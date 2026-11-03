@@ -23,6 +23,8 @@ class JoinMsg(_Msg):
     room: str = Field(min_length=1, max_length=64)
     nick: str = Field(min_length=1, max_length=MAX_NICK_LEN)
     character: str = Field(default="default", max_length=32)
+    # optional secret player token: lets the server show the player's unlocked frame/badge
+    token: Optional[str] = Field(default=None, max_length=128)
 
 
 class LeaveMsg(_Msg):
@@ -40,16 +42,21 @@ class EmoteMsg(_Msg):
 
 
 class StateMsg(_Msg):
-    """Update own profile. Send `character` and/or `nick` (at least one)."""
+    """Update own profile. Send at least one of `character`, `nick`, `frame`, `badge`.
+
+    `frame` / `badge` are decor ids ("" clears); the server only accepts unlocked ones.
+    """
 
     type: Literal["state"] = "state"
     character: Optional[str] = Field(default=None, min_length=1, max_length=32)
     nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
+    frame: Optional[str] = Field(default=None, max_length=32)
+    badge: Optional[str] = Field(default=None, max_length=32)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> "StateMsg":
-        if self.character is None and self.nick is None:
-            raise ValueError("state needs character and/or nick")
+        if all(v is None for v in (self.character, self.nick, self.frame, self.badge)):
+            raise ValueError("state needs character, nick, frame and/or badge")
         return self
 
 
@@ -70,6 +77,8 @@ class Member(BaseModel):
     nick: str
     character: str
     taps: int = 0
+    frame: Optional[str] = None
+    badge: Optional[str] = None
 
 
 class JoinedMsg(BaseModel):
@@ -107,6 +116,8 @@ class StateBroadcast(BaseModel):
     id: str
     character: str
     nick: str
+    frame: Optional[str] = None
+    badge: Optional[str] = None
 
 
 class PongMsg(BaseModel):
@@ -115,5 +126,5 @@ class PongMsg(BaseModel):
 
 class ErrorMsg(BaseModel):
     type: Literal["error"] = "error"
-    code: str  # room_full | bad_message | not_joined | already_joined
+    code: str  # room_full | bad_message | not_joined | already_joined | locked | bad_decor
     message: str = ""

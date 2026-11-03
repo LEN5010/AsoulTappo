@@ -128,3 +128,8 @@ global_config.json
 .pytest_cache/
 .env
 *.pem
+
+# server runtime data (sqlite)
+server/data/
+data/
+*.db

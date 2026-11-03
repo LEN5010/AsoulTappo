@@ -29,6 +29,9 @@ class Peer:
     character: str
     ws: Sender
     taps: int = 0
+    frame: str | None = None
+    badge: str | None = None
+    token: str | None = None  # secret player token (never broadcast)
 
 
 @dataclass
@@ -47,14 +50,16 @@ class RoomManager:
         self.rooms[rid] = Room(rid)
         return rid
 
-    def join(self, room_id: str, nick: str, character: str, ws: Sender) -> Peer:
+    def join(self, room_id: str, nick: str, character: str, ws: Sender,
+             frame: str | None = None, badge: str | None = None, token: str | None = None) -> Peer:
         """Join (auto-creating) a room. Raises RoomFull when at capacity."""
         room = self.rooms.get(room_id)
         if room is None:
             room = self.rooms[room_id] = Room(room_id)
         if len(room.peers) >= self.max_size:
             raise RoomFull(room_id)
-        peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws)
+        peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
+                    frame=frame, badge=badge, token=token)
         room.peers[peer.id] = peer
         return peer
 
