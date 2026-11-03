@@ -1,0 +1,114 @@
+// Collectible items shown in the backpack, collection and craft pages.
+// Ids match the server (server/app/manifest.py): card:<id> emote:<key> acc:<id> theme:<id>.
+// Characters (char:<name>) and frames/badges (decor:<id>) are listed as well, but never drop
+// or get crafted: characters are always owned, frames/badges unlock by collecting a card series.
+import { manifest, RARITY_ORDER, type Rarity } from "./manifest";
+
+export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
+
+export interface Item {
+  /** namespaced id, e.g. "emote:jiaran-eat.03" */
+  id: string;
+  /** id inside its kind: character name, accessory id, emote key, card id, theme id, decor id */
+  ref: string;
+  kind: ItemKind;
+  name: string;
+  /** null for things that are not dropped (characters, starters, frames/badges) */
+  rarity: Rarity | null;
+  /** asset reference (bundle:/pack:); characters are drawn from their pet layers instead */
+  art: string;
+  characters: string[];
+  /** set / series / theme name, used for grouping and details */
+  group: string;
+  starter: boolean;
+}
+
+export const KIND_LABEL: Record<ItemKind, string> = {
+  character: "角色", accessory: "配件", emote: "表情", card: "卡牌", theme: "主题", frame: "头像框", badge: "徽章",
+};
+export const RARITY_LABEL = Object.fromEntries(
+  RARITY_ORDER.map((r) => [r, manifest.rarities[r].name]),
+) as Record<Rarity, string>;
+/** highest first, for grouping */
+export const RARITY_DESC: Rarity[] = [...RARITY_ORDER].reverse();
+
+const starterEmotes = new Set(manifest.starter.emotes);
+const seriesName = (id: string) => manifest.series.find((s) => s.id === id)?.name ?? id;
+
+function build(): Item[] {
+  const out: Item[] = [];
+  for (const c of manifest.characters) {
+    out.push({ id: `char:${c.name}`, ref: c.name, kind: "character", name: c.name, rarity: null, art: "",
+      characters: [c.name], group: "初始角色", starter: true });
+  }
+  for (const a of manifest.accessories) {
+    out.push({ id: `acc:${a.id}`, ref: a.id, kind: "accessory", name: a.name, rarity: a.rarity, art: a.img,
+      characters: a.characters, group: a.slot === "head" ? "头顶" : "桌面", starter: false });
+  }
+  for (const s of manifest.emoteSets) {
+    for (const e of s.emotes) {
+      const starter = starterEmotes.has(e.key);
+      out.push({ id: `emote:${e.key}`, ref: e.key, kind: "emote", name: e.name, rarity: starter ? null : s.rarity,
+        art: e.img, characters: [s.character], group: s.name, starter });
+    }
+  }
+  for (const c of manifest.cards) {
+    out.push({ id: `card:${c.id}`, ref: c.id, kind: "card", name: c.name, rarity: c.rarity, art: c.thumb,
+      characters: c.characters, group: seriesName(c.series), starter: false });
+  }
+  for (const t of manifest.themes) {
+    const starter = t.id === manifest.starter.theme;
+    out.push({ id: `theme:${t.id}`, ref: t.id, kind: "theme", name: t.name, rarity: starter ? null : t.rarity,
+      art: t.cover, characters: t.characters, group: "装扮主题", starter });
+  }
+  for (const d of manifest.decor) {
+    out.push({ id: `decor:${d.id}`, ref: d.id, kind: d.kind, name: d.name, rarity: null, art: d.img,
+      characters: [], group: seriesName(d.unlock.series), starter: false });
+  }
+  return out;
+}
+
+export const items: Item[] = build();
+const index = new Map(items.map((i) => [i.id, i]));
+export const getItem = (id: string) => index.get(id);
+
+/** Items that drop from boxes and can be crafted with shards. */
+export const collectible = items.filter((i) => i.rarity !== null && !i.starter);
+
+export interface Ownership {
+  owned: Record<string, number>;
+  /** unlocked frame/badge ids */
+  unlocked: Iterable<string>;
+}
+
+export function isOwned(item: Item, o: Ownership): boolean {
+  if (item.starter || item.kind === "character") return true;
+  if (item.kind === "frame" || item.kind === "badge") return new Set(o.unlocked).has(item.ref);
+  return (o.owned[item.id] ?? 0) > 0;
+}
+
+export function ownsEmote(key: string, owned: Record<string, number>): boolean {
+  return key === "thumbup" || starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
+}
+
+export function ownsAccessory(id: string, owned: Record<string, number>): boolean {
+  return (owned[`acc:${id}`] ?? 0) > 0;
+}
+
+export function ownsTheme(id: string, owned: Record<string, number>): boolean {
+  return id === manifest.starter.theme || (owned[`theme:${id}`] ?? 0) > 0;
+}
+
+export function craftCost(item: Item): number | null {
+  return item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] : null;
+}
+
+/** Starter emotes of one character (the default quick emotes). */
+export function starterEmotesOf(character: string): string[] {
+  const set = manifest.emoteSets.find((s) => s.character === character);
+  return set ? set.emotes.filter((e) => starterEmotes.has(e.key)).map((e) => e.key) : [];
+}
+
+export function dropLabel(item: Item, isNew: boolean): string {
+  return isNew ? `新${KIND_LABEL[item.kind]}！` : "重复获得";
+}

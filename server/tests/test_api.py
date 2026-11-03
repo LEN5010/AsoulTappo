@@ -36,10 +36,45 @@ def test_activity_open_collection_flow(client):
     r = client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H).json()
     assert r["boxes"] == 2 and r["credited"] == 25
     r = client.post("/api/boxes/open", headers=H).json()
-    assert r["card"] == "c1" and r["new"] is True and r["boxes"] == 1
+    assert r["drops"][0]["item"] == "card:c1" and r["drops"][0]["new"] is True and r["boxes"] == 1
     col = client.get("/api/collection", headers=H).json()
-    assert col["owned"] == {"c1": 1}
+    assert col["owned"] == {"card:c1": 1}
     assert client.get("/api/me", headers=H).json()["totals"]["owned"] == 1
+    r = client.post("/api/boxes/open", json={"count": 5}, headers=H).json()
+    assert len(r["drops"]) == 1 and r["boxes"] == 0 and r["shards"] == 1
+
+
+def test_craft_loadout_and_presets_routes(client):
+    assert client.post("/api/craft", json={"item": "card:c3"}, headers=H).status_code == 409   # no shards
+    assert client.post("/api/craft", json={"item": "nope"}, headers=H).status_code == 400
+    lo = client.post("/api/loadout", json={"character": "嘉然", "favorites": ["e.01"]}, headers=H).json()
+    assert lo["character"] == "嘉然" and lo["favorites"] == ["e.01"]
+    assert client.get("/api/loadout", headers=H).json() == lo
+    r = client.post("/api/loadout", json={"head": "hat"}, headers=H)
+    assert r.status_code == 400 and r.json()["detail"]["code"] == "locked"
+    p = client.post("/api/presets/1", json={"loadout": {"character": "嘉然"}, "name": "a"}, headers=H).json()
+    assert p["presets"][1] == {"name": "a", "loadout": {"character": "嘉然"}}
+    assert client.get("/api/presets", headers=H).json() == p
+    assert client.post("/api/presets/1", json={"loadout": None}, headers=H).json()["presets"][1] is None
+    assert client.post("/api/presets/9", json={}, headers=H).status_code == 400
+
+
+def test_ws_emotes_need_ownership_and_are_rate_limited(client):
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "join", "room": "r", "nick": "a", "token": TOKEN})
+        joined = ws.receive_json()
+        assert joined["members"][0]["uid"] and joined["members"][0]["head"] is None
+        ws.send_json({"type": "emote", "emote": "e.02"})
+        assert ws.receive_json()["code"] == "locked"
+        ws.send_json({"type": "emote", "emote": "e.01"})          # starter
+        assert ws.receive_json() == {"type": "emote", "id": joined["you"], "emote": "e.01"}
+        ws.send_json({"type": "emote", "emote": "e.01"})          # too soon
+        assert ws.receive_json()["code"] == "rate_limited"
+        ws.send_json({"type": "state", "head": "hat"})
+        assert ws.receive_json()["code"] == "locked"
+        ws.send_json({"type": "state", "head": ""})
+        st = ws.receive_json()
+        assert st["type"] == "state" and st["head"] is None
 
 
 def test_activity_validation(client):

@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main pet window: receive input/tray events, drag the window.",
-  "windows": ["main"],
+  "description": "Desk overlay window: receive input/tray events.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "core:event:default",
-    "core:window:allow-start-dragging"
+    "core:event:default"
   ]
 }

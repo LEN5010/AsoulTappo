@@ -60,7 +60,7 @@ def test_daily_and_inventory_caps():
     g, clock = make(DropConfig(taps_per_box=10, daily_box_cap=3, inventory_cap=2, max_taps_per_sec=1000))
     st = g.report_activity(TOKEN, 1000)
     assert st["boxes"] == 2 and st["boxesToday"] == 2          # inventory cap 2
-    g.open_box(TOKEN)
+    g.open_boxes(TOKEN)
     st = g.report_activity(TOKEN, 1000)
     assert st["boxesToday"] == 3 and st["boxes"] == 2          # daily cap 3 (only one more granted)
     clock.t += 86400
@@ -71,23 +71,99 @@ def test_daily_and_inventory_caps():
 def test_open_box_requires_box_and_stores_collection():
     g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000), SeqRng(0.0))
     with pytest.raises(GameError) as e:
-        g.open_box(TOKEN)
+        g.open_boxes(TOKEN)
     assert e.value.code == "no_box"
     g.report_activity(TOKEN, 30)
-    r = g.open_box(TOKEN)
-    assert r["card"] == "c1" and r["new"] and r["count"] == 1 and r["boxes"] == 2
-    r = g.open_box(TOKEN)
-    assert not r["new"] or r["card"] != "c1"
+    r = g.open_boxes(TOKEN)
+    assert r["drops"] == [{"item": "card:c1", "rarity": "common", "new": True, "count": 1, "shards": 0}]
+    assert r["boxes"] == 2
     col = g.collection(TOKEN)
-    assert sum(col["owned"].values()) == 2 and len(col["recent"]) == 2
-    assert g.status(TOKEN)["totals"]["opened"] == 2
+    assert col["owned"] == {"card:c1": 1} and col["recent"][0]["item"] == "card:c1"
+    assert g.status(TOKEN)["totals"]["opened"] == 1
+
+
+def test_open_several_boxes_and_duplicates_give_shards():
+    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000, max_open_batch=10), SeqRng(0.0))
+    g.report_activity(TOKEN, 30)
+    r = g.open_boxes(TOKEN, 5)   # only 3 boxes; rng 0.0 always picks card:c1
+    assert [d["new"] for d in r["drops"]] == [True, False, False]
+    assert [d["shards"] for d in r["drops"]] == [0, 1, 1] and [d["count"] for d in r["drops"]] == [1, 2, 3]
+    assert r["boxes"] == 0 and r["shards"] == 2 and r["totals"]["opened"] == 3
+    assert r["totals"] == {**r["totals"], "owned": 1, "items": 10}
+
+
+def test_craft_spends_shards_on_missing_items():
+    g, _ = make()
+    g.store.update_player(player_id_for(TOKEN), shards=50)
+    r = g.craft(TOKEN, "card:c3")                  # rare costs 30
+    assert r["item"] == "card:c3" and r["shards"] == 20
+    assert g.collection(TOKEN)["owned"] == {"card:c3": 1}
+    for item, code in (("card:c3", "owned"), ("card:c4", "no_shards"), ("emote:e.01", "bad_item"),
+                       ("nope", "bad_item")):
+        with pytest.raises(GameError) as e:
+            g.craft(TOKEN, item)
+        assert e.value.code == code
+    assert g.status(TOKEN)["shards"] == 20
+
+
+def test_loadout_validates_ownership():
+    g, _ = make()
+    pid = player_id_for(TOKEN)
+    assert g.get_loadout(TOKEN) == {"character": None, "head": None, "desk": None, "theme": None,
+                                    "favorites": [], "frame": None, "badge": None}
+    lo = g.set_loadout(TOKEN, {"character": "嘉然", "favorites": ["e.01", "thumbup", "e.01"], "theme": "x"})
+    assert lo["character"] == "嘉然" and lo["favorites"] == ["e.01", "thumbup"] and lo["theme"] == "x"
+    for patch, code in (({"favorites": ["e.02"]}, "locked"), ({"head": "hat"}, "locked"),
+                        ({"theme": "y"}, "locked"), ({"desk": "hat"}, "bad_item"),
+                        ({"character": "路人"}, "bad_item"), ({"favorites": ["e.01"] * 3 + list("abcdefgh")}, "bad_item")):
+        with pytest.raises(GameError) as e:
+            g.set_loadout(TOKEN, patch)
+        assert e.value.code == code, patch
+    g.store.add_item(pid, "acc:hat", 0)
+    g.store.add_item(pid, "acc:cat", 0)
+    lo = g.set_loadout(TOKEN, {"head": "hat", "desk": "cat"})
+    assert (lo["head"], lo["desk"], lo["character"]) == ("hat", "cat", "嘉然")   # other keys are kept
+    assert g.set_loadout(TOKEN, {"head": ""})["head"] is None
+
+
+def test_presets_store_validated_snapshots():
+    g, _ = make()
+    g.store.add_item(player_id_for(TOKEN), "acc:hat", 0)
+    out = g.save_preset(TOKEN, 0, {"character": "嘉然", "head": "hat"}, "上班")
+    assert out["presets"][0] == {"name": "上班", "loadout": {"character": "嘉然", "head": "hat"}}
+    assert out["presets"][1:] == [None] * 4
+    assert g.save_preset(TOKEN, 3, {"favorites": ["e.01"]})["presets"][3]["name"] == "预设 4"
+    with pytest.raises(GameError) as e:
+        g.save_preset(TOKEN, 5, {})
+    assert e.value.code == "bad_slot"
+    with pytest.raises(GameError):
+        g.save_preset(TOKEN, 1, {"desk": "cat"})          # not owned
+    assert g.save_preset(TOKEN, 0, None)["presets"][0] is None
+
+
+def test_room_profile_emotes_and_accessories():
+    g, _ = make()
+    a, b = g.profile_for(TOKEN, "r1"), g.profile_for(TOKEN, "r2")
+    assert a["uid"] and a["uid"] == g.profile_for(TOKEN, "r1")["uid"] != b["uid"]
+    assert TOKEN not in a["uid"] and player_id_for(TOKEN) not in a["uid"]
+    assert g.profile_for(None, "r1") == g.profile_for("bad", "r1") == {
+        "uid": None, "frame": None, "badge": None, "head": None, "desk": None}
+    assert g.owns_emote(None, "e.01") and g.owns_emote(None, "thumbup") and not g.owns_emote(None, "e.02")
+    assert not g.owns_emote(TOKEN, "e.02")
+    g.store.add_item(player_id_for(TOKEN), "emote:e.02", 0)
+    assert g.owns_emote(TOKEN, "e.02")
+    with pytest.raises(GameError):
+        g.check_accessories(None, "hat", None)
+    assert g.check_accessories(None, "", None) == {"head": None}
+    g.store.add_item(player_id_for(TOKEN), "acc:hat", 0)
+    assert g.check_accessories(TOKEN, "hat", None) == {"head": "hat"}
 
 
 def test_pity_counters_persist_and_reset():
     g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=10**5), SeqRng(0.0))
     g.report_activity(TOKEN, 100)
     for _ in range(3):
-        g.open_box(TOKEN)
+        g.open_boxes(TOKEN)
     assert g.status(TOKEN)["pity"] == {"epic": 3, "legendary": 3}
 
 
@@ -99,13 +175,13 @@ def test_players_are_isolated():
 
 
 def test_decor_unlock_select_and_validation():
-    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=10**5), SeqRng(0.0, 0.99))
+    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=10**5), SeqRng(0.0))
     assert g.status(TOKEN)["unlocked"] == []
     with pytest.raises(GameError) as e:
         g.set_decor(TOKEN, None, "badge-s1")
     assert e.value.code == "locked"
     g.report_activity(TOKEN, 100)
-    g.open_box(TOKEN)  # a card of series s1 -> badge unlocked (min 1)
+    g.open_boxes(TOKEN)  # card:c1 of series s1 -> badge unlocked (min 1)
     assert "badge-s1" in g.status(TOKEN)["unlocked"] and "frame-s1" not in g.status(TOKEN)["unlocked"]
     assert g.set_decor(TOKEN, None, "badge-s1")["badge"] == "badge-s1"
     with pytest.raises(GameError):
@@ -113,6 +189,5 @@ def test_decor_unlock_select_and_validation():
     with pytest.raises(GameError) as e:
         g.set_decor(TOKEN, "nope", None)
     assert e.value.code == "bad_decor"
-    assert g.decor_for(TOKEN) == (None, "badge-s1")
+    assert (g.profile_for(TOKEN, "r")["frame"], g.profile_for(TOKEN, "r")["badge"]) == (None, "badge-s1")
     assert g.set_decor(TOKEN, None, "")["badge"] is None
-    assert g.decor_for("bad") == (None, None)

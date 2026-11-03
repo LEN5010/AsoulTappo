@@ -1,0 +1,61 @@
+/* Design tokens for the panel and the desk overlay. Theme/character colours
+   (--accent, --accent-rgb, --on-accent, --char, --tint) come from stores/theme.ts. */
+:root {
+  --font: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --ink: #3b2d33;
+  --ink-2: #7a6970;
+  --ink-3: #a8989e;
+  --paper: #fffaf7;
+  --paper-2: #f8f0eb;
+  --paper-3: #efe3dc;
+  --line: rgba(90, 55, 65, 0.12);
+  --shadow-1: 0 1px 2px rgba(70, 35, 45, 0.08), 0 3px 10px rgba(70, 35, 45, 0.07);
+  --shadow-2: 0 18px 50px rgba(55, 25, 35, 0.25), 0 3px 10px rgba(55, 25, 35, 0.12);
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 18px;
+  --r-xl: 26px;
+  --rar-common: #9eb0c4;
+  --rar-common-bg: linear-gradient(160deg, #f3f6fa, #dfe7ef);
+  --rar-rare: #7d86ee;
+  --rar-rare-bg: linear-gradient(160deg, #f1f0ff, #d8dbff);
+  --rar-epic: #ef8a72;
+  --rar-epic-bg: linear-gradient(160deg, #fff1ea, #ffd3c4);
+  --rar-legendary: #e9b23a;
+  --rar-legendary-bg: linear-gradient(160deg, #fff8df, #ffe193);
+  --rar-none-bg: linear-gradient(160deg, #fff7f3, #f6e6df);
+  --ok: #3fb67a;
+  --warn: #e7a23a;
+  --bad: #d9534f;
+}
+
+/* shared controls inside the panel */
+.ui-btn {
+  font: inherit; font-size: 13px; font-weight: 600; height: 34px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+  transition: transform 120ms, box-shadow 120ms, background 120ms;
+}
+.ui-btn:hover:not(:disabled) { box-shadow: var(--shadow-1); transform: translateY(-1px); }
+.ui-btn:active:not(:disabled) { transform: translateY(0); }
+.ui-btn.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.35); }
+.ui-btn.ghost { background: transparent; }
+.ui-btn.small { height: 28px; padding: 0 10px; font-size: 12px; }
+.ui-btn:disabled { opacity: 0.45; cursor: default; }
+.ui-input {
+  font: inherit; font-size: 13px; height: 34px; padding: 0 12px; border-radius: 999px; min-width: 0;
+  border: 1px solid var(--line); background: #fff; color: var(--ink); outline: none;
+}
+.ui-input:focus { border-color: rgba(var(--accent-rgb), 0.7); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15); }
+.ui-card { background: #fff; border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow-1); }
+.ui-muted { color: var(--ink-2); }
+.ui-hint { color: var(--ink-3); font-size: 12px; }
+.ui-bar { height: 8px; border-radius: 4px; background: var(--paper-3); overflow: hidden; }
+.ui-bar > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width 300ms; }
+.ui-switch { appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--paper-3); position: relative; cursor: pointer; transition: background 150ms; flex: none; }
+.ui-switch::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform 150ms; }
+.ui-switch:checked { background: var(--accent); }
+.ui-switch:checked::after { transform: translateX(16px); }
+.ui-range { accent-color: var(--accent); width: 100%; }
+.ui-scroll { scrollbar-width: thin; scrollbar-color: rgba(var(--accent-rgb), 0.35) transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

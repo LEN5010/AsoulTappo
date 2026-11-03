@@ -63,14 +63,15 @@ def test_overlapping_broadcasts_remove_failed_peer_only_once():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("method", ["decor_for", "set_decor"])
+@pytest.mark.parametrize("method", ["profile_for", "set_decor"])
 def test_database_work_does_not_block_other_event_loop_tasks(monkeypatch, method):
     entered, release = threading.Event(), threading.Event()
 
     def blocked(*args):
         entered.set()
         release.wait(2)
-        return (None, None) if method == "decor_for" else {"frame": None, "badge": None}
+        return ({"uid": None, "frame": None, "badge": None, "head": None, "desk": None}
+                if method == "profile_for" else {"frame": None, "badge": None})
 
     monkeypatch.setattr(main.game, method, blocked)
     monkeypatch.setattr(main, "manager", RoomManager())

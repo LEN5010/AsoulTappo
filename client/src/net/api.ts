@@ -4,10 +4,11 @@ import { manifest } from "../manifest";
 
 export interface PlayerStatus {
   boxes: number;
+  shards: number;
   boxesToday: number;
   progress: { taps: number; tapsPerBox: number; minutes: number; minutesPerBox: number };
   dailyCap: number;
-  totals: { taps: number; activeMinutes: number; opened: number; owned: number; cards: number };
+  totals: { taps: number; activeMinutes: number; opened: number; owned: number; items: number };
   pity: { epic: number; legendary: number };
   unlocked: string[];
   frame: string | null;
@@ -15,15 +16,38 @@ export interface PlayerStatus {
   credited?: number;
   newBoxes?: number;
 }
-export interface OpenResult extends PlayerStatus {
-  card: string;
+export interface Drop {
+  item: string;
   rarity: string;
   new: boolean;
   count: number;
+  /** shards gained for a duplicate */
+  shards: number;
+}
+export interface OpenResult extends PlayerStatus {
+  drops: Drop[];
+}
+export interface CraftResult extends PlayerStatus {
+  item: string;
 }
 export interface Collection {
   owned: Record<string, number>;
-  recent: { card_id: string; rarity: string; is_new: number; ts: number }[];
+  recent: { item: string; rarity: string; new: boolean; ts: number }[];
+}
+export interface Loadout {
+  character: string | null;
+  head: string | null;
+  desk: string | null;
+  theme: string | null;
+  favorites: string[];
+  frame: string | null;
+  badge: string | null;
+}
+/** Loadout patch; "" clears head / desk / frame / badge. */
+export type LoadoutPatch = { [K in keyof Loadout]?: Loadout[K] | (K extends "favorites" ? never : "") };
+export interface Preset {
+  name: string;
+  loadout: LoadoutPatch;
 }
 
 export class ApiError extends Error {
@@ -83,8 +107,14 @@ export class Api {
 
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
-  openBox = () => this.call<OpenResult>("POST", "/api/boxes/open");
+  openBoxes = (count = 1) => this.call<OpenResult>("POST", "/api/boxes/open", { count });
+  craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
   collection = () => this.call<Collection>("GET", "/api/collection");
+  loadout = () => this.call<Loadout>("GET", "/api/loadout");
+  setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
+  presets = () => this.call<{ presets: (Preset | null)[] }>("GET", "/api/presets");
+  savePreset = (slot: number, loadout: LoadoutPatch | null, name?: string) =>
+    this.call<{ presets: (Preset | null)[] }>("POST", `/api/presets/${slot}`, { loadout, ...(name ? { name } : {}) });
   setDecor = (patch: { frame?: string; badge?: string }) =>
     this.call<PlayerStatus>("POST", "/api/decor", patch);
 }
@@ -123,6 +153,6 @@ export class ActivityReporter {
 export function seriesProgress(owned: Record<string, number>) {
   return manifest.series.map((s) => ({
     ...s,
-    have: manifest.cards.filter((c) => c.series === s.id && (owned[c.id] ?? 0) > 0).length,
+    have: manifest.cards.filter((c) => c.series === s.id && (owned[`card:${c.id}`] ?? 0) > 0).length,
   }));
 }

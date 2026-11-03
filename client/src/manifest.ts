@@ -28,6 +28,8 @@ export interface ManifestTheme {
   pack: string | null;
   cover: string;
   preview: string | null;
+  /** null for the default (starter) theme */
+  rarity: Rarity | null;
   colors: { accent: string; tint: string; headFg?: string; tabFg?: string };
   icons: Record<string, ThemeIcon>;
   parts: {
@@ -40,7 +42,19 @@ export interface ManifestTheme {
   };
 }
 export interface ManifestEmote { key: string; name: string; img: string }
-export interface ManifestEmoteSet { id: string; name: string; character: string; emotes: ManifestEmote[] }
+export interface ManifestEmoteSet { id: string; name: string; character: string; rarity: Rarity; emotes: ManifestEmote[] }
+export interface ManifestAccessory {
+  id: string;
+  name: string;
+  /** rider: three poses that follow the mouse; figure: static; anim: animated loop */
+  kind: "rider" | "figure" | "anim";
+  slot: "head" | "desk";
+  characters: string[];
+  rarity: Rarity;
+  img: string;
+  left?: string;
+  right?: string;
+}
 export interface ManifestDecor {
   id: string;
   kind: "frame" | "badge";
@@ -59,6 +73,9 @@ export interface Manifest {
   cards: ManifestCard[];
   emoteSets: ManifestEmoteSet[];
   decor: ManifestDecor[];
+  accessories: ManifestAccessory[];
+  starter: { emotes: string[]; theme: string };
+  economy: { dupShards: Record<Rarity, number>; craftCost: Record<Rarity, number> };
 }
 
 export const manifest = raw as unknown as Manifest;
@@ -66,10 +83,15 @@ export const manifest = raw as unknown as Manifest;
 const cardIndex = new Map(manifest.cards.map((c) => [c.id, c]));
 const emoteIndex = new Map(manifest.emoteSets.flatMap((s) => s.emotes.map((e) => [e.key, e] as const)));
 const decorIndex = new Map(manifest.decor.map((d) => [d.id, d]));
+const accessoryIndex = new Map(manifest.accessories.map((a) => [a.id, a]));
+const emoteSetIndex = new Map(manifest.emoteSets.flatMap((s) => s.emotes.map((e) => [e.key, s] as const)));
 
 export const getCard = (id: string) => cardIndex.get(id);
 export const getEmote = (key: string) => emoteIndex.get(key);
 export const getDecor = (id: string | null | undefined) => (id ? decorIndex.get(id) : undefined);
+export const getAccessory = (id: string | null | undefined) => (id ? accessoryIndex.get(id) : undefined);
+/** The emote set an emote key belongs to. */
+export const getEmoteSet = (key: string) => emoteSetIndex.get(key);
 export const getTheme = (id: string) =>
   manifest.themes.find((t) => t.id === id) ?? manifest.themes.find((t) => t.id === manifest.defaultTheme)!;
 export const characterColor = (name: string) => manifest.characters.find((c) => c.name === name)?.color ?? "#ff6b9d";

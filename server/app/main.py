@@ -1,9 +1,11 @@
-"""AsoulTappo room server: FastAPI + WebSocket rooms, SQLite-backed card progression."""
+"""AsoulTappo room server: FastAPI + WebSocket rooms, SQLite-backed item progression."""
 from __future__ import annotations
 
 import asyncio
 import os
+import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,8 +23,9 @@ from .models import (
 from .rooms import Peer, RoomFull, RoomManager
 from .store import Store
 
-app = FastAPI(title="AsoulTappo server", version="0.2.0")
+app = FastAPI(title="AsoulTappo server", version="0.3.0")
 manager = RoomManager()
+EMOTE_INTERVAL = 0.25  # seconds between emotes of one member
 
 PACKS_DIR = find_packs_dir()
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
@@ -42,7 +45,8 @@ app.add_middleware(
 
 
 def _member(p: Peer) -> Member:
-    return Member(id=p.id, nick=p.nick, character=p.character, taps=p.taps, frame=p.frame, badge=p.badge)
+    return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps,
+                  frame=p.frame, badge=p.badge, head=p.head, desk=p.desk)
 
 
 @app.get("/healthz")
@@ -61,7 +65,7 @@ def _guard(fn, *args):
     try:
         return fn(*args)
     except GameError as e:
-        status = 401 if e.code == "bad_token" else 409 if e.code == "no_box" else 400
+        status = 401 if e.code == "bad_token" else 409 if e.code in ("no_box", "no_shards", "owned") else 400
         raise HTTPException(status_code=status, detail={"code": e.code, "message": e.message})
 
 
@@ -74,6 +78,33 @@ class ActivityBody(BaseModel):
 class DecorBody(BaseModel):
     frame: str | None = Field(default=None, max_length=32)
     badge: str | None = Field(default=None, max_length=32)
+
+
+class OpenBody(BaseModel):
+    count: int = Field(default=1, ge=1, le=100)
+
+
+class CraftBody(BaseModel):
+    item: str = Field(min_length=1, max_length=64)
+
+
+class LoadoutBody(BaseModel):
+    """Loadout patch: only the given keys change.  "" clears head / desk / frame / badge."""
+
+    character: str | None = Field(default=None, max_length=32)
+    head: str | None = Field(default=None, max_length=48)
+    desk: str | None = Field(default=None, max_length=48)
+    theme: str | None = Field(default=None, max_length=48)
+    favorites: list[str] | None = Field(default=None, max_length=16)
+    frame: str | None = Field(default=None, max_length=32)
+    badge: str | None = Field(default=None, max_length=32)
+
+
+class PresetBody(BaseModel):
+    """``loadout: null`` clears the slot."""
+
+    loadout: LoadoutBody | None = None
+    name: str | None = Field(default=None, max_length=24)
 
 
 @app.get("/api/manifest")
@@ -93,8 +124,34 @@ def api_activity(body: ActivityBody, x_player_token: str = Header(default="")) -
 
 
 @app.post("/api/boxes/open")
-def api_open_box(x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.open_box, x_player_token)
+def api_open_box(body: OpenBody | None = None, x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.open_boxes, x_player_token, body.count if body else 1)
+
+
+@app.post("/api/craft")
+def api_craft(body: CraftBody, x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.craft, x_player_token, body.item)
+
+
+@app.get("/api/loadout")
+def api_loadout(x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.get_loadout, x_player_token)
+
+
+@app.post("/api/loadout")
+def api_set_loadout(body: LoadoutBody, x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.set_loadout, x_player_token, body.model_dump(exclude_unset=True))
+
+
+@app.get("/api/presets")
+def api_presets(x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.presets, x_player_token)
+
+
+@app.post("/api/presets/{slot}")
+def api_save_preset(slot: int, body: PresetBody, x_player_token: str = Header(default="")) -> dict:
+    loadout: dict[str, Any] | None = body.loadout.model_dump(exclude_unset=True) if body.loadout else None
+    return _guard(game.save_preset, x_player_token, slot, loadout, body.name)
 
 
 @app.get("/api/collection")
@@ -153,10 +210,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer is not None:
                     await err("already_joined")
                     continue
-                frame, badge = await run_in_threadpool(game.decor_for, msg.token)
+                profile = await run_in_threadpool(game.profile_for, msg.token, msg.room)
                 try:
-                    peer = manager.join(msg.room, msg.nick, msg.character, ws,
-                                        frame=frame, badge=badge, token=msg.token)
+                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=msg.token, **profile)
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
@@ -181,6 +237,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, TapBroadcast(
                     id=peer.id, count=msg.count, total=peer.taps).model_dump())
             elif isinstance(msg, EmoteMsg):
+                now = time.monotonic()
+                if now - peer.last_emote < EMOTE_INTERVAL:
+                    await err("rate_limited", "too many emotes")
+                    continue
+                if msg.emote not in peer.emotes:
+                    if not await run_in_threadpool(game.owns_emote, peer.token, msg.emote):
+                        await err("locked", "emote not owned")
+                        continue
+                    peer.emotes.add(msg.emote)
+                peer.last_emote = now
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, StateMsg):
@@ -194,13 +260,21 @@ async def ws_endpoint(ws: WebSocket) -> None:
                         await err(e.code, e.message)
                         continue
                     peer.frame, peer.badge = st["frame"], st["badge"]
+                if msg.head is not None or msg.desk is not None:
+                    try:
+                        acc = await run_in_threadpool(game.check_accessories, peer.token, msg.head, msg.desk)
+                    except GameError as e:
+                        await err(e.code, e.message)
+                        continue
+                    peer.head = acc.get("head", peer.head)
+                    peer.desk = acc.get("desk", peer.desk)
                 if msg.character is not None:
                     peer.character = msg.character
                 if msg.nick is not None:
                     peer.nick = msg.nick
                 await manager.broadcast(room_id, StateBroadcast(
                     id=peer.id, character=peer.character, nick=peer.nick,
-                    frame=peer.frame, badge=peer.badge).model_dump())
+                    frame=peer.frame, badge=peer.badge, head=peer.head, desk=peer.desk).model_dump())
     except WebSocketDisconnect:
         pass
     except asyncio.TimeoutError:

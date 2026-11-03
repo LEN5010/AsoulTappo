@@ -52,4 +52,22 @@ export const PET_BASE = {
   height: 135,
   keyboard: { x: 94, y: 84, size: 25, pressOffset: 5 },
   mouse: { x: 190, y: 90, size: 25, maxOffset: 20 },
+  /** top centre of the monitor in the background image: desk accessories stand here */
+  monitor: { x: 50, y: 46 },
 };
+
+// Top of each character's head on the base canvas (measured from bgImage.png).
+// Head accessories sit here and emote bubbles grow from its upper right.
+const HEADS: Record<string, { x: number; y: number }> = {
+  嘉然: { x: 152, y: 10 },
+  乃琳: { x: 150, y: 18 },
+  贝拉: { x: 146, y: 10 },
+  心宜: { x: 152, y: 10 },
+  思诺: { x: 142, y: 9 },
+};
+export function headAnchor(name: string): { x: number; y: number } {
+  return HEADS[name] ?? { x: 150, y: 10 };
+}
+
+/** Crop of the background image that shows the character's face, for avatars (base canvas units). */
+export const FACE_CROP = { x: 96, y: 0, size: 108 };

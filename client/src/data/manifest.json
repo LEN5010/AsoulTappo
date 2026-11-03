@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "characters": [
   {
    "id": "jiaran",
@@ -92,7 +92,8 @@
      "n": "bundle:themes/jiaran-eat/icons/myself.webp",
      "s": "bundle:themes/jiaran-eat/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": null
   },
   {
    "id": "jiaran-album-2025",
@@ -133,7 +134,8 @@
      "n": "bundle:themes/jiaran-album-2025/icons/myself.webp",
      "s": "bundle:themes/jiaran-album-2025/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "jiaran-album-2026",
@@ -174,7 +176,8 @@
      "n": "bundle:themes/jiaran-album-2026/icons/myself.webp",
      "s": "bundle:themes/jiaran-album-2026/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "jiaran-2-0",
@@ -221,7 +224,8 @@
      "n": "bundle:themes/jiaran-2-0/icons/myself.webp",
      "s": "bundle:themes/jiaran-2-0/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "jiaran-garden",
@@ -264,7 +268,8 @@
      "n": "bundle:themes/jiaran-garden/icons/myself.webp",
      "s": "bundle:themes/jiaran-garden/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "jiaran-naodong",
@@ -309,7 +314,8 @@
      "n": "bundle:themes/jiaran-naodong/icons/myself.webp",
      "s": "bundle:themes/jiaran-naodong/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "nailin-tavern-2025",
@@ -350,7 +356,8 @@
      "n": "bundle:themes/nailin-tavern-2025/icons/myself.webp",
      "s": "bundle:themes/nailin-tavern-2025/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "nailin-queen",
@@ -397,7 +404,8 @@
      "n": "bundle:themes/nailin-queen/icons/myself.webp",
      "s": "bundle:themes/nailin-queen/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "nailin-2-0",
@@ -444,7 +452,8 @@
      "n": "bundle:themes/nailin-2-0/icons/myself.webp",
      "s": "bundle:themes/nailin-2-0/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "nailin-raccoon",
@@ -487,7 +496,8 @@
      "n": "bundle:themes/nailin-raccoon/icons/myself.webp",
      "s": "bundle:themes/nailin-raccoon/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "nailin-naodong",
@@ -532,7 +542,8 @@
      "n": "bundle:themes/nailin-naodong/icons/myself.webp",
      "s": "bundle:themes/nailin-naodong/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "beila-adventure-2025",
@@ -573,7 +584,8 @@
      "n": "bundle:themes/beila-adventure-2025/icons/myself.webp",
      "s": "bundle:themes/beila-adventure-2025/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "beila-kira",
@@ -620,7 +632,8 @@
      "n": "bundle:themes/beila-kira/icons/myself.webp",
      "s": "bundle:themes/beila-kira/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "beila-2-0",
@@ -667,7 +680,8 @@
      "n": "bundle:themes/beila-2-0/icons/myself.webp",
      "s": "bundle:themes/beila-2-0/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "beila-rabbit",
@@ -712,7 +726,8 @@
      "n": "bundle:themes/beila-rabbit/icons/myself.webp",
      "s": "bundle:themes/beila-rabbit/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "beila-naodong",
@@ -757,7 +772,8 @@
      "n": "bundle:themes/beila-naodong/icons/myself.webp",
      "s": "bundle:themes/beila-naodong/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   },
   {
    "id": "symphony",
@@ -799,7 +815,8 @@
      "n": "bundle:themes/symphony/icons/myself.webp",
      "s": "bundle:themes/symphony/icons/myself_sel.webp"
     }
-   }
+   },
+   "rarity": "rare"
   }
  ],
  "series": [
@@ -1672,7 +1689,8 @@
      "name": "锤头丧气",
      "img": "bundle:emotes/jiaran-eat/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "jiaran-album-2025",
@@ -1779,7 +1797,8 @@
      "name": "记录！",
      "img": "bundle:emotes/jiaran-album-2025/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "jiaran-album-2026",
@@ -1886,7 +1905,8 @@
      "name": "顿悟",
      "img": "bundle:emotes/jiaran-album-2026/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "jiaran-2-0",
@@ -2018,7 +2038,8 @@
      "name": "累了",
      "img": "bundle:emotes/jiaran-2-0/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "jiaran-garden",
@@ -2100,7 +2121,8 @@
      "name": "糖糖来了",
      "img": "bundle:emotes/jiaran-garden/15.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "jiaran-naodong",
@@ -2207,7 +2229,8 @@
      "name": "面包怪",
      "img": "bundle:emotes/jiaran-naodong/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "nailin-tavern-2025",
@@ -2314,7 +2337,8 @@
      "name": "这个好",
      "img": "bundle:emotes/nailin-tavern-2025/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "nailin-queen",
@@ -2446,7 +2470,8 @@
      "name": "鼓掌",
      "img": "bundle:emotes/nailin-queen/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "nailin-2-0",
@@ -2578,7 +2603,8 @@
      "name": "鸳鸯火锅拳",
      "img": "bundle:emotes/nailin-2-0/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "nailin-raccoon",
@@ -2660,7 +2686,8 @@
      "name": "？？？",
      "img": "bundle:emotes/nailin-raccoon/15.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "nailin-naodong",
@@ -2767,7 +2794,8 @@
      "name": "鼓掌",
      "img": "bundle:emotes/nailin-naodong/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "beila-adventure-2025",
@@ -2874,7 +2902,8 @@
      "name": "零分",
      "img": "bundle:emotes/beila-adventure-2025/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "beila-kira",
@@ -3006,7 +3035,8 @@
      "name": "送你小花花",
      "img": "bundle:emotes/beila-kira/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "beila-2-0",
@@ -3138,7 +3168,8 @@
      "name": "过载",
      "img": "bundle:emotes/beila-2-0/25.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "beila-rabbit",
@@ -3245,7 +3276,8 @@
      "name": "骄傲",
      "img": "bundle:emotes/beila-rabbit/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "beila-naodong",
@@ -3352,7 +3384,8 @@
      "name": "飞踢",
      "img": "bundle:emotes/beila-naodong/20.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "bloom-jiaran",
@@ -3384,7 +3417,8 @@
      "name": "超喜欢",
      "img": "bundle:emotes/bloom-jiaran/05.webp"
     }
-   ]
+   ],
+   "rarity": "rare"
   },
   {
    "id": "bloom-nailin",
@@ -3416,7 +3450,8 @@
      "name": "约定",
      "img": "bundle:emotes/bloom-nailin/05.webp"
     }
-   ]
+   ],
+   "rarity": "rare"
   },
   {
    "id": "bloom-beila",
@@ -3448,7 +3483,8 @@
      "name": "贝极星",
      "img": "bundle:emotes/bloom-beila/05.webp"
     }
-   ]
+   ],
+   "rarity": "rare"
   },
   {
    "id": "symphony-xinyi",
@@ -3505,7 +3541,8 @@
      "name": "飞踢",
      "img": "bundle:emotes/symphony-xinyi/10.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   },
   {
    "id": "symphony-sinuo",
@@ -3562,7 +3599,8 @@
      "name": "飞飞飞",
      "img": "bundle:emotes/symphony-sinuo/10.webp"
     }
-   ]
+   ],
+   "rarity": "common"
   }
  ],
  "decor": [
@@ -3656,5 +3694,304 @@
     "min": 1
    }
   }
- ]
+ ],
+ "accessories": [
+  {
+   "id": "rider-jiaran-album-2025",
+   "name": "画册嘉然",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-jiaran-album-2025/normal.webp",
+   "left": "bundle:accessories/rider-jiaran-album-2025/drag_left.webp",
+   "right": "bundle:accessories/rider-jiaran-album-2025/drag_right.webp"
+  },
+  {
+   "id": "rider-jiaran-album-2026",
+   "name": "画册嘉然 · 2026",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-jiaran-album-2026/normal.webp",
+   "left": "bundle:accessories/rider-jiaran-album-2026/drag_left.webp",
+   "right": "bundle:accessories/rider-jiaran-album-2026/drag_right.webp"
+  },
+  {
+   "id": "rider-nailin-tavern-2025",
+   "name": "酒馆乃琳",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-nailin-tavern-2025/normal.webp",
+   "left": "bundle:accessories/rider-nailin-tavern-2025/drag_left.webp",
+   "right": "bundle:accessories/rider-nailin-tavern-2025/drag_right.webp"
+  },
+  {
+   "id": "rider-nailin-2-0",
+   "name": "乃琳 2.0",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-nailin-2-0/normal.webp",
+   "left": "bundle:accessories/rider-nailin-2-0/drag_left.webp",
+   "right": "bundle:accessories/rider-nailin-2-0/drag_right.webp"
+  },
+  {
+   "id": "rider-beila-adventure-2025",
+   "name": "冒险贝拉",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-beila-adventure-2025/normal.webp",
+   "left": "bundle:accessories/rider-beila-adventure-2025/drag_left.webp",
+   "right": "bundle:accessories/rider-beila-adventure-2025/drag_right.webp"
+  },
+  {
+   "id": "rider-beila-2-0",
+   "name": "贝拉 2.0",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-beila-2-0/normal.webp",
+   "left": "bundle:accessories/rider-beila-2-0/drag_left.webp",
+   "right": "bundle:accessories/rider-beila-2-0/drag_right.webp"
+  },
+  {
+   "id": "rider-symphony",
+   "name": "心宜与思诺",
+   "kind": "rider",
+   "slot": "head",
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/rider-symphony/normal.webp",
+   "left": "bundle:accessories/rider-symphony/drag_left.webp",
+   "right": "bundle:accessories/rider-symphony/drag_right.webp"
+  },
+  {
+   "id": "figure-jiaran-eat",
+   "name": "嘉然今天吃什么",
+   "kind": "figure",
+   "slot": "head",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "rare",
+   "img": "bundle:accessories/figure-jiaran-eat.webp"
+  },
+  {
+   "id": "figure-jiaran-2-0",
+   "name": "嘉然 2.0",
+   "kind": "figure",
+   "slot": "head",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "rare",
+   "img": "bundle:accessories/figure-jiaran-2-0.webp"
+  },
+  {
+   "id": "figure-nailin-queen",
+   "name": "乃琳 Queen",
+   "kind": "figure",
+   "slot": "head",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "rare",
+   "img": "bundle:accessories/figure-nailin-queen.webp"
+  },
+  {
+   "id": "figure-beila-kira",
+   "name": "贝拉 kira",
+   "kind": "figure",
+   "slot": "head",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "rare",
+   "img": "bundle:accessories/figure-beila-kira.webp"
+  },
+  {
+   "id": "anim-jiaran-eat",
+   "name": "嘉然今天吃什么 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-jiaran-eat.webp"
+  },
+  {
+   "id": "anim-jiaran-album-2025",
+   "name": "2025 嘉然的画册 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-jiaran-album-2025.webp"
+  },
+  {
+   "id": "anim-jiaran-album-2026",
+   "name": "2026 嘉然的画册 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-jiaran-album-2026.webp"
+  },
+  {
+   "id": "anim-jiaran-2-0",
+   "name": "嘉然个性装扮 2.0 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-jiaran-2-0.webp"
+  },
+  {
+   "id": "anim-nailin-tavern-2025",
+   "name": "2025 乃琳的酒馆 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-nailin-tavern-2025.webp"
+  },
+  {
+   "id": "anim-nailin-queen",
+   "name": "乃琳 Queen · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-nailin-queen.webp"
+  },
+  {
+   "id": "anim-nailin-2-0",
+   "name": "乃琳个性装扮 2.0 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-nailin-2-0.webp"
+  },
+  {
+   "id": "anim-beila-adventure-2025",
+   "name": "2025 贝拉的冒险 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-beila-adventure-2025.webp"
+  },
+  {
+   "id": "anim-beila-kira",
+   "name": "贝拉 kira · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-beila-kira.webp"
+  },
+  {
+   "id": "anim-beila-2-0",
+   "name": "贝拉个性装扮 2.0 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-beila-2-0.webp"
+  },
+  {
+   "id": "anim-symphony",
+   "name": "心宜和思诺的交响乐谱 · 小动画",
+   "kind": "anim",
+   "slot": "desk",
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "rarity": "epic",
+   "img": "bundle:accessories/anim-symphony.webp"
+  }
+ ],
+ "starter": {
+  "emotes": [
+   "jiaran-eat.01",
+   "jiaran-eat.02",
+   "jiaran-eat.03",
+   "jiaran-eat.04",
+   "nailin-tavern-2025.01",
+   "nailin-tavern-2025.02",
+   "nailin-tavern-2025.03",
+   "nailin-tavern-2025.04",
+   "beila-adventure-2025.01",
+   "beila-adventure-2025.02",
+   "beila-adventure-2025.03",
+   "beila-adventure-2025.04",
+   "symphony-xinyi.01",
+   "symphony-xinyi.02",
+   "symphony-xinyi.03",
+   "symphony-xinyi.04",
+   "symphony-sinuo.01",
+   "symphony-sinuo.02",
+   "symphony-sinuo.03",
+   "symphony-sinuo.04"
+  ],
+  "theme": "jiaran-eat"
+ },
+ "economy": {
+  "dupShards": {
+   "common": 1,
+   "rare": 3,
+   "epic": 8,
+   "legendary": 20
+  },
+  "craftCost": {
+   "common": 10,
+   "rare": 30,
+   "epic": 80,
+   "legendary": 200
+  }
+ }
 }

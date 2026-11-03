@@ -1,6 +1,6 @@
 import random
 
-from app.cards import DropConfig, next_pity, pick_card, roll_rarity
+from app.cards import DropConfig, next_pity, pick_item, roll_rarity
 
 from fixtures import SeqRng, tiny_manifest
 
@@ -51,10 +51,19 @@ def test_next_pity():
 
 
 def test_pick_prefers_unowned_and_falls_back():
-    m = tiny_manifest()
-    # c1 owned (weight 1) vs c2 unowned (weight 3): total 4 -> x<0.25 picks c1, else c2
-    assert pick_card(m.by_rarity, {"c1"}, "common", CFG, SeqRng(0.1))["id"] == "c1"
-    assert pick_card(m.by_rarity, {"c1"}, "common", CFG, SeqRng(0.3))["id"] == "c2"
+    pool = {"common": [{"id": "a", "rarity": "common"}, {"id": "b", "rarity": "common"}],
+            "rare": [{"id": "r", "rarity": "rare"}], "epic": [], "legendary": []}
+    # a owned (weight 1) vs b unowned (weight 3): total 4 -> x<0.25 picks a, else b
+    assert pick_item(pool, {"a"}, "common", CFG, SeqRng(0.1))["id"] == "a"
+    assert pick_item(pool, {"a"}, "common", CFG, SeqRng(0.3))["id"] == "b"
     # empty rarity falls back to the next lower one
-    by = {**m.by_rarity, "epic": []}
-    assert pick_card(by, {}, "epic", CFG, SeqRng(0.0))["rarity"] == "rare"
+    assert pick_item(pool, {}, "epic", CFG, SeqRng(0.0))["rarity"] == "rare"
+
+
+def test_manifest_items_exclude_starters_from_drops():
+    m = tiny_manifest()
+    assert m.starter == {"emote:e.01", "theme:x"}
+    common = [i["id"] for i in m.by_rarity["common"]]
+    assert common == ["card:c1", "card:c2", "emote:e.02", "emote:e.03"]
+    assert [i["id"] for i in m.by_rarity["rare"]] == ["card:c3", "acc:hat", "theme:y"]
+    assert "emote:e.01" not in common and "theme:x" in m.items

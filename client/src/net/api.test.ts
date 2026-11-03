@@ -17,7 +17,7 @@ describe("Api", () => {
   });
   it("turns server errors into ApiError with the code", async () => {
     const api = new Api(() => "http://h", () => "t", () => resp(409, { detail: { code: "no_box", message: "没有宝箱" } }));
-    await expect(api.openBox()).rejects.toMatchObject({ status: 409, code: "no_box", message: "没有宝箱" });
+    await expect(api.openBoxes()).rejects.toMatchObject({ status: 409, code: "no_box", message: "没有宝箱" });
     const api2 = new Api(() => "http://h", () => "t", () => resp(500, "x"));
     await expect(api2.me()).rejects.toBeInstanceOf(ApiError);
   });

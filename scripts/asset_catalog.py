@@ -182,6 +182,47 @@ def card_subseries(series: str, name: str) -> str | None:
     return None
 
 
+# --------------------------------------------------------------- accessories
+# Accessories sit on the pet (see client/src/characters.ts for the anchor points).
+#   head: B站 progress-bar riders (normal / drag_left / drag_right, the pose follows the
+#         mouse direction) and static figures (playicon preview)
+#   desk: theme loading animations, standing on top of the monitor
+# id, display name, characters, source dir under <assets>/主题
+RIDERS = [
+    ("rider-jiaran-album-2025", "画册嘉然", ["嘉然"], "2025嘉然的画册"),
+    ("rider-jiaran-album-2026", "画册嘉然 · 2026", ["嘉然"], "2026嘉然的画册"),
+    ("rider-nailin-tavern-2025", "酒馆乃琳", ["乃琳"], "2025乃琳的酒馆"),
+    ("rider-nailin-2-0", "乃琳 2.0", ["乃琳"], "乃琳个性装扮2.0"),
+    ("rider-beila-adventure-2025", "冒险贝拉", ["贝拉"], "2025贝拉的冒险"),
+    ("rider-beila-2-0", "贝拉 2.0", ["贝拉"], "贝拉个性装扮2.0"),
+    ("rider-symphony", "心宜与思诺", ["心宜", "思诺"], "心宜和思诺的交响乐谱"),
+]
+FIGURES = [
+    ("figure-jiaran-eat", "嘉然今天吃什么", ["嘉然"], "嘉然今天吃什么"),
+    ("figure-jiaran-2-0", "嘉然 2.0", ["嘉然"], "嘉然个性装扮2.0"),
+    ("figure-nailin-queen", "乃琳 Queen", ["乃琳"], "乃琳Queen"),
+    ("figure-beila-kira", "贝拉 kira", ["贝拉"], "贝拉kira"),
+]
+# loading animations come from these themes (theme id -> accessory "anim-<theme id>")
+ANIM_THEMES = [
+    "jiaran-eat", "jiaran-album-2025", "jiaran-album-2026", "jiaran-2-0",
+    "nailin-tavern-2025", "nailin-queen", "nailin-2-0",
+    "beila-adventure-2025", "beila-kira", "beila-2-0", "symphony",
+]
+ACCESSORY_RARITY = {"rider": "epic", "figure": "rare", "anim": "epic"}
+
+# ------------------------------------------------------------------ economy
+# Emote sets are common, except the bloom collection sets.  Non-default themes are rare.
+RARE_EMOTE_SETS = {"bloom-jiaran", "bloom-nailin", "bloom-beila"}
+THEME_RARITY = "rare"
+# Every player owns the five characters, the default theme and the first
+# STARTER_EMOTES emotes of each character's first emote set.
+STARTER_EMOTES = 4
+# Duplicates turn into shards; shards craft a chosen missing item.
+DUP_SHARDS = {"common": 1, "rare": 3, "epic": 8, "legendary": 20}
+CRAFT_COST = {"common": 10, "rare": 30, "epic": 80, "legendary": 200}
+
+
 # -------------------------------------------------------- frames and badges
 # id, kind, display name, source file (relative to <assets>/杂项), series, min cards
 # frame unlock: own >= min(5, series size) distinct cards; badge: own >= 1 card.
