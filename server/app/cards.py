@@ -1,4 +1,4 @@
-"""Card drop logic: rarity rolls with pity, and card choice that favours new cards.
+"""Drop logic: rarity rolls with pity, and item choice that favours new items.
 
 Pure functions with an injectable ``rng`` (anything with ``random()``) so the
 behaviour is deterministic in tests.
@@ -28,7 +28,8 @@ class DropConfig:
     epic_hard_pity: int = 20           # guaranteed epic+ on this open
     legendary_hard_pity: int = 60      # guaranteed legendary on this open
     soft_pity_step: float = 8.0        # extra epic weight per open beyond the soft threshold
-    new_card_boost: float = 3.0        # unowned cards weigh this much vs. owned (1.0)
+    new_item_boost: float = 3.0        # unowned items weigh this much vs. owned (1.0)
+    max_open_batch: int = 10           # boxes opened by one "open all" request
 
 
 def _pick(weights: Mapping[str, float], rng: Rng) -> str:
@@ -61,19 +62,19 @@ def roll_rarity(weights: Mapping[str, float], since_epic: int, since_legend: int
     return _pick(w, rng)
 
 
-def pick_card(by_rarity: Mapping[str, list[dict]], owned: Mapping[str, int] | Iterable[str],
+def pick_item(by_rarity: Mapping[str, list[dict]], owned: Mapping[str, int] | Iterable[str],
               rarity: str, cfg: DropConfig, rng: Rng) -> dict:
-    """Pick a card of ``rarity`` (unowned x boost). Falls back to a lower, then higher rarity."""
+    """Pick an item of ``rarity`` (unowned x boost). Falls back to a lower, then higher rarity."""
     idx = RARITY_ORDER.index(rarity)
     order = RARITY_ORDER[: idx + 1][::-1] + RARITY_ORDER[idx + 1 :]
     for r in order:
         pool = by_rarity.get(r) or []
         if not pool:
             continue
-        w = {c["id"]: (1.0 if c["id"] in owned else cfg.new_card_boost) for c in pool}
+        w = {c["id"]: (1.0 if c["id"] in owned else cfg.new_item_boost) for c in pool}
         cid = _pick(w, rng)
         return next(c for c in pool if c["id"] == cid)
-    raise ValueError("no cards available")
+    raise ValueError("no items available")
 
 
 def next_pity(rarity: str, since_epic: int, since_legend: int) -> tuple[int, int]:

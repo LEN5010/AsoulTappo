@@ -1,4 +1,4 @@
-"""SQLite persistence for players, their card collection and the drop log (stdlib only)."""
+"""SQLite persistence for players, their item collection, presets and the drop log (stdlib only)."""
 from __future__ import annotations
 
 import os
@@ -25,29 +25,54 @@ CREATE TABLE IF NOT EXISTS players (
   since_legend INTEGER NOT NULL DEFAULT 0,
   opened_total INTEGER NOT NULL DEFAULT 0,
   frame TEXT,
-  badge TEXT
+  badge TEXT,
+  shards INTEGER NOT NULL DEFAULT 0,
+  loadout TEXT NOT NULL DEFAULT ''
 );
-CREATE TABLE IF NOT EXISTS cards (
+CREATE TABLE IF NOT EXISTS items (
   player_id TEXT NOT NULL,
-  card_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
   count INTEGER NOT NULL DEFAULT 0,
   first_ts REAL NOT NULL,
-  PRIMARY KEY (player_id, card_id)
+  PRIMARY KEY (player_id, item_id)
 );
 CREATE TABLE IF NOT EXISTS drops (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id TEXT NOT NULL,
-  card_id TEXT NOT NULL,
+  item_id TEXT NOT NULL,
   rarity TEXT NOT NULL,
   is_new INTEGER NOT NULL,
   ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS drops_player ON drops (player_id, id);
+CREATE TABLE IF NOT EXISTS activity_budget (
+  player_id TEXT PRIMARY KEY,
+  balance REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity_sessions (
+  player_id TEXT NOT NULL,
+  session TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  PRIMARY KEY (player_id, session)
+);
+CREATE TABLE IF NOT EXISTS presets (
+  player_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (player_id, slot)
+);
+CREATE TABLE IF NOT EXISTS presence_sessions (
+  player_id TEXT NOT NULL,
+  session TEXT NOT NULL,
+  last_seen REAL NOT NULL,
+  PRIMARY KEY (player_id, session)
+);
 """
 
 PLAYER_FIELDS = (
     "id created taps_total active_minutes progress_taps progress_minutes boxes boxes_day boxes_today "
-    "last_activity minute_bucket minute_taps minute_counted since_epic since_legend opened_total frame badge"
+    "last_activity minute_bucket minute_taps minute_counted since_epic since_legend opened_total frame badge "
+    "shards loadout draw_tickets draw_seconds draw_pity drawn_total presence_last"
 ).split()
 
 
@@ -64,6 +89,33 @@ class Store:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            self._migrate()
+
+    def _columns(self, table: str) -> set[str]:
+        return {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
+
+    def _migrate(self) -> None:
+        """Bring databases created by older versions up to the current schema."""
+        with self._db:
+            players = self._columns("players")
+            if "shards" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN shards INTEGER NOT NULL DEFAULT 0")
+            if "loadout" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN loadout TEXT NOT NULL DEFAULT ''")
+            for field, kind in (("draw_tickets", "INTEGER"), ("draw_seconds", "REAL"),
+                                ("draw_pity", "INTEGER"), ("drawn_total", "INTEGER"),
+                                ("presence_last", "REAL")):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+            # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
+            if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
+                self._db.execute(
+                    "INSERT OR IGNORE INTO items (player_id, item_id, count, first_ts) "
+                    "SELECT player_id, 'card:' || card_id, count, first_ts FROM cards")
+                self._db.execute("DROP TABLE cards")
+            if "card_id" in self._columns("drops"):
+                self._db.execute("ALTER TABLE drops RENAME COLUMN card_id TO item_id")
+                self._db.execute("UPDATE drops SET item_id = 'card:' || item_id WHERE instr(item_id, ':') = 0")
 
     def _commit(self) -> None:
         if not getattr(self, "_in_tx", False):
@@ -98,37 +150,91 @@ class Store:
             self._db.execute(f"UPDATE players SET {cols} WHERE id=?", (*fields.values(), pid))
             self._commit()
 
-    # --- cards
+    # --- activity (updated in the same transaction as player progress)
+    def activity_budget(self, pid: str) -> float:
+        with self._lock:
+            row = self._db.execute("SELECT balance FROM activity_budget WHERE player_id=?", (pid,)).fetchone()
+            return row["balance"] if row else 0.0
+
+    def save_activity_budget(self, pid: str, balance: float) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO activity_budget VALUES (?, ?) "
+                "ON CONFLICT(player_id) DO UPDATE SET balance=excluded.balance", (pid, balance))
+            self._commit()
+
+    def activity_sequence(self, pid: str, session: str) -> int:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT sequence FROM activity_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
+            return row["sequence"] if row else 0
+
+    def save_activity_sequence(self, pid: str, session: str, sequence: int) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO activity_sessions VALUES (?, ?, ?) "
+                "ON CONFLICT(player_id, session) DO UPDATE SET sequence=excluded.sequence", (pid, session, sequence))
+            self._commit()
+
+    # --- items
+    def presence(self, pid: str, session: str, now: float) -> float | None:
+        """Return this running session's previous heartbeat and record the new one."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT last_seen FROM presence_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
+            self._db.execute(
+                "INSERT INTO presence_sessions VALUES (?, ?, ?) "
+                "ON CONFLICT(player_id, session) DO UPDATE SET last_seen=excluded.last_seen", (pid, session, now))
+            self._commit()
+            return row["last_seen"] if row else None
+
     def owned(self, pid: str) -> dict[str, int]:
         with self._lock:
-            rows = self._db.execute("SELECT card_id, count FROM cards WHERE player_id=?", (pid,)).fetchall()
-        return {r["card_id"]: r["count"] for r in rows}
+            rows = self._db.execute("SELECT item_id, count FROM items WHERE player_id=?", (pid,)).fetchall()
+        return {r["item_id"]: r["count"] for r in rows}
 
-    def add_card(self, pid: str, card_id: str, now: float) -> int:
+    def add_item(self, pid: str, item_id: str, now: float) -> int:
         """Increment the owned count; returns the new count."""
         with self._lock:
             self._db.execute(
-                "INSERT INTO cards (player_id, card_id, count, first_ts) VALUES (?,?,1,?) "
-                "ON CONFLICT(player_id, card_id) DO UPDATE SET count = count + 1",
-                (pid, card_id, now))
+                "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,1,?) "
+                "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + 1",
+                (pid, item_id, now))
             row = self._db.execute(
-                "SELECT count FROM cards WHERE player_id=? AND card_id=?", (pid, card_id)).fetchone()
+                "SELECT count FROM items WHERE player_id=? AND item_id=?", (pid, item_id)).fetchone()
             self._commit()
             return row["count"]
 
-    def log_drop(self, pid: str, card_id: str, rarity: str, is_new: bool, now: float) -> None:
+    def log_drop(self, pid: str, item_id: str, rarity: str, is_new: bool, now: float) -> None:
         with self._lock:
             self._db.execute(
-                "INSERT INTO drops (player_id, card_id, rarity, is_new, ts) VALUES (?,?,?,?,?)",
-                (pid, card_id, rarity, int(is_new), now))
+                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts) VALUES (?,?,?,?,?)",
+                (pid, item_id, rarity, int(is_new), now))
             self._commit()
 
     def recent_drops(self, pid: str, limit: int = 20) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT card_id, rarity, is_new, ts FROM drops WHERE player_id=? ORDER BY id DESC LIMIT ?",
+                "SELECT item_id, rarity, is_new, ts FROM drops WHERE player_id=? ORDER BY id DESC LIMIT ?",
                 (pid, limit)).fetchall()
-        return [dict(r) for r in rows]
+        return [{"item": r["item_id"], "rarity": r["rarity"], "new": bool(r["is_new"]), "ts": r["ts"]}
+                for r in rows]
+
+    # --- presets (JSON text per slot)
+    def presets(self, pid: str) -> dict[int, str]:
+        with self._lock:
+            rows = self._db.execute("SELECT slot, data FROM presets WHERE player_id=?", (pid,)).fetchall()
+        return {r["slot"]: r["data"] for r in rows}
+
+    def save_preset(self, pid: str, slot: int, data: str | None) -> None:
+        with self._lock:
+            if data is None:
+                self._db.execute("DELETE FROM presets WHERE player_id=? AND slot=?", (pid, slot))
+            else:
+                self._db.execute(
+                    "INSERT INTO presets VALUES (?, ?, ?) "
+                    "ON CONFLICT(player_id, slot) DO UPDATE SET data=excluded.data", (pid, slot, data))
+            self._commit()
 
     def close(self) -> None:
         with self._lock:

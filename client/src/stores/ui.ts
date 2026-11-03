@@ -1,0 +1,15 @@
+import { reactive } from "vue";
+import { settings } from "./settings";
+export type Page = "emotes" | "dex" | "cards" | "room" | "settings";
+export const ui = reactive({ panelOpen: false, page: "emotes" as Page, craftTarget: "", quickOpen: false });
+export function openPanel(page?: Page, opts: { craftTarget?: string } = {}): void {
+  if (settings.clickThrough) return;
+  if (page) ui.page = page;
+  if (opts.craftTarget !== undefined) ui.craftTarget = opts.craftTarget;
+  ui.panelOpen = true;
+  ui.quickOpen = false;
+}
+export function togglePanel(): void {
+  if (ui.panelOpen) ui.panelOpen = false;
+  else openPanel();
+}

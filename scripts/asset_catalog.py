@@ -101,6 +101,22 @@ CARD_SERIES = {
 
 # (series, numeric id, card name, characters).  Only cards listed here exist.
 CARDS = [
+    ("tavern", "1762331462002", "蝶影共醉", ["乃琳"]),
+    ('moon', '1781070981009', '珍馐派对', ['嘉然']),
+    ('moon', '1781070981002', '午睡时间', ['嘉然']),
+    ('moon', '1781070981003', '倚凭栏', ['嘉然']),
+    ('moon', '1781070981004', 'SUPER IDOL', ['嘉然']),
+    ('moon', '1781070981005', '安可time', ['嘉然']),
+    ('moon', '1781070981006', '非请勿入', ['嘉然']),
+    ('moon', '1781070981007', '噔噔噔！灯会', ['嘉然']),
+    ('moon', '1781070981008', '金币至上', ['嘉然']),
+    ('tavern', '1762331462009', '绮梦妖狐', ['乃琳']),
+    ('tavern', '1762331462003', '四季的心动', ['乃琳']),
+    ('tavern', '1762331462004', '罗兰紫嫣', ['乃琳']),
+    ('tavern', '1762331462005', '欢迎光琳', ['乃琳']),
+    ('tavern', '1762331462006', '酒意半酣', ['乃琳']),
+    ('tavern', '1762331462007', '女王法典', ['乃琳']),
+    ('tavern', '1762331462008', '镜界对影', ['乃琳']),
     ("bloom", "1700742793002", "睡衣系列-贝拉", ["贝拉"]),
     ("bloom", "1700742793004", "睡衣系列-乃琳", ["乃琳"]),
     ("bloom", "1700742793005", "睡衣系列-嘉然", ["嘉然"]),
@@ -157,29 +173,35 @@ CARDS = [
     ("voyage", "1756378523010", "引爆枝江大楼", ["贝拉"]),
 ]
 
-# Legendary = the special MV cards of the bloom collection.
-LEGENDARY_IDS = {"1700799218001", "1700799218003", "1700799218004"}
-# Rare = the 时序 / 舞台 sub-series of the bloom collection.
-RARE_SUBSERIES = {"时序系列", "舞台系列"}
-
+BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724002', '1781070981009', '1762331462002', '1756378523002', '1700742793033'}
+SMALL_HIDDEN_IDS = {'1762331462009', '1700742793026', '1756378523010', '1700742793022', '1781070981010', '1745315724008', '1700742793023', '1748345610011'}
 RARITIES = ["common", "rare", "epic", "legendary"]
 
 
+def card_tier(card_id: str) -> str:
+    return "big" if card_id in BIG_HIDDEN_IDS else "small" if card_id in SMALL_HIDDEN_IDS else "normal"
+
+
 def card_rarity(card_id: str, name: str, has_video: bool) -> str:
-    """legendary > rare (时序/舞台) > epic (has video) > common."""
-    if card_id in LEGENDARY_IDS:
-        return "legendary"
-    if name.split("-")[0] in RARE_SUBSERIES:
-        return "rare"
-    if has_video:
-        return "epic"
-    return "common"
+    return {"big": "legendary", "small": "epic", "normal": "common"}[card_tier(card_id)]
 
 
 def card_subseries(series: str, name: str) -> str | None:
     if series == "bloom" and "-" in name:
         return name.split("-")[0]
     return None
+
+
+# ------------------------------------------------------------------ economy
+# Emote sets are common, except the bloom collection sets.  Non-default themes are rare.
+RARE_EMOTE_SETS = {"bloom-jiaran", "bloom-nailin", "bloom-beila"}
+THEME_RARITY = "rare"
+# Every player owns the five characters, the default theme and the first
+# STARTER_EMOTES emotes of each character's first emote set.
+STARTER_EMOTES = 4
+# Duplicates turn into shards; shards craft a chosen missing item.
+DUP_SHARDS = {"common": 1, "rare": 3, "epic": 8, "legendary": 20}
+CRAFT_COST = {"common": 10, "rare": 30, "epic": 80, "legendary": 200}
 
 
 # -------------------------------------------------------- frames and badges

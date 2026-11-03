@@ -1,50 +1,39 @@
 # 架构 / Architecture
 
 ```
-┌──────────────── client/ (Tauri 2 + Vue 3 + TS) ────────────────┐         ┌──────── server/ (FastAPI) ───────┐
-│  Rust (src-tauri)                 Webview (Vue)                │         │ /ws  → RoomManager (in-memory)   │
-│  rdev global hook ──"input"──▶ App.vue ─▶ PetView (layers)     │◀──WS───▶│ /healthz, POST /rooms (+CORS)    │
-│  (kinds + mouse deltas only)         │ registerTap()           │  JSON   └──────────────────────────────────┘
-│  tray / click-through / on-top       ▼                         │
-│  window resize commands        TapBatcher(150ms) ─▶ RoomClient │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────── client/ (Tauri 2 + Vue 3 + TS) ─────────────────────┐        ┌──────── server/ (FastAPI) ────────┐
+│  Rust (src-tauri)                  Webview: one overlay page (App.vue)  │        │ /ws  → RoomManager (in-memory)    │
+│  rdev global hook ──"input"──────▶ own pet (PetView + CounterBar)       │◀──WS──▶│ /api/* → Game → SQLite            │
+│  (kinds + mouse deltas only)       other members' pets (PetActor)       │  JSON  │ /packs → asset packs              │
+│  hit-test thread ◀─"set_hit_regions"─ [data-hit] rects (hit.ts)         │◀─HTTP─▶│ /healthz, POST /rooms (+CORS)     │
+│  tray / monitor / on-top           MainPanel (emotes/dex/room/settings) │        └───────────────────────────────────┘
+│                                    TapBatcher(150ms) ─▶ RoomClient      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Why Tauri 2 + Vue (replacing PyQt6)
-The original PyQt6 client (kept in `legacy/pyqt-client/`) was a ~1100-line `main.py` "god class" with manual QLabel geometry animation, Python-level global hooks and Windows-only dependencies. The new stack gives: a ~10 MB native shell using the system WebView2, GPU-composited CSS/DOM layers for the pet (trivial to scale and to render many small remote pets), a small Rust core for the OS integration, and a typed UI codebase.
+## Desk Overlay Window
+The client uses a single transparent, frameless, always-on-top window (`main`) sized to the monitor work area. It renders the user's own pet, room members' pets, and the floating panel.
+
+Mouse pass-through is updated dynamically based on interactive regions:
+1. Interactive elements carry `data-hit` (pets, counter bar, quick emote dock, chest bubble, toasts, panel). `hit.ts` collects their bounding boxes and sends changes via `set_hit_regions`.
+2. A Rust background thread (`spawn_hit_test`) checks the cursor position against the active hit regions and toggles `set_ignore_cursor_events`.
+3. While dragging (`set_dragging(true)`), the overlay remains interactive until pointer release.
 
 ## Client (`client/`)
 **Rust (`src-tauri/`)**
-- `input.rs` — global keyboard/mouse hook with [`rdev`](https://crates.io/crates/rdev) (Windows low-level hooks). `InputState` is a pure state machine (unit-tested): de-duplicates key auto-repeat, throttles mouse moves to ~60 Hz and emits only `key_down`, `key_up`, `mouse_down/up{button}`, `mouse_move{dx,dy}`. **Key identities are never forwarded**, not even to the webview.
-- `lib.rs` — window commands (`set_click_through`, `set_always_on_top`, `resize_window`, `reset_position`), system tray (show/hide, panel, click-through toggle, reset position, quit).
-- `tauri.conf.json` — the single `main` window is transparent, frameless, always-on-top, non-resizable (resized to its content by the frontend).
+- `input.rs` — global keyboard/mouse hook using `rdev`, emitting `key_down`, `key_up`, `mouse_down/up{button}`, and `mouse_move{dx,dy}`.
+- `hit.rs` — hit-region rectangle matching for cursor pass-through.
+- `lib.rs` — Tauri commands (`set_click_through`, `set_always_on_top`, `set_hit_regions`, `set_dragging`), work-area sizing, and system tray menu.
 
 **Frontend (`src/`)**
-- `components/PetView.vue` — layered pet (bg, keyboard, mouse, left/right-click PNGs on the original 240×135 layout). Keyboard layer presses/bounces on key events, mouse layer follows (smoothed, clamped) mouse deltas, click images show while pressed. Remote pets reuse it at small scale; they bounce per tap batch and show `+N` bursts and emotes.
-- `net/` — `protocol.ts` (wire types), `TapBatcher.ts` (100–200 ms count batching), `RoomClient.ts` (WebSocket, ping/pong keepalive, exponential-backoff reconnect + automatic re-join).
-- `stores/` — `settings.ts` (persisted in `localStorage`, validated on load), `room.ts` (members, bursts, emotes, create/join/leave).
-- `composables/tauri.ts` — Tauri event/command bridge; in a plain browser (`npm run dev`) it falls back to DOM key/mouse events so the UI can be developed without the shell.
-- `characters.ts` — discovers characters from `src/assets/characters/<name>/*.png` (copied from the original project; see `COPYRIGHT.md` there).
+- `App.vue` — overlay root placing the local pet, remote room members' pets, drop toasts, and `MainPanel`.
+- `pet/` — layered pet renderer (`PetView.vue`), drag actor (`PetActor.vue`), `CounterBar.vue`, single-row `QuickEmote.vue` dock, `EmoteBubble.vue`, `ComboBubble.vue`, `ChestBubble.vue`, `DropToast.vue`, and `NamePill.vue`.
+- `panel/` — `MainPanel.vue` (left sidebar + warm cream stage) with `EmotesPage.vue` (live pet dome, character fan cards, 8 squircle favorite slots, chest opening & emote grid), `CollectionPage.vue` (card pools, collapsible rarity sections, online-time card draws), `OnlinePage.vue`, and `SettingsPage.vue`.
+- `ui/` — design tokens (`tokens.css`) and shared UI components (`Icon`, `SegTabs`, `Modal`, `ItemArt`, `ItemCard`, `CharacterAvatar`, `RangeInput`).
+- `stores/` — reactive state for `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, and `theme`.
+- `net/` — `protocol.ts`, `TapBatcher.ts`, `RoomClient.ts`, and `api.ts`.
 
 ## Server (`server/`)
-- FastAPI app, one WebSocket endpoint, JSON messages validated by pydantic (`app/models.py`).
-- `RoomManager` keeps rooms in a dict; max 20 peers per room; empty rooms are deleted; room IDs are `secrets.token_urlsafe(16)`.
-- CORS middleware (`ASOULTAPPO_CORS_ORIGINS`, default `*`), `ping`→`pong` keepalive, `state` can change character and nickname.
-- State is **in memory, single process**. Scaling out would need Redis pub/sub or sticky routing — out of scope for MVP.
-- No accounts, no persistence, no content logging. Only tap *counts* are ever received.
-
-## Privacy / security notes
-- Clients never send key contents or mouse positions; the Rust hook does not even expose key identity to the UI.
-- Room ID is the only secret in v0; use `POST /rooms` for unguessable IDs. TODO: rate limiting, per-IP connection caps, optional room passphrase, origin checks.
-
-## Deployment
-`deploy/docker-compose.yml` runs the server behind Caddy (automatic HTTPS and WebSocket proxying). The client's server URL is configurable in the settings panel (`https://` ⇒ `wss://`).
-
-## CI (`.github/workflows/ci.yml`)
-`server-tests` (pytest) · `client-web` (vitest + `vue-tsc` + `vite build`) · `client-tauri-windows` (`cargo check` + `cargo test` of `src-tauri` on `windows-latest`).
-
-## Known gaps / open questions
-- Pet window geometry is auto-sized to content via a `ResizeObserver`; multi-monitor / DPI edge cases untested.
-- Click-through can only be turned off from the tray menu.
-- No installer/auto-update yet (Tauri NSIS bundle configured, updater not wired).
-- macOS/Linux are not targets (transparent window + global hook behaviour untested).
+- `app/main.py` — FastAPI application serving `/ws` for real-time rooms, `/api/*` for progression/collection/draws, and `/packs` for static asset packs.
+- `app/rooms.py` — in-memory room management (up to 20 members per room).
+- `app/game.py` & `app/store.py` — SQLite-backed player progression, activity credit, emote chests, shard crafting, online-time card draw tickets, and 400-draw shared pity.

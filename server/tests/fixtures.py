@@ -24,7 +24,21 @@ def tiny_manifest() -> Manifest:
             {"id": "badge-s1", "kind": "badge", "name": "b", "img": "bundle:x", "unlock": {"series": "s1", "min": 1}},
             {"id": "frame-s1", "kind": "frame", "name": "f", "img": "bundle:x", "unlock": {"series": "s1", "min": 3}},
         ],
-        "themes": [], "emoteSets": [], "defaultTheme": "x",
+        "themes": [{"id": "x", "name": "X", "default": True, "rarity": None},
+                   {"id": "y", "name": "Y", "default": False, "rarity": "rare"}],
+        "defaultTheme": "x",
+        "emoteSets": [{"id": "e", "name": "E", "character": "嘉然", "rarity": "common", "emotes": [
+            {"key": "e.01", "name": "a", "img": "bundle:x"}, {"key": "e.02", "name": "b", "img": "bundle:x"},
+            {"key": "e.03", "name": "c", "img": "bundle:x"}]}],
+        "accessories": [
+            {"id": "hat", "name": "hat", "kind": "figure", "slot": "head", "characters": ["嘉然"],
+             "rarity": "rare", "img": "bundle:x"},
+            {"id": "cat", "name": "cat", "kind": "anim", "slot": "desk", "characters": ["嘉然"],
+             "rarity": "epic", "img": "bundle:x"},
+        ],
+        "starter": {"emotes": ["e.01"], "theme": "x"},
+        "economy": {"dupShards": {"common": 1, "rare": 3, "epic": 8, "legendary": 20},
+                    "craftCost": {"common": 10, "rare": 30, "epic": 80, "legendary": 200}},
     })
 
 

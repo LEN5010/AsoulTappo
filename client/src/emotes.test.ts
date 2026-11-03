@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { emoteGroups, emoteView, THUMBUP } from "./emotes";
+import { emoteGroups, emoteView } from "./emotes";
 import { manifest } from "./manifest";
 
-const ctx = { serverBase: "http://s", thumbup: "/assets/t.webp", reducedMotion: false };
+const ctx = { serverBase: "http://s" };
 
 describe("emoteView", () => {
   it("resolves manifest emotes to images", () => {
     const key = manifest.emoteSets[0].emotes[0].key;
-    expect(emoteView(key, ctx).img).toMatch(/^\/assets\/emotes\//);
+    expect(emoteView(key, ctx)?.img).toMatch(/^\/assets\/emotes\//);
   });
-  it("thumbup uses the theme animation, or a glyph with reduced motion / no part", () => {
-    expect(emoteView(THUMBUP, ctx)).toEqual({ img: "/assets/t.webp", animated: true });
-    expect(emoteView(THUMBUP, { ...ctx, reducedMotion: true })).toEqual({ text: "👍" });
-    expect(emoteView(THUMBUP, { ...ctx, thumbup: "" })).toEqual({ text: "👍" });
-  });
-  it("keeps legacy glyph keys and shows unknown keys as short text", () => {
-    expect(emoteView("heart", ctx)).toEqual({ text: "❤️" });
-    expect(emoteView("whatever-long", ctx)).toEqual({ text: "what" });
+  it("shows nothing for unknown keys", () => {
+    expect(emoteView("heart", ctx)).toBeNull();
+    expect(emoteView("thumbup", ctx)).toBeNull();
+    expect(emoteView("whatever-long", ctx)).toBeNull();
   });
 });
 

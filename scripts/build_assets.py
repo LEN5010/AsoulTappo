@@ -48,6 +48,8 @@ THEME_BANNER_W = 720
 THEME_HEAD_W = 828
 THEME_TAB_W = 828
 FRAME_PX = 240
+FIGURE_PX = 200
+ANIM_PX = 200
 WEBP_Q = 82
 ICON_Q = 90
 THUMBUP_Q = 70
@@ -120,9 +122,14 @@ def emote_name(stem: str) -> str:
     return (m.group("n") if m else stem).strip()
 
 
+def has_hd(ctx: Ctx, dirname: str) -> bool:
+    hd = ctx.src / "表情包" / dirname / "AI高清"
+    return hd.is_dir() and any(STEM_RE.match(p.name) for p in hd.iterdir())
+
+
 def emote_files(ctx: Ctx, dirname: str) -> list[tuple[str, Path]]:
     base = ctx.src / "表情包" / dirname
-    folder = base / "AI高清" if (base / "AI高清").is_dir() else base / "原图"
+    folder = base / "AI高清" if has_hd(ctx, dirname) else base / "原图"
     out = []
     for p in sorted(folder.iterdir()):
         m = STEM_RE.match(p.name)
@@ -154,11 +161,10 @@ def build_emotes(ctx: Ctx) -> list[dict]:
 
     for set_id, title, character, dirname in cat.EMOTE_SETS:
         files = emote_files(ctx, dirname)
-        lossless = (ctx.src / "表情包" / dirname / "AI高清").is_dir() is False
-        make_set(set_id, title, character, files, lossless)
+        make_set(set_id, title, character, files, not has_hd(ctx, dirname))
     for dirname, groups in cat.MIXED_EMOTE_SETS:
         files = {s: p for s, p in emote_files(ctx, dirname)}
-        lossless = (ctx.src / "表情包" / dirname / "AI高清").is_dir() is False
+        lossless = not has_hd(ctx, dirname)
         for set_id, title, character, stems in groups:
             make_set(set_id, title, character, [(s, files[s]) for s in stems], lossless)
     return sets
@@ -373,6 +379,7 @@ def build_cards(ctx: Ctx) -> list[dict]:
             "id": cid, "name": name, "series": series,
             "sub": cat.card_subseries(series, name), "characters": chars,
             "rarity": cat.card_rarity(card_id, name, vid is not None),
+            "tier": cat.card_tier(card_id),
             "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None,
         }
         if vid is not None:
@@ -388,21 +395,13 @@ def build_cards(ctx: Ctx) -> list[dict]:
     return cards
 
 
-# ------------------------------------------------------------ frames/badges
-def build_decor(ctx: Ctx, cards: list[dict]) -> list[dict]:
-    size = {}
-    for c in cards:
-        size[c["series"]] = size.get(c["series"], 0) + 1
-    items = []
-    for fid, kind, name, rel_src, series in cat.FRAMES_BADGES:
-        rel = f"decor/{fid}.webp"
-        out = BUNDLE / rel
-        if ctx.todo(out):
-            save_webp(square_fit(load_rgba(ctx.src / "杂项" / rel_src), FRAME_PX), out, q=ICON_Q)
-        need = 1 if kind == "badge" else min(5, size[series])
-        items.append({"id": fid, "kind": kind, "name": name, "img": f"bundle:{rel}",
-                      "unlock": {"series": series, "min": need}})
-    return items
+def starter_items(emotes: list[dict]) -> dict:
+    first_set: dict[str, dict] = {}
+    for s in emotes:
+        first_set.setdefault(s["character"], s)
+    keys = [e["key"] for c in cat.CHARACTERS if c["name"] in first_set
+            for e in first_set[c["name"]]["emotes"][: cat.STARTER_EMOTES]]
+    return {"emotes": keys, "theme": cat.DEFAULT_THEME}
 
 
 # ---------------------------------------------------------------- manifest
@@ -458,10 +457,15 @@ def main() -> None:
     emotes = build_emotes(ctx)
     themes = build_themes(ctx)
     cards = build_cards(ctx)
-    decor = build_decor(ctx, cards)
+    decor = []
+    accessories = []
+    for es in emotes:
+        es["rarity"] = "rare" if es["id"] in cat.RARE_EMOTE_SETS else "common"
+    for t in themes:
+        t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
     manifest = {
-        "version": 1,
+        "version": 3,
         "characters": cat.CHARACTERS,
         "rarities": {
             "common": {"name": "普通", "weight": 70},
@@ -476,6 +480,9 @@ def main() -> None:
         "cards": cards,
         "emoteSets": emotes,
         "decor": decor,
+        "accessories": accessories,
+        "starter": starter_items(emotes),
+        "economy": {"dupShards": cat.DUP_SHARDS, "craftCost": cat.CRAFT_COST},
     }
     write_json(PACKS / "manifest.json", manifest)
     write_json(CLIENT_MANIFEST, manifest)
@@ -489,7 +496,8 @@ def main() -> None:
     print(f"bundled assets : {tree_size(BUNDLE) / 1e6:7.1f} MB")
     print(f"assets-packs   : {tree_size(PACKS) / 1e6:7.1f} MB")
     print(f"largest file   : {biggest.relative_to(ROOT)} {biggest.stat().st_size / 1e6:.1f} MB")
-    print(f"{len(cards)} cards, {sum(len(s['emotes']) for s in emotes)} emotes, {len(themes)} themes, {len(decor)} frames/badges")
+    print(f"{len(cards)} cards, {sum(len(s['emotes']) for s in emotes)} emotes, {len(themes)} themes, "
+          f"{len(decor)} frames/badges, {len(accessories)} accessories")
 
 
 if __name__ == "__main__":

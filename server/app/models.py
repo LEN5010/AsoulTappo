@@ -42,21 +42,16 @@ class EmoteMsg(_Msg):
 
 
 class StateMsg(_Msg):
-    """Update own profile. Send at least one of `character`, `nick`, `frame`, `badge`.
-
-    `frame` / `badge` are decor ids ("" clears); the server only accepts unlocked ones.
-    """
+    """Update the displayed character or nickname."""
 
     type: Literal["state"] = "state"
     character: Optional[str] = Field(default=None, min_length=1, max_length=32)
     nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
-    frame: Optional[str] = Field(default=None, max_length=32)
-    badge: Optional[str] = Field(default=None, max_length=32)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> "StateMsg":
-        if all(v is None for v in (self.character, self.nick, self.frame, self.badge)):
-            raise ValueError("state needs character, nick, frame and/or badge")
+        if all(v is None for v in (self.character, self.nick)):
+            raise ValueError("state needs character or nick")
         return self
 
 
@@ -74,11 +69,11 @@ client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
 # ---------------- server -> client ----------------
 class Member(BaseModel):
     id: str
+    # stable per room for players with a token (a hash of player id + room), else null
+    uid: Optional[str] = None
     nick: str
     character: str
     taps: int = 0
-    frame: Optional[str] = None
-    badge: Optional[str] = None
 
 
 class JoinedMsg(BaseModel):
@@ -116,8 +111,6 @@ class StateBroadcast(BaseModel):
     id: str
     character: str
     nick: str
-    frame: Optional[str] = None
-    badge: Optional[str] = None
 
 
 class PongMsg(BaseModel):
@@ -126,5 +119,6 @@ class PongMsg(BaseModel):
 
 class ErrorMsg(BaseModel):
     type: Literal["error"] = "error"
-    code: str  # room_full | bad_message | not_joined | already_joined | locked | bad_decor
+    # room_full | bad_message | not_joined | already_joined | locked | bad_decor | bad_item | rate_limited
+    code: str
     message: str = ""

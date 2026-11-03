@@ -11,10 +11,16 @@ if (typeof window !== "undefined" && window.matchMedia) {
 }
 
 export const skin = computed(() =>
-  buildSkin(settings.theme, settings.character, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL || "/"),
+  buildSkin("jiaran-eat", settings.character, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL || "/"),
 );
 
 /** Root style: theme/character CSS variables. */
-export const skinVars = computed(() => skin.value.vars);
+export const skinVars = computed(() => ({
+  ...skin.value.vars,
+  "--accent": "#FC966E",
+  "--accent-rgb": "252, 150, 110",
+  "--on-accent": "#562915",
+  "--tint": "#FDF4E7",
+}));
 
 export { cssImage };

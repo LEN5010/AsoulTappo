@@ -1,6 +1,5 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
-import manifest from "../data/manifest.json";
 
 export interface Settings {
   serverUrl: string;
@@ -13,10 +12,23 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
-  /** Selected theme id (see data/manifest.json). */
-  theme: string;
   /** Tap batching window (100–200ms). */
   batchMs: number;
+  /** Quick emotes mirrored to the server. */
+  favorites: string[];
+  /** How long an emote bubble stays (ms). */
+  emoteHoldMs: number;
+  /** Size of other members' pets relative to the base canvas. */
+  remoteScale: number;
+  showNames: boolean;
+  /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
+  petX: number;
+  petY: number;
+  panelX: number;
+  panelY: number;
+  sidebarCollapsed: boolean;
+  /** Counter bar shows today's or all-time taps. */
+  tapView: "today" | "total";
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -31,8 +43,17 @@ export const DEFAULT_SETTINGS: Settings = {
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
-  theme: manifest.defaultTheme,
   batchMs: 150,
+  favorites: [],
+  emoteHoldMs: 2500,
+  remoteScale: 0.8,
+  showNames: true,
+  petX: -1,
+  petY: -1,
+  panelX: -1,
+  panelY: -1,
+  sidebarCollapsed: false,
+  tapView: "today",
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
@@ -52,6 +73,12 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   }
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
+  out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
+  out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
+  out.favorites = Array.isArray(out.favorites)
+    ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
+    : [];
+  if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
   return out;
 }
 

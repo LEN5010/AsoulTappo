@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { HitRect } from "../hit";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -54,7 +55,7 @@ export async function listenInput(cb: (e: InputEvent) => void): Promise<() => vo
   };
 }
 
-export type TrayAction = "toggle-panel" | "toggle-click-through";
+export type TrayAction = "toggle-panel" | "toggle-click-through" | "reset-position";
 
 export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
@@ -72,4 +73,7 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
-export const resizeWindow = (width: number, height: number) => call("resize_window", { width, height });
+/** Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through. */
+export const setHitRegions = (rects: HitRect[]) => call("set_hit_regions", { rects });
+/** Keep the overlay clickable while something is being dragged. */
+export const setDragging = (active: boolean) => call("set_dragging", { active });

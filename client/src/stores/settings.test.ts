@@ -16,4 +16,11 @@ describe("loadSettings", () => {
     expect(s.serverUrl).toBe(DEFAULT_SETTINGS.serverUrl);
     expect("extra" in s).toBe(false);
   });
+  it("keeps only string favorites (at most 8) and never shares the default array", () => {
+    const s = loadSettings(store(JSON.stringify({ favorites: ["a", 3, "b", ...Array(10).fill("c")], tapView: "x" })));
+    expect(s.favorites).toEqual(["a", "b", "c", "c", "c", "c", "c", "c"]);
+    expect(s.tapView).toBe("today");
+    loadSettings(store(null)).favorites.push("x");
+    expect(DEFAULT_SETTINGS.favorites).toEqual([]);
+  });
 });

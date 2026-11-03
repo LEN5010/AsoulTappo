@@ -1,68 +1,47 @@
-# AsoulTappo 协议 / Protocol (v0, draft)
+# AsoulTappo 协议
 
-Transport: WebSocket, endpoint `/ws`, one JSON object per text frame.
-HTTP helpers: `GET /healthz` → `{"status":"ok","rooms":N}`, `POST /rooms` → `{"room":"<random id>"}`.
+## 身份与房间
 
-## 隐私原则 / Privacy
-**只发送点击次数,绝不发送按键内容**(不上传按了哪个键、输入了什么、鼠标坐标)。
-Only tap *counts* are sent. Key identities, typed text and mouse positions never leave the client.
+HTTP 请求使用 `X-Player-Token`（16–128 字符）；客户端本地生成，服务端以 SHA-256 前 16 位标识玩家。`GET /healthz` 返回服务状态，`POST /rooms` 返回随机房间号。房间在首次加入时创建、最后一个成员离开时回收，最多 20 人。
 
-## Rooms
-- Room ID: client-chosen string (1–64 chars) or a server-generated random URL-safe ID (~128 bit, from `POST /rooms`). Long random IDs are the only access control in v0.
-- Max **20** members per room. Rooms are created on first join and dropped when empty.
+WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
-## Client → Server
-| type | fields | notes |
-|---|---|---|
-| `join` | `room`, `nick` (≤24), `character` (≤32, default `"default"`), optional `token` (16–128 chars) | must be the first message. With a `token` the server looks up the player's selected `frame` / `badge` and shows them to the room; without one they are `null` |
-| `leave` | – | leave the room (connection may stay open) |
-| `tap` | `count` (1–500) | **batched** count since last message; send ≤ ~4×/s |
-| `emote` | `emote` (≤32) | emote key: a legacy glyph key (`"heart"`), `"thumbup"` (the theme's animated like), or `<emoteSetId>.<nn>` from the manifest (e.g. `jiaran-eat.03`) |
-| `state` | `character` (≤32), `nick` (≤24), `frame`, `badge` (≤32); at least one | update own profile (broadcast to the room). Decor needs a `token` on join and must be unlocked, otherwise `locked` / `bad_decor` |
-| `ping` | – | keepalive; the server answers `pong` (allowed before `join`). Clients send one every ~20s and reconnect when no `pong` arrives |
-
-## Server → Client
-| type | fields |
+| 客户端 type | 字段 |
 |---|---|
-| `joined` | `room`, `you` (your member id), `members[]` (`id`,`nick`,`character`,`taps`,`frame`,`badge`) |
-| `member_joined` | `member` |
-| `member_left` | `id` |
-| `tap` | `id`, `count`, `total` — broadcast to everyone in the room, including the sender |
-| `emote` | `id`, `emote` — broadcast to everyone, including the sender |
-| `state` | `id`, `character`, `nick`, `frame`, `badge` — full current profile of that member, broadcast to everyone, including the sender |
-| `pong` | – |
-| `error` | `code`, `message` |
+| join | room（1–64）、nick（1–24）、character（≤32）、token（可选） |
+| leave | 无 |
+| tap | count（1–500），客户端每 100–200ms 合并 |
+| emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
+| state | character、nick，至少提供一个 |
+| ping | 无 |
 
-Error codes: `room_full`, `bad_message`, `not_joined`, `already_joined`, `locked` (decor not unlocked), `bad_decor` (unknown frame/badge id).
+服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps`。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
-## HTTP API (progression)
-Identity is a random secret the client generates once and sends as the `X-Player-Token` header (16–128 chars); the server stores only a hash (`player_id = sha256(token)[:16]`). Anyone holding the token is that player — there are no accounts and no payments.
+## HTTP API
 
-| route | notes |
+| 路由 | 请求与响应 |
 |---|---|
-| `GET /api/manifest` | asset / card / theme metadata (same as `assets-packs/manifest.json`) |
-| `GET /api/me` | status: unopened `boxes`, `progress` (`taps`, `tapsPerBox`, `minutes`, `minutesPerBox`), `boxesToday` / `dailyCap`, `totals`, `pity`, `unlocked` decor, selected `frame` / `badge` |
-| `POST /api/activity` `{taps}` | report taps since the last report (**counts only**). The server credits at most 15 taps/s of elapsed time (elapsed clamped to 1–120 s, ≤ 5000 per report). A minute is "active" once it has ≥ 10 taps. A box is earned per 600 credited taps or per 10 active minutes; ≤ 10 boxes/day, ≤ 20 unopened |
-| `POST /api/boxes/open` | roll a card with rarity weights 70/22/7/1, soft pity (epic weight +8 per open beyond 10 without epic+), hard pity (epic+ at 20, legendary at 60); unowned cards weigh 3× |
-| `GET /api/collection` | `owned` (`card id → count`) and recent drops |
-| `POST /api/decor` `{frame?, badge?}` | choose avatar frame / badge (must be unlocked) |
-| `GET /packs/index.json`, `/packs/...` | downloadable asset packs with sizes and sha256 |
+| GET /api/manifest | 素材清单，与 `assets-packs/manifest.json` 一致 |
+| GET /api/me | boxes、shards、progress、boxesToday、dailyCap、totals、pity、draw |
+| POST /api/activity | `{taps,session,sequence}`，返回状态和 credited、newBoxes |
+| POST /api/presence | `{session}`，记录运行心跳并返回状态 |
+| POST /api/cards/draw | `{pool,count}`，count 为 1–100，返回状态和 drops |
+| POST /api/boxes/open | `{count}`，每请求最多打开 10 箱，返回状态和 drops |
+| POST /api/craft | `{item}`，兑换未拥有的非初始表情，返回状态和 item |
+| GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
+| GET /api/loadout | character、favorites |
+| POST /api/loadout | 更新 character 或 favorites（最多 8 个且已拥有） |
+| GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
+| GET /packs/... | 卡面原图、视频及动画资源 |
 
-Errors are `{"detail": {"code", "message"}}` with codes such as `bad_token`, `no_box`, `locked`, `bad_decor`.
+物品 ID 为 `card:<id>` 或 `emote:<key>`。`drops[]` 包含 `item,rarity,new,count,shards`，抽卡额外包含 `tier`（`big` / `small` / `normal`）。
 
-## Example
-```json
-→ {"type":"join","room":"Zk3...","nick":"小面包","character":"嘉然"}
-← {"type":"joined","room":"Zk3...","you":"a1b2c3d4","members":[{"id":"a1b2c3d4","nick":"小面包","character":"嘉然","taps":0}]}
-→ {"type":"tap","count":7}
-← {"type":"tap","id":"a1b2c3d4","count":7,"total":7}
-```
+## 在线时长与抽卡
 
-Reference models: `server/app/models.py` (server, pydantic) and `client/src/net/protocol.ts` (client, TypeScript).
+`draw` 包含 `tickets,seconds,secondsPerDraw,pity,hardPity,total`。客户端每 20 秒发送一次 `POST /api/presence` 心跳，累计满 900 秒获得 1 次抽卡机会。
 
-## Client behaviour (reference implementation: `client/src/net/`)
-- **Tap batching:** the client counts key presses / mouse clicks locally and sends one `tap` with the summed count every 100–200 ms (default 150 ms) while there is anything pending (`TapBatcher`). Counts above 500 are split.
-- **Reconnect:** on disconnect the client retries with exponential backoff (0.5 s → 15 s, plus jitter) and re-sends `join` for the last room (member id changes after a reconnect). `room_full` is final and stops retrying.
-- **Own events:** `tap`/`emote`/`state` are echoed to the sender; the client has already animated locally and ignores the echo except for updating totals/profile.
+每次抽卡先按档位概率抽取：大隐藏 0.5%、小隐藏 4.5%、普通 95%，随后在所选卡池的同档位卡牌中等概率抽取。所有卡池共用 400 抽大隐藏保底，抽中大隐藏后重置。
 
-HTTP: the server enables CORS (`ASOULTAPPO_CORS_ORIGINS`, default `*`) so the Tauri webview / browser can call `POST /rooms`. The protocol is unversioned/unstable until MVP phase 2.
+## 活动与表情宝箱
+
+每 600 次有效点击或 10 个活跃分钟获得 1 个表情宝箱（每日最多 10 箱、持有上限 20 箱）。宝箱掉落非初始表情；普通 / 稀有表情重复获得分别转化为 1 / 3 碎片，兑换价格分别为 10 / 30 碎片。

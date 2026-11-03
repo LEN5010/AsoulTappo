@@ -1,31 +1,54 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
-import { toHttpBase, type Member } from "../net/protocol";
+import { toHttpBase, type Member, type ProfilePatch } from "../net/protocol";
+import { ownsEmote } from "../items";
+import { getEmote } from "../manifest";
+import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
+import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
-import { token } from "./player";
-import type { Burst } from "../components/PetView.vue";
+import { collection, token } from "./player";
 
 export interface RemoteMember extends Member {
+  /** increments on every tap batch -> short keyboard bounce */
   pulse: number;
-  bursts: Burst[];
-  emote: { key: number; name: string } | null;
+  emote: EmoteFrame | null;
+  combo: ComboFrame | null;
 }
-
-let seq = 0;
 
 export const conn = ref<ConnState>("idle");
 export const roomId = ref("");
 export const youId = ref("");
 export const lastError = ref("");
 export const members = reactive(new Map<string, RemoteMember>());
+const players = new Map<string, { emote: EmotePlayer; combo: TapCombo }>();
 
 export const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
 export const me = computed(() => members.get(youId.value) ?? null);
 export const inRoom = computed(() => conn.value === "open" && !!youId.value);
 
+/** Stable key of a member for remembering where their pet stands on the desk. */
+export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
+
 function add(m: Member): void {
-  members.set(m.id, { ...m, pulse: 0, bursts: [], emote: null });
+  members.set(m.id, { ...m, pulse: 0, emote: null, combo: null });
+  const rm = members.get(m.id)!;
+  players.set(m.id, {
+    emote: new EmotePlayer((f) => (rm.emote = f), () => settings.emoteHoldMs),
+    combo: new TapCombo((f) => (rm.combo = f)),
+  });
+}
+
+function remove(id: string): void {
+  const p = players.get(id);
+  p?.emote.clear();
+  p?.combo.stop();
+  players.delete(id);
+  members.delete(id);
+}
+
+function clearMembers(): void {
+  for (const id of [...members.keys()]) remove(id);
 }
 
 const events: RoomEvents = {
@@ -33,7 +56,7 @@ const events: RoomEvents = {
     conn.value = s;
     if (s !== "open") {
       // Membership is rebuilt from `joined` after (re)connect.
-      members.clear();
+      clearMembers();
       youId.value = "";
     }
   },
@@ -41,40 +64,35 @@ const events: RoomEvents = {
     roomId.value = room;
     youId.value = you;
     lastError.value = "";
-    members.clear();
+    clearMembers();
     list.forEach(add);
+
   },
   onMemberJoined: add,
-  onMemberLeft: (id) => void members.delete(id),
+  onMemberLeft: remove,
   onTap(id, count, total) {
     const m = members.get(id);
     if (!m) return;
     m.taps = total;
     if (id === youId.value) return; // local pet already reacted instantly
     m.pulse += 1;
-    const key = ++seq;
-    m.bursts.push({ key, text: `+${count}` });
-    if (m.bursts.length > 4) m.bursts.shift();
-    setTimeout(() => {
-      const i = m.bursts.findIndex((b) => b.key === key);
-      if (i >= 0) m.bursts.splice(i, 1);
-    }, 800);
+    players.get(id)?.combo.add(count);
   },
   onEmote(id, name) {
     if (id === youId.value) return; // shown locally on send
-    const m = members.get(id);
-    if (m) showEmote(m, name);
+    if (!getEmote(name)) return;
+    players.get(id)?.emote.play(name);
   },
-  onState(id, character, nick, frame, badge) {
-    const m = members.get(id);
-    if (m) {
-      m.character = character;
-      m.nick = nick;
-      m.frame = frame;
-      m.badge = badge;
-    }
+  onState(u) {
+    const m = members.get(u.id);
+    if (!m) return;
+    m.character = u.character;
+    m.nick = u.nick;
+    m.frame = u.frame ?? null;
+    m.badge = u.badge ?? null;
   },
   onError(code, message) {
+    if (code === "rate_limited") return;
     lastError.value = errorText(code, message);
   },
 };
@@ -85,33 +103,34 @@ function errorText(code: string, message: string): string {
       return "房间已满(最多 20 人)";
     case "bad_url":
       return "服务器地址无效";
+    case "locked":
+      return "还没有获得这个物品";
     default:
       return message || code;
   }
 }
 
-function showEmote(m: { emote: { key: number; name: string } | null }, name: string): void {
-  const key = ++seq;
-  m.emote = { key, name };
-  setTimeout(() => {
-    if (m.emote?.key === key) m.emote = null;
-  }, 2200);
-}
-
 const client = new RoomClient(events);
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 
-/** Local emote bubble for the local pet (shown immediately, also when offline). */
-export const localPet = reactive<{ emote: { key: number; name: string } | null }>({ emote: null });
+/** Emote bubble of the local pet (shown immediately, also when offline). */
+export const localPet = reactive<{ emote: EmoteFrame | null }>({ emote: null });
+const localPlayer = new EmotePlayer((f) => (localPet.emote = f), () => settings.emoteHoldMs);
+let lastSent = 0;
 
 /** Count a tap (key press or click). Only the number is ever sent. */
 export function registerTap(): void {
   if (inRoom.value) batcher.add(1);
 }
 
-export function sendEmote(name: string): void {
-  showEmote(localPet, name);
+/** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
+export function sendEmote(name: string, now = Date.now()): boolean {
+  if (!ownsEmote(name, collection.owned)) return false;
+  if (now - lastSent < SEND_INTERVAL_MS) return false;
+  lastSent = now;
+  localPlayer.play(name);
   if (inRoom.value) client.sendEmote(name);
+  return true;
 }
 
 export function setBatchMs(ms: number): void {
@@ -120,9 +139,11 @@ export function setBatchMs(ms: number): void {
 }
 
 export async function createRoom(): Promise<string> {
-  const res = await fetch(`${toHttpBase(settings.serverUrl)}/rooms`, { method: "POST" });
+  const base = settings.serverUrl;
+  const res = await fetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
   if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
   const data = (await res.json()) as { room: string };
+  if (base !== settings.serverUrl) throw new Error("服务器已切换，请重新创建房间");
   return data.room;
 }
 
@@ -147,7 +168,15 @@ export function leaveRoom(): void {
   roomId.value = "";
 }
 
-/** Push profile changes (character / nick / frame / badge) to the room. */
-export function syncProfile(patch: { character?: string; nick?: string; frame?: string; badge?: string }): void {
-  if (inRoom.value) client.sendState(patch);
+/** Push profile changes (character / nick / frame / badge / accessories) to the room. */
+export function syncProfile(patch: ProfilePatch): void {
+  client.sendState({ ...patch, ...(patch.nick !== undefined ? { nick: patch.nick.trim() || "匿名小面包" } : {}) });
 }
+
+watch(() => settings.serverUrl, () => {
+  leaveRoom();
+  lastError.value = "";
+}, { flush: "sync" });
+watch(() => settings.character, (character) => syncProfile({ character }), { flush: "sync" });
+watch(() => settings.nick, (nick) => syncProfile({ nick }), { flush: "sync" });
+watch(() => settings.batchMs, setBatchMs);

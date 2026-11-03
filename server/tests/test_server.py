@@ -53,8 +53,8 @@ def test_join_tap_emote_leave_broadcast():
         assert ta["type"] == "tap" and ta["count"] == 7 and ta["total"] == 7 and ta["id"] == jb["you"]
         assert b.receive_json()["type"] == "tap"
 
-        a.send_json({"type": "emote", "emote": "heart"})
-        assert b.receive_json() == {"type": "emote", "id": ja["you"], "emote": "heart"}
+        a.send_json({"type": "emote", "emote": "thumbup"})
+        assert b.receive_json() == {"type": "emote", "id": ja["you"], "emote": "thumbup"}
         a.receive_json()
 
         b.send_json({"type": "leave"})
@@ -116,8 +116,7 @@ def test_state_updates_character_and_nick():
         join(b, nick="bob")
         a.receive_json()  # member_joined(bob)
         a.send_json({"type": "state", "character": "贝拉", "nick": "alice2"})
-        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2",
-                    "frame": None, "badge": None}
+        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2"}
         assert b.receive_json() == expected
         assert a.receive_json() == expected
         # nick only keeps the previous character

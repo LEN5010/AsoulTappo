@@ -39,6 +39,11 @@ def all_refs(m: dict):
             yield e["img"]
     for d in m["decor"]:
         yield d["img"]
+    for a in m["accessories"]:
+        yield a["img"]
+        for pose in ("left", "right"):
+            if a.get(pose):
+                yield a[pose]
 
 
 def test_every_referenced_file_exists():
@@ -67,16 +72,13 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    by = M.by_rarity
-    assert {r: len(v) for r, v in by.items()} == {"common": 27, "rare": 6, "epic": 18, "legendary": 3}
-    for c in by["rare"]:
-        assert c["sub"] in ("时序系列", "舞台系列") and c["video"]
-    for c in by["epic"]:
-        assert c["video"]
-    for c in by["common"]:
-        assert c["video"] is None
-    for c in by["legendary"]:
-        assert c["series"] == "bloom" and c["video"]
+    assert len(cards) == 70
+    assert sum(c["tier"] == "big" for c in cards) == 8
+    assert sum(c["tier"] == "small" for c in cards) == 8
+    for pool in M.card_pools.values():
+        assert all(pool.values())
+    assert M.cards["c1748345610010"]["tier"] == "big"
+    assert M.cards["c1748345610002"]["tier"] == "normal"
     for s in M.data["series"]:
         assert s["total"] == sum(1 for c in cards if c["series"] == s["id"]) > 0
 
@@ -86,6 +88,25 @@ def test_decor_unlock_rules_are_reachable():
         assert d["unlock"]["series"] in M.series_total
         assert 1 <= d["unlock"]["min"] <= M.series_total[d["unlock"]["series"]]
         assert d["kind"] in ("frame", "badge")
+
+
+def test_accessories_starter_and_economy():
+    assert M.data["accessories"] == M.data["decor"] == []
+    acc = M.data["accessories"]
+    assert len({a["id"] for a in acc}) == len(acc) and all(len(a["id"]) <= 48 for a in acc)
+    for a in acc:
+        assert a["slot"] in ("head", "desk") and a["rarity"] in M.data["rarities"]
+        assert set(a["characters"]) <= FIVE
+        assert a["kind"] in ("figure", "anim") and (a["kind"] == "figure") == (a["slot"] == "head")
+    # every character can start with a few emotes of their own
+    starter = M.data["starter"]["emotes"]
+    by_key = {e["key"]: s["character"] for s in M.data["emoteSets"] for e in s["emotes"]}
+    assert {by_key[k] for k in starter} == FIVE
+    assert M.starter == {f"emote:{k}" for k in starter}
+    # nothing a player starts with drops from boxes, and every rarity can be crafted
+    dropped = {i["id"] for pool in M.by_rarity.values() for i in pool}
+    assert not dropped & M.starter and len(dropped) + len(M.starter) + len(M.cards) == len(M.items)
+    assert set(M.craft_cost) == set(M.dup_shards) == set(M.data["rarities"])
 
 
 def test_emote_keys_unique_and_fit_wire_limit():
