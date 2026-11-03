@@ -6,6 +6,15 @@ import {
   conn, createRoom, inRoom, joinRoom, lastError, leaveRoom, members, roomId, sendEmote, youId,
 } from "../stores/room";
 import EmotePicker from "./EmotePicker.vue";
+import MemberAvatar from "./MemberAvatar.vue";
+import { characterColor, getDecor, resolveAsset } from "../manifest";
+import { toHttpBase } from "../net/protocol";
+import { reducedMotion, skin } from "../stores/theme";
+
+const badgeImg = (id?: string | null) => {
+  const d = getDecor(id);
+  return d ? resolveAsset(d.img, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL) : "";
+};
 
 const input = ref(settings.lastRoom);
 const busy = ref(false);
@@ -47,7 +56,8 @@ async function copy() {
 <template>
   <div class="room">
     <div class="status">
-      <span class="dot" :class="conn"></span>{{ connText[conn] }}
+      <img v-if="(conn === 'connecting' || conn === 'reconnecting') && skin.loading && !reducedMotion" class="loading" :src="skin.loading" alt="" />
+      <span v-else class="dot" :class="conn"></span>{{ connText[conn] }}
       <span v-if="inRoom" class="count">{{ members.size }}/{{ MAX_ROOM_SIZE }} 人</span>
     </div>
 
@@ -74,8 +84,11 @@ async function copy() {
       <h4>成员</h4>
       <ul class="members">
         <li v-for="m in members.values()" :key="m.id">
-          <span class="nick">{{ m.nick }}<em v-if="m.id === youId">(我)</em></span>
-          <span class="chr">{{ m.character }}</span>
+          <MemberAvatar :character="m.character" :frame="m.frame" />
+          <span class="nick">{{ m.nick }}<em v-if="m.id === youId">(我)</em>
+            <img v-if="badgeImg(m.badge)" class="badge" :src="badgeImg(m.badge)" :title="getDecor(m.badge)?.name" alt="" />
+          </span>
+          <span class="chr" :style="{ color: characterColor(m.character) }">{{ m.character }}</span>
           <span class="taps">{{ m.taps }}</span>
         </li>
       </ul>
@@ -89,23 +102,21 @@ async function copy() {
 
 <style scoped>
 .room { display: flex; flex-direction: column; gap: 8px; }
-.status { font-size: 12px; color: #555; display: flex; align-items: center; gap: 6px; }
+.status { font-size: 12px; color: rgba(0, 0, 0, 0.6); display: flex; align-items: center; gap: 6px; }
 .count { margin-left: auto; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; }
 .dot.open { background: #3ec46d; }
 .dot.connecting, .dot.reconnecting { background: #f0a020; }
+.loading { width: 22px; height: 22px; object-fit: contain; }
 .row { display: flex; gap: 6px; }
 .row input { flex: 1; min-width: 0; }
-input { padding: 5px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 12px; }
-button { padding: 5px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; font-size: 12px; }
-button.primary { background: #ff6b9d; color: #fff; border-color: #ff6b9d; }
-button:disabled { opacity: 0.5; cursor: default; }
-h4 { margin: 6px 0 0; font-size: 12px; color: #888; font-weight: 600; }
-.err { color: #d33; font-size: 12px; }
-.members { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto; font-size: 12px; }
-.members li { display: flex; gap: 8px; padding: 2px 0; border-bottom: 1px dashed #eee; }
-.nick { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nick em { color: #ff6b9d; font-style: normal; margin-left: 2px; }
-.chr { color: #999; }
+h4 { margin: 6px 0 0; font-size: 12px; color: rgba(0, 0, 0, 0.5); font-weight: 600; }
+.err { color: #c33; font-size: 12px; }
+.members { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow: auto; font-size: 12px; scrollbar-width: thin; }
+.members li { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px dashed rgba(0, 0, 0, 0.08); }
+.nick { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nick em { color: var(--accent); font-style: normal; margin-left: 2px; }
+.badge { height: 14px; width: auto; vertical-align: -3px; margin-left: 4px; }
+.chr { font-size: 11px; }
 .taps { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
 </style>

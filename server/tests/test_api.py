@@ -60,6 +60,7 @@ def test_decor_rest_and_ws_member_list(client):
         a.receive_json()  # member_joined
         # clearing via ws state is broadcast
         a.send_json({"type": "state", "badge": ""})
+        assert a.receive_json()["type"] == "state"  # echo to the sender first (TestClient runs each socket on its own loop)
         s = b.receive_json()
         assert s["type"] == "state" and s["badge"] is None and s["id"] == ja["you"]
 

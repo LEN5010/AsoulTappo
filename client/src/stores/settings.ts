@@ -1,5 +1,6 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
+import manifest from "../data/manifest.json";
 
 export interface Settings {
   serverUrl: string;
@@ -12,6 +13,8 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
+  /** Selected theme id (see data/manifest.json). */
+  theme: string;
   /** Tap batching window (100–200ms). */
   batchMs: number;
 }
@@ -28,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
+  theme: manifest.defaultTheme,
   batchMs: 150,
 };
 

@@ -44,9 +44,8 @@ watch(() => settings.batchMs, (ms) => setBatchMs(ms));
 
 <style scoped>
 .settings { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
-label { display: flex; flex-direction: column; gap: 3px; color: #555; }
+label { display: flex; flex-direction: column; gap: 3px; color: rgba(0, 0, 0, 0.65); }
 label.check { flex-direction: row; align-items: center; gap: 6px; }
-input:not([type="checkbox"]):not([type="range"]), select { padding: 5px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 12px; }
-small { color: #999; }
-.hint { color: #999; margin: 4px 0 0; }
+small { color: rgba(0, 0, 0, 0.45); }
+.hint { color: rgba(0, 0, 0, 0.45); margin: 4px 0 0; }
 </style>

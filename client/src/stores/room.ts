@@ -3,6 +3,7 @@ import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
 import { toHttpBase, type Member } from "../net/protocol";
 import { settings } from "./settings";
+import { token } from "./player";
 import type { Burst } from "../components/PetView.vue";
 
 export interface RemoteMember extends Member {
@@ -64,11 +65,13 @@ const events: RoomEvents = {
     const m = members.get(id);
     if (m) showEmote(m, name);
   },
-  onState(id, character, nick) {
+  onState(id, character, nick, frame, badge) {
     const m = members.get(id);
     if (m) {
       m.character = character;
       m.nick = nick;
+      m.frame = frame;
+      m.badge = badge;
     }
   },
   onError(code, message) {
@@ -134,6 +137,7 @@ export function joinRoom(room: string): void {
     room: id,
     nick: settings.nick.trim() || "匿名小面包",
     character: settings.character,
+    token,
   });
 }
 
@@ -143,7 +147,7 @@ export function leaveRoom(): void {
   roomId.value = "";
 }
 
-/** Push profile changes (character / nick) to the room. */
-export function syncProfile(patch: { character?: string; nick?: string }): void {
+/** Push profile changes (character / nick / frame / badge) to the room. */
+export function syncProfile(patch: { character?: string; nick?: string; frame?: string; badge?: string }): void {
   if (inRoom.value) client.sendState(patch);
 }

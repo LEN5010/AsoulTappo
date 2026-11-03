@@ -71,7 +71,9 @@
    "preview": "bundle:themes/jiaran-eat/preview.webp",
    "colors": {
     "accent": "#be5454",
-    "tint": "#f7e9e9"
+    "tint": "#f7e9e9",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -110,7 +112,9 @@
    "preview": "bundle:themes/jiaran-album-2025/preview.webp",
    "colors": {
     "accent": "#4c2f7b",
-    "tint": "#eee9f7"
+    "tint": "#eee9f7",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -149,7 +153,9 @@
    "preview": "bundle:themes/jiaran-album-2026/preview.webp",
    "colors": {
     "accent": "#e4a98b",
-    "tint": "#f9ede7"
+    "tint": "#f9ede7",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -194,7 +200,9 @@
    "preview": "bundle:themes/jiaran-2-0/preview.webp",
    "colors": {
     "accent": "#445075",
-    "tint": "#eceef4"
+    "tint": "#eceef4",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -235,7 +243,9 @@
    "preview": "bundle:themes/jiaran-garden/preview.webp",
    "colors": {
     "accent": "#c38898",
-    "tint": "#f5ebed"
+    "tint": "#f5ebed",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -278,7 +288,9 @@
    "preview": "bundle:themes/jiaran-naodong/preview.webp",
    "colors": {
     "accent": "#724d59",
-    "tint": "#f3edef"
+    "tint": "#f3edef",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -317,7 +329,9 @@
    "preview": "bundle:themes/nailin-tavern-2025/preview.webp",
    "colors": {
     "accent": "#bb7196",
-    "tint": "#f5eaf0"
+    "tint": "#f5eaf0",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -362,7 +376,9 @@
    "preview": "bundle:themes/nailin-queen/preview.webp",
    "colors": {
     "accent": "#b2a7a4",
-    "tint": "#f1efee"
+    "tint": "#f1efee",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -407,7 +423,9 @@
    "preview": "bundle:themes/nailin-2-0/preview.webp",
    "colors": {
     "accent": "#767791",
-    "tint": "#eeeef1"
+    "tint": "#eeeef1",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -448,7 +466,9 @@
    "preview": "bundle:themes/nailin-raccoon/preview.webp",
    "colors": {
     "accent": "#98adcd",
-    "tint": "#eaeff5"
+    "tint": "#eaeff5",
+    "headFg": "#ffffff",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -491,7 +511,9 @@
    "preview": "bundle:themes/nailin-naodong/preview.webp",
    "colors": {
     "accent": "#3e4670",
-    "tint": "#ebedf4"
+    "tint": "#ebedf4",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -530,7 +552,9 @@
    "preview": "bundle:themes/beila-adventure-2025/preview.webp",
    "colors": {
     "accent": "#be98aa",
-    "tint": "#f3ecf0"
+    "tint": "#f3ecf0",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -575,7 +599,9 @@
    "preview": "bundle:themes/beila-kira/preview.webp",
    "colors": {
     "accent": "#5c4c81",
-    "tint": "#eeecf4"
+    "tint": "#eeecf4",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -620,7 +646,9 @@
    "preview": "bundle:themes/beila-2-0/preview.webp",
    "colors": {
     "accent": "#a499c0",
-    "tint": "#eeecf3"
+    "tint": "#eeecf3",
+    "headFg": "#ffffff",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -663,7 +691,9 @@
    "preview": "bundle:themes/beila-rabbit/preview.webp",
    "colors": {
     "accent": "#fdbd66",
-    "tint": "#f9f1e7"
+    "tint": "#f9f1e7",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
    },
    "icons": {
     "main": {
@@ -706,7 +736,9 @@
    "preview": "bundle:themes/beila-naodong/preview.webp",
    "colors": {
     "accent": "#d15f6e",
-    "tint": "#f8e7e9"
+    "tint": "#f8e7e9",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {
@@ -746,7 +778,9 @@
    "preview": "bundle:themes/symphony/preview.webp",
    "colors": {
     "accent": "#88535f",
-    "tint": "#f3ecee"
+    "tint": "#f3ecee",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
    },
    "icons": {
     "main": {

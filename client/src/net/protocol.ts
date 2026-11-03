@@ -6,14 +6,17 @@ export interface Member {
   nick: string;
   character: string;
   taps: number;
+  /** Unlocked avatar frame / badge decor ids (null = none). */
+  frame?: string | null;
+  badge?: string | null;
 }
 
 export type ClientMessage =
-  | { type: "join"; room: string; nick: string; character: string }
+  | { type: "join"; room: string; nick: string; character: string; token?: string }
   | { type: "leave" }
   | { type: "tap"; count: number }
   | { type: "emote"; emote: string }
-  | { type: "state"; character?: string; nick?: string }
+  | { type: "state"; character?: string; nick?: string; frame?: string; badge?: string }
   | { type: "ping" };
 
 export type ServerMessage =
@@ -22,7 +25,7 @@ export type ServerMessage =
   | { type: "member_left"; id: string }
   | { type: "tap"; id: string; count: number; total: number }
   | { type: "emote"; id: string; emote: string }
-  | { type: "state"; id: string; character: string; nick: string }
+  | { type: "state"; id: string; character: string; nick: string; frame?: string | null; badge?: string | null }
   | { type: "error"; code: string; message: string }
   | { type: "pong" };
 

@@ -237,6 +237,18 @@ def palette_from_cover(cover: Image.Image, fallback: str) -> dict:
     return {"accent": accent, "tint": "#%02x%02x%02x" % (round(tr * 255), round(tg * 255), round(tb * 255))}
 
 
+def fg_for(im: Image.Image) -> str:
+    """Readable text color (white or near-black) for the average luminance of an image."""
+    raw = im.convert("RGBA").resize((32, 32)).tobytes()
+    tot = n = 0.0
+    for i in range(0, len(raw), 4):
+        r, g, b, a = raw[i : i + 4]
+        if a > 128:
+            tot += 0.299 * r + 0.587 * g + 0.114 * b
+            n += 1
+    return "#ffffff" if n and tot / n < 140 else "#2b2020"
+
+
 def build_themes(ctx: Ctx) -> list[dict]:
     themes = []
     for tid, title, chars, dirnames in cat.THEMES:
@@ -282,10 +294,14 @@ def build_themes(ctx: Ctx) -> list[dict]:
         parts = t["parts"]
         p = find_part(dirs, "head_bg")
         if p:
-            parts["headBg"] = put_img("head", "head_bg", resize_w(load_rgba(p).convert("RGB"), THEME_HEAD_W), heavy_root, heavy_scheme, q=80)
+            head_im = resize_w(load_rgba(p).convert("RGB"), THEME_HEAD_W)
+            parts["headBg"] = put_img("head", "head_bg", head_im, heavy_root, heavy_scheme, q=80)
+            t["colors"]["headFg"] = fg_for(head_im)
         p = find_part(dirs, "tail_bg")
         if p:
-            parts["tabBg"] = put_img("tab", "tab_bg", resize_w(load_rgba(p), THEME_TAB_W), heavy_root, heavy_scheme, q=85)
+            tab_im = resize_w(load_rgba(p), THEME_TAB_W)
+            parts["tabBg"] = put_img("tab", "tab_bg", tab_im, heavy_root, heavy_scheme, q=85)
+            t["colors"]["tabFg"] = fg_for(tab_im)
         p = find_part(dirs, "head_myself_squared_bg")
         if p:
             parts["banner"] = put_img("banner", "banner", resize_w(load_rgba(p).convert("RGB"), THEME_BANNER_W), heavy_root, heavy_scheme, q=78)

@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { getCharacter, PET_BASE } from "../characters";
-import { emoteGlyph } from "../emotes";
+import { emoteView } from "../emotes";
+import { characterColor } from "../manifest";
+import { toHttpBase } from "../net/protocol";
+import { settings } from "../stores/settings";
+import { reducedMotion, skin } from "../stores/theme";
 
 export interface Burst {
   key: number;
@@ -30,6 +34,17 @@ const props = withDefaults(
 
 const assets = computed(() => getCharacter(props.character));
 const s = computed(() => props.scale);
+const accent = computed(() => characterColor(props.character));
+const emoteShown = computed(() =>
+  props.emote
+    ? emoteView(props.emote.name, {
+        serverBase: toHttpBase(settings.serverUrl),
+        thumbup: skin.value.thumbup,
+        reducedMotion: reducedMotion.value,
+        appBase: import.meta.env.BASE_URL,
+      })
+    : null,
+);
 
 const pulseDown = ref(false);
 let pulseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -80,10 +95,13 @@ const mouseStyle = computed(() => {
         <span v-for="b in bursts" :key="b.key" class="burst" :style="{ fontSize: `${14 * Math.max(0.8, s * 1.4)}px` }">{{ b.text }}</span>
       </transition-group>
       <transition name="emote">
-        <span v-if="emote" :key="emote.key" class="emote" :style="{ fontSize: `${28 * Math.max(0.7, s * 1.5)}px` }">{{ emoteGlyph(emote.name) }}</span>
+        <span v-if="emote && emoteShown" :key="emote.key" class="emote" :style="{ fontSize: `${28 * Math.max(0.7, s * 1.5)}px` }">
+          <img v-if="emoteShown.img" :src="emoteShown.img" :style="{ height: `${40 * Math.max(0.7, s * 1.5)}px` }" alt="" draggable="false" />
+          <template v-else>{{ emoteShown.text }}</template>
+        </span>
       </transition>
     </div>
-    <div v-if="label" class="label" :style="{ maxWidth: `${PET_BASE.width * s}px` }">{{ label }}</div>
+    <div v-if="label" class="label" :style="{ maxWidth: `${PET_BASE.width * s}px`, borderColor: accent, boxShadow: `0 0 0 1px ${accent}55` }">{{ label }}</div>
   </div>
 </template>
 
@@ -98,18 +116,19 @@ const mouseStyle = computed(() => {
 .missing { color: #fff; opacity: 0.5; }
 .label {
   margin-top: 2px; padding: 1px 6px; border-radius: 8px; font-size: 11px; line-height: 14px;
-  color: #fff; background: rgba(0, 0, 0, 0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: #fff; background: rgba(20, 16, 24, 0.6); border: 1px solid transparent; backdrop-filter: blur(4px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
 .bursts { position: absolute; left: 0; right: 0; top: 0; height: 100%; pointer-events: none; }
 .burst {
-  position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-weight: 800; color: #ff6b9d;
+  position: absolute; left: 50%; top: 30%; transform: translateX(-50%); font-weight: 800; color: var(--accent, #ff6b9d);
   text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 .burst-enter-from { opacity: 0; transform: translate(-50%, 10px) scale(0.6); }
 .burst-enter-active { transition: all 150ms ease-out; }
 .burst-leave-active { transition: all 700ms ease-out; }
 .burst-leave-to { opacity: 0; transform: translate(-50%, -34px) scale(1.1); }
+.emote img { display: block; width: auto; max-width: 120px; }
 .emote { position: absolute; left: 50%; top: -6%; transform: translateX(-50%); pointer-events: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.4)); }
 .emote-enter-from { opacity: 0; transform: translate(-50%, 14px) scale(0.4); }
 .emote-enter-active { transition: all 220ms cubic-bezier(0.34, 1.8, 0.64, 1); }

@@ -17,13 +17,24 @@ AsoulTappo 是一个面向 A-SOUL 粉丝的桌宠 + 房间应用:每个人桌面
 
 *The desktop-pet client is derived from [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun) (GPL-2.0), used with the original author's permission.*
 
+## 🎴 素材、收藏与主题(Phase 2)
+
+- **A-SOUL 五位角色**(嘉然 / 乃琳 / 贝拉 / 心宜 / 思诺)的表情、B 站装扮主题、收藏集卡片与头像框 / 徽章,详见 [ASSETS.md](ASSETS.md)(来源、压缩配方、素材包结构、稀有度规则)。
+- **主题皮肤**:17 套装扮(默认「嘉然今天吃什么」内置,其余从服务器素材包按需加载),映射到面板背景、顶栏、底部标签栏、点赞动画、加载动画与角色主题色。
+- **图鉴与开箱**:敲得越多宝箱越多(服务器记录**点击次数**,每 600 次或 10 个活跃分钟一个,有每日上限与保底),开出 54 张卡(普通 / 稀有 / 史诗 / 传说),史诗卡可看视频;未获得的卡显示为剪影。数据存于服务端 SQLite。
+- **表情面板**:375 个表情按角色 / 套组分组,另有主题专属的动态点赞。
+- **头像框 / 徽章**:集卡解锁,在房间成员列表中展示。
+- 支持系统「减少动态效果」与键盘焦点样式。全部非商业、无任何付费。
+
+> 素材版权归 A-SOUL / 乐华娱乐及原作者所有,本项目为非商用粉丝作品,**仅限 5 位角色**,详见 [ASSETS.md](ASSETS.md) 与下方免责声明。重新生成素材:`python scripts/build_assets.py`(需要 Pillow、ffmpeg 与原始素材目录)。
+
 ## 状态
 
 🚧 **早期阶段(early alpha)**。技术栈已从原项目的 PyQt6 **更换为 Tauri 2 + Vue 3 + TypeScript**。
 
 **已可用**
 - `client/`:Tauri 桌宠客户端——透明置顶无边框窗口、全局键鼠钩子(Rust,**只统计次数**)、分层桌宠渲染(键盘按下弹跳 / 鼠标跟随 / 左右键点击图)、角色切换(沿用原项目素材)、托盘(显示隐藏 / 点击穿透 / 面板)、设置持久化、房间面板(创建房间、按 Room ID 加入、成员列表、表情选择器、远端成员迷你桌宠 + 点击 `+N` 气泡 + 表情)、WebSocket 客户端(100–200ms 点击合并、心跳、断线自动重连并重新加入)
-- `server/`:FastAPI + WebSocket 房间服务(内存,最多 20 人,随机长房间号,CORS,pytest 测试)
+- `server/`:FastAPI + WebSocket 房间服务(房间在内存,最多 20 人,随机长房间号,CORS,pytest 测试);另有 SQLite 持久化的玩家进度 / 开箱 / 收藏 HTTP API 与素材包托管(`/packs`)
 - `protocol/`、`deploy/`、`docs/`、CI(服务端测试 / 前端构建与类型检查 / Windows 上 `cargo check`)
 
 **占位 / 未完成**
@@ -36,7 +47,10 @@ AsoulTappo 是一个面向 A-SOUL 粉丝的桌宠 + 房间应用:每个人桌面
 
 ```
 client/    Tauri 2 + Vue 3 + TS 桌宠客户端(src/ 前端,src-tauri/ Rust:全局钩子、托盘、窗口)
-server/    FastAPI + WebSocket 房间服务(app/, tests/)
+server/    FastAPI + WebSocket 房间服务 + 开箱 / 收藏 API(app/, tests/)
+assets-packs/  服务器托管的素材包(卡片原图 / 视频 / 主题大图)+ manifest.json / index.json
+scripts/   build_assets.py 素材压缩与 manifest 生成
+ASSETS.md  素材来源、压缩与稀有度说明
 protocol/  PROTOCOL.md 消息协议(只传点击次数,不传按键内容)
 deploy/    Dockerfile、docker-compose.yml、Caddyfile 示例
 docs/      ARCHITECTURE.md 架构说明
@@ -63,6 +77,8 @@ Docker 部署示例(含 Caddy 自动 HTTPS):
 cd deploy
 DOMAIN=tappo.example.com docker compose up -d --build
 ```
+
+镜像从仓库根目录构建(含 `assets-packs/`),SQLite 存于卷 `server_data`(`ASOULTAPPO_DB`,默认 `data/asoultappo.db`);素材包目录可用 `ASOULTAPPO_PACKS` 覆盖。
 
 ### 客户端(Windows)
 
@@ -108,6 +124,6 @@ npm run build   # vue-tsc 类型检查 + vite build
 ## 免责声明
 
 - 本项目为**非商业的粉丝作品**,与任何官方无关。
-- 仓库中来自原项目的 A-SOUL 角色图片(`client/src/assets/characters/`、`legacy/pyqt-client/img/`)**版权归其各自权利人所有(乐华娱乐 / 字节跳动 A-SOUL 相关方)**,GPL 协议**不适用于**这些美术素材。
+- 仓库中的 A-SOUL 角色图片、表情、装扮与卡片(`client/src/assets/characters/`、`client/public/assets/`、`assets-packs/`、`legacy/pyqt-client/img/`)**版权归其各自权利人所有(乐华娱乐 / 字节跳动 A-SOUL 相关方及原作者)**,GPL 协议**不适用于**这些美术素材,请勿用于商业用途。
 - 如权利人希望移除相关素材,请在本仓库提交 Issue,我们会尽快处理。
 - 本项目与**库洛游戏(Kuro Games)/ WuwaTappo** 及 **Bongo Cat** 无任何关联,也未使用其任何素材或品牌。

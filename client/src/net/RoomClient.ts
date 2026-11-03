@@ -10,7 +10,7 @@ export interface RoomEvents {
   onMemberLeft(id: string): void;
   onTap(id: string, count: number, total: number): void;
   onEmote(id: string, emote: string): void;
-  onState(id: string, character: string, nick: string): void;
+  onState(id: string, character: string, nick: string, frame: string | null, badge: string | null): void;
   onError(code: string, message: string): void;
 }
 
@@ -18,6 +18,8 @@ export interface JoinInfo {
   room: string;
   nick: string;
   character: string;
+  /** Secret player token (enables frame/badge); never shown to others. */
+  token?: string;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -94,7 +96,7 @@ export class RoomClient {
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
   }
-  sendState(patch: { character?: string; nick?: string }): void {
+  sendState(patch: { character?: string; nick?: string; frame?: string; badge?: string }): void {
     if (this.joinInfo) {
       if (patch.character) this.joinInfo.character = patch.character;
       if (patch.nick) this.joinInfo.nick = patch.nick;
@@ -173,7 +175,7 @@ export class RoomClient {
         this.events.onEmote(msg.id, msg.emote);
         break;
       case "state":
-        this.events.onState(msg.id, msg.character, msg.nick);
+        this.events.onState(msg.id, msg.character, msg.nick, msg.frame ?? null, msg.badge ?? null);
         break;
       case "error":
         // A full room is permanent for this attempt: stop retrying.
