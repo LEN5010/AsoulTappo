@@ -278,10 +278,20 @@ const tapPct = computed(() =>
           <span class="pet-well">
             <svg
               class="pet-svg"
-              :viewBox="`${FACE_CROP.x} ${FACE_CROP.y} ${FACE_CROP.size} ${FACE_CROP.size}`"
+              :viewBox="`${FACE_CROP.x} -8 ${FACE_CROP.w} ${FACE_CROP.h + 8}`"
+              preserveAspectRatio="xMidYMax meet"
               aria-hidden="true"
             >
-              <image :href="skin.bg" :width="PET_BASE.width" :height="PET_BASE.height" />
+              <svg
+                :x="FACE_CROP.x"
+                :y="FACE_CROP.y"
+                :width="FACE_CROP.w"
+                :height="FACE_CROP.h"
+                :viewBox="`${FACE_CROP.x} ${FACE_CROP.y} ${FACE_CROP.w} ${FACE_CROP.h}`"
+                overflow="hidden"
+              >
+                <image :href="skin.bg" x="0" y="0" :width="PET_BASE.width" :height="PET_BASE.height" />
+              </svg>
             </svg>
             <span class="corner-badge" aria-hidden="true"><Icon name="person" :size="9" /></span>
             <span v-if="settings.character === skin.name" class="active-dot" aria-label="当前使用">
@@ -704,10 +714,10 @@ const tapPct = computed(() =>
   aspect-ratio: 1;
   border-radius: 13px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   overflow: hidden;
-  padding: 3px;
+  padding: 4px 2px 0;
   box-sizing: border-box;
   background:
     repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.25) 0 9px, transparent 9px 18px),

@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { settings } from "./settings";
-export type Page = "dex" | "emotes" | "room" | "settings";
-export const ui = reactive({ panelOpen: false, page: "dex" as Page, craftTarget: "", quickOpen: false });
+export type Page = "emotes" | "dex" | "cards" | "room" | "settings";
+export const ui = reactive({ panelOpen: false, page: "emotes" as Page, craftTarget: "", quickOpen: false });
 export function openPanel(page?: Page, opts: { craftTarget?: string } = {}): void {
   if (settings.clickThrough) return;
   if (page) ui.page = page;
@@ -9,4 +9,7 @@ export function openPanel(page?: Page, opts: { craftTarget?: string } = {}): voi
   ui.panelOpen = true;
   ui.quickOpen = false;
 }
-export function togglePanel(): void { if (ui.panelOpen) ui.panelOpen = false; else openPanel(); }
+export function togglePanel(): void {
+  if (ui.panelOpen) ui.panelOpen = false;
+  else openPanel();
+}

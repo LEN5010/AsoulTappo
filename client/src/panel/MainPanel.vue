@@ -9,6 +9,7 @@ import { ui, type Page } from "../stores/ui";
 import { setDragging } from "../composables/tauri";
 import Icon from "../ui/Icon.vue";
 import CollectionPage from "./CollectionPage.vue";
+import CardsPage from "./CardsPage.vue";
 import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
 import SettingsPage from "./SettingsPage.vue";
@@ -17,6 +18,7 @@ const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: "emotes", label: "背包", icon: "bag" },
   { id: "dex", label: "图鉴", icon: "book" },
+  { id: "cards", label: "收藏集", icon: "card" },
   { id: "room", label: "联机", icon: "home" },
   { id: "settings", label: "设置", icon: "nut" },
 ];
@@ -64,8 +66,8 @@ onBeforeUnmount(() => {
 });
 
 function badgeOf(id: Page): number {
-  if (id === "emotes") return boxes.value;
-  if (id === "dex") return tickets.value;
+  if (id === "dex") return boxes.value;
+  if (id === "cards") return tickets.value;
   if (id === "room" && inRoom.value) return members.size;
   return 0;
 }
@@ -135,6 +137,7 @@ function badgeOf(id: Page): number {
         <KeepAlive>
           <EmotesPage v-if="ui.page === 'emotes'" />
           <CollectionPage v-else-if="ui.page === 'dex'" />
+          <CardsPage v-else-if="ui.page === 'cards'" />
           <OnlinePage v-else-if="ui.page === 'room'" class="form-page ui-scroll" />
           <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
         </KeepAlive>
@@ -250,8 +253,8 @@ function badgeOf(id: Page): number {
 nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 6px;
   padding-right: 12px;
   position: relative;
   z-index: 1;
@@ -260,15 +263,15 @@ nav button {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
-  height: 52px;
-  padding: 0 16px 0 22px;
+  gap: 11px;
+  height: 46px;
+  padding: 0 14px 0 20px;
   border: 2px solid transparent;
   border-left: 0;
   border-radius: 0 999px 999px 0;
   background: transparent;
   color: #F6DEC9;
-  font: 800 17px var(--font);
+  font: 800 16px var(--font);
   cursor: pointer;
   transition: background 140ms, color 140ms, transform 120ms, box-shadow 140ms;
 }

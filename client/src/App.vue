@@ -160,7 +160,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel"
       >
-        <button v-if="tickets > 0" class="ticket-bubble" data-hit data-no-drag @click="openPanel('dex')">抽卡 ×{{ tickets }}</button>
+        <button v-if="tickets > 0" class="ticket-bubble" data-hit data-no-drag @click="openPanel('cards')">抽卡 ×{{ tickets }}</button>
         <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>

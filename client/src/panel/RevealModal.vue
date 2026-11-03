@@ -22,7 +22,8 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
         :style="{ animationDelay: `${x.i * 90}ms` }"
       >
         <span class="well">
-          <ItemArt :item="x.item!" :size="list.length === 1 ? 132 : 76" />
+          <span class="rays" aria-hidden="true"></span>
+          <ItemArt :item="x.item!" :size="list.length === 1 ? 124 : 64" />
         </span>
         <b class="label">{{ dropLabel(x.item!, x.d.new) }}</b>
         <span class="name">{{ x.item!.name }}</span>
@@ -43,8 +44,8 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px;
 }
 .grid.one {
   grid-template-columns: 1fr;
@@ -55,8 +56,8 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 7px 7px 9px;
-  border-radius: 20px;
+  padding: 6px 6px 8px;
+  border-radius: 18px;
   background: var(--tile-frame);
   border: 2px solid var(--tile-border);
   box-shadow: 0 3px 0 var(--tile-lip);
@@ -67,14 +68,35 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
   width: 176px;
 }
 .well {
+  position: relative;
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
+  border-radius: 13px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background:
     repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 10px, transparent 10px 22px),
     var(--rar-common-bg);
+}
+.rays {
+  position: absolute;
+  inset: -35%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 224, 182, 0) 0deg 12deg,
+    rgba(255, 236, 206, 0.55) 12deg 24deg,
+    rgba(255, 224, 182, 0) 24deg 36deg
+  );
+  animation: ray-spin 9s linear infinite;
+  pointer-events: none;
+}
+@keyframes ray-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .r-rare .well {
   background:

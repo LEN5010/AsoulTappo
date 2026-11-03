@@ -69,5 +69,10 @@ export function headAnchor(name: string): { x: number; y: number } {
   return HEADS[name] ?? { x: 150, y: 10 };
 }
 
-/** Crop of the background image that shows the character's face, for avatars (base canvas units). */
-export const FACE_CROP = { x: 106, y: 2, size: 84 };
+/**
+ * Bounding region of the character alone on the 240x135 base canvas:
+ * - Monitor ends at x = 86 (so x >= 90 has zero monitor)
+ * - Desk bar starts at y = 113 (so y <= 112 has zero desk)
+ * - Character spans x = 92..220, y = 0..112.
+ */
+export const FACE_CROP = { x: 90, y: 0, w: 132, h: 112, size: 122 };

@@ -1,37 +1,28 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { manifest, type ManifestCard } from "../manifest";
+import { computed, ref, watch } from "vue";
+import { manifest } from "../manifest";
 import { assetUrl } from "../asset";
 import { craftCost, getItem, ownsEmote, type Item } from "../items";
 import {
   boxes,
   collection,
   craftItem,
-  drawCards,
   error,
   online,
   openBoxes,
-  presenceUpdatedAt,
   shards,
   status,
-  tickets,
 } from "../stores/player";
 import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
 import type { Drop } from "../net/api";
-import ItemDetail from "./ItemDetail.vue";
-import CardReveal from "./CardReveal.vue";
 import RevealModal from "./RevealModal.vue";
 import Modal from "../ui/Modal.vue";
 import ItemArt from "../ui/ItemArt.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 
-type DexMode = "emotes" | "cards";
-const mode = ref<DexMode>("emotes");
-
-// ---- Emote Codex state (no 21 accordion headers! Clean Rarity grouping like WuwaTappo Image 1)
 const charTab = ref<string>("all");
 const setFilter = ref<string>("all");
 const emoteOwnFilter = ref<"all" | "owned" | "missing">("all");
@@ -44,7 +35,6 @@ const charTabs = computed(() => [
   ...emoteOwners.value.map((c) => ({ id: c, label: c })),
 ]);
 
-// Reset setFilter if switching character and current set belongs to another character
 watch(charTab, (c) => {
   if (setFilter.value !== "all") {
     const s = manifest.emoteSets.find((x) => x.id === setFilter.value);
@@ -98,11 +88,9 @@ const filteredEmotes = computed(() =>
       if (emoteOwnFilter.value === "missing") return !e.owned;
       return true;
     })
-    // Owned items first within each tier so unlocked emotes aren't buried
     .sort((a, b) => Number(b.owned) - Number(a.owned)),
 );
 
-// Just 2 clean Rarity tiers like WuwaTappo Image 1 (Rare vs Common) instead of 21 pack headers
 const emoteGroups = computed(() => {
   const rareAll = allEmotesInScope.value.filter((e) => e.rarity !== "common");
   const commonAll = allEmotesInScope.value.filter((e) => e.rarity === "common");
@@ -124,13 +112,8 @@ const emoteGroups = computed(() => {
   ].filter((g) => g.items.length > 0);
 });
 
-const totalEmotesCount = computed(() => manifest.emoteSets.reduce((acc, s) => acc + s.emotes.length, 0));
-const totalOwnedEmotesCount = computed(() =>
-  manifest.emoteSets.reduce(
-    (acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length,
-    0,
-  ),
-);
+const totalEmotesCount = computed(() => allEmotesInScope.value.length);
+const totalOwnedEmotesCount = computed(() => allEmotesInScope.value.filter((e) => e.owned).length);
 
 const selectedEmote = ref<Item | null>(null);
 const selectedEmoteOwned = computed(() =>
@@ -139,12 +122,12 @@ const selectedEmoteOwned = computed(() =>
 const selectedEmoteCost = computed(() => (selectedEmote.value ? craftCost(selectedEmote.value) : null));
 const actionNote = ref("");
 const boxDrops = ref<Drop[]>([]);
+const busy = ref(false);
 
 watch(
   () => ui.craftTarget,
   (id) => {
     if (id) {
-      mode.value = "emotes";
       selectedEmote.value = getItem(id) ?? null;
       ui.craftTarget = "";
     }
@@ -191,299 +174,94 @@ function fireSelectedEmote(item: Item) {
 const tapPct = computed(() =>
   Math.min(100, ((status.value?.progress.taps ?? 0) / (status.value?.progress.tapsPerBox ?? 600)) * 100),
 );
-
-// ---- Collection Cards state
-const selectedSeries = ref(manifest.series[0]!.id);
-const cardFilter = ref<"all" | "owned" | "missing">("all");
-const cardCollapsed = ref<Record<string, boolean>>({});
-
-const cards = computed(() => manifest.cards.filter((c) => c.series === selectedSeries.value));
-const ownedCount = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
-const haveCards = computed(() => cards.value.filter(ownedCount).length);
-const totalOwnedCardsCount = computed(() => manifest.cards.filter(ownedCount).length);
-const visibleCards = computed(() =>
-  cards.value.filter(
-    (c) => cardFilter.value === "all" || (cardFilter.value === "owned" ? ownedCount(c) > 0 : !ownedCount(c)),
-  ),
-);
-
-const shortName = (name: string) =>
-  name.replace(/^A-SOUL\s*[·\s]\s*/, "").replace(/收藏集$/, "").trim() || name;
-const poolTabs = computed(() =>
-  manifest.series.map((p) => ({
-    id: p.id,
-    label: shortName(p.name),
-  })),
-);
-
-const cardGroups = computed(() => {
-  const hiddenAll = cards.value.filter((c) => c.tier !== "normal");
-  const normalAll = cards.value.filter((c) => c.tier === "normal");
-  return [
-    {
-      id: "hidden",
-      name: "Epic · 隐藏款",
-      owned: hiddenAll.filter(ownedCount).length,
-      total: hiddenAll.length,
-      cards: visibleCards.value
-        .filter((c) => c.tier !== "normal")
-        .sort((a, b) => Number(b.tier === "big") - Number(a.tier === "big")),
-    },
-    {
-      id: "normal",
-      name: "Rare · 普通款",
-      owned: normalAll.filter(ownedCount).length,
-      total: normalAll.length,
-      cards: visibleCards.value.filter((c) => c.tier === "normal"),
-    },
-  ].filter((g) => g.cards.length > 0);
-});
-
-function probability(c: ManifestCard) {
-  const mass = { big: 0.5, small: 4.5, normal: 95 }[c.tier];
-  return (mass / cards.value.filter((x) => x.tier === c.tier).length).toFixed(2) + "%";
-}
-
-const clock = ref(Date.now());
-const timer = setInterval(() => (clock.value = Date.now()), 1000);
-onBeforeUnmount(() => clearInterval(timer));
-const remaining = computed(() => {
-  const draw = status.value?.draw;
-  if (!draw) return 900;
-  const elapsed =
-    online.value && presenceUpdatedAt.value
-      ? Math.min(20, Math.max(0, (clock.value - presenceUpdatedAt.value) / 1000))
-      : 0;
-  return Math.max(0, Math.ceil(draw.secondsPerDraw - draw.seconds - elapsed));
-});
-const countdown = computed(
-  () => `${Math.floor(remaining.value / 60).toString().padStart(2, "0")}:${(remaining.value % 60).toString().padStart(2, "0")}`,
-);
-
-const detail = ref<Item | null>(null);
-const cardDrops = ref<Drop[]>([]);
-const busy = ref(false);
-const pending = ref(0);
-
-async function draw(all: boolean) {
-  if (busy.value || !tickets.value) return;
-  busy.value = true;
-  pending.value = all ? tickets.value : 1;
-  await nextBatch();
-}
-async function nextBatch() {
-  const result = await drawCards(selectedSeries.value, Math.min(pending.value, 100));
-  if (result) {
-    pending.value -= result.length;
-    cardDrops.value = result;
-  } else {
-    pending.value = 0;
-  }
-  busy.value = false;
-}
-async function collect() {
-  cardDrops.value = [];
-  if (pending.value > 0) {
-    busy.value = true;
-    await nextBatch();
-  }
-}
 </script>
 
 <template>
   <div class="collection-page">
-    <!-- Top mode switcher: Emote Codex vs Card Album -->
-    <div class="top-row">
-      <div class="mode-switch" role="tablist" aria-label="图鉴类别">
-        <button type="button" :class="{ on: mode === 'emotes' }" @click="mode = 'emotes'">
-          <Icon name="smile" :size="14" />
-          <span>表情图鉴</span>
-          <small>{{ totalOwnedEmotesCount }}/{{ totalEmotesCount }}</small>
-          <i v-if="boxes > 0" class="badge-dot">{{ boxes }}</i>
-        </button>
-        <button type="button" :class="{ on: mode === 'cards' }" @click="mode = 'cards'">
-          <Icon name="book" :size="14" />
-          <span>典藏卡册</span>
-          <small>{{ totalOwnedCardsCount }}/{{ manifest.cards.length }}</small>
-          <i v-if="tickets > 0" class="badge-dot">{{ tickets }}</i>
-        </button>
-      </div>
-
-      <div class="tabs-bar">
-        <SegTabs
-          v-if="mode === 'emotes'"
-          v-model="charTab"
-          :tabs="charTabs"
-          label="角色筛选"
-        />
-        <SegTabs
-          v-else
-          v-model="selectedSeries"
-          :tabs="poolTabs"
-          :disabled="busy || cardDrops.length > 0"
-          label="收藏集卡池"
-        />
-      </div>
+    <div class="tabs-bar">
+      <SegTabs v-model="charTab" :tabs="charTabs" label="角色筛选" />
     </div>
 
-    <!-- EMOTE CODEX VIEW (Matching WuwaTappo Image 1: Clean Rare / Common groups, no 21 pack headers!) -->
-    <template v-if="mode === 'emotes'">
-      <div class="filters">
-        <div class="filter-pills">
+    <div class="filters">
+      <div class="filter-pills">
+        <button
+          v-for="f in [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥有' }, { id: 'missing', label: '未拥有' }] as const"
+          :key="f.id" type="button" :class="{ on: emoteOwnFilter === f.id }" @click="emoteOwnFilter = f.id"
+        >
+          {{ f.label }}
+        </button>
+      </div>
+
+      <select v-model="setFilter" class="set-select" aria-label="按表情包专辑筛选">
+        <option value="all">全部专辑 ({{ availableSets.length }}套)</option>
+        <option v-for="s in availableSets" :key="s.id" :value="s.id">
+          {{ s.name }} ({{ s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length }}/{{ s.emotes.length }})
+        </option>
+      </select>
+
+      <span class="progress-tag">已解锁 <b>{{ totalOwnedEmotesCount }}</b> / {{ totalEmotesCount }}</span>
+
+      <input v-model="emoteQuery" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
+    </div>
+
+    <div class="wall ui-scroll">
+      <section v-for="group in emoteGroups" :key="group.id" class="group">
+        <button type="button" class="group-head" @click="emoteCollapsed[group.id] = !emoteCollapsed[group.id]">
+          <span class="group-title">{{ group.name }}</span>
+          <span class="group-count">({{ group.owned }}/{{ group.total }})</span>
+          <svg class="caret" :class="{ shut: emoteCollapsed[group.id] }" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path d="M3.5 5.5L8 10.5l4.5-5z" fill="currentColor" />
+          </svg>
+        </button>
+
+        <div v-show="!emoteCollapsed[group.id]" class="emote-grid">
           <button
-            v-for="f in [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥有' }, { id: 'missing', label: '未拥有' }] as const"
-            :key="f.id" type="button" :class="{ on: emoteOwnFilter === f.id }" @click="emoteOwnFilter = f.id"
+            v-for="e in group.items" :key="e.key" type="button"
+            class="sq-card emote-tile"
+            :class="[e.rarity, { owned: e.owned, locked: !e.owned }]"
+            :title="`${e.name}（${e.setName}）· ${e.owned ? '已拥有' : '点击可使用碎片兑换'}`"
+            @click="selectedEmote = getItem(`emote:${e.key}`) ?? null; actionNote = ''"
           >
-            {{ f.label }}
+            <span class="well emote-well">
+              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" draggable="false" />
+              <span class="corner-badge" aria-hidden="true"><Icon name="smile" :size="9" /></span>
+            </span>
+            <b class="name">{{ e.name }}</b>
           </button>
         </div>
+      </section>
 
-        <select v-model="setFilter" class="set-select" aria-label="按表情包专辑筛选">
-          <option value="all">全部专辑 ({{ availableSets.length }}套)</option>
-          <option v-for="s in availableSets" :key="s.id" :value="s.id">
-            {{ s.name }} ({{ s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length }}/{{ s.emotes.length }})
-          </option>
-        </select>
+      <p v-if="!emoteGroups.length" class="empty">当前筛选下没有匹配的表情</p>
+    </div>
 
-        <input v-model="emoteQuery" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
+
+    <footer class="drawbar">
+      <div class="ticket">
+        <span class="ticket-icon"><Icon name="box" :size="18" /></span>
+        <div>
+          <span class="ticket-main"><b>{{ boxes }}</b> 箱可开</span>
+          <small>今日 {{ status?.boxesToday ?? 0 }}/{{ status?.dailyCap ?? 10 }} 箱</small>
+        </div>
       </div>
 
-      <div class="wall ui-scroll">
-        <section v-for="group in emoteGroups" :key="group.id" class="group">
-          <button type="button" class="group-head" @click="emoteCollapsed[group.id] = !emoteCollapsed[group.id]">
-            <span class="group-title">{{ group.name }}</span>
-            <span class="group-count">({{ group.owned }}/{{ group.total }})</span>
-            <svg class="caret" :class="{ shut: emoteCollapsed[group.id] }" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-              <path d="M3.5 5.5L8 10.5l4.5-5z" fill="currentColor" />
-            </svg>
-          </button>
-
-          <div v-show="!emoteCollapsed[group.id]" class="emote-grid">
-            <button
-              v-for="e in group.items" :key="e.key" type="button"
-              class="sq-card emote-tile"
-              :class="[e.rarity, { owned: e.owned, locked: !e.owned }]"
-              :title="`${e.name}（${e.setName}）· ${e.owned ? '已拥有' : '点击可使用碎片兑换'}`"
-              @click="selectedEmote = getItem(`emote:${e.key}`) ?? null; actionNote = ''"
-            >
-              <span class="well emote-well">
-                <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" draggable="false" />
-                <span class="corner-badge" aria-hidden="true"><Icon name="smile" :size="9" /></span>
-              </span>
-              <b class="name">{{ e.name }}</b>
-            </button>
-          </div>
-        </section>
-
-        <p v-if="!emoteGroups.length" class="empty">当前筛选下没有匹配的表情</p>
+      <div class="pity">
+        <div class="pity-head">
+          <span>敲击 <b>{{ status?.progress.taps ?? 0 }}</b>/{{ status?.progress.tapsPerBox ?? 600 }} · 活跃 {{ status?.progress.minutes ?? 0 }}/{{ status?.progress.minutesPerBox ?? 10 }}分</span>
+          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片 · 点击未解锁表情可兑换</small>
+        </div>
+        <div class="ui-bar"><i :style="{ width: `${tapPct}%` }"></i></div>
       </div>
 
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
-
-      <footer class="drawbar">
-        <div class="ticket">
-          <span class="ticket-icon"><Icon name="box" :size="18" /></span>
-          <div>
-            <span class="ticket-main"><b>{{ boxes }}</b> 箱可开</span>
-            <small>今日 {{ status?.boxesToday ?? 0 }}/{{ status?.dailyCap ?? 10 }} 箱</small>
-          </div>
-        </div>
-
-        <div class="pity">
-          <div class="pity-head">
-            <span>敲击 <b>{{ status?.progress.taps ?? 0 }}</b>/{{ status?.progress.tapsPerBox ?? 600 }} · 活跃 {{ status?.progress.minutes ?? 0 }}/{{ status?.progress.minutesPerBox ?? 10 }}分</span>
-            <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片 · 点击未解锁表情可兑换</small>
-          </div>
-          <div class="ui-bar"><i :style="{ width: `${tapPct}%` }"></i></div>
-        </div>
-
-        <div class="draw-actions">
-          <button type="button" class="ui-btn" :disabled="busy || !online || !boxes" @click="openBoxBatch(false)">
-            {{ busy ? "开启中…" : "开一箱" }}
-          </button>
-          <button type="button" class="ui-btn primary" :disabled="busy || !online || !boxes" @click="openBoxBatch(true)">
-            全部开启 <span v-if="boxes">×{{ boxes }}</span>
-          </button>
-        </div>
-      </footer>
-    </template>
-
-    <!-- CARD ALBUM VIEW (6 columns: 6 Epic hidden on 1 row + 18 Rare normal on 3 rows!) -->
-    <template v-else>
-      <div class="filters">
-        <div class="filter-pills">
-          <button
-            v-for="f in [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥有' }, { id: 'missing', label: '未拥有' }] as const"
-            :key="f.id" type="button" :class="{ on: cardFilter === f.id }" @click="cardFilter = f.id"
-          >
-            {{ f.label }}
-          </button>
-        </div>
-        <span class="progress-tag">本套已收集 <b>{{ haveCards }}</b> / {{ cards.length }}</span>
+      <div class="draw-actions">
+        <button type="button" class="ui-btn" :disabled="busy || !online || !boxes" @click="openBoxBatch(false)">
+          {{ busy ? "开启中…" : "开一箱" }}
+        </button>
+        <button type="button" class="ui-btn primary" :disabled="busy || !online || !boxes" @click="openBoxBatch(true)">
+          全部开启 <span v-if="boxes">×{{ boxes }}</span>
+        </button>
       </div>
-
-      <div class="wall ui-scroll">
-        <section v-for="group in cardGroups" :key="group.id" class="group">
-          <button type="button" class="group-head" @click="cardCollapsed[group.id] = !cardCollapsed[group.id]">
-            <span class="group-title">{{ group.name }}</span>
-            <span class="group-count">({{ group.owned }}/{{ group.total }})</span>
-            <svg class="caret" :class="{ shut: cardCollapsed[group.id] }" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-              <path d="M3.5 5.5L8 10.5l4.5-5z" fill="currentColor" />
-            </svg>
-          </button>
-
-          <div v-show="!cardCollapsed[group.id]" class="card-grid">
-            <button
-              v-for="c in group.cards" :key="c.id" type="button"
-              class="sq-card" :class="[c.tier, { owned: ownedCount(c) > 0, locked: !ownedCount(c) }]"
-              :title="`${c.name}（概率 ${probability(c)}）`"
-              @click="detail = getItem(`card:${c.id}`) ?? null"
-            >
-              <span class="well">
-                <img :src="assetUrl(c.thumb)" :alt="c.name" loading="lazy" draggable="false" />
-                <i v-if="c.tier !== 'normal'" class="tier-pill">{{ c.tier === "big" ? "大隐藏" : "小隐藏" }}</i>
-                <b v-if="ownedCount(c)" class="count-pill">×{{ ownedCount(c) }}</b>
-                <span class="corner-badge" :class="{ video: !!c.video }" aria-hidden="true">
-                  <Icon :name="c.video ? 'play' : 'person'" :size="9" />
-                </span>
-              </span>
-              <b class="name">{{ shortName(c.name) }}</b>
-            </button>
-          </div>
-        </section>
-
-        <p v-if="!visibleCards.length" class="empty">当前筛选下暂无卡牌</p>
-      </div>
-
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
-
-      <footer class="drawbar">
-        <div class="ticket">
-          <span class="ticket-icon"><Icon name="book" :size="18" /></span>
-          <div>
-            <span class="ticket-main"><b>{{ tickets }}</b> 次可抽</span>
-            <small>{{ online ? `下一抽 ${countdown}` : "连接服务器后累计在线时长" }}</small>
-          </div>
-        </div>
-
-        <div class="pity">
-          <div class="pity-head">
-            <span>大隐藏保底 <b>{{ status?.draw?.pity ?? 0 }}</b> / 400</span>
-            <small>大隐藏 0.5% · 小隐藏 4.5%</small>
-          </div>
-          <div class="ui-bar"><i :style="{ width: `${(status?.draw?.pity ?? 0) / 4}%` }"></i></div>
-        </div>
-
-        <div class="draw-actions">
-          <button type="button" class="ui-btn" :disabled="busy || !online || !tickets" @click="draw(false)">
-            {{ busy ? "抽取中…" : "抽一次" }}
-          </button>
-          <button type="button" class="ui-btn primary" :disabled="busy || !online || !tickets" @click="draw(true)">
-            全部抽取 <span v-if="tickets">×{{ tickets }}</span>
-          </button>
-        </div>
-      </footer>
-    </template>
+    </footer>
 
     <!-- Emote detail / shard crafting modal -->
     <Modal v-if="selectedEmote" :title="selectedEmote.name" @close="selectedEmote = null">
@@ -513,8 +291,6 @@ async function collect() {
       </div>
     </Modal>
 
-    <ItemDetail v-if="detail" :item="detail" @close="detail = null" />
-    <CardReveal v-if="cardDrops.length" :drops="cardDrops" :remaining="pending" @close="collect" />
     <RevealModal v-if="boxDrops.length" :drops="boxDrops" @close="boxDrops = []" />
   </div>
 </template>
@@ -528,67 +304,9 @@ async function collect() {
   padding: 6px 20px 12px;
 }
 
-.top-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-  flex: none;
-}
-.mode-switch {
-  display: inline-flex;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  border: 1.5px solid var(--tile-border);
-  gap: 3px;
-  flex: none;
-}
-.mode-switch button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1.5px solid transparent;
-  background: transparent;
-  color: var(--ink-2);
-  font: 800 12px var(--font);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.mode-switch button small {
-  font-size: 10.5px;
-  font-weight: 700;
-  opacity: 0.8;
-}
-.mode-switch button.on {
-  background: linear-gradient(180deg, #FFB596 0%, var(--accent) 100%);
-  border-color: var(--accent-deep);
-  color: var(--on-accent);
-  box-shadow: 0 2px 0 var(--accent-deep);
-}
-.badge-dot {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  box-sizing: border-box;
-  border-radius: 999px;
-  background: #FFF6EC;
-  color: #7A3B1E;
-  border: 1px solid #B85832;
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 900;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 .tabs-bar {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  margin-bottom: 6px;
 }
 
 .filters {
@@ -632,20 +350,19 @@ async function collect() {
 .set-select:focus {
   border-color: var(--accent);
 }
-.search-input {
-  margin-left: auto;
-  width: 144px;
-  height: 25px;
-  font-size: 11.5px;
-}
 .progress-tag {
-  margin-left: auto;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--ink-2);
 }
 .progress-tag b {
   color: var(--accent-deep);
+}
+.search-input {
+  margin-left: auto;
+  width: 144px;
+  height: 25px;
+  font-size: 11.5px;
 }
 
 .wall {
@@ -658,20 +375,26 @@ async function collect() {
   margin-top: 12px;
 }
 .group-head {
-  display: inline-flex;
+  position: sticky;
+  top: -2px;
+  z-index: 3;
+  display: flex;
   align-items: center;
-  gap: 5px;
-  margin: 0 0 6px 2px;
-  padding: 2px 6px;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 5px 8px;
+  box-sizing: border-box;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border-bottom: 1.5px dashed rgba(212, 186, 158, 0.55);
+  border-radius: 8px 8px 0 0;
+  background: rgba(253, 244, 231, 0.96);
+  backdrop-filter: blur(4px);
   color: var(--ink-2);
   font: 800 13px var(--font);
   cursor: pointer;
 }
 .group-head:hover {
-  background: rgba(239, 224, 206, 0.6);
   color: var(--ink);
 }
 .group-count {
@@ -680,6 +403,7 @@ async function collect() {
   color: var(--ink-2);
 }
 .caret {
+  margin-left: auto;
   color: var(--ink-2);
   transition: transform 160ms ease;
 }
@@ -687,16 +411,10 @@ async function collect() {
   transform: rotate(-90deg);
 }
 
-/* Dense 8-column Emote Codex grid & 6-column Card Album grid */
 .emote-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 8px;
-}
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 9px;
 }
 .sq-card {
   display: flex;
@@ -723,28 +441,18 @@ async function collect() {
   border-color: #F4B99A;
   box-shadow: 0 2px 0 #DF9B78;
 }
-.sq-card.big.owned {
-  border-color: var(--accent);
-  box-shadow: 0 2px 0 var(--accent-deep), 0 0 12px rgba(var(--accent-rgb), 0.45);
-}
 
-.well {
+.well.emote-well {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 0.94;
+  aspect-ratio: 1;
+  padding: 6px;
+  box-sizing: border-box;
   border-radius: 11px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 8px, transparent 8px 18px),
-    var(--rar-rare-bg);
-}
-.well.emote-well {
-  aspect-ratio: 1;
-  padding: 6px;
-  box-sizing: border-box;
   background:
     repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 8px, transparent 8px 18px),
     var(--rar-common-bg);
@@ -754,27 +462,15 @@ async function collect() {
     repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.24) 0 8px, transparent 8px 18px),
     var(--rar-epic-bg);
 }
-.sq-card.big .well,
-.sq-card.small .well {
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.24) 0 8px, transparent 8px 18px),
-    var(--rar-epic-bg);
-}
-.well img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 16%;
-  display: block;
-  transition: transform 160ms;
-}
 .well.emote-well img {
   max-width: 100%;
   max-height: 100%;
   width: auto;
   height: auto;
   object-fit: contain;
+  display: block;
   margin: auto;
+  transition: transform 160ms;
 }
 .sq-card:hover .well img {
   transform: scale(1.05);
@@ -785,35 +481,6 @@ async function collect() {
 }
 .sq-card.locked .name {
   color: var(--ink-3);
-}
-
-.tier-pill {
-  position: absolute;
-  left: 4px;
-  top: 4px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #FFB596, var(--accent));
-  color: var(--on-accent);
-  border: 1px solid rgba(120, 50, 20, 0.25);
-  font-size: 9px;
-  font-style: normal;
-  font-weight: 800;
-}
-.sq-card.small .tier-pill {
-  background: rgba(255, 245, 234, 0.92);
-  color: #8A5132;
-}
-.count-pill {
-  position: absolute;
-  right: 4px;
-  top: 4px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(92, 59, 40, 0.78);
-  color: #FFF9F2;
-  font-size: 9px;
-  font-weight: 800;
 }
 .corner-badge {
   position: absolute;
@@ -829,12 +496,6 @@ async function collect() {
   align-items: center;
   justify-content: center;
 }
-.corner-badge.video {
-  background: #FFF3E8;
-  border-color: #F2B28E;
-  color: var(--accent-deep);
-}
-
 .name {
   display: block;
   width: 100%;
@@ -898,7 +559,7 @@ async function collect() {
 }
 .pity {
   flex: 1;
-  max-width: 340px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -980,19 +641,5 @@ async function collect() {
   color: var(--bad);
   font-size: 12px;
   font-weight: 700;
-}
-
-@media (max-width: 760px) {
-  .top-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .card-grid {
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  }
-  .drawbar {
-    flex-wrap: wrap;
-    gap: 10px;
-  }
 }
 </style>

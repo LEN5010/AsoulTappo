@@ -11,7 +11,8 @@ const spotlight = ref(0);
 const specials = computed(() => props.drops.filter((d) => d.tier === "big"));
 const special = computed(() => specials.value[spotlight.value]);
 const cards = computed(() => props.drops.map((d) => ({ ...d, card: getCard(d.item.slice(5))! })));
-const shortName = (name: string) => name.split(" · ").at(-1)!;
+const shortName = (name: string) =>
+  name.replace(/^A-SOUL\s*[·\s]\s*/, "").replace(/收藏集$/, "").split(" · ").at(-1)!.trim() || name;
 watch(
   () => props.drops,
   () => (spotlight.value = 0),
@@ -66,8 +67,8 @@ watch(
 }
 .results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px;
   max-height: 360px;
   overflow: auto;
   padding: 6px;
@@ -81,8 +82,8 @@ watch(
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px 6px 8px;
-  border-radius: 20px;
+  padding: 5px 5px 7px;
+  border-radius: 16px;
   background: var(--tile-frame);
   border: 2px solid var(--tile-border);
   box-shadow: 0 3px 0 var(--tile-lip);
@@ -90,7 +91,7 @@ watch(
   animation: reveal 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .results.solo .sq-card {
-  width: 172px;
+  width: 156px;
 }
 .sq-card.big {
   border-color: var(--accent);
@@ -99,8 +100,8 @@ watch(
 .well {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1.08;
-  border-radius: 14px;
+  aspect-ratio: 2 / 3;
+  border-radius: 11px;
   overflow: hidden;
   background: var(--rar-rare-bg);
 }

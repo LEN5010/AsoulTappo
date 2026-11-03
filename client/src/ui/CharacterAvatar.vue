@@ -1,35 +1,60 @@
 <script setup lang="ts">
-// Round avatar cropped from the character's pet background (the face area), with an optional frame.
+// Pure character bust cropped from the pet background (excludes monitor at x<=86 and desk at y>=113).
 import { computed } from "vue";
 import { FACE_CROP, getCharacter, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 
 const props = withDefaults(defineProps<{ character: string; size?: number; round?: boolean }>(), {
-  size: 40, round: true,
+  size: 40,
+  round: true,
 });
 const bg = computed(() => getCharacter(props.character)?.bg ?? "");
-const style = computed(() => {
-  const k = props.size / FACE_CROP.size;
-  return {
-    width: `${props.size}px`,
-    height: `${props.size}px`,
-    borderRadius: props.round ? "50%" : "12%",
-    backgroundColor: `${characterColor(props.character)}33`,
-    backgroundImage: bg.value ? `url("${bg.value}")` : "none",
-    backgroundSize: `${PET_BASE.width * k}px ${PET_BASE.height * k}px`,
-    backgroundPosition: `${-FACE_CROP.x * k}px ${-FACE_CROP.y * k}px`,
-  };
-});
+const tint = computed(() => `${characterColor(props.character)}28`);
 </script>
 
 <template>
-  <span class="avatar" :style="{ width: `${size}px`, height: `${size}px` }">
-    <span class="face" :style="style"></span>
+  <span
+    class="avatar"
+    :style="{
+      width: `${size}px`,
+      height: `${size}px`,
+      borderRadius: round ? '50%' : '14%',
+      backgroundColor: tint,
+    }"
+  >
+    <svg
+      v-if="bg"
+      class="face-svg"
+      :viewBox="`${FACE_CROP.x} -8 ${FACE_CROP.w} ${FACE_CROP.h + 8}`"
+      preserveAspectRatio="xMidYMax meet"
+      aria-hidden="true"
+    >
+      <svg
+        :x="FACE_CROP.x"
+        :y="FACE_CROP.y"
+        :width="FACE_CROP.w"
+        :height="FACE_CROP.h"
+        :viewBox="`${FACE_CROP.x} ${FACE_CROP.y} ${FACE_CROP.w} ${FACE_CROP.h}`"
+        overflow="hidden"
+      >
+        <image :href="bg" x="0" y="0" :width="PET_BASE.width" :height="PET_BASE.height" />
+      </svg>
+    </svg>
   </span>
 </template>
 
 <style scoped>
-.avatar { position: relative; display: inline-grid; place-items: center; flex: none; }
-.face { display: block; background-repeat: no-repeat; }
-.frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: none;
+}
+.face-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 </style>
