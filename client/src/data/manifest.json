@@ -1,0 +1,3660 @@
+{
+ "version": 1,
+ "characters": [
+  {
+   "id": "jiaran",
+   "name": "嘉然",
+   "color": "#e799b0"
+  },
+  {
+   "id": "nailin",
+   "name": "乃琳",
+   "color": "#576690"
+  },
+  {
+   "id": "beila",
+   "name": "贝拉",
+   "color": "#bd7d74"
+  },
+  {
+   "id": "xinyi",
+   "name": "心宜",
+   "color": "#f27ba9"
+  },
+  {
+   "id": "sinuo",
+   "name": "思诺",
+   "color": "#3f5fa8"
+  }
+ ],
+ "rarities": {
+  "common": {
+   "name": "普通",
+   "weight": 70
+  },
+  "rare": {
+   "name": "稀有",
+   "weight": 22
+  },
+  "epic": {
+   "name": "史诗",
+   "weight": 7
+  },
+  "legendary": {
+   "name": "传说",
+   "weight": 1
+  }
+ },
+ "defaultTheme": "jiaran-eat",
+ "themes": [
+  {
+   "id": "jiaran-eat",
+   "name": "嘉然今天吃什么",
+   "characters": [
+    "嘉然"
+   ],
+   "default": true,
+   "pack": null,
+   "parts": {
+    "headBg": "bundle:themes/jiaran-eat/head_bg.webp",
+    "tabBg": "bundle:themes/jiaran-eat/tab_bg.webp",
+    "banner": "bundle:themes/jiaran-eat/banner.webp",
+    "backgrounds": [
+     "bundle:themes/jiaran-eat/bg1.webp",
+     "bundle:themes/jiaran-eat/bg2.webp",
+     "bundle:themes/jiaran-eat/bg3.webp"
+    ],
+    "thumbup": "bundle:themes/jiaran-eat/thumbup.webp",
+    "loading": "bundle:themes/jiaran-eat/loading.webp"
+   },
+   "cover": "bundle:themes/jiaran-eat/cover.webp",
+   "preview": "bundle:themes/jiaran-eat/preview.webp",
+   "colors": {
+    "accent": "#be5454",
+    "tint": "#f7e9e9",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-eat/icons/main.webp",
+     "s": "bundle:themes/jiaran-eat/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-eat/icons/channel.webp",
+     "s": "bundle:themes/jiaran-eat/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-eat/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-eat/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-eat/icons/myself.webp",
+     "s": "bundle:themes/jiaran-eat/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "jiaran-album-2025",
+   "name": "2025 嘉然的画册",
+   "characters": [
+    "嘉然"
+   ],
+   "default": false,
+   "pack": "theme-jiaran-album-2025",
+   "parts": {
+    "headBg": "pack:themes/jiaran-album-2025/head_bg.webp",
+    "tabBg": "pack:themes/jiaran-album-2025/tab_bg.webp",
+    "thumbup": "pack:themes/jiaran-album-2025/thumbup.webp",
+    "loading": "pack:themes/jiaran-album-2025/loading.webp"
+   },
+   "cover": "bundle:themes/jiaran-album-2025/cover.webp",
+   "preview": "bundle:themes/jiaran-album-2025/preview.webp",
+   "colors": {
+    "accent": "#4c2f7b",
+    "tint": "#eee9f7",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-album-2025/icons/main.webp",
+     "s": "bundle:themes/jiaran-album-2025/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-album-2025/icons/channel.webp",
+     "s": "bundle:themes/jiaran-album-2025/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-album-2025/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-album-2025/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-album-2025/icons/myself.webp",
+     "s": "bundle:themes/jiaran-album-2025/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "jiaran-album-2026",
+   "name": "2026 嘉然的画册",
+   "characters": [
+    "嘉然"
+   ],
+   "default": false,
+   "pack": "theme-jiaran-album-2026",
+   "parts": {
+    "headBg": "pack:themes/jiaran-album-2026/head_bg.webp",
+    "tabBg": "pack:themes/jiaran-album-2026/tab_bg.webp",
+    "thumbup": "pack:themes/jiaran-album-2026/thumbup.webp",
+    "loading": "pack:themes/jiaran-album-2026/loading.webp"
+   },
+   "cover": "bundle:themes/jiaran-album-2026/cover.webp",
+   "preview": "bundle:themes/jiaran-album-2026/preview.webp",
+   "colors": {
+    "accent": "#e4a98b",
+    "tint": "#f9ede7",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-album-2026/icons/main.webp",
+     "s": "bundle:themes/jiaran-album-2026/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-album-2026/icons/channel.webp",
+     "s": "bundle:themes/jiaran-album-2026/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-album-2026/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-album-2026/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-album-2026/icons/myself.webp",
+     "s": "bundle:themes/jiaran-album-2026/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "jiaran-2-0",
+   "name": "嘉然个性装扮 2.0",
+   "characters": [
+    "嘉然"
+   ],
+   "default": false,
+   "pack": "theme-jiaran-2-0",
+   "parts": {
+    "headBg": "pack:themes/jiaran-2-0/head_bg.webp",
+    "tabBg": "pack:themes/jiaran-2-0/tab_bg.webp",
+    "banner": "pack:themes/jiaran-2-0/banner.webp",
+    "backgrounds": [
+     "pack:themes/jiaran-2-0/bg1.webp",
+     "pack:themes/jiaran-2-0/bg2.webp",
+     "pack:themes/jiaran-2-0/bg3.webp"
+    ],
+    "thumbup": "pack:themes/jiaran-2-0/thumbup.webp",
+    "loading": "pack:themes/jiaran-2-0/loading.webp"
+   },
+   "cover": "bundle:themes/jiaran-2-0/cover.webp",
+   "preview": "bundle:themes/jiaran-2-0/preview.webp",
+   "colors": {
+    "accent": "#445075",
+    "tint": "#eceef4",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-2-0/icons/main.webp",
+     "s": "bundle:themes/jiaran-2-0/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-2-0/icons/channel.webp",
+     "s": "bundle:themes/jiaran-2-0/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-2-0/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-2-0/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-2-0/icons/myself.webp",
+     "s": "bundle:themes/jiaran-2-0/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "jiaran-garden",
+   "name": "糖糖与小然熊的游园会",
+   "characters": [
+    "嘉然"
+   ],
+   "default": false,
+   "pack": "theme-jiaran-garden",
+   "parts": {
+    "headBg": "pack:themes/jiaran-garden/head_bg.webp",
+    "tabBg": "pack:themes/jiaran-garden/tab_bg.webp",
+    "banner": "pack:themes/jiaran-garden/banner.webp",
+    "backgrounds": [
+     "pack:themes/jiaran-garden/bg1.webp"
+    ]
+   },
+   "cover": "bundle:themes/jiaran-garden/cover.webp",
+   "preview": "bundle:themes/jiaran-garden/preview.webp",
+   "colors": {
+    "accent": "#c38898",
+    "tint": "#f5ebed",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-garden/icons/main.webp",
+     "s": "bundle:themes/jiaran-garden/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-garden/icons/channel.webp",
+     "s": "bundle:themes/jiaran-garden/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-garden/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-garden/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-garden/icons/myself.webp",
+     "s": "bundle:themes/jiaran-garden/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "jiaran-naodong",
+   "name": "脑洞波 · 嘉然",
+   "characters": [
+    "嘉然"
+   ],
+   "default": false,
+   "pack": "theme-jiaran-naodong",
+   "parts": {
+    "headBg": "pack:themes/jiaran-naodong/head_bg.webp",
+    "tabBg": "pack:themes/jiaran-naodong/tab_bg.webp",
+    "banner": "pack:themes/jiaran-naodong/banner.webp",
+    "backgrounds": [
+     "pack:themes/jiaran-naodong/bg1.webp",
+     "pack:themes/jiaran-naodong/bg2.webp",
+     "pack:themes/jiaran-naodong/bg3.webp"
+    ]
+   },
+   "cover": "bundle:themes/jiaran-naodong/cover.webp",
+   "preview": "bundle:themes/jiaran-naodong/preview.webp",
+   "colors": {
+    "accent": "#724d59",
+    "tint": "#f3edef",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/jiaran-naodong/icons/main.webp",
+     "s": "bundle:themes/jiaran-naodong/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/jiaran-naodong/icons/channel.webp",
+     "s": "bundle:themes/jiaran-naodong/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/jiaran-naodong/icons/dynamic.webp",
+     "s": "bundle:themes/jiaran-naodong/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/jiaran-naodong/icons/myself.webp",
+     "s": "bundle:themes/jiaran-naodong/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "nailin-tavern-2025",
+   "name": "2025 乃琳的酒馆",
+   "characters": [
+    "乃琳"
+   ],
+   "default": false,
+   "pack": "theme-nailin-tavern-2025",
+   "parts": {
+    "headBg": "pack:themes/nailin-tavern-2025/head_bg.webp",
+    "tabBg": "pack:themes/nailin-tavern-2025/tab_bg.webp",
+    "thumbup": "pack:themes/nailin-tavern-2025/thumbup.webp",
+    "loading": "pack:themes/nailin-tavern-2025/loading.webp"
+   },
+   "cover": "bundle:themes/nailin-tavern-2025/cover.webp",
+   "preview": "bundle:themes/nailin-tavern-2025/preview.webp",
+   "colors": {
+    "accent": "#bb7196",
+    "tint": "#f5eaf0",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/nailin-tavern-2025/icons/main.webp",
+     "s": "bundle:themes/nailin-tavern-2025/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/nailin-tavern-2025/icons/channel.webp",
+     "s": "bundle:themes/nailin-tavern-2025/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/nailin-tavern-2025/icons/dynamic.webp",
+     "s": "bundle:themes/nailin-tavern-2025/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/nailin-tavern-2025/icons/myself.webp",
+     "s": "bundle:themes/nailin-tavern-2025/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "nailin-queen",
+   "name": "乃琳 Queen",
+   "characters": [
+    "乃琳"
+   ],
+   "default": false,
+   "pack": "theme-nailin-queen",
+   "parts": {
+    "headBg": "pack:themes/nailin-queen/head_bg.webp",
+    "tabBg": "pack:themes/nailin-queen/tab_bg.webp",
+    "banner": "pack:themes/nailin-queen/banner.webp",
+    "backgrounds": [
+     "pack:themes/nailin-queen/bg1.webp",
+     "pack:themes/nailin-queen/bg2.webp",
+     "pack:themes/nailin-queen/bg3.webp"
+    ],
+    "thumbup": "pack:themes/nailin-queen/thumbup.webp",
+    "loading": "pack:themes/nailin-queen/loading.webp"
+   },
+   "cover": "bundle:themes/nailin-queen/cover.webp",
+   "preview": "bundle:themes/nailin-queen/preview.webp",
+   "colors": {
+    "accent": "#b2a7a4",
+    "tint": "#f1efee",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/nailin-queen/icons/main.webp",
+     "s": "bundle:themes/nailin-queen/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/nailin-queen/icons/channel.webp",
+     "s": "bundle:themes/nailin-queen/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/nailin-queen/icons/dynamic.webp",
+     "s": "bundle:themes/nailin-queen/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/nailin-queen/icons/myself.webp",
+     "s": "bundle:themes/nailin-queen/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "nailin-2-0",
+   "name": "乃琳个性装扮 2.0",
+   "characters": [
+    "乃琳"
+   ],
+   "default": false,
+   "pack": "theme-nailin-2-0",
+   "parts": {
+    "headBg": "pack:themes/nailin-2-0/head_bg.webp",
+    "tabBg": "pack:themes/nailin-2-0/tab_bg.webp",
+    "banner": "pack:themes/nailin-2-0/banner.webp",
+    "backgrounds": [
+     "pack:themes/nailin-2-0/bg1.webp",
+     "pack:themes/nailin-2-0/bg2.webp",
+     "pack:themes/nailin-2-0/bg3.webp"
+    ],
+    "thumbup": "pack:themes/nailin-2-0/thumbup.webp",
+    "loading": "pack:themes/nailin-2-0/loading.webp"
+   },
+   "cover": "bundle:themes/nailin-2-0/cover.webp",
+   "preview": "bundle:themes/nailin-2-0/preview.webp",
+   "colors": {
+    "accent": "#767791",
+    "tint": "#eeeef1",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/nailin-2-0/icons/main.webp",
+     "s": "bundle:themes/nailin-2-0/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/nailin-2-0/icons/channel.webp",
+     "s": "bundle:themes/nailin-2-0/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/nailin-2-0/icons/dynamic.webp",
+     "s": "bundle:themes/nailin-2-0/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/nailin-2-0/icons/myself.webp",
+     "s": "bundle:themes/nailin-2-0/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "nailin-raccoon",
+   "name": "奶淇琳浣熊",
+   "characters": [
+    "乃琳"
+   ],
+   "default": false,
+   "pack": "theme-nailin-raccoon",
+   "parts": {
+    "headBg": "pack:themes/nailin-raccoon/head_bg.webp",
+    "tabBg": "pack:themes/nailin-raccoon/tab_bg.webp",
+    "banner": "pack:themes/nailin-raccoon/banner.webp",
+    "backgrounds": [
+     "pack:themes/nailin-raccoon/bg1.webp"
+    ]
+   },
+   "cover": "bundle:themes/nailin-raccoon/cover.webp",
+   "preview": "bundle:themes/nailin-raccoon/preview.webp",
+   "colors": {
+    "accent": "#98adcd",
+    "tint": "#eaeff5",
+    "headFg": "#ffffff",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/nailin-raccoon/icons/main.webp",
+     "s": "bundle:themes/nailin-raccoon/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/nailin-raccoon/icons/channel.webp",
+     "s": "bundle:themes/nailin-raccoon/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/nailin-raccoon/icons/dynamic.webp",
+     "s": "bundle:themes/nailin-raccoon/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/nailin-raccoon/icons/myself.webp",
+     "s": "bundle:themes/nailin-raccoon/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "nailin-naodong",
+   "name": "脑洞波 · 乃琳",
+   "characters": [
+    "乃琳"
+   ],
+   "default": false,
+   "pack": "theme-nailin-naodong",
+   "parts": {
+    "headBg": "pack:themes/nailin-naodong/head_bg.webp",
+    "tabBg": "pack:themes/nailin-naodong/tab_bg.webp",
+    "banner": "pack:themes/nailin-naodong/banner.webp",
+    "backgrounds": [
+     "pack:themes/nailin-naodong/bg1.webp",
+     "pack:themes/nailin-naodong/bg2.webp",
+     "pack:themes/nailin-naodong/bg3.webp"
+    ]
+   },
+   "cover": "bundle:themes/nailin-naodong/cover.webp",
+   "preview": "bundle:themes/nailin-naodong/preview.webp",
+   "colors": {
+    "accent": "#3e4670",
+    "tint": "#ebedf4",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/nailin-naodong/icons/main.webp",
+     "s": "bundle:themes/nailin-naodong/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/nailin-naodong/icons/channel.webp",
+     "s": "bundle:themes/nailin-naodong/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/nailin-naodong/icons/dynamic.webp",
+     "s": "bundle:themes/nailin-naodong/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/nailin-naodong/icons/myself.webp",
+     "s": "bundle:themes/nailin-naodong/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "beila-adventure-2025",
+   "name": "2025 贝拉的冒险",
+   "characters": [
+    "贝拉"
+   ],
+   "default": false,
+   "pack": "theme-beila-adventure-2025",
+   "parts": {
+    "headBg": "pack:themes/beila-adventure-2025/head_bg.webp",
+    "tabBg": "pack:themes/beila-adventure-2025/tab_bg.webp",
+    "thumbup": "pack:themes/beila-adventure-2025/thumbup.webp",
+    "loading": "pack:themes/beila-adventure-2025/loading.webp"
+   },
+   "cover": "bundle:themes/beila-adventure-2025/cover.webp",
+   "preview": "bundle:themes/beila-adventure-2025/preview.webp",
+   "colors": {
+    "accent": "#be98aa",
+    "tint": "#f3ecf0",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/beila-adventure-2025/icons/main.webp",
+     "s": "bundle:themes/beila-adventure-2025/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/beila-adventure-2025/icons/channel.webp",
+     "s": "bundle:themes/beila-adventure-2025/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/beila-adventure-2025/icons/dynamic.webp",
+     "s": "bundle:themes/beila-adventure-2025/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/beila-adventure-2025/icons/myself.webp",
+     "s": "bundle:themes/beila-adventure-2025/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "beila-kira",
+   "name": "贝拉 kira",
+   "characters": [
+    "贝拉"
+   ],
+   "default": false,
+   "pack": "theme-beila-kira",
+   "parts": {
+    "headBg": "pack:themes/beila-kira/head_bg.webp",
+    "tabBg": "pack:themes/beila-kira/tab_bg.webp",
+    "banner": "pack:themes/beila-kira/banner.webp",
+    "backgrounds": [
+     "pack:themes/beila-kira/bg1.webp",
+     "pack:themes/beila-kira/bg2.webp",
+     "pack:themes/beila-kira/bg3.webp"
+    ],
+    "thumbup": "pack:themes/beila-kira/thumbup.webp",
+    "loading": "pack:themes/beila-kira/loading.webp"
+   },
+   "cover": "bundle:themes/beila-kira/cover.webp",
+   "preview": "bundle:themes/beila-kira/preview.webp",
+   "colors": {
+    "accent": "#5c4c81",
+    "tint": "#eeecf4",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/beila-kira/icons/main.webp",
+     "s": "bundle:themes/beila-kira/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/beila-kira/icons/channel.webp",
+     "s": "bundle:themes/beila-kira/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/beila-kira/icons/dynamic.webp",
+     "s": "bundle:themes/beila-kira/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/beila-kira/icons/myself.webp",
+     "s": "bundle:themes/beila-kira/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "beila-2-0",
+   "name": "贝拉个性装扮 2.0",
+   "characters": [
+    "贝拉"
+   ],
+   "default": false,
+   "pack": "theme-beila-2-0",
+   "parts": {
+    "headBg": "pack:themes/beila-2-0/head_bg.webp",
+    "tabBg": "pack:themes/beila-2-0/tab_bg.webp",
+    "banner": "pack:themes/beila-2-0/banner.webp",
+    "backgrounds": [
+     "pack:themes/beila-2-0/bg1.webp",
+     "pack:themes/beila-2-0/bg2.webp",
+     "pack:themes/beila-2-0/bg3.webp"
+    ],
+    "thumbup": "pack:themes/beila-2-0/thumbup.webp",
+    "loading": "pack:themes/beila-2-0/loading.webp"
+   },
+   "cover": "bundle:themes/beila-2-0/cover.webp",
+   "preview": "bundle:themes/beila-2-0/preview.webp",
+   "colors": {
+    "accent": "#a499c0",
+    "tint": "#eeecf3",
+    "headFg": "#ffffff",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/beila-2-0/icons/main.webp",
+     "s": "bundle:themes/beila-2-0/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/beila-2-0/icons/channel.webp",
+     "s": "bundle:themes/beila-2-0/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/beila-2-0/icons/dynamic.webp",
+     "s": "bundle:themes/beila-2-0/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/beila-2-0/icons/myself.webp",
+     "s": "bundle:themes/beila-2-0/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "beila-rabbit",
+   "name": "贝拉兔与贝极星的日常",
+   "characters": [
+    "贝拉"
+   ],
+   "default": false,
+   "pack": "theme-beila-rabbit",
+   "parts": {
+    "headBg": "pack:themes/beila-rabbit/head_bg.webp",
+    "tabBg": "pack:themes/beila-rabbit/tab_bg.webp",
+    "banner": "pack:themes/beila-rabbit/banner.webp",
+    "backgrounds": [
+     "pack:themes/beila-rabbit/bg1.webp",
+     "pack:themes/beila-rabbit/bg2.webp",
+     "pack:themes/beila-rabbit/bg3.webp"
+    ]
+   },
+   "cover": "bundle:themes/beila-rabbit/cover.webp",
+   "preview": "bundle:themes/beila-rabbit/preview.webp",
+   "colors": {
+    "accent": "#fdbd66",
+    "tint": "#f9f1e7",
+    "headFg": "#2b2020",
+    "tabFg": "#2b2020"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/beila-rabbit/icons/main.webp",
+     "s": "bundle:themes/beila-rabbit/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/beila-rabbit/icons/channel.webp",
+     "s": "bundle:themes/beila-rabbit/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/beila-rabbit/icons/dynamic.webp",
+     "s": "bundle:themes/beila-rabbit/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/beila-rabbit/icons/myself.webp",
+     "s": "bundle:themes/beila-rabbit/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "beila-naodong",
+   "name": "脑洞波 · 贝拉",
+   "characters": [
+    "贝拉"
+   ],
+   "default": false,
+   "pack": "theme-beila-naodong",
+   "parts": {
+    "headBg": "pack:themes/beila-naodong/head_bg.webp",
+    "tabBg": "pack:themes/beila-naodong/tab_bg.webp",
+    "banner": "pack:themes/beila-naodong/banner.webp",
+    "backgrounds": [
+     "pack:themes/beila-naodong/bg1.webp",
+     "pack:themes/beila-naodong/bg2.webp",
+     "pack:themes/beila-naodong/bg3.webp"
+    ]
+   },
+   "cover": "bundle:themes/beila-naodong/cover.webp",
+   "preview": "bundle:themes/beila-naodong/preview.webp",
+   "colors": {
+    "accent": "#d15f6e",
+    "tint": "#f8e7e9",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/beila-naodong/icons/main.webp",
+     "s": "bundle:themes/beila-naodong/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/beila-naodong/icons/channel.webp",
+     "s": "bundle:themes/beila-naodong/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/beila-naodong/icons/dynamic.webp",
+     "s": "bundle:themes/beila-naodong/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/beila-naodong/icons/myself.webp",
+     "s": "bundle:themes/beila-naodong/icons/myself_sel.webp"
+    }
+   }
+  },
+  {
+   "id": "symphony",
+   "name": "心宜和思诺的交响乐谱",
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "default": false,
+   "pack": "theme-symphony",
+   "parts": {
+    "headBg": "pack:themes/symphony/head_bg.webp",
+    "tabBg": "pack:themes/symphony/tab_bg.webp",
+    "thumbup": "pack:themes/symphony/thumbup.webp",
+    "loading": "pack:themes/symphony/loading.webp"
+   },
+   "cover": "bundle:themes/symphony/cover.webp",
+   "preview": "bundle:themes/symphony/preview.webp",
+   "colors": {
+    "accent": "#88535f",
+    "tint": "#f3ecee",
+    "headFg": "#ffffff",
+    "tabFg": "#ffffff"
+   },
+   "icons": {
+    "main": {
+     "n": "bundle:themes/symphony/icons/main.webp",
+     "s": "bundle:themes/symphony/icons/main_sel.webp"
+    },
+    "channel": {
+     "n": "bundle:themes/symphony/icons/channel.webp",
+     "s": "bundle:themes/symphony/icons/channel_sel.webp"
+    },
+    "dynamic": {
+     "n": "bundle:themes/symphony/icons/dynamic.webp",
+     "s": "bundle:themes/symphony/icons/dynamic_sel.webp"
+    },
+    "myself": {
+     "n": "bundle:themes/symphony/icons/myself.webp",
+     "s": "bundle:themes/symphony/icons/myself_sel.webp"
+    }
+   }
+  }
+ ],
+ "series": [
+  {
+   "id": "bloom",
+   "name": "A-SOUL 绽放收藏集",
+   "total": 24
+  },
+  {
+   "id": "brilliant",
+   "name": "嘉然的画册 · 绚烂心迹",
+   "total": 9
+  },
+  {
+   "id": "moon",
+   "name": "嘉然的画册 · 此间为爱",
+   "total": 1
+  },
+  {
+   "id": "tavern",
+   "name": "乃琳的酒馆 · 沉沦醉与爱",
+   "total": 1
+  },
+  {
+   "id": "voyage",
+   "name": "贝拉的冒险 · 时空旅人",
+   "total": 9
+  },
+  {
+   "id": "symphony",
+   "name": "心宜和思诺的交响乐谱 · 双声巡梦",
+   "total": 10
+  }
+ ],
+ "cards": [
+  {
+   "id": "c1700742793002",
+   "name": "睡衣系列-贝拉",
+   "series": "bloom",
+   "sub": "睡衣系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793002.webp",
+   "full": "pack:cards/bloom/c1700742793002.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793004",
+   "name": "睡衣系列-乃琳",
+   "series": "bloom",
+   "sub": "睡衣系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793004.webp",
+   "full": "pack:cards/bloom/c1700742793004.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793005",
+   "name": "睡衣系列-嘉然",
+   "series": "bloom",
+   "sub": "睡衣系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793005.webp",
+   "full": "pack:cards/bloom/c1700742793005.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793007",
+   "name": "潮流系列-贝拉",
+   "series": "bloom",
+   "sub": "潮流系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793007.webp",
+   "full": "pack:cards/bloom/c1700742793007.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793008",
+   "name": "潮流系列-嘉然",
+   "series": "bloom",
+   "sub": "潮流系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793008.webp",
+   "full": "pack:cards/bloom/c1700742793008.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793010",
+   "name": "《绽放》舞蹈-嘉然",
+   "series": "bloom",
+   "sub": "《绽放》舞蹈",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1700742793010.webp",
+   "full": "pack:cards/bloom/c1700742793010.webp",
+   "video": "pack:cards/bloom/c1700742793010.mp4"
+  },
+  {
+   "id": "c1700742793012",
+   "name": "Q版系列-贝拉",
+   "series": "bloom",
+   "sub": "Q版系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793012.webp",
+   "full": "pack:cards/bloom/c1700742793012.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793013",
+   "name": "Q版系列-嘉然",
+   "series": "bloom",
+   "sub": "Q版系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793013.webp",
+   "full": "pack:cards/bloom/c1700742793013.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793014",
+   "name": "潮流系列-乃琳",
+   "series": "bloom",
+   "sub": "潮流系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793014.webp",
+   "full": "pack:cards/bloom/c1700742793014.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793015",
+   "name": "都市系列-贝拉",
+   "series": "bloom",
+   "sub": "都市系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793015.webp",
+   "full": "pack:cards/bloom/c1700742793015.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793016",
+   "name": "Q版系列-乃琳",
+   "series": "bloom",
+   "sub": "Q版系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793016.webp",
+   "full": "pack:cards/bloom/c1700742793016.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793017",
+   "name": "《绽放》舞蹈-乃琳",
+   "series": "bloom",
+   "sub": "《绽放》舞蹈",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1700742793017.webp",
+   "full": "pack:cards/bloom/c1700742793017.webp",
+   "video": "pack:cards/bloom/c1700742793017.mp4"
+  },
+  {
+   "id": "c1700742793018",
+   "name": "《绽放》舞蹈-贝拉",
+   "series": "bloom",
+   "sub": "《绽放》舞蹈",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1700742793018.webp",
+   "full": "pack:cards/bloom/c1700742793018.webp",
+   "video": "pack:cards/bloom/c1700742793018.mp4"
+  },
+  {
+   "id": "c1700742793020",
+   "name": "都市系列-乃琳",
+   "series": "bloom",
+   "sub": "都市系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793020.webp",
+   "full": "pack:cards/bloom/c1700742793020.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793021",
+   "name": "都市系列-嘉然",
+   "series": "bloom",
+   "sub": "都市系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1700742793021.webp",
+   "full": "pack:cards/bloom/c1700742793021.webp",
+   "video": null
+  },
+  {
+   "id": "c1700742793022",
+   "name": "舞台系列-贝拉",
+   "series": "bloom",
+   "sub": "舞台系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793022.webp",
+   "full": "pack:cards/bloom/c1700742793022.webp",
+   "video": "pack:cards/bloom/c1700742793022.mp4"
+  },
+  {
+   "id": "c1700742793023",
+   "name": "舞台系列-嘉然",
+   "series": "bloom",
+   "sub": "舞台系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793023.webp",
+   "full": "pack:cards/bloom/c1700742793023.webp",
+   "video": "pack:cards/bloom/c1700742793023.mp4"
+  },
+  {
+   "id": "c1700742793026",
+   "name": "舞台系列-乃琳",
+   "series": "bloom",
+   "sub": "舞台系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793026.webp",
+   "full": "pack:cards/bloom/c1700742793026.webp",
+   "video": "pack:cards/bloom/c1700742793026.mp4"
+  },
+  {
+   "id": "c1700742793031",
+   "name": "时序系列-嘉然",
+   "series": "bloom",
+   "sub": "时序系列",
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793031.webp",
+   "full": "pack:cards/bloom/c1700742793031.webp",
+   "video": "pack:cards/bloom/c1700742793031.mp4"
+  },
+  {
+   "id": "c1700742793032",
+   "name": "时序系列-贝拉",
+   "series": "bloom",
+   "sub": "时序系列",
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793032.webp",
+   "full": "pack:cards/bloom/c1700742793032.webp",
+   "video": "pack:cards/bloom/c1700742793032.mp4"
+  },
+  {
+   "id": "c1700742793033",
+   "name": "时序系列-乃琳",
+   "series": "bloom",
+   "sub": "时序系列",
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "rare",
+   "thumb": "bundle:cards/thumb/c1700742793033.webp",
+   "full": "pack:cards/bloom/c1700742793033.webp",
+   "video": "pack:cards/bloom/c1700742793033.mp4"
+  },
+  {
+   "id": "c1700799218001",
+   "name": "《Shiny Dancer》",
+   "series": "bloom",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "legendary",
+   "thumb": "bundle:cards/thumb/c1700799218001.webp",
+   "full": "pack:cards/bloom/c1700799218001.webp",
+   "video": "pack:cards/bloom/c1700799218001.mp4"
+  },
+  {
+   "id": "c1700799218003",
+   "name": "《Sweet Counter》",
+   "series": "bloom",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "legendary",
+   "thumb": "bundle:cards/thumb/c1700799218003.webp",
+   "full": "pack:cards/bloom/c1700799218003.webp",
+   "video": "pack:cards/bloom/c1700799218003.mp4"
+  },
+  {
+   "id": "c1700799218004",
+   "name": "《Hopeful Dreamer》",
+   "series": "bloom",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "legendary",
+   "thumb": "bundle:cards/thumb/c1700799218004.webp",
+   "full": "pack:cards/bloom/c1700799218004.webp",
+   "video": "pack:cards/bloom/c1700799218004.mp4"
+  },
+  {
+   "id": "c1762331702001",
+   "name": "临阶倩影",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1762331702001.webp",
+   "full": "pack:cards/tavern/c1762331702001.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981010",
+   "name": "月纱花信",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1781070981010.webp",
+   "full": "pack:cards/moon/c1781070981010.webp",
+   "video": "pack:cards/moon/c1781070981010.mp4"
+  },
+  {
+   "id": "c1745315724002",
+   "name": "绘心物语",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1745315724002.webp",
+   "full": "pack:cards/brilliant/c1745315724002.webp",
+   "video": "pack:cards/brilliant/c1745315724002.mp4"
+  },
+  {
+   "id": "c1745315724003",
+   "name": "甜蜜时刻",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1745315724003.webp",
+   "full": "pack:cards/brilliant/c1745315724003.webp",
+   "video": "pack:cards/brilliant/c1745315724003.mp4"
+  },
+  {
+   "id": "c1745315724004",
+   "name": "春日暖阳",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1745315724004.webp",
+   "full": "pack:cards/brilliant/c1745315724004.webp",
+   "video": null
+  },
+  {
+   "id": "c1745315724005",
+   "name": "草莓甜心",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1745315724005.webp",
+   "full": "pack:cards/brilliant/c1745315724005.webp",
+   "video": null
+  },
+  {
+   "id": "c1745315724006",
+   "name": "电玩高手",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1745315724006.webp",
+   "full": "pack:cards/brilliant/c1745315724006.webp",
+   "video": null
+  },
+  {
+   "id": "c1745315724007",
+   "name": "喵喵出击",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1745315724007.webp",
+   "full": "pack:cards/brilliant/c1745315724007.webp",
+   "video": null
+  },
+  {
+   "id": "c1745315724008",
+   "name": "天使奇遇",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1745315724008.webp",
+   "full": "pack:cards/brilliant/c1745315724008.webp",
+   "video": "pack:cards/brilliant/c1745315724008.mp4"
+  },
+  {
+   "id": "c1745315724009",
+   "name": "星夜私语",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1745315724009.webp",
+   "full": "pack:cards/brilliant/c1745315724009.webp",
+   "video": null
+  },
+  {
+   "id": "c1745398468001",
+   "name": "请快乐！",
+   "series": "brilliant",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1745398468001.webp",
+   "full": "pack:cards/brilliant/c1745398468001.webp",
+   "video": "pack:cards/brilliant/c1745398468001.mp4"
+  },
+  {
+   "id": "c1748345610002",
+   "name": "海中密语",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "思诺"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610002.webp",
+   "full": "pack:cards/symphony/c1748345610002.webp",
+   "video": "pack:cards/symphony/c1748345610002.mp4"
+  },
+  {
+   "id": "c1748345610003",
+   "name": "与你相依",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610003.webp",
+   "full": "pack:cards/symphony/c1748345610003.webp",
+   "video": "pack:cards/symphony/c1748345610003.mp4"
+  },
+  {
+   "id": "c1748345610004",
+   "name": "闪耀时刻",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "思诺"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1748345610004.webp",
+   "full": "pack:cards/symphony/c1748345610004.webp",
+   "video": null
+  },
+  {
+   "id": "c1748345610005",
+   "name": "缤纷光影",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1748345610005.webp",
+   "full": "pack:cards/symphony/c1748345610005.webp",
+   "video": null
+  },
+  {
+   "id": "c1748345610006",
+   "name": "花见邂逅",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "思诺"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1748345610006.webp",
+   "full": "pack:cards/symphony/c1748345610006.webp",
+   "video": null
+  },
+  {
+   "id": "c1748345610007",
+   "name": "遇见幸运",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1748345610007.webp",
+   "full": "pack:cards/symphony/c1748345610007.webp",
+   "video": null
+  },
+  {
+   "id": "c1748345610008",
+   "name": "初智齿",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "思诺"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610008.webp",
+   "full": "pack:cards/symphony/c1748345610008.webp",
+   "video": "pack:cards/symphony/c1748345610008.mp4"
+  },
+  {
+   "id": "c1748345610009",
+   "name": "相信光",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610009.webp",
+   "full": "pack:cards/symphony/c1748345610009.webp",
+   "video": "pack:cards/symphony/c1748345610009.mp4"
+  },
+  {
+   "id": "c1748345610010",
+   "name": "巡梦漫游",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610010.webp",
+   "full": "pack:cards/symphony/c1748345610010.webp",
+   "video": "pack:cards/symphony/c1748345610010.mp4"
+  },
+  {
+   "id": "c1748345610011",
+   "name": "魔女契约",
+   "series": "symphony",
+   "sub": null,
+   "characters": [
+    "心宜",
+    "思诺"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1748345610011.webp",
+   "full": "pack:cards/symphony/c1748345610011.webp",
+   "video": "pack:cards/symphony/c1748345610011.mp4"
+  },
+  {
+   "id": "c1756378523002",
+   "name": "时空行者",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1756378523002.webp",
+   "full": "pack:cards/voyage/c1756378523002.webp",
+   "video": "pack:cards/voyage/c1756378523002.mp4"
+  },
+  {
+   "id": "c1756378523003",
+   "name": "拉龙入侵",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1756378523003.webp",
+   "full": "pack:cards/voyage/c1756378523003.webp",
+   "video": "pack:cards/voyage/c1756378523003.mp4"
+  },
+  {
+   "id": "c1756378523004",
+   "name": "一起跳起来！",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1756378523004.webp",
+   "full": "pack:cards/voyage/c1756378523004.webp",
+   "video": "pack:cards/voyage/c1756378523004.mp4"
+  },
+  {
+   "id": "c1756378523005",
+   "name": "决定性电话瞬间",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1756378523005.webp",
+   "full": "pack:cards/voyage/c1756378523005.webp",
+   "video": null
+  },
+  {
+   "id": "c1756378523006",
+   "name": "灯塔之约",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1756378523006.webp",
+   "full": "pack:cards/voyage/c1756378523006.webp",
+   "video": null
+  },
+  {
+   "id": "c1756378523007",
+   "name": "西部女武神",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1756378523007.webp",
+   "full": "pack:cards/voyage/c1756378523007.webp",
+   "video": null
+  },
+  {
+   "id": "c1756378523008",
+   "name": "末路狂花",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1756378523008.webp",
+   "full": "pack:cards/voyage/c1756378523008.webp",
+   "video": null
+  },
+  {
+   "id": "c1756378523009",
+   "name": "星贝传说",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "common",
+   "thumb": "bundle:cards/thumb/c1756378523009.webp",
+   "full": "pack:cards/voyage/c1756378523009.webp",
+   "video": null
+  },
+  {
+   "id": "c1756378523010",
+   "name": "引爆枝江大楼",
+   "series": "voyage",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "epic",
+   "thumb": "bundle:cards/thumb/c1756378523010.webp",
+   "full": "pack:cards/voyage/c1756378523010.webp",
+   "video": "pack:cards/voyage/c1756378523010.mp4"
+  }
+ ],
+ "emoteSets": [
+  {
+   "id": "jiaran-eat",
+   "name": "嘉然今天吃什么",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-eat.01",
+     "name": "biu",
+     "img": "bundle:emotes/jiaran-eat/01.webp"
+    },
+    {
+     "key": "jiaran-eat.02",
+     "name": "mua",
+     "img": "bundle:emotes/jiaran-eat/02.webp"
+    },
+    {
+     "key": "jiaran-eat.03",
+     "name": "一眼真",
+     "img": "bundle:emotes/jiaran-eat/03.webp"
+    },
+    {
+     "key": "jiaran-eat.04",
+     "name": "一米八",
+     "img": "bundle:emotes/jiaran-eat/04.webp"
+    },
+    {
+     "key": "jiaran-eat.05",
+     "name": "你好",
+     "img": "bundle:emotes/jiaran-eat/05.webp"
+    },
+    {
+     "key": "jiaran-eat.06",
+     "name": "剪刀手",
+     "img": "bundle:emotes/jiaran-eat/06.webp"
+    },
+    {
+     "key": "jiaran-eat.07",
+     "name": "吓人",
+     "img": "bundle:emotes/jiaran-eat/07.webp"
+    },
+    {
+     "key": "jiaran-eat.08",
+     "name": "嘉人们",
+     "img": "bundle:emotes/jiaran-eat/08.webp"
+    },
+    {
+     "key": "jiaran-eat.09",
+     "name": "嘉步",
+     "img": "bundle:emotes/jiaran-eat/09.webp"
+    },
+    {
+     "key": "jiaran-eat.10",
+     "name": "嘉油",
+     "img": "bundle:emotes/jiaran-eat/10.webp"
+    },
+    {
+     "key": "jiaran-eat.11",
+     "name": "嘉速心动",
+     "img": "bundle:emotes/jiaran-eat/11.webp"
+    },
+    {
+     "key": "jiaran-eat.12",
+     "name": "安详",
+     "img": "bundle:emotes/jiaran-eat/12.webp"
+    },
+    {
+     "key": "jiaran-eat.13",
+     "name": "干饭",
+     "img": "bundle:emotes/jiaran-eat/13.webp"
+    },
+    {
+     "key": "jiaran-eat.14",
+     "name": "我们是",
+     "img": "bundle:emotes/jiaran-eat/14.webp"
+    },
+    {
+     "key": "jiaran-eat.15",
+     "name": "我有嘉心糖",
+     "img": "bundle:emotes/jiaran-eat/15.webp"
+    },
+    {
+     "key": "jiaran-eat.16",
+     "name": "敲打",
+     "img": "bundle:emotes/jiaran-eat/16.webp"
+    },
+    {
+     "key": "jiaran-eat.17",
+     "name": "暗中观察",
+     "img": "bundle:emotes/jiaran-eat/17.webp"
+    },
+    {
+     "key": "jiaran-eat.18",
+     "name": "流口水",
+     "img": "bundle:emotes/jiaran-eat/18.webp"
+    },
+    {
+     "key": "jiaran-eat.19",
+     "name": "点赞",
+     "img": "bundle:emotes/jiaran-eat/19.webp"
+    },
+    {
+     "key": "jiaran-eat.20",
+     "name": "略略略",
+     "img": "bundle:emotes/jiaran-eat/20.webp"
+    },
+    {
+     "key": "jiaran-eat.21",
+     "name": "番茄炒蛋拳",
+     "img": "bundle:emotes/jiaran-eat/21.webp"
+    },
+    {
+     "key": "jiaran-eat.22",
+     "name": "笔芯",
+     "img": "bundle:emotes/jiaran-eat/22.webp"
+    },
+    {
+     "key": "jiaran-eat.23",
+     "name": "粉色小恶魔",
+     "img": "bundle:emotes/jiaran-eat/23.webp"
+    },
+    {
+     "key": "jiaran-eat.24",
+     "name": "绷不住了",
+     "img": "bundle:emotes/jiaran-eat/24.webp"
+    },
+    {
+     "key": "jiaran-eat.25",
+     "name": "锤头丧气",
+     "img": "bundle:emotes/jiaran-eat/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-album-2025",
+   "name": "2025 嘉然的画册",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-album-2025.01",
+     "name": "不要不要",
+     "img": "bundle:emotes/jiaran-album-2025/01.webp"
+    },
+    {
+     "key": "jiaran-album-2025.02",
+     "name": "什么？",
+     "img": "bundle:emotes/jiaran-album-2025/02.webp"
+    },
+    {
+     "key": "jiaran-album-2025.03",
+     "name": "告白",
+     "img": "bundle:emotes/jiaran-album-2025/03.webp"
+    },
+    {
+     "key": "jiaran-album-2025.04",
+     "name": "哈哈",
+     "img": "bundle:emotes/jiaran-album-2025/04.webp"
+    },
+    {
+     "key": "jiaran-album-2025.05",
+     "name": "哈！",
+     "img": "bundle:emotes/jiaran-album-2025/05.webp"
+    },
+    {
+     "key": "jiaran-album-2025.06",
+     "name": "哼！",
+     "img": "bundle:emotes/jiaran-album-2025/06.webp"
+    },
+    {
+     "key": "jiaran-album-2025.07",
+     "name": "困扰",
+     "img": "bundle:emotes/jiaran-album-2025/07.webp"
+    },
+    {
+     "key": "jiaran-album-2025.08",
+     "name": "大画家",
+     "img": "bundle:emotes/jiaran-album-2025/08.webp"
+    },
+    {
+     "key": "jiaran-album-2025.09",
+     "name": "对不起",
+     "img": "bundle:emotes/jiaran-album-2025/09.webp"
+    },
+    {
+     "key": "jiaran-album-2025.10",
+     "name": "抱头蹲防",
+     "img": "bundle:emotes/jiaran-album-2025/10.webp"
+    },
+    {
+     "key": "jiaran-album-2025.11",
+     "name": "无言",
+     "img": "bundle:emotes/jiaran-album-2025/11.webp"
+    },
+    {
+     "key": "jiaran-album-2025.12",
+     "name": "杂鱼",
+     "img": "bundle:emotes/jiaran-album-2025/12.webp"
+    },
+    {
+     "key": "jiaran-album-2025.13",
+     "name": "桀桀桀",
+     "img": "bundle:emotes/jiaran-album-2025/13.webp"
+    },
+    {
+     "key": "jiaran-album-2025.14",
+     "name": "画！",
+     "img": "bundle:emotes/jiaran-album-2025/14.webp"
+    },
+    {
+     "key": "jiaran-album-2025.15",
+     "name": "盯~",
+     "img": "bundle:emotes/jiaran-album-2025/15.webp"
+    },
+    {
+     "key": "jiaran-album-2025.16",
+     "name": "睡了",
+     "img": "bundle:emotes/jiaran-album-2025/16.webp"
+    },
+    {
+     "key": "jiaran-album-2025.17",
+     "name": "祈祷",
+     "img": "bundle:emotes/jiaran-album-2025/17.webp"
+    },
+    {
+     "key": "jiaran-album-2025.18",
+     "name": "糖糖！",
+     "img": "bundle:emotes/jiaran-album-2025/18.webp"
+    },
+    {
+     "key": "jiaran-album-2025.19",
+     "name": "讨厌讨厌",
+     "img": "bundle:emotes/jiaran-album-2025/19.webp"
+    },
+    {
+     "key": "jiaran-album-2025.20",
+     "name": "记录！",
+     "img": "bundle:emotes/jiaran-album-2025/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-album-2026",
+   "name": "2026 嘉然的画册",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-album-2026.01",
+     "name": "不可以",
+     "img": "bundle:emotes/jiaran-album-2026/01.webp"
+    },
+    {
+     "key": "jiaran-album-2026.02",
+     "name": "不妥",
+     "img": "bundle:emotes/jiaran-album-2026/02.webp"
+    },
+    {
+     "key": "jiaran-album-2026.03",
+     "name": "你完了！",
+     "img": "bundle:emotes/jiaran-album-2026/03.webp"
+    },
+    {
+     "key": "jiaran-album-2026.04",
+     "name": "做嘉然的狗",
+     "img": "bundle:emotes/jiaran-album-2026/04.webp"
+    },
+    {
+     "key": "jiaran-album-2026.05",
+     "name": "别客气",
+     "img": "bundle:emotes/jiaran-album-2026/05.webp"
+    },
+    {
+     "key": "jiaran-album-2026.06",
+     "name": "嬉皮笑脸",
+     "img": "bundle:emotes/jiaran-album-2026/06.webp"
+    },
+    {
+     "key": "jiaran-album-2026.07",
+     "name": "想干嘛",
+     "img": "bundle:emotes/jiaran-album-2026/07.webp"
+    },
+    {
+     "key": "jiaran-album-2026.08",
+     "name": "撤回警告",
+     "img": "bundle:emotes/jiaran-album-2026/08.webp"
+    },
+    {
+     "key": "jiaran-album-2026.09",
+     "name": "比心",
+     "img": "bundle:emotes/jiaran-album-2026/09.webp"
+    },
+    {
+     "key": "jiaran-album-2026.10",
+     "name": "泪目",
+     "img": "bundle:emotes/jiaran-album-2026/10.webp"
+    },
+    {
+     "key": "jiaran-album-2026.11",
+     "name": "燃起来了",
+     "img": "bundle:emotes/jiaran-album-2026/11.webp"
+    },
+    {
+     "key": "jiaran-album-2026.12",
+     "name": "爆炸",
+     "img": "bundle:emotes/jiaran-album-2026/12.webp"
+    },
+    {
+     "key": "jiaran-album-2026.13",
+     "name": "理所当然",
+     "img": "bundle:emotes/jiaran-album-2026/13.webp"
+    },
+    {
+     "key": "jiaran-album-2026.14",
+     "name": "紧张",
+     "img": "bundle:emotes/jiaran-album-2026/14.webp"
+    },
+    {
+     "key": "jiaran-album-2026.15",
+     "name": "给你一拳",
+     "img": "bundle:emotes/jiaran-album-2026/15.webp"
+    },
+    {
+     "key": "jiaran-album-2026.16",
+     "name": "表白",
+     "img": "bundle:emotes/jiaran-album-2026/16.webp"
+    },
+    {
+     "key": "jiaran-album-2026.17",
+     "name": "被看扁了",
+     "img": "bundle:emotes/jiaran-album-2026/17.webp"
+    },
+    {
+     "key": "jiaran-album-2026.18",
+     "name": "超可爱",
+     "img": "bundle:emotes/jiaran-album-2026/18.webp"
+    },
+    {
+     "key": "jiaran-album-2026.19",
+     "name": "都听我说",
+     "img": "bundle:emotes/jiaran-album-2026/19.webp"
+    },
+    {
+     "key": "jiaran-album-2026.20",
+     "name": "顿悟",
+     "img": "bundle:emotes/jiaran-album-2026/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-2-0",
+   "name": "嘉然个性装扮 2.0",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-2-0.01",
+     "name": "MUA你一下",
+     "img": "bundle:emotes/jiaran-2-0/01.webp"
+    },
+    {
+     "key": "jiaran-2-0.02",
+     "name": "RUN了",
+     "img": "bundle:emotes/jiaran-2-0/02.webp"
+    },
+    {
+     "key": "jiaran-2-0.03",
+     "name": "变身",
+     "img": "bundle:emotes/jiaran-2-0/03.webp"
+    },
+    {
+     "key": "jiaran-2-0.04",
+     "name": "可是蒂娜我",
+     "img": "bundle:emotes/jiaran-2-0/04.webp"
+    },
+    {
+     "key": "jiaran-2-0.05",
+     "name": "可爱捏",
+     "img": "bundle:emotes/jiaran-2-0/05.webp"
+    },
+    {
+     "key": "jiaran-2-0.06",
+     "name": "啊笑死",
+     "img": "bundle:emotes/jiaran-2-0/06.webp"
+    },
+    {
+     "key": "jiaran-2-0.07",
+     "name": "嘉心糖",
+     "img": "bundle:emotes/jiaran-2-0/07.webp"
+    },
+    {
+     "key": "jiaran-2-0.08",
+     "name": "嘉然Queen",
+     "img": "bundle:emotes/jiaran-2-0/08.webp"
+    },
+    {
+     "key": "jiaran-2-0.09",
+     "name": "嘿嘿嘿嘿",
+     "img": "bundle:emotes/jiaran-2-0/09.webp"
+    },
+    {
+     "key": "jiaran-2-0.10",
+     "name": "坏东西",
+     "img": "bundle:emotes/jiaran-2-0/10.webp"
+    },
+    {
+     "key": "jiaran-2-0.11",
+     "name": "好好吃饭",
+     "img": "bundle:emotes/jiaran-2-0/11.webp"
+    },
+    {
+     "key": "jiaran-2-0.12",
+     "name": "好好好",
+     "img": "bundle:emotes/jiaran-2-0/12.webp"
+    },
+    {
+     "key": "jiaran-2-0.13",
+     "name": "宅舞",
+     "img": "bundle:emotes/jiaran-2-0/13.webp"
+    },
+    {
+     "key": "jiaran-2-0.14",
+     "name": "小天使",
+     "img": "bundle:emotes/jiaran-2-0/14.webp"
+    },
+    {
+     "key": "jiaran-2-0.15",
+     "name": "小熊",
+     "img": "bundle:emotes/jiaran-2-0/15.webp"
+    },
+    {
+     "key": "jiaran-2-0.16",
+     "name": "干饭神",
+     "img": "bundle:emotes/jiaran-2-0/16.webp"
+    },
+    {
+     "key": "jiaran-2-0.17",
+     "name": "我们是",
+     "img": "bundle:emotes/jiaran-2-0/17.webp"
+    },
+    {
+     "key": "jiaran-2-0.18",
+     "name": "打气",
+     "img": "bundle:emotes/jiaran-2-0/18.webp"
+    },
+    {
+     "key": "jiaran-2-0.19",
+     "name": "打盹",
+     "img": "bundle:emotes/jiaran-2-0/19.webp"
+    },
+    {
+     "key": "jiaran-2-0.20",
+     "name": "撒娇",
+     "img": "bundle:emotes/jiaran-2-0/20.webp"
+    },
+    {
+     "key": "jiaran-2-0.21",
+     "name": "擦汗",
+     "img": "bundle:emotes/jiaran-2-0/21.webp"
+    },
+    {
+     "key": "jiaran-2-0.22",
+     "name": "早上好",
+     "img": "bundle:emotes/jiaran-2-0/22.webp"
+    },
+    {
+     "key": "jiaran-2-0.23",
+     "name": "甜甜小草莓",
+     "img": "bundle:emotes/jiaran-2-0/23.webp"
+    },
+    {
+     "key": "jiaran-2-0.24",
+     "name": "生闷气",
+     "img": "bundle:emotes/jiaran-2-0/24.webp"
+    },
+    {
+     "key": "jiaran-2-0.25",
+     "name": "累了",
+     "img": "bundle:emotes/jiaran-2-0/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-garden",
+   "name": "糖糖与小然熊的游园会",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-garden.01",
+     "name": "一休尼",
+     "img": "bundle:emotes/jiaran-garden/01.webp"
+    },
+    {
+     "key": "jiaran-garden.02",
+     "name": "不愧是我",
+     "img": "bundle:emotes/jiaran-garden/02.webp"
+    },
+    {
+     "key": "jiaran-garden.03",
+     "name": "九点抱抱",
+     "img": "bundle:emotes/jiaran-garden/03.webp"
+    },
+    {
+     "key": "jiaran-garden.04",
+     "name": "天生偶像",
+     "img": "bundle:emotes/jiaran-garden/04.webp"
+    },
+    {
+     "key": "jiaran-garden.05",
+     "name": "好好吃饭",
+     "img": "bundle:emotes/jiaran-garden/05.webp"
+    },
+    {
+     "key": "jiaran-garden.06",
+     "name": "小然说晚安",
+     "img": "bundle:emotes/jiaran-garden/06.webp"
+    },
+    {
+     "key": "jiaran-garden.07",
+     "name": "应援",
+     "img": "bundle:emotes/jiaran-garden/07.webp"
+    },
+    {
+     "key": "jiaran-garden.08",
+     "name": "我动态呢",
+     "img": "bundle:emotes/jiaran-garden/08.webp"
+    },
+    {
+     "key": "jiaran-garden.09",
+     "name": "我发四",
+     "img": "bundle:emotes/jiaran-garden/09.webp"
+    },
+    {
+     "key": "jiaran-garden.10",
+     "name": "我在看着你",
+     "img": "bundle:emotes/jiaran-garden/10.webp"
+    },
+    {
+     "key": "jiaran-garden.11",
+     "name": "我要闹了",
+     "img": "bundle:emotes/jiaran-garden/11.webp"
+    },
+    {
+     "key": "jiaran-garden.12",
+     "name": "才八点",
+     "img": "bundle:emotes/jiaran-garden/12.webp"
+    },
+    {
+     "key": "jiaran-garden.13",
+     "name": "杂鱼杂鱼",
+     "img": "bundle:emotes/jiaran-garden/13.webp"
+    },
+    {
+     "key": "jiaran-garden.14",
+     "name": "汪汪队",
+     "img": "bundle:emotes/jiaran-garden/14.webp"
+    },
+    {
+     "key": "jiaran-garden.15",
+     "name": "糖糖来了",
+     "img": "bundle:emotes/jiaran-garden/15.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-naodong",
+   "name": "脑洞波 · 嘉然",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "jiaran-naodong.01",
+     "name": "伤心",
+     "img": "bundle:emotes/jiaran-naodong/01.webp"
+    },
+    {
+     "key": "jiaran-naodong.02",
+     "name": "加油",
+     "img": "bundle:emotes/jiaran-naodong/02.webp"
+    },
+    {
+     "key": "jiaran-naodong.03",
+     "name": "叹气",
+     "img": "bundle:emotes/jiaran-naodong/03.webp"
+    },
+    {
+     "key": "jiaran-naodong.04",
+     "name": "哇",
+     "img": "bundle:emotes/jiaran-naodong/04.webp"
+    },
+    {
+     "key": "jiaran-naodong.05",
+     "name": "哈哈哈",
+     "img": "bundle:emotes/jiaran-naodong/05.webp"
+    },
+    {
+     "key": "jiaran-naodong.06",
+     "name": "嘉心糖",
+     "img": "bundle:emotes/jiaran-naodong/06.webp"
+    },
+    {
+     "key": "jiaran-naodong.07",
+     "name": "悠闲",
+     "img": "bundle:emotes/jiaran-naodong/07.webp"
+    },
+    {
+     "key": "jiaran-naodong.08",
+     "name": "我们是",
+     "img": "bundle:emotes/jiaran-naodong/08.webp"
+    },
+    {
+     "key": "jiaran-naodong.09",
+     "name": "托腮",
+     "img": "bundle:emotes/jiaran-naodong/09.webp"
+    },
+    {
+     "key": "jiaran-naodong.10",
+     "name": "敲打",
+     "img": "bundle:emotes/jiaran-naodong/10.webp"
+    },
+    {
+     "key": "jiaran-naodong.11",
+     "name": "暗中观察",
+     "img": "bundle:emotes/jiaran-naodong/11.webp"
+    },
+    {
+     "key": "jiaran-naodong.12",
+     "name": "暴躁",
+     "img": "bundle:emotes/jiaran-naodong/12.webp"
+    },
+    {
+     "key": "jiaran-naodong.13",
+     "name": "溜了溜了",
+     "img": "bundle:emotes/jiaran-naodong/13.webp"
+    },
+    {
+     "key": "jiaran-naodong.14",
+     "name": "生气",
+     "img": "bundle:emotes/jiaran-naodong/14.webp"
+    },
+    {
+     "key": "jiaran-naodong.15",
+     "name": "直勾勾",
+     "img": "bundle:emotes/jiaran-naodong/15.webp"
+    },
+    {
+     "key": "jiaran-naodong.16",
+     "name": "美女你谁",
+     "img": "bundle:emotes/jiaran-naodong/16.webp"
+    },
+    {
+     "key": "jiaran-naodong.17",
+     "name": "辣辣",
+     "img": "bundle:emotes/jiaran-naodong/17.webp"
+    },
+    {
+     "key": "jiaran-naodong.18",
+     "name": "阳光开朗",
+     "img": "bundle:emotes/jiaran-naodong/18.webp"
+    },
+    {
+     "key": "jiaran-naodong.19",
+     "name": "震惊",
+     "img": "bundle:emotes/jiaran-naodong/19.webp"
+    },
+    {
+     "key": "jiaran-naodong.20",
+     "name": "面包怪",
+     "img": "bundle:emotes/jiaran-naodong/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-tavern-2025",
+   "name": "2025 乃琳的酒馆",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "nailin-tavern-2025.01",
+     "name": "Oi",
+     "img": "bundle:emotes/nailin-tavern-2025/01.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.02",
+     "name": "loading",
+     "img": "bundle:emotes/nailin-tavern-2025/02.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.03",
+     "name": "不爱听",
+     "img": "bundle:emotes/nailin-tavern-2025/03.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.04",
+     "name": "不高兴",
+     "img": "bundle:emotes/nailin-tavern-2025/04.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.05",
+     "name": "厨神",
+     "img": "bundle:emotes/nailin-tavern-2025/05.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.06",
+     "name": "可爱",
+     "img": "bundle:emotes/nailin-tavern-2025/06.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.07",
+     "name": "啊？",
+     "img": "bundle:emotes/nailin-tavern-2025/07.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.08",
+     "name": "太坏了",
+     "img": "bundle:emotes/nailin-tavern-2025/08.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.09",
+     "name": "干杯",
+     "img": "bundle:emotes/nailin-tavern-2025/09.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.10",
+     "name": "应援",
+     "img": "bundle:emotes/nailin-tavern-2025/10.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.11",
+     "name": "心碎",
+     "img": "bundle:emotes/nailin-tavern-2025/11.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.12",
+     "name": "怒",
+     "img": "bundle:emotes/nailin-tavern-2025/12.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.13",
+     "name": "拜托",
+     "img": "bundle:emotes/nailin-tavern-2025/13.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.14",
+     "name": "无奈",
+     "img": "bundle:emotes/nailin-tavern-2025/14.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.15",
+     "name": "来了",
+     "img": "bundle:emotes/nailin-tavern-2025/15.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.16",
+     "name": "累了",
+     "img": "bundle:emotes/nailin-tavern-2025/16.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.17",
+     "name": "给我",
+     "img": "bundle:emotes/nailin-tavern-2025/17.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.18",
+     "name": "美味",
+     "img": "bundle:emotes/nailin-tavern-2025/18.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.19",
+     "name": "耶",
+     "img": "bundle:emotes/nailin-tavern-2025/19.webp"
+    },
+    {
+     "key": "nailin-tavern-2025.20",
+     "name": "这个好",
+     "img": "bundle:emotes/nailin-tavern-2025/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-queen",
+   "name": "乃琳 Queen",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "nailin-queen.01",
+     "name": "MUA!",
+     "img": "bundle:emotes/nailin-queen/01.webp"
+    },
+    {
+     "key": "nailin-queen.02",
+     "name": "Wink",
+     "img": "bundle:emotes/nailin-queen/02.webp"
+    },
+    {
+     "key": "nailin-queen.03",
+     "name": "乃琳摇",
+     "img": "bundle:emotes/nailin-queen/03.webp"
+    },
+    {
+     "key": "nailin-queen.04",
+     "name": "双向奔赴",
+     "img": "bundle:emotes/nailin-queen/04.webp"
+    },
+    {
+     "key": "nailin-queen.05",
+     "name": "取证中",
+     "img": "bundle:emotes/nailin-queen/05.webp"
+    },
+    {
+     "key": "nailin-queen.06",
+     "name": "吃火锅",
+     "img": "bundle:emotes/nailin-queen/06.webp"
+    },
+    {
+     "key": "nailin-queen.07",
+     "name": "向日葵",
+     "img": "bundle:emotes/nailin-queen/07.webp"
+    },
+    {
+     "key": "nailin-queen.08",
+     "name": "壁咚",
+     "img": "bundle:emotes/nailin-queen/08.webp"
+    },
+    {
+     "key": "nailin-queen.09",
+     "name": "太喜欢了",
+     "img": "bundle:emotes/nailin-queen/09.webp"
+    },
+    {
+     "key": "nailin-queen.10",
+     "name": "女王的肯定",
+     "img": "bundle:emotes/nailin-queen/10.webp"
+    },
+    {
+     "key": "nailin-queen.11",
+     "name": "奶淇琳宝",
+     "img": "bundle:emotes/nailin-queen/11.webp"
+    },
+    {
+     "key": "nailin-queen.12",
+     "name": "好坏女人",
+     "img": "bundle:emotes/nailin-queen/12.webp"
+    },
+    {
+     "key": "nailin-queen.13",
+     "name": "小狐狸",
+     "img": "bundle:emotes/nailin-queen/13.webp"
+    },
+    {
+     "key": "nailin-queen.14",
+     "name": "惊吓小乃琳",
+     "img": "bundle:emotes/nailin-queen/14.webp"
+    },
+    {
+     "key": "nailin-queen.15",
+     "name": "我们是",
+     "img": "bundle:emotes/nailin-queen/15.webp"
+    },
+    {
+     "key": "nailin-queen.16",
+     "name": "摸摸",
+     "img": "bundle:emotes/nailin-queen/16.webp"
+    },
+    {
+     "key": "nailin-queen.17",
+     "name": "晚安小乃琳",
+     "img": "bundle:emotes/nailin-queen/17.webp"
+    },
+    {
+     "key": "nailin-queen.18",
+     "name": "标记",
+     "img": "bundle:emotes/nailin-queen/18.webp"
+    },
+    {
+     "key": "nailin-queen.19",
+     "name": "欧耶",
+     "img": "bundle:emotes/nailin-queen/19.webp"
+    },
+    {
+     "key": "nailin-queen.20",
+     "name": "笑嘻了",
+     "img": "bundle:emotes/nailin-queen/20.webp"
+    },
+    {
+     "key": "nailin-queen.21",
+     "name": "谢谢大家",
+     "img": "bundle:emotes/nailin-queen/21.webp"
+    },
+    {
+     "key": "nailin-queen.22",
+     "name": "遇到困难",
+     "img": "bundle:emotes/nailin-queen/22.webp"
+    },
+    {
+     "key": "nailin-queen.23",
+     "name": "隐藏gamer",
+     "img": "bundle:emotes/nailin-queen/23.webp"
+    },
+    {
+     "key": "nailin-queen.24",
+     "name": "麻了",
+     "img": "bundle:emotes/nailin-queen/24.webp"
+    },
+    {
+     "key": "nailin-queen.25",
+     "name": "鼓掌",
+     "img": "bundle:emotes/nailin-queen/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-2-0",
+   "name": "乃琳个性装扮 2.0",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "nailin-2-0.01",
+     "name": "不合礼法",
+     "img": "bundle:emotes/nailin-2-0/01.webp"
+    },
+    {
+     "key": "nailin-2-0.02",
+     "name": "交朋友",
+     "img": "bundle:emotes/nailin-2-0/02.webp"
+    },
+    {
+     "key": "nailin-2-0.03",
+     "name": "什么欠债",
+     "img": "bundle:emotes/nailin-2-0/03.webp"
+    },
+    {
+     "key": "nailin-2-0.04",
+     "name": "再想想",
+     "img": "bundle:emotes/nailin-2-0/04.webp"
+    },
+    {
+     "key": "nailin-2-0.05",
+     "name": "困",
+     "img": "bundle:emotes/nailin-2-0/05.webp"
+    },
+    {
+     "key": "nailin-2-0.06",
+     "name": "墨镜",
+     "img": "bundle:emotes/nailin-2-0/06.webp"
+    },
+    {
+     "key": "nailin-2-0.07",
+     "name": "大凤沟",
+     "img": "bundle:emotes/nailin-2-0/07.webp"
+    },
+    {
+     "key": "nailin-2-0.08",
+     "name": "奶淇琳",
+     "img": "bundle:emotes/nailin-2-0/08.webp"
+    },
+    {
+     "key": "nailin-2-0.09",
+     "name": "好姐姐",
+     "img": "bundle:emotes/nailin-2-0/09.webp"
+    },
+    {
+     "key": "nailin-2-0.10",
+     "name": "小狐狸",
+     "img": "bundle:emotes/nailin-2-0/10.webp"
+    },
+    {
+     "key": "nailin-2-0.11",
+     "name": "征服",
+     "img": "bundle:emotes/nailin-2-0/11.webp"
+    },
+    {
+     "key": "nailin-2-0.12",
+     "name": "我们是",
+     "img": "bundle:emotes/nailin-2-0/12.webp"
+    },
+    {
+     "key": "nailin-2-0.13",
+     "name": "打招呼",
+     "img": "bundle:emotes/nailin-2-0/13.webp"
+    },
+    {
+     "key": "nailin-2-0.14",
+     "name": "招商",
+     "img": "bundle:emotes/nailin-2-0/14.webp"
+    },
+    {
+     "key": "nailin-2-0.15",
+     "name": "撒娇",
+     "img": "bundle:emotes/nailin-2-0/15.webp"
+    },
+    {
+     "key": "nailin-2-0.16",
+     "name": "放烟花",
+     "img": "bundle:emotes/nailin-2-0/16.webp"
+    },
+    {
+     "key": "nailin-2-0.17",
+     "name": "晚安",
+     "img": "bundle:emotes/nailin-2-0/17.webp"
+    },
+    {
+     "key": "nailin-2-0.18",
+     "name": "朋友们",
+     "img": "bundle:emotes/nailin-2-0/18.webp"
+    },
+    {
+     "key": "nailin-2-0.19",
+     "name": "气晕",
+     "img": "bundle:emotes/nailin-2-0/19.webp"
+    },
+    {
+     "key": "nailin-2-0.20",
+     "name": "流汗",
+     "img": "bundle:emotes/nailin-2-0/20.webp"
+    },
+    {
+     "key": "nailin-2-0.21",
+     "name": "翻跟头",
+     "img": "bundle:emotes/nailin-2-0/21.webp"
+    },
+    {
+     "key": "nailin-2-0.22",
+     "name": "耶",
+     "img": "bundle:emotes/nailin-2-0/22.webp"
+    },
+    {
+     "key": "nailin-2-0.23",
+     "name": "谢谢关注嘎",
+     "img": "bundle:emotes/nailin-2-0/23.webp"
+    },
+    {
+     "key": "nailin-2-0.24",
+     "name": "贴贴捏",
+     "img": "bundle:emotes/nailin-2-0/24.webp"
+    },
+    {
+     "key": "nailin-2-0.25",
+     "name": "鸳鸯火锅拳",
+     "img": "bundle:emotes/nailin-2-0/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-raccoon",
+   "name": "奶淇琳浣熊",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "nailin-raccoon.01",
+     "name": "不听不听",
+     "img": "bundle:emotes/nailin-raccoon/01.webp"
+    },
+    {
+     "key": "nailin-raccoon.02",
+     "name": "伟大",
+     "img": "bundle:emotes/nailin-raccoon/02.webp"
+    },
+    {
+     "key": "nailin-raccoon.03",
+     "name": "吃醋",
+     "img": "bundle:emotes/nailin-raccoon/03.webp"
+    },
+    {
+     "key": "nailin-raccoon.04",
+     "name": "哄不好了",
+     "img": "bundle:emotes/nailin-raccoon/04.webp"
+    },
+    {
+     "key": "nailin-raccoon.05",
+     "name": "哄好了",
+     "img": "bundle:emotes/nailin-raccoon/05.webp"
+    },
+    {
+     "key": "nailin-raccoon.06",
+     "name": "啃啃",
+     "img": "bundle:emotes/nailin-raccoon/06.webp"
+    },
+    {
+     "key": "nailin-raccoon.07",
+     "name": "大黑耗子",
+     "img": "bundle:emotes/nailin-raccoon/07.webp"
+    },
+    {
+     "key": "nailin-raccoon.08",
+     "name": "姐姐~",
+     "img": "bundle:emotes/nailin-raccoon/08.webp"
+    },
+    {
+     "key": "nailin-raccoon.09",
+     "name": "完美的",
+     "img": "bundle:emotes/nailin-raccoon/09.webp"
+    },
+    {
+     "key": "nailin-raccoon.10",
+     "name": "应援",
+     "img": "bundle:emotes/nailin-raccoon/10.webp"
+    },
+    {
+     "key": "nailin-raccoon.11",
+     "name": "我要听！",
+     "img": "bundle:emotes/nailin-raccoon/11.webp"
+    },
+    {
+     "key": "nailin-raccoon.12",
+     "name": "才八点！",
+     "img": "bundle:emotes/nailin-raccoon/12.webp"
+    },
+    {
+     "key": "nailin-raccoon.13",
+     "name": "晚安",
+     "img": "bundle:emotes/nailin-raccoon/13.webp"
+    },
+    {
+     "key": "nailin-raccoon.14",
+     "name": "蛋筒飞飞",
+     "img": "bundle:emotes/nailin-raccoon/14.webp"
+    },
+    {
+     "key": "nailin-raccoon.15",
+     "name": "？？？",
+     "img": "bundle:emotes/nailin-raccoon/15.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-naodong",
+   "name": "脑洞波 · 乃琳",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "nailin-naodong.01",
+     "name": "乃琳困",
+     "img": "bundle:emotes/nailin-naodong/01.webp"
+    },
+    {
+     "key": "nailin-naodong.02",
+     "name": "发呆",
+     "img": "bundle:emotes/nailin-naodong/02.webp"
+    },
+    {
+     "key": "nailin-naodong.03",
+     "name": "哈哈哈",
+     "img": "bundle:emotes/nailin-naodong/03.webp"
+    },
+    {
+     "key": "nailin-naodong.04",
+     "name": "大背头",
+     "img": "bundle:emotes/nailin-naodong/04.webp"
+    },
+    {
+     "key": "nailin-naodong.05",
+     "name": "奶淇琳",
+     "img": "bundle:emotes/nailin-naodong/05.webp"
+    },
+    {
+     "key": "nailin-naodong.06",
+     "name": "害怕",
+     "img": "bundle:emotes/nailin-naodong/06.webp"
+    },
+    {
+     "key": "nailin-naodong.07",
+     "name": "得意",
+     "img": "bundle:emotes/nailin-naodong/07.webp"
+    },
+    {
+     "key": "nailin-naodong.08",
+     "name": "惊恐",
+     "img": "bundle:emotes/nailin-naodong/08.webp"
+    },
+    {
+     "key": "nailin-naodong.09",
+     "name": "我们是",
+     "img": "bundle:emotes/nailin-naodong/09.webp"
+    },
+    {
+     "key": "nailin-naodong.10",
+     "name": "我系雕啊",
+     "img": "bundle:emotes/nailin-naodong/10.webp"
+    },
+    {
+     "key": "nailin-naodong.11",
+     "name": "打住",
+     "img": "bundle:emotes/nailin-naodong/11.webp"
+    },
+    {
+     "key": "nailin-naodong.12",
+     "name": "抽查",
+     "img": "bundle:emotes/nailin-naodong/12.webp"
+    },
+    {
+     "key": "nailin-naodong.13",
+     "name": "撒花",
+     "img": "bundle:emotes/nailin-naodong/13.webp"
+    },
+    {
+     "key": "nailin-naodong.14",
+     "name": "欢呼",
+     "img": "bundle:emotes/nailin-naodong/14.webp"
+    },
+    {
+     "key": "nailin-naodong.15",
+     "name": "灵感",
+     "img": "bundle:emotes/nailin-naodong/15.webp"
+    },
+    {
+     "key": "nailin-naodong.16",
+     "name": "生气",
+     "img": "bundle:emotes/nailin-naodong/16.webp"
+    },
+    {
+     "key": "nailin-naodong.17",
+     "name": "痛哭",
+     "img": "bundle:emotes/nailin-naodong/17.webp"
+    },
+    {
+     "key": "nailin-naodong.18",
+     "name": "退退退",
+     "img": "bundle:emotes/nailin-naodong/18.webp"
+    },
+    {
+     "key": "nailin-naodong.19",
+     "name": "阳光开朗",
+     "img": "bundle:emotes/nailin-naodong/19.webp"
+    },
+    {
+     "key": "nailin-naodong.20",
+     "name": "鼓掌",
+     "img": "bundle:emotes/nailin-naodong/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-adventure-2025",
+   "name": "2025 贝拉的冒险",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "beila-adventure-2025.01",
+     "name": "你看这人",
+     "img": "bundle:emotes/beila-adventure-2025/01.webp"
+    },
+    {
+     "key": "beila-adventure-2025.02",
+     "name": "共犯",
+     "img": "bundle:emotes/beila-adventure-2025/02.webp"
+    },
+    {
+     "key": "beila-adventure-2025.03",
+     "name": "冰山美人",
+     "img": "bundle:emotes/beila-adventure-2025/03.webp"
+    },
+    {
+     "key": "beila-adventure-2025.04",
+     "name": "十分",
+     "img": "bundle:emotes/beila-adventure-2025/04.webp"
+    },
+    {
+     "key": "beila-adventure-2025.05",
+     "name": "大聪明",
+     "img": "bundle:emotes/beila-adventure-2025/05.webp"
+    },
+    {
+     "key": "beila-adventure-2025.06",
+     "name": "委屈",
+     "img": "bundle:emotes/beila-adventure-2025/06.webp"
+    },
+    {
+     "key": "beila-adventure-2025.07",
+     "name": "害羞",
+     "img": "bundle:emotes/beila-adventure-2025/07.webp"
+    },
+    {
+     "key": "beila-adventure-2025.08",
+     "name": "小队长登场",
+     "img": "bundle:emotes/beila-adventure-2025/08.webp"
+    },
+    {
+     "key": "beila-adventure-2025.09",
+     "name": "惊呆",
+     "img": "bundle:emotes/beila-adventure-2025/09.webp"
+    },
+    {
+     "key": "beila-adventure-2025.10",
+     "name": "挠头",
+     "img": "bundle:emotes/beila-adventure-2025/10.webp"
+    },
+    {
+     "key": "beila-adventure-2025.11",
+     "name": "挥拳",
+     "img": "bundle:emotes/beila-adventure-2025/11.webp"
+    },
+    {
+     "key": "beila-adventure-2025.12",
+     "name": "营业",
+     "img": "bundle:emotes/beila-adventure-2025/12.webp"
+    },
+    {
+     "key": "beila-adventure-2025.13",
+     "name": "被吓哭",
+     "img": "bundle:emotes/beila-adventure-2025/13.webp"
+    },
+    {
+     "key": "beila-adventure-2025.14",
+     "name": "要抱抱",
+     "img": "bundle:emotes/beila-adventure-2025/14.webp"
+    },
+    {
+     "key": "beila-adventure-2025.15",
+     "name": "观察",
+     "img": "bundle:emotes/beila-adventure-2025/15.webp"
+    },
+    {
+     "key": "beila-adventure-2025.16",
+     "name": "贝拉驾到",
+     "img": "bundle:emotes/beila-adventure-2025/16.webp"
+    },
+    {
+     "key": "beila-adventure-2025.17",
+     "name": "送花",
+     "img": "bundle:emotes/beila-adventure-2025/17.webp"
+    },
+    {
+     "key": "beila-adventure-2025.18",
+     "name": "选我",
+     "img": "bundle:emotes/beila-adventure-2025/18.webp"
+    },
+    {
+     "key": "beila-adventure-2025.19",
+     "name": "问号",
+     "img": "bundle:emotes/beila-adventure-2025/19.webp"
+    },
+    {
+     "key": "beila-adventure-2025.20",
+     "name": "零分",
+     "img": "bundle:emotes/beila-adventure-2025/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-kira",
+   "name": "贝拉 kira",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "beila-kira.01",
+     "name": "OK",
+     "img": "bundle:emotes/beila-kira/01.webp"
+    },
+    {
+     "key": "beila-kira.02",
+     "name": "sorry",
+     "img": "bundle:emotes/beila-kira/02.webp"
+    },
+    {
+     "key": "beila-kira.03",
+     "name": "不会吧",
+     "img": "bundle:emotes/beila-kira/03.webp"
+    },
+    {
+     "key": "beila-kira.04",
+     "name": "别偷懒",
+     "img": "bundle:emotes/beila-kira/04.webp"
+    },
+    {
+     "key": "beila-kira.05",
+     "name": "别爱我",
+     "img": "bundle:emotes/beila-kira/05.webp"
+    },
+    {
+     "key": "beila-kira.06",
+     "name": "加油",
+     "img": "bundle:emotes/beila-kira/06.webp"
+    },
+    {
+     "key": "beila-kira.07",
+     "name": "吃我贝极拳",
+     "img": "bundle:emotes/beila-kira/07.webp"
+    },
+    {
+     "key": "beila-kira.08",
+     "name": "哼哼",
+     "img": "bundle:emotes/beila-kira/08.webp"
+    },
+    {
+     "key": "beila-kira.09",
+     "name": "在吗在吗",
+     "img": "bundle:emotes/beila-kira/09.webp"
+    },
+    {
+     "key": "beila-kira.10",
+     "name": "开心到劈叉",
+     "img": "bundle:emotes/beila-kira/10.webp"
+    },
+    {
+     "key": "beila-kira.11",
+     "name": "我们是",
+     "img": "bundle:emotes/beila-kira/11.webp"
+    },
+    {
+     "key": "beila-kira.12",
+     "name": "我晕了",
+     "img": "bundle:emotes/beila-kira/12.webp"
+    },
+    {
+     "key": "beila-kira.13",
+     "name": "拖拉机下山",
+     "img": "bundle:emotes/beila-kira/13.webp"
+    },
+    {
+     "key": "beila-kira.14",
+     "name": "拜托",
+     "img": "bundle:emotes/beila-kira/14.webp"
+    },
+    {
+     "key": "beila-kira.15",
+     "name": "汗",
+     "img": "bundle:emotes/beila-kira/15.webp"
+    },
+    {
+     "key": "beila-kira.16",
+     "name": "王之蔑视",
+     "img": "bundle:emotes/beila-kira/16.webp"
+    },
+    {
+     "key": "beila-kira.17",
+     "name": "看我可爱吗",
+     "img": "bundle:emotes/beila-kira/17.webp"
+    },
+    {
+     "key": "beila-kira.18",
+     "name": "笔芯",
+     "img": "bundle:emotes/beila-kira/18.webp"
+    },
+    {
+     "key": "beila-kira.19",
+     "name": "累趴",
+     "img": "bundle:emotes/beila-kira/19.webp"
+    },
+    {
+     "key": "beila-kira.20",
+     "name": "给我出去",
+     "img": "bundle:emotes/beila-kira/20.webp"
+    },
+    {
+     "key": "beila-kira.21",
+     "name": "芭蕾",
+     "img": "bundle:emotes/beila-kira/21.webp"
+    },
+    {
+     "key": "beila-kira.22",
+     "name": "贝式疑问",
+     "img": "bundle:emotes/beila-kira/22.webp"
+    },
+    {
+     "key": "beila-kira.23",
+     "name": "贝极星",
+     "img": "bundle:emotes/beila-kira/23.webp"
+    },
+    {
+     "key": "beila-kira.24",
+     "name": "这题我会",
+     "img": "bundle:emotes/beila-kira/24.webp"
+    },
+    {
+     "key": "beila-kira.25",
+     "name": "送你小花花",
+     "img": "bundle:emotes/beila-kira/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-2-0",
+   "name": "贝拉个性装扮 2.0",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "beila-2-0.01",
+     "name": "NONONO",
+     "img": "bundle:emotes/beila-2-0/01.webp"
+    },
+    {
+     "key": "beila-2-0.02",
+     "name": "你再想想",
+     "img": "bundle:emotes/beila-2-0/02.webp"
+    },
+    {
+     "key": "beila-2-0.03",
+     "name": "健身",
+     "img": "bundle:emotes/beila-2-0/03.webp"
+    },
+    {
+     "key": "beila-2-0.04",
+     "name": "兔兔拳",
+     "img": "bundle:emotes/beila-2-0/04.webp"
+    },
+    {
+     "key": "beila-2-0.05",
+     "name": "剑来",
+     "img": "bundle:emotes/beila-2-0/05.webp"
+    },
+    {
+     "key": "beila-2-0.06",
+     "name": "吃牛肉干",
+     "img": "bundle:emotes/beila-2-0/06.webp"
+    },
+    {
+     "key": "beila-2-0.07",
+     "name": "哈哈哈哈哈",
+     "img": "bundle:emotes/beila-2-0/07.webp"
+    },
+    {
+     "key": "beila-2-0.08",
+     "name": "哈喽",
+     "img": "bundle:emotes/beila-2-0/08.webp"
+    },
+    {
+     "key": "beila-2-0.09",
+     "name": "唱歌",
+     "img": "bundle:emotes/beila-2-0/09.webp"
+    },
+    {
+     "key": "beila-2-0.10",
+     "name": "大聪明",
+     "img": "bundle:emotes/beila-2-0/10.webp"
+    },
+    {
+     "key": "beila-2-0.11",
+     "name": "天鹅小贝拉",
+     "img": "bundle:emotes/beila-2-0/11.webp"
+    },
+    {
+     "key": "beila-2-0.12",
+     "name": "委屈小贝拉",
+     "img": "bundle:emotes/beila-2-0/12.webp"
+    },
+    {
+     "key": "beila-2-0.13",
+     "name": "小笨蛋",
+     "img": "bundle:emotes/beila-2-0/13.webp"
+    },
+    {
+     "key": "beila-2-0.14",
+     "name": "小胡子",
+     "img": "bundle:emotes/beila-2-0/14.webp"
+    },
+    {
+     "key": "beila-2-0.15",
+     "name": "我们是",
+     "img": "bundle:emotes/beila-2-0/15.webp"
+    },
+    {
+     "key": "beila-2-0.16",
+     "name": "拉伸",
+     "img": "bundle:emotes/beila-2-0/16.webp"
+    },
+    {
+     "key": "beila-2-0.17",
+     "name": "拉手摧花",
+     "img": "bundle:emotes/beila-2-0/17.webp"
+    },
+    {
+     "key": "beila-2-0.18",
+     "name": "拜拜",
+     "img": "bundle:emotes/beila-2-0/18.webp"
+    },
+    {
+     "key": "beila-2-0.19",
+     "name": "日程表",
+     "img": "bundle:emotes/beila-2-0/19.webp"
+    },
+    {
+     "key": "beila-2-0.20",
+     "name": "晃悠悠",
+     "img": "bundle:emotes/beila-2-0/20.webp"
+    },
+    {
+     "key": "beila-2-0.21",
+     "name": "要相信光",
+     "img": "bundle:emotes/beila-2-0/21.webp"
+    },
+    {
+     "key": "beila-2-0.22",
+     "name": "贝拉碎月",
+     "img": "bundle:emotes/beila-2-0/22.webp"
+    },
+    {
+     "key": "beila-2-0.23",
+     "name": "贝极星",
+     "img": "bundle:emotes/beila-2-0/23.webp"
+    },
+    {
+     "key": "beila-2-0.24",
+     "name": "起床啦",
+     "img": "bundle:emotes/beila-2-0/24.webp"
+    },
+    {
+     "key": "beila-2-0.25",
+     "name": "过载",
+     "img": "bundle:emotes/beila-2-0/25.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-rabbit",
+   "name": "贝拉兔与贝极星的日常",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "beila-rabbit.01",
+     "name": "亲亲",
+     "img": "bundle:emotes/beila-rabbit/01.webp"
+    },
+    {
+     "key": "beila-rabbit.02",
+     "name": "优雅",
+     "img": "bundle:emotes/beila-rabbit/02.webp"
+    },
+    {
+     "key": "beila-rabbit.03",
+     "name": "低落",
+     "img": "bundle:emotes/beila-rabbit/03.webp"
+    },
+    {
+     "key": "beila-rabbit.04",
+     "name": "兔兔飞踢",
+     "img": "bundle:emotes/beila-rabbit/04.webp"
+    },
+    {
+     "key": "beila-rabbit.05",
+     "name": "呆",
+     "img": "bundle:emotes/beila-rabbit/05.webp"
+    },
+    {
+     "key": "beila-rabbit.06",
+     "name": "哈哈哈",
+     "img": "bundle:emotes/beila-rabbit/06.webp"
+    },
+    {
+     "key": "beila-rabbit.07",
+     "name": "哈喽",
+     "img": "bundle:emotes/beila-rabbit/07.webp"
+    },
+    {
+     "key": "beila-rabbit.08",
+     "name": "喜欢喜欢",
+     "img": "bundle:emotes/beila-rabbit/08.webp"
+    },
+    {
+     "key": "beila-rabbit.09",
+     "name": "大贝蛋",
+     "img": "bundle:emotes/beila-rabbit/09.webp"
+    },
+    {
+     "key": "beila-rabbit.10",
+     "name": "我要闹了！",
+     "img": "bundle:emotes/beila-rabbit/10.webp"
+    },
+    {
+     "key": "beila-rabbit.11",
+     "name": "打call",
+     "img": "bundle:emotes/beila-rabbit/11.webp"
+    },
+    {
+     "key": "beila-rabbit.12",
+     "name": "摸摸头",
+     "img": "bundle:emotes/beila-rabbit/12.webp"
+    },
+    {
+     "key": "beila-rabbit.13",
+     "name": "杨桃干了",
+     "img": "bundle:emotes/beila-rabbit/13.webp"
+    },
+    {
+     "key": "beila-rabbit.14",
+     "name": "比心",
+     "img": "bundle:emotes/beila-rabbit/14.webp"
+    },
+    {
+     "key": "beila-rabbit.15",
+     "name": "疑惑",
+     "img": "bundle:emotes/beila-rabbit/15.webp"
+    },
+    {
+     "key": "beila-rabbit.16",
+     "name": "神！",
+     "img": "bundle:emotes/beila-rabbit/16.webp"
+    },
+    {
+     "key": "beila-rabbit.17",
+     "name": "结婚",
+     "img": "bundle:emotes/beila-rabbit/17.webp"
+    },
+    {
+     "key": "beila-rabbit.18",
+     "name": "过载",
+     "img": "bundle:emotes/beila-rabbit/18.webp"
+    },
+    {
+     "key": "beila-rabbit.19",
+     "name": "震惊",
+     "img": "bundle:emotes/beila-rabbit/19.webp"
+    },
+    {
+     "key": "beila-rabbit.20",
+     "name": "骄傲",
+     "img": "bundle:emotes/beila-rabbit/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-naodong",
+   "name": "脑洞波 · 贝拉",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "beila-naodong.01",
+     "name": "发呆",
+     "img": "bundle:emotes/beila-naodong/01.webp"
+    },
+    {
+     "key": "beila-naodong.02",
+     "name": "吃东西",
+     "img": "bundle:emotes/beila-naodong/02.webp"
+    },
+    {
+     "key": "beila-naodong.03",
+     "name": "哈哈哈",
+     "img": "bundle:emotes/beila-naodong/03.webp"
+    },
+    {
+     "key": "beila-naodong.04",
+     "name": "怀疑",
+     "img": "bundle:emotes/beila-naodong/04.webp"
+    },
+    {
+     "key": "beila-naodong.05",
+     "name": "惬意",
+     "img": "bundle:emotes/beila-naodong/05.webp"
+    },
+    {
+     "key": "beila-naodong.06",
+     "name": "我们是",
+     "img": "bundle:emotes/beila-naodong/06.webp"
+    },
+    {
+     "key": "beila-naodong.07",
+     "name": "戳手指",
+     "img": "bundle:emotes/beila-naodong/07.webp"
+    },
+    {
+     "key": "beila-naodong.08",
+     "name": "打招呼",
+     "img": "bundle:emotes/beila-naodong/08.webp"
+    },
+    {
+     "key": "beila-naodong.09",
+     "name": "操心",
+     "img": "bundle:emotes/beila-naodong/09.webp"
+    },
+    {
+     "key": "beila-naodong.10",
+     "name": "敲打",
+     "img": "bundle:emotes/beila-naodong/10.webp"
+    },
+    {
+     "key": "beila-naodong.11",
+     "name": "无语",
+     "img": "bundle:emotes/beila-naodong/11.webp"
+    },
+    {
+     "key": "beila-naodong.12",
+     "name": "欢呼",
+     "img": "bundle:emotes/beila-naodong/12.webp"
+    },
+    {
+     "key": "beila-naodong.13",
+     "name": "生气",
+     "img": "bundle:emotes/beila-naodong/13.webp"
+    },
+    {
+     "key": "beila-naodong.14",
+     "name": "相信光",
+     "img": "bundle:emotes/beila-naodong/14.webp"
+    },
+    {
+     "key": "beila-naodong.15",
+     "name": "讨厌",
+     "img": "bundle:emotes/beila-naodong/15.webp"
+    },
+    {
+     "key": "beila-naodong.16",
+     "name": "贝极星",
+     "img": "bundle:emotes/beila-naodong/16.webp"
+    },
+    {
+     "key": "beila-naodong.17",
+     "name": "追赶",
+     "img": "bundle:emotes/beila-naodong/17.webp"
+    },
+    {
+     "key": "beila-naodong.18",
+     "name": "锻炼",
+     "img": "bundle:emotes/beila-naodong/18.webp"
+    },
+    {
+     "key": "beila-naodong.19",
+     "name": "阳光开朗",
+     "img": "bundle:emotes/beila-naodong/19.webp"
+    },
+    {
+     "key": "beila-naodong.20",
+     "name": "飞踢",
+     "img": "bundle:emotes/beila-naodong/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "bloom-jiaran",
+   "name": "绽放收藏集 · 嘉然",
+   "character": "嘉然",
+   "emotes": [
+    {
+     "key": "bloom-jiaran.01",
+     "name": "嘉心糖",
+     "img": "bundle:emotes/bloom-jiaran/01.webp"
+    },
+    {
+     "key": "bloom-jiaran.02",
+     "name": "嘉然",
+     "img": "bundle:emotes/bloom-jiaran/02.webp"
+    },
+    {
+     "key": "bloom-jiaran.03",
+     "name": "懂你意思",
+     "img": "bundle:emotes/bloom-jiaran/03.webp"
+    },
+    {
+     "key": "bloom-jiaran.04",
+     "name": "笑晕了",
+     "img": "bundle:emotes/bloom-jiaran/04.webp"
+    },
+    {
+     "key": "bloom-jiaran.05",
+     "name": "超喜欢",
+     "img": "bundle:emotes/bloom-jiaran/05.webp"
+    }
+   ]
+  },
+  {
+   "id": "bloom-nailin",
+   "name": "绽放收藏集 · 乃琳",
+   "character": "乃琳",
+   "emotes": [
+    {
+     "key": "bloom-nailin.01",
+     "name": "乃琳",
+     "img": "bundle:emotes/bloom-nailin/01.webp"
+    },
+    {
+     "key": "bloom-nailin.02",
+     "name": "奶淇琳",
+     "img": "bundle:emotes/bloom-nailin/02.webp"
+    },
+    {
+     "key": "bloom-nailin.03",
+     "name": "摸摸头",
+     "img": "bundle:emotes/bloom-nailin/03.webp"
+    },
+    {
+     "key": "bloom-nailin.04",
+     "name": "晚安",
+     "img": "bundle:emotes/bloom-nailin/04.webp"
+    },
+    {
+     "key": "bloom-nailin.05",
+     "name": "约定",
+     "img": "bundle:emotes/bloom-nailin/05.webp"
+    }
+   ]
+  },
+  {
+   "id": "bloom-beila",
+   "name": "绽放收藏集 · 贝拉",
+   "character": "贝拉",
+   "emotes": [
+    {
+     "key": "bloom-beila.01",
+     "name": "抱抱",
+     "img": "bundle:emotes/bloom-beila/01.webp"
+    },
+    {
+     "key": "bloom-beila.02",
+     "name": "接好运",
+     "img": "bundle:emotes/bloom-beila/02.webp"
+    },
+    {
+     "key": "bloom-beila.03",
+     "name": "毫无头绪",
+     "img": "bundle:emotes/bloom-beila/03.webp"
+    },
+    {
+     "key": "bloom-beila.04",
+     "name": "贝拉",
+     "img": "bundle:emotes/bloom-beila/04.webp"
+    },
+    {
+     "key": "bloom-beila.05",
+     "name": "贝极星",
+     "img": "bundle:emotes/bloom-beila/05.webp"
+    }
+   ]
+  },
+  {
+   "id": "symphony-xinyi",
+   "name": "交响乐谱 · 心宜",
+   "character": "心宜",
+   "emotes": [
+    {
+     "key": "symphony-xinyi.01",
+     "name": "为你打call",
+     "img": "bundle:emotes/symphony-xinyi/01.webp"
+    },
+    {
+     "key": "symphony-xinyi.02",
+     "name": "呆",
+     "img": "bundle:emotes/symphony-xinyi/02.webp"
+    },
+    {
+     "key": "symphony-xinyi.03",
+     "name": "哭哭",
+     "img": "bundle:emotes/symphony-xinyi/03.webp"
+    },
+    {
+     "key": "symphony-xinyi.04",
+     "name": "喝一杯",
+     "img": "bundle:emotes/symphony-xinyi/04.webp"
+    },
+    {
+     "key": "symphony-xinyi.05",
+     "name": "欸嘿",
+     "img": "bundle:emotes/symphony-xinyi/05.webp"
+    },
+    {
+     "key": "symphony-xinyi.06",
+     "name": "生气",
+     "img": "bundle:emotes/symphony-xinyi/06.webp"
+    },
+    {
+     "key": "symphony-xinyi.07",
+     "name": "睡觉",
+     "img": "bundle:emotes/symphony-xinyi/07.webp"
+    },
+    {
+     "key": "symphony-xinyi.08",
+     "name": "谢谢款待",
+     "img": "bundle:emotes/symphony-xinyi/08.webp"
+    },
+    {
+     "key": "symphony-xinyi.09",
+     "name": "阿？",
+     "img": "bundle:emotes/symphony-xinyi/09.webp"
+    },
+    {
+     "key": "symphony-xinyi.10",
+     "name": "飞踢",
+     "img": "bundle:emotes/symphony-xinyi/10.webp"
+    }
+   ]
+  },
+  {
+   "id": "symphony-sinuo",
+   "name": "交响乐谱 · 思诺",
+   "character": "思诺",
+   "emotes": [
+    {
+     "key": "symphony-sinuo.01",
+     "name": "为你应援",
+     "img": "bundle:emotes/symphony-sinuo/01.webp"
+    },
+    {
+     "key": "symphony-sinuo.02",
+     "name": "举高高",
+     "img": "bundle:emotes/symphony-sinuo/02.webp"
+    },
+    {
+     "key": "symphony-sinuo.03",
+     "name": "亲亲",
+     "img": "bundle:emotes/symphony-sinuo/03.webp"
+    },
+    {
+     "key": "symphony-sinuo.04",
+     "name": "吃饭",
+     "img": "bundle:emotes/symphony-sinuo/04.webp"
+    },
+    {
+     "key": "symphony-sinuo.05",
+     "name": "帅！",
+     "img": "bundle:emotes/symphony-sinuo/05.webp"
+    },
+    {
+     "key": "symphony-sinuo.06",
+     "name": "急了急了",
+     "img": "bundle:emotes/symphony-sinuo/06.webp"
+    },
+    {
+     "key": "symphony-sinuo.07",
+     "name": "打你",
+     "img": "bundle:emotes/symphony-sinuo/07.webp"
+    },
+    {
+     "key": "symphony-sinuo.08",
+     "name": "抱抱",
+     "img": "bundle:emotes/symphony-sinuo/08.webp"
+    },
+    {
+     "key": "symphony-sinuo.09",
+     "name": "晚安喵",
+     "img": "bundle:emotes/symphony-sinuo/09.webp"
+    },
+    {
+     "key": "symphony-sinuo.10",
+     "name": "飞飞飞",
+     "img": "bundle:emotes/symphony-sinuo/10.webp"
+    }
+   ]
+  }
+ ],
+ "decor": [
+  {
+   "id": "frame-brilliant",
+   "kind": "frame",
+   "name": "绚烂心迹 头像挂件",
+   "img": "bundle:decor/frame-brilliant.webp",
+   "unlock": {
+    "series": "brilliant",
+    "min": 5
+   }
+  },
+  {
+   "id": "badge-brilliant",
+   "kind": "badge",
+   "name": "绚烂心迹 LV1",
+   "img": "bundle:decor/badge-brilliant.webp",
+   "unlock": {
+    "series": "brilliant",
+    "min": 1
+   }
+  },
+  {
+   "id": "frame-moon",
+   "kind": "frame",
+   "name": "此间为爱 头像挂件",
+   "img": "bundle:decor/frame-moon.webp",
+   "unlock": {
+    "series": "moon",
+    "min": 1
+   }
+  },
+  {
+   "id": "frame-tavern",
+   "kind": "frame",
+   "name": "沉沦醉与爱 头像挂件",
+   "img": "bundle:decor/frame-tavern.webp",
+   "unlock": {
+    "series": "tavern",
+    "min": 1
+   }
+  },
+  {
+   "id": "badge-tavern",
+   "kind": "badge",
+   "name": "2025 乃琳的酒馆 LV1",
+   "img": "bundle:decor/badge-tavern.webp",
+   "unlock": {
+    "series": "tavern",
+    "min": 1
+   }
+  },
+  {
+   "id": "frame-voyage",
+   "kind": "frame",
+   "name": "时空旅人 头像挂件",
+   "img": "bundle:decor/frame-voyage.webp",
+   "unlock": {
+    "series": "voyage",
+    "min": 5
+   }
+  },
+  {
+   "id": "badge-voyage",
+   "kind": "badge",
+   "name": "2025 贝拉的冒险 LV1",
+   "img": "bundle:decor/badge-voyage.webp",
+   "unlock": {
+    "series": "voyage",
+    "min": 1
+   }
+  },
+  {
+   "id": "frame-symphony",
+   "kind": "frame",
+   "name": "双声巡梦 头像框",
+   "img": "bundle:decor/frame-symphony.webp",
+   "unlock": {
+    "series": "symphony",
+    "min": 5
+   }
+  },
+  {
+   "id": "badge-symphony",
+   "kind": "badge",
+   "name": "交响乐谱 LV1",
+   "img": "bundle:decor/badge-symphony.webp",
+   "unlock": {
+    "series": "symphony",
+    "min": 1
+   }
+  }
+ ]
+}

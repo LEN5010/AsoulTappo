@@ -1,23 +1,34 @@
-"""AsoulTappo room server: FastAPI + WebSocket, in-memory state."""
+"""AsoulTappo room server: FastAPI + WebSocket rooms, SQLite-backed card progression."""
 from __future__ import annotations
 
+import asyncio
 import os
+from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import ValidationError
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, ValidationError
 
+from .game import Game, GameError
+from .manifest import Manifest, find_packs_dir
 from .models import (
     EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg, LeaveMsg, Member,
     MemberJoinedMsg, MemberLeftMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
     TapMsg, client_message_adapter,
 )
 from .rooms import Peer, RoomFull, RoomManager
+from .store import Store
 
-app = FastAPI(title="AsoulTappo server", version="0.1.0")
+app = FastAPI(title="AsoulTappo server", version="0.2.0")
 manager = RoomManager()
 
-# CORS for the browser/Tauri webview calling POST /rooms.
+PACKS_DIR = find_packs_dir()
+manifest = Manifest.load(PACKS_DIR / "manifest.json")
+# ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
+game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest)
+
+# CORS for the browser/Tauri webview calling the HTTP API.
 # ASOULTAPPO_CORS_ORIGINS: comma-separated origins, default "*" (no cookies are used).
 _origins = [o.strip() for o in os.environ.get("ASOULTAPPO_CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
@@ -30,7 +41,7 @@ app.add_middleware(
 
 
 def _member(p: Peer) -> Member:
-    return Member(id=p.id, nick=p.nick, character=p.character, taps=p.taps)
+    return Member(id=p.id, nick=p.nick, character=p.character, taps=p.taps, frame=p.frame, badge=p.badge)
 
 
 @app.get("/healthz")
@@ -44,6 +55,61 @@ async def create_room() -> dict:
     return {"room": manager.create_room()}
 
 
+# ------------------------------------------------------------------ HTTP API
+def _guard(fn, *args):
+    try:
+        return fn(*args)
+    except GameError as e:
+        status = 401 if e.code == "bad_token" else 409 if e.code == "no_box" else 400
+        raise HTTPException(status_code=status, detail={"code": e.code, "message": e.message})
+
+
+class ActivityBody(BaseModel):
+    taps: int = Field(ge=0, le=100000)
+
+
+class DecorBody(BaseModel):
+    frame: str | None = Field(default=None, max_length=32)
+    badge: str | None = Field(default=None, max_length=32)
+
+
+@app.get("/api/manifest")
+def api_manifest() -> dict:
+    return manifest.data
+
+
+@app.get("/api/me")
+def api_me(x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.status, x_player_token)
+
+
+@app.post("/api/activity")
+def api_activity(body: ActivityBody, x_player_token: str = Header(default="")) -> dict:
+    """Report the number of taps since the last report (counts only, never content)."""
+    return _guard(game.report_activity, x_player_token, body.taps)
+
+
+@app.post("/api/boxes/open")
+def api_open_box(x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.open_box, x_player_token)
+
+
+@app.get("/api/collection")
+def api_collection(x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.collection, x_player_token)
+
+
+@app.post("/api/decor")
+def api_decor(body: DecorBody, x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.set_decor, x_player_token, body.frame, body.badge)
+
+
+# Heavy assets (card art, videos, theme backgrounds) as downloadable packs: /packs/index.json
+if Path(PACKS_DIR).is_dir():
+    app.mount("/packs", StaticFiles(directory=str(PACKS_DIR)), name="packs")
+
+
+# ----------------------------------------------------------------- WebSocket
 async def _leave(room_id: str | None, peer: Peer | None) -> None:
     if room_id and peer:
         manager.leave(room_id, peer.id)
@@ -76,8 +142,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer is not None:
                     await err("already_joined")
                     continue
+                frame, badge = game.decor_for(msg.token)
                 try:
-                    peer = manager.join(msg.room, msg.nick, msg.character, ws)
+                    peer = manager.join(msg.room, msg.nick, msg.character, ws,
+                                        frame=frame, badge=badge, token=msg.token)
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
@@ -105,13 +173,25 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, StateMsg):
+                if msg.frame is not None or msg.badge is not None:
+                    if not peer.token:
+                        await err("locked", "frame/badge need a player token")
+                        continue
+                    try:
+                        st = game.set_decor(peer.token, msg.frame, msg.badge)
+                    except GameError as e:
+                        await err(e.code, e.message)
+                        continue
+                    peer.frame, peer.badge = st["frame"], st["badge"]
                 if msg.character is not None:
                     peer.character = msg.character
                 if msg.nick is not None:
                     peer.nick = msg.nick
                 await manager.broadcast(room_id, StateBroadcast(
-                    id=peer.id, character=peer.character, nick=peer.nick).model_dump())
+                    id=peer.id, character=peer.character, nick=peer.nick,
+                    frame=peer.frame, badge=peer.badge).model_dump())
     except WebSocketDisconnect:
         pass
     finally:
-        await _leave(room_id, peer)
+        # shielded: the member_left broadcast must survive cancellation of this handler
+        await asyncio.shield(_leave(room_id, peer))

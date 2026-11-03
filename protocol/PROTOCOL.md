@@ -14,26 +14,41 @@ Only tap *counts* are sent. Key identities, typed text and mouse positions never
 ## Client → Server
 | type | fields | notes |
 |---|---|---|
-| `join` | `room`, `nick` (≤24), `character` (≤32, default `"default"`) | must be the first message |
+| `join` | `room`, `nick` (≤24), `character` (≤32, default `"default"`), optional `token` (16–128 chars) | must be the first message. With a `token` the server looks up the player's selected `frame` / `badge` and shows them to the room; without one they are `null` |
 | `leave` | – | leave the room (connection may stay open) |
 | `tap` | `count` (1–500) | **batched** count since last message; send ≤ ~4×/s |
-| `emote` | `emote` (≤32) | emote key, e.g. `"heart"` |
-| `state` | `character` (≤32) and/or `nick` (≤24); at least one | update own profile (broadcast to the room) |
+| `emote` | `emote` (≤32) | emote key: a legacy glyph key (`"heart"`), `"thumbup"` (the theme's animated like), or `<emoteSetId>.<nn>` from the manifest (e.g. `jiaran-eat.03`) |
+| `state` | `character` (≤32), `nick` (≤24), `frame`, `badge` (≤32); at least one | update own profile (broadcast to the room). Decor needs a `token` on join and must be unlocked, otherwise `locked` / `bad_decor` |
 | `ping` | – | keepalive; the server answers `pong` (allowed before `join`). Clients send one every ~20s and reconnect when no `pong` arrives |
 
 ## Server → Client
 | type | fields |
 |---|---|
-| `joined` | `room`, `you` (your member id), `members[]` (`id`,`nick`,`character`,`taps`) |
+| `joined` | `room`, `you` (your member id), `members[]` (`id`,`nick`,`character`,`taps`,`frame`,`badge`) |
 | `member_joined` | `member` |
 | `member_left` | `id` |
 | `tap` | `id`, `count`, `total` — broadcast to everyone in the room, including the sender |
 | `emote` | `id`, `emote` — broadcast to everyone, including the sender |
-| `state` | `id`, `character`, `nick` — full current profile of that member, broadcast to everyone, including the sender |
+| `state` | `id`, `character`, `nick`, `frame`, `badge` — full current profile of that member, broadcast to everyone, including the sender |
 | `pong` | – |
 | `error` | `code`, `message` |
 
-Error codes: `room_full`, `bad_message`, `not_joined`, `already_joined`.
+Error codes: `room_full`, `bad_message`, `not_joined`, `already_joined`, `locked` (decor not unlocked), `bad_decor` (unknown frame/badge id).
+
+## HTTP API (progression)
+Identity is a random secret the client generates once and sends as the `X-Player-Token` header (16–128 chars); the server stores only a hash (`player_id = sha256(token)[:16]`). Anyone holding the token is that player — there are no accounts and no payments.
+
+| route | notes |
+|---|---|
+| `GET /api/manifest` | asset / card / theme metadata (same as `assets-packs/manifest.json`) |
+| `GET /api/me` | status: unopened `boxes`, `progress` (`taps`, `tapsPerBox`, `minutes`, `minutesPerBox`), `boxesToday` / `dailyCap`, `totals`, `pity`, `unlocked` decor, selected `frame` / `badge` |
+| `POST /api/activity` `{taps}` | report taps since the last report (**counts only**). The server credits at most 15 taps/s of elapsed time (elapsed clamped to 1–120 s, ≤ 5000 per report). A minute is "active" once it has ≥ 10 taps. A box is earned per 600 credited taps or per 10 active minutes; ≤ 10 boxes/day, ≤ 20 unopened |
+| `POST /api/boxes/open` | roll a card with rarity weights 70/22/7/1, soft pity (epic weight +8 per open beyond 10 without epic+), hard pity (epic+ at 20, legendary at 60); unowned cards weigh 3× |
+| `GET /api/collection` | `owned` (`card id → count`) and recent drops |
+| `POST /api/decor` `{frame?, badge?}` | choose avatar frame / badge (must be unlocked) |
+| `GET /packs/index.json`, `/packs/...` | downloadable asset packs with sizes and sha256 |
+
+Errors are `{"detail": {"code", "message"}}` with codes such as `bad_token`, `no_box`, `locked`, `bad_decor`.
 
 ## Example
 ```json

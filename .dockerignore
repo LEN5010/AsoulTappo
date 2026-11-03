@@ -1,0 +1,8 @@
+.git
+client
+legacy
+docs
+**/__pycache__
+**/node_modules
+server/tests
+server/data

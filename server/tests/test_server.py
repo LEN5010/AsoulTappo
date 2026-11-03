@@ -40,7 +40,7 @@ def test_room_manager_max_20():
 
 
 def test_join_tap_emote_leave_broadcast():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
         ja = join(a, nick="alice")
         assert ja["type"] == "joined" and len(ja["members"]) == 1
@@ -62,7 +62,7 @@ def test_join_tap_emote_leave_broadcast():
 
 
 def test_not_joined_and_bad_message():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as ws:
         ws.send_json({"type": "tap", "count": 1})
         assert ws.receive_json()["code"] == "not_joined"
@@ -73,7 +73,7 @@ def test_not_joined_and_bad_message():
 
 
 def test_room_full_over_websocket():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     socks = []
     try:
         for i in range(MAX_ROOM_SIZE):
@@ -90,7 +90,7 @@ def test_room_full_over_websocket():
 
 
 def test_cors_preflight_and_create_room():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     r = c.options(
         "/rooms",
         headers={"Origin": "http://tauri.localhost", "Access-Control-Request-Method": "POST"},
@@ -103,20 +103,21 @@ def test_cors_preflight_and_create_room():
 
 
 def test_created_room_can_be_joined():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     room = c.post("/rooms").json()["room"]
     with c.websocket_connect("/ws") as ws:
         assert join(ws, room=room)["room"] == room
 
 
 def test_state_updates_character_and_nick():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
         ja = join(a, nick="alice")
         join(b, nick="bob")
         a.receive_json()  # member_joined(bob)
         a.send_json({"type": "state", "character": "贝拉", "nick": "alice2"})
-        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2"}
+        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2",
+                    "frame": None, "badge": None}
         assert b.receive_json() == expected
         assert a.receive_json() == expected
         # nick only keeps the previous character
@@ -130,14 +131,14 @@ def test_state_updates_character_and_nick():
 
 
 def test_ping_pong_even_before_join():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as ws:
         ws.send_json({"type": "ping"})
         assert ws.receive_json() == {"type": "pong"}
 
 
 def test_tap_totals_accumulate_and_oversized_batch_rejected():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as ws:
         join(ws)
         ws.send_json({"type": "tap", "count": 3})
@@ -149,7 +150,7 @@ def test_tap_totals_accumulate_and_oversized_batch_rejected():
 
 
 def test_member_left_on_disconnect():
-    c = TestClient(app)
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as a:
         join(a, nick="a")
         with c.websocket_connect("/ws") as b:

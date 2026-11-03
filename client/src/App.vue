@@ -2,15 +2,34 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import PetView from "./components/PetView.vue";
 import RoomPanel from "./components/RoomPanel.vue";
-import SettingsPanel from "./components/SettingsPanel.vue";
+import CollectionPanel from "./components/CollectionPanel.vue";
+import ThemePanel from "./components/ThemePanel.vue";
+import ProfilePanel from "./components/ProfilePanel.vue";
 import { settings } from "./stores/settings";
+import { countInput, startReporting, stopReporting, boxes } from "./stores/player";
+import { backgroundFor, cssImage } from "./skin";
+import { skin, skinVars } from "./stores/theme";
 import { inRoom, localPet, me, others, registerTap } from "./stores/room";
 import {
   isTauri, listenInput, listenTray, resizeWindow, setAlwaysOnTop, setClickThrough, type InputEvent,
 } from "./composables/tauri";
 
 const panelOpen = ref(!isTauri); // in a plain browser, show the panel right away
-const tab = ref<"room" | "settings">("room");
+type Tab = "main" | "channel" | "dynamic" | "myself";
+const tab = ref<Tab>("main");
+const TABS: { id: Tab; label: string }[] = [
+  { id: "main", label: "房间" },
+  { id: "channel", label: "图鉴" },
+  { id: "dynamic", label: "主题" },
+  { id: "myself", label: "我的" },
+];
+const tabIdx = computed(() => TABS.findIndex((t) => t.id === tab.value));
+const panelStyle = computed(() => ({
+  ...skinVars.value,
+  "--bg-img": cssImage(backgroundFor(skin.value, tabIdx.value)),
+  "--head-img": cssImage(skin.value.headBg),
+  "--tab-img": cssImage(skin.value.tabBg),
+}));
 const root = ref<HTMLElement | null>(null);
 
 // ---- local pet state, driven by the global input hook ----
@@ -26,6 +45,7 @@ function onInput(e: InputEvent) {
       keysHeld += 1;
       pet.keyDown = true;
       registerTap();
+      countInput();
       break;
     case "key_up":
       keysHeld = Math.max(0, keysHeld - 1);
@@ -35,6 +55,7 @@ function onInput(e: InputEvent) {
       if (e.button === "left") pet.left = true;
       else if (e.button === "right") pet.right = true;
       registerTap();
+      countInput();
       break;
     case "mouse_up":
       if (e.button === "left") pet.left = false;
@@ -66,6 +87,7 @@ let unTray: (() => void) | undefined;
 let ro: ResizeObserver | undefined;
 
 onMounted(async () => {
+  startReporting();
   unInput = await listenInput(onInput);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") panelOpen.value = !panelOpen.value;
@@ -81,6 +103,7 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
+  stopReporting();
   unInput?.();
   unTray?.();
   ro?.disconnect();
@@ -129,19 +152,46 @@ const remoteCols = computed(() => Math.min(5, Math.max(1, others.value.length)))
       />
     </div>
 
-    <div v-if="panelOpen && !settings.clickThrough" class="panel">
-      <div class="tabs">
-        <button :class="{ on: tab === 'room' }" @click="tab = 'room'">房间</button>
-        <button :class="{ on: tab === 'settings' }" @click="tab = 'settings'">设置</button>
-      </div>
-      <RoomPanel v-show="tab === 'room'" />
-      <SettingsPanel v-show="tab === 'settings'" />
+    <div v-if="panelOpen && !settings.clickThrough" class="panel" :style="panelStyle">
+      <header class="head">
+        <strong>AsoulTappo</strong>
+        <span v-if="boxes" class="boxes" title="可开启的宝箱">🎁 {{ boxes }}</span>
+      </header>
+      <main class="content" role="tabpanel">
+        <RoomPanel v-show="tab === 'main'" />
+        <CollectionPanel v-if="tab === 'channel'" />
+        <ThemePanel v-show="tab === 'dynamic'" />
+        <ProfilePanel v-if="tab === 'myself'" />
+      </main>
+      <nav class="tabs" role="tablist" aria-label="面板">
+        <button
+          v-for="t in TABS" :key="t.id" role="tab" :aria-selected="tab === t.id" :class="{ on: tab === t.id }" @click="tab = t.id"
+        >
+          <img v-if="skin.icons[t.id]" :src="tab === t.id ? skin.icons[t.id].s : skin.icons[t.id].n" alt="" draggable="false" />
+          <span>{{ t.label }}</span>
+        </button>
+      </nav>
     </div>
   </div>
 </template>
 
 <style>
 html, body, #app { margin: 0; background: transparent; overflow: hidden; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+/* shared form controls (theme colors come from CSS variables set on .panel) */
+.panel button, .panel input, .panel select { font-family: inherit; font-size: 12px; }
+.panel input:not([type="checkbox"]):not([type="range"]), .panel select {
+  padding: 5px 8px; border: 1px solid rgba(0, 0, 0, 0.18); border-radius: 8px; background: rgba(255, 255, 255, 0.75); color: inherit;
+}
+.panel button {
+  padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(0, 0, 0, 0.15); background: rgba(255, 255, 255, 0.8); color: inherit; cursor: pointer;
+}
+.panel button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.panel button:disabled { opacity: 0.5; cursor: default; }
+.panel input[type="range"], .panel input[type="checkbox"] { accent-color: var(--accent); }
+.panel :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
 </style>
 
 <style scoped>
@@ -151,13 +201,33 @@ html, body, #app { margin: 0; background: transparent; overflow: hidden; font-fa
   position: absolute; right: -2px; top: -2px; width: 22px; height: 22px; border-radius: 50%; border: none; padding: 0;
   background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; opacity: 0; transition: opacity 120ms;
 }
-.stage:hover .gear { opacity: 1; }
+.stage:hover .gear, .gear:focus-visible { opacity: 1; }
 .remotes { display: grid; gap: 4px 6px; justify-items: center; }
 .panel {
-  width: 300px; box-sizing: border-box; padding: 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.97);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.3); color: #222;
+  width: 300px; box-sizing: border-box; border-radius: 16px; overflow: hidden; color: #2b2326; display: flex; flex-direction: column;
+  background: var(--bg-img) center / cover, linear-gradient(160deg, var(--tint), #fff);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(var(--accent-rgb), 0.35);
 }
-.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.tabs button { flex: 1; padding: 4px; border: none; background: #f2f2f2; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.tabs button.on { background: #ff6b9d; color: #fff; }
+.head {
+  display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; min-height: 30px; font-size: 13px;
+  background: var(--head-img) center / cover, linear-gradient(90deg, var(--accent), var(--char));
+  color: var(--head-fg); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.boxes { font-size: 12px; background: rgba(0, 0, 0, 0.35); color: #fff; padding: 1px 8px; border-radius: 999px; }
+.content {
+  margin: 8px; padding: 10px; border-radius: 12px; max-height: 420px; overflow-y: auto; scrollbar-width: thin;
+  background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(8px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+}
+.tabs {
+  display: flex; background: var(--tab-img) center / cover, rgba(255, 255, 255, 0.9);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.tabs button {
+  flex: 1; padding: 5px 0 4px; border: none; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px;
+  font-size: 10px; color: var(--tab-fg); opacity: 0.8;
+}
+.tabs button img { width: 26px; height: 26px; object-fit: contain; }
+.tabs button.on { opacity: 1; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 2px; text-decoration-color: var(--accent); }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 </style>
