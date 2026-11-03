@@ -15,12 +15,13 @@ defineEmits<{ "update:modelValue": [id: T] }>();
 </template>
 
 <style scoped>
-.seg { display: flex; gap: 2px; padding: 4px; border-radius: 999px; background: var(--paper-2); box-shadow: inset 0 1px 2px rgba(70, 35, 45, 0.06); }
+.seg { display: flex; gap: 18px; box-shadow: inset 0 -1px 0 var(--line); overflow-x: auto; scrollbar-width: none; }
 .seg button {
-  flex: 1; min-width: 0; height: 32px; border: none; border-radius: 999px; background: none; cursor: pointer;
-  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-2); white-space: nowrap; transition: background 150ms, color 150ms;
+  position: relative; flex: none; height: 34px; padding: 0 2px; border: none; background: none; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-3); white-space: nowrap; transition: color 120ms;
 }
 .seg button:hover { color: var(--ink); }
-.seg button.on { background: #fff; color: var(--ink); box-shadow: 0 2px 6px rgba(70, 35, 45, 0.12), inset 0 -2px 0 var(--accent); }
-.seg small { margin-left: 4px; font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.seg button.on { color: var(--ink); }
+.seg button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--accent); }
+.seg small { margin-left: 4px; font-size: 11px; color: var(--ink-3); font-weight: 600; font-variant-numeric: tabular-nums; }
 </style>

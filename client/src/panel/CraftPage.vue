@@ -103,7 +103,7 @@ async function craft() {
 
     <section class="pick">
       <header>
-        <h3>合成指定物品</h3>
+        <h4 class="ui-label">合成指定物品</h4>
         <label class="search"><Icon name="search" :size="16" /><input v-model="query" class="ui-input" placeholder="搜索名字 / 系列 / 角色" /></label>
       </header>
       <SegTabs v-model="tab" :tabs="tabs" label="合成分类" />
@@ -131,45 +131,45 @@ async function craft() {
 </template>
 
 <style scoped>
-.craft { display: flex; flex-direction: column; gap: 18px; padding-bottom: 64px; }
-.row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; }
-.chest { display: flex; gap: 16px; padding: 16px; align-items: center; }
-.art { position: relative; width: 104px; height: 104px; border-radius: 26px; display: grid; place-items: center; background: linear-gradient(160deg, #fff6e4, #ffe2b0); flex: none; }
+.craft { display: flex; flex-direction: column; gap: 20px; padding-bottom: 64px; }
+.row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; }
+.chest { display: flex; gap: 16px; padding: 14px; align-items: center; }
+.art { position: relative; width: 96px; height: 96px; border-radius: var(--r-l); display: grid; place-items: center; background: #fbf3e2; flex: none; }
 .art.shake { animation: shake 320ms linear infinite; }
-.art .n { position: absolute; right: -6px; top: -6px; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 13px; }
+.art .n { position: absolute; right: 6px; top: 6px; padding: 0 5px; border-radius: var(--r-s); background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.info > b { font-size: 16px; }
+.info > b { font-size: 15px; }
 .bars { display: flex; flex-direction: column; gap: 6px; }
 .bars label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .ui-bar.alt > i { background: var(--char); }
 .btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .spin { width: 18px; height: 18px; object-fit: contain; }
 .err { color: var(--bad); font-size: 12px; }
-.shards { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.shards { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .sh { display: flex; align-items: center; gap: 8px; color: var(--accent); }
-.sh b { font-size: 28px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
-.sh span { color: var(--ink-2); font-weight: 700; font-size: 13px; }
+.sh b { font-size: 24px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sh span { color: var(--ink-3); font-weight: 600; font-size: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
-th { font-weight: 600; color: var(--ink-3); text-align: right; padding-bottom: 4px; }
-td { padding: 3px 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+th { font-weight: 600; color: var(--ink-3); text-align: right; padding: 0 0 4px; border-bottom: 1px solid var(--line); }
+td { padding: 4px 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 td:first-child { text-align: left; display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
-td i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+td i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .r-common td i { background: var(--rar-common); } .r-rare td i { background: var(--rar-rare); }
 .r-epic td i { background: var(--rar-epic); } .r-legendary td i { background: var(--rar-legendary); }
 .pick { display: flex; flex-direction: column; gap: 12px; }
 .pick header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.pick h3 { margin: 0; font-size: 15px; }
+.pick header .ui-label { margin: 0; }
 .search { display: flex; align-items: center; gap: 6px; color: var(--ink-3); }
 .search input { width: 200px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 14px 10px; justify-items: center; }
 .empty { text-align: center; padding: 24px 0; }
-.dock { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; box-shadow: var(--shadow-2); }
-.tile { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: var(--rar-common-bg); flex: none; }
+.dock { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-color: var(--line-2); box-shadow: var(--shadow-2); }
+.tile { width: 52px; height: 52px; border-radius: var(--r-m); display: grid; place-items: center; background: var(--rar-common-bg); flex: none; }
 .tile.r-rare { background: var(--rar-rare-bg); } .tile.r-epic { background: var(--rar-epic-bg); } .tile.r-legendary { background: var(--rar-legendary-bg); }
 .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .what b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .what small { font-size: 12px; color: var(--ink-3); }
-.slide-enter-active, .slide-leave-active { transition: opacity 180ms, transform 180ms; }
-.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(12px); }
+.slide-enter-active, .slide-leave-active { transition: opacity 160ms, transform 160ms; }
+.slide-enter-from, .slide-leave-to { opacity: 0; transform: translateY(8px); }
 @keyframes shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-4deg); } 75% { transform: rotate(4deg); } }
 </style>

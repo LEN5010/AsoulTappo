@@ -30,20 +30,22 @@ const list = computed(() => props.keys.map((k) => ({ key: k, e: getEmote(k) })).
 <style scoped>
 /* beside the pet, so the bubble on its head stays visible while sending */
 .pop {
-  position: absolute; bottom: 0; z-index: 20; width: 236px; padding: 10px; box-sizing: border-box;
-  border-radius: 20px; background: rgba(255, 252, 249, 0.98); box-shadow: 0 10px 30px rgba(50, 20, 30, 0.28), inset 0 0 0 1.5px rgba(var(--accent-rgb), 0.3);
-  font-family: var(--font); animation: pop 200ms cubic-bezier(0.34, 1.5, 0.64, 1); cursor: default;
+  position: absolute; bottom: 0; z-index: 20; width: 228px; padding: 8px; box-sizing: border-box;
+  border-radius: var(--r-xl); background: rgba(252, 251, 250, 0.99); border: 1px solid var(--line-2); box-shadow: 0 10px 28px rgba(43, 35, 38, 0.2);
+  font-family: var(--font); animation: pop 140ms ease-out; cursor: default;
 }
 .pop.left { right: calc(100% + 12px); transform-origin: 100% 100%; }
 .pop.right { left: calc(100% + 12px); transform-origin: 0 100%; }
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.emo { aspect-ratio: 1; border-radius: 14px; border: none; padding: 3px; background: var(--paper-2); cursor: pointer; transition: transform 120ms, background 120ms; }
-.emo:hover { transform: scale(1.1); background: rgba(var(--accent-rgb), 0.18); }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.emo { aspect-ratio: 1; border-radius: var(--r-m); border: none; padding: 3px; background: none; cursor: pointer; transition: background 120ms; }
+.emo:hover { background: var(--paper-2); }
 .emo img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.foot { display: flex; gap: 6px; margin-top: 8px; }
-.foot button { flex: 1; height: 30px; border-radius: 999px; border: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
-.like { background: rgba(var(--accent-rgb), 0.16); color: var(--ink); }
+.foot { display: flex; gap: 4px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.foot button { flex: 1; height: 28px; border-radius: var(--r-m); border: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.like { background: rgba(var(--accent-rgb), 0.14); color: var(--ink); }
+.like:hover { background: rgba(var(--accent-rgb), 0.22); }
 .like img { width: 20px; height: 20px; object-fit: contain; }
-.more { background: var(--paper-2); color: var(--ink-2); }
-@keyframes pop { from { opacity: 0; transform: scale(0.85) translateY(6px); } }
+.more { background: none; color: var(--ink-2); }
+.more:hover { background: var(--paper-2); color: var(--ink); }
+@keyframes pop { from { opacity: 0; transform: translateY(4px); } }
 </style>

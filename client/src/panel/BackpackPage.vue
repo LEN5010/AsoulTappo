@@ -154,15 +154,15 @@ const presetHead = (slot: number) => {
       </div>
 
       <div class="side">
-        <div class="ui-card presets">
-          <header><b>我的预设</b><small v-if="!online" class="ui-hint">服务器未连接</small></header>
+        <div class="presets">
+          <header><h4 class="ui-label">我的预设</h4><small v-if="!online" class="ui-hint">服务器未连接</small></header>
           <div class="slots">
             <div v-for="(p, i) in presets" :key="i" class="slot" :class="{ empty: !p }">
               <button type="button" class="main" :disabled="!online" :title="p ? `换上「${p.name}」` : '保存当前搭配'" @click="onPreset(i)">
                 <template v-if="p">
                   <span class="av">
-                    <CharacterAvatar :character="p.loadout.character || settings.character" :size="46" />
-                    <ItemArt v-if="presetHead(i)" class="mini" :item="presetHead(i)!" :size="24" />
+                    <CharacterAvatar :character="p.loadout.character || settings.character" :size="34" />
+                    <ItemArt v-if="presetHead(i)" class="mini" :item="presetHead(i)!" :size="20" />
                   </span>
                   <span class="pname">{{ p.name }}</span>
                 </template>
@@ -175,8 +175,8 @@ const presetHead = (slot: number) => {
             </div>
           </div>
         </div>
-        <div class="ui-card favs">
-          <header><b>常用表情</b><small v-if="hint" class="ui-hint">{{ hint }}</small></header>
+        <div class="favs">
+          <header><h4 class="ui-label">常用表情</h4><small v-if="hint" class="ui-hint">{{ hint }}</small></header>
           <div class="fav-row">
             <button
               v-for="(k, i) in favSlots" :key="i" type="button" class="fav" :class="{ empty: !k }" :disabled="!k"
@@ -206,7 +206,7 @@ const presetHead = (slot: number) => {
           :count="collection.owned[i.id] ?? 0" @click="use(i)"
         />
       </div>
-      <p v-else class="empty ui-muted">
+      <p v-else class="none ui-muted">
         {{ ui.bagTab === "recent" ? "还没有获得物品" : "这里还空着" }}
       </p>
     </section>
@@ -216,40 +216,38 @@ const presetHead = (slot: number) => {
 </template>
 
 <style scoped>
-.bag { display: flex; flex-direction: column; gap: 16px; }
-.top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 14px; }
-.stage { position: relative; overflow: hidden; min-height: 236px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--tint), #fff) center / cover; }
-.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255, 250, 247, 0.15), rgba(255, 250, 247, 0.65)); }
+.bag { display: flex; flex-direction: column; gap: 18px; }
+.top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 20px; }
+.stage { position: relative; overflow: hidden; min-height: 236px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--tint) center / cover; }
+.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(252, 251, 250, 0.1), rgba(252, 251, 250, 0.7)); }
 .pet-btn { position: relative; margin-top: 18px; padding: 0; border: none; background: none; cursor: pointer; }
-.worn { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 10px 12px 12px; }
-.tag { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.88); color: var(--ink-2); }
-.side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.side header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-.side header b { font-size: 14px; }
-.presets, .favs { padding: 12px 14px; }
+.worn { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin: 10px 12px 12px; }
+.tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: var(--r-s); background: rgba(255, 255, 255, 0.92); color: var(--ink-2); }
+.side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.side header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .slot { position: relative; }
 .slot .main {
-  width: 100%; aspect-ratio: 1; border-radius: 18px; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px;
-  background: var(--paper-2); color: var(--ink-3); font: inherit; box-shadow: inset 0 0 0 1.5px var(--line); transition: transform 120ms;
+  width: 100%; aspect-ratio: 1; border-radius: var(--r-l); border: 1px solid var(--line); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; overflow: hidden; box-sizing: border-box;
+  background: #fff; color: var(--ink-3); font: inherit; transition: border-color 120ms, background 120ms;
 }
-.slot .main:hover:not(:disabled) { transform: translateY(-2px); }
-.slot.empty .main { border: 2px dashed rgba(var(--accent-rgb), 0.28); box-shadow: none; }
-.slot:not(.empty) .main { background: rgba(var(--accent-rgb), 0.1); }
-.av { position: relative; }
+.slot .main:hover:not(:disabled) { border-color: var(--line-2); background: var(--paper-2); }
+.slot.empty .main { border-style: dashed; border-color: var(--line-2); background: none; }
+.av { position: relative; display: grid; }
 .av .mini { position: absolute; right: -8px; top: -8px; }
-.pname { font-size: 10px; font-weight: 700; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pname { font-size: 10px; font-weight: 600; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ops { position: absolute; right: -4px; top: -6px; display: none; gap: 2px; }
 .slot:hover .ops, .slot:focus-within .ops { display: flex; }
-.ops button { width: 22px; height: 22px; border-radius: 50%; border: none; display: grid; place-items: center; background: #fff; color: var(--ink-2); box-shadow: var(--shadow-1); cursor: pointer; }
+.ops button { width: 22px; height: 22px; border-radius: var(--r-s); border: 1px solid var(--line-2); display: grid; place-items: center; background: #fff; color: var(--ink-2); cursor: pointer; }
+.ops button:hover { color: var(--ink); background: var(--paper-2); }
 .fav-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.fav { width: 100%; min-width: 0; aspect-ratio: 1; max-height: 54px; border-radius: 16px; border: none; padding: 0; display: grid; place-items: center; background: rgba(var(--accent-rgb), 0.12); cursor: pointer; box-sizing: border-box; }
-.fav.empty { background: none; border: 2px dashed rgba(var(--accent-rgb), 0.22); cursor: default; }
-.fav:not(.empty):hover { background: rgba(217, 83, 79, 0.15); }
+.fav { width: 100%; min-width: 0; aspect-ratio: 1; max-height: 54px; border-radius: var(--r-l); border: 1px solid var(--line); padding: 0; display: grid; place-items: center; background: #fff; cursor: pointer; box-sizing: border-box; }
+.fav.empty { background: none; border-style: dashed; border-color: var(--line-2); cursor: default; }
+.fav:not(.empty):hover { border-color: rgba(207, 75, 71, 0.5); background: rgba(207, 75, 71, 0.06); }
 .list { min-height: 120px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 14px 12px; justify-items: center; }
-.group + .group { margin-top: 14px; }
-.group h4 { margin: 0 0 8px; font-size: 12px; color: var(--ink-2); }
+.group + .group { margin-top: 16px; }
+.group h4 { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--ink-3); }
 .group .grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
-.empty { text-align: center; padding: 30px 0; font-size: 13px; }
+.none { text-align: center; padding: 30px 0; font-size: 13px; }
 </style>

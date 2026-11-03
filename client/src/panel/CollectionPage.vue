@@ -93,20 +93,20 @@ function show(i: Item) {
 </template>
 
 <style scoped>
-.dex { display: flex; flex-direction: column; gap: 16px; }
-.progress { display: flex; align-items: center; gap: 18px; padding: 14px 18px; }
-.nums b { font-size: 28px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
-.nums span { margin-left: 4px; font-size: 14px; color: var(--ink-3); font-weight: 700; }
+.dex { display: flex; flex-direction: column; gap: 18px; }
+.progress { display: flex; align-items: center; gap: 18px; padding: 12px 16px; }
+.nums b { font-size: 24px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.nums span { margin-left: 4px; font-size: 13px; color: var(--ink-3); font-weight: 600; font-variant-numeric: tabular-nums; }
 .meter { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .group { display: flex; flex-direction: column; gap: 12px; }
-.ghead { align-self: flex-start; display: flex; align-items: center; gap: 8px; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); padding: 2px 0; }
-.ghead b { font-size: 15px; }
-.count { font-size: 13px; color: var(--ink-3); font-weight: 700; font-variant-numeric: tabular-nums; }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--paper-3); }
+.ghead { align-self: stretch; display: flex; align-items: center; gap: 8px; border: none; border-bottom: 1px solid var(--line); background: none; cursor: pointer; font: inherit; color: var(--ink); padding: 0 0 6px; }
+.ghead b { font-size: 13px; font-weight: 700; }
+.count { font-size: 12px; color: var(--ink-3); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 2px; background: var(--paper-3); }
 .g-legendary .dot { background: var(--rar-legendary); } .g-epic .dot { background: var(--rar-epic); }
 .g-rare .dot { background: var(--rar-rare); } .g-common .dot { background: var(--rar-common); }
 .g-starter .dot, .g-decor .dot { background: var(--accent); }
-.chev { color: var(--ink-3); transition: transform 150ms; }
+.chev { margin-left: auto; color: var(--ink-3); transition: transform 150ms; }
 .chev.up { transform: rotate(180deg); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 14px 10px; justify-items: center; }
 </style>

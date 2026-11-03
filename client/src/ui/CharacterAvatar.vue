@@ -14,7 +14,7 @@ const style = computed(() => {
   return {
     width: `${props.size}px`,
     height: `${props.size}px`,
-    borderRadius: props.round ? "50%" : "22%",
+    borderRadius: props.round ? "50%" : "12%",
     backgroundColor: `${characterColor(props.character)}33`,
     backgroundImage: bg.value ? `url("${bg.value}")` : "none",
     backgroundSize: `${PET_BASE.width * k}px ${PET_BASE.height * k}px`,

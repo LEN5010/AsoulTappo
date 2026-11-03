@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Item, ItemKind } from "../items";
+import type { Item } from "../items";
 import ItemArt from "./ItemArt.vue";
 import Icon from "./Icon.vue";
 
@@ -17,9 +17,6 @@ const props = withDefaults(defineProps<{
 }>(), { locked: false, equipped: false, fresh: false, count: 0, note: "", selected: false, size: 96 });
 defineEmits<{ click: [] }>();
 
-const KIND_ICON: Record<ItemKind, string> = {
-  character: "person", accessory: "bow", emote: "smile", card: "card", theme: "palette", frame: "ring", badge: "medal",
-};
 const rarity = computed(() => props.item.rarity ?? "none");
 </script>
 
@@ -30,7 +27,6 @@ const rarity = computed(() => props.item.rarity ?? "none");
   >
     <span class="tile" :style="{ height: `${size}px` }">
       <ItemArt :item="item" :size="size - 12" :locked="locked" />
-      <span class="kind"><Icon :name="KIND_ICON[item.kind]" :size="12" /></span>
       <span v-if="fresh && !locked" class="fresh">NEW</span>
       <span v-if="count > 1 && !locked" class="count">×{{ count }}</span>
       <span v-if="equipped" class="on"><Icon name="check" :size="12" /></span>
@@ -41,24 +37,26 @@ const rarity = computed(() => props.item.rarity ?? "none");
 </template>
 
 <style scoped>
-.item { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 0; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); }
+.item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: none; background: none; cursor: pointer; font: inherit; color: var(--ink); }
+/* flat tile; the bottom edge carries the rarity colour */
 .tile {
-  position: relative; width: 100%; box-sizing: border-box; display: grid; place-items: center; border-radius: 20px;
-  background: var(--rar-none-bg); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(70, 35, 45, 0.1);
-  transition: transform 140ms, box-shadow 140ms;
+  position: relative; width: 100%; box-sizing: border-box; display: grid; place-items: center; overflow: hidden;
+  border-radius: var(--r-l); background: var(--rar-none-bg); box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 120ms;
 }
-.r-common .tile { background: var(--rar-common-bg); }
-.r-rare .tile { background: var(--rar-rare-bg); }
-.r-epic .tile { background: var(--rar-epic-bg); }
-.r-legendary .tile { background: var(--rar-legendary-bg); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 0 0 2px rgba(233, 178, 58, 0.45), 0 4px 14px rgba(233, 178, 58, 0.35); }
-.item:hover .tile { transform: translateY(-2px); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 6px 14px rgba(70, 35, 45, 0.16); }
-.equipped .tile, .selected .tile { box-shadow: 0 0 0 3px var(--accent), 0 6px 14px rgba(var(--accent-rgb), 0.3); }
+.tile::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: transparent; }
+.r-common .tile { background: var(--rar-common-bg); } .r-common .tile::after { background: var(--rar-common); }
+.r-rare .tile { background: var(--rar-rare-bg); } .r-rare .tile::after { background: var(--rar-rare); }
+.r-epic .tile { background: var(--rar-epic-bg); } .r-epic .tile::after { background: var(--rar-epic); }
+.r-legendary .tile { background: var(--rar-legendary-bg); } .r-legendary .tile::after { background: var(--rar-legendary); }
+.item:hover .tile { box-shadow: inset 0 0 0 1px var(--line-2); }
+.equipped .tile, .selected .tile { box-shadow: inset 0 0 0 2px var(--accent); }
 .locked .tile { background: var(--paper-2); }
-.kind { position: absolute; left: 6px; bottom: 6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.85); color: var(--ink-2); }
-.fresh { position: absolute; left: 6px; top: 6px; font-size: 9px; font-weight: 800; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); }
-.count { position: absolute; right: 6px; bottom: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(59, 45, 51, 0.72); color: #fff; }
-.on { position: absolute; right: 6px; top: 6px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
-.lock { position: absolute; right: 7px; top: 7px; color: var(--ink-3); }
-.name { max-width: 100%; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.locked .tile::after { background: transparent; }
+.fresh { position: absolute; left: 5px; top: 5px; font-size: 9px; font-weight: 800; letter-spacing: 0.04em; padding: 1px 4px; border-radius: 3px; background: var(--accent); color: var(--on-accent); }
+.count { position: absolute; right: 5px; bottom: 7px; font-size: 10px; font-weight: 700; padding: 0 4px; border-radius: 3px; background: rgba(43, 35, 38, 0.7); color: #fff; font-variant-numeric: tabular-nums; }
+.on { position: absolute; right: 5px; top: 5px; width: 18px; height: 18px; border-radius: var(--r-s); display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
+.lock { position: absolute; right: 6px; top: 6px; color: var(--ink-3); }
+.name { max-width: 100%; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
 .locked .name { color: var(--ink-3); }
 </style>

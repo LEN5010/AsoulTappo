@@ -10,6 +10,7 @@ import { assetUrl } from "../asset";
 import { reducedMotion, skin } from "../stores/theme";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import Icon from "../ui/Icon.vue";
+import RangeInput from "../ui/RangeInput.vue";
 
 const input = ref(settings.lastRoom);
 const busy = ref(false);
@@ -44,40 +45,38 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
 
 <template>
   <div class="room">
-    <section class="ui-card hero">
-      <div class="status">
-        <img v-if="(conn === 'connecting' || conn === 'reconnecting') && skin.loading && !reducedMotion" class="loading" :src="skin.loading" alt="" />
-        <span v-else class="dot" :class="conn"></span>
-        <b>{{ connText[conn] }}</b>
-        <span v-if="inRoom" class="ui-muted">· {{ members.size }}/{{ MAX_ROOM_SIZE }} 人</span>
-      </div>
-
-      <template v-if="!inRoom && conn === 'idle'">
-        <div class="join">
+    <section>
+      <h4 class="ui-label">房间</h4>
+      <div class="group">
+        <div class="row">
+          <span class="status">
+            <img v-if="(conn === 'connecting' || conn === 'reconnecting') && skin.loading && !reducedMotion" class="loading" :src="skin.loading" alt="" />
+            <i v-else class="dot" :class="conn"></i>
+            {{ connText[conn] }}<span v-if="inRoom" class="ui-hint">{{ members.size }}/{{ MAX_ROOM_SIZE }} 人</span>
+          </span>
+        </div>
+        <div v-if="!inRoom && conn === 'idle'" class="row join">
           <input v-model="input" class="ui-input" placeholder="输入房间号" spellcheck="false" @keydown.enter="joinRoom(input)" />
           <button type="button" class="ui-btn" :disabled="!input.trim()" @click="joinRoom(input)">加入</button>
-          <span class="or">或</span>
-          <button type="button" class="ui-btn primary" :disabled="busy" @click="onCreate"><Icon name="plus" :size="16" />创建房间</button>
+          <button type="button" class="ui-btn primary" :disabled="busy" @click="onCreate"><Icon name="plus" :size="15" />创建房间</button>
         </div>
-      </template>
-      <template v-else>
-        <div class="join">
-          <label class="rid"><Icon name="link" :size="16" /><input :value="roomId" class="ui-input" readonly spellcheck="false" @focus="($event.target as HTMLInputElement).select()" /></label>
-          <button type="button" class="ui-btn" @click="copy"><Icon name="copy" :size="15" />{{ copied ? "已复制" : "复制房间号" }}</button>
-          <button type="button" class="ui-btn ghost" @click="leaveRoom"><Icon name="logout" :size="15" />离开</button>
+        <div v-else class="row join">
+          <input :value="roomId" class="ui-input mono" readonly spellcheck="false" @focus="($event.target as HTMLInputElement).select()" />
+          <button type="button" class="ui-btn" @click="copy"><Icon name="copy" :size="14" />{{ copied ? "已复制" : "复制" }}</button>
+          <button type="button" class="ui-btn ghost" @click="leaveRoom"><Icon name="logout" :size="14" />离开</button>
         </div>
-      </template>
-      <p v-if="lastError || notice" class="err">{{ lastError || notice }}</p>
+        <p v-if="lastError || notice" class="err">{{ lastError || notice }}</p>
+      </div>
     </section>
 
-    <section v-if="inRoom" class="ui-card members">
-      <header>
-        <b>成员</b>
-        <button type="button" class="ui-btn small" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes"><Icon name="refresh" :size="14" />整理桌面</button>
+    <section v-if="inRoom">
+      <header class="cap">
+        <h4 class="ui-label">成员</h4>
+        <button type="button" class="ui-btn small ghost" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes"><Icon name="refresh" :size="13" />整理桌面</button>
       </header>
-      <ul>
-        <li v-for="m in members.values()" :key="m.id">
-          <CharacterAvatar :character="m.character" :frame="m.frame" :size="34" />
+      <ul class="group">
+        <li v-for="m in members.values()" :key="m.id" class="row">
+          <CharacterAvatar :character="m.character" :frame="m.frame" :size="28" />
           <span class="nick">{{ m.nick }}<em v-if="m.id === youId">我</em></span>
           <img v-if="badgeImg(m.badge)" class="badge" :src="badgeImg(m.badge)" :title="getDecor(m.badge)?.name" alt="" />
           <span class="chr" :style="{ color: characterColor(m.character) }">{{ m.character }}</span>
@@ -86,44 +85,40 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
       </ul>
     </section>
 
-    <section class="ui-card opts">
-      <label class="line">
-        <span>同桌桌宠大小 <b>×{{ settings.remoteScale.toFixed(1) }}</b></span>
-        <input v-model.number="settings.remoteScale" class="ui-range" type="range" min="0.4" max="1.5" step="0.1" />
-      </label>
-      <label class="line sw">
-        <span>显示同桌名字</span>
-        <input v-model="settings.showNames" class="ui-switch" type="checkbox" />
-      </label>
+    <section>
+      <h4 class="ui-label">同桌显示</h4>
+      <div class="group">
+        <label class="row">
+          <span>桌宠大小</span>
+          <span class="ctl"><RangeInput v-model="settings.remoteScale" :min="0.4" :max="1.5" :step="0.1" /><b class="val">×{{ settings.remoteScale.toFixed(1) }}</b></span>
+        </label>
+        <label class="row"><span>显示名字</span><input v-model="settings.showNames" class="ui-switch" type="checkbox" /></label>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.room { display: flex; flex-direction: column; gap: 14px; }
-.hero { padding: 18px; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.1), #fff 60%); }
-.status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); }
-.dot.open { background: var(--ok); box-shadow: 0 0 0 4px rgba(63, 182, 122, 0.18); }
+.room { display: flex; flex-direction: column; gap: 20px; }
+.group { margin: 0; padding: 0; list-style: none; background: #fff; border: 1px solid var(--line); border-radius: var(--r-l); }
+.group > * + * { border-top: 1px solid var(--line); }
+.row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 14px; box-sizing: border-box; font-size: 13px; }
+label.row { justify-content: space-between; }
+.status { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.dot.open { background: var(--ok); }
 .dot.connecting, .dot.reconnecting { background: var(--warn); }
-.loading { width: 24px; height: 24px; object-fit: contain; }
-.join { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.join > .ui-input { flex: 1; min-width: 160px; }
-.rid { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 6px; color: var(--ink-3); }
-.rid .ui-input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
-.or { color: var(--ink-3); font-size: 12px; }
-.err { margin: 0; color: var(--bad); font-size: 12px; }
-.members { padding: 14px 16px; }
-.members header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
-li:last-child { border-bottom: none; }
+.loading { width: 20px; height: 20px; object-fit: contain; }
+.join .ui-input { flex: 1; }
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; color: var(--ink-2); }
+.err { margin: 0; padding: 8px 14px; color: var(--bad); font-size: 12px; }
+.cap { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.cap .ui-label { margin: 0; }
 .nick { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.nick em { margin-left: 6px; font-style: normal; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--on-accent); }
-.badge { height: 20px; width: auto; }
-.chr { font-size: 12px; font-weight: 700; }
+.nick em { margin-left: 6px; font-style: normal; font-size: 11px; padding: 1px 5px; border-radius: var(--r-s); background: rgba(var(--accent-rgb), 0.14); color: var(--ink-2); }
+.badge { height: 18px; width: auto; }
+.chr { font-size: 12px; font-weight: 600; }
 .taps { min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
-.opts { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.line { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-.line.sw { flex-direction: row; align-items: center; justify-content: space-between; }
+.ctl { width: 280px; flex: none; display: flex; align-items: center; gap: 10px; }
+.val { width: 48px; flex: none; text-align: right; font-size: 12px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 </style>
