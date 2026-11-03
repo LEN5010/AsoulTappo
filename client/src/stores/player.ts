@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { Api, ActivityReporter, ApiError, newToken, type Collection, type OpenResult, type PlayerStatus } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { settings } from "./settings";
@@ -13,19 +13,41 @@ function loadToken(): string {
     localStorage.setItem(TOKEN_KEY, n);
     return n;
   } catch {
-    return newToken(); // storage unavailable: progress lives for this session only
+    return newToken();
   }
 }
 
-/** Secret identity of this player on the server (never shown to other players). */
 export const token = loadToken();
-
-export const api = new Api(() => toHttpBase(settings.serverUrl), () => token);
-
 export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
+export const boxes = computed(() => status.value?.boxes ?? 0);
+export const lastOpened = ref<OpenResult | null>(null);
+
+interface Session { api: Api; reporter: ActivityReporter }
+const sessions = new Map<string, Session>();
+let generation = 0;
+let timer: ReturnType<typeof setInterval> | undefined;
+
+function sessionFor(base: string): Session {
+  const found = sessions.get(base);
+  if (found) return found;
+  const api = new Api(() => base, () => token);
+  const session: Session = { api, reporter: new ActivityReporter(async (batch) => {
+    const gen = generation;
+    const result = await api.activity(batch);
+    if (current === session && gen === generation) {
+      status.value = result;
+      online.value = true;
+      error.value = "";
+    }
+  }) };
+  sessions.set(base, session);
+  return session;
+}
+
+let current = sessionFor(toHttpBase(settings.serverUrl));
 
 function fail(e: unknown): void {
   online.value = false;
@@ -33,62 +55,89 @@ function fail(e: unknown): void {
 }
 
 export async function refresh(): Promise<void> {
+  const session = current;
+  const gen = generation;
   try {
-    status.value = await api.me();
-    const c = await api.collection();
+    const [s, c] = await Promise.all([session.api.me(), session.api.collection()]);
+    if (session !== current || gen !== generation) return;
+    status.value = s;
     collection.owned = c.owned;
     collection.recent = c.recent;
     online.value = true;
     error.value = "";
   } catch (e) {
-    fail(e);
+    if (session === current && gen === generation) fail(e);
   }
 }
 
-const reporter = new ActivityReporter(async (n) => {
-  status.value = await api.activity(n);
-  online.value = true;
-});
-
-/** Count one input (key press / click) toward box progress. Only the count is ever sent. */
-export function countInput(): void {
-  reporter.add(1);
+async function flush(session: Session): Promise<boolean> {
+  const gen = generation;
+  const ok = await session.reporter.flush();
+  if (!ok && session === current && gen === generation) online.value = false;
+  return ok;
 }
 
-let timer: ReturnType<typeof setInterval> | undefined;
+watch(() => settings.serverUrl, (url) => {
+  const previous = current;
+  generation++;
+  current = sessionFor(toHttpBase(url));
+  status.value = null;
+  collection.owned = {};
+  collection.recent = [];
+  lastOpened.value = null;
+  online.value = false;
+  error.value = "";
+  // Each reporter keeps its original server and batch identity, including retries.
+  void flush(previous);
+  if (timer) void refresh();
+}, { flush: "sync" });
+
+export function countInput(): void {
+  current.reporter.add(1);
+}
+
 export function startReporting(everyMs = 20000): void {
   if (timer) return;
-  void refresh();
+  void refresh(); // establishes the server's counting baseline before the first batch
   timer = setInterval(() => {
-    if (reporter.size > 0) void reporter.flush().then((ok) => ok || (online.value = false));
+    for (const session of sessions.values()) {
+      if (session.reporter.size > 0) void flush(session);
+    }
   }, everyMs);
 }
+
 export function stopReporting(): void {
   if (timer) clearInterval(timer);
   timer = undefined;
+  for (const session of sessions.values()) void flush(session);
 }
 
-export const boxes = computed(() => status.value?.boxes ?? 0);
-export const lastOpened = ref<OpenResult | null>(null);
-
 export async function openBox(): Promise<OpenResult | null> {
+  const session = current;
+  const gen = generation;
   try {
-    await reporter.flush(); // make sure the latest taps are counted first
-    const r = await api.openBox();
+    if (!await flush(session) || session !== current || gen !== generation) return null;
+    const r = await session.api.openBox();
+    if (session !== current || gen !== generation) return null;
     lastOpened.value = r;
     await refresh();
-    return r;
+    return session === current && gen === generation ? r : null;
   } catch (e) {
-    fail(e);
+    if (session === current && gen === generation) fail(e);
     return null;
   }
 }
 
-export async function chooseDecor(patch: { frame?: string; badge?: string }): Promise<void> {
+export async function chooseDecor(patch: { frame?: string; badge?: string }): Promise<boolean> {
+  const session = current;
+  const gen = generation;
   try {
-    const r = await api.setDecor(patch);
-    if (status.value) Object.assign(status.value, r);
+    const r = await session.api.setDecor(patch);
+    if (session !== current || gen !== generation) return false;
+    status.value = r;
+    return true;
   } catch (e) {
-    fail(e);
+    if (session === current && gen === generation) fail(e);
+    return false;
   }
 }

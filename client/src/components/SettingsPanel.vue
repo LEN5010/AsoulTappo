@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { watch } from "vue";
+import { ref, watch } from "vue";
 import { characterNames } from "../characters";
 import { settings } from "../stores/settings";
-import { setBatchMs, syncProfile } from "../stores/room";
 import { isTauri } from "../composables/tauri";
 
-watch(() => settings.character, (character) => syncProfile({ character }));
-watch(() => settings.nick, (nick) => nick.trim() && syncProfile({ nick: nick.trim() }));
-watch(() => settings.batchMs, (ms) => setBatchMs(ms));
+const serverDraft = ref(settings.serverUrl);
+const serverError = ref("");
+watch(() => settings.serverUrl, (url) => { serverDraft.value = url; });
+function applyServer() {
+  try {
+    const url = new URL(serverDraft.value.trim());
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error("invalid URL");
+    }
+    settings.serverUrl = url.toString().replace(/\/+$/, "");
+    serverDraft.value = settings.serverUrl;
+    serverError.value = "";
+  } catch {
+    serverError.value = "请输入 HTTP 或 HTTPS 服务器地址";
+  }
+}
 </script>
 
 <template>
@@ -21,8 +33,9 @@ watch(() => settings.batchMs, (ms) => setBatchMs(ms));
       </select>
     </label>
     <label>服务器地址
-      <input v-model.trim="settings.serverUrl" spellcheck="false" placeholder="http://localhost:8000" />
-      <small>修改后重新加入房间生效</small>
+      <input v-model.trim="serverDraft" spellcheck="false" placeholder="http://localhost:8000" @keydown.enter="applyServer" />
+      <button type="button" :disabled="serverDraft === settings.serverUrl" @click="applyServer">应用服务器</button>
+      <small v-if="serverError" role="alert">{{ serverError }}</small>
     </label>
     <label>桌宠大小 ×{{ settings.scale.toFixed(1) }}
       <input v-model.number="settings.scale" type="range" min="0.5" max="2" step="0.1" />
@@ -38,7 +51,6 @@ watch(() => settings.batchMs, (ms) => setBatchMs(ms));
       <label class="check"><input v-model="settings.alwaysOnTop" type="checkbox" /> 窗口置顶</label>
       <label class="check"><input v-model="settings.clickThrough" type="checkbox" /> 点击穿透(开启后只能从托盘菜单恢复)</label>
     </template>
-    <p class="hint">隐私:仅上传点击次数,不上传按键内容。</p>
   </div>
 </template>
 

@@ -22,7 +22,8 @@ The original PyQt6 client (kept in `legacy/pyqt-client/`) was a ~1100-line `main
 **Frontend (`src/`)**
 - `components/PetView.vue` — layered pet (bg, keyboard, mouse, left/right-click PNGs on the original 240×135 layout). Keyboard layer presses/bounces on key events, mouse layer follows (smoothed, clamped) mouse deltas, click images show while pressed. Remote pets reuse it at small scale; they bounce per tap batch and show `+N` bursts and emotes.
 - `net/` — `protocol.ts` (wire types), `TapBatcher.ts` (100–200 ms count batching), `RoomClient.ts` (WebSocket, ping/pong keepalive, exponential-backoff reconnect + automatic re-join).
-- `stores/` — `settings.ts` (persisted in `localStorage`, validated on load), `room.ts` (members, bursts, emotes, create/join/leave).
+- `stores/` — `settings.ts` persists applied settings; `room.ts` manages room membership and remembers profile changes during reconnects. `player.ts` keeps activity batches bound to their original server and ignores responses from prior server selections.
+- `MouseMotion.ts` starts animation on input, settles small offsets to zero, and stops scheduling frames while idle. Pet layers animate with transforms.
 - `composables/tauri.ts` — Tauri event/command bridge; in a plain browser (`npm run dev`) it falls back to DOM key/mouse events so the UI can be developed without the shell.
 - `characters.ts` — discovers characters from `src/assets/characters/<name>/*.png` (copied from the original project; see `COPYRIGHT.md` there).
 
@@ -31,7 +32,9 @@ The original PyQt6 client (kept in `legacy/pyqt-client/`) was a ~1100-line `main
 - `RoomManager` keeps rooms in a dict; max 20 peers per room; empty rooms are deleted; room IDs are `secrets.token_urlsafe(16)`.
 - CORS middleware (`ASOULTAPPO_CORS_ORIGINS`, default `*`), `ping`→`pong` keepalive, `state` can change character and nickname.
 - State is **in memory, single process**. Scaling out would need Redis pub/sub or sticky routing — out of scope for MVP.
-- No accounts, no persistence, no content logging. Only tap *counts* are ever received.
+- Player progress and collections persist in SQLite. Activity batches use a session sequence for retry deduplication and a time-based credit balance; both commit with player progress.
+- WebSocket decoration reads/writes run in a worker thread. Each peer serializes outgoing messages with a 2-second send deadline; failed peers are closed and removed.
+- Room IDs are allocated on request, and Room objects are created on first join.
 
 ## Privacy / security notes
 - Clients never send key contents or mouse positions; the Rust hook does not even expose key identity to the UI.

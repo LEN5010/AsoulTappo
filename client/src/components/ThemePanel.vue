@@ -30,7 +30,7 @@ function pick(t: ManifestTheme) {
           v-for="t in g.themes" :key="t.id" type="button" class="theme" :class="{ on: settings.theme === t.id }"
           :aria-pressed="settings.theme === t.id" :style="{ '--c': characterColor(g.c.name), '--t': t.colors.accent }" @click="pick(t)"
         >
-          <img v-if="!broken.has(t.id)" :src="url(t.cover)" :alt="t.name" loading="lazy" draggable="false" @error="broken.add(t.id)" />
+          <img v-if="!broken.has(url(t.cover))" :key="url(t.cover)" :src="url(t.cover)" :alt="t.name" loading="lazy" draggable="false" @error="broken.add(($event.target as HTMLImageElement).getAttribute('src')!)" />
           <span v-else class="ph" :style="{ background: t.colors.tint }"></span>
           <span class="name">{{ t.name }}</span>
           <span class="sw" :style="{ background: t.colors.accent }"></span>

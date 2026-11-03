@@ -9,6 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconne
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from .game import Game, GameError
 from .manifest import Manifest, find_packs_dir
@@ -66,6 +67,8 @@ def _guard(fn, *args):
 
 class ActivityBody(BaseModel):
     taps: int = Field(ge=0, le=100000)
+    session: str = Field(min_length=16, max_length=128)
+    sequence: int = Field(ge=1)
 
 
 class DecorBody(BaseModel):
@@ -86,7 +89,7 @@ def api_me(x_player_token: str = Header(default="")) -> dict:
 @app.post("/api/activity")
 def api_activity(body: ActivityBody, x_player_token: str = Header(default="")) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
-    return _guard(game.report_activity, x_player_token, body.taps)
+    return _guard(game.report_activity, x_player_token, body.taps, body.session, body.sequence)
 
 
 @app.post("/api/boxes/open")
@@ -112,8 +115,8 @@ if Path(PACKS_DIR).is_dir():
 # ----------------------------------------------------------------- WebSocket
 async def _leave(room_id: str | None, peer: Peer | None) -> None:
     if room_id and peer:
-        manager.leave(room_id, peer.id)
-        await manager.broadcast(room_id, MemberLeftMsg(id=peer.id).model_dump())
+        if manager.leave(room_id, peer.id):
+            await manager.broadcast(room_id, MemberLeftMsg(id=peer.id).model_dump())
 
 
 @app.websocket("/ws")
@@ -122,12 +125,20 @@ async def ws_endpoint(ws: WebSocket) -> None:
     room_id: str | None = None
     peer: Peer | None = None
 
+    async def send(data: dict) -> None:
+        if peer:
+            await peer.send(data, manager.send_timeout)
+        else:
+            await asyncio.wait_for(ws.send_json(data), manager.send_timeout)
+
     async def err(code: str, message: str = "") -> None:
-        await ws.send_json(ErrorMsg(code=code, message=message).model_dump())
+        await send(ErrorMsg(code=code, message=message).model_dump())
 
     try:
         while True:
             raw = await ws.receive_json()
+            if peer is not None and not peer.active:
+                break
             try:
                 msg = client_message_adapter.validate_python(raw)
             except ValidationError:
@@ -135,14 +146,14 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 continue
 
             if isinstance(msg, PingMsg):  # keepalive, allowed before join
-                await ws.send_json(PongMsg().model_dump())
+                await send(PongMsg().model_dump())
                 continue
 
             if isinstance(msg, JoinMsg):
                 if peer is not None:
                     await err("already_joined")
                     continue
-                frame, badge = game.decor_for(msg.token)
+                frame, badge = await run_in_threadpool(game.decor_for, msg.token)
                 try:
                     peer = manager.join(msg.room, msg.nick, msg.character, ws,
                                         frame=frame, badge=badge, token=msg.token)
@@ -150,7 +161,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await err("room_full", "room is full (max 20)")
                     continue
                 room_id = msg.room
-                await ws.send_json(JoinedMsg(
+                await send(JoinedMsg(
                     room=room_id, you=peer.id,
                     members=[_member(p) for p in manager.members(room_id)],
                 ).model_dump())
@@ -178,7 +189,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                         await err("locked", "frame/badge need a player token")
                         continue
                     try:
-                        st = game.set_decor(peer.token, msg.frame, msg.badge)
+                        st = await run_in_threadpool(game.set_decor, peer.token, msg.frame, msg.badge)
                     except GameError as e:
                         await err(e.code, e.message)
                         continue
@@ -192,6 +203,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     frame=peer.frame, badge=peer.badge).model_dump())
     except WebSocketDisconnect:
         pass
+    except asyncio.TimeoutError:
+        try:
+            await asyncio.wait_for(ws.close(code=1013), manager.send_timeout)
+        except (asyncio.TimeoutError, RuntimeError, OSError):
+            pass
     finally:
         # shielded: the member_left broadcast must survive cancellation of this handler
         await asyncio.shield(_leave(room_id, peer))

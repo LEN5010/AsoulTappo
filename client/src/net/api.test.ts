@@ -8,9 +8,10 @@ describe("Api", () => {
   it("sends the token header and json body", async () => {
     const f = vi.fn(() => resp(200, { boxes: 1 }));
     const api = new Api(() => "http://h:1/", () => "tok", f);
-    await api.activity(7);
+    const batch = { taps: 7, session: "s".repeat(24), sequence: 1 };
+    await api.activity(batch);
     expect(f).toHaveBeenCalledWith("http://h:1/api/activity", expect.objectContaining({
-      method: "POST", body: JSON.stringify({ taps: 7 }),
+      method: "POST", body: JSON.stringify(batch),
       headers: expect.objectContaining({ "X-Player-Token": "tok", "Content-Type": "application/json" }),
     }));
   });
@@ -23,6 +24,35 @@ describe("Api", () => {
 });
 
 describe("ActivityReporter", () => {
+  it("retries the committed batch identity without crediting new input twice", async () => {
+    const seen = new Set<string>();
+    let credited = 0;
+    let first = true;
+    const r = new ActivityReporter(async (batch) => {
+      const key = `${batch.session}:${batch.sequence}`;
+      if (!seen.has(key)) { seen.add(key); credited += batch.taps; }
+      if (first) { first = false; throw new TypeError("response lost"); }
+    });
+    r.add(10);
+    expect(await r.flush()).toBe(false);
+    r.add(2);
+    expect(await r.flush()).toBe(true);
+    expect(credited).toBe(10);
+    expect(await r.flush()).toBe(true);
+    expect(credited).toBe(12);
+  });
+  it("concurrent flushes await the same request", async () => {
+    let release!: () => void;
+    const send = vi.fn(() => new Promise<void>((resolve) => { release = resolve; }));
+    const r = new ActivityReporter(send);
+    r.add(10);
+    const a = r.flush();
+    const b = r.flush();
+    expect(a).toBe(b);
+    release();
+    expect(await b).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
   it("batches counts and keeps them when sending fails", async () => {
     const send = vi.fn().mockRejectedValueOnce(new Error("down")).mockResolvedValue(undefined);
     const r = new ActivityReporter(send);
@@ -31,7 +61,10 @@ describe("ActivityReporter", () => {
     expect(r.size).toBe(5);
     r.add(2);
     expect(await r.flush()).toBe(true);
-    expect(send).toHaveBeenLastCalledWith(7);
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ taps: 5, sequence: 1 }));
+    expect(r.size).toBe(2);
+    expect(await r.flush()).toBe(true);
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ taps: 2, sequence: 2 }));
     expect(r.size).toBe(0);
   });
   it("caps the pending count", () => {

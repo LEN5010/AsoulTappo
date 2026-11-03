@@ -5,6 +5,7 @@ import RoomPanel from "./components/RoomPanel.vue";
 import CollectionPanel from "./components/CollectionPanel.vue";
 import ThemePanel from "./components/ThemePanel.vue";
 import ProfilePanel from "./components/ProfilePanel.vue";
+import { MouseMotion } from "./MouseMotion";
 import { settings } from "./stores/settings";
 import { countInput, startReporting, stopReporting, boxes } from "./stores/player";
 import { backgroundFor, cssImage } from "./skin";
@@ -35,9 +36,7 @@ const root = ref<HTMLElement | null>(null);
 // ---- local pet state, driven by the global input hook ----
 const pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
 let keysHeld = 0;
-let velX = 0;
-let velY = 0;
-let raf = 0;
+const motion = new MouseMotion(pet);
 
 function onInput(e: InputEvent) {
   switch (e.kind) {
@@ -63,24 +62,12 @@ function onInput(e: InputEvent) {
       break;
     case "mouse_move":
       if (!settings.mouseFollow) break;
-      // Ignore teleports (e.g. monitor switch), smooth the rest.
-      if (Math.hypot(e.dx, e.dy) > 100) break;
-      velX += (e.dx * settings.mouseSensitivity - velX) * 0.3;
-      velY += (e.dy * settings.mouseSensitivity - velY) * 0.3;
+      motion.move(e.dx, e.dy, settings.mouseSensitivity);
       break;
   }
 }
 
-// Mouse layer: integrate velocity, clamp, decay back to centre.
-const MAX_OFF = 20;
-const RETURN = 0.05;
-function tick() {
-  pet.dx = Math.max(-MAX_OFF, Math.min(MAX_OFF, (pet.dx + velX) * (1 - RETURN)));
-  pet.dy = Math.max(-MAX_OFF, Math.min(MAX_OFF, (pet.dy + velY) * (1 - RETURN)));
-  velX *= 0.7;
-  velY *= 0.7;
-  raf = requestAnimationFrame(tick);
-}
+watch(() => settings.mouseFollow, (enabled) => { if (!enabled) motion.stop(); }, { flush: "sync" });
 
 let unInput: (() => void) | undefined;
 let unTray: (() => void) | undefined;
@@ -93,7 +80,6 @@ onMounted(async () => {
     if (a === "toggle-panel") panelOpen.value = !panelOpen.value;
     else settings.clickThrough = !settings.clickThrough;
   });
-  raf = requestAnimationFrame(tick);
   if (root.value && isTauri) {
     ro = new ResizeObserver(() => {
       const r = root.value!.getBoundingClientRect();
@@ -107,7 +93,7 @@ onBeforeUnmount(() => {
   unInput?.();
   unTray?.();
   ro?.disconnect();
-  cancelAnimationFrame(raf);
+  motion.stop();
 });
 
 watch(() => settings.clickThrough, (v) => setClickThrough(v), { immediate: true });
@@ -159,7 +145,7 @@ const remoteCols = computed(() => Math.min(5, Math.max(1, others.value.length)))
       </header>
       <main class="content" role="tabpanel">
         <RoomPanel v-show="tab === 'main'" />
-        <CollectionPanel v-if="tab === 'channel'" />
+        <CollectionPanel v-if="tab === 'channel'" :key="settings.serverUrl" />
         <ThemePanel v-show="tab === 'dynamic'" />
         <ProfilePanel v-if="tab === 'myself'" />
       </main>

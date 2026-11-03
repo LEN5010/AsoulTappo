@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { getCharacter, PET_BASE } from "../characters";
 import { emoteView } from "../emotes";
 import { characterColor } from "../manifest";
@@ -48,6 +48,7 @@ const emoteShown = computed(() =>
 
 const pulseDown = ref(false);
 let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+onBeforeUnmount(() => clearTimeout(pulseTimer));
 watch(
   () => props.pulse,
   () => {
@@ -63,7 +64,8 @@ const kbStyle = computed(() => {
   const k = PET_BASE.keyboard;
   return {
     left: `${k.x * s.value}px`,
-    top: `${(k.y + (pressed.value ? k.pressOffset : 0)) * s.value}px`,
+    top: `${k.y * s.value}px`,
+    transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)`,
     width: `${k.size * s.value}px`,
     height: `${k.size * s.value}px`,
   };
@@ -71,8 +73,9 @@ const kbStyle = computed(() => {
 const mouseStyle = computed(() => {
   const m = PET_BASE.mouse;
   return {
-    left: `${(m.x + props.mouseDx) * s.value}px`,
-    top: `${(m.y + props.mouseDy) * s.value}px`,
+    left: `${m.x * s.value}px`,
+    top: `${m.y * s.value}px`,
+    transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)`,
     width: `${m.size * s.value}px`,
     height: `${m.size * s.value}px`,
   };
@@ -111,8 +114,8 @@ const mouseStyle = computed(() => {
 .layer { position: absolute; pointer-events: none; image-rendering: auto; }
 /* bg is the first layer and fills the canvas */
 .layer:first-child { left: 0; top: 0; }
-.kb { transition: top 140ms cubic-bezier(0.34, 1.8, 0.64, 1); }
-.kb.down { transition: top 50ms ease-out; }
+.kb { transition: transform 140ms cubic-bezier(0.34, 1.8, 0.64, 1); }
+.kb.down { transition: transform 50ms ease-out; }
 .missing { color: #fff; opacity: 0.5; }
 .label {
   margin-top: 2px; padding: 1px 6px; border-radius: 8px; font-size: 11px; line-height: 14px;

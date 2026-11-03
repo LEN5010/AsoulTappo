@@ -22,8 +22,7 @@ onMounted(refresh);
 async function use(kind: "frame" | "badge", id: string) {
   const cur = kind === "frame" ? status.value?.frame : status.value?.badge;
   const next = cur === id ? "" : id; // click again to take off
-  await chooseDecor({ [kind]: next });
-  syncProfile({ [kind]: next });
+  if (await chooseDecor({ [kind]: next })) syncProfile({ [kind]: next });
 }
 </script>
 
@@ -64,7 +63,6 @@ async function use(kind: "frame" | "badge", id: string) {
 
     <button class="toggle" :aria-expanded="showSettings" @click="showSettings = !showSettings">{{ showSettings ? "收起设置" : "设置" }}</button>
     <SettingsPanel v-show="showSettings" />
-    <p class="hint credit">素材版权归 A-SOUL / 乐华娱乐及原作者所有,本项目为非商用粉丝作品,详见 ASSETS.md。</p>
   </div>
 </template>
 

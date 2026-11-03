@@ -80,6 +80,8 @@ DOMAIN=tappo.example.com docker compose up -d --build
 
 镜像从仓库根目录构建(含 `assets-packs/`),SQLite 存于卷 `server_data`(`ASOULTAPPO_DB`,默认 `data/asoultappo.db`);素材包目录可用 `ASOULTAPPO_PACKS` 覆盖。
 
+升级本次点击结算修复时，服务端与客户端一起更新。活动 API 新增 `session` 和 `sequence`；服务端启动时创建计数额度与批次序号表，沿用现有玩家进度。详见 [协议升级说明](protocol/PROTOCOL.md#upgrade)。
+
 ### 客户端(Windows)
 
 准备:[Node.js 20+](https://nodejs.org/)、[Rust(rustup)](https://rustup.rs/) + MSVC 生成工具(Visual Studio Build Tools,勾选“使用 C++ 的桌面开发”),系统自带 WebView2(Win10/11 通常已有)。详见 [Tauri 前置要求](https://tauri.app/start/prerequisites/)。
@@ -91,7 +93,7 @@ npm run tauri dev        # 开发模式(首次编译 Rust 较慢)
 npm run tauri build      # 打包安装程序(NSIS),产物在 src-tauri/target/release/bundle/
 ```
 
-使用:先启动服务端(默认 `http://localhost:8000`),点桌宠右上角 ⚙(鼠标悬停显示)或托盘菜单打开面板 → “创建房间”或输入 Room ID 加入;在“设置”里改昵称、角色、服务器地址。分享 Room ID 给朋友即可同房。
+使用:先启动服务端(默认 `http://localhost:8000`),点桌宠右上角 ⚙(鼠标悬停显示)或托盘菜单打开面板 → “创建房间”或输入 Room ID 加入;在“设置”里改昵称和角色；修改服务器地址后点“应用服务器”，再加入新服务器的房间。分享 Room ID 给朋友即可同房。
 
 仅调试前端界面(无桌面壳,用页面内键鼠事件模拟):
 

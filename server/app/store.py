@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS drops (
   ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS drops_player ON drops (player_id, id);
+CREATE TABLE IF NOT EXISTS activity_budget (
+  player_id TEXT PRIMARY KEY,
+  balance REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity_sessions (
+  player_id TEXT NOT NULL,
+  session TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  PRIMARY KEY (player_id, session)
+);
 """
 
 PLAYER_FIELDS = (
@@ -96,6 +106,32 @@ class Store:
         cols = ", ".join(f"{k}=?" for k in fields)
         with self._lock:
             self._db.execute(f"UPDATE players SET {cols} WHERE id=?", (*fields.values(), pid))
+            self._commit()
+
+    # --- activity (updated in the same transaction as player progress)
+    def activity_budget(self, pid: str) -> float:
+        with self._lock:
+            row = self._db.execute("SELECT balance FROM activity_budget WHERE player_id=?", (pid,)).fetchone()
+            return row["balance"] if row else 0.0
+
+    def save_activity_budget(self, pid: str, balance: float) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO activity_budget VALUES (?, ?) "
+                "ON CONFLICT(player_id) DO UPDATE SET balance=excluded.balance", (pid, balance))
+            self._commit()
+
+    def activity_sequence(self, pid: str, session: str) -> int:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT sequence FROM activity_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
+            return row["sequence"] if row else 0
+
+    def save_activity_sequence(self, pid: str, session: str, sequence: int) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO activity_sessions VALUES (?, ?, ?) "
+                "ON CONFLICT(player_id, session) DO UPDATE SET sequence=excluded.sequence", (pid, session, sequence))
             self._commit()
 
     # --- cards

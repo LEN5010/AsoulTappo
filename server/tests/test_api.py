@@ -10,12 +10,15 @@ from fixtures import Clock, SeqRng, tiny_manifest
 
 TOKEN = "t" * 32
 H = {"X-Player-Token": TOKEN}
+BATCH = {"session": "test-session-0001", "sequence": 1}
 
 
 @pytest.fixture()
 def client(monkeypatch):
     g = Game(Store(":memory:"), tiny_manifest(), DropConfig(taps_per_box=10, max_taps_per_sec=10**5),
              SeqRng(0.0), Clock())
+    g.status(TOKEN)
+    g.now.t += 1
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
     with TestClient(main.app) as c:  # one portal/event loop shared by all sockets
@@ -24,13 +27,13 @@ def client(monkeypatch):
 
 def test_token_required(client):
     assert client.get("/api/me").status_code == 401
-    assert client.post("/api/activity", json={"taps": 1}).status_code == 401
+    assert client.post("/api/activity", json={**BATCH, "taps": 1}).status_code == 401
     assert client.get("/api/me", headers={"X-Player-Token": "short"}).status_code == 401
 
 
 def test_activity_open_collection_flow(client):
     assert client.post("/api/boxes/open", headers=H).status_code == 409
-    r = client.post("/api/activity", json={"taps": 25}, headers=H).json()
+    r = client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H).json()
     assert r["boxes"] == 2 and r["credited"] == 25
     r = client.post("/api/boxes/open", headers=H).json()
     assert r["card"] == "c1" and r["new"] is True and r["boxes"] == 1
@@ -40,12 +43,12 @@ def test_activity_open_collection_flow(client):
 
 
 def test_activity_validation(client):
-    assert client.post("/api/activity", json={"taps": -1}, headers=H).status_code == 422
+    assert client.post("/api/activity", json={**BATCH, "taps": -1}, headers=H).status_code == 422
     assert client.post("/api/activity", json={}, headers=H).status_code == 422
 
 
 def test_decor_rest_and_ws_member_list(client):
-    client.post("/api/activity", json={"taps": 25}, headers=H)
+    client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H)
     client.post("/api/boxes/open", headers=H)
     assert client.post("/api/decor", json={"badge": "frame-s1"}, headers=H).status_code == 400
     assert client.post("/api/decor", json={"frame": "frame-s1"}, headers=H).status_code == 400  # locked

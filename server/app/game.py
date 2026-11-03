@@ -21,7 +21,6 @@ from .store import Store
 TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
-FIRST_REPORT_ELAPSED = 10.0
 
 
 class GameError(Exception):
@@ -47,16 +46,21 @@ class Game:
         self.now = now
 
     # ---------------------------------------------------------------- activity
-    def report_activity(self, token: str, taps: int) -> dict[str, Any]:
+    def report_activity(self, token: str, taps: int, session: str | None = None,
+                        sequence: int = 0) -> dict[str, Any]:
         pid = player_id_for(token)
         taps = max(0, min(int(taps), MAX_REPORT_TAPS))
-        now = self.now()
         cfg = self.cfg
         with self.store.transaction() as st:
+            now = self.now()
             p = st.get_player(pid, now)
-            elapsed = FIRST_REPORT_ELAPSED if p["last_activity"] <= 0 else now - p["last_activity"]
-            elapsed = min(max(elapsed, 1.0), MAX_ELAPSED)
-            credited = min(taps, math.ceil(cfg.max_taps_per_sec * elapsed))
+            if session is not None and sequence <= st.activity_sequence(pid, session):
+                return {**self.status(token), "credited": 0, "newBoxes": 0}
+            previous = p["last_activity"] or p["created"]
+            elapsed = min(max(now - previous, 0.0), MAX_ELAPSED)
+            budget = min(st.activity_budget(pid) + cfg.max_taps_per_sec * elapsed,
+                         cfg.max_taps_per_sec * MAX_ELAPSED)
+            credited = min(taps, math.floor(budget))
 
             bucket = int(now // 60)
             minute_taps, counted = p["minute_taps"], p["minute_counted"]
@@ -87,8 +91,11 @@ class Game:
             st.update_player(
                 pid, taps_total=p["taps_total"] + credited, active_minutes=active_minutes,
                 progress_taps=progress_taps, progress_minutes=progress_minutes, boxes=boxes,
-                boxes_day=day, boxes_today=boxes_today, last_activity=now,
+                boxes_day=day, boxes_today=boxes_today, last_activity=max(now, previous),
                 minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted)
+            st.save_activity_budget(pid, budget - credited)
+            if session is not None:
+                st.save_activity_sequence(pid, session, sequence)
         out = self.status(token)
         out["credited"] = credited
         out["newBoxes"] = gained

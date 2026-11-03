@@ -38,6 +38,12 @@ export function newToken(rand: (n: number) => Uint8Array = (n) => crypto.getRand
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+export interface ActivityBatch {
+  taps: number;
+  session: string;
+  sequence: number;
+}
+
 export class Api {
   constructor(
     private base: () => string,
@@ -46,30 +52,37 @@ export class Api {
   ) {}
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.f(`${this.base().replace(/\/+$/, "")}${path}`, {
-      method,
-      headers: { "X-Player-Token": this.token(), ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      let code = "http_error";
-      let message = `服务器返回 ${res.status}`;
-      try {
-        const d = (await res.json()).detail;
-        if (d?.code) {
-          code = d.code;
-          message = d.message || message;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await this.f(`${this.base().replace(/\/+$/, "")}${path}`, {
+        method,
+        headers: { "X-Player-Token": this.token(), ...(body ? { "Content-Type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        let code = "http_error";
+        let message = `服务器返回 ${res.status}`;
+        try {
+          const d = (await res.json()).detail;
+          if (d?.code) {
+            code = d.code;
+            message = d.message || message;
+          }
+        } catch {
+          /* not json */
         }
-      } catch {
-        /* not json */
+        throw new ApiError(res.status, code, message);
       }
-      throw new ApiError(res.status, code, message);
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
     }
-    return (await res.json()) as T;
   }
 
   me = () => this.call<PlayerStatus>("GET", "/api/me");
-  activity = (taps: number) => this.call<PlayerStatus>("POST", "/api/activity", { taps });
+  activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
   openBox = () => this.call<OpenResult>("POST", "/api/boxes/open");
   collection = () => this.call<Collection>("GET", "/api/collection");
   setDecor = (patch: { frame?: string; badge?: string }) =>
@@ -79,30 +92,30 @@ export class Api {
 /** Accumulates taps locally and reports only the count, in batches. */
 export class ActivityReporter {
   private pending = 0;
-  private busy = false;
-  constructor(private send: (taps: number) => Promise<unknown>) {}
+  private sequence = 0;
+  private batch: ActivityBatch | null = null;
+  private busy: Promise<boolean> | null = null;
+  constructor(private send: (batch: ActivityBatch) => Promise<unknown>, private session = newToken()) {}
 
   add(n = 1): void {
-    this.pending = Math.min(this.pending + n, 5000);
+    this.pending = Math.min(this.pending + n, 5000 - (this.batch?.taps ?? 0));
   }
   get size(): number {
-    return this.pending;
+    return this.pending + (this.batch?.taps ?? 0);
   }
   /** Send what we have; on failure the count is kept for the next try. */
-  async flush(): Promise<boolean> {
-    if (this.busy) return false;
-    const n = this.pending;
-    this.busy = true;
-    this.pending = 0;
-    try {
-      await this.send(n);
-      return true;
-    } catch {
-      this.pending = Math.min(this.pending + n, 5000);
-      return false;
-    } finally {
-      this.busy = false;
+  flush(): Promise<boolean> {
+    if (this.busy) return this.busy;
+    if (!this.batch && !this.pending) return Promise.resolve(true);
+    if (!this.batch) {
+      this.batch = { taps: this.pending, session: this.session, sequence: ++this.sequence };
+      this.pending = 0;
     }
+    this.busy = this.send(this.batch).then(() => {
+      this.batch = null;
+      return true;
+    }, () => false).finally(() => { this.busy = null; });
+    return this.busy;
   }
 }
 

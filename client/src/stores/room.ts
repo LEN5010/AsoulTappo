@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
 import { toHttpBase, type Member } from "../net/protocol";
@@ -120,9 +120,11 @@ export function setBatchMs(ms: number): void {
 }
 
 export async function createRoom(): Promise<string> {
-  const res = await fetch(`${toHttpBase(settings.serverUrl)}/rooms`, { method: "POST" });
+  const base = settings.serverUrl;
+  const res = await fetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
   if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
   const data = (await res.json()) as { room: string };
+  if (base !== settings.serverUrl) throw new Error("服务器已切换，请重新创建房间");
   return data.room;
 }
 
@@ -149,5 +151,13 @@ export function leaveRoom(): void {
 
 /** Push profile changes (character / nick / frame / badge) to the room. */
 export function syncProfile(patch: { character?: string; nick?: string; frame?: string; badge?: string }): void {
-  if (inRoom.value) client.sendState(patch);
+  client.sendState({ ...patch, ...(patch.nick !== undefined ? { nick: patch.nick.trim() || "匿名小面包" } : {}) });
 }
+
+watch(() => settings.serverUrl, () => {
+  leaveRoom();
+  lastError.value = "";
+}, { flush: "sync" });
+watch(() => settings.character, (character) => syncProfile({ character }), { flush: "sync" });
+watch(() => settings.nick, (nick) => syncProfile({ nick }), { flush: "sync" });
+watch(() => settings.batchMs, setBatchMs);

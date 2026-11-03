@@ -42,7 +42,7 @@ Identity is a random secret the client generates once and sends as the `X-Player
 |---|---|
 | `GET /api/manifest` | asset / card / theme metadata (same as `assets-packs/manifest.json`) |
 | `GET /api/me` | status: unopened `boxes`, `progress` (`taps`, `tapsPerBox`, `minutes`, `minutesPerBox`), `boxesToday` / `dailyCap`, `totals`, `pity`, `unlocked` decor, selected `frame` / `badge` |
-| `POST /api/activity` `{taps}` | report taps since the last report (**counts only**). The server credits at most 15 taps/s of elapsed time (elapsed clamped to 1–120 s, ≤ 5000 per report). A minute is "active" once it has ≥ 10 taps. A box is earned per 600 credited taps or per 10 active minutes; ≤ 10 boxes/day, ≤ 20 unopened |
+| `POST /api/activity` `{taps, session, sequence}` | report a batch of tap counts. `session` is a random 16–128 character ID per reporter; `sequence` starts at 1 and increases for each new batch. Retries reuse the same batch and sequence. Credit accrues at 15 taps/s of actual elapsed time, with fractional credit retained and a maximum balance of 120 seconds (≤ 5000 taps per report). A minute is "active" once it has ≥ 10 taps. A box is earned per 600 credited taps or per 10 active minutes; ≤ 10 boxes/day, ≤ 20 unopened |
 | `POST /api/boxes/open` | roll a card with rarity weights 70/22/7/1, soft pity (epic weight +8 per open beyond 10 without epic+), hard pity (epic+ at 20, legendary at 60); unowned cards weigh 3× |
 | `GET /api/collection` | `owned` (`card id → count`) and recent drops |
 | `POST /api/decor` `{frame?, badge?}` | choose avatar frame / badge (must be unlocked) |
@@ -66,3 +66,15 @@ Reference models: `server/app/models.py` (server, pydantic) and `client/src/net/
 - **Own events:** `tap`/`emote`/`state` are echoed to the sender; the client has already animated locally and ignores the echo except for updating totals/profile.
 
 HTTP: the server enables CORS (`ASOULTAPPO_CORS_ORIGINS`, default `*`) so the Tauri webview / browser can call `POST /rooms`. The protocol is unversioned/unstable until MVP phase 2.
+
+## Activity and server switching
+
+- Call `GET /api/me` when starting input reporting to establish the counting baseline. The first 20-second batch then receives its actual elapsed-time allowance.
+- Activity progress, remaining rate credit and the session sequence commit in one SQLite transaction. Replayed sequences return current status with `credited: 0` and `newBoxes: 0`.
+- The client retains a failed batch separately from newly accumulated taps and retries the original `session` / `sequence`. HTTP requests time out after 10 seconds.
+- Editing the server field changes a draft. Applying it leaves the old room, switches the progress and asset server, and clears displayed player state. Pending activity retains its original destination; responses from older server selections are ignored.
+- `POST /rooms` generates an ID; the room is allocated when its first member joins. Sends to a member have a 2-second deadline; failed members are removed and closed with code 1013.
+
+## Upgrade
+
+Update the server and client together: activity requests now require `session` and `sequence`. On server startup the existing schema initialization creates `activity_budget` and `activity_sessions` alongside the player tables. Existing player progress and collections remain available.

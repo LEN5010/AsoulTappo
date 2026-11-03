@@ -9,9 +9,11 @@ from fixtures import Clock, SeqRng, tiny_manifest
 TOKEN = "t" * 32
 
 
-def make(cfg=None, rng=None, clock=None):
+def make(cfg=None, rng=None, clock=None, elapsed=10):
     clock = clock or Clock()
     g = Game(Store(":memory:"), tiny_manifest(), cfg, rng or SeqRng(0.0), clock)
+    g.status(TOKEN)
+    clock.t += elapsed
     return g, clock
 
 
@@ -32,7 +34,7 @@ def test_taps_progress_and_box_award():
 
 
 def test_rate_limit_clips_credit():
-    g, clock = make(DropConfig(max_taps_per_sec=10, taps_per_box=100))
+    g, clock = make(DropConfig(max_taps_per_sec=10, taps_per_box=100), elapsed=0)
     g.report_activity(TOKEN, 0)
     clock.t += 2
     st = g.report_activity(TOKEN, 5000)  # only ~20 taps are plausible in 2s
@@ -40,7 +42,7 @@ def test_rate_limit_clips_credit():
 
 
 def test_active_minute_counts_once_per_minute_and_awards_box():
-    g, clock = make(DropConfig(taps_per_box=10**6, minutes_per_box=2, min_taps_active_minute=10))
+    g, clock = make(DropConfig(taps_per_box=10**6, minutes_per_box=2, min_taps_active_minute=10), clock=Clock(59990))
     clock.t = 60 * 1000.0
     g.report_activity(TOKEN, 4)         # below threshold: not active yet
     clock.t += 5
