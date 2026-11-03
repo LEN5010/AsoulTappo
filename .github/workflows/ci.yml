@@ -19,3 +19,47 @@ jobs:
           cache-dependency-path: server/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
+
+  client-web:
+    name: client (web build + typecheck + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build # vue-tsc --noEmit && vite build
+
+  client-tauri-windows:
+    name: client (Tauri / cargo check on Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+      - run: npm ci
+      # tauri::generate_context! needs the built frontend (../dist)
+      - run: npm run build
+      - name: cargo check
+        working-directory: client/src-tauri
+        run: cargo check --all-targets --locked
+      - name: cargo test (input state machine)
+        working-directory: client/src-tauri
+        run: cargo test --lib --locked

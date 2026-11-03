@@ -1,0 +1,159 @@
+//! Global keyboard / mouse hook (via `rdev`).
+//!
+//! PRIVACY: this module never forwards *which* key was pressed. The frontend
+//! only learns "a key went down/up", which mouse button, and relative mouse
+//! movement (used to animate the local pet; never sent over the network).
+
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
+use rdev::{Button, EventType, Key};
+use serde::Serialize;
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Other,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InputEvent {
+    KeyDown,
+    KeyUp,
+    MouseDown { button: MouseButton },
+    MouseUp { button: MouseButton },
+    MouseMove { dx: f64, dy: f64 },
+}
+
+/// Minimum spacing between emitted mouse-move events (~60 Hz).
+const MOVE_INTERVAL: Duration = Duration::from_millis(16);
+
+/// Pure state machine: raw rdev events in, privacy-filtered events out.
+/// Kept separate from the hook thread so it is unit-testable.
+#[derive(Default)]
+pub struct InputState {
+    held: HashSet<Key>,
+    last_pos: Option<(f64, f64)>,
+    acc: (f64, f64),
+    last_move_emit: Option<Instant>,
+}
+
+impl InputState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn handle(&mut self, ev: &EventType, now: Instant) -> Option<InputEvent> {
+        match ev {
+            // OS auto-repeat sends repeated presses: only report the first.
+            EventType::KeyPress(k) => self.held.insert(*k).then_some(InputEvent::KeyDown),
+            EventType::KeyRelease(k) => self.held.remove(k).then_some(InputEvent::KeyUp),
+            EventType::ButtonPress(b) => Some(InputEvent::MouseDown { button: map_button(b) }),
+            EventType::ButtonRelease(b) => Some(InputEvent::MouseUp { button: map_button(b) }),
+            EventType::MouseMove { x, y } => {
+                if let Some((lx, ly)) = self.last_pos {
+                    self.acc.0 += x - lx;
+                    self.acc.1 += y - ly;
+                }
+                self.last_pos = Some((*x, *y));
+                let due = self
+                    .last_move_emit
+                    .map_or(true, |t| now.duration_since(t) >= MOVE_INTERVAL);
+                if due && (self.acc.0 != 0.0 || self.acc.1 != 0.0) {
+                    let (dx, dy) = std::mem::take(&mut self.acc);
+                    self.last_move_emit = Some(now);
+                    Some(InputEvent::MouseMove { dx, dy })
+                } else {
+                    None
+                }
+            }
+            EventType::Wheel { .. } => None,
+        }
+    }
+}
+
+fn map_button(b: &Button) -> MouseButton {
+    match b {
+        Button::Left => MouseButton::Left,
+        Button::Right => MouseButton::Right,
+        Button::Middle => MouseButton::Middle,
+        Button::Unknown(_) => MouseButton::Other,
+    }
+}
+
+/// Spawn the blocking hook on a background thread; `emit` is called for every
+/// filtered event.
+pub fn spawn_hook<F>(emit: F)
+where
+    F: Fn(InputEvent) + Send + 'static,
+{
+    std::thread::spawn(move || {
+        let mut state = InputState::new();
+        let result = rdev::listen(move |event| {
+            if let Some(out) = state.handle(&event.event_type, Instant::now()) {
+                emit(out);
+            }
+        });
+        if let Err(e) = result {
+            eprintln!("global input hook stopped: {e:?}");
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_autorepeat_is_deduplicated() {
+        let mut s = InputState::new();
+        let t = Instant::now();
+        assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), Some(InputEvent::KeyDown));
+        assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), None);
+        assert_eq!(s.handle(&EventType::KeyRelease(Key::KeyA), t), Some(InputEvent::KeyUp));
+        assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), Some(InputEvent::KeyDown));
+    }
+
+    #[test]
+    fn serialized_key_events_carry_no_key_identity() {
+        let json = serde_json::to_string(&InputEvent::KeyDown).unwrap();
+        assert_eq!(json, r#"{"kind":"key_down"}"#);
+    }
+
+    #[test]
+    fn mouse_buttons_map() {
+        let mut s = InputState::new();
+        let t = Instant::now();
+        assert_eq!(
+            s.handle(&EventType::ButtonPress(Button::Left), t),
+            Some(InputEvent::MouseDown { button: MouseButton::Left })
+        );
+        assert_eq!(
+            s.handle(&EventType::ButtonRelease(Button::Right), t),
+            Some(InputEvent::MouseUp { button: MouseButton::Right })
+        );
+    }
+
+    #[test]
+    fn mouse_moves_are_throttled_and_accumulated() {
+        let mut s = InputState::new();
+        let t0 = Instant::now();
+        // first move only establishes the reference position
+        assert_eq!(s.handle(&EventType::MouseMove { x: 10.0, y: 10.0 }, t0), None);
+        assert_eq!(
+            s.handle(&EventType::MouseMove { x: 15.0, y: 10.0 }, t0),
+            Some(InputEvent::MouseMove { dx: 5.0, dy: 0.0 })
+        );
+        // within the throttle window: accumulate, don't emit
+        assert_eq!(s.handle(&EventType::MouseMove { x: 17.0, y: 12.0 }, t0), None);
+        let later = t0 + Duration::from_millis(20);
+        assert_eq!(
+            s.handle(&EventType::MouseMove { x: 18.0, y: 12.0 }, later),
+            Some(InputEvent::MouseMove { dx: 3.0, dy: 2.0 })
+        );
+    }
+}
