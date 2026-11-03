@@ -18,7 +18,8 @@ def client(monkeypatch):
              SeqRng(0.0), Clock())
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
-    return TestClient(main.app)
+    with TestClient(main.app) as c:  # one portal/event loop shared by all sockets
+        yield c
 
 
 def test_token_required(client):
@@ -60,7 +61,7 @@ def test_decor_rest_and_ws_member_list(client):
         a.receive_json()  # member_joined
         # clearing via ws state is broadcast
         a.send_json({"type": "state", "badge": ""})
-        assert a.receive_json()["type"] == "state"  # echo to the sender first (TestClient runs each socket on its own loop)
+        assert a.receive_json()["type"] == "state"
         s = b.receive_json()
         assert s["type"] == "state" and s["badge"] is None and s["id"] == ja["you"]
 
