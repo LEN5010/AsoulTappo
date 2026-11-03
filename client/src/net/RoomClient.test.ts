@@ -69,10 +69,10 @@ describe("RoomClient", () => {
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
     expect(ev.onTap).toHaveBeenCalledWith("x", 3, 9);
     c.sendTap(2);
-    c.sendEmote("heart");
+    c.sendEmote("thumbup");
     expect(ws.sent.slice(1)).toEqual([
       { type: "tap", count: 2 },
-      { type: "emote", emote: "heart" },
+      { type: "emote", emote: "thumbup" },
     ]);
   });
 

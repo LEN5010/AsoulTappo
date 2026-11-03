@@ -25,8 +25,8 @@ MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 PRESET_SLOTS = 5
 MAX_FAVORITES = 8
-# emote keys every member may send: the theme like and the legacy glyph emotes
-FREE_EMOTES = frozenset({"thumbup", "heart", "clap", "laugh", "party", "cry", "fire", "star", "bread"})
+# emote keys every member may send besides the starter emotes: the theme like
+FREE_EMOTES = frozenset({"thumbup"})
 LOADOUT_KEYS = ("character", "head", "desk", "theme", "favorites")
 
 

@@ -149,6 +149,7 @@ def test_room_profile_emotes_and_accessories():
     assert g.profile_for(None, "r1") == g.profile_for("bad", "r1") == {
         "uid": None, "frame": None, "badge": None, "head": None, "desk": None}
     assert g.owns_emote(None, "e.01") and g.owns_emote(None, "thumbup") and not g.owns_emote(None, "e.02")
+    assert not g.owns_emote(TOKEN, "heart")  # old glyph emotes are gone
     assert not g.owns_emote(TOKEN, "e.02")
     g.store.add_item(player_id_for(TOKEN), "emote:e.02", 0)
     assert g.owns_emote(TOKEN, "e.02")

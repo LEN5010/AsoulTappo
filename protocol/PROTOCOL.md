@@ -17,7 +17,7 @@ Only tap *counts* are sent. Key identities, typed text and mouse positions never
 | `join` | `room`, `nick` (≤24), `character` (≤32, default `"default"`), optional `token` (16–128 chars) | must be the first message. With a `token` the server looks up the player's `frame` / `badge` / `head` / `desk` and gives the member a stable per-room `uid`; without one they are all `null` |
 | `leave` | – | leave the room (connection may stay open) |
 | `tap` | `count` (1–500) | **batched** count since last message; send ≤ ~4×/s |
-| `emote` | `emote` (≤32) | emote key: a legacy glyph key (`"heart"`), `"thumbup"` (the theme's animated like), or `<emoteSetId>.<nn>` from the manifest (e.g. `jiaran-eat.03`). Glyph keys, `thumbup` and the starter emotes are free; other emotes must be owned by the player (`token`), otherwise `locked`. At most one emote per 250 ms, otherwise `rate_limited` |
+| `emote` | `emote` (≤32) | emote key: `"thumbup"` (the theme's animated like) or `<emoteSetId>.<nn>` from the manifest (e.g. `jiaran-eat.03`). `thumbup` and the starter emotes are free; other emotes must be owned by the player (`token`), otherwise `locked`. At most one emote per 250 ms, otherwise `rate_limited` |
 | `state` | `character` (≤32), `nick` (≤24), `frame`, `badge` (≤32), `head`, `desk` (≤48); at least one | update own profile (broadcast to the room). Decor and accessories need a `token` on join; decor must be unlocked (`locked` / `bad_decor`), accessories owned and in the right slot (`locked` / `bad_item`). `""` clears a field |
 | `ping` | – | keepalive; the server answers `pong` (allowed before `join`). Clients send one every ~20s and reconnect when no `pong` arrives |
 
@@ -90,5 +90,5 @@ HTTP: the server enables CORS (`ASOULTAPPO_CORS_ORIGINS`, default `*`) so the Ta
 
 Update the server and client together.
 
-- 0.3: boxes drop all item kinds, not only cards, and duplicates give shards. On startup the server adds the `shards` / `loadout` player columns and the `presets` table, copies `cards` into `items` (ids get the `card:` prefix) and renames `drops.card_id` to `item_id`. Older clients can't read the new `drops` / `owned` shapes.
+- 0.3: the old glyph emote keys (`heart`, `clap`, ...) are rejected with `locked`, and clients ignore them. Boxes drop all item kinds, not only cards, and duplicates give shards. On startup the server adds the `shards` / `loadout` player columns and the `presets` table, copies `cards` into `items` (ids get the `card:` prefix) and renames `drops.card_id` to `item_id`. Older clients can't read the new `drops` / `owned` shapes.
 - Activity requests require `session` and `sequence`. On server startup the existing schema initialization creates `activity_budget` and `activity_sessions` alongside the player tables. Existing player progress and collections remain available.

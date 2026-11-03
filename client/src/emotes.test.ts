@@ -7,16 +7,16 @@ const ctx = { serverBase: "http://s", thumbup: "/assets/t.webp", reducedMotion: 
 describe("emoteView", () => {
   it("resolves manifest emotes to images", () => {
     const key = manifest.emoteSets[0].emotes[0].key;
-    expect(emoteView(key, ctx).img).toMatch(/^\/assets\/emotes\//);
+    expect(emoteView(key, ctx)?.img).toMatch(/^\/assets\/emotes\//);
   });
-  it("thumbup uses the theme animation, or a glyph with reduced motion / no part", () => {
+  it("thumbup uses the theme animation, or an icon with reduced motion / no part", () => {
     expect(emoteView(THUMBUP, ctx)).toEqual({ img: "/assets/t.webp", animated: true });
-    expect(emoteView(THUMBUP, { ...ctx, reducedMotion: true })).toEqual({ text: "👍" });
-    expect(emoteView(THUMBUP, { ...ctx, thumbup: "" })).toEqual({ text: "👍" });
+    expect(emoteView(THUMBUP, { ...ctx, reducedMotion: true })).toEqual({ icon: "thumb" });
+    expect(emoteView(THUMBUP, { ...ctx, thumbup: "" })).toEqual({ icon: "thumb" });
   });
-  it("keeps legacy glyph keys and shows unknown keys as short text", () => {
-    expect(emoteView("heart", ctx)).toEqual({ text: "❤️" });
-    expect(emoteView("whatever-long", ctx)).toEqual({ text: "what" });
+  it("shows nothing for unknown keys such as old glyph emotes", () => {
+    expect(emoteView("heart", ctx)).toBeNull();
+    expect(emoteView("whatever-long", ctx)).toBeNull();
   });
 });
 
