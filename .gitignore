@@ -130,6 +130,5 @@ global_config.json
 *.pem
 
 # server runtime data (sqlite)
-server/data/
-data/
+/server/data/
 *.db
