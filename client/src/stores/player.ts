@@ -34,10 +34,23 @@ let heartbeatBusy = false;
 export async function heartbeat(): Promise<void> {
   if (heartbeatBusy) return;
   heartbeatBusy = true;
+  const session = current;
+  const gen = generation;
   try {
-    const result = await call((api) => api.presence(presenceSession));
-    if (result) { status.value = result; presenceUpdatedAt.value = Date.now(); online.value = true; error.value = ""; }
-  } finally { heartbeatBusy = false; }
+    const result = await serial(session, () => session.api.presence(presenceSession));
+    if (session === current && gen === generation) {
+      status.value = result;
+      presenceUpdatedAt.value = Date.now();
+      online.value = true;
+      error.value = "";
+    }
+  } catch (e) {
+    if (session === current && gen === generation) {
+      if (!(e instanceof ApiError) || e.status >= 500) online.value = false;
+    }
+  } finally {
+    heartbeatBusy = false;
+  }
 }
 
 export const boxes = computed(() => status.value?.boxes ?? 0);

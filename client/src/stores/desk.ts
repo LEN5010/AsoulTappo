@@ -45,9 +45,9 @@ export function clamp(p: Pos, size: Size, vp: Size = viewport.value, margin = 8)
   };
 }
 
-/** Default place of the own pet: bottom right, above the taskbar edge. */
+/** Default place of the own pet: bottom right, leaving room below for the quick emote dock. */
 export function defaultPetPos(size: Size, vp: Size = viewport.value): Pos {
-  return clamp({ x: vp.w - size.w - 48, y: vp.h - size.h - 24 }, size, vp);
+  return clamp({ x: vp.w - size.w - 48, y: vp.h - size.h - 80 }, size, vp);
 }
 
 /**

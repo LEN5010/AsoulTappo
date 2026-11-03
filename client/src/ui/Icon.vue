@@ -1,15 +1,18 @@
 <script setup lang="ts">
-// Small line icon set drawn for this project (24x24, stroke = currentColor).
+// Cute rounded icon set (24x24, stroke = currentColor).
 const PATHS: Record<string, string[]> = {
-  box: ["M4 11h16v9H4z", "M4 11V8a8 5 0 0 1 16 0v3", "M10 10h4v5h-4z"],
-  bag: ["M6 9a6 6 0 0 1 12 0v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z", "M9 9V7a3 3 0 0 1 6 0v2", "M9 14h6"],
-  book: ["M6 4h9a3 3 0 0 1 3 3v13H9a3 3 0 0 1-3-3z", "M6 17a3 3 0 0 1 3-3h9", "M10 8h4"],
+  box: ["M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z", "M3 8h18v3H3z", "M12 8v13", "M12 8c-2-3.5-5.5-3.5-5.5-1S9 8 12 8", "M12 8c2-3.5 5.5-3.5 5.5-1S15 8 12 8"],
+  bag: ["M6 9a6 6 0 0 1 12 0v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z", "M9 9V7a3 3 0 0 1 6 0v2", "M9.5 14a2.5 2.5 0 0 0 5 0"],
+  book: ["M6 4h10a2 2 0 0 1 2 2v14H8a2 2 0 0 1-2-2z", "M6 18a2 2 0 0 1 2-2h10", "M12 8l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z"],
   craft: ["M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z", "M18.5 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z", "M5.5 16l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z"],
+  home: ["M3 11l9-7 9 7", "M5 9.5V19a1 1 0 0 0 1 1h4v-5h4v5h4a1 1 0 0 0 1-1V9.5"],
   users: ["M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M3.5 19a5.5 5.5 0 0 1 11 0", "M15.5 5.3a3 3 0 0 1 0 5.4", "M17.5 14.2A5.5 5.5 0 0 1 20.5 19"],
-  sliders: ["M4 7h9", "M17 7h3", "M4 17h3", "M11 17h9", "M15 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z", "M9 19.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"],
+  nut: ["M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
+  sliders: ["M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"],
   fold: ["M4 6h16", "M10 12h10", "M4 18h16", "M7 9l-3 3 3 3"],
   unfold: ["M4 6h16", "M4 12h10", "M4 18h16", "M17 9l3 3-3 3"],
   close: ["M6 6l12 12", "M18 6L6 18"],
+  star: ["M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"],
   plus: ["M12 5v14", "M5 12h14"],
   copy: ["M9 9h10v10H9z", "M5 15V5h10"],
   menu: ["M5 7h14", "M5 12h14", "M5 17h14"],
@@ -39,7 +42,7 @@ defineProps<{ name: string; size?: number }>();
 <template>
   <svg
     :width="size ?? 20" :height="size ?? 20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="icon"
+    stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="icon"
   >
     <path v-for="(d, i) in PATHS[name] ?? []" :key="i" :d="d" />
   </svg>

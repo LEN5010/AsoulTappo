@@ -70,4 +70,4 @@ export function headAnchor(name: string): { x: number; y: number } {
 }
 
 /** Crop of the background image that shows the character's face, for avatars (base canvas units). */
-export const FACE_CROP = { x: 96, y: 0, size: 108 };
+export const FACE_CROP = { x: 106, y: 2, size: 84 };

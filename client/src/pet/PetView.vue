@@ -1,11 +1,9 @@
 <script setup lang="ts">
 // The layered desk pet from ASoul-Little-Bun (background, keyboard paw, mouse paw, click
-// images) plus accessories on the head / monitor, the emote bubble and the tap combo.
+// images) plus the emote bubble and the tap combo.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { getCharacter, headAnchor, PET_BASE } from "../characters";
-import { reducedMotion, skin } from "../stores/theme";
 import EmoteBubble from "./EmoteBubble.vue";
-import LikeBurst from "./LikeBurst.vue";
 import ComboBubble from "./ComboBubble.vue";
 import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
@@ -70,15 +68,12 @@ const mouseStyle = computed(() => {
 
 const head = computed(() => headAnchor(props.character));
 
-// ---- emote bubble / like / combo
+// ---- emote bubble / combo
 const emoteSize = computed(() => Math.max(props.minEmote, 72 * s.value));
 const bubbleAnchor = computed(() => ({
   x: (head.value.x + (props.flipBubble ? -20 : 20)) * s.value,
   y: (head.value.y + 16) * s.value,
 }));
-const likeOn = computed(() => !!skin.value.thumbup && !reducedMotion.value);
-const bubbleFrame = computed(() => (props.emote?.key === "thumbup" && likeOn.value ? null : props.emote));
-const likeBeat = computed(() => (props.emote?.key === "thumbup" && likeOn.value ? props.emote.beat : null));
 </script>
 
 <template>
@@ -93,8 +88,7 @@ const likeBeat = computed(() => (props.emote?.key === "thumbup" && likeOn.value 
     <div v-else class="missing">?</div>
 
     <ComboBubble :frame="combo" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
-    <EmoteBubble :frame="bubbleFrame" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
-    <LikeBurst :src="skin.thumbup" :beat="likeBeat" :size="PET_BASE.height * 1.15 * s" :x="head.x * s" :y="PET_BASE.height * 0.45 * s" />
+    <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
   </div>
 </template>
 
@@ -102,8 +96,6 @@ const likeBeat = computed(() => (props.emote?.key === "thumbup" && likeOn.value 
 .pet { position: relative; user-select: none; }
 .layer { position: absolute; pointer-events: none; }
 .bg { left: 0; top: 0; }
-.acc { object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18)); }
-.acc.head { transition: transform 120ms cubic-bezier(0.34, 1.8, 0.64, 1); }
 .kb { transition: transform 140ms cubic-bezier(0.34, 1.8, 0.64, 1); }
 .kb.down { transition: transform 50ms ease-out; }
 .missing { color: #fff; opacity: 0.5; }

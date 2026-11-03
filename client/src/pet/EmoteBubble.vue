@@ -3,9 +3,8 @@
 // A new emote swaps the picture inside the open bubble; repeats show ×N.
 import { computed } from "vue";
 import { emoteView } from "../emotes";
-import Icon from "../ui/Icon.vue";
 import { serverBase } from "../asset";
-import { reducedMotion, skin } from "../stores/theme";
+import { reducedMotion } from "../stores/theme";
 import type { EmoteFrame } from "./EmotePlayer";
 
 const props = defineProps<{
@@ -22,8 +21,6 @@ const view = computed(() =>
   props.frame
     ? emoteView(props.frame.key, {
         serverBase: serverBase.value,
-        thumbup: skin.value.thumbup,
-        reducedMotion: true, // the animated like is drawn by LikeBurst, the bubble shows a still
         appBase: import.meta.env.BASE_URL,
       })
     : null,
@@ -34,10 +31,9 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
 <template>
   <div class="anchor" :style="style">
     <Transition :name="reducedMotion ? 'fade' : 'bubble'">
-      <div v-if="frame && view" class="bubble" :class="{ flip }">
+      <div v-if="frame && view?.img" class="bubble" :class="{ flip }">
         <Transition :name="reducedMotion ? 'fade' : 'swap'" mode="out-in">
-          <img v-if="view.img" :key="frame.seq" :src="view.img" :style="{ height: `${size}px` }" alt="" draggable="false" />
-          <span v-else :key="`i${frame.seq}`" class="icon-emote" :style="{ width: `${size}px`, height: `${size}px` }"><Icon :name="view.icon ?? ''" :size="size * 0.62" /></span>
+          <img :key="frame.seq" :src="view.img" :style="{ height: `${size}px` }" alt="" draggable="false" />
         </Transition>
         <span v-if="frame.count > 1" :key="frame.count" class="times">×{{ frame.count }}</span>
       </div>
@@ -49,21 +45,20 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
 .anchor { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 5; }
 .bubble {
   position: absolute; left: 0; bottom: 0; transform-origin: 0 100%;
-  padding: 5px; border-radius: 10px 10px 10px 3px; background: #fff;
-  box-shadow: 0 4px 14px rgba(43, 35, 38, 0.18), 0 0 0 1px rgba(43, 35, 38, 0.12);
+  padding: 6px; border-radius: 16px 16px 16px 4px; background: #FFF9F2;
+  box-shadow: 0 4px 14px rgba(72, 38, 20, 0.18), 0 0 0 2px var(--tile-border, #DFC9B0);
 }
 .bubble::after {
-  content: ""; position: absolute; left: -5px; bottom: -3px; width: 14px; height: 12px; background: #fff;
+  content: ""; position: absolute; left: -5px; bottom: -3px; width: 14px; height: 12px; background: #FFF9F2;
   clip-path: polygon(0 100%, 100% 0, 100% 70%); border-bottom-left-radius: 4px;
 }
-.bubble.flip { left: auto; right: 0; transform-origin: 100% 100%; border-radius: 10px 10px 3px 10px; }
+.bubble.flip { left: auto; right: 0; transform-origin: 100% 100%; border-radius: 16px 16px 4px 16px; }
 .bubble.flip::after { left: auto; right: -5px; clip-path: polygon(100% 100%, 0 0, 0 70%); border-bottom-left-radius: 0; border-bottom-right-radius: 4px; }
 .bubble.flip .times { right: auto; left: -8px; }
 .bubble img { display: block; width: auto; max-width: 160px; object-fit: contain; }
-.icon-emote { display: grid; place-items: center; color: var(--accent, #e799b0); }
 .times {
-  position: absolute; right: -8px; top: -9px; padding: 0 5px; border-radius: var(--r-s, 4px); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
-  background: var(--accent, #e799b0); color: var(--on-accent, #fff); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  position: absolute; right: -8px; top: -9px; padding: 1px 6px; border-radius: 999px; font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: var(--accent, #FC966E); color: var(--on-accent, #562915); border: 1.5px solid var(--accent-deep, #D26A42); box-shadow: 0 2px 4px rgba(72, 38, 20, 0.18);
   animation: times 260ms cubic-bezier(0.34, 1.8, 0.64, 1);
 }
 .bubble-enter-active { animation: bubble-in 260ms cubic-bezier(0.34, 1.6, 0.64, 1); }

@@ -68,7 +68,7 @@ function pickQuick(key: string) {
 }
 function closeQuick(e: Event) {
   const t = e.target as HTMLElement | null;
-  if (!t?.closest?.(".pop, .spark")) ui.quickOpen = false;
+  if (!t?.closest?.(".dock, .spark")) ui.quickOpen = false;
 }
 
 // ---- other members on the desk
@@ -162,7 +162,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
       >
         <button v-if="tickets > 0" class="ticket-bubble" data-hit data-no-drag @click="openPanel('dex')">抽卡 ×{{ tickets }}</button>
         <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
-        <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" :side="ownPos.x > 260 ? 'left' : 'right'" @pick="pickQuick" @more="openPanel('emotes')" />
+        <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
       <DropToast v-if="!settings.clickThrough" :drop="toasts[0] ?? null" @done="toasts.shift()" />
     </PetActor>
@@ -184,7 +184,23 @@ html.browser-preview body {
 </style>
 
 <style scoped>
-.ticket-bubble { position: absolute; left: 4px; bottom: calc(100% + 6px); border: 1px solid #ffc8b0; border-radius: 5px; background: #fff5ee; color: #78402b; padding: 5px 10px; font: 600 12px var(--font); cursor: pointer; }
+.ticket-bubble {
+  position: absolute;
+  left: 4px;
+  bottom: calc(100% + 6px);
+  border: 2px solid var(--accent-deep);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #FFB596, var(--accent));
+  box-shadow: 0 2.5px 0 var(--accent-deep);
+  color: var(--on-accent);
+  padding: 4px 12px;
+  font: 800 12px var(--font);
+  cursor: pointer;
+  transition: transform 120ms;
+}
+.ticket-bubble:hover {
+  transform: translateY(-2px);
+}
 .desk { position: fixed; inset: 0; pointer-events: none; }
 .desk > :deep(*) { pointer-events: auto; }
 </style>

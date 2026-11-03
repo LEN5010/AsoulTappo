@@ -15,6 +15,12 @@ export const skin = computed(() =>
 );
 
 /** Root style: theme/character CSS variables. */
-export const skinVars = computed(() => ({ ...skin.value.vars, "--accent": "#FC966E", "--accent-rgb": "252, 150, 110", "--on-accent": "#4f2b1d", "--tint": "#fff5ef" }));
+export const skinVars = computed(() => ({
+  ...skin.value.vars,
+  "--accent": "#FC966E",
+  "--accent-rgb": "252, 150, 110",
+  "--on-accent": "#562915",
+  "--tint": "#FDF4E7",
+}));
 
 export { cssImage };

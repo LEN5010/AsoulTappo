@@ -75,7 +75,7 @@ export function isOwned(item: Item, o: Ownership): boolean {
 }
 
 export function ownsEmote(key: string, owned: Record<string, number>): boolean {
-  return key === "thumbup" || starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
+  return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
 }
 
 export function ownsAccessory(id: string, owned: Record<string, number>): boolean {

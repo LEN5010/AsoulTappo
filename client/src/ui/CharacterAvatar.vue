@@ -30,6 +30,6 @@ const style = computed(() => {
 
 <style scoped>
 .avatar { position: relative; display: inline-grid; place-items: center; flex: none; }
-.face { display: block; background-repeat: no-repeat; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7); }
+.face { display: block; background-repeat: no-repeat; }
 .frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 </style>

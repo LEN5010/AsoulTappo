@@ -4,7 +4,6 @@ import { TapBatcher } from "../net/TapBatcher";
 import { toHttpBase, type Member, type ProfilePatch } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote } from "../manifest";
-import { THUMBUP } from "../emotes";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
@@ -81,7 +80,7 @@ const events: RoomEvents = {
   },
   onEmote(id, name) {
     if (id === youId.value) return; // shown locally on send
-    if (name !== THUMBUP && !getEmote(name)) return; // e.g. glyph keys from old clients
+    if (!getEmote(name)) return;
     players.get(id)?.emote.play(name);
   },
   onState(u) {
