@@ -5,9 +5,9 @@ the server never receives key / mouse content.
 """
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, model_validator
 
 MAX_NICK_LEN = 24
 MAX_TAP_BATCH = 500  # sanity cap per tap message
@@ -40,12 +40,25 @@ class EmoteMsg(_Msg):
 
 
 class StateMsg(_Msg):
+    """Update own profile. Send `character` and/or `nick` (at least one)."""
+
     type: Literal["state"] = "state"
-    character: str = Field(max_length=32)
+    character: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> "StateMsg":
+        if self.character is None and self.nick is None:
+            raise ValueError("state needs character and/or nick")
+        return self
+
+
+class PingMsg(_Msg):
+    type: Literal["ping"] = "ping"
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, EmoteMsg, StateMsg],
+    Union[JoinMsg, LeaveMsg, TapMsg, EmoteMsg, StateMsg, PingMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -93,6 +106,11 @@ class StateBroadcast(BaseModel):
     type: Literal["state"] = "state"
     id: str
     character: str
+    nick: str
+
+
+class PongMsg(BaseModel):
+    type: Literal["pong"] = "pong"
 
 
 class ErrorMsg(BaseModel):

@@ -1,18 +1,32 @@
 """AsoulTappo room server: FastAPI + WebSocket, in-memory state."""
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
 from .models import (
     EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg, LeaveMsg, Member,
-    MemberJoinedMsg, MemberLeftMsg, StateBroadcast, StateMsg, TapBroadcast,
+    MemberJoinedMsg, MemberLeftMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
     TapMsg, client_message_adapter,
 )
 from .rooms import Peer, RoomFull, RoomManager
 
 app = FastAPI(title="AsoulTappo server", version="0.1.0")
 manager = RoomManager()
+
+# CORS for the browser/Tauri webview calling POST /rooms.
+# ASOULTAPPO_CORS_ORIGINS: comma-separated origins, default "*" (no cookies are used).
+_origins = [o.strip() for o in os.environ.get("ASOULTAPPO_CORS_ORIGINS", "*").split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 def _member(p: Peer) -> Member:
@@ -54,6 +68,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await err("bad_message", "invalid message")
                 continue
 
+            if isinstance(msg, PingMsg):  # keepalive, allowed before join
+                await ws.send_json(PongMsg().model_dump())
+                continue
+
             if isinstance(msg, JoinMsg):
                 if peer is not None:
                     await err("already_joined")
@@ -87,9 +105,12 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, StateMsg):
-                peer.character = msg.character
+                if msg.character is not None:
+                    peer.character = msg.character
+                if msg.nick is not None:
+                    peer.nick = msg.nick
                 await manager.broadcast(room_id, StateBroadcast(
-                    id=peer.id, character=msg.character).model_dump())
+                    id=peer.id, character=peer.character, nick=peer.nick).model_dump())
     except WebSocketDisconnect:
         pass
     finally:
