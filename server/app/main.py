@@ -1,6 +1,7 @@
 """AsoulTappo room server: FastAPI + WebSocket rooms, SQLite-backed card progression."""
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -192,4 +193,5 @@ async def ws_endpoint(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        await _leave(room_id, peer)
+        # shielded: the member_left broadcast must survive cancellation of this handler
+        await asyncio.shield(_leave(room_id, peer))
