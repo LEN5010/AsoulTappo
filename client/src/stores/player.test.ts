@@ -72,19 +72,38 @@ it("ignores a previous server's slow refresh after switching", async () => {
   expect(p.collection.owned).toEqual({ b: 1 });
 });
 
-it("discards old decoration responses and reports failure to the room sync caller", async () => {
+it("discards a draw result after switching servers", async () => {
   let release!: (r: Response) => void;
   vi.stubGlobal("fetch", async (url: string) => {
-    if (url.endsWith("/decor")) return new Promise<Response>((resolve) => { release = resolve; });
+    if (url.endsWith("/cards/draw")) return new Promise<Response>((resolve) => { release = resolve; });
     const server = new URL(url).hostname;
     return response(url.endsWith("/collection") ? collectionFor(server) : statusFor(server));
   });
   const { settings, p } = await setup();
   await vi.advanceTimersByTimeAsync(0);
-  const decor = p.chooseDecor({ badge: "old-badge" });
+  const draw = p.drawCards("bloom");
+  await vi.advanceTimersByTimeAsync(0);
   settings.serverUrl = "http://b";
   await vi.advanceTimersByTimeAsync(0);
-  release(response({ boxes: 5, badge: "old-badge" }));
-  expect(await decor).toBe(false);
+  release(response({ boxes: 5, drops: [] }));
+  expect(await draw).toBeNull();
   expect(p.status.value?.boxes).toBe(0);
+});
+
+it("reports running time even when there are no key presses", async () => {
+  const heartbeats: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/presence")) heartbeats.push(JSON.parse(init!.body as string).session);
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : {
+      boxes: 0, draw: { tickets: 2, seconds: 400, pity: 3, hardPity: 400, total: 3, secondsPerDraw: 900 },
+    });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(40000);
+  expect(heartbeats).toHaveLength(3);
+  expect(new Set(heartbeats).size).toBe(1);
+  expect(p.tickets.value).toBe(2);
+  p.stopReporting();
+  await vi.advanceTimersByTimeAsync(40000);
+  expect(heartbeats).toHaveLength(3);
 });

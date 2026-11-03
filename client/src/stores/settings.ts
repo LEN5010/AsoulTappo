@@ -1,6 +1,5 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
-import manifest from "../data/manifest.json";
 
 export interface Settings {
   serverUrl: string;
@@ -13,13 +12,9 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
-  /** Selected theme id (see data/manifest.json). */
-  theme: string;
   /** Tap batching window (100–200ms). */
   batchMs: number;
-  /** Equipped accessory ids ("" = none) and quick emotes; mirrored to the server loadout. */
-  head: string;
-  desk: string;
+  /** Quick emotes mirrored to the server. */
   favorites: string[];
   /** How long an emote bubble stays (ms). */
   emoteHoldMs: number;
@@ -48,10 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
-  theme: manifest.defaultTheme,
   batchMs: 150,
-  head: "",
-  desk: "",
   favorites: [],
   emoteHoldMs: 2500,
   remoteScale: 0.8,

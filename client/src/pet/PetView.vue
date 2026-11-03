@@ -3,8 +3,6 @@
 // images) plus accessories on the head / monitor, the emote bubble and the tap combo.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { getCharacter, headAnchor, PET_BASE } from "../characters";
-import { getAccessory } from "../manifest";
-import { assetUrl } from "../asset";
 import { reducedMotion, skin } from "../stores/theme";
 import EmoteBubble from "./EmoteBubble.vue";
 import LikeBurst from "./LikeBurst.vue";
@@ -24,8 +22,6 @@ const props = withDefaults(
     mouseDy?: number;
     leftDown?: boolean;
     rightDown?: boolean;
-    head?: string | null;
-    desk?: string | null;
     emote?: EmoteFrame | null;
     combo?: ComboFrame | null;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
@@ -35,7 +31,7 @@ const props = withDefaults(
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
-    head: null, desk: null, emote: null, combo: null, minEmote: 44, flipBubble: false,
+    emote: null, combo: null, minEmote: 44, flipBubble: false,
   },
 );
 
@@ -72,22 +68,7 @@ const mouseStyle = computed(() => {
   };
 });
 
-// ---- accessories
 const head = computed(() => headAnchor(props.character));
-const headAcc = computed(() => getAccessory(props.head));
-const deskAcc = computed(() => getAccessory(props.desk));
-const headStyle = computed(() => {
-  const h = 46;
-  return {
-    left: u(head.value.x - h / 2), top: u(head.value.y + 12 - h), width: u(h), height: u(h),
-    transform: `translateY(${pressed.value ? 1.5 * s.value : 0}px)`,
-  };
-});
-const deskStyle = computed(() => {
-  const h = 54;
-  const m = PET_BASE.monitor;
-  return { left: u(m.x - h / 2), top: u(m.y + 3 - h), width: u(h), height: u(h) };
-});
 
 // ---- emote bubble / like / combo
 const emoteSize = computed(() => Math.max(props.minEmote, 72 * s.value));
@@ -104,12 +85,10 @@ const likeBeat = computed(() => (props.emote?.key === "thumbup" && likeOn.value 
   <div class="pet" :style="box">
     <template v-if="assets">
       <img class="layer bg" :src="assets.bg" :style="box" draggable="false" alt="" />
-      <img v-if="deskAcc" class="layer acc" :src="assetUrl(deskAcc.img)" :style="deskStyle" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="leftDown" class="layer" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="rightDown" class="layer" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="headAcc" class="layer acc head" :src="assetUrl(headAcc.img)" :style="headStyle" draggable="false" alt="" />
     </template>
     <div v-else class="missing">?</div>
 

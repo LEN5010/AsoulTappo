@@ -17,7 +17,7 @@ import type { Drop } from "./net/api";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet } from "./stores/pet";
-import { boxes, online, openBoxes, startReporting, stopReporting } from "./stores/player";
+import { boxes, tickets, online, openBoxes, startReporting, stopReporting } from "./stores/player";
 import { localPet, memberKey, others, roomId, sendEmote, type RemoteMember } from "./stores/room";
 import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
@@ -59,7 +59,7 @@ async function openChest() {
   const drops = await openBoxes(1);
   opening.value = false;
   if (drops) toasts.value.push(...drops);
-  else if (!online.value) openPanel("craft");
+  else if (!online.value) openPanel("emotes");
 }
 
 // ---- quick emotes
@@ -143,16 +143,16 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
       @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick"
     >
       <PetView
-        :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse" :head="m.head" :desk="m.desk"
+        :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
         :emote="m.emote" :combo="m.combo" :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
-      <NamePill v-if="settings.showNames" :nick="m.nick" :badge="m.badge" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />
+      <NamePill v-if="settings.showNames" :nick="m.nick" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />
     </PetActor>
 
     <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
-        :left-down="pet.left" :right-down="pet.right" :head="settings.head" :desk="settings.desk" :emote="localPet.emote"
+        :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CounterBar
@@ -160,8 +160,9 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel"
       >
+        <button v-if="tickets > 0" class="ticket-bubble" data-hit data-no-drag @click="openPanel('dex')">抽卡 ×{{ tickets }}</button>
         <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
-        <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" :side="ownPos.x > 260 ? 'left' : 'right'" @pick="pickQuick" @more="openPanel('bag', { bagTab: 'emote' })" />
+        <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" :side="ownPos.x > 260 ? 'left' : 'right'" @pick="pickQuick" @more="openPanel('emotes')" />
       </CounterBar>
       <DropToast v-if="!settings.clickThrough" :drop="toasts[0] ?? null" @done="toasts.shift()" />
     </PetActor>
@@ -183,6 +184,7 @@ html.browser-preview body {
 </style>
 
 <style scoped>
+.ticket-bubble { position: absolute; left: 4px; bottom: calc(100% + 6px); border: 1px solid #ffc8b0; border-radius: 5px; background: #fff5ee; color: #78402b; padding: 5px 10px; font: 600 12px var(--font); cursor: pointer; }
 .desk { position: fixed; inset: 0; pointer-events: none; }
 .desk > :deep(*) { pointer-events: auto; }
 </style>

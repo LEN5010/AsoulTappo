@@ -61,12 +61,18 @@ CREATE TABLE IF NOT EXISTS presets (
   data TEXT NOT NULL,
   PRIMARY KEY (player_id, slot)
 );
+CREATE TABLE IF NOT EXISTS presence_sessions (
+  player_id TEXT NOT NULL,
+  session TEXT NOT NULL,
+  last_seen REAL NOT NULL,
+  PRIMARY KEY (player_id, session)
+);
 """
 
 PLAYER_FIELDS = (
     "id created taps_total active_minutes progress_taps progress_minutes boxes boxes_day boxes_today "
     "last_activity minute_bucket minute_taps minute_counted since_epic since_legend opened_total frame badge "
-    "shards loadout"
+    "shards loadout draw_tickets draw_seconds draw_pity drawn_total presence_last"
 ).split()
 
 
@@ -96,6 +102,11 @@ class Store:
                 self._db.execute("ALTER TABLE players ADD COLUMN shards INTEGER NOT NULL DEFAULT 0")
             if "loadout" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN loadout TEXT NOT NULL DEFAULT ''")
+            for field, kind in (("draw_tickets", "INTEGER"), ("draw_seconds", "REAL"),
+                                ("draw_pity", "INTEGER"), ("drawn_total", "INTEGER"),
+                                ("presence_last", "REAL")):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(
@@ -166,6 +177,17 @@ class Store:
             self._commit()
 
     # --- items
+    def presence(self, pid: str, session: str, now: float) -> float | None:
+        """Return this running session's previous heartbeat and record the new one."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT last_seen FROM presence_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
+            self._db.execute(
+                "INSERT INTO presence_sessions VALUES (?, ?, ?) "
+                "ON CONFLICT(player_id, session) DO UPDATE SET last_seen=excluded.last_seen", (pid, session, now))
+            self._commit()
+            return row["last_seen"] if row else None
+
     def owned(self, pid: str) -> dict[str, int]:
         with self._lock:
             rows = self._db.execute("SELECT item_id, count FROM items WHERE player_id=?", (pid,)).fetchall()

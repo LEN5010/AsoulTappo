@@ -15,6 +15,7 @@ export interface ManifestCard {
   sub: string | null;
   characters: string[];
   rarity: Rarity;
+  tier: "big" | "small" | "normal";
   thumb: string;
   full: string;
   video: string | null;

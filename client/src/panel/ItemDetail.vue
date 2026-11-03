@@ -20,7 +20,7 @@ const unlockText = computed(() => {
 });
 function goCraft() {
   emit("close");
-  openPanel("craft", { craftTarget: props.item.id });
+  openPanel("emotes", { craftTarget: props.item.id });
 }
 </script>
 
@@ -44,8 +44,9 @@ function goCraft() {
       <p v-if="owned" class="state ok">已拥有<template v-if="count > 1"> ×{{ count }}</template></p>
       <template v-else>
         <p v-if="unlockText" class="state">{{ unlockText }}</p>
+        <p v-else-if="card" class="state">在「{{ item.group }}」中抽卡获得</p>
         <p v-else-if="cost !== null" class="state">开宝箱获得，或用 {{ cost }} 碎片合成（现有 {{ shards }}）</p>
-        <button v-if="cost !== null" type="button" class="ui-btn primary" @click="goCraft">去合成</button>
+        <button v-if="cost !== null" type="button" class="ui-btn primary" @click="goCraft">兑换表情</button>
       </template>
     </div>
   </Modal>

@@ -55,17 +55,12 @@ class Manifest:
         for s in self.data.get("emoteSets", []):
             for e in s["emotes"]:
                 add("emote", e["key"], s.get("rarity", "common"), e["name"])
-        for a in self.data.get("accessories", []):
-            add("acc", a["id"], a["rarity"], a["name"])
-        for t in self.data.get("themes", []):
-            add("theme", t["id"], t.get("rarity"), t["name"])
         return out
 
     @cached_property
     def starter(self) -> frozenset[str]:
         st = self.data.get("starter", {})
         ids = {f"emote:{k}" for k in st.get("emotes", [])}
-        ids.add(f"theme:{st.get('theme', self.data.get('defaultTheme', ''))}")
         return frozenset(i for i in ids if i in self.items)
 
     @cached_property
@@ -73,9 +68,17 @@ class Manifest:
         """Droppable items (everything except starters) grouped by rarity."""
         out: dict[str, list[dict]] = {r: [] for r in self.data["rarities"]}
         for item in self.items.values():
-            if item["id"] not in self.starter and item["rarity"] in out:
+            if item["kind"] == "emote" and item["id"] not in self.starter and item["rarity"] in out:
                 out[item["rarity"]].append(item)
         return out
+
+    @cached_property
+    def card_pools(self) -> dict[str, dict[str, list[dict]]]:
+        pools: dict[str, dict[str, list[dict]]] = {}
+        for card in self.cards.values():
+            pool = pools.setdefault(card["series"], {"big": [], "small": [], "normal": []})
+            pool[card.get("tier", "normal")].append(card)
+        return pools
 
     @cached_property
     def accessories(self) -> dict[str, dict]:

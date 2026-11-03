@@ -3,14 +3,14 @@
    Flat surfaces with hairline borders; radii stay small (4-10px). */
 :root {
   --font: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --ink: #2b2326;
-  --ink-2: #6f6266;
-  --ink-3: #a1959a;
-  --paper: #fcfbfa;
-  --paper-2: #f4f1ef;
-  --paper-3: #e7e2df;
-  --line: rgba(43, 35, 38, 0.1);
-  --line-2: rgba(43, 35, 38, 0.18);
+  --ink: #49372f;
+  --ink-2: #8b7467;
+  --ink-3: #a99689;
+  --paper: #ffffff;
+  --paper-2: #fff5ee;
+  --paper-3: #f0e1d7;
+  --line: #f0e6df;
+  --line-2: #e8d6c9;
   --shadow-1: 0 1px 2px rgba(43, 35, 38, 0.08);
   --shadow-2: 0 18px 44px rgba(43, 35, 38, 0.22), 0 2px 6px rgba(43, 35, 38, 0.08);
   --r-s: 4px;
@@ -77,3 +77,6 @@
 .ui-range::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); }
 .ui-scroll { scrollbar-width: thin; scrollbar-color: var(--paper-3) transparent; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button, input, b, small { font-variant-numeric: tabular-nums; }
+.ui-btn:active:not(:disabled) { transform: translateY(1px); }

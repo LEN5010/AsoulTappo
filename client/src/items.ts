@@ -41,10 +41,6 @@ function build(): Item[] {
     out.push({ id: `char:${c.name}`, ref: c.name, kind: "character", name: c.name, rarity: null, art: "",
       characters: [c.name], group: "初始角色", starter: true });
   }
-  for (const a of manifest.accessories) {
-    out.push({ id: `acc:${a.id}`, ref: a.id, kind: "accessory", name: a.name, rarity: a.rarity, art: a.img,
-      characters: a.characters, group: a.slot === "head" ? "头顶" : "桌面", starter: false });
-  }
   for (const s of manifest.emoteSets) {
     for (const e of s.emotes) {
       const starter = starterEmotes.has(e.key);
@@ -55,15 +51,6 @@ function build(): Item[] {
   for (const c of manifest.cards) {
     out.push({ id: `card:${c.id}`, ref: c.id, kind: "card", name: c.name, rarity: c.rarity, art: c.thumb,
       characters: c.characters, group: seriesName(c.series), starter: false });
-  }
-  for (const t of manifest.themes) {
-    const starter = t.id === manifest.starter.theme;
-    out.push({ id: `theme:${t.id}`, ref: t.id, kind: "theme", name: t.name, rarity: starter ? null : t.rarity,
-      art: t.cover, characters: t.characters, group: "装扮主题", starter });
-  }
-  for (const d of manifest.decor) {
-    out.push({ id: `decor:${d.id}`, ref: d.id, kind: d.kind, name: d.name, rarity: null, art: d.img,
-      characters: [], group: seriesName(d.unlock.series), starter: false });
   }
   return out;
 }
@@ -100,7 +87,7 @@ export function ownsTheme(id: string, owned: Record<string, number>): boolean {
 }
 
 export function craftCost(item: Item): number | null {
-  return item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] : null;
+  return item.kind === "emote" && item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] : null;
 }
 
 /** Starter emotes of one character (the default quick emotes). */

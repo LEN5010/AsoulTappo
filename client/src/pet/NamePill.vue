@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { getDecor } from "../manifest";
-import { assetUrl } from "../asset";
-
-const props = defineProps<{ nick: string; badge?: string | null; width: number }>();
-const badgeImg = computed(() => assetUrl(getDecor(props.badge)?.img));
+defineProps<{ nick: string; width: number }>();
 </script>
 
 <template>
   <div class="pill" :style="{ maxWidth: `${width}px` }">
-    <img v-if="badgeImg" :src="badgeImg" alt="" draggable="false" />
     <span>{{ nick }}</span>
   </div>
 </template>

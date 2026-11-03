@@ -63,15 +63,14 @@ def test_overlapping_broadcasts_remove_failed_peer_only_once():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("method", ["profile_for", "set_decor"])
+@pytest.mark.parametrize("method", ["profile_for", "owns_emote"])
 def test_database_work_does_not_block_other_event_loop_tasks(monkeypatch, method):
     entered, release = threading.Event(), threading.Event()
 
     def blocked(*args):
         entered.set()
         release.wait(2)
-        return ({"uid": None, "frame": None, "badge": None, "head": None, "desk": None}
-                if method == "profile_for" else {"frame": None, "badge": None})
+        return {"uid": None} if method == "profile_for" else True
 
     monkeypatch.setattr(main.game, method, blocked)
     monkeypatch.setattr(main, "manager", RoomManager())
@@ -81,7 +80,7 @@ def test_database_work_does_not_block_other_event_loop_tasks(monkeypatch, method
             super().__init__()
             self.queue = [
                 {"type": "join", "room": "r", "nick": "n", "token": "test-player-000000"},
-                {"type": "state", "badge": ""},
+                {"type": "emote", "emote": "thumbup"},
             ]
 
         async def accept(self):

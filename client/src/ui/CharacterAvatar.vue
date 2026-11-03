@@ -2,11 +2,10 @@
 // Round avatar cropped from the character's pet background (the face area), with an optional frame.
 import { computed } from "vue";
 import { FACE_CROP, getCharacter, PET_BASE } from "../characters";
-import { characterColor, getDecor } from "../manifest";
-import { assetUrl } from "../asset";
+import { characterColor } from "../manifest";
 
-const props = withDefaults(defineProps<{ character: string; size?: number; frame?: string | null; round?: boolean }>(), {
-  size: 40, frame: null, round: true,
+const props = withDefaults(defineProps<{ character: string; size?: number; round?: boolean }>(), {
+  size: 40, round: true,
 });
 const bg = computed(() => getCharacter(props.character)?.bg ?? "");
 const style = computed(() => {
@@ -21,13 +20,11 @@ const style = computed(() => {
     backgroundPosition: `${-FACE_CROP.x * k}px ${-FACE_CROP.y * k}px`,
   };
 });
-const frameImg = computed(() => assetUrl(getDecor(props.frame)?.img));
 </script>
 
 <template>
-  <span class="avatar" :style="{ width: `${size * (frameImg ? 1.36 : 1)}px`, height: `${size * (frameImg ? 1.36 : 1)}px` }">
+  <span class="avatar" :style="{ width: `${size}px`, height: `${size}px` }">
     <span class="face" :style="style"></span>
-    <img v-if="frameImg" class="frame" :src="frameImg" alt="" draggable="false" />
   </span>
 </template>
 

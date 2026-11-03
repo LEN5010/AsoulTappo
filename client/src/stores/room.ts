@@ -67,12 +67,7 @@ const events: RoomEvents = {
     lastError.value = "";
     clearMembers();
     list.forEach(add);
-    // The server shows the stored loadout; catch up with local edits it has not seen yet.
-    const self = list.find((m) => m.id === you);
-    const patch: ProfilePatch = {};
-    if ((self?.head ?? "") !== settings.head) patch.head = settings.head;
-    if ((self?.desk ?? "") !== settings.desk) patch.desk = settings.desk;
-    if (Object.keys(patch).length) client.sendState(patch);
+
   },
   onMemberJoined: add,
   onMemberLeft: remove,
@@ -96,8 +91,6 @@ const events: RoomEvents = {
     m.nick = u.nick;
     m.frame = u.frame ?? null;
     m.badge = u.badge ?? null;
-    m.head = u.head ?? null;
-    m.desk = u.desk ?? null;
   },
   onError(code, message) {
     if (code === "rate_limited") return;
@@ -187,6 +180,4 @@ watch(() => settings.serverUrl, () => {
 }, { flush: "sync" });
 watch(() => settings.character, (character) => syncProfile({ character }), { flush: "sync" });
 watch(() => settings.nick, (nick) => syncProfile({ nick }), { flush: "sync" });
-watch(() => settings.head, (head) => syncProfile({ head }), { flush: "sync" });
-watch(() => settings.desk, (desk) => syncProfile({ desk }), { flush: "sync" });
 watch(() => settings.batchMs, setBatchMs);

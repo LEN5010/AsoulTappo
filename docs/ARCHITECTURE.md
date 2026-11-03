@@ -34,19 +34,19 @@ The tray menu can show / hide the overlay, open the panel, toggle click-through,
 **Frontend (`src/`)**
 - `App.vue` — the overlay root. Places the own pet (`PetActor` + `PetView` + `CounterBar`), the other members' pets with name pills, drop toasts and the panel; decides whether emote bubbles grow to the left near the right screen edge.
 - `pet/` — the pet and what floats around it:
-  - `PetView.vue`: the ASoul-Little-Bun layers (bg, keyboard, mouse, left/right-click PNGs on the original 240×135 layout), a head accessory anchored per character, a desk accessory on the monitor, the emote bubble, the `+N` combo and the theme's like animation.
+  - `PetView.vue`: the ASoul-Little-Bun layers (bg, keyboard, mouse, left/right-click PNGs on the original 240×135 layout), the emote bubble, the `+N` combo and the theme's like animation.
   - `PetActor.vue`: drag with pointer capture, reports position and size.
   - `EmotePlayer.ts`: one bubble per pet. A different emote swaps the picture, the same emote again shows `×N`, the bubble hides after the hold time (setting, 1.2–6 s). `TapCombo.ts` merges a member's tap batches into one rising `+N`.
   - `CounterBar.vue` (today / total counter, quick emotes, menu), `ChestBubble.vue`, `QuickEmote.vue`, `DropToast.vue`, `NamePill.vue`.
-- `panel/` — `MainPanel.vue` (draggable floating panel, sidebar that folds) with five pages: 背包 (stage preview, 5 presets, 8 favorite emotes, owned items by kind), 图鉴 (everything grouped by rarity, locked items as silhouettes), 合成 (open chests, shards, craft a chosen item), 联机 (create / join / leave, members, tidy, remote pet size, names), 设置.
+- `panel/` — draggable panel with 收藏集 (pool selection, card wall, draws and reveals), 表情 (boxes, shards, eight favorites), 联机 and 设置. `CardReveal.vue` presents big-hidden cards separately.
 - `ui/` — design tokens (`tokens.css`) and shared pieces (`Icon`, `ItemArt`, `ItemCard`, `SegTabs`, `Modal`, `CharacterAvatar`).
-- `items.ts` — one catalog of collectible items (`card:` / `emote:` / `acc:` / `theme:` ids, plus characters and decor for display) with ownership helpers.
+- `items.ts` — one catalog of collectible items (`card:` / `emote:` ids, plus characters for display) with ownership helpers.
 - `stores/`
-  - `settings.ts`: persisted settings, including the loadout (character, head, desk, theme, favorites) and pet / panel positions.
-  - `player.ts`: progress, boxes, shards, crafting, loadout sync (local settings are the source of truth, mirrored to `POST /api/loadout` after 400 ms) and presets. Activity batches stay bound to their original server; responses from older server selections are ignored.
+  - `settings.ts`: persisted settings, including the loadout (character, favorites) and pet / panel positions.
+  - `player.ts`: progress, boxes, shards, crafting, loadout sync (local settings are the source of truth, mirrored to `POST /api/loadout` after 400 ms) and online-time card draws. Activity batches stay bound to their original server; responses from older server selections are ignored.
   - `room.ts`: room membership, per-member emote player and tap combo, remembers profile changes during reconnects.
   - `desk.ts`: where pets stand. Other members' positions are remembered per room by their stable member id (`uid`) in localStorage (10 rooms max); newcomers get the next free slot next to the own pet.
-  - `counter.ts` (local tap counters), `pet.ts` (own pet input state), `ui.ts` (panel page and tabs), `theme.ts` (theme CSS variables).
+  - `counter.ts` (local tap counters), `pet.ts` (own pet input state), `ui.ts` (panel page and tabs), `theme.ts` (white/orange UI tokens and bundled animations).
 - `net/` — `protocol.ts` (wire types), `TapBatcher.ts` (100–200 ms count batching), `RoomClient.ts` (WebSocket, ping/pong keepalive, exponential-backoff reconnect + automatic re-join), `api.ts` (HTTP API).
 - `composables/tauri.ts` — Tauri event/command bridge; in a plain browser (`npm run dev`) it falls back to DOM key/mouse events and skips hit testing, so the UI can be developed without the shell.
 - `characters.ts` — discovers characters from `src/assets/characters/<name>/*.png` (copied from the original project; see `COPYRIGHT.md` there) and holds the head anchor of each character.
@@ -54,9 +54,9 @@ The tray menu can show / hide the overlay, open the panel, toggle click-through,
 ## Server (`server/`)
 - FastAPI app, one WebSocket endpoint, JSON messages validated by pydantic (`app/models.py`).
 - `RoomManager` keeps rooms in a dict; max 20 peers per room; empty rooms are deleted; room IDs are `secrets.token_urlsafe(16)`.
-- CORS middleware (`ASOULTAPPO_CORS_ORIGINS`, default `*`), `ping`→`pong` keepalive, `state` can change character, nickname, decor and accessories.
+- CORS middleware (`ASOULTAPPO_CORS_ORIGINS`, default `*`), `ping`→`pong` keepalive, `state` can change character and nickname.
 - Room state is **in memory, single process**. Scaling out would need Redis pub/sub or sticky routing.
-- `app/game.py` holds the progression rules: activity credit, boxes, drops, shards and crafting, loadout and presets. Everything a player owns is one `items` table keyed by namespaced item id (`card:` / `emote:` / `acc:` / `theme:`). Older databases are migrated on startup (`cards` → `items`, `drops.card_id` → `item_id`).
+- `app/game.py` holds the progression rules: activity credit, boxes, drops, shards and crafting, character and favorite emotes. Everything a player owns is one `items` table keyed by namespaced item id (`card:` / `emote:`). Older databases are migrated on startup (`cards` → `items`, `drops.card_id` → `item_id`).
 - Activity batches use a session sequence for retry deduplication and a time-based credit balance; both commit with player progress.
 - WebSocket profile / ownership checks run in a worker thread. Emotes are rate-limited (250 ms) and must be owned; ownership is cached per peer. Each peer serializes outgoing messages with a 2-second send deadline; failed peers are closed and removed.
 - Room IDs are allocated on request, and Room objects are created on first join.
@@ -78,3 +78,7 @@ The tray menu can show / hide the overlay, open the panel, toggle click-through,
 - Click-through can only be turned off from the tray menu.
 - No installer/auto-update yet (Tauri NSIS bundle configured, updater not wired).
 - macOS/Linux are not targets (transparent window + global hook behaviour untested).
+
+## Card draws
+
+`POST /api/presence` receives a heartbeat every 20 seconds. The server credits intervals up to 60 seconds and uses a per-player timestamp to merge overlapping clients. Every 900 connected seconds yields one ticket, with no inventory cap. Six pools share the 400-draw big-hidden pity counter. Rarity probabilities are 0.5% / 4.5% / 95%, followed by equal choice within the pool tier. Ticket deduction, ownership and pity commit atomically in SQLite. The client serializes state requests per server and displays batches of at most 100 cards.

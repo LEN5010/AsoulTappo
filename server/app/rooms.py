@@ -30,10 +30,6 @@ class Peer:
     character: str
     ws: Sender
     taps: int = 0
-    frame: str | None = None
-    badge: str | None = None
-    head: str | None = None
-    desk: str | None = None
     uid: str | None = None
     token: str | None = None  # secret player token (never broadcast)
     emotes: set[str] = field(default_factory=set)  # emote keys known to be owned
@@ -64,18 +60,18 @@ class RoomManager:
         return new_room_id()
 
     def join(self, room_id: str, nick: str, character: str, ws: Sender,
-             frame: str | None = None, badge: str | None = None, token: str | None = None,
+             token: str | None = None,
              **profile: str | None) -> Peer:
         """Join (auto-creating) a room. Raises RoomFull when at capacity.
 
-        ``profile`` may carry ``uid``, ``head`` and ``desk``."""
+        ``profile`` carries the stable room ``uid``."""
         room = self.rooms.get(room_id)
         if room is None:
             room = self.rooms[room_id] = Room(room_id)
         if len(room.peers) >= self.max_size:
             raise RoomFull(room_id)
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
-                    frame=frame, badge=badge, token=token, **profile)
+                    token=token, **profile)
         room.peers[peer.id] = peer
         return peer
 

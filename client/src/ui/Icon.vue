@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Small line icon set drawn for this project (24x24, stroke = currentColor).
 const PATHS: Record<string, string[]> = {
+  box: ["M4 11h16v9H4z", "M4 11V8a8 5 0 0 1 16 0v3", "M10 10h4v5h-4z"],
   bag: ["M6 9a6 6 0 0 1 12 0v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z", "M9 9V7a3 3 0 0 1 6 0v2", "M9 14h6"],
   book: ["M6 4h9a3 3 0 0 1 3 3v13H9a3 3 0 0 1-3-3z", "M6 17a3 3 0 0 1 3-3h9", "M10 8h4"],
   craft: ["M12 3l1.8 4.7 4.7 1.8-4.7 1.8L12 16l-1.8-4.7-4.7-1.8 4.7-1.8z", "M18.5 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z", "M5.5 16l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z"],

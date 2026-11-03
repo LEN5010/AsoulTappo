@@ -1,15 +1,13 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type Collection, type Drop, type LoadoutPatch, type PlayerStatus, type Preset,
+  type Collection, type Drop, type LoadoutPatch, type PlayerStatus,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
-import { manifest } from "../manifest";
-import { ownsAccessory, ownsEmote, ownsTheme } from "../items";
+import { ownsEmote } from "../items";
 import { settings } from "./settings";
 
 const TOKEN_KEY = "asoultappo.token.v1";
-export const PRESET_SLOTS = 5;
 
 function loadToken(): string {
   try {
@@ -28,14 +26,32 @@ export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
+export const tickets = computed(() => status.value?.draw?.tickets ?? 0);
+export const presenceUpdatedAt = ref(0);
+const presenceSession = newToken();
+let heartbeatBusy = false;
+
+export async function heartbeat(): Promise<void> {
+  if (heartbeatBusy) return;
+  heartbeatBusy = true;
+  try {
+    const result = await call((api) => api.presence(presenceSession));
+    if (result) { status.value = result; presenceUpdatedAt.value = Date.now(); online.value = true; error.value = ""; }
+  } finally { heartbeatBusy = false; }
+}
+
 export const boxes = computed(() => status.value?.boxes ?? 0);
 export const shards = computed(() => status.value?.shards ?? 0);
 export const unlocked = computed(() => new Set(status.value?.unlocked ?? []));
-export const presets = ref<(Preset | null)[]>(Array(PRESET_SLOTS).fill(null));
 /** Items obtained in this session that the player has not looked at yet. */
 export const freshItems = reactive(new Set<string>());
 
-interface Session { api: Api; reporter: ActivityReporter }
+interface Session { api: Api; reporter: ActivityReporter; tail: Promise<unknown> }
+function serial<T>(session: Session, fn: () => Promise<T>): Promise<T> {
+  const next = session.tail.then(fn);
+  session.tail = next.catch(() => {});
+  return next;
+}
 const sessions = new Map<string, Session>();
 let generation = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -44,9 +60,9 @@ function sessionFor(base: string): Session {
   const found = sessions.get(base);
   if (found) return found;
   const api = new Api(() => base, () => token);
-  const session: Session = { api, reporter: new ActivityReporter(async (batch) => {
+  const session: Session = { api, tail: Promise.resolve(), reporter: new ActivityReporter(async (batch) => {
     const gen = generation;
-    const result = await api.activity(batch);
+    const result = await serial(session, () => api.activity(batch));
     if (current === session && gen === generation) {
       status.value = result;
       online.value = true;
@@ -70,7 +86,7 @@ async function call<T>(fn: (api: Api) => Promise<T>): Promise<T | null> {
   const session = current;
   const gen = generation;
   try {
-    const r = await fn(session.api);
+    const r = await serial(session, () => fn(session.api));
     return session === current && gen === generation ? r : null;
   } catch (e) {
     if (session === current && gen === generation) fail(e);
@@ -82,7 +98,7 @@ export async function refresh(): Promise<void> {
   const session = current;
   const gen = generation;
   try {
-    const [s, c] = await Promise.all([session.api.me(), session.api.collection()]);
+    const [s, c] = await serial(session, () => Promise.all([session.api.me(), session.api.collection()]));
     if (session !== current || gen !== generation) return;
     status.value = s;
     collection.owned = c.owned;
@@ -95,7 +111,7 @@ export async function refresh(): Promise<void> {
   }
   sanitizeLoadout();
   void pushLoadout();
-  void loadPresets();
+
 }
 
 async function flush(session: Session): Promise<boolean> {
@@ -112,13 +128,13 @@ watch(() => settings.serverUrl, (url) => {
   status.value = null;
   collection.owned = {};
   collection.recent = [];
-  presets.value = Array(PRESET_SLOTS).fill(null);
   freshItems.clear();
   online.value = false;
   error.value = "";
   // Each reporter keeps its original server and batch identity, including retries.
   void flush(previous);
-  if (timer) void refresh();
+  presenceUpdatedAt.value = 0;
+  if (timer) { void refresh(); void heartbeat(); }
 }, { flush: "sync" });
 
 export function countInput(): void {
@@ -127,8 +143,9 @@ export function countInput(): void {
 
 export function startReporting(everyMs = 20000): void {
   if (timer) return;
-  void refresh(); // establishes the server's counting baseline before the first batch
+  void refresh().then(heartbeat); // establishes the input and running-time baselines
   timer = setInterval(() => {
+    void heartbeat();
     for (const session of sessions.values()) {
       if (session.reporter.size > 0) void flush(session);
     }
@@ -147,6 +164,15 @@ async function reloadCollection(): Promise<void> {
     collection.owned = c.owned;
     collection.recent = c.recent;
   }
+}
+
+export async function drawCards(pool: string, count = 1): Promise<Drop[] | null> {
+  const r = await call((api) => api.drawCards(pool, count));
+  if (!r) return null;
+  status.value = r;
+  for (const d of r.drops) if (d.new) freshItems.add(d.item);
+  await reloadCollection();
+  return r.drops;
 }
 
 /** Open up to `count` boxes. Pending taps are reported first so new boxes count. */
@@ -171,23 +197,12 @@ export async function craftItem(item: string): Promise<boolean> {
   return true;
 }
 
-export async function chooseDecor(patch: { frame?: string; badge?: string }): Promise<boolean> {
-  const r = await call((api) => api.setDecor(patch));
-  if (!r) return false;
-  status.value = r;
-  return true;
-}
-
 // ---------------------------------------------------------------- loadout
-// The local settings are what the pet shows; the server keeps a validated copy so the room
-// sees the same accessories and presets can be stored.
+// Sync the selected character and favorites.
 
 export function localLoadout(): LoadoutPatch {
   return {
     character: settings.character,
-    head: settings.head,
-    desk: settings.desk,
-    theme: settings.theme,
     favorites: [...settings.favorites],
   };
 }
@@ -196,9 +211,6 @@ export function localLoadout(): LoadoutPatch {
 export function sanitizeLoadout(): void {
   if (!online.value) return;
   const owned = collection.owned;
-  if (settings.head && !ownsAccessory(settings.head, owned)) settings.head = "";
-  if (settings.desk && !ownsAccessory(settings.desk, owned)) settings.desk = "";
-  if (!ownsTheme(settings.theme, owned)) settings.theme = manifest.defaultTheme;
   const favs = settings.favorites.filter((k) => ownsEmote(k, owned));
   if (favs.length !== settings.favorites.length) settings.favorites = favs;
 }
@@ -210,40 +222,9 @@ export async function pushLoadout(): Promise<boolean> {
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
-  () => [settings.character, settings.head, settings.desk, settings.theme, settings.favorites.join(",")],
+  () => [settings.character, settings.favorites.join(",")],
   () => {
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushLoadout(), 400);
   },
 );
-
-export async function loadPresets(): Promise<void> {
-  const r = await call((api) => api.presets());
-  if (r && Array.isArray(r.presets)) presets.value = r.presets;
-}
-
-export async function savePreset(slot: number, name?: string): Promise<boolean> {
-  const snapshot: LoadoutPatch = { ...localLoadout(), frame: status.value?.frame ?? "", badge: status.value?.badge ?? "" };
-  const r = await call((api) => api.savePreset(slot, snapshot, name));
-  if (r) presets.value = r.presets;
-  return r !== null;
-}
-
-export async function clearPreset(slot: number): Promise<void> {
-  const r = await call((api) => api.savePreset(slot, null));
-  if (r) presets.value = r.presets;
-}
-
-/** Apply a preset; returns the frame/badge patch for the room when decor changed. */
-export async function applyPreset(slot: number): Promise<{ frame?: string; badge?: string } | null> {
-  const lo = presets.value[slot]?.loadout;
-  if (!lo) return null;
-  if (lo.character) settings.character = lo.character;
-  if (lo.head !== undefined) settings.head = lo.head ?? "";
-  if (lo.desk !== undefined) settings.desk = lo.desk ?? "";
-  if (lo.theme) settings.theme = lo.theme;
-  if (lo.favorites) settings.favorites = [...lo.favorites];
-  const decor = { frame: lo.frame ?? "", badge: lo.badge ?? "" };
-  if (decor.frame === (status.value?.frame ?? "") && decor.badge === (status.value?.badge ?? "")) return null;
-  return await chooseDecor(decor) ? decor : null;
-}

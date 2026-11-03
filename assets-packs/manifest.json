@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "characters": [
   {
    "id": "jiaran",
@@ -833,12 +833,12 @@
   {
    "id": "moon",
    "name": "嘉然的画册 · 此间为爱",
-   "total": 1
+   "total": 9
   },
   {
    "id": "tavern",
    "name": "乃琳的酒馆 · 沉沦醉与爱",
-   "total": 1
+   "total": 9
   },
   {
    "id": "voyage",
@@ -853,6 +853,230 @@
  ],
  "cards": [
   {
+   "id": "c1762331462002",
+   "name": "蝶影共醉",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "legendary",
+   "tier": "big",
+   "thumb": "bundle:cards/thumb/c1762331462002.webp",
+   "full": "pack:cards/tavern/c1762331462002.webp",
+   "video": "pack:cards/tavern/c1762331462002.mp4"
+  },
+  {
+   "id": "c1781070981009",
+   "name": "珍馐派对",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "legendary",
+   "tier": "big",
+   "thumb": "bundle:cards/thumb/c1781070981009.webp",
+   "full": "pack:cards/moon/c1781070981009.webp",
+   "video": "pack:cards/moon/c1781070981009.mp4"
+  },
+  {
+   "id": "c1781070981002",
+   "name": "午睡时间",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981002.webp",
+   "full": "pack:cards/moon/c1781070981002.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981003",
+   "name": "倚凭栏",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981003.webp",
+   "full": "pack:cards/moon/c1781070981003.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981004",
+   "name": "SUPER IDOL",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981004.webp",
+   "full": "pack:cards/moon/c1781070981004.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981005",
+   "name": "安可time",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981005.webp",
+   "full": "pack:cards/moon/c1781070981005.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981006",
+   "name": "非请勿入",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981006.webp",
+   "full": "pack:cards/moon/c1781070981006.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981007",
+   "name": "噔噔噔！灯会",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981007.webp",
+   "full": "pack:cards/moon/c1781070981007.webp",
+   "video": null
+  },
+  {
+   "id": "c1781070981008",
+   "name": "金币至上",
+   "series": "moon",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1781070981008.webp",
+   "full": "pack:cards/moon/c1781070981008.webp",
+   "video": null
+  },
+  {
+   "id": "c1762331462009",
+   "name": "绮梦妖狐",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "epic",
+   "tier": "small",
+   "thumb": "bundle:cards/thumb/c1762331462009.webp",
+   "full": "pack:cards/tavern/c1762331462009.webp",
+   "video": "pack:cards/tavern/c1762331462009.mp4"
+  },
+  {
+   "id": "c1762331462003",
+   "name": "四季的心动",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462003.webp",
+   "full": "pack:cards/tavern/c1762331462003.webp",
+   "video": "pack:cards/tavern/c1762331462003.mp4"
+  },
+  {
+   "id": "c1762331462004",
+   "name": "罗兰紫嫣",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462004.webp",
+   "full": "pack:cards/tavern/c1762331462004.webp",
+   "video": "pack:cards/tavern/c1762331462004.mp4"
+  },
+  {
+   "id": "c1762331462005",
+   "name": "欢迎光琳",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462005.webp",
+   "full": "pack:cards/tavern/c1762331462005.webp",
+   "video": null
+  },
+  {
+   "id": "c1762331462006",
+   "name": "酒意半酣",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462006.webp",
+   "full": "pack:cards/tavern/c1762331462006.webp",
+   "video": null
+  },
+  {
+   "id": "c1762331462007",
+   "name": "女王法典",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462007.webp",
+   "full": "pack:cards/tavern/c1762331462007.webp",
+   "video": null
+  },
+  {
+   "id": "c1762331462008",
+   "name": "镜界对影",
+   "series": "tavern",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "common",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c1762331462008.webp",
+   "full": "pack:cards/tavern/c1762331462008.webp",
+   "video": null
+  },
+  {
    "id": "c1700742793002",
    "name": "睡衣系列-贝拉",
    "series": "bloom",
@@ -861,6 +1085,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793002.webp",
    "full": "pack:cards/bloom/c1700742793002.webp",
    "video": null
@@ -874,6 +1099,7 @@
     "乃琳"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793004.webp",
    "full": "pack:cards/bloom/c1700742793004.webp",
    "video": null
@@ -887,6 +1113,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793005.webp",
    "full": "pack:cards/bloom/c1700742793005.webp",
    "video": null
@@ -900,6 +1127,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793007.webp",
    "full": "pack:cards/bloom/c1700742793007.webp",
    "video": null
@@ -913,6 +1141,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793008.webp",
    "full": "pack:cards/bloom/c1700742793008.webp",
    "video": null
@@ -925,7 +1154,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793010.webp",
    "full": "pack:cards/bloom/c1700742793010.webp",
    "video": "pack:cards/bloom/c1700742793010.mp4"
@@ -939,6 +1169,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793012.webp",
    "full": "pack:cards/bloom/c1700742793012.webp",
    "video": null
@@ -952,6 +1183,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793013.webp",
    "full": "pack:cards/bloom/c1700742793013.webp",
    "video": null
@@ -965,6 +1197,7 @@
     "乃琳"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793014.webp",
    "full": "pack:cards/bloom/c1700742793014.webp",
    "video": null
@@ -978,6 +1211,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793015.webp",
    "full": "pack:cards/bloom/c1700742793015.webp",
    "video": null
@@ -991,6 +1225,7 @@
     "乃琳"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793016.webp",
    "full": "pack:cards/bloom/c1700742793016.webp",
    "video": null
@@ -1003,7 +1238,8 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793017.webp",
    "full": "pack:cards/bloom/c1700742793017.webp",
    "video": "pack:cards/bloom/c1700742793017.mp4"
@@ -1016,7 +1252,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793018.webp",
    "full": "pack:cards/bloom/c1700742793018.webp",
    "video": "pack:cards/bloom/c1700742793018.mp4"
@@ -1030,6 +1267,7 @@
     "乃琳"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793020.webp",
    "full": "pack:cards/bloom/c1700742793020.webp",
    "video": null
@@ -1043,6 +1281,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793021.webp",
    "full": "pack:cards/bloom/c1700742793021.webp",
    "video": null
@@ -1055,7 +1294,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "rare",
+   "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793022.webp",
    "full": "pack:cards/bloom/c1700742793022.webp",
    "video": "pack:cards/bloom/c1700742793022.mp4"
@@ -1068,7 +1308,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "rare",
+   "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793023.webp",
    "full": "pack:cards/bloom/c1700742793023.webp",
    "video": "pack:cards/bloom/c1700742793023.mp4"
@@ -1081,7 +1322,8 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "rare",
+   "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793026.webp",
    "full": "pack:cards/bloom/c1700742793026.webp",
    "video": "pack:cards/bloom/c1700742793026.mp4"
@@ -1094,7 +1336,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "rare",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793031.webp",
    "full": "pack:cards/bloom/c1700742793031.webp",
    "video": "pack:cards/bloom/c1700742793031.mp4"
@@ -1107,7 +1350,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "rare",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793032.webp",
    "full": "pack:cards/bloom/c1700742793032.webp",
    "video": "pack:cards/bloom/c1700742793032.mp4"
@@ -1120,7 +1364,8 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "rare",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793033.webp",
    "full": "pack:cards/bloom/c1700742793033.webp",
    "video": "pack:cards/bloom/c1700742793033.mp4"
@@ -1133,7 +1378,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "legendary",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218001.webp",
    "full": "pack:cards/bloom/c1700799218001.webp",
    "video": "pack:cards/bloom/c1700799218001.mp4"
@@ -1146,7 +1392,8 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "legendary",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218003.webp",
    "full": "pack:cards/bloom/c1700799218003.webp",
    "video": "pack:cards/bloom/c1700799218003.mp4"
@@ -1159,7 +1406,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "legendary",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218004.webp",
    "full": "pack:cards/bloom/c1700799218004.webp",
    "video": "pack:cards/bloom/c1700799218004.mp4"
@@ -1173,6 +1421,7 @@
     "乃琳"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331702001.webp",
    "full": "pack:cards/tavern/c1762331702001.webp",
    "video": null
@@ -1186,6 +1435,7 @@
     "嘉然"
    ],
    "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1781070981010.webp",
    "full": "pack:cards/moon/c1781070981010.webp",
    "video": "pack:cards/moon/c1781070981010.mp4"
@@ -1198,7 +1448,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "epic",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1745315724002.webp",
    "full": "pack:cards/brilliant/c1745315724002.webp",
    "video": "pack:cards/brilliant/c1745315724002.mp4"
@@ -1211,7 +1462,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724003.webp",
    "full": "pack:cards/brilliant/c1745315724003.webp",
    "video": "pack:cards/brilliant/c1745315724003.mp4"
@@ -1225,6 +1477,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724004.webp",
    "full": "pack:cards/brilliant/c1745315724004.webp",
    "video": null
@@ -1238,6 +1491,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724005.webp",
    "full": "pack:cards/brilliant/c1745315724005.webp",
    "video": null
@@ -1251,6 +1505,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724006.webp",
    "full": "pack:cards/brilliant/c1745315724006.webp",
    "video": null
@@ -1264,6 +1519,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724007.webp",
    "full": "pack:cards/brilliant/c1745315724007.webp",
    "video": null
@@ -1277,6 +1533,7 @@
     "嘉然"
    ],
    "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1745315724008.webp",
    "full": "pack:cards/brilliant/c1745315724008.webp",
    "video": "pack:cards/brilliant/c1745315724008.mp4"
@@ -1290,6 +1547,7 @@
     "嘉然"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724009.webp",
    "full": "pack:cards/brilliant/c1745315724009.webp",
    "video": null
@@ -1302,7 +1560,8 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745398468001.webp",
    "full": "pack:cards/brilliant/c1745398468001.webp",
    "video": "pack:cards/brilliant/c1745398468001.mp4"
@@ -1315,7 +1574,8 @@
    "characters": [
     "思诺"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610002.webp",
    "full": "pack:cards/symphony/c1748345610002.webp",
    "video": "pack:cards/symphony/c1748345610002.mp4"
@@ -1329,7 +1589,8 @@
     "心宜",
     "思诺"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610003.webp",
    "full": "pack:cards/symphony/c1748345610003.webp",
    "video": "pack:cards/symphony/c1748345610003.mp4"
@@ -1343,6 +1604,7 @@
     "思诺"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610004.webp",
    "full": "pack:cards/symphony/c1748345610004.webp",
    "video": null
@@ -1356,6 +1618,7 @@
     "心宜"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610005.webp",
    "full": "pack:cards/symphony/c1748345610005.webp",
    "video": null
@@ -1369,6 +1632,7 @@
     "思诺"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610006.webp",
    "full": "pack:cards/symphony/c1748345610006.webp",
    "video": null
@@ -1382,6 +1646,7 @@
     "心宜"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610007.webp",
    "full": "pack:cards/symphony/c1748345610007.webp",
    "video": null
@@ -1394,7 +1659,8 @@
    "characters": [
     "思诺"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610008.webp",
    "full": "pack:cards/symphony/c1748345610008.webp",
    "video": "pack:cards/symphony/c1748345610008.mp4"
@@ -1407,7 +1673,8 @@
    "characters": [
     "心宜"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610009.webp",
    "full": "pack:cards/symphony/c1748345610009.webp",
    "video": "pack:cards/symphony/c1748345610009.mp4"
@@ -1421,7 +1688,8 @@
     "心宜",
     "思诺"
    ],
-   "rarity": "epic",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1748345610010.webp",
    "full": "pack:cards/symphony/c1748345610010.webp",
    "video": "pack:cards/symphony/c1748345610010.mp4"
@@ -1436,6 +1704,7 @@
     "思诺"
    ],
    "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1748345610011.webp",
    "full": "pack:cards/symphony/c1748345610011.webp",
    "video": "pack:cards/symphony/c1748345610011.mp4"
@@ -1448,7 +1717,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "epic",
+   "rarity": "legendary",
+   "tier": "big",
    "thumb": "bundle:cards/thumb/c1756378523002.webp",
    "full": "pack:cards/voyage/c1756378523002.webp",
    "video": "pack:cards/voyage/c1756378523002.mp4"
@@ -1461,7 +1731,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523003.webp",
    "full": "pack:cards/voyage/c1756378523003.webp",
    "video": "pack:cards/voyage/c1756378523003.mp4"
@@ -1474,7 +1745,8 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "epic",
+   "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523004.webp",
    "full": "pack:cards/voyage/c1756378523004.webp",
    "video": "pack:cards/voyage/c1756378523004.mp4"
@@ -1488,6 +1760,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523005.webp",
    "full": "pack:cards/voyage/c1756378523005.webp",
    "video": null
@@ -1501,6 +1774,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523006.webp",
    "full": "pack:cards/voyage/c1756378523006.webp",
    "video": null
@@ -1514,6 +1788,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523007.webp",
    "full": "pack:cards/voyage/c1756378523007.webp",
    "video": null
@@ -1527,6 +1802,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523008.webp",
    "full": "pack:cards/voyage/c1756378523008.webp",
    "video": null
@@ -1540,6 +1816,7 @@
     "贝拉"
    ],
    "rarity": "common",
+   "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523009.webp",
    "full": "pack:cards/voyage/c1756378523009.webp",
    "video": null
@@ -1553,6 +1830,7 @@
     "贝拉"
    ],
    "rarity": "epic",
+   "tier": "small",
    "thumb": "bundle:cards/thumb/c1756378523010.webp",
    "full": "pack:cards/voyage/c1756378523010.webp",
    "video": "pack:cards/voyage/c1756378523010.mp4"
@@ -3603,266 +3881,8 @@
    "rarity": "common"
   }
  ],
- "decor": [
-  {
-   "id": "frame-brilliant",
-   "kind": "frame",
-   "name": "绚烂心迹 头像挂件",
-   "img": "bundle:decor/frame-brilliant.webp",
-   "unlock": {
-    "series": "brilliant",
-    "min": 5
-   }
-  },
-  {
-   "id": "badge-brilliant",
-   "kind": "badge",
-   "name": "绚烂心迹 LV1",
-   "img": "bundle:decor/badge-brilliant.webp",
-   "unlock": {
-    "series": "brilliant",
-    "min": 1
-   }
-  },
-  {
-   "id": "frame-moon",
-   "kind": "frame",
-   "name": "此间为爱 头像挂件",
-   "img": "bundle:decor/frame-moon.webp",
-   "unlock": {
-    "series": "moon",
-    "min": 1
-   }
-  },
-  {
-   "id": "frame-tavern",
-   "kind": "frame",
-   "name": "沉沦醉与爱 头像挂件",
-   "img": "bundle:decor/frame-tavern.webp",
-   "unlock": {
-    "series": "tavern",
-    "min": 1
-   }
-  },
-  {
-   "id": "badge-tavern",
-   "kind": "badge",
-   "name": "2025 乃琳的酒馆 LV1",
-   "img": "bundle:decor/badge-tavern.webp",
-   "unlock": {
-    "series": "tavern",
-    "min": 1
-   }
-  },
-  {
-   "id": "frame-voyage",
-   "kind": "frame",
-   "name": "时空旅人 头像挂件",
-   "img": "bundle:decor/frame-voyage.webp",
-   "unlock": {
-    "series": "voyage",
-    "min": 5
-   }
-  },
-  {
-   "id": "badge-voyage",
-   "kind": "badge",
-   "name": "2025 贝拉的冒险 LV1",
-   "img": "bundle:decor/badge-voyage.webp",
-   "unlock": {
-    "series": "voyage",
-    "min": 1
-   }
-  },
-  {
-   "id": "frame-symphony",
-   "kind": "frame",
-   "name": "双声巡梦 头像框",
-   "img": "bundle:decor/frame-symphony.webp",
-   "unlock": {
-    "series": "symphony",
-    "min": 5
-   }
-  },
-  {
-   "id": "badge-symphony",
-   "kind": "badge",
-   "name": "交响乐谱 LV1",
-   "img": "bundle:decor/badge-symphony.webp",
-   "unlock": {
-    "series": "symphony",
-    "min": 1
-   }
-  }
- ],
- "accessories": [
-  {
-   "id": "figure-jiaran-eat",
-   "name": "嘉然今天吃什么",
-   "kind": "figure",
-   "slot": "head",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "rare",
-   "img": "bundle:accessories/figure-jiaran-eat.webp"
-  },
-  {
-   "id": "figure-jiaran-2-0",
-   "name": "嘉然 2.0",
-   "kind": "figure",
-   "slot": "head",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "rare",
-   "img": "bundle:accessories/figure-jiaran-2-0.webp"
-  },
-  {
-   "id": "figure-nailin-queen",
-   "name": "乃琳 Queen",
-   "kind": "figure",
-   "slot": "head",
-   "characters": [
-    "乃琳"
-   ],
-   "rarity": "rare",
-   "img": "bundle:accessories/figure-nailin-queen.webp"
-  },
-  {
-   "id": "figure-beila-kira",
-   "name": "贝拉 kira",
-   "kind": "figure",
-   "slot": "head",
-   "characters": [
-    "贝拉"
-   ],
-   "rarity": "rare",
-   "img": "bundle:accessories/figure-beila-kira.webp"
-  },
-  {
-   "id": "anim-jiaran-eat",
-   "name": "嘉然今天吃什么 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-jiaran-eat.webp"
-  },
-  {
-   "id": "anim-jiaran-album-2025",
-   "name": "2025 嘉然的画册 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-jiaran-album-2025.webp"
-  },
-  {
-   "id": "anim-jiaran-album-2026",
-   "name": "2026 嘉然的画册 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-jiaran-album-2026.webp"
-  },
-  {
-   "id": "anim-jiaran-2-0",
-   "name": "嘉然个性装扮 2.0 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-jiaran-2-0.webp"
-  },
-  {
-   "id": "anim-nailin-tavern-2025",
-   "name": "2025 乃琳的酒馆 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "乃琳"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-nailin-tavern-2025.webp"
-  },
-  {
-   "id": "anim-nailin-queen",
-   "name": "乃琳 Queen · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "乃琳"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-nailin-queen.webp"
-  },
-  {
-   "id": "anim-nailin-2-0",
-   "name": "乃琳个性装扮 2.0 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "乃琳"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-nailin-2-0.webp"
-  },
-  {
-   "id": "anim-beila-adventure-2025",
-   "name": "2025 贝拉的冒险 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "贝拉"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-beila-adventure-2025.webp"
-  },
-  {
-   "id": "anim-beila-kira",
-   "name": "贝拉 kira · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "贝拉"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-beila-kira.webp"
-  },
-  {
-   "id": "anim-beila-2-0",
-   "name": "贝拉个性装扮 2.0 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "贝拉"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-beila-2-0.webp"
-  },
-  {
-   "id": "anim-symphony",
-   "name": "心宜和思诺的交响乐谱 · 小动画",
-   "kind": "anim",
-   "slot": "desk",
-   "characters": [
-    "心宜",
-    "思诺"
-   ],
-   "rarity": "epic",
-   "img": "bundle:accessories/anim-symphony.webp"
-  }
- ],
+ "decor": [],
+ "accessories": [],
  "starter": {
   "emotes": [
    "jiaran-eat.01",

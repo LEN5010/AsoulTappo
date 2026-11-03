@@ -42,24 +42,16 @@ class EmoteMsg(_Msg):
 
 
 class StateMsg(_Msg):
-    """Update own profile. Send at least one of `character`, `nick`, `frame`, `badge`, `head`, `desk`.
-
-    `frame` / `badge` are decor ids, `head` / `desk` accessory ids ("" clears); the
-    server only accepts unlocked / owned ones.
-    """
+    """Update the displayed character or nickname."""
 
     type: Literal["state"] = "state"
     character: Optional[str] = Field(default=None, min_length=1, max_length=32)
     nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
-    frame: Optional[str] = Field(default=None, max_length=32)
-    badge: Optional[str] = Field(default=None, max_length=32)
-    head: Optional[str] = Field(default=None, max_length=48)
-    desk: Optional[str] = Field(default=None, max_length=48)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> "StateMsg":
-        if all(v is None for v in (self.character, self.nick, self.frame, self.badge, self.head, self.desk)):
-            raise ValueError("state needs character, nick, frame, badge, head and/or desk")
+        if all(v is None for v in (self.character, self.nick)):
+            raise ValueError("state needs character or nick")
         return self
 
 
@@ -82,10 +74,6 @@ class Member(BaseModel):
     nick: str
     character: str
     taps: int = 0
-    frame: Optional[str] = None
-    badge: Optional[str] = None
-    head: Optional[str] = None
-    desk: Optional[str] = None
 
 
 class JoinedMsg(BaseModel):
@@ -123,10 +111,6 @@ class StateBroadcast(BaseModel):
     id: str
     character: str
     nick: str
-    frame: Optional[str] = None
-    badge: Optional[str] = None
-    head: Optional[str] = None
-    desk: Optional[str] = None
 
 
 class PongMsg(BaseModel):

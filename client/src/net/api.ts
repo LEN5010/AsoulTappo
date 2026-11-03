@@ -3,6 +3,7 @@
 import { manifest } from "../manifest";
 
 export interface PlayerStatus {
+  draw?: { tickets: number; seconds: number; secondsPerDraw: number; pity: number; hardPity: number; total: number };
   boxes: number;
   shards: number;
   boxesToday: number;
@@ -18,6 +19,7 @@ export interface PlayerStatus {
 }
 export interface Drop {
   item: string;
+  tier?: "big" | "small" | "normal";
   rarity: string;
   new: boolean;
   count: number;
@@ -34,21 +36,8 @@ export interface Collection {
   owned: Record<string, number>;
   recent: { item: string; rarity: string; new: boolean; ts: number }[];
 }
-export interface Loadout {
-  character: string | null;
-  head: string | null;
-  desk: string | null;
-  theme: string | null;
-  favorites: string[];
-  frame: string | null;
-  badge: string | null;
-}
-/** Loadout patch; "" clears head / desk / frame / badge. */
-export type LoadoutPatch = { [K in keyof Loadout]?: Loadout[K] | (K extends "favorites" ? never : "") };
-export interface Preset {
-  name: string;
-  loadout: LoadoutPatch;
-}
+export interface Loadout { character: string | null; favorites: string[] }
+export type LoadoutPatch = Partial<Loadout>;
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -105,6 +94,8 @@ export class Api {
     }
   }
 
+  presence = (session: string) => this.call<PlayerStatus>("POST", "/api/presence", { session });
+  drawCards = (pool: string, count = 1) => this.call<OpenResult>("POST", "/api/cards/draw", { pool, count });
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
   openBoxes = (count = 1) => this.call<OpenResult>("POST", "/api/boxes/open", { count });
@@ -112,11 +103,7 @@ export class Api {
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
-  presets = () => this.call<{ presets: (Preset | null)[] }>("GET", "/api/presets");
-  savePreset = (slot: number, loadout: LoadoutPatch | null, name?: string) =>
-    this.call<{ presets: (Preset | null)[] }>("POST", `/api/presets/${slot}`, { loadout, ...(name ? { name } : {}) });
-  setDecor = (patch: { frame?: string; badge?: string }) =>
-    this.call<PlayerStatus>("POST", "/api/decor", patch);
+
 }
 
 /** Accumulates taps locally and reports only the count, in batches. */

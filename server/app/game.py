@@ -23,11 +23,12 @@ from .store import Store
 TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
-PRESET_SLOTS = 5
 MAX_FAVORITES = 8
+DRAW_SECONDS = 15 * 60
+DRAW_PITY = 400
 # emote keys every member may send besides the starter emotes: the theme like
 FREE_EMOTES = frozenset({"thumbup"})
-LOADOUT_KEYS = ("character", "head", "desk", "theme", "favorites")
+LOADOUT_KEYS = ("character", "favorites")
 
 
 class GameError(Exception):
@@ -109,6 +110,53 @@ class Game:
         return out
 
     # ------------------------------------------------------------------- boxes
+    def presence(self, token: str, session: str) -> dict[str, Any]:
+        """Accumulate connected running time, shared across simultaneous clients."""
+        pid = player_id_for(token)
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            previous = st.presence(pid, session, now)
+            elapsed = 0.0
+            if previous is not None and 0 <= now - previous <= 60:
+                elapsed = max(0.0, now - max(previous, p["presence_last"]))
+            seconds = p["draw_seconds"] + elapsed
+            earned = int(seconds // DRAW_SECONDS)
+            st.update_player(pid, draw_tickets=p["draw_tickets"] + earned,
+                             draw_seconds=seconds % DRAW_SECONDS,
+                             presence_last=max(now, p["presence_last"]) if previous is not None else p["presence_last"])
+        return self.status(token)
+
+    def draw_cards(self, token: str, pool_id: str, count: int = 1) -> dict[str, Any]:
+        pool = self.manifest.card_pools.get(pool_id)
+        if not pool or not all(pool.values()):
+            raise GameError("bad_pool", "请选择收藏集")
+        pid = player_id_for(token)
+        drops: list[dict[str, Any]] = []
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            if p["draw_tickets"] < 1:
+                raise GameError("no_ticket", "抽卡次数不足")
+            n = min(max(1, count), 100, p["draw_tickets"])
+            pity = p["draw_pity"]
+            owned = st.owned(pid)
+            for _ in range(n):
+                roll = self.rng.random()
+                tier = "big" if pity + 1 >= DRAW_PITY or roll < 0.005 else "small" if roll < 0.05 else "normal"
+                candidates = pool[tier]
+                card = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
+                iid = f"card:{card['id']}"
+                fresh = iid not in owned
+                owned[iid] = st.add_item(pid, iid, now)
+                st.log_drop(pid, iid, card["rarity"], fresh, now)
+                pity = 0 if tier == "big" else pity + 1
+                drops.append({"item": iid, "rarity": card["rarity"], "tier": tier,
+                              "new": fresh, "count": owned[iid], "shards": 0})
+            st.update_player(pid, draw_tickets=p["draw_tickets"] - n,
+                             draw_pity=pity, drawn_total=p["drawn_total"] + n)
+        return {**self.status(token), "drops": drops}
+
     def open_boxes(self, token: str, count: int = 1) -> dict[str, Any]:
         """Open up to ``count`` boxes (at most ``cfg.max_open_batch``); returns status + drops."""
         pid = player_id_for(token)
@@ -147,7 +195,7 @@ class Game:
         now = self.now()
         item = self.manifest.items.get(item_id)
         cost = self.manifest.craft_cost.get(item["rarity"] or "") if item else None
-        if item is None or item_id in self.manifest.starter or cost is None:
+        if item is None or item["kind"] != "emote" or item_id in self.manifest.starter or cost is None:
             raise GameError("bad_item", "unknown item")
         with self.store.transaction() as st:
             p = st.get_player(pid, now)
@@ -163,15 +211,6 @@ class Game:
         return out
 
     # ------------------------------------------------------------------ status
-    def unlocked_decor(self, owned: dict[str, int]) -> list[str]:
-        per_series: dict[str, int] = {}
-        for iid in owned:
-            c = self.manifest.cards.get(iid[5:]) if iid.startswith("card:") else None
-            if c:
-                per_series[c["series"]] = per_series.get(c["series"], 0) + 1
-        return sorted(d["id"] for d in self.manifest.decor.values()
-                      if per_series.get(d["unlock"]["series"], 0) >= d["unlock"]["min"])
-
     def status(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
         now = self.now()
@@ -184,48 +223,23 @@ class Game:
             "player": pid,
             "boxes": p["boxes"],
             "shards": p["shards"],
+            "draw": {"tickets": p["draw_tickets"], "seconds": p["draw_seconds"],
+                     "secondsPerDraw": DRAW_SECONDS, "pity": p["draw_pity"],
+                     "hardPity": DRAW_PITY, "total": p["drawn_total"]},
             "progress": {"taps": p["progress_taps"], "tapsPerBox": cfg.taps_per_box,
                          "minutes": p["progress_minutes"], "minutesPerBox": cfg.minutes_per_box},
             "boxesToday": boxes_today, "dailyCap": cfg.daily_box_cap,
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
                        "opened": p["opened_total"],
                        "owned": sum(1 for i in owned if i in self.manifest.items),
-                       "items": sum(len(v) for v in self.manifest.by_rarity.values())},
+                       "items": len(self.manifest.items)},
             "pity": {"epic": p["since_epic"], "legendary": p["since_legend"]},
-            "unlocked": self.unlocked_decor(owned),
-            "frame": p["frame"], "badge": p["badge"],
         }
 
     def collection(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
         self.store.get_player(pid, self.now())
         return {"owned": self.store.owned(pid), "recent": self.store.recent_drops(pid)}
-
-    # ------------------------------------------------------------------- decor
-    def _decor_updates(self, frame: str | None, badge: str | None, unlocked: set[str]) -> dict[str, Any]:
-        updates: dict[str, Any] = {}
-        for field, value, kind in (("frame", frame, "frame"), ("badge", badge, "badge")):
-            if value is None:
-                continue
-            if value == "":
-                updates[field] = None
-                continue
-            item = self.manifest.decor.get(value)
-            if item is None or item["kind"] != kind:
-                raise GameError("bad_decor", f"unknown {kind}")
-            if value not in unlocked:
-                raise GameError("locked", f"{kind} not unlocked")
-            updates[field] = value
-        return updates
-
-    def set_decor(self, token: str, frame: str | None, badge: str | None) -> dict[str, Any]:
-        """Select frame/badge ("" or None clears).  Must be unlocked."""
-        pid = player_id_for(token)
-        self.store.get_player(pid, self.now())
-        updates = self._decor_updates(frame, badge, set(self.unlocked_decor(self.store.owned(pid))))
-        if updates:
-            self.store.update_player(pid, **updates)
-        return self.status(token)
 
     # ----------------------------------------------------------------- loadout
     def _owns(self, owned: dict[str, int], item_id: str) -> bool:
@@ -238,23 +252,6 @@ class Game:
             if patch["character"] not in self.manifest.character_names:
                 raise GameError("bad_item", "unknown character")
             out["character"] = patch["character"]
-        for slot in ("head", "desk"):
-            if slot not in patch:
-                continue
-            value = patch[slot] or None
-            if value is not None:
-                acc = self.manifest.accessories.get(value)
-                if acc is None or acc["slot"] != slot:
-                    raise GameError("bad_item", f"unknown {slot} accessory")
-                if not self._owns(owned, f"acc:{value}"):
-                    raise GameError("locked", "accessory not owned")
-            out[slot] = value
-        if "theme" in patch and patch["theme"] is not None:
-            if patch["theme"] not in self.manifest.themes:
-                raise GameError("bad_item", "unknown theme")
-            if not self._owns(owned, f"theme:{patch['theme']}"):
-                raise GameError("locked", "theme not owned")
-            out["theme"] = patch["theme"]
         if "favorites" in patch and patch["favorites"] is not None:
             favs = list(dict.fromkeys(patch["favorites"]))
             if len(favs) > MAX_FAVORITES or not all(isinstance(k, str) for k in favs):
@@ -270,7 +267,7 @@ class Game:
             raw = json.loads(p["loadout"]) if p["loadout"] else {}
         except ValueError:
             raw = {}
-        out: dict[str, Any] = {"character": None, "head": None, "desk": None, "theme": None, "favorites": []}
+        out: dict[str, Any] = {"character": None, "favorites": []}
         for key in LOADOUT_KEYS:  # drop parts that the manifest no longer knows
             try:
                 out.update(self._check_loadout({key: raw.get(key)}, owned))
@@ -282,65 +279,27 @@ class Game:
         pid = player_id_for(token)
         p = self.store.get_player(pid, self.now())
         owned = self.store.owned(pid)
-        unlocked = set(self.unlocked_decor(owned))
-        return {**self._stored_loadout(p, owned),
-                "frame": p["frame"] if p["frame"] in unlocked else None,
-                "badge": p["badge"] if p["badge"] in unlocked else None}
+        return self._stored_loadout(p, owned)
 
     def set_loadout(self, token: str, patch: dict[str, Any]) -> dict[str, Any]:
-        """Update part of the loadout (character, head, desk, theme, favorites, frame, badge)."""
+        """Update the selected character and favorite emotes."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             p = st.get_player(pid, self.now())
             owned = st.owned(pid)
             loadout = {**self._stored_loadout(p, owned), **self._check_loadout(patch, owned)}
-            decor = self._decor_updates(patch.get("frame"), patch.get("badge"), set(self.unlocked_decor(owned)))
-            st.update_player(pid, loadout=json.dumps(loadout, ensure_ascii=False), **decor)
+            st.update_player(pid, loadout=json.dumps(loadout, ensure_ascii=False))
         return self.get_loadout(token)
-
-    # ----------------------------------------------------------------- presets
-    def presets(self, token: str) -> dict[str, Any]:
-        pid = player_id_for(token)
-        self.store.get_player(pid, self.now())
-        stored = self.store.presets(pid)
-        out: list[dict | None] = []
-        for slot in range(PRESET_SLOTS):
-            try:
-                out.append(json.loads(stored[slot]) if slot in stored else None)
-            except ValueError:
-                out.append(None)
-        return {"presets": out}
-
-    def save_preset(self, token: str, slot: int, loadout: dict[str, Any] | None,
-                    name: str | None = None) -> dict[str, Any]:
-        """Store a loadout snapshot in ``slot`` (0-4); ``loadout=None`` clears the slot."""
-        pid = player_id_for(token)
-        if not 0 <= slot < PRESET_SLOTS:
-            raise GameError("bad_slot", f"slot must be 0-{PRESET_SLOTS - 1}")
-        self.store.get_player(pid, self.now())
-        data = None
-        if loadout is not None:
-            owned = self.store.owned(pid)
-            clean = self._check_loadout(loadout, owned)
-            clean.update(self._decor_updates(loadout.get("frame"), loadout.get("badge"),
-                                             set(self.unlocked_decor(owned))))
-            data = json.dumps({"name": (name or f"预设 {slot + 1}")[:24], "loadout": clean}, ensure_ascii=False)
-        self.store.save_preset(pid, slot, data)
-        return self.presets(token)
 
     # -------------------------------------------------------------------- room
     def profile_for(self, token: str | None, room: str) -> dict[str, Any]:
-        """What a room may see of a player: a per-room id and the validated decor/accessories."""
-        empty = {"uid": None, "frame": None, "badge": None, "head": None, "desk": None}
         if not token:
-            return empty
+            return {"uid": None}
         try:
             pid = player_id_for(token)
         except GameError:
-            return empty
-        lo = self.get_loadout(token)
-        uid = hashlib.sha256(f"{pid}:{room}".encode()).hexdigest()[:10]
-        return {"uid": uid, "frame": lo["frame"], "badge": lo["badge"], "head": lo["head"], "desk": lo["desk"]}
+            return {"uid": None}
+        return {"uid": hashlib.sha256(f"{pid}:{room}".encode()).hexdigest()[:10]}
 
     def owns_emote(self, token: str | None, key: str) -> bool:
         if key in FREE_EMOTES or f"emote:{key}" in self.manifest.starter:
@@ -352,15 +311,3 @@ class Game:
         except GameError:
             return False
         return f"emote:{key}" in self.store.owned(pid)
-
-    def check_accessories(self, token: str | None, head: str | None, desk: str | None) -> dict[str, Any]:
-        """Validate head/desk accessories for a room `state` message (None = unchanged)."""
-        patch = {k: v for k, v in (("head", head), ("desk", desk)) if v is not None}
-        if not patch:
-            return {}
-        if not token:
-            if any(patch.values()):
-                raise GameError("locked", "accessories need a player token")
-            return {k: None for k in patch}
-        pid = player_id_for(token)
-        return self._check_loadout(patch, self.store.owned(pid))

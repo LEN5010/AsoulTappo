@@ -5,8 +5,7 @@ import { MAX_ROOM_SIZE } from "../net/protocol";
 import { settings } from "../stores/settings";
 import { conn, createRoom, inRoom, joinRoom, lastError, leaveRoom, members, roomId, youId } from "../stores/room";
 import { tidyRemotes } from "../stores/desk";
-import { getDecor, characterColor } from "../manifest";
-import { assetUrl } from "../asset";
+import { characterColor } from "../manifest";
 import { reducedMotion, skin } from "../stores/theme";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import Icon from "../ui/Icon.vue";
@@ -40,7 +39,6 @@ async function copy() {
     notice.value = "复制失败";
   }
 }
-const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
 </script>
 
 <template>
@@ -76,9 +74,8 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
       </header>
       <ul class="group">
         <li v-for="m in members.values()" :key="m.id" class="row">
-          <CharacterAvatar :character="m.character" :frame="m.frame" :size="28" />
+          <CharacterAvatar :character="m.character" :size="28" />
           <span class="nick">{{ m.nick }}<em v-if="m.id === youId">我</em></span>
-          <img v-if="badgeImg(m.badge)" class="badge" :src="badgeImg(m.badge)" :title="getDecor(m.badge)?.name" alt="" />
           <span class="chr" :style="{ color: characterColor(m.character) }">{{ m.character }}</span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}</span>
         </li>

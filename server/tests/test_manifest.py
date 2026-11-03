@@ -72,16 +72,13 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    by = {r: [c for c in cards if c["rarity"] == r] for r in M.data["rarities"]}
-    assert {r: len(v) for r, v in by.items()} == {"common": 27, "rare": 6, "epic": 18, "legendary": 3}
-    for c in by["rare"]:
-        assert c["sub"] in ("时序系列", "舞台系列") and c["video"]
-    for c in by["epic"]:
-        assert c["video"]
-    for c in by["common"]:
-        assert c["video"] is None
-    for c in by["legendary"]:
-        assert c["series"] == "bloom" and c["video"]
+    assert len(cards) == 70
+    assert sum(c["tier"] == "big" for c in cards) == 8
+    assert sum(c["tier"] == "small" for c in cards) == 8
+    for pool in M.card_pools.values():
+        assert all(pool.values())
+    assert M.cards["c1748345610010"]["tier"] == "big"
+    assert M.cards["c1748345610002"]["tier"] == "normal"
     for s in M.data["series"]:
         assert s["total"] == sum(1 for c in cards if c["series"] == s["id"]) > 0
 
@@ -94,6 +91,7 @@ def test_decor_unlock_rules_are_reachable():
 
 
 def test_accessories_starter_and_economy():
+    assert M.data["accessories"] == M.data["decor"] == []
     acc = M.data["accessories"]
     assert len({a["id"] for a in acc}) == len(acc) and all(len(a["id"]) <= 48 for a in acc)
     for a in acc:
@@ -104,10 +102,10 @@ def test_accessories_starter_and_economy():
     starter = M.data["starter"]["emotes"]
     by_key = {e["key"]: s["character"] for s in M.data["emoteSets"] for e in s["emotes"]}
     assert {by_key[k] for k in starter} == FIVE
-    assert M.starter >= {f"emote:{k}" for k in starter} | {f"theme:{M.data['defaultTheme']}"}
+    assert M.starter == {f"emote:{k}" for k in starter}
     # nothing a player starts with drops from boxes, and every rarity can be crafted
     dropped = {i["id"] for pool in M.by_rarity.values() for i in pool}
-    assert not dropped & M.starter and len(dropped) + len(M.starter) == len(M.items)
+    assert not dropped & M.starter and len(dropped) + len(M.starter) + len(M.cards) == len(M.items)
     assert set(M.craft_cost) == set(M.dup_shards) == set(M.data["rarities"])
 
 

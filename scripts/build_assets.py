@@ -379,6 +379,7 @@ def build_cards(ctx: Ctx) -> list[dict]:
             "id": cid, "name": name, "series": series,
             "sub": cat.card_subseries(series, name), "characters": chars,
             "rarity": cat.card_rarity(card_id, name, vid is not None),
+            "tier": cat.card_tier(card_id),
             "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None,
         }
         if vid is not None:
@@ -392,68 +393,6 @@ def build_cards(ctx: Ctx) -> list[dict]:
         with ThreadPoolExecutor(4) as ex:
             list(ex.map(lambda j: ffmpeg_video(*j), video_jobs))
     return cards
-
-
-# ------------------------------------------------------------ frames/badges
-def build_decor(ctx: Ctx, cards: list[dict]) -> list[dict]:
-    size = {}
-    for c in cards:
-        size[c["series"]] = size.get(c["series"], 0) + 1
-    items = []
-    for fid, kind, name, rel_src, series in cat.FRAMES_BADGES:
-        rel = f"decor/{fid}.webp"
-        out = BUNDLE / rel
-        if ctx.todo(out):
-            save_webp(square_fit(load_rgba(ctx.src / "杂项" / rel_src), FRAME_PX), out, q=ICON_Q)
-        need = 1 if kind == "badge" else min(5, size[series])
-        items.append({"id": fid, "kind": kind, "name": name, "img": f"bundle:{rel}",
-                      "unlock": {"series": series, "min": need}})
-    return items
-
-
-# -------------------------------------------------------------- accessories
-def anim_resize(src: Path, out: Path, px: int) -> None:
-    """Animated WebP -> animated WebP whose longer side is at most px."""
-    im = Image.open(src)
-    frames, durations = [], []
-    for fr in ImageSequence.Iterator(im):
-        f = fr.convert("RGBA")
-        scale = px / max(f.size)
-        if scale < 1:
-            f = f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.LANCZOS)
-        frames.append(f)
-        durations.append(fr.info.get("duration", im.info.get("duration", 50)) or 50)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    frames[0].save(out, "WEBP", save_all=True, append_images=frames[1:], duration=durations,
-                   loop=0, quality=80, method=4, alpha_quality=90)
-
-
-def build_accessories(ctx: Ctx) -> list[dict]:
-    items = []
-    theme_dirs = {tid: dirs for tid, _, _, dirs in cat.THEMES}
-    theme_names = {tid: name for tid, name, _, _ in cat.THEMES}
-    theme_chars = {tid: chars for tid, _, chars, _ in cat.THEMES}
-
-    def preview(dirname: str) -> Path:
-        return next((ctx.src / "主题" / dirname / "playicon").glob("*_playicon_preview.png"))
-
-    for aid, name, chars, dirname in cat.FIGURES:
-        rel = f"accessories/{aid}.webp"
-        if ctx.todo(BUNDLE / rel):
-            save_webp(square_fit(load_rgba(preview(dirname)), FIGURE_PX), BUNDLE / rel, q=88)
-        items.append({"id": aid, "name": name, "kind": "figure", "slot": "head", "characters": chars,
-                      "rarity": cat.ACCESSORY_RARITY["figure"], "img": f"bundle:{rel}"})
-    for tid in cat.ANIM_THEMES:
-        src = next(ctx.src / "主题" / d / "loading" / "loading-0_loading.webp" for d in theme_dirs[tid]
-                   if (ctx.src / "主题" / d / "loading" / "loading-0_loading.webp").exists())
-        aid = f"anim-{tid}"
-        rel = f"accessories/{aid}.webp"
-        if ctx.todo(BUNDLE / rel):
-            anim_resize(src, BUNDLE / rel, ANIM_PX)
-        items.append({"id": aid, "name": f"{theme_names[tid]} · 小动画", "kind": "anim", "slot": "desk",
-                      "characters": theme_chars[tid], "rarity": cat.ACCESSORY_RARITY["anim"],
-                      "img": f"bundle:{rel}"})
-    return items
 
 
 def starter_items(emotes: list[dict]) -> dict:
@@ -518,15 +457,15 @@ def main() -> None:
     emotes = build_emotes(ctx)
     themes = build_themes(ctx)
     cards = build_cards(ctx)
-    decor = build_decor(ctx, cards)
-    accessories = build_accessories(ctx)
+    decor = []
+    accessories = []
     for es in emotes:
         es["rarity"] = "rare" if es["id"] in cat.RARE_EMOTE_SETS else "common"
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
     manifest = {
-        "version": 2,
+        "version": 3,
         "characters": cat.CHARACTERS,
         "rarities": {
             "common": {"name": "普通", "weight": 70},

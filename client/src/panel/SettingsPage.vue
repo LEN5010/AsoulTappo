@@ -4,6 +4,8 @@ import { settings } from "../stores/settings";
 import { isTauri } from "../composables/tauri";
 import { online, status } from "../stores/player";
 import { counter } from "../stores/counter";
+import { manifest } from "../manifest";
+import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import RangeInput from "../ui/RangeInput.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
@@ -46,6 +48,7 @@ function applyServer() {
 
     <section>
       <h4 class="ui-label">桌宠</h4>
+      <div class="characters"><button v-for="c in manifest.characters" :key="c.name" :class="{ on: settings.character === c.name }" @click="settings.character = c.name"><CharacterAvatar :character="c.name" :size="52" /><span>{{ c.name }}</span></button></div>
       <div class="group">
         <label class="row">
           <span>大小</span>
@@ -101,6 +104,7 @@ function applyServer() {
 </template>
 
 <style scoped>
+.characters { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }.characters button { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 80px; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; color: var(--ink-2); font: 12px var(--font); }.characters button.on { background: #fff5ed; border-color: var(--accent); color: #985431; }
 .settings { display: flex; flex-direction: column; gap: 20px; }
 .group { background: #fff; border: 1px solid var(--line); border-radius: var(--r-l); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 6px 14px; box-sizing: border-box; font-size: 13px; }

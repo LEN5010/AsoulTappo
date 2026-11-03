@@ -23,7 +23,9 @@ describe("manifest", () => {
     expect(new Set(manifest.cards.map((c) => c.id)).size).toBe(manifest.cards.length);
     expect(getCard(manifest.cards[0].id)).toBe(manifest.cards[0]);
     expect(getEmote(manifest.emoteSets[0].emotes[0].key)).toBeTruthy();
-    expect(getDecor(manifest.decor[0].id)).toBeTruthy();
+    expect(manifest.decor).toEqual([]);
+    expect(manifest.accessories).toEqual([]);
+    expect(manifest.cards).toHaveLength(70);
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
     expect(characterColor("???")).toBe("#ff6b9d");

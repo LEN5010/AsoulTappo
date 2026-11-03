@@ -62,8 +62,9 @@ def test_pick_prefers_unowned_and_falls_back():
 
 def test_manifest_items_exclude_starters_from_drops():
     m = tiny_manifest()
-    assert m.starter == {"emote:e.01", "theme:x"}
+    assert m.starter == {"emote:e.01"}
     common = [i["id"] for i in m.by_rarity["common"]]
-    assert common == ["card:c1", "card:c2", "emote:e.02", "emote:e.03"]
-    assert [i["id"] for i in m.by_rarity["rare"]] == ["card:c3", "acc:hat", "theme:y"]
-    assert "emote:e.01" not in common and "theme:x" in m.items
+    assert common == ["emote:e.02", "emote:e.03"]
+    assert m.by_rarity["rare"] == []
+    assert "emote:e.01" not in common and "theme:x" not in m.items
+    assert all(i["kind"] == "emote" for group in m.by_rarity.values() for i in group)

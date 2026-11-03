@@ -1,94 +1,64 @@
-# AsoulTappo 协议 / Protocol (v0, draft)
+# AsoulTappo 协议
 
-Transport: WebSocket, endpoint `/ws`, one JSON object per text frame.
-HTTP helpers: `GET /healthz` → `{"status":"ok","rooms":N}`, `POST /rooms` → `{"room":"<random id>"}`.
+## 身份与房间
 
-## 隐私原则 / Privacy
-**只发送点击次数,绝不发送按键内容**(不上传按了哪个键、输入了什么、鼠标坐标)。
-Only tap *counts* are sent. Key identities, typed text and mouse positions never leave the client.
+HTTP 请求使用 `X-Player-Token`（16–128 字符）；客户端本地生成，服务端以 SHA-256 前 16 位标识玩家。`GET /healthz` 返回服务状态，`POST /rooms` 返回随机房间号。房间在首次加入时创建、最后一个成员离开时回收，最多 20 人。
 
-## Rooms
-- Room ID: client-chosen string (1–64 chars) or a server-generated random URL-safe ID (~128 bit, from `POST /rooms`). Long random IDs are the only access control in v0.
-- Max **20** members per room. Rooms are created on first join and dropped when empty.
+WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
-## Client → Server
-| type | fields | notes |
-|---|---|---|
-| `join` | `room`, `nick` (≤24), `character` (≤32, default `"default"`), optional `token` (16–128 chars) | must be the first message. With a `token` the server looks up the player's `frame` / `badge` / `head` / `desk` and gives the member a stable per-room `uid`; without one they are all `null` |
-| `leave` | – | leave the room (connection may stay open) |
-| `tap` | `count` (1–500) | **batched** count since last message; send ≤ ~4×/s |
-| `emote` | `emote` (≤32) | emote key: `"thumbup"` (the theme's animated like) or `<emoteSetId>.<nn>` from the manifest (e.g. `jiaran-eat.03`). `thumbup` and the starter emotes are free; other emotes must be owned by the player (`token`), otherwise `locked`. At most one emote per 250 ms, otherwise `rate_limited` |
-| `state` | `character` (≤32), `nick` (≤24), `frame`, `badge` (≤32), `head`, `desk` (≤48); at least one | update own profile (broadcast to the room). Decor and accessories need a `token` on join; decor must be unlocked (`locked` / `bad_decor`), accessories owned and in the right slot (`locked` / `bad_item`). `""` clears a field |
-| `ping` | – | keepalive; the server answers `pong` (allowed before `join`). Clients send one every ~20s and reconnect when no `pong` arrives |
-
-## Server → Client
-| type | fields |
+| 客户端 type | 字段 |
 |---|---|
-| `joined` | `room`, `you` (your member id), `members[]` (`id`,`uid`,`nick`,`character`,`taps`,`frame`,`badge`,`head`,`desk`) |
-| `member_joined` | `member` |
-| `member_left` | `id` |
-| `tap` | `id`, `count`, `total` — broadcast to everyone in the room, including the sender |
-| `emote` | `id`, `emote` — broadcast to everyone, including the sender |
-| `state` | `id`, `character`, `nick`, `frame`, `badge`, `head`, `desk` — full current profile of that member, broadcast to everyone, including the sender |
-| `pong` | – |
-| `error` | `code`, `message` |
+| join | room（1–64）、nick（1–24）、character（≤32）、token（可选） |
+| leave | 无 |
+| tap | count（1–500），客户端每 100–200ms 合并 |
+| emote | emote（≤32），图片表情 key 或 thumbup；初始表情免费，其余验证所有权 |
+| state | character、nick，至少提供一个 |
+| ping | 无 |
 
-Error codes: `room_full`, `bad_message`, `not_joined`, `already_joined`, `locked` (decor / accessory / emote not owned), `bad_decor` (unknown frame/badge id), `bad_item` (unknown accessory or wrong slot), `rate_limited` (emotes sent too fast).
+服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps`。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
-`id` changes on every (re)connect. `uid` is `sha256("<player id>:<room>")[:10]`: the same for a player every time they join that room, different between rooms, and `null` for members without a token. The reference client uses it to remember where you dragged someone's pet.
+表情服务端间隔 250ms，客户端间隔 400ms。每个成员的发送串行执行，2 秒超时后关闭慢连接。数据库所有权检查在线程池执行。客户端每 20 秒 ping，断线指数退避重连并重新加入。
 
-## HTTP API (progression)
-Identity is a random secret the client generates once and sends as the `X-Player-Token` header (16–128 chars); the server stores only a hash (`player_id = sha256(token)[:16]`). Anyone holding the token is that player — there are no accounts and no payments.
+## HTTP API
 
-| route | notes |
+| 路由 | 请求与响应 |
 |---|---|
-| `GET /api/manifest` | asset / card / theme metadata (same as `assets-packs/manifest.json`) |
-| `GET /api/me` | status: unopened `boxes`, `shards`, `progress` (`taps`, `tapsPerBox`, `minutes`, `minutesPerBox`), `boxesToday` / `dailyCap`, `totals` (`taps`, `activeMinutes`, `opened`, `owned`, `items` = number of droppable items), `pity`, `unlocked` decor, selected `frame` / `badge` |
-| `POST /api/activity` `{taps, session, sequence}` | report a batch of tap counts. `session` is a random 16–128 character ID per reporter; `sequence` starts at 1 and increases for each new batch. Retries reuse the same batch and sequence. Credit accrues at 15 taps/s of actual elapsed time, with fractional credit retained and a maximum balance of 120 seconds (≤ 5000 taps per report). A minute is "active" once it has ≥ 10 taps. A box is earned per 600 credited taps or per 10 active minutes; ≤ 10 boxes/day, ≤ 20 unopened |
-| `POST /api/boxes/open` `{count?}` | open `count` boxes (default 1, at most 10 per request and at most the boxes you have). Each box rolls an item with rarity weights 70/22/7/1, soft pity (epic weight +8 per open beyond 10 without epic+), hard pity (epic+ at 20, legendary at 60); unowned items weigh 3×. Returns the status plus `drops[]` (`item`, `rarity`, `new`, `count`, `shards`). A duplicate gives shards: common 1 / rare 3 / epic 8 / legendary 20 |
-| `POST /api/craft` `{item}` | spend shards on one missing item: common 10 / rare 30 / epic 80 / legendary 200. Returns the status plus `item`. Starter items can't be crafted |
-| `GET /api/collection` | `owned` (`item id → count`) and `recent` drops (`item`, `rarity`, `new`, `ts`) |
-| `GET /api/loadout` | `character`, `head`, `desk`, `theme`, `favorites` (≤8 emote keys), `frame`, `badge` |
-| `POST /api/loadout` | change part of the loadout (only the keys you send). Everything must be owned / unlocked; `""` clears `head` / `desk` / `frame` / `badge`. Returns the full loadout |
-| `GET /api/presets` | `presets`: 5 slots, each `null` or `{name, loadout}` |
-| `POST /api/presets/{slot}` `{loadout, name?}` | save a loadout in slot 0–4 (validated like `POST /api/loadout`); `loadout: null` clears the slot. Returns all presets |
-| `POST /api/decor` `{frame?, badge?}` | choose avatar frame / badge (must be unlocked) |
-| `GET /packs/index.json`, `/packs/...` | downloadable asset packs with sizes and sha256 |
+| GET /api/manifest | 素材清单，与 assets-packs/manifest.json 一致 |
+| GET /api/me | boxes、shards、progress、boxesToday、dailyCap、totals、pity、draw |
+| POST /api/activity | `{taps,session,sequence}`，返回状态和 credited、newBoxes |
+| POST /api/presence | `{session}`，记录运行心跳并返回状态 |
+| POST /api/cards/draw | `{pool,count}`，count 为 1–100，返回状态和 drops |
+| POST /api/boxes/open | `{count}`，每请求最多打开 10 箱，返回状态和 drops |
+| POST /api/craft | `{item}`，兑换未拥有的非初始表情，返回状态和 item |
+| GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
+| GET /api/loadout | character、favorites |
+| POST /api/loadout | 更新 character 或 favorites（最多 8 个且拥有） |
+| GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
+| GET /packs/... | 卡面原图、视频及动画资源 |
 
-Errors are `{"detail": {"code", "message"}}`. Status 401: `bad_token`. Status 409: `no_box`, `no_shards`, `owned`. Status 400: `locked`, `bad_decor`, `bad_item`, `bad_slot`.
+物品 ID 为 `card:<id>` 或 `emote:<key>`。`drops[]` 包含 `item,rarity,new,count,shards`，抽卡额外包含 `tier`（big / small / normal）。
 
-### Items
-Everything a player can own has a namespaced id: `card:<card id>`, `emote:<emote key>`, `acc:<accessory id>`, `theme:<theme id>`. Rarities come from the manifest (`cards[].rarity`, `emoteSets[].rarity`, `accessories[].rarity`, `themes[].rarity`). Items in `manifest.starter` (the first 4 emotes of each character's first set and the default theme) are owned by everyone and never drop. Accessories have a slot: `head` (figures sit on the pet's head) or `desk` (animations stand on the monitor).
+## 在线时长与抽卡
 
-## Example
-```json
-→ {"type":"join","room":"Zk3...","nick":"小面包","character":"嘉然"}
-← {"type":"joined","room":"Zk3...","you":"a1b2c3d4","members":[{"id":"a1b2c3d4","nick":"小面包","character":"嘉然","taps":0}]}
-→ {"type":"tap","count":7}
-← {"type":"tap","id":"a1b2c3d4","count":7,"total":7}
-```
+`draw` 包含 `tickets,seconds,secondsPerDraw,pity,hardPity,total`。每个运行会话使用随机 session，启动时建立基线，每 20 秒心跳一次。相邻心跳间隔不超过 60 秒时按服务端实际时间累计；超过 60 秒重新建立基线。多客户端的重叠时间只累计一次。累计 900 秒获得一抽，剩余秒数、抽卡次数和保底保存在 SQLite；次数无积累上限。
 
-Reference models: `server/app/models.py` (server, pydantic) and `client/src/net/protocol.ts` (client, TypeScript).
+每次先抽档位：大隐藏 0.5%、小隐藏 4.5%、普通 95%；然后在所选卡池的同档卡牌中等概率抽取。第 400 抽必出大隐藏，所有卡池共用计数，提前抽中也重置。重复卡累加收藏数量。库存扣除、掉落和保底更新在同一事务中完成。客户端“全部抽取”按最多 100 抽一批展示，收下后继续剩余次数。
 
-## Client behaviour (reference implementation: `client/src/net/`)
-- **Tap batching:** the client counts key presses / mouse clicks locally and sends one `tap` with the summed count every 100–200 ms (default 150 ms) while there is anything pending (`TapBatcher`). Counts above 500 are split.
-- **Reconnect:** on disconnect the client retries with exponential backoff (0.5 s → 15 s, plus jitter) and re-sends `join` for the last room (member id changes after a reconnect). `room_full` is final and stops retrying.
-- **Own events:** `tap`/`emote`/`state` are echoed to the sender; the client has already animated locally and ignores the echo except for updating totals/profile.
-- **Emotes:** the client only offers emotes the player owns and sends at most one every 400 ms. After (re)joining it re-sends `head` / `desk` when they differ from what the server reported in `joined`.
+## 活动与表情宝箱
 
-HTTP: the server enables CORS (`ASOULTAPPO_CORS_ORIGINS`, default `*`) so the Tauri webview / browser can call `POST /rooms`. The protocol is unversioned/unstable until MVP phase 2.
+活动批次的 session 为 16–128 字符，sequence 从 1 开始，每个新批次递增；失败重试复用原批次。每秒产生 15 次点击额度，最多积累 120 秒，保留小数额度；每次最多结算 5000 次。每 UTC 分钟达到 10 次点击记一个活跃分钟。每 600 次点击或 10 个活跃分钟获得一箱，每日最多 10 箱、持有最多 20 箱。
 
-## Activity and server switching
+宝箱只掉落非初始表情。普通 / 稀有表情重复后分别获得 1 / 3 碎片，兑换价格分别为 10 / 30。每个角色第一套的前四个表情为初始表情。宝箱保留既有稀有度抽取与偏向未收集表情的权重；独立抽卡使用上一节的固定概率。
 
-- Call `GET /api/me` when starting input reporting to establish the counting baseline. The first 20-second batch then receives its actual elapsed-time allowance.
-- Activity progress, remaining rate credit and the session sequence commit in one SQLite transaction. Replayed sequences return current status with `credited: 0` and `newBoxes: 0`.
-- The client retains a failed batch separately from newly accumulated taps and retries the original `session` / `sequence`. HTTP requests time out after 10 seconds.
-- Editing the server field changes a draft. Applying it leaves the old room, switches the progress and asset server, and clears displayed player state. Pending activity retains its original destination; responses from older server selections are ignored.
-- `POST /rooms` generates an ID; the room is allocated when its first member joins. Sends to a member have a 2-second deadline; failed members are removed and closed with code 1013.
+客户端 HTTP 超时为 10 秒，同一服务器的状态请求顺序执行。切换服务器时退出旧房间、清空显示状态；未送达的活动批次继续发往原服务器，过期响应按服务器代次过滤。
+
+错误格式为 `{"detail":{"code":"...","message":"..."}}`。401：bad_token；409：no_box、no_shards、owned、no_ticket；400：bad_item、bad_pool、locked；字段校验错误返回 422。
 
 ## Upgrade
 
-Update the server and client together.
+同时更新客户端、服务端和素材包。
 
-- 0.3: the old glyph emote keys (`heart`, `clap`, ...) are rejected with `locked`, and clients ignore them. Boxes drop all item kinds, not only cards, and duplicates give shards. On startup the server adds the `shards` / `loadout` player columns and the `presets` table, copies `cards` into `items` (ids get the `card:` prefix) and renames `drops.card_id` to `item_id`. Older clients can't read the new `drops` / `owned` shapes.
-- Activity requests require `session` and `sequence`. On server startup the existing schema initialization creates `activity_budget` and `activity_sessions` alongside the player tables. Existing player progress and collections remain available.
+- 旧数据库启动时增加 draw_tickets、draw_seconds、draw_pity、drawn_total、presence_last 及 presence_sessions 表。已有卡牌、表情、宝箱和碎片继续使用；旧配件与装扮记录保留在数据库中，当前产品不展示。
+- 收藏集扩展至 70 张，并使用明确的 tier 字段；大隐藏不再根据是否带视频推断。
+- 配件、装扮、预设 API 及房间对应字段已移除；loadout 仅同步角色和常用表情。
+- 保留 activity 的 session / sequence 去重协议及旧 cards 表到 items 表的迁移。
