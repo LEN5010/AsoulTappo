@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Item } from "../items";
-import { getAccessory } from "../manifest";
 import { assetUrl } from "../asset";
 import CharacterAvatar from "./CharacterAvatar.vue";
 
 const props = withDefaults(defineProps<{ item: Item; size?: number; locked?: boolean }>(), { size: 84, locked: false });
 const src = computed(() => assetUrl(props.item.art));
 const fit = computed(() => (props.item.kind === "card" || props.item.kind === "theme" ? "cover" : "contain"));
-const rider = computed(() => getAccessory(props.item.ref)?.kind === "rider");
 </script>
 
 <template>
@@ -16,7 +14,7 @@ const rider = computed(() => getAccessory(props.item.ref)?.kind === "rider");
     <CharacterAvatar v-if="item.kind === 'character'" :character="item.ref" :size="size * 0.92" :round="false" />
     <img
       v-else :src="src" :alt="locked ? '' : item.name" loading="lazy" draggable="false"
-      :style="{ objectFit: fit, padding: rider ? `${size * 0.12}px` : undefined }"
+      :style="{ objectFit: fit }"
     />
   </span>
 </template>

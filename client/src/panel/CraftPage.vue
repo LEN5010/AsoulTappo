@@ -78,14 +78,14 @@ async function craft() {
             <label>敲击 {{ prog?.taps ?? 0 }} / {{ prog?.tapsPerBox ?? 600 }}<div class="ui-bar"><i :style="{ width: `${pct(prog?.taps ?? 0, prog?.tapsPerBox)}%` }"></i></div></label>
             <label>活跃分钟 {{ prog?.minutes ?? 0 }} / {{ prog?.minutesPerBox ?? 10 }}<div class="ui-bar alt"><i :style="{ width: `${pct(prog?.minutes ?? 0, prog?.minutesPerBox)}%` }"></i></div></label>
           </div>
-          <small class="ui-hint">任意一条攒满就得到一个宝箱 · 今日 {{ status?.boxesToday ?? 0 }}/{{ status?.dailyCap ?? 10 }}</small>
+          <small class="ui-hint">今日已得 {{ status?.boxesToday ?? 0 }}/{{ status?.dailyCap ?? 10 }}</small>
           <div class="btns">
             <button type="button" class="ui-btn primary" :disabled="!boxes || busy || !online" @click="open(1)">
               <img v-if="busy && skin.loading && !reducedMotion" class="spin" :src="skin.loading" alt="" />开一个
             </button>
             <button type="button" class="ui-btn" :disabled="boxes < 2 || busy || !online" @click="open(batch)">全部打开{{ boxes > 1 ? `（${batch}）` : "" }}</button>
           </div>
-          <small v-if="!online" class="err">{{ error || "服务器离线，连上之后才能开箱" }}</small>
+          <small v-if="!online" class="err">{{ error || "服务器未连接" }}</small>
         </div>
       </div>
       <div class="ui-card shards">

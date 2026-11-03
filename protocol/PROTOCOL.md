@@ -58,7 +58,7 @@ Identity is a random secret the client generates once and sends as the `X-Player
 Errors are `{"detail": {"code", "message"}}`. Status 401: `bad_token`. Status 409: `no_box`, `no_shards`, `owned`. Status 400: `locked`, `bad_decor`, `bad_item`, `bad_slot`.
 
 ### Items
-Everything a player can own has a namespaced id: `card:<card id>`, `emote:<emote key>`, `acc:<accessory id>`, `theme:<theme id>`. Rarities come from the manifest (`cards[].rarity`, `emoteSets[].rarity`, `accessories[].rarity`, `themes[].rarity`). Items in `manifest.starter` (the first 4 emotes of each character's first set and the default theme) are owned by everyone and never drop. Accessories have a slot: `head` (riders and figures sit on the pet's head) or `desk` (animations stand on the monitor).
+Everything a player can own has a namespaced id: `card:<card id>`, `emote:<emote key>`, `acc:<accessory id>`, `theme:<theme id>`. Rarities come from the manifest (`cards[].rarity`, `emoteSets[].rarity`, `accessories[].rarity`, `themes[].rarity`). Items in `manifest.starter` (the first 4 emotes of each character's first set and the default theme) are owned by everyone and never drop. Accessories have a slot: `head` (figures sit on the pet's head) or `desk` (animations stand on the monitor).
 
 ## Example
 ```json

@@ -44,10 +44,9 @@ function goCraft() {
       <p v-if="owned" class="state ok">已拥有<template v-if="count > 1"> ×{{ count }}</template></p>
       <template v-else>
         <p v-if="unlockText" class="state">{{ unlockText }}</p>
-        <p v-else-if="cost !== null" class="state">开宝箱有机会获得，也可以用 {{ cost }} 碎片合成（现有 {{ shards }}）</p>
+        <p v-else-if="cost !== null" class="state">开宝箱获得，或用 {{ cost }} 碎片合成（现有 {{ shards }}）</p>
         <button v-if="cost !== null" type="button" class="ui-btn primary" @click="goCraft">去合成</button>
       </template>
-      <small v-if="card?.video && owned" class="ui-hint">视频由服务器素材包提供，首次播放时加载</small>
     </div>
   </Modal>
 </template>

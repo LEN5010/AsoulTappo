@@ -434,28 +434,13 @@ def build_accessories(ctx: Ctx) -> list[dict]:
     theme_names = {tid: name for tid, name, _, _ in cat.THEMES}
     theme_chars = {tid: chars for tid, _, chars, _ in cat.THEMES}
 
-    def playicons(dirname: str) -> dict[str, Path]:
-        found = {}
-        for p in sorted((ctx.src / "主题" / dirname / "playicon").glob("*.png")):
-            for pose in ("normal", "drag_left", "drag_right", "preview"):
-                if p.stem.endswith(f"_playicon_{pose}"):
-                    found[pose] = p
-        return found
+    def preview(dirname: str) -> Path:
+        return next((ctx.src / "主题" / dirname / "playicon").glob("*_playicon_preview.png"))
 
-    for aid, name, chars, dirname in cat.RIDERS:
-        icons = playicons(dirname)
-        item = {"id": aid, "name": name, "kind": "rider", "slot": "head", "characters": chars,
-                "rarity": cat.ACCESSORY_RARITY["rider"]}
-        for pose, key in (("normal", "img"), ("drag_left", "left"), ("drag_right", "right")):
-            rel = f"accessories/{aid}/{pose}.webp"
-            if ctx.todo(BUNDLE / rel):
-                save_webp(square_fit(load_rgba(icons[pose]), 96), BUNDLE / rel, lossless=True)
-            item[key] = f"bundle:{rel}"
-        items.append(item)
     for aid, name, chars, dirname in cat.FIGURES:
         rel = f"accessories/{aid}.webp"
         if ctx.todo(BUNDLE / rel):
-            save_webp(square_fit(load_rgba(playicons(dirname)["preview"]), FIGURE_PX), BUNDLE / rel, q=88)
+            save_webp(square_fit(load_rgba(preview(dirname)), FIGURE_PX), BUNDLE / rel, q=88)
         items.append({"id": aid, "name": name, "kind": "figure", "slot": "head", "characters": chars,
                       "rarity": cat.ACCESSORY_RARITY["figure"], "img": f"bundle:{rel}"})
     for tid in cat.ANIM_THEMES:

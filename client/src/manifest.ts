@@ -46,14 +46,12 @@ export interface ManifestEmoteSet { id: string; name: string; character: string;
 export interface ManifestAccessory {
   id: string;
   name: string;
-  /** rider: three poses that follow the mouse; figure: static; anim: animated loop */
-  kind: "rider" | "figure" | "anim";
+  /** figure: static; anim: animated loop */
+  kind: "figure" | "anim";
   slot: "head" | "desk";
   characters: string[];
   rarity: Rarity;
   img: string;
-  left?: string;
-  right?: string;
 }
 export interface ManifestDecor {
   id: string;

@@ -76,15 +76,8 @@ const mouseStyle = computed(() => {
 const head = computed(() => headAnchor(props.character));
 const headAcc = computed(() => getAccessory(props.head));
 const deskAcc = computed(() => getAccessory(props.desk));
-const headImg = computed(() => {
-  const a = headAcc.value;
-  if (!a) return "";
-  if (a.kind === "rider" && props.mouseDx < -3 && a.left) return assetUrl(a.left);
-  if (a.kind === "rider" && props.mouseDx > 3 && a.right) return assetUrl(a.right);
-  return assetUrl(a.img);
-});
 const headStyle = computed(() => {
-  const h = headAcc.value?.kind === "rider" ? 40 : 46;
+  const h = 46;
   return {
     left: u(head.value.x - h / 2), top: u(head.value.y + 12 - h), width: u(h), height: u(h),
     transform: `translateY(${pressed.value ? 1.5 * s.value : 0}px)`,
@@ -116,7 +109,7 @@ const likeBeat = computed(() => (props.emote?.key === "thumbup" && likeOn.value 
       <img class="layer" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="leftDown" class="layer" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="rightDown" class="layer" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="headAcc" class="layer acc head" :src="headImg" :style="headStyle" draggable="false" alt="" />
+      <img v-if="headAcc" class="layer acc head" :src="assetUrl(headAcc.img)" :style="headStyle" draggable="false" alt="" />
     </template>
     <div v-else class="missing">?</div>
 

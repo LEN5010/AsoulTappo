@@ -67,7 +67,7 @@ function show(i: Item) {
       <div class="nums"><b>{{ current.have }}</b><span>/ {{ current.total }}</span></div>
       <div class="meter">
         <div class="ui-bar"><i :style="{ width: `${pct}%` }"></i></div>
-        <small class="ui-hint">已收集 {{ pct }}%，重复获得的会变成碎片，可以去合成换没有的</small>
+        <small class="ui-hint">已收集 {{ pct }}%</small>
       </div>
     </div>
 

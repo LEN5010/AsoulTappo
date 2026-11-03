@@ -41,7 +41,7 @@ function toggleFavorite(key: string) {
   if (i >= 0) settings.favorites.splice(i, 1);
   else if (settings.favorites.length < MAX_FAVS) settings.favorites.push(key);
   else {
-    hint.value = `常用表情最多 ${MAX_FAVS} 个，先点掉一个吧`;
+    hint.value = `最多 ${MAX_FAVS} 个`;
     setTimeout(() => (hint.value = ""), 2400);
     return;
   }
@@ -155,7 +155,7 @@ const presetHead = (slot: number) => {
 
       <div class="side">
         <div class="ui-card presets">
-          <header><b>我的预设</b><small class="ui-hint">{{ online ? "点空位保存当前搭配" : "连接服务器后可用" }}</small></header>
+          <header><b>我的预设</b><small v-if="!online" class="ui-hint">服务器未连接</small></header>
           <div class="slots">
             <div v-for="(p, i) in presets" :key="i" class="slot" :class="{ empty: !p }">
               <button type="button" class="main" :disabled="!online" :title="p ? `换上「${p.name}」` : '保存当前搭配'" @click="onPreset(i)">
@@ -176,7 +176,7 @@ const presetHead = (slot: number) => {
           </div>
         </div>
         <div class="ui-card favs">
-          <header><b>常用表情</b><small class="ui-hint">{{ hint || "在下方表情页点选，桌宠上的 ✦ 会用到" }}</small></header>
+          <header><b>常用表情</b><small v-if="hint" class="ui-hint">{{ hint }}</small></header>
           <div class="fav-row">
             <button
               v-for="(k, i) in favSlots" :key="i" type="button" class="fav" :class="{ empty: !k }" :disabled="!k"
@@ -207,7 +207,7 @@ const presetHead = (slot: number) => {
         />
       </div>
       <p v-else class="empty ui-muted">
-        {{ ui.bagTab === "recent" ? "还没有开过宝箱。敲键盘攒进度，桌宠旁边冒出宝箱就点开吧。" : "这里还空着，开宝箱或者去合成看看。" }}
+        {{ ui.bagTab === "recent" ? "还没有获得物品" : "这里还空着" }}
       </p>
     </section>
 

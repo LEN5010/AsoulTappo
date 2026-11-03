@@ -6,7 +6,7 @@ defineEmits<{ open: [] }>();
 </script>
 
 <template>
-  <button type="button" class="chest" :class="{ busy }" :title="`有 ${count} 个宝箱，点一下打开`" aria-label="打开宝箱" @click="$emit('open')">
+  <button type="button" class="chest" :class="{ busy }" :title="`打开宝箱（${count}）`" aria-label="打开宝箱" @click="$emit('open')">
     <span class="rays" aria-hidden="true"><i></i><i></i><i></i></span>
     <ChestIcon :size="30" :open="busy" />
     <span v-if="count > 1" class="n">{{ count }}</span>

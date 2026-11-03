@@ -99,7 +99,7 @@ def test_accessories_starter_and_economy():
     for a in acc:
         assert a["slot"] in ("head", "desk") and a["rarity"] in M.data["rarities"]
         assert set(a["characters"]) <= FIVE
-        assert (a["kind"] == "rider") == bool(a.get("left") and a.get("right"))
+        assert a["kind"] in ("figure", "anim") and (a["kind"] == "figure") == (a["slot"] == "head")
     # every character can start with a few emotes of their own
     starter = M.data["starter"]["emotes"]
     by_key = {e["key"]: s["character"] for s in M.data["emoteSets"] for e in s["emotes"]}

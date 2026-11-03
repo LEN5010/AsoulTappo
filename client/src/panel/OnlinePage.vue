@@ -25,7 +25,7 @@ async function onCreate() {
     input.value = id;
     joinRoom(id);
   } catch (e) {
-    notice.value = `创建失败：${e instanceof Error ? e.message : e}（检查服务器地址）`;
+    notice.value = `创建失败：${e instanceof Error ? e.message : e}`;
   } finally {
     busy.value = false;
   }
@@ -36,7 +36,7 @@ async function copy() {
     copied.value = true;
     setTimeout(() => (copied.value = false), 1200);
   } catch {
-    notice.value = "复制失败，请手动选中房间号";
+    notice.value = "复制失败";
   }
 }
 const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
@@ -53,7 +53,6 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
       </div>
 
       <template v-if="!inRoom && conn === 'idle'">
-        <p class="ui-muted lead">和朋友进同一个房间，大家的桌宠会出现在彼此的桌面上，敲键盘、发表情都能看到。</p>
         <div class="join">
           <input v-model="input" class="ui-input" placeholder="输入房间号" spellcheck="false" @keydown.enter="joinRoom(input)" />
           <button type="button" class="ui-btn" :disabled="!input.trim()" @click="joinRoom(input)">加入</button>
@@ -96,7 +95,6 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
         <span>显示同桌名字</span>
         <input v-model="settings.showNames" class="ui-switch" type="checkbox" />
       </label>
-      <p class="ui-hint">别人的桌宠可以直接拖到桌面任意位置，位置会按房间记住。</p>
     </section>
   </div>
 </template>
@@ -109,7 +107,6 @@ const badgeImg = (id?: string | null) => assetUrl(getDecor(id)?.img);
 .dot.open { background: var(--ok); box-shadow: 0 0 0 4px rgba(63, 182, 122, 0.18); }
 .dot.connecting, .dot.reconnecting { background: var(--warn); }
 .loading { width: 24px; height: 24px; object-fit: contain; }
-.lead { margin: 0; font-size: 13px; line-height: 1.6; }
 .join { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .join > .ui-input { flex: 1; min-width: 160px; }
 .rid { flex: 1; min-width: 200px; display: flex; align-items: center; gap: 6px; color: var(--ink-3); }
@@ -129,5 +126,4 @@ li:last-child { border-bottom: none; }
 .opts { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 .line { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .line.sw { flex-direction: row; align-items: center; justify-content: space-between; }
-.opts .ui-hint { margin: 0; }
 </style>

@@ -56,14 +56,14 @@ function applyServer() {
         <span>跟随灵敏度 <b>{{ settings.mouseSensitivity.toFixed(2) }}</b></span>
         <input v-model.number="settings.mouseSensitivity" class="ui-range" type="range" min="0.1" max="1" step="0.05" />
       </label>
-      <div class="row"><span>找不到桌宠了？</span><button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button></div>
+      <div class="row"><span>桌宠位置</span><button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button></div>
     </section>
 
     <section v-if="isTauri" class="ui-card">
       <h4>窗口</h4>
       <label class="row sw"><span>桌宠置顶</span><input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" /></label>
       <label class="row sw">
-        <span>点击穿透<small class="ui-hint">开启后桌宠不再响应鼠标，只能从托盘菜单关闭</small></span>
+        <span>点击穿透<small class="ui-hint">关闭请用托盘菜单</small></span>
         <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
       </label>
     </section>
@@ -83,8 +83,7 @@ function applyServer() {
 
     <section class="ui-card about">
       <h4>关于</h4>
-      <p>AsoulTappo 是非商业的粉丝作品。桌宠代码与素材源自 <b>Evelynall / ASoul-Little-Bun</b>（GPL-2.0），已获原作者许可。</p>
-      <p>A-SOUL 角色、表情、装扮与卡牌素材的版权归各自权利人所有，仅限非商业使用。只上传敲击次数，从不上传按了哪个键。</p>
+      <p>桌宠形象与代码来自 <b>Evelynall / ASoul-Little-Bun</b>（GPL-2.0），感谢原作者。</p>
     </section>
   </div>
 </template>

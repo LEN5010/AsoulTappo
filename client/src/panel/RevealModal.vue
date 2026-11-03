@@ -24,7 +24,7 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
         <small>{{ RARITY_LABEL[x.d.rarity as Rarity] }}<template v-if="x.d.shards"> · 碎片 +{{ x.d.shards }}</template></small>
       </div>
     </div>
-    <p v-if="shardsTotal" class="ui-muted sum">重复的收藏变成了 {{ shardsTotal }} 碎片</p>
+    <p v-if="shardsTotal" class="ui-muted sum">碎片 +{{ shardsTotal }}</p>
     <div class="actions"><button type="button" class="ui-btn primary" @click="emit('close')">收下</button></div>
   </Modal>
 </template>
