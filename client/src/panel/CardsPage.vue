@@ -247,7 +247,6 @@ async function collect() {
         <div class="gacha-box ui-frame ui-ring" data-rise>
           <div class="pity-row">
             <span>大隐藏保底 <b>{{ status?.draw?.pity ?? 0 }}</b> / 400</span>
-            <small>大隐藏 0.5% · 小隐藏 4.5%</small>
           </div>
           <div class="ui-bar"><i :style="{ width: `${(status?.draw?.pity ?? 0) / 4}%` }"></i></div>
 
@@ -256,7 +255,7 @@ async function collect() {
               <Icon name="card" :size="14" />
               <b>{{ tickets }}</b> 次可抽
             </span>
-            <small class="cd-text">{{ online ? `下一抽 ${countdown}` : "连接服务器累积在线时长" }}</small>
+            <small v-if="online" class="cd-text">下一抽 {{ countdown }}</small>
           </div>
 
           <div class="gacha-btns">
@@ -589,12 +588,6 @@ async function collect() {
 .pity-row b {
   font: italic 800 17px/1 var(--font-latin);
   color: var(--accent-deep);
-}
-.pity-row small {
-  font-size: 9.5px;
-  color: var(--ink-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .ticket-row {
   display: flex;

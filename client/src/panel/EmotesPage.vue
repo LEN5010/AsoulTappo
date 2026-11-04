@@ -210,7 +210,6 @@ const tapPct = computed(() =>
         <div class="fav-head">
           <h3 class="fav-title">我的预设</h3>
           <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
-          <small class="fav-hint">点击下方表情即可装卸</small>
         </div>
 
         <div class="fav-body">
@@ -521,11 +520,6 @@ const tapPct = computed(() =>
 .fav-count small {
   font: inherit;
   font-size: 14px;
-  color: var(--ink-3);
-}
-.fav-hint {
-  font-size: 11px;
-  font-weight: 600;
   color: var(--ink-3);
 }
 .fav-note {

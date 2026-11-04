@@ -252,7 +252,7 @@ const tapPct = computed(() =>
       <div class="pity">
         <div class="pity-head">
           <span>敲击 <b>{{ status?.progress.taps ?? 0 }}</b>/{{ status?.progress.tapsPerBox ?? 600 }} · 活跃 {{ status?.progress.minutes ?? 0 }}/{{ status?.progress.minutesPerBox ?? 10 }}分</span>
-          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片 · 点击未解锁表情可兑换</small>
+          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片</small>
         </div>
         <div class="ui-bar"><i :style="{ width: `${tapPct}%` }"></i></div>
       </div>
