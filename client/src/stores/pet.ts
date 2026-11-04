@@ -18,12 +18,12 @@ function tap(): void {
   bumpCounter();
 }
 
-export function onInput(e: InputEvent): void {
+export function onInput(e: InputEvent, count = true): void {
   switch (e.kind) {
     case "key_down":
       keysHeld += 1;
       pet.keyDown = true;
-      tap();
+      if (count) tap();
       break;
     case "key_up":
       keysHeld = Math.max(0, keysHeld - 1);
@@ -32,7 +32,7 @@ export function onInput(e: InputEvent): void {
     case "mouse_down":
       if (e.button === "left") pet.left = true;
       else if (e.button === "right") pet.right = true;
-      tap();
+      if (count) tap();
       break;
     case "mouse_up":
       if (e.button === "left") pet.left = false;

@@ -2,6 +2,8 @@
 // other members' pets are remembered per room (by member key) in localStorage, so a
 // friend you dragged next to your pet stays there next time.
 import { reactive, ref } from "vue";
+import { isPanelWindow } from "../composables/tauri";
+import { requestDesktop } from "../desktop/transport";
 
 const KEY = "asoultappo.desk.v1";
 const MAX_ROOMS = 10;
@@ -90,6 +92,7 @@ export function placeRemote(key: string, p: Pos): void {
 
 /** Forget remembered positions in this room so everyone lines up next to the own pet again. */
 export function tidyRemotes(): void {
+  if (isPanelWindow) { void requestDesktop("tidyRemotes"); return; }
   remotePos.clear();
   if (currentRoom) {
     delete saved[currentRoom];

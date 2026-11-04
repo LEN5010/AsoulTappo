@@ -3,15 +3,18 @@ import { accentTokens, contrast } from "./palette";
 
 // tokens.css
 const INK_3 = "#766D7C";
-const SUPPORT_COLORS = ["#E799B0", "#576690", "#BD7D74", "#F27BA9", "#3F5FA8"];
+const SUPPORT_COLORS = ["#E799B0", "#576690", "#DB7D74", "#C93773", "#7252C0"];
 
 describe("accentTokens", () => {
   it.each(SUPPORT_COLORS)("keeps %s readable", (color) => {
     const t = accentTokens(color);
+    expect(t["--accent"]).toBe(color);
     expect(contrast(t["--accent"]!, t["--on-accent"]!)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t["--accent-hover"]!, t["--on-accent"]!)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(t["--accent-deep"]!, t["--page"]!)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(INK_3, t["--page"]!)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(t["--accent-surface"]!, t["--on-accent-surface"]!)).toBeGreaterThanOrEqual(4.5);
+    expect(t["--accent-surface"]).not.toBe(color);
   });
   it("leaves a color alone when it already passes", () => {
     expect(accentTokens("#576690")["--accent"]).toBe("#576690");

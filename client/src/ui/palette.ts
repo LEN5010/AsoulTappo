@@ -42,9 +42,12 @@ export function accentTokens(color: string): Record<string, string> {
   const onAccent = contrast(color, INK) >= contrast(color, WHITE) ? INK : WHITE;
   const accent = untilReadable(color, onAccent === INK ? WHITE : INK, onAccent);
   const page = untilReadable(mix(accent, WHITE, 0.93), WHITE, INK_3);
+  const surface = untilReadable(mix(accent, WHITE, 0.28), WHITE, INK);
   return {
     "--accent": accent,
     "--accent-rgb": rgb(accent).join(", "),
+    "--accent-surface": surface,
+    "--on-accent-surface": INK,
     "--accent-deep": untilReadable(accent, INK, page),
     "--accent-hover": untilReadable(mix(accent, WHITE, 0.18), accent, onAccent),
     "--accent-mid": mix(accent, WHITE, 0.45),

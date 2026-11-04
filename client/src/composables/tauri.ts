@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { HitRect } from "../hit";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const isPanelWindow = isTauri && new URLSearchParams(window.location.search).get("window") === "panel";
 
 export type MouseButton = "left" | "right" | "middle" | "other";
 /** Privacy-filtered input events from the Rust hook (src-tauri/src/input.rs). No key identity. */

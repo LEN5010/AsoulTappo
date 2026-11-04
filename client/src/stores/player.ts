@@ -6,6 +6,8 @@ import {
 import { toHttpBase } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { settings } from "./settings";
+import { isPanelWindow } from "../composables/tauri";
+import { requestDesktop } from "../desktop/transport";
 
 const TOKEN_KEY = "asoultappo.token.v1";
 
@@ -135,6 +137,7 @@ async function flush(session: Session): Promise<boolean> {
 }
 
 watch(() => settings.serverUrl, (url) => {
+  if (isPanelWindow) return;
   const previous = current;
   generation++;
   current = sessionFor(toHttpBase(url));
@@ -180,6 +183,7 @@ async function reloadCollection(): Promise<void> {
 }
 
 export async function drawCards(pool: string, count = 1): Promise<Drop[] | null> {
+  if (isPanelWindow) return requestDesktop("drawCards", pool, count);
   const r = await call((api) => api.drawCards(pool, count));
   if (!r) return null;
   status.value = r;
@@ -190,6 +194,7 @@ export async function drawCards(pool: string, count = 1): Promise<Drop[] | null>
 
 /** Open up to `count` boxes. Pending taps are reported first so new boxes count. */
 export async function openBoxes(count = 1): Promise<Drop[] | null> {
+  if (isPanelWindow) return requestDesktop("openBoxes", count);
   const session = current;
   const gen = generation;
   if (!await flush(session) || session !== current || gen !== generation) return null;
@@ -202,6 +207,7 @@ export async function openBoxes(count = 1): Promise<Drop[] | null> {
 }
 
 export async function craftItem(item: string): Promise<boolean> {
+  if (isPanelWindow) return requestDesktop("craftItem", item);
   const r = await call((api) => api.craft(item));
   if (!r) return false;
   status.value = r;
@@ -237,6 +243,7 @@ let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
   () => [settings.character, settings.favorites.join(",")],
   () => {
+    if (isPanelWindow) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushLoadout(), 400);
   },

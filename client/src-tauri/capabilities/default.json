@@ -1,12 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Desk overlay window: receive input/tray events.",
+  "description": "Desk overlay and independent panel: events and panel window controls.",
   "windows": [
-    "main"
+    "main",
+    "panel"
   ],
   "permissions": [
     "core:default",
-    "core:event:default"
+    "core:event:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize"
   ]
 }

@@ -1,29 +1,29 @@
 <script setup lang="ts">
-// Member cards above the backpack. A card filters to that member; picking it again clears the filter.
+// Member cards equip the corresponding original skin.
 import { characters } from "../characters";
-import { manifest } from "../manifest";
+import { manifest, memberOf } from "../manifest";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
-const props = defineProps<{ modelValue: string }>();
+defineProps<{ modelValue: string }>();
 const emit = defineEmits<{ "update:modelValue": [name: string] }>();
 
 const EN_NAMES: Record<string, string> = { jiaran: "Diana", nailin: "Eileen", beila: "Bella", xinyi: "Fiona", sinuo: "Gladys" };
 
-const pick = (name: string) => emit("update:modelValue", props.modelValue === name ? "all" : name);
+const pick = (name: string) => emit("update:modelValue", name);
 </script>
 
 <template>
-  <div class="members" role="group" aria-label="按成员筛选">
+  <div class="members" role="group" aria-label="选择成员原皮">
     <button
       v-for="m in manifest.characters" :key="m.id" type="button"
-      class="member ui-frame" :class="{ on: modelValue === m.name }"
-      :aria-pressed="modelValue === m.name" @click="pick(m.name)"
+      class="member ui-frame" :class="{ on: memberOf(modelValue) === m.name }"
+      :aria-pressed="memberOf(modelValue) === m.name" :title="`使用${m.name}原皮`" @click="pick(m.name)"
     >
       <PetBust v-if="characters[m.name]" class="bust" :src="characters[m.name]!.bg" />
       <b><i :style="{ background: m.color }" aria-hidden="true"></i>{{ m.name }}</b>
       <small>{{ EN_NAMES[m.id] }}</small>
-      <span v-if="modelValue === m.name" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
+      <span v-if="memberOf(modelValue) === m.name" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
     </button>
   </div>
 </template>
@@ -56,9 +56,9 @@ const pick = (name: string) => emit("update:modelValue", props.modelValue === na
   box-shadow: inset 0 0 0 2.5px var(--ink);
 }
 .member.on {
-  background: var(--accent);
+  background: var(--accent-surface);
   box-shadow: none;
-  color: var(--on-accent);
+  color: var(--on-accent-surface);
 }
 .bust {
   flex: none;

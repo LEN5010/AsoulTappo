@@ -1,7 +1,7 @@
 //! Which parts of the desk overlay take the mouse.
 //!
 //! The overlay window covers the monitor's work area. The frontend reports the
-//! rectangles where something is drawn (pets, counter bars, the panel); outside of
+//! rectangles where something is drawn (pets, counter bars, bubbles); outside of
 //! them the window ignores the cursor so clicks reach the windows below.
 
 use serde::Deserialize;

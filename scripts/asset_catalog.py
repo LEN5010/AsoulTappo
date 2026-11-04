@@ -13,9 +13,9 @@ from __future__ import annotations
 CHARACTERS = [
     {"id": "jiaran", "name": "嘉然", "color": "#e799b0"},
     {"id": "nailin", "name": "乃琳", "color": "#576690"},
-    {"id": "beila", "name": "贝拉", "color": "#bd7d74"},
-    {"id": "xinyi", "name": "心宜", "color": "#f27ba9"},
-    {"id": "sinuo", "name": "思诺", "color": "#3f5fa8"},
+    {"id": "beila", "name": "贝拉", "color": "#db7d74"},
+    {"id": "xinyi", "name": "心宜", "color": "#c93773"},
+    {"id": "sinuo", "name": "思诺", "color": "#7252c0"},
 ]
 CHAR_BY_NAME = {c["name"]: c for c in CHARACTERS}
 

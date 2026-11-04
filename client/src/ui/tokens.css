@@ -33,6 +33,8 @@
   --accent-soft: #FFE3D6;
   --accent-tint: #FFF3ED;
   --on-accent: #2B2530;
+  --accent-surface: var(--accent);
+  --on-accent-surface: var(--on-accent);
 
   --ink: #2B2530;
   --ink-rgb: 43, 37, 48;

@@ -5,8 +5,9 @@ import { boxes, online, tickets } from "../stores/player";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
-import { ui, type Page } from "../stores/ui";
-import { setDragging } from "../composables/tauri";
+import { closePanel, ui, type Page } from "../stores/ui";
+import { isPanelWindow, setDragging } from "../composables/tauri";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
 import { EASE_OUT, nextFrame, rise, SLANT } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
@@ -36,9 +37,11 @@ const SIDE_TRAVEL = 44;
 const OPEN_TIMING = { dwell: 180, rise: 150 };
 const TURN_TIMING = { dwell: 50, rise: 80 };
 
-const size = computed(() => ({ w: Math.min(980, viewport.value.w - 20), h: Math.min(700, viewport.value.h - 20) }));
+const size = computed(() => isPanelWindow
+  ? { w: viewport.value.w - 20, h: viewport.value.h - 20 }
+  : { w: Math.min(980, viewport.value.w - 20), h: Math.min(700, viewport.value.h - 20) });
 const pos = computed(() =>
-  clamp(
+  isPanelWindow ? { x: 10, y: 10 } : clamp(
     settings.panelX < 0
       ? { x: (viewport.value.w - size.value.w) / 2, y: (viewport.value.h - size.value.h) / 2 }
       : { x: settings.panelX, y: settings.panelY },
@@ -50,6 +53,7 @@ let drag: { px: number; py: number; x: number; y: number; id: number } | null = 
 
 function down(e: PointerEvent) {
   if (e.button !== 0 || (e.target as HTMLElement).closest("button, input")) return;
+  if (isPanelWindow) { void getCurrentWindow().startDragging(); return; }
   drag = { px: e.clientX, py: e.clientY, x: pos.value.x, y: pos.value.y, id: e.pointerId };
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   void setDragging(true);
@@ -70,7 +74,7 @@ function up(e: PointerEvent) {
   live.value = null;
 }
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Escape" && !document.querySelector("[data-overlay]")) ui.panelOpen = false;
+  if (e.key === "Escape" && !document.querySelector("[data-overlay]")) closePanel();
 }
 
 // ---- page turns
@@ -167,7 +171,10 @@ function badgeOf(id: Page): number {
           <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
           <span v-if="!online" class="offline ui-tag dark" role="status"><i aria-hidden="true"></i>未连接</span>
           <span class="ticks" aria-hidden="true"><i></i><i></i><i></i></span>
-          <button type="button" class="close ui-slant" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
+          <button v-if="isPanelWindow" type="button" class="close ui-slant" title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
+            <Icon name="minus" :size="15" />
+          </button>
+          <button type="button" class="close ui-slant" title="关闭面板" aria-label="关闭面板" @click="closePanel">
             <Icon name="close" :size="15" />
           </button>
         </div>
@@ -431,7 +438,7 @@ function badgeOf(id: Page): number {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--accent);
+  background: var(--accent-surface);
   clip-path: polygon(0 0, calc(100% - 12px) 0, calc(100% - 12px - var(--side-run)) 100%, 0 100%);
 }
 .side-inner {
@@ -459,7 +466,7 @@ function badgeOf(id: Page): number {
   bottom: 60px;
   width: 82px;
   aspect-ratio: 122 / 152;
-  background: var(--on-ink);
+  background: var(--on-accent-surface);
   pointer-events: none;
   mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
@@ -489,7 +496,7 @@ function badgeOf(id: Page): number {
   display: block;
   width: 146px;
   aspect-ratio: 3.172;
-  background: var(--surface);
+  background: var(--on-accent-surface);
   transform-origin: 0 0;
   transition: transform var(--dur-slow) var(--ease-out);
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
@@ -546,7 +553,7 @@ nav button {
   gap: 12px;
   border: 0;
   background: none;
-  color: var(--on-accent);
+  color: var(--on-accent-surface);
   cursor: pointer;
   transition: color var(--dur-base), transform var(--dur-base) var(--ease-out);
 }
@@ -606,7 +613,7 @@ nav button.on .nav-icon {
 .nav-text small {
   font: italic 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.1em;
-  color: var(--on-accent);
+  color: var(--on-accent-surface);
   transition: color var(--dur-base);
 }
 nav button.on .nav-text small {
@@ -641,7 +648,7 @@ nav button.on .nav-text small {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--on-accent);
+  color: var(--on-accent-surface);
   font: 800 var(--fs-strong) var(--font);
   display: flex;
   align-items: center;

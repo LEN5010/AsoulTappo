@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The desk overlay: one transparent always-on-top window over the work area that holds
-// the own pet (with its counter bar), the pets of everyone in the room and the panel.
+// The desk overlay holds the own pet and room members. Tauri opens the panel in a
+// separate regular window; the browser preview keeps it inside the overlay.
 // Only the drawn parts take the mouse (see hit.ts); everything else clicks through.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import PetActor from "./pet/PetActor.vue";
@@ -131,7 +131,6 @@ watch(() => settings.alwaysOnTop, (v) => setAlwaysOnTop(v), { immediate: true })
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {
-    ui.panelOpen = false;
     ui.quickOpen = false;
   }
 });
@@ -173,7 +172,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
     </PetActor>
 
     <Transition name="panel">
-      <MainPanel v-if="ui.panelOpen && !settings.clickThrough" @reset-pet="resetPet" />
+      <MainPanel v-if="!isTauri && ui.panelOpen" @reset-pet="resetPet" />
     </Transition>
   </div>
 </template>

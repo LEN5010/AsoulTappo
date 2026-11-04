@@ -4,6 +4,7 @@ import { THEME_COLORS, themeTokens } from "./theme";
 describe("theme colors", () => {
   it("offers the brand color and one color per member", () => {
     expect(THEME_COLORS.map((t) => t.id)).toEqual(["asoul", "jiaran", "nailin", "beila", "xinyi", "sinuo"]);
+    expect(THEME_COLORS.map((t) => t.color)).toEqual(["#FC966E", "#E799B0", "#576690", "#DB7D74", "#C93773", "#7252C0"]);
   });
   it("leaves the brand palette to tokens.css", () => {
     expect(themeTokens("asoul")).toEqual({});

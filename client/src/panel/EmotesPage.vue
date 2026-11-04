@@ -19,7 +19,6 @@ import { rise } from "../ui/motion";
 
 type MainKind = "all" | "emote" | "pet";
 const mainTab = ref<MainKind>("all");
-const charFilter = ref<string>("all");
 const query = ref("");
 const actionNote = ref("");
 
@@ -53,7 +52,7 @@ function pokeStage() {
 
 const root = ref<HTMLElement>();
 const listing = ref<HTMLElement>();
-watch([mainTab, charFilter], () => nextTick(() => rise(listing.value, root.value)));
+watch(mainTab, () => nextTick(() => rise(listing.value, root.value)));
 
 // Replays the member-color band over the stage on every character switch.
 const ribbon = ref(0);
@@ -68,11 +67,7 @@ const skinRank = (name: string) => {
 // Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
 const petSkins = computed(() =>
   Object.values(characters)
-    .filter(
-      (c) =>
-        (charFilter.value === "all" || memberOf(c.name) === charFilter.value) &&
-        (!query.value || c.name.includes(query.value)),
-    )
+    .filter((c) => !query.value || c.name.includes(query.value))
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
 
@@ -81,7 +76,6 @@ const ownedEmotes = computed(() => {
   if (mainTab.value === "pet") return [];
   const list: { key: string; name: string; img: string; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
-    if (charFilter.value !== "all" && s.character !== charFilter.value) continue;
     for (const e of s.emotes) {
       if (!ownsEmote(e.key, collection.owned)) continue;
       if (query.value && !e.name.includes(query.value) && !s.name.includes(query.value)) continue;
@@ -194,7 +188,7 @@ const tapPct = computed(() =>
       </div>
 
       <div class="desk" data-rise>
-        <MemberStrip v-model="charFilter" />
+        <MemberStrip v-model="settings.character" />
 
         <div class="fav-head">
           <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
