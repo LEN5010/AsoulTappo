@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Full-panel reveal of a draw or a box. It covers the panel before the request goes out: the
+// Full-panel reveal of every draw result. It covers the panel before the request goes out: the
 // stores update as soon as a response lands, and the page underneath would give the result away.
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { getCharacter } from "../characters";
@@ -15,6 +15,7 @@ import ItemArt from "../ui/ItemArt.vue";
 import CardBack from "./CardBack.vue";
 import CardSpotlight from "./CardSpotlight.vue";
 import SkinSpotlight from "./SkinSpotlight.vue";
+import EmoteSpotlight from "./EmoteSpotlight.vue";
 
 const props = defineProps<{
   /** Runs once the scene is up. null closes it, leaving the error to the page. */
@@ -50,6 +51,11 @@ async function artOf(card: ManifestCard): Promise<string> {
   );
 }
 
+function prepareArt(index: number) {
+  const entry = queue.value[index];
+  if (entry?.card) void artOf(entry.card).then((art) => { entry.art = art; });
+}
+
 async function run() {
   phase.value = "charge";
   drops.value = [];
@@ -65,15 +71,15 @@ async function run() {
   }
   drops.value = sortDrops(result);
   const spot = spotlightQueue(result).map((drop) => ({ drop, card: cardOf(drop) }));
-  const arts = await Promise.all(spot.map((s) => s.card ? artOf(s.card) : Promise.resolve("")));
-  if (!alive) return;
-  queue.value = spot.map((s, i) => ({ ...s, art: arts[i]! }));
+  queue.value = spot.map((s) => ({ ...s, art: s.card ? assetUrl(s.card.thumb) : "" }));
   if (!queue.value.length || (skipping && needsSummary(drops.value))) {
     phase.value = "summary";
     return;
   }
   settled.value = skipping || reducedMotion.value;
   phase.value = "spotlight";
+  prepareArt(0);
+  prepareArt(1);
 }
 
 function finish() {
@@ -84,6 +90,7 @@ function next() {
   if (at.value + 1 < queue.value.length) {
     at.value++;
     settled.value = reducedMotion.value;
+    prepareArt(at.value + 1);
   } else if (needsSummary(drops.value)) {
     phase.value = "summary";
   } else {
@@ -102,8 +109,8 @@ function tap() {
 }
 
 const action = computed(() => {
-  if (!settled.value) return "跳过";
-  if (at.value + 1 < queue.value.length) return "下一张";
+  if (!settled.value) return "翻开";
+  if (at.value + 1 < queue.value.length) return "下一件";
   return needsSummary(drops.value) ? "查看全部" : "收下";
 });
 
@@ -150,17 +157,19 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
         <i class="band one" aria-hidden="true"></i>
         <i class="band two" aria-hidden="true"></i>
         <div class="sealed"><div class="sealed-face ui-frame"><CardBack /></div></div>
-        <button type="button" class="ui-btn large act" @click="skip">跳过</button>
+        <button type="button" class="ui-btn large act" @click.stop="skip">跳过动画</button>
       </div>
 
       <template v-else-if="phase === 'spotlight'">
         <SkinSpotlight v-if="queue[at]!.drop.rarity === 'skin'" :key="`skin:${at}`" :drop="queue[at]!.drop" :settled="settled" @done="settled = true" />
-        <CardSpotlight v-else
+        <CardSpotlight v-else-if="queue[at]!.card"
           :key="at" :drop="queue[at]!.drop" :card="queue[at]!.card!" :art="queue[at]!.art"
           :settled="settled" @done="settled = true"
         />
+        <EmoteSpotlight v-else :key="`emote:${at}`" :drop="queue[at]!.drop" :settled="settled" @done="settled = true" />
         <span v-if="queue.length > 1" class="page"><b>{{ at + 1 }}</b> / {{ queue.length }}</span>
-        <button type="button" class="ui-btn large act" @click.stop="settled ? next() : skip()">{{ action }}</button>
+        <button v-if="needsSummary(drops)" type="button" class="ui-btn small show-all" @click.stop="skip">查看全部</button>
+        <button type="button" class="ui-btn large act" @click.stop="tap">{{ action }}</button>
       </template>
 
       <section v-else class="summary-body" :class="{ calm: reducedMotion }">
@@ -226,6 +235,12 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
   position: absolute;
   right: 30px;
   bottom: 26px;
+  z-index: 5;
+}
+.show-all {
+  position: absolute;
+  left: 30px;
+  top: 24px;
   z-index: 5;
 }
 .page {

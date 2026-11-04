@@ -7,6 +7,7 @@ import { cardLabel, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import type { Drop } from "../net/api";
 import { reducedMotion } from "../stores/theme";
+import CardBack from "./CardBack.vue";
 
 const props = defineProps<{ drop: Drop; card: ManifestCard; art: string; settled: boolean }>();
 defineEmits<{ done: [] }>();
@@ -22,6 +23,7 @@ const hidden = computed(() => props.card.tier !== "normal");
 
     <div class="row">
       <div class="flip" @animationend.self="$emit('done')">
+        <div class="reverse ui-frame"><CardBack /></div>
         <div class="art ui-frame">
           <video
             v-if="settled && card.video && !reducedMotion" class="media"
@@ -109,10 +111,20 @@ const hidden = computed(() => props.card.tier !== "normal");
   box-sizing: border-box;
 }
 .flip {
+  position: relative;
   flex: none;
+  transform-style: preserve-3d;
   animation: flip var(--flip-ms) var(--ease-out) var(--flip-at) backwards;
 }
+.reverse {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+  backface-visibility: hidden;
+  overflow: hidden;
+}
 .art {
+  backface-visibility: hidden;
   --radius: var(--radius-l);
   height: min(480px, 74cqh);
   aspect-ratio: 2 / 3;
@@ -222,8 +234,10 @@ h3 {
 
 @keyframes flip {
   from {
-    opacity: 0;
-    transform: perspective(900px) rotateY(96deg) scale(0.82);
+    transform: perspective(900px) rotateY(180deg) scale(0.9);
+  }
+  to {
+    transform: perspective(900px) rotateY(0) scale(1);
   }
 }
 @keyframes facts {

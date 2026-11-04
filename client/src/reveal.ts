@@ -34,11 +34,9 @@ export function groupDrops<T extends Revealed & { item: string; count: number; s
   return [...groups.values()];
 }
 
-/** Single cards/skins get a spotlight; batches highlight legendary, skin and epic. */
+/** Reveal every result in draw order, including duplicates and emotes. */
 export function spotlightQueue<T extends Revealed>(drops: readonly T[]): T[] {
-  if (drops.length === 1) return drops.filter((d) => d.item.startsWith("card:") || d.item.startsWith("char:"));
-  return sortDrops(drops).filter((d) => ["legendary", "skin", "epic"].includes(d.rarity));
+  return [...drops];
 }
 
-/** Single emotes go straight to the summary. */
-export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1 || spotlightQueue(drops).length === 0;
+export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1;

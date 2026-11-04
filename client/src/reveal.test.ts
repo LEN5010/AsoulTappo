@@ -10,15 +10,17 @@ describe("mixed resonance reveals", () => {
     expect(sortDrops(drops)[5]!.new).toBe(true);
     expect(drops[0]!.rarity).toBe("common");
   });
-  it("spotlights single cards and skins, sends single emotes to summary", () => {
+  it("reveals single cards, skins and emotes before collecting", () => {
     expect(spotlightQueue([d("common")])).toHaveLength(1);
     expect(spotlightQueue([d("skin", "char:test")])).toHaveLength(1);
-    expect(spotlightQueue([d("rare", "emote:test")])).toEqual([]);
-    expect(needsSummary([d("rare", "emote:test")])).toBe(true);
+    expect(spotlightQueue([d("rare", "emote:test")])).toHaveLength(1);
+    expect(needsSummary([d("rare", "emote:test")])).toBe(false);
     expect(needsSummary([d("common")])).toBe(false);
   });
-  it("spotlights epic dancing cards in batches", () => {
-    expect(spotlightQueue([d("common"), d("epic"), d("rare", "emote:test"), d("skin", "char:test"), d("legendary")]).map((x) => x.rarity)).toEqual(["legendary", "skin", "epic"]);
+  it("reveals every mixed result and duplicate in draw order", () => {
+    const drops = [d("common"), d("epic"), d("rare", "emote:test"), d("skin", "char:test"), d("legendary"), d("common")];
+    expect(spotlightQueue(drops)).toEqual(drops);
+    expect(spotlightQueue(drops)).not.toBe(drops);
     expect(needsSummary([d("common"), d("common")])).toBe(true);
   });
   it("groups repeats and sums refunds, preserving new state", () => {
