@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows-nsis:
+    name: Windows NSIS
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: client
+          tagName: v__VERSION__
+          releaseName: AsoulTappo v__VERSION__
+          releaseBody: |
+            内测包，Windows NSIS 安装器。安装包未签名，SmartScreen 可能拦截，选择仍要运行即可。
+
+            - Tauri 2 + Vue 3 桌宠与同桌联机
+            - 斜切舞台风面板，Noto Sans SC 字体
+            - 表情背包、收藏集抽卡（连接服务端后每在线 5 分钟 1 次）
+            - 服务端可自行部署，见 README
+
+            仅 Windows。未做自动更新。
+          releaseDraft: false
+          prerelease: true
+          uploadUpdaterJson: false
+          args: --bundles nsis
