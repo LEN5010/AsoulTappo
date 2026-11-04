@@ -2,7 +2,7 @@
 // Ids match the server (server/app/manifest.py): card:<id> emote:<key> acc:<id> theme:<id>.
 // Characters (char:<name>) and frames/badges (decor:<id>) are listed as well, but never drop
 // or get crafted: characters are always owned, frames/badges unlock by collecting a card series.
-import { manifest, RARITY_ORDER, type Rarity } from "./manifest";
+import { canonicalCharacter, manifest, RARITY_ORDER, type Rarity } from "./manifest";
 
 export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
 
@@ -92,7 +92,8 @@ export function craftCost(item: Item): number | null {
 
 /** Starter emotes of one character (the default quick emotes). */
 export function starterEmotesOf(character: string): string[] {
-  const set = manifest.emoteSets.find((s) => s.character === character);
+  const who = canonicalCharacter(character);
+  const set = manifest.emoteSets.find((s) => s.character === who);
   return set ? set.emotes.filter((e) => starterEmotes.has(e.key)).map((e) => e.key) : [];
 }
 

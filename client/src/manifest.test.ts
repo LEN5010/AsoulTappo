@@ -28,6 +28,7 @@ describe("manifest", () => {
     expect(manifest.cards).toHaveLength(70);
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
+    expect(characterColor("贝拉神女")).toBe(characterColor("贝拉"));
     expect(characterColor("???")).toBe("#ff6b9d");
   });
   it("default theme is fully bundled; unknown ids fall back to it", () => {

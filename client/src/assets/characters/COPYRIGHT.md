@@ -11,3 +11,4 @@ Copyright of the artwork belongs to its respective owners. The GPL-2.0 license c
 Non-commercial fan project. Rights holders: open an issue and the assets will be removed promptly.
 
 Per character: `bgImage.png`, `keyboardImage.png`, `mouseImage.png`, `leftClickImage.png`, `rightClickImage.png`.
+Outfit folders such as `贝拉神女` reuse the same layer names; keyboard and mouse layers may be shared with the base character.

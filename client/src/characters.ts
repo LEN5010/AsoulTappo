@@ -66,7 +66,11 @@ const HEADS: Record<string, { x: number; y: number }> = {
   思诺: { x: 142, y: 9 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
-  return HEADS[name] ?? { x: 150, y: 10 };
+  if (HEADS[name]) return HEADS[name];
+  for (const [k, v] of Object.entries(HEADS)) {
+    if (name.startsWith(k)) return v;
+  }
+  return { x: 150, y: 10 };
 }
 
 /**
