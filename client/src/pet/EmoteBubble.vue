@@ -81,8 +81,8 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
 .flip .point { left: auto; right: var(--tip); transform: scaleX(-1); }
 .sticker img { position: relative; display: block; width: auto; max-width: 160px; object-fit: contain; filter: var(--contour-lg); }
 .times {
-  position: absolute; right: -9px; top: -10px; padding: 0 7px; font: italic 800 var(--fs-strong)/19px var(--font-latin);
-  background: var(--ink); color: var(--on-ink); transform: skewX(var(--skew));
+  position: absolute; right: -9px; top: -10px; padding: 0 7px; font: 800 var(--fs-strong)/19px var(--font-latin);
+  background: var(--ink); color: var(--on-ink);
   animation: times var(--dur-base) var(--ease-pop);
 }
 .bubble-enter-active { animation: bubble-in var(--dur-base) var(--ease-spring); }
@@ -95,5 +95,5 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 @keyframes bubble-in { from { opacity: 0; transform: scale(0.5) translate(-6px, 8px); } 60% { opacity: 1; transform: scale(1.06); } to { transform: none; } }
 @keyframes swap-in { from { opacity: 0; transform: scale(0.75); } to { opacity: 1; transform: none; } }
-@keyframes times { from { transform: skewX(var(--skew)) scale(0.4); } }
+@keyframes times { from { transform: scale(0.4); } }
 </style>

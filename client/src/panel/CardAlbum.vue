@@ -64,7 +64,7 @@ const visible = computed(() =>
 }
 .slot {
   --well-ratio: 2 / 3;
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
 }
 .art {
   padding: 0;
@@ -121,7 +121,6 @@ const visible = computed(() =>
   height: 16px;
   background: var(--ink);
   color: var(--on-ink);
-  transform: skewX(var(--skew));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -158,7 +157,6 @@ const visible = computed(() =>
   flex: none;
   width: 3px;
   height: 9px;
-  transform: skewX(var(--skew));
 }
 .slot.locked .name b {
   color: var(--ink-2);

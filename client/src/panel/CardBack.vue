@@ -4,7 +4,6 @@
 
 <template>
   <span class="back" aria-hidden="true">
-    <i class="stripe"></i>
     <i class="mark"></i>
   </span>
 </template>
@@ -15,16 +14,7 @@
   inset: 0;
   display: block;
   overflow: hidden;
-  background: var(--accent-deep);
-}
-.stripe {
-  position: absolute;
-  top: -8%;
-  bottom: -8%;
-  left: 44%;
-  width: 30%;
-  background: rgba(255, 255, 255, 0.14);
-  transform: skewX(var(--skew));
+  background: var(--grad-sky);
 }
 .mark {
   position: absolute;

@@ -61,10 +61,7 @@ const countdown = computed(
 
 <template>
   <div class="pool">
-    <section class="stage ui-frame" :class="active.tier" data-rise>
-      <i class="stripe" aria-hidden="true"></i>
-      <i class="band" aria-hidden="true"></i>
-
+    <section class="stage ui-frame ui-ring" :class="active.tier" data-rise>
       <button type="button" class="hero" :title="active.name" @click="$emit('inspect', active)">
         <span class="hero-rays" aria-hidden="true"></span>
         <span class="hero-frame ui-frame">
@@ -84,14 +81,10 @@ const countdown = computed(
         <div class="title-block">
           <p class="owner">{{ owner }}</p>
           <h3>{{ poolName(series.name) }}</h3>
-          <div class="now">
-            <span class="ui-tag" :class="{ gold: active.tier === 'big', light: active.tier === 'small', dark: active.tier === 'normal' }">{{ TIER_LABEL[active.tier] }}</span>
-            <p>
-              <b>{{ label.title }}</b>
-              <span>{{ label.who }}<template v-if="owned(active)"> · ×{{ owned(active) }}</template></span>
-            </p>
-            <i class="rule" aria-hidden="true"></i>
-          </div>
+          <p class="now">
+            <b>{{ label.title }}</b>
+            <span><em class="tier">{{ TIER_LABEL[active.tier] }}</em>{{ label.who }}<template v-if="owned(active)"> · ×{{ owned(active) }}</template></span>
+          </p>
         </div>
 
         <div class="lineup">
@@ -118,16 +111,12 @@ const countdown = computed(
           </div>
         </div>
       </div>
-
     </section>
 
     <footer class="console ui-frame ui-ring" data-rise>
       <div class="tickets">
-        <span class="tickets-icon"><Icon name="card" :size="20" /></span>
-        <div>
-          <span class="tickets-count"><b>{{ tickets }}</b>次可抽</span>
-          <small v-if="online">下一抽 {{ countdown }}</small>
-        </div>
+        <span class="tickets-count"><b>{{ tickets }}</b>次可抽</span>
+        <small v-if="online">下一抽 {{ countdown }}</small>
       </div>
 
       <div class="pity">
@@ -136,18 +125,17 @@ const countdown = computed(
       </div>
 
       <div class="actions">
-        <button type="button" class="ui-btn large one" :disabled="busy || !online || !tickets" @click="$emit('draw', false)">抽一次</button>
-        <button type="button" class="ui-btn large primary all" :disabled="busy || !online || !tickets" @click="$emit('draw', true)">
-          <Icon name="spark" :size="13" class="glint" />
-          全部抽取<span v-if="tickets > 1">×{{ tickets }}</span>
-          <Icon name="spark" :size="10" class="glint" />
+        <button type="button" class="ui-btn large" :disabled="busy || !online || !tickets" @click="$emit('draw', true)">
+          全部抽取<template v-if="tickets > 1"> ×{{ tickets }}</template>
         </button>
+        <button type="button" class="ui-btn large primary pulse" :disabled="busy || !online || !tickets" @click="$emit('draw', false)">抽一次</button>
       </div>
     </footer>
   </div>
 </template>
 
 <style scoped>
+/* Orange is kept for the main action, the pity bar and the selection. */
 .pool {
   flex: 1;
   min-height: 0;
@@ -157,35 +145,15 @@ const countdown = computed(
 }
 
 .stage {
-  --cut: var(--cut-l);
-  --band-h: 128px;
+  --radius: var(--radius-l);
   --mini-w: 62px;
   flex: 1;
   min-height: 0;
   display: flex;
   gap: 24px;
-  padding: 14px 24px 12px 22px;
+  padding: 14px 16px 14px 18px;
   box-sizing: border-box;
-  background: var(--accent-mid);
-}
-.stripe {
-  position: absolute;
-  top: -10px;
-  bottom: -10px;
-  right: 16%;
-  width: 150px;
-  background: rgba(255, 255, 255, 0.2);
-  transform: skewX(var(--skew));
-}
-/* The lineup rests on this band; its slanted end disappears behind the hero. */
-.band {
-  position: absolute;
-  left: 18%;
-  right: -40px;
-  bottom: 0;
-  height: var(--band-h);
-  background: var(--accent);
-  transform: skewX(var(--skew));
+  background: var(--surface);
 }
 
 .hero {
@@ -193,7 +161,7 @@ const countdown = computed(
   z-index: 1;
   flex: none;
   align-self: center;
-  height: min(100%, 396px);
+  height: min(100%, 420px);
   aspect-ratio: 2 / 3;
   padding: 0;
   border: 0;
@@ -201,21 +169,14 @@ const countdown = computed(
   cursor: pointer;
   display: grid;
   place-items: center;
+  filter: drop-shadow(0 6px 14px rgba(var(--ink-rgb), 0.18));
   transition: transform var(--dur-slow) var(--ease-out);
 }
-/* A sheet peeking out behind the card. */
-.hero::before {
-  content: "";
-  position: absolute;
-  inset: 7px -9px -7px 9px;
-  background: rgba(255, 255, 255, 0.36);
-  rotate: 1.6deg;
-}
 .hero:hover {
-  transform: translate(-2px, -3px);
+  transform: translateY(-3px);
 }
 .hero-frame {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   position: relative;
   width: 100%;
   height: 100%;
@@ -257,11 +218,17 @@ const countdown = computed(
   position: absolute;
   width: 170%;
   aspect-ratio: 1;
-  background: repeating-conic-gradient(rgba(255, 255, 255, 0) 0deg 12deg, rgba(255, 255, 255, 0.22) 12deg 24deg);
+  background: repeating-conic-gradient(transparent 0deg 12deg, var(--ray) 12deg 24deg);
   mask: radial-gradient(closest-side, #000 62%, transparent);
   -webkit-mask: radial-gradient(closest-side, #000 62%, transparent);
   opacity: 0;
   pointer-events: none;
+}
+.big .hero-rays {
+  --ray: rgba(var(--gold-rgb), 0.16);
+}
+.small .hero-rays {
+  --ray: rgba(var(--accent-rgb), 0.14);
 }
 .big .hero-rays,
 .small .hero-rays {
@@ -281,69 +248,63 @@ const countdown = computed(
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
   color: var(--ink);
 }
 .title-block {
   flex: 1;
   min-height: 0;
-  padding-bottom: 14px;
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
+  text-align: center;
 }
 .owner {
-  margin: 0 0 2px;
-  font: italic 800 var(--fs-section)/1.1 var(--font-latin);
-  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  font-size: var(--fs-strong);
+  font-weight: 500;
+  color: var(--ink-2);
 }
 h3 {
   margin: 0;
-  font: var(--fs-display)/1.15 var(--font-display);
+  font: 800 var(--fs-display)/1.15 var(--font);
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 .now {
-  margin-top: 12px;
+  margin: 20px 0 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.now .ui-tag {
-  padding: 0 11px;
-  font-size: var(--fs-label);
-  line-height: 21px;
-}
-.now p {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 2px 10px;
+  gap: 6px;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--ink-2);
 }
 .now b {
-  font: var(--fs-heading)/1.2 var(--font-display);
+  font: 800 var(--fs-heading)/1.2 var(--font);
+  color: var(--ink);
 }
-.now p span {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: var(--fs-strong);
+.tier {
+  margin-right: 6px;
+  font-style: normal;
+}
+.normal .tier::after {
+  content: " ·";
+}
+.big .tier,
+.small .tier {
+  padding: 2px 7px;
+  font-size: var(--fs-label);
   font-weight: 800;
+  color: var(--ink);
 }
-.now p span::before {
-  content: "";
-  width: 2px;
-  height: 15px;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+.big .tier {
+  background: var(--gold-soft);
 }
-.rule {
-  width: 190px;
-  max-width: 100%;
-  height: 6px;
-  margin-top: 2px;
-  background: repeating-linear-gradient(98deg, var(--ink) 0 2px, transparent 2px 6px);
+.small .tier {
+  background: var(--accent-soft);
 }
 
 .lineup {
@@ -352,13 +313,14 @@ h3 {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 3px 4px;
-  margin-right: -14px;
+  padding: 10px 8px;
+  background: var(--accent-tint);
 }
 .row {
   grid-column: 2;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, var(--mini-w)));
-  justify-content: start;
+  justify-content: center;
   gap: 8px;
   animation: lineup var(--dur-slow) var(--ease-out);
 }
@@ -374,12 +336,15 @@ h3 {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--on-accent);
+  color: var(--ink-2);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out), color var(--dur-fast);
+}
+.flip:hover {
+  color: var(--ink);
 }
 .flip .icon {
   stroke-width: 3;
@@ -414,12 +379,11 @@ h3 {
 .dots button {
   position: relative;
   width: 8px;
-  height: 6px;
+  height: 4px;
   padding: 0;
   border: 0;
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--line-2);
   cursor: pointer;
-  transform: skewX(var(--skew));
   transition: width var(--dur-base) var(--ease-out), background var(--dur-fast);
 }
 .dots button::before {
@@ -429,11 +393,11 @@ h3 {
 }
 .dots .on {
   width: 22px;
-  background: var(--surface);
+  background: var(--grad-main);
 }
 
 .mini {
-  --cut: var(--cut-s);
+  --radius: var(--radius-s);
   position: relative;
   min-width: 0;
   padding: 0;
@@ -462,164 +426,103 @@ h3 {
 .mini.on {
   transform: translateY(-3px);
 }
-/* Corner brackets: eight bars drawn as background layers. */
 .mini.on::after {
-  --bar: linear-gradient(var(--ink), var(--ink));
-  --long: 13px;
-  --thick: 2.5px;
   content: "";
   position: absolute;
-  inset: -4px;
+  inset: -2px;
+  border-radius: var(--radius-m);
   pointer-events: none;
-  background:
-    var(--bar) 0 0 / var(--long) var(--thick),
-    var(--bar) 0 0 / var(--thick) var(--long),
-    var(--bar) 100% 0 / var(--long) var(--thick),
-    var(--bar) 100% 0 / var(--thick) var(--long),
-    var(--bar) 0 100% / var(--long) var(--thick),
-    var(--bar) 0 100% / var(--thick) var(--long),
-    var(--bar) 100% 100% / var(--long) var(--thick),
-    var(--bar) 100% 100% / var(--thick) var(--long);
-  background-repeat: no-repeat;
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-m);
 }
 
 .console {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   flex: none;
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 12px 18px 12px 14px;
+  gap: 24px;
+  padding: 12px 18px 12px 20px;
   background: var(--surface);
 }
 .tickets {
   flex: none;
   display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.tickets-icon {
-  width: 44px;
-  height: 42px;
-  background: var(--accent);
-  color: var(--on-accent);
-  transform: skewX(var(--skew));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.tickets > div {
-  display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .tickets-count {
-  font-size: var(--fs-label);
-  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   color: var(--ink-2);
 }
 .tickets-count b {
-  margin-right: 3px;
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
-  color: var(--accent-deep);
+  font: 800 var(--fs-title)/1 var(--font);
+  color: var(--ink);
 }
 .tickets small {
-  font-size: var(--fs-caption);
-  font-weight: 700;
+  font-size: var(--fs-label);
+  font-weight: 500;
   color: var(--ink-3);
 }
 .pity {
-  position: relative;
   flex: 1;
   min-width: 0;
-  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: var(--fs-label);
-  font-weight: 700;
+  font-weight: 500;
   color: var(--ink-2);
   white-space: nowrap;
 }
-.pity::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  background: var(--line-2);
-  transform: skewX(var(--skew));
-}
 .pity b {
-  font: italic 800 var(--fs-heading)/1 var(--font-latin);
-  color: var(--accent-deep);
+  font-weight: 800;
+  color: var(--ink);
 }
 .actions {
   flex: none;
   display: flex;
-  gap: 12px;
-  padding-right: 4px;
+  gap: 10px;
 }
 .actions .ui-btn {
-  font: 400 var(--fs-section)/1 var(--font-display);
+  padding: 0 20px;
+  font-weight: 700;
 }
-.actions .one {
-  padding: 0 18px;
-}
-.actions span {
-  margin-left: 2px;
-  font: italic 800 var(--fs-section)/1 var(--font-latin);
-}
-.glint {
-  position: absolute;
-  left: 9px;
-  top: 6px;
-  color: var(--surface);
-  fill: currentColor;
-}
-.glint:last-child {
-  left: auto;
-  right: 9px;
-  top: auto;
-  bottom: 6px;
-}
-.all:disabled .glint {
-  display: none;
+.actions .primary {
+  padding: 0 34px;
+  font-size: var(--fs-number);
+  font-weight: 800;
 }
 
 @container panel (max-height: 620px) {
   .stage {
-    --band-h: 96px;
     --mini-w: 46px;
   }
   h3 {
     font-size: var(--fs-title);
   }
   .owner {
-    font-size: var(--fs-strong);
+    margin-bottom: 2px;
+    font-size: var(--fs-body);
   }
   .now {
-    margin-top: 6px;
-    gap: 5px;
+    margin-top: 8px;
+    gap: 2px;
   }
   .now b {
     font-size: var(--fs-section);
   }
-  .rule {
-    display: none;
-  }
-  .title-block {
-    padding-bottom: 6px;
-  }
 }
 @container panel (max-height: 520px) {
   .stage {
-    padding: 10px 18px 10px 14px;
+    padding: 10px 14px;
     gap: 16px;
   }
   .console {
-    padding: 8px 14px 8px 12px;
+    padding: 8px 14px;
   }
   .actions .ui-btn {
     height: 36px;

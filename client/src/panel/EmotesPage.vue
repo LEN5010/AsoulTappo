@@ -22,6 +22,14 @@ const mainTab = ref<MainKind>("all");
 const query = ref("");
 const actionNote = ref("");
 
+// A member card narrows the shelves to her and equips her original skin; ALL only lifts the filter.
+const member = ref("all");
+function pickMember(name: string) {
+  member.value = name;
+  if (name !== "all") settings.character = name;
+}
+const inMember = (name: string) => member.value === "all" || memberOf(name) === member.value;
+
 // ---- live stage preview
 const preview = ref<EmoteFrame | null>(null);
 const player = new EmotePlayer((f) => (preview.value = f), () => settings.emoteHoldMs);
@@ -36,12 +44,12 @@ const stageStickers = computed(() =>
     .map((k) => ({ key: k, emo: getEmote(k) }))
     .filter((x) => x.emo),
 );
-// Stickers run down the stage's slanted left edge.
+// Stickers run down the stage's left edge.
 const STICKER_ARC = [
-  { x: 34, y: 4, rot: -9 },
-  { x: 24, y: 56, rot: 6 },
+  { x: 14, y: 4, rot: -9 },
+  { x: 14, y: 56, rot: 6 },
   { x: 14, y: 108, rot: -5 },
-  { x: 4, y: 160, rot: 8 },
+  { x: 14, y: 160, rot: 8 },
 ];
 const STAGE_SCALE = 1.15;
 
@@ -52,7 +60,7 @@ function pokeStage() {
 
 const root = ref<HTMLElement>();
 const listing = ref<HTMLElement>();
-watch(mainTab, () => nextTick(() => rise(listing.value, root.value)));
+watch([mainTab, member], () => nextTick(() => rise(listing.value, root.value)));
 
 // Replays the member-color band over the stage on every character switch.
 const ribbon = ref(0);
@@ -67,7 +75,7 @@ const skinRank = (name: string) => {
 // Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
 const petSkins = computed(() =>
   Object.values(characters)
-    .filter((c) => !query.value || c.name.includes(query.value))
+    .filter((c) => inMember(c.name) && (!query.value || c.name.includes(query.value)))
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
 
@@ -76,6 +84,7 @@ const ownedEmotes = computed(() => {
   if (mainTab.value === "pet") return [];
   const list: { key: string; name: string; img: string; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
+    if (!inMember(s.character)) continue;
     for (const e of s.emotes) {
       if (!ownsEmote(e.key, collection.owned)) continue;
       if (query.value && !e.name.includes(query.value) && !s.name.includes(query.value)) continue;
@@ -93,16 +102,15 @@ const ownedEmotes = computed(() => {
 });
 
 const totalOwnedEmotes = computed(() =>
-  manifest.emoteSets.reduce(
-    (acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length,
-    0,
-  ),
+  manifest.emoteSets
+    .filter((s) => inMember(s.character))
+    .reduce((acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length, 0),
 );
 
 const mainTabs = computed(() => [
   { id: "all" as const, label: "全部" },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
-  { id: "pet" as const, label: "桌宠", count: Object.keys(characters).length },
+  { id: "pet" as const, label: "桌宠", count: Object.keys(characters).filter(inMember).length },
 ]);
 
 const nothingFound = computed(
@@ -155,7 +163,7 @@ const tapPct = computed(() =>
         <div class="stage" @click="pokeStage">
           <span class="stage-bg" aria-hidden="true">
             <i class="stage-dots"></i>
-            <i class="stage-stripe"></i>
+            <i class="stage-light"></i>
             <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
           </span>
           <div class="stage-pet">
@@ -165,7 +173,7 @@ const tapPct = computed(() =>
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
           </div>
-          <button type="button" class="stage-name ui-slant" title="更换桌宠" @click.stop="mainTab = 'pet'">
+          <button type="button" class="stage-name ui-plate" title="更换桌宠" @click.stop="mainTab = 'pet'">
             <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="11" />
           </button>
           <Icon name="star5" :size="24" class="stage-deco big" />
@@ -188,7 +196,7 @@ const tapPct = computed(() =>
       </div>
 
       <div class="desk" data-rise>
-        <MemberStrip v-model="settings.character" />
+        <MemberStrip :model-value="member" @update:model-value="pickMember" />
 
         <div class="fav-head">
           <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
@@ -222,7 +230,7 @@ const tapPct = computed(() =>
             <b>{{ boxes }}</b><small>箱</small>
             <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
           </div>
-          <button type="button" class="ui-btn open" :class="{ primary: boxes > 0 }" @click="ui.page = 'dex'">开箱</button>
+          <button type="button" class="ui-btn open" :class="{ primary: boxes > 0, pulse: boxes > 0 }" @click="ui.page = 'dex'">开箱</button>
         </div>
       </div>
     </section>
@@ -333,25 +341,21 @@ const tapPct = computed(() =>
   position: absolute;
   inset: 0 12px;
   overflow: hidden;
-  background: var(--accent);
-  transform: skewX(var(--skew));
+  border-radius: var(--radius-l);
+  background: var(--grad-sky);
 }
 .stage-dots {
   position: absolute;
   inset: 0 -14px;
   background: var(--surface);
   opacity: 0.34;
-  transform: skewX(calc(var(--skew) * -1));
   mask: var(--halftone) left bottom / 280px auto repeat-x;
   -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
 }
-.stage-stripe {
+.stage-light {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 26px;
-  width: 104px;
-  background: rgba(255, 255, 255, 0.2);
+  inset: 0;
+  background: radial-gradient(58% 78% at 60% 100%, rgba(255, 255, 255, 0.46), transparent 72%);
 }
 .stage-ribbon {
   position: absolute;
@@ -378,7 +382,8 @@ const tapPct = computed(() =>
 }
 /* Left of the head: the emote bubble grows to the right of it. */
 .stage-name {
-  --slant-bg: var(--ink);
+  --plate-bg: var(--surface);
+  --plate-edge: 0 4px 10px -4px rgba(var(--ink-rgb), 0.34);
   position: absolute;
   left: 62px;
   top: 12px;
@@ -390,17 +395,16 @@ const tapPct = computed(() =>
   border: 0;
   background: none;
   font: 800 var(--fs-strong) var(--font);
-  color: var(--on-ink);
+  color: var(--ink);
   cursor: pointer;
 }
 .stage-name:hover {
-  --slant-bg: var(--accent-deep);
+  --plate-bg: var(--accent-tint);
 }
 .stage-name i {
   width: 5px;
   height: 14px;
   background: var(--char);
-  transform: skewX(var(--skew));
 }
 .stage-deco {
   position: absolute;
@@ -433,7 +437,7 @@ const tapPct = computed(() =>
   box-sizing: border-box;
   border: 0;
   background: var(--surface);
-  box-shadow: var(--drop-s) var(--ink);
+  box-shadow: 0 3px 8px rgba(var(--ink-rgb), 0.28);
   transform: rotate(var(--rot));
   cursor: pointer;
   transition: transform var(--dur-base) var(--ease-out);
@@ -466,7 +470,7 @@ const tapPct = computed(() =>
   margin: 0;
 }
 .fav-count {
-  font: italic 800 var(--fs-section)/1 var(--font-latin);
+  font: 800 var(--fs-section)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .fav-count small {
@@ -486,7 +490,7 @@ const tapPct = computed(() =>
   gap: 5px;
 }
 .sq-slot {
-  --cut: var(--cut-s);
+  --radius: var(--radius-s);
   aspect-ratio: 1;
   min-width: 0;
   padding: 4px;
@@ -523,6 +527,7 @@ const tapPct = computed(() =>
   gap: 16px;
 }
 .res {
+  position: relative;
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: center;
@@ -530,7 +535,7 @@ const tapPct = computed(() =>
   color: var(--accent-deep);
 }
 .res b {
-  font: italic 800 var(--fs-heading)/1 var(--font-latin);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
 }
 .res small {
@@ -538,8 +543,12 @@ const tapPct = computed(() =>
   font-weight: 700;
   color: var(--ink-2);
 }
+/* Out of flow, so the bar does not push this entry above its neighbours. */
 .res-bar {
-  grid-column: 1 / -1;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
   height: 4px;
   margin-top: 2px;
 }
@@ -583,7 +592,6 @@ const tapPct = computed(() =>
   font-size: var(--fs-label);
 }
 
-/* Plain edges: a chamfer here would clip-path a block as tall as the whole sticker list. */
 .shelves {
   display: flex;
   flex-direction: column;
@@ -606,7 +614,7 @@ const tapPct = computed(() =>
   gap: 12px;
 }
 .pet-card {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   --well-ratio: 5 / 4;
 }
 .pet-well {
@@ -638,7 +646,6 @@ const tapPct = computed(() =>
   flex: none;
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 .tag {
   position: absolute;
@@ -669,7 +676,7 @@ const tapPct = computed(() =>
   background: var(--accent-soft);
 }
 .more-card .ui-well {
-  background: var(--accent);
+  background: var(--grad-main);
   color: var(--on-accent);
 }
 .send-mini {

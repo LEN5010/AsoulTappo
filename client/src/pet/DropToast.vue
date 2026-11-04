@@ -50,7 +50,7 @@ onBeforeUnmount(() => clearTimeout(timer));
   cursor: pointer;
   text-align: left;
   background: var(--surface);
-  box-shadow: var(--drop-m) var(--accent), 0 10px 24px rgba(var(--ink-rgb), 0.2);
+  box-shadow: var(--glow-s), 0 10px 24px rgba(var(--ink-rgb), 0.2);
   font-family: var(--font);
   color: var(--ink);
   white-space: nowrap;

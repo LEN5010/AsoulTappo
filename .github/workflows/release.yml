@@ -41,7 +41,7 @@ jobs:
             内测包，Windows NSIS 安装器。安装包未签名，SmartScreen 可能拦截，选择仍要运行即可。
 
             - Tauri 2 + Vue 3 桌宠与同桌联机
-            - 斜切舞台风面板，Noto Sans SC 字体
+            - 舞台风面板，Noto Sans SC 字体
             - 新皮肤：贝拉山海经
             - 表情背包、收藏集抽卡（连接服务端后每在线 5 分钟 1 次）
             - 服务端可自行部署，见 README

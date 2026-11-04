@@ -9,7 +9,7 @@ import { closePanel, ui, type Page } from "../stores/ui";
 import { isPanelWindow, setDragging } from "../composables/tauri";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
-import { EASE_OUT, nextFrame, rise, SLANT } from "../ui/motion";
+import { nextFrame, rise } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
 import CollectionPage from "./CollectionPage.vue";
 import CardsPage from "./CardsPage.vue";
@@ -26,10 +26,6 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "room", label: "联机", en: "ONLINE", icon: "users" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "nut" },
 ];
-const BACK_OFFSET = 6;
-const NAV_STEP = 54;
-/** How far the collapsed sidebar slides under the panel edge. */
-const SIDE_TRAVEL = 44;
 /**
  * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
  * `rise` starts the new page once the bands are on their way out.
@@ -137,13 +133,6 @@ const navEl = ref<HTMLElement>();
 const navThumb = ref<HTMLElement>();
 useSlider(navEl, navThumb, () => ui.page);
 
-function toggleSidebar() {
-  settings.sidebarCollapsed = !settings.sidebarCollapsed;
-  if (reducedMotion.value) return;
-  const from = settings.sidebarCollapsed ? SIDE_TRAVEL : -SIDE_TRAVEL;
-  body.value?.animate([{ transform: `translateX(${from}px)` }, { transform: "none" }], { duration: 340, easing: EASE_OUT });
-}
-
 function badgeOf(id: Page): number {
   if (id === "dex") return boxes.value;
   if (id === "cards") return tickets.value;
@@ -157,24 +146,19 @@ function badgeOf(id: Page): number {
     class="panel" data-hit role="dialog" aria-label="AsoulTappo 面板"
     :style="{
       ...skinVars, width: `${size.w}px`, height: `${size.h}px`, left: `${(live ?? pos).x}px`, top: `${(live ?? pos).y}px`,
-      '--back': `${BACK_OFFSET}px`, '--side-run': `${(size.h - BACK_OFFSET) * SLANT}px`, '--side-travel': `${SIDE_TRAVEL}px`,
     }"
   >
     <span class="glow" aria-hidden="true"></span>
-    <span class="back" aria-hidden="true"></span>
 
-    <div class="face" :class="{ mini: settings.sidebarCollapsed }">
+    <div class="face">
       <div class="main">
-        <span class="wedge" aria-hidden="true"></span>
-
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
           <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
           <span v-if="!online" class="offline ui-tag dark" role="status"><i aria-hidden="true"></i>未连接</span>
-          <span class="ticks" aria-hidden="true"><i></i><i></i><i></i></span>
-          <button v-if="isPanelWindow" type="button" class="close ui-slant" title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
+          <button v-if="isPanelWindow" type="button" class="close ui-plate" title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
             <Icon name="minus" :size="15" />
           </button>
-          <button type="button" class="close ui-slant" title="关闭面板" aria-label="关闭面板" @click="closePanel">
+          <button type="button" class="close ui-plate" title="关闭面板" aria-label="关闭面板" @click="closePanel">
             <Icon name="close" :size="15" />
           </button>
         </div>
@@ -198,34 +182,25 @@ function badgeOf(id: Page): number {
         <div class="side-inner">
           <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
             <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
-            <span class="logo-word lbl ui-slant">TAPPO</span>
+            <span class="logo-word ui-plate">TAPPO</span>
           </div>
 
           <nav ref="navEl" aria-label="主导航">
             <i ref="navThumb" class="nav-thumb" aria-hidden="true"></i>
             <button
-              v-for="(n, i) in NAV" :key="n.id" type="button"
+              v-for="n in NAV" :key="n.id" type="button"
               :class="{ on: ui.page === n.id }" :title="n.label"
-              :style="{ marginLeft: `${30 - i * NAV_STEP * SLANT}px` }"
               :aria-current="ui.page === n.id ? 'page' : undefined"
               @click="ui.page = n.id"
             >
               <span class="nav-icon"><Icon :name="n.icon" :size="20" /></span>
-              <span class="lbl nav-text"><b>{{ n.label }}</b><small>{{ n.en }}</small></span>
+              <span class="nav-text"><b>{{ n.label }}</b><small>{{ n.en }}</small></span>
               <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
             </button>
           </nav>
 
-          <span class="side-deco lbl" aria-hidden="true"></span>
-
-          <button
-            type="button" class="fold"
-            :title="settings.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
-            @click="toggleSidebar"
-          >
-            <Icon :name="settings.sidebarCollapsed ? 'unfold' : 'fold'" :size="19" />
-            <span class="lbl">收起</span>
-          </button>
+          <span class="side-stars" aria-hidden="true"></span>
+          <span class="side-deco" aria-hidden="true"></span>
         </div>
       </aside>
 
@@ -237,11 +212,6 @@ function badgeOf(id: Page): number {
 <style scoped>
 .panel {
   --side-w: 196px;
-  --panel-cut: var(--cut-l);
-  --panel-clip: polygon(
-    var(--panel-cut) 0, 100% 0, 100% calc(100% - var(--panel-cut)),
-    calc(100% - var(--panel-cut)) 100%, 0 100%, 0 var(--panel-cut)
-  );
   position: absolute;
   z-index: 40;
   box-sizing: border-box;
@@ -266,7 +236,7 @@ function badgeOf(id: Page): number {
   }
 }
 
-/* clip-path drops box-shadow, so depth comes from a static blur and an offset block behind the face */
+/* Depth comes from a static blur behind the face. */
 .glow {
   position: absolute;
   inset: 24px 16px 10px 24px;
@@ -274,18 +244,12 @@ function badgeOf(id: Page): number {
   filter: blur(24px);
   will-change: transform;
 }
-.back {
-  position: absolute;
-  inset: var(--back) 0 0 var(--back);
-  background: var(--accent);
-  clip-path: var(--panel-clip);
-}
 .face {
   position: absolute;
-  inset: 0 var(--back) var(--back) 0;
+  inset: 0;
   overflow: hidden;
   background: var(--surface);
-  clip-path: var(--panel-clip);
+  border-radius: var(--radius-l);
 }
 
 .main {
@@ -296,22 +260,6 @@ function badgeOf(id: Page): number {
   flex-direction: column;
   background: var(--page);
 }
-/* Fills the blank wedge under the sidebar's slanted edge. */
-.wedge {
-  position: absolute;
-  z-index: -1;
-  left: 112px;
-  bottom: 16px;
-  width: 72px;
-  height: 52px;
-  background: repeating-linear-gradient(90deg, rgba(var(--accent-rgb), 0.45) 0 6px, transparent 6px 14px);
-  transform: skewX(var(--skew));
-  transition: left var(--dur-slow) var(--ease-out);
-}
-.mini .wedge {
-  left: calc(112px - var(--side-travel));
-}
-
 .topbar {
   position: relative;
   z-index: 3;
@@ -342,11 +290,11 @@ function badgeOf(id: Page): number {
   align-items: baseline;
   gap: 9px;
   margin: 0 auto 0 16px;
-  font: 400 var(--fs-title)/1 var(--font-display);
+  font: 800 var(--fs-title)/1 var(--font);
   color: var(--ink);
 }
 .page-title em {
-  font: italic 800 var(--fs-strong)/1 var(--font-latin);
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.1em;
   color: var(--accent-deep);
 }
@@ -362,35 +310,25 @@ function badgeOf(id: Page): number {
   height: 10px;
   margin-right: 5px;
   background: var(--bad);
-  transform: skewX(var(--skew));
-}
-.ticks {
-  display: flex;
-  gap: 5px;
-  height: 14px;
-  margin-right: 12px;
-  transform: skewX(var(--skew));
-}
-.ticks i {
-  width: 5px;
-  background: var(--accent);
 }
 .close {
-  --slant-bg: var(--ink);
-  width: 52px;
-  height: 26px;
-  margin-right: 10px;
+  --plate-bg: transparent;
+  width: 34px;
+  height: 30px;
+  margin: 8px 8px 0 0;
   padding: 0;
   border: 0;
   background: none;
-  color: var(--on-ink);
+  color: var(--ink-2);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: color var(--dur-fast);
 }
 .close:hover {
-  --slant-bg: var(--accent-deep);
+  --plate-bg: var(--accent-soft);
+  color: var(--ink);
 }
 
 .body {
@@ -398,10 +336,6 @@ function badgeOf(id: Page): number {
   min-height: 0;
   overflow: hidden;
   margin-left: var(--side-w);
-}
-.mini .body,
-.mini .topbar {
-  margin-left: calc(var(--side-w) - var(--side-travel));
 }
 .form-page {
   height: 100%;
@@ -421,7 +355,7 @@ function badgeOf(id: Page): number {
   pointer-events: auto;
 }
 
-/* The outer shape is the pale edge strip; the orange fill sits inside it along the same slant. */
+/* The outer shape is the pale edge strip; the orange fill sits inside it. */
 .side {
   position: absolute;
   left: 0;
@@ -429,17 +363,14 @@ function badgeOf(id: Page): number {
   bottom: 0;
   z-index: 2;
   width: var(--side-w);
+  overflow: hidden;
   background: var(--accent-soft);
-  clip-path: polygon(0 0, 100% 0, calc(100% - var(--side-run)) 100%, 0 100%);
   user-select: none;
-  transition: transform var(--dur-slow) var(--ease-out);
 }
 .side-fill {
   position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--accent-surface);
-  clip-path: polygon(0 0, calc(100% - 12px) 0, calc(100% - 12px - var(--side-run)) 100%, 0 100%);
+  inset: 0 12px 0 0;
+  background: var(--grad-sky);
 }
 .side-inner {
   position: absolute;
@@ -448,45 +379,48 @@ function badgeOf(id: Page): number {
   flex-direction: column;
   padding: 20px 0 12px;
   box-sizing: border-box;
-  transition: transform var(--dur-slow) var(--ease-out);
 }
-/* Collapsing only moves layers: the orange edge slides left while the icons hold still. */
-.mini .side {
-  transform: translateX(calc(var(--side-travel) * -1));
+.side-stars {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(100% - 12px);
+  aspect-ratio: 184 / 230;
+  background: var(--surface);
+  pointer-events: none;
+  mask: url("../assets/brand/side-stars.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/brand/side-stars.svg") center / contain no-repeat;
 }
-.mini .side-inner {
-  transform: translateX(var(--side-travel));
-}
-.lbl {
-  transition: opacity var(--dur-base);
-}
+/* Stands behind the bottom edge: the drawing is cut off at the waist. */
 .side-deco {
   position: absolute;
-  left: 12px;
-  bottom: 60px;
-  width: 82px;
-  aspect-ratio: 122 / 152;
+  left: 10px;
+  bottom: 0;
+  width: 104px;
+  aspect-ratio: 122 / 118;
   background: var(--on-accent-surface);
   pointer-events: none;
   mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
 }
-/* Below this height the mascot would run into the last nav item. */
-@container panel (max-height: 550px) {
+/* Below these heights the art would run into the last nav item. */
+@container panel (max-height: 620px) {
+  .side-stars {
+    display: none;
+  }
+}
+@container panel (max-height: 500px) {
   .side-deco {
     display: none;
   }
 }
-.mini .lbl {
-  opacity: 0;
-  pointer-events: none;
-}
 
 .logo {
   position: relative;
+  width: 146px;
   height: 84px;
   flex: none;
-  padding-left: 14px;
+  margin-left: 14px;
   cursor: grab;
 }
 .logo:active {
@@ -497,23 +431,18 @@ function badgeOf(id: Page): number {
   width: 146px;
   aspect-ratio: 3.172;
   background: var(--on-accent-surface);
-  transform-origin: 0 0;
-  transition: transform var(--dur-slow) var(--ease-out);
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
-.mini .logo-mark {
-  transform: translateX(2px) scale(0.78);
-}
-.logo-word.ui-slant {
+.logo-word.ui-plate {
   position: absolute;
-  left: 68px;
+  right: 0;
   top: 52px;
   padding: 0 10px 0 12px;
-  font: italic 800 var(--fs-section)/22px var(--font-latin);
+  font: 800 var(--fs-section)/22px var(--font-latin);
   letter-spacing: 0.22em;
   color: var(--on-ink);
-  --slant-bg: var(--ink);
+  --plate-bg: var(--ink);
 }
 
 nav {
@@ -528,7 +457,9 @@ nav {
   left: 0;
   top: 0;
   opacity: 0;
+  border-radius: var(--radius-m) 0 0 var(--radius-m);
   background: var(--surface);
+  box-shadow: 0 6px 16px -8px rgba(var(--ink-rgb), 0.34);
   transform-origin: 0 50%;
   will-change: transform;
 }
@@ -536,15 +467,17 @@ nav {
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  background: var(--ink);
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--grad-main);
 }
 nav button {
   position: relative;
-  width: 214px;
+  width: calc(100% - 14px);
   height: 46px;
+  margin-left: 14px;
   flex: none;
   padding: 0 0 0 16px;
   box-sizing: border-box;
@@ -574,31 +507,23 @@ nav button:focus-visible .nav-icon {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: var(--radius-s);
   background: var(--surface);
   color: var(--accent-deep);
-  transform: skewX(var(--skew));
-  transform-origin: 0 50%;
-  transition: background var(--dur-base), color var(--dur-base), transform var(--dur-slow) var(--ease-out);
+  transition: color var(--dur-base), box-shadow var(--dur-base);
+}
+nav button:hover:not(.on) .nav-icon {
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.7);
 }
 .nav-icon .icon {
   stroke-width: 2.4;
-  transform: skewX(calc(var(--skew) * -1));
-}
-.mini .nav-icon {
-  transform: skewX(var(--skew)) scale(1.16);
-}
-.fold .icon {
-  transform-origin: 0 50%;
-  transition: transform var(--dur-slow) var(--ease-out);
-}
-.mini .fold .icon {
-  transform: scale(1.3);
 }
 nav button.on {
   color: var(--accent-deep);
 }
 nav button.on .nav-icon {
-  background: var(--accent);
+  background: var(--grad-main);
+  box-shadow: var(--glow-s);
   color: var(--on-accent);
 }
 .nav-text {
@@ -608,10 +533,10 @@ nav button.on .nav-icon {
   gap: 1px;
 }
 .nav-text b {
-  font: var(--fs-heading)/1 var(--font-display);
+  font: 800 var(--fs-heading)/1 var(--font);
 }
 .nav-text small {
-  font: italic 800 var(--fs-caption)/1 var(--font-latin);
+  font: 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.1em;
   color: var(--on-accent-surface);
   transition: color var(--dur-base);
@@ -619,7 +544,7 @@ nav button.on .nav-icon {
 nav button.on .nav-text small {
   color: inherit;
 }
-/* Pinned to the icon tile: the slanted edge leaves no room beside the longer labels. */
+/* Pinned to the icon tile. */
 .pip {
   position: absolute;
   left: 44px;
@@ -630,37 +555,10 @@ nav button.on .nav-text small {
   box-sizing: border-box;
   background: var(--ink);
   color: var(--on-ink);
-  font: italic 800 var(--fs-body)/18px var(--font-latin);
+  font: 800 var(--fs-body)/18px var(--font-latin);
   text-align: center;
-  transform: skewX(var(--skew));
 }
 .pip.soft {
   background: var(--accent-deep);
-}
-.mini .pip {
-  left: 50px;
-}
-
-.fold {
-  margin: auto 0 0 14px;
-  width: 72px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--on-accent-surface);
-  font: 800 var(--fs-strong) var(--font);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.fold:hover {
-  transform: translateX(3px);
-}
-/* the slanted edge is narrowest down here, so the hit area must shrink to the icon */
-.mini .fold {
-  width: 30px;
 }
 </style>

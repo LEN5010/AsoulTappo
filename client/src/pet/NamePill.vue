@@ -3,15 +3,15 @@ defineProps<{ nick: string; width: number }>();
 </script>
 
 <template>
-  <div class="pill ui-slant" :style="{ maxWidth: `${width}px` }">
+  <div class="pill ui-plate" :style="{ maxWidth: `${width}px` }">
     <span>{{ nick }}</span>
   </div>
 </template>
 
 <style scoped>
 .pill {
-  --slant-bg: var(--ink);
-  --slant-edge: var(--drop-s) var(--accent);
+  --plate-bg: var(--ink);
+  --plate-edge: var(--glow-s);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -4,7 +4,7 @@ import { reducedMotion } from "../stores/theme";
 import { arrowSelect } from "./focus";
 import { useSlider } from "./useSlider";
 
-const props = defineProps<{ tabs: { id: T; label: string; count?: number }[]; modelValue: T; label?: string; disabled?: boolean }>();
+const props = defineProps<{ tabs: { id: T; label: string; count?: number }[]; modelValue: T; label?: string; disabled?: boolean; plain?: boolean }>();
 defineEmits<{ "update:modelValue": [id: T] }>();
 
 const track = ref<HTMLElement>();
@@ -46,7 +46,7 @@ onBeforeUnmount(() => observer.disconnect());
 
 <template>
   <div
-    ref="track" class="seg" :class="{ 'more-left': moreLeft, 'more-right': moreRight }" role="tablist" :aria-label="label"
+    ref="track" class="seg" :class="{ plain, 'more-left': moreLeft, 'more-right': moreRight }" role="tablist" :aria-label="label"
     @scroll.passive="measure" @wheel="onWheel" @keydown="arrowSelect($event, track)"
   >
     <i ref="thumb" class="thumb" aria-hidden="true"></i>
@@ -90,7 +90,9 @@ onBeforeUnmount(() => observer.disconnect());
   left: 0;
   top: 0;
   opacity: 0;
-  background: var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--grad-main);
+  box-shadow: var(--glow-s);
   transform-origin: 0 50%;
   will-change: transform;
 }
@@ -121,7 +123,6 @@ onBeforeUnmount(() => observer.disconnect());
   bottom: 8px;
   width: 1.5px;
   background: var(--line-2);
-  transform: skewX(var(--skew));
   transition: opacity var(--dur-fast);
 }
 .seg button.on::before,
@@ -142,7 +143,24 @@ onBeforeUnmount(() => observer.disconnect());
   cursor: default;
 }
 .seg small {
-  font: italic 800 var(--fs-strong) var(--font-latin);
+  font: 800 var(--fs-strong) var(--font-latin);
   opacity: 0.72;
+}
+/* Underline in place of the orange block. */
+.plain .thumb {
+  border-radius: 0;
+  background: var(--grad-main) bottom / 100% 3px no-repeat;
+  box-shadow: none;
+}
+.plain button + button::before {
+  display: none;
+}
+.seg.plain button.on {
+  color: var(--ink);
+}
+.plain small {
+  font: 500 var(--fs-label) var(--font);
+  color: var(--ink-3);
+  opacity: 1;
 }
 </style>

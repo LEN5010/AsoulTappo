@@ -51,10 +51,10 @@ function togglePlay() {
         <img v-else class="dim" :src="assetUrl(card.thumb)" :alt="card.name" />
 
         <div v-if="full && card.video" class="controls">
-          <button type="button" class="ui-slant" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
+          <button type="button" class="ui-plate" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
-          <button type="button" class="ui-slant" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
+          <button type="button" class="ui-plate" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
             <Icon :name="muted ? 'mute' : 'sound'" :size="14" />
           </button>
         </div>
@@ -81,7 +81,7 @@ function togglePlay() {
   align-items: stretch;
 }
 .art {
-  --cut: var(--cut-l);
+  --radius: var(--radius-l);
   flex: none;
   height: min(440px, calc(100cqh - 120px));
   aspect-ratio: 2 / 3;
@@ -117,7 +117,7 @@ function togglePlay() {
   gap: 8px;
 }
 .controls button {
-  --slant-bg: var(--ink);
+  --plate-bg: var(--ink);
   width: 34px;
   height: 26px;
   padding: 0;
@@ -130,7 +130,7 @@ function togglePlay() {
   cursor: pointer;
 }
 .controls button:hover {
-  --slant-bg: var(--accent-deep);
+  --plate-bg: var(--accent-deep);
 }
 
 .info {
@@ -144,7 +144,7 @@ function togglePlay() {
 }
 h3 {
   margin: 4px 0 0;
-  font: 400 var(--fs-heading)/1.2 var(--font-display);
+  font: 800 var(--fs-heading)/1.2 var(--font);
 }
 .who {
   margin: 0;
@@ -158,7 +158,6 @@ h3 {
 .who i {
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 dl {
   width: 100%;

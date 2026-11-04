@@ -242,7 +242,7 @@ const tapPct = computed(() =>
 
       <div class="draw-actions">
         <button type="button" class="ui-btn" :disabled="!!opening || !online || !boxes" @click="opening = 1">开一箱</button>
-        <button type="button" class="ui-btn primary" :disabled="!!opening || !online || !boxes" @click="opening = boxes">
+        <button type="button" class="ui-btn primary pulse" :disabled="!!opening || !online || !boxes" @click="opening = boxes">
           全部开启 <span v-if="boxes">×{{ boxes }}</span>
         </button>
       </div>
@@ -309,7 +309,7 @@ const tapPct = computed(() =>
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 400 var(--fs-section)/1.2 var(--font-display);
+  font: 800 var(--fs-section)/1.2 var(--font);
 }
 .progress {
   flex: none;
@@ -319,7 +319,7 @@ const tapPct = computed(() =>
   white-space: nowrap;
 }
 .progress b {
-  font: italic 800 var(--fs-section)/1 var(--font-latin);
+  font: 800 var(--fs-section)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .search-input {
@@ -346,7 +346,7 @@ const tapPct = computed(() =>
 }
 .album {
   --well-ratio: 16 / 10;
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   align-items: stretch;
 }
 .collage {
@@ -411,11 +411,10 @@ const tapPct = computed(() =>
   height: 11px;
   margin: 0 6px 0 2px;
   vertical-align: -1px;
-  transform: skewX(var(--skew));
 }
 .album-count {
   flex: none;
-  font: italic 800 var(--fs-label)/1 var(--font-latin);
+  font: 800 var(--fs-label)/1 var(--font-latin);
   color: var(--ink-3);
 }
 .album-count b {
@@ -435,7 +434,7 @@ const tapPct = computed(() =>
 }
 
 .drawbar {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -453,9 +452,10 @@ const tapPct = computed(() =>
 .ticket-icon {
   width: 34px;
   height: 32px;
-  background: var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--grad-main);
+  box-shadow: var(--glow-s);
   color: var(--on-accent);
-  transform: skewX(var(--skew));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -471,7 +471,7 @@ const tapPct = computed(() =>
   color: var(--ink-2);
 }
 .ticket-main b {
-  font: italic 800 var(--fs-heading)/1 var(--font-latin);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
   margin-right: 2px;
 }
@@ -522,13 +522,13 @@ const tapPct = computed(() =>
   text-align: center;
 }
 .detail-well {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   padding: 14px;
   background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .emote-detail h3 {
   margin: 4px 0 0;
-  font: 400 var(--fs-heading)/1.1 var(--font-display);
+  font: 800 var(--fs-heading)/1.1 var(--font);
 }
 .detail-sub {
   margin: 0;

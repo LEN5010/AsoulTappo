@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// Two slanted bands that sweep out from behind the sidebar. cover() ends with the page
+// Two bands that sweep out from behind the sidebar. cover() ends with the page
 // hidden, which is when MainPanel swaps it; reveal() carries on off to the right.
 import { ref } from "vue";
-import { EASE_IN_OUT as EASE, SKEW } from "../ui/motion";
+import { EASE_IN_OUT as EASE } from "../ui/motion";
 
 defineProps<{ title: string; label: string }>();
 
-const LEFT = `translateX(-112%) ${SKEW}`;
-const HOME = `translateX(0) ${SKEW}`;
-const RIGHT = `translateX(112%) ${SKEW}`;
+const LEFT = "translateX(-112%)";
+const HOME = "translateX(0)";
+const RIGHT = "translateX(112%)";
 /** Opening the panel gets the full sweep; everyday page turns stay out of the way. */
 const OPEN = { revealMs: 315, lagMs: 52 };
 const TURN = { revealMs: 230, lagMs: 36 };
@@ -96,24 +96,15 @@ defineExpose({ hold, cover, reveal, rewind });
   bottom: -2px;
   left: -8%;
   width: 116%;
-  transform: translateX(-112%) skewX(var(--skew));
+  transform: translateX(-112%);
   will-change: transform;
 }
 .under {
   background: var(--accent-soft);
 }
 .over {
-  background: var(--accent);
+  background: var(--grad-sky);
   overflow: hidden;
-}
-.over::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 16%;
-  width: 22%;
-  background: rgba(255, 255, 255, 0.14);
 }
 .title {
   position: absolute;
@@ -122,17 +113,17 @@ defineExpose({ hold, cover, reveal, rewind });
   display: flex;
   flex-direction: column;
   align-items: center;
-  transform: translate(-50%, -50%) skewX(calc(var(--skew) * -1));
+  transform: translate(-50%, -50%);
   white-space: nowrap;
 }
 .title b {
-  font: italic 800 112px/0.9 var(--font-latin);
+  font: 800 112px/0.9 var(--font-latin);
   letter-spacing: 0.01em;
   color: var(--on-ink);
 }
 .title small {
   margin-top: 6px;
-  font: var(--fs-title) var(--font-display);
+  font: 800 var(--fs-title) var(--font);
   color: var(--on-accent);
 }
 </style>

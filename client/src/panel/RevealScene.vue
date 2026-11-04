@@ -234,7 +234,7 @@ const boxResults = computed(() =>
   z-index: 40;
   overflow: hidden;
   outline: none;
-  background: var(--accent);
+  background: var(--grad-sky);
   color: var(--on-accent);
   cursor: pointer;
   animation: scene-in var(--dur-base) var(--ease-out);
@@ -246,7 +246,7 @@ const boxResults = computed(() =>
 }
 @keyframes scene-in {
   from {
-    transform: translateX(-100%) skewX(var(--skew));
+    transform: translateX(-100%);
   }
 }
 
@@ -266,7 +266,7 @@ const boxResults = computed(() =>
   color: var(--on-ink);
 }
 .page b {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
 }
 
 .charge {
@@ -281,7 +281,6 @@ const boxResults = computed(() =>
   bottom: -10px;
   width: 26%;
   background: rgba(255, 255, 255, 0.16);
-  transform: skewX(var(--skew));
   animation: band 1.5s linear infinite;
 }
 .band.two {
@@ -292,11 +291,11 @@ const boxResults = computed(() =>
   position: relative;
   height: min(380px, 62cqh);
   aspect-ratio: 2 / 3;
-  filter: drop-shadow(var(--drop-l) var(--ink));
+  filter: drop-shadow(0 12px 26px rgba(var(--ink-rgb), 0.32));
   animation: charge 760ms var(--ease-in-out) infinite alternate;
 }
 .sealed-face {
-  --cut: var(--cut-l);
+  --radius: var(--radius-l);
   height: 100%;
   background: var(--surface);
 }
@@ -304,7 +303,7 @@ const boxResults = computed(() =>
   inset: 6px;
 }
 .chest {
-  filter: drop-shadow(var(--drop-m) rgba(var(--ink-rgb), 0.28));
+  filter: drop-shadow(0 8px 16px rgba(var(--ink-rgb), 0.26));
   animation: shake 180ms linear infinite;
 }
 .chest.open {
@@ -359,7 +358,7 @@ header {
 }
 header h3 {
   margin: 0;
-  font: 400 var(--fs-title)/1.15 var(--font-display);
+  font: 800 var(--fs-title)/1.15 var(--font);
 }
 .shards {
   font-size: var(--fs-strong);
@@ -397,7 +396,7 @@ header h3 {
   animation: none;
 }
 .result .art {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   width: 100%;
   aspect-ratio: 2 / 3;
   background: var(--surface);

@@ -52,7 +52,7 @@ async function copy() {
       <RoomStage />
 
       <section class="ticket ui-frame ui-ring" data-rise>
-        <div class="stub ui-slant">
+        <div class="stub ui-plate">
           <span class="stub-mark">ROOM</span>
           <span class="status">
             <img
@@ -129,14 +129,14 @@ async function copy() {
 }
 
 .ticket {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   display: flex;
   align-items: stretch;
   min-height: 64px;
   background: var(--surface);
 }
 .stub {
-  --slant-bg: var(--accent);
+  --plate-bg: var(--grad-sky);
   flex: none;
   width: 156px;
   margin-left: -8px;
@@ -155,10 +155,9 @@ async function copy() {
   bottom: 0;
   right: -7px;
   border-right: 2px dashed var(--line-2);
-  transform: skewX(var(--skew));
 }
 .stub-mark {
-  font: italic 800 var(--fs-heading)/1 var(--font-latin);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
   letter-spacing: 0.08em;
 }
 .status {
@@ -172,7 +171,6 @@ async function copy() {
   width: 6px;
   height: 12px;
   background: var(--surface);
-  transform: skewX(var(--skew));
 }
 .dot.open,
 .dot.connecting,
@@ -209,7 +207,7 @@ async function copy() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: italic 800 var(--fs-section)/1.2 var(--font-latin);
+  font: 800 var(--fs-section)/1.2 var(--font-latin);
   letter-spacing: 0.03em;
   user-select: text;
 }
@@ -235,7 +233,7 @@ async function copy() {
   list-style: none;
 }
 .member {
-  --cut: var(--cut-s);
+  --radius: var(--radius-s);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -272,7 +270,6 @@ async function copy() {
 .who small i {
   width: 3px;
   height: 9px;
-  transform: skewX(var(--skew));
 }
 .taps {
   flex: none;
@@ -280,7 +277,7 @@ async function copy() {
   flex-direction: column;
   align-items: flex-end;
   gap: 1px;
-  font: italic 800 var(--fs-number)/1 var(--font-latin);
+  font: 800 var(--fs-number)/1 var(--font-latin);
 }
 .taps small {
   font: 700 var(--fs-caption)/1.2 var(--font);

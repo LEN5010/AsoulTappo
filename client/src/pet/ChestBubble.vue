@@ -24,7 +24,7 @@ defineEmits<{ open: [] }>();
   cursor: pointer;
   background: var(--surface);
   box-sizing: border-box;
-  box-shadow: var(--drop-m) var(--accent), 0 6px 14px rgba(var(--ink-rgb), 0.2);
+  box-shadow: var(--glow-s), 0 6px 14px rgba(var(--ink-rgb), 0.2);
   display: grid;
   place-items: center;
   animation: nudge 40s var(--ease-in-out) infinite;
@@ -45,9 +45,8 @@ defineEmits<{ open: [] }>();
   box-sizing: border-box;
   background: var(--ink);
   color: var(--on-ink);
-  font: italic 800 var(--fs-strong)/18px var(--font-latin);
+  font: 800 var(--fs-strong)/18px var(--font-latin);
   text-align: center;
-  transform: skewX(var(--skew));
 }
 @keyframes nudge {
   0%, 8%, 100% { transform: none; }

@@ -7,7 +7,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 </script>
 
 <template>
-  <div class="bar ui-slant" :style="{ width: `${width}px` }">
+  <div class="bar ui-plate" :style="{ width: `${width}px` }">
     <button
       type="button" class="count"
       :title="view === 'today' ? '今日敲击，点击切换累计' : '累计敲击，点击切换今日'"
@@ -29,8 +29,8 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 
 <style scoped>
 .bar {
-  --slant-bg: var(--surface);
-  --slant-edge: var(--drop-m) var(--accent), 0 6px 16px rgba(var(--ink-rgb), 0.2);
+  --plate-bg: var(--surface);
+  --plate-edge: var(--glow-s), 0 6px 16px rgba(var(--ink-rgb), 0.2);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -61,7 +61,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   line-height: 1;
 }
 .count b {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
 }
 .count small {
   font-size: var(--fs-caption);
@@ -82,7 +82,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   cursor: pointer;
   background: var(--accent-tint);
   color: var(--ink);
-  transform: skewX(var(--skew));
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 .round svg,
@@ -94,7 +93,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   background: var(--accent-soft);
 }
 .spark {
-  background: var(--accent);
+  background: var(--grad-main);
   color: var(--on-accent);
 }
 .spark:hover {

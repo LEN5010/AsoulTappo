@@ -171,7 +171,6 @@ function applyServer() {
   width: calc(100% + 16px);
   height: 40px;
   flex: none;
-  transform: skewX(var(--skew));
 }
 .swatch b {
   font-size: var(--fs-body);
@@ -214,7 +213,7 @@ function applyServer() {
   border-left: 1.5px solid var(--line);
 }
 .stats b {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .state {
@@ -228,7 +227,6 @@ function applyServer() {
   width: 8px;
   height: 14px;
   background: var(--ink-3);
-  transform: skewX(var(--skew));
 }
 .state.ok i {
   background: var(--ok);

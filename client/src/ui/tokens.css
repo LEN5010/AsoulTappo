@@ -1,27 +1,19 @@
-/* Idol-stage design tokens: #FC966E and white, one 8deg slant, flat color blocks, no rounded pills. */
+/* Idol-stage design tokens: #FC966E and white, upright shapes, small radii. Light belongs to what can be pressed. */
 @font-face {
   font-family: "Noto Sans SC";
   font-weight: 400 800;
   src: url("../assets/fonts/NotoSansSC-subset.woff2") format("woff2");
   font-display: swap;
 }
-/* Black weight sheared 8deg by scripts/build_ui_assets.py. Clogs below 18px: smaller labels use --font at weight 800. */
-@font-face {
-  font-family: "Noto Sans SC Slanted";
-  src: url("../assets/fonts/NotoSansSC-Slanted-subset.woff2") format("woff2");
-  font-display: swap;
-}
 @font-face {
   font-family: "Barlow Condensed";
-  font-style: italic;
   font-weight: 800;
-  src: url("../assets/fonts/BarlowCondensed-ExtraBoldItalic.woff2") format("woff2");
+  src: url("../assets/fonts/BarlowCondensed-ExtraBold.woff2") format("woff2");
   font-display: swap;
 }
 
 :root {
   --font: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --font-display: "Noto Sans SC Slanted", var(--font);
   --font-latin: "Barlow Condensed", var(--font);
 
   --accent: #FC966E;
@@ -58,14 +50,19 @@
   --fs-display: 46px;
   --fs-burst: 72px;
 
-  --skew: -8deg;
-  --cut-s: 10px;
-  --cut-m: 14px;
-  --cut-l: 18px;
-  /* Hard offset shadows, followed by a color. */
-  --drop-s: 3px 3px 0;
-  --drop-m: 5px 5px 0;
-  --drop-l: 8px 8px 0;
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 10px;
+  /* Lit from above and shading toward coral: darkening orange would turn it brown. */
+  --grad-from: color-mix(in oklab, var(--accent) 80%, #fff);
+  --grad-to: color-mix(in oklab, var(--accent) 80%, #E8386E);
+  --grad-main: linear-gradient(180deg, var(--grad-from), var(--accent) 52%, var(--grad-to));
+  /* Large blocks: dusk, warm at the top and coral at the bottom. */
+  --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, #FFD7AE), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, #E8386E));
+  --grad-paper: linear-gradient(180deg, var(--surface), var(--accent-tint));
+  --glow-s: 0 4px 12px -4px rgba(var(--accent-rgb), 0.62);
+  --glow-m: 0 6px 16px -4px rgba(var(--accent-rgb), 0.76), 0 0 0 3px rgba(var(--accent-rgb), 0.14);
+  --glow-l: 0 0 20px 2px rgba(var(--accent-rgb), 0.55);
   --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
   --halftone: url("../assets/patterns/halftone.svg");
 
@@ -102,15 +99,15 @@
   --bad: #D9483F;
 }
 
-/* Parallelograms are skewed ::before layers, so the label stays upright and borders survive. */
-.ui-slant,
+/* Plates paint their fill on a ::before layer, themed through --plate-bg and --plate-edge. */
+.ui-plate,
 .ui-btn,
 .ui-chip,
 .ui-tag {
   position: relative;
   isolation: isolate;
 }
-.ui-slant::before,
+.ui-plate::before,
 .ui-btn::before,
 .ui-chip::before,
 .ui-tag::before {
@@ -118,14 +115,14 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--slant-bg);
-  box-shadow: var(--slant-edge, none);
-  transform: skewX(var(--skew));
+  background: var(--plate-bg);
+  border-radius: var(--radius-s);
+  box-shadow: var(--plate-edge, none);
   transition: background var(--dur-fast), box-shadow var(--dur-fast);
 }
 .ui-btn {
-  --slant-bg: var(--surface);
-  --slant-edge: inset 0 0 0 1.5px var(--line-2);
+  --plate-bg: var(--grad-paper);
+  --plate-edge: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(var(--ink-rgb), 0.06);
   font: inherit;
   font-size: var(--fs-body);
   font-weight: 700;
@@ -143,26 +140,59 @@
   transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-btn:hover:not(:disabled) {
-  --slant-bg: var(--accent-soft);
+  --plate-bg: linear-gradient(180deg, var(--surface), var(--accent-soft));
+  --plate-edge: inset 0 0 0 1px var(--accent-mid), 0 0 0 3px rgba(var(--accent-rgb), 0.12);
 }
 .ui-btn:active:not(:disabled) {
-  transform: translate(1px, 1px);
+  transform: translateY(1px);
 }
 .ui-btn.primary {
-  --slant-bg: var(--accent);
-  --slant-edge: var(--drop-s) var(--ink);
+  --plate-bg: var(--grad-main);
+  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.5), var(--glow-s);
   color: var(--on-accent);
 }
 .ui-btn.primary:hover:not(:disabled) {
-  --slant-bg: var(--accent-hover);
-  --slant-edge: var(--drop-m) var(--ink);
+  --plate-bg: var(--grad-main);
+  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6), var(--glow-m);
 }
 .ui-btn.primary:active:not(:disabled) {
-  --slant-edge: 1px 1px 0 var(--ink);
+  --plate-edge: inset 0 2px 5px rgba(var(--ink-rgb), 0.16);
+}
+/* A band of light crosses the button on hover. */
+.ui-btn.primary:not(:disabled)::before {
+  background:
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.44) 50%, transparent 58%) 140% 0 / 260% 100% no-repeat,
+    var(--grad-main);
+  transition: background-position 560ms var(--ease-out), box-shadow var(--dur-base);
+}
+.ui-btn.primary:hover:not(:disabled)::before {
+  background-position: -40% 0, 0 0;
+}
+/* Breathes while the action is available, so a glow always means there is something to press. */
+.ui-btn.pulse:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  border-radius: var(--radius-s);
+  box-shadow: var(--glow-l);
+  opacity: 0;
+  animation: breathe 2.8s var(--ease-in-out) infinite;
+}
+@keyframes breathe {
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn.pulse:not(:disabled)::after {
+    opacity: 0.6;
+    animation: none;
+  }
 }
 .ui-btn.ghost {
-  --slant-bg: transparent;
-  --slant-edge: none;
+  --plate-bg: transparent;
+  --plate-edge: none;
   color: var(--ink-2);
 }
 .ui-btn.ghost:hover:not(:disabled) {
@@ -180,15 +210,14 @@
   font-weight: 800;
 }
 .ui-btn:disabled {
-  --slant-bg: var(--accent-tint);
-  --slant-edge: inset 0 0 0 1.5px var(--line);
+  --plate-bg: var(--accent-tint);
+  --plate-edge: inset 0 0 0 1.5px var(--line);
   color: var(--ink-3);
   cursor: default;
 }
-/* Upright stripes: the layer's own skew leans them along the slant. */
 .ui-btn.primary:disabled {
-  --slant-bg: repeating-linear-gradient(90deg, var(--accent-soft) 0 7px, var(--accent-tint) 7px 14px);
-  --slant-edge: none;
+  --plate-bg: var(--accent-soft);
+  --plate-edge: none;
   color: var(--ink-2);
 }
 
@@ -222,7 +251,7 @@
   align-items: baseline;
   gap: 7px;
   margin: 0 0 8px;
-  font: 400 var(--fs-section)/1 var(--font-display);
+  font: 800 var(--fs-section)/1 var(--font);
   color: var(--ink);
 }
 .ui-label::before {
@@ -231,10 +260,9 @@
   width: 7px;
   height: 14px;
   background: var(--accent);
-  transform: skewX(var(--skew));
 }
 .ui-label em {
-  font: italic 800 var(--fs-strong)/1 var(--font-latin);
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.08em;
   color: var(--accent-deep);
 }
@@ -249,7 +277,7 @@
 }
 .ui-label small {
   margin-left: auto;
-  font: italic 800 var(--fs-strong)/1 var(--font-latin);
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink-3);
 }
 .ui-muted {
@@ -277,31 +305,23 @@
   font-weight: 700;
 }
 
-/* Chamfered block. clip-path would swallow a border, so .ui-ring lays the hairline on top. */
+/* Rounded block. Content is clipped to the corners, so .ui-ring lays the hairline on top. */
 .ui-frame {
   position: relative;
   overflow: hidden;
+  border-radius: var(--radius, var(--radius-s));
 }
-.ui-frame,
 .ui-tile::before {
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut, var(--cut-s))), calc(100% - var(--cut, var(--cut-s))) 100%, 0 100%);
+  border-radius: var(--radius, var(--radius-s));
 }
 .ui-ring::after {
-  --r: 1.5px;
-  --c: calc(var(--cut, var(--cut-s)) + var(--r) * 0.414);
   content: "";
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  background: var(--ring, var(--line-2));
-  clip-path: polygon(
-    evenodd,
-    0 0, 100% 0, 100% calc(100% - var(--cut, var(--cut-s))), calc(100% - var(--cut, var(--cut-s))) 100%, 0 100%, 0 0,
-    var(--r) var(--r), var(--r) calc(100% - var(--r)),
-    calc(100% - var(--c)) calc(100% - var(--r)), calc(100% - var(--r)) calc(100% - var(--c)),
-    calc(100% - var(--r)) var(--r), var(--r) var(--r), 0 0
-  );
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px var(--ring, var(--line-2));
 }
 .ui-well {
   width: 100%;
@@ -399,7 +419,7 @@
 }
 
 .ui-chip {
-  --slant-bg: var(--surface);
+  --plate-bg: var(--surface);
   height: 26px;
   padding: 0 11px;
   display: inline-flex;
@@ -414,20 +434,19 @@
   transition: color var(--dur-fast);
 }
 .ui-chip:hover {
-  --slant-bg: var(--accent-soft);
+  --plate-bg: var(--accent-soft);
 }
 .ui-chip.on {
-  --slant-bg: var(--accent);
+  --plate-bg: var(--grad-main);
   color: var(--on-accent);
 }
 .ui-chip > i {
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 
 .ui-tag {
-  --slant-bg: var(--tag-bg, var(--accent));
+  --plate-bg: var(--tag-bg, var(--accent));
   display: inline-block;
   padding: 0 7px;
   font-size: var(--fs-caption);
@@ -452,7 +471,7 @@
 
 /* Settings-style list: chamfered white block of rows. */
 .ui-group {
-  --cut: var(--cut-m);
+  --radius: var(--radius-m);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -483,7 +502,7 @@
   width: 52px;
   flex: none;
   text-align: right;
-  font: italic 800 var(--fs-number)/1 var(--font-latin);
+  font: 800 var(--fs-number)/1 var(--font-latin);
   color: var(--ink-2);
 }
 .ui-sections {
@@ -494,15 +513,16 @@
 
 .ui-bar {
   height: 8px;
+  border-radius: 4px;
   background: var(--accent-soft);
   overflow: hidden;
   box-sizing: border-box;
-  transform: skewX(var(--skew));
 }
 .ui-bar > i {
   display: block;
   height: 100%;
-  background: var(--accent);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-from), var(--accent) 55%, var(--grad-to));
   transition: width var(--dur-stage) var(--ease-out);
 }
 
@@ -511,11 +531,11 @@
   margin: 0;
   width: 42px;
   height: 22px;
+  border-radius: 11px;
   background: var(--accent-soft);
   position: relative;
   cursor: pointer;
-  transform: skewX(var(--skew));
-  transition: background var(--dur-base);
+  transition: box-shadow var(--dur-base);
   flex: none;
 }
 .ui-switch::after {
@@ -523,19 +543,22 @@
   position: absolute;
   left: 3px;
   top: 3px;
-  width: 18px;
+  width: 16px;
   height: 16px;
+  border-radius: 50%;
   background: var(--surface);
+  box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.24);
   transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-switch:checked {
-  background: var(--accent);
+  background: var(--grad-main);
+  box-shadow: var(--glow-s);
 }
 .ui-switch:checked::after {
-  transform: translateX(18px);
+  transform: translateX(20px);
 }
 
-/* range: flat track filled up to --fill (set by RangeInput.vue) */
+/* range: track filled up to --fill (set by RangeInput.vue) */
 .ui-range {
   appearance: none;
   -webkit-appearance: none;
@@ -547,30 +570,38 @@
 }
 .ui-range::-webkit-slider-runnable-track {
   height: 6px;
-  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--grad-from) 0%, var(--grad-to) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
 }
 .ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px;
-  height: 20px;
-  margin-top: -7px;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
+}
+.ui-range:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-m);
 }
 .ui-range::-moz-range-track {
   height: 6px;
+  border-radius: 3px;
   background: var(--accent-soft);
 }
 .ui-range::-moz-range-progress {
   height: 6px;
+  border-radius: 3px;
   background: var(--accent);
 }
 .ui-range::-moz-range-thumb {
-  width: 12px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border: 0;
-  border-radius: 0;
-  background: var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
 }
 
 .ui-scroll {
@@ -592,17 +623,17 @@
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
-/* Slanted controls ring their skewed layer; clip-path would cut an outline off a chamfered block. */
+/* Plates ring their fill layer; overflow would clip an inner outline on a framed block. */
 .ui-btn:focus-visible,
 .ui-chip:focus-visible,
-button.ui-slant:focus-visible,
+button.ui-plate:focus-visible,
 .ui-tile:focus-visible,
 .ui-frame:focus-visible {
   outline: none;
 }
 .ui-btn:focus-visible::before,
 .ui-chip:focus-visible::before,
-button.ui-slant:focus-visible::before {
+button.ui-plate:focus-visible::before {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }

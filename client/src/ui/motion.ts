@@ -4,10 +4,6 @@ import { reducedMotion } from "../stores/theme";
 
 export const EASE_OUT = "cubic-bezier(0.16, 1, 0.3, 1)";
 export const EASE_IN_OUT = "cubic-bezier(0.76, 0, 0.24, 1)";
-/** Matches --skew in tokens.css. */
-export const SKEW = "skewX(-8deg)";
-/** tan(8deg): horizontal run per pixel of height along the UI's slant. */
-export const SLANT = 0.1405;
 
 const RISE_MS = 360;
 const RISE_STEP_MS = 18;
@@ -49,7 +45,7 @@ export function flyFrom(from: DOMRect, target: HTMLElement, src: string): void {
 }
 
 /**
- * Stagger the `[data-rise]` elements of `scope` that are inside `view` along the slant.
+ * Stagger the `[data-rise]` elements of `scope` that are inside `view`.
  * Elements below the fold appear without animation, which keeps long grids cheap.
  */
 export function rise(scope: Element | null | undefined, view: Element | null | undefined = scope, delay = 0): void {

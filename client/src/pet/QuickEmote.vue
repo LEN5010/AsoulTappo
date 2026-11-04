@@ -106,7 +106,7 @@ function onWheel(e: WheelEvent) {
   padding: 7px 8px;
   box-sizing: border-box;
   background: var(--surface);
-  box-shadow: var(--drop-m) var(--accent), 0 8px 20px rgba(var(--ink-rgb), 0.2);
+  box-shadow: var(--glow-s), 0 8px 20px rgba(var(--ink-rgb), 0.2);
   font-family: var(--font);
   animation: drop-in var(--dur-base) var(--ease-out);
   cursor: default;
@@ -130,7 +130,7 @@ function onWheel(e: WheelEvent) {
   box-sizing: border-box;
   border: 0;
   background: var(--accent-tint);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-s)), calc(100% - var(--cut-s)) 100%, 0 100%);
+  border-radius: var(--radius-s);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -183,7 +183,6 @@ function onWheel(e: WheelEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: skewX(var(--skew));
   transition: background var(--dur-fast);
 }
 .nav-arrow:hover:not(:disabled) {

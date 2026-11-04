@@ -21,7 +21,6 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
 <template>
   <section class="table ui-frame" data-rise>
     <i class="halftone" aria-hidden="true"></i>
-    <i class="stripe" aria-hidden="true"></i>
     <div class="seats">
       <div class="seat">
         <PetView
@@ -43,8 +42,8 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
 
 <style scoped>
 .table {
-  --cut: var(--cut-l);
-  background: var(--accent);
+  --radius: var(--radius-l);
+  background: var(--grad-sky);
   padding: 50px 12px 12px;
 }
 .halftone {
@@ -55,15 +54,6 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
   opacity: 0.34;
   mask: var(--halftone) left bottom / 280px auto repeat-x;
   -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
-}
-.stripe {
-  position: absolute;
-  top: -10px;
-  bottom: -10px;
-  right: 18%;
-  width: 130px;
-  background: rgba(255, 255, 255, 0.2);
-  transform: skewX(var(--skew));
 }
 .seats {
   position: relative;
@@ -89,11 +79,10 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
   margin-bottom: 12px;
   box-sizing: border-box;
   border: 2px dashed rgba(255, 255, 255, 0.72);
-  transform: skewX(var(--skew));
 }
 .more b {
   margin-bottom: 24px;
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
   color: var(--on-accent);
 }
 </style>

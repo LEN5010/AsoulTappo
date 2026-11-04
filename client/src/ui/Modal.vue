@@ -32,7 +32,7 @@ onDeactivated(() => emit("close"));
       <slot name="behind" />
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <div class="sheet-band" aria-hidden="true"></div>
-        <button type="button" class="x ui-slant" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
+        <button type="button" class="x ui-plate" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
         <div class="sheet-body">
           <slot />
         </div>
@@ -64,7 +64,8 @@ onDeactivated(() => emit("close"));
   overflow: auto;
   box-sizing: border-box;
   background: var(--surface);
-  box-shadow: var(--drop-l) var(--accent);
+  border-radius: var(--radius-l);
+  box-shadow: var(--glow-l), 0 18px 44px rgba(var(--ink-rgb), 0.26);
   animation: slide var(--dur-slow) var(--ease-out);
 }
 .sheet.wide {
@@ -77,19 +78,13 @@ onDeactivated(() => emit("close"));
   position: relative;
   height: 22px;
   overflow: hidden;
-  background: var(--accent);
-}
-.sheet-band::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(82deg, rgba(255, 255, 255, 0.28) 0 10px, transparent 10px 22px);
+  background: var(--grad-sky);
 }
 .sheet-body {
   padding: 18px 24px 24px;
 }
 .x {
-  --slant-bg: var(--ink);
+  --plate-bg: var(--ink);
   position: absolute;
   right: 10px;
   top: 0;
@@ -106,7 +101,7 @@ onDeactivated(() => emit("close"));
   z-index: 2;
 }
 .x:hover {
-  --slant-bg: var(--accent-deep);
+  --plate-bg: var(--accent-deep);
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }

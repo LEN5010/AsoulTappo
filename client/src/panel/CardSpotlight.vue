@@ -18,7 +18,7 @@ const hidden = computed(() => props.card.tier !== "normal");
 <template>
   <div class="spot" :class="[card.tier, { settled }]">
     <i v-if="card.tier === 'big'" class="rays" aria-hidden="true"></i>
-    <i v-else class="stripe" aria-hidden="true"></i>
+    <i v-else class="halo" aria-hidden="true"></i>
 
     <div class="row">
       <div class="flip" @animationend.self="$emit('done')">
@@ -57,7 +57,7 @@ const hidden = computed(() => props.card.tier !== "normal");
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--accent);
+  background: var(--grad-sky);
   color: var(--on-accent);
 }
 .small {
@@ -75,18 +75,14 @@ const hidden = computed(() => props.card.tier !== "normal");
   color: var(--on-ink);
 }
 
-.stripe {
+.halo {
+  --light: rgba(255, 255, 255, 0.36);
   position: absolute;
-  top: -10px;
-  bottom: -10px;
-  right: 16%;
-  width: 22%;
-  background: rgba(255, 255, 255, 0.14);
-  transform: skewX(var(--skew));
+  inset: 0;
+  background: radial-gradient(46% 64% at 38% 50%, var(--light), transparent 74%);
 }
-.small .stripe {
-  background: var(--accent);
-  opacity: 0.22;
+.small .halo {
+  --light: rgba(var(--accent-rgb), 0.42);
 }
 .rays {
   position: absolute;
@@ -117,7 +113,7 @@ const hidden = computed(() => props.card.tier !== "normal");
   animation: flip var(--flip-ms) var(--ease-out) var(--flip-at) backwards;
 }
 .art {
-  --cut: var(--cut-l);
+  --radius: var(--radius-l);
   height: min(480px, 74cqh);
   aspect-ratio: 2 / 3;
   padding: 5px;
@@ -153,7 +149,7 @@ const hidden = computed(() => props.card.tier !== "normal");
 }
 h3 {
   margin: 6px 0 0;
-  font: 400 var(--fs-display)/1.15 var(--font-display);
+  font: 800 var(--fs-display)/1.15 var(--font);
 }
 .facts p {
   margin: 0;
@@ -166,7 +162,6 @@ h3 {
 .facts p i {
   width: 5px;
   height: 13px;
-  transform: skewX(var(--skew));
 }
 .state {
   margin-top: 10px;
@@ -174,7 +169,7 @@ h3 {
   font-weight: 800;
 }
 .state.fresh {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
   letter-spacing: 0.06em;
 }
 .big .state.fresh {
@@ -191,7 +186,7 @@ h3 {
   position: absolute;
   inset: -2px -14%;
   z-index: 2;
-  transform: skewX(var(--skew)) translateX(-112%);
+  transform: translateX(-112%);
   animation: cut 620ms var(--ease-in-out) both;
 }
 .cut.one {
@@ -215,7 +210,7 @@ h3 {
   left: 50%;
   top: 50%;
   z-index: 3;
-  font: 400 var(--fs-burst)/1 var(--font-display);
+  font: 800 var(--fs-burst)/1 var(--font);
   color: var(--ink);
   white-space: nowrap;
   transform: translate(-50%, -50%);
@@ -239,10 +234,10 @@ h3 {
 }
 @keyframes cut {
   45%, 55% {
-    transform: skewX(var(--skew)) translateX(0);
+    transform: translateX(0);
   }
   to {
-    transform: skewX(var(--skew)) translateX(112%);
+    transform: translateX(112%);
   }
 }
 @keyframes title {

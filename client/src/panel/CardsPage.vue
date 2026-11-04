@@ -63,7 +63,7 @@ async function nextBatch() {
 
 <template>
   <div ref="root" class="cards-page">
-    <SegTabs v-model="selectedSeries" :tabs="poolTabs" :disabled="revealing" label="卡池" />
+    <SegTabs v-model="selectedSeries" plain :tabs="poolTabs" :disabled="revealing" label="卡池" />
 
     <div class="head">
       <FilterChips v-model="view" :options="VIEWS" label="收藏集视图" />
@@ -96,27 +96,22 @@ async function nextBatch() {
   align-items: center;
   gap: 18px;
 }
+.head :deep(.ui-chip.on) {
+  --plate-bg: var(--accent-soft);
+  color: var(--ink);
+}
 .have {
   margin-left: auto;
   display: flex;
   align-items: baseline;
   gap: 5px;
   font-size: var(--fs-body);
-  font-weight: 800;
+  font-weight: 500;
   color: var(--ink-2);
   white-space: nowrap;
 }
-.have::before {
-  content: "";
-  align-self: center;
-  width: 2px;
-  height: 14px;
-  margin-right: 5px;
-  background: var(--line-2);
-  transform: skewX(var(--skew));
-}
 .have b {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
-  color: var(--accent-deep);
+  font: 800 var(--fs-heading)/1 var(--font);
+  color: var(--ink);
 }
 </style>
