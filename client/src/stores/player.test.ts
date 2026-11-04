@@ -95,7 +95,7 @@ it("reports running time even when there are no key presses", async () => {
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     if (url.endsWith("/presence")) heartbeats.push(JSON.parse(init!.body as string).session);
     return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : {
-      boxes: 0, draw: { tickets: 2, seconds: 400, pity: 3, hardPity: 400, total: 3, secondsPerDraw: 900 },
+      boxes: 0, draw: { tickets: 2, seconds: 100, pity: 3, hardPity: 400, total: 3, secondsPerDraw: 300 },
     });
   });
   const { p } = await setup();

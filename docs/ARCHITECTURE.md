@@ -29,7 +29,7 @@ Mouse pass-through is updated dynamically based on interactive regions:
 - `App.vue` — overlay root placing the local pet, remote room members' pets, drop toasts, and `MainPanel`.
 - `pet/` — layered pet renderer (`PetView.vue`), drag actor (`PetActor.vue`), `CounterBar.vue`, single-row `QuickEmote.vue` dock, `EmoteBubble.vue`, `ComboBubble.vue`, `ChestBubble.vue`, `DropToast.vue`, and `NamePill.vue`.
 - `panel/` — `MainPanel.vue` (left sidebar + warm cream stage) with `EmotesPage.vue` (live pet dome, character fan cards, 8 squircle favorite slots, chest opening & emote grid), `CollectionPage.vue` (card pools, collapsible rarity sections, online-time card draws), `OnlinePage.vue`, and `SettingsPage.vue`.
-- `ui/` — design tokens (`tokens.css`) and shared UI components (`Icon`, `SegTabs`, `Modal`, `ItemArt`, `ItemCard`, `CharacterAvatar`, `RangeInput`).
+- `ui/` — design tokens (`tokens.css`) and shared UI components (`Icon`, `SegTabs`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`).
 - `stores/` — reactive state for `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, and `theme`.
 - `net/` — `protocol.ts`, `TapBatcher.ts`, `RoomClient.ts`, and `api.ts`.
 

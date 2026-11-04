@@ -24,7 +24,7 @@ function goCraft() {
 <template>
   <Modal :title="item.name" :wide="!!card" @close="emit('close')">
     <div class="detail" :class="`r-${item.rarity ?? 'none'}`">
-      <div class="stage">
+      <div class="stage ui-frame">
         <template v-if="card && owned">
           <video v-if="card.video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)" controls playsinline preload="none"></video>
           <img v-else :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="item.name" />
@@ -32,9 +32,9 @@ function goCraft() {
         <ItemArt v-else :item="item" :size="180" :locked="!owned" />
       </div>
       <div class="chips">
-        <span class="chip rar">{{ card ? (card.tier === "big" ? "大隐藏" : card.tier === "small" ? "小隐藏" : "普通款") : item.rarity ? RARITY_LABEL[item.rarity] : "初始" }}</span>
-        <span class="chip">{{ KIND_LABEL[item.kind] }}</span>
-        <span v-if="item.characters.length" class="chip">{{ item.characters.join(" / ") }}</span>
+        <span class="ui-tag">{{ card ? (card.tier === "big" ? "大隐藏" : card.tier === "small" ? "小隐藏" : "普通款") : item.rarity ? RARITY_LABEL[item.rarity] : "初始" }}</span>
+        <span class="ui-tag dark">{{ KIND_LABEL[item.kind] }}</span>
+        <span v-if="item.characters.length" class="ui-tag dark">{{ item.characters.join(" / ") }}</span>
       </div>
       <h3>{{ item.name }}</h3>
       <p class="ui-muted">{{ item.group }}</p>
@@ -57,13 +57,12 @@ function goCraft() {
   text-align: center;
 }
 .stage {
+  --cut: 18px;
   width: 100%;
   min-height: 200px;
   display: grid;
   place-items: center;
-  border-radius: 20px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
+  background: var(--dots) 0 0 / 10px 10px, var(--accent-tint);
   padding: 12px;
   box-sizing: border-box;
 }
@@ -72,32 +71,18 @@ function goCraft() {
   width: 100%;
   max-height: 360px;
   object-fit: contain;
-  border-radius: 14px;
   background: center / contain no-repeat;
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-  margin-top: 2px;
-}
-.chip {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  color: var(--ink-2);
-}
-.chip.rar {
-  background: var(--accent-soft);
-  color: var(--on-accent);
+  margin-top: 4px;
 }
 h3 {
   margin: 2px 0 0;
-  font-size: 17px;
-  font-weight: 800;
+  font: 400 22px/1.1 var(--font-display);
 }
 p {
   margin: 0;

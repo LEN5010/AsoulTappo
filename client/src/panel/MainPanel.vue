@@ -1,27 +1,38 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
 import { boxes, tickets } from "../stores/player";
 import { inRoom, members } from "../stores/room";
-import { skinVars } from "../stores/theme";
+import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
 import { ui, type Page } from "../stores/ui";
 import { setDragging } from "../composables/tauri";
 import Icon from "../ui/Icon.vue";
+import { EASE_OUT, nextFrame, rise, SLANT } from "../ui/motion";
+import { useSlider } from "../ui/useSlider";
 import CollectionPage from "./CollectionPage.vue";
 import CardsPage from "./CardsPage.vue";
 import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
+import PageShutter from "./PageShutter.vue";
 import SettingsPage from "./SettingsPage.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
-const NAV: { id: Page; label: string; icon: string }[] = [
-  { id: "emotes", label: "背包", icon: "bag" },
-  { id: "dex", label: "图鉴", icon: "book" },
-  { id: "cards", label: "收藏集", icon: "card" },
-  { id: "room", label: "联机", icon: "home" },
-  { id: "settings", label: "设置", icon: "nut" },
+const NAV: { id: Page; label: string; en: string; icon: string }[] = [
+  { id: "emotes", label: "背包", en: "BACKPACK", icon: "bag" },
+  { id: "dex", label: "图鉴", en: "CODEX", icon: "book" },
+  { id: "cards", label: "收藏集", en: "COLLECTION", icon: "card" },
+  { id: "room", label: "联机", en: "ONLINE", icon: "home" },
+  { id: "settings", label: "设置", en: "SETTINGS", icon: "nut" },
 ];
+const BACK_OFFSET = 6;
+const NAV_STEP = 54;
+/** How far the collapsed sidebar slides under the panel edge. */
+const SIDE_TRAVEL = 44;
+/** Time the covered shutter stays up so its title can be read; a slow mount eats into it. */
+const DWELL_MS = 180;
+/** The new page starts rising once the bands are on their way out. */
+const RISE_DELAY_MS = 150;
 
 const size = computed(() => ({ w: Math.min(980, viewport.value.w - 20), h: Math.min(700, viewport.value.h - 20) }));
 const pos = computed(() =>
@@ -59,11 +70,72 @@ function up(e: PointerEvent) {
 function onKey(e: KeyboardEvent) {
   if (e.key === "Escape" && !document.querySelector(".backdrop")) ui.panelOpen = false;
 }
-onMounted(() => window.addEventListener("keydown", onKey));
+
+// ---- page turns
+// ui.page moves at once (the nav highlight follows it); the shown page swaps behind the
+// shutter. Clicks that outrun the animation only ever leave the latest page pending.
+const shown = ref<Page>(ui.page);
+const shownNav = computed(() => NAV.find((n) => n.id === shown.value) ?? NAV[0]!);
+const nextNav = computed(() => NAV.find((n) => n.id === ui.page) ?? NAV[0]!);
+const shutter = ref<InstanceType<typeof PageShutter>>();
+const body = ref<HTMLElement>();
+let turning = false;
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function settle() {
+  for (;;) {
+    const covered = performance.now();
+    shown.value = ui.page;
+    await nextTick();
+    await nextFrame();
+    await pause(DWELL_MS - (performance.now() - covered));
+    rise(body.value, body.value, RISE_DELAY_MS);
+    if (!(await shutter.value?.reveal())) return;
+  }
+}
+async function turnPage() {
+  if (turning) {
+    if (ui.page !== shown.value) shutter.value?.rewind();
+    return;
+  }
+  if (ui.page === shown.value) return;
+  if (reducedMotion.value) {
+    shown.value = ui.page;
+    return;
+  }
+  turning = true;
+  await shutter.value?.cover();
+  await settle();
+  turning = false;
+  if (ui.page !== shown.value) void turnPage();
+}
+watch(() => ui.page, turnPage);
+
+onMounted(async () => {
+  window.addEventListener("keydown", onKey);
+  if (reducedMotion.value) return;
+  turning = true;
+  shutter.value?.hold();
+  await settle();
+  turning = false;
+  if (ui.page !== shown.value) void turnPage();
+});
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKey);
   if (drag) void setDragging(false);
 });
+
+const navEl = ref<HTMLElement>();
+const navThumb = ref<HTMLElement>();
+useSlider(navEl, navThumb, () => ui.page);
+
+function toggleSidebar() {
+  settings.sidebarCollapsed = !settings.sidebarCollapsed;
+  if (reducedMotion.value) return;
+  const from = settings.sidebarCollapsed ? SIDE_TRAVEL : -SIDE_TRAVEL;
+  body.value?.animate([{ transform: `translateX(${from}px)` }, { transform: "none" }], { duration: 340, easing: EASE_OUT });
+}
 
 function badgeOf(id: Page): number {
   if (id === "dex") return boxes.value;
@@ -76,383 +148,514 @@ function badgeOf(id: Page): number {
 <template>
   <section
     class="panel" data-hit role="dialog" aria-label="AsoulTappo 面板"
-    :style="{ ...skinVars, width: `${size.w}px`, height: `${size.h}px`, left: `${(live ?? pos).x}px`, top: `${(live ?? pos).y}px` }"
+    :style="{
+      ...skinVars, width: `${size.w}px`, height: `${size.h}px`, left: `${(live ?? pos).x}px`, top: `${(live ?? pos).y}px`,
+      '--back': `${BACK_OFFSET}px`, '--side-run': `${(size.h - BACK_OFFSET) * SLANT}px`, '--side-travel': `${SIDE_TRAVEL}px`,
+    }"
   >
-    <aside class="side" :class="{ mini: settings.sidebarCollapsed }">
-      <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
-        <template v-if="!settings.sidebarCollapsed">
-          <span class="logo-line top">Asoul</span>
-          <span class="logo-line bot">
-            Tappo
-            <svg class="sparks" viewBox="0 0 24 28" width="18" height="22" aria-hidden="true">
-              <ellipse cx="7" cy="6" rx="2.5" ry="4.5" transform="rotate(35 7 6)" fill="#FC966E" />
-              <ellipse cx="14" cy="14" rx="2.5" ry="5" transform="rotate(68 14 14)" fill="#FFE0A3" />
-              <ellipse cx="10" cy="22" rx="2.2" ry="4" transform="rotate(105 10 22)" fill="#FC966E" />
-            </svg>
+    <span class="glow" aria-hidden="true"></span>
+    <span class="back" aria-hidden="true"></span>
+
+    <div class="face" :class="{ mini: settings.sidebarCollapsed }">
+      <div class="main">
+        <span class="wedge" aria-hidden="true"></span>
+
+        <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+          <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
+          <span class="ticks" aria-hidden="true"><i></i><i></i><i></i></span>
+          <button type="button" class="close" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
+            <Icon name="close" :size="15" />
+          </button>
+        </div>
+
+        <main ref="body" class="body" :key="settings.serverUrl">
+          <KeepAlive>
+            <EmotesPage v-if="shown === 'emotes'" />
+            <CollectionPage v-else-if="shown === 'dex'" />
+            <CardsPage v-else-if="shown === 'cards'" />
+            <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
+            <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
+          </KeepAlive>
+        </main>
+      </div>
+
+      <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
+
+      <aside class="side">
+        <span class="side-fill" aria-hidden="true"><i class="side-dots"></i></span>
+
+        <div class="side-inner">
+          <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+            <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
+            <span class="logo-word lbl">TAPPO</span>
+          </div>
+
+          <nav ref="navEl" aria-label="主导航">
+            <i ref="navThumb" class="nav-thumb" aria-hidden="true"></i>
+            <button
+              v-for="(n, i) in NAV" :key="n.id" type="button"
+              :class="{ on: ui.page === n.id }" :title="n.label"
+              :style="{ marginLeft: `${30 - i * NAV_STEP * SLANT}px` }"
+              :aria-current="ui.page === n.id ? 'page' : undefined"
+              @click="ui.page = n.id"
+            >
+              <span class="nav-icon"><Icon :name="n.icon" :size="20" /></span>
+              <span class="lbl nav-text"><b>{{ n.label }}</b><small>{{ n.en }}</small></span>
+              <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
+            </button>
+          </nav>
+
+          <span class="side-deco lbl" aria-hidden="true">
+            <Icon name="cat" :size="72" />
+            <Icon name="star5" :size="17" />
+            <Icon name="star5" :size="11" />
           </span>
-        </template>
-        <span v-else class="logo-mini">A✦</span>
-      </div>
 
-      <nav aria-label="主导航">
-        <button
-          v-for="n in NAV" :key="n.id" type="button"
-          :class="{ on: ui.page === n.id }" :title="n.label"
-          :aria-current="ui.page === n.id ? 'page' : undefined"
-          @click="ui.page = n.id"
-        >
-          <Icon :name="n.icon" :size="22" />
-          <span class="lbl">{{ n.label }}</span>
-          <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
-        </button>
-      </nav>
-
-      <button
-        type="button" class="fold"
-        :title="settings.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
-        @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
-      >
-        <Icon :name="settings.sidebarCollapsed ? 'unfold' : 'fold'" :size="20" />
-        <span class="lbl">收起</span>
-      </button>
-    </aside>
-
-    <div class="main">
-      <div class="awning" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
-        <svg class="wave" viewBox="0 0 120 14" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M0 0 H120 V6 Q90 14 60 6 T0 6 Z" fill="#F3E2CE" />
-          <path d="M0 6 Q30 -2 60 6 T120 6" fill="none" stroke="#E8D3BC" stroke-width="1.5" />
-        </svg>
-      </div>
-
-      <button type="button" class="close-diamond" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
-        <span class="diamond-rim">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="M12 3l2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3z" fill="currentColor" />
-          </svg>
-        </span>
-      </button>
-
-      <main class="body" :key="settings.serverUrl">
-        <KeepAlive>
-          <EmotesPage v-if="ui.page === 'emotes'" />
-          <CollectionPage v-else-if="ui.page === 'dex'" />
-          <CardsPage v-else-if="ui.page === 'cards'" />
-          <OnlinePage v-else-if="ui.page === 'room'" class="form-page ui-scroll" />
-          <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
-        </KeepAlive>
-      </main>
+          <button
+            type="button" class="fold"
+            :title="settings.sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+            @click="toggleSidebar"
+          >
+            <Icon :name="settings.sidebarCollapsed ? 'unfold' : 'fold'" :size="19" />
+            <span class="lbl">收起</span>
+          </button>
+        </div>
+      </aside>
     </div>
   </section>
 </template>
 
 <style scoped>
 .panel {
+  --side-w: 196px;
+  --panel-cut: 18px;
+  --panel-clip: polygon(
+    var(--panel-cut) 0, 100% 0, 100% calc(100% - var(--panel-cut)),
+    calc(100% - var(--panel-cut)) 100%, 0 100%, 0 var(--panel-cut)
+  );
   position: absolute;
   z-index: 40;
-  display: flex;
-  overflow: hidden;
   box-sizing: border-box;
-  border-radius: 26px;
-  background: var(--paper);
-  border: 3px solid #7E4529;
-  box-shadow: 0 24px 60px rgba(60, 28, 12, 0.34), 0 4px 14px rgba(60, 28, 12, 0.18);
   font-family: var(--font);
   color: var(--ink);
-  animation: open 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.panel-enter-active {
+  animation: panel-in 340ms var(--ease-out);
+}
+.panel-leave-active {
+  transition: opacity 150ms ease-in, transform 150ms ease-in;
+}
+.panel-leave-to {
+  opacity: 0;
+  transform: translate(16px, -10px);
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translate(-24px, 16px);
+  }
 }
 
-/* Warm cocoa-terracotta sidebar with cloud silhouettes at bottom-left, matching WuwaTappo */
-.side {
-  position: relative;
-  width: 164px;
-  flex: none;
+/* clip-path drops box-shadow, so depth comes from a static blur and an offset block behind the face */
+.glow {
+  position: absolute;
+  inset: 24px 16px 10px 24px;
+  background: rgba(43, 37, 48, 0.42);
+  filter: blur(24px);
+  will-change: transform;
+}
+.back {
+  position: absolute;
+  inset: var(--back) 0 0 var(--back);
+  background: var(--accent);
+  clip-path: var(--panel-clip);
+}
+.face {
+  position: absolute;
+  inset: 0 var(--back) var(--back) 0;
+  overflow: hidden;
+  background: var(--surface);
+  clip-path: var(--panel-clip);
+}
+
+.main {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: flex;
   flex-direction: column;
-  padding: 14px 0 12px;
-  box-sizing: border-box;
-  background: linear-gradient(180deg, #A15E40 0%, #945235 100%);
-  border-right: 2px solid #824429;
-  overflow: hidden;
-  user-select: none;
-  transition: width 180ms ease;
+  background-color: var(--page);
+  background-image: var(--grid);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
 }
-.side::before,
-.side::after {
+/* Fills the blank wedge under the sidebar's slanted edge. */
+.wedge {
+  position: absolute;
+  z-index: -1;
+  left: 112px;
+  bottom: 16px;
+  width: 72px;
+  height: 52px;
+  background: repeating-linear-gradient(90deg, rgba(var(--accent-rgb), 0.45) 0 6px, transparent 6px 14px);
+  transform: skewX(var(--skew));
+  transition: left 340ms var(--ease-out);
+}
+.mini .wedge {
+  left: calc(112px - var(--side-travel));
+}
+
+.topbar {
+  position: relative;
+  z-index: 3;
+  height: 46px;
+  flex: none;
+  margin-left: var(--side-w);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  cursor: grab;
+  user-select: none;
+}
+.topbar:active {
+  cursor: grabbing;
+}
+.topbar::after {
   content: "";
   position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 214, 184, 0.1);
-  pointer-events: none;
+  left: 16px;
+  right: 20px;
+  bottom: 0;
+  height: 2px;
+  background: var(--line-2);
 }
-.side::before {
-  width: 170px;
-  height: 170px;
-  left: -48px;
-  bottom: -54px;
-}
-.side::after {
-  width: 130px;
-  height: 130px;
-  right: -36px;
-  bottom: -64px;
-}
-.side.mini {
-  width: 72px;
-}
-
-/* Chunky playful 2-line logo like WuwaTappo */
-.logo {
+.page-title {
+  align-self: center;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 76px;
-  padding: 2px 12px 10px;
-  cursor: grab;
-  position: relative;
-  z-index: 1;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 auto 0 16px;
+  font: 400 25px/1 var(--font-display);
+  color: var(--ink);
 }
-.logo:active {
-  cursor: grabbing;
+.page-title em {
+  font: italic 800 15px/1 var(--font-latin);
+  letter-spacing: 0.1em;
+  color: var(--accent);
 }
-.logo-line {
-  display: inline-flex;
-  align-items: center;
-  font-weight: 900;
-  font-size: 30px;
-  line-height: 0.96;
-  letter-spacing: 0.5px;
-  color: #FFE5A8;
-  -webkit-text-stroke: 5px #5B2E17;
-  paint-order: stroke fill;
-  text-shadow: 0 3px 0 #5B2E17;
-}
-.logo-line.top {
-  transform: rotate(-4deg) translateX(-4px);
-  color: #FFE8AE;
-}
-.logo-line.bot {
-  transform: rotate(-2deg) translateX(4px);
-  color: #FFC39B;
-  position: relative;
-}
-.sparks {
-  margin-left: 2px;
-  filter: drop-shadow(0 2px 0 #5B2E17);
-}
-.logo-mini {
-  font-size: 24px;
-  font-weight: 900;
-  color: #FFE5A8;
-  -webkit-text-stroke: 4px #5B2E17;
-  paint-order: stroke fill;
-  text-shadow: 0 2px 0 #5B2E17;
-}
-
-nav {
+.ticks {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-  padding-right: 12px;
-  position: relative;
-  z-index: 1;
+  gap: 5px;
+  height: 14px;
+  margin-right: 12px;
+  transform: skewX(var(--skew));
 }
-nav button {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  height: 46px;
-  padding: 0 14px 0 20px;
-  border: 2px solid transparent;
-  border-left: 0;
-  border-radius: 0 999px 999px 0;
-  background: transparent;
-  color: #F6DEC9;
-  font: 800 16px var(--font);
-  cursor: pointer;
-  transition: background 140ms, color 140ms, transform 120ms, box-shadow 140ms;
-}
-nav button:hover:not(.on) {
-  background: rgba(255, 236, 218, 0.12);
-  color: #FFF5EB;
-}
-/* Active puffy capsule pill with #FC966E coral-peach fill and 3D bottom lip */
-nav button.on {
-  background: linear-gradient(180deg, #FFD4B8 0%, var(--accent) 100%);
-  color: #562915;
-  border-color: #C45D35;
-  box-shadow: 0 4px 0 #74381F, inset 0 2px 0 rgba(255, 255, 255, 0.55);
-}
-.pip {
-  margin-left: auto;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  box-sizing: border-box;
-  border-radius: 999px;
+.ticks i {
+  width: 5px;
   background: var(--accent);
-  color: #562915;
-  border: 1.5px solid #5B2E17;
-  font-size: 11px;
-  font-weight: 900;
-  display: grid;
-  place-items: center;
 }
-nav button.on .pip {
-  background: #FFF6EC;
-  color: #7A3B1E;
-  border-color: #B85832;
-}
-.pip.soft {
-  background: rgba(255, 240, 225, 0.25);
-  color: #FFF5EB;
-  border-color: transparent;
-}
-
-.fold {
-  margin: auto 12px 0 12px;
-  height: 40px;
-  padding: 0 12px;
+.close {
+  position: relative;
+  isolation: isolate;
+  width: 52px;
+  height: 26px;
+  margin-right: 10px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #EDD0B6;
-  font: 800 15px var(--font);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  position: relative;
-  z-index: 1;
-  transition: background 140ms, color 140ms;
-}
-.fold:hover {
-  background: rgba(255, 236, 218, 0.12);
-  color: #FFF5EB;
-}
-
-.side.mini .lbl {
-  display: none;
-}
-.side.mini nav {
-  padding-right: 8px;
-}
-.side.mini nav button {
-  justify-content: center;
-  padding: 0;
-}
-.side.mini .pip {
-  position: absolute;
-  right: 4px;
-  top: 4px;
-}
-.side.mini .fold {
-  justify-content: center;
-  padding: 0;
-}
-
-/* Main right-hand cream stage with wavy awning trim & rotated diamond close button */
-.main {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--paper);
-}
-.awning {
-  position: relative;
-  height: 20px;
-  flex: none;
-  cursor: grab;
-  user-select: none;
-  background:
-    repeating-linear-gradient(
-      -32deg,
-      rgba(228, 198, 166, 0.32) 0 8px,
-      rgba(248, 232, 212, 0.55) 8px 16px
-    ),
-    #F3E2CE;
-}
-.awning:active {
-  cursor: grabbing;
-}
-.wave {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -6px;
-  width: 100%;
-  height: 12px;
-  display: block;
-  pointer-events: none;
-}
-
-.close-diamond {
-  position: absolute;
-  top: 8px;
-  right: 11px;
-  z-index: 10;
-  width: 28px;
-  height: 28px;
-  padding: 3px;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 8px;
-  transform: rotate(45deg);
-  background: linear-gradient(135deg, #FFB08E 0%, var(--accent) 100%);
-  border: 2px solid #6F391F;
-  box-shadow: 0 2.5px 0 #6F391F;
-  color: #562915;
+  background: none;
+  color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 140ms, filter 140ms;
 }
-.close-diamond:hover {
-  filter: brightness(1.06);
-  transform: rotate(45deg) scale(1.06);
+.close::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+  transition: background 140ms;
 }
-.close-diamond:active {
-  transform: rotate(45deg) translate(1px, 1px);
-  box-shadow: 0 1px 0 #6F391F;
-}
-.diamond-rim {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  border-radius: 4px;
-  border: 1.5px solid rgba(255, 246, 236, 0.65);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.diamond-rim svg {
-  transform: rotate(-45deg);
-  display: block;
+.close:hover::before {
+  background: var(--accent-deep);
 }
 
+/* Not positioned: Modal's backdrop must reach .main, under the sidebar's slanted edge. */
 .body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  padding-top: 6px;
+  margin-left: var(--side-w);
+}
+.mini .body,
+.mini .topbar {
+  margin-left: calc(var(--side-w) - var(--side-travel));
 }
 .form-page {
   height: 100%;
   box-sizing: border-box;
   overflow: auto;
-  padding: 18px 28px 28px;
+  padding: 14px 20px 28px 16px;
 }
 
-@keyframes open {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(8px);
-  }
+/* The outer shape is the pale edge strip; the orange fill sits inside it along the same slant. */
+.side {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: var(--side-w);
+  background: var(--accent-soft);
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--side-run)) 100%, 0 100%);
+  user-select: none;
+  transition: transform 340ms var(--ease-out);
+}
+.side-fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--accent);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, calc(100% - 12px - var(--side-run)) 100%, 0 100%);
+}
+.side-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 140px;
+  background: #fff;
+  opacity: 0.38;
+  mask: var(--halftone) left bottom / 280px auto repeat-x;
+  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
+}
+.side-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0 12px;
+  box-sizing: border-box;
+  transition: transform 340ms var(--ease-out);
+}
+/* Collapsing only moves layers: the orange edge slides left while the icons hold still. */
+.mini .side {
+  transform: translateX(calc(var(--side-travel) * -1));
+}
+.mini .side-inner {
+  transform: translateX(var(--side-travel));
+}
+.lbl {
+  transition: opacity 180ms;
+}
+.side-deco {
+  position: absolute;
+  left: 14px;
+  bottom: 54px;
+  color: #fff;
+  pointer-events: none;
+}
+.side-deco .icon:first-child {
+  stroke-width: 0.9;
+  transform: rotate(-6deg);
+}
+.side-deco .icon + .icon {
+  position: absolute;
+  left: 66px;
+  top: -8px;
+  stroke-width: 1.6;
+}
+.side-deco .icon + .icon + .icon {
+  left: 2px;
+  top: -12px;
+}
+.mini .lbl {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.logo {
+  position: relative;
+  height: 84px;
+  flex: none;
+  padding-left: 22px;
+  cursor: grab;
+}
+.logo:active {
+  cursor: grabbing;
+}
+.logo-mark {
+  display: block;
+  width: 146px;
+  aspect-ratio: 3.172;
+  background: #fff;
+  transform-origin: 0 0;
+  transition: transform 340ms var(--ease-out);
+  mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
+}
+.mini .logo-mark {
+  transform: translateX(-6px) scale(0.78);
+}
+.logo-word {
+  position: absolute;
+  left: 76px;
+  top: 52px;
+  padding: 0 10px 0 12px;
+  font: italic 800 19px/22px var(--font-latin);
+  letter-spacing: 0.22em;
+  color: #fff;
+  isolation: isolate;
+}
+.logo-word::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+}
+
+nav {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.nav-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  background: var(--surface);
+  transform-origin: 0 50%;
+  will-change: transform;
+}
+.nav-thumb::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--ink);
+}
+nav button {
+  position: relative;
+  width: 214px;
+  height: 46px;
+  flex: none;
+  padding: 0 0 0 16px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: color 200ms, transform 220ms var(--ease-out);
+}
+nav button:hover:not(.on) {
+  transform: translateX(4px);
+}
+.nav-icon {
+  flex: none;
+  width: 38px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--accent-deep);
+  transform: skewX(var(--skew));
+  transform-origin: 0 50%;
+  transition: background 200ms, color 200ms, transform 340ms var(--ease-out);
+}
+.nav-icon .icon {
+  stroke-width: 2.4;
+  transform: skewX(calc(var(--skew) * -1));
+}
+.mini .nav-icon {
+  transform: skewX(var(--skew)) scale(1.16);
+}
+.fold .icon {
+  transform-origin: 0 50%;
+  transition: transform 340ms var(--ease-out);
+}
+.mini .fold .icon {
+  transform: scale(1.3);
+}
+nav button.on {
+  color: var(--accent-deep);
+}
+nav button.on .nav-icon {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.nav-text b {
+  font: 20px/1 var(--font-display);
+}
+.nav-text small {
+  font: italic 800 10.5px/1 var(--font-latin);
+  letter-spacing: 0.1em;
+  color: #fff;
+  transition: color 200ms;
+}
+nav button.on .nav-text small {
+  color: inherit;
+}
+/* Pinned to the icon tile: the slanted edge leaves no room beside the longer labels. */
+.pip {
+  position: absolute;
+  left: 44px;
+  top: 0;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  background: var(--ink);
+  color: #fff;
+  font: italic 800 13px/18px var(--font-latin);
+  text-align: center;
+  transform: skewX(var(--skew));
+}
+.pip.soft {
+  background: var(--accent-deep);
+}
+.mini .pip {
+  left: 50px;
+}
+
+.fold {
+  margin: auto 0 0 14px;
+  width: 72px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 800 14px var(--font);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 220ms var(--ease-out);
+}
+.fold:hover {
+  transform: translateX(3px);
+}
+/* the slanted edge is narrowest down here, so the hit area must shrink to the icon */
+.mini .fold {
+  width: 30px;
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { manifest, type ManifestCard } from "../manifest";
 import { assetUrl } from "../asset";
 import { getItem, type Item } from "../items";
@@ -9,6 +9,7 @@ import ItemDetail from "./ItemDetail.vue";
 import CardReveal from "./CardReveal.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
+import { rise } from "../ui/motion";
 
 const selectedSeries = ref(manifest.series[0]!.id);
 const filter = ref<"all" | "owned" | "missing" | "hidden">("all");
@@ -57,6 +58,9 @@ watch(
 const activeCard = computed(
   () => cards.value.find((c) => c.id === activeCardId.value) ?? featuredHiddenCards.value[0] ?? sortedCards.value[0],
 );
+const binder = ref<HTMLElement>();
+watch([selectedSeries, filter], () => nextTick(() => rise(binder.value)));
+
 const activeOwned = computed(() => (activeCard.value ? ownedCount(activeCard.value) > 0 : false));
 
 const visibleCards = computed(() =>
@@ -100,7 +104,7 @@ const timer = setInterval(() => (clock.value = Date.now()), 1000);
 onBeforeUnmount(() => clearInterval(timer));
 const remaining = computed(() => {
   const draw = status.value?.draw;
-  if (!draw) return 900;
+  if (!draw) return 300;
   const elapsed =
     online.value && presenceUpdatedAt.value
       ? Math.min(20, Math.max(0, (clock.value - presenceUpdatedAt.value) / 1000))
@@ -165,13 +169,16 @@ async function collect() {
       <aside class="showcase-col">
         <div
           v-if="activeCard"
-          class="hero-stage"
+          class="hero-stage ui-frame"
           :class="[activeCard.tier, { owned: activeOwned, locked: !activeOwned }]"
+          data-rise
           @click="openActiveDetail"
         >
+          <span class="hero-dots" aria-hidden="true"></span>
+          <span class="hero-stripe" aria-hidden="true"></span>
           <span v-if="activeCard.tier !== 'normal'" class="hero-rays" aria-hidden="true"></span>
 
-          <div class="hero-card-frame">
+          <div class="hero-card-frame ui-frame">
             <video
               v-if="activeOwned && activeCard.video"
               :key="activeCard.id"
@@ -194,7 +201,7 @@ async function collect() {
             <span class="foil-sheen" aria-hidden="true"></span>
 
             <!-- Top-left tier ribbon -->
-            <span class="hero-tier" :class="activeCard.tier">
+            <span class="hero-tier ui-tag" :class="{ dark: activeCard.tier === 'normal' }">
               {{ tierLabel(activeCard.tier) }} · {{ probability(activeCard) }}
             </span>
 
@@ -227,7 +234,7 @@ async function collect() {
           <div v-if="featuredHiddenCards.length > 1" class="up-pills" @click.stop>
             <button
               v-for="h in featuredHiddenCards" :key="h.id" type="button"
-              class="up-dot" :class="[h.tier, { on: activeCard.id === h.id }]"
+              class="up-dot ui-chip" :class="[h.tier, { on: activeCard.id === h.id }]"
               :title="`预览隐藏款：${h.name}`"
               @click="activeCardId = h.id"
             >
@@ -237,10 +244,9 @@ async function collect() {
         </div>
 
         <!-- Gacha Console Box -->
-        <div class="gacha-box">
+        <div class="gacha-box ui-frame ui-ring" data-rise>
           <div class="pity-row">
             <span>大隐藏保底 <b>{{ status?.draw?.pity ?? 0 }}</b> / 400</span>
-            <small>大隐藏 0.5% · 小隐藏 4.5%</small>
           </div>
           <div class="ui-bar"><i :style="{ width: `${(status?.draw?.pity ?? 0) / 4}%` }"></i></div>
 
@@ -249,7 +255,7 @@ async function collect() {
               <Icon name="card" :size="14" />
               <b>{{ tickets }}</b> 次可抽
             </span>
-            <small class="cd-text">{{ online ? `下一抽 ${countdown}` : "连接服务器累积在线时长" }}</small>
+            <small v-if="online" class="cd-text">下一抽 {{ countdown }}</small>
           </div>
 
           <div class="gacha-btns">
@@ -265,7 +271,7 @@ async function collect() {
 
       <!-- RIGHT: 2:3 Vertical Portrait Card Binder -->
       <section class="binder-col">
-        <header class="binder-head">
+        <header class="binder-head" data-rise>
           <div class="series-meta">
             <h3>{{ seriesObj.name }}</h3>
             <span class="collect-pill">已集齐 <b>{{ haveCount }}</b> / {{ cards.length }}</span>
@@ -281,6 +287,7 @@ async function collect() {
               ] as const"
               :key="f.id"
               type="button"
+              class="ui-chip"
               :class="{ on: filter === f.id }"
               @click="filter = f.id"
             >
@@ -289,40 +296,40 @@ async function collect() {
           </div>
         </header>
 
-        <p v-if="error" class="error-banner" role="alert">{{ error }}</p>
+        <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-        <div class="binder-scroll ui-scroll">
+        <div ref="binder" class="binder-scroll ui-scroll">
           <div class="binder-grid" :class="{ dense: cards.length > 12 }">
             <button
               v-for="c in visibleCards" :key="c.id" type="button"
-              class="v-card"
+              class="v-card ui-tile"
               :class="[
                 c.tier,
                 {
-                  owned: ownedCount(c) > 0,
                   locked: !ownedCount(c),
-                  active: activeCard?.id === c.id,
+                  picked: activeCard?.id === c.id,
                 },
               ]"
+              data-rise
               :title="`${c.name}（${tierLabel(c.tier)} · 概率 ${probability(c)}）· 点击在左侧预览，再次点击全屏赏析`"
               @click="selectOrInspect(c)"
             >
-              <span class="v-art">
-                <img :src="assetUrl(c.thumb)" :alt="c.name" loading="lazy" draggable="false" />
+              <span class="v-art ui-frame ui-well">
+                <img :src="assetUrl(c.thumb)" :alt="c.name" loading="lazy" decoding="async" draggable="false" />
                 <span class="v-foil" aria-hidden="true"></span>
-                <i v-if="c.tier !== 'normal'" class="v-tier" :class="c.tier">
+                <i v-if="c.tier !== 'normal'" class="v-tier ui-tag" :class="{ light: c.tier === 'small' }">
                   {{ c.tier === "big" ? "大隐藏" : "小隐藏" }}
                 </i>
-                <b v-if="ownedCount(c)" class="v-count">×{{ ownedCount(c) }}</b>
+                <b v-if="ownedCount(c)" class="v-count ui-tag dark">×{{ ownedCount(c) }}</b>
                 <span v-if="c.video" class="v-live" title="含动态视频卡面">
                   <Icon name="play" :size="9" />
                 </span>
               </span>
-              <span class="v-name">{{ shortName(c.name) }}</span>
+              <span class="ui-tile-name">{{ shortName(c.name) }}</span>
             </button>
           </div>
 
-          <p v-if="!visibleCards.length" class="empty">当前筛选下没有匹配的典藏卡</p>
+          <p v-if="!visibleCards.length" class="ui-empty">当前筛选下没有匹配的典藏卡</p>
         </div>
       </section>
     </div>
@@ -338,63 +345,69 @@ async function collect() {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 6px 20px 14px;
-  gap: 8px;
+  padding: 8px 20px 14px 16px;
+  gap: 10px;
 }
-
 .series-bar {
   flex: none;
 }
-
 .stage-layout {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 16px;
+  gap: 18px;
 }
 
-/* LEFT COLUMN: 2:3 Featured Card Stage + Gacha Console */
 .showcase-col {
   width: 242px;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   min-height: 0;
 }
 
 .hero-stage {
-  position: relative;
+  --cut: 18px;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 10px;
-  border-radius: 22px;
-  background: radial-gradient(circle at 50% 38%, #FFF7EC 0%, #F3DEC4 100%);
-  border: 2px solid var(--tile-border);
-  box-shadow: inset 0 -4px 0 rgba(210, 172, 134, 0.3);
-  overflow: hidden;
+  padding: 10px;
+  background: var(--accent);
   cursor: pointer;
 }
-.hero-stage.big {
-  border-color: #E89668;
-  background: radial-gradient(circle at 50% 35%, #FFF8EE 0%, #F7D8BE 100%);
+.hero-dots {
+  position: absolute;
+  inset: auto 0 0;
+  height: 140px;
+  background: #fff;
+  opacity: 0.34;
+  mask: var(--halftone) left bottom / 280px auto repeat-x;
+  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
+}
+.hero-stripe {
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  left: 46%;
+  width: 96px;
+  background: rgba(255, 255, 255, 0.2);
+  transform: skewX(var(--skew));
 }
 .hero-rays {
   position: absolute;
-  width: 340px;
-  height: 340px;
-  border-radius: 50%;
+  width: 420px;
+  height: 420px;
   background: conic-gradient(
     from 0deg,
-    rgba(252, 150, 110, 0) 0deg 12deg,
-    rgba(255, 224, 178, 0.55) 12deg 24deg,
-    rgba(252, 150, 110, 0) 24deg 36deg
+    rgba(255, 255, 255, 0) 0deg 12deg,
+    rgba(255, 255, 255, 0.22) 12deg 24deg,
+    rgba(255, 255, 255, 0) 24deg 36deg
   );
-  animation: spin 14s linear infinite;
+  animation: spin 18s linear infinite;
   pointer-events: none;
 }
 @keyframes spin {
@@ -404,116 +417,102 @@ async function collect() {
 }
 
 .hero-card-frame {
-  position: relative;
+  --cut: 14px;
   z-index: 1;
   height: 100%;
-  max-height: 280px;
+  max-height: 290px;
   aspect-ratio: 2 / 3;
-  border-radius: 16px;
   padding: 4px;
   box-sizing: border-box;
-  background: linear-gradient(145deg, #FFFDF9 0%, #EED5BA 100%);
-  border: 2.5px solid #C89B72;
-  box-shadow: 0 8px 22px rgba(72, 36, 16, 0.22), 0 3px 0 #9E724C;
-  overflow: hidden;
+  background: var(--surface);
   display: flex;
-  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 300ms var(--ease-out);
 }
 .hero-stage:hover .hero-card-frame {
-  transform: translateY(-2px) scale(1.015);
-}
-.hero-stage.big .hero-card-frame {
-  background: linear-gradient(145deg, #FFE6B8 0%, #FC966E 55%, #FFD2A6 100%);
-  border-color: #B44D25;
-  box-shadow: 0 8px 24px rgba(252, 150, 110, 0.42), 0 3px 0 #8E3918;
-}
-.hero-stage.small .hero-card-frame {
-  background: linear-gradient(145deg, #FFF0E4 0%, #F3B391 100%);
-  border-color: #C46840;
+  transform: translate(-2px, -3px);
 }
 
 .hero-media {
   width: 100%;
   height: 100%;
-  border-radius: 11px;
   object-fit: cover;
   display: block;
-  background: #EAD7C2;
+  background: var(--accent-soft);
 }
 .hero-stage.locked .hero-media {
   filter: saturate(0.75) contrast(0.95);
 }
 
+/* Foil: a single band that crosses hidden cards every few seconds. */
 .foil-sheen {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    115deg,
-    transparent 25%,
-    rgba(255, 255, 255, 0.32) 45%,
-    rgba(255, 232, 200, 0.18) 52%,
-    transparent 70%
-  );
+  inset: -10%;
+  z-index: 1;
+  background: linear-gradient(112deg, transparent 38%, rgba(255, 255, 255, 0.46) 48%, rgba(255, 224, 190, 0.28) 54%, transparent 64%);
+  transform: translateX(-70%);
   pointer-events: none;
+}
+.hero-stage.big .foil-sheen,
+.hero-stage.small .foil-sheen {
+  animation: foil 4.2s var(--ease-in-out) infinite;
+}
+@keyframes foil {
+  0%, 12% {
+    transform: translateX(-70%);
+  }
+  55%, 100% {
+    transform: translateX(70%);
+  }
 }
 
 .hero-tier {
   position: absolute;
-  left: 8px;
-  top: 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(68, 36, 18, 0.76);
-  color: #FFF7EE;
-  font-size: 10px;
-  font-weight: 800;
-  backdrop-filter: blur(4px);
+  left: 11px;
+  top: 10px;
+  z-index: 2;
 }
-.hero-tier.big {
-  background: linear-gradient(180deg, #FFB899 0%, var(--accent) 100%);
-  color: var(--on-accent);
-  border: 1px solid rgba(114, 46, 18, 0.35);
-}
-.hero-tier.small {
-  background: rgba(255, 244, 232, 0.92);
-  color: #8A4B2A;
-  border: 1px solid #E4A888;
-}
-
 .hero-zoom {
   position: absolute;
-  right: 8px;
-  top: 8px;
-  height: 22px;
+  right: 9px;
+  top: 9px;
+  z-index: 2;
+  isolation: isolate;
+  height: 20px;
   padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 246, 236, 0.55);
-  background: rgba(64, 32, 16, 0.72);
-  color: #FFF8F0;
+  border: 0;
+  background: none;
+  color: #fff;
   font: 800 10px var(--font);
   display: inline-flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  backdrop-filter: blur(4px);
 }
-.hero-zoom:hover {
-  background: var(--accent);
-  color: var(--on-accent);
+.hero-zoom::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+  transition: background 140ms;
+}
+.hero-zoom:hover::before {
+  background: var(--accent-deep);
 }
 
 .hero-plate {
   position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-  padding: 16px 8px 6px;
-  border-radius: 0 0 11px 11px;
-  background: linear-gradient(180deg, transparent 0%, rgba(44, 22, 10, 0.84) 48%, rgba(36, 18, 8, 0.92) 100%);
-  color: #FFF8F0;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 18px 8px 6px;
+  background: linear-gradient(180deg, transparent 0%, rgba(43, 37, 48, 0.82) 46%, rgba(43, 37, 48, 0.94) 100%);
+  color: #fff;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .plate-main {
   display: flex;
@@ -522,25 +521,20 @@ async function collect() {
   gap: 4px;
 }
 .plate-main b {
-  font-size: 12.5px;
-  font-weight: 900;
+  font: 800 15px/1.1 var(--font);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .char-tag {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(252, 150, 110, 0.28);
-  border: 1px solid rgba(252, 150, 110, 0.55);
-  color: #FFE4D4;
-  font-size: 9.5px;
-  font-weight: 800;
   flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--accent);
 }
 .plate-state {
   font-size: 10px;
-  color: rgba(255, 238, 222, 0.82);
+  color: rgba(255, 255, 255, 0.78);
   font-weight: 700;
 }
 
@@ -550,53 +544,50 @@ async function collect() {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 5px 8px;
+  margin-top: 8px;
 }
 .up-dot {
   height: 20px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid var(--tile-border);
-  background: rgba(255, 249, 242, 0.88);
-  color: var(--ink-2);
-  font: 700 10px var(--font);
-  cursor: pointer;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--ink);
+}
+.up-dot::before {
+  background: var(--surface);
+}
+.up-dot:hover::before {
+  background: var(--accent-tint);
 }
 .up-dot.on {
-  background: var(--accent);
-  border-color: var(--accent-deep);
-  color: var(--on-accent);
-  font-weight: 800;
+  color: #fff;
+}
+.up-dot.on::before {
+  background: var(--ink);
 }
 
-/* Gacha Console Box */
 .gacha-box {
+  --cut: 14px;
   flex: none;
-  padding: 9px 11px;
-  border-radius: 18px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 2.5px 0 var(--tile-lip);
+  padding: 10px 12px 12px;
+  background: var(--surface);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 .pity-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 6px;
   font-size: 11px;
   font-weight: 700;
   color: var(--ink-2);
+  white-space: nowrap;
 }
 .pity-row b {
-  color: var(--ink);
-  font-weight: 900;
-}
-.pity-row small {
-  font-size: 9.5px;
-  color: var(--ink-3);
+  font: italic 800 17px/1 var(--font-latin);
+  color: var(--accent-deep);
 }
 .ticket-row {
   display: flex;
@@ -608,7 +599,7 @@ async function collect() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -616,8 +607,7 @@ async function collect() {
   color: var(--accent-deep);
 }
 .ticket-badge b {
-  font-size: 14px;
-  font-weight: 900;
+  font: italic 800 20px/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .cd-text {
@@ -628,15 +618,15 @@ async function collect() {
 .gacha-btns {
   display: grid;
   grid-template-columns: 1fr 1.25fr;
-  gap: 6px;
+  gap: 8px;
+  padding: 0 4px 3px 2px;
 }
 .gacha-btns .ui-btn {
-  min-height: 30px;
-  padding: 4px 8px;
+  height: 32px;
+  padding: 0 8px;
   font-size: 12px;
 }
 
-/* RIGHT COLUMN: 2:3 Vertical Portrait Card Binder */
 .binder-col {
   flex: 1;
   min-width: 0;
@@ -649,7 +639,7 @@ async function collect() {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   flex: none;
   flex-wrap: wrap;
 }
@@ -657,128 +647,67 @@ async function collect() {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 .series-meta h3 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 900;
+  font: 400 18px/1.1 var(--font-display);
   color: var(--ink);
+  white-space: nowrap;
+}
+.filter-pills .ui-chip {
+  padding: 0 9px;
 }
 .collect-pill {
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  border: 1.5px solid var(--tile-border);
   font-size: 11px;
   font-weight: 800;
   color: var(--ink-2);
+  white-space: nowrap;
 }
 .collect-pill b {
+  font: italic 800 17px/1 var(--font-latin);
   color: var(--accent-deep);
 }
-
 .filter-pills {
   display: flex;
-  gap: 4px;
-}
-.filter-pills button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1.5px solid transparent;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  font: 700 11.5px var(--font);
-  cursor: pointer;
-}
-.filter-pills button.on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  gap: 5px;
+  padding-left: 3px;
 }
 
 .binder-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 4px 10px 2px;
+  padding: 2px 8px 10px 0;
 }
-
-/* 5 columns for 9-10 card series (fits in just 2 neat rows!), 6 columns for 24-card series */
 .binder-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 9px;
+  gap: 12px 10px;
 }
 .binder-grid.dense {
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .v-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 4px 4px 5px;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 14px;
-  background: var(--tile-frame);
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 0 var(--tile-lip);
-  cursor: pointer;
-  font: inherit;
-  color: var(--ink);
-  transition: transform 130ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
+  --well-ratio: 2 / 3;
 }
-.v-card:hover {
-  transform: translateY(-3px);
-  border-color: var(--accent);
-}
-.v-card.owned {
-  background: #FFF9F2;
-  border-color: #F2B594;
-  box-shadow: 0 2px 0 #DF9B78;
-}
-.v-card.big.owned {
-  background: linear-gradient(180deg, #FFF7EB 0%, #FFE8D1 100%);
-  border-color: var(--accent);
-  box-shadow: 0 2.5px 0 var(--accent-deep);
-}
-.v-card.active {
-  border-color: var(--accent);
-  box-shadow: 0 2.5px 0 var(--accent-deep), 0 0 0 2.5px rgba(var(--accent-rgb), 0.45);
-}
-
 .v-art {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 2 / 3;
-  border-radius: 10px;
-  overflow: hidden;
+  padding: 0;
   background: var(--rar-rare-bg);
-  display: block;
-}
-.v-card.big .v-art,
-.v-card.small .v-art {
-  background: var(--rar-epic-bg);
 }
 .v-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  transition: transform 180ms;
-}
-.v-card:hover .v-art img {
-  transform: scale(1.05);
+  filter: none;
 }
 .v-card.locked .v-art img {
-  filter: saturate(0.45) contrast(0.92);
-  opacity: 0.55;
+  filter: saturate(0.48) contrast(0.9);
 }
-.v-card.locked .v-name {
-  color: var(--ink-3);
+.v-card.big .v-art,
+.v-card.small .v-art {
+  background: var(--rar-epic-bg);
 }
 .v-foil {
   position: absolute;
@@ -786,74 +715,34 @@ async function collect() {
   background: linear-gradient(125deg, transparent 35%, rgba(255, 255, 255, 0.25) 50%, transparent 65%);
   pointer-events: none;
 }
-
 .v-tier {
   position: absolute;
-  left: 4px;
-  top: 4px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #FFB596, var(--accent));
-  color: var(--on-accent);
-  border: 1px solid rgba(120, 50, 20, 0.25);
-  font-size: 8.5px;
-  font-style: normal;
-  font-weight: 800;
-}
-.v-tier.small {
-  background: rgba(255, 245, 234, 0.94);
-  color: #8A5132;
+  left: 6px;
+  top: 5px;
+  font-size: 9px;
+  line-height: 15px;
+  padding: 0 5px;
 }
 .v-count {
   position: absolute;
-  right: 4px;
-  top: 4px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(68, 36, 18, 0.78);
-  color: #FFF9F2;
+  right: 6px;
+  top: 5px;
   font-size: 9px;
-  font-weight: 800;
+  line-height: 15px;
+  padding: 0 5px;
 }
 .v-live {
   position: absolute;
-  left: 4px;
-  bottom: 4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: rgba(255, 243, 232, 0.94);
-  border: 1px solid #F2B28E;
-  color: var(--accent-deep);
+  left: 6px;
+  bottom: 6px;
+  width: 20px;
+  height: 15px;
+  background: var(--ink);
+  color: #fff;
+  transform: skewX(var(--skew));
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.v-name {
-  display: block;
-  width: 100%;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.error-banner {
-  margin: 0 0 6px;
-  color: var(--bad);
-  font-size: 12px;
-  font-weight: 700;
-}
-.empty {
-  color: var(--ink-3);
-  padding: 28px 0;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
 }
 
 @media (max-width: 780px) {

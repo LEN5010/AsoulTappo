@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
-import { getEmote, manifest } from "../manifest";
-import { characters, FACE_CROP, PET_BASE } from "../characters";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { characterColor, getEmote, manifest } from "../manifest";
+import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
 import { boxes, collection, error, online, openBoxes, shards, status } from "../stores/player";
@@ -12,9 +12,12 @@ import { ui } from "../stores/ui";
 import type { Drop } from "../net/api";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import PetView from "../pet/PetView.vue";
+import MemberStrip from "./MemberStrip.vue";
+import PetBust from "./PetBust.vue";
 import RevealModal from "./RevealModal.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
+import { rise } from "../ui/motion";
 
 type MainKind = "all" | "pet" | "emote";
 const mainTab = ref<MainKind>("all");
@@ -36,17 +39,26 @@ const stageStickers = computed(() =>
     .map((k) => ({ key: k, emo: getEmote(k) }))
     .filter((x) => x.emo),
 );
+// Stickers run down the stage's slanted left edge.
 const STICKER_ARC = [
-  { x: 18, y: 2, rot: -25 },
-  { x: 2, y: 38, rot: -10 },
-  { x: 2, y: 78, rot: 8 },
-  { x: 18, y: 112, rot: 24 },
+  { x: 30, y: 2, rot: -9 },
+  { x: 20, y: 44, rot: 6 },
+  { x: 12, y: 86, rot: -5 },
+  { x: 2, y: 128, rot: 8 },
 ];
 
 function pokeStage() {
   const keys = quickKeys.value;
   if (keys.length) player.play(keys[Math.floor(Math.random() * keys.length)]!);
 }
+
+const root = ref<HTMLElement>();
+const listing = ref<HTMLElement>();
+watch([mainTab, charFilter], () => nextTick(() => rise(listing.value, root.value)));
+
+// Replays the member-color band over the stage on every character switch.
+const ribbon = ref(0);
+watch(() => settings.character, () => ribbon.value++);
 
 const MEMBER_ORDER = manifest.characters.map((c) => c.name);
 const skinRank = (name: string) => {
@@ -64,8 +76,6 @@ const petSkins = computed(() =>
     )
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
-
-const emoteOwners = computed(() => [...new Set(manifest.emoteSets.map((s) => s.character))]);
 
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)
 const ownedEmotes = computed(() => {
@@ -163,198 +173,175 @@ const tapPct = computed(() =>
 </script>
 
 <template>
-  <div class="emotes-page ui-scroll">
-    <!-- Generous top showcase matching Reference Image 2 (WuwaTappo): Left Pet Dome + Arc | Right 2x4 Squircle Preset Slots -->
+  <div ref="root" class="emotes-page ui-scroll">
     <section class="showcase">
-      <div class="stage-cluster">
-        <div class="fan-arc" aria-label="快捷表情预览">
-          <button
-            v-for="(s, i) in stageStickers" :key="s.key" type="button"
-            class="fan-card" :title="`预览：${s.emo!.name}`"
-            :style="{
-              left: `${STICKER_ARC[i]?.x ?? 0}px`,
-              top: `${STICKER_ARC[i]?.y ?? i * 34}px`,
-              transform: `rotate(${STICKER_ARC[i]?.rot ?? 0}deg)`,
-            }"
-            @click="player.play(s.key)"
-          >
-            <img :src="assetUrl(s.emo!.img)" :alt="s.emo!.name" draggable="false" />
-          </button>
-        </div>
-
-        <div class="dome" title="点击桌宠预览表情" @click="pokeStage">
-          <div class="dome-pet">
+      <div class="stage-cluster" data-rise>
+        <div class="stage" title="点击桌宠预览表情" @click="pokeStage">
+          <span class="stage-bg" aria-hidden="true">
+            <i class="stage-dots"></i>
+            <i class="stage-stripe"></i>
+            <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
+          </span>
+          <div class="stage-pet">
             <PetView
-              :character="settings.character" :scale="0.72"
+              :character="settings.character" :scale="1"
               :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
           </div>
-          <span class="dome-name">{{ settings.character }}</span>
+          <span class="stage-name"><i aria-hidden="true"></i>{{ settings.character }}</span>
+          <Icon name="star5" :size="24" class="stage-deco big" />
+          <Icon name="star5" :size="14" class="stage-deco small" />
+          <Icon name="heart" :size="16" class="stage-deco heart" />
         </div>
+
+        <button
+          v-for="(s, i) in stageStickers" :key="s.key" type="button"
+          class="sticker" :title="`预览：${s.emo!.name}`"
+          :style="{
+            left: `${STICKER_ARC[i]?.x ?? 0}px`,
+            top: `${STICKER_ARC[i]?.y ?? i * 34}px`,
+            '--rot': `${STICKER_ARC[i]?.rot ?? 0}deg`,
+          }"
+          @click="player.play(s.key)"
+        >
+          <img :src="assetUrl(s.emo!.img)" :alt="s.emo!.name" decoding="async" draggable="false" />
+        </button>
       </div>
 
-      <div class="stage-divider" aria-hidden="true"></div>
-
-      <div class="fav-panel">
+      <div class="fav-panel" data-rise>
         <div class="fav-head">
-          <span class="fav-title">
-            我的预设 <small>({{ settings.favorites.length }}/8 · 点击下方表情即可装卸)</small>
-          </span>
-          <div class="resource-pills">
-            <span class="res-pill" title="表情碎片（可在图鉴中兑换未拥有的表情）">
-              <Icon name="shard" :size="13" /><b>{{ shards }}</b><small>碎片</small>
-            </span>
-            <div
-              class="chest-pill"
-              :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
-            >
-              <Icon name="box" :size="14" />
-              <b>{{ boxes }}</b><small>箱</small>
-              <span class="mini-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
-              <button type="button" class="mini-btn" :disabled="busy || !online || !boxes" @click="open(false)">开箱</button>
-              <button v-if="boxes > 1" type="button" class="mini-btn primary" :disabled="busy || !online" @click="open(true)">全开</button>
-            </div>
-          </div>
+          <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
+          <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
         </div>
 
-        <div class="slots">
-          <button
-            v-for="(item, n) in favorites" :key="n" type="button"
-            class="sq-slot" :class="{ filled: !!item }"
-            :title="item ? `${item.name}（点击移出预设）` : `预设槽位 ${n + 1}（点击下方表情装入）`"
-            @dragover.prevent @drop.prevent="assign($event, n)"
-            @click="item && favorite(item)"
-          >
-            <span class="slot-inner">
-              <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" draggable="false" />
-              <svg v-else class="plus-cross" viewBox="0 0 36 36" width="26" height="26" aria-hidden="true">
-                <path d="M18 7v22M7 18h22" stroke="currentColor" stroke-width="3.8" stroke-linecap="round" />
-              </svg>
-            </span>
-          </button>
+        <div class="fav-body">
+          <div class="slots">
+            <button
+              v-for="(item, n) in favorites" :key="n" type="button"
+              class="sq-slot ui-frame" :class="{ filled: !!item }"
+              :title="item ? `${item.name}（点击移出预设）` : `预设槽位 ${n + 1}（点击下方表情装入）`"
+              @dragover.prevent @drop.prevent="assign($event, n)"
+              @click="item && favorite(item)"
+            >
+              <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
+              <Icon v-else name="plus" :size="18" />
+            </button>
+          </div>
+
+          <div class="resources">
+            <div class="res" title="表情碎片（可在图鉴中兑换未拥有的表情）">
+              <Icon name="shard" :size="15" />
+              <b>{{ shards }}</b><small>碎片</small>
+            </div>
+            <div
+              class="res chest"
+              :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
+            >
+              <Icon name="box" :size="15" />
+              <b>{{ boxes }}</b><small>箱</small>
+              <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
+            </div>
+            <div class="res-actions">
+              <button type="button" class="ui-btn primary open-btn" :disabled="busy || !online || !boxes" @click="open(false)">
+                <Icon name="box" :size="17" />开箱<em v-if="boxes <= 1">OPEN</em>
+              </button>
+              <button v-if="boxes > 1" type="button" class="ui-btn" :disabled="busy || !online" @click="open(true)">全开</button>
+            </div>
+          </div>
         </div>
         <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
       </div>
     </section>
 
-    <!-- Sticky navigation bar -->
     <div class="sticky-nav">
-      <div class="tabs-bar">
-        <SegTabs v-model="mainTab" :tabs="mainTabs" label="背包分类" />
-      </div>
+      <MemberStrip v-model="charFilter" />
 
       <div class="sub-bar">
-        <div class="char-pills">
-          <button type="button" :class="{ on: charFilter === 'all' }" @click="charFilter = 'all'">全角色</button>
-          <button
-            v-for="name in emoteOwners" :key="name" type="button"
-            :class="{ on: charFilter === name }" @click="charFilter = name"
-          >
-            {{ name }}
-          </button>
-        </div>
+        <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
         <input v-model="query" class="ui-input search-input" placeholder="搜索背包…" aria-label="搜索背包" />
       </div>
     </div>
 
-    <p v-if="error" class="error-pill" role="alert">{{ error }}</p>
+    <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <!-- Dedicated Character Row (separate from emotes, clean SVG portrait crop without monitor/desk) -->
-    <section v-if="showPets" class="pet-section">
-      <div v-if="mainTab === 'all'" class="sec-label">
-        <Icon name="person" :size="13" />
-        <span>桌宠形象</span>
-        <small>{{ petSkins.length }}</small>
-      </div>
+    <div ref="listing">
+      <section v-if="showPets" class="pet-section">
+        <div v-if="mainTab === 'all'" class="ui-label" data-rise>
+          <span>桌宠形象</span>
+          <em>CHARACTER</em>
+          <small>{{ petSkins.length }}</small>
+        </div>
 
-      <div class="pet-grid">
-        <button
-          v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
-          class="pet-card" :class="{ active: settings.character === skin.name }"
-          :title="`切换桌宠：${skin.name}`"
-          @click="settings.character = skin.name; pokeStage()"
-        >
-          <span class="pet-well">
-            <svg
-              class="pet-svg"
-              :viewBox="`${FACE_CROP.x} -8 ${FACE_CROP.w} ${FACE_CROP.h + 8}`"
-              preserveAspectRatio="xMidYMax meet"
-              aria-hidden="true"
-            >
-              <svg
-                :x="FACE_CROP.x"
-                :y="FACE_CROP.y"
-                :width="FACE_CROP.w"
-                :height="FACE_CROP.h"
-                :viewBox="`${FACE_CROP.x} ${FACE_CROP.y} ${FACE_CROP.w} ${FACE_CROP.h}`"
-                overflow="hidden"
-              >
-                <image :href="skin.bg" x="0" y="0" :width="PET_BASE.width" :height="PET_BASE.height" />
-              </svg>
-            </svg>
-            <span class="corner-badge" aria-hidden="true"><Icon name="person" :size="9" /></span>
-            <span v-if="settings.character === skin.name" class="active-dot" aria-label="当前使用">
-              <Icon name="star" :size="10" />
+        <div class="pet-grid">
+          <button
+            v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
+            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name }"
+            :title="`切换桌宠：${skin.name}`" data-rise
+            @click="settings.character = skin.name; pokeStage()"
+          >
+            <span class="pet-well ui-frame ui-well">
+              <PetBust class="pet-svg" :src="skin.bg" />
+              <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
             </span>
-          </span>
-          <b class="card-name">{{ skin.name }}</b>
-        </button>
-      </div>
-    </section>
+            <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
+          </button>
+        </div>
+      </section>
 
-    <!-- Owned Emotes in their own separate flat grid -->
-    <section v-if="mainTab !== 'pet'" class="emote-section">
-      <div v-if="mainTab === 'all' && showPets" class="sec-label">
-        <Icon name="smile" :size="13" />
-        <span>已拥有表情</span>
-        <small>{{ ownedEmotes.length }}</small>
-      </div>
+      <section v-if="mainTab !== 'pet'" class="emote-section">
+        <div v-if="mainTab === 'all' && showPets" class="ui-label" data-rise>
+          <span>已拥有表情</span>
+          <em>STICKER</em>
+          <small>{{ ownedEmotes.length }}</small>
+        </div>
 
-      <div class="emote-grid">
-        <div
-          v-for="e in ownedEmotes" :key="e.key"
-          class="emote-card owned"
-          :class="[e.rarity, { fav: settings.favorites.includes(e.key) }]"
-          :title="`${e.name}（${e.setName}）· 点击${settings.favorites.includes(e.key) ? '移出' : '装入'}预设`"
-          draggable="true"
-          role="button"
-          tabindex="0"
-          @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
-          @click="toggleFavKey(e.key)"
-        >
-          <span class="art-well">
-            <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" draggable="false" />
-            <span class="corner-badge" aria-hidden="true"><Icon name="smile" :size="9" /></span>
-            <span v-if="settings.favorites.includes(e.key)" class="eq-tag">预设</span>
+        <div class="emote-grid">
+          <div
+            v-for="e in ownedEmotes" :key="e.key"
+            class="emote-card ui-tile"
+            :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
+            :title="`${e.name}（${e.setName}）· 点击${settings.favorites.includes(e.key) ? '移出' : '装入'}预设`"
+            draggable="true"
+            role="button"
+            tabindex="0"
+            data-rise
+            @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
+            @click="toggleFavKey(e.key)"
+          >
+            <span class="ui-frame ui-well">
+              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+              <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
+            </span>
             <button
               type="button"
               class="send-mini"
               title="立即发送该表情"
               @click.stop="fireEmote(e.key)"
             >
-              <Icon name="spark" :size="10" />
+              <Icon name="spark" :size="11" />
             </button>
-          </span>
-          <b class="card-name">{{ e.name }}</b>
+            <b class="ui-tile-name">{{ e.name }}</b>
+          </div>
+
+          <!-- Shortcut tile to unlock/craft more emotes in Dex -->
+          <button
+            type="button"
+            class="emote-card more-card ui-tile"
+            title="前往图鉴查看全部 375 个表情与碎片兑换"
+            data-rise
+            @click="ui.page = 'dex'"
+          >
+            <span class="ui-frame ui-well">
+              <Icon name="book" :size="24" />
+            </span>
+            <b class="ui-tile-name">全部图鉴 →</b>
+          </button>
         </div>
+      </section>
+    </div>
 
-        <!-- Shortcut tile to unlock/craft more emotes in Dex -->
-        <button
-          type="button"
-          class="emote-card more-card"
-          title="前往图鉴查看全部 375 个表情与碎片兑换"
-          @click="ui.page = 'dex'"
-        >
-          <span class="art-well more-well">
-            <Icon name="book" :size="22" />
-          </span>
-          <b class="card-name">全部图鉴 →</b>
-        </button>
-      </div>
-    </section>
-
-    <p v-if="!showPets && !showEmotes" class="empty">
+    <p v-if="!showPets && !showEmotes" class="ui-empty">
       还没有匹配的物品，去 <button type="button" class="link-btn" @click="ui.page = 'dex'">图鉴</button> 开箱或用碎片兑换吧
     </p>
 
@@ -368,103 +355,146 @@ const tapPct = computed(() =>
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
-  padding: 4px 22px 18px;
+  padding: 10px 20px 18px 16px;
 }
 
-/* Generous top showcase matching WuwaTappo Reference Image 2 */
 .showcase {
   display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 2px 6px 8px;
+  align-items: stretch;
+  gap: 18px;
+  padding: 2px 0 12px;
 }
+
+/* The pet sits outside the clipped background so it and its emote bubble can break the frame. */
 .stage-cluster {
   position: relative;
-  width: 244px;
-  height: 158px;
+  width: 292px;
+  height: 170px;
   flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
 }
-.fan-arc {
+.stage {
   position: absolute;
-  left: 0;
+  inset: 0 0 0 26px;
+  cursor: pointer;
+}
+.stage-bg {
+  position: absolute;
+  inset: 0 12px;
+  overflow: hidden;
+  background: var(--accent);
+  transform: skewX(var(--skew));
+}
+.stage-dots {
+  position: absolute;
+  inset: 0 -14px;
+  background: #fff;
+  opacity: 0.34;
+  transform: skewX(8deg);
+  mask: var(--halftone) left bottom / 280px auto repeat-x;
+  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
+}
+.stage-stripe {
+  position: absolute;
   top: 0;
   bottom: 0;
-  width: 72px;
-  z-index: 2;
+  right: 26px;
+  width: 92px;
+  background: rgba(255, 255, 255, 0.2);
 }
-.fan-card {
+.stage-ribbon {
   position: absolute;
+  inset: 0 -4%;
+  background: var(--char);
+  transform: translateX(-112%);
+  animation: ribbon 760ms var(--ease-in-out);
+}
+@keyframes ribbon {
+  to {
+    transform: translateX(112%);
+  }
+}
+.stage-pet {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-46%);
+}
+.stage-pet :deep(.art) {
+  filter: var(--sticker-lg);
+}
+/* Left of the head: the emote bubble grows to the right of it. */
+.stage-name {
+  position: absolute;
+  left: 58px;
+  top: 12px;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 12px 0 9px;
+  font: 800 14px var(--font);
+  color: #fff;
+}
+.stage-name::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+}
+.stage-name i {
+  width: 5px;
+  height: 14px;
+  background: var(--char);
+  transform: skewX(var(--skew));
+}
+.stage-deco {
+  position: absolute;
+  color: #fff;
+  pointer-events: none;
+}
+.stage-deco.big {
+  right: 28px;
+  top: 16px;
+  transform: rotate(14deg);
+}
+.stage-deco.small {
+  right: 22px;
+  top: 52px;
+}
+.stage-deco.heart {
+  left: 64px;
+  top: 50px;
+  fill: #fff;
+  transform: rotate(-12deg);
+}
+
+.sticker {
+  --rot: 0deg;
+  position: absolute;
+  z-index: 2;
   width: 40px;
   height: 40px;
-  padding: 5px;
-  margin: 0;
+  padding: 3px;
   box-sizing: border-box;
-  border-radius: 10px;
-  background: #FFF9F2;
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 5px rgba(92, 59, 40, 0.14);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+  border: 0;
+  background: var(--surface);
+  box-shadow: 2px 2px 0 var(--ink);
+  transform: rotate(var(--rot));
   cursor: pointer;
-  transition: border-color 140ms, box-shadow 140ms;
+  transition: transform 240ms var(--ease-out);
 }
-.fan-card:hover {
-  border-color: var(--accent);
+.sticker:hover {
   z-index: 3;
+  transform: rotate(0deg) scale(1.12);
 }
-.fan-card img {
-  max-width: 28px;
-  max-height: 28px;
-  width: auto;
-  height: auto;
+.sticker img {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
-}
-
-.dome {
-  position: relative;
-  width: 196px;
-  height: 154px;
-  border-radius: 90px 90px 36px 36px;
-  background: radial-gradient(circle at 50% 42%, #FFF5E8 0%, #F4DFC7 100%);
-  border: 2.5px solid #E4C9AC;
-  box-shadow: inset 0 -5px 0 rgba(215, 180, 145, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: visible;
-}
-.dome-pet {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transform: translateY(-2px);
-}
-.dome-name {
-  position: absolute;
-  bottom: 6px;
-  padding: 1px 10px;
-  border-radius: 999px;
-  background: rgba(255, 249, 242, 0.92);
-  border: 1.5px solid var(--tile-border);
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--ink-2);
-}
-
-.stage-divider {
-  width: 2px;
-  align-self: stretch;
-  margin: 8px 0;
-  background: var(--line);
-  border-radius: 999px;
-  flex: none;
 }
 
 .fav-panel {
@@ -476,19 +506,20 @@ const tapPct = computed(() =>
 }
 .fav-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  flex-wrap: wrap;
 }
 .fav-title {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: var(--ink-2);
+  margin: 0;
+  font-size: 20px;
 }
-.fav-title small {
-  font-size: 11px;
-  font-weight: 600;
+.fav-count {
+  font: italic 800 20px/1 var(--font-latin);
+  color: var(--accent-deep);
+}
+.fav-count small {
+  font: inherit;
+  font-size: 14px;
   color: var(--ink-3);
 }
 .fav-note {
@@ -496,423 +527,211 @@ const tapPct = computed(() =>
   font-weight: 700;
   color: var(--accent-deep);
 }
-.resource-pills {
+.fav-body {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 16px;
+  min-width: 0;
 }
-.res-pill,
-.chest-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  border: 1.5px solid var(--tile-border);
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--ink);
-}
-.res-pill :deep(.icon),
-.chest-pill :deep(.icon) {
-  color: var(--accent-deep);
-}
-.res-pill small,
-.chest-pill small {
-  font-size: 10.5px;
-  color: var(--ink-2);
-}
-.mini-bar {
-  width: 36px;
-  height: 5px;
-  border-radius: 999px;
-  background: #DFCCB6;
-  overflow: hidden;
-}
-.mini-bar > i {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-}
-.mini-btn {
-  height: 19px;
-  padding: 0 7px;
-  border-radius: 999px;
-  border: 1.5px solid var(--tile-border);
-  background: var(--card);
-  color: var(--ink);
-  font: 800 10.5px var(--font);
-  cursor: pointer;
-}
-.mini-btn.primary {
-  background: var(--accent);
-  border-color: var(--accent-deep);
-  color: var(--on-accent);
-}
-.mini-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* 2 rows x 4 columns of chunky squircle + slots (matching WuwaTappo Image 2) */
 .slots {
   display: grid;
-  grid-template-columns: repeat(4, 64px);
-  gap: 8px 10px;
+  grid-template-columns: repeat(4, 60px);
+  gap: 8px;
+  flex: none;
 }
 .sq-slot {
-  width: 64px;
-  height: 62px;
-  padding: 5px;
-  margin: 0;
+  --cut: 9px;
+  width: 60px;
+  height: 60px;
+  padding: 7px;
   box-sizing: border-box;
-  border-radius: 18px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 3px 0 var(--tile-lip);
+  border: 0;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--accent);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 120ms, border-color 140ms;
+  transition: background 160ms, transform 220ms var(--ease-out);
 }
 .sq-slot:hover {
-  border-color: var(--accent);
-  transform: translateY(-2px);
+  background: var(--accent-soft);
+  transform: translate(-1px, -1px);
 }
 .sq-slot.filled {
-  background: #FFF6EB;
-  border-color: #F3B391;
+  background: var(--accent-soft);
 }
-.slot-inner {
-  width: 100%;
-  height: 100%;
-  padding: 4px;
-  box-sizing: border-box;
-  border-radius: 12px;
-  background: #F8EFE3;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.slot-inner img {
-  max-width: 38px;
-  max-height: 38px;
-  width: auto;
-  height: auto;
+.sq-slot img {
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
   display: block;
-  margin: auto;
-}
-.plus-cross {
-  color: #DAC5AE;
-  display: block;
+  filter: var(--sticker);
 }
 
-/* Sticky navigation & filter bar */
+.resources {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+.res {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 2px 6px;
+  color: var(--accent-deep);
+}
+.res b {
+  font: italic 800 24px/1 var(--font-latin);
+  color: var(--ink);
+}
+.res small {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.res-bar {
+  grid-column: 1 / -1;
+  height: 5px;
+  margin-top: 3px;
+}
+.res-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px 3px 2px;
+}
+.res-actions .ui-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+}
+.open-btn em {
+  font: italic 800 14px/1 var(--font-latin);
+  letter-spacing: 0.08em;
+}
+
 .sticky-nav {
   position: sticky;
-  top: -4px;
+  top: 0;
   z-index: 6;
-  background: var(--paper);
-  padding: 4px 0 8px;
-}
-.tabs-bar {
-  margin-bottom: 6px;
+  background: var(--page);
+  padding: 2px 0 8px;
 }
 .sub-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  margin-top: 8px;
 }
-.char-pills {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-.char-pills button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1.5px solid transparent;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  font: 700 11.5px var(--font);
-  cursor: pointer;
-}
-.char-pills button.on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--on-accent);
+.kind-tabs {
+  flex: 1;
+  min-width: 0;
 }
 .search-input {
-  margin-left: auto;
-  width: 148px;
-  height: 25px;
-  font-size: 11.5px;
+  flex: none;
+  width: 150px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
-.sec-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin: 2px 0 6px 2px;
-  font-size: 12.5px;
-  font-weight: 800;
-  color: var(--ink-2);
-}
-.sec-label small {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-3);
-}
-
-/* Dedicated Character Row (separate from emotes, clean SVG portrait crop) */
 .pet-section {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .pet-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-  gap: 10px;
-  padding: 2px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
 }
 .pet-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 5px 5px 6px;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 18px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 2.5px 0 var(--tile-lip);
-  cursor: pointer;
-  font: inherit;
-  color: var(--ink);
-  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
-}
-.pet-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--accent);
-}
-.pet-card.active {
-  background: #FFF6EB;
-  border-color: var(--accent);
-  box-shadow: 0 2.5px 0 var(--accent-deep), 0 0 12px rgba(var(--accent-rgb), 0.45);
+  --cut: 14px;
+  --well-ratio: 5 / 4;
 }
 .pet-well {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 13px;
-  display: flex;
   align-items: flex-end;
-  justify-content: center;
-  overflow: hidden;
-  padding: 4px 2px 0;
-  box-sizing: border-box;
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.25) 0 9px, transparent 9px 18px),
-    var(--rar-epic-bg);
+  padding: 6px 4px 0;
+  background: var(--dots) 0 0 / 9px 9px, var(--surface);
+}
+.pet-card.picked .pet-well {
+  background: var(--accent-soft);
 }
 .pet-svg {
   width: 100%;
   height: 100%;
   display: block;
-  transition: transform 150ms;
+  filter: var(--sticker);
+  transition: transform 260ms var(--ease-out);
 }
 .pet-card:hover .pet-svg {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
-.active-dot {
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 1px solid var(--accent-deep);
-  color: var(--on-accent);
+.pet-card .ui-tile-name {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
+  font: 800 14px var(--font);
+}
+.pet-card .ui-tile-name i {
+  flex: none;
+  width: 4px;
+  height: 11px;
+  transform: skewX(var(--skew));
+}
+.tag {
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  z-index: 1;
 }
 
-/* Flat, compact Squircle Emote Grid */
 .emote-section {
   padding-bottom: 12px;
 }
 .emote-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-  gap: 8px;
-  padding: 2px;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 12px 10px;
 }
-.emote-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 4px 4px 5px;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 15px;
-  background: var(--tile-frame);
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 0 var(--tile-lip);
-  cursor: pointer;
-  font: inherit;
-  color: var(--ink);
-  user-select: none;
-  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
+.emote-card.rare .ui-well {
+  background: var(--rar-rare-bg);
 }
-.emote-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--accent);
+.emote-card.picked .ui-well {
+  background: var(--accent-soft);
 }
-.emote-card.owned {
-  background: #FFF8F0;
-  border-color: #F4B99A;
-  box-shadow: 0 2px 0 #DF9B78;
-}
-.emote-card.fav {
-  background: #FFF5E8;
-  border-color: var(--accent);
-  box-shadow: 0 2px 0 var(--accent-deep), 0 0 10px rgba(var(--accent-rgb), 0.45);
-}
-.more-card {
-  border-style: dashed;
-  background: rgba(244, 230, 212, 0.55);
-  color: var(--ink-2);
-}
-.more-well {
-  background: rgba(255, 248, 240, 0.65) !important;
-  color: var(--accent-deep);
-}
-.art-well {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  padding: 6px;
-  box-sizing: border-box;
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 8px, transparent 8px 18px),
-    var(--rar-common-bg);
-}
-.emote-card.rare .art-well {
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 8px, transparent 8px 18px),
-    var(--rar-rare-bg);
-}
-.art-well img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  display: block;
-  margin: auto;
-  transition: transform 150ms;
-}
-.emote-card:hover .art-well img {
-  transform: scale(1.06);
-}
-.corner-badge {
-  position: absolute;
-  left: 3px;
-  bottom: 3px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: var(--tile-frame);
-  border: 1px solid var(--tile-border);
-  color: #B48967;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.eq-tag {
-  position: absolute;
-  left: 3px;
-  top: 3px;
-  padding: 1px 5px;
-  border-radius: 999px;
+.more-card .ui-well {
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 9px;
-  font-weight: 800;
 }
 .send-mini {
   position: absolute;
-  right: 3px;
-  top: 3px;
-  width: 19px;
-  height: 19px;
+  right: 0;
+  top: 0;
+  z-index: 4;
+  width: 24px;
+  height: 20px;
   padding: 0;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 1px solid var(--tile-border);
-  background: rgba(255, 249, 242, 0.92);
-  color: var(--accent-deep);
-  display: inline-flex;
+  border: 0;
+  background: var(--ink);
+  color: #fff;
+  display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 120ms, transform 120ms;
+  transition: opacity 140ms, background 140ms;
 }
-.emote-card:hover .send-mini {
+.emote-card:hover .send-mini,
+.send-mini:focus-visible {
   opacity: 1;
 }
 .send-mini:hover {
-  transform: scale(1.12);
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.card-name {
-  display: block;
-  width: 100%;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: center;
+  background: var(--accent-deep);
 }
 
-.error-pill {
-  align-self: flex-start;
-  margin: 0 0 6px;
-  padding: 3px 12px;
-  border-radius: 999px;
-  background: #FDE8E6;
-  border: 1px solid #F3B7B2;
-  color: var(--bad);
-  font-size: 12px;
-  font-weight: 700;
-}
-.empty {
-  color: var(--ink-3);
-  text-align: center;
-  padding: 32px 0;
-  font-size: 13px;
-  font-weight: 700;
-}
 .link-btn {
   border: 0;
   background: transparent;
@@ -926,10 +745,6 @@ const tapPct = computed(() =>
 @media (max-width: 780px) {
   .showcase {
     flex-direction: column;
-    align-items: stretch;
-  }
-  .stage-divider {
-    display: none;
   }
 }
 </style>

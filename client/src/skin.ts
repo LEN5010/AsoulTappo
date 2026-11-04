@@ -48,6 +48,7 @@ export function buildSkin(themeId: string, character: string, serverBase: string
       "--tint-rgb": hexToRgb(t.colors.tint),
       "--char": who,
       "--char-rgb": hexToRgb(who),
+      "--on-char": isDark(who) ? "#fff" : "#2B2530",
     },
     headBg: url(t.parts.headBg),
     tabBg: url(t.parts.tabBg),

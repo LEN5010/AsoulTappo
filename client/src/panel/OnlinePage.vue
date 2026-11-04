@@ -47,9 +47,9 @@ async function copy() {
 
 <template>
   <div class="room">
-    <section>
-      <h4 class="ui-label">联机房间</h4>
-      <div class="group">
+    <section data-rise>
+      <h4 class="ui-label"><span>联机房间</span><em>ROOM</em></h4>
+      <div class="group ui-frame ui-ring">
         <div class="row">
           <span class="status">
             <img
@@ -58,7 +58,7 @@ async function copy() {
             />
             <i v-else class="dot" :class="conn"></i>
             {{ connText[conn] }}
-            <span v-if="inRoom" class="count-pill">{{ members.size }} / {{ MAX_ROOM_SIZE }} 人</span>
+            <span v-if="inRoom" class="ui-tag">{{ members.size }} / {{ MAX_ROOM_SIZE }} 人</span>
           </span>
         </div>
         <div v-if="!inRoom && conn === 'idle'" class="row join">
@@ -77,30 +77,30 @@ async function copy() {
             <Icon name="logout" :size="14" />离开
           </button>
         </div>
-        <p v-if="lastError || notice" class="err">{{ lastError || notice }}</p>
+        <p v-if="lastError || notice" class="ui-error err">{{ lastError || notice }}</p>
       </div>
     </section>
 
-    <section v-if="inRoom">
+    <section v-if="inRoom" data-rise>
       <header class="cap">
-        <h4 class="ui-label">房间成员</h4>
+        <h4 class="ui-label"><span>房间成员</span><em>MEMBERS</em></h4>
         <button type="button" class="ui-btn small" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes">
           <Icon name="refresh" :size="13" />整理位置
         </button>
       </header>
-      <ul class="group">
+      <ul class="group ui-frame ui-ring">
         <li v-for="m in members.values()" :key="m.id" class="row">
           <CharacterAvatar :character="m.character" :size="32" />
-          <span class="nick">{{ m.nick }}<em v-if="m.id === youId">我</em></span>
-          <span class="chr" :style="{ color: characterColor(m.character) }">{{ m.character }}</span>
+          <span class="nick">{{ m.nick }}<em v-if="m.id === youId" class="ui-tag">我</em></span>
+          <span class="ui-chip chr"><i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ m.character }}</span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }} <small>敲击</small></span>
         </li>
       </ul>
     </section>
 
-    <section>
-      <h4 class="ui-label">同桌显示</h4>
-      <div class="group">
+    <section data-rise>
+      <h4 class="ui-label"><span>同桌显示</span><em>TOGETHER</em></h4>
+      <div class="group ui-frame ui-ring">
         <label class="row">
           <span>伙伴桌宠大小</span>
           <span class="ctl">
@@ -121,25 +121,22 @@ async function copy() {
 .room {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 .group {
+  --cut: 16px;
   margin: 0;
-  padding: 4px 0;
+  padding: 0;
   list-style: none;
-  background: var(--card);
-  border: 2px solid var(--tile-border);
-  border-radius: 22px;
-  box-shadow: 0 3px 0 var(--tile-lip);
-  overflow: hidden;
+  background: var(--surface);
 }
 .group > * + * {
-  border-top: 1.5px dashed var(--line);
+  border-top: 1.5px solid var(--line);
 }
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-height: 48px;
   padding: 8px 18px;
   box-sizing: border-box;
@@ -156,14 +153,13 @@ label.row {
   font-weight: 800;
 }
 .dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+  width: 8px;
+  height: 14px;
   background: var(--ink-3);
+  transform: skewX(var(--skew));
 }
 .dot.open {
   background: var(--ok);
-  box-shadow: 0 0 0 3px rgba(70, 168, 114, 0.2);
 }
 .dot.connecting,
 .dot.reconnecting {
@@ -173,14 +169,6 @@ label.row {
   width: 22px;
   height: 22px;
   object-fit: contain;
-}
-.count-pill {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 700;
 }
 .join .ui-input {
   flex: 1;
@@ -193,15 +181,12 @@ label.row {
 .err {
   margin: 0;
   padding: 8px 18px;
-  color: var(--bad);
-  font-size: 12px;
-  font-weight: 700;
 }
 .cap {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .cap .ui-label {
   margin: 0;
@@ -215,32 +200,24 @@ label.row {
   font-weight: 800;
 }
 .nick em {
-  margin-left: 6px;
-  font-style: normal;
-  font-size: 11px;
-  font-weight: 800;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--on-accent);
+  margin-left: 8px;
 }
 .chr {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--paper);
-  font-size: 12px;
-  font-weight: 800;
+  cursor: default;
+  height: 22px;
+  color: var(--ink);
+}
+.chr:hover::before {
+  background: var(--surface);
 }
 .taps {
   min-width: 72px;
   text-align: right;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
-  font-weight: 800;
+  font: italic 800 17px/1 var(--font-latin);
+  color: var(--ink);
 }
 .taps small {
-  font-size: 11px;
-  font-weight: 600;
+  font: 600 11px var(--font);
   color: var(--ink-3);
 }
 .ctl {
@@ -248,15 +225,13 @@ label.row {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .val {
   width: 52px;
   flex: none;
   text-align: right;
-  font-size: 12px;
-  font-weight: 800;
+  font: italic 800 16px/1 var(--font-latin);
   color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -1,113 +1,156 @@
-/* Cute warm game-UI design tokens inspired by WuwaTappo, themed around A-SOUL's #FC966E. */
-:root {
-  --font: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --accent: #FC966E;
-  --accent-rgb: 252, 150, 110;
-  --accent-deep: #D26A42;
-  --accent-soft: #FFE1CF;
-  --on-accent: #562915;
-
-  --sidebar-bg: #9C5A3C;
-  --sidebar-deep: #7B4228;
-  --sidebar-cloud: #AD6B4D;
-
-  --ink: #5C3B28;
-  --ink-2: #8C6751;
-  --ink-3: #B08E78;
-
-  --paper: #FDF4E7;
-  --paper-2: #EFE0CE;
-  --paper-3: #E4D0BA;
-  --card: #FFF9F2;
-
-  --tile-frame: #F1E2D0;
-  --tile-border: #DFC9B0;
-  --tile-lip: #D2B89C;
-
-  --line: #E7D4C0;
-  --line-2: #D8C0A8;
-
-  --shadow-1: 0 3px 0 rgba(165, 115, 80, 0.22), 0 4px 10px rgba(92, 59, 40, 0.08);
-  --shadow-2: 0 20px 52px rgba(72, 38, 20, 0.28), 0 4px 14px rgba(72, 38, 20, 0.14);
-
-  --r-s: 10px;
-  --r-m: 14px;
-  --r-l: 20px;
-  --r-xl: 26px;
-
-  --rar-common: #8AB572;
-  --rar-common-bg: linear-gradient(145deg, #DCECC8 0%, #C7DFAC 100%);
-  --rar-rare: #D88BA2;
-  --rar-rare-bg: linear-gradient(145deg, #F5D5DF 0%, #EBC1D0 100%);
-  --rar-epic: #FC966E;
-  --rar-epic-bg: linear-gradient(145deg, #FFD8C2 0%, #FCBEA2 100%);
-  --rar-legendary: #E59B35;
-  --rar-legendary-bg: linear-gradient(145deg, #FFE6B6 0%, #FFC982 100%);
-  --rar-none-bg: linear-gradient(145deg, #F7E8D8 0%, #ECD7C0 100%);
-
-  --ok: #46A872;
-  --warn: #E29A32;
-  --bad: #D95850;
+/* Idol-stage design tokens: #FC966E and white, one 8deg slant, flat color blocks, no rounded pills. */
+@font-face {
+  font-family: "Noto Sans SC";
+  font-weight: 400 800;
+  src: url("../assets/fonts/NotoSansSC-subset.woff2") format("woff2");
+  font-display: swap;
+}
+/* Black weight sheared 8deg by scripts/build_ui_assets.py. Clogs below 18px: smaller labels use --font at weight 800. */
+@font-face {
+  font-family: "Noto Sans SC Slanted";
+  src: url("../assets/fonts/NotoSansSC-Slanted-subset.woff2") format("woff2");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: italic;
+  font-weight: 800;
+  src: url("../assets/fonts/BarlowCondensed-ExtraBoldItalic.woff2") format("woff2");
+  font-display: swap;
 }
 
-/* shared tactile controls inside the panel */
+:root {
+  --font: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: "Noto Sans SC Slanted", var(--font);
+  --font-latin: "Barlow Condensed", var(--font);
+
+  --accent: #FC966E;
+  --accent-rgb: 252, 150, 110;
+  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.68:1) */
+  --accent-deep: #C94A20;
+  --accent-soft: #FFE3D6;
+  --accent-tint: #FFF3ED;
+  --on-accent: #2B2530;
+
+  --ink: #2B2530;
+  --ink-2: #625968;
+  --ink-3: #8D8493;
+  --surface: #FFFFFF;
+  --page: #FFF4EE;
+
+  --line: #F6E3DA;
+  --line-2: #EFD3C6;
+
+  --skew: -8deg;
+  --grid: linear-gradient(rgba(var(--accent-rgb), 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-rgb), 0.1) 1px, transparent 1px);
+  --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
+  --halftone: url("../assets/patterns/halftone.svg");
+
+  /* Die-cut sticker contour: four offset passes grow the silhouette, the last pass of --sticker lifts it off the tile. */
+  --contour: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff);
+  --contour-lg: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff);
+  --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
+  --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --rar-common: #F4A988;
+  --rar-common-bg: linear-gradient(145deg, #FFF8F4 0%, #FFEFE7 100%);
+  --rar-rare: #F58A5F;
+  --rar-rare-bg: linear-gradient(145deg, #FFE7DB 0%, #FFD3BF 100%);
+  --rar-epic: #FC966E;
+  --rar-epic-bg: linear-gradient(145deg, #FFCFB9 0%, #FCA582 100%);
+  --rar-legendary: #E59B35;
+  --rar-legendary-bg: linear-gradient(145deg, #FFD9A8 0%, #FC966E 100%);
+  --rar-none-bg: linear-gradient(145deg, #FFF8F4 0%, #FFF0E9 100%);
+
+  --ok: #2F9E68;
+  --warn: #D98A1F;
+  --bad: #D9483F;
+}
+
+/* Parallelograms are skewed ::before layers, so the label stays upright and borders survive. */
 .ui-btn {
+  position: relative;
+  isolation: isolate;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
   height: 36px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 2px solid var(--line-2);
-  background: var(--card);
+  padding: 0 18px;
+  border: 0;
+  background: none;
   color: var(--ink);
-  box-shadow: 0 3px 0 var(--line-2);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   white-space: nowrap;
-  transition: transform 100ms, box-shadow 100ms, background 120ms, filter 120ms;
+  transition: transform 180ms var(--ease-out);
 }
-.ui-btn:hover:not(:disabled) {
-  background: #FFF3E6;
+.ui-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  transform: skewX(var(--skew));
+  transition: background 140ms, box-shadow 140ms;
+}
+.ui-btn:hover:not(:disabled)::before {
+  background: var(--accent-soft);
 }
 .ui-btn:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--line-2);
+  transform: translate(1px, 1px);
 }
 .ui-btn.primary {
-  background: linear-gradient(180deg, #FFB18F 0%, var(--accent) 100%);
-  border-color: var(--accent-deep);
   color: var(--on-accent);
-  box-shadow: 0 3px 0 var(--accent-deep), inset 0 1.5px 0 rgba(255, 255, 255, 0.45);
 }
-.ui-btn.primary:hover:not(:disabled) {
-  filter: brightness(1.03);
+.ui-btn.primary::before {
+  background: var(--accent);
+  box-shadow: 3px 3px 0 var(--ink);
 }
-.ui-btn.primary:active:not(:disabled) {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 var(--accent-deep);
+.ui-btn.primary:hover:not(:disabled)::before {
+  background: #FFA883;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.ui-btn.primary:active:not(:disabled)::before {
+  box-shadow: 1px 1px 0 var(--ink);
 }
 .ui-btn.ghost {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
   color: var(--ink-2);
 }
+.ui-btn.ghost::before {
+  background: transparent;
+  box-shadow: none;
+}
 .ui-btn.ghost:hover:not(:disabled) {
-  background: rgba(252, 150, 110, 0.14);
   color: var(--ink);
 }
 .ui-btn.small {
   height: 30px;
-  padding: 0 12px;
+  padding: 0 14px;
   font-size: 12px;
 }
 .ui-btn:disabled {
-  opacity: 0.48;
+  color: var(--ink-3);
   cursor: default;
+}
+.ui-btn:disabled::before {
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+/* Upright stripes: the layer's own skew leans them along the slant. */
+.ui-btn.primary:disabled::before {
+  background: repeating-linear-gradient(90deg, var(--accent-soft) 0 7px, var(--accent-tint) 7px 14px);
+  box-shadow: none;
+}
+.ui-btn.primary:disabled {
+  color: var(--ink-2);
 }
 
 .ui-input {
@@ -115,38 +158,60 @@
   font-size: 13px;
   font-weight: 600;
   height: 36px;
-  padding: 0 14px;
-  border-radius: 999px;
+  padding: 0 12px;
+  border-radius: 0;
   min-width: 0;
   box-sizing: border-box;
-  border: 2px solid var(--line-2);
-  background: var(--card);
+  border: 0;
+  border-bottom: 2px solid var(--line-2);
+  background: var(--surface);
   color: var(--ink);
   outline: none;
-  transition: border-color 140ms, box-shadow 140ms;
+  transition: border-color 140ms, background 140ms;
 }
 .ui-input::placeholder {
   color: var(--ink-3);
   font-weight: 500;
 }
 .ui-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.22);
-}
-
-.ui-card {
-  background: var(--card);
-  border: 2px solid var(--line);
-  border-radius: var(--r-l);
-  box-shadow: 0 3px 0 var(--line);
+  background: var(--surface);
+  border-color: var(--accent-deep);
 }
 
 .ui-label {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
   margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--ink-2);
-  letter-spacing: 0.02em;
+  font: 400 18px/1 var(--font-display);
+  color: var(--ink);
+}
+.ui-label::before {
+  content: "";
+  align-self: center;
+  width: 7px;
+  height: 14px;
+  background: var(--accent);
+  transform: skewX(var(--skew));
+}
+.ui-label em {
+  font: italic 800 14px/1 var(--font-latin);
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.ui-label em::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 5px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+.ui-label small {
+  margin-left: auto;
+  font: italic 800 15px/1 var(--font-latin);
+  color: var(--ink-3);
 }
 .ui-muted {
   color: var(--ink-2);
@@ -156,56 +221,242 @@
   font-size: 12px;
 }
 
+.ui-error {
+  margin: 0 0 8px;
+  padding: 4px 10px;
+  background: #FDECEA;
+  box-shadow: inset 3px 0 0 var(--bad);
+  color: var(--bad);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ui-empty {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Chamfered block. clip-path would swallow a border, so .ui-ring lays the hairline on top. */
+.ui-frame {
+  position: relative;
+  overflow: hidden;
+}
+.ui-frame,
+.ui-tile::before {
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%);
+}
+.ui-ring::after {
+  --r: 1.5px;
+  --c: calc(var(--cut, 11px) + var(--r) * 0.414);
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--line-2);
+  clip-path: polygon(
+    evenodd,
+    0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%, 0 0,
+    var(--r) var(--r), var(--r) calc(100% - var(--r)),
+    calc(100% - var(--c)) calc(100% - var(--r)), calc(100% - var(--r)) calc(100% - var(--c)),
+    calc(100% - var(--r)) var(--r), var(--r) var(--r), 0 0
+  );
+}
+.ui-well {
+  width: 100%;
+  aspect-ratio: var(--well-ratio, 1);
+  box-sizing: border-box;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.ui-well img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  margin: auto;
+  /* contour only: one more pass over a whole grid of tiles drops frames during page turns */
+  filter: var(--contour);
+  transition: transform 260ms var(--ease-out);
+}
+
+/* A well plus its name. Hover and selection slide an offset block out from behind the well. */
+.ui-tile {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  user-select: none;
+  transition: transform 240ms var(--ease-out);
+}
+.ui-tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  aspect-ratio: var(--well-ratio, 1);
+  background: var(--accent);
+  opacity: 0;
+  transition: transform 240ms var(--ease-out), opacity 120ms;
+}
+.ui-tile:hover {
+  transform: translate(-2px, -2px);
+}
+.ui-tile:hover::before,
+.ui-tile.picked::before {
+  opacity: 1;
+  transform: translate(4px, 4px);
+}
+.ui-tile:hover .ui-well img {
+  transform: scale(1.06);
+}
+.ui-tile.locked .ui-well img {
+  filter: saturate(0.48) contrast(0.9) var(--contour);
+  opacity: 0.5;
+}
+.ui-tile.locked .ui-tile-name {
+  color: var(--ink-3);
+}
+.ui-tile-name {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ui-chip {
+  position: relative;
+  isolation: isolate;
+  height: 26px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 700 12px var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 160ms;
+}
+.ui-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--surface);
+  transform: skewX(var(--skew));
+  transition: background 160ms;
+}
+.ui-chip:hover::before {
+  background: var(--accent-soft);
+}
+.ui-chip.on {
+  color: var(--on-accent);
+}
+.ui-chip.on::before {
+  background: var(--accent);
+}
+.ui-chip > i {
+  width: 4px;
+  height: 11px;
+  transform: skewX(var(--skew));
+}
+
+.ui-tag {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  padding: 0 7px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 17px;
+  color: var(--tag-fg, var(--on-accent));
+  white-space: nowrap;
+}
+.ui-tag::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--tag-bg, var(--accent));
+  transform: skewX(var(--skew));
+}
+.ui-tag.dark {
+  --tag-bg: var(--ink);
+  --tag-fg: #fff;
+}
+.ui-tag.light {
+  --tag-bg: var(--surface);
+  --tag-fg: var(--accent-deep);
+}
+
 .ui-bar {
-  height: 10px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  border: 1.5px solid var(--line-2);
+  height: 8px;
+  background: var(--accent-soft);
   overflow: hidden;
   box-sizing: border-box;
+  transform: skewX(var(--skew));
 }
 .ui-bar > i {
   display: block;
   height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #FFB18F, var(--accent));
-  transition: width 300ms ease;
+  background: var(--accent);
+  transition: width 420ms var(--ease-out);
 }
 
 .ui-switch {
   appearance: none;
   margin: 0;
   width: 42px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  border: 2px solid var(--line-2);
+  height: 22px;
+  background: var(--accent-soft);
   position: relative;
   cursor: pointer;
-  transition: background 150ms, border-color 150ms;
+  transform: skewX(var(--skew));
+  transition: background 180ms;
   flex: none;
 }
 .ui-switch::after {
   content: "";
   position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 16px;
+  left: 3px;
+  top: 3px;
+  width: 18px;
   height: 16px;
-  border-radius: 50%;
-  background: #FFF9F2;
-  box-shadow: 0 1px 3px rgba(92, 59, 40, 0.28);
-  transition: transform 160ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: var(--surface);
+  transition: transform 260ms var(--ease-out);
 }
 .ui-switch:checked {
   background: var(--accent);
-  border-color: var(--accent-deep);
 }
 .ui-switch:checked::after {
   transform: translateX(18px);
 }
 
-/* range: plump rounded track filled up to --fill (set by RangeInput.vue) */
+/* range: flat track filled up to --fill (set by RangeInput.vue) */
 .ui-range {
   appearance: none;
   -webkit-appearance: none;
@@ -216,61 +467,50 @@
   cursor: pointer;
 }
 .ui-range::-webkit-slider-runnable-track {
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--paper-2) var(--fill, 50%), var(--paper-2) 100%);
-  box-shadow: inset 0 1px 2px rgba(92, 59, 40, 0.18);
+  height: 6px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
 }
 .ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: #FFF9F2;
-  border: 3px solid var(--accent);
-  box-sizing: border-box;
-  box-shadow: 0 2px 4px rgba(92, 59, 40, 0.25);
+  width: 12px;
+  height: 20px;
+  margin-top: -7px;
+  background: var(--ink);
+  transform: skewX(var(--skew));
 }
 .ui-range::-moz-range-track {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--paper-2);
+  height: 6px;
+  background: var(--accent-soft);
 }
 .ui-range::-moz-range-progress {
-  height: 8px;
-  border-radius: 999px;
+  height: 6px;
   background: var(--accent);
 }
 .ui-range::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #FFF9F2;
-  border: 3px solid var(--accent);
+  width: 12px;
+  height: 20px;
+  border: 0;
+  border-radius: 0;
+  background: var(--ink);
 }
 
-/* Cute thin warm scrollbar like the right edge of WuwaTappo */
 .ui-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #E5B48C rgba(228, 208, 186, 0.4);
+  scrollbar-color: var(--accent) transparent;
 }
 .ui-scroll::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 .ui-scroll::-webkit-scrollbar-track {
-  background: rgba(228, 208, 186, 0.45);
-  border-radius: 999px;
-  margin: 8px 0;
+  background: transparent;
 }
 .ui-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #F6B992, #FC966E);
-  border-radius: 999px;
+  background: var(--accent);
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 

@@ -78,13 +78,13 @@ const bubbleAnchor = computed(() => ({
 
 <template>
   <div class="pet" :style="box">
-    <template v-if="assets">
+    <div v-if="assets" class="art">
       <img class="layer bg" :src="assets.bg" :style="box" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="leftDown" class="layer" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="rightDown" class="layer" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
-    </template>
+    </div>
     <div v-else class="missing">?</div>
 
     <ComboBubble :frame="combo" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
@@ -94,9 +94,10 @@ const bubbleAnchor = computed(() => ({
 
 <style scoped>
 .pet { position: relative; user-select: none; }
+.art { position: absolute; inset: 0; }
 .layer { position: absolute; pointer-events: none; }
 .bg { left: 0; top: 0; }
 .kb { transition: transform 140ms cubic-bezier(0.34, 1.8, 0.64, 1); }
 .kb.down { transition: transform 50ms ease-out; }
-.missing { color: #fff; opacity: 0.5; }
+.missing { color: var(--surface); opacity: 0.5; }
 </style>

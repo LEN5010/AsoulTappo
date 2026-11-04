@@ -38,7 +38,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 ## 在线时长与抽卡
 
-`draw` 包含 `tickets,seconds,secondsPerDraw,pity,hardPity,total`。客户端每 20 秒发送一次 `POST /api/presence` 心跳，累计满 900 秒获得 1 次抽卡机会。
+`draw` 包含 `tickets,seconds,secondsPerDraw,pity,hardPity,total`。客户端每 20 秒发送一次 `POST /api/presence` 心跳，累计满 300 秒获得 1 次抽卡机会。
 
 每次抽卡先按档位概率抽取：大隐藏 0.5%、小隐藏 4.5%、普通 95%，随后在所选卡池的同档位卡牌中等概率抽取。所有卡池共用 400 抽大隐藏保底，抽中大隐藏后重置。
 

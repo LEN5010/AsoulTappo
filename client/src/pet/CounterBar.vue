@@ -30,19 +30,25 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 <style scoped>
 .bar {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 38px;
+  gap: 6px;
+  height: 31px;
   margin-top: -4px;
-  padding: 0 4px 0 0;
+  padding: 0 7px 0 0;
   box-sizing: border-box;
-  border-radius: 999px;
-  background: rgba(253, 244, 231, 0.98);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 3px 0 var(--tile-lip), 0 6px 14px rgba(72, 38, 20, 0.16);
   font-family: var(--font);
   color: var(--ink);
+}
+.bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--accent), 0 6px 16px rgba(43, 37, 48, 0.2);
+  transform: skewX(var(--skew));
 }
 .count {
   flex: 1;
@@ -50,9 +56,8 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   align-self: stretch;
   display: flex;
   align-items: center;
-  padding: 0 0 0 14px;
+  padding: 0 0 0 13px;
   border: none;
-  border-radius: 999px 0 0 999px;
   background: none;
   cursor: pointer;
   font: inherit;
@@ -61,36 +66,33 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 .count span {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 6px;
   line-height: 1;
-  padding-top: 1px;
 }
 .count b {
-  font-size: 17px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
+  font: italic 800 23px/1 var(--font-latin);
 }
 .count small {
   font-size: 11px;
   font-weight: 800;
-  color: var(--ink-2);
+  color: var(--accent-deep);
 }
 .round {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 22px;
   padding: 0;
   margin: 0;
   box-sizing: border-box;
   flex: none;
-  border-radius: 50%;
-  border: 1.5px solid var(--tile-border);
+  border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: var(--card);
-  color: var(--ink-2);
-  transition: background 140ms, color 140ms, transform 140ms, border-color 140ms;
+  background: var(--accent-tint);
+  color: var(--ink);
+  transform: skewX(var(--skew));
+  transition: background 140ms, color 140ms;
 }
 .round svg,
 .round :deep(.icon) {
@@ -98,23 +100,23 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   flex: none;
 }
 .round:hover {
-  color: var(--ink);
-  background: #FFF1E2;
-  transform: scale(1.06);
+  background: var(--accent-soft);
 }
 .spark {
-  background: var(--accent-soft);
-  border-color: #F3B391;
-  color: var(--accent-deep);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .spark:hover {
-  background: #FFD4BC;
-  color: var(--on-accent);
+  background: #FFA883;
 }
 .spark.on {
-  background: var(--accent);
-  border-color: var(--accent-deep);
-  color: var(--on-accent);
+  background: var(--ink);
+  color: #fff;
+}
+.spark svg {
+  transition: transform 300ms var(--ease-out);
+}
+.spark.on svg {
   transform: rotate(45deg);
 }
 </style>

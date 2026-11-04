@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { manifest } from "../manifest";
 import { assetUrl } from "../asset";
 import { craftCost, getItem, ownsEmote, type Item } from "../items";
@@ -22,10 +22,13 @@ import Modal from "../ui/Modal.vue";
 import ItemArt from "../ui/ItemArt.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
+import { rise } from "../ui/motion";
 
 const charTab = ref<string>("all");
 const setFilter = ref<string>("all");
 const emoteOwnFilter = ref<"all" | "owned" | "missing">("all");
+const wall = ref<HTMLElement>();
+watch([charTab, setFilter, emoteOwnFilter], () => nextTick(() => rise(wall.value)));
 const emoteQuery = ref("");
 const emoteCollapsed = ref<Record<string, boolean>>({});
 
@@ -186,7 +189,7 @@ const tapPct = computed(() =>
       <div class="filter-pills">
         <button
           v-for="f in [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥有' }, { id: 'missing', label: '未拥有' }] as const"
-          :key="f.id" type="button" :class="{ on: emoteOwnFilter === f.id }" @click="emoteOwnFilter = f.id"
+          :key="f.id" type="button" class="ui-chip" :class="{ on: emoteOwnFilter === f.id }" @click="emoteOwnFilter = f.id"
         >
           {{ f.label }}
         </button>
@@ -204,11 +207,12 @@ const tapPct = computed(() =>
       <input v-model="emoteQuery" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
     </div>
 
-    <div class="wall ui-scroll">
+    <div ref="wall" class="wall ui-scroll">
       <section v-for="group in emoteGroups" :key="group.id" class="group">
-        <button type="button" class="group-head" @click="emoteCollapsed[group.id] = !emoteCollapsed[group.id]">
+        <button type="button" class="group-head" data-rise @click="emoteCollapsed[group.id] = !emoteCollapsed[group.id]">
+          <i aria-hidden="true"></i>
           <span class="group-title">{{ group.name }}</span>
-          <span class="group-count">({{ group.owned }}/{{ group.total }})</span>
+          <span class="group-count"><b>{{ group.owned }}</b>/{{ group.total }}</span>
           <svg class="caret" :class="{ shut: emoteCollapsed[group.id] }" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
             <path d="M3.5 5.5L8 10.5l4.5-5z" fill="currentColor" />
           </svg>
@@ -217,26 +221,26 @@ const tapPct = computed(() =>
         <div v-show="!emoteCollapsed[group.id]" class="emote-grid">
           <button
             v-for="e in group.items" :key="e.key" type="button"
-            class="sq-card emote-tile"
-            :class="[e.rarity, { owned: e.owned, locked: !e.owned }]"
+            class="ui-tile emote-tile"
+            :class="[e.rarity, { locked: !e.owned }]"
             :title="`${e.name}（${e.setName}）· ${e.owned ? '已拥有' : '点击可使用碎片兑换'}`"
+            data-rise
             @click="selectedEmote = getItem(`emote:${e.key}`) ?? null; actionNote = ''"
           >
-            <span class="well emote-well">
-              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" draggable="false" />
-              <span class="corner-badge" aria-hidden="true"><Icon name="smile" :size="9" /></span>
+            <span class="ui-frame ui-well">
+              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
             </span>
-            <b class="name">{{ e.name }}</b>
+            <b class="ui-tile-name">{{ e.name }}</b>
           </button>
         </div>
       </section>
 
-      <p v-if="!emoteGroups.length" class="empty">当前筛选下没有匹配的表情</p>
+      <p v-if="!emoteGroups.length" class="ui-empty">当前筛选下没有匹配的表情</p>
     </div>
 
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <footer class="drawbar">
+    <footer class="drawbar ui-frame ui-ring">
       <div class="ticket">
         <span class="ticket-icon"><Icon name="box" :size="18" /></span>
         <div>
@@ -248,7 +252,7 @@ const tapPct = computed(() =>
       <div class="pity">
         <div class="pity-head">
           <span>敲击 <b>{{ status?.progress.taps ?? 0 }}</b>/{{ status?.progress.tapsPerBox ?? 600 }} · 活跃 {{ status?.progress.minutes ?? 0 }}/{{ status?.progress.minutesPerBox ?? 10 }}分</span>
-          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片 · 点击未解锁表情可兑换</small>
+          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片</small>
         </div>
         <div class="ui-bar"><i :style="{ width: `${tapPct}%` }"></i></div>
       </div>
@@ -266,7 +270,7 @@ const tapPct = computed(() =>
     <!-- Emote detail / shard crafting modal -->
     <Modal v-if="selectedEmote" :title="selectedEmote.name" @close="selectedEmote = null">
       <div class="emote-detail">
-        <div class="detail-well">
+        <div class="detail-well ui-frame">
           <ItemArt :item="selectedEmote" :size="128" :locked="!selectedEmoteOwned" />
         </div>
         <h3>{{ selectedEmote.name }}</h3>
@@ -301,111 +305,103 @@ const tapPct = computed(() =>
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 6px 20px 12px;
+  padding: 8px 20px 12px 16px;
 }
-
 .tabs-bar {
   flex: none;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .filters {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 10px;
+  margin-bottom: 8px;
   flex: none;
   flex-wrap: wrap;
 }
 .filter-pills {
   display: flex;
-  gap: 4px;
-}
-.filter-pills button {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1.5px solid transparent;
-  background: var(--paper-2);
-  color: var(--ink-2);
-  font: 700 11.5px var(--font);
-  cursor: pointer;
-}
-.filter-pills button.on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  gap: 5px;
+  padding-left: 3px;
 }
 .set-select {
-  height: 25px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1.5px solid var(--tile-border);
-  background: var(--card);
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 2px solid var(--line-2);
+  border-radius: 0;
+  background: var(--surface);
   color: var(--ink);
-  font: 700 11.5px var(--font);
+  font: 700 12px var(--font);
   cursor: pointer;
   outline: none;
 }
 .set-select:focus {
-  border-color: var(--accent);
+  border-color: var(--accent-deep);
 }
 .progress-tag {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--ink-2);
 }
 .progress-tag b {
+  font: italic 800 17px/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .search-input {
   margin-left: auto;
-  width: 144px;
-  height: 25px;
-  font-size: 11.5px;
+  width: 140px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .wall {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 2px 4px 10px 2px;
+  padding-right: 6px;
 }
 .group + .group {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .group-head {
   position: sticky;
-  top: -2px;
+  top: 0;
   z-index: 3;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   width: 100%;
   margin: 0 0 8px;
-  padding: 5px 8px;
+  padding: 5px 0;
   box-sizing: border-box;
   border: 0;
-  border-bottom: 1.5px dashed rgba(212, 186, 158, 0.55);
-  border-radius: 8px 8px 0 0;
-  background: rgba(253, 244, 231, 0.96);
-  backdrop-filter: blur(4px);
-  color: var(--ink-2);
-  font: 800 13px var(--font);
+  box-shadow: 0 2px 0 var(--line);
+  background: var(--page);
+  color: var(--ink);
+  font: 18px/1 var(--font-display);
   cursor: pointer;
 }
-.group-head:hover {
-  color: var(--ink);
+.group-head i {
+  width: 7px;
+  height: 14px;
+  background: var(--accent);
+  transform: skewX(var(--skew));
 }
 .group-count {
-  font-weight: 700;
-  font-size: 12px;
-  color: var(--ink-2);
+  font: italic 800 14px/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.group-count b {
+  font: inherit;
+  color: var(--accent-deep);
 }
 .caret {
   margin-left: auto;
   color: var(--ink-2);
-  transition: transform 160ms ease;
+  transition: transform 260ms var(--ease-out);
 }
 .caret.shut {
   transform: rotate(-90deg);
@@ -414,125 +410,35 @@ const tapPct = computed(() =>
 .emote-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
-  gap: 8px;
+  gap: 12px 10px;
+  padding: 2px 4px 2px 0;
 }
-.sq-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 4px 4px 5px;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 15px;
-  background: var(--tile-frame);
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 0 var(--tile-lip);
-  cursor: pointer;
-  font: inherit;
-  color: var(--ink);
-  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 140ms, box-shadow 140ms;
-}
-.sq-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--accent);
-}
-.sq-card.owned {
-  background: #FFF8F0;
-  border-color: #F4B99A;
-  box-shadow: 0 2px 0 #DF9B78;
-}
-
-.well.emote-well {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  padding: 6px;
-  box-sizing: border-box;
-  border-radius: 11px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 8px, transparent 8px 18px),
-    var(--rar-common-bg);
-}
-.sq-card.rare .well.emote-well {
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.24) 0 8px, transparent 8px 18px),
-    var(--rar-epic-bg);
-}
-.well.emote-well img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  display: block;
-  margin: auto;
-  transition: transform 160ms;
-}
-.sq-card:hover .well img {
-  transform: scale(1.05);
-}
-.sq-card.locked .well img {
-  filter: saturate(0.48) contrast(0.9);
-  opacity: 0.5;
-}
-.sq-card.locked .name {
-  color: var(--ink-3);
-}
-.corner-badge {
-  position: absolute;
-  left: 3px;
-  bottom: 3px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: var(--tile-frame);
-  border: 1px solid var(--tile-border);
-  color: #B48967;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.name {
-  display: block;
-  width: 100%;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  font-weight: 700;
-  text-align: center;
+.emote-tile.rare .ui-well {
+  background: var(--rar-epic-bg);
 }
 
 .drawbar {
+  --cut: 14px;
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-top: 4px;
-  padding: 7px 14px;
-  border-radius: 16px;
-  background: var(--tile-frame);
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 0 var(--tile-lip);
+  margin-top: 6px;
+  padding: 8px 14px;
+  background: var(--surface);
   flex: none;
 }
 .ticket {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   flex: none;
 }
 .ticket-icon {
-  width: 32px;
+  width: 34px;
   height: 32px;
-  border-radius: 10px;
-  background: var(--accent-soft);
-  border: 1.5px solid #F3B391;
-  color: var(--accent-deep);
+  background: var(--accent);
+  color: var(--on-accent);
+  transform: skewX(var(--skew));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -543,13 +449,12 @@ const tapPct = computed(() =>
   gap: 1px;
 }
 .ticket-main {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--ink-2);
 }
 .ticket-main b {
-  font-size: 16px;
-  font-weight: 900;
+  font: italic 800 22px/1 var(--font-latin);
   color: var(--ink);
   margin-right: 2px;
 }
@@ -562,7 +467,7 @@ const tapPct = computed(() =>
   max-width: 360px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .pity-head {
   display: flex;
@@ -588,7 +493,7 @@ const tapPct = computed(() =>
 }
 .draw-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
 }
 
@@ -600,15 +505,13 @@ const tapPct = computed(() =>
   text-align: center;
 }
 .detail-well {
-  padding: 12px;
-  border-radius: 22px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
+  --cut: 16px;
+  padding: 14px;
+  background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .emote-detail h3 {
   margin: 4px 0 0;
-  font-size: 17px;
-  font-weight: 800;
+  font: 400 22px/1.1 var(--font-display);
 }
 .detail-sub {
   margin: 0;
@@ -625,21 +528,7 @@ const tapPct = computed(() =>
 }
 .buttons {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   margin-top: 4px;
-}
-
-.empty {
-  color: var(--ink-3);
-  padding: 28px 0;
-  text-align: center;
-  font-size: 13px;
-  font-weight: 700;
-}
-.error {
-  margin: 3px 0;
-  color: var(--bad);
-  font-size: 12px;
-  font-weight: 700;
 }
 </style>
