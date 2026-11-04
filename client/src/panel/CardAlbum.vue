@@ -1,11 +1,11 @@
 <script setup lang="ts">
-// The album view of one pool: every card in a slot, cards not owned yet stay gray until hovered.
-import { computed } from "vue";
+// The album keeps card colors and plays visible owned videos; unowned cards stay still.
+import { computed, onBeforeUnmount, type ObjectDirective } from "vue";
 import { assetUrl } from "../asset";
-import { byTier, cardLabel, TIER_LABEL } from "../cards";
+import { byTier, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
-import CardBack from "./CardBack.vue";
+import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
 export type AlbumFilter = "all" | "hidden" | "owned" | "missing";
@@ -14,6 +14,22 @@ const props = defineProps<{ cards: ManifestCard[]; filter: AlbumFilter }>();
 defineEmits<{ inspect: [card: ManifestCard, from?: DOMRect] }>();
 
 const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
+const visibility = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    const video = entry.target as HTMLVideoElement;
+    if (entry.isIntersecting) video.src = video.dataset.src!;
+    else {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+  }
+});
+const vVisibleVideo: ObjectDirective<HTMLVideoElement> = {
+  mounted: (video) => visibility.observe(video),
+  beforeUnmount: (video) => visibility.unobserve(video),
+};
+onBeforeUnmount(() => visibility.disconnect());
 const visible = computed(() =>
   props.cards
     .filter((card) => {
@@ -36,7 +52,11 @@ const visible = computed(() =>
         @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined)"
       >
         <span class="art ui-frame ui-well" :class="{ 'ui-ring': card.tier !== 'normal' }">
-          <CardBack v-if="!owned(card) && card.tier !== 'normal'" />
+          <video
+            v-if="playsCardVideo(card, owned(card), reducedMotion)" v-visible-video
+            :data-src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            :aria-label="card.name" autoplay loop muted playsinline preload="none"
+          ></video>
           <img v-else :src="assetUrl(card.thumb)" :alt="card.name" loading="lazy" decoding="async" draggable="false" />
           <i v-if="card.tier !== 'normal'" class="tier ui-tag" :class="{ gold: card.tier === 'big' }">{{ TIER_LABEL[card.tier] }}</i>
           <b v-if="owned(card) > 1" class="count ui-tag dark">×{{ owned(card) }}</b>
@@ -73,7 +93,8 @@ const visible = computed(() =>
   background: var(--accent-tint);
   box-shadow: none;
 }
-.art img {
+.art img,
+.art video {
   position: relative;
   width: 100%;
   height: 100%;
@@ -82,12 +103,10 @@ const visible = computed(() =>
   object-fit: cover;
   filter: none;
 }
-.slot.locked .art img {
-  filter: var(--dim);
+.slot.locked .art img,
+.slot.locked .art video {
+  filter: brightness(0.74);
   transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base);
-}
-.slot.locked:hover .art img {
-  filter: none;
 }
 .slot.small .art {
   --ring: var(--accent);

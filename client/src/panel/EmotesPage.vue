@@ -75,7 +75,7 @@ const skinRank = (name: string) => {
 // Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
 const petSkins = computed(() =>
   Object.values(characters)
-    .filter((c) => ownsCharacter(c.name, collection.owned) && inMember(c.name) && (!query.value || c.name.includes(query.value)))
+    .filter((c) => inMember(c.name) && (!query.value || c.name.includes(query.value)))
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
 
@@ -240,13 +240,15 @@ function fireEmote(key: string) {
         <div class="pet-grid">
           <button
             v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
-            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name }"
-            :title="`切换桌宠：${skin.name}`" data-rise
+            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name, locked: !ownsCharacter(skin.name, collection.owned) }"
+            :disabled="!ownsCharacter(skin.name, collection.owned)"
+            :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skin.name}`" data-rise
             @click="settings.character = skin.name; pokeStage()"
           >
             <span class="pet-well ui-frame ui-well">
               <PetBust class="pet-svg" :src="skin.bg" />
               <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
+              <span v-else-if="!ownsCharacter(skin.name, collection.owned)" class="tag ui-tag">未解锁</span>
             </span>
             <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
           </button>
@@ -621,8 +623,18 @@ function fireEmote(key: string) {
   filter: var(--sticker);
   transition: transform var(--dur-base) var(--ease-out);
 }
-.pet-card:hover .pet-svg {
+.pet-card:hover:not(:disabled) .pet-svg {
   transform: scale(1.05);
+}
+.pet-card:disabled {
+  cursor: default;
+  transform: none;
+}
+.pet-card:disabled::before {
+  display: none;
+}
+.pet-card.locked .pet-svg {
+  filter: brightness(0.54);
 }
 .pet-card .ui-tile-name {
   display: flex;

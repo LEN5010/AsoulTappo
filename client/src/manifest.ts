@@ -4,8 +4,8 @@
 //   pack:<path>    downloaded on demand from the room server (<server>/packs/<path>)
 import raw from "./data/manifest.json";
 
-export type Rarity = "common" | "rare" | "epic" | "skin" | "legendary";
-export const RARITY_ORDER: Rarity[] = ["common", "rare", "epic", "skin", "legendary"];
+export type Rarity = "common" | "uncommon" | "rare" | "epic" | "skin" | "legendary";
+export const RARITY_ORDER: Rarity[] = ["common", "uncommon", "rare", "epic", "skin", "legendary"];
 
 export interface ManifestCharacter { id: string; name: string; color: string }
 export interface ManifestCard {
@@ -77,7 +77,7 @@ export interface Manifest {
   skins: { name: string; member: string }[];
   economy: {
     income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number };
-    resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; duplicateRefund: number };
+    resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number }; duplicateRefund: number };
     craftCost: Partial<Record<Rarity, number>>;
   };
 }

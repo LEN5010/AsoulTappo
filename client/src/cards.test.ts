@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byTier, cardLabel, poolName } from "./cards";
+import { byTier, cardLabel, playsCardVideo, poolName } from "./cards";
 import { manifest } from "./manifest";
 
 describe("poolName", () => {
@@ -36,4 +36,22 @@ describe("cardLabel", () => {
 
 it("sorts the rarest tier first", () => {
   expect([{ tier: "normal" as const }, { tier: "big" as const }, { tier: "small" as const }].sort(byTier).map((c) => c.tier)).toEqual(["big", "small", "normal"]);
+});
+
+it("plays owned dynamic cards and shows static posters for every unowned card", () => {
+  for (const tier of ["normal", "small", "big"] as const) {
+    const card = { tier, video: "bundle:card.mp4" };
+    expect(playsCardVideo(card, 0, false)).toBe(false);
+    expect(playsCardVideo(card, undefined, false)).toBe(false);
+    expect(playsCardVideo(card, 1, false)).toBe(true);
+    expect(playsCardVideo(card, 1, true)).toBe(false);
+  }
+  expect(playsCardVideo({ video: null }, 1, false)).toBe(false);
+});
+
+it("plays resonance demo cards at every ownership level", () => {
+  const card = { video: "bundle:card.mp4" };
+  expect(playsCardVideo(card, 0, false, true)).toBe(true);
+  expect(playsCardVideo(card, undefined, false, true)).toBe(true);
+  expect(playsCardVideo(card, 0, true, true)).toBe(false);
 });

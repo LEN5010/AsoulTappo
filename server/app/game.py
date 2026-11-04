@@ -132,10 +132,13 @@ class Game:
                 available = {r for r in missing if missing[r]}
                 rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng)
                 candidates = missing[rarity] or pool[rarity]
-                item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
+                if rarity == "common":
+                    item = cardlogic.pick_common(pool[rarity], cfg["commonKindWeights"], owned, self.rng)
+                else:
+                    item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
                 iid = item["id"]
                 fresh = iid not in owned
-                gained = 0 if fresh else cfg["duplicateRefund"]
+                gained = cfg["duplicateRefund"] if not fresh and item["kind"] == "emote" else 0
                 refund += gained
                 owned[iid] = st.add_item(pid, iid, now)
                 st.log_drop(pid, iid, rarity, fresh, now)

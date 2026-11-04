@@ -25,7 +25,7 @@ def test_new_player_and_idle_income():
         clock.t += 20
         r = g.presence(TOKEN, SESSION)
     assert r["shards"] == 1616 and r["income"] == {"multiplier": 1, "perMinute": 16}
-    assert r["totals"]["items"] == 428
+    assert r["totals"]["items"] == 446
 
 
 @pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 16), (30, 3, 48), (60, 5, 80), (120, 5, 80)])
@@ -107,7 +107,7 @@ def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
     assert g.resonate(TOKEN)["drops"][0]["item"] == "char:心宜新皮肤"
 
 
-@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .005), ("epic", .01), ("rare", .055)])
+@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .005), ("epic", .01), ("rare", .055), ("uncommon", .085)])
 def test_completed_high_tier_rolls_into_common(rarity, roll):
     g, _ = game(SeqRng(roll, .5))
     for item in g.manifest.resonance_pool[rarity]:
@@ -115,17 +115,20 @@ def test_completed_high_tier_rolls_into_common(rarity, roll):
     assert g.resonate(TOKEN)["drops"][0]["rarity"] == "common"
 
 
-def test_common_prefers_unowned_then_refunds_duplicates():
-    g, _ = game()
+@pytest.mark.parametrize("kind,roll", [("card", 0), ("emote", .9999)])
+def test_common_prefers_unowned_within_kind_then_refunds_duplicates(kind, roll):
+    g, _ = game(SeqRng(.5, roll, .5, roll))
     pid = player_id_for(TOKEN)
-    pool = g.manifest.resonance_pool["common"]
+    pool = [item for item in g.manifest.resonance_pool["common"] if item["kind"] == kind]
     for item in pool[:-1]:
         g.store.add_item(pid, item["id"], 0)
     r = g.resonate(TOKEN, 2)
     assert r["drops"][0]["item"] == pool[-1]["id"]
     assert [d["new"] for d in r["drops"]] == [True, False]
-    assert [d["shards"] for d in r["drops"]] == [0, 40]
-    assert r["shards"] == 1320
+    refund = 10 if kind == "emote" else 0
+    assert [d["shards"] for d in r["drops"]] == [0, refund]
+    assert r["shards"] == 1280 + refund
+    assert all(d["item"].startswith(f"{kind}:") for d in r["drops"])
 
 
 def test_shared_card_has_one_pool_entry_and_one_ownership_record():

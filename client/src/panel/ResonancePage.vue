@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
 import { type Item, RARITY_LABEL } from "../items";
-import { poolOf, effectiveRates } from "../resonance";
+import { poolOf, effectiveRates, commonKindRates } from "../resonance";
 import { collection, resonate, draws, shards, status, online, error } from "../stores/player";
 import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
@@ -16,12 +16,13 @@ import CardDetail from "./CardDetail.vue";
 const pool = poolOf();
 const complete = computed(() => Object.values(pool).flat().every((i) => collection.owned[i.id]));
 const rates = computed(() => effectiveRates(pool, collection.owned));
+const commonRates = computed(() => commonKindRates(pool, collection.owned));
 const revealing = ref(false);
 const pending = ref(0);
 const probabilities = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
-const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "common"];
+const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const pityTiers = ["legendary", "skin"] as const;
 const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
@@ -84,10 +85,11 @@ async function nextBatch() {
       <table class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
         <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ manifest.economy.resonance.rates[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' ? '400 次' : r === 'skin' ? '200 次' : '—' }}</td></tr>
       </tbody></table>
-      <p class="ui-muted">传说为大隐藏，史诗为小隐藏与跳舞卡，稀有为稀有表情。高档集齐后概率并入普通档，普通档重复返还 40 碎片。每次消耗 160 碎片。</p>
+      <p class="ui-muted">当前单次共鸣：普卡 {{ commonRates.card.toFixed(2) }}%、普通表情 {{ commonRates.emote.toFixed(2) }}%。普通档先选类型，再在该类型内优先补缺；集齐后获得重复。</p>
+      <p class="ui-muted">传说为大隐藏，史诗为小隐藏与跳舞卡，稀有为绽放收藏集表情，罕见为脑洞波表情。高档集齐后概率并入普通档。重复表情返还 {{ manifest.economy.resonance.duplicateRefund }} 碎片，重复卡片累计数量。每次消耗 {{ manifest.economy.resonance.cost }} 碎片。</p>
       <p class="ui-muted">全角色共用一个池子。两个保底各自累计；同时到期时先触发大隐藏，下一次触发皮肤。对应档位集齐后保留进度，新增内容后可继续触发。</p>
     </Modal>
-    <CardDetail v-if="detail" :card="detail" @craft="openCraft" @close="detail = null" />
+    <CardDetail v-if="detail" :card="detail" preview @craft="openCraft" @close="detail = null" />
     <Modal v-if="skin" :title="skin.name" @close="skin = null"><ItemArt :item="skin" :size="240" /></Modal>
     <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" @close="revealing = false" />
   </div>

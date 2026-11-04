@@ -97,6 +97,20 @@ CARD_SERIES = {
     "tavern": ("乃琳的酒馆 · 沉沦醉与爱", "乃琳的酒馆-沉沦醉与爱"),
     "voyage": ("贝拉的冒险 · 时空旅人", "贝拉的冒险-时空旅人"),
     "symphony": ("心宜和思诺的交响乐谱 · 双声巡梦", "心宜和思诺的交响乐谱-双声巡梦"),
+    "reverie": ("乃琳的酒馆 · 绮梦漫游", "乃琳的酒馆-绮梦漫游"),
+    "casket": ("贝拉的冒险 · 匣中惊鸿", "贝拉的冒险-匣中惊鸿"),
+}
+
+# Member-first layout used by the newer downloadable collection archive.
+CARD_SOURCE_DIRS = {
+    "bloom": "A-SOUL/A-SOUL 绽放收藏集/收藏集",
+    "brilliant": "嘉然/嘉然的画册-绚烂心迹/收藏集",
+    "moon": "嘉然/嘉然的画册-此间为爱/收藏集",
+    "tavern": "乃琳/乃琳的酒馆-沉沦罪与爱/收藏集",
+    "voyage": "贝拉/贝拉的冒险-时空旅人/收藏集",
+    "symphony": "心宜和思诺/心宜和思诺的交响乐谱-双声巡梦/收藏集",
+    "reverie": "乃琳/乃琳的酒馆-绮梦漫游/收藏集",
+    "casket": "贝拉/贝拉的冒险-匣中惊鸿/收藏集",
 }
 
 # (series, numeric id, card name, characters).  Only cards listed here exist.
@@ -171,11 +185,31 @@ CARDS = [
     ("voyage", "1756378523008", "末路狂花", ["贝拉"]),
     ("voyage", "1756378523009", "星贝传说", ["贝拉"]),
     ("voyage", "1756378523010", "引爆枝江大楼", ["贝拉"]),
+    ("reverie", "1787896765002", "晨间一刻", ["乃琳"]),
+    ("reverie", "1787896765003", "歌剧之星", ["乃琳"]),
+    ("reverie", "1787896765004", "软绵绵时光", ["乃琳"]),
+    ("reverie", "1787896765005", "Shining！", ["乃琳"]),
+    ("reverie", "1787896765006", "采购日", ["乃琳"]),
+    ("reverie", "1787896765007", "晚风微醺", ["乃琳"]),
+    ("reverie", "1787896765008", "甜蜜便当", ["乃琳"]),
+    ("reverie", "1787896765009", "危险邀约", ["乃琳"]),
+    ("reverie", "1787896765010", "纯白誓约", ["乃琳"]),
+    ("casket", "1785126321002", "月下童话", ["贝拉"]),
+    ("casket", "1785126321003", "浮生若梦", ["贝拉"]),
+    ("casket", "1785126321004", "Shopping Time", ["贝拉"]),
+    ("casket", "1785126321005", "公路旅行", ["贝拉"]),
+    ("casket", "1785126321006", "海风之恋", ["贝拉"]),
+    ("casket", "1785126321007", "一起去滑雪", ["贝拉"]),
+    ("casket", "1785126321008", "新的邀请", ["贝拉"]),
+    ("casket", "1785126321009", "在你身边", ["贝拉"]),
+    ("casket", "1785126321010", "夜的终章", ["贝拉"]),
 ]
 
 BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724002', '1781070981009', '1762331462002', '1756378523002', '1700742793033'}
 SMALL_HIDDEN_IDS = {'1762331462009', '1700742793026', '1756378523010', '1700742793022', '1781070981010', '1745315724008', '1700742793023', '1748345610011'}
-RARITIES = ["common", "rare", "epic", "legendary"]
+BIG_HIDDEN_IDS.update({'1787896765003', '1785126321002'})
+SMALL_HIDDEN_IDS.update({'1787896765010', '1785126321010'})
+RARITIES = ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 def card_tier(card_id: str) -> str:
@@ -196,8 +230,9 @@ def card_subseries(series: str, name: str) -> str | None:
 
 
 # ------------------------------------------------------------------ economy
-# Emote sets are common, except the bloom collection sets.  Non-default themes are rare.
+# Bloom collection sets are rare; the three Brainwave sets are uncommon.
 RARE_EMOTE_SETS = {"bloom-jiaran", "bloom-nailin", "bloom-beila"}
+UNCOMMON_EMOTE_SETS = {"jiaran-naodong", "nailin-naodong", "beila-naodong"}
 THEME_RARITY = "rare"
 # Every player owns the five characters, the default theme and the first
 # STARTER_EMOTES emotes of each character's first emote set.
@@ -205,9 +240,10 @@ STARTER_EMOTES = 4
 # Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
 SKINS = [{"name": f"{member}山海经", "member": member} for member in ("嘉然", "乃琳", "贝拉")]
 INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
-RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 5, "common": 89.5},
-             "pity": {"legendary": 400, "skin": 200}, "duplicateRefund": 40}
-CRAFT_COST = {"common": 480, "rare": 1600}
+RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
+             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 62.65, "emote": 22.85},
+             "duplicateRefund": 10}
+CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
 
 
 # -------------------------------------------------------- frames and badges

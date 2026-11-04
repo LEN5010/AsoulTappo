@@ -19,6 +19,7 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "skin", label: "皮肤", icon: "shirt" },
   { rarity: "epic", label: "史诗", icon: "spark" },
   { rarity: "rare", label: "稀有", icon: "gem" },
+  { rarity: "uncommon", label: "罕见", icon: "gem" },
   { rarity: "common", label: "普通", icon: "star5" },
 ];
 

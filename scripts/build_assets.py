@@ -5,8 +5,8 @@ manifest-described files in the repository.
     python scripts/build_assets.py --src /workspace/asoul-assets [--force]
 
 Outputs
-  client/public/assets/...        bundled in the desktop client (small)
-  assets-packs/...                heavy files, served by the room server as packs
+  client/public/assets/...        bundled in the desktop client, including card videos
+  assets-packs/...                full card artwork and theme packs served by the room server
   assets-packs/manifest.json      canonical asset metadata (read by the server)
   assets-packs/index.json         pack list with per-file size + sha256
   client/src/data/manifest.json   copy of manifest.json used by the client build
@@ -54,7 +54,8 @@ WEBP_Q = 82
 ICON_Q = 90
 THUMBUP_Q = 70
 VIDEO_CRF = "28"
-VIDEO_W = 720
+VIDEO_W = 640
+VIDEO_FPS = 30
 ICON_KEYS = ["main", "channel", "dynamic", "myself"]
 
 
@@ -337,6 +338,8 @@ def build_themes(ctx: Ctx) -> list[dict]:
 # -------------------------------------------------------------------- cards
 def find_card_files(ctx: Ctx, series: str, card_id: str) -> tuple[Path | None, Path | None]:
     d = ctx.src / "收藏集卡牌" / cat.CARD_SERIES[series][1]
+    if not d.is_dir():
+        d = ctx.src / cat.CARD_SOURCE_DIRS[series]
     img = vid = None
     for p in d.rglob(f"*-{card_id}_*"):
         if p.name.endswith("_card.png") or p.name.endswith("_card.jpg"):
@@ -349,8 +352,9 @@ def find_card_files(ctx: Ctx, series: str, card_id: str) -> tuple[Path | None, P
 def ffmpeg_video(src: Path, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
-           "-vf", f"scale={VIDEO_W}:-2", "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", "slow",
-           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", "-threads", "2", str(out)]
+           "-vf", f"scale={VIDEO_W}:-2:flags=lanczos,fps={VIDEO_FPS}",
+           "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", "slow",
+           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "48k", "-movflags", "+faststart", "-threads", "2", str(out)]
     subprocess.run(cmd, check=True)
 
 
@@ -360,9 +364,11 @@ def first_frame(src: Path) -> Image.Image:
     return load_rgba(r.stdout)
 
 
-def build_cards(ctx: Ctx) -> list[dict]:
+def build_cards(ctx: Ctx, series_ids: set[str] | None = None) -> list[dict]:
     cards, video_jobs = [], []
     for series, card_id, name, chars in cat.CARDS:
+        if series_ids is not None and series not in series_ids:
+            continue
         img, vid = find_card_files(ctx, series, card_id)
         cid = f"c{card_id}"
         thumb_rel = f"cards/thumb/{cid}.webp"
@@ -384,9 +390,9 @@ def build_cards(ctx: Ctx) -> list[dict]:
         }
         if vid is not None:
             vrel = f"cards/{series}/{cid}.mp4"
-            card["video"] = f"pack:{vrel}"
-            if ctx.todo(PACKS / vrel):
-                video_jobs.append((vid, PACKS / vrel))
+            card["video"] = f"bundle:{vrel}"
+            if ctx.todo(BUNDLE / vrel):
+                video_jobs.append((vid, BUNDLE / vrel))
         cards.append(card)
     if video_jobs:
         print(f"encoding {len(video_jobs)} videos ...", flush=True)
@@ -424,8 +430,6 @@ def collect_pack_files(manifest: dict) -> dict[str, list[str]]:
         packs[t["pack"]] = sorted(paths)
     for c in manifest["cards"]:
         packs.setdefault(f"cards-{c['series']}", []).append(c["full"].split(":", 1)[1])
-        if c["video"]:
-            packs.setdefault(f"videos-{c['series']}", []).append(c["video"].split(":", 1)[1])
     return {k: sorted(v) for k, v in packs.items()}
 
 
@@ -441,8 +445,6 @@ def build_index(manifest: dict) -> dict:
             title = next(t["name"] for t in manifest["themes"] if t["pack"] == pid)
         elif pid.startswith("cards-"):
             title = cat.CARD_SERIES[pid[6:]][0] + " · 卡面"
-        elif pid.startswith("videos-"):
-            title = cat.CARD_SERIES[pid[7:]][0] + " · 视频"
         out.append({"id": pid, "title": title, "size": sum(x["size"] for x in files), "files": files})
     return {"version": 1, "packs": out}
 
@@ -451,16 +453,28 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default="/workspace/asoul-assets")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--cards-only", action="store_true", help="Update cards while retaining existing themes and emotes")
+    ap.add_argument("--series", nargs="+", choices=cat.CARD_SERIES, help="Series to update with --cards-only")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
-    emotes = build_emotes(ctx)
-    themes = build_themes(ctx)
-    cards = build_cards(ctx)
-    decor = []
-    accessories = []
+    if args.series and not args.cards_only:
+        ap.error("--series requires --cards-only")
+    if args.cards_only:
+        manifest = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+        selected = set(args.series or cat.CARD_SERIES)
+        cards = [c for c in manifest["cards"] if c["series"] not in selected] + build_cards(ctx, selected)
+        emotes, themes = manifest["emoteSets"], manifest["themes"]
+        decor, accessories = manifest["decor"], manifest["accessories"]
+    else:
+        emotes = build_emotes(ctx)
+        themes = build_themes(ctx)
+        cards = build_cards(ctx)
+        decor = []
+        accessories = []
     for es in emotes:
-        es["rarity"] = "rare" if es["id"] in cat.RARE_EMOTE_SETS else "common"
+        es["rarity"] = ("rare" if es["id"] in cat.RARE_EMOTE_SETS else
+                        "uncommon" if es["id"] in cat.UNCOMMON_EMOTE_SETS else "common")
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
@@ -469,6 +483,7 @@ def main() -> None:
         "characters": cat.CHARACTERS,
         "rarities": {
             "common": {"name": "普通"},
+            "uncommon": {"name": "罕见"},
             "rare": {"name": "稀有"},
             "epic": {"name": "史诗"},
             "legendary": {"name": "传说"},

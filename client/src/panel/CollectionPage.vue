@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The dex brings card albums, searchable emote sets and skins together.
 import { computed, nextTick, ref, watch } from "vue";
-import { characterColor, manifest, type ManifestCard, type ManifestEmoteSet } from "../manifest";
+import { characterColor, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet } from "../manifest";
 import { assetUrl } from "../asset";
 import { craftCost, getItem, ownsCharacter, ownsEmote, RARITY_LABEL, type Item } from "../items";
 import { collection, craftItem, error, online, shards } from "../stores/player";
@@ -54,7 +54,7 @@ const albums = computed(() =>
         collage: [...owned, ...stickers.filter((e) => !e.owned)].slice(0, 3),
       };
     })
-    .sort((a, b) => Number(b.set.rarity !== "common") - Number(a.set.rarity !== "common")),
+    .sort((a, b) => RARITY_ORDER.indexOf(b.set.rarity) - RARITY_ORDER.indexOf(a.set.rarity)),
 );
 
 const album = computed(() => manifest.emoteSets.find((s) => s.id === albumId.value) ?? null);
@@ -141,11 +141,11 @@ function fireSelectedEmote(item: Item) {
 
 const category = ref("card");
 const CATEGORIES = [{ id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" }];
-const selectedSeries = ref(manifest.series[0]!.id);
+const selectedSeries = ref("all");
 const cardFilter = ref<AlbumFilter>("all");
 const CARD_FILTERS = [{ id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" }];
-const cards = computed(() => manifest.cards.filter((c) => c.series === selectedSeries.value));
-const poolTabs = computed(() => manifest.series.map((s) => ({ id: s.id, label: poolName(s.name) })));
+const cards = computed(() => manifest.cards.filter((c) => selectedSeries.value === "all" || c.series === selectedSeries.value));
+const poolTabs = computed(() => [{ id: "all", label: "全部" }, ...manifest.series.map((s) => ({ id: s.id, label: poolName(s.name) }))]);
 const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
 function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; }
@@ -227,7 +227,7 @@ function toResonance() { ui.page = "resonance"; }
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
     </template>
-    <CardDetail v-if="detail" :card="detail" :from="detailFrom" dimmed @craft="craftCard" @close="detail = null" />
+    <CardDetail v-if="detail" :card="detail" :from="detailFrom" @craft="craftCard" @close="detail = null" />
 
     <Modal v-if="selectedItem" :title="selectedItem.name" @close="selectedItem = null">
       <div class="emote-detail">

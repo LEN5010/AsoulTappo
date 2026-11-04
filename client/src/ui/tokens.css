@@ -90,6 +90,7 @@
   --gold-rgb: 229, 155, 53;
   --gold-soft: #FFE3A6;
   --rar-common-bg: var(--surface);
+  --rar-uncommon-bg: var(--accent-tint);
   --rar-rare-bg: var(--accent-soft);
   --rar-epic-bg: var(--accent-mid);
   --rar-legendary-bg: var(--gold-soft);
@@ -383,6 +384,9 @@
 }
 .ui-tile:hover .ui-well img {
   transform: scale(1.06);
+}
+.ui-tile.uncommon .ui-well {
+  background: var(--rar-uncommon-bg);
 }
 .ui-tile.rare .ui-well {
   background: var(--rar-rare-bg);

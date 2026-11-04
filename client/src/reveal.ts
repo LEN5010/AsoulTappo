@@ -7,7 +7,7 @@ export interface Revealed {
   new: boolean;
 }
 
-const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "common"];
+const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const rank = (d: Revealed) => ORDER.indexOf(d.rarity);
 
 /** Results for the summary: rarest first, then new before duplicates, otherwise in draw order. */

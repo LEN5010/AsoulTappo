@@ -8,6 +8,10 @@ export const TIER_RANK: Record<CardTier, number> = { big: 0, small: 1, normal: 2
 
 export const byTier = (a: { tier: CardTier }, b: { tier: CardTier }) => TIER_RANK[a.tier] - TIER_RANK[b.tier];
 
+export function playsCardVideo(card: Pick<ManifestCard, "video">, owned: number | undefined, reducedMotion: boolean, preview = false): boolean {
+  return !!card.video && (preview || !!owned) && !reducedMotion;
+}
+
 /** Short pool name for tabs: 嘉然的画册 · 绚烂心迹 -> 绚烂心迹, A-SOUL 绽放收藏集 -> 绽放. */
 export function poolName(name: string): string {
   const bare = name.replace(/^A-SOUL\s*[·\s]\s*/, "").replace(/收藏集$/, "").trim() || name;

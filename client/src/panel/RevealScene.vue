@@ -40,6 +40,7 @@ const cardOf = (d: Drop) => d.item.startsWith("card:") ? getCard(d.item.slice(5)
 
 /** Full artwork when it decodes in time, otherwise the bundled thumbnail. */
 async function artOf(card: ManifestCard): Promise<string> {
+  if (card.video) return assetUrl(card.thumb);
   const img = new Image();
   img.src = assetUrl(card.full);
   const timeout = wait(FULL_ART_TIMEOUT_MS).then(() => Promise.reject(new Error("timeout")));

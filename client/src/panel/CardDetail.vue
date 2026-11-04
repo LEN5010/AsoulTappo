@@ -2,22 +2,20 @@
 // Card detail: the artwork beside its facts. Videos loop muted until sound is turned on.
 import { computed, nextTick, onMounted, ref } from "vue";
 import { assetUrl } from "../asset";
-import { cardLabel, poolName, TIER_LABEL } from "../cards";
+import { cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { craftCost, getItem } from "../items";
 import { collection } from "../stores/player";
-import CardBack from "./CardBack.vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import { flyFrom } from "../ui/motion";
 
-// `dimmed` is the album's treatment of cards not owned yet; the draw view shows every card in full.
-const props = defineProps<{ card: ManifestCard; from?: DOMRect; dimmed?: boolean }>();
+const props = defineProps<{ card: ManifestCard; from?: DOMRect; preview?: boolean }>();
 const emit = defineEmits<{ close: []; craft: [id: string] }>();
 
 const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
-const full = computed(() => count.value > 0 || (!props.dimmed && props.card.tier === "normal"));
+const animated = computed(() => playsCardVideo(props.card, count.value, reducedMotion.value, props.preview));
 const cost = computed(() => craftCost(getItem(`card:${props.card.id}`)!));
 const label = computed(() => cardLabel(props.card));
 const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
@@ -43,19 +41,15 @@ function togglePlay() {
 <template>
   <Modal :title="card.name" wide :still="!!from" @close="emit('close')">
     <div class="detail" :class="card.tier">
-      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal' && full }">
-        <template v-if="full">
+      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal', locked: !preview && !count }">
           <video
-            v-if="card.video && !reducedMotion" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            v-if="animated" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :muted="muted" autoplay loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>
-          <img v-else :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
-        </template>
-        <CardBack v-else-if="card.tier !== 'normal'" />
-        <img v-else class="dim" :src="assetUrl(card.thumb)" :alt="card.name" />
+          <img v-else :src="assetUrl(count || preview ? card.full : card.thumb)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
 
-        <div v-if="full && card.video" class="controls">
+        <div v-if="animated" class="controls">
           <button type="button" class="ui-plate" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
@@ -107,12 +101,10 @@ function togglePlay() {
   object-fit: cover;
   background: center / cover no-repeat;
 }
-.art .dim {
-  filter: var(--dim);
+.art.locked video,
+.art.locked img {
+  filter: brightness(0.74);
   transition: filter var(--dur-base);
-}
-.art:hover .dim {
-  filter: none;
 }
 .controls {
   position: absolute;

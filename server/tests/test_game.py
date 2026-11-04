@@ -43,11 +43,13 @@ def test_active_minutes_count_once_per_minute():
     assert g.report_activity(TOKEN, 12)["totals"]["activeMinutes"] == 2
 
 
-@pytest.mark.parametrize("item,cost", [("card:c1", 480), ("emote:e.02", 480), ("emote:rare.01", 1600)])
+@pytest.mark.parametrize("item,cost", [("card:c1", 480), ("emote:e.02", 480), ("emote:uncommon.01", 960), ("emote:rare.01", 1600)])
 def test_craft_prices_and_owned(item, cost):
     manifest = tiny_manifest()
     manifest.data["emoteSets"].append({"id": "rare", "name": "rare", "character": "嘉然", "rarity": "rare",
                                         "emotes": [{"key": "rare.01", "name": "r", "img": "bundle:x"}]})
+    manifest.data["emoteSets"].append({"id": "uncommon", "name": "uncommon", "character": "嘉然", "rarity": "uncommon",
+                                        "emotes": [{"key": "uncommon.01", "name": "u", "img": "bundle:x"}]})
     g = Game(Store(), manifest)
     assert g.status(TOKEN)["shards"] == 1600
     assert g.craft(TOKEN, item)["shards"] == 1600 - cost

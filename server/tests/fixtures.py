@@ -17,7 +17,7 @@ def tiny_manifest() -> Manifest:
         "version": 1,
         "characters": [{"id": "jiaran", "name": "嘉然", "color": "#e799b0"}],
         "skins": [{"name": "嘉然山海经", "member": "嘉然"}],
-        "rarities": {"common": {"name": "普通", "weight": 70}, "rare": {"name": "稀有", "weight": 22},
+        "rarities": {"common": {"name": "普通", "weight": 70}, "uncommon": {"name": "罕见"}, "rare": {"name": "稀有", "weight": 22},
                      "epic": {"name": "史诗", "weight": 7}, "legendary": {"name": "传说", "weight": 1}},
         "series": [{"id": "s1", "name": "S1", "total": 3}, {"id": "s2", "name": "S2", "total": 2}],
         "cards": cards,
@@ -39,9 +39,10 @@ def tiny_manifest() -> Manifest:
         ],
         "starter": {"emotes": ["e.01"], "theme": "x"},
         "economy": {"income": {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60},
-                    "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 5, "common": 89.5},
-                                  "pity": {"legendary": 400, "skin": 200}, "duplicateRefund": 40},
-                    "craftCost": {"common": 480, "rare": 1600}},
+                    "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
+                                  "pity": {"legendary": 400, "skin": 200},
+                                  "commonKindWeights": {"card": 62.65, "emote": 22.85}, "duplicateRefund": 10},
+                    "craftCost": {"common": 480, "uncommon": 960, "rare": 1600}},
     })
 
 

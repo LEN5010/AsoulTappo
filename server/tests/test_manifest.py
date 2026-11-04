@@ -72,13 +72,34 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    assert len(cards) == 70
-    assert sum(c["tier"] == "big" for c in cards) == 8
-    assert sum(c["tier"] == "small" for c in cards) == 8
+    assert len(cards) == 88
+    assert sum(c["tier"] == "big" for c in cards) == 10
+    assert sum(c["tier"] == "small" for c in cards) == 10
     assert M.cards["c1748345610010"]["tier"] == "big"
     assert M.cards["c1748345610002"]["tier"] == "normal"
     for s in M.data["series"]:
         assert s["total"] == sum(1 for c in cards if c["series"] == s["id"]) > 0
+
+
+def test_new_collections_have_all_nine_cards_and_confirmed_hidden_tiers():
+    for series, member in (("reverie", "乃琳"), ("casket", "贝拉")):
+        cards = [c for c in M.cards.values() if c["series"] == series]
+        assert len(cards) == 9
+        assert all(c["characters"] == [member] for c in cards)
+        assert sum(c["video"] is not None for c in cards) == 2
+    for cid, tier in (("c1787896765003", "big"), ("c1787896765010", "small"),
+                      ("c1785126321002", "big"), ("c1785126321010", "small")):
+        assert M.cards[cid]["tier"] == tier
+        assert M.cards[cid]["rarity"] == ("legendary" if tier == "big" else "epic")
+
+
+def test_every_card_video_is_bundled_in_the_client():
+    videos = [c["video"] for c in M.cards.values() if c["video"]]
+    assert len(videos) == 36
+    assert all(ref.startswith("bundle:cards/") for ref in videos)
+    assert not list(PACKS.rglob("*.mp4"))
+    index = json.loads((PACKS / "index.json").read_text(encoding="utf-8"))
+    assert not any(pack["id"].startswith("videos-") for pack in index["packs"])
 
 
 def test_decor_unlock_rules_are_reachable():
@@ -103,16 +124,29 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 428
+    assert len(dropped) == 446
     assert len(M.items) == len(dropped) + len(M.starter)
-    assert M.craft_cost == {"common": 480, "rare": 1600}
+    assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "rare", "epic", "legendary", "skin")] == [378, 15, 24, 8, 3]
+    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [332, 60, 15, 26, 10, 3]
     for c in M.cards.values():
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
     assert all(set(r) == {"name"} for r in M.data["rarities"].values())
+
+
+def test_emote_tiers_match_the_curated_sets():
+    sets = {s["id"]: s["rarity"] for s in M.data["emoteSets"]}
+    assert {sid for sid, rarity in sets.items() if rarity == "rare"} == {
+        "bloom-jiaran", "bloom-nailin", "bloom-beila"}
+    assert {sid for sid, rarity in sets.items() if rarity == "uncommon"} == {
+        "jiaran-naodong", "nailin-naodong", "beila-naodong"}
+    for sid in ("jiaran-garden", "nailin-raccoon", "beila-rabbit", "symphony-xinyi", "symphony-sinuo"):
+        assert sets[sid] == "common"
+    assert M.resonance["duplicateRefund"] == 10
+    assert M.resonance["commonKindWeights"] == {"card": 62.65, "emote": 22.85}
+    assert M.resonance["rates"] == {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5}
 
 
 def test_skin_directories_match_manifest():
