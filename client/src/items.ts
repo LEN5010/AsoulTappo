@@ -1,7 +1,6 @@
 // Collectible items shown in the backpack, collection and craft pages.
-// Ids match the server (server/app/manifest.py): card:<id> emote:<key> acc:<id> theme:<id>.
-// Characters (char:<name>) and frames/badges (decor:<id>) are listed as well, but never drop
-// or get crafted: characters are always owned, frames/badges unlock by collecting a card series.
+// Ids match the server: card:<id>, emote:<key>, char:<skin name>.
+// Original characters are always owned; skins use char:<name> and drop from resonance.
 import { manifest, memberOf, RARITY_ORDER, type Rarity } from "./manifest";
 
 export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
@@ -27,7 +26,7 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   character: "角色", accessory: "配件", emote: "表情", card: "卡牌", theme: "主题", frame: "头像框", badge: "徽章",
 };
 export const RARITY_LABEL = Object.fromEntries(
-  RARITY_ORDER.map((r) => [r, manifest.rarities[r].name]),
+  RARITY_ORDER.map((r) => [r, r === "skin" ? "皮肤" : manifest.rarities[r].name]),
 ) as Record<Rarity, string>;
 /** highest first, for grouping */
 export const RARITY_DESC: Rarity[] = [...RARITY_ORDER].reverse();
@@ -40,6 +39,10 @@ function build(): Item[] {
   for (const c of manifest.characters) {
     out.push({ id: `char:${c.name}`, ref: c.name, kind: "character", name: c.name, rarity: null, art: "",
       characters: [c.name], group: "初始角色", starter: true });
+  }
+  for (const skin of manifest.skins) {
+    out.push({ id: `char:${skin.name}`, ref: skin.name, kind: "character", name: skin.name,
+      rarity: "skin", art: "", characters: [skin.member], group: "皮肤", starter: false });
   }
   for (const s of manifest.emoteSets) {
     for (const e of s.emotes) {
@@ -59,8 +62,12 @@ export const items: Item[] = build();
 const index = new Map(items.map((i) => [i.id, i]));
 export const getItem = (id: string) => index.get(id);
 
-/** Items that drop from boxes and can be crafted with shards. */
+/** Items available through resonance. */
 export const collectible = items.filter((i) => i.rarity !== null && !i.starter);
+
+export function ownsCharacter(name: string, owned: Record<string, number>): boolean {
+  return manifest.characters.some((m) => m.name === name) || (owned[`char:${name}`] ?? 0) > 0;
+}
 
 export function ownsEmote(key: string, owned: Record<string, number>): boolean {
   return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
@@ -75,7 +82,7 @@ export function ownsTheme(id: string, owned: Record<string, number>): boolean {
 }
 
 export function craftCost(item: Item): number | null {
-  return item.kind === "emote" && item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] : null;
+  return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] ?? null : null;
 }
 
 /** Starter emotes of one character (the default quick emotes). */

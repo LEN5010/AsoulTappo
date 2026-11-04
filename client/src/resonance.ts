@@ -1,0 +1,21 @@
+// One pool for every member. Shared cards keep a single collectible id.
+import { collectible, type Item } from "./items";
+import { manifest, type Rarity } from "./manifest";
+
+export type ResonancePool = Record<Rarity, Item[]>;
+export function poolOf(): ResonancePool {
+  const pool: ResonancePool = { legendary: [], skin: [], epic: [], rare: [], common: [] };
+  for (const item of collectible) if (item.rarity) pool[item.rarity].push(item);
+  return pool;
+}
+
+export function effectiveRates(pool: ResonancePool, owned: Record<string, number>): Record<Rarity, number> {
+  const rates = { ...manifest.economy.resonance.rates };
+  for (const rarity of ["legendary", "skin", "epic", "rare"] as const) {
+    if (!pool[rarity].some((item) => !owned[item.id])) {
+      rates.common += rates[rarity];
+      rates[rarity] = 0;
+    }
+  }
+  return rates;
+}

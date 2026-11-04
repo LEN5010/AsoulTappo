@@ -12,7 +12,7 @@ import { requestDesktop, type DesktopRequest } from "./transport";
 function snapshot() {
   return {
     status: player.status.value, collection: player.collection, online: player.online.value,
-    error: player.error.value, presenceUpdatedAt: player.presenceUpdatedAt.value,
+    error: player.error.value,
     freshItems: [...player.freshItems], counter: { ...counter },
     conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value,
     lastError: room.lastError.value, members: [...room.members.values()], emote: room.localPet.emote,
@@ -25,7 +25,6 @@ function applySnapshot(s: Snapshot) {
   Object.assign(player.collection, s.collection);
   player.online.value = s.online;
   player.error.value = s.error;
-  player.presenceUpdatedAt.value = s.presenceUpdatedAt;
   player.freshItems.clear();
   s.freshItems.forEach((id) => player.freshItems.add(id));
   Object.assign(counter, s.counter);
@@ -82,8 +81,7 @@ export async function initDesktop(): Promise<() => void> {
       let result: unknown;
       switch (action) {
         case "sync": result = { settings, page: ui.page, craftTarget: ui.craftTarget }; break;
-        case "drawCards": result = await player.drawCards(args[0] as string, args[1] as number); break;
-        case "openBoxes": result = await player.openBoxes(args[0] as number); break;
+        case "resonate": result = await player.resonate(args[0] as number); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
         case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number); break;
         case "createRoom": result = await room.createRoom(); break;

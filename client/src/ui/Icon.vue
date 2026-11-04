@@ -28,6 +28,12 @@ const PATHS: Record<string, string[]> = {
   pause: ["M8.5 5v14", "M15.5 5v14"],
   sound: ["M4 9.5h3.5L13 5v14l-5.5-4.5H4z", "M16.5 9a4 4 0 0 1 0 6", "M19 6.5a8 8 0 0 1 0 11"],
   mute: ["M4 9.5h3.5L13 5v14l-5.5-4.5H4z", "M16.5 9.5l5 5", "M21.5 9.5l-5 5"],
+  crown: ["M4 8l4.5 4L12 5l3.5 7L20 8l-1.5 11h-13z"],
+  shirt: ["M9 3L3.5 6.5 6 10.5l2-1V21h8V9.5l2 1 2.5-4L15 3a3 3 0 0 1-6 0z"],
+  gem: ["M7 4h10l4 5-9 11L3 9z", "M3 9h18", "M9 9l3 11 3-11"],
+  layers: ["M12 3l9 4.5-9 4.5-9-4.5z", "M3 12l9 4.5 9-4.5", "M3 16.5l9 4.5 9-4.5"],
+  clock: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 7.5V12l3 2"],
+  info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 11v5.5", "M12 7.5v1.5"],
 };
 const ROUND = new Set(["heart"]);
 defineProps<{ name: string; size?: number }>();

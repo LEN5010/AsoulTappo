@@ -6,18 +6,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import PetActor from "./pet/PetActor.vue";
 import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
-import ChestBubble from "./pet/ChestBubble.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
-import DropToast from "./pet/DropToast.vue";
 import NamePill from "./pet/NamePill.vue";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
-import type { Drop } from "./net/api";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet } from "./stores/pet";
-import { boxes, tickets, online, openBoxes, startReporting, stopReporting } from "./stores/player";
+import { draws, startReporting, stopReporting } from "./stores/player";
 import { localPet, memberKey, others, roomId, sendEmote, type RemoteMember } from "./stores/room";
 import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
@@ -49,20 +46,6 @@ function resetPet() {
 const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
 const shownCount = computed(() => (settings.tapView === "today" ? counter.today : counter.total));
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
-
-// ---- chest and drops
-/** Room a drop toast needs beside the pet. */
-const TOAST_ROOM = 270;
-const opening = ref(false);
-const toasts = ref<Drop[]>([]);
-async function openChest() {
-  if (opening.value) return;
-  opening.value = true;
-  const drops = await openBoxes(1);
-  opening.value = false;
-  if (drops) toasts.value.push(...drops);
-  else if (!online.value) openPanel("emotes");
-}
 
 // ---- quick emotes
 function pickQuick(key: string) {
@@ -134,7 +117,7 @@ watch(() => settings.clickThrough, (v) => {
     ui.quickOpen = false;
   }
 });
-watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick, { flush: "post" });
+watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
 </script>
 
 <template>
@@ -161,14 +144,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel"
       >
-        <button v-if="tickets > 0" class="ticket-bubble ui-btn small primary" data-hit data-no-drag @click="openPanel('cards')">抽卡 ×{{ tickets }}</button>
-        <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
+        <button v-if="draws > 0" class="ticket-bubble ui-btn small primary" data-hit data-no-drag @click="openPanel('resonance')">共鸣 ×{{ draws }}</button>
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
-      <DropToast
-        v-if="!settings.clickThrough" :drop="toasts[0] ?? null" :side="ownPos.x > TOAST_ROOM ? 'left' : 'right'"
-        @done="toasts.shift()"
-      />
+
     </PetActor>
 
     <Transition name="panel">

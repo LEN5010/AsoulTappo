@@ -1,32 +1,25 @@
 // HTTP client for the progression API (see protocol/PROTOCOL.md). The player token is a random
 // secret kept in localStorage; the server only ever stores its hash.
-import { manifest } from "../manifest";
+import { manifest, type Rarity } from "../manifest";
 
 export interface PlayerStatus {
-  draw?: { tickets: number; seconds: number; secondsPerDraw: number; pity: number; hardPity: number; total: number };
-  boxes: number;
+  player: string;
   shards: number;
-  boxesToday: number;
-  progress: { taps: number; tapsPerBox: number; minutes: number; minutesPerBox: number };
-  dailyCap: number;
-  totals: { taps: number; activeMinutes: number; opened: number; owned: number; items: number };
-  pity: { epic: number; legendary: number };
-  unlocked: string[];
-  frame: string | null;
-  badge: string | null;
+  income: { multiplier: number; perMinute: number };
+  resonance: { pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number };
+  totals: { taps: number; activeMinutes: number; owned: number; items: number };
   credited?: number;
-  newBoxes?: number;
 }
 export interface Drop {
   item: string;
   tier?: "big" | "small" | "normal";
-  rarity: string;
+  rarity: Rarity;
   new: boolean;
   count: number;
   /** shards gained for a duplicate */
   shards: number;
 }
-export interface OpenResult extends PlayerStatus {
+export interface ResonanceResult extends PlayerStatus {
   drops: Drop[];
 }
 export interface CraftResult extends PlayerStatus {
@@ -95,10 +88,9 @@ export class Api {
   }
 
   presence = (session: string) => this.call<PlayerStatus>("POST", "/api/presence", { session });
-  drawCards = (pool: string, count = 1) => this.call<OpenResult>("POST", "/api/cards/draw", { pool, count });
+  resonate = (count = 1) => this.call<ResonanceResult>("POST", "/api/resonance/draw", { count });
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
-  openBoxes = (count = 1) => this.call<OpenResult>("POST", "/api/boxes/open", { count });
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");

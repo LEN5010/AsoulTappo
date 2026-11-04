@@ -1,5 +1,5 @@
 {
- "version": 3,
+ "version": 4,
  "characters": [
   {
    "id": "jiaran",
@@ -29,20 +29,16 @@
  ],
  "rarities": {
   "common": {
-   "name": "普通",
-   "weight": 70
+   "name": "普通"
   },
   "rare": {
-   "name": "稀有",
-   "weight": 22
+   "name": "稀有"
   },
   "epic": {
-   "name": "史诗",
-   "weight": 7
+   "name": "史诗"
   },
   "legendary": {
-   "name": "传说",
-   "weight": 1
+   "name": "传说"
   }
  },
  "defaultTheme": "jiaran-eat",
@@ -1000,7 +996,7 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462003.webp",
    "full": "pack:cards/tavern/c1762331462003.webp",
@@ -1014,7 +1010,7 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462004.webp",
    "full": "pack:cards/tavern/c1762331462004.webp",
@@ -1154,7 +1150,7 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793010.webp",
    "full": "pack:cards/bloom/c1700742793010.webp",
@@ -1238,7 +1234,7 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793017.webp",
    "full": "pack:cards/bloom/c1700742793017.webp",
@@ -1252,7 +1248,7 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793018.webp",
    "full": "pack:cards/bloom/c1700742793018.webp",
@@ -1378,7 +1374,7 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218001.webp",
    "full": "pack:cards/bloom/c1700799218001.webp",
@@ -1392,7 +1388,7 @@
    "characters": [
     "乃琳"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218003.webp",
    "full": "pack:cards/bloom/c1700799218003.webp",
@@ -1406,7 +1402,7 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700799218004.webp",
    "full": "pack:cards/bloom/c1700799218004.webp",
@@ -1462,7 +1458,7 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724003.webp",
    "full": "pack:cards/brilliant/c1745315724003.webp",
@@ -1560,7 +1556,7 @@
    "characters": [
     "嘉然"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745398468001.webp",
    "full": "pack:cards/brilliant/c1745398468001.webp",
@@ -1574,7 +1570,7 @@
    "characters": [
     "思诺"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610002.webp",
    "full": "pack:cards/symphony/c1748345610002.webp",
@@ -1589,7 +1585,7 @@
     "心宜",
     "思诺"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610003.webp",
    "full": "pack:cards/symphony/c1748345610003.webp",
@@ -1659,7 +1655,7 @@
    "characters": [
     "思诺"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610008.webp",
    "full": "pack:cards/symphony/c1748345610008.webp",
@@ -1673,7 +1669,7 @@
    "characters": [
     "心宜"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610009.webp",
    "full": "pack:cards/symphony/c1748345610009.webp",
@@ -1731,7 +1727,7 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523003.webp",
    "full": "pack:cards/voyage/c1756378523003.webp",
@@ -1745,7 +1741,7 @@
    "characters": [
     "贝拉"
    ],
-   "rarity": "common",
+   "rarity": "epic",
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523004.webp",
    "full": "pack:cards/voyage/c1756378523004.webp",
@@ -3909,17 +3905,43 @@
   "theme": "jiaran-eat"
  },
  "economy": {
-  "dupShards": {
-   "common": 1,
-   "rare": 3,
-   "epic": 8,
-   "legendary": 20
+  "income": {
+   "perMinute": 16,
+   "maxMultiplier": 5,
+   "fullTapsPerMinute": 60
+  },
+  "resonance": {
+   "cost": 160,
+   "rates": {
+    "legendary": 0.5,
+    "skin": 0.5,
+    "epic": 4.5,
+    "rare": 5,
+    "common": 89.5
+   },
+   "pity": {
+    "legendary": 400,
+    "skin": 200
+   },
+   "duplicateRefund": 40
   },
   "craftCost": {
-   "common": 10,
-   "rare": 30,
-   "epic": 80,
-   "legendary": 200
+   "common": 480,
+   "rare": 1600
   }
- }
+ },
+ "skins": [
+  {
+   "name": "嘉然山海经",
+   "member": "嘉然"
+  },
+  {
+   "name": "乃琳山海经",
+   "member": "乃琳"
+  },
+  {
+   "name": "贝拉山海经",
+   "member": "贝拉"
+  }
+ ]
 }

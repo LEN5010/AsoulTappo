@@ -4,17 +4,21 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import { assetUrl } from "../asset";
 import { cardLabel, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
+import { craftCost, getItem } from "../items";
 import { collection } from "../stores/player";
+import CardBack from "./CardBack.vue";
+import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import { flyFrom } from "../ui/motion";
 
 // `dimmed` is the album's treatment of cards not owned yet; the draw view shows every card in full.
 const props = defineProps<{ card: ManifestCard; from?: DOMRect; dimmed?: boolean }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; craft: [id: string] }>();
 
 const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
-const full = computed(() => count.value > 0 || !props.dimmed);
+const full = computed(() => count.value > 0 || (!props.dimmed && props.card.tier === "normal"));
+const cost = computed(() => craftCost(getItem(`card:${props.card.id}`)!));
 const label = computed(() => cardLabel(props.card));
 const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
 
@@ -42,12 +46,13 @@ function togglePlay() {
       <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal' && full }">
         <template v-if="full">
           <video
-            v-if="card.video" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            v-if="card.video && !reducedMotion" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :muted="muted" autoplay loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>
           <img v-else :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
         </template>
+        <CardBack v-else-if="card.tier !== 'normal'" />
         <img v-else class="dim" :src="assetUrl(card.thumb)" :alt="card.name" />
 
         <div v-if="full && card.video" class="controls">
@@ -69,6 +74,7 @@ function togglePlay() {
           <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
           <div v-if="card.video"><dt>卡面</dt><dd>动态</dd></div>
         </dl>
+        <button v-if="!count && cost !== null" type="button" class="ui-btn primary" @click="emit('craft', `card:${card.id}`)">兑换（{{ cost }} 碎片）</button>
       </div>
     </div>
   </Modal>

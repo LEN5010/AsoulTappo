@@ -24,84 +24,50 @@ def test_token_validation_and_player_id():
     assert TOKEN not in player_id_for(TOKEN)
 
 
-def test_taps_progress_and_box_award():
-    g, clock = make(DropConfig(taps_per_box=100, minutes_per_box=1000))
-    st = g.report_activity(TOKEN, 60)
-    assert st["boxes"] == 0 and st["progress"]["taps"] == 60
-    clock.t += 10
-    st = g.report_activity(TOKEN, 60)
-    assert st["boxes"] == 1 and st["newBoxes"] == 1 and st["progress"]["taps"] == 20
-
-
 def test_rate_limit_clips_credit():
-    g, clock = make(DropConfig(max_taps_per_sec=10, taps_per_box=100), elapsed=0)
-    g.report_activity(TOKEN, 0)
+    g, clock = make(DropConfig(max_taps_per_sec=10), elapsed=0)
     clock.t += 2
-    st = g.report_activity(TOKEN, 5000)  # only ~20 taps are plausible in 2s
-    assert st["credited"] == 20 and st["totals"]["taps"] == 20
+    st = g.report_activity(TOKEN, 5000)
+    assert st["credited"] == st["totals"]["taps"] == 20
 
 
-def test_active_minute_counts_once_per_minute_and_awards_box():
-    g, clock = make(DropConfig(taps_per_box=10**6, minutes_per_box=2, min_taps_active_minute=10), clock=Clock(59990))
-    clock.t = 60 * 1000.0
-    g.report_activity(TOKEN, 4)         # below threshold: not active yet
+def test_active_minutes_count_once_per_minute():
+    g, clock = make(clock=Clock(59990))
+    clock.t = 60000
+    g.report_activity(TOKEN, 4)
     clock.t += 5
-    st = g.report_activity(TOKEN, 8)    # 12 taps this minute -> active
-    assert st["totals"]["activeMinutes"] == 1
+    assert g.report_activity(TOKEN, 8)["totals"]["activeMinutes"] == 1
     clock.t += 5
-    st = g.report_activity(TOKEN, 8)    # same minute: no double count
-    assert st["totals"]["activeMinutes"] == 1 and st["boxes"] == 0
-    clock.t = 60 * 1001.0
-    st = g.report_activity(TOKEN, 12)   # next minute: 2nd active minute -> box
-    assert st["totals"]["activeMinutes"] == 2 and st["boxes"] == 1
+    assert g.report_activity(TOKEN, 8)["totals"]["activeMinutes"] == 1
+    clock.t = 60060
+    assert g.report_activity(TOKEN, 12)["totals"]["activeMinutes"] == 2
 
 
-def test_daily_and_inventory_caps():
-    g, clock = make(DropConfig(taps_per_box=10, daily_box_cap=3, inventory_cap=2, max_taps_per_sec=1000))
-    st = g.report_activity(TOKEN, 1000)
-    assert st["boxes"] == 2 and st["boxesToday"] == 2          # inventory cap 2
-    g.open_boxes(TOKEN)
-    st = g.report_activity(TOKEN, 1000)
-    assert st["boxesToday"] == 3 and st["boxes"] == 2          # daily cap 3 (only one more granted)
-    clock.t += 86400
-    st = g.report_activity(TOKEN, 0)
-    assert st["boxesToday"] == 0                               # new UTC day
+@pytest.mark.parametrize("item,cost", [("card:c1", 480), ("emote:e.02", 480), ("emote:rare.01", 1600)])
+def test_craft_prices_and_owned(item, cost):
+    manifest = tiny_manifest()
+    manifest.data["emoteSets"].append({"id": "rare", "name": "rare", "character": "嘉然", "rarity": "rare",
+                                        "emotes": [{"key": "rare.01", "name": "r", "img": "bundle:x"}]})
+    g = Game(Store(), manifest)
+    assert g.status(TOKEN)["shards"] == 1600
+    assert g.craft(TOKEN, item)["shards"] == 1600 - cost
+    with pytest.raises(GameError, match="owned"):
+        g.craft(TOKEN, item)
 
 
-def test_open_box_requires_box_and_stores_collection():
-    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000), SeqRng(0.0))
-    with pytest.raises(GameError) as e:
-        g.open_boxes(TOKEN)
-    assert e.value.code == "no_box"
-    g.report_activity(TOKEN, 30)
-    r = g.open_boxes(TOKEN)
-    assert r["drops"] == [{"item": "emote:e.02", "rarity": "common", "new": True, "count": 1, "shards": 0}]
-    assert r["boxes"] == 2
-    col = g.collection(TOKEN)
-    assert col["owned"] == {"emote:e.02": 1} and col["recent"][0]["item"] == "emote:e.02"
-    assert g.status(TOKEN)["totals"]["opened"] == 1
-
-
-def test_open_several_boxes_and_duplicates_give_shards():
-    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000, max_open_batch=10), SeqRng(0.0))
-    g.report_activity(TOKEN, 30)
-    r = g.open_boxes(TOKEN, 5)   # only 3 boxes; rng 0.0 always picks card:c1
-    assert [d["new"] for d in r["drops"]] == [True, False, False]
-    assert [d["shards"] for d in r["drops"]] == [0, 1, 1] and [d["count"] for d in r["drops"]] == [1, 2, 3]
-    assert r["boxes"] == 0 and r["shards"] == 2 and r["totals"]["opened"] == 3
-    assert r["totals"] == {**r["totals"], "owned": 1, "items": 8}
-
-
-def test_craft_spends_shards_on_missing_emotes_only():
+@pytest.mark.parametrize("item", ["card:c4", "card:c5", "char:嘉然山海经", "emote:e.01", "acc:hat", "nope"])
+def test_uncraftable_items(item):
     g, _ = make()
-    g.store.update_player(player_id_for(TOKEN), shards=15)
-    r = g.craft(TOKEN, "emote:e.02")
-    assert r["item"] == "emote:e.02" and r["shards"] == 5
-    for item, code in (("emote:e.02", "owned"), ("emote:e.03", "no_shards"),
-                       ("emote:e.01", "bad_item"), ("card:c1", "bad_item"), ("acc:hat", "bad_item")):
-        with pytest.raises(GameError) as e:
-            g.craft(TOKEN, item)
-        assert e.value.code == code
+    with pytest.raises(GameError, match="unknown item"):
+        g.craft(TOKEN, item)
+
+
+def test_craft_insufficient_shards():
+    g, _ = make()
+    g.store.update_player(player_id_for(TOKEN), shards=479)
+    with pytest.raises(GameError) as e:
+        g.craft(TOKEN, "card:c1")
+    assert e.value.code == "no_shards"
 
 
 def test_loadout_validates_favorites_and_ignores_retired_equipment():
@@ -115,12 +81,16 @@ def test_loadout_validates_favorites_and_ignores_retired_equipment():
         assert e.value.code == code
 
 
-def test_loadout_accepts_skins_of_known_members():
+def test_loadout_requires_owned_skin_and_accepts_original():
     g, _ = make()
-    assert g.set_loadout(TOKEN, {"character": "嘉然山海经", "favorites": ["e.01"]})["character"] == "嘉然山海经"
-    assert g.get_loadout(TOKEN) == {"character": "嘉然山海经", "favorites": ["e.01"]}
     with pytest.raises(GameError) as e:
-        g.set_loadout(TOKEN, {"character": "路人山海经"})
+        g.set_loadout(TOKEN, {"character": "嘉然山海经"})
+    assert e.value.code == "locked"
+    g.store.add_item(player_id_for(TOKEN), "char:嘉然山海经", 0)
+    assert g.set_loadout(TOKEN, {"character": "嘉然山海经"})["character"] == "嘉然山海经"
+    assert g.set_loadout(TOKEN, {"character": "嘉然"})["character"] == "嘉然"
+    with pytest.raises(GameError) as e:
+        g.set_loadout(TOKEN, {"character": "嘉然不存在"})
     assert e.value.code == "bad_item"
 
 
@@ -135,25 +105,8 @@ def test_room_profile_and_emote_ownership():
     assert g.owns_emote(TOKEN, "e.02")
 
 
-def test_pity_counters_persist_and_reset():
-    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=10**5), SeqRng(0.0))
-    g.report_activity(TOKEN, 100)
-    for _ in range(3):
-        g.open_boxes(TOKEN)
-    assert g.status(TOKEN)["pity"] == {"epic": 3, "legendary": 3}
-
-
-def test_pity_resets_when_the_rolled_rarity_falls_back():
-    # the manifest has no epic emote, so a forced epic roll drops a lower rarity
-    g, _ = make(DropConfig(taps_per_box=10, daily_box_cap=100, inventory_cap=100, max_taps_per_sec=10**5,
-                           max_open_batch=30), SeqRng(0.0))
-    g.report_activity(TOKEN, 300)
-    g.open_boxes(TOKEN, 30)
-    assert g.status(TOKEN)["pity"]["epic"] == 10
-
-
 def test_players_are_isolated():
-    g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000))
-    g.report_activity(TOKEN, 50)
+    g, _ = make()
+    g.resonate(TOKEN)
     other = "o" * 32
-    assert g.status(other)["boxes"] == 0 and g.collection(other)["owned"] == {}
+    assert g.status(other)["shards"] == 1600 and g.collection(other)["owned"] == {}

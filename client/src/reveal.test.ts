@@ -1,54 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { groupDrops, needsSummary, sortDrops, spotlightQueue, type Revealed } from "./reveal";
+import { groupDrops, needsSummary, sortDrops, spotlightQueue } from "./reveal";
+import type { Rarity } from "./manifest";
+const d = (rarity: Rarity, item = "card:test", fresh = false) => ({ rarity, item, new: fresh });
 
-const d = (tier: Revealed["tier"], isNew = false, id = 0) => ({ tier, new: isNew, id });
-
-describe("sortDrops", () => {
-  it("puts the rarest first and keeps draw order within a tier", () => {
-    const sorted = sortDrops([d("normal", false, 1), d("small", false, 2), d("big", false, 3), d("normal", false, 4)]);
-    expect(sorted.map((x) => x.id)).toEqual([3, 2, 1, 4]);
+describe("mixed resonance reveals", () => {
+  it("sorts legendary, skin, epic, rare, common, then new before duplicates", () => {
+    const drops = [d("common"), d("epic"), d("skin", "char:test"), d("legendary"), d("rare"), d("common", "card:new", true)];
+    expect(sortDrops(drops).map((x) => x.rarity)).toEqual(["legendary", "skin", "epic", "rare", "common", "common"]);
+    expect(sortDrops(drops)[4]!.new).toBe(true);
+    expect(drops[0]!.rarity).toBe("common");
   });
-  it("puts new cards before duplicates of the same tier", () => {
-    expect(sortDrops([d("normal", false, 1), d("normal", true, 2)]).map((x) => x.id)).toEqual([2, 1]);
+  it("spotlights single cards and skins, sends single emotes to summary", () => {
+    expect(spotlightQueue([d("common")])).toHaveLength(1);
+    expect(spotlightQueue([d("skin", "char:test")])).toHaveLength(1);
+    expect(spotlightQueue([d("rare", "emote:test")])).toEqual([]);
+    expect(needsSummary([d("rare", "emote:test")])).toBe(true);
+    expect(needsSummary([d("common")])).toBe(false);
   });
-  it("treats drops without a tier as normal", () => {
-    expect(sortDrops([d(undefined, false, 1), d("small", false, 2)]).map((x) => x.id)).toEqual([2, 1]);
+  it("spotlights epic dancing cards in batches", () => {
+    expect(spotlightQueue([d("common"), d("epic"), d("rare", "emote:test"), d("skin", "char:test"), d("legendary")]).map((x) => x.rarity)).toEqual(["legendary", "skin", "epic"]);
+    expect(needsSummary([d("common"), d("common")])).toBe(true);
   });
-  it("does not touch its input", () => {
-    const drops = [d("normal"), d("big")];
-    sortDrops(drops);
-    expect(drops[0]!.tier).toBe("normal");
-  });
-});
-
-describe("groupDrops", () => {
-  const drop = (item: string, count: number, shards = 0, isNew = false) => ({ item, count, shards, new: isNew, tier: "normal" as const });
-
-  it("merges repeats and keeps first-seen order", () => {
-    const groups = groupDrops([drop("a", 1, 0, true), drop("b", 4), drop("a", 2, 3), drop("a", 3, 3)]);
-    expect(groups.map((g) => g.item)).toEqual(["a", "b"]);
-    expect(groups[0]).toMatchObject({ got: 3, count: 3, shards: 6, new: true });
-    expect(groups[1]).toMatchObject({ got: 1, count: 4 });
-  });
-});
-
-describe("spotlightQueue", () => {
-  it("spotlights a single draw of any tier", () => {
-    expect(spotlightQueue([d("normal")])).toHaveLength(1);
-    expect(spotlightQueue([d("big")])).toHaveLength(1);
-  });
-  it("spotlights only hidden cards in a batch, big before small", () => {
-    const queue = spotlightQueue([d("normal"), d("small", false, 1), d("normal"), d("big", false, 2)]);
-    expect(queue.map((x) => x.id)).toEqual([2, 1]);
-  });
-  it("is empty for a batch of normal cards", () => {
-    expect(spotlightQueue([d("normal"), d("normal")])).toEqual([]);
-  });
-});
-
-describe("needsSummary", () => {
-  it("skips the summary for a single draw", () => {
-    expect(needsSummary([d("big")])).toBe(false);
-    expect(needsSummary([d("normal"), d("normal")])).toBe(true);
+  it("groups repeats and sums refunds, preserving new state", () => {
+    const drops = [{ ...d("common", "card:a", true), count: 1, shards: 0 }, { ...d("common", "card:a"), count: 2, shards: 40 }, { ...d("common", "card:a"), count: 3, shards: 40 }];
+    expect(groupDrops(drops)).toEqual([{ ...drops[0], count: 3, shards: 80, got: 3 }]);
   });
 });

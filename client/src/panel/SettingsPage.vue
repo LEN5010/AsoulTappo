@@ -47,7 +47,7 @@ function applyServer() {
         <div class="stats">
           <span><b>{{ counter.total.toLocaleString("en-US") }}</b>累计敲击</span>
           <span><b>{{ status?.totals.activeMinutes ?? "-" }}</b>活跃分钟</span>
-          <span><b>{{ status?.totals.opened ?? "-" }}</b>已开宝箱</span>
+          <span><b>{{ status?.resonance.total ?? "-" }}</b>已共鸣</span>
           <span><b>{{ status ? `${status.totals.owned}/${status.totals.items}` : "-" }}</b>收集进度</span>
         </div>
       </div>

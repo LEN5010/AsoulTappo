@@ -1,12 +1,14 @@
 // Order and pacing of a draw's results. Pure, so the scene only has to play them back.
-import { TIER_RANK, type CardTier } from "./cards";
+import type { Rarity } from "./manifest";
 
 export interface Revealed {
-  tier?: CardTier;
+  rarity: Rarity;
+  item: string;
   new: boolean;
 }
 
-const rank = (d: Revealed) => TIER_RANK[d.tier ?? "normal"];
+const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "common"];
+const rank = (d: Revealed) => ORDER.indexOf(d.rarity);
 
 /** Results for the summary: rarest first, then new before duplicates, otherwise in draw order. */
 export function sortDrops<T extends Revealed>(drops: readonly T[]): T[] {
@@ -32,11 +34,11 @@ export function groupDrops<T extends Revealed & { item: string; count: number; s
   return [...groups.values()];
 }
 
-/** A single draw always gets the spotlight. In a batch only hidden cards do, rarest first. */
+/** Single cards/skins get a spotlight; batches highlight legendary, skin and epic. */
 export function spotlightQueue<T extends Revealed>(drops: readonly T[]): T[] {
-  if (drops.length === 1) return [...drops];
-  return sortDrops(drops).filter((d) => d.tier === "big" || d.tier === "small");
+  if (drops.length === 1) return drops.filter((d) => d.item.startsWith("card:") || d.item.startsWith("char:"));
+  return sortDrops(drops).filter((d) => ["legendary", "skin", "epic"].includes(d.rarity));
 }
 
-/** A single draw ends on its spotlight, there is nothing left to sum up. */
-export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1;
+/** Single emotes go straight to the summary. */
+export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1 || spotlightQueue(drops).length === 0;

@@ -1,6 +1,6 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
 
-export type DesktopAction = "sync" | "drawCards" | "openBoxes" | "craftItem" | "sendEmote" |
+export type DesktopAction = "sync" | "resonate" | "craftItem" | "sendEmote" |
   "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes";
 
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[] }

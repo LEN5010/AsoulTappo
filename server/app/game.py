@@ -1,18 +1,10 @@
-"""Server-authoritative progression: input activity -> loot boxes -> items.
-
-The client only reports *counts* of taps (never key content).  The server clips
-the credited taps to a plausible rate, decides when a box is earned, rolls the
-item and stores everything in SQLite.  Duplicates become shards that craft a
-chosen missing item.  Identity is a client-generated secret token; the player id
-is a hash of it.
-"""
+"""Server-authoritative activity income, resonance and item ownership."""
 from __future__ import annotations
 
 import hashlib
 import json
 import math
 import time
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 from . import cards as cardlogic
@@ -24,8 +16,6 @@ TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
-DRAW_SECONDS = 5 * 60
-DRAW_PITY = 400
 # emote keys every member may send besides the starter emotes: the theme like
 FREE_EMOTES = frozenset({"thumbup"})
 LOADOUT_KEYS = ("character", "favorites")
@@ -63,7 +53,7 @@ class Game:
             now = self.now()
             p = st.get_player(pid, now)
             if session is not None and sequence <= st.activity_sequence(pid, session):
-                return {**self.status(token), "credited": 0, "newBoxes": 0}
+                return {**self.status(token), "credited": 0}
             previous = p["last_activity"] or p["created"]
             elapsed = min(max(now - previous, 0.0), MAX_ELAPSED)
             budget = min(st.activity_budget(pid) + cfg.max_taps_per_sec * elapsed,
@@ -72,44 +62,28 @@ class Game:
 
             bucket = int(now // 60)
             minute_taps, counted = p["minute_taps"], p["minute_counted"]
+            last_minute_taps = p["last_minute_taps"]
             if bucket != p["minute_bucket"]:
+                last_minute_taps = minute_taps if bucket == p["minute_bucket"] + 1 else 0
                 minute_taps, counted = 0, 0
             minute_taps += credited
-            active_minutes, progress_minutes = p["active_minutes"], p["progress_minutes"]
+            active_minutes = p["active_minutes"]
             if not counted and minute_taps >= cfg.min_taps_active_minute:
                 counted = 1
                 active_minutes += 1
-                progress_minutes += 1
 
-            progress_taps = p["progress_taps"] + credited
-            earned = progress_taps // cfg.taps_per_box + progress_minutes // cfg.minutes_per_box
-            progress_taps %= cfg.taps_per_box
-            progress_minutes %= cfg.minutes_per_box
-
-            day = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%d")
-            boxes, boxes_today = p["boxes"], p["boxes_today"]
-            if p["boxes_day"] != day:
-                boxes_today = 0
-            gained = 0
-            for _ in range(earned):
-                if boxes_today < cfg.daily_box_cap and boxes < cfg.inventory_cap:
-                    boxes += 1
-                    boxes_today += 1
-                    gained += 1
             st.update_player(
                 pid, taps_total=p["taps_total"] + credited, active_minutes=active_minutes,
-                progress_taps=progress_taps, progress_minutes=progress_minutes, boxes=boxes,
-                boxes_day=day, boxes_today=boxes_today, last_activity=max(now, previous),
+                last_activity=max(now, previous), last_minute_taps=last_minute_taps,
                 minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted)
             st.save_activity_budget(pid, budget - credited)
             if session is not None:
                 st.save_activity_sequence(pid, session, sequence)
         out = self.status(token)
         out["credited"] = credited
-        out["newBoxes"] = gained
         return out
 
-    # ------------------------------------------------------------------- boxes
+    # ------------------------------------------------------------------ income
     def presence(self, token: str, session: str) -> dict[str, Any]:
         """Accumulate connected running time, shared across simultaneous clients."""
         pid = player_id_for(token)
@@ -120,73 +94,60 @@ class Game:
             elapsed = 0.0
             if previous is not None and 0 <= now - previous <= 60:
                 elapsed = max(0.0, now - max(previous, p["presence_last"]))
-            seconds = p["draw_seconds"] + elapsed
-            earned = int(seconds // DRAW_SECONDS)
-            st.update_player(pid, draw_tickets=p["draw_tickets"] + earned,
-                             draw_seconds=seconds % DRAW_SECONDS,
+            inc = self.manifest.income
+            earned = p["shard_remainder"] + elapsed / 60 * inc["perMinute"] * self._multiplier(p, now)
+            # Absorb floating-point noise at whole-shard boundaries.
+            whole = int(earned + 1e-9)
+            st.update_player(pid, shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
                              presence_last=max(now, p["presence_last"]) if previous is not None else p["presence_last"])
         return self.status(token)
 
-    def draw_cards(self, token: str, pool_id: str, count: int = 1) -> dict[str, Any]:
-        pool = self.manifest.card_pools.get(pool_id)
-        if not pool or not all(pool.values()):
-            raise GameError("bad_pool", "请选择收藏集")
+    def _multiplier(self, p, now):
+        bucket = int(now // 60)
+        if p["minute_bucket"] == bucket:
+            taps = p["last_minute_taps"]
+        elif p["minute_bucket"] == bucket - 1:
+            taps = p["minute_taps"]
+        else:
+            taps = 0
+        inc = self.manifest.income
+        return 1 + (inc["maxMultiplier"] - 1) * min(taps, inc["fullTapsPerMinute"]) / inc["fullTapsPerMinute"]
+
+    def resonate(self, token: str, count: int = 1) -> dict[str, Any]:
+        pool = self.manifest.resonance_pool
         pid = player_id_for(token)
-        drops: list[dict[str, Any]] = []
+        cfg = self.manifest.resonance
+        drops = []
         with self.store.transaction() as st:
             now = self.now()
             p = st.get_player(pid, now)
-            if p["draw_tickets"] < 1:
-                raise GameError("no_ticket", "抽卡次数不足")
-            n = min(max(1, count), 100, p["draw_tickets"])
-            pity = p["draw_pity"]
+            if p["shards"] < cfg["cost"]:
+                raise GameError("no_shards", "碎片不足")
+            n = min(max(1, count), 100, p["shards"] // cfg["cost"])
+            pity = {"legendary": p["draw_pity"], "skin": p["skin_pity"]}
             owned = st.owned(pid)
+            refund = 0
             for _ in range(n):
-                roll = self.rng.random()
-                tier = "big" if pity + 1 >= DRAW_PITY or roll < 0.005 else "small" if roll < 0.05 else "normal"
-                candidates = pool[tier]
-                card = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
-                iid = f"card:{card['id']}"
+                missing = {r: [item for item in items if item["id"] not in owned] for r, items in pool.items()}
+                available = {r for r in missing if missing[r]}
+                rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng)
+                candidates = missing[rarity] or pool[rarity]
+                item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
+                iid = item["id"]
                 fresh = iid not in owned
+                gained = 0 if fresh else cfg["duplicateRefund"]
+                refund += gained
                 owned[iid] = st.add_item(pid, iid, now)
-                st.log_drop(pid, iid, card["rarity"], fresh, now)
-                pity = 0 if tier == "big" else pity + 1
-                drops.append({"item": iid, "rarity": card["rarity"], "tier": tier,
-                              "new": fresh, "count": owned[iid], "shards": 0})
-            st.update_player(pid, draw_tickets=p["draw_tickets"] - n,
-                             draw_pity=pity, drawn_total=p["drawn_total"] + n)
+                st.log_drop(pid, iid, rarity, fresh, now)
+                for r in pity:
+                    pity[r] = 0 if rarity == r else pity[r] + 1
+                drop = {"item": iid, "rarity": rarity, "new": fresh, "count": owned[iid], "shards": gained}
+                if item["kind"] == "card":
+                    drop["tier"] = self.manifest.cards[iid[5:]]["tier"]
+                drops.append(drop)
+            st.update_player(pid, shards=p["shards"] - n * cfg["cost"] + refund,
+                             draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
         return {**self.status(token), "drops": drops}
-
-    def open_boxes(self, token: str, count: int = 1) -> dict[str, Any]:
-        """Open up to ``count`` boxes (at most ``cfg.max_open_batch``); returns status + drops."""
-        pid = player_id_for(token)
-        now = self.now()
-        cfg = self.cfg
-        drops: list[dict[str, Any]] = []
-        with self.store.transaction() as st:
-            p = st.get_player(pid, now)
-            if p["boxes"] <= 0:
-                raise GameError("no_box", "no box to open")
-            n = max(1, min(int(count), p["boxes"], cfg.max_open_batch))
-            owned = st.owned(pid)
-            since_epic, since_legend, shards = p["since_epic"], p["since_legend"], p["shards"]
-            for _ in range(n):
-                rarity = cardlogic.roll_rarity(self.manifest.weights, since_epic, since_legend, cfg, self.rng)
-                item = cardlogic.pick_item(self.manifest.by_rarity, owned, rarity, cfg, self.rng)
-                got = item["rarity"]
-                is_new = item["id"] not in owned
-                gained = 0 if is_new else self.manifest.dup_shards.get(got, 0)
-                shards += gained
-                owned[item["id"]] = st.add_item(pid, item["id"], now)
-                st.log_drop(pid, item["id"], got, is_new, now)
-                since_epic, since_legend = cardlogic.next_pity(rarity, since_epic, since_legend)
-                drops.append({"item": item["id"], "rarity": got, "new": is_new,
-                              "count": owned[item["id"]], "shards": gained})
-            st.update_player(pid, boxes=p["boxes"] - n, opened_total=p["opened_total"] + n,
-                             since_epic=since_epic, since_legend=since_legend, shards=shards)
-        out = self.status(token)
-        out["drops"] = drops
-        return out
 
     # ------------------------------------------------------------------- craft
     def craft(self, token: str, item_id: str) -> dict[str, Any]:
@@ -195,7 +156,7 @@ class Game:
         now = self.now()
         item = self.manifest.items.get(item_id)
         cost = self.manifest.craft_cost.get(item["rarity"] or "") if item else None
-        if item is None or item["kind"] != "emote" or item_id in self.manifest.starter or cost is None:
+        if item is None or item["kind"] not in ("emote", "card") or item_id in self.manifest.starter or cost is None:
             raise GameError("bad_item", "unknown item")
         with self.store.transaction() as st:
             p = st.get_player(pid, now)
@@ -216,24 +177,17 @@ class Game:
         now = self.now()
         p = self.store.get_player(pid, now)
         owned = self.store.owned(pid)
-        cfg = self.cfg
-        day = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%d")
-        boxes_today = p["boxes_today"] if p["boxes_day"] == day else 0
+        multiplier = self._multiplier(p, now)
         return {
             "player": pid,
-            "boxes": p["boxes"],
             "shards": p["shards"],
-            "draw": {"tickets": p["draw_tickets"], "seconds": p["draw_seconds"],
-                     "secondsPerDraw": DRAW_SECONDS, "pity": p["draw_pity"],
-                     "hardPity": DRAW_PITY, "total": p["drawn_total"]},
-            "progress": {"taps": p["progress_taps"], "tapsPerBox": cfg.taps_per_box,
-                         "minutes": p["progress_minutes"], "minutesPerBox": cfg.minutes_per_box},
-            "boxesToday": boxes_today, "dailyCap": cfg.daily_box_cap,
+            "income": {"multiplier": round(multiplier, 2),
+                       "perMinute": round(self.manifest.income["perMinute"] * multiplier, 1)},
+            "resonance": {"pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]},
+                          "hardPity": self.manifest.resonance["pity"], "total": p["drawn_total"]},
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
-                       "opened": p["opened_total"],
-                       "owned": sum(1 for i in owned if i in self.manifest.items),
-                       "items": len(self.manifest.items)},
-            "pity": {"epic": p["since_epic"], "legendary": p["since_legend"]},
+                       "owned": sum(1 for i in owned if i in self.manifest.items and i not in self.manifest.starter),
+                       "items": len(self.manifest.items) - len(self.manifest.starter)},
         }
 
     def collection(self, token: str) -> dict[str, Any]:
@@ -249,8 +203,12 @@ class Game:
         """Validate the given loadout keys; raises GameError.  "" / None clear head and desk."""
         out: dict[str, Any] = {}
         if "character" in patch and patch["character"] is not None:
-            if not self.manifest.knows_character(patch["character"]):
-                raise GameError("bad_item", "unknown character")
+            name = patch["character"]
+            if name not in self.manifest.character_names:
+                if name not in self.manifest.skins:
+                    raise GameError("bad_item", "unknown character")
+                if f"char:{name}" not in owned:
+                    raise GameError("locked", "skin not owned")
             out["character"] = patch["character"]
         if "favorites" in patch and patch["favorites"] is not None:
             favs = list(dict.fromkeys(patch["favorites"]))

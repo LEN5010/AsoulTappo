@@ -465,13 +465,13 @@ def main() -> None:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
     manifest = {
-        "version": 3,
+        "version": 4,
         "characters": cat.CHARACTERS,
         "rarities": {
-            "common": {"name": "普通", "weight": 70},
-            "rare": {"name": "稀有", "weight": 22},
-            "epic": {"name": "史诗", "weight": 7},
-            "legendary": {"name": "传说", "weight": 1},
+            "common": {"name": "普通"},
+            "rare": {"name": "稀有"},
+            "epic": {"name": "史诗"},
+            "legendary": {"name": "传说"},
         },
         "defaultTheme": cat.DEFAULT_THEME,
         "themes": themes,
@@ -482,7 +482,8 @@ def main() -> None:
         "decor": decor,
         "accessories": accessories,
         "starter": starter_items(emotes),
-        "economy": {"dupShards": cat.DUP_SHARDS, "craftCost": cat.CRAFT_COST},
+        "skins": cat.SKINS,
+        "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST},
     }
     write_json(PACKS / "manifest.json", manifest)
     write_json(CLIENT_MANIFEST, manifest)

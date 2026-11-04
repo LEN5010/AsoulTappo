@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 let player: typeof import("./player") | undefined;
 const response = (data: unknown) => ({ ok: true, json: async () => data }) as Response;
-const statusFor = (server: string) => ({ boxes: server === "a" ? 5 : 0 });
+const statusFor = (server: string) => ({ shards: server === "a" ? 800 : 0 });
 const collectionFor = (server: string) => ({ owned: { [server]: 1 }, recent: [] });
 
 beforeEach(() => {
@@ -51,7 +51,7 @@ it("keeps pending batches and their retries at the original server", async () =>
   expect(activities.map((r) => r.url)).toEqual(["http://a/api/activity", "http://a/api/activity", "http://b/api/activity"]);
   expect(activities[0]).toEqual(activities[1]);
   expect(activities[2].body).toMatchObject({ taps: 2, sequence: 1 });
-  expect(p.status.value?.boxes).toBe(0);
+  expect(p.status.value?.shards).toBe(0);
   expect(p.collection.owned).toEqual({ b: 1 });
 });
 
@@ -68,26 +68,26 @@ it("ignores a previous server's slow refresh after switching", async () => {
   await vi.advanceTimersByTimeAsync(0);
   release(response(statusFor("a")));
   await vi.advanceTimersByTimeAsync(0);
-  expect(p.status.value?.boxes).toBe(0);
+  expect(p.status.value?.shards).toBe(0);
   expect(p.collection.owned).toEqual({ b: 1 });
 });
 
 it("discards a draw result after switching servers", async () => {
   let release!: (r: Response) => void;
   vi.stubGlobal("fetch", async (url: string) => {
-    if (url.endsWith("/cards/draw")) return new Promise<Response>((resolve) => { release = resolve; });
+    if (url.endsWith("/resonance/draw")) return new Promise<Response>((resolve) => { release = resolve; });
     const server = new URL(url).hostname;
     return response(url.endsWith("/collection") ? collectionFor(server) : statusFor(server));
   });
   const { settings, p } = await setup();
   await vi.advanceTimersByTimeAsync(0);
-  const draw = p.drawCards("bloom");
+  const draw = p.resonate();
   await vi.advanceTimersByTimeAsync(0);
   settings.serverUrl = "http://b";
   await vi.advanceTimersByTimeAsync(0);
-  release(response({ boxes: 5, drops: [] }));
+  release(response({ shards: 800, drops: [] }));
   expect(await draw).toBeNull();
-  expect(p.status.value?.boxes).toBe(0);
+  expect(p.status.value?.shards).toBe(0);
 });
 
 it("reports running time even when there are no key presses", async () => {
@@ -95,15 +95,31 @@ it("reports running time even when there are no key presses", async () => {
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     if (url.endsWith("/presence")) heartbeats.push(JSON.parse(init!.body as string).session);
     return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : {
-      boxes: 0, draw: { tickets: 2, seconds: 100, pity: 3, hardPity: 400, total: 3, secondsPerDraw: 300 },
+      shards: 320,
     });
   });
   const { p } = await setup();
   await vi.advanceTimersByTimeAsync(40000);
   expect(heartbeats).toHaveLength(3);
   expect(new Set(heartbeats).size).toBe(1);
-  expect(p.tickets.value).toBe(2);
+  expect(p.draws.value).toBe(2);
   p.stopReporting();
   await vi.advanceTimersByTimeAsync(40000);
   expect(heartbeats).toHaveLength(3);
+});
+
+it("equips an original member when a saved skin is locked after collection loads", async () => {
+  vi.stubGlobal("fetch", async (url: string) => response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 1600 }));
+  const { settings, p } = await setup();
+  settings.character = "贝拉山海经";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settings.character).toBe("贝拉");
+  settings.character = "贝拉山海经";
+  p.online.value = false;
+  p.sanitizeLoadout();
+  expect(settings.character).toBe("贝拉山海经");
+  p.online.value = true;
+  p.collection.owned["char:贝拉山海经"] = 1;
+  p.sanitizeLoadout();
+  expect(settings.character).toBe("贝拉山海经");
 });

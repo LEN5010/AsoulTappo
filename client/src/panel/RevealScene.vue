@@ -2,21 +2,21 @@
 // Full-panel reveal of a draw or a box. It covers the panel before the request goes out: the
 // stores update as soon as a response lands, and the page underneath would give the result away.
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { getCharacter } from "../characters";
 import { assetUrl } from "../asset";
 import { cardLabel, TIER_LABEL } from "../cards";
 import { dropLabel, getItem, RARITY_LABEL } from "../items";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import type { Drop } from "../net/api";
-import ChestIcon from "../pet/ChestIcon.vue";
 import { groupDrops, needsSummary, sortDrops, spotlightQueue } from "../reveal";
 import { reducedMotion } from "../stores/theme";
 import { takeFocus, trapTab } from "../ui/focus";
 import ItemArt from "../ui/ItemArt.vue";
 import CardBack from "./CardBack.vue";
 import CardSpotlight from "./CardSpotlight.vue";
+import SkinSpotlight from "./SkinSpotlight.vue";
 
 const props = defineProps<{
-  kind: "card" | "box";
   /** Runs once the scene is up. null closes it, leaving the error to the page. */
   load: () => Promise<Drop[] | null>;
   /** Draws left for another round. */
@@ -29,15 +29,14 @@ const FULL_ART_TIMEOUT_MS = 1500;
 
 const phase = ref<"charge" | "spotlight" | "summary">("charge");
 const drops = ref<Drop[]>([]);
-const queue = ref<{ drop: Drop; card: ManifestCard; art: string }[]>([]);
+const queue = ref<{ drop: Drop; card?: ManifestCard; art: string }[]>([]);
 const at = ref(0);
 const settled = ref(false);
-const opened = ref(false);
 let skipping = false;
 let alive = true;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const cardOf = (d: Drop) => getCard(d.item.slice(5));
+const cardOf = (d: Drop) => d.item.startsWith("card:") ? getCard(d.item.slice(5)) : undefined;
 
 /** Full artwork when it decodes in time, otherwise the bundled thumbnail. */
 async function artOf(card: ManifestCard): Promise<string> {
@@ -55,7 +54,6 @@ async function run() {
   drops.value = [];
   queue.value = [];
   at.value = 0;
-  opened.value = false;
   skipping = false;
 
   const [result] = await Promise.all([props.load(), wait(reducedMotion.value ? 0 : CHARGE_MS)]);
@@ -65,16 +63,10 @@ async function run() {
     return;
   }
   drops.value = sortDrops(result);
-  opened.value = true;
-  if (props.kind === "card") {
-    const spot = spotlightQueue(result).flatMap((drop) => {
-      const card = cardOf(drop);
-      return card ? [{ drop, card }] : [];
-    });
-    const arts = await Promise.all(spot.map((s) => artOf(s.card)));
-    if (!alive) return;
-    queue.value = spot.map((s, i) => ({ ...s, art: arts[i]! }));
-  }
+  const spot = spotlightQueue(result).map((drop) => ({ drop, card: cardOf(drop) }));
+  const arts = await Promise.all(spot.map((s) => s.card ? artOf(s.card) : Promise.resolve("")));
+  if (!alive) return;
+  queue.value = spot.map((s, i) => ({ ...s, art: arts[i]! }));
   if (!queue.value.length || (skipping && needsSummary(drops.value))) {
     phase.value = "summary";
     return;
@@ -138,41 +130,32 @@ onBeforeUnmount(() => {
 onDeactivated(() => emit("close"));
 
 const shards = computed(() => drops.value.reduce((n, d) => n + d.shards, 0));
-const heading = computed(() =>
-  props.kind === "card" ? `本次抽卡获得 ${drops.value.length} 张` : `开出了 ${drops.value.length} 个表情`,
-);
-const cardResults = computed(() =>
-  groupDrops(drops.value).flatMap((drop) => {
-    const card = cardOf(drop);
-    return card ? [{ drop, card, label: cardLabel(card) }] : [];
-  }),
-);
-const boxResults = computed(() =>
-  groupDrops(drops.value).flatMap((drop) => {
-    const item = getItem(drop.item);
-    return item ? [{ drop, item }] : [];
-  }),
-);
+const heading = computed(() => `本次共鸣获得 ${drops.value.length} 件`);
+const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
+  const item = getItem(drop.item);
+  const card = cardOf(drop);
+  return item ? [{ drop, item, card, label: card ? cardLabel(card) : null }] : [];
+}));
 </script>
 
 <template>
   <Teleport defer to=".panel-overlay">
     <div
       ref="root" class="scene" :class="phase" data-overlay
-      role="dialog" aria-modal="true" :aria-label="kind === 'card' ? '抽卡结果' : '开箱结果'" tabindex="-1"
+      role="dialog" aria-modal="true" aria-label="共鸣结果" tabindex="-1"
       @click="tap"
     >
       <div v-if="phase === 'charge'" class="charge">
         <i class="band one" aria-hidden="true"></i>
         <i class="band two" aria-hidden="true"></i>
-        <div v-if="kind === 'card'" class="sealed"><div class="sealed-face ui-frame"><CardBack /></div></div>
-        <div v-else class="chest" :class="{ open: opened }"><ChestIcon :size="168" :open="opened" /></div>
+        <div class="sealed"><div class="sealed-face ui-frame"><CardBack /></div></div>
         <button type="button" class="ui-btn large act" @click="skip">跳过</button>
       </div>
 
       <template v-else-if="phase === 'spotlight'">
-        <CardSpotlight
-          :key="at" :drop="queue[at]!.drop" :card="queue[at]!.card" :art="queue[at]!.art"
+        <SkinSpotlight v-if="queue[at]!.drop.rarity === 'skin'" :key="`skin:${at}`" :drop="queue[at]!.drop" :settled="settled" @done="settled = true" />
+        <CardSpotlight v-else
+          :key="at" :drop="queue[at]!.drop" :card="queue[at]!.card!" :art="queue[at]!.art"
           :settled="settled" @done="settled = true"
         />
         <span v-if="queue.length > 1" class="page"><b>{{ at + 1 }}</b> / {{ queue.length }}</span>
@@ -185,36 +168,23 @@ const boxResults = computed(() =>
           <span v-if="shards" class="shards">碎片 +{{ shards }}</span>
         </header>
 
-        <div class="results ui-scroll" :class="kind">
-          <template v-if="kind === 'card'">
-            <article
-              v-for="(r, i) in cardResults" :key="i" class="result" :class="r.card.tier"
-              :style="{ '--i': Math.min(i, 14) }"
-            >
-              <span class="art ui-frame">
-                <img :src="assetUrl(r.card.thumb)" :alt="r.card.name" draggable="false" />
-                <i v-if="r.card.tier !== 'normal'" class="tier ui-tag" :class="{ gold: r.card.tier === 'big' }">{{ TIER_LABEL[r.card.tier] }}</i>
-                <b v-if="r.drop.new" class="fresh ui-tag dark">NEW</b>
-                <b v-if="r.drop.got > 1" class="got ui-tag dark">+{{ r.drop.got }}</b>
-              </span>
-              <b class="name">{{ r.label.title }}</b>
-              <small>{{ r.label.who }} · ×{{ r.drop.count }}</small>
-            </article>
-          </template>
-          <template v-else>
-            <article
-              v-for="(r, i) in boxResults" :key="i" class="result sticker ui-tile" :class="r.drop.rarity"
-              :style="{ '--i': Math.min(i, 14) }"
-            >
-              <span class="ui-frame ui-well">
-                <ItemArt :item="r.item" :size="84" />
-                <b v-if="r.drop.new" class="fresh ui-tag dark">NEW</b>
-                <b v-if="r.drop.got > 1" class="got ui-tag dark">+{{ r.drop.got }}</b>
-              </span>
-              <b class="name">{{ r.item.name }}</b>
-              <small>{{ r.drop.new ? RARITY_LABEL[r.drop.rarity as Rarity] : dropLabel(r.item, false) }}<template v-if="r.drop.shards"> · 碎片 +{{ r.drop.shards }}</template></small>
-            </article>
-          </template>
+        <div class="results ui-scroll mixed">
+          <article v-for="(r, i) in results" :key="r.item.id" class="result" :class="[r.drop.rarity, { sticker: r.item.kind === 'emote' }]" :style="{ '--i': Math.min(i, 14) }">
+            <span v-if="r.card" class="art ui-frame">
+              <img :src="assetUrl(r.card.thumb)" :alt="r.card.name" draggable="false" />
+              <i v-if="r.card.tier !== 'normal'" class="tier ui-tag" :class="{ gold: r.card.tier === 'big' }">{{ TIER_LABEL[r.card.tier] }}</i>
+              <b v-if="r.drop.new" class="fresh ui-tag dark">NEW</b>
+              <b v-if="r.drop.got > 1" class="got ui-tag dark">+{{ r.drop.got }}</b>
+            </span>
+            <span v-else class="ui-frame ui-well">
+              <img v-if="r.item.kind === 'character'" :src="getCharacter(r.item.ref)?.bg" :alt="r.item.name" />
+              <ItemArt v-else :item="r.item" :size="84" />
+              <b v-if="r.drop.new" class="fresh ui-tag dark">NEW</b>
+              <b v-if="r.drop.got > 1" class="got ui-tag dark">+{{ r.drop.got }}</b>
+            </span>
+            <b class="name">{{ r.label?.title ?? r.item.name }}</b>
+            <small>{{ r.drop.new ? RARITY_LABEL[r.drop.rarity as Rarity] : dropLabel(r.item, false) }} · ×{{ r.drop.count }}<template v-if="r.drop.shards"> · 碎片 +{{ r.drop.shards }}</template></small>
+          </article>
         </div>
 
         <footer>
@@ -228,6 +198,7 @@ const boxResults = computed(() =>
 </template>
 
 <style scoped>
+.results.mixed { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
 .scene {
   position: absolute;
   inset: 0;
@@ -302,13 +273,6 @@ const boxResults = computed(() =>
 .sealed-face :deep(.back) {
   inset: 6px;
 }
-.chest {
-  filter: drop-shadow(0 8px 16px rgba(var(--ink-rgb), 0.26));
-  animation: shake 180ms linear infinite;
-}
-.chest.open {
-  animation: pop var(--dur-slow) var(--ease-pop);
-}
 @keyframes band {
   from {
     left: -30%;
@@ -325,23 +289,6 @@ const boxResults = computed(() =>
     transform: scale(1.03);
   }
 }
-@keyframes shake {
-  0%, 100% {
-    transform: rotate(0);
-  }
-  25% {
-    transform: rotate(-5deg);
-  }
-  75% {
-    transform: rotate(5deg);
-  }
-}
-@keyframes pop {
-  from {
-    transform: scale(0.8);
-  }
-}
-
 .summary-body {
   height: 100%;
   display: flex;
@@ -376,9 +323,6 @@ header h3 {
   gap: 14px 16px;
   padding: 2px 6px 8px 0;
 }
-.results.box {
-  grid-template-columns: repeat(auto-fill, minmax(112px, 128px));
-}
 .result {
   min-width: 0;
   display: flex;
@@ -387,10 +331,6 @@ header h3 {
   gap: 2px;
   text-align: center;
   animation: result-in var(--dur-stage) var(--ease-out) calc(var(--i) * 45ms) backwards;
-}
-.results.box .result {
-  animation-name: fly-in;
-  cursor: default;
 }
 .calm .result {
   animation: none;
@@ -465,11 +405,5 @@ footer {
     transform: perspective(700px) rotateY(70deg) translateY(10px);
   }
 }
-/* Stickers burst out of the chest at the middle of the scene. */
-@keyframes fly-in {
-  from {
-    opacity: 0;
-    transform: translate(calc(3 * (6px - var(--i) * 8px)), 120px) scale(0.3) rotate(-14deg);
-  }
-}
+
 </style>

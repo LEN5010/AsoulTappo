@@ -1,159 +1,117 @@
 <script setup lang="ts">
-// The draw view of one pool: a card on stage, every card of the pool to browse, and the draw console.
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+// Resonance stage: a framed card, the pool's tier counts and a lineup of its cards and skins.
+import { computed, ref } from "vue";
 import { assetUrl } from "../asset";
-import { byTier, cardLabel, poolName, TIER_LABEL } from "../cards";
-import type { ManifestCard, ManifestSeries } from "../manifest";
-import { collection, online, presenceUpdatedAt, status, tickets } from "../stores/player";
+import { getCharacter } from "../characters";
+import { getCard, type Rarity } from "../manifest";
+import type { Item } from "../items";
+import { poolOf } from "../resonance";
+import { collection } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ series: ManifestSeries; cards: ManifestCard[]; busy: boolean }>();
-defineEmits<{ inspect: [card: ManifestCard]; draw: [all: boolean] }>();
+defineProps<{ busy: boolean }>();
+const emit = defineEmits<{ inspect: [item: Item] }>();
 
-const LINEUP_SIZE = 6;
+const LINEUP_SIZE = 7;
+const STATS: { rarity: Rarity; label: string; icon: string }[] = [
+  { rarity: "legendary", label: "大隐藏", icon: "crown" },
+  { rarity: "skin", label: "皮肤", icon: "shirt" },
+  { rarity: "epic", label: "史诗", icon: "spark" },
+  { rarity: "rare", label: "稀有", icon: "gem" },
+  { rarity: "common", label: "普通", icon: "star5" },
+];
 
-const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
-const sorted = computed(() => [...props.cards].sort(byTier));
-const owner = computed(() => (props.series.name.includes(" · ") ? props.series.name.split(" · ")[0] : "A-SOUL"));
+const pool = poolOf();
+const all = Object.values(pool).flat();
+const previews = [...pool.legendary, ...pool.skin, ...pool.epic, ...pool.common].filter((i) => i.kind !== "emote");
+const have = (items: Item[]) => items.filter((i) => collection.owned[i.id]).length;
 
-const activeId = ref("");
+const selected = ref(previews[0]?.id ?? "");
+const active = computed(() => previews.find((i) => i.id === selected.value) ?? previews[0]);
+const card = computed(() => (active.value?.kind === "card" ? getCard(active.value.ref) : undefined));
+
 const page = ref(0);
-watch(
-  () => props.series.id,
-  () => {
-    activeId.value = sorted.value[0]?.id ?? "";
-    page.value = 0;
-  },
-  { immediate: true },
-);
-const active = computed(() => props.cards.find((c) => c.id === activeId.value) ?? props.cards[0]!);
-const label = computed(() => cardLabel(active.value));
-
-const pageCount = computed(() => Math.ceil(sorted.value.length / LINEUP_SIZE));
-const lineup = computed(() => sorted.value.slice(page.value * LINEUP_SIZE, (page.value + 1) * LINEUP_SIZE));
-/** The side a lineup page slides in from: -1 left, 1 right. */
-const slideFrom = ref(0);
-function turn(to: number, from = Math.sign(to - page.value)) {
-  slideFrom.value = reducedMotion.value ? 0 : from;
-  page.value = (to + pageCount.value) % pageCount.value;
-}
-
-const PITY = 400;
-const pity = computed(() => status.value?.draw?.pity ?? 0);
-
-const clock = ref(Date.now());
-const timer = setInterval(() => (clock.value = Date.now()), 1000);
-onBeforeUnmount(() => clearInterval(timer));
-const remaining = computed(() => {
-  const draw = status.value?.draw;
-  if (!draw) return 300;
-  const elapsed =
-    online.value && presenceUpdatedAt.value
-      ? Math.min(20, Math.max(0, (clock.value - presenceUpdatedAt.value) / 1000))
-      : 0;
-  return Math.max(0, Math.ceil(draw.secondsPerDraw - draw.seconds - elapsed));
-});
-const countdown = computed(
-  () => `${Math.floor(remaining.value / 60).toString().padStart(2, "0")}:${(remaining.value % 60).toString().padStart(2, "0")}`,
-);
+const pageCount = Math.ceil(previews.length / LINEUP_SIZE);
+const lineup = computed(() => previews.slice(page.value * LINEUP_SIZE, (page.value + 1) * LINEUP_SIZE));
+const turn = (step: number) => (page.value = (page.value + step + pageCount) % pageCount);
+const thumb = (item: Item) => (item.kind === "card" ? assetUrl(item.art) : getCharacter(item.ref)?.bg);
 </script>
 
 <template>
-  <div class="pool">
-    <section class="stage ui-frame ui-ring" :class="active.tier" data-rise>
-      <button type="button" class="hero" :title="active.name" @click="$emit('inspect', active)">
-        <span class="hero-rays" aria-hidden="true"></span>
-        <span class="hero-frame ui-frame">
-          <video
-            v-if="active.video && !reducedMotion" :key="active.id" class="hero-media"
-            :src="assetUrl(active.video)" :poster="assetUrl(active.thumb)" autoplay loop muted playsinline
-          ></video>
-          <img
-            v-else :key="active.id" class="hero-media" :src="assetUrl(active.full)"
-            :style="{ backgroundImage: `url(${assetUrl(active.thumb)})` }" :alt="active.name" draggable="false"
-          />
-          <i class="foil" aria-hidden="true"></i>
+  <section class="pool-stage">
+    <button v-if="active" type="button" class="hero" :disabled="busy" :title="active.name" @click="emit('inspect', active)">
+      <span class="frame">
+        <span class="art ui-frame">
+          <template v-if="card">
+            <video
+              v-if="card.video && !reducedMotion" :key="card.id"
+              :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)" autoplay loop muted playsinline
+            ></video>
+            <img v-else :key="card.id" :src="assetUrl(card.full)" :alt="card.name" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" draggable="false" />
+          </template>
+          <img v-else class="skin" :src="getCharacter(active.ref)?.bg" :alt="active.name" draggable="false" />
         </span>
-      </button>
+        <b class="crest">A-SOUL</b>
+        <b class="plate">{{ active.name }}</b>
+      </span>
+      <Icon name="spark" :size="26" class="twinkle top" />
+      <Icon name="spark" :size="14" class="twinkle side" />
+    </button>
 
-      <div class="info">
-        <div class="title-block">
-          <p class="owner">{{ owner }}</p>
-          <h3>{{ poolName(series.name) }}</h3>
-          <p class="now">
-            <b>{{ label.title }}</b>
-            <span><em class="tier">{{ TIER_LABEL[active.tier] }}</em>{{ label.who }}<template v-if="owned(active)"> · ×{{ owned(active) }}</template></span>
-          </p>
-        </div>
+    <div class="info">
+      <header class="title">
+        <svg class="orbit" viewBox="0 0 320 110" aria-hidden="true">
+          <ellipse cx="160" cy="55" rx="150" ry="34" transform="rotate(-8 160 55)" />
+        </svg>
+        <h3>此间共鸣</h3>
+        <em>Resonance</em>
+        <small>A-SOUL TAPPO</small>
+      </header>
 
-        <div class="lineup">
-          <button v-if="pageCount > 1" type="button" class="flip prev" aria-label="上一页" @click="turn(page - 1, -1)">
-            <Icon name="down" :size="20" />
-          </button>
-          <div :key="page" class="row" :style="{ '--from': `${slideFrom * 20}px` }">
-            <button
-              v-for="c in lineup" :key="c.id" type="button"
-              class="mini" :class="[c.tier, { on: c.id === active.id }]"
-              :title="c.name" :aria-pressed="c.id === active.id" @click="activeId = c.id"
-            >
-              <span class="ui-frame"><img :src="assetUrl(c.thumb)" :alt="c.name" draggable="false" /></span>
-            </button>
-          </div>
-          <button v-if="pageCount > 1" type="button" class="flip next" aria-label="下一页" @click="turn(page + 1, 1)">
-            <Icon name="down" :size="20" />
-          </button>
-          <div v-if="pageCount > 1" class="dots">
-            <button
-              v-for="n in pageCount" :key="n" type="button" :class="{ on: n - 1 === page }"
-              :aria-label="`第 ${n} 页`" :aria-current="n - 1 === page ? 'page' : undefined" @click="turn(n - 1)"
-            ></button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <footer class="console ui-frame ui-ring" data-rise>
-      <div class="tickets">
-        <span class="tickets-count"><b>{{ tickets }}</b>次可抽</span>
-        <small v-if="online">下一抽 {{ countdown }}</small>
+      <div class="stats">
+        <template v-for="s in STATS" :key="s.rarity">
+          <span v-if="pool[s.rarity].length" class="stat">
+            <Icon :name="s.icon" :size="16" />{{ s.label }}<b>{{ have(pool[s.rarity]) }}</b><i>/ {{ pool[s.rarity].length }}</i>
+          </span>
+        </template>
       </div>
 
-      <div class="pity">
-        <span>大隐藏保底 <b>{{ pity }}</b> / {{ PITY }}</span>
-        <div class="ui-bar"><i :style="{ width: `${(pity / PITY) * 100}%` }"></i></div>
-      </div>
+      <p class="collected">
+        <Icon name="layers" :size="16" />
+        已收集 <b>{{ have(all) }}</b><i>/ {{ all.length }}</i>
+        <template v-if="active"><span class="sep">·</span><span class="now">{{ active.name }}</span></template>
+      </p>
 
-      <div class="actions">
-        <button type="button" class="ui-btn large" :disabled="busy || !online || !tickets" @click="$emit('draw', true)">
-          全部抽取<template v-if="tickets > 1"> ×{{ tickets }}</template>
+      <div class="lineup">
+        <button v-if="pageCount > 1" type="button" class="flip" aria-label="上一页" :disabled="busy" @click="turn(-1)">
+          <Icon name="back" :size="18" />
         </button>
-        <button type="button" class="ui-btn large primary pulse" :disabled="busy || !online || !tickets" @click="$emit('draw', false)">抽一次</button>
+        <div :key="page" class="row">
+          <button
+            v-for="item in lineup" :key="item.id" type="button" class="mini" :class="{ on: active?.id === item.id }"
+            :disabled="busy" :title="item.name" :aria-pressed="active?.id === item.id" @click="selected = item.id"
+          >
+            <span class="ui-frame"><img :class="{ skin: item.kind !== 'card' }" :src="thumb(item)" :alt="item.name" draggable="false" /></span>
+          </button>
+        </div>
+        <button v-if="pageCount > 1" type="button" class="flip next" aria-label="下一页" :disabled="busy" @click="turn(1)">
+          <Icon name="back" :size="18" />
+        </button>
       </div>
-    </footer>
-  </div>
+    </div>
+  </section>
 </template>
 
 <style scoped>
-/* Orange is kept for the main action, the pity bar and the selection. */
-.pool {
-  flex: 1;
-  min-height: 0;
+.pool-stage {
+  /* 240px covers the page title, the dock below and the page padding. */
+  --hero-h: max(250px, min(44cqw, 100cqh - 240px));
+  flex: 1 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.stage {
-  --radius: var(--radius-l);
-  --mini-w: 62px;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  gap: 24px;
-  padding: 14px 16px 14px 18px;
-  box-sizing: border-box;
-  background: var(--surface);
+  align-items: stretch;
+  min-height: var(--hero-h);
+  padding: 4px 6px 8px 8px;
 }
 
 .hero {
@@ -161,372 +119,316 @@ const countdown = computed(
   z-index: 1;
   flex: none;
   align-self: center;
-  height: min(100%, 420px);
-  aspect-ratio: 2 / 3;
+  width: calc(var(--hero-h) * 0.7);
+  height: var(--hero-h);
   padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
-  display: grid;
-  place-items: center;
-  filter: drop-shadow(0 6px 14px rgba(var(--ink-rgb), 0.18));
-  transition: transform var(--dur-slow) var(--ease-out);
 }
-.hero:hover {
+.hero::before,
+.hero::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: var(--radius-m);
+}
+.hero::before {
+  inset: -2px -12px 22px 26px;
+  background: var(--accent-mid);
+  opacity: 0.55;
+  transform: rotate(3deg);
+}
+.hero::after {
+  inset: 26px 8px -8px -2px;
+  background: var(--accent-soft);
+  transform: rotate(-2deg);
+}
+.frame {
+  position: absolute;
+  inset: 0;
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: var(--radius-m);
+  background: linear-gradient(135deg, var(--gold-soft), var(--gold) 46%, var(--gold-soft));
+  box-shadow: 0 12px 24px -14px rgba(var(--ink-rgb), 0.6);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.hero:hover:not(:disabled) .frame {
   transform: translateY(-3px);
 }
-.hero-frame {
-  --radius: var(--radius-m);
-  position: relative;
+.art {
+  display: block;
   width: 100%;
   height: 100%;
-  padding: 4px;
-  box-sizing: border-box;
-  background: var(--surface);
-  display: flex;
+  background: var(--ink);
 }
-.big .hero-frame {
-  background: var(--gold);
+.art::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1px rgba(var(--gold-rgb), 0.8);
+  pointer-events: none;
 }
-.hero-media {
+.art img,
+.art video {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
-  background: var(--accent-soft) center / cover no-repeat;
+  background: center / cover;
 }
-.foil {
+.art img.skin {
+  object-fit: contain;
+  background: var(--accent-tint);
+}
+.crest,
+.plate {
   position: absolute;
-  inset: -10%;
-  background: linear-gradient(112deg, transparent 38%, rgba(255, 255, 255, 0.46) 48%, rgba(255, 224, 190, 0.28) 54%, transparent 64%);
-  transform: translateX(-70%);
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--gold);
+  color: var(--gold-soft);
+  white-space: nowrap;
+}
+.crest {
+  top: 2px;
+  padding: 3px 18px 4px;
+  border-radius: 0 0 var(--radius-l) var(--radius-l);
+  font: 800 var(--fs-caption)/1 var(--font-latin);
+  letter-spacing: 0.18em;
+}
+.plate {
+  bottom: 16px;
+  max-width: 78%;
+  padding: 4px 14px;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 700 var(--fs-label)/1.3 var(--font);
+}
+.twinkle {
+  position: absolute;
+  z-index: 2;
+  color: var(--gold-soft);
+  fill: var(--surface);
+  stroke-width: 1.2;
   pointer-events: none;
 }
-.big .foil,
-.small .foil {
-  animation: foil 4.2s var(--ease-in-out) infinite;
+.twinkle.top {
+  top: -10px;
+  left: -10px;
 }
-@keyframes foil {
-  0%, 12% {
-    transform: translateX(-70%);
-  }
-  55%, 100% {
-    transform: translateX(70%);
-  }
-}
-.hero-rays {
-  position: absolute;
-  width: 170%;
-  aspect-ratio: 1;
-  background: repeating-conic-gradient(transparent 0deg 12deg, var(--ray) 12deg 24deg);
-  mask: radial-gradient(closest-side, #000 62%, transparent);
-  -webkit-mask: radial-gradient(closest-side, #000 62%, transparent);
-  opacity: 0;
-  pointer-events: none;
-}
-.big .hero-rays {
-  --ray: rgba(var(--gold-rgb), 0.16);
-}
-.small .hero-rays {
-  --ray: rgba(var(--accent-rgb), 0.14);
-}
-.big .hero-rays,
-.small .hero-rays {
-  opacity: 1;
-  animation: spin 18s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.twinkle.side {
+  top: 14px;
+  left: 20px;
 }
 
 .info {
   position: relative;
-  z-index: 1;
   flex: 1;
   min-width: 0;
+  margin-left: -22px;
+  padding: 14px 20px 18px 42px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  color: var(--ink);
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: var(--radius-l);
+  background: linear-gradient(135deg, var(--surface) 55%, var(--accent-tint));
+  box-shadow: inset 0 0 0 1px var(--line-2), 0 10px 22px -18px rgba(var(--accent-rgb), 0.7);
 }
-.title-block {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
+
+.title {
+  position: relative;
+  padding: 4px 0 2px 12px;
 }
-.owner {
-  margin: 0 0 6px;
-  font-size: var(--fs-strong);
-  font-weight: 500;
-  color: var(--ink-2);
+.orbit {
+  position: absolute;
+  left: -14px;
+  top: -8px;
+  width: min(100%, 300px);
+  height: auto;
+  fill: none;
+  stroke: var(--accent-mid);
+  stroke-width: 1.4;
+  pointer-events: none;
 }
 h3 {
+  position: relative;
   margin: 0;
-  font: 800 var(--fs-display)/1.15 var(--font);
-  letter-spacing: 0.02em;
+  font: 800 clamp(28px, 4.2cqw, 40px)/1.15 var(--font);
+  letter-spacing: 0.03em;
+}
+.title em {
+  position: relative;
+  display: block;
+  margin: -5px 0 0 30px;
+  font: italic 400 clamp(16px, 2.4cqw, 23px)/1 "Snell Roundhand", "Segoe Script", "Brush Script MT", cursive;
+  color: var(--accent-deep);
+}
+.title small {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  font: 800 var(--fs-caption)/1 var(--font-latin);
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+}
+.stat {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  color: var(--ink-2);
   white-space: nowrap;
 }
-.now {
-  margin: 20px 0 0;
+.stat svg {
+  margin-right: 7px;
+  color: var(--accent-deep);
+}
+.stat b,
+.collected b {
+  margin-left: auto;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink);
+}
+.stat i,
+.collected i {
+  margin-left: 4px;
+  font-style: normal;
+  color: var(--ink-3);
+}
+
+.collected {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 6px;
+  margin: 0;
+  padding: 7px 2px;
+  border-top: 1px dashed var(--line-2);
+  border-bottom: 1px solid var(--line-2);
   font-size: var(--fs-body);
   font-weight: 500;
   color: var(--ink-2);
 }
-.now b {
-  font: 800 var(--fs-heading)/1.2 var(--font);
+.collected svg {
+  flex: none;
+  color: var(--accent-deep);
+}
+.collected b {
+  margin-left: 0;
+}
+.collected i {
+  margin-left: 0;
+}
+.sep {
+  color: var(--ink-3);
+}
+.now {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--ink);
-}
-.tier {
-  margin-right: 6px;
-  font-style: normal;
-}
-.normal .tier::after {
-  content: " ·";
-}
-.big .tier,
-.small .tier {
-  padding: 2px 7px;
-  font-size: var(--fs-label);
-  font-weight: 800;
-  color: var(--ink);
-}
-.big .tier {
-  background: var(--gold-soft);
-}
-.small .tier {
-  background: var(--accent-soft);
 }
 
 .lineup {
-  flex: none;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 3px 4px;
-  padding: 10px 8px;
-  background: var(--accent-tint);
-}
-.row {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, var(--mini-w)));
-  justify-content: center;
-  gap: 8px;
-  animation: lineup var(--dur-slow) var(--ease-out);
-}
-@keyframes lineup {
-  from {
-    opacity: 0;
-    transform: translateX(var(--from));
-  }
+  gap: 4px;
+  padding-bottom: 8px;
 }
 .flip {
-  width: 20px;
+  flex: none;
+  width: 22px;
   height: 40px;
   padding: 0;
+  display: grid;
+  place-items: center;
   border: 0;
   background: none;
   color: var(--ink-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out), color var(--dur-fast);
 }
-.flip:hover {
-  color: var(--ink);
+.flip:hover:not(:disabled) {
+  color: var(--accent-deep);
 }
-.flip .icon {
-  stroke-width: 3;
+.flip.next svg {
+  transform: rotate(180deg);
 }
-.prev {
-  grid-column: 1;
-}
-.next {
-  grid-column: 3;
-}
-.prev .icon {
-  transform: rotate(90deg);
-}
-.next .icon {
-  transform: rotate(-90deg);
-}
-.prev:hover {
-  transform: translateX(-2px);
-}
-.next:hover {
-  transform: translateX(2px);
-}
-.dots {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  justify-self: center;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 10px;
-}
-.dots button {
-  position: relative;
-  width: 8px;
-  height: 4px;
-  padding: 0;
-  border: 0;
-  background: var(--line-2);
-  cursor: pointer;
-  transition: width var(--dur-base) var(--ease-out), background var(--dur-fast);
-}
-.dots button::before {
-  content: "";
-  position: absolute;
-  inset: -6px -3px;
-}
-.dots .on {
-  width: 22px;
-  background: var(--grad-main);
-}
-
-.mini {
-  --radius: var(--radius-s);
-  position: relative;
+.row {
+  flex: 1;
   min-width: 0;
-  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.mini {
+  position: relative;
+  aspect-ratio: 0.76;
+  padding: 2px;
   border: 0;
-  background: none;
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.mini span {
-  display: block;
-  aspect-ratio: 2 / 3;
-  padding: 3px;
-  box-sizing: border-box;
+  border-radius: var(--radius-s);
   background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
 }
-.mini.big span {
-  background: var(--gold);
+.mini:hover:not(:disabled) {
+  transform: translateY(-2px);
 }
-.mini img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.mini:hover,
 .mini.on {
-  transform: translateY(-3px);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
 }
 .mini.on::after {
   content: "";
   position: absolute;
-  inset: -2px;
-  border-radius: var(--radius-m);
-  pointer-events: none;
-  box-shadow: 0 0 0 2px var(--accent), var(--glow-m);
+  left: 50%;
+  bottom: -11px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--accent);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+.mini span {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.mini img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mini img.skin {
+  object-fit: contain;
+  background: var(--accent-tint);
 }
 
-.console {
-  --radius: var(--radius-m);
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 18px 12px 20px;
-  background: var(--surface);
-}
-.tickets {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.tickets-count {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  color: var(--ink-2);
-}
-.tickets-count b {
-  font: 800 var(--fs-title)/1 var(--font);
-  color: var(--ink);
-}
-.tickets small {
-  font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-3);
-}
-.pity {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-.pity b {
-  font-weight: 800;
-  color: var(--ink);
-}
-.actions {
-  flex: none;
-  display: flex;
-  gap: 10px;
-}
-.actions .ui-btn {
-  padding: 0 20px;
-  font-weight: 700;
-}
-.actions .primary {
-  padding: 0 34px;
-  font-size: var(--fs-number);
-  font-weight: 800;
-}
-
-@container panel (max-height: 620px) {
-  .stage {
-    --mini-w: 46px;
+@container panel (max-width: 820px) {
+  .title small {
+    display: none;
   }
-  h3 {
-    font-size: var(--fs-title);
-  }
-  .owner {
-    margin-bottom: 2px;
-    font-size: var(--fs-body);
-  }
-  .now {
-    margin-top: 8px;
-    gap: 2px;
-  }
-  .now b {
-    font-size: var(--fs-section);
-  }
-}
-@container panel (max-height: 520px) {
-  .stage {
-    padding: 10px 14px;
-    gap: 16px;
-  }
-  .console {
-    padding: 8px 14px;
-  }
-  .actions .ui-btn {
-    height: 36px;
-    padding: 0 14px;
+  .info {
+    padding-right: 12px;
   }
 }
 </style>

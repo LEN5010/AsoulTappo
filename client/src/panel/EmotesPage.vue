@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { characterColor, getEmote, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
-import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
-import { boxes, collection, error, shards, status } from "../stores/player";
+import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
+import { draws, collection, error, shards } from "../stores/player";
 import { settings } from "../stores/settings";
 import { pet } from "../stores/pet";
 import { sendEmote } from "../stores/room";
@@ -75,7 +75,7 @@ const skinRank = (name: string) => {
 // Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
 const petSkins = computed(() =>
   Object.values(characters)
-    .filter((c) => inMember(c.name) && (!query.value || c.name.includes(query.value)))
+    .filter((c) => ownsCharacter(c.name, collection.owned) && inMember(c.name) && (!query.value || c.name.includes(query.value)))
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
 
@@ -110,7 +110,7 @@ const totalOwnedEmotes = computed(() =>
 const mainTabs = computed(() => [
   { id: "all" as const, label: "全部" },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
-  { id: "pet" as const, label: "桌宠", count: Object.keys(characters).filter(inMember).length },
+  { id: "pet" as const, label: "桌宠", count: petSkins.value.length },
 ]);
 
 const nothingFound = computed(
@@ -151,9 +151,6 @@ function fireEmote(key: string) {
   sendEmote(key);
 }
 
-const tapPct = computed(() =>
-  Math.min(100, ((status.value?.progress.taps ?? 0) / (status.value?.progress.tapsPerBox ?? 600)) * 100),
-);
 </script>
 
 <template>
@@ -222,15 +219,7 @@ const tapPct = computed(() =>
             <Icon name="shard" :size="15" />
             <b>{{ shards }}</b><small>碎片</small>
           </div>
-          <div
-            class="res"
-            :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
-          >
-            <Icon name="box" :size="15" />
-            <b>{{ boxes }}</b><small>箱</small>
-            <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
-          </div>
-          <button type="button" class="ui-btn open" :class="{ primary: boxes > 0, pulse: boxes > 0 }" @click="ui.page = 'dex'">开箱</button>
+          <button type="button" class="ui-btn open" :class="{ primary: draws > 0, pulse: draws > 0 }" @click="ui.page = 'resonance'">去共鸣</button>
         </div>
       </div>
     </section>

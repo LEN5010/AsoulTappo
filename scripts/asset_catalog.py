@@ -183,7 +183,10 @@ def card_tier(card_id: str) -> str:
 
 
 def card_rarity(card_id: str, name: str, has_video: bool) -> str:
-    return {"big": "legendary", "small": "epic", "normal": "common"}[card_tier(card_id)]
+    tier = card_tier(card_id)
+    if tier == "big":
+        return "legendary"
+    return "epic" if tier == "small" or has_video else "common"
 
 
 def card_subseries(series: str, name: str) -> str | None:
@@ -199,9 +202,12 @@ THEME_RARITY = "rare"
 # Every player owns the five characters, the default theme and the first
 # STARTER_EMOTES emotes of each character's first emote set.
 STARTER_EMOTES = 4
-# Duplicates turn into shards; shards craft a chosen missing item.
-DUP_SHARDS = {"common": 1, "rare": 3, "epic": 8, "legendary": 20}
-CRAFT_COST = {"common": 10, "rare": 30, "epic": 80, "legendary": 200}
+# Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
+SKINS = [{"name": f"{member}山海经", "member": member} for member in ("嘉然", "乃琳", "贝拉")]
+INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
+RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 5, "common": 89.5},
+             "pity": {"legendary": 400, "skin": 200}, "duplicateRefund": 40}
+CRAFT_COST = {"common": 480, "rare": 1600}
 
 
 # -------------------------------------------------------- frames and badges

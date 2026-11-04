@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
-import { boxes, online, tickets } from "../stores/player";
+import { draws, online } from "../stores/player";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
@@ -12,7 +12,7 @@ import Icon from "../ui/Icon.vue";
 import { nextFrame, rise } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
 import CollectionPage from "./CollectionPage.vue";
-import CardsPage from "./CardsPage.vue";
+import ResonancePage from "./ResonancePage.vue";
 import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
@@ -21,8 +21,8 @@ import SettingsPage from "./SettingsPage.vue";
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "emotes", label: "背包", en: "BACKPACK", icon: "bag" },
+  { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "book" },
-  { id: "cards", label: "收藏集", en: "COLLECTION", icon: "card" },
   { id: "room", label: "联机", en: "ONLINE", icon: "users" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "nut" },
 ];
@@ -134,8 +134,7 @@ const navThumb = ref<HTMLElement>();
 useSlider(navEl, navThumb, () => ui.page);
 
 function badgeOf(id: Page): number {
-  if (id === "dex") return boxes.value;
-  if (id === "cards") return tickets.value;
+  if (id === "resonance") return draws.value;
   if (id === "room" && inRoom.value) return members.size;
   return 0;
 }
@@ -167,7 +166,7 @@ function badgeOf(id: Page): number {
           <KeepAlive>
             <EmotesPage v-if="shown === 'emotes'" />
             <CollectionPage v-else-if="shown === 'dex'" />
-            <CardsPage v-else-if="shown === 'cards'" />
+            <ResonancePage v-else-if="shown === 'resonance'" />
             <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
             <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
           </KeepAlive>

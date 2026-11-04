@@ -7,15 +7,16 @@ from app.manifest import Manifest
 def _card(cid, rarity, series="s1", chars=("嘉然",)):
     return {"id": cid, "name": cid, "series": series, "sub": None, "characters": list(chars),
             "rarity": rarity, "thumb": f"bundle:cards/thumb/{cid}.webp",
-            "full": f"pack:cards/{series}/{cid}.webp", "video": None}
+            "full": f"pack:cards/{series}/{cid}.webp", "video": None, "tier": {"legendary": "big", "epic": "small"}.get(rarity, "normal")}
 
 
 def tiny_manifest() -> Manifest:
-    cards = [_card("c1", "common"), _card("c2", "common"), _card("c3", "rare"),
+    cards = [_card("c1", "common"), _card("c2", "common"), _card("c3", "common"),
              _card("c4", "epic", "s2"), _card("c5", "legendary", "s2")]
     return Manifest({
         "version": 1,
         "characters": [{"id": "jiaran", "name": "嘉然", "color": "#e799b0"}],
+        "skins": [{"name": "嘉然山海经", "member": "嘉然"}],
         "rarities": {"common": {"name": "普通", "weight": 70}, "rare": {"name": "稀有", "weight": 22},
                      "epic": {"name": "史诗", "weight": 7}, "legendary": {"name": "传说", "weight": 1}},
         "series": [{"id": "s1", "name": "S1", "total": 3}, {"id": "s2", "name": "S2", "total": 2}],
@@ -37,8 +38,10 @@ def tiny_manifest() -> Manifest:
              "rarity": "epic", "img": "bundle:x"},
         ],
         "starter": {"emotes": ["e.01"], "theme": "x"},
-        "economy": {"dupShards": {"common": 1, "rare": 3, "epic": 8, "legendary": 20},
-                    "craftCost": {"common": 10, "rare": 30, "epic": 80, "legendary": 200}},
+        "economy": {"income": {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60},
+                    "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 5, "common": 89.5},
+                                  "pity": {"legendary": 400, "skin": 200}, "duplicateRefund": 40},
+                    "craftCost": {"common": 480, "rare": 1600}},
     })
 
 

@@ -51,3 +51,12 @@ describe("skin", () => {
     expect(pk.loading).toMatch(/^http:\/\/s\/packs\/themes\/nailin-queen\//);
   });
 });
+
+it("ships manifest v4 skins for exactly the non-member character directories", () => {
+  expect(manifest.version).toBe(4);
+  const members = new Set(manifest.characters.map((m) => m.name));
+  const dirs = Object.keys(import.meta.glob("./assets/characters/*/bgImage.png"))
+    .map((path) => path.split("/")[3]!).filter((name) => !members.has(name)).sort();
+  expect(dirs).toEqual(manifest.skins.map((s) => s.name).sort());
+  expect(Object.values(manifest.rarities).every((r) => Object.keys(r).join() === "name")).toBe(true);
+});

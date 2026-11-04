@@ -24,7 +24,7 @@ const hidden = computed(() => props.card.tier !== "normal");
       <div class="flip" @animationend.self="$emit('done')">
         <div class="art ui-frame">
           <video
-            v-if="settled && hidden && card.video && !reducedMotion" class="media"
+            v-if="settled && card.video && !reducedMotion" class="media"
             :src="assetUrl(card.video)" :poster="art" autoplay loop muted playsinline
           ></video>
           <img v-else class="media" :src="art" :alt="card.name" draggable="false" />
@@ -37,7 +37,7 @@ const hidden = computed(() => props.card.tier !== "normal");
         <h3>{{ label.title }}</h3>
         <p><i :style="{ background: characterColor(card.characters[0] ?? '') }" aria-hidden="true"></i>{{ label.who }}</p>
         <span v-if="drop.new" class="state fresh">NEW</span>
-        <span v-else class="state">已拥有 ×{{ drop.count }}</span>
+        <span v-else class="state">已拥有 ×{{ drop.count }}<template v-if="drop.shards"> · 碎片 +{{ drop.shards }}</template></span>
       </div>
     </div>
 

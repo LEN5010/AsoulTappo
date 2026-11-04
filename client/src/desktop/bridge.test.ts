@@ -71,13 +71,13 @@ it("mirrors desk state and exchanges setting edits without starting panel reques
 it("applies action results to both windows before resolving an awaited draw", async () => {
   const desk = await context(false);
   const panel = await context(true);
-  const drops = [{ item: "card:test", new: true }] as Awaited<ReturnType<typeof desk.player.drawCards>>;
-  vi.spyOn(desk.player, "drawCards").mockImplementation(async () => {
+  const drops = [{ item: "card:test", new: true }] as Awaited<ReturnType<typeof desk.player.resonate>>;
+  vi.spyOn(desk.player, "resonate").mockImplementation(async () => {
     desk.player.collection.owned["card:test"] = 1;
     return drops;
   });
-  expect(await panel.player.drawCards("test", 1)).toEqual(drops);
-  expect(desk.player.drawCards).toHaveBeenCalledWith("test", 1);
+  expect(await panel.player.resonate(1)).toEqual(drops);
+  expect(desk.player.resonate).toHaveBeenCalledWith(1);
   expect(panel.player.collection.owned["card:test"]).toBe(1);
 });
 
@@ -97,10 +97,10 @@ it("opens the regular panel while the pet is click-through and closes it separat
   const desk = await context(false);
   const { invoke } = await import("@tauri-apps/api/core");
   desk.settings.clickThrough = true;
-  desk.ui.openPanel("cards");
-  expect(invoke).toHaveBeenCalledWith("open_panel", { page: "cards", craftTarget: "" });
+  desk.ui.openPanel("resonance");
+  expect(invoke).toHaveBeenCalledWith("open_panel", { page: "resonance", craftTarget: "" });
   const panel = await context(true);
-  expect(panel.ui.ui.page).toBe("cards");
+  expect(panel.ui.ui.page).toBe("resonance");
   panel.ui.closePanel();
   expect(invoke).toHaveBeenCalledWith("hide_panel");
   expect(desk.settings.clickThrough).toBe(true);

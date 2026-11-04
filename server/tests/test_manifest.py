@@ -75,8 +75,6 @@ def test_cards_rarity_rules_and_counts():
     assert len(cards) == 70
     assert sum(c["tier"] == "big" for c in cards) == 8
     assert sum(c["tier"] == "small" for c in cards) == 8
-    for pool in M.card_pools.values():
-        assert all(pool.values())
     assert M.cards["c1748345610010"]["tier"] == "big"
     assert M.cards["c1748345610002"]["tier"] == "normal"
     for s in M.data["series"]:
@@ -103,10 +101,23 @@ def test_accessories_starter_and_economy():
     by_key = {e["key"]: s["character"] for s in M.data["emoteSets"] for e in s["emotes"]}
     assert {by_key[k] for k in starter} == FIVE
     assert M.starter == {f"emote:{k}" for k in starter}
-    # nothing a player starts with drops from boxes, and every rarity can be crafted
-    dropped = {i["id"] for pool in M.by_rarity.values() for i in pool}
-    assert not dropped & M.starter and len(dropped) + len(M.starter) + len(M.cards) == len(M.items)
-    assert set(M.craft_cost) == set(M.dup_shards) == set(M.data["rarities"])
+    dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
+    assert not dropped & M.starter
+    assert len(dropped) == 428
+    assert len(M.items) == len(dropped) + len(M.starter)
+    assert M.craft_cost == {"common": 480, "rare": 1600}
+
+
+def test_pool_counts_and_card_rarities():
+    assert [len(M.resonance_pool[r]) for r in ("common", "rare", "epic", "legendary", "skin")] == [378, 15, 24, 8, 3]
+    for c in M.cards.values():
+        assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
+    assert all(set(r) == {"name"} for r in M.data["rarities"].values())
+
+
+def test_skin_directories_match_manifest():
+    directories = {p.name for p in (REPO / "client/src/assets/characters").iterdir() if p.is_dir()} - FIVE
+    assert directories == set(M.skins)
 
 
 def test_emote_keys_unique_and_fit_wire_limit():

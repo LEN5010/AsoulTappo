@@ -15,7 +15,7 @@ BATCH = {"session": "test-session-0001", "sequence": 1}
 
 @pytest.fixture()
 def client(monkeypatch):
-    g = Game(Store(":memory:"), tiny_manifest(), DropConfig(taps_per_box=10, max_taps_per_sec=10**5),
+    g = Game(Store(":memory:"), tiny_manifest(), DropConfig(max_taps_per_sec=10**5),
              SeqRng(0.0), Clock())
     g.status(TOKEN)
     g.now.t += 1
@@ -31,26 +31,32 @@ def test_token_required(client):
     assert client.get("/api/me", headers={"X-Player-Token": "short"}).status_code == 401
 
 
-def test_activity_open_collection_flow(client):
-    assert client.post("/api/boxes/open", headers=H).status_code == 409
+def test_activity_resonance_collection_flow(client):
     r = client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H).json()
-    assert r["boxes"] == 2 and r["credited"] == 25
-    r = client.post("/api/boxes/open", headers=H).json()
-    assert r["drops"][0]["item"] == "emote:e.02" and r["drops"][0]["new"] is True and r["boxes"] == 1
-    col = client.get("/api/collection", headers=H).json()
-    assert col["owned"] == {"emote:e.02": 1}
-    assert client.get("/api/me", headers=H).json()["totals"]["owned"] == 1
-    r = client.post("/api/boxes/open", json={"count": 5}, headers=H).json()
-    assert len(r["drops"]) == 1 and r["boxes"] == 0 and r["shards"] == 1
+    assert r["credited"] == r["totals"]["taps"] == 25
+    assert r["shards"] == 1600
+    r = client.post("/api/resonance/draw", json={"count": 10}, headers=H).json()
+    assert len(r["drops"]) == 10 and r["resonance"]["total"] == 10
+    assert client.get("/api/collection", headers=H).json()["owned"]
+    assert client.get("/api/me", headers=H).json()["totals"]["owned"] > 0
+    main.game.store.update_player(r["player"], shards=0)
+    assert client.post("/api/resonance/draw", json={}, headers=H).status_code == 409
+    assert client.post("/api/cards/draw", json={}, headers=H).status_code == 404
+    assert client.post("/api/boxes/open", json={}, headers=H).status_code == 404
+    assert client.post("/api/resonance/draw", json={"count": 101}, headers=H).status_code == 422
+    assert client.post("/api/resonance/draw", json={"count": 0}, headers=H).status_code == 422
+    assert client.post("/api/resonance/draw", json={}).status_code == 401
+    assert client.post("/api/presence", json={"session": "test-session-0001"}, headers=H).status_code == 200
 
 
-def test_craft_loadout_and_presets_routes(client):
-    assert client.post("/api/craft", json={"item": "emote:e.03"}, headers=H).status_code == 409   # no shards
+def test_craft_and_loadout_routes(client):
+    assert client.post("/api/craft", json={"item": "emote:e.03"}, headers=H).json()["shards"] == 1120
     assert client.post("/api/craft", json={"item": "nope"}, headers=H).status_code == 400
     lo = client.post("/api/loadout", json={"character": "嘉然", "favorites": ["e.01"]}, headers=H).json()
-    assert lo["character"] == "嘉然" and lo["favorites"] == ["e.01"]
+    assert lo == {"character": "嘉然", "favorites": ["e.01"]}
     assert client.get("/api/loadout", headers=H).json() == lo
-    assert client.post("/api/craft", json={"item": "card:c1"}, headers=H).status_code == 400
+    assert client.post("/api/craft", json={"item": "card:c1"}, headers=H).status_code == 200
+    assert client.post("/api/loadout", json={"character": "嘉然山海经"}, headers=H).status_code == 400
 
 
 def test_ws_emotes_need_ownership_and_are_rate_limited(client):

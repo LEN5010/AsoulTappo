@@ -1,29 +1,21 @@
 <script setup lang="ts">
-// Emote dex: a wall of albums that open onto their stickers. A search query lists matches across albums.
+// The dex brings card albums, searchable emote sets and skins together.
 import { computed, nextTick, ref, watch } from "vue";
-import { characterColor, manifest, type ManifestEmoteSet } from "../manifest";
+import { characterColor, manifest, type ManifestCard, type ManifestEmoteSet } from "../manifest";
 import { assetUrl } from "../asset";
-import { craftCost, getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
-import {
-  boxes,
-  collection,
-  craftItem,
-  error,
-  online,
-  openBoxes,
-  shards,
-  status,
-} from "../stores/player";
+import { craftCost, getItem, ownsCharacter, ownsEmote, RARITY_LABEL, type Item } from "../items";
+import { collection, craftItem, error, online, shards } from "../stores/player";
 import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
-import type { Drop } from "../net/api";
-import RevealScene from "./RevealScene.vue";
 import Modal from "../ui/Modal.vue";
 import ItemArt from "../ui/ItemArt.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import FilterChips from "../ui/FilterChips.vue";
 import Icon from "../ui/Icon.vue";
+import { poolName } from "../cards";
+import CardAlbum, { type AlbumFilter } from "./CardAlbum.vue";
+import CardDetail from "./CardDetail.vue";
 import { rise } from "../ui/motion";
 
 type OwnFilter = "all" | "owned" | "missing";
@@ -101,18 +93,17 @@ watch([charTab, albumId, ownFilter, searching], () =>
   }),
 );
 
-const selectedEmote = ref<Item | null>(null);
-const selectedEmoteOwned = computed(() =>
-  selectedEmote.value ? ownsEmote(selectedEmote.value.ref, collection.owned) : false,
+const selectedItem = ref<Item | null>(null);
+const selectedItemOwned = computed(() =>
+  selectedItem.value ? selectedItem.value.starter || !!collection.owned[selectedItem.value.id] : false,
 );
-const selectedEmoteCount = computed(() => (selectedEmote.value ? collection.owned[selectedEmote.value.id] ?? 0 : 0));
-const selectedEmoteCost = computed(() => (selectedEmote.value ? craftCost(selectedEmote.value) : null));
+const selectedItemCount = computed(() => (selectedItem.value ? collection.owned[selectedItem.value.id] ?? 0 : 0));
+const selectedItemCost = computed(() => (selectedItem.value ? craftCost(selectedItem.value) : null));
 const actionNote = ref("");
-const opening = ref(0);
 const busy = ref(false);
 
 function inspect(key: string) {
-  selectedEmote.value = getItem(`emote:${key}`) ?? null;
+  selectedItem.value = getItem(`emote:${key}`) ?? null;
   actionNote.value = "";
 }
 
@@ -120,29 +111,18 @@ watch(
   () => ui.craftTarget,
   (id) => {
     if (id) {
-      selectedEmote.value = getItem(id) ?? null;
+      selectedItem.value = getItem(id) ?? null;
+      actionNote.value = "";
       ui.craftTarget = "";
     }
   },
   { immediate: true },
 );
 
-async function loadBoxes(): Promise<Drop[] | null> {
-  const results: Drop[] = [];
-  let rem = opening.value;
-  while (rem > 0) {
-    const batch = await openBoxes(Math.min(10, rem));
-    if (!batch?.length) break;
-    results.push(...batch);
-    rem -= batch.length;
-  }
-  return results.length ? results : null;
-}
-
-async function craftSelectedEmote() {
-  if (!selectedEmote.value || busy.value) return;
+async function craftSelectedItem() {
+  if (!selectedItem.value || busy.value) return;
   busy.value = true;
-  const item = selectedEmote.value;
+  const item = selectedItem.value;
   if (await craftItem(item.id)) actionNote.value = `已兑换 ${item.name}`;
   busy.value = false;
 }
@@ -156,16 +136,39 @@ function toggleFav(item: Item) {
 
 function fireSelectedEmote(item: Item) {
   sendEmote(item.ref);
-  selectedEmote.value = null;
+  selectedItem.value = null;
 }
 
-const tapPct = computed(() =>
-  Math.min(100, ((status.value?.progress.taps ?? 0) / (status.value?.progress.tapsPerBox ?? 600)) * 100),
-);
+const category = ref("card");
+const CATEGORIES = [{ id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" }];
+const selectedSeries = ref(manifest.series[0]!.id);
+const cardFilter = ref<AlbumFilter>("all");
+const CARD_FILTERS = [{ id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" }];
+const cards = computed(() => manifest.cards.filter((c) => c.series === selectedSeries.value));
+const poolTabs = computed(() => manifest.series.map((s) => ({ id: s.id, label: poolName(s.name) })));
+const detail = ref<ManifestCard | null>(null);
+const detailFrom = ref<DOMRect>();
+function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; }
+function craftCard(id: string) { detail.value = null; selectedItem.value = getItem(id) ?? null; }
+function toResonance() { ui.page = "resonance"; }
 </script>
 
 <template>
   <div class="collection-page">
+    <SegTabs v-model="category" :tabs="CATEGORIES" label="图鉴分类" />
+    <template v-if="category === 'card'">
+      <SegTabs v-model="selectedSeries" plain :tabs="poolTabs" label="卡片系列" />
+      <FilterChips v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
+      <CardAlbum :cards="cards" :filter="cardFilter" @inspect="inspectCard" />
+    </template>
+    <div v-else-if="category === 'skin'" class="skin-grid ui-scroll">
+      <article v-for="s in manifest.skins" :key="s.name" class="skin-item ui-frame">
+        <ItemArt :item="getItem(`char:${s.name}`)!" :size="160" :locked="!ownsCharacter(s.name, collection.owned)" />
+        <b>{{ s.name }}</b><small>{{ ownsCharacter(s.name, collection.owned) ? '已拥有' : '未解锁' }}</small>
+        <button type="button" class="ui-btn" @click="toResonance()">去共鸣</button>
+      </article>
+    </div>
+    <template v-else>
     <SegTabs v-model="charTab" class="tabs-bar" :tabs="charTabs" label="角色筛选" />
 
     <div class="head">
@@ -223,66 +226,45 @@ const tapPct = computed(() =>
 
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <footer class="drawbar ui-frame ui-ring">
-      <div class="ticket">
-        <span class="ticket-icon"><Icon name="box" :size="18" /></span>
-        <div>
-          <span class="ticket-main"><b>{{ boxes }}</b> 箱可开</span>
-          <small>今日 {{ status?.boxesToday ?? 0 }}/{{ status?.dailyCap ?? 10 }} 箱</small>
-        </div>
-      </div>
+    </template>
+    <CardDetail v-if="detail" :card="detail" :from="detailFrom" dimmed @craft="craftCard" @close="detail = null" />
 
-      <div class="pity">
-        <div class="pity-head">
-          <span>敲击 <b>{{ status?.progress.taps ?? 0 }}</b>/{{ status?.progress.tapsPerBox ?? 600 }} · 活跃 {{ status?.progress.minutes ?? 0 }}/{{ status?.progress.minutesPerBox ?? 10 }}分</span>
-          <small class="shard-badge"><Icon name="shard" :size="12" /> <b>{{ shards }}</b> 碎片</small>
-        </div>
-        <div class="ui-bar"><i :style="{ width: `${tapPct}%` }"></i></div>
-      </div>
-
-      <div class="draw-actions">
-        <button type="button" class="ui-btn" :disabled="!!opening || !online || !boxes" @click="opening = 1">开一箱</button>
-        <button type="button" class="ui-btn primary pulse" :disabled="!!opening || !online || !boxes" @click="opening = boxes">
-          全部开启 <span v-if="boxes">×{{ boxes }}</span>
-        </button>
-      </div>
-    </footer>
-
-    <Modal v-if="selectedEmote" :title="selectedEmote.name" @close="selectedEmote = null">
+    <Modal v-if="selectedItem" :title="selectedItem.name" @close="selectedItem = null">
       <div class="emote-detail">
         <div class="detail-well ui-frame">
-          <ItemArt :item="selectedEmote" :size="128" :locked="!selectedEmoteOwned" />
+          <ItemArt :item="selectedItem" :size="128" :locked="!selectedItemOwned" />
         </div>
-        <h3>{{ selectedEmote.name }}</h3>
-        <p class="detail-sub">{{ selectedEmote.group }}</p>
+        <h3>{{ selectedItem.name }}</h3>
+        <p class="detail-sub">{{ selectedItem.group }}</p>
         <small v-if="actionNote" class="note">{{ actionNote }}</small>
-        <template v-if="selectedEmoteOwned">
-          <p class="held">已拥有<template v-if="selectedEmoteCount > 1"> ×{{ selectedEmoteCount }}</template></p>
-          <div class="buttons">
-            <button type="button" class="ui-btn" @click="toggleFav(selectedEmote)">
-              {{ settings.favorites.includes(selectedEmote.ref) ? "移出预设" : "装入预设" }}
+        <template v-if="selectedItemOwned">
+          <p class="held">已拥有<template v-if="selectedItemCount > 1"> ×{{ selectedItemCount }}</template></p>
+          <div v-if="selectedItem.kind === 'emote'" class="buttons">
+            <button type="button" class="ui-btn" @click="toggleFav(selectedItem)">
+              {{ settings.favorites.includes(selectedItem.ref) ? "移出预设" : "装入预设" }}
             </button>
-            <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedEmote)">发表情</button>
+            <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedItem)">发表情</button>
           </div>
         </template>
         <template v-else>
           <p class="held"><Icon name="shard" :size="13" />持有 {{ shards }} 碎片</p>
           <button
-            v-if="selectedEmoteCost !== null" type="button" class="ui-btn primary"
-            :disabled="busy || !online || shards < selectedEmoteCost"
-            @click="craftSelectedEmote"
+            v-if="selectedItemCost !== null" type="button" class="ui-btn primary"
+            :disabled="busy || !online || shards < selectedItemCost"
+            @click="craftSelectedItem"
           >
-            {{ shards < selectedEmoteCost ? `还差 ${selectedEmoteCost - shards} 碎片` : `兑换（${selectedEmoteCost} 碎片）` }}
+            {{ shards < selectedItemCost ? `还差 ${selectedItemCost - shards} 碎片` : `兑换（${selectedItemCost} 碎片）` }}
           </button>
         </template>
       </div>
     </Modal>
-
-    <RevealScene v-if="opening" kind="box" :load="loadBoxes" @close="opening = 0" />
   </div>
 </template>
 
 <style scoped>
+.skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; overflow: auto; }
+.skin-item { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; background: var(--surface); }
+
 .collection-page {
   height: 100%;
   display: flex;
@@ -431,87 +413,6 @@ const tapPct = computed(() =>
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 12px 10px;
   padding: 2px 4px 2px 0;
-}
-
-.drawbar {
-  --radius: var(--radius-m);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 8px;
-  padding: 8px 14px;
-  background: var(--surface);
-  flex: none;
-}
-.ticket {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex: none;
-}
-.ticket-icon {
-  width: 34px;
-  height: 32px;
-  border-radius: var(--radius-s);
-  background: var(--grad-main);
-  box-shadow: var(--glow-s);
-  color: var(--on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ticket > div {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.ticket-main {
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.ticket-main b {
-  font: 800 var(--fs-heading)/1 var(--font-latin);
-  color: var(--ink);
-  margin-right: 2px;
-}
-.ticket small {
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-}
-.pity {
-  flex: 1;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.pity-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.pity-head b {
-  color: var(--ink);
-}
-.pity-head small {
-  font-size: var(--fs-caption);
-  color: var(--ink-3);
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.shard-badge :deep(.icon) {
-  color: var(--accent-deep);
-}
-.draw-actions {
-  display: flex;
-  gap: 10px;
-  margin-left: auto;
 }
 
 .emote-detail {

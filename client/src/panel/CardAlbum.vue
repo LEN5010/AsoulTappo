@@ -5,6 +5,7 @@ import { assetUrl } from "../asset";
 import { byTier, cardLabel, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
+import CardBack from "./CardBack.vue";
 import Icon from "../ui/Icon.vue";
 
 export type AlbumFilter = "all" | "hidden" | "owned" | "missing";
@@ -35,7 +36,8 @@ const visible = computed(() =>
         @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined)"
       >
         <span class="art ui-frame ui-well" :class="{ 'ui-ring': card.tier !== 'normal' }">
-          <img :src="assetUrl(card.thumb)" :alt="card.name" loading="lazy" decoding="async" draggable="false" />
+          <CardBack v-if="!owned(card) && card.tier !== 'normal'" />
+          <img v-else :src="assetUrl(card.thumb)" :alt="card.name" loading="lazy" decoding="async" draggable="false" />
           <i v-if="card.tier !== 'normal'" class="tier ui-tag" :class="{ gold: card.tier === 'big' }">{{ TIER_LABEL[card.tier] }}</i>
           <b v-if="owned(card) > 1" class="count ui-tag dark">×{{ owned(card) }}</b>
           <span v-if="card.video && owned(card)" class="live" title="动态卡面"><Icon name="play" :size="9" /></span>

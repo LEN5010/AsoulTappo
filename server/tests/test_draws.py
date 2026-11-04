@@ -1,9 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from fastapi.testclient import TestClient
-
-import app.main as main
 from app.game import Game, GameError, player_id_for
 from app.manifest import Manifest
 from app.store import Store
@@ -20,21 +17,47 @@ def game(rng=None, path=":memory:"):
     return g, clock
 
 
-def test_idle_running_time_earns_ticket_after_exactly_five_minutes():
+def test_new_player_and_idle_income():
     g, clock = game()
+    assert g.status(TOKEN)["shards"] == 1600
     g.presence(TOKEN, SESSION)
-    for _ in range(14):
+    for _ in range(3):
         clock.t += 20
-        g.presence(TOKEN, SESSION)
-    assert g.status(TOKEN)["draw"]["tickets"] == 0
+        r = g.presence(TOKEN, SESSION)
+    assert r["shards"] == 1616 and r["income"] == {"multiplier": 1, "perMinute": 16}
+    assert r["totals"]["items"] == 428
+
+
+@pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 16), (30, 3, 48), (60, 5, 80), (120, 5, 80)])
+def test_previous_minute_income(taps, multiplier, rate):
+    g, clock = game()
     clock.t += 20
-    result = g.presence(TOKEN, SESSION)
-    assert result["draw"]["tickets"] == 1
-    assert result["draw"]["seconds"] == 0
-    assert result["totals"]["taps"] == 0
+    g.report_activity(TOKEN, taps)
+    clock.t += 40
+    assert g.status(TOKEN)["income"] == {"multiplier": multiplier, "perMinute": rate}
+    g.presence(TOKEN, SESSION)
+    clock.t += 20
+    # Repeated reports keep the previous-minute sample available.
+    g.report_activity(TOKEN, taps)
+    for _ in range(2):
+        g.presence(TOKEN, SESSION)
+        clock.t += 20
+    assert g.presence(TOKEN, SESSION)["shards"] == 1600 + rate
+    clock.t += 120
+    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 16}
 
 
-def test_heartbeats_overlap_once_and_pause_does_not_credit_offline_time():
+def test_fractional_shards_accumulate():
+    g, clock = game()
+    g.presence(TOKEN, SESSION)
+    for _ in range(60):
+        clock.t += 1
+        g.presence(TOKEN, SESSION)
+    assert g.status(TOKEN)["shards"] == 1616
+    assert g.store.get_player(player_id_for(TOKEN), clock.t)["shard_remainder"] == pytest.approx(0)
+
+
+def test_heartbeats_overlap_once_and_pause_resumes_from_new_baseline():
     g, clock = game()
     g.presence(TOKEN, SESSION)
     clock.t += 10
@@ -42,77 +65,114 @@ def test_heartbeats_overlap_once_and_pause_does_not_credit_offline_time():
     clock.t += 10
     g.presence(TOKEN, SESSION)
     g.presence(TOKEN, "second-session-0001")
-    assert g.status(TOKEN)["draw"]["seconds"] == 20
+    assert g.status(TOKEN)["shards"] == 1605
     clock.t += 3600
-    assert g.presence(TOKEN, SESSION)["draw"]["seconds"] == 20
-    clock.t += 20
-    assert g.presence(TOKEN, SESSION)["draw"]["seconds"] == 40
+    assert g.presence(TOKEN, SESSION)["shards"] == 1605
+    clock.t += 40
+    assert g.presence(TOKEN, SESSION)["shards"] == 1616
 
 
-def test_tickets_have_no_inventory_cap_and_persist_after_restart(tmp_path):
-    path = tmp_path / "draw.sqlite"
-    g, clock = game(path=path)
-    pid = player_id_for(TOKEN)
-    g.store.update_player(pid, draw_tickets=10000, draw_seconds=290, draw_pity=399)
-    g.presence(TOKEN, SESSION)
-    clock.t += 20
-    assert g.presence(TOKEN, SESSION)["draw"]["tickets"] == 10001
-    g.store.close()
-    reopened = Game(Store(str(path)), Manifest.load(), now=clock)
-    assert reopened.status(TOKEN)["draw"] == {
-        "tickets": 10001, "seconds": 10, "secondsPerDraw": 300,
-        "pity": 399, "hardPity": 400, "total": 0}
+def test_simultaneous_pities_then_independent_resets():
+    g, _ = game()
+    g.store.update_player(player_id_for(TOKEN), draw_pity=399, skin_pity=199)
+    r = g.resonate(TOKEN)
+    assert r["drops"][0]["rarity"] == "legendary"
+    assert r["resonance"]["pity"] == {"legendary": 0, "skin": 200}
+    r = g.resonate(TOKEN)
+    assert r["drops"][0]["rarity"] == "skin"
+    assert r["resonance"]["pity"] == {"legendary": 1, "skin": 0}
 
 
-@pytest.mark.parametrize("roll,tier", [(0, "big"), (.00499, "big"), (.005, "small"), (.04999, "small"), (.05, "normal")])
-def test_rarity_probability_boundaries(roll, tier):
+@pytest.mark.parametrize("roll,tier,counters", [(0, "legendary", {"legendary": 0, "skin": 88}), (.005, "skin", {"legendary": 213, "skin": 0})])
+def test_natural_roll_resets_only_its_own_counter(roll, tier, counters):
     g, _ = game(SeqRng(roll, .5))
-    g.store.update_player(player_id_for(TOKEN), draw_tickets=1)
-    result = g.draw_cards(TOKEN, "bloom")
-    assert result["drops"][0]["tier"] == tier
-    assert result["draw"]["tickets"] == 0
-    assert result["drops"][0]["shards"] == 0
+    g.store.update_player(player_id_for(TOKEN), draw_pity=212, skin_pity=87)
+    r = g.resonate(TOKEN)
+    assert r["drops"][0]["rarity"] == tier and r["resonance"]["pity"] == counters
 
 
-def test_pity_is_shared_across_pools_and_resets_on_big_hidden():
+def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
     g, _ = game()
-    g.store.update_player(player_id_for(TOKEN), draw_tickets=3, draw_pity=398)
-    first = g.draw_cards(TOKEN, "moon")
-    assert first["drops"][0]["tier"] == "normal" and first["draw"]["pity"] == 399
-    second = g.draw_cards(TOKEN, "symphony")
-    assert second["drops"][0]["item"] == "card:c1748345610010"
-    assert second["draw"]["pity"] == 0
-    assert g.draw_cards(TOKEN, "tavern")["draw"]["pity"] == 1
+    pid = player_id_for(TOKEN)
+    for rarity in ("legendary", "skin"):
+        for item in g.manifest.resonance_pool[rarity]:
+            g.store.add_item(pid, item["id"], 0)
+    g.store.update_player(pid, draw_pity=400, skin_pity=200)
+    r = g.resonate(TOKEN)
+    assert r["drops"][0]["rarity"] == "common"
+    assert r["resonance"]["pity"] == {"legendary": 401, "skin": 201}
+    # A newly released skin makes the stored counter eligible again.
+    g.manifest.data["skins"].append({"name": "心宜新皮肤", "member": "心宜"})
+    g.manifest = Manifest(g.manifest.data)
+    assert g.resonate(TOKEN)["drops"][0]["item"] == "char:心宜新皮肤"
 
 
-def test_concurrent_draws_spend_each_ticket_once():
+@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .005), ("epic", .01), ("rare", .055)])
+def test_completed_high_tier_rolls_into_common(rarity, roll):
+    g, _ = game(SeqRng(roll, .5))
+    for item in g.manifest.resonance_pool[rarity]:
+        g.store.add_item(player_id_for(TOKEN), item["id"], 0)
+    assert g.resonate(TOKEN)["drops"][0]["rarity"] == "common"
+
+
+def test_common_prefers_unowned_then_refunds_duplicates():
     g, _ = game()
-    g.store.update_player(player_id_for(TOKEN), draw_tickets=7)
+    pid = player_id_for(TOKEN)
+    pool = g.manifest.resonance_pool["common"]
+    for item in pool[:-1]:
+        g.store.add_item(pid, item["id"], 0)
+    r = g.resonate(TOKEN, 2)
+    assert r["drops"][0]["item"] == pool[-1]["id"]
+    assert [d["new"] for d in r["drops"]] == [True, False]
+    assert [d["shards"] for d in r["drops"]] == [0, 40]
+    assert r["shards"] == 1320
+
+
+def test_shared_card_has_one_pool_entry_and_one_ownership_record():
+    g, _ = game(SeqRng(.01, .9999))
+    pid = player_id_for(TOKEN)
+    shared = next(c for c in g.manifest.cards.values() if c["name"] == "魔女契约")
+    iid = f"card:{shared['id']}"
+    assert sum(item["id"] == iid for item in g.manifest.resonance_pool["epic"]) == 1
+    for item in g.manifest.resonance_pool["epic"]:
+        if item["id"] != iid:
+            g.store.add_item(pid, item["id"], 0)
+    assert g.resonate(TOKEN)["drops"][0]["item"] == iid
+    assert g.resonate(TOKEN)["drops"][0]["rarity"] == "common"
+    assert g.collection(TOKEN)["owned"][iid] == 1
+
+
+def test_count_is_capped_by_balance_and_batch_size():
+    g, _ = game()
+    assert len(g.resonate(TOKEN, 999)["drops"]) == 10
+    with pytest.raises(GameError) as e:
+        g.resonate(TOKEN)
+    assert e.value.code == "no_shards"
+    g.store.update_player(player_id_for(TOKEN), shards=100000)
+    assert len(g.resonate(TOKEN, 999)["drops"]) == 100
+
+
+def test_concurrent_draws_spend_balance_once():
+    g, _ = game()
     def draw(_):
         try:
-            return len(g.draw_cards(TOKEN, "bloom", 100)["drops"])
+            return len(g.resonate(TOKEN, 100)["drops"])
         except GameError as e:
-            assert e.code == "no_ticket"
+            assert e.code == "no_shards"
             return 0
     with ThreadPoolExecutor(4) as pool:
-        assert sum(pool.map(draw, range(4))) == 7
-    assert g.status(TOKEN)["draw"]["tickets"] == 0
-    assert sum(g.collection(TOKEN)["owned"].values()) == 7
+        assert sum(pool.map(draw, range(4))) == 10
+    assert g.status(TOKEN)["shards"] == 0
 
 
-def test_presence_draw_api_and_emote_only_boxes(monkeypatch):
-    g, clock = game()
-    monkeypatch.setattr(main, "game", g)
-    headers = {"X-Player-Token": TOKEN}
-    with TestClient(main.app) as client:
-        assert client.post("/api/presence", json={"session": SESSION}).status_code == 401
-        assert client.post("/api/presence", json={"session": SESSION}, headers=headers).status_code == 200
-        assert client.post("/api/cards/draw", json={"pool": "bloom"}, headers=headers).status_code == 409
-        g.store.update_player(player_id_for(TOKEN), draw_tickets=2, boxes=10)
-        result = client.post("/api/cards/draw", json={"pool": "tavern", "count": 2}, headers=headers).json()
-        assert len(result["drops"]) == 2
-        assert all(g.manifest.cards[d["item"][5:]]["series"] == "tavern" for d in result["drops"])
-        opened = client.post("/api/boxes/open", json={"count": 10}, headers=headers).json()
-        assert all(d["item"].startswith("emote:") for d in opened["drops"])
-        assert client.post("/api/craft", json={"item": result["drops"][0]["item"]}, headers=headers).status_code == 400
-        assert client.post("/api/cards/draw", json={"pool": "bloom", "count": 101}, headers=headers).status_code == 422
+def test_resonance_transaction_rolls_back(monkeypatch):
+    g, _ = game()
+    original = g.store.log_drop
+    def fail(*args):
+        original(*args)
+        raise RuntimeError("interrupted")
+    monkeypatch.setattr(g.store, "log_drop", fail)
+    with pytest.raises(RuntimeError):
+        g.resonate(TOKEN)
+    assert g.status(TOKEN)["shards"] == 1600
+    assert g.collection(TOKEN) == {"owned": {}, "recent": []}
