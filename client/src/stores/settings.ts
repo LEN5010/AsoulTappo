@@ -34,7 +34,7 @@ export interface Settings {
 const KEY = "asoultappo.settings.v1";
 
 export const DEFAULT_SETTINGS: Settings = {
-  serverUrl: "http://localhost:8000",
+  serverUrl: "http://121.36.224.230:8000",
   nick: "",
   character: defaultCharacter,
   scale: 1,

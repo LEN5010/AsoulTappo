@@ -8,6 +8,8 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
+    ports:
+      - "8000:8000"
     volumes:
       - server_data:/srv/data # SQLite: players, boxes, collection
 

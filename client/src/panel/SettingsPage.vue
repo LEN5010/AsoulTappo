@@ -104,7 +104,7 @@ function applyServer() {
         <div class="row">
           <span class="state" :class="{ ok: online }"><i></i>{{ online ? "已连接" : "未连接" }}</span>
           <span class="ctl wide">
-            <input v-model.trim="serverDraft" class="ui-input" spellcheck="false" placeholder="http://localhost:8000" @keydown.enter="applyServer" />
+            <input v-model.trim="serverDraft" class="ui-input" spellcheck="false" placeholder="http://121.36.224.230:8000" @keydown.enter="applyServer" />
             <button type="button" class="ui-btn" :disabled="serverDraft === settings.serverUrl" @click="applyServer">应用</button>
           </span>
         </div>

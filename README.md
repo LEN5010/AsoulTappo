@@ -52,6 +52,8 @@ cd deploy
 DOMAIN=tappo.example.com docker compose up -d --build
 ```
 
+打包客户端默认连接 `http://121.36.224.230:8000`，可在设置里改。
+
 ### 2. 启动客户端
 
 环境要求：[Node.js 20+](https://nodejs.org/)、[Rust](https://rustup.rs/) 及对应平台的 Tauri 依赖。
