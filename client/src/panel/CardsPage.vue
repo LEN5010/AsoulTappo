@@ -345,7 +345,7 @@ async function collect() {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 0 20px 14px 16px;
+  padding: 8px 20px 14px 16px;
   gap: 10px;
 }
 .series-bar {
@@ -521,7 +521,7 @@ async function collect() {
   gap: 4px;
 }
 .plate-main b {
-  font: 400 16px/1.1 var(--font-display);
+  font: 800 15px/1.1 var(--font);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -570,7 +570,7 @@ async function collect() {
   --cut: 14px;
   flex: none;
   padding: 10px 12px 12px;
-  background: var(--accent-tint);
+  background: var(--surface);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -651,8 +651,12 @@ async function collect() {
 }
 .series-meta h3 {
   margin: 0;
-  font: 400 19px/1.1 var(--font-display);
+  font: 400 18px/1.1 var(--font-display);
   color: var(--ink);
+  white-space: nowrap;
+}
+.filter-pills .ui-chip {
+  padding: 0 9px;
 }
 .collect-pill {
   font-size: 11px;

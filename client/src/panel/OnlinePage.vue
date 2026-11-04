@@ -48,7 +48,7 @@ async function copy() {
 <template>
   <div class="room">
     <section data-rise>
-      <h4 class="ui-label">联机房间</h4>
+      <h4 class="ui-label"><span>联机房间</span><em>ROOM</em></h4>
       <div class="group ui-frame ui-ring">
         <div class="row">
           <span class="status">
@@ -83,7 +83,7 @@ async function copy() {
 
     <section v-if="inRoom" data-rise>
       <header class="cap">
-        <h4 class="ui-label">房间成员</h4>
+        <h4 class="ui-label"><span>房间成员</span><em>MEMBERS</em></h4>
         <button type="button" class="ui-btn small" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes">
           <Icon name="refresh" :size="13" />整理位置
         </button>
@@ -99,7 +99,7 @@ async function copy() {
     </section>
 
     <section data-rise>
-      <h4 class="ui-label">同桌显示</h4>
+      <h4 class="ui-label"><span>同桌显示</span><em>TOGETHER</em></h4>
       <div class="group ui-frame ui-ring">
         <label class="row">
           <span>伙伴桌宠大小</span>
@@ -208,7 +208,7 @@ label.row {
   color: var(--ink);
 }
 .chr:hover::before {
-  background: var(--accent-tint);
+  background: var(--surface);
 }
 .taps {
   min-width: 72px;

@@ -158,9 +158,10 @@ function badgeOf(id: Page): number {
 
     <div class="face" :class="{ mini: settings.sidebarCollapsed }">
       <div class="main">
-        <span class="ghost" aria-hidden="true">{{ shownNav.en }}</span>
+        <span class="wedge" aria-hidden="true"></span>
 
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+          <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
           <span class="ticks" aria-hidden="true"><i></i><i></i><i></i></span>
           <button type="button" class="close" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
             <Icon name="close" :size="15" />
@@ -203,6 +204,12 @@ function badgeOf(id: Page): number {
               <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
             </button>
           </nav>
+
+          <span class="side-deco lbl" aria-hidden="true">
+            <Icon name="cat" :size="72" />
+            <Icon name="star5" :size="17" />
+            <Icon name="star5" :size="11" />
+          </span>
 
           <button
             type="button" class="fold"
@@ -277,35 +284,31 @@ function badgeOf(id: Page): number {
   z-index: 0;
   display: flex;
   flex-direction: column;
+  background-color: var(--page);
   background-image: var(--grid);
   background-size: 24px 24px;
   background-position: -1px -1px;
 }
-/* Runs up the blank wedge beside the sidebar, parallel to its edge. */
-.ghost {
+/* Fills the blank wedge under the sidebar's slanted edge. */
+.wedge {
   position: absolute;
   z-index: -1;
-  left: 168px;
-  bottom: 10px;
-  font: italic 800 62px/1 var(--font-latin);
-  letter-spacing: 0.01em;
-  color: transparent;
-  -webkit-text-stroke: 1.5px rgba(var(--accent-rgb), 0.5);
-  white-space: nowrap;
-  user-select: none;
-  pointer-events: none;
-  transform: rotate(-82deg);
-  transform-origin: 0 100%;
+  left: 112px;
+  bottom: 16px;
+  width: 72px;
+  height: 52px;
+  background: repeating-linear-gradient(90deg, rgba(var(--accent-rgb), 0.45) 0 6px, transparent 6px 14px);
+  transform: skewX(var(--skew));
   transition: left 340ms var(--ease-out);
 }
-.mini .ghost {
-  left: calc(168px - var(--side-travel));
+.mini .wedge {
+  left: calc(112px - var(--side-travel));
 }
 
 .topbar {
   position: relative;
   z-index: 3;
-  height: 26px;
+  height: 46px;
   flex: none;
   margin-left: var(--side-w);
   display: flex;
@@ -316,6 +319,29 @@ function badgeOf(id: Page): number {
 }
 .topbar:active {
   cursor: grabbing;
+}
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 20px;
+  bottom: 0;
+  height: 2px;
+  background: var(--line-2);
+}
+.page-title {
+  align-self: center;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 auto 0 16px;
+  font: 400 25px/1 var(--font-display);
+  color: var(--ink);
+}
+.page-title em {
+  font: italic 800 15px/1 var(--font-latin);
+  letter-spacing: 0.1em;
+  color: var(--accent);
 }
 .ticks {
   display: flex;
@@ -371,7 +397,7 @@ function badgeOf(id: Page): number {
   height: 100%;
   box-sizing: border-box;
   overflow: auto;
-  padding: 14px 28px 28px;
+  padding: 14px 20px 28px 16px;
 }
 
 /* The outer shape is the pale edge strip; the orange fill sits inside it along the same slant. */
@@ -423,6 +449,27 @@ function badgeOf(id: Page): number {
 }
 .lbl {
   transition: opacity 180ms;
+}
+.side-deco {
+  position: absolute;
+  left: 14px;
+  bottom: 54px;
+  color: #fff;
+  pointer-events: none;
+}
+.side-deco .icon:first-child {
+  stroke-width: 0.9;
+  transform: rotate(-6deg);
+}
+.side-deco .icon + .icon {
+  position: absolute;
+  left: 66px;
+  top: -8px;
+  stroke-width: 1.6;
+}
+.side-deco .icon + .icon + .icon {
+  left: 2px;
+  top: -12px;
 }
 .mini .lbl {
   opacity: 0;
@@ -597,7 +644,7 @@ nav button.on .nav-text small {
   border: 0;
   background: none;
   color: var(--ink);
-  font: 15px var(--font-display);
+  font: 800 14px var(--font);
   display: flex;
   align-items: center;
   gap: 8px;

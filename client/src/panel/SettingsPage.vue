@@ -34,7 +34,7 @@ function applyServer() {
 <template>
   <div class="settings">
     <section data-rise>
-      <h4 class="ui-label">个人资料</h4>
+      <h4 class="ui-label"><span>个人资料</span><em>PROFILE</em></h4>
       <div class="group ui-frame ui-ring">
         <label class="row">
           <span>昵称</span>
@@ -50,7 +50,7 @@ function applyServer() {
     </section>
 
     <section data-rise>
-      <h4 class="ui-label">桌宠表现</h4>
+      <h4 class="ui-label"><span>桌宠表现</span><em>PET</em></h4>
       <div class="group ui-frame ui-ring">
         <label class="row">
           <span>桌宠大小</span>
@@ -85,7 +85,7 @@ function applyServer() {
     </section>
 
     <section v-if="isTauri" data-rise>
-      <h4 class="ui-label">窗口设置</h4>
+      <h4 class="ui-label"><span>窗口设置</span><em>WINDOW</em></h4>
       <div class="group ui-frame ui-ring">
         <label class="row">
           <span>桌宠置顶</span>
@@ -99,7 +99,7 @@ function applyServer() {
     </section>
 
     <section data-rise>
-      <h4 class="ui-label">服务器连接</h4>
+      <h4 class="ui-label"><span>服务器连接</span><em>SERVER</em></h4>
       <div class="group ui-frame ui-ring">
         <div class="row">
           <span class="state" :class="{ ok: online }"><i></i>{{ online ? "已连接" : "未连接" }}</span>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { characterColor, getEmote, manifest } from "../manifest";
-import { characters, FACE_CROP, PET_BASE } from "../characters";
+import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
 import { boxes, collection, error, online, openBoxes, shards, status } from "../stores/player";
@@ -12,6 +12,8 @@ import { ui } from "../stores/ui";
 import type { Drop } from "../net/api";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import PetView from "../pet/PetView.vue";
+import MemberStrip from "./MemberStrip.vue";
+import PetBust from "./PetBust.vue";
 import RevealModal from "./RevealModal.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
@@ -74,8 +76,6 @@ const petSkins = computed(() =>
     )
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
-
-const emoteOwners = computed(() => [...new Set(manifest.emoteSets.map((s) => s.character))]);
 
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)
 const ownedEmotes = computed(() => {
@@ -184,12 +184,15 @@ const tapPct = computed(() =>
           </span>
           <div class="stage-pet">
             <PetView
-              :character="settings.character" :scale="0.84"
+              :character="settings.character" :scale="1"
               :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
           </div>
           <span class="stage-name"><i aria-hidden="true"></i>{{ settings.character }}</span>
+          <Icon name="star5" :size="24" class="stage-deco big" />
+          <Icon name="star5" :size="14" class="stage-deco small" />
+          <Icon name="heart" :size="16" class="stage-deco heart" />
         </div>
 
         <button
@@ -208,7 +211,7 @@ const tapPct = computed(() =>
 
       <div class="fav-panel" data-rise>
         <div class="fav-head">
-          <h3 class="fav-title">我的预设</h3>
+          <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
           <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
         </div>
 
@@ -240,8 +243,10 @@ const tapPct = computed(() =>
               <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
             </div>
             <div class="res-actions">
-              <button type="button" class="ui-btn small primary" :disabled="busy || !online || !boxes" @click="open(false)">开箱</button>
-              <button v-if="boxes > 1" type="button" class="ui-btn small" :disabled="busy || !online" @click="open(true)">全开</button>
+              <button type="button" class="ui-btn primary open-btn" :disabled="busy || !online || !boxes" @click="open(false)">
+                <Icon name="box" :size="17" />开箱<em v-if="boxes <= 1">OPEN</em>
+              </button>
+              <button v-if="boxes > 1" type="button" class="ui-btn" :disabled="busy || !online" @click="open(true)">全开</button>
             </div>
           </div>
         </div>
@@ -250,18 +255,10 @@ const tapPct = computed(() =>
     </section>
 
     <div class="sticky-nav">
-      <SegTabs v-model="mainTab" :tabs="mainTabs" label="背包分类" />
+      <MemberStrip v-model="charFilter" />
 
       <div class="sub-bar">
-        <div class="char-chips">
-          <button type="button" class="ui-chip" :class="{ on: charFilter === 'all' }" @click="charFilter = 'all'">全角色</button>
-          <button
-            v-for="name in emoteOwners" :key="name" type="button"
-            class="ui-chip" :class="{ on: charFilter === name }" @click="charFilter = name"
-          >
-            <i :style="{ background: characterColor(name) }" aria-hidden="true"></i>{{ name }}
-          </button>
-        </div>
+        <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
         <input v-model="query" class="ui-input search-input" placeholder="搜索背包…" aria-label="搜索背包" />
       </div>
     </div>
@@ -284,23 +281,7 @@ const tapPct = computed(() =>
             @click="settings.character = skin.name; pokeStage()"
           >
             <span class="pet-well ui-frame ui-well">
-              <svg
-                class="pet-svg"
-                :viewBox="`${FACE_CROP.x} -8 ${FACE_CROP.w} ${FACE_CROP.h + 8}`"
-                preserveAspectRatio="xMidYMax meet"
-                aria-hidden="true"
-              >
-                <svg
-                  :x="FACE_CROP.x"
-                  :y="FACE_CROP.y"
-                  :width="FACE_CROP.w"
-                  :height="FACE_CROP.h"
-                  :viewBox="`${FACE_CROP.x} ${FACE_CROP.y} ${FACE_CROP.w} ${FACE_CROP.h}`"
-                  overflow="hidden"
-                >
-                  <image :href="skin.bg" x="0" y="0" :width="PET_BASE.width" :height="PET_BASE.height" />
-                </svg>
-              </svg>
+              <PetBust class="pet-svg" :src="skin.bg" />
               <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
             </span>
             <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
@@ -374,7 +355,7 @@ const tapPct = computed(() =>
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
-  padding: 0 20px 18px 16px;
+  padding: 10px 20px 18px 16px;
 }
 
 .showcase {
@@ -452,7 +433,7 @@ const tapPct = computed(() =>
   gap: 7px;
   height: 26px;
   padding: 0 12px 0 9px;
-  font: 16px var(--font-display);
+  font: 800 14px var(--font);
   color: #fff;
 }
 .stage-name::before {
@@ -468,6 +449,26 @@ const tapPct = computed(() =>
   height: 14px;
   background: var(--char);
   transform: skewX(var(--skew));
+}
+.stage-deco {
+  position: absolute;
+  color: #fff;
+  pointer-events: none;
+}
+.stage-deco.big {
+  right: 28px;
+  top: 16px;
+  transform: rotate(14deg);
+}
+.stage-deco.small {
+  right: 22px;
+  top: 52px;
+}
+.stage-deco.heart {
+  left: 64px;
+  top: 50px;
+  fill: #fff;
+  transform: rotate(-12deg);
 }
 
 .sticker {
@@ -510,8 +511,7 @@ const tapPct = computed(() =>
 }
 .fav-title {
   margin: 0;
-  font: 20px/1 var(--font-display);
-  color: var(--ink);
+  font-size: 20px;
 }
 .fav-count {
   font: italic 800 20px/1 var(--font-latin);
@@ -545,7 +545,8 @@ const tapPct = computed(() =>
   padding: 7px;
   box-sizing: border-box;
   border: 0;
-  background: var(--accent-tint);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
   color: var(--accent);
   cursor: pointer;
   display: flex;
@@ -607,12 +608,16 @@ const tapPct = computed(() =>
   min-width: 0;
   padding: 0 6px;
 }
+.open-btn em {
+  font: italic 800 14px/1 var(--font-latin);
+  letter-spacing: 0.08em;
+}
 
 .sticky-nav {
   position: sticky;
   top: 0;
   z-index: 6;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--page);
   padding: 2px 0 8px;
 }
 .sub-bar {
@@ -621,16 +626,14 @@ const tapPct = computed(() =>
   gap: 6px;
   margin-top: 8px;
 }
-.char-chips {
-  display: flex;
-  gap: 5px;
+.kind-tabs {
+  flex: 1;
   min-width: 0;
-  padding-left: 3px;
 }
 .search-input {
-  margin-left: auto;
+  flex: none;
   width: 150px;
-  height: 26px;
+  height: 32px;
   padding: 0 10px;
   font-size: 12px;
 }
@@ -650,7 +653,7 @@ const tapPct = computed(() =>
 .pet-well {
   align-items: flex-end;
   padding: 6px 4px 0;
-  background: var(--dots) 0 0 / 9px 9px, var(--accent-tint);
+  background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .pet-card.picked .pet-well {
   background: var(--accent-soft);
@@ -670,7 +673,7 @@ const tapPct = computed(() =>
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font: 15px var(--font-display);
+  font: 800 14px var(--font);
 }
 .pet-card .ui-tile-name i {
   flex: none;

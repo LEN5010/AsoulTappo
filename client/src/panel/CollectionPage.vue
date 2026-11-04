@@ -305,7 +305,7 @@ const tapPct = computed(() =>
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 0 20px 12px 16px;
+  padding: 8px 20px 12px 16px;
 }
 .tabs-bar {
   flex: none;
@@ -331,7 +331,7 @@ const tapPct = computed(() =>
   border: 0;
   border-bottom: 2px solid var(--line-2);
   border-radius: 0;
-  background: var(--accent-tint);
+  background: var(--surface);
   color: var(--ink);
   font: 700 12px var(--font);
   cursor: pointer;
@@ -379,9 +379,9 @@ const tapPct = computed(() =>
   box-sizing: border-box;
   border: 0;
   box-shadow: 0 2px 0 var(--line);
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--page);
   color: var(--ink);
-  font: 16px/1 var(--font-display);
+  font: 18px/1 var(--font-display);
   cursor: pointer;
 }
 .group-head i {
@@ -424,7 +424,7 @@ const tapPct = computed(() =>
   gap: 16px;
   margin-top: 6px;
   padding: 8px 14px;
-  background: var(--accent-tint);
+  background: var(--surface);
   flex: none;
 }
 .ticket {
@@ -507,7 +507,7 @@ const tapPct = computed(() =>
 .detail-well {
   --cut: 16px;
   padding: 14px;
-  background: var(--dots) 0 0 / 9px 9px, var(--accent-tint);
+  background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .emote-detail h3 {
   margin: 4px 0 0;

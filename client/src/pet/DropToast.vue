@@ -68,7 +68,7 @@ onBeforeUnmount(() => clearTimeout(timer));
 .r-legendary .tile { background: var(--rar-legendary-bg); }
 .txt { display: flex; flex-direction: column; gap: 1px; }
 .txt b { font-size: 12px; font-weight: 800; color: var(--accent-deep); }
-.name { font: 400 16px/1.15 var(--font-display); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.name { font: 800 15px/1.15 var(--font); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 small { font-size: 11px; font-weight: 700; color: var(--ink-3); }
 .toast-enter-active { animation: in 360ms var(--ease-out); }
 .toast-leave-active { transition: opacity 250ms, transform 250ms; }
