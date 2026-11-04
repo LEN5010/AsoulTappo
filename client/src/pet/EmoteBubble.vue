@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Die-cut sticker popping up at the upper right of the character's head: the emote with a white
 // contour and a shadow so it reads on any wallpaper, plus a small white point aimed at the character.
-// A new emote swaps the picture in place; repeats show ×N.
+// A new emote replaces the sticker, point included, with no gap; repeats show ×N.
 import { computed } from "vue";
 import { emoteView } from "../emotes";
 import { serverBase } from "../asset";
@@ -34,9 +34,11 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
     <Transition :name="reducedMotion ? 'fade' : 'bubble'">
       <div v-if="frame && view?.img" class="bubble" :class="{ flip }">
         <div class="sticker" :style="{ '--size': `${size}px` }">
-          <i class="point" />
-          <Transition :name="reducedMotion ? 'fade' : 'swap'" mode="out-in">
-            <img :key="frame.seq" :src="view.img" :style="{ height: `${size}px` }" alt="" draggable="false" />
+          <Transition :name="reducedMotion ? 'fade' : 'swap'">
+            <div :key="frame.seq" class="art">
+              <i class="point" />
+              <img :src="view.img" :style="{ height: `${size}px` }" alt="" draggable="false" />
+            </div>
           </Transition>
         </div>
         <span v-if="frame.count > 1" :key="frame.count" class="times">×{{ frame.count }}</span>
@@ -59,6 +61,12 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
   filter: drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38)) drop-shadow(0 4px 7px rgba(43, 37, 48, 0.3));
 }
 .flip .sticker { margin: 0 calc(var(--tip) * -1) 10px 0; }
+/* Scales around the tip of the point, so the tip stays on the character through a swap. */
+.art { position: relative; transform-origin: var(--tip) calc(100% + 10px); }
+.flip .art { transform-origin: calc(100% - var(--tip)) calc(100% + 10px); }
+/* The outgoing sticker leaves the flow: the box follows the new picture, drawn on top of it. */
+.art.swap-leave-active, .art.fade-leave-active { position: absolute; left: 0; bottom: 0; }
+.flip .art.swap-leave-active, .flip .art.fade-leave-active { left: auto; right: 0; }
 /* Sits away from the corner and runs under the picture: every emote reaches the bottom edge of
    its box, but many leave the corner itself empty. */
 .point {
