@@ -58,7 +58,7 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
   --tip: calc(var(--size) * 0.19 - 8px);
   position: relative;
   margin: 0 0 10px calc(var(--tip) * -1);
-  filter: drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38)) drop-shadow(0 4px 7px rgba(43, 37, 48, 0.3));
+  filter: drop-shadow(0 1.5px 1.5px rgba(var(--ink-rgb), 0.38)) drop-shadow(0 4px 7px rgba(var(--ink-rgb), 0.3));
 }
 .flip .sticker { margin: 0 calc(var(--tip) * -1) 10px 0; }
 /* Scales around the tip of the point, so the tip stays on the character through a swap. */
@@ -75,23 +75,23 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
   bottom: -10px;
   width: 30px;
   height: 18px;
-  background: #fff;
+  background: var(--surface);
   clip-path: polygon(0 100%, 20% 0, 100% 0);
 }
 .flip .point { left: auto; right: var(--tip); transform: scaleX(-1); }
 .sticker img { position: relative; display: block; width: auto; max-width: 160px; object-fit: contain; filter: var(--contour-lg); }
 .times {
-  position: absolute; right: -9px; top: -10px; padding: 0 7px; font: italic 800 15px/19px var(--font-latin);
-  background: var(--ink); color: #fff; transform: skewX(var(--skew));
-  animation: times 260ms cubic-bezier(0.34, 1.8, 0.64, 1);
+  position: absolute; right: -9px; top: -10px; padding: 0 7px; font: italic 800 var(--fs-strong)/19px var(--font-latin);
+  background: var(--ink); color: var(--on-ink); transform: skewX(var(--skew));
+  animation: times var(--dur-base) var(--ease-pop);
 }
-.bubble-enter-active { animation: bubble-in 260ms cubic-bezier(0.34, 1.6, 0.64, 1); }
-.bubble-leave-active { transition: opacity 300ms ease-in, transform 300ms ease-in; }
+.bubble-enter-active { animation: bubble-in var(--dur-base) var(--ease-spring); }
+.bubble-leave-active { transition: opacity var(--dur-slow) var(--ease-in), transform var(--dur-slow) var(--ease-in); }
 .bubble-leave-to { opacity: 0; transform: translateY(-12px) scale(0.92); }
-.swap-enter-active { animation: swap-in 160ms cubic-bezier(0.34, 1.6, 0.64, 1); }
+.swap-enter-active { animation: swap-in var(--dur-fast) var(--ease-spring); }
 .swap-leave-active { transition: opacity 80ms, transform 80ms; }
 .swap-leave-to { opacity: 0; transform: scale(0.8); }
-.fade-enter-active, .fade-leave-active { transition: opacity 200ms; }
+.fade-enter-active, .fade-leave-active { transition: opacity var(--dur-base); }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 @keyframes bubble-in { from { opacity: 0; transform: scale(0.5) translate(-6px, 8px); } 60% { opacity: 1; transform: scale(1.06); } to { transform: none; } }
 @keyframes swap-in { from { opacity: 0; transform: scale(0.75); } to { opacity: 1; transform: none; } }

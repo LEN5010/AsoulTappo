@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
-import { boxes, tickets } from "../stores/player";
+import { boxes, online, tickets } from "../stores/player";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
@@ -22,17 +22,19 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "emotes", label: "背包", en: "BACKPACK", icon: "bag" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "book" },
   { id: "cards", label: "收藏集", en: "COLLECTION", icon: "card" },
-  { id: "room", label: "联机", en: "ONLINE", icon: "home" },
+  { id: "room", label: "联机", en: "ONLINE", icon: "users" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "nut" },
 ];
 const BACK_OFFSET = 6;
 const NAV_STEP = 54;
 /** How far the collapsed sidebar slides under the panel edge. */
 const SIDE_TRAVEL = 44;
-/** Time the covered shutter stays up so its title can be read; a slow mount eats into it. */
-const DWELL_MS = 180;
-/** The new page starts rising once the bands are on their way out. */
-const RISE_DELAY_MS = 150;
+/**
+ * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
+ * `rise` starts the new page once the bands are on their way out.
+ */
+const OPEN_TIMING = { dwell: 180, rise: 150 };
+const TURN_TIMING = { dwell: 50, rise: 80 };
 
 const size = computed(() => ({ w: Math.min(980, viewport.value.w - 20), h: Math.min(700, viewport.value.h - 20) }));
 const pos = computed(() =>
@@ -68,7 +70,7 @@ function up(e: PointerEvent) {
   live.value = null;
 }
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Escape" && !document.querySelector(".backdrop")) ui.panelOpen = false;
+  if (e.key === "Escape" && !document.querySelector("[data-overlay]")) ui.panelOpen = false;
 }
 
 // ---- page turns
@@ -83,15 +85,16 @@ let turning = false;
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function settle() {
+async function settle(opening = false) {
+  const { dwell, rise: riseDelay } = opening ? OPEN_TIMING : TURN_TIMING;
   for (;;) {
     const covered = performance.now();
     shown.value = ui.page;
     await nextTick();
     await nextFrame();
-    await pause(DWELL_MS - (performance.now() - covered));
-    rise(body.value, body.value, RISE_DELAY_MS);
-    if (!(await shutter.value?.reveal())) return;
+    await pause(dwell - (performance.now() - covered));
+    rise(body.value, body.value, riseDelay);
+    if (!(await shutter.value?.reveal(opening))) return;
   }
 }
 async function turnPage() {
@@ -117,7 +120,7 @@ onMounted(async () => {
   if (reducedMotion.value) return;
   turning = true;
   shutter.value?.hold();
-  await settle();
+  await settle(true);
   turning = false;
   if (ui.page !== shown.value) void turnPage();
 });
@@ -162,8 +165,9 @@ function badgeOf(id: Page): number {
 
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
           <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
+          <span v-if="!online" class="offline ui-tag dark" role="status"><i aria-hidden="true"></i>未连接</span>
           <span class="ticks" aria-hidden="true"><i></i><i></i><i></i></span>
-          <button type="button" class="close" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
+          <button type="button" class="close ui-slant" title="关闭面板" aria-label="关闭面板" @click="ui.panelOpen = false">
             <Icon name="close" :size="15" />
           </button>
         </div>
@@ -187,7 +191,7 @@ function badgeOf(id: Page): number {
         <div class="side-inner">
           <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
             <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
-            <span class="logo-word lbl">TAPPO</span>
+            <span class="logo-word lbl ui-slant">TAPPO</span>
           </div>
 
           <nav ref="navEl" aria-label="主导航">
@@ -221,6 +225,8 @@ function badgeOf(id: Page): number {
           </button>
         </div>
       </aside>
+
+      <div class="panel-overlay"></div>
     </div>
   </section>
 </template>
@@ -228,7 +234,7 @@ function badgeOf(id: Page): number {
 <style scoped>
 .panel {
   --side-w: 196px;
-  --panel-cut: 18px;
+  --panel-cut: var(--cut-l);
   --panel-clip: polygon(
     var(--panel-cut) 0, 100% 0, 100% calc(100% - var(--panel-cut)),
     calc(100% - var(--panel-cut)) 100%, 0 100%, 0 var(--panel-cut)
@@ -236,14 +242,15 @@ function badgeOf(id: Page): number {
   position: absolute;
   z-index: 40;
   box-sizing: border-box;
+  container: panel / size;
   font-family: var(--font);
   color: var(--ink);
 }
 .panel-enter-active {
-  animation: panel-in 340ms var(--ease-out);
+  animation: panel-in var(--dur-slow) var(--ease-out);
 }
 .panel-leave-active {
-  transition: opacity 150ms ease-in, transform 150ms ease-in;
+  transition: opacity var(--dur-fast) var(--ease-in), transform var(--dur-fast) var(--ease-in);
 }
 .panel-leave-to {
   opacity: 0;
@@ -260,7 +267,7 @@ function badgeOf(id: Page): number {
 .glow {
   position: absolute;
   inset: 24px 16px 10px 24px;
-  background: rgba(43, 37, 48, 0.42);
+  background: rgba(var(--ink-rgb), 0.42);
   filter: blur(24px);
   will-change: transform;
 }
@@ -299,7 +306,7 @@ function badgeOf(id: Page): number {
   height: 52px;
   background: repeating-linear-gradient(90deg, rgba(var(--accent-rgb), 0.45) 0 6px, transparent 6px 14px);
   transform: skewX(var(--skew));
-  transition: left 340ms var(--ease-out);
+  transition: left var(--dur-slow) var(--ease-out);
 }
 .mini .wedge {
   left: calc(112px - var(--side-travel));
@@ -335,13 +342,27 @@ function badgeOf(id: Page): number {
   align-items: baseline;
   gap: 9px;
   margin: 0 auto 0 16px;
-  font: 400 25px/1 var(--font-display);
+  font: 400 var(--fs-title)/1 var(--font-display);
   color: var(--ink);
 }
 .page-title em {
-  font: italic 800 15px/1 var(--font-latin);
+  font: italic 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.1em;
-  color: var(--accent);
+  color: var(--accent-deep);
+}
+.offline {
+  align-self: center;
+  margin-right: 14px;
+  padding: 0 9px 0 7px;
+  line-height: 20px;
+}
+.offline i {
+  display: inline-block;
+  width: 4px;
+  height: 10px;
+  margin-right: 5px;
+  background: var(--bad);
+  transform: skewX(var(--skew));
 }
 .ticks {
   display: flex;
@@ -355,34 +376,23 @@ function badgeOf(id: Page): number {
   background: var(--accent);
 }
 .close {
-  position: relative;
-  isolation: isolate;
+  --slant-bg: var(--ink);
   width: 52px;
   height: 26px;
   margin-right: 10px;
   padding: 0;
   border: 0;
   background: none;
-  color: #fff;
+  color: var(--on-ink);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.close::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  transform: skewX(var(--skew));
-  transition: background 140ms;
-}
-.close:hover::before {
-  background: var(--accent-deep);
+.close:hover {
+  --slant-bg: var(--accent-deep);
 }
 
-/* Not positioned: Modal's backdrop must reach .main, under the sidebar's slanted edge. */
 .body {
   flex: 1;
   min-height: 0;
@@ -400,6 +410,17 @@ function badgeOf(id: Page): number {
   padding: 14px 20px 28px 16px;
 }
 
+/* Modals teleport here, so they sit above the sidebar and cover the whole face. */
+.panel-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.panel-overlay > :deep(*) {
+  pointer-events: auto;
+}
+
 /* The outer shape is the pale edge strip; the orange fill sits inside it along the same slant. */
 .side {
   position: absolute;
@@ -411,7 +432,7 @@ function badgeOf(id: Page): number {
   background: var(--accent-soft);
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--side-run)) 100%, 0 100%);
   user-select: none;
-  transition: transform 340ms var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 .side-fill {
   position: absolute;
@@ -426,7 +447,7 @@ function badgeOf(id: Page): number {
   right: 0;
   bottom: 0;
   height: 140px;
-  background: #fff;
+  background: var(--surface);
   opacity: 0.38;
   mask: var(--halftone) left bottom / 280px auto repeat-x;
   -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
@@ -438,7 +459,7 @@ function badgeOf(id: Page): number {
   flex-direction: column;
   padding: 20px 0 12px;
   box-sizing: border-box;
-  transition: transform 340ms var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 /* Collapsing only moves layers: the orange edge slides left while the icons hold still. */
 .mini .side {
@@ -448,14 +469,20 @@ function badgeOf(id: Page): number {
   transform: translateX(var(--side-travel));
 }
 .lbl {
-  transition: opacity 180ms;
+  transition: opacity var(--dur-base);
 }
 .side-deco {
   position: absolute;
   left: 14px;
   bottom: 54px;
-  color: #fff;
+  color: var(--on-ink);
   pointer-events: none;
+}
+/* Below this height the cat would run into the last nav item. */
+@container panel (max-height: 540px) {
+  .side-deco {
+    display: none;
+  }
 }
 .side-deco .icon:first-child {
   stroke-width: 0.9;
@@ -480,7 +507,7 @@ function badgeOf(id: Page): number {
   position: relative;
   height: 84px;
   flex: none;
-  padding-left: 22px;
+  padding-left: 14px;
   cursor: grab;
 }
 .logo:active {
@@ -490,32 +517,24 @@ function badgeOf(id: Page): number {
   display: block;
   width: 146px;
   aspect-ratio: 3.172;
-  background: #fff;
+  background: var(--surface);
   transform-origin: 0 0;
-  transition: transform 340ms var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-out);
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
 .mini .logo-mark {
-  transform: translateX(-6px) scale(0.78);
+  transform: translateX(2px) scale(0.78);
 }
-.logo-word {
+.logo-word.ui-slant {
   position: absolute;
-  left: 76px;
+  left: 68px;
   top: 52px;
   padding: 0 10px 0 12px;
-  font: italic 800 19px/22px var(--font-latin);
+  font: italic 800 var(--fs-section)/22px var(--font-latin);
   letter-spacing: 0.22em;
-  color: #fff;
-  isolation: isolate;
-}
-.logo-word::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+  color: var(--on-ink);
+  --slant-bg: var(--ink);
 }
 
 nav {
@@ -557,10 +576,17 @@ nav button {
   background: none;
   color: var(--ink);
   cursor: pointer;
-  transition: color 200ms, transform 220ms var(--ease-out);
+  transition: color var(--dur-base), transform var(--dur-base) var(--ease-out);
 }
 nav button:hover:not(.on) {
   transform: translateX(4px);
+}
+nav button:focus-visible {
+  outline: none;
+}
+nav button:focus-visible .nav-icon {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 .nav-icon {
   flex: none;
@@ -573,7 +599,7 @@ nav button:hover:not(.on) {
   color: var(--accent-deep);
   transform: skewX(var(--skew));
   transform-origin: 0 50%;
-  transition: background 200ms, color 200ms, transform 340ms var(--ease-out);
+  transition: background var(--dur-base), color var(--dur-base), transform var(--dur-slow) var(--ease-out);
 }
 .nav-icon .icon {
   stroke-width: 2.4;
@@ -584,7 +610,7 @@ nav button:hover:not(.on) {
 }
 .fold .icon {
   transform-origin: 0 50%;
-  transition: transform 340ms var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 .mini .fold .icon {
   transform: scale(1.3);
@@ -603,13 +629,13 @@ nav button.on .nav-icon {
   gap: 1px;
 }
 .nav-text b {
-  font: 20px/1 var(--font-display);
+  font: var(--fs-heading)/1 var(--font-display);
 }
 .nav-text small {
-  font: italic 800 10.5px/1 var(--font-latin);
+  font: italic 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.1em;
-  color: #fff;
-  transition: color 200ms;
+  color: var(--ink);
+  transition: color var(--dur-base);
 }
 nav button.on .nav-text small {
   color: inherit;
@@ -624,8 +650,8 @@ nav button.on .nav-text small {
   padding: 0 4px;
   box-sizing: border-box;
   background: var(--ink);
-  color: #fff;
-  font: italic 800 13px/18px var(--font-latin);
+  color: var(--on-ink);
+  font: italic 800 var(--fs-body)/18px var(--font-latin);
   text-align: center;
   transform: skewX(var(--skew));
 }
@@ -644,12 +670,12 @@ nav button.on .nav-text small {
   border: 0;
   background: none;
   color: var(--ink);
-  font: 800 14px var(--font);
+  font: 800 var(--fs-strong) var(--font);
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  transition: transform 220ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .fold:hover {
   transform: translateX(3px);

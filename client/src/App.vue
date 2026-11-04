@@ -51,6 +51,8 @@ const shownCount = computed(() => (settings.tapView === "today" ? counter.today 
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
 
 // ---- chest and drops
+/** Room a drop toast needs beside the pet. */
+const TOAST_ROOM = 270;
 const opening = ref(false);
 const toasts = ref<Drop[]>([]);
 async function openChest() {
@@ -164,7 +166,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
         <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
-      <DropToast v-if="!settings.clickThrough" :drop="toasts[0] ?? null" @done="toasts.shift()" />
+      <DropToast
+        v-if="!settings.clickThrough" :drop="toasts[0] ?? null" :side="ownPos.x > TOAST_ROOM ? 'left' : 'right'"
+        @done="toasts.shift()"
+      />
     </PetActor>
 
     <Transition name="panel">

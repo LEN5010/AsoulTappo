@@ -1,0 +1,184 @@
+<script setup lang="ts">
+// Card detail: the artwork beside its facts. Videos loop muted until sound is turned on.
+import { computed, nextTick, onMounted, ref } from "vue";
+import { assetUrl } from "../asset";
+import { cardLabel, poolName, poolSkin, TIER_LABEL } from "../cards";
+import { characterColor, manifest, type ManifestCard } from "../manifest";
+import { collection } from "../stores/player";
+import Icon from "../ui/Icon.vue";
+import Modal from "../ui/Modal.vue";
+import { flyFrom } from "../ui/motion";
+
+const props = defineProps<{ card: ManifestCard; from?: DOMRect }>();
+const emit = defineEmits<{ close: [] }>();
+
+const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
+const label = computed(() => cardLabel(props.card));
+const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
+
+// Modal teleports with `defer`, so the artwork exists only after the next tick.
+const artEl = ref<HTMLElement>();
+onMounted(async () => {
+  await nextTick();
+  if (props.from && artEl.value) flyFrom(props.from, artEl.value, assetUrl(props.card.thumb));
+});
+
+const video = ref<HTMLVideoElement>();
+const paused = ref(false);
+const muted = ref(true);
+function togglePlay() {
+  const v = video.value;
+  if (!v) return;
+  if (v.paused) void v.play();
+  else v.pause();
+}
+</script>
+
+<template>
+  <Modal :title="card.name" wide :still="!!from" :tint="poolSkin(card.series).tokens" @close="emit('close')">
+    <div class="detail" :class="card.tier">
+      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal' && count > 0 }">
+        <template v-if="count">
+          <video
+            v-if="card.video" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            :muted="muted" autoplay loop playsinline
+            @play="paused = false" @pause="paused = true"
+          ></video>
+          <img v-else :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
+        </template>
+        <img v-else class="dim" :src="assetUrl(card.thumb)" :alt="card.name" />
+
+        <div v-if="count && card.video" class="controls">
+          <button type="button" class="ui-slant" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
+            <Icon :name="paused ? 'play' : 'pause'" :size="14" />
+          </button>
+          <button type="button" class="ui-slant" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
+            <Icon :name="muted ? 'mute' : 'sound'" :size="14" />
+          </button>
+        </div>
+      </div>
+
+      <div class="info">
+        <span class="ui-tag" :class="{ gold: card.tier === 'big', dark: card.tier === 'normal' }">{{ TIER_LABEL[card.tier] }}</span>
+        <h3>{{ label.title }}</h3>
+        <p class="who"><i :style="{ background: characterColor(card.characters[0] ?? '') }" aria-hidden="true"></i>{{ label.who }}</p>
+        <dl>
+          <div><dt>卡池</dt><dd>{{ pool }}</dd></div>
+          <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
+          <div v-if="card.video"><dt>卡面</dt><dd>动态</dd></div>
+        </dl>
+      </div>
+    </div>
+  </Modal>
+</template>
+
+<style scoped>
+.detail {
+  display: flex;
+  gap: 24px;
+  align-items: stretch;
+}
+.art {
+  --cut: var(--cut-l);
+  flex: none;
+  height: min(440px, calc(100cqh - 120px));
+  aspect-ratio: 2 / 3;
+  background: var(--accent-tint);
+}
+.small .art {
+  --ring: var(--accent);
+}
+.big .art {
+  --ring: var(--gold);
+}
+.art video,
+.art img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: center / cover no-repeat;
+}
+.art .dim {
+  filter: grayscale(1);
+  transition: filter var(--dur-base);
+}
+.art:hover .dim {
+  filter: none;
+}
+.controls {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+}
+.controls button {
+  --slant-bg: var(--ink);
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--on-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.controls button:hover {
+  --slant-bg: var(--accent-deep);
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 4px;
+}
+h3 {
+  margin: 4px 0 0;
+  font: 400 var(--fs-heading)/1.2 var(--font-display);
+}
+.who {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.who i {
+  width: 4px;
+  height: 11px;
+  transform: skewX(var(--skew));
+}
+dl {
+  width: 100%;
+  margin: 14px 0 0;
+}
+dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1.5px solid var(--line);
+  font-size: var(--fs-body);
+}
+dt {
+  color: var(--ink-3);
+  font-weight: 700;
+}
+dd {
+  margin: 0;
+  font-weight: 800;
+}
+dd.missing {
+  color: var(--ink-3);
+}
+</style>

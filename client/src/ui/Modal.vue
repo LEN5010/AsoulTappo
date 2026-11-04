@@ -1,26 +1,46 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from "vue";
+import { nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { takeFocus, trapTab } from "./focus";
 import Icon from "./Icon.vue";
 
-defineProps<{ title?: string; wide?: boolean }>();
+// `tint` carries a subtree's accent tokens across the teleport. `still` drops the sheet's slide
+// for content that animates into place on its own.
+defineProps<{ title?: string; wide?: boolean; still?: boolean; tint?: Record<string, string> }>();
 const emit = defineEmits<{ close: [] }>();
-const onKey = (e: KeyboardEvent) => e.key === "Escape" && emit("close");
-onMounted(() => window.addEventListener("keydown", onKey));
-onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
+
+const sheet = ref<HTMLElement>();
+let release: (() => void) | undefined;
+function onKey(e: KeyboardEvent) {
+  if (e.key === "Escape") emit("close");
+  else if (e.key === "Tab" && sheet.value) trapTab(sheet.value, e);
+}
+onMounted(async () => {
+  window.addEventListener("keydown", onKey);
+  await nextTick();
+  release = takeFocus(sheet.value);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKey);
+  release?.();
+});
+// Teleported content stays behind when its page turns away (a desk shortcut can do that).
+onDeactivated(() => emit("close"));
 </script>
 
 <template>
-  <div class="backdrop" @click.self="emit('close')">
-    <slot name="behind" />
-    <div class="sheet ui-scroll" :class="{ wide }" role="dialog" aria-modal="true" :aria-label="title">
-      <div class="sheet-band" aria-hidden="true"></div>
-      <button type="button" class="x" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
-      <div class="sheet-body">
-        <slot />
+  <Teleport defer to=".panel-overlay">
+    <div class="backdrop" :style="tint" data-overlay @click.self="emit('close')">
+      <slot name="behind" />
+      <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
+        <div class="sheet-band" aria-hidden="true"></div>
+        <button type="button" class="x ui-slant" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
+        <div class="sheet-body">
+          <slot />
+        </div>
       </div>
+      <slot name="front" />
     </div>
-    <slot name="front" />
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -34,21 +54,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   padding: 20px;
   box-sizing: border-box;
   overflow: hidden;
-  background: rgba(43, 37, 48, 0.46);
-  animation: fade 160ms ease-out;
+  background: rgba(var(--ink-rgb), 0.46);
+  animation: fade var(--dur-fast) var(--ease-out);
 }
 .sheet {
   position: relative;
+  outline: none;
   width: min(400px, 100%);
   max-height: 100%;
   overflow: auto;
   box-sizing: border-box;
   background: var(--surface);
-  box-shadow: 8px 8px 0 var(--accent);
-  animation: slide 320ms var(--ease-out);
+  box-shadow: var(--drop-l) var(--accent);
+  animation: slide var(--dur-slow) var(--ease-out);
 }
 .sheet.wide {
   width: min(600px, 100%);
+}
+.sheet.still {
+  animation: fade var(--dur-base) var(--ease-out);
 }
 .sheet-band {
   position: relative;
@@ -66,6 +90,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   padding: 18px 24px 24px;
 }
 .x {
+  --slant-bg: var(--ink);
   position: absolute;
   right: 10px;
   top: 0;
@@ -74,25 +99,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   padding: 0;
   border: 0;
   background: none;
-  color: #fff;
+  color: var(--on-ink);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   z-index: 2;
-  isolation: isolate;
 }
-.x::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  transform: skewX(var(--skew));
-  transition: background 140ms;
-}
-.x:hover::before {
-  background: var(--accent-deep);
+.x:hover {
+  --slant-bg: var(--accent-deep);
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }

@@ -2,17 +2,17 @@
 // Two slanted bands that sweep out from behind the sidebar. cover() ends with the page
 // hidden, which is when MainPanel swaps it; reveal() carries on off to the right.
 import { ref } from "vue";
+import { EASE_IN_OUT as EASE, SKEW } from "../ui/motion";
 
 defineProps<{ title: string; label: string }>();
 
-const SKEW = "skewX(-8deg)";
 const LEFT = `translateX(-112%) ${SKEW}`;
 const HOME = `translateX(0) ${SKEW}`;
 const RIGHT = `translateX(112%) ${SKEW}`;
-const EASE = "cubic-bezier(0.7, 0, 0.2, 1)";
-const COVER_MS = 255;
-const REVEAL_MS = 315;
-const LAG_MS = 52;
+/** Opening the panel gets the full sweep; everyday page turns stay out of the way. */
+const OPEN = { revealMs: 315, lagMs: 52 };
+const TURN = { revealMs: 230, lagMs: 36 };
+const COVER_MS = 170;
 
 const root = ref<HTMLElement>();
 const under = ref<HTMLElement>();
@@ -25,9 +25,9 @@ const show = (visible: boolean) => {
   if (root.value) root.value.style.visibility = visible ? "visible" : "hidden";
 };
 const settled = (list: Animation[]) => Promise.allSettled(list.map((a) => a.finished));
-function sweep(first: HTMLElement, second: HTMLElement, from: string, to: string, duration: number): Animation[] {
+function sweep(first: HTMLElement, second: HTMLElement, from: string, to: string, duration: number, lag: number): Animation[] {
   return [first, second].map((el, i) =>
-    el.animate([{ transform: from }, { transform: to }], { duration, delay: i * LAG_MS, easing: EASE, fill: "both" }),
+    el.animate([{ transform: from }, { transform: to }], { duration, delay: i * lag, easing: EASE, fill: "both" }),
   );
 }
 
@@ -39,14 +39,15 @@ function hold() {
 
 async function cover() {
   show(true);
-  held = sweep(under.value!, over.value!, LEFT, HOME, COVER_MS);
+  held = sweep(under.value!, over.value!, LEFT, HOME, COVER_MS, TURN.lagMs);
   await settled(held);
 }
 
 /** Resolves true when rewind() sent the bands back, which leaves the page covered again. */
-async function reveal(): Promise<boolean> {
+async function reveal(opening: boolean): Promise<boolean> {
+  const { revealMs, lagMs } = opening ? OPEN : TURN;
   const previous = held;
-  held = sweep(over.value!, under.value!, HOME, RIGHT, REVEAL_MS);
+  held = sweep(over.value!, under.value!, HOME, RIGHT, revealMs, lagMs);
   previous.forEach((a) => a.cancel());
   revealing = true;
   rewound = false;
@@ -95,7 +96,7 @@ defineExpose({ hold, cover, reveal, rewind });
   bottom: -2px;
   left: -8%;
   width: 116%;
-  transform: translateX(-112%) skewX(-8deg);
+  transform: translateX(-112%) skewX(var(--skew));
   will-change: transform;
 }
 .under {
@@ -121,17 +122,17 @@ defineExpose({ hold, cover, reveal, rewind });
   display: flex;
   flex-direction: column;
   align-items: center;
-  transform: translate(-50%, -50%) skewX(8deg);
+  transform: translate(-50%, -50%) skewX(calc(var(--skew) * -1));
   white-space: nowrap;
 }
 .title b {
   font: italic 800 112px/0.9 var(--font-latin);
   letter-spacing: 0.01em;
-  color: #fff;
+  color: var(--on-ink);
 }
 .title small {
   margin-top: 6px;
-  font: 24px var(--font-display);
+  font: var(--fs-title) var(--font-display);
   color: var(--ink);
 }
 </style>

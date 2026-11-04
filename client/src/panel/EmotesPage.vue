@@ -4,23 +4,21 @@ import { characterColor, getEmote, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
-import { boxes, collection, error, online, openBoxes, shards, status } from "../stores/player";
+import { boxes, collection, error, shards, status } from "../stores/player";
 import { settings } from "../stores/settings";
 import { pet } from "../stores/pet";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
-import type { Drop } from "../net/api";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import PetView from "../pet/PetView.vue";
 import MemberStrip from "./MemberStrip.vue";
 import PetBust from "./PetBust.vue";
-import RevealModal from "./RevealModal.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 import { rise } from "../ui/motion";
 
-type MainKind = "all" | "pet" | "emote";
-const mainTab = ref<MainKind>("all");
+type MainKind = "emote" | "pet";
+const mainTab = ref<MainKind>("emote");
 const charFilter = ref<string>("all");
 const query = ref("");
 const actionNote = ref("");
@@ -107,33 +105,15 @@ const totalOwnedEmotes = computed(() =>
 );
 
 const mainTabs = computed(() => [
-  { id: "all" as const, label: "全部", count: Object.keys(characters).length + totalOwnedEmotes.value },
-  { id: "pet" as const, label: "角色", count: Object.keys(characters).length },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
+  { id: "pet" as const, label: "桌宠", count: Object.keys(characters).length },
 ]);
 
-const showPets = computed(() => (mainTab.value === "all" || mainTab.value === "pet") && petSkins.value.length > 0);
-const showEmotes = computed(() => mainTab.value !== "pet" && ownedEmotes.value.length > 0);
+const nothingFound = computed(() =>
+  mainTab.value === "pet" ? !petSkins.value.length : !ownedEmotes.value.length,
+);
 
 const favorites = computed(() => Array.from({ length: 8 }, (_, n) => getItem(`emote:${settings.favorites[n]}`)));
-const busy = ref(false);
-const drops = ref<Drop[]>([]);
-
-async function open(all: boolean) {
-  if (busy.value) return;
-  busy.value = true;
-  const count = all ? boxes.value : 1;
-  const results: Drop[] = [];
-  let remaining = count;
-  while (remaining > 0) {
-    const batch = await openBoxes(Math.min(10, remaining));
-    if (!batch?.length) break;
-    results.push(...batch);
-    remaining -= batch.length;
-  }
-  drops.value = results;
-  busy.value = false;
-}
 
 function toggleFavKey(key: string) {
   actionNote.value = "";
@@ -145,7 +125,7 @@ function toggleFavKey(key: string) {
     player.play(key);
   } else {
     player.play(key);
-    actionNote.value = "预设栏已满（8/8），先点击上方预设槽移出一个吧";
+    actionNote.value = "预设已满 8/8";
   }
 }
 
@@ -176,7 +156,7 @@ const tapPct = computed(() =>
   <div ref="root" class="emotes-page ui-scroll">
     <section class="showcase">
       <div class="stage-cluster" data-rise>
-        <div class="stage" title="点击桌宠预览表情" @click="pokeStage">
+        <div class="stage" @click="pokeStage">
           <span class="stage-bg" aria-hidden="true">
             <i class="stage-dots"></i>
             <i class="stage-stripe"></i>
@@ -189,7 +169,9 @@ const tapPct = computed(() =>
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
           </div>
-          <span class="stage-name"><i aria-hidden="true"></i>{{ settings.character }}</span>
+          <button type="button" class="stage-name ui-slant" title="更换桌宠" @click.stop="mainTab = 'pet'">
+            <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="11" />
+          </button>
           <Icon name="star5" :size="24" class="stage-deco big" />
           <Icon name="star5" :size="14" class="stage-deco small" />
           <Icon name="heart" :size="16" class="stage-deco heart" />
@@ -220,7 +202,7 @@ const tapPct = computed(() =>
             <button
               v-for="(item, n) in favorites" :key="n" type="button"
               class="sq-slot ui-frame" :class="{ filled: !!item }"
-              :title="item ? `${item.name}（点击移出预设）` : `预设槽位 ${n + 1}（点击下方表情装入）`"
+              :title="item ? item.name : `预设槽位 ${n + 1}`"
               @dragover.prevent @drop.prevent="assign($event, n)"
               @click="item && favorite(item)"
             >
@@ -230,24 +212,19 @@ const tapPct = computed(() =>
           </div>
 
           <div class="resources">
-            <div class="res" title="表情碎片（可在图鉴中兑换未拥有的表情）">
+            <div class="res" title="表情碎片">
               <Icon name="shard" :size="15" />
               <b>{{ shards }}</b><small>碎片</small>
             </div>
-            <div
-              class="res chest"
+            <button
+              type="button" class="res chest ui-slant" :class="{ ready: boxes > 0 }"
               :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
+              @click="ui.page = 'dex'"
             >
               <Icon name="box" :size="15" />
               <b>{{ boxes }}</b><small>箱</small>
               <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
-            </div>
-            <div class="res-actions">
-              <button type="button" class="ui-btn primary open-btn" :disabled="busy || !online || !boxes" @click="open(false)">
-                <Icon name="box" :size="17" />开箱<em v-if="boxes <= 1">OPEN</em>
-              </button>
-              <button v-if="boxes > 1" type="button" class="ui-btn" :disabled="busy || !online" @click="open(true)">全开</button>
-            </div>
+            </button>
           </div>
         </div>
         <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
@@ -266,13 +243,7 @@ const tapPct = computed(() =>
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
     <div ref="listing">
-      <section v-if="showPets" class="pet-section">
-        <div v-if="mainTab === 'all'" class="ui-label" data-rise>
-          <span>桌宠形象</span>
-          <em>CHARACTER</em>
-          <small>{{ petSkins.length }}</small>
-        </div>
-
+      <section v-if="mainTab === 'pet'" class="pet-section">
         <div class="pet-grid">
           <button
             v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
@@ -289,46 +260,34 @@ const tapPct = computed(() =>
         </div>
       </section>
 
-      <section v-if="mainTab !== 'pet'" class="emote-section">
-        <div v-if="mainTab === 'all' && showPets" class="ui-label" data-rise>
-          <span>已拥有表情</span>
-          <em>STICKER</em>
-          <small>{{ ownedEmotes.length }}</small>
-        </div>
-
+      <section v-else class="emote-section">
         <div class="emote-grid">
           <div
             v-for="e in ownedEmotes" :key="e.key"
-            class="emote-card ui-tile"
-            :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
-            :title="`${e.name}（${e.setName}）· 点击${settings.favorites.includes(e.key) ? '移出' : '装入'}预设`"
-            draggable="true"
-            role="button"
-            tabindex="0"
-            data-rise
+            class="emote-cell" draggable="true" data-rise
             @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
-            @click="toggleFavKey(e.key)"
           >
-            <span class="ui-frame ui-well">
-              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
-              <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
-            </span>
             <button
-              type="button"
-              class="send-mini"
-              title="立即发送该表情"
-              @click.stop="fireEmote(e.key)"
+              type="button" class="emote-card ui-tile"
+              :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
+              :title="`${e.name}（${e.setName}）`" :aria-pressed="settings.favorites.includes(e.key)"
+              @click="toggleFavKey(e.key)"
             >
+              <span class="ui-frame ui-well">
+                <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+                <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
+              </span>
+              <b class="ui-tile-name">{{ e.name }}</b>
+            </button>
+            <button type="button" class="send-mini" title="发送" :aria-label="`发送 ${e.name}`" @click="fireEmote(e.key)">
               <Icon name="spark" :size="11" />
             </button>
-            <b class="ui-tile-name">{{ e.name }}</b>
           </div>
 
           <!-- Shortcut tile to unlock/craft more emotes in Dex -->
           <button
             type="button"
             class="emote-card more-card ui-tile"
-            title="前往图鉴查看全部 375 个表情与碎片兑换"
             data-rise
             @click="ui.page = 'dex'"
           >
@@ -341,11 +300,7 @@ const tapPct = computed(() =>
       </section>
     </div>
 
-    <p v-if="!showPets && !showEmotes" class="ui-empty">
-      还没有匹配的物品，去 <button type="button" class="link-btn" @click="ui.page = 'dex'">图鉴</button> 开箱或用碎片兑换吧
-    </p>
-
-    <RevealModal v-if="drops.length" :drops="drops" @close="drops = []" />
+    <p v-if="nothingFound" class="ui-empty">没有匹配的内容</p>
   </div>
 </template>
 
@@ -387,9 +342,9 @@ const tapPct = computed(() =>
 .stage-dots {
   position: absolute;
   inset: 0 -14px;
-  background: #fff;
+  background: var(--surface);
   opacity: 0.34;
-  transform: skewX(8deg);
+  transform: skewX(calc(var(--skew) * -1));
   mask: var(--halftone) left bottom / 280px auto repeat-x;
   -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
 }
@@ -424,25 +379,23 @@ const tapPct = computed(() =>
 }
 /* Left of the head: the emote bubble grows to the right of it. */
 .stage-name {
+  --slant-bg: var(--ink);
   position: absolute;
   left: 58px;
   top: 12px;
-  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 7px;
   height: 26px;
-  padding: 0 12px 0 9px;
-  font: 800 14px var(--font);
-  color: #fff;
+  padding: 0 9px;
+  border: 0;
+  background: none;
+  font: 800 var(--fs-strong) var(--font);
+  color: var(--on-ink);
+  cursor: pointer;
 }
-.stage-name::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+.stage-name:hover {
+  --slant-bg: var(--accent-deep);
 }
 .stage-name i {
   width: 5px;
@@ -452,7 +405,7 @@ const tapPct = computed(() =>
 }
 .stage-deco {
   position: absolute;
-  color: #fff;
+  color: var(--on-ink);
   pointer-events: none;
 }
 .stage-deco.big {
@@ -467,7 +420,7 @@ const tapPct = computed(() =>
 .stage-deco.heart {
   left: 64px;
   top: 50px;
-  fill: #fff;
+  fill: var(--on-ink);
   transform: rotate(-12deg);
 }
 
@@ -481,10 +434,10 @@ const tapPct = computed(() =>
   box-sizing: border-box;
   border: 0;
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: var(--drop-s) var(--ink);
   transform: rotate(var(--rot));
   cursor: pointer;
-  transition: transform 240ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .sticker:hover {
   z-index: 3;
@@ -511,19 +464,19 @@ const tapPct = computed(() =>
 }
 .fav-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--fs-heading);
 }
 .fav-count {
-  font: italic 800 20px/1 var(--font-latin);
+  font: italic 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .fav-count small {
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-strong);
   color: var(--ink-3);
 }
 .fav-note {
-  font-size: 11px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--accent-deep);
 }
@@ -539,7 +492,7 @@ const tapPct = computed(() =>
   flex: none;
 }
 .sq-slot {
-  --cut: 9px;
+  --cut: var(--cut-s);
   width: 60px;
   height: 60px;
   padding: 7px;
@@ -552,7 +505,7 @@ const tapPct = computed(() =>
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 160ms, transform 220ms var(--ease-out);
+  transition: background var(--dur-fast), transform var(--dur-base) var(--ease-out);
 }
 .sq-slot:hover {
   background: var(--accent-soft);
@@ -585,11 +538,11 @@ const tapPct = computed(() =>
   color: var(--accent-deep);
 }
 .res b {
-  font: italic 800 24px/1 var(--font-latin);
+  font: italic 800 var(--fs-title)/1 var(--font-latin);
   color: var(--ink);
 }
 .res small {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--ink-2);
 }
@@ -598,24 +551,45 @@ const tapPct = computed(() =>
   height: 5px;
   margin-top: 3px;
 }
-.res-actions {
-  display: flex;
-  gap: 8px;
-  padding: 0 4px 3px 2px;
+.chest {
+  --slant-bg: var(--accent-tint);
+  --slant-edge: inset 0 0 0 1.5px var(--line);
+  width: calc(100% - 8px);
+  margin-left: 4px;
+  padding: 9px 12px 11px;
+  box-sizing: border-box;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.res-actions .ui-btn {
-  flex: 1;
-  min-width: 0;
-  padding: 0 6px;
+.chest:hover {
+  --slant-bg: var(--accent-soft);
 }
-.open-btn em {
-  font: italic 800 14px/1 var(--font-latin);
-  letter-spacing: 0.08em;
+.chest.ready {
+  --slant-bg: var(--accent);
+  --slant-edge: none;
+  color: var(--on-accent);
+}
+.chest.ready:hover {
+  --slant-bg: var(--accent-hover);
+}
+.chest.ready b,
+.chest.ready small {
+  color: var(--on-accent);
+}
+.chest.ready .res-bar {
+  background: rgba(255, 255, 255, 0.34);
+}
+.chest.ready .res-bar > i {
+  background: var(--surface);
 }
 
+/* -10px cancels the scroller's top padding, which would otherwise let tiles show above the bar. */
 .sticky-nav {
   position: sticky;
-  top: 0;
+  top: -10px;
   z-index: 6;
   background: var(--page);
   padding: 2px 0 8px;
@@ -635,7 +609,7 @@ const tapPct = computed(() =>
   width: 150px;
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-label);
 }
 
 .pet-section {
@@ -643,11 +617,11 @@ const tapPct = computed(() =>
 }
 .pet-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 12px;
 }
 .pet-card {
-  --cut: 14px;
+  --cut: var(--cut-m);
   --well-ratio: 5 / 4;
 }
 .pet-well {
@@ -663,7 +637,7 @@ const tapPct = computed(() =>
   height: 100%;
   display: block;
   filter: var(--sticker);
-  transition: transform 260ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .pet-card:hover .pet-svg {
   transform: scale(1.05);
@@ -673,7 +647,7 @@ const tapPct = computed(() =>
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font: 800 14px var(--font);
+  font: 800 var(--fs-strong) var(--font);
 }
 .pet-card .ui-tile-name i {
   flex: none;
@@ -687,6 +661,11 @@ const tapPct = computed(() =>
   top: 6px;
   z-index: 1;
 }
+.emote-card .tag {
+  left: 6px;
+  top: auto;
+  bottom: 5px;
+}
 
 .emote-section {
   padding-bottom: 12px;
@@ -696,8 +675,13 @@ const tapPct = computed(() =>
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 12px 10px;
 }
-.emote-card.rare .ui-well {
-  background: var(--rar-rare-bg);
+.emote-cell {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+.emote-cell .emote-card {
+  width: 100%;
 }
 .emote-card.picked .ui-well {
   background: var(--accent-soft);
@@ -716,30 +700,20 @@ const tapPct = computed(() =>
   padding: 0;
   border: 0;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-ink);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 140ms, background 140ms;
+  transition: opacity var(--dur-fast), background var(--dur-fast);
 }
-.emote-card:hover .send-mini,
+.emote-cell:hover .send-mini,
 .send-mini:focus-visible {
   opacity: 1;
 }
 .send-mini:hover {
   background: var(--accent-deep);
-}
-
-.link-btn {
-  border: 0;
-  background: transparent;
-  color: var(--accent-deep);
-  font: inherit;
-  font-weight: 800;
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 @media (max-width: 780px) {

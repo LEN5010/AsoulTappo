@@ -24,16 +24,16 @@ defineEmits<{ open: [] }>();
   cursor: pointer;
   background: var(--surface);
   box-sizing: border-box;
-  box-shadow: 4px 4px 0 var(--accent), 0 6px 14px rgba(43, 37, 48, 0.2);
+  box-shadow: var(--drop-m) var(--accent), 0 6px 14px rgba(var(--ink-rgb), 0.2);
   display: grid;
   place-items: center;
-  animation: bob 1.8s ease-in-out infinite;
+  animation: nudge 40s var(--ease-in-out) infinite;
 }
 .chest:hover {
   animation-play-state: paused;
 }
 .chest.busy {
-  animation: shake 320ms linear infinite;
+  animation: shake var(--dur-slow) linear infinite;
 }
 .n {
   position: absolute;
@@ -44,14 +44,17 @@ defineEmits<{ open: [] }>();
   padding: 0 5px;
   box-sizing: border-box;
   background: var(--ink);
-  color: #fff;
-  font: italic 800 14px/18px var(--font-latin);
+  color: var(--on-ink);
+  font: italic 800 var(--fs-strong)/18px var(--font-latin);
   text-align: center;
   transform: skewX(var(--skew));
 }
-@keyframes bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+@keyframes nudge {
+  0%, 8%, 100% { transform: none; }
+  1% { transform: translateY(-5px) rotate(-6deg); }
+  2.5% { transform: translateY(-5px) rotate(6deg); }
+  4% { transform: translateY(-3px) rotate(-4deg); }
+  5.5% { transform: translateY(-2px) rotate(3deg); }
 }
 @keyframes shake {
   0%, 100% { transform: rotate(0); }

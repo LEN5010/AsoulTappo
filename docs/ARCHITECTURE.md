@@ -28,8 +28,14 @@ Mouse pass-through is updated dynamically based on interactive regions:
 **Frontend (`src/`)**
 - `App.vue` — overlay root placing the local pet, remote room members' pets, drop toasts, and `MainPanel`.
 - `pet/` — layered pet renderer (`PetView.vue`), drag actor (`PetActor.vue`), `CounterBar.vue`, single-row `QuickEmote.vue` dock, `EmoteBubble.vue`, `ComboBubble.vue`, `ChestBubble.vue`, `DropToast.vue`, and `NamePill.vue`.
-- `panel/` — `MainPanel.vue` (left sidebar + warm cream stage) with `EmotesPage.vue` (live pet dome, character fan cards, 8 squircle favorite slots, chest opening & emote grid), `CollectionPage.vue` (card pools, collapsible rarity sections, online-time card draws), `OnlinePage.vue`, and `SettingsPage.vue`.
-- `ui/` — design tokens (`tokens.css`) and shared UI components (`Icon`, `SegTabs`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`).
+- `panel/` — `MainPanel.vue` (sidebar, top bar, page shutter) with five pages:
+  - `EmotesPage.vue`: pet stage, 8 favorite slots, and the owned emotes and pet skins.
+  - `CollectionPage.vue`: emote dex. An album wall that opens onto each album's stickers; its footer is the main way to open boxes.
+  - `CardsPage.vue`: one tab per card pool, with a draw view (`PoolStage.vue`) and an album view (`CardAlbum.vue`). Each pool wears the palette and stickers of its decoration set (`poolSkin` in `cards.ts`), applied by overriding the accent tokens on the page's subtree; the sidebar and frame keep the brand color.
+  - `OnlinePage.vue`: a live table of pets (`RoomStage.vue`), the room ticket, members and desk settings.
+  - `SettingsPage.vue`.
+- `panel/RevealScene.vue` — full-panel draw and box reveal, with `CardSpotlight.vue` for the card entrances and `reveal.ts` for their order. The scene covers the panel before the request goes out, because `drawCards` and `openBoxes` update the stores as soon as the response lands.
+- `ui/` — design tokens (`tokens.css`), shared components (`Icon`, `SegTabs`, `FilterChips`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`) and helpers (`motion.ts`, `focus.ts`, `palette.ts`). `Modal` and `RevealScene` teleport to `.panel-overlay` and carry `data-overlay`, which keeps Esc from closing the panel underneath them.
 - `stores/` — reactive state for `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, and `theme`.
 - `net/` — `protocol.ts`, `TapBatcher.ts`, `RoomClient.ts`, and `api.ts`.
 

@@ -3,15 +3,15 @@ defineProps<{ nick: string; width: number }>();
 </script>
 
 <template>
-  <div class="pill" :style="{ maxWidth: `${width}px` }">
+  <div class="pill ui-slant" :style="{ maxWidth: `${width}px` }">
     <span>{{ nick }}</span>
   </div>
 </template>
 
 <style scoped>
 .pill {
-  position: relative;
-  isolation: isolate;
+  --slant-bg: var(--ink);
+  --slant-edge: var(--drop-s) var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -21,18 +21,9 @@ defineProps<{ nick: string; width: number }>();
   padding: 0 11px;
   box-sizing: border-box;
   font-family: var(--font);
-  font-size: 12px;
+  font-size: var(--fs-label);
   font-weight: 800;
-  color: #fff;
-}
-.pill::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  box-shadow: 3px 3px 0 var(--accent);
-  transform: skewX(var(--skew));
+  color: var(--on-ink);
 }
 .pill span {
   overflow: hidden;

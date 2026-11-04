@@ -5,7 +5,8 @@ import { dropLabel, getItem, RARITY_LABEL } from "../items";
 import type { Rarity } from "../manifest";
 import ItemArt from "../ui/ItemArt.vue";
 
-const props = defineProps<{ drop: Drop | null }>();
+/** `side` is where the toast sits next to the pet, so it never covers an emote above the head. */
+const props = defineProps<{ drop: Drop | null; side: "left" | "right" }>();
 const emit = defineEmits<{ done: [] }>();
 const item = computed(() => (props.drop ? getItem(props.drop.item) : undefined));
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -24,7 +25,7 @@ onBeforeUnmount(() => clearTimeout(timer));
   <Transition name="toast">
     <button
       v-if="drop && item" :key="`${drop.item}-${drop.count}`" type="button"
-      class="toast" :class="`r-${drop.rarity}`" data-hit data-no-drag @click="emit('done')"
+      class="toast" :class="[`r-${drop.rarity}`, side]" data-hit data-no-drag @click="emit('done')"
     >
       <span class="tile ui-frame"><ItemArt :item="item" :size="54" /></span>
       <span class="txt">
@@ -39,10 +40,8 @@ onBeforeUnmount(() => clearTimeout(timer));
 <style scoped>
 .toast {
   position: absolute;
-  left: 50%;
-  bottom: calc(100% + 12px);
+  bottom: 36px;
   z-index: 25;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -51,10 +50,16 @@ onBeforeUnmount(() => clearTimeout(timer));
   cursor: pointer;
   text-align: left;
   background: var(--surface);
-  box-shadow: 5px 5px 0 var(--accent), 0 10px 24px rgba(43, 37, 48, 0.2);
+  box-shadow: var(--drop-m) var(--accent), 0 10px 24px rgba(var(--ink-rgb), 0.2);
   font-family: var(--font);
   color: var(--ink);
   white-space: nowrap;
+}
+.toast.left {
+  right: calc(100% + 14px);
+}
+.toast.right {
+  left: calc(100% + 14px);
 }
 .tile {
   width: 58px;
@@ -67,11 +72,11 @@ onBeforeUnmount(() => clearTimeout(timer));
 .r-epic .tile { background: var(--rar-epic-bg); }
 .r-legendary .tile { background: var(--rar-legendary-bg); }
 .txt { display: flex; flex-direction: column; gap: 1px; }
-.txt b { font-size: 12px; font-weight: 800; color: var(--accent-deep); }
-.name { font: 800 15px/1.15 var(--font); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
-small { font-size: 11px; font-weight: 700; color: var(--ink-3); }
-.toast-enter-active { animation: in 360ms var(--ease-out); }
-.toast-leave-active { transition: opacity 250ms, transform 250ms; }
-.toast-leave-to { opacity: 0; transform: translate(-50%, -10px); }
-@keyframes in { from { opacity: 0; transform: translate(calc(-50% - 16px), 12px); } }
+.txt b { font-size: var(--fs-label); font-weight: 800; color: var(--accent-deep); }
+.name { font: 800 var(--fs-strong)/1.15 var(--font); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+small { font-size: var(--fs-caption); font-weight: 700; color: var(--ink-3); }
+.toast-enter-active { animation: in var(--dur-slow) var(--ease-out); }
+.toast-leave-active { transition: opacity var(--dur-base), transform var(--dur-base); }
+.toast-leave-to { opacity: 0; transform: translateY(-10px); }
+@keyframes in { from { opacity: 0; transform: translate(-16px, 12px); } }
 </style>

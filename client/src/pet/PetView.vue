@@ -97,7 +97,7 @@ const bubbleAnchor = computed(() => ({
 .art { position: absolute; inset: 0; }
 .layer { position: absolute; pointer-events: none; }
 .bg { left: 0; top: 0; }
-.kb { transition: transform 140ms cubic-bezier(0.34, 1.8, 0.64, 1); }
-.kb.down { transition: transform 50ms ease-out; }
+.kb { transition: transform var(--dur-fast) var(--ease-pop); }
+.kb.down { transition: transform 50ms var(--ease-out); }
 .missing { color: var(--surface); opacity: 0.5; }
 </style>

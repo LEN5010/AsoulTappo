@@ -26,22 +26,43 @@
 
   --accent: #FC966E;
   --accent-rgb: 252, 150, 110;
-  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.68:1) */
-  --accent-deep: #C94A20;
+  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.5:1 on --page) */
+  --accent-deep: #C0461E;
+  --accent-hover: #FFA883;
   --accent-soft: #FFE3D6;
   --accent-tint: #FFF3ED;
   --on-accent: #2B2530;
 
   --ink: #2B2530;
+  --ink-rgb: 43, 37, 48;
+  --on-ink: #FFFFFF;
   --ink-2: #625968;
-  --ink-3: #8D8493;
+  --ink-3: #766D7C;
   --surface: #FFFFFF;
   --page: #FFF4EE;
 
   --line: #F6E3DA;
   --line-2: #EFD3C6;
 
+  --fs-caption: 11px;
+  --fs-label: 12px;
+  --fs-body: 13px;
+  --fs-strong: 14px;
+  --fs-number: 16px;
+  --fs-section: 18px;
+  --fs-heading: 20px;
+  --fs-title: 25px;
+  --fs-display: 40px;
+  --fs-burst: 72px;
+
   --skew: -8deg;
+  --cut-s: 10px;
+  --cut-m: 14px;
+  --cut-l: 18px;
+  /* Hard offset shadows, followed by a color. */
+  --drop-s: 3px 3px 0;
+  --drop-m: 5px 5px 0;
+  --drop-l: 8px 8px 0;
   --grid: linear-gradient(rgba(var(--accent-rgb), 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-rgb), 0.1) 1px, transparent 1px);
   --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
   --halftone: url("../assets/patterns/halftone.svg");
@@ -52,19 +73,25 @@
   --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
   --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
 
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+  --dur-stage: 480ms;
+  /* Mirrored in ui/motion.ts for Web Animations. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-pop: cubic-bezier(0.34, 1.8, 0.64, 1);
 
-  --rar-common: #F4A988;
-  --rar-common-bg: linear-gradient(145deg, #FFF8F4 0%, #FFEFE7 100%);
-  --rar-rare: #F58A5F;
+  /* Each step up the ladder gets stronger: paper, peach, deep orange, gold. */
+  --gold: #E59B35;
+  --gold-rgb: 229, 155, 53;
+  --gold-soft: #FFE3A6;
+  --rar-common-bg: var(--surface);
   --rar-rare-bg: linear-gradient(145deg, #FFE7DB 0%, #FFD3BF 100%);
-  --rar-epic: #FC966E;
-  --rar-epic-bg: linear-gradient(145deg, #FFCFB9 0%, #FCA582 100%);
-  --rar-legendary: #E59B35;
-  --rar-legendary-bg: linear-gradient(145deg, #FFD9A8 0%, #FC966E 100%);
-  --rar-none-bg: linear-gradient(145deg, #FFF8F4 0%, #FFF0E9 100%);
+  --rar-epic-bg: linear-gradient(145deg, #FFC1A6 0%, #F58A5F 100%);
+  --rar-legendary-bg: linear-gradient(145deg, var(--gold-soft) 0%, var(--gold) 100%);
 
   --ok: #2F9E68;
   --warn: #D98A1F;
@@ -72,11 +99,31 @@
 }
 
 /* Parallelograms are skewed ::before layers, so the label stays upright and borders survive. */
-.ui-btn {
+.ui-slant,
+.ui-btn,
+.ui-chip,
+.ui-tag {
   position: relative;
   isolation: isolate;
+}
+.ui-slant::before,
+.ui-btn::before,
+.ui-chip::before,
+.ui-tag::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--slant-bg);
+  box-shadow: var(--slant-edge, none);
+  transform: skewX(var(--skew));
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.ui-btn {
+  --slant-bg: var(--surface);
+  --slant-edge: inset 0 0 0 1.5px var(--line-2);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   height: 36px;
   padding: 0 18px;
@@ -89,44 +136,30 @@
   justify-content: center;
   gap: 6px;
   white-space: nowrap;
-  transition: transform 180ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.ui-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
-  transform: skewX(var(--skew));
-  transition: background 140ms, box-shadow 140ms;
-}
-.ui-btn:hover:not(:disabled)::before {
-  background: var(--accent-soft);
+.ui-btn:hover:not(:disabled) {
+  --slant-bg: var(--accent-soft);
 }
 .ui-btn:active:not(:disabled) {
   transform: translate(1px, 1px);
 }
 .ui-btn.primary {
+  --slant-bg: var(--accent);
+  --slant-edge: var(--drop-s) var(--ink);
   color: var(--on-accent);
 }
-.ui-btn.primary::before {
-  background: var(--accent);
-  box-shadow: 3px 3px 0 var(--ink);
+.ui-btn.primary:hover:not(:disabled) {
+  --slant-bg: var(--accent-hover);
+  --slant-edge: var(--drop-m) var(--ink);
 }
-.ui-btn.primary:hover:not(:disabled)::before {
-  background: #FFA883;
-  box-shadow: 4px 4px 0 var(--ink);
-}
-.ui-btn.primary:active:not(:disabled)::before {
-  box-shadow: 1px 1px 0 var(--ink);
+.ui-btn.primary:active:not(:disabled) {
+  --slant-edge: 1px 1px 0 var(--ink);
 }
 .ui-btn.ghost {
+  --slant-bg: transparent;
+  --slant-edge: none;
   color: var(--ink-2);
-}
-.ui-btn.ghost::before {
-  background: transparent;
-  box-shadow: none;
 }
 .ui-btn.ghost:hover:not(:disabled) {
   color: var(--ink);
@@ -134,28 +167,30 @@
 .ui-btn.small {
   height: 30px;
   padding: 0 14px;
-  font-size: 12px;
+  font-size: var(--fs-label);
+}
+.ui-btn.large {
+  height: 46px;
+  padding: 0 26px;
+  font-size: var(--fs-strong);
+  font-weight: 800;
 }
 .ui-btn:disabled {
+  --slant-bg: var(--accent-tint);
+  --slant-edge: inset 0 0 0 1.5px var(--line);
   color: var(--ink-3);
   cursor: default;
 }
-.ui-btn:disabled::before {
-  background: var(--accent-tint);
-  box-shadow: inset 0 0 0 1.5px var(--line);
-}
 /* Upright stripes: the layer's own skew leans them along the slant. */
-.ui-btn.primary:disabled::before {
-  background: repeating-linear-gradient(90deg, var(--accent-soft) 0 7px, var(--accent-tint) 7px 14px);
-  box-shadow: none;
-}
 .ui-btn.primary:disabled {
+  --slant-bg: repeating-linear-gradient(90deg, var(--accent-soft) 0 7px, var(--accent-tint) 7px 14px);
+  --slant-edge: none;
   color: var(--ink-2);
 }
 
 .ui-input {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   height: 36px;
   padding: 0 12px;
@@ -167,7 +202,7 @@
   background: var(--surface);
   color: var(--ink);
   outline: none;
-  transition: border-color 140ms, background 140ms;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .ui-input::placeholder {
   color: var(--ink-3);
@@ -183,7 +218,7 @@
   align-items: baseline;
   gap: 7px;
   margin: 0 0 8px;
-  font: 400 18px/1 var(--font-display);
+  font: 400 var(--fs-section)/1 var(--font-display);
   color: var(--ink);
 }
 .ui-label::before {
@@ -195,9 +230,9 @@
   transform: skewX(var(--skew));
 }
 .ui-label em {
-  font: italic 800 14px/1 var(--font-latin);
+  font: italic 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-deep);
 }
 .ui-label em::after {
   content: "";
@@ -210,7 +245,7 @@
 }
 .ui-label small {
   margin-left: auto;
-  font: italic 800 15px/1 var(--font-latin);
+  font: italic 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink-3);
 }
 .ui-muted {
@@ -218,7 +253,7 @@
 }
 .ui-hint {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-label);
 }
 
 .ui-error {
@@ -227,14 +262,14 @@
   background: #FDECEA;
   box-shadow: inset 3px 0 0 var(--bad);
   color: var(--bad);
-  font-size: 12px;
+  font-size: var(--fs-label);
   font-weight: 700;
 }
 .ui-empty {
   padding: 32px 0;
   text-align: center;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
@@ -245,20 +280,20 @@
 }
 .ui-frame,
 .ui-tile::before {
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut, var(--cut-s))), calc(100% - var(--cut, var(--cut-s))) 100%, 0 100%);
 }
 .ui-ring::after {
   --r: 1.5px;
-  --c: calc(var(--cut, 11px) + var(--r) * 0.414);
+  --c: calc(var(--cut, var(--cut-s)) + var(--r) * 0.414);
   content: "";
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  background: var(--line-2);
+  background: var(--ring, var(--line-2));
   clip-path: polygon(
     evenodd,
-    0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%, 0 0,
+    0 0, 100% 0, 100% calc(100% - var(--cut, var(--cut-s))), calc(100% - var(--cut, var(--cut-s))) 100%, 0 100%, 0 0,
     var(--r) var(--r), var(--r) calc(100% - var(--r)),
     calc(100% - var(--c)) calc(100% - var(--r)), calc(100% - var(--r)) calc(100% - var(--c)),
     calc(100% - var(--r)) var(--r), var(--r) var(--r), 0 0
@@ -283,7 +318,7 @@
   margin: auto;
   /* contour only: one more pass over a whole grid of tiles drops frames during page turns */
   filter: var(--contour);
-  transition: transform 260ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 /* A well plus its name. Hover and selection slide an offset block out from behind the well. */
@@ -301,7 +336,7 @@
   font: inherit;
   color: var(--ink);
   user-select: none;
-  transition: transform 240ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-tile::before {
   content: "";
@@ -312,7 +347,7 @@
   aspect-ratio: var(--well-ratio, 1);
   background: var(--accent);
   opacity: 0;
-  transition: transform 240ms var(--ease-out), opacity 120ms;
+  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-fast);
 }
 .ui-tile:hover {
   transform: translate(-2px, -2px);
@@ -325,9 +360,24 @@
 .ui-tile:hover .ui-well img {
   transform: scale(1.06);
 }
+.ui-tile.rare .ui-well {
+  background: var(--rar-rare-bg);
+}
+.ui-tile.epic .ui-well {
+  background: var(--rar-epic-bg);
+}
+.ui-tile.legendary .ui-well {
+  background: var(--rar-legendary-bg);
+}
+/* Locked stickers stay gray until hovered. They skip the contour, which keeps the grid cheap to paint. */
+.ui-tile.locked .ui-well {
+  background: var(--accent-tint);
+}
 .ui-tile.locked .ui-well img {
-  filter: saturate(0.48) contrast(0.9) var(--contour);
-  opacity: 0.5;
+  filter: grayscale(1) opacity(0.6);
+}
+.ui-tile.locked:hover .ui-well img {
+  filter: var(--contour);
 }
 .ui-tile.locked .ui-tile-name {
   color: var(--ink-3);
@@ -339,14 +389,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: var(--fs-label);
   font-weight: 700;
   text-align: center;
 }
 
 .ui-chip {
-  position: relative;
-  isolation: isolate;
+  --slant-bg: var(--surface);
   height: 26px;
   padding: 0 11px;
   display: inline-flex;
@@ -355,28 +404,17 @@
   border: 0;
   background: none;
   color: var(--ink-2);
-  font: 700 12px var(--font);
+  font: 700 var(--fs-label) var(--font);
   cursor: pointer;
   white-space: nowrap;
-  transition: color 160ms;
+  transition: color var(--dur-fast);
 }
-.ui-chip::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--surface);
-  transform: skewX(var(--skew));
-  transition: background 160ms;
-}
-.ui-chip:hover::before {
-  background: var(--accent-soft);
+.ui-chip:hover {
+  --slant-bg: var(--accent-soft);
 }
 .ui-chip.on {
+  --slant-bg: var(--accent);
   color: var(--on-accent);
-}
-.ui-chip.on::before {
-  background: var(--accent);
 }
 .ui-chip > i {
   width: 4px;
@@ -385,24 +423,15 @@
 }
 
 .ui-tag {
-  position: relative;
-  isolation: isolate;
+  --slant-bg: var(--tag-bg, var(--accent));
   display: inline-block;
   padding: 0 7px;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-style: normal;
   font-weight: 800;
   line-height: 17px;
   color: var(--tag-fg, var(--on-accent));
   white-space: nowrap;
-}
-.ui-tag::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--tag-bg, var(--accent));
-  transform: skewX(var(--skew));
 }
 .ui-tag.dark {
   --tag-bg: var(--ink);
@@ -411,6 +440,52 @@
 .ui-tag.light {
   --tag-bg: var(--surface);
   --tag-fg: var(--accent-deep);
+}
+.ui-tag.gold {
+  --tag-bg: var(--gold);
+  --tag-fg: var(--ink);
+}
+
+/* Settings-style list: chamfered white block of rows. */
+.ui-group {
+  --cut: var(--cut-m);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+}
+.ui-group > * + * {
+  border-top: 1.5px solid var(--line);
+}
+.ui-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 8px 18px;
+  box-sizing: border-box;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+.ui-ctl {
+  width: 280px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ui-val {
+  width: 52px;
+  flex: none;
+  text-align: right;
+  font: italic 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink-2);
+}
+.ui-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .ui-bar {
@@ -424,7 +499,7 @@
   display: block;
   height: 100%;
   background: var(--accent);
-  transition: width 420ms var(--ease-out);
+  transition: width var(--dur-stage) var(--ease-out);
 }
 
 .ui-switch {
@@ -436,7 +511,7 @@
   position: relative;
   cursor: pointer;
   transform: skewX(var(--skew));
-  transition: background 180ms;
+  transition: background var(--dur-base);
   flex: none;
 }
 .ui-switch::after {
@@ -447,7 +522,7 @@
   width: 18px;
   height: 16px;
   background: var(--surface);
-  transition: transform 260ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-switch:checked {
   background: var(--accent);
@@ -512,6 +587,24 @@
 :focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+/* Slanted controls ring their skewed layer; clip-path would cut an outline off a chamfered block. */
+.ui-btn:focus-visible,
+.ui-chip:focus-visible,
+button.ui-slant:focus-visible,
+.ui-tile:focus-visible,
+.ui-frame:focus-visible {
+  outline: none;
+}
+.ui-btn:focus-visible::before,
+.ui-chip:focus-visible::before,
+button.ui-slant:focus-visible::before {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.ui-frame:focus-visible,
+.ui-tile:focus-visible .ui-well {
+  box-shadow: inset 0 0 0 2.5px var(--ink);
 }
 
 button, input, b, small {

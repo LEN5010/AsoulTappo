@@ -106,9 +106,9 @@ function onWheel(e: WheelEvent) {
   padding: 7px 8px;
   box-sizing: border-box;
   background: var(--surface);
-  box-shadow: 4px 4px 0 var(--accent), 0 8px 20px rgba(43, 37, 48, 0.2);
+  box-shadow: var(--drop-m) var(--accent), 0 8px 20px rgba(var(--ink-rgb), 0.2);
   font-family: var(--font);
-  animation: drop-in 260ms var(--ease-out);
+  animation: drop-in var(--dur-base) var(--ease-out);
   cursor: default;
 }
 .row {
@@ -130,18 +130,22 @@ function onWheel(e: WheelEvent) {
   box-sizing: border-box;
   border: 0;
   background: var(--accent-tint);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-s)), calc(100% - var(--cut-s)) 100%, 0 100%);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 200ms var(--ease-out), background 140ms;
+  transition: transform var(--dur-base) var(--ease-out), background var(--dur-fast);
 }
 .dock.compact .emo {
   width: 41px;
   height: 41px;
   flex: 0 0 41px;
   padding: 4px;
+}
+.emo:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2.5px var(--ink);
 }
 .emo:hover {
   background: var(--accent-soft);
@@ -180,7 +184,7 @@ function onWheel(e: WheelEvent) {
   align-items: center;
   justify-content: center;
   transform: skewX(var(--skew));
-  transition: background 140ms;
+  transition: background var(--dur-fast);
 }
 .nav-arrow:hover:not(:disabled) {
   background: var(--accent);

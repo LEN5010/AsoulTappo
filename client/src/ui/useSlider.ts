@@ -2,10 +2,9 @@
 // and the travel is a FLIP animation of transform, so moving it never touches layout.
 import { onActivated, onBeforeUnmount, onMounted, watch, type Ref, type WatchSource } from "vue";
 import { reducedMotion } from "../stores/theme";
-import { EASE_OUT } from "./motion";
+import { EASE_OUT, SKEW } from "./motion";
 
 interface Box { x: number; y: number; w: number; h: number }
-const SKEW = "skewX(-8deg)";
 const SLIDE_MS = 380;
 const at = (b: Box) => `translate(${b.x}px, ${b.y}px)`;
 

@@ -1,8 +1,9 @@
 <script setup lang="ts">
+// Emote dex: a wall of albums that open onto their stickers. A search query lists matches across albums.
 import { computed, nextTick, ref, watch } from "vue";
-import { manifest } from "../manifest";
+import { characterColor, manifest, type ManifestEmoteSet } from "../manifest";
 import { assetUrl } from "../asset";
-import { craftCost, getItem, ownsEmote, type Item } from "../items";
+import { craftCost, getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
 import {
   boxes,
   collection,
@@ -17,115 +18,103 @@ import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
 import type { Drop } from "../net/api";
-import RevealModal from "./RevealModal.vue";
+import RevealScene from "./RevealScene.vue";
 import Modal from "../ui/Modal.vue";
 import ItemArt from "../ui/ItemArt.vue";
 import SegTabs from "../ui/SegTabs.vue";
+import FilterChips from "../ui/FilterChips.vue";
 import Icon from "../ui/Icon.vue";
 import { rise } from "../ui/motion";
 
-const charTab = ref<string>("all");
-const setFilter = ref<string>("all");
-const emoteOwnFilter = ref<"all" | "owned" | "missing">("all");
-const wall = ref<HTMLElement>();
-watch([charTab, setFilter, emoteOwnFilter], () => nextTick(() => rise(wall.value)));
-const emoteQuery = ref("");
-const emoteCollapsed = ref<Record<string, boolean>>({});
+type OwnFilter = "all" | "owned" | "missing";
+const OWN_FILTERS = [
+  { id: "all", label: "全部" },
+  { id: "owned", label: "已拥有" },
+  { id: "missing", label: "未拥有" },
+] as const;
 
-const emoteOwners = computed(() => [...new Set(manifest.emoteSets.map((s) => s.character))]);
+const charTab = ref("all");
+const albumId = ref("");
+const ownFilter = ref<OwnFilter>("all");
+const query = ref("");
+const wall = ref<HTMLElement>();
+
 const charTabs = computed(() => [
   { id: "all", label: "全部" },
-  ...emoteOwners.value.map((c) => ({ id: c, label: c })),
+  ...[...new Set(manifest.emoteSets.map((s) => s.character))].map((c) => ({ id: c, label: c })),
 ]);
 
-watch(charTab, (c) => {
-  if (setFilter.value !== "all") {
-    const s = manifest.emoteSets.find((x) => x.id === setFilter.value);
-    if (s && c !== "all" && s.character !== c) setFilter.value = "all";
-  }
-});
-
-const availableSets = computed(() =>
+const sets = computed(() =>
   manifest.emoteSets.filter((s) => charTab.value === "all" || s.character === charTab.value),
 );
+const stickersOf = (set: ManifestEmoteSet) =>
+  set.emotes.map((e) => ({ ...e, setName: set.name, rarity: set.rarity, owned: ownsEmote(e.key, collection.owned) }));
 
-interface FlatEmote {
-  key: string;
-  name: string;
-  img: string;
-  character: string;
-  setId: string;
-  setName: string;
-  rarity: "common" | "rare" | "epic" | "legendary";
-  owned: boolean;
-}
-
-const allEmotesInScope = computed<FlatEmote[]>(() => {
-  const list: FlatEmote[] = [];
-  for (const s of manifest.emoteSets) {
-    if (charTab.value !== "all" && s.character !== charTab.value) continue;
-    if (setFilter.value !== "all" && s.id !== setFilter.value) continue;
-    for (const e of s.emotes) {
-      list.push({
-        key: e.key,
-        name: e.name,
-        img: e.img,
-        character: s.character,
-        setId: s.id,
-        setName: s.name,
-        rarity: s.rarity,
-        owned: ownsEmote(e.key, collection.owned),
-      });
-    }
-  }
-  return list;
-});
-
-const filteredEmotes = computed(() =>
-  allEmotesInScope.value
-    .filter((e) => {
-      if (emoteQuery.value && !e.name.includes(emoteQuery.value) && !e.setName.includes(emoteQuery.value)) {
-        return false;
-      }
-      if (emoteOwnFilter.value === "owned") return e.owned;
-      if (emoteOwnFilter.value === "missing") return !e.owned;
-      return true;
+const albums = computed(() =>
+  sets.value
+    .map((set) => {
+      const stickers = stickersOf(set);
+      const owned = stickers.filter((e) => e.owned);
+      return {
+        set,
+        owned: owned.length,
+        total: stickers.length,
+        collage: [...owned, ...stickers.filter((e) => !e.owned)].slice(0, 3),
+      };
     })
-    .sort((a, b) => Number(b.owned) - Number(a.owned)),
+    .sort((a, b) => Number(b.set.rarity !== "common") - Number(a.set.rarity !== "common")),
 );
 
-const emoteGroups = computed(() => {
-  const rareAll = allEmotesInScope.value.filter((e) => e.rarity !== "common");
-  const commonAll = allEmotesInScope.value.filter((e) => e.rarity === "common");
-  return [
-    {
-      id: "rare",
-      name: "Rare · 珍稀款",
-      owned: rareAll.filter((e) => e.owned).length,
-      total: rareAll.length,
-      items: filteredEmotes.value.filter((e) => e.rarity !== "common"),
-    },
-    {
-      id: "common",
-      name: "Common · 常驻款",
-      owned: commonAll.filter((e) => e.owned).length,
-      total: commonAll.length,
-      items: filteredEmotes.value.filter((e) => e.rarity === "common"),
-    },
-  ].filter((g) => g.items.length > 0);
+const album = computed(() => manifest.emoteSets.find((s) => s.id === albumId.value) ?? null);
+const searching = computed(() => !!query.value.trim());
+const showWall = computed(() => !album.value && !searching.value);
+
+const tiles = computed(() => {
+  const q = query.value.trim();
+  const scope = searching.value ? sets.value : album.value ? [album.value] : [];
+  const list = scope
+    .flatMap(stickersOf)
+    .filter((e) => !q || e.name.includes(q) || e.setName.includes(q))
+    .filter((e) => ownFilter.value === "all" || e.owned === (ownFilter.value === "owned"));
+  return searching.value ? list.sort((a, b) => Number(b.owned) - Number(a.owned)) : list;
 });
 
-const totalEmotesCount = computed(() => allEmotesInScope.value.length);
-const totalOwnedEmotesCount = computed(() => allEmotesInScope.value.filter((e) => e.owned).length);
+const progress = computed(() => {
+  const stickers = (album.value && !searching.value ? [album.value] : sets.value).flatMap(stickersOf);
+  return { owned: stickers.filter((e) => e.owned).length, total: stickers.length };
+});
+
+let wallTop = 0;
+function openAlbum(id: string) {
+  wallTop = wall.value?.scrollTop ?? 0;
+  albumId.value = id;
+}
+watch(charTab, () => {
+  albumId.value = "";
+  wallTop = 0;
+});
+watch(albumId, () => (ownFilter.value = "all"));
+watch([charTab, albumId, ownFilter, searching], () =>
+  nextTick(() => {
+    if (wall.value) wall.value.scrollTop = showWall.value ? wallTop : 0;
+    rise(wall.value);
+  }),
+);
 
 const selectedEmote = ref<Item | null>(null);
 const selectedEmoteOwned = computed(() =>
   selectedEmote.value ? ownsEmote(selectedEmote.value.ref, collection.owned) : false,
 );
+const selectedEmoteCount = computed(() => (selectedEmote.value ? collection.owned[selectedEmote.value.id] ?? 0 : 0));
 const selectedEmoteCost = computed(() => (selectedEmote.value ? craftCost(selectedEmote.value) : null));
 const actionNote = ref("");
-const boxDrops = ref<Drop[]>([]);
+const opening = ref(0);
 const busy = ref(false);
+
+function inspect(key: string) {
+  selectedEmote.value = getItem(`emote:${key}`) ?? null;
+  actionNote.value = "";
+}
 
 watch(
   () => ui.craftTarget,
@@ -138,20 +127,16 @@ watch(
   { immediate: true },
 );
 
-async function openBoxBatch(all: boolean) {
-  if (busy.value) return;
-  busy.value = true;
-  const count = all ? boxes.value : 1;
+async function loadBoxes(): Promise<Drop[] | null> {
   const results: Drop[] = [];
-  let rem = count;
+  let rem = opening.value;
   while (rem > 0) {
     const batch = await openBoxes(Math.min(10, rem));
     if (!batch?.length) break;
     results.push(...batch);
     rem -= batch.length;
   }
-  boxDrops.value = results;
-  busy.value = false;
+  return results.length ? results : null;
 }
 
 async function craftSelectedEmote() {
@@ -166,7 +151,7 @@ function toggleFav(item: Item) {
   const at = settings.favorites.indexOf(item.ref);
   if (at >= 0) settings.favorites.splice(at, 1);
   else if (settings.favorites.length < 8) settings.favorites.push(item.ref);
-  else actionNote.value = "预设栏已满（8/8），可前往「背包」调整";
+  else actionNote.value = "预设已满 8/8";
 }
 
 function fireSelectedEmote(item: Item) {
@@ -181,51 +166,50 @@ const tapPct = computed(() =>
 
 <template>
   <div class="collection-page">
-    <div class="tabs-bar">
-      <SegTabs v-model="charTab" :tabs="charTabs" label="角色筛选" />
-    </div>
+    <SegTabs v-model="charTab" class="tabs-bar" :tabs="charTabs" label="角色筛选" />
 
-    <div class="filters">
-      <div class="filter-pills">
-        <button
-          v-for="f in [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥有' }, { id: 'missing', label: '未拥有' }] as const"
-          :key="f.id" type="button" class="ui-chip" :class="{ on: emoteOwnFilter === f.id }" @click="emoteOwnFilter = f.id"
-        >
-          {{ f.label }}
-        </button>
-      </div>
-
-      <select v-model="setFilter" class="set-select" aria-label="按表情包专辑筛选">
-        <option value="all">全部专辑 ({{ availableSets.length }}套)</option>
-        <option v-for="s in availableSets" :key="s.id" :value="s.id">
-          {{ s.name }} ({{ s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length }}/{{ s.emotes.length }})
-        </option>
-      </select>
-
-      <span class="progress-tag">已解锁 <b>{{ totalOwnedEmotesCount }}</b> / {{ totalEmotesCount }}</span>
-
-      <input v-model="emoteQuery" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
+    <div class="head">
+      <template v-if="album && !searching">
+        <button type="button" class="ui-btn small" @click="albumId = ''"><Icon name="back" :size="13" />全部专辑</button>
+        <h3 class="album-title">{{ album.name }}</h3>
+      </template>
+      <FilterChips v-if="!showWall" v-model="ownFilter" :options="OWN_FILTERS" label="持有筛选" />
+      <span class="progress">已解锁 <b>{{ progress.owned }}</b> / {{ progress.total }}</span>
+      <input v-model="query" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
     </div>
 
     <div ref="wall" class="wall ui-scroll">
-      <section v-for="group in emoteGroups" :key="group.id" class="group">
-        <button type="button" class="group-head" data-rise @click="emoteCollapsed[group.id] = !emoteCollapsed[group.id]">
-          <i aria-hidden="true"></i>
-          <span class="group-title">{{ group.name }}</span>
-          <span class="group-count"><b>{{ group.owned }}</b>/{{ group.total }}</span>
-          <svg class="caret" :class="{ shut: emoteCollapsed[group.id] }" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path d="M3.5 5.5L8 10.5l4.5-5z" fill="currentColor" />
-          </svg>
+      <div v-if="showWall" class="albums">
+        <button
+          v-for="a in albums" :key="a.set.id" type="button"
+          class="album ui-tile" :class="a.set.rarity" :title="a.set.name" data-rise
+          @click="openAlbum(a.set.id)"
+        >
+          <span class="collage ui-frame ui-well">
+            <img
+              v-for="e in a.collage" :key="e.key" :class="{ miss: !e.owned }"
+              :src="assetUrl(e.img)" alt="" loading="lazy" decoding="async" draggable="false"
+            />
+            <span class="flags">
+              <i v-if="a.set.rarity !== 'common'" class="ui-tag">{{ RARITY_LABEL[a.set.rarity] }}</i>
+              <i v-if="a.owned === a.total" class="ui-tag gold">集齐</i>
+            </span>
+          </span>
+          <span class="album-meta">
+            <b class="album-name"><i :style="{ background: characterColor(a.set.character) }" aria-hidden="true"></i>{{ a.set.name }}</b>
+            <span class="album-count"><b>{{ a.owned }}</b>/{{ a.total }}</span>
+          </span>
+          <span class="ui-bar album-bar"><i :style="{ width: `${(a.owned / a.total) * 100}%` }"></i></span>
         </button>
+      </div>
 
-        <div v-show="!emoteCollapsed[group.id]" class="emote-grid">
+      <template v-else>
+        <div class="emote-grid">
           <button
-            v-for="e in group.items" :key="e.key" type="button"
-            class="ui-tile emote-tile"
-            :class="[e.rarity, { locked: !e.owned }]"
-            :title="`${e.name}（${e.setName}）· ${e.owned ? '已拥有' : '点击可使用碎片兑换'}`"
-            data-rise
-            @click="selectedEmote = getItem(`emote:${e.key}`) ?? null; actionNote = ''"
+            v-for="e in tiles" :key="e.key" type="button"
+            class="ui-tile" :class="[e.rarity, { locked: !e.owned }]"
+            :title="`${e.name}（${e.setName}）`" data-rise
+            @click="inspect(e.key)"
           >
             <span class="ui-frame ui-well">
               <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
@@ -233,9 +217,8 @@ const tapPct = computed(() =>
             <b class="ui-tile-name">{{ e.name }}</b>
           </button>
         </div>
-      </section>
-
-      <p v-if="!emoteGroups.length" class="ui-empty">当前筛选下没有匹配的表情</p>
+        <p v-if="!tiles.length" class="ui-empty">没有匹配的表情</p>
+      </template>
     </div>
 
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
@@ -258,16 +241,13 @@ const tapPct = computed(() =>
       </div>
 
       <div class="draw-actions">
-        <button type="button" class="ui-btn" :disabled="busy || !online || !boxes" @click="openBoxBatch(false)">
-          {{ busy ? "开启中…" : "开一箱" }}
-        </button>
-        <button type="button" class="ui-btn primary" :disabled="busy || !online || !boxes" @click="openBoxBatch(true)">
+        <button type="button" class="ui-btn" :disabled="!!opening || !online || !boxes" @click="opening = 1">开一箱</button>
+        <button type="button" class="ui-btn primary" :disabled="!!opening || !online || !boxes" @click="opening = boxes">
           全部开启 <span v-if="boxes">×{{ boxes }}</span>
         </button>
       </div>
     </footer>
 
-    <!-- Emote detail / shard crafting modal -->
     <Modal v-if="selectedEmote" :title="selectedEmote.name" @close="selectedEmote = null">
       <div class="emote-detail">
         <div class="detail-well ui-frame">
@@ -276,26 +256,29 @@ const tapPct = computed(() =>
         <h3>{{ selectedEmote.name }}</h3>
         <p class="detail-sub">{{ selectedEmote.group }}</p>
         <small v-if="actionNote" class="note">{{ actionNote }}</small>
-        <div v-if="selectedEmoteOwned" class="buttons">
-          <button type="button" class="ui-btn" @click="toggleFav(selectedEmote)">
-            {{ settings.favorites.includes(selectedEmote.ref) ? "移出预设" : "装入预设" }}
-          </button>
-          <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedEmote)">发表情</button>
-        </div>
+        <template v-if="selectedEmoteOwned">
+          <p class="held">已拥有<template v-if="selectedEmoteCount > 1"> ×{{ selectedEmoteCount }}</template></p>
+          <div class="buttons">
+            <button type="button" class="ui-btn" @click="toggleFav(selectedEmote)">
+              {{ settings.favorites.includes(selectedEmote.ref) ? "移出预设" : "装入预设" }}
+            </button>
+            <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedEmote)">发表情</button>
+          </div>
+        </template>
         <template v-else>
-          <span class="craft-info">开宝箱获得 · 或使用 {{ selectedEmoteCost }} 碎片兑换（当前 {{ shards }} 碎片）</span>
+          <p class="held"><Icon name="shard" :size="13" />持有 {{ shards }} 碎片</p>
           <button
-            type="button" class="ui-btn primary"
-            :disabled="busy || !online || selectedEmoteCost === null || shards < selectedEmoteCost"
+            v-if="selectedEmoteCost !== null" type="button" class="ui-btn primary"
+            :disabled="busy || !online || shards < selectedEmoteCost"
             @click="craftSelectedEmote"
           >
-            {{ selectedEmoteCost !== null && shards < selectedEmoteCost ? `还差 ${selectedEmoteCost - shards} 碎片` : `兑换（${selectedEmoteCost} 碎片）` }}
+            {{ shards < selectedEmoteCost ? `还差 ${selectedEmoteCost - shards} 碎片` : `兑换（${selectedEmoteCost} 碎片）` }}
           </button>
         </template>
       </div>
     </Modal>
 
-    <RevealModal v-if="boxDrops.length" :drops="boxDrops" @close="boxDrops = []" />
+    <RevealScene v-if="opening" kind="box" :load="loadBoxes" @close="opening = 0" />
   </div>
 </template>
 
@@ -312,49 +295,40 @@ const tapPct = computed(() =>
   margin-bottom: 8px;
 }
 
-.filters {
+.head {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  min-height: 28px;
+  margin-bottom: 10px;
+}
+.album-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 var(--fs-section)/1.2 var(--font-display);
+}
+.progress {
   flex: none;
-  flex-wrap: wrap;
-}
-.filter-pills {
-  display: flex;
-  gap: 5px;
-  padding-left: 3px;
-}
-.set-select {
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-bottom: 2px solid var(--line-2);
-  border-radius: 0;
-  background: var(--surface);
-  color: var(--ink);
-  font: 700 12px var(--font);
-  cursor: pointer;
-  outline: none;
-}
-.set-select:focus {
-  border-color: var(--accent-deep);
-}
-.progress-tag {
-  font-size: 12px;
+  font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
+  white-space: nowrap;
 }
-.progress-tag b {
-  font: italic 800 17px/1 var(--font-latin);
+.progress b {
+  font: italic 800 var(--fs-section)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .search-input {
+  flex: none;
   margin-left: auto;
   width: 140px;
-  height: 26px;
+  height: 28px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-label);
 }
 
 .wall {
@@ -363,48 +337,94 @@ const tapPct = computed(() =>
   overflow: auto;
   padding-right: 6px;
 }
-.group + .group {
-  margin-top: 10px;
+
+.albums {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 16px 14px;
+  padding: 2px 4px 6px 0;
 }
-.group-head {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+.album {
+  --well-ratio: 16 / 10;
+  --cut: var(--cut-m);
+  align-items: stretch;
+}
+.collage {
+  padding: 0;
+}
+.collage img {
+  position: absolute;
+  width: 46%;
+  aspect-ratio: 1;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+.collage img:nth-of-type(1) {
+  left: 5%;
+  top: 22%;
+  rotate: -8deg;
+}
+.collage img:nth-of-type(2) {
+  left: 28%;
+  top: 8%;
+  rotate: 4deg;
+}
+.collage img:nth-of-type(3) {
+  left: 51%;
+  top: 24%;
+  rotate: 9deg;
+}
+.collage img.miss {
+  filter: grayscale(1) opacity(0.6);
+}
+.album:hover .collage img.miss {
+  filter: var(--contour);
+}
+.flags {
+  position: absolute;
+  left: 7px;
+  top: 6px;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+}
+.album-meta {
   display: flex;
   align-items: center;
-  gap: 7px;
-  width: 100%;
-  margin: 0 0 8px;
-  padding: 5px 0;
-  box-sizing: border-box;
-  border: 0;
-  box-shadow: 0 2px 0 var(--line);
-  background: var(--page);
-  color: var(--ink);
-  font: 18px/1 var(--font-display);
-  cursor: pointer;
+  gap: 8px;
+  margin-top: 7px;
 }
-.group-head i {
-  width: 7px;
-  height: 14px;
-  background: var(--accent);
+.album-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--fs-label);
+  font-weight: 800;
+}
+.album-name i {
+  display: inline-block;
+  width: 4px;
+  height: 11px;
+  margin: 0 6px 0 2px;
+  vertical-align: -1px;
   transform: skewX(var(--skew));
 }
-.group-count {
-  font: italic 800 14px/1 var(--font-latin);
+.album-count {
+  flex: none;
+  font: italic 800 var(--fs-label)/1 var(--font-latin);
   color: var(--ink-3);
 }
-.group-count b {
+.album-count b {
   font: inherit;
   color: var(--accent-deep);
 }
-.caret {
-  margin-left: auto;
-  color: var(--ink-2);
-  transition: transform 260ms var(--ease-out);
-}
-.caret.shut {
-  transform: rotate(-90deg);
+.album-bar {
+  height: 5px;
+  margin: 5px 1px 0;
 }
 
 .emote-grid {
@@ -413,16 +433,13 @@ const tapPct = computed(() =>
   gap: 12px 10px;
   padding: 2px 4px 2px 0;
 }
-.emote-tile.rare .ui-well {
-  background: var(--rar-epic-bg);
-}
 
 .drawbar {
-  --cut: 14px;
+  --cut: var(--cut-m);
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-top: 6px;
+  margin-top: 8px;
   padding: 8px 14px;
   background: var(--surface);
   flex: none;
@@ -449,17 +466,17 @@ const tapPct = computed(() =>
   gap: 1px;
 }
 .ticket-main {
-  font-size: 12px;
+  font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
 }
 .ticket-main b {
-  font: italic 800 22px/1 var(--font-latin);
+  font: italic 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
   margin-right: 2px;
 }
 .ticket small {
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
   color: var(--ink-3);
 }
 .pity {
@@ -474,7 +491,7 @@ const tapPct = computed(() =>
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--ink-2);
 }
@@ -482,7 +499,7 @@ const tapPct = computed(() =>
   color: var(--ink);
 }
 .pity-head small {
-  font-size: 10.5px;
+  font-size: var(--fs-caption);
   color: var(--ink-3);
   display: inline-flex;
   align-items: center;
@@ -505,26 +522,34 @@ const tapPct = computed(() =>
   text-align: center;
 }
 .detail-well {
-  --cut: 16px;
+  --cut: var(--cut-m);
   padding: 14px;
   background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .emote-detail h3 {
   margin: 4px 0 0;
-  font: 400 22px/1.1 var(--font-display);
+  font: 400 var(--fs-heading)/1.1 var(--font-display);
 }
 .detail-sub {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-label);
   color: var(--ink-2);
 }
 .note {
   color: var(--accent-deep);
   font-weight: 700;
 }
-.craft-info {
-  font-size: 12px;
+.held {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-label);
+  font-weight: 700;
   color: var(--ink-2);
+}
+.held :deep(.icon) {
+  color: var(--accent-deep);
 }
 .buttons {
   display: flex;

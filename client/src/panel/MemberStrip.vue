@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { characters } from "../characters";
 import { manifest } from "../manifest";
+import { arrowSelect } from "../ui/focus";
 import { useSlider } from "../ui/useSlider";
 import PetBust from "./PetBust.vue";
 
@@ -16,7 +17,7 @@ useSlider(track, thumb, () => props.modelValue);
 </script>
 
 <template>
-  <div ref="track" class="strip" role="radiogroup" aria-label="按成员筛选">
+  <div ref="track" class="strip" role="radiogroup" aria-label="按成员筛选" @keydown="arrowSelect($event, track)">
     <i ref="thumb" class="thumb" aria-hidden="true"></i>
     <button
       type="button" class="all" role="radio" :aria-checked="modelValue === 'all'"
@@ -67,7 +68,7 @@ button {
   background: none;
   color: var(--ink-3);
   cursor: pointer;
-  transition: color 180ms;
+  transition: color var(--dur-base);
 }
 button + button::before {
   content: "";
@@ -94,7 +95,7 @@ button.on {
   align-self: flex-end;
   width: 52px;
   height: 44px;
-  transition: transform 240ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 button:hover .bust {
   transform: translateY(-2px);
@@ -109,7 +110,7 @@ b {
   display: flex;
   align-items: center;
   gap: 4px;
-  font: 800 14px/1 var(--font);
+  font: 800 var(--fs-strong)/1 var(--font);
   color: var(--ink);
 }
 b i {
@@ -119,7 +120,7 @@ b i {
   transform: skewX(var(--skew));
 }
 small {
-  font: italic 800 12px/1 var(--font-latin);
+  font: italic 800 var(--fs-label)/1 var(--font-latin);
   letter-spacing: 0.06em;
   text-align: left;
 }

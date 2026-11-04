@@ -7,7 +7,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 </script>
 
 <template>
-  <div class="bar" :style="{ width: `${width}px` }">
+  <div class="bar ui-slant" :style="{ width: `${width}px` }">
     <button
       type="button" class="count"
       :title="view === 'today' ? '今日敲击，点击切换累计' : '累计敲击，点击切换今日'"
@@ -29,8 +29,8 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 
 <style scoped>
 .bar {
-  position: relative;
-  isolation: isolate;
+  --slant-bg: var(--surface);
+  --slant-edge: var(--drop-m) var(--accent), 0 6px 16px rgba(var(--ink-rgb), 0.2);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -40,15 +40,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   box-sizing: border-box;
   font-family: var(--font);
   color: var(--ink);
-}
-.bar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--surface);
-  box-shadow: 4px 4px 0 var(--accent), 0 6px 16px rgba(43, 37, 48, 0.2);
-  transform: skewX(var(--skew));
 }
 .count {
   flex: 1;
@@ -70,10 +61,10 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   line-height: 1;
 }
 .count b {
-  font: italic 800 23px/1 var(--font-latin);
+  font: italic 800 var(--fs-title)/1 var(--font-latin);
 }
 .count small {
-  font-size: 11px;
+  font-size: var(--fs-caption);
   font-weight: 800;
   color: var(--accent-deep);
 }
@@ -92,7 +83,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   background: var(--accent-tint);
   color: var(--ink);
   transform: skewX(var(--skew));
-  transition: background 140ms, color 140ms;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .round svg,
 .round :deep(.icon) {
@@ -107,14 +98,14 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   color: var(--on-accent);
 }
 .spark:hover {
-  background: #FFA883;
+  background: var(--accent-hover);
 }
 .spark.on {
   background: var(--ink);
-  color: #fff;
+  color: var(--on-ink);
 }
 .spark svg {
-  transition: transform 300ms var(--ease-out);
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 .spark.on svg {
   transform: rotate(45deg);

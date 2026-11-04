@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { toHttpBase } from "../net/protocol";
-import { buildSkin, cssImage } from "../skin";
+import { buildSkin } from "../skin";
 import { settings } from "./settings";
 
 export const reducedMotion = ref(false);
@@ -14,13 +14,5 @@ export const skin = computed(() =>
   buildSkin("jiaran-eat", settings.character, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL || "/"),
 );
 
-/** Root style: theme/character CSS variables. */
-export const skinVars = computed(() => ({
-  ...skin.value.vars,
-  "--accent": "#FC966E",
-  "--accent-rgb": "252, 150, 110",
-  "--on-accent": "#2B2530",
-  "--tint": "#FFFFFF",
-}));
-
-export { cssImage };
+/** Root style: character CSS variables. */
+export const skinVars = computed(() => skin.value.vars);

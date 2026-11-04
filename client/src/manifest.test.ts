@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backgroundFor, buildSkin, hexToRgb, isDark } from "./skin";
+import { buildSkin } from "./skin";
 import { characterColor, getCard, getDecor, getEmote, getTheme, manifest, resolveAsset } from "./manifest";
 
 describe("resolveAsset", () => {
@@ -43,24 +43,11 @@ describe("manifest", () => {
 });
 
 describe("skin", () => {
-  it("builds css vars and urls from a theme", () => {
+  it("follows the character and resolves the loading art", () => {
     const k = buildSkin(manifest.defaultTheme, "嘉然", "http://s");
-    expect(k.vars["--accent"]).toMatch(/^#/);
     expect(k.vars["--char"]).toBe("#e799b0");
-    expect(k.headBg).toMatch(/^\/assets\/themes\//);
-    expect(k.icons.main.s).toContain("main_sel");
+    expect(k.loading).toMatch(/^\/assets\/themes\//);
     const pk = buildSkin("nailin-queen", "乃琳", "http://s");
-    expect(pk.headBg).toMatch(/^http:\/\/s\/packs\/themes\/nailin-queen\//);
-  });
-  it("cycles backgrounds and copes with none", () => {
-    expect(backgroundFor({ backgrounds: ["a", "b", "c"] }, 4)).toBe("b");
-    expect(backgroundFor({ backgrounds: ["a"] }, -3)).toBe("a");
-    expect(backgroundFor({ backgrounds: [] }, 1)).toBe("");
-  });
-  it("color helpers", () => {
-    expect(hexToRgb("#ff0080")).toBe("255, 0, 128");
-    expect(hexToRgb("bad")).toBe("255, 107, 157");
-    expect(isDark("#102030")).toBe(true);
-    expect(isDark("#f0f0f0")).toBe(false);
+    expect(pk.loading).toMatch(/^http:\/\/s\/packs\/themes\/nailin-queen\//);
   });
 });

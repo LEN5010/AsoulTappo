@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   batchMs: 150,
   favorites: [],
   emoteHoldMs: 2500,
-  remoteScale: 0.8,
+  remoteScale: 1,
   showNames: true,
   petX: -1,
   petY: -1,

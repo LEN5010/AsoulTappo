@@ -62,18 +62,6 @@ export const getItem = (id: string) => index.get(id);
 /** Items that drop from boxes and can be crafted with shards. */
 export const collectible = items.filter((i) => i.rarity !== null && !i.starter);
 
-export interface Ownership {
-  owned: Record<string, number>;
-  /** unlocked frame/badge ids */
-  unlocked: Iterable<string>;
-}
-
-export function isOwned(item: Item, o: Ownership): boolean {
-  if (item.starter || item.kind === "character") return true;
-  if (item.kind === "frame" || item.kind === "badge") return new Set(o.unlocked).has(item.ref);
-  return (o.owned[item.id] ?? 0) > 0;
-}
-
 export function ownsEmote(key: string, owned: Record<string, number>): boolean {
   return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
 }
