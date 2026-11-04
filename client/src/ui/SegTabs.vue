@@ -1,10 +1,18 @@
 <script setup lang="ts" generic="T extends string">
-defineProps<{ tabs: { id: T; label: string; count?: number }[]; modelValue: T; label?: string; disabled?: boolean }>();
+import { ref } from "vue";
+import { useSlider } from "./useSlider";
+
+const props = defineProps<{ tabs: { id: T; label: string; count?: number }[]; modelValue: T; label?: string; disabled?: boolean }>();
 defineEmits<{ "update:modelValue": [id: T] }>();
+
+const track = ref<HTMLElement>();
+const thumb = ref<HTMLElement>();
+useSlider(track, thumb, () => props.modelValue);
 </script>
 
 <template>
-  <div class="seg" role="tablist" :aria-label="label">
+  <div ref="track" class="seg" role="tablist" :aria-label="label">
+    <i ref="thumb" class="thumb" aria-hidden="true"></i>
     <button
       v-for="t in tabs" :key="t.id" type="button" role="tab" :aria-selected="t.id === modelValue"
       :disabled="disabled" :class="{ on: t.id === modelValue }" @click="$emit('update:modelValue', t.id)"
@@ -16,15 +24,14 @@ defineEmits<{ "update:modelValue": [id: T] }>();
 </template>
 
 <style scoped>
-/* Full-width rounded capsule track with puffy #FC966E pill active tab, matching WuwaTappo */
 .seg {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 5px;
-  border-radius: 999px;
-  background: var(--paper-2);
-  box-shadow: inset 0 2px 3px rgba(120, 75, 45, 0.08);
+  gap: 2px;
+  padding: 0 6px;
+  background: var(--accent-tint);
+  box-shadow: inset 0 -2px 0 var(--line-2);
   overflow-x: auto;
   scrollbar-width: none;
   flex: none;
@@ -32,46 +39,46 @@ defineEmits<{ "update:modelValue": [id: T] }>();
 .seg::-webkit-scrollbar {
   display: none;
 }
+.thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  background: var(--accent);
+  transform-origin: 0 50%;
+  will-change: transform;
+}
 .seg button {
   position: relative;
   flex: 1 0 auto;
   min-width: 64px;
-  height: 28px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 14px;
   box-sizing: border-box;
-  border-radius: 999px;
-  border: 1.5px solid transparent;
+  border: 0;
   background: transparent;
   cursor: pointer;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 800;
+  font: 15px var(--font-display);
   color: var(--ink-2);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  transition: background 140ms, color 140ms, transform 100ms, box-shadow 140ms;
+  gap: 6px;
+  transition: color 180ms;
 }
 .seg button:hover:not(:disabled):not(.on) {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.38);
 }
 .seg button.on {
-  background: linear-gradient(180deg, #FFB596 0%, var(--accent) 100%);
-  border-color: var(--accent-deep);
   color: var(--on-accent);
-  box-shadow: 0 2px 0 var(--accent-deep), inset 0 1.5px 0 rgba(255, 255, 255, 0.5);
 }
 .seg button:disabled {
   opacity: 0.6;
   cursor: default;
 }
 .seg small {
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.78;
-  font-variant-numeric: tabular-nums;
+  font: italic 800 14px var(--font-latin);
+  opacity: 0.72;
 }
 </style>

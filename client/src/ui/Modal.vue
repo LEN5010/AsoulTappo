@@ -12,10 +12,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 <template>
   <div class="backdrop" @click.self="emit('close')">
     <div class="sheet ui-scroll" :class="{ wide }" role="dialog" aria-modal="true" :aria-label="title">
-      <div class="sheet-awning" aria-hidden="true"></div>
-      <button type="button" class="x" aria-label="关闭" @click="emit('close')">
-        <span class="x-inner"><Icon name="close" :size="15" /></span>
-      </button>
+      <div class="sheet-band" aria-hidden="true"></div>
+      <button type="button" class="x" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
       <div class="sheet-body">
         <slot />
       </div>
@@ -33,9 +31,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
-  background: rgba(68, 36, 18, 0.36);
-  backdrop-filter: blur(2px);
-  animation: fade 140ms ease-out;
+  background: rgba(43, 37, 48, 0.46);
+  animation: fade 160ms ease-out;
 }
 .sheet {
   position: relative;
@@ -43,61 +40,57 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   max-height: 100%;
   overflow: auto;
   box-sizing: border-box;
-  border-radius: 28px;
-  background: var(--paper);
-  border: 3px solid var(--tile-border);
-  box-shadow: 0 6px 0 var(--tile-lip), var(--shadow-2);
-  animation: pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: var(--surface);
+  box-shadow: 8px 8px 0 var(--accent);
+  animation: slide 320ms var(--ease-out);
 }
 .sheet.wide {
   width: min(600px, 100%);
 }
-.sheet-awning {
-  height: 20px;
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      rgba(252, 150, 110, 0.14) 0 10px,
-      rgba(255, 245, 232, 0.5) 10px 20px
-    ),
-    #F5E4D0;
-  border-bottom: 2px dashed var(--tile-border);
+.sheet-band {
+  position: relative;
+  height: 22px;
+  overflow: hidden;
+  background: var(--accent);
+}
+.sheet-band::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(82deg, rgba(255, 255, 255, 0.28) 0 10px, transparent 10px 22px);
 }
 .sheet-body {
   padding: 18px 24px 24px;
 }
 .x {
   position: absolute;
-  right: 12px;
-  top: 10px;
-  width: 30px;
-  height: 30px;
+  right: 10px;
+  top: 0;
+  width: 42px;
+  height: 22px;
   padding: 0;
-  margin: 0;
-  box-sizing: border-box;
-  border-radius: 9px;
-  transform: rotate(45deg);
-  border: 2px solid #7E4529;
-  background: linear-gradient(135deg, #FFB08E, var(--accent));
-  color: #562915;
-  box-shadow: 0 2px 0 #7E4529;
+  border: 0;
+  background: none;
+  color: #fff;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   z-index: 2;
-  transition: transform 140ms, filter 140ms;
+  isolation: isolate;
 }
-.x:hover {
-  filter: brightness(1.06);
-  transform: rotate(45deg) scale(1.06);
+.x::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+  transition: background 140ms;
 }
-.x-inner {
-  transform: rotate(-45deg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.x:hover::before {
+  background: var(--accent-deep);
 }
 @keyframes fade { from { opacity: 0; } }
-@keyframes pop { from { opacity: 0; transform: scale(0.92) translateY(8px); } }
+@keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }
 </style>

@@ -9,6 +9,8 @@
 **本项目的桌宠角色素材与分层交互源自 [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun)（作者 [@Evelynall](https://github.com/Evelynall)），已获得原作者许可。**
 
 - 本项目遵循 **GPL-2.0** 协议发布，原 PyQt6 客户端代码保留在 `legacy/pyqt-client/`。
+- 界面字体使用 [得意黑 Smiley Sans](https://github.com/atelier-anchor/smiley-sans) 与 [Barlow](https://github.com/jpt/barlow)，均为 SIL Open Font License 1.1。
+- A-SOUL 标志与角色美术的版权归其权利人所有，不在 GPL-2.0 许可范围内。本项目为非官方粉丝作品。
 
 ## 功能概览
 

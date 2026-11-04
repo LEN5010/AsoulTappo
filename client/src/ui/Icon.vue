@@ -13,6 +13,7 @@ const PATHS: Record<string, string[]> = {
   unfold: ["M4 6h16", "M4 12h10", "M4 18h16", "M17 9l3 3-3 3"],
   close: ["M6 6l12 12", "M18 6L6 18"],
   star: ["M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"],
+  spark: ["M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"],
   plus: ["M12 5v14", "M5 12h14"],
   copy: ["M9 9h10v10H9z", "M5 15V5h10"],
   menu: ["M5 7h14", "M5 12h14", "M5 17h14"],

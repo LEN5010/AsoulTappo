@@ -19,8 +19,8 @@ export const skinVars = computed(() => ({
   ...skin.value.vars,
   "--accent": "#FC966E",
   "--accent-rgb": "252, 150, 110",
-  "--on-accent": "#562915",
-  "--tint": "#FDF4E7",
+  "--on-accent": "#2B2530",
+  "--tint": "#FFFFFF",
 }));
 
 export { cssImage };

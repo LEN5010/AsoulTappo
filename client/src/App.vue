@@ -167,7 +167,9 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
       <DropToast v-if="!settings.clickThrough" :drop="toasts[0] ?? null" @done="toasts.shift()" />
     </PetActor>
 
-    <MainPanel v-if="ui.panelOpen && !settings.clickThrough" @reset-pet="resetPet" />
+    <Transition name="panel">
+      <MainPanel v-if="ui.panelOpen && !settings.clickThrough" @reset-pet="resetPet" />
+    </Transition>
   </div>
 </template>
 
