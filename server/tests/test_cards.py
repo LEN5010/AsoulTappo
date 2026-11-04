@@ -1,70 +1,37 @@
-import random
-
-from app.cards import DropConfig, next_pity, pick_item, roll_rarity
-
+import pytest
+from app.cards import pick_common, roll_tier
 from fixtures import SeqRng, tiny_manifest
 
-W = {"common": 70, "rare": 22, "epic": 7, "legendary": 1}
-CFG = DropConfig()
+CFG = tiny_manifest().resonance
+
+@pytest.mark.parametrize("x,tier", [(0, "legendary"), (.004999, "legendary"), (.005, "skin"), (.009999, "skin"),
+                                    (.01, "epic"), (.054999, "epic"), (.055, "rare"), (.084999, "rare"),
+                                    (.085, "uncommon"), (.144999, "uncommon"), (.145, "common"), (.999, "common")])
+def test_probability_boundaries(x, tier):
+    assert roll_tier(CFG["rates"], set(CFG["rates"]), {"legendary": 0, "skin": 0}, CFG["pity"], SeqRng(x)) == tier
+
+@pytest.mark.parametrize("x", [0, .005, .01, .055, .085])
+def test_unavailable_tier_lands_on_common(x):
+    assert roll_tier(CFG["rates"], set(), {"legendary": 999, "skin": 999}, CFG["pity"], SeqRng(x)) == "common"
 
 
-def test_roll_follows_weights_boundaries():
-    assert roll_rarity(W, 0, 0, CFG, SeqRng(0.0)) == "common"
-    assert roll_rarity(W, 0, 0, CFG, SeqRng(0.70)) == "rare"      # 70/100 starts "rare"
-    assert roll_rarity(W, 0, 0, CFG, SeqRng(0.92)) == "epic"
-    assert roll_rarity(W, 0, 0, CFG, SeqRng(0.995)) == "legendary"
+def test_common_odds_follow_kind_weights_instead_of_catalog_sizes():
+    from collections import Counter
+    pool = [{"id": "card:one", "kind": "card"}] + [
+        {"id": f"emote:{i}", "kind": "emote"} for i in range(100)]
+    outcomes = Counter(pick_common(pool, CFG["commonKindWeights"], {}, SeqRng((i + .5) / 8550))["kind"]
+                       for i in range(8550))
+    assert outcomes == {"card": 6265, "emote": 2285}
 
 
-def test_distribution_roughly_matches_weights():
-    rng = random.Random(1234)
-    counts = {r: 0 for r in W}
-    since_e = since_l = 0
-    n = 20000
-    for _ in range(n):
-        r = roll_rarity(W, since_e, since_l, CFG, rng)
-        counts[r] += 1
-        since_e, since_l = next_pity(r, since_e, since_l)
-    assert 0.66 < counts["common"] / n < 0.74
-    assert counts["legendary"] > 0
-    assert counts["epic"] / n > 0.06  # pity only ever raises it
+@pytest.mark.parametrize("kind,roll", [("card", 62.65 / 85.5 - .000001), ("emote", 62.65 / 85.5 + .000001)])
+def test_completed_common_kind_keeps_its_odds(kind, roll):
+    pool = [{"id": "card:one", "kind": "card"}, {"id": "emote:one", "kind": "emote"}]
+    owned = {f"{kind}:one": 1}
+    assert pick_common(pool, CFG["commonKindWeights"], owned, SeqRng(roll))["id"] == f"{kind}:one"
 
 
-def test_epic_hard_pity_and_soft_pity_ramp():
-    # 19 opens without epic -> the 20th is epic or better whatever the roll
-    assert roll_rarity(W, 19, 0, CFG, SeqRng(0.0)) in ("epic", "legendary")
-    assert roll_rarity(W, 19, 0, CFG, SeqRng(0.0)) == "epic"
-    # soft pity: epic weight grows after 10 misses, so a roll that is "rare" at 0 becomes epic
-    assert roll_rarity(W, 0, 0, CFG, SeqRng(0.95)) == "epic"
-    base = roll_rarity(W, 5, 0, CFG, SeqRng(0.85))
-    ramp = roll_rarity(W, 17, 0, CFG, SeqRng(0.85))
-    assert base == "rare" and ramp == "epic"
-
-
-def test_legendary_hard_pity():
-    assert roll_rarity(W, 5, 59, CFG, SeqRng(0.0)) == "legendary"
-
-
-def test_next_pity():
-    assert next_pity("common", 3, 4) == (4, 5)
-    assert next_pity("epic", 3, 4) == (0, 5)
-    assert next_pity("legendary", 3, 4) == (0, 0)
-
-
-def test_pick_prefers_unowned_and_falls_back():
-    pool = {"common": [{"id": "a", "rarity": "common"}, {"id": "b", "rarity": "common"}],
-            "rare": [{"id": "r", "rarity": "rare"}], "epic": [], "legendary": []}
-    # a owned (weight 1) vs b unowned (weight 3): total 4 -> x<0.25 picks a, else b
-    assert pick_item(pool, {"a"}, "common", CFG, SeqRng(0.1))["id"] == "a"
-    assert pick_item(pool, {"a"}, "common", CFG, SeqRng(0.3))["id"] == "b"
-    # empty rarity falls back to the next lower one
-    assert pick_item(pool, {}, "epic", CFG, SeqRng(0.0))["rarity"] == "rare"
-
-
-def test_manifest_items_exclude_starters_from_drops():
-    m = tiny_manifest()
-    assert m.starter == {"emote:e.01"}
-    common = [i["id"] for i in m.by_rarity["common"]]
-    assert common == ["emote:e.02", "emote:e.03"]
-    assert m.by_rarity["rare"] == []
-    assert "emote:e.01" not in common and "theme:x" not in m.items
-    assert all(i["kind"] == "emote" for group in m.by_rarity.values() for i in group)
+@pytest.mark.parametrize("kind", ["card", "emote"])
+def test_common_supports_catalogs_with_only_one_kind(kind):
+    pool = [{"id": f"{kind}:one", "kind": kind}]
+    assert pick_common(pool, CFG["commonKindWeights"], {}, SeqRng(.99999)) == pool[0]

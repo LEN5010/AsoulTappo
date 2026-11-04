@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import { groupDrops, needsSummary, sortDrops, spotlightQueue } from "./reveal";
+import type { Rarity } from "./manifest";
+const d = (rarity: Rarity, item = "card:test", fresh = false) => ({ rarity, item, new: fresh });
+
+describe("mixed resonance reveals", () => {
+  it("sorts rarity tiers including uncommon, then new before duplicates", () => {
+    const drops = [d("common"), d("epic"), d("skin", "char:test"), d("legendary"), d("rare"), d("uncommon"), d("common", "card:new", true)];
+    expect(sortDrops(drops).map((x) => x.rarity)).toEqual(["legendary", "skin", "epic", "rare", "uncommon", "common", "common"]);
+    expect(sortDrops(drops)[5]!.new).toBe(true);
+    expect(drops[0]!.rarity).toBe("common");
+  });
+  it("reveals single cards, skins and emotes before collecting", () => {
+    expect(spotlightQueue([d("common")])).toHaveLength(1);
+    expect(spotlightQueue([d("skin", "char:test")])).toHaveLength(1);
+    expect(spotlightQueue([d("rare", "emote:test")])).toHaveLength(1);
+    expect(needsSummary([d("rare", "emote:test")])).toBe(false);
+    expect(needsSummary([d("common")])).toBe(false);
+  });
+  it("reveals every mixed result and duplicate in draw order", () => {
+    const drops = [d("common"), d("epic"), d("rare", "emote:test"), d("skin", "char:test"), d("legendary"), d("common")];
+    expect(spotlightQueue(drops)).toEqual(drops);
+    expect(spotlightQueue(drops)).not.toBe(drops);
+    expect(needsSummary([d("common"), d("common")])).toBe(true);
+  });
+  it("groups repeats and sums refunds, preserving new state", () => {
+    const drops = [{ ...d("common", "emote:a", true), count: 1, shards: 0 }, { ...d("common", "emote:a"), count: 2, shards: 10 }, { ...d("common", "emote:a"), count: 3, shards: 10 }];
+    expect(groupDrops(drops)).toEqual([{ ...drops[0], count: 3, shards: 20, got: 3 }]);
+  });
+});

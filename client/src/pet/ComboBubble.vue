@@ -18,13 +18,13 @@ defineProps<{ frame: ComboFrame | null; x: number; y: number; size: number }>();
 .anchor { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 4; }
 .combo { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); white-space: nowrap; }
 .num {
-  display: inline-block; font-family: var(--font-latin); font-style: italic; font-weight: 800; color: var(--accent);
-  -webkit-text-stroke: 4px #fff; paint-order: stroke fill; text-shadow: 0 2px 6px rgba(43, 37, 48, 0.25);
-  animation: beat 220ms cubic-bezier(0.34, 1.8, 0.64, 1);
+  display: inline-block; font-family: var(--font-latin); font-weight: 800; color: var(--accent);
+  -webkit-text-stroke: 4px var(--surface); paint-order: stroke fill; text-shadow: 0 2px 6px rgba(var(--ink-rgb), 0.25);
+  animation: beat var(--dur-base) var(--ease-pop);
 }
-.combo-enter-active { transition: opacity 120ms, transform 120ms; }
+.combo-enter-active { transition: opacity var(--dur-fast), transform var(--dur-fast); }
 .combo-enter-from { opacity: 0; transform: translate(-50%, 8px); }
-.combo-leave-active { transition: opacity 500ms ease-in, transform 500ms ease-in; }
+.combo-leave-active { transition: opacity var(--dur-stage) var(--ease-in), transform var(--dur-stage) var(--ease-in); }
 .combo-leave-to { opacity: 0; transform: translate(-50%, -18px); }
 @keyframes beat { from { transform: scale(1.35); } }
 </style>

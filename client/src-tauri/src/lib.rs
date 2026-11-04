@@ -8,7 +8,7 @@ use hit::{HitRect, HitState};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow,
+    Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
 /// How often the cursor is checked against the overlay's hit rectangles.
@@ -34,8 +34,77 @@ fn set_click_through(overlay: tauri::State<'_, Arc<Overlay>>, enabled: bool) {
 }
 
 #[tauri::command]
-fn set_always_on_top(window: WebviewWindow, enabled: bool) -> Result<(), String> {
-    window.set_always_on_top(enabled).map_err(|e| e.to_string())
+fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    if let Some(window) = main_window(&app) {
+        window.set_always_on_top(enabled).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("panel") {
+        window.unminimize().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("panel") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// A regular taskbar window. The first load asks the desk for its current state
+/// before showing; later opens reuse the panel and its selected page.
+#[tauri::command]
+async fn open_panel(
+    app: tauri::AppHandle,
+    page: Option<String>,
+    craft_target: Option<String>,
+) -> Result<(), String> {
+    if app.get_webview_window("panel").is_some() {
+        app.emit_to("panel", "panel:open", serde_json::json!({ "page": page, "craftTarget": craft_target }))
+            .map_err(|e| e.to_string())?;
+        return show_panel(app);
+    }
+    let window = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("index.html?window=panel".into()))
+        .title("AsoulTappo")
+        .inner_size(1000.0, 720.0)
+        .min_inner_size(640.0, 480.0)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .shadow(false)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        window.set_size(PhysicalSize::new(
+            (1000.0 * scale).min(area.size.width as f64 - 20.0) as u32,
+            (720.0 * scale).min(area.size.height as f64 - 20.0) as u32,
+        )).map_err(|e| e.to_string())?;
+    }
+    window.center().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("panel") {
+        if window.is_visible().map_err(|e| e.to_string())? && !window.is_minimized().map_err(|e| e.to_string())? {
+            return hide_panel(app);
+        }
+    }
+    open_panel(app, None, None).await
 }
 
 /// Areas (CSS px) where the overlay draws something and should take the mouse.
@@ -46,7 +115,7 @@ fn set_hit_regions(overlay: tauri::State<'_, Arc<Overlay>>, rects: Vec<HitRect>)
     }
 }
 
-/// Keep taking the mouse while a pet or the panel is being dragged.
+/// Keep taking the mouse while a pet is being dragged.
 #[tauri::command]
 fn set_dragging(overlay: tauri::State<'_, Arc<Overlay>>, active: bool) {
     if let Ok(mut st) = overlay.hit.lock() {
@@ -108,8 +177,20 @@ pub fn run() {
             set_click_through,
             set_always_on_top,
             set_hit_regions,
-            set_dragging
+            set_dragging,
+            open_panel,
+            toggle_panel,
+            show_panel,
+            hide_panel
         ])
+        .on_window_event(|window, event| {
+            if window.label() == "panel" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(move |app| {
             // ---- overlay window over the work area, mouse passes through until something is hit ----
             if let Some(w) = main_window(app.handle()) {
@@ -153,16 +234,16 @@ pub fn run() {
                         }
                     }
                     "toggle_panel" => {
-                        let _ = app.emit("tray", "toggle-panel");
+                        let _ = app.emit_to("main", "tray", "toggle-panel");
                     }
                     "toggle_click_through" => {
-                        let _ = app.emit("tray", "toggle-click-through");
+                        let _ = app.emit_to("main", "tray", "toggle-click-through");
                     }
                     "reset_position" => {
                         if let Some(w) = main_window(app) {
                             let _ = w.show();
                         }
-                        let _ = app.emit("tray", "reset-position");
+                        let _ = app.emit_to("main", "tray", "reset-position");
                     }
                     "next_monitor" => {
                         if let Some(w) = main_window(app) {

@@ -10,21 +10,16 @@ characters missing from the subsets fall back to the system font, one glyph at a
 from __future__ import annotations
 
 import argparse
-import math
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CLIENT = ROOT / "client"
 TEXT_OUT = CLIENT / "src/assets/fonts/NotoSansSC-subset.woff2"
-DISPLAY_OUT = CLIENT / "src/assets/fonts/NotoSansSC-Slanted-subset.woff2"
 HALFTONE_OUT = CLIENT / "src/assets/patterns/halftone.svg"
 
 NON_ASCII = re.compile(r"[^\x00-\x7f]")
 TEXT_WEIGHTS = (400, 400, 800)
-DISPLAY_WEIGHT = 900
-# Matches --skew in client/src/ui/tokens.css.
-DISPLAY_SLANT_DEGREES = 8.0
 
 
 def ui_text() -> str:
@@ -47,37 +42,6 @@ def load_subset(src: Path, text: str):
     return font
 
 
-def slant(font, degrees: float) -> None:
-    """Shear the outlines, pivoting at mid x-height so glyphs stay centered on their advance."""
-    from fontTools.pens.recordingPen import DecomposingRecordingPen
-    from fontTools.pens.transformPen import TransformPen
-    from fontTools.pens.ttGlyphPen import TTGlyphPen
-
-    shear = math.tan(math.radians(degrees))
-    transform = (1, 0, shear, 1, -shear * font["OS/2"].sxHeight / 2, 0)
-    glyph_set = font.getGlyphSet()
-    sheared = {}
-    for name in font.getGlyphOrder():
-        recording = DecomposingRecordingPen(glyph_set)
-        glyph_set[name].draw(recording)
-        pen = TTGlyphPen(None)
-        recording.replay(TransformPen(pen, transform))
-        sheared[name] = pen.glyph()
-    glyf, hmtx = font["glyf"], font["hmtx"]
-    for name, glyph in sheared.items():
-        glyf[name] = glyph
-        glyph.recalcBounds(glyf)
-        hmtx[name] = (hmtx[name][0], getattr(glyph, "xMin", 0))
-    font["post"].italicAngle = -degrees
-
-
-def rename(font, suffix: str) -> None:
-    """A modified font must not pass for the original."""
-    for record in font["name"].names:
-        text = record.toUnicode()
-        record.string = text.replace("Noto Sans SC", f"Noto Sans SC {suffix}").replace("NotoSansSC", f"NotoSansSC{suffix}")
-
-
 def write_font(font, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     font.flavor = "woff2"
@@ -90,10 +54,6 @@ def build_fonts(src: Path) -> None:
 
     text = ui_text()
     write_font(instantiateVariableFont(load_subset(src, text), {"wght": TEXT_WEIGHTS}), TEXT_OUT)
-    display = instantiateVariableFont(load_subset(src, text), {"wght": DISPLAY_WEIGHT})
-    slant(display, DISPLAY_SLANT_DEGREES)
-    rename(display, "Slanted")
-    write_font(display, DISPLAY_OUT)
 
 
 def halftone(cols: int = 20, rows: int = 10, pitch: float = 14.0, max_r: float = 2.4) -> None:

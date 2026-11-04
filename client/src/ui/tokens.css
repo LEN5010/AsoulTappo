@@ -1,48 +1,68 @@
-/* Idol-stage design tokens: #FC966E and white, one 8deg slant, flat color blocks, no rounded pills. */
+/* Idol-stage design tokens: #FC966E and white, upright shapes, small radii. Light belongs to what can be pressed. */
 @font-face {
   font-family: "Noto Sans SC";
   font-weight: 400 800;
   src: url("../assets/fonts/NotoSansSC-subset.woff2") format("woff2");
   font-display: swap;
 }
-/* Black weight sheared 8deg by scripts/build_ui_assets.py. Clogs below 18px: smaller labels use --font at weight 800. */
-@font-face {
-  font-family: "Noto Sans SC Slanted";
-  src: url("../assets/fonts/NotoSansSC-Slanted-subset.woff2") format("woff2");
-  font-display: swap;
-}
 @font-face {
   font-family: "Barlow Condensed";
-  font-style: italic;
   font-weight: 800;
-  src: url("../assets/fonts/BarlowCondensed-ExtraBoldItalic.woff2") format("woff2");
+  src: url("../assets/fonts/BarlowCondensed-ExtraBold.woff2") format("woff2");
   font-display: swap;
 }
 
 :root {
   --font: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
-  --font-display: "Noto Sans SC Slanted", var(--font);
   --font-latin: "Barlow Condensed", var(--font);
 
   --accent: #FC966E;
   --accent-rgb: 252, 150, 110;
-  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.68:1) */
-  --accent-deep: #C94A20;
+  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.5:1 on --page) */
+  --accent-deep: #C0461E;
+  --accent-hover: #FFA883;
+  --accent-mid: #FDC5AF;
   --accent-soft: #FFE3D6;
   --accent-tint: #FFF3ED;
   --on-accent: #2B2530;
+  --accent-surface: var(--accent);
+  --on-accent-surface: var(--on-accent);
 
   --ink: #2B2530;
+  --ink-rgb: 43, 37, 48;
+  --on-ink: #FFFFFF;
   --ink-2: #625968;
-  --ink-3: #8D8493;
+  --ink-3: #766D7C;
   --surface: #FFFFFF;
   --page: #FFF4EE;
 
   --line: #F6E3DA;
   --line-2: #EFD3C6;
 
-  --skew: -8deg;
-  --grid: linear-gradient(rgba(var(--accent-rgb), 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-rgb), 0.1) 1px, transparent 1px);
+  --fs-caption: 11px;
+  --fs-label: 12px;
+  --fs-body: 13px;
+  --fs-strong: 14px;
+  --fs-number: 16px;
+  --fs-section: 18px;
+  --fs-heading: 20px;
+  --fs-title: 25px;
+  --fs-display: 46px;
+  --fs-burst: 72px;
+
+  --radius-s: 4px;
+  --radius-m: 6px;
+  --radius-l: 10px;
+  /* Lit from above and shading toward coral: darkening orange would turn it brown. */
+  --grad-from: color-mix(in oklab, var(--accent) 80%, #fff);
+  --grad-to: color-mix(in oklab, var(--accent) 80%, #E8386E);
+  --grad-main: linear-gradient(180deg, var(--grad-from), var(--accent) 52%, var(--grad-to));
+  /* Large blocks: dusk, warm at the top and coral at the bottom. */
+  --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, #FFD7AE), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, #E8386E));
+  --grad-paper: linear-gradient(180deg, var(--surface), var(--accent-tint));
+  --glow-s: 0 4px 12px -4px rgba(var(--accent-rgb), 0.62);
+  --glow-m: 0 6px 16px -4px rgba(var(--accent-rgb), 0.76), 0 0 0 3px rgba(var(--accent-rgb), 0.14);
+  --glow-l: 0 0 20px 2px rgba(var(--accent-rgb), 0.55);
   --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
   --halftone: url("../assets/patterns/halftone.svg");
 
@@ -51,32 +71,61 @@
   --contour-lg: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff);
   --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
   --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
+  /* Not owned yet. Stays opaque: stickers overlap, and any transparency shows one through the other. */
+  --dim: grayscale(1) contrast(0.84) brightness(1.08);
 
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 340ms;
+  --dur-stage: 480ms;
+  /* Mirrored in ui/motion.ts for Web Animations. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.76, 0, 0.24, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-pop: cubic-bezier(0.34, 1.8, 0.64, 1);
 
-  --rar-common: #F4A988;
-  --rar-common-bg: linear-gradient(145deg, #FFF8F4 0%, #FFEFE7 100%);
-  --rar-rare: #F58A5F;
-  --rar-rare-bg: linear-gradient(145deg, #FFE7DB 0%, #FFD3BF 100%);
-  --rar-epic: #FC966E;
-  --rar-epic-bg: linear-gradient(145deg, #FFCFB9 0%, #FCA582 100%);
-  --rar-legendary: #E59B35;
-  --rar-legendary-bg: linear-gradient(145deg, #FFD9A8 0%, #FC966E 100%);
-  --rar-none-bg: linear-gradient(145deg, #FFF8F4 0%, #FFF0E9 100%);
+  /* Each step up the ladder gets stronger: paper, soft, mid, gold. */
+  --gold: #E59B35;
+  --gold-rgb: 229, 155, 53;
+  --gold-soft: #FFE3A6;
+  --rar-common-bg: var(--surface);
+  --rar-uncommon-bg: var(--accent-tint);
+  --rar-rare-bg: var(--accent-soft);
+  --rar-epic-bg: var(--accent-mid);
+  --rar-legendary-bg: var(--gold-soft);
 
   --ok: #2F9E68;
   --warn: #D98A1F;
   --bad: #D9483F;
 }
 
-/* Parallelograms are skewed ::before layers, so the label stays upright and borders survive. */
-.ui-btn {
+/* Plates paint their fill on a ::before layer, themed through --plate-bg and --plate-edge. */
+.ui-plate,
+.ui-btn,
+.ui-chip,
+.ui-tag {
   position: relative;
   isolation: isolate;
+}
+.ui-plate::before,
+.ui-btn::before,
+.ui-chip::before,
+.ui-tag::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--plate-bg);
+  border-radius: var(--radius-s);
+  box-shadow: var(--plate-edge, none);
+  transition: background var(--dur-fast), box-shadow var(--dur-fast);
+}
+.ui-btn {
+  --plate-bg: var(--grad-paper);
+  --plate-edge: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(var(--ink-rgb), 0.06);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   height: 36px;
   padding: 0 18px;
@@ -89,44 +138,63 @@
   justify-content: center;
   gap: 6px;
   white-space: nowrap;
-  transition: transform 180ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.ui-btn::before {
+.ui-btn:hover:not(:disabled) {
+  --plate-bg: linear-gradient(180deg, var(--surface), var(--accent-soft));
+  --plate-edge: inset 0 0 0 1px var(--accent-mid), 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+}
+.ui-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.ui-btn.primary {
+  --plate-bg: var(--grad-main);
+  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.5), var(--glow-s);
+  color: var(--on-accent);
+}
+.ui-btn.primary:hover:not(:disabled) {
+  --plate-bg: var(--grad-main);
+  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6), var(--glow-m);
+}
+.ui-btn.primary:active:not(:disabled) {
+  --plate-edge: inset 0 2px 5px rgba(var(--ink-rgb), 0.16);
+}
+/* A band of light crosses the button on hover. */
+.ui-btn.primary:not(:disabled)::before {
+  background:
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.44) 50%, transparent 58%) 140% 0 / 260% 100% no-repeat,
+    var(--grad-main);
+  transition: background-position 560ms var(--ease-out), box-shadow var(--dur-base);
+}
+.ui-btn.primary:hover:not(:disabled)::before {
+  background-position: -40% 0, 0 0;
+}
+/* Breathes while the action is available, so a glow always means there is something to press. */
+.ui-btn.pulse:not(:disabled)::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -1;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
-  transform: skewX(var(--skew));
-  transition: background 140ms, box-shadow 140ms;
+  z-index: -2;
+  border-radius: var(--radius-s);
+  box-shadow: var(--glow-l);
+  opacity: 0;
+  animation: breathe 2.8s var(--ease-in-out) infinite;
 }
-.ui-btn:hover:not(:disabled)::before {
-  background: var(--accent-soft);
+@keyframes breathe {
+  50% {
+    opacity: 1;
+  }
 }
-.ui-btn:active:not(:disabled) {
-  transform: translate(1px, 1px);
-}
-.ui-btn.primary {
-  color: var(--on-accent);
-}
-.ui-btn.primary::before {
-  background: var(--accent);
-  box-shadow: 3px 3px 0 var(--ink);
-}
-.ui-btn.primary:hover:not(:disabled)::before {
-  background: #FFA883;
-  box-shadow: 4px 4px 0 var(--ink);
-}
-.ui-btn.primary:active:not(:disabled)::before {
-  box-shadow: 1px 1px 0 var(--ink);
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn.pulse:not(:disabled)::after {
+    opacity: 0.6;
+    animation: none;
+  }
 }
 .ui-btn.ghost {
+  --plate-bg: transparent;
+  --plate-edge: none;
   color: var(--ink-2);
-}
-.ui-btn.ghost::before {
-  background: transparent;
-  box-shadow: none;
 }
 .ui-btn.ghost:hover:not(:disabled) {
   color: var(--ink);
@@ -134,28 +202,29 @@
 .ui-btn.small {
   height: 30px;
   padding: 0 14px;
-  font-size: 12px;
+  font-size: var(--fs-label);
+}
+.ui-btn.large {
+  height: 46px;
+  padding: 0 26px;
+  font-size: var(--fs-strong);
+  font-weight: 800;
 }
 .ui-btn:disabled {
+  --plate-bg: var(--accent-tint);
+  --plate-edge: inset 0 0 0 1.5px var(--line);
   color: var(--ink-3);
   cursor: default;
 }
-.ui-btn:disabled::before {
-  background: var(--accent-tint);
-  box-shadow: inset 0 0 0 1.5px var(--line);
-}
-/* Upright stripes: the layer's own skew leans them along the slant. */
-.ui-btn.primary:disabled::before {
-  background: repeating-linear-gradient(90deg, var(--accent-soft) 0 7px, var(--accent-tint) 7px 14px);
-  box-shadow: none;
-}
 .ui-btn.primary:disabled {
+  --plate-bg: var(--accent-soft);
+  --plate-edge: none;
   color: var(--ink-2);
 }
 
 .ui-input {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   height: 36px;
   padding: 0 12px;
@@ -167,7 +236,7 @@
   background: var(--surface);
   color: var(--ink);
   outline: none;
-  transition: border-color 140ms, background 140ms;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .ui-input::placeholder {
   color: var(--ink-3);
@@ -183,7 +252,7 @@
   align-items: baseline;
   gap: 7px;
   margin: 0 0 8px;
-  font: 400 18px/1 var(--font-display);
+  font: 800 var(--fs-section)/1 var(--font);
   color: var(--ink);
 }
 .ui-label::before {
@@ -192,12 +261,11 @@
   width: 7px;
   height: 14px;
   background: var(--accent);
-  transform: skewX(var(--skew));
 }
 .ui-label em {
-  font: italic 800 14px/1 var(--font-latin);
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.08em;
-  color: var(--accent);
+  color: var(--accent-deep);
 }
 .ui-label em::after {
   content: "";
@@ -210,7 +278,7 @@
 }
 .ui-label small {
   margin-left: auto;
-  font: italic 800 15px/1 var(--font-latin);
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink-3);
 }
 .ui-muted {
@@ -218,7 +286,7 @@
 }
 .ui-hint {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: var(--fs-label);
 }
 
 .ui-error {
@@ -227,42 +295,34 @@
   background: #FDECEA;
   box-shadow: inset 3px 0 0 var(--bad);
   color: var(--bad);
-  font-size: 12px;
+  font-size: var(--fs-label);
   font-weight: 700;
 }
 .ui-empty {
   padding: 32px 0;
   text-align: center;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
-/* Chamfered block. clip-path would swallow a border, so .ui-ring lays the hairline on top. */
+/* Rounded block. Content is clipped to the corners, so .ui-ring lays the hairline on top. */
 .ui-frame {
   position: relative;
   overflow: hidden;
+  border-radius: var(--radius, var(--radius-s));
 }
-.ui-frame,
 .ui-tile::before {
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%);
+  border-radius: var(--radius, var(--radius-s));
 }
 .ui-ring::after {
-  --r: 1.5px;
-  --c: calc(var(--cut, 11px) + var(--r) * 0.414);
   content: "";
   position: absolute;
   inset: 0;
   z-index: 3;
   pointer-events: none;
-  background: var(--line-2);
-  clip-path: polygon(
-    evenodd,
-    0 0, 100% 0, 100% calc(100% - var(--cut, 11px)), calc(100% - var(--cut, 11px)) 100%, 0 100%, 0 0,
-    var(--r) var(--r), var(--r) calc(100% - var(--r)),
-    calc(100% - var(--c)) calc(100% - var(--r)), calc(100% - var(--r)) calc(100% - var(--c)),
-    calc(100% - var(--r)) var(--r), var(--r) var(--r), 0 0
-  );
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1.5px var(--ring, var(--line-2));
 }
 .ui-well {
   width: 100%;
@@ -283,7 +343,7 @@
   margin: auto;
   /* contour only: one more pass over a whole grid of tiles drops frames during page turns */
   filter: var(--contour);
-  transition: transform 260ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 /* A well plus its name. Hover and selection slide an offset block out from behind the well. */
@@ -301,7 +361,7 @@
   font: inherit;
   color: var(--ink);
   user-select: none;
-  transition: transform 240ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-tile::before {
   content: "";
@@ -312,7 +372,7 @@
   aspect-ratio: var(--well-ratio, 1);
   background: var(--accent);
   opacity: 0;
-  transition: transform 240ms var(--ease-out), opacity 120ms;
+  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-fast);
 }
 .ui-tile:hover {
   transform: translate(-2px, -2px);
@@ -325,9 +385,27 @@
 .ui-tile:hover .ui-well img {
   transform: scale(1.06);
 }
+.ui-tile.uncommon .ui-well {
+  background: var(--rar-uncommon-bg);
+}
+.ui-tile.rare .ui-well {
+  background: var(--rar-rare-bg);
+}
+.ui-tile.epic .ui-well {
+  background: var(--rar-epic-bg);
+}
+.ui-tile.legendary .ui-well {
+  background: var(--rar-legendary-bg);
+}
+/* Locked stickers stay gray until hovered. They skip the contour, which keeps the grid cheap to paint. */
+.ui-tile.locked .ui-well {
+  background: var(--accent-tint);
+}
 .ui-tile.locked .ui-well img {
-  filter: saturate(0.48) contrast(0.9) var(--contour);
-  opacity: 0.5;
+  filter: var(--dim);
+}
+.ui-tile.locked:hover .ui-well img {
+  filter: var(--contour);
 }
 .ui-tile.locked .ui-tile-name {
   color: var(--ink-3);
@@ -339,14 +417,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: var(--fs-label);
   font-weight: 700;
   text-align: center;
 }
 
 .ui-chip {
-  position: relative;
-  isolation: isolate;
+  --plate-bg: var(--surface);
   height: 26px;
   padding: 0 11px;
   display: inline-flex;
@@ -355,54 +432,33 @@
   border: 0;
   background: none;
   color: var(--ink-2);
-  font: 700 12px var(--font);
+  font: 700 var(--fs-label) var(--font);
   cursor: pointer;
   white-space: nowrap;
-  transition: color 160ms;
+  transition: color var(--dur-fast);
 }
-.ui-chip::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--surface);
-  transform: skewX(var(--skew));
-  transition: background 160ms;
-}
-.ui-chip:hover::before {
-  background: var(--accent-soft);
+.ui-chip:hover {
+  --plate-bg: var(--accent-soft);
 }
 .ui-chip.on {
+  --plate-bg: var(--grad-main);
   color: var(--on-accent);
-}
-.ui-chip.on::before {
-  background: var(--accent);
 }
 .ui-chip > i {
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 
 .ui-tag {
-  position: relative;
-  isolation: isolate;
+  --plate-bg: var(--tag-bg, var(--accent));
   display: inline-block;
   padding: 0 7px;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-style: normal;
   font-weight: 800;
   line-height: 17px;
   color: var(--tag-fg, var(--on-accent));
   white-space: nowrap;
-}
-.ui-tag::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--tag-bg, var(--accent));
-  transform: skewX(var(--skew));
 }
 .ui-tag.dark {
   --tag-bg: var(--ink);
@@ -412,19 +468,66 @@
   --tag-bg: var(--surface);
   --tag-fg: var(--accent-deep);
 }
+.ui-tag.gold {
+  --tag-bg: var(--gold);
+  --tag-fg: var(--ink);
+}
+
+/* Settings-style list: chamfered white block of rows. */
+.ui-group {
+  --radius: var(--radius-m);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+}
+.ui-group > * + * {
+  border-top: 1.5px solid var(--line);
+}
+.ui-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 8px 18px;
+  box-sizing: border-box;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+.ui-ctl {
+  width: 280px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ui-val {
+  width: 52px;
+  flex: none;
+  text-align: right;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink-2);
+}
+.ui-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
 
 .ui-bar {
   height: 8px;
+  border-radius: 4px;
   background: var(--accent-soft);
   overflow: hidden;
   box-sizing: border-box;
-  transform: skewX(var(--skew));
 }
 .ui-bar > i {
   display: block;
   height: 100%;
-  background: var(--accent);
-  transition: width 420ms var(--ease-out);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-from), var(--accent) 55%, var(--grad-to));
+  transition: width var(--dur-stage) var(--ease-out);
 }
 
 .ui-switch {
@@ -432,11 +535,11 @@
   margin: 0;
   width: 42px;
   height: 22px;
+  border-radius: 11px;
   background: var(--accent-soft);
   position: relative;
   cursor: pointer;
-  transform: skewX(var(--skew));
-  transition: background 180ms;
+  transition: box-shadow var(--dur-base);
   flex: none;
 }
 .ui-switch::after {
@@ -444,19 +547,22 @@
   position: absolute;
   left: 3px;
   top: 3px;
-  width: 18px;
+  width: 16px;
   height: 16px;
+  border-radius: 50%;
   background: var(--surface);
-  transition: transform 260ms var(--ease-out);
+  box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.24);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .ui-switch:checked {
-  background: var(--accent);
+  background: var(--grad-main);
+  box-shadow: var(--glow-s);
 }
 .ui-switch:checked::after {
-  transform: translateX(18px);
+  transform: translateX(20px);
 }
 
-/* range: flat track filled up to --fill (set by RangeInput.vue) */
+/* range: track filled up to --fill (set by RangeInput.vue) */
 .ui-range {
   appearance: none;
   -webkit-appearance: none;
@@ -468,30 +574,38 @@
 }
 .ui-range::-webkit-slider-runnable-track {
   height: 6px;
-  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--grad-from) 0%, var(--grad-to) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
 }
 .ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px;
-  height: 20px;
-  margin-top: -7px;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
+}
+.ui-range:hover::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-m);
 }
 .ui-range::-moz-range-track {
   height: 6px;
+  border-radius: 3px;
   background: var(--accent-soft);
 }
 .ui-range::-moz-range-progress {
   height: 6px;
+  border-radius: 3px;
   background: var(--accent);
 }
 .ui-range::-moz-range-thumb {
-  width: 12px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border: 0;
-  border-radius: 0;
-  background: var(--ink);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
 }
 
 .ui-scroll {
@@ -512,6 +626,24 @@
 :focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
+}
+/* Plates ring their fill layer; overflow would clip an inner outline on a framed block. */
+.ui-btn:focus-visible,
+.ui-chip:focus-visible,
+button.ui-plate:focus-visible,
+.ui-tile:focus-visible,
+.ui-frame:focus-visible {
+  outline: none;
+}
+.ui-btn:focus-visible::before,
+.ui-chip:focus-visible::before,
+button.ui-plate:focus-visible::before {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.ui-frame:focus-visible,
+.ui-tile:focus-visible .ui-well {
+  box-shadow: inset 0 0 0 2.5px var(--ink);
 }
 
 button, input, b, small {

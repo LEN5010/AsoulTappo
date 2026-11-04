@@ -64,7 +64,7 @@ def _guard(fn, *args):
     try:
         return fn(*args)
     except GameError as e:
-        status = 401 if e.code == "bad_token" else 409 if e.code in ("no_box", "no_shards", "owned", "no_ticket") else 400
+        status = 401 if e.code == "bad_token" else 409 if e.code in ("no_shards", "owned") else 400
         raise HTTPException(status_code=status, detail={"code": e.code, "message": e.message})
 
 
@@ -72,10 +72,6 @@ class ActivityBody(BaseModel):
     taps: int = Field(ge=0, le=100000)
     session: str = Field(min_length=16, max_length=128)
     sequence: int = Field(ge=1)
-
-
-class OpenBody(BaseModel):
-    count: int = Field(default=1, ge=1, le=100)
 
 
 class CraftBody(BaseModel):
@@ -86,8 +82,7 @@ class PresenceBody(BaseModel):
     session: str = Field(min_length=16, max_length=128)
 
 
-class DrawBody(BaseModel):
-    pool: str = Field(min_length=1, max_length=48)
+class ResonanceBody(BaseModel):
     count: int = Field(default=1, ge=1, le=100)
 
 
@@ -114,19 +109,14 @@ def api_activity(body: ActivityBody, x_player_token: str = Header(default="")) -
     return _guard(game.report_activity, x_player_token, body.taps, body.session, body.sequence)
 
 
-@app.post("/api/boxes/open")
-def api_open_box(body: OpenBody | None = None, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.open_boxes, x_player_token, body.count if body else 1)
-
-
 @app.post("/api/presence")
 def api_presence(body: PresenceBody, x_player_token: str = Header(default="")) -> dict:
     return _guard(game.presence, x_player_token, body.session)
 
 
-@app.post("/api/cards/draw")
-def api_draw(body: DrawBody, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.draw_cards, x_player_token, body.pool, body.count)
+@app.post("/api/resonance/draw")
+def api_resonate(body: ResonanceBody, x_player_token: str = Header(default="")) -> dict:
+    return _guard(game.resonate, x_player_token, body.count)
 
 
 @app.post("/api/craft")

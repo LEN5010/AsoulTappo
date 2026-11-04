@@ -6,7 +6,7 @@ const resp = (status: number, body: unknown) =>
 
 describe("Api", () => {
   it("sends the token header and json body", async () => {
-    const f = vi.fn(() => resp(200, { boxes: 1 }));
+    const f = vi.fn(() => resp(200, { shards: 1600 }));
     const api = new Api(() => "http://h:1/", () => "tok", f);
     const batch = { taps: 7, session: "s".repeat(24), sequence: 1 };
     await api.activity(batch);
@@ -15,9 +15,15 @@ describe("Api", () => {
       headers: expect.objectContaining({ "X-Player-Token": "tok", "Content-Type": "application/json" }),
     }));
   });
+  it("posts only the count to the unified resonance route", async () => {
+    const f = vi.fn(() => resp(200, { drops: [] }));
+    const api = new Api(() => "http://h", () => "tok", f);
+    await api.resonate(10);
+    expect(f).toHaveBeenCalledWith("http://h/api/resonance/draw", expect.objectContaining({ method: "POST", body: JSON.stringify({ count: 10 }) }));
+  });
   it("turns server errors into ApiError with the code", async () => {
-    const api = new Api(() => "http://h", () => "t", () => resp(409, { detail: { code: "no_box", message: "没有宝箱" } }));
-    await expect(api.openBoxes()).rejects.toMatchObject({ status: 409, code: "no_box", message: "没有宝箱" });
+    const api = new Api(() => "http://h", () => "t", () => resp(409, { detail: { code: "no_shards", message: "碎片不足" } }));
+    await expect(api.resonate()).rejects.toMatchObject({ status: 409, code: "no_shards", message: "碎片不足" });
     const api2 = new Api(() => "http://h", () => "t", () => resp(500, "x"));
     await expect(api2.me()).rejects.toBeInstanceOf(ApiError);
   });

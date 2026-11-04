@@ -1,6 +1,8 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { manifest } from "../manifest";
 import { toHttpBase } from "../net/protocol";
-import { buildSkin, cssImage } from "../skin";
+import { buildSkin } from "../skin";
+import { accentTokens } from "../ui/palette";
 import { settings } from "./settings";
 
 export const reducedMotion = ref(false);
@@ -14,13 +16,33 @@ export const skin = computed(() =>
   buildSkin("jiaran-eat", settings.character, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL || "/"),
 );
 
-/** Root style: theme/character CSS variables. */
-export const skinVars = computed(() => ({
-  ...skin.value.vars,
-  "--accent": "#FC966E",
-  "--accent-rgb": "252, 150, 110",
-  "--on-accent": "#2B2530",
-  "--tint": "#FFFFFF",
-}));
+/** Root style: character CSS variables. */
+export const skinVars = computed(() => skin.value.vars);
 
-export { cssImage };
+/** The brand orange of tokens.css, then one support color per member. */
+export const THEME_COLORS = [
+  { id: "asoul", name: "A-SOUL", color: "#FC966E" },
+  ...manifest.characters.map(({ id, name, color }) => ({ id, name, color: color.toUpperCase() })),
+];
+
+/** Overrides for tokens.css. The brand palette is hand-tuned there and needs none. */
+export function themeTokens(id: string): Record<string, string> {
+  const theme = THEME_COLORS.find((t) => t.id === id);
+  return !theme || theme === THEME_COLORS[0] ? {} : accentTokens(theme.color);
+}
+
+// On :root rather than the panel: overlays and the desk widgets read the same tokens.
+if (typeof document !== "undefined") {
+  let applied: string[] = [];
+  watch(
+    () => settings.themeColor,
+    (id) => {
+      const root = document.documentElement.style;
+      applied.forEach((name) => root.removeProperty(name));
+      const tokens = themeTokens(id);
+      applied = Object.keys(tokens);
+      applied.forEach((name) => root.setProperty(name, tokens[name]!));
+    },
+    { immediate: true },
+  );
+}

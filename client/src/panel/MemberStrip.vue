@@ -1,126 +1,170 @@
 <script setup lang="ts">
-import { ref } from "vue";
+// Backpack filter: a member card narrows the shelves to her, the ALL card lifts the filter.
 import { characters } from "../characters";
 import { manifest } from "../manifest";
-import { useSlider } from "../ui/useSlider";
+import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
-const props = defineProps<{ modelValue: string }>();
-defineEmits<{ "update:modelValue": [name: string] }>();
+defineProps<{ modelValue: string }>();
+const emit = defineEmits<{ "update:modelValue": [name: string] }>();
 
 const EN_NAMES: Record<string, string> = { jiaran: "Diana", nailin: "Eileen", beila: "Bella", xinyi: "Fiona", sinuo: "Gladys" };
+/** Busts stacked as silhouettes on the ALL card, back to front. */
+const GHOSTS = manifest.characters.slice(0, 3).flatMap((m) => characters[m.name]?.bg ?? []);
 
-const track = ref<HTMLElement>();
-const thumb = ref<HTMLElement>();
-useSlider(track, thumb, () => props.modelValue);
+const pick = (name: string) => emit("update:modelValue", name);
 </script>
 
 <template>
-  <div ref="track" class="strip" role="radiogroup" aria-label="按成员筛选">
-    <i ref="thumb" class="thumb" aria-hidden="true"></i>
+  <div class="members" role="group" aria-label="筛选成员">
     <button
-      type="button" class="all" role="radio" :aria-checked="modelValue === 'all'"
-      :class="{ on: modelValue === 'all' }" @click="$emit('update:modelValue', 'all')"
+      type="button" class="member ui-frame" :class="{ on: modelValue === 'all' }"
+      :aria-pressed="modelValue === 'all'" title="显示全部成员" @click="pick('all')"
     >
-      <b>全部</b><small>ALL</small>
+      <span class="ghosts" aria-hidden="true">
+        <span class="stack"><PetBust v-for="bg in GHOSTS" :key="bg" class="ghost" :src="bg" /></span>
+        <span class="ask">?</span>
+      </span>
+      <b>全部</b>
+      <small>ALL</small>
+      <span v-if="modelValue === 'all'" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
     </button>
     <button
-      v-for="m in manifest.characters" :key="m.id" type="button" role="radio" :aria-checked="modelValue === m.name"
-      :class="{ on: modelValue === m.name }" @click="$emit('update:modelValue', m.name)"
+      v-for="m in manifest.characters" :key="m.id" type="button"
+      class="member ui-frame" :class="{ on: modelValue === m.name }"
+      :aria-pressed="modelValue === m.name" :title="`使用${m.name}原皮`" @click="pick(m.name)"
     >
       <PetBust v-if="characters[m.name]" class="bust" :src="characters[m.name]!.bg" />
-      <span class="who">
-        <b><i :style="{ background: m.color }" aria-hidden="true"></i>{{ m.name }}</b>
-        <small>{{ EN_NAMES[m.id] }}</small>
-      </span>
+      <b><i :style="{ background: m.color }" aria-hidden="true"></i>{{ m.name }}</b>
+      <small>{{ EN_NAMES[m.id] }}</small>
+      <span v-if="modelValue === m.name" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
     </button>
   </div>
 </template>
 
 <style scoped>
-.strip {
-  position: relative;
-  display: flex;
-  height: 46px;
-  padding: 0 8px;
-  background: var(--surface);
-  box-shadow: inset 0 -2px 0 var(--line-2);
+.members {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
 }
-.thumb {
-  position: absolute;
-  left: 0;
-  top: 0;
-  opacity: 0;
-  background: var(--accent);
-  transform-origin: 0 50%;
-  will-change: transform;
-}
-button {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 6px 0 2px;
+.member {
+  --radius: var(--radius-s);
+  height: 86px;
+  padding: 3px 0 6px;
+  box-sizing: border-box;
   border: 0;
-  background: none;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: color 180ms;
-}
-button + button::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 1.5px;
-  background: var(--line-2);
-  transform: skewX(var(--skew));
-}
-button.on {
-  color: var(--on-accent);
-}
-.all {
-  flex: 0 0 58px;
+  display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 0;
+  align-items: center;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.member:hover {
+  transform: translateY(-2px);
+}
+.member:hover:not(.on) {
+  box-shadow: inset 0 0 0 1.5px var(--accent-mid), 0 6px 12px -8px rgba(var(--accent-rgb), 0.7);
+}
+.member:focus-visible {
+  box-shadow: inset 0 0 0 2.5px var(--ink);
+}
+.member.on {
+  background: var(--grad-main);
+  box-shadow: var(--glow-m);
+  color: var(--on-accent-surface);
 }
 .bust {
   flex: none;
-  align-self: flex-end;
-  width: 52px;
-  height: 44px;
-  transition: transform 240ms var(--ease-out);
+  width: 56px;
+  height: 46px;
+  filter: var(--contour);
 }
-button:hover .bust {
-  transform: translateY(-2px);
+.ghosts {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 46px;
 }
-.who {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+/* Opaque grays multiplied onto the card, so overlaps stay flat; the white contour keeps figures apart. */
+.stack {
+  position: absolute;
+  inset: 0 -2px;
+  mix-blend-mode: multiply;
+  mask: linear-gradient(#000 56%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 56%, transparent 96%);
+}
+.ghost {
+  position: absolute;
+  bottom: 1px;
+  width: 36px;
+  height: 34px;
+  filter: brightness(0) invert(0.84) drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff) drop-shadow(0 -1px 0 #fff);
+}
+.ghost:nth-child(1) {
+  left: 0;
+}
+.ghost:nth-child(2) {
+  right: 0;
+}
+.ghost:nth-child(3) {
+  left: 12px;
+  bottom: -3px;
+  filter: brightness(0) invert(0.7) drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff) drop-shadow(0 -1px 0 #fff);
+}
+/* On the lit card the figures turn to white light: multiplied gray would brown the orange. */
+.on .stack {
+  mix-blend-mode: normal;
+}
+.on .ghost {
+  filter: brightness(0) invert(1);
+  opacity: 0.42;
+}
+.on .ghost:nth-child(3) {
+  filter: brightness(0) invert(1);
+  opacity: 0.72;
+}
+.ask {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 800 var(--fs-title)/1 var(--font-latin);
+  color: var(--ink);
+  text-shadow: 0 0 2px #fff, 0 0 6px #fff;
 }
 b {
+  margin-top: 2px;
   display: flex;
   align-items: center;
   gap: 4px;
-  font: 800 14px/1 var(--font);
+  font: 800 var(--fs-strong)/1.1 var(--font);
   color: var(--ink);
+}
+.on b {
+  color: inherit;
 }
 b i {
   flex: none;
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 small {
-  font: italic 800 12px/1 var(--font-latin);
+  font: 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.06em;
-  text-align: left;
+}
+.mark {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 20px;
+  height: 18px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

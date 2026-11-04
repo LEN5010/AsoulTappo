@@ -8,6 +8,8 @@ import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlay
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
 import { collection, token } from "./player";
+import { isPanelWindow } from "../composables/tauri";
+import { requestDesktop } from "../desktop/transport";
 
 export interface RemoteMember extends Member {
   /** increments on every tap batch -> short keyboard bounce */
@@ -125,6 +127,10 @@ export function registerTap(): void {
 
 /** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
 export function sendEmote(name: string, now = Date.now()): boolean {
+  if (isPanelWindow) {
+    void requestDesktop("sendEmote", name, now);
+    return true;
+  }
   if (!ownsEmote(name, collection.owned)) return false;
   if (now - lastSent < SEND_INTERVAL_MS) return false;
   lastSent = now;
@@ -139,6 +145,7 @@ export function setBatchMs(ms: number): void {
 }
 
 export async function createRoom(): Promise<string> {
+  if (isPanelWindow) return requestDesktop("createRoom");
   const base = settings.serverUrl;
   const res = await fetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
   if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
@@ -148,6 +155,7 @@ export async function createRoom(): Promise<string> {
 }
 
 export function joinRoom(room: string): void {
+  if (isPanelWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
   if (!id) return;
   lastError.value = "";
@@ -163,6 +171,7 @@ export function joinRoom(room: string): void {
 }
 
 export function leaveRoom(): void {
+  if (isPanelWindow) { void requestDesktop("leaveRoom"); return; }
   batcher.clear();
   client.leave();
   roomId.value = "";
@@ -174,9 +183,10 @@ export function syncProfile(patch: ProfilePatch): void {
 }
 
 watch(() => settings.serverUrl, () => {
+  if (isPanelWindow) return;
   leaveRoom();
   lastError.value = "";
 }, { flush: "sync" });
-watch(() => settings.character, (character) => syncProfile({ character }), { flush: "sync" });
-watch(() => settings.nick, (nick) => syncProfile({ nick }), { flush: "sync" });
-watch(() => settings.batchMs, setBatchMs);
+watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
+watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });
+watch(() => settings.batchMs, (ms) => { if (!isPanelWindow) setBatchMs(ms); });

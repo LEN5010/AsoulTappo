@@ -69,10 +69,11 @@ CREATE TABLE IF NOT EXISTS presence_sessions (
 );
 """
 
+STARTER_SHARDS = 1600
+
 PLAYER_FIELDS = (
-    "id created taps_total active_minutes progress_taps progress_minutes boxes boxes_day boxes_today "
-    "last_activity minute_bucket minute_taps minute_counted since_epic since_legend opened_total frame badge "
-    "shards loadout draw_tickets draw_seconds draw_pity drawn_total presence_last"
+    "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
+    "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder"
 ).split()
 
 
@@ -107,6 +108,12 @@ class Store:
                                 ("presence_last", "REAL")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+            if "skin_pity" not in players:
+                for field, kind in (("skin_pity", "INTEGER"), ("last_minute_taps", "INTEGER"),
+                                    ("shard_remainder", "REAL")):
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+                self._db.execute("UPDATE players SET shards = shards * 16 + (draw_tickets + boxes) * 160, "
+                                 "draw_tickets = 0, boxes = 0")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(
@@ -134,7 +141,7 @@ class Store:
         with self._lock:
             row = self._db.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
             if row is None:
-                self._db.execute("INSERT INTO players (id, created) VALUES (?, ?)", (pid, now))
+                self._db.execute("INSERT INTO players (id, created, shards) VALUES (?, ?, ?)", (pid, now, STARTER_SHARDS))
                 self._commit()
                 row = self._db.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
             return dict(row)

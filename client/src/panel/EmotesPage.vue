@@ -1,29 +1,34 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { characterColor, getEmote, manifest } from "../manifest";
+import { characterColor, getEmote, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
-import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
-import { boxes, collection, error, online, openBoxes, shards, status } from "../stores/player";
+import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
+import { draws, collection, error, shards } from "../stores/player";
 import { settings } from "../stores/settings";
 import { pet } from "../stores/pet";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
-import type { Drop } from "../net/api";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import PetView from "../pet/PetView.vue";
 import MemberStrip from "./MemberStrip.vue";
 import PetBust from "./PetBust.vue";
-import RevealModal from "./RevealModal.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 import { rise } from "../ui/motion";
 
-type MainKind = "all" | "pet" | "emote";
+type MainKind = "all" | "emote" | "pet";
 const mainTab = ref<MainKind>("all");
-const charFilter = ref<string>("all");
 const query = ref("");
 const actionNote = ref("");
+
+// A member card narrows the shelves to her and equips her original skin; ALL only lifts the filter.
+const member = ref("all");
+function pickMember(name: string) {
+  member.value = name;
+  if (name !== "all") settings.character = name;
+}
+const inMember = (name: string) => member.value === "all" || memberOf(name) === member.value;
 
 // ---- live stage preview
 const preview = ref<EmoteFrame | null>(null);
@@ -39,13 +44,14 @@ const stageStickers = computed(() =>
     .map((k) => ({ key: k, emo: getEmote(k) }))
     .filter((x) => x.emo),
 );
-// Stickers run down the stage's slanted left edge.
+// Stickers run down the stage's left edge.
 const STICKER_ARC = [
-  { x: 30, y: 2, rot: -9 },
-  { x: 20, y: 44, rot: 6 },
-  { x: 12, y: 86, rot: -5 },
-  { x: 2, y: 128, rot: 8 },
+  { x: 14, y: 4, rot: -9 },
+  { x: 14, y: 56, rot: 6 },
+  { x: 14, y: 108, rot: -5 },
+  { x: 14, y: 160, rot: 8 },
 ];
+const STAGE_SCALE = 1.15;
 
 function pokeStage() {
   const keys = quickKeys.value;
@@ -54,7 +60,7 @@ function pokeStage() {
 
 const root = ref<HTMLElement>();
 const listing = ref<HTMLElement>();
-watch([mainTab, charFilter], () => nextTick(() => rise(listing.value, root.value)));
+watch([mainTab, member], () => nextTick(() => rise(listing.value, root.value)));
 
 // Replays the member-color band over the stage on every character switch.
 const ribbon = ref(0);
@@ -62,18 +68,14 @@ watch(() => settings.character, () => ribbon.value++);
 
 const MEMBER_ORDER = manifest.characters.map((c) => c.name);
 const skinRank = (name: string) => {
-  const idx = MEMBER_ORDER.findIndex((m) => name.startsWith(m));
+  const idx = MEMBER_ORDER.indexOf(memberOf(name));
   return idx >= 0 ? idx : 999;
 };
 
 // Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
 const petSkins = computed(() =>
   Object.values(characters)
-    .filter(
-      (c) =>
-        (charFilter.value === "all" || c.name.includes(charFilter.value)) &&
-        (!query.value || c.name.includes(query.value)),
-    )
+    .filter((c) => inMember(c.name) && (!query.value || c.name.includes(query.value)))
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
 );
 
@@ -82,7 +84,7 @@ const ownedEmotes = computed(() => {
   if (mainTab.value === "pet") return [];
   const list: { key: string; name: string; img: string; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
-    if (charFilter.value !== "all" && s.character !== charFilter.value) continue;
+    if (!inMember(s.character)) continue;
     for (const e of s.emotes) {
       if (!ownsEmote(e.key, collection.owned)) continue;
       if (query.value && !e.name.includes(query.value) && !s.name.includes(query.value)) continue;
@@ -100,40 +102,22 @@ const ownedEmotes = computed(() => {
 });
 
 const totalOwnedEmotes = computed(() =>
-  manifest.emoteSets.reduce(
-    (acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length,
-    0,
-  ),
+  manifest.emoteSets
+    .filter((s) => inMember(s.character))
+    .reduce((acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length, 0),
 );
 
 const mainTabs = computed(() => [
-  { id: "all" as const, label: "全部", count: Object.keys(characters).length + totalOwnedEmotes.value },
-  { id: "pet" as const, label: "角色", count: Object.keys(characters).length },
+  { id: "all" as const, label: "全部" },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
+  { id: "pet" as const, label: "桌宠", count: petSkins.value.length },
 ]);
 
-const showPets = computed(() => (mainTab.value === "all" || mainTab.value === "pet") && petSkins.value.length > 0);
-const showEmotes = computed(() => mainTab.value !== "pet" && ownedEmotes.value.length > 0);
+const nothingFound = computed(
+  () => !ownedEmotes.value.length && (mainTab.value === "emote" || !petSkins.value.length),
+);
 
 const favorites = computed(() => Array.from({ length: 8 }, (_, n) => getItem(`emote:${settings.favorites[n]}`)));
-const busy = ref(false);
-const drops = ref<Drop[]>([]);
-
-async function open(all: boolean) {
-  if (busy.value) return;
-  busy.value = true;
-  const count = all ? boxes.value : 1;
-  const results: Drop[] = [];
-  let remaining = count;
-  while (remaining > 0) {
-    const batch = await openBoxes(Math.min(10, remaining));
-    if (!batch?.length) break;
-    results.push(...batch);
-    remaining -= batch.length;
-  }
-  drops.value = results;
-  busy.value = false;
-}
 
 function toggleFavKey(key: string) {
   actionNote.value = "";
@@ -145,7 +129,7 @@ function toggleFavKey(key: string) {
     player.play(key);
   } else {
     player.play(key);
-    actionNote.value = "预设栏已满（8/8），先点击上方预设槽移出一个吧";
+    actionNote.value = "预设已满 8/8";
   }
 }
 
@@ -167,29 +151,28 @@ function fireEmote(key: string) {
   sendEmote(key);
 }
 
-const tapPct = computed(() =>
-  Math.min(100, ((status.value?.progress.taps ?? 0) / (status.value?.progress.tapsPerBox ?? 600)) * 100),
-);
 </script>
 
 <template>
   <div ref="root" class="emotes-page ui-scroll">
     <section class="showcase">
       <div class="stage-cluster" data-rise>
-        <div class="stage" title="点击桌宠预览表情" @click="pokeStage">
+        <div class="stage" @click="pokeStage">
           <span class="stage-bg" aria-hidden="true">
             <i class="stage-dots"></i>
-            <i class="stage-stripe"></i>
+            <i class="stage-light"></i>
             <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
           </span>
           <div class="stage-pet">
             <PetView
-              :character="settings.character" :scale="1"
+              :character="settings.character" :scale="STAGE_SCALE"
               :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
           </div>
-          <span class="stage-name"><i aria-hidden="true"></i>{{ settings.character }}</span>
+          <button type="button" class="stage-name ui-plate" title="更换桌宠" @click.stop="mainTab = 'pet'">
+            <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="11" />
+          </button>
           <Icon name="star5" :size="24" class="stage-deco big" />
           <Icon name="star5" :size="14" class="stage-deco small" />
           <Icon name="heart" :size="16" class="stage-deco heart" />
@@ -209,126 +192,98 @@ const tapPct = computed(() =>
         </button>
       </div>
 
-      <div class="fav-panel" data-rise>
+      <div class="desk" data-rise>
+        <MemberStrip :model-value="member" @update:model-value="pickMember" />
+
         <div class="fav-head">
           <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
           <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
+          <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
         </div>
 
-        <div class="fav-body">
-          <div class="slots">
-            <button
-              v-for="(item, n) in favorites" :key="n" type="button"
-              class="sq-slot ui-frame" :class="{ filled: !!item }"
-              :title="item ? `${item.name}（点击移出预设）` : `预设槽位 ${n + 1}（点击下方表情装入）`"
-              @dragover.prevent @drop.prevent="assign($event, n)"
-              @click="item && favorite(item)"
-            >
-              <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
-              <Icon v-else name="plus" :size="18" />
-            </button>
-          </div>
-
-          <div class="resources">
-            <div class="res" title="表情碎片（可在图鉴中兑换未拥有的表情）">
-              <Icon name="shard" :size="15" />
-              <b>{{ shards }}</b><small>碎片</small>
-            </div>
-            <div
-              class="res chest"
-              :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
-            >
-              <Icon name="box" :size="15" />
-              <b>{{ boxes }}</b><small>箱</small>
-              <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
-            </div>
-            <div class="res-actions">
-              <button type="button" class="ui-btn primary open-btn" :disabled="busy || !online || !boxes" @click="open(false)">
-                <Icon name="box" :size="17" />开箱<em v-if="boxes <= 1">OPEN</em>
-              </button>
-              <button v-if="boxes > 1" type="button" class="ui-btn" :disabled="busy || !online" @click="open(true)">全开</button>
-            </div>
-          </div>
+        <div class="slots">
+          <button
+            v-for="(item, n) in favorites" :key="n" type="button"
+            class="sq-slot ui-frame" :class="{ filled: !!item }"
+            :title="item ? item.name : `预设槽位 ${n + 1}`"
+            @dragover.prevent @drop.prevent="assign($event, n)"
+            @click="item && favorite(item)"
+          >
+            <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
+            <Icon v-else name="plus" :size="16" />
+          </button>
         </div>
-        <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
+
+        <div class="resources">
+          <div class="res" title="表情碎片">
+            <Icon name="shard" :size="15" />
+            <b>{{ shards }}</b><small>碎片</small>
+          </div>
+          <button type="button" class="ui-btn open" :class="{ primary: draws > 0, pulse: draws > 0 }" @click="ui.page = 'resonance'">去共鸣</button>
+        </div>
       </div>
     </section>
 
     <div class="sticky-nav">
-      <MemberStrip v-model="charFilter" />
-
-      <div class="sub-bar">
-        <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
-        <input v-model="query" class="ui-input search-input" placeholder="搜索背包…" aria-label="搜索背包" />
-      </div>
+      <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
+      <label class="search">
+        <Icon name="search" :size="14" />
+        <input v-model="query" class="ui-input" placeholder="搜索背包…" aria-label="搜索背包" />
+      </label>
     </div>
 
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <div ref="listing">
-      <section v-if="showPets" class="pet-section">
-        <div v-if="mainTab === 'all'" class="ui-label" data-rise>
-          <span>桌宠形象</span>
-          <em>CHARACTER</em>
-          <small>{{ petSkins.length }}</small>
-        </div>
-
+    <div ref="listing" class="shelves">
+      <section v-if="mainTab !== 'emote' && petSkins.length" class="shelf">
+        <h4 class="ui-label shelf-head"><span>桌宠形象</span><em>DESKTOP PET</em><small>{{ petSkins.length }}</small></h4>
         <div class="pet-grid">
           <button
             v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
-            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name }"
-            :title="`切换桌宠：${skin.name}`" data-rise
+            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name, locked: !ownsCharacter(skin.name, collection.owned) }"
+            :disabled="!ownsCharacter(skin.name, collection.owned)"
+            :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skin.name}`" data-rise
             @click="settings.character = skin.name; pokeStage()"
           >
             <span class="pet-well ui-frame ui-well">
               <PetBust class="pet-svg" :src="skin.bg" />
               <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
+              <span v-else-if="!ownsCharacter(skin.name, collection.owned)" class="tag ui-tag">未解锁</span>
             </span>
             <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
           </button>
         </div>
       </section>
 
-      <section v-if="mainTab !== 'pet'" class="emote-section">
-        <div v-if="mainTab === 'all' && showPets" class="ui-label" data-rise>
-          <span>已拥有表情</span>
-          <em>STICKER</em>
-          <small>{{ ownedEmotes.length }}</small>
-        </div>
-
+      <section v-if="mainTab !== 'pet'" class="shelf">
+        <h4 class="ui-label shelf-head"><span>表情贴纸</span><em>STICKER</em><small>{{ ownedEmotes.length }}</small></h4>
         <div class="emote-grid">
           <div
             v-for="e in ownedEmotes" :key="e.key"
-            class="emote-card ui-tile"
-            :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
-            :title="`${e.name}（${e.setName}）· 点击${settings.favorites.includes(e.key) ? '移出' : '装入'}预设`"
-            draggable="true"
-            role="button"
-            tabindex="0"
-            data-rise
+            class="emote-cell" draggable="true" data-rise
             @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
-            @click="toggleFavKey(e.key)"
           >
-            <span class="ui-frame ui-well">
-              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
-              <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
-            </span>
             <button
-              type="button"
-              class="send-mini"
-              title="立即发送该表情"
-              @click.stop="fireEmote(e.key)"
+              type="button" class="emote-card ui-tile"
+              :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
+              :title="`${e.name}（${e.setName}）`" :aria-pressed="settings.favorites.includes(e.key)"
+              @click="toggleFavKey(e.key)"
             >
+              <span class="ui-frame ui-well">
+                <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+                <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
+              </span>
+              <b class="ui-tile-name">{{ e.name }}</b>
+            </button>
+            <button type="button" class="send-mini" title="发送" :aria-label="`发送 ${e.name}`" @click="fireEmote(e.key)">
               <Icon name="spark" :size="11" />
             </button>
-            <b class="ui-tile-name">{{ e.name }}</b>
           </div>
 
           <!-- Shortcut tile to unlock/craft more emotes in Dex -->
           <button
             type="button"
             class="emote-card more-card ui-tile"
-            title="前往图鉴查看全部 375 个表情与碎片兑换"
             data-rise
             @click="ui.page = 'dex'"
           >
@@ -341,11 +296,7 @@ const tapPct = computed(() =>
       </section>
     </div>
 
-    <p v-if="!showPets && !showEmotes" class="ui-empty">
-      还没有匹配的物品，去 <button type="button" class="link-btn" @click="ui.page = 'dex'">图鉴</button> 开箱或用碎片兑换吧
-    </p>
-
-    <RevealModal v-if="drops.length" :drops="drops" @close="drops = []" />
+    <p v-if="nothingFound" class="ui-empty">没有匹配的内容</p>
   </div>
 </template>
 
@@ -361,15 +312,15 @@ const tapPct = computed(() =>
 .showcase {
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  gap: 16px;
   padding: 2px 0 12px;
 }
 
 /* The pet sits outside the clipped background so it and its emote bubble can break the frame. */
 .stage-cluster {
   position: relative;
-  width: 292px;
-  height: 170px;
+  width: 332px;
+  height: 214px;
   flex: none;
 }
 .stage {
@@ -381,25 +332,21 @@ const tapPct = computed(() =>
   position: absolute;
   inset: 0 12px;
   overflow: hidden;
-  background: var(--accent);
-  transform: skewX(var(--skew));
+  border-radius: var(--radius-l);
+  background: var(--grad-sky);
 }
 .stage-dots {
   position: absolute;
   inset: 0 -14px;
-  background: #fff;
+  background: var(--surface);
   opacity: 0.34;
-  transform: skewX(8deg);
   mask: var(--halftone) left bottom / 280px auto repeat-x;
   -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
 }
-.stage-stripe {
+.stage-light {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 26px;
-  width: 92px;
-  background: rgba(255, 255, 255, 0.2);
+  inset: 0;
+  background: radial-gradient(58% 78% at 60% 100%, rgba(255, 255, 255, 0.46), transparent 72%);
 }
 .stage-ribbon {
   position: absolute;
@@ -413,46 +360,46 @@ const tapPct = computed(() =>
     transform: translateX(112%);
   }
 }
+/* Above the stars, so an emote is never drawn under them. */
 .stage-pet {
   position: absolute;
+  z-index: 1;
   left: 50%;
-  bottom: 8px;
-  transform: translateX(-46%);
+  bottom: 0;
+  transform: translateX(-44%);
 }
 .stage-pet :deep(.art) {
   filter: var(--sticker-lg);
 }
 /* Left of the head: the emote bubble grows to the right of it. */
 .stage-name {
+  --plate-bg: var(--surface);
+  --plate-edge: 0 4px 10px -4px rgba(var(--ink-rgb), 0.34);
   position: absolute;
-  left: 58px;
+  left: 62px;
   top: 12px;
-  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 7px;
   height: 26px;
-  padding: 0 12px 0 9px;
-  font: 800 14px var(--font);
-  color: #fff;
+  padding: 0 9px;
+  border: 0;
+  background: none;
+  font: 800 var(--fs-strong) var(--font);
+  color: var(--ink);
+  cursor: pointer;
 }
-.stage-name::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--ink);
-  transform: skewX(var(--skew));
+.stage-name:hover {
+  --plate-bg: var(--accent-tint);
 }
 .stage-name i {
   width: 5px;
   height: 14px;
   background: var(--char);
-  transform: skewX(var(--skew));
 }
 .stage-deco {
   position: absolute;
-  color: #fff;
+  color: var(--on-ink);
   pointer-events: none;
 }
 .stage-deco.big {
@@ -467,7 +414,7 @@ const tapPct = computed(() =>
 .stage-deco.heart {
   left: 64px;
   top: 50px;
-  fill: #fff;
+  fill: var(--on-ink);
   transform: rotate(-12deg);
 }
 
@@ -481,10 +428,10 @@ const tapPct = computed(() =>
   box-sizing: border-box;
   border: 0;
   background: var(--surface);
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 0 3px 8px rgba(var(--ink-rgb), 0.28);
   transform: rotate(var(--rot));
   cursor: pointer;
-  transition: transform 240ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .sticker:hover {
   z-index: 3;
@@ -497,52 +444,47 @@ const tapPct = computed(() =>
   display: block;
 }
 
-.fav-panel {
+.desk {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 .fav-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  margin-top: 1px;
 }
 .fav-title {
   margin: 0;
-  font-size: 20px;
 }
 .fav-count {
-  font: italic 800 20px/1 var(--font-latin);
+  font: 800 var(--fs-section)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .fav-count small {
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-strong);
   color: var(--ink-3);
 }
 .fav-note {
-  font-size: 11px;
+  margin-left: auto;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--accent-deep);
 }
-.fav-body {
-  display: flex;
-  gap: 16px;
-  min-width: 0;
-}
 .slots {
   display: grid;
-  grid-template-columns: repeat(4, 60px);
-  gap: 8px;
-  flex: none;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
 }
 .sq-slot {
-  --cut: 9px;
-  width: 60px;
-  height: 60px;
-  padding: 7px;
+  --radius: var(--radius-s);
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 4px;
   box-sizing: border-box;
   border: 0;
   background: var(--surface);
@@ -552,7 +494,7 @@ const tapPct = computed(() =>
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 160ms, transform 220ms var(--ease-out);
+  transition: background var(--dur-fast), transform var(--dur-base) var(--ease-out);
 }
 .sq-slot:hover {
   background: var(--accent-soft);
@@ -570,84 +512,100 @@ const tapPct = computed(() =>
 }
 
 .resources {
-  flex: 1;
-  min-width: 0;
+  margin-top: auto;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
+  align-items: center;
+  gap: 16px;
 }
 .res {
+  position: relative;
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: center;
-  gap: 2px 6px;
+  gap: 2px 5px;
   color: var(--accent-deep);
 }
 .res b {
-  font: italic 800 24px/1 var(--font-latin);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
 }
 .res small {
-  font-size: 11.5px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--ink-2);
 }
+/* Out of flow, so the bar does not push this entry above its neighbours. */
 .res-bar {
-  grid-column: 1 / -1;
-  height: 5px;
-  margin-top: 3px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 4px;
+  margin-top: 2px;
 }
-.res-actions {
-  display: flex;
-  gap: 8px;
-  padding: 0 4px 3px 2px;
-}
-.res-actions .ui-btn {
-  flex: 1;
-  min-width: 0;
-  padding: 0 6px;
-}
-.open-btn em {
-  font: italic 800 14px/1 var(--font-latin);
-  letter-spacing: 0.08em;
+.open {
+  margin: 0 3px 0 auto;
+  width: 112px;
+  flex: none;
 }
 
+/* -10px cancels the scroller's top padding, which would otherwise let tiles show above the bar. */
 .sticky-nav {
   position: sticky;
-  top: 0;
+  top: -10px;
   z-index: 6;
-  background: var(--page);
-  padding: 2px 0 8px;
-}
-.sub-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  padding: 2px 0 8px;
+  background: var(--page);
 }
 .kind-tabs {
   flex: 1;
   min-width: 0;
 }
-.search-input {
+.search {
   flex: none;
-  width: 150px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--ink-3);
+}
+.search .icon {
+  position: absolute;
+  left: 9px;
+  pointer-events: none;
+}
+.search input {
+  width: 164px;
   height: 32px;
-  padding: 0 10px;
-  font-size: 12px;
+  padding: 0 10px 0 29px;
+  font-size: var(--fs-label);
 }
 
-.pet-section {
-  margin-bottom: 14px;
+.shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.shelf {
+  padding: 0 12px 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.shelf-head {
+  margin: 0 -12px 10px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
 }
 .pet-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 12px;
 }
 .pet-card {
-  --cut: 14px;
+  --radius: var(--radius-m);
   --well-ratio: 5 / 4;
 }
 .pet-well {
@@ -663,23 +621,32 @@ const tapPct = computed(() =>
   height: 100%;
   display: block;
   filter: var(--sticker);
-  transition: transform 260ms var(--ease-out);
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.pet-card:hover .pet-svg {
+.pet-card:hover:not(:disabled) .pet-svg {
   transform: scale(1.05);
+}
+.pet-card:disabled {
+  cursor: default;
+  transform: none;
+}
+.pet-card:disabled::before {
+  display: none;
+}
+.pet-card.locked .pet-svg {
+  filter: brightness(0.54);
 }
 .pet-card .ui-tile-name {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font: 800 14px var(--font);
+  font: 800 var(--fs-strong) var(--font);
 }
 .pet-card .ui-tile-name i {
   flex: none;
   width: 4px;
   height: 11px;
-  transform: skewX(var(--skew));
 }
 .tag {
   position: absolute;
@@ -687,23 +654,30 @@ const tapPct = computed(() =>
   top: 6px;
   z-index: 1;
 }
-
-.emote-section {
-  padding-bottom: 12px;
+.emote-card .tag {
+  left: 6px;
+  top: auto;
+  bottom: 5px;
 }
+
 .emote-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 12px 10px;
 }
-.emote-card.rare .ui-well {
-  background: var(--rar-rare-bg);
+.emote-cell {
+  position: relative;
+  min-width: 0;
+  display: flex;
+}
+.emote-cell .emote-card {
+  width: 100%;
 }
 .emote-card.picked .ui-well {
   background: var(--accent-soft);
 }
 .more-card .ui-well {
-  background: var(--accent);
+  background: var(--grad-main);
   color: var(--on-accent);
 }
 .send-mini {
@@ -716,30 +690,20 @@ const tapPct = computed(() =>
   padding: 0;
   border: 0;
   background: var(--ink);
-  color: #fff;
+  color: var(--on-ink);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 140ms, background 140ms;
+  transition: opacity var(--dur-fast), background var(--dur-fast);
 }
-.emote-card:hover .send-mini,
+.emote-cell:hover .send-mini,
 .send-mini:focus-visible {
   opacity: 1;
 }
 .send-mini:hover {
   background: var(--accent-deep);
-}
-
-.link-btn {
-  border: 0;
-  background: transparent;
-  color: var(--accent-deep);
-  font: inherit;
-  font-weight: 800;
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 @media (max-width: 780px) {

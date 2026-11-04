@@ -18,7 +18,7 @@ def test_fixed_time_and_new_sessions_do_not_create_rate_credit():
     game, clock = make()
     for i in range(40):
         result = game.report_activity(TOKEN, 5000, f"session-{i}", 1)
-    assert result["totals"]["taps"] == 0 and result["boxes"] == 0
+    assert result["totals"]["taps"] == 0
     clock.t += 1
     for i in range(40):
         result = game.report_activity(TOKEN, 5000, f"session-{i}", 2)
@@ -52,9 +52,8 @@ def test_replay_does_not_change_progress_even_after_restart(tmp_path):
     clock.t += 60
     replay = game.report_activity(TOKEN, 600, "session", 1)
     assert replay["totals"] == first["totals"]
-    assert replay["boxes"] == first["boxes"] == 1
-    assert replay["newBoxes"] == replay["credited"] == 0
-    assert replay["progress"] == first["progress"]
+    assert replay["totals"]["taps"] == first["totals"]["taps"] == 600
+    assert replay["credited"] == 0
     assert game.report_activity(TOKEN, 10, "session", 2)["credited"] == 10
 
 

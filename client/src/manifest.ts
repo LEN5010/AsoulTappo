@@ -4,8 +4,8 @@
 //   pack:<path>    downloaded on demand from the room server (<server>/packs/<path>)
 import raw from "./data/manifest.json";
 
-export type Rarity = "common" | "rare" | "epic" | "legendary";
-export const RARITY_ORDER: Rarity[] = ["common", "rare", "epic", "legendary"];
+export type Rarity = "common" | "uncommon" | "rare" | "epic" | "skin" | "legendary";
+export const RARITY_ORDER: Rarity[] = ["common", "uncommon", "rare", "epic", "skin", "legendary"];
 
 export interface ManifestCharacter { id: string; name: string; color: string }
 export interface ManifestCard {
@@ -65,7 +65,7 @@ export interface ManifestSeries { id: string; name: string; total: number }
 export interface Manifest {
   version: number;
   characters: ManifestCharacter[];
-  rarities: Record<Rarity, { name: string; weight: number }>;
+  rarities: Record<Exclude<Rarity, "skin">, { name: string }>;
   defaultTheme: string;
   themes: ManifestTheme[];
   series: ManifestSeries[];
@@ -74,7 +74,12 @@ export interface Manifest {
   decor: ManifestDecor[];
   accessories: ManifestAccessory[];
   starter: { emotes: string[]; theme: string };
-  economy: { dupShards: Record<Rarity, number>; craftCost: Record<Rarity, number> };
+  skins: { name: string; member: string }[];
+  economy: {
+    income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number };
+    resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number }; duplicateRefund: number };
+    craftCost: Partial<Record<Rarity, number>>;
+  };
 }
 
 export const manifest = raw as unknown as Manifest;
@@ -93,7 +98,12 @@ export const getAccessory = (id: string | null | undefined) => (id ? accessoryIn
 export const getEmoteSet = (key: string) => emoteSetIndex.get(key);
 export const getTheme = (id: string) =>
   manifest.themes.find((t) => t.id === id) ?? manifest.themes.find((t) => t.id === manifest.defaultTheme)!;
-export const characterColor = (name: string) => manifest.characters.find((c) => c.name === name)?.color ?? "#ff6b9d";
+/** Member a character or skin name belongs to: 贝拉山海经 -> 贝拉. */
+export const memberOf = (name: string) =>
+  manifest.characters.find((c) => name.startsWith(c.name))?.name ?? name;
+
+export const characterColor = (name: string) =>
+  manifest.characters.find((c) => c.name === memberOf(name))?.color ?? "#ff6b9d";
 
 /** Resolve a `bundle:` / `pack:` reference to a URL. `serverBase` has no trailing slash. */
 export function resolveAsset(ref: string | null | undefined, serverBase: string, appBase = "/"): string {

@@ -4,7 +4,7 @@ The server only needs the *metadata* (items, rarities, frames/badges); the image
 and video files are served statically from the packs directory.
 
 Collectible items have namespaced ids:
-  card:<card id>   emote:<emote key>   acc:<accessory id>   theme:<theme id>
+  card:<card id>   emote:<emote key>   char:<skin name>
 Starter items (see ``starter`` in the manifest) are owned by every player and never drop.
 """
 from __future__ import annotations
@@ -55,6 +55,8 @@ class Manifest:
         for s in self.data.get("emoteSets", []):
             for e in s["emotes"]:
                 add("emote", e["key"], s.get("rarity", "common"), e["name"])
+        for skin in self.data["skins"]:
+            add("char", skin["name"], "skin", skin["name"])
         return out
 
     @cached_property
@@ -64,21 +66,16 @@ class Manifest:
         return frozenset(i for i in ids if i in self.items)
 
     @cached_property
-    def by_rarity(self) -> dict[str, list[dict]]:
-        """Droppable items (everything except starters) grouped by rarity."""
-        out: dict[str, list[dict]] = {r: [] for r in self.data["rarities"]}
-        for item in self.items.values():
-            if item["kind"] == "emote" and item["id"] not in self.starter and item["rarity"] in out:
-                out[item["rarity"]].append(item)
-        return out
+    def skins(self) -> dict[str, dict]:
+        return {s["name"]: s for s in self.data["skins"]}
 
     @cached_property
-    def card_pools(self) -> dict[str, dict[str, list[dict]]]:
-        pools: dict[str, dict[str, list[dict]]] = {}
-        for card in self.cards.values():
-            pool = pools.setdefault(card["series"], {"big": [], "small": [], "normal": []})
-            pool[card.get("tier", "normal")].append(card)
-        return pools
+    def resonance_pool(self) -> dict[str, list[dict]]:
+        pool = {r: [] for r in self.resonance["rates"]}
+        for item in self.items.values():
+            if item["id"] not in self.starter:
+                pool[item["rarity"]].append(item)
+        return pool
 
     @cached_property
     def accessories(self) -> dict[str, dict]:
@@ -93,16 +90,16 @@ class Manifest:
         return self.data.get("defaultTheme", "")
 
     @cached_property
-    def dup_shards(self) -> dict[str, int]:
-        return dict(self.data.get("economy", {}).get("dupShards", {}))
+    def income(self) -> dict:
+        return self.data["economy"]["income"]
+
+    @cached_property
+    def resonance(self) -> dict:
+        return self.data["economy"]["resonance"]
 
     @cached_property
     def craft_cost(self) -> dict[str, int]:
         return dict(self.data.get("economy", {}).get("craftCost", {}))
-
-    @cached_property
-    def weights(self) -> dict[str, float]:
-        return {k: float(v["weight"]) for k, v in self.data["rarities"].items()}
 
     @cached_property
     def series_total(self) -> dict[str, int]:

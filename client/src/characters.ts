@@ -1,5 +1,9 @@
 // Character assets live in src/assets/characters/<name>/{bgImage,keyboardImage,mouseImage,leftClickImage,rightClickImage}.png
 // Imported from Evelynall/ASoul-Little-Bun (see assets/characters/COPYRIGHT.md).
+// A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.png
+// is required, the other layers come from the member.
+import { memberOf } from "./manifest";
+
 const files = import.meta.glob("./assets/characters/*/*.png", {
   eager: true,
   query: "?url",
@@ -23,7 +27,8 @@ function build(): Record<string, CharacterAssets> {
     (tmp[m[1]] ??= {})[m[2]] = url;
   }
   const out: Record<string, CharacterAssets> = {};
-  for (const [name, f] of Object.entries(tmp)) {
+  for (const [name, own] of Object.entries(tmp)) {
+    const f = { ...tmp[memberOf(name)], ...own };
     if (!f.bgImage || !f.keyboardImage || !f.mouseImage) continue;
     out[name] = {
       name,
@@ -43,7 +48,7 @@ export const defaultCharacter = characterNames[0] ?? "";
 
 /** Resolve a (possibly unknown, e.g. from a remote client) name to assets. */
 export function getCharacter(name: string): CharacterAssets | undefined {
-  return characters[name] ?? characters[defaultCharacter];
+  return characters[name] ?? characters[memberOf(name)] ?? characters[defaultCharacter];
 }
 
 // Layout of the layers on the 240x135 base canvas (from the original app's defaults).
@@ -66,7 +71,7 @@ const HEADS: Record<string, { x: number; y: number }> = {
   思诺: { x: 142, y: 9 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
-  return HEADS[name] ?? { x: 150, y: 10 };
+  return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };
 }
 
 /**

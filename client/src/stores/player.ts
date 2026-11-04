@@ -4,8 +4,11 @@ import {
   type Collection, type Drop, type LoadoutPatch, type PlayerStatus,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
-import { ownsEmote } from "../items";
+import { ownsCharacter, ownsEmote } from "../items";
+import { manifest, memberOf } from "../manifest";
 import { settings } from "./settings";
+import { isPanelWindow } from "../composables/tauri";
+import { requestDesktop } from "../desktop/transport";
 
 const TOKEN_KEY = "asoultappo.token.v1";
 
@@ -26,8 +29,7 @@ export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
-export const tickets = computed(() => status.value?.draw?.tickets ?? 0);
-export const presenceUpdatedAt = ref(0);
+export const draws = computed(() => Math.floor((status.value?.shards ?? 0) / manifest.economy.resonance.cost));
 const presenceSession = newToken();
 let heartbeatBusy = false;
 
@@ -40,7 +42,6 @@ export async function heartbeat(): Promise<void> {
     const result = await serial(session, () => session.api.presence(presenceSession));
     if (session === current && gen === generation) {
       status.value = result;
-      presenceUpdatedAt.value = Date.now();
       online.value = true;
       error.value = "";
     }
@@ -53,9 +54,7 @@ export async function heartbeat(): Promise<void> {
   }
 }
 
-export const boxes = computed(() => status.value?.boxes ?? 0);
 export const shards = computed(() => status.value?.shards ?? 0);
-export const unlocked = computed(() => new Set(status.value?.unlocked ?? []));
 /** Items obtained in this session that the player has not looked at yet. */
 export const freshItems = reactive(new Set<string>());
 
@@ -135,6 +134,7 @@ async function flush(session: Session): Promise<boolean> {
 }
 
 watch(() => settings.serverUrl, (url) => {
+  if (isPanelWindow) return;
   const previous = current;
   generation++;
   current = sessionFor(toHttpBase(url));
@@ -146,7 +146,6 @@ watch(() => settings.serverUrl, (url) => {
   error.value = "";
   // Each reporter keeps its original server and batch identity, including retries.
   void flush(previous);
-  presenceUpdatedAt.value = 0;
   if (timer) { void refresh(); void heartbeat(); }
 }, { flush: "sync" });
 
@@ -179,21 +178,9 @@ async function reloadCollection(): Promise<void> {
   }
 }
 
-export async function drawCards(pool: string, count = 1): Promise<Drop[] | null> {
-  const r = await call((api) => api.drawCards(pool, count));
-  if (!r) return null;
-  status.value = r;
-  for (const d of r.drops) if (d.new) freshItems.add(d.item);
-  await reloadCollection();
-  return r.drops;
-}
-
-/** Open up to `count` boxes. Pending taps are reported first so new boxes count. */
-export async function openBoxes(count = 1): Promise<Drop[] | null> {
-  const session = current;
-  const gen = generation;
-  if (!await flush(session) || session !== current || gen !== generation) return null;
-  const r = await call((api) => api.openBoxes(count));
+export async function resonate(count = 1): Promise<Drop[] | null> {
+  if (isPanelWindow) return requestDesktop("resonate", count);
+  const r = await call((api) => api.resonate(count));
   if (!r) return null;
   status.value = r;
   for (const d of r.drops) if (d.new) freshItems.add(d.item);
@@ -202,6 +189,7 @@ export async function openBoxes(count = 1): Promise<Drop[] | null> {
 }
 
 export async function craftItem(item: string): Promise<boolean> {
+  if (isPanelWindow) return requestDesktop("craftItem", item);
   const r = await call((api) => api.craft(item));
   if (!r) return false;
   status.value = r;
@@ -224,6 +212,7 @@ export function localLoadout(): LoadoutPatch {
 export function sanitizeLoadout(): void {
   if (!online.value) return;
   const owned = collection.owned;
+  if (!ownsCharacter(settings.character, owned)) settings.character = memberOf(settings.character);
   const favs = settings.favorites.filter((k) => ownsEmote(k, owned));
   if (favs.length !== settings.favorites.length) settings.favorites = favs;
 }
@@ -237,6 +226,7 @@ let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
   () => [settings.character, settings.favorites.join(",")],
   () => {
+    if (isPanelWindow) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => void pushLoadout(), 400);
   },

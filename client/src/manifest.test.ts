@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backgroundFor, buildSkin, hexToRgb, isDark } from "./skin";
+import { buildSkin } from "./skin";
 import { characterColor, getCard, getDecor, getEmote, getTheme, manifest, resolveAsset } from "./manifest";
 
 describe("resolveAsset", () => {
@@ -25,9 +25,10 @@ describe("manifest", () => {
     expect(getEmote(manifest.emoteSets[0].emotes[0].key)).toBeTruthy();
     expect(manifest.decor).toEqual([]);
     expect(manifest.accessories).toEqual([]);
-    expect(manifest.cards).toHaveLength(70);
+    expect(manifest.cards).toHaveLength(88);
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
+    expect(characterColor("贝拉山海经")).toBe(characterColor("贝拉"));
     expect(characterColor("???")).toBe("#ff6b9d");
   });
   it("default theme is fully bundled; unknown ids fall back to it", () => {
@@ -39,27 +40,31 @@ describe("manifest", () => {
   it("wire emote keys fit the server limit", () => {
     for (const s of manifest.emoteSets) for (const e of s.emotes) expect(e.key.length).toBeLessThanOrEqual(32);
   });
+  it("ships every dynamic card video as a local client asset", () => {
+    const videos = manifest.cards.flatMap((c) => c.video ? [c.video] : []);
+    expect(videos).toHaveLength(36);
+    for (const video of videos) {
+      expect(video).toMatch(/^bundle:cards\/.+\.mp4$/);
+      expect(resolveAsset(video, "http://room-server:8000")).toMatch(/^\/assets\/cards\//);
+    }
+  });
 });
 
 describe("skin", () => {
-  it("builds css vars and urls from a theme", () => {
+  it("follows the character and resolves the loading art", () => {
     const k = buildSkin(manifest.defaultTheme, "嘉然", "http://s");
-    expect(k.vars["--accent"]).toMatch(/^#/);
     expect(k.vars["--char"]).toBe("#e799b0");
-    expect(k.headBg).toMatch(/^\/assets\/themes\//);
-    expect(k.icons.main.s).toContain("main_sel");
+    expect(k.loading).toMatch(/^\/assets\/themes\//);
     const pk = buildSkin("nailin-queen", "乃琳", "http://s");
-    expect(pk.headBg).toMatch(/^http:\/\/s\/packs\/themes\/nailin-queen\//);
+    expect(pk.loading).toMatch(/^http:\/\/s\/packs\/themes\/nailin-queen\//);
   });
-  it("cycles backgrounds and copes with none", () => {
-    expect(backgroundFor({ backgrounds: ["a", "b", "c"] }, 4)).toBe("b");
-    expect(backgroundFor({ backgrounds: ["a"] }, -3)).toBe("a");
-    expect(backgroundFor({ backgrounds: [] }, 1)).toBe("");
-  });
-  it("color helpers", () => {
-    expect(hexToRgb("#ff0080")).toBe("255, 0, 128");
-    expect(hexToRgb("bad")).toBe("255, 107, 157");
-    expect(isDark("#102030")).toBe(true);
-    expect(isDark("#f0f0f0")).toBe(false);
-  });
+});
+
+it("ships manifest v4 skins for exactly the non-member character directories", () => {
+  expect(manifest.version).toBe(4);
+  const members = new Set(manifest.characters.map((m) => m.name));
+  const dirs = Object.keys(import.meta.glob("./assets/characters/*/bgImage.png"))
+    .map((path) => path.split("/")[3]!).filter((name) => !members.has(name)).sort();
+  expect(dirs).toEqual(manifest.skins.map((s) => s.name).sort());
+  expect(Object.values(manifest.rarities).every((r) => Object.keys(r).join() === "name")).toBe(true);
 });

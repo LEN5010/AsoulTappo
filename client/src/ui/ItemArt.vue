@@ -40,10 +40,13 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
 }
 .art.locked img,
 .art.locked :deep(.face) {
-  filter: saturate(0.55) contrast(0.92);
-  opacity: 0.58;
+  filter: var(--dim);
 }
-.art.emote.locked img {
-  filter: saturate(0.55) contrast(0.92) var(--contour);
+.art.locked:hover img,
+.art.locked:hover :deep(.face) {
+  filter: none;
+}
+.art.emote.locked:hover img {
+  filter: var(--contour);
 }
 </style>
