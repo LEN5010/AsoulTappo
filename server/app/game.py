@@ -24,7 +24,7 @@ TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
-DRAW_SECONDS = 15 * 60
+DRAW_SECONDS = 5 * 60
 DRAW_PITY = 400
 # emote keys every member may send besides the starter emotes: the theme like
 FREE_EMOTES = frozenset({"thumbup"})

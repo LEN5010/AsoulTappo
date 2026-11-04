@@ -104,7 +104,7 @@ const timer = setInterval(() => (clock.value = Date.now()), 1000);
 onBeforeUnmount(() => clearInterval(timer));
 const remaining = computed(() => {
   const draw = status.value?.draw;
-  if (!draw) return 900;
+  if (!draw) return 300;
   const elapsed =
     online.value && presenceUpdatedAt.value
       ? Math.min(20, Math.max(0, (clock.value - presenceUpdatedAt.value) / 1000))

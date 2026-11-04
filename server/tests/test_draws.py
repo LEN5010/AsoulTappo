@@ -20,10 +20,10 @@ def game(rng=None, path=":memory:"):
     return g, clock
 
 
-def test_idle_running_time_earns_ticket_after_exactly_fifteen_minutes():
+def test_idle_running_time_earns_ticket_after_exactly_five_minutes():
     g, clock = game()
     g.presence(TOKEN, SESSION)
-    for _ in range(44):
+    for _ in range(14):
         clock.t += 20
         g.presence(TOKEN, SESSION)
     assert g.status(TOKEN)["draw"]["tickets"] == 0
@@ -53,14 +53,14 @@ def test_tickets_have_no_inventory_cap_and_persist_after_restart(tmp_path):
     path = tmp_path / "draw.sqlite"
     g, clock = game(path=path)
     pid = player_id_for(TOKEN)
-    g.store.update_player(pid, draw_tickets=10000, draw_seconds=890, draw_pity=399)
+    g.store.update_player(pid, draw_tickets=10000, draw_seconds=290, draw_pity=399)
     g.presence(TOKEN, SESSION)
     clock.t += 20
     assert g.presence(TOKEN, SESSION)["draw"]["tickets"] == 10001
     g.store.close()
     reopened = Game(Store(str(path)), Manifest.load(), now=clock)
     assert reopened.status(TOKEN)["draw"] == {
-        "tickets": 10001, "seconds": 10, "secondsPerDraw": 900,
+        "tickets": 10001, "seconds": 10, "secondsPerDraw": 300,
         "pity": 399, "hardPity": 400, "total": 0}
 
 
