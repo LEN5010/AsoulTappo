@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// The draw view of one pool: its hidden cards on stage and the draw console below.
+// The draw view of one pool: a card on stage, every card of the pool to browse, and the draw console.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
-import { byTier, cardLabel, poolName, poolSkin, TIER_LABEL } from "../cards";
+import { byTier, cardLabel, poolName, TIER_LABEL } from "../cards";
 import type { ManifestCard, ManifestSeries } from "../manifest";
 import { collection, online, presenceUpdatedAt, status, tickets } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
@@ -11,23 +11,33 @@ import Icon from "../ui/Icon.vue";
 const props = defineProps<{ series: ManifestSeries; cards: ManifestCard[]; busy: boolean }>();
 defineEmits<{ inspect: [card: ManifestCard]; draw: [all: boolean] }>();
 
+const LINEUP_SIZE = 6;
+
 const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
-const hidden = computed(() => props.cards.filter((c) => c.tier !== "normal").sort(byTier));
+const sorted = computed(() => [...props.cards].sort(byTier));
 const owner = computed(() => (props.series.name.includes(" · ") ? props.series.name.split(" · ")[0] : "A-SOUL"));
 
 const activeId = ref("");
-watch(() => props.series.id, () => (activeId.value = hidden.value[0]?.id ?? props.cards[0]?.id ?? ""), { immediate: true });
+const page = ref(0);
+watch(
+  () => props.series.id,
+  () => {
+    activeId.value = sorted.value[0]?.id ?? "";
+    page.value = 0;
+  },
+  { immediate: true },
+);
 const active = computed(() => props.cards.find((c) => c.id === activeId.value) ?? props.cards[0]!);
-const activeOwned = computed(() => owned(active.value) > 0);
 const label = computed(() => cardLabel(active.value));
 
-const skin = computed(() => poolSkin(props.series.id));
-
-// The old pool's color slides off along the slant, uncovering the new one.
-const wipe = ref({ n: 0, color: "" });
-watch(() => props.series.id, (_, old) => {
-  if (!reducedMotion.value) wipe.value = { n: wipe.value.n + 1, color: poolSkin(old).accent };
-});
+const pageCount = computed(() => Math.ceil(sorted.value.length / LINEUP_SIZE));
+const lineup = computed(() => sorted.value.slice(page.value * LINEUP_SIZE, (page.value + 1) * LINEUP_SIZE));
+/** The side a lineup page slides in from: -1 left, 1 right. */
+const slideFrom = ref(0);
+function turn(to: number, from = Math.sign(to - page.value)) {
+  slideFrom.value = reducedMotion.value ? 0 : from;
+  page.value = (to + pageCount.value) % pageCount.value;
+}
 
 const PITY = 400;
 const pity = computed(() => status.value?.draw?.pity ?? 0);
@@ -52,54 +62,68 @@ const countdown = computed(
 <template>
   <div class="pool">
     <section class="stage ui-frame" :class="active.tier" data-rise>
-      <i class="halftone" aria-hidden="true"></i>
       <i class="stripe" aria-hidden="true"></i>
-      <div v-if="skin.mascots.length" class="mascots" aria-hidden="true">
-        <img v-for="m in skin.mascots" :key="m" :src="assetUrl(m)" alt="" draggable="false" />
-      </div>
+      <i class="band" aria-hidden="true"></i>
 
       <button type="button" class="hero" :title="active.name" @click="$emit('inspect', active)">
         <span class="hero-rays" aria-hidden="true"></span>
         <span class="hero-frame ui-frame">
           <video
-            v-if="activeOwned && active.video" :key="active.id" class="hero-media"
+            v-if="active.video && !reducedMotion" :key="active.id" class="hero-media"
             :src="assetUrl(active.video)" :poster="assetUrl(active.thumb)" autoplay loop muted playsinline
           ></video>
           <img
-            v-else class="hero-media" :class="{ locked: !activeOwned }"
-            :src="assetUrl(activeOwned ? active.full : active.thumb)" :alt="active.name" draggable="false"
+            v-else :key="active.id" class="hero-media" :src="assetUrl(active.full)"
+            :style="{ backgroundImage: `url(${assetUrl(active.thumb)})` }" :alt="active.name" draggable="false"
           />
           <i class="foil" aria-hidden="true"></i>
         </span>
       </button>
 
       <div class="info">
-        <p class="owner">{{ owner }}</p>
-        <h3>{{ poolName(series.name) }}</h3>
-
-        <div class="now">
-          <span class="ui-tag" :class="{ gold: active.tier === 'big', light: active.tier === 'small', dark: active.tier === 'normal' }">{{ TIER_LABEL[active.tier] }}</span>
-          <b>{{ label.title }}</b>
-          <small>{{ label.who }}<template v-if="activeOwned"> · ×{{ owned(active) }}</template></small>
+        <div class="title-block">
+          <p class="owner">{{ owner }}</p>
+          <h3>{{ poolName(series.name) }}</h3>
+          <div class="now">
+            <span class="ui-tag" :class="{ gold: active.tier === 'big', light: active.tier === 'small', dark: active.tier === 'normal' }">{{ TIER_LABEL[active.tier] }}</span>
+            <p>
+              <b>{{ label.title }}</b>
+              <span>{{ label.who }}<template v-if="owned(active)"> · ×{{ owned(active) }}</template></span>
+            </p>
+            <i class="rule" aria-hidden="true"></i>
+          </div>
         </div>
 
-        <div v-if="hidden.length > 1" class="lineup">
-          <button
-            v-for="c in hidden" :key="c.id" type="button"
-            class="mini ui-frame" :class="[c.tier, { on: c.id === active.id, missing: !owned(c) }]"
-            :title="c.name" :aria-pressed="c.id === active.id" @click="activeId = c.id"
-          >
-            <img :src="assetUrl(c.thumb)" :alt="c.name" draggable="false" />
+        <div class="lineup">
+          <button v-if="pageCount > 1" type="button" class="flip prev" aria-label="上一页" @click="turn(page - 1, -1)">
+            <Icon name="down" :size="20" />
           </button>
+          <div :key="page" class="row" :style="{ '--from': `${slideFrom * 20}px` }">
+            <button
+              v-for="c in lineup" :key="c.id" type="button"
+              class="mini" :class="[c.tier, { on: c.id === active.id }]"
+              :title="c.name" :aria-pressed="c.id === active.id" @click="activeId = c.id"
+            >
+              <span class="ui-frame"><img :src="assetUrl(c.thumb)" :alt="c.name" draggable="false" /></span>
+            </button>
+          </div>
+          <button v-if="pageCount > 1" type="button" class="flip next" aria-label="下一页" @click="turn(page + 1, 1)">
+            <Icon name="down" :size="20" />
+          </button>
+          <div v-if="pageCount > 1" class="dots">
+            <button
+              v-for="n in pageCount" :key="n" type="button" :class="{ on: n - 1 === page }"
+              :aria-label="`第 ${n} 页`" :aria-current="n - 1 === page ? 'page' : undefined" @click="turn(n - 1)"
+            ></button>
+          </div>
         </div>
       </div>
 
-      <i v-if="wipe.n" :key="wipe.n" class="wipe" :style="{ background: wipe.color }" aria-hidden="true"></i>
     </section>
 
     <footer class="console ui-frame ui-ring" data-rise>
       <div class="tickets">
-        <span class="tickets-icon"><Icon name="card" :size="18" /></span>
+        <span class="tickets-icon"><Icon name="card" :size="20" /></span>
         <div>
           <span class="tickets-count"><b>{{ tickets }}</b>次可抽</span>
           <small v-if="online">下一抽 {{ countdown }}</small>
@@ -113,8 +137,10 @@ const countdown = computed(
 
       <div class="actions">
         <button type="button" class="ui-btn large one" :disabled="busy || !online || !tickets" @click="$emit('draw', false)">抽一次</button>
-        <button type="button" class="ui-btn large primary" :disabled="busy || !online || !tickets" @click="$emit('draw', true)">
+        <button type="button" class="ui-btn large primary all" :disabled="busy || !online || !tickets" @click="$emit('draw', true)">
+          <Icon name="spark" :size="13" class="glint" />
           全部抽取<span v-if="tickets > 1">×{{ tickets }}</span>
+          <Icon name="spark" :size="10" class="glint" />
         </button>
       </div>
     </footer>
@@ -132,73 +158,42 @@ const countdown = computed(
 
 .stage {
   --cut: var(--cut-l);
+  --band-h: 128px;
+  --mini-w: 62px;
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 26px;
-  padding: 14px 24px 14px 20px;
+  gap: 24px;
+  padding: 14px 24px 12px 22px;
   box-sizing: border-box;
-  background: var(--accent);
-}
-.halftone {
-  position: absolute;
-  inset: auto 0 0;
-  height: 140px;
-  background: var(--surface);
-  opacity: 0.34;
-  mask: var(--halftone) left bottom / 280px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
+  background: var(--accent-mid);
 }
 .stripe {
   position: absolute;
   top: -10px;
   bottom: -10px;
-  right: 22%;
+  right: 16%;
   width: 150px;
   background: rgba(255, 255, 255, 0.2);
   transform: skewX(var(--skew));
 }
-
-.mascots {
+/* The lineup rests on this band; its slanted end disappears behind the hero. */
+.band {
   position: absolute;
-  right: 14px;
-  top: 10px;
-  z-index: 1;
-  display: flex;
-  align-items: flex-start;
-  pointer-events: none;
-}
-.mascots img {
-  width: 104px;
-  height: auto;
-  display: block;
-  filter: var(--sticker);
-  rotate: -6deg;
-}
-.mascots img + img {
-  width: 84px;
-  margin: 26px 0 0 -18px;
-  rotate: 8deg;
-}
-.wipe {
-  position: absolute;
-  inset: -2px -14%;
-  z-index: 4;
-  pointer-events: none;
-  transform: skewX(var(--skew)) translateX(112%);
-  animation: wipe var(--dur-stage) var(--ease-in-out) backwards;
-}
-@keyframes wipe {
-  from {
-    transform: skewX(var(--skew)) translateX(0);
-  }
+  left: 18%;
+  right: -40px;
+  bottom: 0;
+  height: var(--band-h);
+  background: var(--accent);
+  transform: skewX(var(--skew));
 }
 
 .hero {
   position: relative;
   z-index: 1;
   flex: none;
-  height: 100%;
+  align-self: center;
+  height: min(100%, 396px);
   aspect-ratio: 2 / 3;
   padding: 0;
   border: 0;
@@ -208,11 +203,20 @@ const countdown = computed(
   place-items: center;
   transition: transform var(--dur-slow) var(--ease-out);
 }
+/* A sheet peeking out behind the card. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 7px -9px -7px 9px;
+  background: rgba(255, 255, 255, 0.36);
+  rotate: 1.6deg;
+}
 .hero:hover {
   transform: translate(-2px, -3px);
 }
 .hero-frame {
   --cut: var(--cut-m);
+  position: relative;
   width: 100%;
   height: 100%;
   padding: 4px;
@@ -221,21 +225,14 @@ const countdown = computed(
   display: flex;
 }
 .big .hero-frame {
-  background: linear-gradient(145deg, var(--gold-soft), var(--gold));
+  background: var(--gold);
 }
 .hero-media {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  background: var(--accent-soft);
-}
-.hero-media.locked {
-  filter: grayscale(1);
-  transition: filter var(--dur-base);
-}
-.hero:hover .hero-media.locked {
-  filter: none;
+  background: var(--accent-soft) center / cover no-repeat;
 }
 .foil {
   position: absolute;
@@ -271,9 +268,6 @@ const countdown = computed(
   opacity: 1;
   animation: spin 18s linear infinite;
 }
-.hero-frame {
-  position: relative;
-}
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -287,48 +281,176 @@ const countdown = computed(
   min-width: 0;
   display: flex;
   flex-direction: column;
-  color: var(--on-accent);
+  color: var(--ink);
+}
+.title-block {
+  flex: 1;
+  min-height: 0;
+  padding-bottom: 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .owner {
-  margin: 8px 0 2px;
-  font-size: var(--fs-strong);
-  font-weight: 800;
+  margin: 0 0 2px;
+  font: italic 800 var(--fs-section)/1.1 var(--font-latin);
+  letter-spacing: 0.04em;
 }
 h3 {
   margin: 0;
   font: var(--fs-display)/1.15 var(--font-display);
+  white-space: nowrap;
 }
 .now {
-  margin-top: 16px;
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
+}
+.now .ui-tag {
+  padding: 0 11px;
+  font-size: var(--fs-label);
+  line-height: 21px;
+}
+.now p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
 }
 .now b {
   font: var(--fs-heading)/1.2 var(--font-display);
 }
-.now small {
-  font-size: var(--fs-body);
-  font-weight: 700;
-}
-.lineup {
-  margin-top: auto;
+.now p span {
   display: flex;
-  gap: 8px;
-  padding-bottom: 6px;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-strong);
+  font-weight: 800;
 }
+.now p span::before {
+  content: "";
+  width: 2px;
+  height: 15px;
+  background: var(--ink);
+  transform: skewX(var(--skew));
+}
+.rule {
+  width: 190px;
+  max-width: 100%;
+  height: 6px;
+  margin-top: 2px;
+  background: repeating-linear-gradient(98deg, var(--ink) 0 2px, transparent 2px 6px);
+}
+
+.lineup {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 4px;
+  margin-right: -14px;
+}
+.row {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, var(--mini-w)));
+  justify-content: start;
+  gap: 8px;
+  animation: lineup var(--dur-slow) var(--ease-out);
+}
+@keyframes lineup {
+  from {
+    opacity: 0;
+    transform: translateX(var(--from));
+  }
+}
+.flip {
+  width: 20px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.flip .icon {
+  stroke-width: 3;
+}
+.prev {
+  grid-column: 1;
+}
+.next {
+  grid-column: 3;
+}
+.prev .icon {
+  transform: rotate(90deg);
+}
+.next .icon {
+  transform: rotate(-90deg);
+}
+.prev:hover {
+  transform: translateX(-2px);
+}
+.next:hover {
+  transform: translateX(2px);
+}
+.dots {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 10px;
+}
+.dots button {
+  position: relative;
+  width: 8px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  background: rgba(255, 255, 255, 0.62);
+  cursor: pointer;
+  transform: skewX(var(--skew));
+  transition: width var(--dur-base) var(--ease-out), background var(--dur-fast);
+}
+.dots button::before {
+  content: "";
+  position: absolute;
+  inset: -6px -3px;
+}
+.dots .on {
+  width: 22px;
+  background: var(--surface);
+}
+
 .mini {
   --cut: var(--cut-s);
-  flex: 0 1 62px;
+  position: relative;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.mini span {
+  display: block;
   aspect-ratio: 2 / 3;
   padding: 3px;
   box-sizing: border-box;
-  border: 0;
   background: var(--surface);
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out), background var(--dur-fast);
+}
+.mini.big span {
+  background: var(--gold);
 }
 .mini img {
   width: 100%;
@@ -336,22 +458,29 @@ h3 {
   object-fit: cover;
   display: block;
 }
-.mini.missing img {
-  filter: grayscale(1);
-  transition: filter var(--dur-base);
-}
-.mini.missing:hover img {
-  filter: none;
-}
-.mini.big {
-  background: linear-gradient(145deg, var(--gold-soft), var(--gold));
-}
-.mini:hover {
-  transform: translateY(-3px);
-}
+.mini:hover,
 .mini.on {
-  background: var(--ink);
   transform: translateY(-3px);
+}
+/* Corner brackets: eight bars drawn as background layers. */
+.mini.on::after {
+  --bar: linear-gradient(var(--ink), var(--ink));
+  --long: 13px;
+  --thick: 2.5px;
+  content: "";
+  position: absolute;
+  inset: -4px;
+  pointer-events: none;
+  background:
+    var(--bar) 0 0 / var(--long) var(--thick),
+    var(--bar) 0 0 / var(--thick) var(--long),
+    var(--bar) 100% 0 / var(--long) var(--thick),
+    var(--bar) 100% 0 / var(--thick) var(--long),
+    var(--bar) 0 100% / var(--long) var(--thick),
+    var(--bar) 0 100% / var(--thick) var(--long),
+    var(--bar) 100% 100% / var(--long) var(--thick),
+    var(--bar) 100% 100% / var(--thick) var(--long);
+  background-repeat: no-repeat;
 }
 
 .console {
@@ -359,7 +488,7 @@ h3 {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 18px;
   padding: 12px 18px 12px 14px;
   background: var(--surface);
 }
@@ -370,8 +499,8 @@ h3 {
   gap: 10px;
 }
 .tickets-icon {
-  width: 38px;
-  height: 36px;
+  width: 44px;
+  height: 42px;
   background: var(--accent);
   color: var(--on-accent);
   transform: skewX(var(--skew));
@@ -392,7 +521,7 @@ h3 {
 .tickets-count b {
   margin-right: 3px;
   font: italic 800 var(--fs-title)/1 var(--font-latin);
-  color: var(--ink);
+  color: var(--accent-deep);
 }
 .tickets small {
   font-size: var(--fs-caption);
@@ -400,8 +529,10 @@ h3 {
   color: var(--ink-3);
 }
 .pity {
+  position: relative;
   flex: 1;
   min-width: 0;
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -410,8 +541,18 @@ h3 {
   color: var(--ink-2);
   white-space: nowrap;
 }
+.pity::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--line-2);
+  transform: skewX(var(--skew));
+}
 .pity b {
-  font: italic 800 var(--fs-section)/1 var(--font-latin);
+  font: italic 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .actions {
@@ -420,6 +561,9 @@ h3 {
   gap: 12px;
   padding-right: 4px;
 }
+.actions .ui-btn {
+  font: 400 var(--fs-section)/1 var(--font-display);
+}
 .actions .one {
   padding: 0 18px;
 }
@@ -427,34 +571,49 @@ h3 {
   margin-left: 2px;
   font: italic 800 var(--fs-section)/1 var(--font-latin);
 }
+.glint {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  color: var(--surface);
+  fill: currentColor;
+}
+.glint:last-child {
+  left: auto;
+  right: 9px;
+  top: auto;
+  bottom: 6px;
+}
+.all:disabled .glint {
+  display: none;
+}
 
 @container panel (max-height: 620px) {
+  .stage {
+    --band-h: 96px;
+    --mini-w: 46px;
+  }
   h3 {
     font-size: var(--fs-title);
   }
   .owner {
-    margin-top: 0;
+    font-size: var(--fs-strong);
   }
   .now {
-    margin-top: 8px;
+    margin-top: 6px;
+    gap: 5px;
   }
   .now b {
     font-size: var(--fs-section);
   }
-  .mini {
-    flex-basis: 46px;
-  }
-  .mascots img {
-    width: 84px;
-  }
-  .mascots img + img {
+  .rule {
     display: none;
+  }
+  .title-block {
+    padding-bottom: 6px;
   }
 }
 @container panel (max-height: 520px) {
-  .mascots {
-    display: none;
-  }
   .stage {
     padding: 10px 18px 10px 14px;
     gap: 16px;

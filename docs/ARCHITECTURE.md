@@ -29,9 +29,9 @@ Mouse pass-through is updated dynamically based on interactive regions:
 - `App.vue` — overlay root placing the local pet, remote room members' pets, drop toasts, and `MainPanel`.
 - `pet/` — layered pet renderer (`PetView.vue`), drag actor (`PetActor.vue`), `CounterBar.vue`, single-row `QuickEmote.vue` dock, `EmoteBubble.vue`, `ComboBubble.vue`, `ChestBubble.vue`, `DropToast.vue`, and `NamePill.vue`.
 - `panel/` — `MainPanel.vue` (sidebar, top bar, page shutter) with five pages:
-  - `EmotesPage.vue`: pet stage, 8 favorite slots, and the owned emotes and pet skins.
+  - `EmotesPage.vue`: pet stage, member cards (`MemberStrip.vue`, a toggle filter), 8 favorite slots, and shelves of pet skins and owned emotes. The open-box button only jumps to the dex, which stays the single place that opens boxes.
   - `CollectionPage.vue`: emote dex. An album wall that opens onto each album's stickers; its footer is the main way to open boxes.
-  - `CardsPage.vue`: one tab per card pool, with a draw view (`PoolStage.vue`) and an album view (`CardAlbum.vue`). Each pool wears the palette and stickers of its decoration set (`poolSkin` in `cards.ts`), applied by overriding the accent tokens on the page's subtree; the sidebar and frame keep the brand color.
+  - `CardsPage.vue`: one tab per card pool, with a draw view (`PoolStage.vue`, a card on stage plus a paged lineup of the whole pool) and an album view (`CardAlbum.vue`). Cards not owned yet are gray only in the album and the dex. Each pool wears the palette and stickers of its decoration set (`poolSkin` in `cards.ts`), applied by overriding the accent tokens on the page's subtree; the sidebar and frame keep the brand color. Custom properties resolve where they are declared, so a tinted subtree also carries `.ui-tint`, which re-declares the gradients from its own accent.
   - `OnlinePage.vue`: a live table of pets (`RoomStage.vue`), the room ticket, members and desk settings.
   - `SettingsPage.vue`.
 - `panel/RevealScene.vue` — full-panel draw and box reveal, with `CardSpotlight.vue` for the card entrances and `reveal.ts` for their order. The scene covers the panel before the request goes out, because `drawCards` and `openBoxes` update the stores as soon as the response lands.

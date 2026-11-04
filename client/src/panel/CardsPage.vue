@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import { poolName, poolSkin } from "../cards";
+import { poolName } from "../cards";
 import { manifest, type ManifestCard } from "../manifest";
 import { collection, drawCards, error, tickets } from "../stores/player";
 import FilterChips from "../ui/FilterChips.vue";
@@ -25,7 +25,6 @@ const filter = ref<AlbumFilter>("all");
 
 const series = computed(() => manifest.series.find((s) => s.id === selectedSeries.value) ?? manifest.series[0]!);
 const cards = computed(() => manifest.cards.filter((c) => c.series === selectedSeries.value));
-const skin = computed(() => poolSkin(selectedSeries.value));
 const ownedCount = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
 const haveCount = computed(() => cards.value.filter(ownedCount).length);
 
@@ -63,7 +62,7 @@ async function nextBatch() {
 </script>
 
 <template>
-  <div ref="root" class="cards-page" :style="skin.tokens">
+  <div ref="root" class="cards-page">
     <SegTabs v-model="selectedSeries" :tabs="poolTabs" :disabled="revealing" label="卡池" />
 
     <div class="head">
@@ -77,8 +76,8 @@ async function nextBatch() {
     <PoolStage v-if="view === 'pool'" :series="series" :cards="cards" :busy="revealing" @inspect="inspect" @draw="draw" />
     <CardAlbum v-else :cards="cards" :filter="filter" @inspect="inspect" />
 
-    <CardDetail v-if="detail" :card="detail" :from="detailFrom" @close="detail = null" />
-    <RevealScene v-if="revealing" kind="card" :load="nextBatch" :remaining="pending" :tint="skin.tokens" @close="revealing = false" />
+    <CardDetail v-if="detail" :card="detail" :from="detailFrom" :dimmed="view === 'album'" @close="detail = null" />
+    <RevealScene v-if="revealing" kind="card" :load="nextBatch" :remaining="pending" @close="revealing = false" />
   </div>
 </template>
 
@@ -99,13 +98,25 @@ async function nextBatch() {
 }
 .have {
   margin-left: auto;
-  font-size: var(--fs-label);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: var(--fs-body);
   font-weight: 800;
   color: var(--ink-2);
   white-space: nowrap;
 }
+.have::before {
+  content: "";
+  align-self: center;
+  width: 2px;
+  height: 14px;
+  margin-right: 5px;
+  background: var(--line-2);
+  transform: skewX(var(--skew));
+}
 .have b {
-  font: italic 800 var(--fs-section)/1 var(--font-latin);
+  font: italic 800 var(--fs-title)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 </style>

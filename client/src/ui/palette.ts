@@ -1,10 +1,10 @@
-// Derives the accent tokens of tokens.css from one color, so a subtree can wear another palette.
+// Derives the color tokens of tokens.css from one color, so the app can wear another palette.
 type Rgb = [number, number, number];
 
 const INK = "#2B2530";
 const WHITE = "#FFFFFF";
-/** --page in tokens.css: small accent text sits on it. */
-const PAGE = "#FFF4EE";
+/** --ink-3 in tokens.css: the faintest text that sits on the page. */
+const INK_3 = "#766D7C";
 const AA = 4.5;
 
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as Rgb;
@@ -41,13 +41,18 @@ function untilReadable(color: string, target: string, against: string): string {
 export function accentTokens(color: string): Record<string, string> {
   const onAccent = contrast(color, INK) >= contrast(color, WHITE) ? INK : WHITE;
   const accent = untilReadable(color, onAccent === INK ? WHITE : INK, onAccent);
+  const page = untilReadable(mix(accent, WHITE, 0.93), WHITE, INK_3);
   return {
     "--accent": accent,
     "--accent-rgb": rgb(accent).join(", "),
-    "--accent-deep": untilReadable(accent, INK, PAGE),
-    "--accent-hover": mix(accent, WHITE, 0.18),
+    "--accent-deep": untilReadable(accent, INK, page),
+    "--accent-hover": untilReadable(mix(accent, WHITE, 0.18), accent, onAccent),
+    "--accent-mid": mix(accent, WHITE, 0.45),
     "--accent-soft": mix(accent, WHITE, 0.74),
     "--accent-tint": mix(accent, WHITE, 0.9),
     "--on-accent": onAccent,
+    "--page": page,
+    "--line": mix(accent, WHITE, 0.84),
+    "--line-2": mix(accent, WHITE, 0.72),
   };
 }

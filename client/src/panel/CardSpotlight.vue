@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // One card's entrance. A normal card flips, a small hidden card cuts in over ink, a big hidden
-// card gets gold rays and a title card. `settled` holds the final frame; a video starts only there.
+// card gets gold rays and a title card. `settled` holds the final frame; a hidden card's video starts there.
 import { computed } from "vue";
 import { assetUrl } from "../asset";
 import { cardLabel, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import type { Drop } from "../net/api";
+import { reducedMotion } from "../stores/theme";
 
 const props = defineProps<{ drop: Drop; card: ManifestCard; art: string; settled: boolean }>();
 defineEmits<{ done: [] }>();
@@ -23,7 +24,7 @@ const hidden = computed(() => props.card.tier !== "normal");
       <div class="flip" @animationend.self="$emit('done')">
         <div class="art ui-frame">
           <video
-            v-if="settled && card.tier === 'big' && card.video" class="media"
+            v-if="settled && hidden && card.video && !reducedMotion" class="media"
             :src="assetUrl(card.video)" :poster="art" autoplay loop muted playsinline
           ></video>
           <img v-else class="media" :src="art" :alt="card.name" draggable="false" />
@@ -69,7 +70,7 @@ const hidden = computed(() => props.card.tier !== "normal");
 .big {
   --flip-at: 1280ms;
   --flip-ms: 640ms;
-  --frame: linear-gradient(145deg, var(--gold-soft), var(--gold));
+  --frame: var(--gold);
   background: var(--ink);
   color: var(--on-ink);
 }

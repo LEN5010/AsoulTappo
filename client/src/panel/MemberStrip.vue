@@ -1,117 +1,81 @@
 <script setup lang="ts">
-import { ref } from "vue";
+// Member cards above the backpack. A card filters to that member; picking it again clears the filter.
 import { characters } from "../characters";
 import { manifest } from "../manifest";
-import { arrowSelect } from "../ui/focus";
-import { useSlider } from "../ui/useSlider";
+import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
 const props = defineProps<{ modelValue: string }>();
-defineEmits<{ "update:modelValue": [name: string] }>();
+const emit = defineEmits<{ "update:modelValue": [name: string] }>();
 
 const EN_NAMES: Record<string, string> = { jiaran: "Diana", nailin: "Eileen", beila: "Bella", xinyi: "Fiona", sinuo: "Gladys" };
 
-const track = ref<HTMLElement>();
-const thumb = ref<HTMLElement>();
-useSlider(track, thumb, () => props.modelValue);
+const pick = (name: string) => emit("update:modelValue", props.modelValue === name ? "all" : name);
 </script>
 
 <template>
-  <div ref="track" class="strip" role="radiogroup" aria-label="按成员筛选" @keydown="arrowSelect($event, track)">
-    <i ref="thumb" class="thumb" aria-hidden="true"></i>
+  <div class="members" role="group" aria-label="按成员筛选">
     <button
-      type="button" class="all" role="radio" :aria-checked="modelValue === 'all'"
-      :class="{ on: modelValue === 'all' }" @click="$emit('update:modelValue', 'all')"
-    >
-      <b>全部</b><small>ALL</small>
-    </button>
-    <button
-      v-for="m in manifest.characters" :key="m.id" type="button" role="radio" :aria-checked="modelValue === m.name"
-      :class="{ on: modelValue === m.name }" @click="$emit('update:modelValue', m.name)"
+      v-for="m in manifest.characters" :key="m.id" type="button"
+      class="member ui-frame" :class="{ on: modelValue === m.name }"
+      :aria-pressed="modelValue === m.name" @click="pick(m.name)"
     >
       <PetBust v-if="characters[m.name]" class="bust" :src="characters[m.name]!.bg" />
-      <span class="who">
-        <b><i :style="{ background: m.color }" aria-hidden="true"></i>{{ m.name }}</b>
-        <small>{{ EN_NAMES[m.id] }}</small>
-      </span>
+      <b><i :style="{ background: m.color }" aria-hidden="true"></i>{{ m.name }}</b>
+      <small>{{ EN_NAMES[m.id] }}</small>
+      <span v-if="modelValue === m.name" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
     </button>
   </div>
 </template>
 
 <style scoped>
-.strip {
-  position: relative;
-  display: flex;
-  height: 46px;
-  padding: 0 8px;
-  background: var(--surface);
-  box-shadow: inset 0 -2px 0 var(--line-2);
+.members {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
-.thumb {
-  position: absolute;
-  left: 0;
-  top: 0;
-  opacity: 0;
-  background: var(--accent);
-  transform-origin: 0 50%;
-  will-change: transform;
-}
-button {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 6px 0 2px;
+.member {
+  --cut: var(--cut-s);
+  height: 86px;
+  padding: 3px 0 6px;
+  box-sizing: border-box;
   border: 0;
-  background: none;
-  color: var(--ink-3);
-  cursor: pointer;
-  transition: color var(--dur-base);
-}
-button + button::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 1.5px;
-  background: var(--line-2);
-  transform: skewX(var(--skew));
-}
-button.on {
-  color: var(--on-accent);
-}
-.all {
-  flex: 0 0 58px;
+  display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 0;
+  align-items: center;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.member:hover {
+  transform: translateY(-2px);
+}
+.member:focus-visible {
+  box-shadow: inset 0 0 0 2.5px var(--ink);
+}
+.member.on {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--on-accent);
 }
 .bust {
   flex: none;
-  align-self: flex-end;
-  width: 52px;
-  height: 44px;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-button:hover .bust {
-  transform: translateY(-2px);
-}
-.who {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  width: 56px;
+  height: 46px;
+  filter: var(--contour);
 }
 b {
+  margin-top: 2px;
   display: flex;
   align-items: center;
   gap: 4px;
-  font: 800 var(--fs-strong)/1 var(--font);
+  font: 800 var(--fs-strong)/1.1 var(--font);
   color: var(--ink);
+}
+.on b {
+  color: inherit;
 }
 b i {
   flex: none;
@@ -120,8 +84,19 @@ b i {
   transform: skewX(var(--skew));
 }
 small {
-  font: italic 800 var(--fs-label)/1 var(--font-latin);
+  font: italic 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.06em;
-  text-align: left;
+}
+.mark {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 20px;
+  height: 18px;
+  background: var(--ink);
+  color: var(--on-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

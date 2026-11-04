@@ -3,9 +3,8 @@ import { nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { takeFocus, trapTab } from "./focus";
 import Icon from "./Icon.vue";
 
-// `tint` carries a subtree's accent tokens across the teleport. `still` drops the sheet's slide
-// for content that animates into place on its own.
-defineProps<{ title?: string; wide?: boolean; still?: boolean; tint?: Record<string, string> }>();
+// `still` drops the sheet's slide for content that animates into place on its own.
+defineProps<{ title?: string; wide?: boolean; still?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
@@ -29,7 +28,7 @@ onDeactivated(() => emit("close"));
 
 <template>
   <Teleport defer to=".panel-overlay">
-    <div class="backdrop" :style="tint" data-overlay @click.self="emit('close')">
+    <div class="backdrop" data-overlay @click.self="emit('close')">
       <slot name="behind" />
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <div class="sheet-band" aria-hidden="true"></div>

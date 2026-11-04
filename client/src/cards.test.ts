@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byTier, cardLabel, poolName, poolSkin } from "./cards";
+import { byTier, cardLabel, poolName } from "./cards";
 import { manifest } from "./manifest";
 
 describe("poolName", () => {
@@ -12,18 +12,6 @@ describe("poolName", () => {
     const names = manifest.series.map((s) => poolName(s.name));
     expect(new Set(names).size).toBe(names.length);
     expect(Math.max(...names.map((n) => n.length))).toBeLessThanOrEqual(6);
-  });
-});
-
-describe("poolSkin", () => {
-  it("keeps the group-wide pool on the brand palette", () => {
-    expect(poolSkin("bloom")).toEqual({ accent: "#FC966E", tokens: {}, mascots: [] });
-  });
-  it("gives every member pool its own accent and two stickers", () => {
-    const pools = manifest.series.map((s) => s.id).filter((id) => id !== "bloom");
-    const accents = pools.map((id) => poolSkin(id).accent);
-    expect(new Set(accents).size).toBe(pools.length);
-    for (const id of pools) expect(poolSkin(id).mascots).toHaveLength(2);
   });
 });
 

@@ -29,6 +29,8 @@ export interface Settings {
   sidebarCollapsed: boolean;
   /** Counter bar shows today's or all-time taps. */
   tapView: "today" | "total";
+  /** Id from THEME_COLORS in stores/theme.ts. */
+  themeColor: string;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   panelY: -1,
   sidebarCollapsed: false,
   tapView: "today",
+  themeColor: "asoul",
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {

@@ -4,9 +4,13 @@ import { settings } from "../stores/settings";
 import { isTauri } from "../composables/tauri";
 import { online, status } from "../stores/player";
 import { counter } from "../stores/counter";
+import { THEME_COLORS } from "../stores/theme";
+import { arrowSelect } from "../ui/focus";
+import Icon from "../ui/Icon.vue";
 import RangeInput from "../ui/RangeInput.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
+const swatches = ref<HTMLElement>();
 const serverDraft = ref(settings.serverUrl);
 const serverError = ref("");
 watch(
@@ -46,6 +50,21 @@ function applyServer() {
           <span><b>{{ status?.totals.opened ?? "-" }}</b>已开宝箱</span>
           <span><b>{{ status ? `${status.totals.owned}/${status.totals.items}` : "-" }}</b>收集进度</span>
         </div>
+      </div>
+    </section>
+
+    <section data-rise>
+      <h4 class="ui-label"><span>主题色</span><em>THEME</em></h4>
+      <div ref="swatches" class="swatches" role="radiogroup" aria-label="主题色" @keydown="arrowSelect($event, swatches)">
+        <button
+          v-for="t in THEME_COLORS" :key="t.id" type="button" role="radio"
+          class="swatch ui-frame ui-ring" :class="{ on: settings.themeColor === t.id }"
+          :aria-checked="settings.themeColor === t.id" @click="settings.themeColor = t.id"
+        >
+          <i :style="{ background: t.color }" aria-hidden="true"></i>
+          <b>{{ t.name }}</b>
+          <span v-if="settings.themeColor === t.id" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
+        </button>
       </div>
     </section>
 
@@ -122,6 +141,54 @@ function applyServer() {
 </template>
 
 <style scoped>
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+.swatch {
+  --ring: var(--line-2);
+  height: 68px;
+  padding: 0 0 7px;
+  box-sizing: border-box;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.swatch:hover {
+  transform: translateY(-2px);
+}
+.swatch.on {
+  --ring: var(--ink);
+}
+.swatch i {
+  width: calc(100% + 16px);
+  height: 40px;
+  flex: none;
+  transform: skewX(var(--skew));
+}
+.swatch b {
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+.mark {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 20px;
+  height: 18px;
+  background: var(--ink);
+  color: var(--on-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .wide {
   width: auto;
   flex: 1;

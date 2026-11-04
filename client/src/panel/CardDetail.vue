@@ -2,17 +2,19 @@
 // Card detail: the artwork beside its facts. Videos loop muted until sound is turned on.
 import { computed, nextTick, onMounted, ref } from "vue";
 import { assetUrl } from "../asset";
-import { cardLabel, poolName, poolSkin, TIER_LABEL } from "../cards";
+import { cardLabel, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import { flyFrom } from "../ui/motion";
 
-const props = defineProps<{ card: ManifestCard; from?: DOMRect }>();
+// `dimmed` is the album's treatment of cards not owned yet; the draw view shows every card in full.
+const props = defineProps<{ card: ManifestCard; from?: DOMRect; dimmed?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
+const full = computed(() => count.value > 0 || !props.dimmed);
 const label = computed(() => cardLabel(props.card));
 const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
 
@@ -35,10 +37,10 @@ function togglePlay() {
 </script>
 
 <template>
-  <Modal :title="card.name" wide :still="!!from" :tint="poolSkin(card.series).tokens" @close="emit('close')">
+  <Modal :title="card.name" wide :still="!!from" @close="emit('close')">
     <div class="detail" :class="card.tier">
-      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal' && count > 0 }">
-        <template v-if="count">
+      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal' && full }">
+        <template v-if="full">
           <video
             v-if="card.video" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :muted="muted" autoplay loop playsinline
@@ -48,7 +50,7 @@ function togglePlay() {
         </template>
         <img v-else class="dim" :src="assetUrl(card.thumb)" :alt="card.name" />
 
-        <div v-if="count && card.video" class="controls">
+        <div v-if="full && card.video" class="controls">
           <button type="button" class="ui-slant" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
@@ -100,7 +102,7 @@ function togglePlay() {
   background: center / cover no-repeat;
 }
 .art .dim {
-  filter: grayscale(1);
+  filter: var(--dim);
   transition: filter var(--dur-base);
 }
 .art:hover .dim {

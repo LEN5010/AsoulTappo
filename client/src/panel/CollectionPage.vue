@@ -354,29 +354,29 @@ const tapPct = computed(() =>
 }
 .collage img {
   position: absolute;
-  width: 46%;
+  width: 41%;
   aspect-ratio: 1;
   max-width: none;
   max-height: none;
   margin: 0;
 }
 .collage img:nth-of-type(1) {
-  left: 5%;
-  top: 22%;
+  left: 4%;
+  top: 28%;
   rotate: -8deg;
 }
 .collage img:nth-of-type(2) {
-  left: 28%;
+  left: 30%;
   top: 8%;
   rotate: 4deg;
 }
 .collage img:nth-of-type(3) {
-  left: 51%;
-  top: 24%;
+  left: 56%;
+  top: 30%;
   rotate: 9deg;
 }
 .collage img.miss {
-  filter: grayscale(1) opacity(0.6);
+  filter: var(--dim) var(--contour);
 }
 .album:hover .collage img.miss {
   filter: var(--contour);

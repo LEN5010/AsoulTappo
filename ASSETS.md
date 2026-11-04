@@ -52,6 +52,7 @@ assets-packs/
 | `client/src/assets/fonts/BarlowCondensed-ExtraBoldItalic.woff2` | 英文与数字粗斜体 | [Barlow](https://github.com/jpt/barlow)，SIL Open Font License 1.1 |
 | `client/src/assets/patterns/halftone.svg` | 半调网点，作为 CSS 遮罩使用 | 由脚本生成 |
 | `client/src/assets/brand/asoul-logo.svg` | A-SOUL 标志的矢量描摹，作为 CSS 遮罩使用 | 版权归权利人所有，见同目录 `COPYRIGHT.md` |
+| `client/src/assets/brand/side-cat.svg` | 侧栏羊驼线稿，依参考图手绘，作为 CSS 遮罩使用 | 线稿为项目绘制，原形象版权归权利人所有 |
 
 新增界面文字后运行 `python scripts/build_ui_assets.py --noto <NotoSansSC[wght].ttf>`（需安装 fonttools 与 brotli）重新裁剪字体。未包含在子集内的字符会回退到系统字体。
 

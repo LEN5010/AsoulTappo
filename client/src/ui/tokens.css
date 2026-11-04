@@ -29,6 +29,7 @@
   /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.5:1 on --page) */
   --accent-deep: #C0461E;
   --accent-hover: #FFA883;
+  --accent-mid: #FDC5AF;
   --accent-soft: #FFE3D6;
   --accent-tint: #FFF3ED;
   --on-accent: #2B2530;
@@ -52,7 +53,7 @@
   --fs-section: 18px;
   --fs-heading: 20px;
   --fs-title: 25px;
-  --fs-display: 40px;
+  --fs-display: 46px;
   --fs-burst: 72px;
 
   --skew: -8deg;
@@ -63,7 +64,6 @@
   --drop-s: 3px 3px 0;
   --drop-m: 5px 5px 0;
   --drop-l: 8px 8px 0;
-  --grid: linear-gradient(rgba(var(--accent-rgb), 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--accent-rgb), 0.1) 1px, transparent 1px);
   --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
   --halftone: url("../assets/patterns/halftone.svg");
 
@@ -72,6 +72,8 @@
   --contour-lg: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff);
   --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
   --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
+  /* Not owned yet. Stays opaque: stickers overlap, and any transparency shows one through the other. */
+  --dim: grayscale(1) contrast(0.84) brightness(1.08);
 
   --dur-fast: 140ms;
   --dur-base: 220ms;
@@ -84,14 +86,14 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-pop: cubic-bezier(0.34, 1.8, 0.64, 1);
 
-  /* Each step up the ladder gets stronger: paper, peach, deep orange, gold. */
+  /* Each step up the ladder gets stronger: paper, soft, mid, gold. */
   --gold: #E59B35;
   --gold-rgb: 229, 155, 53;
   --gold-soft: #FFE3A6;
   --rar-common-bg: var(--surface);
-  --rar-rare-bg: linear-gradient(145deg, #FFE7DB 0%, #FFD3BF 100%);
-  --rar-epic-bg: linear-gradient(145deg, #FFC1A6 0%, #F58A5F 100%);
-  --rar-legendary-bg: linear-gradient(145deg, var(--gold-soft) 0%, var(--gold) 100%);
+  --rar-rare-bg: var(--accent-soft);
+  --rar-epic-bg: var(--accent-mid);
+  --rar-legendary-bg: var(--gold-soft);
 
   --ok: #2F9E68;
   --warn: #D98A1F;
@@ -374,7 +376,7 @@
   background: var(--accent-tint);
 }
 .ui-tile.locked .ui-well img {
-  filter: grayscale(1) opacity(0.6);
+  filter: var(--dim);
 }
 .ui-tile.locked:hover .ui-well img {
   filter: var(--contour);

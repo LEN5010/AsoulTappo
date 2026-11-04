@@ -40,7 +40,7 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
 }
 .art.locked img,
 .art.locked :deep(.face) {
-  filter: grayscale(1) opacity(0.6);
+  filter: var(--dim);
 }
 .art.locked:hover img,
 .art.locked:hover :deep(.face) {

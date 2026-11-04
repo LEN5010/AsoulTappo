@@ -113,6 +113,21 @@ onBeforeUnmount(() => observer.disconnect());
   gap: 6px;
   transition: color var(--dur-base);
 }
+.seg button + button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1.5px;
+  background: var(--line-2);
+  transform: skewX(var(--skew));
+  transition: opacity var(--dur-fast);
+}
+.seg button.on::before,
+.seg button.on + button::before {
+  opacity: 0;
+}
 .seg button:focus-visible {
   outline-offset: -4px;
 }

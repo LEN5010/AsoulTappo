@@ -133,6 +133,6 @@ defineExpose({ hold, cover, reveal, rewind });
 .title small {
   margin-top: 6px;
   font: var(--fs-title) var(--font-display);
-  color: var(--ink);
+  color: var(--on-accent);
 }
 </style>

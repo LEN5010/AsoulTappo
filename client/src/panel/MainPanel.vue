@@ -186,7 +186,7 @@ function badgeOf(id: Page): number {
       <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
 
       <aside class="side">
-        <span class="side-fill" aria-hidden="true"><i class="side-dots"></i></span>
+        <span class="side-fill" aria-hidden="true"></span>
 
         <div class="side-inner">
           <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
@@ -209,11 +209,7 @@ function badgeOf(id: Page): number {
             </button>
           </nav>
 
-          <span class="side-deco lbl" aria-hidden="true">
-            <Icon name="cat" :size="72" />
-            <Icon name="star5" :size="17" />
-            <Icon name="star5" :size="11" />
-          </span>
+          <span class="side-deco lbl" aria-hidden="true"></span>
 
           <button
             type="button" class="fold"
@@ -291,10 +287,7 @@ function badgeOf(id: Page): number {
   z-index: 0;
   display: flex;
   flex-direction: column;
-  background-color: var(--page);
-  background-image: var(--grid);
-  background-size: 24px 24px;
-  background-position: -1px -1px;
+  background: var(--page);
 }
 /* Fills the blank wedge under the sidebar's slanted edge. */
 .wedge {
@@ -441,17 +434,6 @@ function badgeOf(id: Page): number {
   background: var(--accent);
   clip-path: polygon(0 0, calc(100% - 12px) 0, calc(100% - 12px - var(--side-run)) 100%, 0 100%);
 }
-.side-dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 140px;
-  background: var(--surface);
-  opacity: 0.38;
-  mask: var(--halftone) left bottom / 280px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
-}
 .side-inner {
   position: absolute;
   inset: 0;
@@ -473,30 +455,20 @@ function badgeOf(id: Page): number {
 }
 .side-deco {
   position: absolute;
-  left: 14px;
-  bottom: 54px;
-  color: var(--on-ink);
+  left: 12px;
+  bottom: 60px;
+  width: 82px;
+  aspect-ratio: 122 / 152;
+  background: var(--on-ink);
   pointer-events: none;
+  mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
 }
-/* Below this height the cat would run into the last nav item. */
-@container panel (max-height: 540px) {
+/* Below this height the mascot would run into the last nav item. */
+@container panel (max-height: 550px) {
   .side-deco {
     display: none;
   }
-}
-.side-deco .icon:first-child {
-  stroke-width: 0.9;
-  transform: rotate(-6deg);
-}
-.side-deco .icon + .icon {
-  position: absolute;
-  left: 66px;
-  top: -8px;
-  stroke-width: 1.6;
-}
-.side-deco .icon + .icon + .icon {
-  left: 2px;
-  top: -12px;
 }
 .mini .lbl {
   opacity: 0;
@@ -574,7 +546,7 @@ nav button {
   gap: 12px;
   border: 0;
   background: none;
-  color: var(--ink);
+  color: var(--on-accent);
   cursor: pointer;
   transition: color var(--dur-base), transform var(--dur-base) var(--ease-out);
 }
@@ -634,7 +606,7 @@ nav button.on .nav-icon {
 .nav-text small {
   font: italic 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.1em;
-  color: var(--ink);
+  color: var(--on-accent);
   transition: color var(--dur-base);
 }
 nav button.on .nav-text small {
@@ -669,7 +641,7 @@ nav button.on .nav-text small {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--ink);
+  color: var(--on-accent);
   font: 800 var(--fs-strong) var(--font);
   display: flex;
   align-items: center;

@@ -81,7 +81,7 @@ const visible = computed(() =>
   filter: none;
 }
 .slot.locked .art img {
-  filter: grayscale(1) opacity(0.7);
+  filter: var(--dim);
   transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base);
 }
 .slot.locked:hover .art img {

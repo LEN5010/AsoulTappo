@@ -17,8 +17,8 @@ import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 import { rise } from "../ui/motion";
 
-type MainKind = "emote" | "pet";
-const mainTab = ref<MainKind>("emote");
+type MainKind = "all" | "emote" | "pet";
+const mainTab = ref<MainKind>("all");
 const charFilter = ref<string>("all");
 const query = ref("");
 const actionNote = ref("");
@@ -39,11 +39,12 @@ const stageStickers = computed(() =>
 );
 // Stickers run down the stage's slanted left edge.
 const STICKER_ARC = [
-  { x: 30, y: 2, rot: -9 },
-  { x: 20, y: 44, rot: 6 },
-  { x: 12, y: 86, rot: -5 },
-  { x: 2, y: 128, rot: 8 },
+  { x: 34, y: 4, rot: -9 },
+  { x: 24, y: 56, rot: 6 },
+  { x: 14, y: 108, rot: -5 },
+  { x: 4, y: 160, rot: 8 },
 ];
+const STAGE_SCALE = 1.15;
 
 function pokeStage() {
   const keys = quickKeys.value;
@@ -105,12 +106,13 @@ const totalOwnedEmotes = computed(() =>
 );
 
 const mainTabs = computed(() => [
+  { id: "all" as const, label: "全部" },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
   { id: "pet" as const, label: "桌宠", count: Object.keys(characters).length },
 ]);
 
-const nothingFound = computed(() =>
-  mainTab.value === "pet" ? !petSkins.value.length : !ownedEmotes.value.length,
+const nothingFound = computed(
+  () => !ownedEmotes.value.length && (mainTab.value === "emote" || !petSkins.value.length),
 );
 
 const favorites = computed(() => Array.from({ length: 8 }, (_, n) => getItem(`emote:${settings.favorites[n]}`)));
@@ -164,7 +166,7 @@ const tapPct = computed(() =>
           </span>
           <div class="stage-pet">
             <PetView
-              :character="settings.character" :scale="1"
+              :character="settings.character" :scale="STAGE_SCALE"
               :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
               :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
             />
@@ -191,59 +193,59 @@ const tapPct = computed(() =>
         </button>
       </div>
 
-      <div class="fav-panel" data-rise>
+      <div class="desk" data-rise>
+        <MemberStrip v-model="charFilter" />
+
         <div class="fav-head">
           <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
           <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
+          <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
         </div>
 
-        <div class="fav-body">
-          <div class="slots">
-            <button
-              v-for="(item, n) in favorites" :key="n" type="button"
-              class="sq-slot ui-frame" :class="{ filled: !!item }"
-              :title="item ? item.name : `预设槽位 ${n + 1}`"
-              @dragover.prevent @drop.prevent="assign($event, n)"
-              @click="item && favorite(item)"
-            >
-              <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
-              <Icon v-else name="plus" :size="18" />
-            </button>
-          </div>
-
-          <div class="resources">
-            <div class="res" title="表情碎片">
-              <Icon name="shard" :size="15" />
-              <b>{{ shards }}</b><small>碎片</small>
-            </div>
-            <button
-              type="button" class="res chest ui-slant" :class="{ ready: boxes > 0 }"
-              :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
-              @click="ui.page = 'dex'"
-            >
-              <Icon name="box" :size="15" />
-              <b>{{ boxes }}</b><small>箱</small>
-              <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
-            </button>
-          </div>
+        <div class="slots">
+          <button
+            v-for="(item, n) in favorites" :key="n" type="button"
+            class="sq-slot ui-frame" :class="{ filled: !!item }"
+            :title="item ? item.name : `预设槽位 ${n + 1}`"
+            @dragover.prevent @drop.prevent="assign($event, n)"
+            @click="item && favorite(item)"
+          >
+            <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
+            <Icon v-else name="plus" :size="16" />
+          </button>
         </div>
-        <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
+
+        <div class="resources">
+          <div class="res" title="表情碎片">
+            <Icon name="shard" :size="15" />
+            <b>{{ shards }}</b><small>碎片</small>
+          </div>
+          <div
+            class="res"
+            :title="`敲击 ${status?.progress.taps ?? 0}/${status?.progress.tapsPerBox ?? 600} · 活跃 ${status?.progress.minutes ?? 0}/${status?.progress.minutesPerBox ?? 10} 分钟 · 今日 ${status?.boxesToday ?? 0}/${status?.dailyCap ?? 10} 箱`"
+          >
+            <Icon name="box" :size="15" />
+            <b>{{ boxes }}</b><small>箱</small>
+            <span class="ui-bar res-bar"><i :style="{ width: `${tapPct}%` }"></i></span>
+          </div>
+          <button type="button" class="ui-btn open" :class="{ primary: boxes > 0 }" @click="ui.page = 'dex'">开箱</button>
+        </div>
       </div>
     </section>
 
     <div class="sticky-nav">
-      <MemberStrip v-model="charFilter" />
-
-      <div class="sub-bar">
-        <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
-        <input v-model="query" class="ui-input search-input" placeholder="搜索背包…" aria-label="搜索背包" />
-      </div>
+      <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
+      <label class="search">
+        <Icon name="search" :size="14" />
+        <input v-model="query" class="ui-input" placeholder="搜索背包…" aria-label="搜索背包" />
+      </label>
     </div>
 
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <div ref="listing">
-      <section v-if="mainTab === 'pet'" class="pet-section">
+    <div ref="listing" class="shelves">
+      <section v-if="mainTab !== 'emote' && petSkins.length" class="shelf">
+        <h4 class="ui-label shelf-head"><span>桌宠形象</span><em>DESKTOP PET</em><small>{{ petSkins.length }}</small></h4>
         <div class="pet-grid">
           <button
             v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
@@ -260,7 +262,8 @@ const tapPct = computed(() =>
         </div>
       </section>
 
-      <section v-else class="emote-section">
+      <section v-if="mainTab !== 'pet'" class="shelf">
+        <h4 class="ui-label shelf-head"><span>表情贴纸</span><em>STICKER</em><small>{{ ownedEmotes.length }}</small></h4>
         <div class="emote-grid">
           <div
             v-for="e in ownedEmotes" :key="e.key"
@@ -316,15 +319,15 @@ const tapPct = computed(() =>
 .showcase {
   display: flex;
   align-items: stretch;
-  gap: 18px;
+  gap: 16px;
   padding: 2px 0 12px;
 }
 
 /* The pet sits outside the clipped background so it and its emote bubble can break the frame. */
 .stage-cluster {
   position: relative;
-  width: 292px;
-  height: 170px;
+  width: 332px;
+  height: 214px;
   flex: none;
 }
 .stage {
@@ -353,7 +356,7 @@ const tapPct = computed(() =>
   top: 0;
   bottom: 0;
   right: 26px;
-  width: 92px;
+  width: 104px;
   background: rgba(255, 255, 255, 0.2);
 }
 .stage-ribbon {
@@ -368,11 +371,13 @@ const tapPct = computed(() =>
     transform: translateX(112%);
   }
 }
+/* Above the stars, so an emote is never drawn under them. */
 .stage-pet {
   position: absolute;
+  z-index: 1;
   left: 50%;
-  bottom: 8px;
-  transform: translateX(-46%);
+  bottom: 0;
+  transform: translateX(-44%);
 }
 .stage-pet :deep(.art) {
   filter: var(--sticker-lg);
@@ -381,7 +386,7 @@ const tapPct = computed(() =>
 .stage-name {
   --slant-bg: var(--ink);
   position: absolute;
-  left: 58px;
+  left: 62px;
   top: 12px;
   display: flex;
   align-items: center;
@@ -450,24 +455,24 @@ const tapPct = computed(() =>
   display: block;
 }
 
-.fav-panel {
+.desk {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 .fav-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  margin-top: 1px;
 }
 .fav-title {
   margin: 0;
-  font-size: var(--fs-heading);
 }
 .fav-count {
-  font: italic 800 var(--fs-heading)/1 var(--font-latin);
+  font: italic 800 var(--fs-section)/1 var(--font-latin);
   color: var(--accent-deep);
 }
 .fav-count small {
@@ -476,26 +481,21 @@ const tapPct = computed(() =>
   color: var(--ink-3);
 }
 .fav-note {
+  margin-left: auto;
   font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--accent-deep);
 }
-.fav-body {
-  display: flex;
-  gap: 16px;
-  min-width: 0;
-}
 .slots {
   display: grid;
-  grid-template-columns: repeat(4, 60px);
-  gap: 8px;
-  flex: none;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
 }
 .sq-slot {
   --cut: var(--cut-s);
-  width: 60px;
-  height: 60px;
-  padding: 7px;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 4px;
   box-sizing: border-box;
   border: 0;
   background: var(--surface);
@@ -523,22 +523,20 @@ const tapPct = computed(() =>
 }
 
 .resources {
-  flex: 1;
-  min-width: 0;
+  margin-top: auto;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
+  align-items: center;
+  gap: 16px;
 }
 .res {
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: center;
-  gap: 2px 6px;
+  gap: 2px 5px;
   color: var(--accent-deep);
 }
 .res b {
-  font: italic 800 var(--fs-title)/1 var(--font-latin);
+  font: italic 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
 }
 .res small {
@@ -548,42 +546,13 @@ const tapPct = computed(() =>
 }
 .res-bar {
   grid-column: 1 / -1;
-  height: 5px;
-  margin-top: 3px;
+  height: 4px;
+  margin-top: 2px;
 }
-.chest {
-  --slant-bg: var(--accent-tint);
-  --slant-edge: inset 0 0 0 1.5px var(--line);
-  width: calc(100% - 8px);
-  margin-left: 4px;
-  padding: 9px 12px 11px;
-  box-sizing: border-box;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.chest:hover {
-  --slant-bg: var(--accent-soft);
-}
-.chest.ready {
-  --slant-bg: var(--accent);
-  --slant-edge: none;
-  color: var(--on-accent);
-}
-.chest.ready:hover {
-  --slant-bg: var(--accent-hover);
-}
-.chest.ready b,
-.chest.ready small {
-  color: var(--on-accent);
-}
-.chest.ready .res-bar {
-  background: rgba(255, 255, 255, 0.34);
-}
-.chest.ready .res-bar > i {
-  background: var(--surface);
+.open {
+  margin: 0 3px 0 auto;
+  width: 112px;
+  flex: none;
 }
 
 /* -10px cancels the scroller's top padding, which would otherwise let tiles show above the bar. */
@@ -591,33 +560,55 @@ const tapPct = computed(() =>
   position: sticky;
   top: -10px;
   z-index: 6;
-  background: var(--page);
-  padding: 2px 0 8px;
-}
-.sub-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  padding: 2px 0 8px;
+  background: var(--page);
 }
 .kind-tabs {
   flex: 1;
   min-width: 0;
 }
-.search-input {
+.search {
   flex: none;
-  width: 150px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  color: var(--ink-3);
+}
+.search .icon {
+  position: absolute;
+  left: 9px;
+  pointer-events: none;
+}
+.search input {
+  width: 164px;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 10px 0 29px;
   font-size: var(--fs-label);
 }
 
-.pet-section {
-  margin-bottom: 14px;
+/* Plain edges: a chamfer here would clip-path a block as tall as the whole sticker list. */
+.shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.shelf {
+  padding: 0 12px 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.shelf-head {
+  margin: 0 -12px 10px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
 }
 .pet-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 12px;
 }
 .pet-card {
@@ -667,9 +658,6 @@ const tapPct = computed(() =>
   bottom: 5px;
 }
 
-.emote-section {
-  padding-bottom: 12px;
-}
 .emote-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));

@@ -21,7 +21,6 @@ const props = defineProps<{
   load: () => Promise<Drop[] | null>;
   /** Draws left for another round. */
   remaining?: number;
-  tint?: Record<string, string>;
 }>();
 const emit = defineEmits<{ close: [] }>();
 
@@ -159,7 +158,7 @@ const boxResults = computed(() =>
 <template>
   <Teleport defer to=".panel-overlay">
     <div
-      ref="root" class="scene" :class="phase" :style="tint" data-overlay
+      ref="root" class="scene" :class="phase" data-overlay
       role="dialog" aria-modal="true" :aria-label="kind === 'card' ? '抽卡结果' : '开箱结果'" tabindex="-1"
       @click="tap"
     >
@@ -418,7 +417,7 @@ header h3 {
 .result.big .art {
   padding: 3px;
   box-sizing: border-box;
-  background: linear-gradient(145deg, var(--gold-soft), var(--gold));
+  background: var(--gold);
 }
 .tier {
   position: absolute;
