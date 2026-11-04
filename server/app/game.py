@@ -249,7 +249,7 @@ class Game:
         """Validate the given loadout keys; raises GameError.  "" / None clear head and desk."""
         out: dict[str, Any] = {}
         if "character" in patch and patch["character"] is not None:
-            if patch["character"] not in self.manifest.character_names:
+            if not self.manifest.knows_character(patch["character"]):
                 raise GameError("bad_item", "unknown character")
             out["character"] = patch["character"]
         if "favorites" in patch and patch["favorites"] is not None:

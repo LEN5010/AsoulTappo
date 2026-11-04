@@ -8,7 +8,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 | 客户端 type | 字段 |
 |---|---|
-| join | room（1–64）、nick（1–24）、character（≤32）、token（可选） |
+| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |

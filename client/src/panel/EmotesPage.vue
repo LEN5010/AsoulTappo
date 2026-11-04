@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { characterColor, getEmote, manifest } from "../manifest";
+import { characterColor, getEmote, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -62,7 +62,7 @@ watch(() => settings.character, () => ribbon.value++);
 
 const MEMBER_ORDER = manifest.characters.map((c) => c.name);
 const skinRank = (name: string) => {
-  const idx = MEMBER_ORDER.findIndex((m) => name.startsWith(m));
+  const idx = MEMBER_ORDER.indexOf(memberOf(name));
   return idx >= 0 ? idx : 999;
 };
 
@@ -71,7 +71,7 @@ const petSkins = computed(() =>
   Object.values(characters)
     .filter(
       (c) =>
-        (charFilter.value === "all" || c.name.includes(charFilter.value)) &&
+        (charFilter.value === "all" || memberOf(c.name) === charFilter.value) &&
         (!query.value || c.name.includes(query.value)),
     )
     .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),

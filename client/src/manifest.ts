@@ -93,15 +93,12 @@ export const getAccessory = (id: string | null | undefined) => (id ? accessoryIn
 export const getEmoteSet = (key: string) => emoteSetIndex.get(key);
 export const getTheme = (id: string) =>
   manifest.themes.find((t) => t.id === id) ?? manifest.themes.find((t) => t.id === manifest.defaultTheme)!;
-/** Map an outfit name such as 贝拉神女 back to the member 贝拉. */
-export function canonicalCharacter(name: string): string {
-  const exact = manifest.characters.find((c) => c.name === name);
-  if (exact) return exact.name;
-  return manifest.characters.find((c) => name.startsWith(c.name))?.name ?? name;
-}
+/** Member a character or skin name belongs to: 贝拉山海经 -> 贝拉. */
+export const memberOf = (name: string) =>
+  manifest.characters.find((c) => name.startsWith(c.name))?.name ?? name;
 
 export const characterColor = (name: string) =>
-  manifest.characters.find((c) => c.name === canonicalCharacter(name))?.color ?? "#ff6b9d";
+  manifest.characters.find((c) => c.name === memberOf(name))?.color ?? "#ff6b9d";
 
 /** Resolve a `bundle:` / `pack:` reference to a URL. `serverBase` has no trailing slash. */
 export function resolveAsset(ref: string | null | undefined, serverBase: string, appBase = "/"): string {

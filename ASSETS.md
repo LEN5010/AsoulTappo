@@ -26,6 +26,13 @@ assets-packs/
 - `bundle:<path>` → 客户端内置资源（`assets/<path>`）
 - `pack:<path>` → 服务端托管资源（`<server>/packs/<path>`）
 
+## 桌宠皮肤
+
+在 `client/src/assets/characters/` 下新建以成员名开头的文件夹（如 `贝拉山海经/`），放入透明背景的 `bgImage.png`，构图与成员原皮保持一致。
+
+- 键盘、鼠标、点击图层可省略，缺失时沿用成员原皮；主题色、初始表情和头部位置跟随成员。
+- 皮肤随客户端发布，服务端无需更新。对方客户端没有这个皮肤时显示成员原皮。
+
 ## 构建脚本
 
 运行 `python scripts/build_assets.py [--src <原始素材目录>] [--force]`（需安装 Pillow 与 ffmpeg），可从原始素材生成压缩产物与 `manifest.json`。

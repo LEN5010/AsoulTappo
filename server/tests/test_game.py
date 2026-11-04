@@ -115,6 +115,15 @@ def test_loadout_validates_favorites_and_ignores_retired_equipment():
         assert e.value.code == code
 
 
+def test_loadout_accepts_skins_of_known_members():
+    g, _ = make()
+    assert g.set_loadout(TOKEN, {"character": "嘉然山海经", "favorites": ["e.01"]})["character"] == "嘉然山海经"
+    assert g.get_loadout(TOKEN) == {"character": "嘉然山海经", "favorites": ["e.01"]}
+    with pytest.raises(GameError) as e:
+        g.set_loadout(TOKEN, {"character": "路人山海经"})
+    assert e.value.code == "bad_item"
+
+
 def test_room_profile_and_emote_ownership():
     g, _ = make()
     a = g.profile_for(TOKEN, "r1")

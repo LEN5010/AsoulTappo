@@ -115,3 +115,7 @@ class Manifest:
     @cached_property
     def character_names(self) -> set[str]:
         return {c["name"] for c in self.data["characters"]}
+
+    def knows_character(self, name: str) -> bool:
+        """A member, or a skin named after one such as 贝拉山海经. Skins ship with the client only."""
+        return any(name.startswith(m) for m in self.character_names)
