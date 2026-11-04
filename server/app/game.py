@@ -179,7 +179,7 @@ class Game:
                 shards += gained
                 owned[item["id"]] = st.add_item(pid, item["id"], now)
                 st.log_drop(pid, item["id"], got, is_new, now)
-                since_epic, since_legend = cardlogic.next_pity(got, since_epic, since_legend)
+                since_epic, since_legend = cardlogic.next_pity(rarity, since_epic, since_legend)
                 drops.append({"item": item["id"], "rarity": got, "new": is_new,
                               "count": owned[item["id"]], "shards": gained})
             st.update_player(pid, boxes=p["boxes"] - n, opened_total=p["opened_total"] + n,

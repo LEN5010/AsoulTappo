@@ -143,6 +143,15 @@ def test_pity_counters_persist_and_reset():
     assert g.status(TOKEN)["pity"] == {"epic": 3, "legendary": 3}
 
 
+def test_pity_resets_when_the_rolled_rarity_falls_back():
+    # the manifest has no epic emote, so a forced epic roll drops a lower rarity
+    g, _ = make(DropConfig(taps_per_box=10, daily_box_cap=100, inventory_cap=100, max_taps_per_sec=10**5,
+                           max_open_batch=30), SeqRng(0.0))
+    g.report_activity(TOKEN, 300)
+    g.open_boxes(TOKEN, 30)
+    assert g.status(TOKEN)["pity"]["epic"] == 10
+
+
 def test_players_are_isolated():
     g, _ = make(DropConfig(taps_per_box=10, max_taps_per_sec=1000))
     g.report_activity(TOKEN, 50)
