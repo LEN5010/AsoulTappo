@@ -21,10 +21,21 @@ watch(
 
 <template>
   <Modal :title="special ? '抽中大隐藏！' : '抽卡结果'" wide @close="special ? spotlight++ : emit('close')">
-    <div v-if="special" class="special">
-      <span class="tag-pill">大隐藏</span>
-      <div class="special-frame">
+    <template v-if="special" #behind>
+      <i :key="spotlight" class="dots" aria-hidden="true"></i>
+    </template>
+    <template v-if="special" #front>
+      <div :key="spotlight" class="burst" aria-hidden="true">
+        <i class="flash soft"></i>
+        <i class="flash hot"></i>
+      </div>
+    </template>
+
+    <div v-if="special" :key="spotlight" class="special">
+      <span class="ui-tag dark">大隐藏</span>
+      <div class="special-frame ui-frame">
         <img class="special-card" :src="assetUrl(getCard(special.item.slice(5))!.thumb)" :alt="getCard(special.item.slice(5))!.name" />
+        <i class="foil" aria-hidden="true"></i>
       </div>
       <h3>{{ getCard(special.item.slice(5))!.name }}</h3>
       <small>{{ special.new ? "新获得！" : `已拥有 ×${special.count}` }}</small>
@@ -36,13 +47,13 @@ watch(
       <div class="results ui-scroll" :class="{ solo: cards.length === 1 }">
         <article
           v-for="(c, i) in cards" :key="i"
-          class="sq-card" :class="c.tier"
+          class="drawn" :class="c.tier"
           :style="{ animationDelay: `${Math.min(i, 9) * 55}ms` }"
         >
-          <div class="well">
+          <div class="well ui-frame">
             <img :src="assetUrl(c.card.thumb)" :alt="c.card.name" />
-            <span v-if="c.new" class="new-pill">NEW</span>
-            <i v-if="c.tier !== 'normal'" class="tier-pill">{{ c.tier === "big" ? "大隐藏" : "小隐藏" }}</i>
+            <span v-if="c.new" class="new-tag ui-tag">NEW</span>
+            <i v-if="c.tier !== 'normal'" class="tier-tag ui-tag dark">{{ c.tier === "big" ? "大隐藏" : "小隐藏" }}</i>
           </div>
           <b>{{ shortName(c.card.name) }}</b>
           <small>×{{ c.count }}</small>
@@ -61,52 +72,40 @@ watch(
 .heading {
   margin: 0 0 14px;
   text-align: center;
-  font-size: 16px;
-  font-weight: 800;
+  font: 400 21px/1.1 var(--font-display);
   color: var(--ink);
 }
 .results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 124px));
+  justify-content: center;
+  gap: 12px 10px;
   max-height: 360px;
   overflow: auto;
-  padding: 6px;
+  padding: 6px 8px 6px 2px;
 }
 .results.solo {
   display: flex;
   justify-content: center;
 }
-.sq-card {
+.drawn {
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 5px 5px 7px;
-  border-radius: 16px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 3px 0 var(--tile-lip);
   text-align: center;
-  animation: reveal 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: reveal 520ms var(--ease-out) both;
 }
-.results.solo .sq-card {
+.results.solo .drawn {
   width: 156px;
 }
-.sq-card.big {
-  border-color: var(--accent);
-  box-shadow: 0 3px 0 var(--accent-deep), 0 0 14px rgba(var(--accent-rgb), 0.5);
-}
 .well {
-  position: relative;
   width: 100%;
   aspect-ratio: 2 / 3;
-  border-radius: 11px;
-  overflow: hidden;
   background: var(--rar-rare-bg);
 }
-.sq-card.big .well,
-.sq-card.small .well {
+.drawn.big .well,
+.drawn.small .well {
   background: var(--rar-epic-bg);
 }
 .well img {
@@ -116,30 +115,17 @@ watch(
   object-position: 50% 16%;
   display: block;
 }
-.new-pill {
+.new-tag {
   position: absolute;
-  left: 4px;
-  top: 4px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 9px;
-  font-weight: 900;
+  left: 6px;
+  top: 5px;
 }
-.tier-pill {
+.tier-tag {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: rgba(255, 246, 236, 0.92);
-  color: var(--on-accent);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 800;
+  right: 12px;
+  bottom: 6px;
 }
-.sq-card b {
+.drawn b {
   display: block;
   width: 100%;
   margin-top: 6px;
@@ -149,9 +135,8 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sq-card small {
-  font-size: 10px;
-  font-weight: 700;
+.drawn small {
+  font: italic 800 13px/1 var(--font-latin);
   color: var(--ink-3);
 }
 .actions {
@@ -160,47 +145,111 @@ watch(
   margin-top: 18px;
 }
 
+/* Hidden-card reveal: two slanted bands sweep over everything and the card flips in as they clear,
+   while a ring of dots bursts out behind the sheet. */
+.burst {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.flash {
+  position: absolute;
+  top: -4%;
+  bottom: -4%;
+  left: -10%;
+  width: 120%;
+  transform: translateX(-115%) skewX(var(--skew));
+  animation: flash 1200ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.flash.soft {
+  background: var(--accent-soft);
+}
+.flash.hot {
+  background: var(--accent);
+  animation-delay: 130ms;
+}
+.dots {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 760px;
+  height: 760px;
+  margin: -380px 0 0 -380px;
+  background: radial-gradient(var(--accent) 2.4px, transparent 2.8px) 0 0 / 22px 22px;
+  mask: radial-gradient(circle, transparent 26%, #000 34%, #000 46%, transparent 64%);
+  -webkit-mask: radial-gradient(circle, transparent 26%, #000 34%, #000 46%, transparent 64%);
+  opacity: 0;
+  animation: dots 1200ms var(--ease-out) 680ms both;
+}
+@keyframes flash {
+  to {
+    transform: translateX(115%) skewX(var(--skew));
+  }
+}
+@keyframes dots {
+  from {
+    opacity: 1;
+    transform: scale(0.35);
+  }
+  60% {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
 .special {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
 }
-.tag-pill {
-  padding: 3px 12px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #FFB596, var(--accent));
-  border: 1.5px solid var(--accent-deep);
-  color: var(--on-accent);
-  font-size: 12px;
-  font-weight: 900;
-}
 .special-frame {
-  padding: 8px;
-  border-radius: 24px;
-  background: #FFF6EC;
-  border: 3px solid var(--accent);
-  box-shadow: 0 4px 0 var(--accent-deep), 0 0 24px rgba(var(--accent-rgb), 0.48);
-  animation: reveal 550ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --cut: 16px;
+  padding: 6px;
+  background: var(--accent);
+  animation: flip 800ms var(--ease-out) 640ms both;
 }
 .special-card {
   width: 168px;
-  border-radius: 16px;
   display: block;
 }
-h3 {
+.foil {
+  position: absolute;
+  inset: -10%;
+  background: linear-gradient(112deg, transparent 38%, rgba(255, 255, 255, 0.6) 48%, rgba(255, 224, 190, 0.35) 54%, transparent 64%);
+  transform: translateX(-70%);
+  animation: foil 3.6s var(--ease-in-out) 1.5s infinite;
+}
+@keyframes foil {
+  0% {
+    transform: translateX(-70%);
+  }
+  50%, 100% {
+    transform: translateX(70%);
+  }
+}
+.special h3 {
   margin: 4px 0 0;
-  font-size: 17px;
-  font-weight: 800;
+  font: 400 22px/1.1 var(--font-display);
 }
 .special small {
   color: var(--ink-2);
   font-weight: 700;
 }
+@keyframes flip {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateY(100deg) scale(0.8);
+  }
+}
 @keyframes reveal {
   from {
     opacity: 0;
-    transform: perspective(600px) rotateY(80deg) scale(0.92);
+    transform: perspective(600px) rotateY(70deg) translateY(10px);
   }
 }
 </style>

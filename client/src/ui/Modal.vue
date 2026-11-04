@@ -11,6 +11,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 
 <template>
   <div class="backdrop" @click.self="emit('close')">
+    <slot name="behind" />
     <div class="sheet ui-scroll" :class="{ wide }" role="dialog" aria-modal="true" :aria-label="title">
       <div class="sheet-band" aria-hidden="true"></div>
       <button type="button" class="x" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
@@ -18,6 +19,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <slot />
       </div>
     </div>
+    <slot name="front" />
   </div>
 </template>
 
@@ -31,6 +33,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   justify-content: center;
   padding: 20px;
   box-sizing: border-box;
+  overflow: hidden;
   background: rgba(43, 37, 48, 0.46);
   animation: fade 160ms ease-out;
 }

@@ -10,9 +10,9 @@ const LEFT = `translateX(-112%) ${SKEW}`;
 const HOME = `translateX(0) ${SKEW}`;
 const RIGHT = `translateX(112%) ${SKEW}`;
 const EASE = "cubic-bezier(0.7, 0, 0.2, 1)";
-const COVER_MS = 190;
-const REVEAL_MS = 240;
-const LAG_MS = 40;
+const COVER_MS = 255;
+const REVEAL_MS = 315;
+const LAG_MS = 52;
 
 const root = ref<HTMLElement>();
 const under = ref<HTMLElement>();
@@ -72,7 +72,6 @@ defineExpose({ hold, cover, reveal, rewind });
   <div ref="root" class="shutter" aria-hidden="true">
     <div ref="under" class="band under"></div>
     <div ref="over" class="band over">
-      <span class="dots"></span>
       <span class="title">
         <b>{{ title }}</b>
         <small>{{ label }}</small>
@@ -106,14 +105,14 @@ defineExpose({ hold, cover, reveal, rewind });
   background: var(--accent);
   overflow: hidden;
 }
-.dots {
+.over::before {
+  content: "";
   position: absolute;
-  inset: auto 0 0;
-  height: 200px;
-  background: #fff;
-  opacity: 0.42;
-  mask: var(--halftone) left bottom / 240px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 240px auto repeat-x;
+  top: 0;
+  bottom: 0;
+  right: 16%;
+  width: 22%;
+  background: rgba(255, 255, 255, 0.14);
 }
 .title {
   position: absolute;

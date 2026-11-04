@@ -10,23 +10,29 @@ defineProps<{ nick: string; width: number }>();
 
 <style scoped>
 .pill {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   min-width: 56px;
-  height: 24px;
-  margin-top: -2px;
-  padding: 0 10px;
+  height: 22px;
+  margin-top: 1px;
+  padding: 0 11px;
   box-sizing: border-box;
-  border-radius: 999px;
-  background: rgba(253, 244, 231, 0.96);
-  border: 1.5px solid var(--tile-border);
-  box-shadow: 0 2px 0 var(--tile-lip), 0 3px 8px rgba(72, 38, 20, 0.14);
   font-family: var(--font);
   font-size: 12px;
   font-weight: 800;
-  color: var(--ink);
+  color: #fff;
+}
+.pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--ink);
+  box-shadow: 3px 3px 0 var(--accent);
+  transform: skewX(var(--skew));
 }
 .pill span {
   overflow: hidden;

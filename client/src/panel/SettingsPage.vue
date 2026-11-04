@@ -33,9 +33,9 @@ function applyServer() {
 
 <template>
   <div class="settings">
-    <section>
+    <section data-rise>
       <h4 class="ui-label">个人资料</h4>
-      <div class="group">
+      <div class="group ui-frame ui-ring">
         <label class="row">
           <span>昵称</span>
           <input v-model.trim="settings.nick" class="ui-input ctl" maxlength="24" placeholder="匿名小面包" />
@@ -49,9 +49,9 @@ function applyServer() {
       </div>
     </section>
 
-    <section>
+    <section data-rise>
       <h4 class="ui-label">桌宠表现</h4>
-      <div class="group">
+      <div class="group ui-frame ui-ring">
         <label class="row">
           <span>桌宠大小</span>
           <span class="ctl">
@@ -84,9 +84,9 @@ function applyServer() {
       </div>
     </section>
 
-    <section v-if="isTauri">
+    <section v-if="isTauri" data-rise>
       <h4 class="ui-label">窗口设置</h4>
-      <div class="group">
+      <div class="group ui-frame ui-ring">
         <label class="row">
           <span>桌宠置顶</span>
           <input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" />
@@ -98,9 +98,9 @@ function applyServer() {
       </div>
     </section>
 
-    <section>
+    <section data-rise>
       <h4 class="ui-label">服务器连接</h4>
-      <div class="group">
+      <div class="group ui-frame ui-ring">
         <div class="row">
           <span class="state" :class="{ ok: online }"><i></i>{{ online ? "已连接" : "未连接" }}</span>
           <span class="ctl wide">
@@ -108,7 +108,7 @@ function applyServer() {
             <button type="button" class="ui-btn" :disabled="serverDraft === settings.serverUrl" @click="applyServer">应用</button>
           </span>
         </div>
-        <p v-if="serverError" class="err" role="alert">{{ serverError }}</p>
+        <p v-if="serverError" class="ui-error err" role="alert">{{ serverError }}</p>
         <label class="row">
           <span>敲击同步间隔</span>
           <span class="ctl">
@@ -125,14 +125,11 @@ function applyServer() {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 .group {
-  background: var(--card);
-  border: 2px solid var(--tile-border);
-  border-radius: 22px;
-  box-shadow: 0 3px 0 var(--tile-lip);
-  overflow: hidden;
+  --cut: 16px;
+  background: var(--surface);
 }
 .row {
   display: flex;
@@ -146,14 +143,14 @@ function applyServer() {
   font-weight: 700;
 }
 .group > * + * {
-  border-top: 1.5px dashed var(--line);
+  border-top: 1.5px solid var(--line);
 }
 .ctl {
   width: 280px;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 .ctl.wide {
   width: auto;
@@ -167,10 +164,8 @@ function applyServer() {
   width: 52px;
   flex: none;
   text-align: right;
-  font-size: 12px;
-  font-weight: 800;
+  font: italic 800 16px/1 var(--font-latin);
   color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
 }
 .stats {
   display: grid;
@@ -180,19 +175,17 @@ function applyServer() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 18px;
+  padding: 10px 18px 12px;
   font-size: 12px;
   font-weight: 700;
   color: var(--ink-3);
 }
 .stats span + span {
-  border-left: 1.5px dashed var(--line);
+  border-left: 1.5px solid var(--line);
 }
 .stats b {
-  font-size: 18px;
-  font-weight: 900;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
+  font: italic 800 30px/1 var(--font-latin);
+  color: var(--accent-deep);
 }
 .state {
   display: inline-flex;
@@ -202,20 +195,16 @@ function applyServer() {
   font-weight: 800;
 }
 .state i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+  width: 8px;
+  height: 14px;
   background: var(--ink-3);
+  transform: skewX(var(--skew));
 }
 .state.ok i {
   background: var(--ok);
-  box-shadow: 0 0 0 3px rgba(70, 168, 114, 0.2);
 }
 .err {
   margin: 0;
   padding: 8px 18px;
-  color: var(--bad);
-  font-size: 12px;
-  font-weight: 700;
 }
 </style>

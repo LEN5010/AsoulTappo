@@ -27,10 +27,12 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
 ];
 const BACK_OFFSET = 6;
 const NAV_STEP = 54;
-/** How far the collapsed sidebar slides under the panel edge (see .side.mini). */
-const SIDE_TRAVEL = 60;
-/** The new page starts rising once the bands begin to leave. */
-const RISE_DELAY_MS = 90;
+/** How far the collapsed sidebar slides under the panel edge. */
+const SIDE_TRAVEL = 44;
+/** Time the covered shutter stays up so its title can be read; a slow mount eats into it. */
+const DWELL_MS = 180;
+/** The new page starts rising once the bands are on their way out. */
+const RISE_DELAY_MS = 150;
 
 const size = computed(() => ({ w: Math.min(980, viewport.value.w - 20), h: Math.min(700, viewport.value.h - 20) }));
 const pos = computed(() =>
@@ -79,11 +81,15 @@ const shutter = ref<InstanceType<typeof PageShutter>>();
 const body = ref<HTMLElement>();
 let turning = false;
 
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function settle() {
   for (;;) {
+    const covered = performance.now();
     shown.value = ui.page;
     await nextTick();
     await nextFrame();
+    await pause(DWELL_MS - (performance.now() - covered));
     rise(body.value, body.value, RISE_DELAY_MS);
     if (!(await shutter.value?.reveal())) return;
   }
@@ -144,7 +150,7 @@ function badgeOf(id: Page): number {
     class="panel" data-hit role="dialog" aria-label="AsoulTappo 面板"
     :style="{
       ...skinVars, width: `${size.w}px`, height: `${size.h}px`, left: `${(live ?? pos).x}px`, top: `${(live ?? pos).y}px`,
-      '--back': `${BACK_OFFSET}px`, '--side-run': `${(size.h - BACK_OFFSET) * SLANT}px`,
+      '--back': `${BACK_OFFSET}px`, '--side-run': `${(size.h - BACK_OFFSET) * SLANT}px`, '--side-travel': `${SIDE_TRAVEL}px`,
     }"
   >
     <span class="glow" aria-hidden="true"></span>
@@ -192,7 +198,7 @@ function badgeOf(id: Page): number {
               :aria-current="ui.page === n.id ? 'page' : undefined"
               @click="ui.page = n.id"
             >
-              <Icon :name="n.icon" :size="21" />
+              <span class="nav-icon"><Icon :name="n.icon" :size="20" /></span>
               <span class="lbl nav-text"><b>{{ n.label }}</b><small>{{ n.en }}</small></span>
               <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
             </button>
@@ -293,7 +299,7 @@ function badgeOf(id: Page): number {
   transition: left 340ms var(--ease-out);
 }
 .mini .ghost {
-  left: 108px;
+  left: calc(168px - var(--side-travel));
 }
 
 .topbar {
@@ -359,7 +365,7 @@ function badgeOf(id: Page): number {
 }
 .mini .body,
 .mini .topbar {
-  margin-left: calc(var(--side-w) - 60px);
+  margin-left: calc(var(--side-w) - var(--side-travel));
 }
 .form-page {
   height: 100%;
@@ -393,11 +399,11 @@ function badgeOf(id: Page): number {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 200px;
+  height: 140px;
   background: #fff;
-  opacity: 0.46;
-  mask: var(--halftone) left bottom / 240px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 240px auto repeat-x;
+  opacity: 0.38;
+  mask: var(--halftone) left bottom / 280px auto repeat-x;
+  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
 }
 .side-inner {
   position: absolute;
@@ -410,10 +416,10 @@ function badgeOf(id: Page): number {
 }
 /* Collapsing only moves layers: the orange edge slides left while the icons hold still. */
 .mini .side {
-  transform: translateX(-60px);
+  transform: translateX(calc(var(--side-travel) * -1));
 }
 .mini .side-inner {
-  transform: translateX(60px);
+  transform: translateX(var(--side-travel));
 }
 .lbl {
   transition: opacity 180ms;
@@ -444,7 +450,7 @@ function badgeOf(id: Page): number {
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
 .mini .logo-mark {
-  transform: scale(0.56);
+  transform: translateX(-6px) scale(0.78);
 }
 .logo-word {
   position: absolute;
@@ -499,7 +505,7 @@ nav button {
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   border: 0;
   background: none;
   color: var(--ink);
@@ -509,8 +515,39 @@ nav button {
 nav button:hover:not(.on) {
   transform: translateX(4px);
 }
+.nav-icon {
+  flex: none;
+  width: 38px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--accent-deep);
+  transform: skewX(var(--skew));
+  transform-origin: 0 50%;
+  transition: background 200ms, color 200ms, transform 340ms var(--ease-out);
+}
+.nav-icon .icon {
+  stroke-width: 2.4;
+  transform: skewX(calc(var(--skew) * -1));
+}
+.mini .nav-icon {
+  transform: skewX(var(--skew)) scale(1.16);
+}
+.fold .icon {
+  transform-origin: 0 50%;
+  transition: transform 340ms var(--ease-out);
+}
+.mini .fold .icon {
+  transform: scale(1.3);
+}
 nav button.on {
   color: var(--accent-deep);
+}
+nav button.on .nav-icon {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .nav-text {
   display: flex;
@@ -519,34 +556,37 @@ nav button.on {
   gap: 1px;
 }
 .nav-text b {
-  font: 18px/1 var(--font-display);
+  font: 20px/1 var(--font-display);
 }
 .nav-text small {
   font: italic 800 10.5px/1 var(--font-latin);
   letter-spacing: 0.1em;
-  opacity: 0.72;
+  color: #fff;
+  transition: color 200ms;
 }
+nav button.on .nav-text small {
+  color: inherit;
+}
+/* Pinned to the icon tile: the slanted edge leaves no room beside the longer labels. */
 .pip {
   position: absolute;
-  left: 132px;
-  top: 12px;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 5px;
+  left: 44px;
+  top: 0;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 4px;
   box-sizing: border-box;
   background: var(--ink);
   color: #fff;
-  font: italic 800 14px/20px var(--font-latin);
+  font: italic 800 13px/18px var(--font-latin);
   text-align: center;
   transform: skewX(var(--skew));
 }
 .pip.soft {
-  background: var(--surface);
-  color: var(--accent-deep);
+  background: var(--accent-deep);
 }
 .mini .pip {
-  left: 30px;
-  top: 2px;
+  left: 50px;
 }
 
 .fold {
@@ -569,6 +609,6 @@ nav button.on {
 }
 /* the slanted edge is narrowest down here, so the hit area must shrink to the icon */
 .mini .fold {
-  width: 24px;
+  width: 30px;
 }
 </style>

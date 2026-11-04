@@ -160,7 +160,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, toasts.value.length, boxes.value], kick
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel"
       >
-        <button v-if="tickets > 0" class="ticket-bubble" data-hit data-no-drag @click="openPanel('cards')">抽卡 ×{{ tickets }}</button>
+        <button v-if="tickets > 0" class="ticket-bubble ui-btn small primary" data-hit data-no-drag @click="openPanel('cards')">抽卡 ×{{ tickets }}</button>
         <ChestBubble v-if="boxes > 0" :count="boxes" :busy="opening" @open="openChest" />
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
@@ -189,19 +189,7 @@ html.browser-preview body {
 .ticket-bubble {
   position: absolute;
   left: 4px;
-  bottom: calc(100% + 6px);
-  border: 2px solid var(--accent-deep);
-  border-radius: 999px;
-  background: linear-gradient(180deg, #FFB596, var(--accent));
-  box-shadow: 0 2.5px 0 var(--accent-deep);
-  color: var(--on-accent);
-  padding: 4px 12px;
-  font: 800 12px var(--font);
-  cursor: pointer;
-  transition: transform 120ms;
-}
-.ticket-bubble:hover {
-  transform: translateY(-2px);
+  bottom: calc(100% + 8px);
 }
 .desk { position: fixed; inset: 0; pointer-events: none; }
 .desk > :deep(*) { pointer-events: auto; }

@@ -4,10 +4,7 @@ import { computed } from "vue";
 import { FACE_CROP, getCharacter, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 
-const props = withDefaults(defineProps<{ character: string; size?: number; round?: boolean }>(), {
-  size: 40,
-  round: true,
-});
+const props = withDefaults(defineProps<{ character: string; size?: number }>(), { size: 40 });
 const bg = computed(() => getCharacter(props.character)?.bg ?? "");
 const tint = computed(() => `${characterColor(props.character)}28`);
 </script>
@@ -18,7 +15,6 @@ const tint = computed(() => `${characterColor(props.character)}28`);
     :style="{
       width: `${size}px`,
       height: `${size}px`,
-      borderRadius: round ? '50%' : '14%',
       backgroundColor: tint,
     }"
   >

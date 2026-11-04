@@ -11,7 +11,7 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
 
 <template>
   <span class="art" :class="[item.kind, { locked }]" :style="{ width: `${size}px`, height: `${size}px` }">
-    <CharacterAvatar v-if="item.kind === 'character'" :character="item.ref" :size="size * 0.92" :round="false" />
+    <CharacterAvatar v-if="item.kind === 'character'" :character="item.ref" :size="size * 0.92" />
     <img
       v-else :src="src" :alt="item.name" loading="lazy" draggable="false"
       :style="{ objectFit: fit }"
@@ -25,7 +25,6 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
   place-items: center;
   overflow: hidden;
   flex: none;
-  border-radius: 14px;
 }
 .art img {
   width: 100%;
@@ -35,14 +34,16 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
 }
 .art.card img {
   object-position: 50% 18%;
-  border-radius: 14px;
 }
-.art.theme img {
-  border-radius: 14px;
+.art.emote img {
+  filter: var(--contour);
 }
 .art.locked img,
 .art.locked :deep(.face) {
   filter: saturate(0.55) contrast(0.92);
   opacity: 0.58;
+}
+.art.emote.locked img {
+  filter: saturate(0.55) contrast(0.92) var(--contour);
 }
 </style>

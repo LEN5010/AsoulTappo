@@ -93,24 +93,22 @@ function onWheel(e: WheelEvent) {
 </template>
 
 <style scoped>
-/* Single-row emote dock centered directly beneath the CounterBar — never clips tiles in half */
+/* Single-row dock under the counter bar; tiles are never clipped in half */
 .dock {
   position: absolute;
   left: 50%;
-  top: calc(100% + 6px);
+  top: calc(100% + 10px);
   transform: translateX(-50%);
   z-index: 20;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 6px 8px;
+  gap: 6px;
+  padding: 7px 8px;
   box-sizing: border-box;
-  border-radius: 20px;
-  background: rgba(253, 244, 231, 0.98);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 3px 0 var(--tile-lip), 0 8px 20px rgba(72, 38, 20, 0.18);
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--accent), 0 8px 20px rgba(43, 37, 48, 0.2);
   font-family: var(--font);
-  animation: drop-in 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: drop-in 260ms var(--ease-out);
   cursor: default;
 }
 .row {
@@ -130,32 +128,27 @@ function onWheel(e: WheelEvent) {
   padding: 5px;
   margin: 0;
   box-sizing: border-box;
-  border-radius: 14px;
-  border: 1.5px solid var(--tile-border);
-  background: linear-gradient(145deg, #FFF9F2 0%, #F6E6D4 100%);
-  box-shadow: 0 2px 0 var(--tile-lip);
+  border: 0;
+  background: var(--accent-tint);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  transition: transform 120ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 120ms, background 120ms;
+  transition: transform 200ms var(--ease-out), background 140ms;
 }
 .dock.compact .emo {
   width: 41px;
   height: 41px;
   flex: 0 0 41px;
   padding: 4px;
-  border-radius: 12px;
 }
 .emo:hover {
-  background: #FFF3E6;
-  border-color: var(--accent);
-  transform: translateY(-2px);
+  background: var(--accent-soft);
+  transform: translate(-1px, -2px);
 }
 .emo:active {
-  transform: translateY(1px);
-  box-shadow: 0 1px 0 var(--tile-lip);
+  transform: translate(1px, 1px);
 }
 .emo img {
   max-width: 34px;
@@ -165,6 +158,7 @@ function onWheel(e: WheelEvent) {
   object-fit: contain;
   display: block;
   margin: auto;
+  filter: var(--sticker);
 }
 .dock.compact .emo img {
   max-width: 30px;
@@ -172,30 +166,24 @@ function onWheel(e: WheelEvent) {
 }
 
 .nav-arrow {
-  width: 22px;
+  width: 20px;
   height: 36px;
-  flex: 0 0 22px;
+  flex: 0 0 20px;
   padding: 0;
   margin: 0;
   box-sizing: border-box;
-  border-radius: 10px;
-  border: 1.5px solid var(--tile-border);
-  background: #F7E8D6;
-  color: var(--ink-2);
-  box-shadow: 0 2px 0 var(--tile-lip);
+  border: 0;
+  background: var(--accent-tint);
+  color: var(--ink);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 120ms, color 120ms, transform 100ms;
+  transform: skewX(var(--skew));
+  transition: background 140ms;
 }
 .nav-arrow:hover:not(:disabled) {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-.nav-arrow:active:not(:disabled) {
-  transform: translateY(1px);
+  background: var(--accent);
 }
 .nav-arrow:disabled {
   opacity: 0.35;
@@ -205,7 +193,7 @@ function onWheel(e: WheelEvent) {
 @keyframes drop-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-6px) scale(0.94);
+    transform: translate(calc(-50% - 10px), -8px);
   }
 }
 </style>

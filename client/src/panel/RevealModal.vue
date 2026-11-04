@@ -18,11 +18,10 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
     <div class="grid" :class="{ one: list.length === 1 }">
       <div
         v-for="x in list" :key="x.i"
-        class="sq-slot" :class="`r-${x.d.rarity}`"
+        class="drop" :class="`r-${x.d.rarity}`"
         :style="{ animationDelay: `${x.i * 90}ms` }"
       >
-        <span class="well">
-          <span class="rays" aria-hidden="true"></span>
+        <span class="well ui-frame">
           <ItemArt :item="x.item!" :size="list.length === 1 ? 124 : 64" />
         </span>
         <b class="label">{{ dropLabel(x.item!, x.d.new) }}</b>
@@ -39,72 +38,49 @@ const shardsTotal = computed(() => props.drops.reduce((n, d) => n + d.shards, 0)
 .title {
   margin: 0 0 14px;
   text-align: center;
-  font-size: 16px;
-  font-weight: 800;
+  font: 400 21px/1.1 var(--font-display);
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 124px));
+  justify-content: center;
+  gap: 12px 10px;
 }
 .grid.one {
   grid-template-columns: 1fr;
   justify-items: center;
 }
-.sq-slot {
+.drop {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 6px 6px 8px;
-  border-radius: 18px;
-  background: var(--tile-frame);
-  border: 2px solid var(--tile-border);
-  box-shadow: 0 3px 0 var(--tile-lip);
+  gap: 2px;
   text-align: center;
-  animation: flip 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: drop-in 460ms var(--ease-out) both;
 }
-.grid.one .sq-slot {
+.grid.one .drop {
   width: 176px;
 }
 .well {
-  position: relative;
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 13px;
-  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 10px, transparent 10px 22px),
-    var(--rar-common-bg);
-}
-.rays {
-  position: absolute;
-  inset: -35%;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    rgba(255, 224, 182, 0) 0deg 12deg,
-    rgba(255, 236, 206, 0.55) 12deg 24deg,
-    rgba(255, 224, 182, 0) 24deg 36deg
-  );
-  animation: ray-spin 9s linear infinite;
-  pointer-events: none;
-}
-@keyframes ray-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  background: var(--dots) 0 0 / 9px 9px, var(--rar-common-bg);
 }
 .r-rare .well {
-  background:
-    repeating-linear-gradient(-35deg, rgba(255, 255, 255, 0.22) 0 10px, transparent 10px 22px),
-    var(--rar-rare-bg);
+  background: var(--rar-rare-bg);
+}
+.r-epic .well {
+  background: var(--rar-epic-bg);
+}
+.r-legendary .well {
+  background: var(--rar-legendary-bg);
 }
 .label {
-  margin-top: 4px;
+  margin-top: 5px;
   font-size: 11px;
   font-weight: 800;
   color: var(--accent-deep);
@@ -133,10 +109,10 @@ small {
   justify-content: center;
   margin-top: 16px;
 }
-@keyframes flip {
+@keyframes drop-in {
   from {
     opacity: 0;
-    transform: perspective(600px) rotateY(80deg) scale(0.92);
+    transform: translate(-14px, 20px);
   }
 }
 </style>

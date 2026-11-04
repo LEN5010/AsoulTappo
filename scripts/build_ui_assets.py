@@ -54,13 +54,16 @@ def subset_font(src: Path) -> None:
     print(f"{FONT_OUT.relative_to(ROOT)}: {FONT_OUT.stat().st_size / 1024:.0f} KB")
 
 
-def halftone(cols: int = 28, rows: int = 24, pitch: float = 10.0, max_r: float = 4.6) -> None:
-    """Staggered dots growing toward the bottom edge; used as a CSS mask, so any color works."""
+def halftone(cols: int = 20, rows: int = 10, pitch: float = 14.0, max_r: float = 2.4) -> None:
+    """Sparse staggered dots growing toward the bottom edge; used as a CSS mask, so any color works.
+
+    Keep the gaps around three dot diameters: tight clusters of round dots read as trypophobic.
+    """
     HALFTONE_OUT.parent.mkdir(parents=True, exist_ok=True)
     width, height = cols * pitch, rows * pitch
     parts = []
     for row in range(rows):
-        radius = round(max_r * ((row + 1) / rows) ** 1.5, 2)
+        radius = round(max_r * ((row + 1) / rows) ** 1.2, 2)
         if radius < 0.25:
             continue
         y = (row + 0.5) * pitch

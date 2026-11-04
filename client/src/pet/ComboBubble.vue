@@ -18,8 +18,8 @@ defineProps<{ frame: ComboFrame | null; x: number; y: number; size: number }>();
 .anchor { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 4; }
 .combo { position: absolute; left: 0; bottom: 0; transform: translateX(-50%); white-space: nowrap; }
 .num {
-  display: inline-block; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--accent, #e799b0);
-  -webkit-text-stroke: 4px #fff; paint-order: stroke fill; text-shadow: 0 2px 6px rgba(50, 20, 30, 0.25);
+  display: inline-block; font-family: var(--font-latin); font-style: italic; font-weight: 800; color: var(--accent);
+  -webkit-text-stroke: 4px #fff; paint-order: stroke fill; text-shadow: 0 2px 6px rgba(43, 37, 48, 0.25);
   animation: beat 220ms cubic-bezier(0.34, 1.8, 0.64, 1);
 }
 .combo-enter-active { transition: opacity 120ms, transform 120ms; }
