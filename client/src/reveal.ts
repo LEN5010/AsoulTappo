@@ -42,11 +42,20 @@ export function spotlightQueue<T extends Revealed>(drops: readonly T[]): T[] {
 
 export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1;
 
-/** Fast-forward ordinary results; hidden cards and skins keep their reveal. */
+/** Hidden cards and skins always reveal; first-time animated cards and rare emotes also reveal. */
+export function isRevealHighlight(drop: Revealed): boolean {
+  if (drop.rarity === "skin" || drop.tier === "big" || drop.tier === "small" || drop.rarity === "legendary") return true;
+  if (!drop.new) return false;
+  // Non-hidden epic cards are the catalog's cards with bundled videos.
+  if (drop.item.startsWith("card:")) return drop.rarity === "epic";
+  return drop.item.startsWith("emote:") && ["rare", "epic", "legendary"].includes(drop.rarity);
+}
+
+/** Fast-forward to the next result whose reveal should be watched. */
 export function nextRevealIndex(drops: readonly Revealed[], start: number, highlightsOnly: boolean): number {
   for (let i = start; i < drops.length; i++) {
     const drop = drops[i]!;
-    if (!highlightsOnly || drop.rarity === "skin" || drop.tier === "big" || drop.tier === "small" || drop.rarity === "legendary") return i;
+    if (!highlightsOnly || isRevealHighlight(drop)) return i;
   }
   return -1;
 }
