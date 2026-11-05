@@ -39,14 +39,13 @@ const item = computed(() => getItem(props.drop.item)!);
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--grad-sky);
-  color: var(--ink);
+  background: var(--stage-dark);
+  color: var(--on-ink);
 }
 .halo {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 35% 50%, var(--surface), transparent 65%);
-  opacity: 0.65;
+  background: radial-gradient(ellipse at 35% 50%, rgba(var(--accent-rgb), 0.44), transparent 65%);
 }
 .row {
   position: relative;
@@ -111,7 +110,7 @@ p {
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: var(--ink-2);
+  color: rgba(255, 255, 255, 0.78);
   font-size: var(--fs-body);
 }
 p i { width: 5px; height: 14px; flex: none; }
@@ -119,7 +118,7 @@ p i { width: 5px; height: 14px; flex: none; }
   margin-top: 12px;
   font: 800 var(--fs-title)/1 var(--font-latin);
   letter-spacing: 0.06em;
-  color: var(--accent-deep);
+  color: var(--accent-mid);
 }
 .settled .flip { animation: none; }
 @keyframes flip {

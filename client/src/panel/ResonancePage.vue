@@ -45,7 +45,7 @@ async function nextBatch() {
 <template>
   <div class="resonance-page ui-scroll">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
-    <PoolStage :busy="revealing" @inspect="inspect" />
+    <PoolStage :busy="revealing" :paused="probabilities || !!detail || !!skin" @inspect="inspect" />
     <section class="dock">
       <div class="pities">
         <template v-for="r in pityTiers" :key="r">
@@ -163,6 +163,7 @@ async function nextBatch() {
   gap: 8px;
   margin: 0;
   font: 800 var(--fs-heading)/1 var(--font);
+  white-space: nowrap;
 }
 .wallet b {
   font: 800 34px/1 var(--font-latin);
@@ -180,20 +181,16 @@ async function nextBatch() {
   font-size: var(--fs-strong);
   color: var(--accent-deep);
 }
-/* The plates lean, the labels stay upright. */
 .act {
   min-width: clamp(116px, 15cqw, 158px);
   font-size: var(--fs-number);
-}
-.act::before,
-.act::after {
-  transform: skewX(-10deg);
 }
 .act:not(.primary):not(:disabled) svg {
   color: var(--accent);
 }
 @container panel (max-width: 820px) {
-  .crystal {
+  .crystal,
+  .wallet small {
     display: none;
   }
   .console {

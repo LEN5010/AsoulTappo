@@ -1,21 +1,22 @@
 <script setup lang="ts">
-// The room as one table: the own pet and the members' live pets, empty seats outlined.
+// The room as one table: the own pet and the members' live pets, empty seats outlined. A full row opens the next.
 import { computed } from "vue";
 import { PET_BASE } from "../characters";
+import { MAX_ROOM_SIZE } from "../net/protocol";
 import { pet } from "../stores/pet";
 import { localPet, others } from "../stores/room";
 import { settings } from "../stores/settings";
 import NamePill from "../pet/NamePill.vue";
 import PetView from "../pet/PetView.vue";
 
-const SEATS = 6;
+const ROW = 6;
 const SCALE = 0.46;
 const PILL_WIDTH = PET_BASE.width * SCALE;
 
-// The own pet takes a seat; when the room outgrows the table the last seat counts the rest.
-const seated = computed(() => others.value.slice(0, others.value.length > SEATS - 1 ? SEATS - 2 : SEATS - 1));
-const hidden = computed(() => others.value.length - seated.value.length);
-const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 1 : 0));
+const vacant = computed(() => {
+  const seated = others.value.length + 1;
+  return Math.min(Math.ceil(seated / ROW) * ROW, MAX_ROOM_SIZE) - seated;
+});
 </script>
 
 <template>
@@ -30,13 +31,12 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
         />
         <NamePill :nick="settings.nick.trim() || '我'" :width="PILL_WIDTH" />
       </div>
-      <div v-for="m in seated" :key="m.id" class="seat">
+      <div v-for="m in others" :key="m.id" class="seat">
         <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo"
           :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
           :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse />
         <NamePill :nick="m.nick" :width="PILL_WIDTH" />
       </div>
-      <div v-if="hidden" class="seat more"><b>+{{ hidden }}</b></div>
       <div v-for="n in vacant" :key="n" class="seat vacant"><i aria-hidden="true"></i></div>
     </div>
   </section>
@@ -61,7 +61,7 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
   position: relative;
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  gap: 26px 6px;
 }
 .seat {
   min-width: 0;
@@ -81,10 +81,5 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
   margin-bottom: 12px;
   box-sizing: border-box;
   border: 2px dashed rgba(255, 255, 255, 0.72);
-}
-.more b {
-  margin-bottom: 24px;
-  font: 800 var(--fs-title)/1 var(--font-latin);
-  color: var(--on-accent);
 }
 </style>

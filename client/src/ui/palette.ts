@@ -6,6 +6,7 @@ const WHITE = "#FFFFFF";
 /** --ink-3 in tokens.css: the faintest text that sits on the page. */
 const INK_3 = "#766D7C";
 const AA = 4.5;
+const WARM_SHIFT = 18;
 
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as Rgb;
 const toHex = (c: Rgb) => `#${c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
@@ -38,17 +39,48 @@ function untilReadable(color: string, target: string, against: string): string {
   return target;
 }
 
-export function accentTokens(color: string): Record<string, string> {
+function hueSaturation(hex: string): [number, number] {
+  const [r, g, b] = rgb(hex).map((v) => v / 255) as Rgb;
+  const hi = Math.max(r, g, b);
+  const lo = Math.min(r, g, b);
+  const d = hi - lo;
+  if (!d) return [0, 0];
+  const sector = hi === r ? ((g - b) / d + 6) % 6 : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [sector * 60, d / (1 - Math.abs(hi + lo - 1))];
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const channel = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return 255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+  };
+  return toHex([channel(0), channel(8), channel(4)]);
+}
+
+/** Text tone of `color`: warm hues slide toward rose, because plainly darker orange or pink reads as brown. */
+function deepTone(color: string, against: string): string {
+  const [hue, saturation] = hueSaturation(color);
+  const warm = hue < 50 || hue > 330;
+  const h = warm ? (hue + 360 - WARM_SHIFT) % 360 : hue;
+  const s = warm ? Math.max(saturation, 0.6) : saturation;
+  for (let l = 0.62; l > 0.15; l -= 0.01) {
+    const next = hslToHex(h, s, l);
+    if (contrast(next, against) >= AA) return next;
+  }
+  return untilReadable(color, INK, against);
+}
+
+export function accentTokens(color: string, tones?: { top: string; bottom: string }): Record<string, string> {
   const onAccent = contrast(color, INK) >= contrast(color, WHITE) ? INK : WHITE;
   const accent = untilReadable(color, onAccent === INK ? WHITE : INK, onAccent);
   const page = untilReadable(mix(accent, WHITE, 0.93), WHITE, INK_3);
-  const surface = untilReadable(mix(accent, WHITE, 0.28), WHITE, INK);
   return {
     "--accent": accent,
     "--accent-rgb": rgb(accent).join(", "),
-    "--accent-surface": surface,
-    "--on-accent-surface": INK,
-    "--accent-deep": untilReadable(accent, INK, page),
+    "--accent-surface": accent,
+    "--on-accent-surface": onAccent,
+    ...(tones && { "--tone-top": tones.top, "--tone-bottom": tones.bottom }),
+    "--accent-deep": deepTone(accent, page),
     "--accent-hover": untilReadable(mix(accent, WHITE, 0.18), accent, onAccent),
     "--accent-mid": mix(accent, WHITE, 0.45),
     "--accent-soft": mix(accent, WHITE, 0.74),

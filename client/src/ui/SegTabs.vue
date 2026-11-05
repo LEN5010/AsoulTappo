@@ -4,7 +4,7 @@ import { reducedMotion } from "../stores/theme";
 import { arrowSelect } from "./focus";
 import { useSlider } from "./useSlider";
 
-const props = defineProps<{ tabs: { id: T; label: string; count?: number }[]; modelValue: T; label?: string; disabled?: boolean; plain?: boolean }>();
+const props = defineProps<{ tabs: { id: T; label: string; count?: number | string }[]; modelValue: T; label?: string; disabled?: boolean; plain?: boolean }>();
 defineEmits<{ "update:modelValue": [id: T] }>();
 
 const track = ref<HTMLElement>();
@@ -67,8 +67,9 @@ onBeforeUnmount(() => observer.disconnect());
   align-items: center;
   gap: 2px;
   padding: 0 6px;
+  border-radius: var(--radius-s);
   background: var(--surface);
-  box-shadow: inset 0 -2px 0 var(--line-2);
+  box-shadow: inset 0 0 0 1.5px var(--line);
   overflow-x: auto;
   scrollbar-width: none;
   flex: none;
@@ -147,6 +148,10 @@ onBeforeUnmount(() => observer.disconnect());
   opacity: 0.72;
 }
 /* Underline in place of the orange block. */
+.seg.plain {
+  border-radius: 0;
+  box-shadow: inset 0 -2px 0 var(--line);
+}
 .plain .thumb {
   border-radius: 0;
   background: var(--grad-main) bottom / 100% 3px no-repeat;

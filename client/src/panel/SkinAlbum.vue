@@ -31,7 +31,7 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
 
 <style scoped>
 .skin-album { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 12px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
 header > span { font-size: var(--fs-label); color: var(--ink-2); white-space: nowrap; }
 header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--accent-deep); }
 .wall { flex: 1; min-height: 0; overflow: auto; padding: 3px 6px 12px 2px; }

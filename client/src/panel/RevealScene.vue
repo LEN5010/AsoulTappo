@@ -225,14 +225,13 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
   z-index: 40;
   overflow: hidden;
   outline: none;
-  background: var(--grad-sky);
-  color: var(--on-accent);
+  background: var(--stage-dark);
+  color: var(--on-ink);
   cursor: pointer;
   animation: scene-in var(--dur-base) var(--ease-out);
 }
 .scene.summary {
-  background: var(--page);
-  color: var(--ink);
+  background: radial-gradient(90% 70% at 50% 0, rgba(var(--accent-rgb), 0.26), transparent 74%), var(--stage-dark);
   cursor: default;
 }
 @keyframes scene-in {
@@ -277,7 +276,7 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
   top: -10px;
   bottom: -10px;
   width: 26%;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(var(--accent-rgb), 0.2);
   animation: band 1.5s linear infinite;
 }
 .band.two {
@@ -288,7 +287,7 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
   position: relative;
   height: min(380px, 62cqh);
   aspect-ratio: 2 / 3;
-  filter: drop-shadow(0 12px 26px rgba(var(--ink-rgb), 0.32));
+  filter: drop-shadow(0 0 34px rgba(var(--accent-rgb), 0.6));
   animation: charge 760ms var(--ease-in-out) infinite alternate;
 }
 .sealed-face {
@@ -336,7 +335,7 @@ header h3 {
 .shards {
   font-size: var(--fs-strong);
   font-weight: 800;
-  color: var(--accent-deep);
+  color: var(--accent-mid);
 }
 .results {
   flex: 1;
@@ -417,7 +416,7 @@ header h3 {
   white-space: nowrap;
   font-size: var(--fs-caption);
   font-weight: 700;
-  color: var(--ink-2);
+  color: rgba(255, 255, 255, 0.7);
 }
 footer {
   flex: none;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { characterColor, getEmote, manifest, memberOf } from "../manifest";
+import { characterColor, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -38,20 +38,10 @@ onBeforeUnmount(() => player.clear());
 const quickKeys = computed(() =>
   settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character),
 );
-const stageStickers = computed(() =>
-  quickKeys.value
-    .slice(0, 4)
-    .map((k) => ({ key: k, emo: getEmote(k) }))
-    .filter((x) => x.emo),
-);
-// Stickers run down the stage's left edge.
-const STICKER_ARC = [
-  { x: 14, y: 4, rot: -9 },
-  { x: 14, y: 56, rot: 6 },
-  { x: 14, y: 108, rot: -5 },
-  { x: 14, y: 160, rot: 8 },
-];
-const STAGE_SCALE = 1.15;
+const STAGE_SCALE = 1.42;
+// The pet nearly fills the stage's height, so the bubble hangs off the side of the head and stays in frame.
+const STAGE_EMOTE = 86;
+const STAGE_BUBBLE = { x: 36, y: 62 };
 
 function pokeStage() {
   const keys = quickKeys.value;
@@ -154,53 +144,35 @@ function fireEmote(key: string) {
 </script>
 
 <template>
-  <div ref="root" class="emotes-page ui-scroll">
+  <div class="emotes-page">
     <section class="showcase">
-      <div class="stage-cluster" data-rise>
-        <div class="stage" @click="pokeStage">
-          <span class="stage-bg" aria-hidden="true">
-            <i class="stage-dots"></i>
-            <i class="stage-light"></i>
-            <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
-          </span>
-          <div class="stage-pet">
-            <PetView
-              :character="settings.character" :scale="STAGE_SCALE"
-              :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
-              :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
-            />
-          </div>
-          <button type="button" class="stage-name ui-plate" title="更换桌宠" @click.stop="mainTab = 'pet'">
-            <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="11" />
-          </button>
-          <Icon name="star5" :size="24" class="stage-deco big" />
-          <Icon name="star5" :size="14" class="stage-deco small" />
-          <Icon name="heart" :size="16" class="stage-deco heart" />
+      <div class="stage" data-rise @click="pokeStage">
+        <span class="stage-bg" aria-hidden="true">
+          <i class="stage-disc"></i>
+          <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
+        </span>
+        <div class="stage-pet">
+          <PetView
+            :character="settings.character" :scale="STAGE_SCALE"
+            :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
+            :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
+            :max-emote="STAGE_EMOTE" :bubble-shift="STAGE_BUBBLE"
+          />
         </div>
-
-        <button
-          v-for="(s, i) in stageStickers" :key="s.key" type="button"
-          class="sticker" :title="`预览：${s.emo!.name}`"
-          :style="{
-            left: `${STICKER_ARC[i]?.x ?? 0}px`,
-            top: `${STICKER_ARC[i]?.y ?? i * 34}px`,
-            '--rot': `${STICKER_ARC[i]?.rot ?? 0}deg`,
-          }"
-          @click="player.play(s.key)"
-        >
-          <img :src="assetUrl(s.emo!.img)" :alt="s.emo!.name" decoding="async" draggable="false" />
+        <button type="button" class="stage-name ui-plate" title="更换桌宠" @click.stop="mainTab = 'pet'">
+          <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="11" />
         </button>
+        <Icon name="star5" :size="24" class="stage-deco big" />
+        <Icon name="star5" :size="14" class="stage-deco small" />
+        <Icon name="heart" :size="16" class="stage-deco heart" />
       </div>
 
       <div class="desk" data-rise>
-        <MemberStrip :model-value="member" @update:model-value="pickMember" />
-
         <div class="fav-head">
           <h3 class="ui-label fav-title"><span>我的预设</span><em>MY PRESET</em></h3>
-          <b class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
           <small v-if="actionNote" class="fav-note">{{ actionNote }}</small>
+          <b v-else class="fav-count">{{ settings.favorites.length }}<small>/8</small></b>
         </div>
-
         <div class="slots">
           <button
             v-for="(item, n) in favorites" :key="n" type="button"
@@ -210,10 +182,9 @@ function fireEmote(key: string) {
             @click="item && favorite(item)"
           >
             <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
-            <Icon v-else name="plus" :size="16" />
+            <Icon v-else name="plus" :size="15" />
           </button>
         </div>
-
         <div class="resources">
           <div class="res" title="表情碎片">
             <Icon name="shard" :size="15" />
@@ -224,7 +195,8 @@ function fireEmote(key: string) {
       </div>
     </section>
 
-    <div class="sticky-nav">
+    <div class="filters">
+      <MemberStrip :model-value="member" @update:model-value="pickMember" />
       <SegTabs v-model="mainTab" class="kind-tabs" :tabs="mainTabs" label="背包分类" />
       <label class="search">
         <Icon name="search" :size="14" />
@@ -234,119 +206,117 @@ function fireEmote(key: string) {
 
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
-    <div ref="listing" class="shelves">
-      <section v-if="mainTab !== 'emote' && petSkins.length" class="shelf">
-        <h4 class="ui-label shelf-head"><span>桌宠形象</span><em>DESKTOP PET</em><small>{{ petSkins.length }}</small></h4>
-        <div class="pet-grid">
-          <button
-            v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
-            class="pet-card ui-tile" :class="{ picked: settings.character === skin.name, locked: !ownsCharacter(skin.name, collection.owned) }"
-            :disabled="!ownsCharacter(skin.name, collection.owned)"
-            :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skin.name}`" data-rise
-            @click="settings.character = skin.name; pokeStage()"
-          >
-            <span class="pet-well ui-frame ui-well">
-              <PetBust class="pet-svg" :src="skin.bg" />
-              <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
-              <span v-else-if="!ownsCharacter(skin.name, collection.owned)" class="tag ui-tag">未解锁</span>
-            </span>
-            <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
-          </button>
-        </div>
-      </section>
-
-      <section v-if="mainTab !== 'pet'" class="shelf">
-        <h4 class="ui-label shelf-head"><span>表情贴纸</span><em>STICKER</em><small>{{ ownedEmotes.length }}</small></h4>
-        <div class="emote-grid">
-          <div
-            v-for="e in ownedEmotes" :key="e.key"
-            class="emote-cell" draggable="true" data-rise
-            @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
-          >
+    <div ref="root" class="scroller ui-scroll">
+      <div ref="listing" class="shelves">
+        <section v-if="mainTab !== 'emote' && petSkins.length" class="shelf">
+          <h4 class="ui-label shelf-head"><span>桌宠形象</span><em>DESKTOP PET</em><small>{{ petSkins.length }}</small></h4>
+          <div class="pet-grid">
             <button
-              type="button" class="emote-card ui-tile"
-              :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
-              :title="`${e.name}（${e.setName}）`" :aria-pressed="settings.favorites.includes(e.key)"
-              @click="toggleFavKey(e.key)"
+              v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
+              class="pet-card ui-tile" :class="{ picked: settings.character === skin.name, locked: !ownsCharacter(skin.name, collection.owned) }"
+              :disabled="!ownsCharacter(skin.name, collection.owned)"
+              :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skin.name}`" data-rise
+              @click="settings.character = skin.name; pokeStage()"
             >
-              <span class="ui-frame ui-well">
-                <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
-                <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
+              <span class="pet-well ui-frame ui-well">
+                <PetBust class="pet-svg" :src="skin.bg" />
+                <span v-if="settings.character === skin.name" class="tag ui-tag" aria-label="当前使用">使用中</span>
+                <span v-else-if="!ownsCharacter(skin.name, collection.owned)" class="tag ui-tag">未解锁</span>
               </span>
-              <b class="ui-tile-name">{{ e.name }}</b>
-            </button>
-            <button type="button" class="send-mini" title="发送" :aria-label="`发送 ${e.name}`" @click="fireEmote(e.key)">
-              <Icon name="spark" :size="11" />
+              <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
             </button>
           </div>
+        </section>
 
-          <!-- Shortcut tile to unlock/craft more emotes in Dex -->
-          <button
-            type="button"
-            class="emote-card more-card ui-tile"
-            data-rise
-            @click="ui.page = 'dex'"
-          >
-            <span class="ui-frame ui-well">
-              <Icon name="book" :size="24" />
-            </span>
-            <b class="ui-tile-name">全部图鉴 →</b>
-          </button>
-        </div>
-      </section>
+        <section v-if="mainTab !== 'pet'" class="shelf">
+          <h4 class="ui-label shelf-head"><span>表情贴纸</span><em>STICKER</em><small>{{ ownedEmotes.length }}</small></h4>
+          <div class="emote-grid">
+            <div
+              v-for="e in ownedEmotes" :key="e.key"
+              class="emote-cell" draggable="true" data-rise
+              @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
+            >
+              <button
+                type="button" class="emote-card ui-tile"
+                :class="[e.rarity, { picked: settings.favorites.includes(e.key) }]"
+                :title="`${e.name}（${e.setName}）`" :aria-pressed="settings.favorites.includes(e.key)"
+                @click="toggleFavKey(e.key)"
+              >
+                <span class="ui-frame ui-well">
+                  <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+                  <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
+                </span>
+                <b class="ui-tile-name">{{ e.name }}</b>
+              </button>
+              <button type="button" class="send-mini" title="发送" :aria-label="`发送 ${e.name}`" @click="fireEmote(e.key)">
+                <Icon name="spark" :size="11" />
+              </button>
+            </div>
+
+            <!-- Shortcut tile to unlock/craft more emotes in Dex -->
+            <button
+              type="button"
+              class="emote-card more-card ui-tile"
+              data-rise
+              @click="ui.page = 'dex'"
+            >
+              <span class="ui-frame ui-well">
+                <Icon name="book" :size="24" />
+              </span>
+              <b class="ui-tile-name">全部图鉴 →</b>
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <p v-if="nothingFound" class="ui-empty">没有匹配的内容</p>
     </div>
-
-    <p v-if="nothingFound" class="ui-empty">没有匹配的内容</p>
   </div>
 </template>
 
 <style scoped>
+/* Only the shelves scroll: the pet and the presets stay put, so a sticker can be dragged up from any depth. */
 .emotes-page {
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
   box-sizing: border-box;
-  padding: 10px 20px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 20px 0 16px;
 }
 
 .showcase {
+  flex: none;
   display: flex;
-  align-items: stretch;
-  gap: 16px;
-  padding: 2px 0 12px;
+  gap: 12px;
+  height: 214px;
 }
 
-/* The pet sits outside the clipped background so it and its emote bubble can break the frame. */
-.stage-cluster {
-  position: relative;
-  width: 332px;
-  height: 214px;
-  flex: none;
-}
+/* The pet sits outside the clipped background so it can break the frame. */
 .stage {
-  position: absolute;
-  inset: 0 0 0 26px;
+  position: relative;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
 }
 .stage-bg {
   position: absolute;
-  inset: 0 12px;
+  inset: 0;
   overflow: hidden;
   border-radius: var(--radius-l);
   background: var(--grad-sky);
 }
-.stage-dots {
+/* The sidebar's disc rising behind the pet like a spotlight. */
+.stage-disc {
   position: absolute;
-  inset: 0 -14px;
-  background: var(--surface);
-  opacity: 0.34;
-  mask: var(--halftone) left bottom / 280px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
-}
-.stage-light {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(58% 78% at 60% 100%, rgba(255, 255, 255, 0.46), transparent 72%);
+  left: 50%;
+  top: 22px;
+  width: 340px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.16) 70%);
+  box-shadow: 0 0 0 16px rgba(255, 255, 255, 0.12), 0 0 0 34px rgba(255, 255, 255, 0.07);
 }
 .stage-ribbon {
   position: absolute;
@@ -366,23 +336,23 @@ function fireEmote(key: string) {
   z-index: 1;
   left: 50%;
   bottom: 0;
-  transform: translateX(-44%);
+  transform: translateX(-50%);
 }
 .stage-pet :deep(.art) {
   filter: var(--sticker-lg);
 }
-/* Left of the head: the emote bubble grows to the right of it. */
 .stage-name {
   --plate-bg: var(--surface);
   --plate-edge: 0 4px 10px -4px rgba(var(--ink-rgb), 0.34);
   position: absolute;
-  left: 62px;
+  z-index: 2;
+  left: 12px;
   top: 12px;
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 26px;
-  padding: 0 9px;
+  height: 28px;
+  padding: 0 10px;
   border: 0;
   background: none;
   font: 800 var(--fs-strong) var(--font);
@@ -395,6 +365,7 @@ function fireEmote(key: string) {
 .stage-name i {
   width: 5px;
   height: 14px;
+  border-radius: 1px;
   background: var(--char);
 }
 .stage-deco {
@@ -403,62 +374,42 @@ function fireEmote(key: string) {
   pointer-events: none;
 }
 .stage-deco.big {
-  right: 28px;
-  top: 16px;
+  right: 26px;
+  top: 18px;
   transform: rotate(14deg);
 }
 .stage-deco.small {
-  right: 22px;
-  top: 52px;
+  right: 18px;
+  top: 56px;
 }
 .stage-deco.heart {
-  left: 64px;
-  top: 50px;
+  left: 26px;
+  top: 60px;
   fill: var(--on-ink);
   transform: rotate(-12deg);
 }
 
-.sticker {
-  --rot: 0deg;
-  position: absolute;
-  z-index: 2;
-  width: 40px;
-  height: 40px;
-  padding: 3px;
-  box-sizing: border-box;
-  border: 0;
-  background: var(--surface);
-  box-shadow: 0 3px 8px rgba(var(--ink-rgb), 0.28);
-  transform: rotate(var(--rot));
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.sticker:hover {
-  z-index: 3;
-  transform: rotate(0deg) scale(1.12);
-}
-.sticker img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
 .desk {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  width: 264px;
+  padding: 11px 12px 12px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 9px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
 }
 .fav-head {
   display: flex;
   align-items: baseline;
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 1px;
 }
 .fav-title {
   margin: 0;
+  white-space: nowrap;
 }
 .fav-count {
   font: 800 var(--fs-section)/1 var(--font-latin);
@@ -470,15 +421,15 @@ function fireEmote(key: string) {
   color: var(--ink-3);
 }
 .fav-note {
-  margin-left: auto;
   font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--accent-deep);
+  white-space: nowrap;
 }
 .slots {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
 }
 .sq-slot {
   --radius: var(--radius-s);
@@ -487,7 +438,7 @@ function fireEmote(key: string) {
   padding: 4px;
   box-sizing: border-box;
   border: 0;
-  background: var(--surface);
+  background: var(--accent-tint);
   box-shadow: inset 0 0 0 1.5px var(--line);
   color: var(--accent);
   cursor: pointer;
@@ -498,7 +449,7 @@ function fireEmote(key: string) {
 }
 .sq-slot:hover {
   background: var(--accent-soft);
-  transform: translate(-1px, -1px);
+  transform: translateY(-2px);
 }
 .sq-slot.filled {
   background: var(--accent-soft);
@@ -510,19 +461,17 @@ function fireEmote(key: string) {
   display: block;
   filter: var(--sticker);
 }
-
 .resources {
   margin-top: auto;
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 10px;
 }
 .res {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto auto 1fr;
+  display: flex;
   align-items: center;
-  gap: 2px 5px;
+  gap: 5px;
   color: var(--accent-deep);
 }
 .res b {
@@ -534,38 +483,25 @@ function fireEmote(key: string) {
   font-weight: 700;
   color: var(--ink-2);
 }
-/* Out of flow, so the bar does not push this entry above its neighbours. */
-.res-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  height: 4px;
-  margin-top: 2px;
-}
 .open {
-  margin: 0 3px 0 auto;
-  width: 112px;
   flex: none;
+  width: 92px;
 }
 
-/* -10px cancels the scroller's top padding, which would otherwise let tiles show above the bar. */
-.sticky-nav {
-  position: sticky;
-  top: -10px;
-  z-index: 6;
+.filters {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0 8px;
-  background: var(--page);
+  gap: 10px;
 }
 .kind-tabs {
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
+  border-radius: var(--radius-s);
 }
 .search {
-  flex: none;
+  flex: 0 1 136px;
+  min-width: 96px;
   position: relative;
   display: flex;
   align-items: center;
@@ -577,27 +513,28 @@ function fireEmote(key: string) {
   pointer-events: none;
 }
 .search input {
-  width: 164px;
+  width: 100%;
   height: 32px;
   padding: 0 10px 0 29px;
   font-size: var(--fs-label);
 }
 
+/* Bleeds past the page gutters so a tile's lift and glow are not cut at the edge. */
+.scroller {
+  flex: 1;
+  min-height: 0;
+  margin: -4px -14px 0 -8px;
+  padding: 4px 14px 14px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 .shelves {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-bottom: 12px;
-}
-.shelf {
-  padding: 0 12px 12px;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line);
+  gap: 16px;
 }
 .shelf-head {
-  margin: 0 -12px 10px;
-  padding: 8px 12px;
-  background: var(--accent-soft);
+  margin: 0 0 10px;
 }
 .pet-grid {
   display: grid;
@@ -611,7 +548,6 @@ function fireEmote(key: string) {
 .pet-well {
   align-items: flex-end;
   padding: 6px 4px 0;
-  background: var(--dots) 0 0 / 9px 9px, var(--surface);
 }
 .pet-card.picked .pet-well {
   background: var(--accent-soft);
@@ -706,9 +642,56 @@ function fireEmote(key: string) {
   background: var(--accent-deep);
 }
 
-@media (max-width: 780px) {
+@container panel (max-width: 860px) {
+  .filters {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+  .desk {
+    width: 196px;
+  }
+  .fav-title em,
+  .res small,
+  .stage-deco {
+    display: none;
+  }
+  .stage-pet {
+    transform: translateX(-50%) scale(0.74);
+    transform-origin: 50% 100%;
+  }
+  .stage-disc {
+    top: 46px;
+    width: 250px;
+  }
+  .open {
+    width: 76px;
+    padding: 0;
+  }
+}
+/* Short windows give the stage's height to the shelves. */
+@container panel (max-height: 580px) {
   .showcase {
-    flex-direction: column;
+    height: 142px;
+  }
+  .stage-pet {
+    transform: translateX(-50%) scale(0.62);
+    transform-origin: 50% 100%;
+  }
+  .stage-disc {
+    top: 26px;
+    width: 200px;
+  }
+  .desk {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .slots {
+    grid-template-columns: repeat(4, minmax(0, 44px));
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .resources {
+    display: none;
   }
 }
 </style>

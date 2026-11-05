@@ -42,7 +42,7 @@ const name = computed(() => props.drop.item.slice(5));
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--ink);
+  background: var(--stage-dark);
   color: var(--on-ink);
 }
 .aura {

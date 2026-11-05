@@ -59,32 +59,29 @@ const hidden = computed(() => props.card.tier !== "normal");
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--grad-sky);
-  color: var(--on-accent);
+  background: var(--stage-dark);
+  color: var(--on-ink);
 }
+/* Rarity climbs through light on the shared dark stage: a soft halo, then a band wipe, then gold rays. */
 .small {
   --flip-at: 620ms;
   --flip-ms: 560ms;
   --frame: var(--accent);
-  background: var(--ink);
-  color: var(--on-ink);
 }
 .big {
   --flip-at: 1280ms;
   --flip-ms: 640ms;
   --frame: var(--gold);
-  background: var(--ink);
-  color: var(--on-ink);
 }
 
 .halo {
-  --light: rgba(255, 255, 255, 0.36);
+  --light: rgba(var(--accent-rgb), 0.38);
   position: absolute;
   inset: 0;
   background: radial-gradient(46% 64% at 38% 50%, var(--light), transparent 74%);
 }
 .small .halo {
-  --light: rgba(var(--accent-rgb), 0.42);
+  --light: rgba(var(--accent-rgb), 0.62);
 }
 .rays {
   position: absolute;

@@ -25,12 +25,16 @@ const props = withDefaults(
     combo?: ComboFrame | null;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
+    /** largest emote picture height in px, for frames too short for a scaled-up bubble */
+    maxEmote?: number;
+    /** moves the bubble off the top of the head, px */
+    bubbleShift?: { x: number; y: number };
     /** emote bubble grows to the left (pet near the right screen edge) */
     flipBubble?: boolean;
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
-    emote: null, combo: null, minEmote: 44, flipBubble: false,
+    emote: null, combo: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
   },
 );
 
@@ -70,10 +74,10 @@ const mouseStyle = computed(() => {
 const head = computed(() => headAnchor(props.character));
 
 // ---- emote bubble / combo
-const emoteSize = computed(() => Math.max(props.minEmote, 72 * s.value));
+const emoteSize = computed(() => Math.min(props.maxEmote, Math.max(props.minEmote, 72 * s.value)));
 const bubbleAnchor = computed(() => ({
-  x: (head.value.x + (props.flipBubble ? -20 : 20)) * s.value,
-  y: (head.value.y + 16) * s.value,
+  x: (head.value.x + (props.flipBubble ? -20 : 20)) * s.value + props.bubbleShift.x,
+  y: (head.value.y + 16) * s.value + props.bubbleShift.y,
 }));
 </script>
 

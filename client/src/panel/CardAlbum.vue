@@ -77,7 +77,7 @@ const visible = computed(() =>
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 2px 8px 10px 0;
+  padding: 12px 8px 10px 0;
 }
 .grid {
   display: grid;

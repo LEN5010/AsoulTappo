@@ -1,4 +1,8 @@
-/* Idol-stage design tokens: #FC966E and white, upright shapes, small radii. Light belongs to what can be pressed. */
+/*
+ * Idol-stage design tokens: #FC966E and white, soft radii. Light belongs to what can be pressed.
+ * Tilt means one thing: a physical object stuck onto the page (a sticker, a card). Anything read or operated
+ * stays upright, and a tilted object straightens under the pointer.
+ */
 @font-face {
   font-family: "Noto Sans SC";
   font-weight: 400 800;
@@ -27,6 +31,9 @@
   --on-accent: #2B2530;
   --accent-surface: var(--accent);
   --on-accent-surface: var(--on-accent);
+  /* The hues gradients lean toward: warmer at the top, deeper at the bottom. Each theme picks neighbours of its accent. */
+  --tone-top: #FFD7AE;
+  --tone-bottom: #E8386E;
 
   --ink: #2B2530;
   --ink-rgb: 43, 37, 48;
@@ -35,6 +42,9 @@
   --ink-3: #766D7C;
   --surface: #FFFFFF;
   --page: #FFF4EE;
+  /* Behind the full-panel reveals. Aubergine rather than black, so it sits with coral. */
+  --stage-dark: #231730;
+  --stage-dark-rgb: 35, 23, 48;
 
   --line: #F6E3DA;
   --line-2: #EFD3C6;
@@ -50,15 +60,15 @@
   --fs-display: 46px;
   --fs-burst: 72px;
 
-  --radius-s: 4px;
-  --radius-m: 6px;
-  --radius-l: 10px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 16px;
   /* Lit from above and shading toward coral: darkening orange would turn it brown. */
   --grad-from: color-mix(in oklab, var(--accent) 80%, #fff);
-  --grad-to: color-mix(in oklab, var(--accent) 80%, #E8386E);
+  --grad-to: color-mix(in oklab, var(--accent) 80%, var(--tone-bottom));
   --grad-main: linear-gradient(180deg, var(--grad-from), var(--accent) 52%, var(--grad-to));
   /* Large blocks: dusk, warm at the top and coral at the bottom. */
-  --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, #FFD7AE), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, #E8386E));
+  --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, var(--tone-top)), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, var(--tone-bottom)));
   --grad-paper: linear-gradient(180deg, var(--surface), var(--accent-tint));
   --glow-s: 0 4px 12px -4px rgba(var(--accent-rgb), 0.62);
   --glow-m: 0 6px 16px -4px rgba(var(--accent-rgb), 0.76), 0 0 0 3px rgba(var(--accent-rgb), 0.14);

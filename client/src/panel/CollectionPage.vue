@@ -138,7 +138,11 @@ const selectedSeries = ref("all");
 const cardFilter = ref<AlbumFilter>("all");
 const CARD_FILTERS = [{ id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" }];
 const cards = computed(() => manifest.cards.filter((c) => selectedSeries.value === "all" || c.series === selectedSeries.value));
-const poolTabs = computed(() => [{ id: "all", label: "全部" }, ...manifest.series.map((s) => ({ id: s.id, label: poolName(s.name) }))]);
+const seriesCount = (list: ManifestCard[]) => `${list.filter((c) => collection.owned[`card:${c.id}`]).length}/${list.length}`;
+const poolTabs = computed(() => [
+  { id: "all", label: "全部", count: seriesCount(manifest.cards) },
+  ...manifest.series.map((s) => ({ id: s.id, label: poolName(s.name), count: seriesCount(manifest.cards.filter((c) => c.series === s.id)) })),
+]);
 const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
 function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; }
@@ -152,25 +156,29 @@ if (ui.craftTarget) {
 
 <template>
   <div class="collection-page">
-    <SegTabs v-model="category" :tabs="CATEGORIES" label="图鉴分类" />
-    <div class="dex-wallet"><Icon name="shard" :size="14" />碎片 <b>{{ shards }}</b><button class="ui-btn small" type="button" @click="ui.page = 'resonance'">去共鸣</button></div>
+    <div class="dex-bar">
+      <SegTabs v-model="category" class="dex-kind" :tabs="CATEGORIES" label="图鉴分类" />
+      <FilterChips v-if="category === 'card'" v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
+      <span v-else-if="category === 'emote'" class="progress">已解锁 <b>{{ progress.owned }}</b> / {{ progress.total }}</span>
+      <div class="dex-wallet"><Icon name="shard" :size="14" /><b>{{ shards }}</b><button class="ui-btn small" type="button" @click="ui.page = 'resonance'">去共鸣</button></div>
+    </div>
     <template v-if="category === 'card'">
       <SegTabs v-model="selectedSeries" plain :tabs="poolTabs" label="卡片系列" />
-      <FilterChips v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
       <CardAlbum :cards="cards" :filter="cardFilter" @inspect="inspectCard" />
     </template>
     <SkinAlbum v-else-if="category === 'skin'" />
     <template v-else>
-    <SegTabs v-model="charTab" class="tabs-bar" :tabs="charTabs" label="角色筛选" />
+    <div class="emote-bar">
+      <SegTabs v-model="charTab" plain class="tabs-bar" :tabs="charTabs" label="角色筛选" />
+      <input v-model="query" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
+    </div>
 
-    <div class="head">
+    <div v-if="!showWall" class="head">
       <template v-if="album && !searching">
         <button type="button" class="ui-btn small" @click="albumId = ''"><Icon name="back" :size="13" />全部专辑</button>
         <h3 class="album-title">{{ album.name }}</h3>
       </template>
-      <FilterChips v-if="!showWall" v-model="ownFilter" :options="OWN_FILTERS" label="持有筛选" />
-      <span class="progress">已解锁 <b>{{ progress.owned }}</b> / {{ progress.total }}</span>
-      <input v-model="query" class="ui-input search-input" placeholder="搜索表情…" aria-label="搜索表情" />
+      <FilterChips v-model="ownFilter" :options="OWN_FILTERS" label="持有筛选" />
     </div>
 
     <div ref="wall" class="wall ui-scroll">
@@ -245,19 +253,51 @@ if (ui.craftTarget) {
 </template>
 
 <style scoped>
-.dex-wallet { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 7px 0; color: var(--ink-2); font-size: var(--fs-label); }
-.dex-wallet b { margin-right: 8px; color: var(--accent-deep); font: 800 var(--fs-section)/1 var(--font-latin); }
-
 .collection-page {
   height: 100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 8px 20px 12px 16px;
+  padding: 2px 20px 12px 16px;
+}
+.dex-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.dex-kind {
+  flex: 0 0 222px;
+}
+.dex-wallet {
+  flex: none;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-deep);
+}
+.dex-wallet b {
+  margin-right: 6px;
+  color: var(--ink);
+  font: 800 var(--fs-section)/1 var(--font-latin);
+}
+.emote-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 .tabs-bar {
-  flex: none;
-  margin-bottom: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@container panel (max-width: 860px) {
+  .dex-bar {
+    flex-wrap: wrap;
+  }
 }
 
 .head {
@@ -289,11 +329,16 @@ if (ui.craftTarget) {
 }
 .search-input {
   flex: none;
-  margin-left: auto;
-  width: 140px;
-  height: 28px;
+  width: 132px;
+  height: 30px;
   padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1.5px var(--line);
   font-size: var(--fs-label);
+}
+.search-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--accent-deep);
 }
 
 .wall {

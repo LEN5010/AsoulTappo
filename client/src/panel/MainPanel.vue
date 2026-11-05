@@ -198,7 +198,6 @@ function badgeOf(id: Page): number {
             </button>
           </nav>
 
-          <span class="side-stars" aria-hidden="true"></span>
           <span class="side-deco" aria-hidden="true"></span>
         </div>
       </aside>
@@ -379,40 +378,6 @@ function badgeOf(id: Page): number {
   padding: 20px 0 12px;
   box-sizing: border-box;
 }
-.side-stars {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: calc(100% - 12px);
-  aspect-ratio: 184 / 230;
-  background: var(--surface);
-  pointer-events: none;
-  mask: url("../assets/brand/side-stars.svg") center / contain no-repeat;
-  -webkit-mask: url("../assets/brand/side-stars.svg") center / contain no-repeat;
-}
-/* Stands behind the bottom edge: the drawing is cut off at the waist. */
-.side-deco {
-  position: absolute;
-  left: 10px;
-  bottom: 0;
-  width: 104px;
-  aspect-ratio: 122 / 118;
-  background: var(--on-accent-surface);
-  pointer-events: none;
-  mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
-  -webkit-mask: url("../assets/brand/side-cat.svg") center / contain no-repeat;
-}
-/* Below these heights the art would run into the last nav item. */
-@container panel (max-height: 620px) {
-  .side-stars {
-    display: none;
-  }
-}
-@container panel (max-height: 500px) {
-  .side-deco {
-    display: none;
-  }
-}
 
 .logo {
   position: relative;
@@ -420,6 +385,7 @@ function badgeOf(id: Page): number {
   height: 84px;
   flex: none;
   margin-left: 14px;
+  filter: var(--contour) drop-shadow(0 2px 3px rgba(var(--ink-rgb), 0.22));
   cursor: grab;
 }
 .logo:active {
@@ -429,7 +395,7 @@ function badgeOf(id: Page): number {
   display: block;
   width: 146px;
   aspect-ratio: 3.172;
-  background: var(--on-accent-surface);
+  background: var(--ink);
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
@@ -543,15 +509,17 @@ nav button.on .nav-icon {
 nav button.on .nav-text small {
   color: inherit;
 }
-/* Pinned to the icon tile. */
+/* At the end of the row, clear of the label however long the count gets. */
 .pip {
   position: absolute;
-  left: 44px;
-  top: 0;
-  min-width: 20px;
+  right: 8px;
+  top: 50%;
+  min-width: 22px;
   height: 18px;
-  padding: 0 4px;
+  padding: 0 5px;
   box-sizing: border-box;
+  border-radius: 9px;
+  transform: translateY(-50%);
   background: var(--ink);
   color: var(--on-ink);
   font: 800 var(--fs-body)/18px var(--font-latin);
@@ -559,5 +527,70 @@ nav button.on .nav-text small {
 }
 .pip.soft {
   background: var(--accent-deep);
+}
+/* A sticker standing in the corner, cut off by the bottom edge and straightened by the pointer. */
+.side-deco {
+  position: absolute;
+  left: 16px;
+  bottom: -30px;
+  width: 112px;
+  aspect-ratio: 420 / 620;
+  background: url("../assets/brand/side-alpaca.webp") center / contain no-repeat;
+  filter: var(--contour) drop-shadow(0 4px 7px rgba(var(--ink-rgb), 0.3));
+  transform: rotate(-5deg);
+  transform-origin: 50% 100%;
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+.side-deco:hover {
+  transform: rotate(0deg) translateX(5px);
+}
+
+@container panel (max-width: 760px) {
+  .face {
+    --side-w: 176px;
+  }
+  .logo {
+    width: 128px;
+    height: 74px;
+    margin-left: 16px;
+  }
+  .logo-mark {
+    width: 128px;
+  }
+  .logo-word.ui-plate {
+    top: 45px;
+    font-size: var(--fs-number);
+    line-height: 19px;
+  }
+  nav button {
+    width: calc(100% - 10px);
+    margin-left: 10px;
+    gap: 9px;
+    padding-left: 10px;
+  }
+  .nav-text small {
+    display: none;
+  }
+  .pip {
+    right: 5px;
+  }
+  .side-deco {
+    left: 14px;
+    bottom: -24px;
+    width: 92px;
+  }
+}
+/* Below these heights the alpaca would run into the last nav item. */
+@container panel (max-height: 600px) {
+  .side-deco {
+    left: 14px;
+    bottom: -22px;
+    width: 84px;
+  }
+}
+@container panel (max-height: 500px) {
+  .side-deco {
+    display: none;
+  }
 }
 </style>

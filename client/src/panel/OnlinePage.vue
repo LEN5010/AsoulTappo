@@ -83,6 +83,23 @@ async function copy() {
       <p v-if="lastError || notice" class="ui-error err" role="alert">{{ lastError || notice }}</p>
     </div>
 
+    <section data-rise>
+      <h4 class="ui-label"><span>同桌显示</span><em>TOGETHER</em></h4>
+      <div class="ui-group ui-frame ui-ring">
+        <label class="ui-row">
+          <span>伙伴桌宠大小</span>
+          <span class="ui-ctl">
+            <RangeInput v-model="settings.remoteScale" :min="0.4" :max="1.5" :step="0.1" />
+            <b class="ui-val">×{{ settings.remoteScale.toFixed(1) }}</b>
+          </span>
+        </label>
+        <label class="ui-row">
+          <span>显示伙伴昵称</span>
+          <input v-model="settings.showNames" class="ui-switch" type="checkbox" />
+        </label>
+      </div>
+    </section>
+
     <section v-if="inRoom" data-rise>
       <header class="cap">
         <h4 class="ui-label"><span>房间成员</span><em>MEMBERS</em><small>{{ members.size }} / {{ MAX_ROOM_SIZE }}</small></h4>
@@ -100,23 +117,6 @@ async function copy() {
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}<small>敲击</small></span>
         </li>
       </ul>
-    </section>
-
-    <section data-rise>
-      <h4 class="ui-label"><span>同桌显示</span><em>TOGETHER</em></h4>
-      <div class="ui-group ui-frame ui-ring">
-        <label class="ui-row">
-          <span>伙伴桌宠大小</span>
-          <span class="ui-ctl">
-            <RangeInput v-model="settings.remoteScale" :min="0.4" :max="1.5" :step="0.1" />
-            <b class="ui-val">×{{ settings.remoteScale.toFixed(1) }}</b>
-          </span>
-        </label>
-        <label class="ui-row">
-          <span>显示伙伴昵称</span>
-          <input v-model="settings.showNames" class="ui-switch" type="checkbox" />
-        </label>
-      </div>
     </section>
   </div>
 </template>
@@ -226,7 +226,7 @@ async function copy() {
 }
 .members {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
