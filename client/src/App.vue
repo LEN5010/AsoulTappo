@@ -128,6 +128,8 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
+        :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
+        :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
         :emote="m.emote" :combo="m.combo" :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
       <NamePill v-if="settings.showNames" :nick="m.nick" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />

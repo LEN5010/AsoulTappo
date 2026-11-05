@@ -88,6 +88,16 @@ MIXED_EMOTE_SETS = [
     ),
 ]
 
+# Additional sets in the member/collection layout. Keep the original GIF animation.
+# id, title, member, collection directory, source folder
+COLLECTION_EMOTE_SETS = [
+    ("nailin-reverie", "绮梦漫游 · 乃琳", "乃琳", "乃琳的酒馆-绮梦漫游", "表情包AI高清"),
+    ("beila-casket", "匣中惊鸿 · 贝拉", "贝拉", "贝拉的冒险-匣中惊鸿", "表情包AI高清"),
+    ("jiaran-moon-motion", "此间为爱 · 嘉然（动态）", "嘉然", "嘉然的画册-此间为爱", "动态表情包"),
+    ("nailin-reverie-motion", "绮梦漫游 · 乃琳（动态）", "乃琳", "乃琳的酒馆-绮梦漫游", "动态表情包"),
+    ("beila-casket-motion", "匣中惊鸿 · 贝拉（动态）", "贝拉", "贝拉的冒险-匣中惊鸿", "动态表情包"),
+]
+
 # --------------------------------------------------------------------- cards
 # series id -> (display name, source dir under <assets>/收藏集卡牌)
 CARD_SERIES = {
@@ -241,7 +251,7 @@ STARTER_EMOTES = 4
 SKINS = [{"name": f"{member}山海经", "member": member} for member in ("嘉然", "乃琳", "贝拉")]
 INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
-             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 62.65, "emote": 22.85},
+             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
              "duplicateRefund": 10}
 CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
 

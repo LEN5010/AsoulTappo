@@ -1,7 +1,8 @@
 import { computed, reactive, ref, watch } from "vue";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
-import { toHttpBase, type Member, type ProfilePatch } from "../net/protocol";
+import { MotionSender } from "../net/MotionSender";
+import { restingMotion, toHttpBase, type Member, type PetMotion, type ProfilePatch } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote } from "../manifest";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
@@ -16,6 +17,7 @@ export interface RemoteMember extends Member {
   pulse: number;
   emote: EmoteFrame | null;
   combo: ComboFrame | null;
+  motion: PetMotion;
 }
 
 export const conn = ref<ConnState>("idle");
@@ -33,7 +35,7 @@ export const inRoom = computed(() => conn.value === "open" && !!youId.value);
 export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
 
 function add(m: Member): void {
-  members.set(m.id, { ...m, pulse: 0, emote: null, combo: null });
+  members.set(m.id, { ...m, pulse: 0, emote: null, combo: null, motion: m.motion ? { ...m.motion } : restingMotion() });
   const rm = members.get(m.id)!;
   players.set(m.id, {
     emote: new EmotePlayer((f) => (rm.emote = f), () => settings.emoteHoldMs),
@@ -57,6 +59,7 @@ const events: RoomEvents = {
   onConnState(s) {
     conn.value = s;
     if (s !== "open") {
+      motionSender.clear();
       // Membership is rebuilt from `joined` after (re)connect.
       clearMembers();
       youId.value = "";
@@ -84,6 +87,10 @@ const events: RoomEvents = {
     if (id === youId.value) return; // shown locally on send
     if (!getEmote(name)) return;
     players.get(id)?.emote.play(name);
+  },
+  onMotion(id, pose) {
+    const member = members.get(id);
+    if (member && id !== youId.value) Object.assign(member.motion, pose);
   },
   onState(u) {
     const m = members.get(u.id);
@@ -113,6 +120,7 @@ function errorText(code: string, message: string): string {
 }
 
 const client = new RoomClient(events);
+const motionSender = new MotionSender((pose) => client.sendMotion(pose));
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 
 /** Emote bubble of the local pet (shown immediately, also when offline). */
@@ -123,6 +131,10 @@ let lastSent = 0;
 /** Count a tap (key press or click). Only the number is ever sent. */
 export function registerTap(): void {
   if (inRoom.value) batcher.add(1);
+}
+
+export function syncMotion(pose: PetMotion): void {
+  if (!isPanelWindow && inRoom.value) motionSender.update(pose);
 }
 
 /** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
@@ -160,6 +172,7 @@ export function joinRoom(room: string): void {
   if (!id) return;
   lastError.value = "";
   batcher.clear();
+  motionSender.clear();
   settings.lastRoom = id;
   roomId.value = id;
   client.join(settings.serverUrl, {
@@ -173,6 +186,7 @@ export function joinRoom(room: string): void {
 export function leaveRoom(): void {
   if (isPanelWindow) { void requestDesktop("leaveRoom"); return; }
   batcher.clear();
+  motionSender.clear();
   client.leave();
   roomId.value = "";
 }

@@ -5,6 +5,7 @@ export interface Revealed {
   rarity: Rarity;
   item: string;
   new: boolean;
+  tier?: "big" | "small" | "normal";
 }
 
 const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
@@ -40,3 +41,12 @@ export function spotlightQueue<T extends Revealed>(drops: readonly T[]): T[] {
 }
 
 export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1;
+
+/** Fast-forward ordinary results; hidden cards and skins keep their reveal. */
+export function nextRevealIndex(drops: readonly Revealed[], start: number, highlightsOnly: boolean): number {
+  for (let i = start; i < drops.length; i++) {
+    const drop = drops[i]!;
+    if (!highlightsOnly || drop.rarity === "skin" || drop.tier === "big" || drop.tier === "small" || drop.rarity === "legendary") return i;
+  }
+  return -1;
+}

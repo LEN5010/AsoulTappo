@@ -4,14 +4,13 @@ import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
 import { type Item, RARITY_LABEL } from "../items";
 import { poolOf, effectiveRates, commonKindRates } from "../resonance";
 import { collection, resonate, draws, shards, status, online, error } from "../stores/player";
-import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
-import ItemArt from "../ui/ItemArt.vue";
 import ShardCrystal from "../ui/ShardCrystal.vue";
 import PoolStage from "./PoolStage.vue";
 import RevealScene from "./RevealScene.vue";
 import CardDetail from "./CardDetail.vue";
+import SkinDetail from "./SkinDetail.vue";
 
 const pool = poolOf();
 const complete = computed(() => Object.values(pool).flat().every((i) => collection.owned[i.id]));
@@ -28,11 +27,6 @@ const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
-}
-function openCraft(id: string) {
-  detail.value = null;
-  ui.craftTarget = id;
-  ui.page = "dex";
 }
 const pityPercent = (r: "legendary" | "skin") =>
   Math.min(100, (status.value?.resonance.pity[r] ?? 0) / manifest.economy.resonance.pity[r] * 100);
@@ -89,8 +83,8 @@ async function nextBatch() {
       <p class="ui-muted">传说为大隐藏，史诗为小隐藏与跳舞卡，稀有为绽放收藏集表情，罕见为脑洞波表情。高档集齐后概率并入普通档。重复表情返还 {{ manifest.economy.resonance.duplicateRefund }} 碎片，重复卡片累计数量。每次消耗 {{ manifest.economy.resonance.cost }} 碎片。</p>
       <p class="ui-muted">全角色共用一个池子。两个保底各自累计；同时到期时先触发大隐藏，下一次触发皮肤。对应档位集齐后保留进度，新增内容后可继续触发。</p>
     </Modal>
-    <CardDetail v-if="detail" :card="detail" preview @craft="openCraft" @close="detail = null" />
-    <Modal v-if="skin" :title="skin.name" @close="skin = null"><ItemArt :item="skin" :size="240" /></Modal>
+    <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
+    <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
     <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" @close="revealing = false" />
   </div>
 </template>

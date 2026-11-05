@@ -56,3 +56,15 @@ it("syncs clearing a nickname while connected and closes the old room on server 
   await vi.advanceTimersByTimeAsync(60000);
   expect(Socket.all).toHaveLength(1);
 });
+
+it("receives a remote pet's movement and button release without changing its tap count", async () => {
+  const { socket, r } = await setup();
+  socket.recv({ type: 'member_joined', member: { id: 'friend', nick: '朋友', character: '乃琳', taps: 12 } });
+  socket.recv({ type: 'motion', id: 'friend', dx: 15.2, dy: -3, keyDown: true, left: true, right: false });
+  expect(r.members.get('friend')!.motion).toEqual({ dx: 15.2, dy: -3, keyDown: true, left: true, right: false });
+  expect(r.members.get('friend')!.taps).toBe(12);
+  socket.recv({ type: 'motion', id: 'friend', dx: 0, dy: 0, keyDown: false, left: false, right: false });
+  expect(r.members.get('friend')!.motion.left).toBe(false);
+  r.leaveRoom();
+  expect(r.members.size).toBe(0);
+});

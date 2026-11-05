@@ -8,7 +8,7 @@ import { cardLabel, TIER_LABEL } from "../cards";
 import { dropLabel, getItem, RARITY_LABEL } from "../items";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import type { Drop } from "../net/api";
-import { groupDrops, needsSummary, sortDrops, spotlightQueue } from "../reveal";
+import { groupDrops, needsSummary, nextRevealIndex, sortDrops, spotlightQueue } from "../reveal";
 import { reducedMotion } from "../stores/theme";
 import { takeFocus, trapTab } from "../ui/focus";
 import ItemArt from "../ui/ItemArt.vue";
@@ -33,7 +33,7 @@ const drops = ref<Drop[]>([]);
 const queue = ref<{ drop: Drop; card?: ManifestCard; art: string }[]>([]);
 const at = ref(0);
 const settled = ref(false);
-let skipping = false;
+const skipping = ref(false);
 let alive = true;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -61,7 +61,6 @@ async function run() {
   drops.value = [];
   queue.value = [];
   at.value = 0;
-  skipping = false;
 
   const [result] = await Promise.all([props.load(), wait(reducedMotion.value ? 0 : CHARGE_MS)]);
   if (!alive) return;
@@ -72,14 +71,16 @@ async function run() {
   drops.value = sortDrops(result);
   const spot = spotlightQueue(result).map((drop) => ({ drop, card: cardOf(drop) }));
   queue.value = spot.map((s) => ({ ...s, art: s.card ? assetUrl(s.card.thumb) : "" }));
-  if (!queue.value.length || (skipping && needsSummary(drops.value))) {
+  const first = nextRevealIndex(result, 0, skipping.value);
+  if (first < 0) {
     phase.value = "summary";
     return;
   }
-  settled.value = skipping || reducedMotion.value;
+  at.value = first;
+  settled.value = reducedMotion.value;
   phase.value = "spotlight";
-  prepareArt(0);
-  prepareArt(1);
+  prepareArt(first);
+  prepareArt(first + 1);
 }
 
 function finish() {
@@ -87,9 +88,11 @@ function finish() {
   else emit("close");
 }
 function next() {
-  if (at.value + 1 < queue.value.length) {
-    at.value++;
+  const index = nextRevealIndex(queue.value.map((entry) => entry.drop), at.value + 1, skipping.value);
+  if (index >= 0) {
+    at.value = index;
     settled.value = reducedMotion.value;
+    prepareArt(index);
     prepareArt(at.value + 1);
   } else if (needsSummary(drops.value)) {
     phase.value = "summary";
@@ -98,12 +101,19 @@ function next() {
   }
 }
 function skip() {
-  if (phase.value === "charge") skipping = true;
-  else if (needsSummary(drops.value)) phase.value = "summary";
-  else settled.value = true;
+  skipping.value = true;
+  if (phase.value !== "spotlight") return;
+  const drops = queue.value.map((entry) => entry.drop);
+  // Keep the current special reveal intact; later clicks advance after it settles.
+  if (nextRevealIndex(drops, at.value, true) === at.value) {
+    if (settled.value) next();
+    return;
+  }
+  next();
 }
 function tap() {
   if (phase.value !== "spotlight") return;
+  if (skipping.value && !settled.value) return;
   if (settled.value) next();
   else settled.value = true;
 }
@@ -157,7 +167,7 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
         <i class="band one" aria-hidden="true"></i>
         <i class="band two" aria-hidden="true"></i>
         <div class="sealed"><div class="sealed-face ui-frame"><CardBack /></div></div>
-        <button type="button" class="ui-btn large act" @click.stop="skip">跳过动画</button>
+        <button type="button" class="ui-btn large act" @click.stop="skip">{{ skipping ? '等待隐藏与皮肤' : '跳过普通结果' }}</button>
       </div>
 
       <template v-else-if="phase === 'spotlight'">
@@ -168,8 +178,8 @@ const results = computed(() => groupDrops(drops.value).flatMap((drop) => {
         />
         <EmoteSpotlight v-else :key="`emote:${at}`" :drop="queue[at]!.drop" :settled="settled" @done="settled = true" />
         <span v-if="queue.length > 1" class="page"><b>{{ at + 1 }}</b> / {{ queue.length }}</span>
-        <button v-if="needsSummary(drops)" type="button" class="ui-btn small show-all" @click.stop="skip">查看全部</button>
-        <button type="button" class="ui-btn large act" @click.stop="tap">{{ action }}</button>
+        <button v-if="needsSummary(drops)" type="button" class="ui-btn small show-all" :disabled="skipping && !settled" @click.stop="skip">{{ skipping ? '继续跳过普通结果' : '跳过普通结果' }}</button>
+        <button type="button" class="ui-btn large act" :disabled="skipping && !settled" @click.stop="tap">{{ skipping && !settled ? '播放中…' : action }}</button>
       </template>
 
       <section v-else class="summary-body" :class="{ calm: reducedMotion }">

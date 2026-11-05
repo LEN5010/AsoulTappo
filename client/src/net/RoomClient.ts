@@ -1,4 +1,4 @@
-import type { ClientMessage, Member, ProfilePatch, ServerMessage, StateUpdate } from "./protocol";
+import type { ClientMessage, Member, PetMotion, ProfilePatch, ServerMessage, StateUpdate } from "./protocol";
 import { toWsUrl } from "./protocol";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
@@ -9,6 +9,7 @@ export interface RoomEvents {
   onMemberJoined(member: Member): void;
   onMemberLeft(id: string): void;
   onTap(id: string, count: number, total: number): void;
+  onMotion(id: string, pose: PetMotion): void;
   onEmote(id: string, emote: string): void;
   onState(update: StateUpdate): void;
   onError(code: string, message: string): void;
@@ -93,6 +94,9 @@ export class RoomClient {
   sendTap(count: number): void {
     this.send({ type: "tap", count });
   }
+  sendMotion(pose: PetMotion): void {
+    this.send({ type: "motion", ...pose });
+  }
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
   }
@@ -171,6 +175,11 @@ export class RoomClient {
       case "tap":
         this.events.onTap(msg.id, msg.count, msg.total);
         break;
+      case "motion": {
+        const { type: _, id, ...pose } = msg;
+        this.events.onMotion(id, pose);
+        break;
+      }
       case "emote":
         this.events.onEmote(msg.id, msg.emote);
         break;

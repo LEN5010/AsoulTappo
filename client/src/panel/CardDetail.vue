@@ -4,19 +4,21 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import { assetUrl } from "../asset";
 import { cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
-import { craftCost, getItem } from "../items";
+import { getItem } from "../items";
 import { collection } from "../stores/player";
+import { ui } from "../stores/ui";
+import CraftAction from "../ui/CraftAction.vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import { flyFrom } from "../ui/motion";
 
 const props = defineProps<{ card: ManifestCard; from?: DOMRect; preview?: boolean }>();
-const emit = defineEmits<{ close: []; craft: [id: string] }>();
+const emit = defineEmits<{ close: [] }>();
 
 const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
 const animated = computed(() => playsCardVideo(props.card, count.value, reducedMotion.value, props.preview));
-const cost = computed(() => craftCost(getItem(`card:${props.card.id}`)!));
+const item = computed(() => getItem(`card:${props.card.id}`)!);
 const label = computed(() => cardLabel(props.card));
 const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
 
@@ -68,7 +70,8 @@ function togglePlay() {
           <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
           <div v-if="card.video"><dt>卡面</dt><dd>动态</dd></div>
         </dl>
-        <button v-if="!count && cost !== null" type="button" class="ui-btn primary" @click="emit('craft', `card:${card.id}`)">兑换（{{ cost }} 碎片）</button>
+        <CraftAction :key="item.id" :item="item" />
+        <button v-if="!count && !manifest.economy.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
       </div>
     </div>
   </Modal>
@@ -179,5 +182,10 @@ dd {
 }
 dd.missing {
   color: var(--ink-3);
+}
+.resonance { align-self: stretch; margin-top: auto; }
+@container panel (max-width: 660px) {
+  .detail { gap: 16px; }
+  .art { max-width: 44%; height: auto; align-self: flex-start; }
 }
 </style>

@@ -35,6 +35,7 @@ function setup() {
     onMemberJoined: vi.fn(),
     onMemberLeft: vi.fn(),
     onTap: vi.fn(),
+    onMotion: vi.fn(),
     onEmote: vi.fn(),
     onState: vi.fn(),
     onError: vi.fn(),

@@ -31,7 +31,9 @@ const vacant = computed(() => SEATS - 1 - seated.value.length - (hidden.value ? 
         <NamePill :nick="settings.nick.trim() || '我'" :width="PILL_WIDTH" />
       </div>
       <div v-for="m in seated" :key="m.id" class="seat">
-        <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo" />
+        <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo"
+          :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
+          :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse />
         <NamePill :nick="m.nick" :width="PILL_WIDTH" />
       </div>
       <div v-if="hidden" class="seat more"><b>+{{ hidden }}</b></div>

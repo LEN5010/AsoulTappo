@@ -22,6 +22,7 @@ const PATHS: Record<string, string[]> = {
   logout: ["M15 4h4v16h-4", "M10 8l-4 4 4 4", "M6 12h10"],
   grid: ["M5 5h6v6H5z", "M13 5h6v6h-6z", "M5 13h6v6H5z", "M13 13h6v6h-6z"],
   thumb: ["M7 11H4v9h3z", "M7 11l3.6-6.3a1.8 1.8 0 0 1 3.3 1.3L13 10h5.2a2 2 0 0 1 2 2.4l-1.3 6A2 2 0 0 1 17 20H7"],
+  lock: ["M6 10h12v11H6z", "M8 10V6a4 4 0 0 1 8 0v4", "M12 14v3"],
   check: ["M5 13l4.5 4.5L19 7"],
   search: ["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M16 16l5 5"],
   back: ["M14.5 5.5L8 12l6.5 6.5"],

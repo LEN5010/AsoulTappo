@@ -17,7 +17,7 @@ from .game import Game, GameError
 from .manifest import Manifest, find_packs_dir
 from .models import (
     EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg, LeaveMsg, Member,
-    MemberJoinedMsg, MemberLeftMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
+    MemberJoinedMsg, MemberLeftMsg, MotionMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
     TapMsg, client_message_adapter,
 )
 from .rooms import Peer, RoomFull, RoomManager
@@ -45,7 +45,7 @@ app.add_middleware(
 
 
 def _member(p: Peer) -> Member:
-    return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps)
+    return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion)
 
 
 @app.get("/healthz")
@@ -211,6 +211,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 peer.taps += msg.count
                 await manager.broadcast(room_id, TapBroadcast(
                     id=peer.id, count=msg.count, total=peer.taps).model_dump())
+            elif isinstance(msg, MotionMsg):
+                peer.motion = msg.model_dump(exclude={"type"})
+                await manager.broadcast(room_id, {**msg.model_dump(), "id": peer.id}, exclude=peer.id)
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
                 if now - peer.last_emote < EMOTE_INTERVAL:

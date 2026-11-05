@@ -81,6 +81,19 @@ it("applies action results to both windows before resolving an awaited draw", as
   expect(panel.player.collection.owned["card:test"]).toBe(1);
 });
 
+it("mirrors remote pet animation poses into the panel without another room socket", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5,
+    pulse: 0, emote: null, combo: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
+  Object.assign(desk.room.members.get('friend')!.motion, { dx: 0, dy: 0, keyDown: false, left: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(panel.room.members.get('friend')!.motion.left).toBe(false);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 it("counts input only in the desk while the panel preview reacts to the same key", async () => {
   const desk = await context(false);
   const panel = await context(true);

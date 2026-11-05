@@ -4140,6 +4140,546 @@
     }
    ],
    "rarity": "common"
+  },
+  {
+   "id": "nailin-reverie",
+   "name": "绮梦漫游 · 乃琳",
+   "character": "乃琳",
+   "rarity": "common",
+   "emotes": [
+    {
+     "key": "nailin-reverie.01",
+     "name": "emmmm",
+     "img": "bundle:emotes/nailin-reverie/01.webp"
+    },
+    {
+     "key": "nailin-reverie.02",
+     "name": "一锤定音",
+     "img": "bundle:emotes/nailin-reverie/02.webp"
+    },
+    {
+     "key": "nailin-reverie.03",
+     "name": "享受",
+     "img": "bundle:emotes/nailin-reverie/03.webp"
+    },
+    {
+     "key": "nailin-reverie.04",
+     "name": "什么意思",
+     "img": "bundle:emotes/nailin-reverie/04.webp"
+    },
+    {
+     "key": "nailin-reverie.05",
+     "name": "害羞",
+     "img": "bundle:emotes/nailin-reverie/05.webp"
+    },
+    {
+     "key": "nailin-reverie.06",
+     "name": "得意",
+     "img": "bundle:emotes/nailin-reverie/06.webp"
+    },
+    {
+     "key": "nailin-reverie.07",
+     "name": "心如止水",
+     "img": "bundle:emotes/nailin-reverie/07.webp"
+    },
+    {
+     "key": "nailin-reverie.08",
+     "name": "我要闹了",
+     "img": "bundle:emotes/nailin-reverie/08.webp"
+    },
+    {
+     "key": "nailin-reverie.09",
+     "name": "指",
+     "img": "bundle:emotes/nailin-reverie/09.webp"
+    },
+    {
+     "key": "nailin-reverie.10",
+     "name": "挠头",
+     "img": "bundle:emotes/nailin-reverie/10.webp"
+    },
+    {
+     "key": "nailin-reverie.11",
+     "name": "揪心",
+     "img": "bundle:emotes/nailin-reverie/11.webp"
+    },
+    {
+     "key": "nailin-reverie.12",
+     "name": "晚安",
+     "img": "bundle:emotes/nailin-reverie/12.webp"
+    },
+    {
+     "key": "nailin-reverie.13",
+     "name": "服了",
+     "img": "bundle:emotes/nailin-reverie/13.webp"
+    },
+    {
+     "key": "nailin-reverie.14",
+     "name": "期待",
+     "img": "bundle:emotes/nailin-reverie/14.webp"
+    },
+    {
+     "key": "nailin-reverie.15",
+     "name": "爱你",
+     "img": "bundle:emotes/nailin-reverie/15.webp"
+    },
+    {
+     "key": "nailin-reverie.16",
+     "name": "私密马赛",
+     "img": "bundle:emotes/nailin-reverie/16.webp"
+    },
+    {
+     "key": "nailin-reverie.17",
+     "name": "落泪",
+     "img": "bundle:emotes/nailin-reverie/17.webp"
+    },
+    {
+     "key": "nailin-reverie.18",
+     "name": "装傻",
+     "img": "bundle:emotes/nailin-reverie/18.webp"
+    },
+    {
+     "key": "nailin-reverie.19",
+     "name": "调教警告",
+     "img": "bundle:emotes/nailin-reverie/19.webp"
+    },
+    {
+     "key": "nailin-reverie.20",
+     "name": "超赞",
+     "img": "bundle:emotes/nailin-reverie/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-casket",
+   "name": "匣中惊鸿 · 贝拉",
+   "character": "贝拉",
+   "rarity": "common",
+   "emotes": [
+    {
+     "key": "beila-casket.01",
+     "name": "下头",
+     "img": "bundle:emotes/beila-casket/01.webp"
+    },
+    {
+     "key": "beila-casket.02",
+     "name": "不是吧",
+     "img": "bundle:emotes/beila-casket/02.webp"
+    },
+    {
+     "key": "beila-casket.03",
+     "name": "不解",
+     "img": "bundle:emotes/beila-casket/03.webp"
+    },
+    {
+     "key": "beila-casket.04",
+     "name": "何意味",
+     "img": "bundle:emotes/beila-casket/04.webp"
+    },
+    {
+     "key": "beila-casket.05",
+     "name": "你话多了",
+     "img": "bundle:emotes/beila-casket/05.webp"
+    },
+    {
+     "key": "beila-casket.06",
+     "name": "凄凉",
+     "img": "bundle:emotes/beila-casket/06.webp"
+    },
+    {
+     "key": "beila-casket.07",
+     "name": "大可不必",
+     "img": "bundle:emotes/beila-casket/07.webp"
+    },
+    {
+     "key": "beila-casket.08",
+     "name": "大惊失色",
+     "img": "bundle:emotes/beila-casket/08.webp"
+    },
+    {
+     "key": "beila-casket.09",
+     "name": "头晕",
+     "img": "bundle:emotes/beila-casket/09.webp"
+    },
+    {
+     "key": "beila-casket.10",
+     "name": "好安静",
+     "img": "bundle:emotes/beila-casket/10.webp"
+    },
+    {
+     "key": "beila-casket.11",
+     "name": "害羞",
+     "img": "bundle:emotes/beila-casket/11.webp"
+    },
+    {
+     "key": "beila-casket.12",
+     "name": "慌了",
+     "img": "bundle:emotes/beila-casket/12.webp"
+    },
+    {
+     "key": "beila-casket.13",
+     "name": "揪心",
+     "img": "bundle:emotes/beila-casket/13.webp"
+    },
+    {
+     "key": "beila-casket.14",
+     "name": "比心",
+     "img": "bundle:emotes/beila-casket/14.webp"
+    },
+    {
+     "key": "beila-casket.15",
+     "name": "自我安慰",
+     "img": "bundle:emotes/beila-casket/15.webp"
+    },
+    {
+     "key": "beila-casket.16",
+     "name": "虚弱",
+     "img": "bundle:emotes/beila-casket/16.webp"
+    },
+    {
+     "key": "beila-casket.17",
+     "name": "警告",
+     "img": "bundle:emotes/beila-casket/17.webp"
+    },
+    {
+     "key": "beila-casket.18",
+     "name": "让我看看",
+     "img": "bundle:emotes/beila-casket/18.webp"
+    },
+    {
+     "key": "beila-casket.19",
+     "name": "败北",
+     "img": "bundle:emotes/beila-casket/19.webp"
+    },
+    {
+     "key": "beila-casket.20",
+     "name": "飞吻",
+     "img": "bundle:emotes/beila-casket/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "jiaran-moon-motion",
+   "name": "此间为爱 · 嘉然（动态）",
+   "character": "嘉然",
+   "rarity": "common",
+   "emotes": [
+    {
+     "key": "jiaran-moon-motion.01",
+     "name": "你在干嘛",
+     "img": "bundle:emotes/jiaran-moon-motion/01.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.02",
+     "name": "你干嘛",
+     "img": "bundle:emotes/jiaran-moon-motion/02.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.03",
+     "name": "你管我",
+     "img": "bundle:emotes/jiaran-moon-motion/03.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.04",
+     "name": "你说我在听",
+     "img": "bundle:emotes/jiaran-moon-motion/04.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.05",
+     "name": "再说一遍",
+     "img": "bundle:emotes/jiaran-moon-motion/05.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.06",
+     "name": "听不见",
+     "img": "bundle:emotes/jiaran-moon-motion/06.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.07",
+     "name": "哇哈哈哈",
+     "img": "bundle:emotes/jiaran-moon-motion/07.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.08",
+     "name": "就你是吧",
+     "img": "bundle:emotes/jiaran-moon-motion/08.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.09",
+     "name": "扶我下",
+     "img": "bundle:emotes/jiaran-moon-motion/09.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.10",
+     "name": "拿来吧你",
+     "img": "bundle:emotes/jiaran-moon-motion/10.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.11",
+     "name": "捏捏",
+     "img": "bundle:emotes/jiaran-moon-motion/11.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.12",
+     "name": "敬友谊",
+     "img": "bundle:emotes/jiaran-moon-motion/12.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.13",
+     "name": "有点秃然",
+     "img": "bundle:emotes/jiaran-moon-motion/13.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.14",
+     "name": "求饶",
+     "img": "bundle:emotes/jiaran-moon-motion/14.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.15",
+     "name": "看我表现",
+     "img": "bundle:emotes/jiaran-moon-motion/15.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.16",
+     "name": "糖糖回家",
+     "img": "bundle:emotes/jiaran-moon-motion/16.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.17",
+     "name": "走开走开",
+     "img": "bundle:emotes/jiaran-moon-motion/17.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.18",
+     "name": "起来high",
+     "img": "bundle:emotes/jiaran-moon-motion/18.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.19",
+     "name": "邦邦两拳",
+     "img": "bundle:emotes/jiaran-moon-motion/19.webp"
+    },
+    {
+     "key": "jiaran-moon-motion.20",
+     "name": "黯然离场",
+     "img": "bundle:emotes/jiaran-moon-motion/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "nailin-reverie-motion",
+   "name": "绮梦漫游 · 乃琳（动态）",
+   "character": "乃琳",
+   "rarity": "common",
+   "emotes": [
+    {
+     "key": "nailin-reverie-motion.01",
+     "name": "不对劲",
+     "img": "bundle:emotes/nailin-reverie-motion/01.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.02",
+     "name": "五体投地",
+     "img": "bundle:emotes/nailin-reverie-motion/02.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.03",
+     "name": "优雅",
+     "img": "bundle:emotes/nailin-reverie-motion/03.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.04",
+     "name": "厨艺展示",
+     "img": "bundle:emotes/nailin-reverie-motion/04.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.05",
+     "name": "否定",
+     "img": "bundle:emotes/nailin-reverie-motion/05.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.06",
+     "name": "喏咖啡",
+     "img": "bundle:emotes/nailin-reverie-motion/06.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.07",
+     "name": "奶淇琳~",
+     "img": "bundle:emotes/nailin-reverie-motion/07.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.08",
+     "name": "帅气",
+     "img": "bundle:emotes/nailin-reverie-motion/08.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.09",
+     "name": "打游戏",
+     "img": "bundle:emotes/nailin-reverie-motion/09.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.10",
+     "name": "拍桌",
+     "img": "bundle:emotes/nailin-reverie-motion/10.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.11",
+     "name": "捂脸",
+     "img": "bundle:emotes/nailin-reverie-motion/11.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.12",
+     "name": "摇摆",
+     "img": "bundle:emotes/nailin-reverie-motion/12.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.13",
+     "name": "有猪",
+     "img": "bundle:emotes/nailin-reverie-motion/13.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.14",
+     "name": "柔弱",
+     "img": "bundle:emotes/nailin-reverie-motion/14.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.15",
+     "name": "气鼓鼓",
+     "img": "bundle:emotes/nailin-reverie-motion/15.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.16",
+     "name": "爆了",
+     "img": "bundle:emotes/nailin-reverie-motion/16.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.17",
+     "name": "爱你",
+     "img": "bundle:emotes/nailin-reverie-motion/17.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.18",
+     "name": "装傻",
+     "img": "bundle:emotes/nailin-reverie-motion/18.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.19",
+     "name": "赖床",
+     "img": "bundle:emotes/nailin-reverie-motion/19.webp"
+    },
+    {
+     "key": "nailin-reverie-motion.20",
+     "name": "蹦蹦跳跳",
+     "img": "bundle:emotes/nailin-reverie-motion/20.webp"
+    }
+   ]
+  },
+  {
+   "id": "beila-casket-motion",
+   "name": "匣中惊鸿 · 贝拉（动态）",
+   "character": "贝拉",
+   "rarity": "common",
+   "emotes": [
+    {
+     "key": "beila-casket-motion.01",
+     "name": "严肃",
+     "img": "bundle:emotes/beila-casket-motion/01.webp"
+    },
+    {
+     "key": "beila-casket-motion.02",
+     "name": "你看这人",
+     "img": "bundle:emotes/beila-casket-motion/02.webp"
+    },
+    {
+     "key": "beila-casket-motion.03",
+     "name": "光速开溜",
+     "img": "bundle:emotes/beila-casket-motion/03.webp"
+    },
+    {
+     "key": "beila-casket-motion.04",
+     "name": "可恶",
+     "img": "bundle:emotes/beila-casket-motion/04.webp"
+    },
+    {
+     "key": "beila-casket-motion.05",
+     "name": "啊？",
+     "img": "bundle:emotes/beila-casket-motion/05.webp"
+    },
+    {
+     "key": "beila-casket-motion.06",
+     "name": "威胁",
+     "img": "bundle:emotes/beila-casket-motion/06.webp"
+    },
+    {
+     "key": "beila-casket-motion.07",
+     "name": "恰！",
+     "img": "bundle:emotes/beila-casket-motion/07.webp"
+    },
+    {
+     "key": "beila-casket-motion.08",
+     "name": "我有一计",
+     "img": "bundle:emotes/beila-casket-motion/08.webp"
+    },
+    {
+     "key": "beila-casket-motion.09",
+     "name": "摆了",
+     "img": "bundle:emotes/beila-casket-motion/09.webp"
+    },
+    {
+     "key": "beila-casket-motion.10",
+     "name": "摸脑袋",
+     "img": "bundle:emotes/beila-casket-motion/10.webp"
+    },
+    {
+     "key": "beila-casket-motion.11",
+     "name": "村口集合",
+     "img": "bundle:emotes/beila-casket-motion/11.webp"
+    },
+    {
+     "key": "beila-casket-motion.12",
+     "name": "气鼓鼓",
+     "img": "bundle:emotes/beila-casket-motion/12.webp"
+    },
+    {
+     "key": "beila-casket-motion.13",
+     "name": "点赞",
+     "img": "bundle:emotes/beila-casket-motion/13.webp"
+    },
+    {
+     "key": "beila-casket-motion.14",
+     "name": "烧烤",
+     "img": "bundle:emotes/beila-casket-motion/14.webp"
+    },
+    {
+     "key": "beila-casket-motion.15",
+     "name": "突然出现",
+     "img": "bundle:emotes/beila-casket-motion/15.webp"
+    },
+    {
+     "key": "beila-casket-motion.16",
+     "name": "立正",
+     "img": "bundle:emotes/beila-casket-motion/16.webp"
+    },
+    {
+     "key": "beila-casket-motion.17",
+     "name": "背手",
+     "img": "bundle:emotes/beila-casket-motion/17.webp"
+    },
+    {
+     "key": "beila-casket-motion.18",
+     "name": "记下了",
+     "img": "bundle:emotes/beila-casket-motion/18.webp"
+    },
+    {
+     "key": "beila-casket-motion.19",
+     "name": "贝极星~",
+     "img": "bundle:emotes/beila-casket-motion/19.webp"
+    },
+    {
+     "key": "beila-casket-motion.20",
+     "name": "队长登场",
+     "img": "bundle:emotes/beila-casket-motion/20.webp"
+    }
+   ]
   }
  ],
  "decor": [],
@@ -4204,8 +4744,8 @@
     "skin": 200
    },
    "commonKindWeights": {
-    "card": 62.65,
-    "emote": 22.85
+    "card": 45,
+    "emote": 40.5
    },
    "duplicateRefund": 10
   },

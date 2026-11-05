@@ -41,7 +41,7 @@ def tiny_manifest() -> Manifest:
         "economy": {"income": {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60},
                     "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
                                   "pity": {"legendary": 400, "skin": 200},
-                                  "commonKindWeights": {"card": 62.65, "emote": 22.85}, "duplicateRefund": 10},
+                                  "commonKindWeights": {"card": 45, "emote": 40.5}, "duplicateRefund": 10},
                     "craftCost": {"common": 480, "uncommon": 960, "rare": 1600}},
     })
 

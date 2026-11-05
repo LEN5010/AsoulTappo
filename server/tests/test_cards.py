@@ -21,10 +21,10 @@ def test_common_odds_follow_kind_weights_instead_of_catalog_sizes():
         {"id": f"emote:{i}", "kind": "emote"} for i in range(100)]
     outcomes = Counter(pick_common(pool, CFG["commonKindWeights"], {}, SeqRng((i + .5) / 8550))["kind"]
                        for i in range(8550))
-    assert outcomes == {"card": 6265, "emote": 2285}
+    assert outcomes == {"card": 4500, "emote": 4050}
 
 
-@pytest.mark.parametrize("kind,roll", [("card", 62.65 / 85.5 - .000001), ("emote", 62.65 / 85.5 + .000001)])
+@pytest.mark.parametrize("kind,roll", [("card", 45 / 85.5 - .000001), ("emote", 45 / 85.5 + .000001)])
 def test_completed_common_kind_keeps_its_odds(kind, roll):
     pool = [{"id": "card:one", "kind": "card"}, {"id": "emote:one", "kind": "emote"}]
     owned = {f"{kind}:one": 1}

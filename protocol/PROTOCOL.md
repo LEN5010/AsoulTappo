@@ -11,11 +11,14 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并 |
+| motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 50ms 合并，按键状态即时发送 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
 | state | character、nick，至少提供一个 |
 | ping | 无 |
 
-服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps`。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion`，加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+
+motion 仅广播到同房间的其他成员，用于桌面与联机面板的键鼠图层动画；敲击计数仍由 tap 单独累计。连接关闭时清除成员动作，重连后发送当前动作。
 
 ## HTTP API
 
@@ -49,7 +52,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
     "hardPity": { "legendary": 400, "skin": 200 },
     "total": 1234
   },
-  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 446 }
+  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 546 }
 }
 ```
 
@@ -63,7 +66,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 ## 共鸣与兑换
 
-五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 446 件：88 张卡、355 张表情、3 款皮肤。
+五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 546 件：88 张卡、455 张表情、3 款皮肤。
 
 | 档位 | 内容 | 概率 | 保底 |
 |---|---|---|---|
@@ -74,9 +77,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | 罕见 | 脑洞波表情 | 6% | — |
 | 普通 | 普通卡与普通表情 | 85.5% | — |
 
-每次消耗 160 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档。普通档先按 `commonKindWeights`（普卡 62.65 : 表情 22.85）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复；只有表情重复返还 10 碎片，卡片重复累计数量。初始单抽概率为普卡 62.65%、普通表情 22.85%；某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
+每次消耗 160 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档。普通档先按 `commonKindWeights`（普卡 45 : 表情 40.5）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复；只有表情重复返还 10 碎片，卡片重复累计数量。初始单抽概率为普卡 45%、普通表情 40.5%；某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
 
-稀有表情为绽放收藏集的 15 个表情；罕见为三套脑洞波的 60 个表情；普通表情共 280 个。已有物品按原 ID 保留。
+稀有表情为绽放收藏集的 15 个表情；罕见为三套脑洞波的 60 个表情；普通表情共 380 个。已有物品按原 ID 保留。
 
 新玩家获得 1600 碎片。普通卡与普通表情兑换价格为 480，罕见表情为 960，稀有表情为 1600；史诗、传说、皮肤和初始表情不参与兑换。
 

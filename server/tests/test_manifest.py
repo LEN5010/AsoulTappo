@@ -124,13 +124,13 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 446
+    assert len(dropped) == 546
     assert len(M.items) == len(dropped) + len(M.starter)
     assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [332, 60, 15, 26, 10, 3]
+    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [432, 60, 15, 26, 10, 3]
     for c in M.cards.values():
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
     assert all(set(r) == {"name"} for r in M.data["rarities"].values())
@@ -145,13 +145,26 @@ def test_emote_tiers_match_the_curated_sets():
     for sid in ("jiaran-garden", "nailin-raccoon", "beila-rabbit", "symphony-xinyi", "symphony-sinuo"):
         assert sets[sid] == "common"
     assert M.resonance["duplicateRefund"] == 10
-    assert M.resonance["commonKindWeights"] == {"card": 62.65, "emote": 22.85}
+    assert M.resonance["commonKindWeights"] == {"card": 45, "emote": 40.5}
     assert M.resonance["rates"] == {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5}
 
 
 def test_skin_directories_match_manifest():
     directories = {p.name for p in (REPO / "client/src/assets/characters").iterdir() if p.is_dir()} - FIVE
     assert directories == set(M.skins)
+
+
+def test_additional_collection_emotes_include_full_animated_sets():
+    sets = {s['id']: s for s in M.data['emoteSets']}
+    ids = ['nailin-reverie', 'beila-casket', 'jiaran-moon-motion', 'nailin-reverie-motion', 'beila-casket-motion']
+    for sid in ids:
+        assert len(sets[sid]['emotes']) == 20
+        assert sets[sid]['rarity'] == 'common'
+        if sid.endswith('-motion'):
+            for emote in sets[sid]['emotes']:
+                data = resolve(emote['img']).read_bytes()
+                assert data[:4] == b'RIFF' and data[8:12] == b'WEBP'
+                assert b'ANIM' in data[:64]
 
 
 def test_emote_keys_unique_and_fit_wire_limit():

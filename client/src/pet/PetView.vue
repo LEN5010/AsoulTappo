@@ -20,6 +20,7 @@ const props = withDefaults(
     mouseDy?: number;
     leftDown?: boolean;
     rightDown?: boolean;
+    smoothMouse?: boolean;
     emote?: EmoteFrame | null;
     combo?: ComboFrame | null;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
@@ -77,13 +78,13 @@ const bubbleAnchor = computed(() => ({
 </script>
 
 <template>
-  <div class="pet" :style="box">
+  <div class="pet" :class="{ 'smooth-mouse': smoothMouse }" :style="box">
     <div v-if="assets" class="art">
       <img class="layer bg" :src="assets.bg" :style="box" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
-      <img class="layer" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="leftDown" class="layer" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="rightDown" class="layer" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
+      <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
+      <img v-if="leftDown" class="layer mouse" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
+      <img v-if="rightDown" class="layer mouse" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
     </div>
     <div v-else class="missing">?</div>
 
@@ -99,5 +100,6 @@ const bubbleAnchor = computed(() => ({
 .bg { left: 0; top: 0; }
 .kb { transition: transform var(--dur-fast) var(--ease-pop); }
 .kb.down { transition: transform 50ms var(--ease-out); }
+.smooth-mouse .mouse { transition: transform 60ms linear; }
 .missing { color: var(--surface); opacity: 0.5; }
 </style>

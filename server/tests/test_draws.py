@@ -25,7 +25,7 @@ def test_new_player_and_idle_income():
         clock.t += 20
         r = g.presence(TOKEN, SESSION)
     assert r["shards"] == 1616 and r["income"] == {"multiplier": 1, "perMinute": 16}
-    assert r["totals"]["items"] == 446
+    assert r["totals"]["items"] == 546
 
 
 @pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 16), (30, 3, 48), (60, 5, 80), (120, 5, 80)])

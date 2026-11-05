@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupDrops, needsSummary, sortDrops, spotlightQueue } from "./reveal";
+import { groupDrops, needsSummary, nextRevealIndex, sortDrops, spotlightQueue } from "./reveal";
 import type { Rarity } from "./manifest";
 const d = (rarity: Rarity, item = "card:test", fresh = false) => ({ rarity, item, new: fresh });
 
@@ -26,5 +26,16 @@ describe("mixed resonance reveals", () => {
   it("groups repeats and sums refunds, preserving new state", () => {
     const drops = [{ ...d("common", "emote:a", true), count: 1, shards: 0 }, { ...d("common", "emote:a"), count: 2, shards: 10 }, { ...d("common", "emote:a"), count: 3, shards: 10 }];
     expect(groupDrops(drops)).toEqual([{ ...drops[0], count: 3, shards: 20, got: 3 }]);
+  });
+  it("skips ordinary dancing cards and emotes but stops on every hidden card and skin in draw order", () => {
+    const drops = [d('common'), { ...d('epic'), tier: 'normal' as const }, d('rare', 'emote:a'),
+      { ...d('epic'), tier: 'small' as const }, d('skin', 'char:test'), d('uncommon', 'emote:b'),
+      { ...d('legendary'), tier: 'big' as const }, d('common')];
+    expect(nextRevealIndex(drops, 0, false)).toBe(0);
+    expect(nextRevealIndex(drops, 0, true)).toBe(3);
+    expect(nextRevealIndex(drops, 4, true)).toBe(4);
+    expect(nextRevealIndex(drops, 5, true)).toBe(6);
+    expect(nextRevealIndex(drops, 7, true)).toBe(-1);
+    expect(nextRevealIndex([d('common')], 0, true)).toBe(-1);
   });
 });

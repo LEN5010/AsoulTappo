@@ -34,6 +34,7 @@ class Peer:
     token: str | None = None  # secret player token (never broadcast)
     emotes: set[str] = field(default_factory=set)  # emote keys known to be owned
     last_emote: float = 0.0
+    motion: dict[str, float | bool] | None = None
     active: bool = True
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 

@@ -1,7 +1,6 @@
 """Pydantic message models for the AsoulTappo WebSocket protocol.
 
-See protocol/PROTOCOL.md. Privacy rule: only *counts* of taps are ever sent;
-the server never receives key / mouse content.
+See protocol/PROTOCOL.md. Room input carries counts and bounded pet animation offsets.
 """
 from __future__ import annotations
 
@@ -41,6 +40,18 @@ class EmoteMsg(_Msg):
     emote: str = Field(min_length=1, max_length=32)
 
 
+class PetMotion(_Msg):
+    dx: float = Field(ge=-20, le=20, allow_inf_nan=False)
+    dy: float = Field(ge=-20, le=20, allow_inf_nan=False)
+    keyDown: bool
+    left: bool
+    right: bool
+
+
+class MotionMsg(PetMotion):
+    type: Literal["motion"] = "motion"
+
+
 class StateMsg(_Msg):
     """Update the displayed character or nickname."""
 
@@ -60,7 +71,7 @@ class PingMsg(_Msg):
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, EmoteMsg, StateMsg, PingMsg],
+    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, EmoteMsg, StateMsg, PingMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -74,6 +85,7 @@ class Member(BaseModel):
     nick: str
     character: str
     taps: int = 0
+    motion: Optional[PetMotion] = None
 
 
 class JoinedMsg(BaseModel):

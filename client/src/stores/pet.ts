@@ -5,12 +5,15 @@ import type { InputEvent } from "../composables/tauri";
 import { MouseMotion } from "../MouseMotion";
 import { bumpCounter } from "./counter";
 import { countInput } from "./player";
-import { registerTap } from "./room";
+import { inRoom, registerTap, syncMotion, youId } from "./room";
 import { settings } from "./settings";
 
 export const pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
 let keysHeld = 0;
 const motion = new MouseMotion(pet);
+
+watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, youId.value],
+  () => syncMotion({ ...pet }), { flush: "sync" });
 
 function tap(): void {
   registerTap();

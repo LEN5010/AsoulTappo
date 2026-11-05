@@ -3,24 +3,24 @@ import { manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
 import { commonKindRates, effectiveRates, poolOf } from "./resonance";
 
-it("builds one all-member pool with 446 distinct items", () => {
+it("builds one all-member pool with 546 distinct items", () => {
   const p = poolOf();
-  expect([p.common.length,p.uncommon.length,p.rare.length,p.epic.length,p.legendary.length,p.skin.length]).toEqual([332,60,15,26,10,3]);
-  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(446);
+  expect([p.common.length,p.uncommon.length,p.rare.length,p.epic.length,p.legendary.length,p.skin.length]).toEqual([432,60,15,26,10,3]);
+  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(546);
 });
-it("preserves the card odds while uncommon takes its share from emotes", () => {
+it("allocates 45 percent to common cards and 40.5 percent to ordinary emotes", () => {
   const p = poolOf();
   const owned = Object.fromEntries(p.common.filter((i) => i.kind === "card").map((i) => [i.id, 1]));
   for (const items of [{}, owned]) {
     const rates = commonKindRates(p, items);
-    expect(rates.card).toBeCloseTo(62.65);
-    expect(rates.emote).toBeCloseTo(22.85);
+    expect(rates.card).toBeCloseTo(45);
+    expect(rates.emote).toBeCloseTo(40.5);
   }
   for (const tier of ["legendary", "skin", "epic", "rare", "uncommon"] as const) {
     for (const item of p[tier]) owned[item.id] = 1;
   }
-  expect(commonKindRates(p, owned).card).toBeCloseTo(100 * 62.65 / 85.5);
-  expect(commonKindRates(p, owned).emote).toBeCloseTo(100 * 22.85 / 85.5);
+  expect(commonKindRates(p, owned).card).toBeCloseTo(100 * 45 / 85.5);
+  expect(commonKindRates(p, owned).emote).toBeCloseTo(100 * 40.5 / 85.5);
 });
 it("moves exactly the completed tier weights into common and keeps the total at 100", () => {
   const p = poolOf();

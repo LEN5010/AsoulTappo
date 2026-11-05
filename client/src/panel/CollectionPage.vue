@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // The dex brings card albums, searchable emote sets and skins together.
 import { computed, nextTick, ref, watch } from "vue";
-import { characterColor, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet } from "../manifest";
+import { characterColor, getCard, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet } from "../manifest";
 import { assetUrl } from "../asset";
-import { craftCost, getItem, ownsCharacter, ownsEmote, RARITY_LABEL, type Item } from "../items";
-import { collection, craftItem, error, online, shards } from "../stores/player";
+import { getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
+import { collection, error, shards } from "../stores/player";
 import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
@@ -16,6 +16,8 @@ import Icon from "../ui/Icon.vue";
 import { poolName } from "../cards";
 import CardAlbum, { type AlbumFilter } from "./CardAlbum.vue";
 import CardDetail from "./CardDetail.vue";
+import CraftAction from "../ui/CraftAction.vue";
+import SkinAlbum from "./SkinAlbum.vue";
 import { rise } from "../ui/motion";
 
 type OwnFilter = "all" | "owned" | "missing";
@@ -98,9 +100,7 @@ const selectedItemOwned = computed(() =>
   selectedItem.value ? selectedItem.value.starter || !!collection.owned[selectedItem.value.id] : false,
 );
 const selectedItemCount = computed(() => (selectedItem.value ? collection.owned[selectedItem.value.id] ?? 0 : 0));
-const selectedItemCost = computed(() => (selectedItem.value ? craftCost(selectedItem.value) : null));
 const actionNote = ref("");
-const busy = ref(false);
 
 function inspect(key: string) {
   selectedItem.value = getItem(`emote:${key}`) ?? null;
@@ -111,21 +111,14 @@ watch(
   () => ui.craftTarget,
   (id) => {
     if (id) {
-      selectedItem.value = getItem(id) ?? null;
+      if (id.startsWith('card:')) detail.value = getCard(id.slice(5)) ?? null;
+      else selectedItem.value = getItem(id) ?? null;
       actionNote.value = "";
       ui.craftTarget = "";
     }
   },
-  { immediate: true },
+  { flush: 'post' },
 );
-
-async function craftSelectedItem() {
-  if (!selectedItem.value || busy.value) return;
-  busy.value = true;
-  const item = selectedItem.value;
-  if (await craftItem(item.id)) actionNote.value = `已兑换 ${item.name}`;
-  busy.value = false;
-}
 
 function toggleFav(item: Item) {
   const at = settings.favorites.indexOf(item.ref);
@@ -149,25 +142,24 @@ const poolTabs = computed(() => [{ id: "all", label: "全部" }, ...manifest.ser
 const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
 function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; }
-function craftCard(id: string) { detail.value = null; selectedItem.value = getItem(id) ?? null; }
-function toResonance() { ui.page = "resonance"; }
+if (ui.craftTarget) {
+  const target = ui.craftTarget;
+  ui.craftTarget = '';
+  if (target.startsWith('card:')) detail.value = getCard(target.slice(5)) ?? null;
+  else selectedItem.value = getItem(target) ?? null;
+}
 </script>
 
 <template>
   <div class="collection-page">
     <SegTabs v-model="category" :tabs="CATEGORIES" label="图鉴分类" />
+    <div class="dex-wallet"><Icon name="shard" :size="14" />碎片 <b>{{ shards }}</b><button class="ui-btn small" type="button" @click="ui.page = 'resonance'">去共鸣</button></div>
     <template v-if="category === 'card'">
       <SegTabs v-model="selectedSeries" plain :tabs="poolTabs" label="卡片系列" />
       <FilterChips v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
       <CardAlbum :cards="cards" :filter="cardFilter" @inspect="inspectCard" />
     </template>
-    <div v-else-if="category === 'skin'" class="skin-grid ui-scroll">
-      <article v-for="s in manifest.skins" :key="s.name" class="skin-item ui-frame">
-        <ItemArt :item="getItem(`char:${s.name}`)!" :size="160" :locked="!ownsCharacter(s.name, collection.owned)" />
-        <b>{{ s.name }}</b><small>{{ ownsCharacter(s.name, collection.owned) ? '已拥有' : '未解锁' }}</small>
-        <button type="button" class="ui-btn" @click="toResonance()">去共鸣</button>
-      </article>
-    </div>
+    <SkinAlbum v-else-if="category === 'skin'" />
     <template v-else>
     <SegTabs v-model="charTab" class="tabs-bar" :tabs="charTabs" label="角色筛选" />
 
@@ -227,7 +219,7 @@ function toResonance() { ui.page = "resonance"; }
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
     </template>
-    <CardDetail v-if="detail" :card="detail" :from="detailFrom" @craft="craftCard" @close="detail = null" />
+    <CardDetail v-if="detail" :card="detail" :from="detailFrom" @close="detail = null" />
 
     <Modal v-if="selectedItem" :title="selectedItem.name" @close="selectedItem = null">
       <div class="emote-detail">
@@ -246,24 +238,15 @@ function toResonance() { ui.page = "resonance"; }
             <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedItem)">发表情</button>
           </div>
         </template>
-        <template v-else>
-          <p class="held"><Icon name="shard" :size="13" />持有 {{ shards }} 碎片</p>
-          <button
-            v-if="selectedItemCost !== null" type="button" class="ui-btn primary"
-            :disabled="busy || !online || shards < selectedItemCost"
-            @click="craftSelectedItem"
-          >
-            {{ shards < selectedItemCost ? `还差 ${selectedItemCost - shards} 碎片` : `兑换（${selectedItemCost} 碎片）` }}
-          </button>
-        </template>
+        <CraftAction :key="selectedItem.id" :item="selectedItem" />
       </div>
     </Modal>
   </div>
 </template>
 
 <style scoped>
-.skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; overflow: auto; }
-.skin-item { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; background: var(--surface); }
+.dex-wallet { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 7px 0; color: var(--ink-2); font-size: var(--fs-label); }
+.dex-wallet b { margin-right: 8px; color: var(--accent-deep); font: 800 var(--fs-section)/1 var(--font-latin); }
 
 .collection-page {
   height: 100%;

@@ -171,6 +171,41 @@ def build_emotes(ctx: Ctx) -> list[dict]:
     return sets
 
 
+# ------------------------------------------------------ collection emotes
+def build_collection_emotes(ctx: Ctx) -> list[dict]:
+    sets = []
+    for sid, title, member, album, folder in cat.COLLECTION_EMOTE_SETS:
+        source = ctx.src / member / album / folder
+        animated = folder == "动态表情包"
+        suffix = "-0_sticker_gif.gif" if animated else "-0_sticker_static-AI高清.png"
+        files = sorted(p for p in source.iterdir() if p.name.endswith(suffix))
+        if not files:
+            raise ValueError(f"No emotes in {source}")
+        emotes = []
+        for i, path in enumerate(files, 1):
+            rel = f"emotes/{sid}/{i:02d}.webp"
+            out = BUNDLE / rel
+            if ctx.todo(out):
+                with Image.open(path) as image:
+                    if animated:
+                        size = image.size
+                        scale = min(1, EMOTE_PX / max(size))
+                        target = tuple(max(1, round(n * scale)) for n in size)
+                        frames, durations = [], []
+                        for frame in ImageSequence.Iterator(image):
+                            frames.append(frame.convert("RGBA").resize(target, Image.Resampling.LANCZOS))
+                            durations.append(frame.info.get("duration", 100))
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        frames[0].save(out, "WEBP", save_all=True, append_images=frames[1:],
+                                       duration=durations, loop=image.info.get("loop", 0), quality=85, method=6)
+                    else:
+                        save_webp(square_fit(image, EMOTE_PX), out, q=85)
+            emotes.append({"key": f"{sid}.{i:02d}", "name": emote_name(path.name.removesuffix(suffix)),
+                           "img": f"bundle:{rel}"})
+        sets.append({"id": sid, "name": title, "character": member, "rarity": "common", "emotes": emotes})
+    return sets
+
+
 # ------------------------------------------------------------------- themes
 def find_part(dirs: list[Path], prefix: str) -> Path | None:
     for d in dirs:
@@ -454,16 +489,22 @@ def main() -> None:
     ap.add_argument("--src", default="/workspace/asoul-assets")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--cards-only", action="store_true", help="Update cards while retaining existing themes and emotes")
+    ap.add_argument("--emotes-only", action="store_true", help="Add collection emotes from the member/collection layout")
+    ap.add_argument("--collection-src", help="Additional member/collection source when rebuilding all assets")
     ap.add_argument("--series", nargs="+", choices=cat.CARD_SERIES, help="Series to update with --cards-only")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
+    if args.emotes_only and args.cards_only:
+        ap.error("--emotes-only and --cards-only are mutually exclusive")
+
     if args.series and not args.cards_only:
         ap.error("--series requires --cards-only")
-    if args.cards_only:
+    if args.cards_only or args.emotes_only:
         manifest = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
         selected = set(args.series or cat.CARD_SERIES)
-        cards = [c for c in manifest["cards"] if c["series"] not in selected] + build_cards(ctx, selected)
+        cards = ([c for c in manifest["cards"] if c["series"] not in selected] + build_cards(ctx, selected)
+                 if args.cards_only else manifest["cards"])
         emotes, themes = manifest["emoteSets"], manifest["themes"]
         decor, accessories = manifest["decor"], manifest["accessories"]
     else:
@@ -472,6 +513,14 @@ def main() -> None:
         cards = build_cards(ctx)
         decor = []
         accessories = []
+    if args.emotes_only or args.collection_src:
+        additions = build_collection_emotes(Ctx(Path(args.collection_src or args.src), args.force))
+        replaced = {s["id"] for s in additions}
+        emotes = [s for s in emotes if s["id"] not in replaced] + additions
+    elif not args.cards_only:
+        previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+        collection_ids = {s[0] for s in cat.COLLECTION_EMOTE_SETS}
+        emotes += [s for s in previous["emoteSets"] if s["id"] in collection_ids]
     for es in emotes:
         es["rarity"] = ("rare" if es["id"] in cat.RARE_EMOTE_SETS else
                         "uncommon" if es["id"] in cat.UNCOMMON_EMOTE_SETS else "common")
