@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The dex brings card albums, searchable emote sets and skins together.
 import { computed, nextTick, ref, watch } from "vue";
-import { characterColor, getCard, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet } from "../manifest";
+import { characterColor, getCard, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet, type Rarity } from "../manifest";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
 import { collection, error, shards } from "../stores/player";
@@ -58,6 +58,17 @@ const albums = computed(() =>
     })
     .sort((a, b) => RARITY_ORDER.indexOf(b.set.rarity) - RARITY_ORDER.indexOf(a.set.rarity)),
 );
+
+const albumGroups = computed(() =>
+  [...RARITY_ORDER].reverse()
+    .map((rarity) => ({ rarity, albums: albums.value.filter((a) => a.set.rarity === rarity) }))
+    .filter((group) => group.albums.length),
+);
+const collapsedGroups = ref(new Set<Rarity>());
+function toggleGroup(rarity: Rarity) {
+  if (collapsedGroups.value.has(rarity)) collapsedGroups.value.delete(rarity);
+  else collapsedGroups.value.add(rarity);
+}
 
 const album = computed(() => manifest.emoteSets.find((s) => s.id === albumId.value) ?? null);
 const searching = computed(() => !!query.value.trim());
@@ -182,9 +193,23 @@ if (ui.craftTarget) {
     </div>
 
     <div ref="wall" class="wall ui-scroll">
-      <div v-if="showWall" class="albums">
+      <div v-if="showWall" class="album-groups">
+        <section v-for="group in albumGroups" :key="group.rarity" class="rarity-group">
+          <h3 class="group-heading">
+            <button
+              type="button" class="group-toggle"
+              :aria-expanded="!collapsedGroups.has(group.rarity)" :aria-controls="`emote-group-${group.rarity}`"
+              @click="toggleGroup(group.rarity)"
+            >
+              <span>{{ RARITY_LABEL[group.rarity] }}</span>
+              <svg class="group-arrow" :class="{ expanded: !collapsedGroups.has(group.rarity) }" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 3.5 11 8 5 12.5Z" /></svg>
+              <small>{{ group.albums.length }} 套</small>
+              <i class="group-line" aria-hidden="true"></i>
+            </button>
+          </h3>
+          <div v-show="!collapsedGroups.has(group.rarity)" :id="`emote-group-${group.rarity}`" class="albums">
         <button
-          v-for="a in albums" :key="a.set.id" type="button"
+          v-for="a in group.albums" :key="a.set.id" type="button"
           class="album ui-tile" :class="a.set.rarity" :title="a.set.name" data-rise
           @click="openAlbum(a.set.id)"
         >
@@ -204,6 +229,8 @@ if (ui.craftTarget) {
           </span>
           <span class="ui-bar album-bar"><i :style="{ width: `${(a.owned / a.total) * 100}%` }"></i></span>
         </button>
+          </div>
+        </section>
       </div>
 
       <template v-else>
@@ -348,6 +375,35 @@ if (ui.craftTarget) {
   padding-right: 6px;
 }
 
+.album-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding-top: 2px;
+}
+.rarity-group { min-width: 0; }
+.group-heading { margin: 0 0 10px; }
+.group-toggle {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 4px 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 800 var(--fs-strong)/1.4 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.group-toggle small { color: var(--ink-3); font: 500 var(--fs-label)/1 var(--font); white-space: nowrap; }
+.group-arrow { flex: none; color: var(--ink-2); transition: transform var(--dur-fast) var(--ease-out); }
+.group-arrow.expanded { transform: rotate(90deg); }
+.group-line { flex: 1; height: 1px; margin-left: 3px; background: var(--line-2); transition: background var(--dur-fast); }
+.group-toggle:hover { color: var(--accent-deep); }
+.group-toggle:hover .group-line { background: var(--accent); }
+.group-toggle:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; border-radius: var(--radius-s); }
 .albums {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
@@ -387,9 +443,6 @@ if (ui.craftTarget) {
 }
 .collage img.miss {
   filter: var(--dim) var(--contour);
-}
-.album:hover .collage img.miss {
-  filter: var(--contour);
 }
 .flags {
   position: absolute;

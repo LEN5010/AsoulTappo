@@ -42,11 +42,4 @@ const fit = computed(() => (props.item.kind === "card" || props.item.kind === "t
 .art.locked :deep(.face) {
   filter: var(--dim);
 }
-.art.locked:hover img,
-.art.locked:hover :deep(.face) {
-  filter: none;
-}
-.art.emote.locked:hover img {
-  filter: var(--contour);
-}
 </style>

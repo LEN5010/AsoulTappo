@@ -338,7 +338,8 @@ function fireEmote(key: string) {
   bottom: 0;
   transform: translateX(-50%);
 }
-.stage-pet :deep(.art) {
+/* Only outline the pet's layers; the emote bubble draws its own image contour and tail. */
+.stage-pet :deep(.pet > .art) {
   filter: var(--sticker-lg);
 }
 .stage-name {

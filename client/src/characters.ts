@@ -51,6 +51,9 @@ export function getCharacter(name: string): CharacterAssets | undefined {
   return characters[name] ?? characters[memberOf(name)] ?? characters[defaultCharacter];
 }
 
+/** Skin folder names are the member name followed by the collection name. */
+export const skinSeries = (name: string) => name.slice(memberOf(name).length);
+
 // Layout of the layers on the 240x135 base canvas (from the original app's defaults).
 export const PET_BASE = {
   width: 240,

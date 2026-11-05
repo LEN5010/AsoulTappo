@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Resonance stage: a framed card, the pool's tier counts, its skins and a lineup of the dynamic cards.
 // The lineup deals the next card on its own.
-import { computed, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { assetUrl } from "../asset";
-import { getCharacter } from "../characters";
-import { getCard, type Rarity } from "../manifest";
+import { getCharacter, skinSeries } from "../characters";
+import { getCard, characterColor, memberOf, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { poolOf } from "../resonance";
 import { collection } from "../stores/player";
@@ -59,10 +59,46 @@ const lineup = computed(() =>
 );
 const pointing = ref(false);
 watch(() => props.busy, () => (pointing.value = false));
+
+const skinViewport = ref<HTMLElement>();
+const skinGroup = ref<HTMLElement[]>();
+const skinFocused = ref(false);
+// The detail sheet restores focus to its trigger when it closes. Resume after
+// that restoration instead of treating it as a new keyboard navigation action.
+watch(() => props.paused, (paused) => {
+  if (!paused) skinFocused.value = false;
+}, { flush: "post" });
+let skinFrame = 0;
+let skinTime = 0;
+let skinOffset = 0;
+function scrollSkins(time: number) {
+  const viewport = skinViewport.value;
+  const width = skinGroup.value?.[0]?.offsetWidth ?? 0;
+  if (viewport && width > viewport.clientWidth && skinTime && !reducedMotion.value
+    && !props.busy && !props.paused && !skinFocused.value) {
+    skinOffset = (skinOffset + Math.min(time - skinTime, 50) * .024) % width;
+    viewport.scrollLeft = skinOffset;
+  } else if (viewport) skinOffset = viewport.scrollLeft;
+  skinTime = time;
+  skinFrame = requestAnimationFrame(scrollSkins);
+}
+function startSkins() {
+  if (skinFrame) return;
+  skinTime = 0;
+  skinFrame = requestAnimationFrame(scrollSkins);
+}
+function stopSkins() {
+  cancelAnimationFrame(skinFrame);
+  skinFrame = 0;
+}
+onMounted(startSkins);
+onActivated(startSkins);
+onDeactivated(stopSkins);
+onBeforeUnmount(stopSkins);
 </script>
 
 <template>
-  <section class="pool-stage" :class="{ hold: busy || paused || pointing }">
+  <section class="pool-stage" :class="{ hold: busy || paused || pointing || skinFocused }">
     <button
       v-if="active" type="button" class="hero" :disabled="busy" :title="active.name"
       @pointerenter="pointing = true" @pointerleave="pointing = false" @click="emit('inspect', active)"
@@ -110,14 +146,25 @@ watch(() => props.busy, () => (pointing.value = false));
         <template v-if="active"><span class="sep">·</span><span class="now">{{ active.name }}</span></template>
       </p>
 
-      <div v-if="skins.length" class="skins">
+      <div
+        v-if="skins.length" ref="skinViewport" class="skins" role="region" aria-label="皮肤预览"
+        @pointerdown="skinFocused = false"
+        @focusin="skinFocused = ($event.target as HTMLElement).matches(':focus-visible')"
+        @focusout="skinFocused = ($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node | null)"
+      >
+        <div class="skin-track">
+        <div v-for="copy in reducedMotion ? 1 : 2" :key="copy" ref="skinGroup" class="skin-group" :aria-hidden="copy === 2 ? true : undefined">
         <button
           v-for="{ item, bg } in skins" :key="item.id" type="button" class="skin-tile"
-          :disabled="busy" :title="item.name" @click="emit('inspect', item)"
+          :style="{ '--member': characterColor(item.ref) }"
+          :tabindex="copy === 2 ? -1 : undefined"
+          :disabled="busy" :title="item.name" :aria-label="`查看${item.name}`" @click="emit('inspect', item)"
         >
           <PetBust class="skin-bust" :src="bg" />
-          <b>{{ item.name }}</b>
+          <span class="skin-label"><b>{{ memberOf(item.ref) }}</b><small>{{ skinSeries(item.ref) }}</small></span>
         </button>
+        </div>
+        </div>
       </div>
 
       <div class="lineup" @pointerenter="pointing = true" @pointerleave="pointing = false">
@@ -401,44 +448,60 @@ h3 {
 }
 
 .skins {
+  min-width: 0;
+  overflow-x: auto;
+  padding: 3px 0;
+  scrollbar-width: none;
+}
+.skins::-webkit-scrollbar { display: none; }
+.skin-track { display: flex; width: max-content; }
+.skin-group {
+  flex: none;
   display: flex;
-  gap: 7px;
+  gap: 8px;
+  padding-right: 8px;
 }
 .skin-tile {
-  flex: 1 1 0;
+  flex: none;
+  width: 126px;
   min-width: 0;
-  height: 54px;
-  padding: 0 4px 0 2px;
+  min-height: 58px;
+  padding: 5px 7px;
   box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-m);
-  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 3px;
-  background: var(--accent-tint);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  justify-content: center;
+  gap: 7px;
+  background: color-mix(in oklab, var(--member) 7%, var(--surface));
   color: var(--ink);
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast);
 }
 .skin-tile:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: inset 0 0 0 1.5px var(--accent), var(--glow-s);
+  background: color-mix(in oklab, var(--member) 16%, var(--surface));
 }
 .skin-bust {
   flex: none;
-  align-self: flex-end;
-  width: 46px;
-  height: 46px;
-  filter: var(--contour);
+  width: 48px;
+  height: 48px;
 }
-.skin-tile b {
+.skin-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+.skin-label b {
+  font: 800 var(--fs-body)/1.3 var(--font);
+}
+.skin-label small {
   white-space: nowrap;
-  font: 800 var(--fs-caption)/1.3 var(--font);
+  font: 500 var(--fs-caption)/1.3 var(--font);
+  color: var(--ink-2);
 }
 
 .lineup {
@@ -537,27 +600,42 @@ h3 {
   .title small,
   .stat i,
   .sep,
-  .now,
-  .skin-tile b {
+  .now {
     display: none;
   }
   .info {
     padding-right: 12px;
   }
   .stat {
-    padding: 0 8px;
+    height: 28px;
+    padding: 0 6px;
+    font-size: var(--fs-label);
   }
+  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .stat svg { width: 13px; margin-right: 4px; }
   .collected {
     white-space: nowrap;
   }
   .skin-tile {
-    height: 42px;
-    padding: 0;
-    justify-content: center;
+    width: 118px;
+    min-height: 54px;
+    gap: 7px;
+    padding: 4px 7px;
   }
   .skin-bust {
+    width: 42px;
     height: 40px;
   }
+  .skin-label { gap: 2px; }
+  .skin-label b { font-size: var(--fs-label); }
+  .skin-label small { font-size: var(--fs-caption); }
+}
+@container panel (max-width: 660px) {
+  .pool-stage { flex-direction: column; gap: 18px; padding: 4px; }
+  .hero { width: 150px; height: 214px; }
+  .info { margin-left: 0; padding: 16px; gap: 14px; }
+  .skin-bust { width: 44px; height: 40px; }
+  .skin-label small { font-size: var(--fs-caption); }
 }
 /* Keeps the draw buttons above the fold: the collected total still sums up what the tier counts break down. */
 @container panel (max-height: 560px) {

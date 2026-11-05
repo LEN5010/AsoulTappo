@@ -3957,7 +3957,7 @@
      "img": "bundle:emotes/bloom-jiaran/05.webp"
     }
    ],
-   "rarity": "rare"
+   "rarity": "uncommon"
   },
   {
    "id": "bloom-nailin",
@@ -3990,7 +3990,7 @@
      "img": "bundle:emotes/bloom-nailin/05.webp"
     }
    ],
-   "rarity": "rare"
+   "rarity": "uncommon"
   },
   {
    "id": "bloom-beila",
@@ -4023,7 +4023,7 @@
      "img": "bundle:emotes/bloom-beila/05.webp"
     }
    ],
-   "rarity": "rare"
+   "rarity": "uncommon"
   },
   {
    "id": "symphony-xinyi",
@@ -4361,7 +4361,7 @@
    "id": "jiaran-moon-motion",
    "name": "此间为爱 · 嘉然（动态）",
    "character": "嘉然",
-   "rarity": "common",
+   "rarity": "rare",
    "emotes": [
     {
      "key": "jiaran-moon-motion.01",
@@ -4469,7 +4469,7 @@
    "id": "nailin-reverie-motion",
    "name": "绮梦漫游 · 乃琳（动态）",
    "character": "乃琳",
-   "rarity": "common",
+   "rarity": "rare",
    "emotes": [
     {
      "key": "nailin-reverie-motion.01",
@@ -4577,7 +4577,7 @@
    "id": "beila-casket-motion",
    "name": "匣中惊鸿 · 贝拉（动态）",
    "character": "贝拉",
-   "rarity": "common",
+   "rarity": "rare",
    "emotes": [
     {
      "key": "beila-casket-motion.01",

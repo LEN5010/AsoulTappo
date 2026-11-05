@@ -17,6 +17,7 @@ import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
 import SettingsPage from "./SettingsPage.vue";
+import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -198,7 +199,7 @@ function badgeOf(id: Page): number {
             </button>
           </nav>
 
-          <span class="side-deco" aria-hidden="true"></span>
+          <AlpacaEasterEgg class="side-deco" />
         </div>
       </aside>
 
@@ -528,21 +529,13 @@ nav button.on .nav-text small {
 .pip.soft {
   background: var(--accent-deep);
 }
-/* A sticker standing in the corner, cut off by the bottom edge and straightened by the pointer. */
+/* The alpaca and its surprise sticker share the bottom corner. */
 .side-deco {
   position: absolute;
   left: 16px;
   bottom: -30px;
   width: 112px;
   aspect-ratio: 420 / 620;
-  background: url("../assets/brand/side-alpaca.webp") center / contain no-repeat;
-  filter: var(--contour) drop-shadow(0 4px 7px rgba(var(--ink-rgb), 0.3));
-  transform: rotate(-5deg);
-  transform-origin: 50% 100%;
-  transition: transform var(--dur-slow) var(--ease-spring);
-}
-.side-deco:hover {
-  transform: rotate(0deg) translateX(5px);
 }
 
 @container panel (max-width: 760px) {

@@ -82,7 +82,7 @@
   --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
   --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
   /* Not owned yet. Stays opaque: stickers overlap, and any transparency shows one through the other. */
-  --dim: grayscale(1) contrast(0.84) brightness(1.08);
+  --dim: brightness(0.74);
 
   --dur-fast: 140ms;
   --dur-base: 220ms;
@@ -407,15 +407,12 @@
 .ui-tile.legendary .ui-well {
   background: var(--rar-legendary-bg);
 }
-/* Locked stickers stay gray until hovered. They skip the contour, which keeps the grid cheap to paint. */
+/* Unowned stickers keep their colors with the same dimming as unowned cards. */
 .ui-tile.locked .ui-well {
   background: var(--accent-tint);
 }
 .ui-tile.locked .ui-well img {
   filter: var(--dim);
-}
-.ui-tile.locked:hover .ui-well img {
-  filter: var(--contour);
 }
 .ui-tile.locked .ui-tile-name {
   color: var(--ink-3);

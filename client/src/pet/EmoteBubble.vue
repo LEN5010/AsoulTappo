@@ -14,12 +14,15 @@ const props = defineProps<{
   anchor: { x: number; y: number };
   /** emote picture height in px */
   size: number;
+  /** Local UI stickers can supply an image directly, outside the collectible manifest. */
+  src?: string;
+  alt?: string;
   /** grow to the upper left instead (pet near the right screen edge) */
   flip?: boolean;
 }>();
 
 const view = computed(() =>
-  props.frame
+  props.src ? { img: props.src } : props.frame
     ? emoteView(props.frame.key, {
         serverBase: serverBase.value,
         appBase: import.meta.env.BASE_URL,
@@ -37,7 +40,7 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
           <Transition :name="reducedMotion ? 'fade' : 'swap'">
             <div :key="frame.seq" class="art">
               <i class="point" />
-              <img :src="view.img" :style="{ height: `${size}px` }" alt="" draggable="false" />
+              <img :src="view.img" :style="{ height: `${size}px` }" :alt="alt ?? ''" draggable="false" />
             </div>
           </Transition>
         </div>
@@ -79,7 +82,7 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
   clip-path: polygon(0 100%, 20% 0, 100% 0);
 }
 .flip .point { left: auto; right: var(--tip); transform: scaleX(-1); }
-.sticker img { position: relative; display: block; width: auto; max-width: 160px; object-fit: contain; filter: var(--contour-lg); }
+.sticker img { position: relative; display: block; width: auto; max-width: var(--bubble-max-width, 160px); object-fit: contain; filter: var(--contour-lg); }
 .times {
   position: absolute; right: -9px; top: -10px; padding: 0 7px; font: 800 var(--fs-strong)/19px var(--font-latin);
   background: var(--ink); color: var(--on-ink);

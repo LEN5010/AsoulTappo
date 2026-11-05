@@ -240,9 +240,10 @@ def card_subseries(series: str, name: str) -> str | None:
 
 
 # ------------------------------------------------------------------ economy
-# Bloom collection sets are rare; the three Brainwave sets are uncommon.
-RARE_EMOTE_SETS = {"bloom-jiaran", "bloom-nailin", "bloom-beila"}
-UNCOMMON_EMOTE_SETS = {"jiaran-naodong", "nailin-naodong", "beila-naodong"}
+# Animated collection emotes are rare; Bloom and Brainwave sets are uncommon.
+RARE_EMOTE_SETS = {sid for sid, _, _, _, folder in COLLECTION_EMOTE_SETS if folder == "动态表情包"}
+UNCOMMON_EMOTE_SETS = {"jiaran-naodong", "nailin-naodong", "beila-naodong",
+                       "bloom-jiaran", "bloom-nailin", "bloom-beila"}
 THEME_RARITY = "rare"
 # Every player owns the five characters, the default theme and the first
 # STARTER_EMOTES emotes of each character's first emote set.

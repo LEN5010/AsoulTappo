@@ -40,7 +40,7 @@ header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--accent-
 .cover { position: relative; display: block; transition: transform var(--dur-base) var(--ease-out); }
 .skin-card:hover .cover { transform: translateY(-4px); }
 .skin-card:hover :deep(.figure) { transform: translateY(-3px); }
-.state { position: absolute; left: 12px; top: 34px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-caption); }
+.state { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-caption); }
 .meta { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
 .meta b { font-size: var(--fs-strong); font-weight: 800; }
 .meta small { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: var(--fs-label); }
