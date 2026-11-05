@@ -248,7 +248,8 @@ THEME_RARITY = "rare"
 # STARTER_EMOTES emotes of each character's first emote set.
 STARTER_EMOTES = 4
 # Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
-SKINS = [{"name": f"{member}山海经", "member": member} for member in ("嘉然", "乃琳", "贝拉")]
+SKINS = [{"name": f"{member}{series}", "member": member}
+         for series in ("山海经", "睡衣派对") for member in ("嘉然", "乃琳", "贝拉")]
 INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
