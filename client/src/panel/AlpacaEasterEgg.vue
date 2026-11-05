@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue";
+import { onBeforeUnmount, onDeactivated, ref } from "vue";
 import EmoteBubble from "../pet/EmoteBubble.vue";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 
@@ -21,6 +21,7 @@ function surprise() {
   player.play(shown.value.src);
 }
 onBeforeUnmount(() => player.clear());
+onDeactivated(() => player.clear());
 </script>
 
 <template>

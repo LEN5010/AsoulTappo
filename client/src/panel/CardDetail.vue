@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Card detail: the artwork beside its facts. Videos loop muted until sound is turned on.
 import { computed, nextTick, onMounted, ref } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
@@ -16,6 +17,7 @@ import { flyFrom } from "../ui/motion";
 const props = defineProps<{ card: ManifestCard; from?: DOMRect; preview?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
+const pageActive = usePageActive();
 const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
 const animated = computed(() => playsCardVideo(props.card, count.value, reducedMotion.value, props.preview));
 const item = computed(() => getItem(`card:${props.card.id}`)!);
@@ -45,7 +47,7 @@ function togglePlay() {
     <div class="detail" :class="card.tier">
       <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal', locked: !preview && !count }">
           <video
-            v-if="animated" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            v-if="animated && pageActive" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :muted="muted" autoplay loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>

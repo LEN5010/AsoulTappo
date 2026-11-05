@@ -21,7 +21,7 @@ function resonate() { ui.page = 'resonance'; emit('close'); }
 <template>
   <Modal :title="name" wide @close="emit('close')">
     <div class="skin-detail">
-      <SkinArt class="portrait" :name="name" :owned="owned" />
+      <SkinArt class="portrait" :name="name" :owned="owned" detail />
       <div class="info">
         <span class="ui-tag gold">皮肤藏品</span>
         <h3>{{ name }}</h3>

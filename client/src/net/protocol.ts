@@ -63,6 +63,7 @@ export type ServerMessage =
   | { type: "member_left"; id: string }
   | { type: "tap"; id: string; count: number; total: number }
   | ({ type: "motion"; id: string } & PetMotion)
+  | { type: "motion_batch"; motions: ({ id: string } & PetMotion)[] }
   | { type: "emote"; id: string; emote: string }
   | StateUpdate
   | { type: "error"; code: string; message: string }

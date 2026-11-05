@@ -200,6 +200,15 @@ class Store:
             rows = self._db.execute("SELECT item_id, count FROM items WHERE player_id=?", (pid,)).fetchall()
         return {r["item_id"]: r["count"] for r in rows}
 
+    def count_items(self, pid: str, item_ids: tuple[str, ...]) -> int:
+        if not item_ids:
+            return 0
+        placeholders = ",".join("?" for _ in item_ids)
+        with self._lock:
+            return self._db.execute(
+                f"SELECT COUNT(*) FROM items WHERE player_id=? AND item_id IN ({placeholders})",
+                (pid, *item_ids)).fetchone()[0]
+
     def add_item(self, pid: str, item_id: str, now: float) -> int:
         """Increment the owned count; returns the new count."""
         with self._lock:
@@ -211,6 +220,22 @@ class Store:
                 "SELECT count FROM items WHERE player_id=? AND item_id=?", (pid, item_id)).fetchone()
             self._commit()
             return row["count"]
+
+    def add_items(self, pid: str, counts: dict[str, int], now: float) -> None:
+        """Apply one draw batch's increments; the caller owns the transaction."""
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,?,?) "
+                "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + excluded.count",
+                [(pid, item, count, now) for item, count in counts.items()])
+            self._commit()
+
+    def log_drops(self, pid: str, drops: list[dict], now: float) -> None:
+        with self._lock:
+            self._db.executemany(
+                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts) VALUES (?,?,?,?,?)",
+                [(pid, d["item"], d["rarity"], int(d["new"]), now) for d in drops])
+            self._commit()
 
     def log_drop(self, pid: str, item_id: str, rarity: str, is_new: bool, now: float) -> None:
         with self._lock:

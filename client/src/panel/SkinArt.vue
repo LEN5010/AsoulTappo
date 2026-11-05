@@ -2,7 +2,7 @@
 import { getCharacter, skinSeries } from "../characters";
 import { characterColor, memberOf } from "../manifest";
 import PetBust from "./PetBust.vue";
-defineProps<{ name: string; owned?: boolean }>();
+defineProps<{ name: string; owned?: boolean; detail?: boolean }>();
 </script>
 
 <template>
@@ -10,7 +10,7 @@ defineProps<{ name: string; owned?: boolean }>();
     <span class="serial" aria-hidden="true">A-SOUL · SKIN COLLECTION</span>
     <span class="orbit" aria-hidden="true"></span>
     <span class="edition" aria-hidden="true">{{ skinSeries(name) }}</span>
-    <PetBust class="figure" :src="getCharacter(name)!.bg" />
+    <PetBust class="figure" :src="getCharacter(name)!.bg" :detail="detail" />
     <span class="skin-seal" aria-hidden="true">{{ memberOf(name) }}</span>
   </span>
 </template>

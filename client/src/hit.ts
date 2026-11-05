@@ -20,33 +20,72 @@ export function sameRects(a: HitRect[], b: HitRect[]): boolean {
   return a.length === b.length && a.every((r, i) => r.x === b[i].x && r.y === b[i].y && r.w === b[i].w && r.h === b[i].h);
 }
 
-/**
- * Report hit rectangles whenever they change: on `kick()` (next frame) and as a fallback
- * every `intervalMs` (for animations and late layout).
- */
+/** Observe layout changes and sample only while a hit target is animating. */
 export function startHitReporter(
   send: (rects: HitRect[]) => void,
   collect: () => HitRect[] = () => collectRects(),
-  intervalMs = 200,
+  intervalMs?: number,
 ): { kick(): void; stop(): void } {
   let last: HitRect[] | null = null;
   let frame: number | null = null;
+  const animating = new Set<Element>();
+  const kick = () => { if (frame === null) frame = requestAnimationFrame(report); };
   const report = () => {
     frame = null;
     const rects = collect();
-    if (last && sameRects(last, rects)) return;
-    last = rects;
-    send(rects);
+    if (!last || !sameRects(last, rects)) { last = rects; send(rects); }
+    if (animating.size) kick();
   };
-  const timer = setInterval(report, intervalMs);
+  let resize: ResizeObserver | undefined;
+  let mutations: MutationObserver | undefined;
+  const observe = () => {
+    resize?.disconnect();
+    document.querySelectorAll("[data-hit]").forEach((el) => resize?.observe(el));
+    for (const el of animating) if (!el.isConnected) animating.delete(el);
+  };
+  const animation = (event: Event) => {
+    const el = event.target as Element;
+    if (!el.matches("[data-hit]")) return;
+    if (event.type === "transitionrun" || event.type === "animationstart") animating.add(el);
+    else animating.delete(el);
+    kick();
+  };
+  // Explicit intervals remain available for callers with an external layout source.
+  const timer = intervalMs === undefined ? undefined : setInterval(report, intervalMs);
+  if (intervalMs === undefined) {
+    resize = new ResizeObserver(kick);
+    mutations = new MutationObserver((records) => {
+      let structure = false;
+      let layout = false;
+      for (const record of records) {
+        if (record.type === "childList") {
+          if ([...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
+            (node.matches("[data-hit]") || node.querySelector("[data-hit]")))) structure = true;
+        } else if (record.target instanceof Element &&
+          (record.target.matches("[data-hit]") || record.target.querySelector("[data-hit]"))) layout = true;
+      }
+      if (structure) observe();
+      if (structure || layout) kick();
+    });
+    mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true,
+      attributeFilter: ["style", "class", "data-hit"] });
+    observe();
+    window.addEventListener("resize", kick);
+    for (const name of ["transitionrun", "transitionend", "transitioncancel", "animationstart", "animationend", "animationcancel"])
+      document.addEventListener(name, animation, true);
+  }
   report();
   return {
-    kick() {
-      if (frame === null) frame = requestAnimationFrame(report);
-    },
+    kick,
     stop() {
       clearInterval(timer);
+      resize?.disconnect(); mutations?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
+      if (intervalMs === undefined) {
+        window.removeEventListener("resize", kick);
+        for (const name of ["transitionrun", "transitionend", "transitioncancel", "animationstart", "animationend", "animationcancel"])
+          document.removeEventListener(name, animation, true);
+      }
     },
   };
 }

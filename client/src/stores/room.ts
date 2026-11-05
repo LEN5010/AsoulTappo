@@ -1,6 +1,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
+import { MotionPlayback } from "../net/MotionPlayback";
 import { MotionSender } from "../net/MotionSender";
 import { restingMotion, toHttpBase, type Member, type PetMotion, type ProfilePatch } from "../net/protocol";
 import { ownsEmote } from "../items";
@@ -25,7 +26,7 @@ export const roomId = ref("");
 export const youId = ref("");
 export const lastError = ref("");
 export const members = reactive(new Map<string, RemoteMember>());
-const players = new Map<string, { emote: EmotePlayer; combo: TapCombo }>();
+const players = new Map<string, { emote: EmotePlayer; combo: TapCombo; motion: MotionPlayback }>();
 
 export const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
 export const me = computed(() => members.get(youId.value) ?? null);
@@ -40,6 +41,7 @@ function add(m: Member): void {
   players.set(m.id, {
     emote: new EmotePlayer((f) => (rm.emote = f), () => settings.emoteHoldMs),
     combo: new TapCombo((f) => (rm.combo = f)),
+    motion: new MotionPlayback(rm.motion),
   });
 }
 
@@ -47,6 +49,7 @@ function remove(id: string): void {
   const p = players.get(id);
   p?.emote.clear();
   p?.combo.stop();
+  p?.motion.clear();
   players.delete(id);
   members.delete(id);
 }
@@ -90,7 +93,7 @@ const events: RoomEvents = {
   },
   onMotion(id, pose) {
     const member = members.get(id);
-    if (member && id !== youId.value) Object.assign(member.motion, pose);
+    if (member && id !== youId.value) players.get(id)?.motion.update(pose);
   },
   onState(u) {
     const m = members.get(u.id);

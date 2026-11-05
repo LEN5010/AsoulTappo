@@ -10,6 +10,7 @@ import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
 import Modal from "../ui/Modal.vue";
 import ItemArt from "../ui/ItemArt.vue";
+import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import FilterChips from "../ui/FilterChips.vue";
 import Icon from "../ui/Icon.vue";
@@ -216,7 +217,7 @@ if (ui.craftTarget) {
           <span class="collage ui-frame ui-well">
             <img
               v-for="e in a.collage" :key="e.key" :class="{ miss: !e.owned }"
-              :src="assetUrl(e.img)" alt="" loading="lazy" decoding="async" draggable="false"
+              :src="assetUrl(e.thumb ?? e.img)" alt="" loading="lazy" decoding="async" draggable="false"
             />
             <span class="flags">
               <i v-if="a.set.rarity !== 'common'" class="ui-tag">{{ RARITY_LABEL[a.set.rarity] }}</i>
@@ -234,19 +235,22 @@ if (ui.craftTarget) {
       </div>
 
       <template v-else>
-        <div class="emote-grid">
+        <VirtualGrid class="emote-grid" :items="tiles" :item-key="(e) => e.key">
+          <template #default="{ item: e }">
           <button
-            v-for="e in tiles" :key="e.key" type="button"
+            type="button"
             class="ui-tile" :class="[e.rarity, { locked: !e.owned }]"
             :title="`${e.name}（${e.setName}）`" data-rise
             @click="inspect(e.key)"
           >
             <span class="ui-frame ui-well">
-              <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+              <img :src="assetUrl(e.thumb ?? e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+              <span v-if="e.animated" class="dynamic ui-tag dark" title="动态表情"><Icon name="play" :size="9" /></span>
             </span>
             <b class="ui-tile-name">{{ e.name }}</b>
           </button>
-        </div>
+          </template>
+        </VirtualGrid>
         <p v-if="!tiles.length" class="ui-empty">没有匹配的表情</p>
       </template>
     </div>
@@ -280,6 +284,7 @@ if (ui.craftTarget) {
 </template>
 
 <style scoped>
+.dynamic { position: absolute; right: 5px; bottom: 5px; }
 .collection-page {
   height: 100%;
   display: flex;

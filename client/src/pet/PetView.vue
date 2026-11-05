@@ -84,7 +84,7 @@ const bubbleAnchor = computed(() => ({
 <template>
   <div class="pet" :class="{ 'smooth-mouse': smoothMouse }" :style="box">
     <div v-if="assets" class="art">
-      <img class="layer bg" :src="assets.bg" :style="box" draggable="false" alt="" />
+      <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="box" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <img v-if="leftDown" class="layer mouse" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />

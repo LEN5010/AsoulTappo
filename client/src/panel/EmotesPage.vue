@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { characterColor, manifest, memberOf } from "../manifest";
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+import { characterColor, emoteCover, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -13,6 +13,7 @@ import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import PetView from "../pet/PetView.vue";
 import MemberStrip from "./MemberStrip.vue";
 import PetBust from "./PetBust.vue";
+import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 import { rise } from "../ui/motion";
@@ -34,6 +35,7 @@ const inMember = (name: string) => member.value === "all" || memberOf(name) === 
 const preview = ref<EmoteFrame | null>(null);
 const player = new EmotePlayer((f) => (preview.value = f), () => settings.emoteHoldMs);
 onBeforeUnmount(() => player.clear());
+onDeactivated(() => player.clear());
 
 const quickKeys = computed(() =>
   settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character),
@@ -72,7 +74,7 @@ const petSkins = computed(() =>
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)
 const ownedEmotes = computed(() => {
   if (mainTab.value === "pet") return [];
-  const list: { key: string; name: string; img: string; character: string; setName: string; rarity: string }[] = [];
+  const list: { key: string; name: string; img: string; animated?: boolean; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
     if (!inMember(s.character)) continue;
     for (const e of s.emotes) {
@@ -81,7 +83,8 @@ const ownedEmotes = computed(() => {
       list.push({
         key: e.key,
         name: e.name,
-        img: e.img,
+        img: e.thumb ?? e.img,
+        animated: e.animated,
         character: s.character,
         setName: s.name,
         rarity: s.rarity,
@@ -181,7 +184,7 @@ function fireEmote(key: string) {
             @dragover.prevent @drop.prevent="assign($event, n)"
             @click="item && favorite(item)"
           >
-            <img v-if="item" :src="assetUrl(item.art)" :alt="item.name" decoding="async" draggable="false" />
+            <img v-if="item" :src="assetUrl(emoteCover(item.ref))" :alt="item.name" decoding="async" draggable="false" />
             <Icon v-else name="plus" :size="15" />
           </button>
         </div>
@@ -230,9 +233,9 @@ function fireEmote(key: string) {
 
         <section v-if="mainTab !== 'pet'" class="shelf">
           <h4 class="ui-label shelf-head"><span>表情贴纸</span><em>STICKER</em><small>{{ ownedEmotes.length }}</small></h4>
-          <div class="emote-grid">
+          <VirtualGrid class="emote-grid" :items="ownedEmotes" :item-key="(e) => e.key" extra>
+            <template #default="{ item: e }">
             <div
-              v-for="e in ownedEmotes" :key="e.key"
               class="emote-cell" draggable="true" data-rise
               @dragstart="$event.dataTransfer?.setData('text/plain', e.key)"
             >
@@ -244,6 +247,7 @@ function fireEmote(key: string) {
               >
                 <span class="ui-frame ui-well">
                   <img :src="assetUrl(e.img)" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
+                  <span v-if="e.animated" class="dynamic ui-tag dark" title="动态表情"><Icon name="play" :size="9" /></span>
                   <span v-if="settings.favorites.includes(e.key)" class="tag ui-tag">预设</span>
                 </span>
                 <b class="ui-tile-name">{{ e.name }}</b>
@@ -253,6 +257,8 @@ function fireEmote(key: string) {
               </button>
             </div>
 
+            </template>
+            <template #extra>
             <!-- Shortcut tile to unlock/craft more emotes in Dex -->
             <button
               type="button"
@@ -265,7 +271,8 @@ function fireEmote(key: string) {
               </span>
               <b class="ui-tile-name">全部图鉴 →</b>
             </button>
-          </div>
+            </template>
+          </VirtualGrid>
         </section>
       </div>
 
@@ -591,6 +598,7 @@ function fireEmote(key: string) {
   top: 6px;
   z-index: 1;
 }
+.dynamic { position: absolute; right: 5px; bottom: 5px; }
 .emote-card .tag {
   left: 6px;
   top: auto;

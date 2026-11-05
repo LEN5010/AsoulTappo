@@ -45,9 +45,14 @@ def pick_common(pool, kind_weights, owned, rng: Rng):
     groups = [(weight, [item for item in pool if item["kind"] == kind])
               for kind, weight in kind_weights.items()]
     groups = [(weight, items) for weight, items in groups if items]
+    return pick_common_group([(weight, [item for item in items if item["id"] not in owned] or items)
+                              for weight, items in groups], rng)
+
+
+def pick_common_group(groups, rng: Rng):
+    """Choose from cached kind pools using the same weighted draw."""
     x = rng.random() * sum(weight for weight, _ in groups)
     for weight, items in groups:
         if x < weight:
-            items = [item for item in items if item["id"] not in owned] or items
             return items[min(int(x / weight * len(items)), len(items) - 1)]
         x -= weight

@@ -42,7 +42,7 @@ export interface ManifestTheme {
     loading?: string;
   };
 }
-export interface ManifestEmote { key: string; name: string; img: string }
+export interface ManifestEmote { key: string; name: string; img: string; thumb?: string; animated?: boolean }
 export interface ManifestEmoteSet { id: string; name: string; character: string; rarity: Rarity; emotes: ManifestEmote[] }
 export interface ManifestAccessory {
   id: string;
@@ -92,6 +92,7 @@ const emoteSetIndex = new Map(manifest.emoteSets.flatMap((s) => s.emotes.map((e)
 
 export const getCard = (id: string) => cardIndex.get(id);
 export const getEmote = (key: string) => emoteIndex.get(key);
+export const emoteCover = (key: string) => { const emote = getEmote(key); return emote?.thumb ?? emote?.img; };
 export const getDecor = (id: string | null | undefined) => (id ? decorIndex.get(id) : undefined);
 export const getAccessory = (id: string | null | undefined) => (id ? accessoryIndex.get(id) : undefined);
 /** The emote set an emote key belongs to. */

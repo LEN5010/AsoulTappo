@@ -2,6 +2,7 @@
 // Resonance stage: a framed card, the pool's tier counts, its skins and a lineup of the dynamic cards.
 // The lineup deals the next card on its own.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { getCharacter, skinSeries } from "../characters";
 import { getCard, characterColor, memberOf, type Rarity } from "../manifest";
@@ -68,37 +69,51 @@ const skinFocused = ref(false);
 watch(() => props.paused, (paused) => {
   if (!paused) skinFocused.value = false;
 }, { flush: "post" });
+const pageActive = usePageActive();
+const skinWidth = ref(0);
+const viewportWidth = ref(0);
+const scrolling = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused
+  && !skinFocused.value && skinWidth.value > viewportWidth.value);
+const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
 let skinFrame = 0;
 let skinTime = 0;
 let skinOffset = 0;
+let resize: ResizeObserver | undefined;
 function scrollSkins(time: number) {
   const viewport = skinViewport.value;
-  const width = skinGroup.value?.[0]?.offsetWidth ?? 0;
-  if (viewport && width > viewport.clientWidth && skinTime && !reducedMotion.value
-    && !props.busy && !props.paused && !skinFocused.value) {
-    skinOffset = (skinOffset + Math.min(time - skinTime, 50) * .024) % width;
+  if (viewport && skinTime) {
+    skinOffset = (skinOffset + Math.min(time - skinTime, 50) * .024) % skinWidth.value;
     viewport.scrollLeft = skinOffset;
-  } else if (viewport) skinOffset = viewport.scrollLeft;
+  }
   skinTime = time;
   skinFrame = requestAnimationFrame(scrollSkins);
 }
 function startSkins() {
-  if (skinFrame) return;
+  if (skinFrame || !scrolling.value) return;
   skinTime = 0;
+  skinOffset = skinViewport.value?.scrollLeft ?? 0;
   skinFrame = requestAnimationFrame(scrollSkins);
 }
 function stopSkins() {
   cancelAnimationFrame(skinFrame);
   skinFrame = 0;
 }
-onMounted(startSkins);
+watch(scrolling, (run) => run ? startSkins() : stopSkins());
+onMounted(() => {
+  resize = new ResizeObserver(() => {
+    skinWidth.value = skinGroup.value?.[0]?.offsetWidth ?? 0;
+    viewportWidth.value = skinViewport.value?.clientWidth ?? 0;
+  });
+  if (skinViewport.value) resize.observe(skinViewport.value);
+  if (skinGroup.value?.[0]) resize.observe(skinGroup.value[0]);
+});
 onActivated(startSkins);
 onDeactivated(stopSkins);
-onBeforeUnmount(stopSkins);
+onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
 </script>
 
 <template>
-  <section class="pool-stage" :class="{ hold: busy || paused || pointing || skinFocused }">
+  <section class="pool-stage" :class="{ hold: !pageActive || busy || paused || pointing || skinFocused }">
     <button
       v-if="active" type="button" class="hero" :disabled="busy" :title="active.name"
       @pointerenter="pointing = true" @pointerleave="pointing = false" @click="emit('inspect', active)"
@@ -108,10 +123,10 @@ onBeforeUnmount(stopSkins);
         <span class="art ui-frame">
           <template v-if="card">
             <video
-              v-if="card.video && !reducedMotion" :key="card.id"
+              v-if="card.video && playing" :key="card.id"
               :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)" autoplay loop muted playsinline
             ></video>
-            <img v-else :key="card.id" :src="assetUrl(card.full)" :alt="card.name" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" draggable="false" />
+            <img v-else :key="card.id" :src="assetUrl(card.video ? card.thumb : card.full)" :alt="card.name" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" draggable="false" />
           </template>
         </span>
         <b class="crest">A-SOUL</b>

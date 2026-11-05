@@ -42,6 +42,7 @@ class Game:
         self.cfg = cfg or DropConfig()
         self.rng = rng or cardlogic.default_rng()
         self.now = now
+        self.collectible_ids = tuple(i for i in manifest.items if i not in manifest.starter)
 
     # ---------------------------------------------------------------- activity
     def report_activity(self, token: str, taps: int, session: str | None = None,
@@ -127,27 +128,40 @@ class Game:
             pity = {"legendary": p["draw_pity"], "skin": p["skin_pity"]}
             owned = st.owned(pid)
             refund = 0
+            increments: dict[str, int] = {}
+            missing = {r: [item for item in items if item["id"] not in owned] for r, items in pool.items()}
+            common = {kind: [item for item in pool["common"] if item["kind"] == kind]
+                      for kind in cfg["commonKindWeights"]}
+            common_missing = {kind: [item for item in items if item["id"] not in owned]
+                              for kind, items in common.items()}
             for _ in range(n):
-                missing = {r: [item for item in items if item["id"] not in owned] for r, items in pool.items()}
                 available = {r for r in missing if missing[r]}
                 rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng)
                 candidates = missing[rarity] or pool[rarity]
                 if rarity == "common":
-                    item = cardlogic.pick_common(pool[rarity], cfg["commonKindWeights"], owned, self.rng)
+                    item = cardlogic.pick_common_group(
+                        [(weight, common_missing[kind] or common[kind])
+                         for kind, weight in cfg["commonKindWeights"].items() if common[kind]], self.rng)
                 else:
                     item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
                 iid = item["id"]
                 fresh = iid not in owned
                 gained = cfg["duplicateRefund"] if not fresh and item["kind"] == "emote" else 0
                 refund += gained
-                owned[iid] = st.add_item(pid, iid, now)
-                st.log_drop(pid, iid, rarity, fresh, now)
+                owned[iid] = owned.get(iid, 0) + 1
+                increments[iid] = increments.get(iid, 0) + 1
+                if fresh:
+                    missing[rarity].remove(item)
+                    if rarity == "common":
+                        common_missing[item["kind"]].remove(item)
                 for r in pity:
                     pity[r] = 0 if rarity == r else pity[r] + 1
                 drop = {"item": iid, "rarity": rarity, "new": fresh, "count": owned[iid], "shards": gained}
                 if item["kind"] == "card":
                     drop["tier"] = self.manifest.cards[iid[5:]]["tier"]
                 drops.append(drop)
+            st.add_items(pid, increments, now)
+            st.log_drops(pid, drops, now)
             st.update_player(pid, shards=p["shards"] - n * cfg["cost"] + refund,
                              draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
         return {**self.status(token), "drops": drops}
@@ -179,7 +193,7 @@ class Game:
         pid = player_id_for(token)
         now = self.now()
         p = self.store.get_player(pid, now)
-        owned = self.store.owned(pid)
+        owned_count = self.store.count_items(pid, self.collectible_ids)
         multiplier = self._multiplier(p, now)
         return {
             "player": pid,
@@ -189,7 +203,7 @@ class Game:
             "resonance": {"pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]},
                           "hardPity": self.manifest.resonance["pity"], "total": p["drawn_total"]},
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
-                       "owned": sum(1 for i in owned if i in self.manifest.items and i not in self.manifest.starter),
+                       "owned": owned_count,
                        "items": len(self.manifest.items) - len(self.manifest.starter)},
         }
 

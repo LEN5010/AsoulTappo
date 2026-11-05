@@ -180,6 +180,9 @@ export class RoomClient {
         this.events.onMotion(id, pose);
         break;
       }
+      case "motion_batch":
+        for (const { id, ...pose } of msg.motions) this.events.onMotion(id, pose);
+        break;
       case "emote":
         this.events.onEmote(msg.id, msg.emote);
         break;

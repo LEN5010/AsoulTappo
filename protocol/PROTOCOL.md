@@ -16,9 +16,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | state | character、nick，至少提供一个 |
 | ping | 无 |
 
-服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion`，加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion`，加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
-motion 仅广播到同房间的其他成员，用于桌面与联机面板的键鼠图层动画；敲击计数仍由 tap 单独累计。连接关闭时清除成员动作，重连后发送当前动作。
+连续位移由服务端按房间每 50ms 汇总为一条 `motion_batch`，每个成员保留最新位置。按键、左右键边沿仍即时发送 `motion`，入房、离房、表情和敲击消息按连接顺序发送。动作仅发给同房间的其他成员。每个连接独立发送，连续位置批次合并，发送超时或有序消息积压达到 256 条时断开该连接。客户端将短按状态保持至少 70ms，供桌宠呈现点击和按键动作。
+
+连接关闭时清除成员动作，重连后发送当前动作；敲击计数由 `tap` 累计。本次协议更新配套发布客户端和服务端。
 
 ## HTTP API
 
@@ -52,7 +54,7 @@ motion 仅广播到同房间的其他成员，用于桌面与联机面板的键�
     "hardPity": { "legendary": 400, "skin": 200 },
     "total": 1234
   },
-  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 546 }
+  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 549 }
 }
 ```
 
@@ -66,7 +68,7 @@ motion 仅广播到同房间的其他成员，用于桌面与联机面板的键�
 
 ## 共鸣与兑换
 
-五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 546 件：88 张卡、455 张表情、3 款皮肤。
+五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 549 件：88 张卡、455 张表情、6 款皮肤。
 
 | 档位 | 内容 | 概率 | 保底 |
 |---|---|---|---|

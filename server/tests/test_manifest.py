@@ -37,6 +37,8 @@ def all_refs(m: dict):
     for s in m["emoteSets"]:
         for e in s["emotes"]:
             yield e["img"]
+            if e.get("thumb"):
+                yield e["thumb"]
     for d in m["decor"]:
         yield d["img"]
     for a in m["accessories"]:

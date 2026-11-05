@@ -212,8 +212,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, TapBroadcast(
                     id=peer.id, count=msg.count, total=peer.taps).model_dump())
             elif isinstance(msg, MotionMsg):
-                peer.motion = msg.model_dump(exclude={"type"})
-                await manager.broadcast(room_id, {**msg.model_dump(), "id": peer.id}, exclude=peer.id)
+                await manager.motion(room_id, peer, msg.model_dump(exclude={"type"}))
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
                 if now - peer.last_emote < EMOTE_INTERVAL:
@@ -234,7 +233,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     peer.nick = msg.nick
                 await manager.broadcast(room_id, StateBroadcast(
                     id=peer.id, character=peer.character, nick=peer.nick).model_dump())
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, ConnectionError):
         pass
     except asyncio.TimeoutError:
         try:

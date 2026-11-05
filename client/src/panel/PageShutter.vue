@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Two arc-edged bands that sweep out from behind the sidebar. cover() ends with the page
+// Two bands that sweep out from behind the sidebar. cover() ends with the page
 // hidden, which is when MainPanel swaps it; reveal() carries on off to the right.
 import { ref } from "vue";
 import { EASE_IN_OUT as EASE } from "../ui/motion";
@@ -90,17 +90,14 @@ defineExpose({ hold, cover, reveal, rewind });
   pointer-events: none;
   visibility: hidden;
 }
-/* Wider than the face: the arc has to clear both sides while the band covers it. */
 .band {
   position: absolute;
   top: -2px;
   bottom: -2px;
-  left: -16%;
-  width: 132%;
+  left: -8%;
+  width: 116%;
   transform: translateX(-112%);
   will-change: transform;
-  mask: url("../assets/brand/shutter-band.svg") 0 0 / 100% 100% no-repeat;
-  -webkit-mask: url("../assets/brand/shutter-band.svg") 0 0 / 100% 100% no-repeat;
 }
 .under {
   background: var(--accent-soft);

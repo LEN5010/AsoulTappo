@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The album keeps card colors and plays visible owned videos; unowned cards stay still.
-import { computed, onBeforeUnmount, type ObjectDirective } from "vue";
+import { computed, onBeforeUnmount, watch, type ObjectDirective } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { byTier, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
@@ -14,21 +15,41 @@ const props = defineProps<{ cards: ManifestCard[]; filter: AlbumFilter }>();
 defineEmits<{ inspect: [card: ManifestCard, from?: DOMRect] }>();
 
 const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
-const visibility = new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    const video = entry.target as HTMLVideoElement;
-    if (entry.isIntersecting) video.src = video.dataset.src!;
-    else {
+const active = usePageActive();
+const inView = new Set<HTMLVideoElement>();
+const videos = new Set<HTMLVideoElement>();
+const MAX_PLAYING = 3;
+function scheduleVideos() {
+  let playing = 0;
+  for (const video of videos) {
+    const play = active.value && inView.has(video) && playing < MAX_PLAYING;
+    if (play) {
+      playing++;
+      if (!video.hasAttribute("src")) video.src = video.dataset.src!;
+      void video.play().catch(() => {});
+    } else if (video.hasAttribute("src")) {
       video.pause();
       video.removeAttribute("src");
       video.load();
     }
   }
+}
+const visibility = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting) inView.add(entry.target as HTMLVideoElement);
+    else inView.delete(entry.target as HTMLVideoElement);
+  }
+  scheduleVideos();
 });
 const vVisibleVideo: ObjectDirective<HTMLVideoElement> = {
-  mounted: (video) => visibility.observe(video),
-  beforeUnmount: (video) => visibility.unobserve(video),
+  mounted(video) { videos.add(video); visibility.observe(video); },
+  beforeUnmount(video) {
+    visibility.unobserve(video); inView.delete(video); videos.delete(video);
+    video.pause(); video.removeAttribute("src"); video.load();
+    scheduleVideos();
+  },
 };
+watch(active, scheduleVideos);
 onBeforeUnmount(() => visibility.disconnect());
 const visible = computed(() =>
   props.cards

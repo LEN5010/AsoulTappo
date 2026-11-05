@@ -47,6 +47,7 @@ fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
         window.unminimize().map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        app.emit_to("panel", "panel:visible", true).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -55,6 +56,7 @@ fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
 fn hide_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("panel") {
         window.hide().map_err(|e| e.to_string())?;
+        app.emit_to("panel", "panel:visible", false).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -188,6 +190,7 @@ pub fn run() {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
+                    let _ = window.emit("panel:visible", false);
                 }
             }
         })

@@ -25,7 +25,7 @@ def test_new_player_and_idle_income():
         clock.t += 20
         r = g.presence(TOKEN, SESSION)
     assert r["shards"] == 1616 and r["income"] == {"multiplier": 1, "perMinute": 16}
-    assert r["totals"]["items"] == 546
+    assert r["totals"]["items"] == 549
 
 
 @pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 16), (30, 3, 48), (60, 5, 80), (120, 5, 80)])
@@ -170,11 +170,11 @@ def test_concurrent_draws_spend_balance_once():
 
 def test_resonance_transaction_rolls_back(monkeypatch):
     g, _ = game()
-    original = g.store.log_drop
+    original = g.store.log_drops
     def fail(*args):
         original(*args)
         raise RuntimeError("interrupted")
-    monkeypatch.setattr(g.store, "log_drop", fail)
+    monkeypatch.setattr(g.store, "log_drops", fail)
     with pytest.raises(RuntimeError):
         g.resonate(TOKEN)
     assert g.status(TOKEN)["shards"] == 1600

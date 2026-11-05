@@ -70,7 +70,6 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --emot
 | `client/src/assets/patterns/halftone.svg` | 半调网点，作为 CSS 遮罩使用 | 由脚本生成 |
 | `client/src/assets/brand/asoul-logo.svg` | A-SOUL 标志的矢量描摹，作为 CSS 遮罩使用 | 版权归权利人所有，见同目录 `COPYRIGHT.md` |
 | `client/src/assets/brand/side-alpaca.webp` | 侧栏羊驼贴纸，透明底 | 原形象版权归权利人所有 |
-| `client/src/assets/brand/shutter-band.svg` | 页面切换色带的 CSS 遮罩，随容器拉伸 | 项目绘制 |
 
 新增界面文字后运行 `python scripts/build_ui_assets.py --noto <NotoSansSC[wght].ttf>`（需安装 fonttools 与 brotli）重新裁剪字体。未包含在子集内的字符会回退到系统字体。
 
@@ -95,3 +94,7 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --emot
 - **表情与皮肤**：共 475 个收藏表情，每位成员 4 个初始表情；455 个非初始表情入池，普通 320 个、罕见 75 个、稀有 60 个。脑洞波与绽放各三套为罕见，三套动态表情为稀有，其他为普通。山海经、睡衣派对各 3 款皮肤通过共鸣解锁，背包展示全部皮肤，未解锁项压暗且不可选择。
 - **图鉴卡册**：系列栏含「全部」；未拥有卡保持彩色并压暗。目录内可见且已拥有的动态卡循环播放；所有未拥有卡使用静态缩略图，跳舞卡同样显示其静态封面。滚出可视区域的视频卸载，回到视野时开始播放。共鸣页的卡池演示独立于持有状态，动态卡保持正常亮度并自动播放。
 - **碎片**：共鸣每次 160。重复表情返还 10 碎片，重复卡片累计持有数量。普通兑换价 480、罕见 960、稀有 1600；皮肤、史诗、传说和初始表情按共鸣与初始规则获取。
+
+### 性能预览资源
+
+运行 `server/.venv/bin/python scripts/build_previews.py`，从现有素材生成动态表情静态封面、桌宠 480／960 像素背景和 264×224 头像。更换桌宠原图后执行此命令；主素材管线也会调用此步骤。列表使用封面，表情预览与发送使用原始动画。派生素材沿用原素材的来源和许可。

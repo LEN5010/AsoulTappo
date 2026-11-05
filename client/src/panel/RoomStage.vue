@@ -72,7 +72,7 @@ const vacant = computed(() => {
   justify-content: flex-end;
   gap: 2px;
 }
-.seat :deep(.art) {
+.seat :deep(.bg) {
   filter: var(--contour);
 }
 .vacant i {

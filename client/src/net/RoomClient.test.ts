@@ -69,6 +69,12 @@ describe("RoomClient", () => {
     expect(ev.onJoined).toHaveBeenCalledWith("r", "me", []);
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
     expect(ev.onTap).toHaveBeenCalledWith("x", 3, 9);
+    ws.recv({ type: "motion_batch", motions: [
+      { id: "x", dx: 3, dy: -2, keyDown: false, left: false, right: false },
+      { id: "y", dx: 9, dy: 1, keyDown: true, left: true, right: false },
+    ] });
+    expect(ev.onMotion).toHaveBeenCalledWith("x", { dx: 3, dy: -2, keyDown: false, left: false, right: false });
+    expect(ev.onMotion).toHaveBeenCalledWith("y", { dx: 9, dy: 1, keyDown: true, left: true, right: false });
     c.sendTap(2);
     c.sendEmote("thumbup");
     expect(ws.sent.slice(1)).toEqual([

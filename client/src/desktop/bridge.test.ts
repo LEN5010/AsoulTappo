@@ -39,6 +39,8 @@ afterEach(async () => {
 async function context(panel: boolean) {
   vi.resetModules();
   vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: panel ? "?window=panel" : "" } });
+  const uiStore = await import("../stores/ui");
+  if (panel) uiStore.ui.panelOpen = true;
   const bridge = await import("./bridge");
   stops.push(await bridge.initDesktop());
   return {
@@ -63,7 +65,7 @@ it("mirrors desk state and exchanges setting edits without starting panel reques
   desk.settings.clickThrough = true;
   expect(panel.settings.clickThrough).toBe(true);
   desk.counter.total++;
-  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(50);
   expect(panel.counter.total).toBe(43);
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -84,12 +86,14 @@ it("applies action results to both windows before resolving an awaited draw", as
 it("mirrors remote pet animation poses into the panel without another room socket", async () => {
   const desk = await context(false);
   const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
   desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5,
     pulse: 0, emote: null, combo: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
-  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
   Object.assign(desk.room.members.get('friend')!.motion, { dx: 0, dy: 0, keyDown: false, left: false });
-  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion.left).toBe(false);
   expect(fetch).not.toHaveBeenCalled();
 });
@@ -99,7 +103,7 @@ it("counts input only in the desk while the panel preview reacts to the same key
   const panel = await context(true);
   desk.pet.onInput({ kind: "key_down" });
   panel.pet.onInput({ kind: "key_down" }, false);
-  await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(50);
   expect(desk.counter.total).toBe(1);
   expect(panel.counter.total).toBe(1);
   expect(panel.pet.pet.keyDown).toBe(true);
@@ -118,4 +122,33 @@ it("opens the regular panel while the pet is click-through and closes it separat
   expect(invoke).toHaveBeenCalledWith("hide_panel");
   expect(desk.settings.clickThrough).toBe(true);
   expect(desk.settings.alwaysOnTop).toBe(true);
+});
+
+it("sends changed member runtime without replacing the collection, and resyncs after hiding", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 1,
+    pulse: 0, emote: null, combo: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+  await vi.advanceTimersByTimeAsync(50);
+  const owned = panel.player.collection.owned;
+  const { emitTo } = await import("@tauri-apps/api/event");
+  vi.mocked(emitTo).mockClear();
+  desk.room.members.get("friend")!.motion.dx = 7;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.members.get("friend")!.motion.dx).toBe(7);
+  expect(panel.player.collection.owned).toBe(owned);
+  expect(emitTo).not.toHaveBeenCalledWith("panel", "desktop:state", expect.anything());
+  panel.ui.ui.panelOpen = false;
+  await vi.advanceTimersByTimeAsync(0);
+  vi.mocked(emitTo).mockClear();
+  desk.counter.total = 99;
+  desk.room.members.get("friend")!.motion.dx = 13;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(emitTo).not.toHaveBeenCalledWith("panel", "desktop:motion", expect.anything());
+  expect(panel.counter.total).not.toBe(99);
+  panel.ui.ui.panelOpen = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.counter.total).toBe(99);
+  expect(panel.room.members.get("friend")!.motion.dx).toBe(13);
 });

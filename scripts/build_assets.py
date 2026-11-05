@@ -549,6 +549,9 @@ def main() -> None:
         "skins": cat.SKINS,
         "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST},
     }
+    from build_previews import build_emote_covers, build_pet_previews
+    build_emote_covers(manifest)
+    build_pet_previews()
     write_json(PACKS / "manifest.json", manifest)
     write_json(CLIENT_MANIFEST, manifest)
     index = build_index(manifest)

@@ -4366,102 +4366,142 @@
     {
      "key": "jiaran-moon-motion.01",
      "name": "你在干嘛",
-     "img": "bundle:emotes/jiaran-moon-motion/01.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/01.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/01-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.02",
      "name": "你干嘛",
-     "img": "bundle:emotes/jiaran-moon-motion/02.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/02.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/02-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.03",
      "name": "你管我",
-     "img": "bundle:emotes/jiaran-moon-motion/03.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/03.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/03-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.04",
      "name": "你说我在听",
-     "img": "bundle:emotes/jiaran-moon-motion/04.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/04.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/04-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.05",
      "name": "再说一遍",
-     "img": "bundle:emotes/jiaran-moon-motion/05.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/05.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/05-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.06",
      "name": "听不见",
-     "img": "bundle:emotes/jiaran-moon-motion/06.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/06.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/06-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.07",
      "name": "哇哈哈哈",
-     "img": "bundle:emotes/jiaran-moon-motion/07.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/07.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/07-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.08",
      "name": "就你是吧",
-     "img": "bundle:emotes/jiaran-moon-motion/08.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/08.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/08-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.09",
      "name": "扶我下",
-     "img": "bundle:emotes/jiaran-moon-motion/09.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/09.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/09-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.10",
      "name": "拿来吧你",
-     "img": "bundle:emotes/jiaran-moon-motion/10.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/10.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/10-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.11",
      "name": "捏捏",
-     "img": "bundle:emotes/jiaran-moon-motion/11.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/11.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/11-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.12",
      "name": "敬友谊",
-     "img": "bundle:emotes/jiaran-moon-motion/12.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/12.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/12-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.13",
      "name": "有点秃然",
-     "img": "bundle:emotes/jiaran-moon-motion/13.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/13.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/13-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.14",
      "name": "求饶",
-     "img": "bundle:emotes/jiaran-moon-motion/14.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/14.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/14-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.15",
      "name": "看我表现",
-     "img": "bundle:emotes/jiaran-moon-motion/15.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/15.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/15-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.16",
      "name": "糖糖回家",
-     "img": "bundle:emotes/jiaran-moon-motion/16.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/16.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/16-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.17",
      "name": "走开走开",
-     "img": "bundle:emotes/jiaran-moon-motion/17.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/17.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/17-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.18",
      "name": "起来high",
-     "img": "bundle:emotes/jiaran-moon-motion/18.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/18.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/18-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.19",
      "name": "邦邦两拳",
-     "img": "bundle:emotes/jiaran-moon-motion/19.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/19.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/19-cover.webp",
+     "animated": true
     },
     {
      "key": "jiaran-moon-motion.20",
      "name": "黯然离场",
-     "img": "bundle:emotes/jiaran-moon-motion/20.webp"
+     "img": "bundle:emotes/jiaran-moon-motion/20.webp",
+     "thumb": "bundle:emotes/jiaran-moon-motion/20-cover.webp",
+     "animated": true
     }
    ]
   },
@@ -4474,102 +4514,142 @@
     {
      "key": "nailin-reverie-motion.01",
      "name": "不对劲",
-     "img": "bundle:emotes/nailin-reverie-motion/01.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/01.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/01-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.02",
      "name": "五体投地",
-     "img": "bundle:emotes/nailin-reverie-motion/02.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/02.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/02-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.03",
      "name": "优雅",
-     "img": "bundle:emotes/nailin-reverie-motion/03.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/03.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/03-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.04",
      "name": "厨艺展示",
-     "img": "bundle:emotes/nailin-reverie-motion/04.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/04.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/04-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.05",
      "name": "否定",
-     "img": "bundle:emotes/nailin-reverie-motion/05.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/05.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/05-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.06",
      "name": "喏咖啡",
-     "img": "bundle:emotes/nailin-reverie-motion/06.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/06.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/06-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.07",
      "name": "奶淇琳~",
-     "img": "bundle:emotes/nailin-reverie-motion/07.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/07.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/07-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.08",
      "name": "帅气",
-     "img": "bundle:emotes/nailin-reverie-motion/08.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/08.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/08-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.09",
      "name": "打游戏",
-     "img": "bundle:emotes/nailin-reverie-motion/09.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/09.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/09-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.10",
      "name": "拍桌",
-     "img": "bundle:emotes/nailin-reverie-motion/10.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/10.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/10-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.11",
      "name": "捂脸",
-     "img": "bundle:emotes/nailin-reverie-motion/11.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/11.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/11-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.12",
      "name": "摇摆",
-     "img": "bundle:emotes/nailin-reverie-motion/12.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/12.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/12-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.13",
      "name": "有猪",
-     "img": "bundle:emotes/nailin-reverie-motion/13.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/13.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/13-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.14",
      "name": "柔弱",
-     "img": "bundle:emotes/nailin-reverie-motion/14.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/14.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/14-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.15",
      "name": "气鼓鼓",
-     "img": "bundle:emotes/nailin-reverie-motion/15.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/15.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/15-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.16",
      "name": "爆了",
-     "img": "bundle:emotes/nailin-reverie-motion/16.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/16.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/16-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.17",
      "name": "爱你",
-     "img": "bundle:emotes/nailin-reverie-motion/17.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/17.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/17-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.18",
      "name": "装傻",
-     "img": "bundle:emotes/nailin-reverie-motion/18.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/18.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/18-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.19",
      "name": "赖床",
-     "img": "bundle:emotes/nailin-reverie-motion/19.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/19.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/19-cover.webp",
+     "animated": true
     },
     {
      "key": "nailin-reverie-motion.20",
      "name": "蹦蹦跳跳",
-     "img": "bundle:emotes/nailin-reverie-motion/20.webp"
+     "img": "bundle:emotes/nailin-reverie-motion/20.webp",
+     "thumb": "bundle:emotes/nailin-reverie-motion/20-cover.webp",
+     "animated": true
     }
    ]
   },
@@ -4582,102 +4662,142 @@
     {
      "key": "beila-casket-motion.01",
      "name": "严肃",
-     "img": "bundle:emotes/beila-casket-motion/01.webp"
+     "img": "bundle:emotes/beila-casket-motion/01.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/01-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.02",
      "name": "你看这人",
-     "img": "bundle:emotes/beila-casket-motion/02.webp"
+     "img": "bundle:emotes/beila-casket-motion/02.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/02-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.03",
      "name": "光速开溜",
-     "img": "bundle:emotes/beila-casket-motion/03.webp"
+     "img": "bundle:emotes/beila-casket-motion/03.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/03-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.04",
      "name": "可恶",
-     "img": "bundle:emotes/beila-casket-motion/04.webp"
+     "img": "bundle:emotes/beila-casket-motion/04.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/04-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.05",
      "name": "啊？",
-     "img": "bundle:emotes/beila-casket-motion/05.webp"
+     "img": "bundle:emotes/beila-casket-motion/05.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/05-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.06",
      "name": "威胁",
-     "img": "bundle:emotes/beila-casket-motion/06.webp"
+     "img": "bundle:emotes/beila-casket-motion/06.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/06-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.07",
      "name": "恰！",
-     "img": "bundle:emotes/beila-casket-motion/07.webp"
+     "img": "bundle:emotes/beila-casket-motion/07.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/07-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.08",
      "name": "我有一计",
-     "img": "bundle:emotes/beila-casket-motion/08.webp"
+     "img": "bundle:emotes/beila-casket-motion/08.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/08-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.09",
      "name": "摆了",
-     "img": "bundle:emotes/beila-casket-motion/09.webp"
+     "img": "bundle:emotes/beila-casket-motion/09.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/09-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.10",
      "name": "摸脑袋",
-     "img": "bundle:emotes/beila-casket-motion/10.webp"
+     "img": "bundle:emotes/beila-casket-motion/10.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/10-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.11",
      "name": "村口集合",
-     "img": "bundle:emotes/beila-casket-motion/11.webp"
+     "img": "bundle:emotes/beila-casket-motion/11.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/11-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.12",
      "name": "气鼓鼓",
-     "img": "bundle:emotes/beila-casket-motion/12.webp"
+     "img": "bundle:emotes/beila-casket-motion/12.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/12-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.13",
      "name": "点赞",
-     "img": "bundle:emotes/beila-casket-motion/13.webp"
+     "img": "bundle:emotes/beila-casket-motion/13.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/13-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.14",
      "name": "烧烤",
-     "img": "bundle:emotes/beila-casket-motion/14.webp"
+     "img": "bundle:emotes/beila-casket-motion/14.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/14-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.15",
      "name": "突然出现",
-     "img": "bundle:emotes/beila-casket-motion/15.webp"
+     "img": "bundle:emotes/beila-casket-motion/15.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/15-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.16",
      "name": "立正",
-     "img": "bundle:emotes/beila-casket-motion/16.webp"
+     "img": "bundle:emotes/beila-casket-motion/16.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/16-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.17",
      "name": "背手",
-     "img": "bundle:emotes/beila-casket-motion/17.webp"
+     "img": "bundle:emotes/beila-casket-motion/17.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/17-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.18",
      "name": "记下了",
-     "img": "bundle:emotes/beila-casket-motion/18.webp"
+     "img": "bundle:emotes/beila-casket-motion/18.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/18-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.19",
      "name": "贝极星~",
-     "img": "bundle:emotes/beila-casket-motion/19.webp"
+     "img": "bundle:emotes/beila-casket-motion/19.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/19-cover.webp",
+     "animated": true
     },
     {
      "key": "beila-casket-motion.20",
      "name": "队长登场",
-     "img": "bundle:emotes/beila-casket-motion/20.webp"
+     "img": "bundle:emotes/beila-casket-motion/20.webp",
+     "thumb": "bundle:emotes/beila-casket-motion/20-cover.webp",
+     "animated": true
     }
    ]
   }

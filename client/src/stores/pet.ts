@@ -50,6 +50,8 @@ export function onInput(e: InputEvent, count = true): void {
 
 export function stopPet(): void {
   motion.stop();
+  keysHeld = 0;
+  Object.assign(pet, { keyDown: false, left: false, right: false, dx: 0, dy: 0 });
 }
 
 watch(() => settings.mouseFollow, (enabled) => { if (!enabled) motion.stop(); }, { flush: "sync" });

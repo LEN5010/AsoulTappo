@@ -73,7 +73,7 @@ function onWheel(e: WheelEvent) {
         class="emo" role="menuitem" :title="x.e!.name"
         @click="$emit('pick', x.key)"
       >
-        <img :src="assetUrl(x.e!.img)" :alt="x.e!.name" draggable="false" />
+        <img :src="assetUrl(x.e!.thumb ?? x.e!.img)" :alt="x.e!.name" draggable="false" />
       </button>
     </div>
 

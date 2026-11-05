@@ -10,6 +10,7 @@ import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import type { Drop } from "../net/api";
 import { groupDrops, needsSummary, nextRevealIndex, sortDrops, spotlightQueue } from "../reveal";
 import { reducedMotion } from "../stores/theme";
+import { ui } from "../stores/ui";
 import { takeFocus, trapTab } from "../ui/focus";
 import PetBust from "./PetBust.vue";
 import "./reveal-stage.css";
@@ -146,7 +147,11 @@ onBeforeUnmount(() => {
   release?.();
 });
 // Teleported content stays behind when its page turns away (a desk shortcut can do that).
-onDeactivated(() => emit("close"));
+// Hiding or minimizing the window deactivates the whole panel; keep this reveal so it can resume.
+onDeactivated(() => {
+  if (!ui.panelOpen || ui.panelMinimized) return;
+  emit("close");
+});
 
 const shards = computed(() => drops.value.reduce((n, d) => n + d.shards, 0));
 const heading = computed(() => `本次共鸣获得 ${drops.value.length} 件`);
@@ -212,7 +217,7 @@ const results = computed(() => {
           <article v-for="(r, i) in results" :key="`${r.item.id}:${i}`" class="result" :class="[`rarity-${r.drop.rarity}`, { sticker: r.item.kind === 'emote' }]" :style="{ '--i': Math.min(i, 14) }">
             <div class="result-media" :class="{ 'is-card': !!r.card, 'is-skin': r.item.kind === 'character' }">
               <img v-if="r.card" class="result-card" :src="assetUrl(r.card.thumb)" :alt="r.card.name" draggable="false" />
-              <PetBust v-else-if="r.item.kind === 'character'" class="result-pet" :src="getCharacter(r.item.ref)!.bg" />
+              <PetBust v-else-if="r.item.kind === 'character'" class="result-pet" detail :src="getCharacter(r.item.ref)!.bg" />
               <img v-else class="result-sticker" :src="assetUrl(r.item.art)" :alt="r.item.name" draggable="false" />
               <span v-if="r.drop.new" class="fresh">新</span>
               <span v-if="r.card && r.card.tier !== 'normal'" class="tier">{{ TIER_LABEL[r.card.tier] }}</span>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { getCharacter, skinSeries } from "../characters";
 import { cardLabel, TIER_LABEL } from "../cards";
@@ -9,6 +10,7 @@ import type { Drop } from "../net/api";
 import { reducedMotion } from "../stores/theme";
 import { isRevealHighlight } from "../reveal";
 
+const pageActive = usePageActive();
 const props = defineProps<{ drop: Drop; card?: ManifestCard; art?: string; settled: boolean }>();
 const emit = defineEmits<{ done: [] }>();
 const item = computed(() => getItem(props.drop.item)!);
@@ -36,7 +38,7 @@ watch(reducedMotion, (value) => { if (value) emit("done"); });
         <div class="reveal-object" @animationend.self="emit('done')">
           <div class="front" :class="{ illustration: !!card }">
             <template v-if="card">
-              <video v-if="settled && card.video && !reducedMotion" class="card-image" :src="assetUrl(card.video)" :poster="art" autoplay loop muted playsinline></video>
+              <video v-if="settled && card.video && !reducedMotion && pageActive" class="card-image" :src="assetUrl(card.video)" :poster="art" autoplay loop muted playsinline></video>
               <img v-else class="card-image" :src="art" :alt="card.name" draggable="false" />
             </template>
             <template v-else>

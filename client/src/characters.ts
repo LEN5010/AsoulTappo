@@ -10,9 +10,17 @@ const files = import.meta.glob("./assets/characters/*/*.png", {
   import: "default",
 }) as Record<string, string>;
 
+const previews = import.meta.glob("./assets/previews/characters/*/*.webp", {
+  eager: true, query: "?url", import: "default",
+}) as Record<string, string>;
+const preview = (name: string, kind: string) => previews[`./assets/previews/characters/${name}/${kind}.webp`];
+
 export interface CharacterAssets {
   name: string;
   bg: string;
+  bgSmall: string;
+  bgMedium: string;
+  portrait: string;
   keyboard: string;
   mouse: string;
   leftClick: string;
@@ -33,6 +41,9 @@ function build(): Record<string, CharacterAssets> {
     out[name] = {
       name,
       bg: f.bgImage,
+      bgSmall: preview(name, "bg-480") ?? f.bgImage,
+      bgMedium: preview(name, "bg-960") ?? f.bgImage,
+      portrait: preview(name, "face") ?? "",
       keyboard: f.keyboardImage,
       mouse: f.mouseImage,
       leftClick: f.leftClickImage ?? f.mouseImage,
@@ -43,6 +54,8 @@ function build(): Record<string, CharacterAssets> {
 }
 
 export const characters = build();
+const portraits = new Map(Object.values(characters).map((c) => [c.bg, c.portrait]));
+export const portraitFor = (src: string) => portraits.get(src);
 export const characterNames = Object.keys(characters);
 export const defaultCharacter = characterNames[0] ?? "";
 

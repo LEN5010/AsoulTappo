@@ -3,10 +3,10 @@ import { manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
 import { commonKindRates, effectiveRates, poolOf } from "./resonance";
 
-it("builds one all-member pool with 546 distinct items", () => {
+it("builds one all-member pool with 549 distinct items", () => {
   const p = poolOf();
-  expect([p.common.length,p.uncommon.length,p.rare.length,p.epic.length,p.legendary.length,p.skin.length]).toEqual([432,60,15,26,10,3]);
-  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(546);
+  expect([p.common.length,p.uncommon.length,p.rare.length,p.epic.length,p.legendary.length,p.skin.length]).toEqual([372,75,60,26,10,6]);
+  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(549);
 });
 it("allocates 45 percent to common cards and 40.5 percent to ordinary emotes", () => {
   const p = poolOf();
