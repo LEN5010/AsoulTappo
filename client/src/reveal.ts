@@ -61,7 +61,11 @@ export function spotlights(drop: Revealed, tier?: CardTier): boolean {
 }
 
 const SEALED: Rarity[] = ["rare", "epic", "skin", "legendary"];
-/** Face down until turned. A grouped batch only seals what spotlights, so a hundred draws stay quick. */
+/**
+ * Face down until turned: rare and above, and in a dealt batch anything new, so a first copy is
+ * always turned over by hand. A grouped batch only seals what spotlights and the rare tier, which
+ * is the animated emotes: face up they would start playing the moment they land.
+ */
 export function sealed(drop: Revealed, grouped: boolean, tier?: CardTier): boolean {
-  return grouped ? spotlights(drop, tier) : SEALED.includes(drop.rarity);
+  return grouped ? spotlights(drop, tier) || drop.rarity === "rare" : SEALED.includes(drop.rarity) || drop.new;
 }

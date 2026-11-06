@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The back of a sealed result. It fills with the parent's --tone-fill, so the colour alone says how
 // rare the front is; a band of light keeps crossing it because it is waiting to be pressed.
+// The plain tiers bring --seal-fill, --seal-mark and --seal-rule instead: paper with the mark in accent.
 import Icon from "../ui/Icon.vue";
 </script>
 
@@ -21,16 +22,16 @@ import Icon from "../ui/Icon.vue";
   display: block;
   overflow: hidden;
   border-radius: var(--radius-m);
-  background: var(--tone-fill, var(--grad-sky));
+  background: var(--seal-fill, var(--tone-fill, var(--grad-sky)));
   box-shadow: inset 0 0 0 3px #fff, inset 0 1px 0 4px rgba(255, 255, 255, 0.35);
-  color: #fff;
+  color: var(--seal-mark, #fff);
   container-type: inline-size;
 }
 .rule {
   position: absolute;
   inset: 9px;
   border-radius: var(--radius-s);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 0 1px var(--seal-rule, rgba(255, 255, 255, 0.55));
 }
 .star {
   position: absolute;

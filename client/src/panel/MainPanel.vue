@@ -18,6 +18,7 @@ import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
 import SettingsPage from "./SettingsPage.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
+import SideDesk from "./SideDesk.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -198,6 +199,8 @@ function badgeOf(id: Page): number {
               <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
             </button>
           </nav>
+
+          <SideDesk class="side-desk" />
 
           <AlpacaEasterEgg class="side-deco" />
         </div>
@@ -529,6 +532,11 @@ nav button.on .nav-text small {
 .pip.soft {
   background: var(--accent-deep);
 }
+/* Under the nav, with headroom for the bust standing out of its top edge. */
+.side-desk {
+  flex: none;
+  margin: 40px 26px 0 14px;
+}
 /* The alpaca and its surprise sticker share the bottom corner. */
 .side-deco {
   position: absolute;
@@ -583,6 +591,12 @@ nav button.on .nav-text small {
 }
 @container panel (max-height: 500px) {
   .side-deco {
+    display: none;
+  }
+}
+/* Below this the card would crowd the alpaca. */
+@container panel (max-height: 640px) {
+  .side-desk {
     display: none;
   }
 }

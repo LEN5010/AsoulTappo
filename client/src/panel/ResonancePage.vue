@@ -27,6 +27,7 @@ const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
 const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const pityTiers = ["legendary", "skin"] as const;
+const cost = manifest.economy.resonance.cost;
 const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
@@ -57,7 +58,7 @@ async function nextBatch() {
     <section class="dock">
       <div class="pities">
         <template v-for="r in pityTiers" :key="r">
-          <div v-if="missingTier(r)" class="pity">
+          <div v-if="missingTier(r)" class="pity" :class="r">
             <span>
               <Icon :name="r === 'legendary' ? 'crown' : 'shirt'" :size="15" />
               {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b> / {{ manifest.economy.resonance.pity[r] }}
@@ -65,21 +66,23 @@ async function nextBatch() {
             <div class="ui-bar"><i :style="{ width: `${pityPercent(r)}%` }"></i></div>
           </div>
         </template>
-        <button type="button" class="ui-btn small" @click="probabilities = true"><Icon name="info" :size="14" />概率说明</button>
+        <button type="button" class="ui-btn small ghost rates-btn" @click="probabilities = true"><Icon name="info" :size="14" />概率说明</button>
       </div>
       <footer class="console">
         <ShardCrystal class="crystal" :size="58" />
         <div class="wallet">
-          <p>碎片 <b>{{ shards }}</b></p>
+          <p><span class="wallet-label">碎片</span><b>{{ shards }}</b></p>
           <small><Icon name="clock" :size="14" />收益 ×{{ status?.income.multiplier ?? 1 }} · 每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</small>
         </div>
         <b v-if="complete" class="done">已集齐</b>
-        <button v-if="draws >= 2" type="button" class="ui-btn ghost" :disabled="revealing || !online || complete" @click="draw(draws)">全部 ×{{ draws }}</button>
+        <button v-if="draws >= 2" type="button" class="ui-btn ghost all" :disabled="revealing || !online || complete" @click="draw(draws)">全部 ×{{ draws }}</button>
         <button type="button" class="ui-btn large act" :disabled="revealing || !online || draws < 1 || complete" @click="draw(1)">
-          <Icon name="spark" :size="16" />共鸣一次
+          <span class="act-label"><Icon name="spark" :size="16" />共鸣一次</span>
+          <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
         <button type="button" class="ui-btn large act primary pulse" :disabled="revealing || !online || draws < 10 || complete" @click="draw(10)">
-          <Icon name="spark" :size="18" />共鸣十次
+          <span class="act-label"><Icon name="spark" :size="18" />共鸣十次</span>
+          <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
       </footer>
     </section>
@@ -149,6 +152,15 @@ async function nextBatch() {
 .pity .ui-bar {
   margin-top: 5px;
 }
+.pity.legendary svg {
+  color: var(--gold);
+}
+.pity.legendary .ui-bar > i {
+  background: linear-gradient(90deg, var(--gold-soft), var(--gold) 60%, color-mix(in oklab, var(--gold) 78%, var(--tone-bottom)));
+}
+.rates-btn {
+  margin-left: auto;
+}
 .console {
   display: flex;
   align-items: center;
@@ -191,7 +203,24 @@ async function nextBatch() {
 }
 .act {
   min-width: clamp(116px, 15cqw, 158px);
+  height: 54px;
+  flex-direction: column;
+  gap: 3px;
   font-size: var(--fs-number);
+}
+.act-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The price under the action, so the cost of a press is never a guess. */
+.act-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  letter-spacing: 0.04em;
+  opacity: 0.75;
 }
 .act:not(.primary):not(:disabled) svg {
   color: var(--accent);
@@ -201,8 +230,25 @@ async function nextBatch() {
   .wallet small {
     display: none;
   }
+  .wallet b {
+    font-size: 26px;
+  }
+  .act {
+    min-width: 0;
+    padding: 0 16px;
+  }
+}
+/* Narrow: the number speaks for itself, so the buttons keep their row. */
+@container panel (max-width: 720px) {
+  .wallet-label {
+    display: none;
+  }
   .console {
-    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .all {
+    padding: 0 6px;
   }
 }
 .rates {

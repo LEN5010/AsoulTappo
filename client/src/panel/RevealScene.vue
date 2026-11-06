@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The reveal of a draw, played over the page area with the sidebar and title bar left in place.
+// The reveal of a draw, played over the whole panel, sidebar and title bar included.
 // Page-turn bands cover the page before the request goes out, because the stores update as soon
 // as a response lands and the page underneath would give the result away. They announce the best
 // result, then uncover a board where every result lands like a card stuck onto the page.
@@ -43,7 +43,7 @@ const entries = shallowRef<BoardEntry[]>([]);
 const tell = ref<Tell>("plain");
 const opened = reactive(new Set<number>());
 const turned = reactive(new Set<number>());
-const spot = shallowRef<{ index: number; from: DOMRect | null } | null>(null);
+const spot = shallowRef<{ index: number; tile: HTMLElement | null } | null>(null);
 const auto = ref(false);
 /** Draws left as the board shows them. A repeat bumps the page's queue before its bands have covered the old board. */
 const frozen = ref<number | null>(null);
@@ -136,8 +136,7 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
-  const body = root.value?.querySelectorAll(".tile")[index]?.querySelector(".body");
-  spot.value = { index, from: body?.getBoundingClientRect() ?? null };
+  spot.value = { index, tile: root.value?.querySelectorAll<HTMLElement>(".tile")[index] ?? null };
   return new Promise((resolve) => (spotDone = resolve));
 }
 function spotClosed() {
@@ -209,12 +208,8 @@ async function fadeOut() {
 
 /** A single draw gets a band of its tone and the facts beside it, instead of one card on a bare page. */
 const solo = computed(() => (single.value ? entries.value[0] : undefined));
-const soloWord = computed(() => {
-  const d = solo.value?.drop;
-  if (!d) return "";
-  if (d.new) return "NEW";
-  return d.shards ? `+${d.shards}` : `×${d.count}`;
-});
+/** Only a first copy gets the stamp; how many are owned is already in the line under the name. */
+const soloWord = computed(() => (solo.value?.drop.new ? "NEW" : ""));
 function repeat() {
   const count = props.again ?? 1;
   emit("again");
@@ -264,8 +259,8 @@ onDeactivated(() => {
             @press="press(i)"
           />
           <div v-if="solo && opened.has(0)" class="solo-facts" :class="[solo.tone, { calm }]" :style="solo.toneStyle">
-            <b class="solo-word" aria-hidden="true">{{ soloWord }}</b>
-            <span class="ui-tag dark">{{ solo.kind }}</span>
+            <b v-if="soloWord" class="solo-word" aria-hidden="true">{{ soloWord }}</b>
+            <span class="ui-tag dark solo-kind">{{ solo.kind }}</span>
             <h3>{{ solo.title }}</h3>
             <p class="who"><i :style="{ background: characterColor(solo.item.characters[0] ?? '') }"></i>{{ solo.who }}</p>
             <p class="own">
@@ -287,7 +282,7 @@ onDeactivated(() => {
           </button>
           <template v-else>
             <button v-if="again && !left" type="button" class="ui-btn large" :disabled="!!spot || frozen !== null || closing" @click="repeat">
-              再共鸣{{ again === 1 ? "一次" : "十次" }}
+              共鸣{{ again === 1 ? "一次" : "十次" }}
             </button>
             <button type="button" class="ui-btn primary large" :disabled="!!spot || frozen !== null || closing" @click="finish">
               {{ left ? `收下并继续（剩余 ${left} 次）` : "收下" }}
@@ -297,7 +292,7 @@ onDeactivated(() => {
 
         <RevealSpotlight
           v-if="spot" ref="spotlight" :key="spot.index"
-          :entry="entries[spot.index]!" :from="spot.from" :calm="calm" @done="spotClosed"
+          :entry="entries[spot.index]!" :tile="spot.tile" :calm="calm" @done="spotClosed"
         />
       </section>
 
@@ -309,10 +304,7 @@ onDeactivated(() => {
 <style scoped>
 .reveal {
   position: absolute;
-  top: 46px;
-  left: var(--side-w);
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 40;
   container: reveal / size;
   overflow: hidden;
@@ -449,6 +441,8 @@ onDeactivated(() => {
   justify-self: start;
   min-width: 0;
   max-width: 100%;
+  /* Sits a little above the band's middle, so the name reads first. */
+  translate: 0 -24px;
   color: var(--tone-ink, var(--on-accent-surface));
   animation: solo-facts-in 380ms var(--ease-out) 160ms both;
 }
@@ -464,9 +458,14 @@ onDeactivated(() => {
   color: #fff;
   text-shadow: 0 2px 0 rgba(var(--ink-rgb), 0.08);
 }
+.solo-kind {
+  padding: 0 10px;
+  font-size: var(--fs-body);
+  line-height: 24px;
+}
 .solo-facts h3 {
-  margin: 10px 0 8px;
-  font: 800 clamp(20px, 3.6cqw, 30px)/1.25 var(--font);
+  margin: 12px 0 10px;
+  font: 800 clamp(26px, 4.8cqw, 42px)/1.2 var(--font);
   text-wrap: balance;
 }
 .solo-facts .who {

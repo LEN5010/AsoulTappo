@@ -502,6 +502,30 @@
   --tone-ink: var(--ink);
 }
 
+/*
+ * Card frames by tier: gold for big hidden cards, rose for small ones. Set on the framed element
+ * itself, so the gradient resolves against the theme in force there. Bands of light and shade
+ * read as metal; drawn at 220% and slid by --frame-x / --frame-y, the light moves across the
+ * frame as the card leans. At rest both sit where the spotlight's lean rests (30% 20%).
+ */
+.frame-gold,
+.frame-rose {
+  --frame-size: 220% 220%;
+  --frame-at: calc(var(--frame-x, 0.3) * 100%) calc(var(--frame-y, 0.2) * 100%);
+}
+.frame-gold {
+  --frame-fill: linear-gradient(125deg,
+    var(--gold) 0%, var(--gold-soft) 15%, color-mix(in oklab, var(--gold-soft) 45%, #fff) 21%, var(--gold-soft) 27%,
+    var(--gold) 40%, color-mix(in oklab, var(--gold) 78%, #E8386E) 54%, var(--gold) 66%,
+    color-mix(in oklab, var(--gold-soft) 45%, #fff) 80%, var(--gold-soft) 88%, var(--gold) 100%);
+}
+.frame-rose {
+  --frame-fill: linear-gradient(125deg,
+    var(--accent) 0%, var(--accent-mid) 15%, color-mix(in oklab, var(--accent-mid) 40%, #fff) 21%, var(--accent-mid) 27%,
+    var(--accent) 40%, var(--tone-bottom) 54%, var(--accent) 66%,
+    color-mix(in oklab, var(--accent-mid) 40%, #fff) 80%, var(--accent-mid) 88%, var(--accent) 100%);
+}
+
 /* Settings-style list: chamfered white block of rows. */
 .ui-group {
   --radius: var(--radius-m);

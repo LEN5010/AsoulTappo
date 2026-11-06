@@ -40,10 +40,14 @@ describe("resonance reveal", () => {
     expect(spotlights(d("rare", "emote:a", true))).toBe(false);
   });
 
-  it("seals rare and above in a dealt batch, only spotlights in a grouped one", () => {
+  it("seals rare and above and first copies in a dealt batch, spotlights and animated emotes in a grouped one", () => {
     expect(sealed(d("uncommon", "emote:a"), false)).toBe(false);
+    expect(sealed(d("common", "card:a", true), false)).toBe(true);
+    expect(sealed(d("common", "emote:a", true), false)).toBe(true);
+    expect(sealed(d("common", "emote:a", true), true)).toBe(false);
     expect(sealed(d("rare", "emote:a"), false)).toBe(true);
-    expect(sealed(d("rare", "emote:a"), true)).toBe(false);
+    expect(sealed(d("rare", "emote:a"), true)).toBe(true);
+    expect(sealed(d("uncommon", "emote:a"), true)).toBe(false);
     expect(sealed(d("epic", "card:dance"), true, "normal")).toBe(false);
     expect(sealed(d("legendary"), true, "big")).toBe(true);
   });

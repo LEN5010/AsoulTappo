@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // One result on the reveal board. Cards land like cards stuck onto the page and stickers get
 // slapped on, both tilted until the pointer straightens them. Sealed ones lie face down and glow
-// until they are turned, and the turn goes off with a flash, a ring and a burst of stars.
+// until they are turned. Rare and above turn with a flash, a ring and a burst of stars; a plain
+// first copy turns quietly off a paper back. An animated emote stays on a plate of its tone, a
+// plain sticker peels off the paper it was turned on.
 import { computed } from "vue";
 import type { BoardEntry } from "./reveal-board";
 import CardBack from "./CardBack.vue";
@@ -23,6 +25,12 @@ const props = defineProps<{
 const emit = defineEmits<{ press: [] }>();
 
 const sticker = computed(() => props.entry.item.kind === "emote");
+/** Common and uncommon: sealed only as a first copy, and turned without the fanfare. */
+const quiet = computed(() => props.entry.drop.rarity === "common" || props.entry.drop.rarity === "uncommon");
+/** Animated emotes sit on a plate of their tone, so they read apart from plain stickers at a glance. */
+const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare");
+/** Hidden cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
+const frame = computed(() => (props.entry.card?.tier === "big" ? "frame-gold" : props.entry.card?.tier === "small" ? "frame-rose" : ""));
 const actionable = computed(() => !props.open || props.entry.spot);
 const label = computed(() => (props.open ? `再看一次${props.entry.title}` : `翻开${props.entry.hint}`));
 const note = computed(() => {
@@ -42,7 +50,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   <component
     :is="actionable ? 'button' : 'div'" :type="actionable ? 'button' : undefined"
     class="tile"
-    :class="[entry.tone, `kind-${entry.item.kind}`, { sticker, open, sealed: !open, turned, lifted, calm, dense, actionable }]"
+    :class="[entry.tone, `kind-${entry.item.kind}`, { sticker, plated, quiet, open, sealed: !open, turned, lifted, calm, dense, actionable }]"
     :style="{ '--i': Math.min(index, 14), '--tilt': `${entry.tilt}deg`, ...entry.toneStyle }"
     :aria-label="actionable ? label : undefined"
     @click="actionable && emit('press')"
@@ -50,16 +58,23 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
     <span class="body">
       <span class="flipper">
         <span class="face face-front">
-          <img v-if="entry.card" class="card-art" :src="entry.art" alt="" draggable="false" />
+          <span v-if="entry.card && frame" class="card-frame card-face" :class="frame">
+            <img class="card-art" :src="entry.art" alt="" draggable="false" />
+          </span>
+          <img v-else-if="entry.card" class="card-art card-face" :src="entry.art" alt="" draggable="false" />
           <span v-else-if="entry.item.kind === 'character'" class="plate">
             <PetBust class="bust" :src="entry.art" />
           </span>
-          <img v-else class="sticker-art" :src="entry.art" alt="" draggable="false" />
+          <template v-else>
+            <i v-if="plated" class="pad" aria-hidden="true"></i>
+            <i v-else-if="turned && !calm" class="pad paper" aria-hidden="true"></i>
+            <img class="sticker-art" :src="entry.art" alt="" draggable="false" />
+          </template>
           <i v-if="turned && !calm" class="flash" aria-hidden="true"></i>
         </span>
         <span v-if="entry.sealed" class="face face-back"><CardBack /></span>
       </span>
-      <template v-if="turned && !calm">
+      <template v-if="turned && !calm && !quiet">
         <i class="ring" aria-hidden="true"></i>
         <span class="burst" aria-hidden="true">
           <i v-for="(s, n) in SPARKS" :key="n" :style="{ '--a': s.angle, '--d': s.reach }">
@@ -99,13 +114,22 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   animation-duration: 420ms;
   animation-timing-function: var(--ease-out);
 }
-.tile.calm {
+/* Turning swaps the root from a button to a plain block, which Vue builds anew; it must not land a second time. */
+.tile.calm,
+.tile.turned {
   animation: none;
 }
 .actionable {
   cursor: pointer;
 }
 .tone-uncommon { --dot: var(--accent-mid); }
+/* Plain first copies: a paper back with the mark in accent and a faint glow. */
+.quiet {
+  --seal-fill: linear-gradient(180deg, var(--surface), var(--accent-soft));
+  --seal-mark: var(--accent);
+  --seal-rule: var(--accent-mid);
+  --tone-glow: rgba(var(--accent-rgb), 0.35);
+}
 .tone-rare { --dot: var(--accent); }
 .tone-epic { --dot: var(--tone-bottom); }
 .tone-skin { --dot: var(--tone-glow); }
@@ -116,10 +140,17 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   width: 100%;
   aspect-ratio: 0.7;
   perspective: 900px;
+  /* Frames are sized in its width, matching the spotlight's card at any size. */
+  container-type: inline-size;
 }
+/*
+ * Out of hit-testing: a face turned away in 3D still caught clicks meant for the tile beside it.
+ * The tile's own box takes the pointer instead.
+ */
 .flipper {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   transform-style: preserve-3d;
   rotate: var(--tilt);
   transition: rotate var(--dur-base) var(--ease-out), translate var(--dur-base) var(--ease-out);
@@ -141,7 +172,10 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   transform: rotateY(180deg);
 }
 .turned .flipper {
-  animation: tile-turn 540ms var(--ease-out) both;
+  animation: tile-turn 640ms linear both;
+}
+.quiet.turned .flipper {
+  animation-duration: 520ms;
 }
 .lifted .flipper {
   visibility: hidden;
@@ -165,12 +199,66 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   background: var(--surface);
   box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.5);
 }
+/* Same proportions as the spotlight's framed card, so the card flying home lands on this frame. */
+.card-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 5cqw;
+  background: var(--frame-fill) var(--frame-at) / var(--frame-size);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.5);
+}
+/* An image keeps its own size under auto, so the size inside the frame is spelled out. */
+.card-frame .card-art {
+  position: absolute;
+  inset: 1.5cqw;
+  width: calc(100% - 3cqw);
+  height: calc(100% - 3cqw);
+  border-radius: 3.5cqw;
+  box-shadow: none;
+}
 .sticker-art {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   filter: var(--sticker-lg);
+}
+/* The card the sticker was turned on: a plate of its tone that stays, or paper that peels away. */
+.pad {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-m);
+  background: var(--tone-fill, var(--grad-sky));
+  box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.45);
+}
+.pad::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+.pad.paper {
+  background: var(--seal-fill);
+  animation: pad-peel 340ms var(--ease-in) 470ms both;
+}
+.pad.paper::after {
+  box-shadow: inset 0 0 0 1px var(--seal-rule);
+}
+.plated .sticker-art {
+  position: absolute;
+  left: 10%;
+  top: 10%;
+  width: 80%;
+  height: 80%;
+  rotate: -4deg;
+}
+.plated.turned:not(.calm) .sticker-art {
+  animation: sticker-pop 560ms var(--ease-spring) 280ms both;
+}
+.quiet.sticker.turned:not(.calm) .sticker-art {
+  animation: sticker-lift 460ms var(--ease-out) 440ms both;
 }
 .dense .sticker-art {
   filter: var(--contour);
@@ -225,7 +313,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   background: #fff;
   opacity: 0;
   pointer-events: none;
-  animation: turn-flash 540ms var(--ease-out) both;
+  animation: turn-flash 640ms var(--ease-out) both;
+}
+.quiet .flash {
+  animation-name: turn-flash-soft;
+  animation-duration: 520ms;
 }
 .ring {
   position: absolute;
@@ -329,10 +421,34 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   70% { transform: scale(1.05); }
   100% { opacity: 1; transform: none; }
 }
+/*
+ * Every step names the same functions in the same order, so the angle itself is interpolated. Mixed
+ * lists fall back to matrix interpolation, which flattens a half turn and threw the card off its axis.
+ * Speeds up into edge-on, overshoots past face-up and settles: a damped spring written out by hand.
+ */
 @keyframes tile-turn {
-  0% { transform: rotateY(180deg); }
-  45% { transform: rotateY(90deg) translateZ(50px) scale(1.1); }
-  80% { transform: rotateY(-8deg) scale(1.04); }
+  0% { transform: translateZ(0) rotateY(180deg) scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.9, 0.55); }
+  40% { transform: translateZ(60px) rotateY(90deg) scale(1.12); animation-timing-function: cubic-bezier(0.15, 0.6, 0.35, 1); }
+  72% { transform: translateZ(12px) rotateY(-14deg) scale(1.04); animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
+  88% { transform: translateZ(0) rotateY(5deg) scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
+  100% { transform: translateZ(0) rotateY(0deg) scale(1); }
+}
+@keyframes turn-flash-soft {
+  0%, 30% { opacity: 0; }
+  42% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+@keyframes pad-peel {
+  to { opacity: 0; transform: translateY(10%) scale(0.86) rotate(4deg); }
+}
+@keyframes sticker-pop {
+  0% { transform: scale(0.72); }
+  55% { transform: scale(1.16) rotate(5deg); }
+  100% { transform: none; }
+}
+@keyframes sticker-lift {
+  0% { transform: none; }
+  40% { transform: translateY(-7%) scale(1.08) rotate(-3deg); }
   100% { transform: none; }
 }
 @keyframes seal-breathe {
@@ -340,7 +456,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
 }
 @keyframes turn-flash {
   0%, 30% { opacity: 0; }
-  45% { opacity: 0.95; }
+  42% { opacity: 0.95; }
   100% { opacity: 0; }
 }
 @keyframes turn-ring {
