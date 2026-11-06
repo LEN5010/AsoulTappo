@@ -64,11 +64,13 @@ const skinRank = (name: string) => {
   return idx >= 0 ? idx : 999;
 };
 
-// Dynamic pet skins from characters.ts, sorted in canonical member order (supports future outfits/skins)
+// Dynamic pet skins from characters.ts: owned ones first, each group in canonical member order (supports future outfits/skins)
+const lockedRank = (name: string) => Number(!ownsCharacter(name, collection.owned));
 const petSkins = computed(() =>
   Object.values(characters)
     .filter((c) => inMember(c.name) && (!query.value || c.name.includes(query.value)))
-    .sort((a, b) => skinRank(a.name) - skinRank(b.name) || a.name.localeCompare(b.name, "zh-CN")),
+    .sort((a, b) => lockedRank(a.name) - lockedRank(b.name) || skinRank(a.name) - skinRank(b.name)
+      || a.name.localeCompare(b.name, "zh-CN")),
 );
 
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)

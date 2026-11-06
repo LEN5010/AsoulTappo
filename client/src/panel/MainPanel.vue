@@ -510,10 +510,10 @@ nav button.on .nav-icon {
 nav button.on .nav-text small {
   color: inherit;
 }
-/* At the end of the row, clear of the label however long the count gets. */
+/* At the end of the row, clear of the label and of the 12px pale strip on the sidebar's right edge, even at three digits. */
 .pip {
   position: absolute;
-  right: 8px;
+  right: 18px;
   top: 50%;
   min-width: 22px;
   height: 18px;
@@ -565,7 +565,7 @@ nav button.on .nav-text small {
     display: none;
   }
   .pip {
-    right: 5px;
+    right: 16px;
   }
   .side-deco {
     left: 14px;
