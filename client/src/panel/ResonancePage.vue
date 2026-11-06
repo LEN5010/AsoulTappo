@@ -73,7 +73,7 @@ async function nextBatch() {
       </div>
       <div class="supply">
         <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
-        <small>收益 ×{{ status?.income.multiplier ?? 1 }} · 每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</small>
+        <small><span>收益 ×{{ status?.income.multiplier ?? 1 }}</span><span>每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</span></small>
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">
@@ -207,13 +207,17 @@ async function nextBatch() {
   font: 800 26px/1 var(--font-latin);
   color: var(--ink);
 }
+/* Two short pieces that wrap onto a second line instead of cutting off when the keys crowd them. */
 .supply small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
   font-size: var(--fs-label);
   font-weight: 500;
   color: var(--ink-3);
+}
+.supply small span {
+  white-space: nowrap;
 }
 .done {
   flex: none;
