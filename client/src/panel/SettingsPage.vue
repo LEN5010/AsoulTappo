@@ -147,7 +147,7 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
           <div class="ui-group ui-frame">
             <div class="ui-row">
               <span>版本</span>
-              <b class="ui-val version">{{ version }}</b>
+              <b class="version">{{ version }}</b>
             </div>
             <div class="ui-row">
               <span>项目主页</span>
@@ -216,7 +216,12 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
   flex: 1;
 }
 .version {
+  flex: none;
+  padding-right: 4px;
   white-space: nowrap;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--ink-2);
 }
 .note {
   margin: 0;
