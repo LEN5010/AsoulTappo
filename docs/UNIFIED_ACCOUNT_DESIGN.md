@@ -1,21 +1,22 @@
 # 主站、Asasfans 与桌宠的统一账号方案
 
-状态：实施方案。先实现第 2 节（主站后端）和第 3 节（Asasfans），第 4 节（桌宠）随后接入。
+状态：第 2 节（主站）和第 3 节（Asasfans）已在两个仓库的 `codex/unified-accounts` 分支实现，未部署；第 4 节（桌宠）只做了 4.1 存档码。
 
 ## 1. 结论
 
-- 主站（dynamic_asoul）现有的 users 表是唯一账号库。Asasfans 和桌宠都登录主站账号，沿用已有用户 ID、密码和恢复码。
-- 登录方式是授权码加 PKCE：客户端打开系统浏览器到主站登录并确认，拿回一次性授权码，再用只有客户端自己知道的随机串换取令牌。PKCE 保证授权码被别的程序截走也换不到令牌。
+- 主站（dynamic_asoul）现有的 users 表是唯一账号库。Asasfans 和桌宠都登录主站账号，沿用已有用户 ID 和密码。恢复码已整体删除，找回只靠已验证邮箱。
+- 客户端用原生登录：在客户端自己的界面输入账号密码，调用 `/api/auth/native/login`、`/native/register` 直接拿令牌。授权码加 PKCE（系统浏览器登录）也已在主站实现，作为备用入口保留，Asasfans 没有使用。
 - 换来的令牌就是主站 sessions 表里的一行，客户端放在请求头 `Authorization: Bearer <令牌>` 里使用。现有的会话校验、authVersion（账号安全版本，改密码或找回时加一，旧会话全部失效）和撤销逻辑直接覆盖客户端。
 - 首期只做上面这套授权码登录。三端都是自营客户端，用不到 OIDC 的 ID Token、JWKS、discovery。以后接入第三方或自建服时，再在这套流程上补 OIDC。
 - 业务数据各管各的：内容收藏在主站 user.db，桌宠的卡片、碎片、保底在桌宠服务端，桌宠服务端只记录主站用户 ID 和存档的对应关系。
-- 邮箱用于验证和找回密码，通过 Resend 的 HTTPS API 发信。邮箱是可选绑定，现有账号照常使用。
+- 邮箱是必需的：新账号注册时就要验证邮箱；旧账号登录后，网页和 App 都只允许先绑定邮箱（只在界面拦截，服务端不限制其他接口）。验证和找回都用 6 位邮箱验证码，通过 Resend 的 HTTPS API 发信。
+- 网页发注册码和找回码之前要过 Cap 人机验证；原生客户端带 `client_id` 跳过人机验证，只受限流约束。
 
 ### 数据归属
 
 | 数据 | 存放位置 | 使用方 |
 | --- | --- | --- |
-| 账号、密码、邮箱、恢复码、各设备登录状态 | 主站 user.db | 三端 |
+| 账号、密码、邮箱、各设备登录状态 | 主站 user.db | 三端 |
 | 动态、二创、小说收藏 | 主站 user.db 的 favorites | Web、Asasfans |
 | Asasfans 收藏夹结构、稍后看、历史、订阅、音乐收藏 | App 本地 | App，首期不同步 |
 | 桌宠卡片、皮肤、表情、碎片、保底、装备 | 桌宠服务端 SQLite | 桌宠 |
@@ -42,7 +43,7 @@ API 对外地址是 `https://len5010.top/dynamics/api/`（nginx 同时转发 `/a
 
 | client_id | 名称 | 允许的回调地址 |
 | --- | --- | --- |
-| `asasfans` | Asasfans | `asasfans://oauth/callback`；回环地址 `http://localhost:<任意端口>/callback` 和 `http://127.0.0.1:<任意端口>/callback`（Windows 用） |
+| `asasfans` | Asasfans（实际走原生登录，未使用这条流程） | `asasfans://oauth/callback`；回环地址 `http://localhost:<任意端口>/callback` 和 `http://127.0.0.1:<任意端口>/callback`（Windows 用） |
 | `asoultappo` | AsoulTappo 桌宠 | 回环地址 `http://127.0.0.1:<任意端口>/callback` |
 
 回环地址回调指桌面客户端在本机临时开一个端口接收授权码。
@@ -82,7 +83,12 @@ CREATE TABLE oauth_codes (
 ### 2.3 设备管理
 
 - 账号安全页的会话列表显示客户端名称（client_id 为空时显示浏览器和 user_agent）。
-- 新增 `POST /api/account/sessions/:id/revoke`，退出指定设备。现有的退出其他设备、改密码、恢复码找回都会让客户端令牌一起失效。
+- 新增 `POST /api/account/sessions/:id/revoke`，退出指定设备。设备 ID 是会话令牌的 SHA-256，列表里不返回可登录的令牌本身。退出其他设备、改密码、邮箱找回都会让客户端令牌一起失效。
+
+### 2.3a 原生登录
+
+- `POST /api/auth/native/login`：请求体和浏览器登录相同（账号可填用户名或已验证邮箱），另加 `client_id`。返回 `access_token`、`token_type`、`expires_in`、`user`，不设置 Cookie。
+- `POST /api/auth/native/register`：同上，请求体是 `username`、`email`、`code`、`password`、`client_id`。
 
 ### 2.4 收藏同步接口
 
@@ -103,41 +109,42 @@ Web 和 App 对同一份内容的记法不同。同步接口统一用内容键�
 
 `bilibiliVideo` 和歌曲在主站没有对应内容，首期留在 App 本地。
 
-### 2.5 邮箱绑定与找回
+### 2.5 邮箱、注册与找回
 
-- users 加 `email TEXT`、`email_verified_at TEXT`；已验证邮箱建唯一索引。
-- 新表 `email_tokens(token_hash, user_id, purpose, email, expires_at, used_at)`，purpose 为 `verify` 或 `reset`；链接有效 30 分钟，只能使用一次。
-- `POST /api/account/email`：验证当前密码后给新邮箱发验证链接。
-- `POST /api/account/email/verify`：消费验证链接，写入邮箱和验证时间。
-- `POST /api/auth/password-reset/request`：输入用户名或已验证邮箱，有已验证邮箱就发找回链接，接口统一返回成功。
-- `POST /api/auth/password-reset/confirm`：消费找回链接并设置新密码，authVersion 加一，所有设备重新登录。
-- 发信模块直接请求 `https://api.resend.com/emails`。环境变量 `RESEND_API_KEY`、`MAIL_FROM=账号中心 <account@notify.len5010.top>`，链接域名用 `PUBLIC_SITE_URL`。
-- 注册的 IP 限制目前是同一网络 24 小时内一个账号。三端共用账号后，宿舍和校园网会频繁触发，建议放宽到 5 个。
+迁移 `0019_account_email.sql`：删除恢复码相关列和历史事件，users 加 `email`（只存已验证地址，小写，唯一索引），新增 `email_codes` 和 `registration_codes`。
+
+- 验证码统一 6 位数字，10 分钟有效，同一用途 60 秒内不能重发，错 5 次作废，库里只存哈希。
+- 注册：`POST /api/auth/register/code` 给地址发码，再提交注册，账号创建时邮箱即为已验证。同一 IP 24 小时内最多注册 5 个账号。
+- 绑定和换绑：`POST /api/account/email` 发码（已有邮箱时要再输当前密码），`POST /api/account/email/verify` 提交验证码。旧账号在网页上登录后会被跳到绑定页。
+- 找回：`POST /api/auth/password-reset/request` 输入用户名或邮箱，接口统一返回成功；`POST /api/auth/password-reset/confirm` 提交验证码和新密码，authVersion 加一，所有设备重新登录。
+- 人机验证：网页用开源的 Cap（`@cap.js/widget`），服务端校验在 `apps/api/src/auth/cap.ts` 按 Cap 协议自写，wasm 从本站提供。发注册码和找回码时，浏览器带 `capToken`，原生客户端带 `client_id`。
+- 发信模块直接请求 `https://api.resend.com/emails`，环境变量 `RESEND_API_KEY`、`MAIL_FROM=账号中心 <account@notify.len5010.top>`。没配置时发码接口返回 503。
 
 ### 2.6 主站测试
 
 - 授权码：PKCE 校验失败、授权码重复使用、过期、回调地址不匹配、client_id 不存在，各自返回错误。
-- 改密码、恢复码找回、邮箱找回之后，旧的客户端令牌返回 401。
+- 改密码、邮箱找回之后，旧的客户端令牌返回 401。
 - bearer 请求不需要 CSRF 头，Cookie 请求仍然需要。
 - 收藏同步：`bili:X` 同时存在于两个库时两边都写入；移除时两边都删除；未知键原样返回。
-- 发信模块用注入的发送函数测试。
+- 发信模块用注入的发送函数测试；验证码的重发间隔、错误次数、过期和一次性；Cap 令牌只能用一次。
 
 ## 3. Asasfans
 
-按该仓库 AGENTS.md 的规定，实施前把本节写进 `docs/next.md`。
+已实现，仓库内的长期约定写在该仓库的 AGENTS.md。
 
 ### 3.1 登录
 
-- 我的页增加账号入口 `登录主站账号`。用 `flutter_web_auth_2` 打开系统浏览器完成第 2.2 节的流程：Android、iOS、macOS 用 `asasfans://oauth/callback`，Windows 用回环地址。这是本次唯一新增的依赖。
+- 设置第一行是「用户」，进入原生页面：登录（用户名或邮箱）、注册（用户名、邮箱、邮箱验证码、密码）、邮箱验证码找回密码、绑定和换绑邮箱、退出。没有新增依赖。
 - 令牌存进现有的 flutter_secure_storage。
-- 令牌只附加在账号和收藏同步请求上（`oauth/*`、`favorites/*`、`auth/me`）。二创问号反馈等匿名请求保持不带令牌。
+- 令牌只附加在账号和收藏同步请求上（`auth/*`、`account/email*`、`oauth/revoke`、`favorites/*`）。二创问号反馈等匿名请求保持不带令牌。
+- 账号有已验证邮箱之后，收藏才切到这个账号并开始同步；没有邮箱的旧账号登录后只能绑定邮箱或退出，期间继续使用本机游客收藏。网页上绑定的邮箱，App 进入用户页时自动读到。
 - 退出登录：调用 `oauth/revoke`，删除本地令牌，切回游客。任何账号请求返回 401 时同样切回游客，并提示重新登录。
 
 ### 3.2 本地收藏按账号区分
 
 - 个人库 schema 升到 v12：collection_folders 和 collection_items 加 `owner TEXT NOT NULL`，主键带上 owner。游客的 owner 是 `local`，登录后是主站用户 ID。每个 owner 有自己的默认收藏夹。
 - 收藏相关查询都带当前 owner。content_refs 存内容快照，各账号共用。稍后看、历史、订阅、音乐收藏和偏好设置首期保持设备级，所有账号共用。
-- 首次登录某个账号时询问一次：`把本机收藏带进这个账号` 或 `从空白开始`。带进账号就是把 local 的收藏夹和条目复制一份到新 owner，并把其中可同步的条目写进待同步表。
+- 某个账号第一次带着已验证邮箱进入这台设备时询问一次：`把本机收藏带进这个账号` 或 `从空白开始`。带进账号就是把 local 的收藏夹和条目复制一份到新 owner，并把其中可同步的条目写进待同步表。
 
 ### 3.3 同步
 
@@ -194,7 +201,7 @@ CREATE TABLE IF NOT EXISTS account_links (
 
 ### 4.4 客户端登录
 
-- `/api/info` 为 true 时，设置里显示 `登录主站账号`。用 Tauri 打开系统浏览器，本机回环端口接收授权码，令牌存进系统钥匙串。登录后调用 `/api/account/link`，按返回结果处理选择。
+- `/api/info` 为 true 时，设置里显示主站账号登录。按 Asasfans 的做法用原生登录（`/api/auth/native/login`，`client_id` 为 `asoultappo`），令牌存进系统钥匙串；主站需要给这两个接口放开 Tauri 窗口的跨域来源（目前只有 `/api/oauth/*` 放开了）。登录后调用 `/api/account/link`，按返回结果处理选择。系统浏览器加授权码的流程仍可用，作为备选。
 - 切换账号时一起切换 HTTP 令牌、活动上报和房间连接。
 
 ### 4.5 桌宠测试
@@ -205,15 +212,16 @@ CREATE TABLE IF NOT EXISTS account_links (
 - 主站请求用注入的假实现测试，缓存期内不重复请求，主站返回 401 时接口返回 `account_expired`。
 - 未设置 `MAIN_API_URL` 时，`/api/info` 返回 false，账号接口不可用，游客功能照常。
 
-## 5. 实施顺序
+## 5. 实施进度
 
-1. 主站 2.1 到 2.3：Bearer 令牌、授权码登录、设备管理。
-2. 主站 2.4：收藏同步接口。
-3. Asasfans 第 3 节：登录、按账号区分收藏、同步。依赖前两步上线。
-4. 主站 2.5：邮箱绑定与找回。
-5. 桌宠第 4 节。4.1 存档码随时可以做，其余依赖第 1 步上线。
+| 步骤 | 状态 |
+| --- | --- |
+| 主站 2.1 到 2.5 | dynamic_asoul `codex/unified-accounts` 已提交，测试通过，未推送、未部署 |
+| Asasfans 第 3 节 | as-as-fans `codex/unified-accounts` 已提交，未推送；真机登录、同步未验证 |
+| 桌宠 4.1 存档码 | 已合入 main |
+| 桌宠 4.2 到 4.5 | 未开始，依赖主站上线 |
 
-主站每一步单独发版。
+主站上线前先备份 user.db，再在 lbot 配置 `RESEND_API_KEY` 和 `MAIL_FROM`；0018、0019 两个迁移在 API 启动时执行。
 
 ## 6. 发信服务现状
 
@@ -233,5 +241,5 @@ API key 在本仓库 `.local/resend-setup.md`（Git 已忽略），主站上线�
 
 - [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html)：原生应用通过系统浏览器授权，回环地址回调。
 - [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html)：PKCE。
-- [flutter_web_auth_2](https://pub.dev/packages/flutter_web_auth_2)：Flutter 的系统浏览器授权。
+- [Cap](https://capjs.js.org/)：开源的工作量证明人机验证。
 - [Resend 发信接口](https://resend.com/docs/api-reference/emails/send-email)
