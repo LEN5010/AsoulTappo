@@ -42,7 +42,7 @@ onDeactivated(() => player.clear());
   padding: 0;
   border: 0;
   background: url("../assets/brand/side-alpaca.webp") center / contain no-repeat;
-  filter: var(--contour) drop-shadow(0 4px 7px rgba(var(--c-900-rgb), .3));
+  filter: var(--contour) drop-shadow(0 4px 7px rgba(var(--shadow-rgb), .3));
   transform: rotate(-5deg);
   transform-origin: 50% 100%;
   transition: transform var(--dur-slow) var(--ease-spring);
@@ -54,6 +54,7 @@ onDeactivated(() => player.clear());
 .bubble-anchor {
   --bubble-max-width: 100px;
   position: absolute;
+  z-index: 2;
   left: 62%;
   top: 10%;
   width: 0;

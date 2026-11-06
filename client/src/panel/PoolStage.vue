@@ -2,7 +2,7 @@
 // Resonance stage: the page itself. The dynamic cards are held as a fanned hand in front of slow rays
 // and a soft wash of the front card's colours; the front card leans toward the pointer. Beside it the
 // page names the card and sums up the collection and its skins. The lineup deals the next card on its own.
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { cardFrame, cardLabel, poolName, TIER_LABEL } from "../cards";
@@ -56,10 +56,56 @@ const cardOf = (item: Item) => getCard(item.ref);
 
 /** Which way the cards are travelling: forward deals the next card to the front. */
 const dealing = ref(1);
+/** Steps still to play, one card at a time. A jump of several is the same deal, played faster. */
+let pending = 0;
+let stepTimer = 0;
+let rushTimer = 0;
+const STEP_GAP = 260;
+const RUSH_GAP = 180;
+/** Matches --deal on .fan.rush, so the fast timing stays until the last card has landed. */
+const RUSH_MS = 360;
+const rush = ref(false);
+function stopRush() {
+  window.clearTimeout(rushTimer);
+  rushTimer = 0;
+  rush.value = false;
+}
 function go(step: number) {
-  if (!step) return;
-  dealing.value = Math.sign(step);
-  selected.value = neighbour(step).id;
+  if (!step || props.busy) return;
+  if (reducedMotion.value) {
+    window.clearTimeout(stepTimer);
+    stepTimer = 0;
+    pending = 0;
+    stopRush();
+    dealing.value = Math.sign(step);
+    selected.value = neighbour(step).id;
+    return;
+  }
+  const max = Math.max(1, previews.length - 1);
+  pending = Math.max(-max, Math.min(max, step));
+  if (Math.abs(step) > 1) {
+    window.clearTimeout(rushTimer);
+    rushTimer = 0;
+    rush.value = true;
+  } else if (!stepTimer) {
+    stopRush();
+  }
+  runStep();
+}
+function runStep() {
+  if (stepTimer || !pending) return;
+  const dir = Math.sign(pending);
+  pending -= dir;
+  dealing.value = dir;
+  selected.value = neighbour(dir).id;
+  if (!pending) {
+    if (rush.value) rushTimer = window.setTimeout(stopRush, RUSH_MS);
+    return;
+  }
+  stepTimer = window.setTimeout(() => {
+    stepTimer = 0;
+    runStep();
+  }, rush.value ? RUSH_GAP : STEP_GAP);
 }
 
 /** The hand: the card on show and the next ones peeking out behind it. */
@@ -107,12 +153,12 @@ let leanBox: DOMRect | null = null;
 let leanFrame = 0;
 let leanAt = { x: 0, y: 0 };
 function writeLean(x: number, y: number) {
-  const el = fanEl.value;
-  if (!el) return;
-  el.style.setProperty("--lx", x.toFixed(3));
-  el.style.setProperty("--ly", y.toFixed(3));
-  el.style.setProperty("--frame-x", (0.3 + x * 0.25).toFixed(3));
-  el.style.setProperty("--frame-y", (0.2 + y * 0.25).toFixed(3));
+  const front = fanEl.value?.querySelector(".s0");
+  if (!(front instanceof HTMLElement)) return;
+  front.style.setProperty("--lx", x.toFixed(3));
+  front.style.setProperty("--ly", y.toFixed(3));
+  front.style.setProperty("--frame-x", (0.3 + x * 0.25).toFixed(3));
+  front.style.setProperty("--frame-y", (0.2 + y * 0.25).toFixed(3));
 }
 function leanStart(e: PointerEvent) {
   pointing.value = true;
@@ -149,34 +195,13 @@ watch(() => props.paused, (paused) => {
 const pageActive = usePageActive();
 const skinWidth = ref(0);
 const viewportWidth = ref(0);
-const scrolling = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused
-  && !skinFocused.value && skinWidth.value > viewportWidth.value);
+const canMarquee = computed(() => !reducedMotion.value && skinWidth.value > viewportWidth.value);
+const scrolling = computed(() => canMarquee.value && pageActive.value && !props.busy && !props.paused && !skinFocused.value);
+/** One group width at the old 24px/s, so the loop keeps the same pace at any panel size. */
+const marqueeDuration = computed(() => `${Math.max(8, skinWidth.value / 24)}s`);
 const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
 watch(playing, (on) => { if (!on) writeLean(0, 0); });
-let skinFrame = 0;
-let skinTime = 0;
-let skinOffset = 0;
 let resize: ResizeObserver | undefined;
-function scrollSkins(time: number) {
-  const viewport = skinViewport.value;
-  if (viewport && skinTime) {
-    skinOffset = (skinOffset + Math.min(time - skinTime, 50) * .024) % skinWidth.value;
-    viewport.scrollLeft = skinOffset;
-  }
-  skinTime = time;
-  skinFrame = requestAnimationFrame(scrollSkins);
-}
-function startSkins() {
-  if (skinFrame || !scrolling.value) return;
-  skinTime = 0;
-  skinOffset = skinViewport.value?.scrollLeft ?? 0;
-  skinFrame = requestAnimationFrame(scrollSkins);
-}
-function stopSkins() {
-  cancelAnimationFrame(skinFrame);
-  skinFrame = 0;
-}
-watch(scrolling, (run) => run ? startSkins() : stopSkins());
 onMounted(() => {
   resize = new ResizeObserver(() => {
     skinWidth.value = skinGroup.value?.[0]?.offsetWidth ?? 0;
@@ -185,22 +210,31 @@ onMounted(() => {
   if (skinViewport.value) resize.observe(skinViewport.value);
   if (skinGroup.value?.[0]) resize.observe(skinGroup.value[0]);
 });
-onActivated(startSkins);
-onDeactivated(stopSkins);
-onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(leanFrame); });
+onBeforeUnmount(() => {
+  resize?.disconnect();
+  cancelAnimationFrame(leanFrame);
+  window.clearTimeout(stepTimer);
+  window.clearTimeout(rushTimer);
+});
 </script>
 
 <template>
-  <section class="pool-stage" :class="{ hold: !pageActive || busy || paused || pointing || skinFocused, calm: reducedMotion }">
+  <section
+    class="pool-stage"
+    :class="{ hold: !pageActive || busy || paused || pointing || skinFocused, calm: reducedMotion, marquee: canMarquee, run: scrolling }"
+    :style="{ '--marquee': marqueeDuration }"
+  >
     <div class="wash" aria-hidden="true">
       <Transition name="wash" :css="!reducedMotion">
-        <img v-if="card" :key="card.id" :src="assetUrl(card.thumb)" alt="" draggable="false" />
+        <span v-if="card" :key="card.id" class="wash-blob">
+          <img :src="assetUrl(card.thumb)" alt="" draggable="false" />
+        </span>
       </Transition>
     </div>
 
     <div class="hand">
-      <div ref="fanEl" class="fan" :style="{ '--lean': `${LEAN_DEG}deg` }" @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd">
-        <i class="rays" aria-hidden="true"></i>
+      <div ref="fanEl" class="fan" :class="{ rush }" :style="{ '--lean': `${LEAN_DEG}deg` }" @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd">
+        <i class="rays" aria-hidden="true"><i></i></i>
         <TransitionGroup :name="dealing > 0 ? 'fan-fwd' : 'fan-back'" :css="!reducedMotion">
           <button
             v-for="f in fan" :key="f.item.id" type="button"
@@ -253,6 +287,8 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
         <h3>此间共鸣</h3>
       </header>
 
+      <div class="sheet">
+      <div class="feature-slot">
       <Transition name="feature" mode="out-in" :css="!reducedMotion">
         <div v-if="feature" :key="active?.id" class="feature">
           <p class="tags">
@@ -267,6 +303,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
           </p>
         </div>
       </Transition>
+      </div>
 
       <div class="meter">
         <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i></p>
@@ -276,6 +313,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
             <span class="t-bar" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`"><i :style="{ width: t.fill }"></i></span>
           </li>
         </ul>
+      </div>
       </div>
 
       <div
@@ -307,11 +345,13 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   /* About seven tenths of the page, short of what the lineup and the action bar need, and of the width the text needs. */
   --hero-h: max(200px, min(0.7 * (100cqh - 46px), 100cqh - 262px, 44cqw));
   --card-w: calc(var(--hero-h) * 0.7);
+  --stage-gap: 28px;
   position: relative;
+  isolation: isolate;
   flex: 1 0 auto;
   display: flex;
   align-items: stretch;
-  gap: 28px;
+  gap: var(--stage-gap);
   padding: 26px 26px 12px 34px;
   box-sizing: border-box;
 }
@@ -329,13 +369,21 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   mask: radial-gradient(closest-side, #000 25%, transparent 100%);
   -webkit-mask: radial-gradient(closest-side, #000 25%, transparent 100%);
 }
-.wash img {
+/* Blur a postage-stamp image, then scale the already-filtered layer. The mask stays on .wash. */
+.wash-blob {
   position: absolute;
-  inset: 8% 10%;
-  width: 80%;
-  height: 84%;
+  left: 50%;
+  top: 46%;
+  width: 72px;
+  height: 72px;
+  transform: translate(-50%, -50%) scale(7);
+}
+.wash-blob img {
+  display: block;
+  width: 72px;
+  height: 72px;
   object-fit: cover;
-  filter: blur(36px) saturate(1.5) brightness(1.12);
+  filter: blur(5px) saturate(1.5) brightness(1.12);
   opacity: 0.55;
 }
 .wash-enter-active,
@@ -372,16 +420,21 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   top: calc(var(--hero-h) * -0.25);
   width: calc(var(--hero-h) * 1.5);
   aspect-ratio: 1;
+  overflow: hidden;
   border-radius: 50%;
-  background: repeating-conic-gradient(rgba(255, 255, 255, 0.85) 0 4deg, transparent 4deg 20deg);
   mask: radial-gradient(circle, #000 18%, transparent 66%);
   -webkit-mask: radial-gradient(circle, #000 18%, transparent 66%);
   opacity: 0.45;
   pointer-events: none;
+}
+.rays i {
+  position: absolute;
+  inset: -20%;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.85) 0 4deg, transparent 4deg 20deg);
   animation: rays-turn 96s linear infinite;
 }
-.hold .rays,
-.calm .rays {
+.hold .rays i,
+.calm .rays i {
   animation-play-state: paused;
 }
 .fan-card {
@@ -395,7 +448,12 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   background: none;
   cursor: pointer;
   transform-origin: 50% 100%;
-  transition: transform 520ms var(--ease-out), opacity 320ms;
+  transition: transform var(--deal, 520ms) var(--ease-out), opacity 320ms;
+}
+/* A jump of several cards plays each deal faster. One card at a time stays on the defaults. */
+.fan.rush {
+  --deal: 360ms;
+  --deal-fade: 280ms;
 }
 /* The card itself: a metal frame (the same share of the width as the reveal's framed cards) around the art. */
 .face {
@@ -407,7 +465,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   box-sizing: border-box;
   border-radius: var(--radius-m);
   background: var(--frame-fill, var(--surface)) var(--frame-at, 0 0) / var(--frame-size, auto);
-  box-shadow: 0 0 0 3px #fff, 0 16px 28px -16px rgba(var(--c-900-rgb), 0.6);
+  box-shadow: 0 0 0 3px #fff, 0 16px 28px -16px rgba(var(--shadow-rgb), 0.6);
   transform: perspective(900px) rotateX(0deg) rotateY(0deg);
   transition: transform 160ms var(--ease-out), box-shadow var(--dur-base);
 }
@@ -431,7 +489,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
   transform: translateY(-6px) rotate(0deg);
 }
 .fan:hover .s0:not(:disabled) .face {
-  box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--c-500-rgb), 0.45), 0 24px 32px -16px rgba(var(--c-900-rgb), 0.6);
+  box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--c-500-rgb), 0.45), 0 24px 32px -16px rgba(var(--shadow-rgb), 0.6);
 }
 .fan:hover .s1:not(:disabled) {
   transform: translateX(17%) rotate(8deg) scale(0.93);
@@ -477,9 +535,10 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
 .fan-fwd-leave-active,
 .fan-back-leave-active {
   z-index: 4;
-  transition: transform 520ms var(--ease-in-out), opacity 420ms var(--ease-in);
+  transition: transform var(--deal, 520ms) var(--ease-in-out), opacity var(--deal-fade, 420ms) var(--ease-in);
 }
-.fan-fwd-leave-to {
+.fan-fwd-leave-to,
+.fan:hover .s0.fan-fwd-leave-to {
   opacity: 0;
   transform: translate(-46%, 6%) rotate(-18deg) scale(0.9);
 }
@@ -549,22 +608,39 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(
 
 .info {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   gap: 14px;
   padding-top: 4px;
 }
+/* One paper sheet, above the fanned cards. It overlaps the hand's right edge so the back cards slide under it. */
+.sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-left: calc(var(--stage-gap) * -1 - 18px);
+  padding: 16px 18px 14px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+}
+.feature-slot {
+  min-height: 108px;
+}
 
 .title .ui-eyebrow {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  letter-spacing: 0.22em;
 }
 h3 {
   margin: 0;
-  font: 800 clamp(28px, 3.7cqw, 36px)/1.15 var(--font);
+  font: 800 clamp(42px, 6cqw, 58px)/1.05 var(--font);
   letter-spacing: 0.03em;
 }
 
@@ -657,9 +733,11 @@ h3 {
 
 /* The collection at a glance: the total, then one small gauge per tier. */
 .meter {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 .total {
   display: flex;
@@ -677,9 +755,12 @@ h3 {
   color: var(--ink-3);
 }
 .tiers {
+  flex: 1;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  align-items: center;
+  gap: 8px 22px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -717,8 +798,8 @@ h3 {
 }
 .t-bar {
   display: block;
-  height: 4px;
-  margin-top: 4px;
+  height: 8px;
+  margin-top: 6px;
   border-radius: 2px;
   background: var(--c-100);
   overflow: hidden;
@@ -738,8 +819,20 @@ h3 {
   padding: 10px 0 2px;
   scrollbar-width: none;
 }
+.marquee .skins {
+  overflow: hidden;
+  /* The row dissolves at the two ends it scrolls off, not along each bust. */
+  mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
 .skins::-webkit-scrollbar { display: none; }
 .skin-track { display: flex; width: max-content; }
+.marquee .skin-track {
+  animation: skin-marquee var(--marquee, 40s) linear infinite;
+  animation-play-state: paused;
+}
+.run .skin-track {
+  animation-play-state: running;
+}
 .skin-group {
   flex: none;
   display: flex;
@@ -767,24 +860,12 @@ h3 {
   height: 66px;
   transition: transform var(--dur-base) var(--ease-out);
 }
-.stand::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  right: 6px;
-  bottom: -3px;
-  height: 10px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.8);
-  box-shadow: 0 2px 0 var(--c-200), 0 4px 6px -2px rgba(var(--c-900-rgb), 0.3);
-}
 .skin-bust {
   position: relative;
   z-index: 1;
   width: 100%;
   height: 100%;
-  filter: var(--contour) drop-shadow(3px 0 0 rgba(255, 255, 255, 0.5)) drop-shadow(-3px 0 0 rgba(255, 255, 255, 0.5))
-    drop-shadow(0 -3px 0 rgba(255, 255, 255, 0.5));
+  filter: var(--contour);
 }
 .skin-stand:hover:not(:disabled) .stand {
   transform: translateY(-3px);
@@ -857,6 +938,11 @@ h3 {
     transform: rotate(1turn);
   }
 }
+@keyframes skin-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
 .hold .tick,
 .lineup:has(:focus-visible) .tick {
   animation-play-state: paused;
@@ -889,7 +975,7 @@ h3 {
     display: none;
   }
   .pool-stage {
-    gap: 18px;
+    --stage-gap: 18px;
     padding-right: 18px;
   }
   .hand {
@@ -907,6 +993,7 @@ h3 {
   .hand { --hero-h: 214px; --card-w: 150px; }
   .wash { left: 50%; transform: translateX(-50%); height: 300px; bottom: auto; }
   .info { width: 100%; }
+  .sheet { margin-left: 0; }
 }
 /* Keeps the action bar above the fold: the total still sums up what the tier gauges break down. */
 @container panel (max-height: 600px) {

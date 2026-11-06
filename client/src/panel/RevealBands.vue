@@ -187,7 +187,7 @@ defineExpose({ cover, announce, leave });
   font: 800 clamp(64px, 17cqw, 112px)/0.9 var(--font-latin);
   letter-spacing: 0.01em;
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--shadow-rgb), 0.08);
 }
 .letters i {
   display: block;
@@ -253,14 +253,14 @@ defineExpose({ cover, announce, leave });
   top: 0;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.2));
+  filter: drop-shadow(0 1px 2px rgba(var(--shadow-rgb), 0.2));
   animation: burst-fly 820ms var(--ease-out) calc(120ms + var(--delay)) both;
 }
 .spark {
   position: absolute;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.2));
+  filter: drop-shadow(0 1px 2px rgba(var(--shadow-rgb), 0.2));
   animation: spark-pop 620ms var(--ease-pop) 260ms both;
 }
 .s1 { left: -14%; top: -18%; animation-delay: 260ms; }

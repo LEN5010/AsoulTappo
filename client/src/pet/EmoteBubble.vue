@@ -61,7 +61,7 @@ const style = computed(() => ({ left: `${props.anchor.x}px`, top: `${props.ancho
   --tip: calc(var(--size) * 0.19 - 8px);
   position: relative;
   margin: 0 0 10px calc(var(--tip) * -1);
-  filter: drop-shadow(0 1.5px 1.5px rgba(var(--c-900-rgb), 0.38)) drop-shadow(0 4px 7px rgba(var(--c-900-rgb), 0.3));
+  filter: drop-shadow(0 1.5px 1.5px rgba(var(--shadow-rgb), 0.38)) drop-shadow(0 4px 7px rgba(var(--shadow-rgb), 0.3));
 }
 .flip .sticker { margin: 0 calc(var(--tip) * -1) 10px 0; }
 /* Scales around the tip of the point, so the tip stays on the character through a swap. */

@@ -72,7 +72,7 @@ onBeforeUnmount(() => observer.disconnect());
   border-radius: var(--radius-key);
   border-bottom: 3px solid var(--c-200);
   background: linear-gradient(180deg, #fff, var(--key-white-shade));
-  box-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.25);
+  box-shadow: 0 4px 8px -3px rgba(var(--shadow-rgb), 0.25);
   overflow-x: auto;
   scrollbar-width: none;
   flex: none;
@@ -97,12 +97,12 @@ onBeforeUnmount(() => observer.disconnect());
   transform-origin: 0 50%;
   will-change: transform;
 }
-/* The row's 3px lip counts as rim, so the face sits 4px from every visible edge: 4px above,
- * 2px inset + 2px row padding at the sides, and below its own 1px lip, 1px of white + the 3px row lip. */
+/* The face fills its key. The row's 2px padding is the only side gap, so an 8px radius
+ * sits concentric in the 10px track. 2px above and below keeps it off the track lip. */
 .thumb::before {
   content: "";
   position: absolute;
-  inset: 4px 2px 2px;
+  inset: 2px 0;
   border-radius: var(--radius-key-s);
   background: var(--c-500);
   box-shadow: 0 1px 0 var(--c-600);
@@ -151,10 +151,6 @@ onBeforeUnmount(() => observer.disconnect());
 }
 .seg button.on {
   color: var(--ink);
-}
-/* The picked face is centred 1px below the button's middle; its label follows. */
-.seg:not(.plain) button.on > * {
-  transform: translateY(1px);
 }
 .seg button:disabled {
   opacity: 0.6;

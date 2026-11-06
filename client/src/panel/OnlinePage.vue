@@ -139,7 +139,7 @@ async function copy() {
 }
 .stub {
   flex: none;
-  width: 132px;
+  width: 148px;
   padding: 12px 10px 12px 20px;
   box-sizing: border-box;
   display: flex;
@@ -147,18 +147,21 @@ async function copy() {
   justify-content: center;
   gap: 6px;
 }
+.stub .ui-eyebrow {
+  font-size: 13px;
+}
 .status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-label);
+  gap: 8px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--ink-2);
 }
 /* The only place green and amber appear: whether the room connection is up. */
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--ink-3);
 }

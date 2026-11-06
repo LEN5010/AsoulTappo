@@ -41,7 +41,7 @@ header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--c-700);
 .skin-card:hover :deep(.figure) { transform: translateY(-4px); }
 /* Unowned skins stay a dimmed original until the pointer lights them up. */
 .skin-card:hover :deep(.locked .figure) { filter: var(--contour) drop-shadow(0 0 2.5px rgba(255, 255, 255, 0.9)); }
-.state { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-caption); }
+.state { position: absolute; z-index: 3; top: 14px; right: 12px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-caption); }
 .meta { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
 .meta b { font-size: var(--fs-strong); font-weight: 800; }
 .meta small { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: var(--fs-label); }

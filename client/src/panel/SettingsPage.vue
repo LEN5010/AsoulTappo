@@ -62,9 +62,17 @@ function applyServer() {
 
     <section data-rise>
       <h4 class="ui-label"><span>存档</span></h4>
-      <div class="ui-group ui-frame">
-        <div class="ui-row"><span>当前存档码</span><input class="ui-input" readonly :value="saveCode" aria-label="当前存档码" /><button class="ui-btn" type="button" @click="copySave">复制</button></div>
-        <form class="ui-row" @submit.prevent="restoreSave"><input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" /><button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button></form>
+      <div class="ui-group ui-frame saves">
+        <div class="ui-row">
+          <span>当前存档码</span>
+          <div class="ui-input save-read" role="textbox" aria-readonly="true" aria-label="当前存档码">{{ saveCode }}</div>
+          <button class="ui-btn" type="button" @click="copySave">复制</button>
+        </div>
+        <form class="ui-row" @submit.prevent="restoreSave">
+          <span>切换存档码</span>
+          <input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" />
+          <button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button>
+        </form>
         <p v-if="saveNotice" role="status" class="err">{{ saveNotice }}</p>
       </div>
     </section>
@@ -154,6 +162,36 @@ function applyServer() {
 .settings > * {
   flex: none;
 }
+/* Both code fields share one column. A bare input stays 20 characters wide and clips the token. */
+.saves {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.saves > .ui-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+  column-gap: 16px;
+}
+.saves > .err {
+  grid-column: 1 / -1;
+}
+.saves .ui-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.save-read {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-weight: 700;
+  text-align: left;
+  user-select: text;
+}
 
 .profile {
   --radius: var(--radius-l);
@@ -178,8 +216,9 @@ function applyServer() {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -34px;
-  width: 104px;
+  /* 104px disc, 10% larger, grown from the same center (was bottom: -34px). */
+  bottom: calc(-34px - 104px * 0.05);
+  width: calc(104px * 1.1);
   aspect-ratio: 1;
   border-radius: 50%;
   transform: translateX(-50%);
@@ -191,6 +230,7 @@ function applyServer() {
   width: 100%;
   height: 100%;
   filter: var(--sticker);
+  transform: translateX(4px);
 }
 .nick {
   flex: 0 1 196px;
@@ -298,8 +338,11 @@ function applyServer() {
     height: 58px;
   }
   .portrait::before {
-    bottom: -8px;
-    width: 72px;
+    bottom: calc(-8px - 72px * 0.05);
+    width: calc(72px * 1.1);
+  }
+  .bust {
+    transform: translateX(3px);
   }
   .nick {
     flex: 1;

@@ -35,6 +35,8 @@
   --c-900: #652330;
   --c-500-rgb: 252, 150, 110;
   --c-900-rgb: 101, 35, 48;
+  /* Drop shadows stay neutral. The coral ramp is for surfaces, not for shade. */
+  --shadow-rgb: 0, 0, 0;
 
   --ink: #3A222B;
   --ink-2: #674F58;
@@ -59,8 +61,8 @@
   --radius-key: 10px;
   --radius-key-s: 8px;
 
-  --shadow-key: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.25);
-  --shadow-paper: 0 1px 2px rgba(var(--c-900-rgb), 0.06), 0 8px 24px -16px rgba(var(--c-900-rgb), 0.28);
+  --shadow-key: 0 4px 8px -3px rgba(var(--shadow-rgb), 0.22);
+  --shadow-paper: 0 1px 2px rgba(var(--shadow-rgb), 0.06), 0 8px 24px -16px rgba(var(--shadow-rgb), 0.22);
   /* The coral backlight under a primary key. */
   --shadow-backlight: 0 7px 16px -5px rgba(var(--c-500-rgb), 0.85);
 
@@ -76,8 +78,8 @@
   /* Die-cut sticker contour: four offset passes grow the silhouette, the last pass of --sticker lifts it off the tile. */
   --contour: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff);
   --contour-lg: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff);
-  --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(var(--c-900-rgb), 0.38));
-  --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(var(--c-900-rgb), 0.38));
+  --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(var(--shadow-rgb), 0.28));
+  --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(var(--shadow-rgb), 0.28));
   /* Not owned yet. Stays opaque: stickers overlap, and any transparency shows one through the other. */
   --dim: brightness(0.74);
 
@@ -625,12 +627,12 @@
   content: "";
   position: absolute;
   left: 3px;
-  top: 2px;
+  top: 3px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 2px 0 var(--c-300), 0 3px 5px -2px rgba(var(--c-900-rgb), 0.3);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 5px -2px rgba(var(--shadow-rgb), 0.3);
   transition: transform var(--dur-release) var(--ease-spring), box-shadow var(--dur-fast);
 }
 .ui-switch:checked {
@@ -638,7 +640,7 @@
 }
 .ui-switch:checked::after {
   transform: translateX(18px);
-  box-shadow: 0 2px 0 var(--c-600), 0 3px 5px -2px rgba(var(--c-900-rgb), 0.3);
+  box-shadow: 0 2px 0 var(--c-600), 0 3px 5px -2px rgba(var(--shadow-rgb), 0.3);
 }
 .ui-switch:active::after {
   transform: translateY(1px);
@@ -669,7 +671,7 @@
   margin-top: -7px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--c-900-rgb), 0.35);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--shadow-rgb), 0.35);
   transition: transform var(--dur-fast);
 }
 .ui-range:hover::-webkit-slider-thumb {
@@ -677,7 +679,7 @@
 }
 .ui-range:active::-webkit-slider-thumb {
   transform: translateY(1px);
-  box-shadow: 0 1px 0 var(--c-300), 0 2px 4px -2px rgba(var(--c-900-rgb), 0.35);
+  box-shadow: 0 1px 0 var(--c-300), 0 2px 4px -2px rgba(var(--shadow-rgb), 0.35);
 }
 .ui-range::-moz-range-track {
   height: 6px;
@@ -695,7 +697,7 @@
   border: 0;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--c-900-rgb), 0.35);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--shadow-rgb), 0.35);
 }
 
 .ui-scroll {

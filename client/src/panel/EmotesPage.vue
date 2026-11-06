@@ -7,12 +7,11 @@ import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from ".
 import { collection, error } from "../stores/player";
 import { settings } from "../stores/settings";
 import { reducedMotion } from "../stores/theme";
-import { pet } from "../stores/pet";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
-import PetView from "../pet/PetView.vue";
 import MemberStrip from "./MemberStrip.vue";
+import StagePet from "./StagePet.vue";
 import PetBust from "./PetBust.vue";
 import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
@@ -41,10 +40,6 @@ onDeactivated(() => player.clear());
 const quickKeys = computed(() =>
   settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character),
 );
-const STAGE_SCALE = 1.42;
-// The pet nearly fills the stage's height, so the bubble hangs off the side of the head and stays in frame.
-const STAGE_EMOTE = 86;
-const STAGE_BUBBLE = { x: 36, y: 62 };
 
 function pokeStage() {
   const keys = quickKeys.value;
@@ -213,12 +208,7 @@ function fireEmote(key: string) {
           <i v-if="ribbon" :key="ribbon" class="stage-ribbon"></i>
         </span>
         <div class="stage-pet">
-          <PetView
-            :character="settings.character" :scale="STAGE_SCALE"
-            :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
-            :left-down="pet.left" :right-down="pet.right" :emote="preview" :min-emote="38"
-            :max-emote="STAGE_EMOTE" :bubble-shift="STAGE_BUBBLE"
-          />
+          <StagePet :character="settings.character" :emote="preview" />
         </div>
         <button type="button" class="stage-name ui-btn" title="更换桌宠" @click.stop="mainTab = 'pet'">
           <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="12" />
@@ -405,10 +395,7 @@ function fireEmote(key: string) {
   bottom: 0;
   transform: translateX(-50%);
 }
-/* Only outline the pet's layers; the emote bubble draws its own image contour and tail. */
-.stage-pet :deep(.pet > .art) {
-  filter: var(--sticker-lg);
-}
+
 /* The pet's name is a key: it opens the pet shelf. */
 .stage-name {
   position: absolute;

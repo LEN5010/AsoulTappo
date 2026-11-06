@@ -50,7 +50,7 @@ import Icon from "../ui/Icon.vue";
   aspect-ratio: 3.172;
   background: currentColor;
   transform: translateY(-50%);
-  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.18));
+  filter: drop-shadow(0 1px 1px rgba(var(--shadow-rgb), 0.18));
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }

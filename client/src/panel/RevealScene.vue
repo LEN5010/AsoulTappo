@@ -368,7 +368,7 @@ onDeactivated(() => {
   padding: 12px 20px 15px 24px;
   border-radius: 20px 20px 0 0;
   background: var(--surface);
-  box-shadow: 0 -10px 28px -18px rgba(var(--c-900-rgb), 0.38), 0 -1px 2px rgba(var(--c-900-rgb), 0.05);
+  box-shadow: 0 -10px 28px -18px rgba(var(--shadow-rgb), 0.38), 0 -1px 2px rgba(var(--shadow-rgb), 0.05);
 }
 .tally {
   flex: 1;
@@ -458,7 +458,7 @@ onDeactivated(() => {
   margin-bottom: 12px;
   font: 800 clamp(48px, 10cqw, 88px)/0.86 var(--font-latin);
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--shadow-rgb), 0.08);
 }
 .solo-kind {
   padding: 0 10px;

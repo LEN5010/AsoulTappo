@@ -69,7 +69,7 @@ onDeactivated(() => emit("close"));
   box-sizing: border-box;
   background: var(--surface);
   border-radius: 20px;
-  box-shadow: 0 2px 4px rgba(var(--c-900-rgb), 0.08), 0 24px 48px -20px rgba(var(--c-900-rgb), 0.45);
+  box-shadow: 0 2px 4px rgba(var(--shadow-rgb), 0.08), 0 24px 48px -20px rgba(var(--shadow-rgb), 0.45);
   animation: slide var(--dur-slow) var(--ease-out);
 }
 .sheet.wide {

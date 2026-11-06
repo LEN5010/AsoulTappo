@@ -138,7 +138,7 @@ function lightUp() {
     ),
   );
   (deco.value?.$el as HTMLElement | undefined)?.animate(
-    [{ transform: "translateY(70%)" }, { transform: "none" }],
+    [{ transform: "translate(-50%, 60%)" }, { transform: "translate(-50%, -10%)" }],
     { duration: 520, delay: 240, easing: "cubic-bezier(0.34, 1.56, 0.64, 1)", fill: "backwards" },
   );
 }
@@ -418,7 +418,8 @@ function badgeOf(id: Page): number {
   bottom: 0;
   z-index: 2;
   width: var(--side-w);
-  overflow: hidden;
+  /* The sticker crosses onto the page. The face still clips the panel edge; modals stay above this. */
+  overflow: visible;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -540,7 +541,7 @@ nav button:not(.on):hover .nav-face {
 }
 nav button:not(.on):active .nav-face {
   transform: translateY(2px);
-  box-shadow: 0 0 0 var(--c-600), 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
+  box-shadow: 0 0 0 var(--c-600), 0 1px 2px -1px rgba(var(--shadow-rgb), 0.2);
   transition-duration: var(--dur-press), var(--dur-press), var(--dur-press);
   transition-timing-function: ease-out;
 }
@@ -586,10 +587,11 @@ nav button.on .pip {
 /* The alpaca and its surprise sticker peek up from the bottom edge. */
 .side-deco {
   position: absolute;
-  left: 30px;
+  left: 50%;
   bottom: -46px;
   width: 104px;
   aspect-ratio: 420 / 620;
+  transform: translate(-50%, -10%);
 }
 
 @container panel (max-width: 760px) {
@@ -613,7 +615,6 @@ nav button.on .pip {
     right: 10px;
   }
   .side-deco {
-    left: 18px;
     bottom: -40px;
     width: 96px;
   }
@@ -621,7 +622,6 @@ nav button.on .pip {
 /* Below these heights the alpaca would run into the last nav item. */
 @container panel (max-height: 600px) {
   .side-deco {
-    left: 22px;
     bottom: -34px;
     width: 84px;
   }

@@ -418,7 +418,7 @@ defineExpose({ close });
   overflow: hidden;
   border-radius: var(--radius-l);
   background: var(--surface);
-  box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--c-900-rgb), 0.55);
+  box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--shadow-rgb), 0.55);
 }
 /* A band of the tier's metal inside the white edge. Same proportions as RevealTile's frame. */
 .card.frame-gold,
@@ -548,7 +548,7 @@ defineExpose({ close });
   z-index: 2;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.25));
+  filter: drop-shadow(0 1px 2px rgba(var(--shadow-rgb), 0.25));
   animation: spark-in 600ms var(--ease-pop) 300ms both, twinkle 2.6s var(--ease-in-out) 1200ms infinite;
 }
 .s1 { right: -30px; top: 6%; }
@@ -586,7 +586,7 @@ defineExpose({ close });
   font: 800 clamp(48px, 11cqw, 96px)/0.86 var(--font-latin);
   letter-spacing: 0.01em;
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--shadow-rgb), 0.08);
 }
 .word i {
   display: block;

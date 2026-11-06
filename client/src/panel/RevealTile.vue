@@ -195,7 +195,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   object-fit: cover;
   border-radius: var(--radius-m);
   background: var(--surface);
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
 }
 /* Same proportions as the spotlight's framed card, so the card flying home lands on this frame. */
 .card-frame {
@@ -203,7 +203,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   inset: 0;
   border-radius: 5cqw;
   background: var(--frame-fill) var(--frame-at) / var(--frame-size);
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
 }
 /* An image keeps its own size under auto, so the size inside the frame is spelled out. */
 .card-frame .card-art {
@@ -228,7 +228,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   inset: 0;
   border-radius: var(--radius-m);
   background: var(--tone-fill, var(--c-500));
-  box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.45);
+  box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.45);
 }
 .pad::after {
   content: "";
@@ -269,7 +269,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   overflow: hidden;
   border-radius: var(--radius-m);
   background: linear-gradient(180deg, var(--surface) 35%, color-mix(in srgb, var(--tone-glow) 34%, var(--surface)));
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
 }
 .bust {
   display: block;

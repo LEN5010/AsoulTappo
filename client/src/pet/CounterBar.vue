@@ -78,7 +78,7 @@ watch(
   box-sizing: border-box;
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.12), 0 6px 16px -6px rgba(var(--c-900-rgb), 0.35);
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 6px 16px -6px rgba(var(--shadow-rgb), 0.35);
   font-family: var(--font);
   color: var(--ink);
 }

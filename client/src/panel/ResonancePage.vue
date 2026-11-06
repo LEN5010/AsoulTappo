@@ -74,7 +74,6 @@ async function nextBatch() {
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">
-        <button v-if="draws >= 2" type="button" class="ui-btn ghost all" :disabled="revealing || !online || complete" @click="draw(draws)">全部 ×{{ draws }}</button>
         <button type="button" class="ui-btn large act once" :disabled="revealing || !online || draws < 1 || complete" @click="draw(1)">
           <span class="act-label">共鸣一次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
@@ -126,7 +125,7 @@ async function nextBatch() {
   padding: 12px 16px 14px 24px;
   border-radius: 20px 20px 0 0;
   background: var(--surface);
-  box-shadow: 0 -10px 28px -18px rgba(var(--c-900-rgb), 0.38), 0 -1px 2px rgba(var(--c-900-rgb), 0.05);
+  box-shadow: 0 -10px 28px -18px rgba(var(--shadow-rgb), 0.38), 0 -1px 2px rgba(var(--shadow-rgb), 0.05);
 }
 .pities {
   flex: 0 1 190px;
@@ -291,9 +290,6 @@ async function nextBatch() {
   }
   .keys {
     gap: 6px;
-  }
-  .all {
-    padding: 0 8px;
   }
   .ten {
     min-width: 0;

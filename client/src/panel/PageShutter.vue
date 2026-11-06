@@ -11,8 +11,8 @@ const HOME = "translateX(0)";
 const RIGHT = "translateX(112%)";
 /** Opening the panel gets the full sweep; everyday page turns stay out of the way. */
 const OPEN = { revealMs: 315, lagMs: 52 };
-const TURN = { revealMs: 230, lagMs: 36 };
-const COVER_MS = 170;
+const TURN = { revealMs: 455, lagMs: 36 };
+const COVER_MS = 395;
 
 const root = ref<HTMLElement>();
 const under = ref<HTMLElement>();
