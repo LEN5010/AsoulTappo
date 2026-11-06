@@ -1,0 +1,49 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import Modal from "../ui/Modal.vue";
+import {
+  dismissUpdate, installUpdate, updateBusy, updateDialogOpen, updateFailed, updateOffer, updatePercent,
+} from "../stores/update";
+
+const label = computed(() => {
+  if (updateFailed.value) return "再试一次";
+  if (updateBusy.value) return updatePercent.value == null ? "下载中" : `${updatePercent.value}%`;
+  return "更新";
+});
+</script>
+
+<template>
+  <Modal v-if="updateDialogOpen && updateOffer" title="发现新版本" heading @close="dismissUpdate">
+    <p class="ver">{{ updateOffer.version }}</p>
+    <p v-if="updateOffer.notes" class="notes">{{ updateOffer.notes }}</p>
+    <div class="acts">
+      <button type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
+      <button type="button" class="ui-btn primary" :class="{ pulse: !updateBusy }" @click="installUpdate">{{ label }}</button>
+    </div>
+  </Modal>
+</template>
+
+<style scoped>
+.ver {
+  margin: 0;
+  font: 800 40px/1 var(--font-latin);
+  color: var(--ink);
+}
+.notes {
+  margin: 14px 0 0;
+  white-space: pre-wrap;
+  font-size: var(--fs-strong);
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.acts .primary {
+  min-width: 96px;
+}
+</style>

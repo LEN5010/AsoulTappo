@@ -45,6 +45,19 @@
       "icons/icon.ico"
     ],
     "license": "GPL-2.0-only",
-    "copyright": "AsoulTappo contributors; derived from Evelynall/ASoul-Little-Bun (GPL-2.0)"
+    "copyright": "AsoulTappo contributors; derived from Evelynall/ASoul-Little-Bun (GPL-2.0)",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3RTlDODM3ODM4OEE2ODcKUldTSHBvaUROOGpwRjQ0cXVyTWhmV2RYOWs0WG8yWXdHSHFMSW5TSWhhNzFjNGpINEdOekJEcjcK",
+      "endpoints": [
+        "https://github.com/LEN5010/AsoulTappo/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
   }
 }

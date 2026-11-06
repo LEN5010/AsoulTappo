@@ -21,6 +21,7 @@ import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
+import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
@@ -99,6 +100,20 @@ onMounted(async () => {
   });
   if (isTauri) hits = startHitReporter((rects) => void setHitRegions(rects));
   else document.documentElement.classList.add("browser-preview");
+  // Dev-only look at the update dialog. Production builds drop this branch.
+  if (import.meta.env.DEV && !isTauri && new URLSearchParams(location.search).get("preview") === "update") {
+    const shot = new URLSearchParams(location.search).get("shot");
+    updateOffer.value = {
+      version: "0.1.0-beta.7",
+      notes: "睡衣派对三款皮肤\n共鸣开包按抽取顺序揭晓",
+    };
+    updateDialogOpen.value = shot !== "row";
+    if (shot === "progress") {
+      updateBusy.value = true;
+      updatePercent.value = 64;
+    }
+    openPanel("settings");
+  }
 });
 onBeforeUnmount(() => {
   window.removeEventListener("resize", onResize);

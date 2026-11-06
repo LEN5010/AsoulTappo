@@ -17,7 +17,9 @@ import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
 import SettingsPage from "./SettingsPage.vue";
+import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
+import { lookForUpdate } from "../stores/update";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -150,6 +152,7 @@ onActivated(() => {
 
 onMounted(async () => {
   window.addEventListener("keydown", onKey);
+  void lookForUpdate();
   lightUp();
   if (reducedMotion.value) return;
   turning = true;
@@ -262,6 +265,7 @@ function badgeOf(id: Page): number {
         <AlpacaEasterEgg ref="deco" class="side-deco" />
       </aside>
 
+      <UpdateDialog />
       <div class="panel-overlay"></div>
     </div>
   </section>

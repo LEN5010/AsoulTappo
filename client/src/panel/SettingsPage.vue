@@ -9,6 +9,7 @@ import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
 import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
+import { openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
@@ -161,7 +162,10 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
           <div class="ui-group ui-frame">
             <div class="ui-row">
               <span>版本</span>
-              <b class="version">{{ version }}</b>
+              <span class="version-side">
+                <b class="version">{{ version }}</b>
+                <button v-if="updateOffer" type="button" class="ui-btn small primary" @click="openUpdateDialog">更新</button>
+              </span>
             </div>
             <div class="ui-row">
               <span>项目主页</span>
@@ -229,9 +233,15 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
 .who {
   flex: 1;
 }
+.version-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 4px;
+}
 .version {
   flex: none;
-  padding-right: 4px;
   white-space: nowrap;
   font-size: var(--fs-body);
   font-weight: 700;

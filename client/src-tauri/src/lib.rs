@@ -195,6 +195,8 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
 pub fn run() {
     let overlay = Arc::new(Overlay::default());
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(overlay.clone())
         .invoke_handler(tauri::generate_handler![
             set_click_through,
