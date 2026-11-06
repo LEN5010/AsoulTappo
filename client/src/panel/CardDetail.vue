@@ -126,17 +126,26 @@ function togglePlay() {
   display: flex;
   gap: 8px;
 }
-/* Quiet keys on a frosted face, so they read over any artwork. */
-.controls button {
-  --key-top: rgba(255, 255, 255, 0.82);
-  --key-bottom: rgba(255, 255, 255, 0.82);
+/* Two identical flat keys on a frosted face, so they read over any artwork. The icons carry the
+   state, so the sound key ignores the pressed look other toggles use. */
+.controls .ui-btn,
+.controls .ui-btn[aria-pressed]:not(:disabled) {
+  --key-top: rgba(255, 255, 255, 0.86);
+  --key-bottom: rgba(255, 255, 255, 0.86);
+  --key-y: 0px;
+  --key-lip-h: 0px;
   width: 32px;
   padding: 0;
   color: var(--ink);
+  backdrop-filter: blur(6px);
 }
-.controls button:hover:not(:disabled) {
+.controls .ui-btn:hover:not(:disabled) {
   --key-top: #fff;
   --key-bottom: #fff;
+}
+.controls .ui-btn:active:not(:disabled) {
+  --key-top: var(--c-100);
+  --key-bottom: var(--c-100);
 }
 
 .info {

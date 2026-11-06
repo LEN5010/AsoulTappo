@@ -141,7 +141,7 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
-  sfx.lift(entries.value[index]?.drop.rarity ?? "");
+  sfx.lift();
   spot.value = { index, tile: root.value?.querySelectorAll<HTMLElement>(".tile")[index] ?? null };
   return new Promise((resolve) => (spotDone = resolve));
 }
@@ -234,6 +234,7 @@ function onKey(e: KeyboardEvent) {
   else finish();
 }
 onMounted(async () => {
+  sfx.prime();
   window.addEventListener("keydown", onKey);
   void run();
   await nextTick();

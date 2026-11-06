@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { prime } from "../audio/sfx";
 import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
 import { type Item, RARITY_LABEL } from "../items";
 import { poolOf, effectiveRates, commonKindRates } from "../resonance";
@@ -15,6 +16,8 @@ const pool = poolOf();
 const complete = computed(() => Object.values(pool).flat().every((i) => collection.owned[i.id]));
 const rates = computed(() => effectiveRates(pool, collection.owned));
 const commonRates = computed(() => commonKindRates(pool, collection.owned));
+// Decode the draw sounds while the page sits idle, so the first draw is not silent.
+onMounted(prime);
 const revealing = ref(false);
 const pending = ref(0);
 /** Size of the last request, offered again from the result board. */

@@ -1,5 +1,5 @@
-// Interface sounds synthesized with Web Audio, so no audio files ship with the client.
-// Every sound is a short graph built on demand; settings.sfx turns them all off.
+// Interface sounds. The draw uses short CC0 recordings from Kenney (Casino Audio, Music Jingles; see
+// assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
 import { settings } from "../stores/settings";
 import type { Tell } from "../reveal";
 
@@ -7,7 +7,6 @@ type Wave = OscillatorType;
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let noise: AudioBuffer | null = null;
 
 /** The context starts on the first sound, which always follows a click, so autoplay rules allow it. */
 function audio(): { ac: AudioContext; out: GainNode } | null {
@@ -23,15 +22,6 @@ function audio(): { ac: AudioContext; out: GainNode } | null {
   }
   if (ctx.state === "suspended") void ctx.resume();
   return { ac: ctx, out: master! };
-}
-
-function noiseBuffer(ac: AudioContext): AudioBuffer {
-  if (!noise) {
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-    const data = noise.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  }
-  return noise;
 }
 
 /** Gain envelope: quick attack, exponential tail. */
@@ -65,78 +55,66 @@ function tone(a: { ac: AudioContext; out: AudioNode }, freq: number, at: number,
   osc.stop(at + dur + 0.02);
 }
 
-interface SweepOptions { from: number; to: number; q?: number; gain?: number; filter?: BiquadFilterType; attack?: number }
-
-function sweep(a: { ac: AudioContext; out: AudioNode }, at: number, dur: number, o: SweepOptions): void {
-  const { ac, out } = a;
-  const src = ac.createBufferSource();
-  src.buffer = noiseBuffer(ac);
-  const filter = ac.createBiquadFilter();
-  filter.type = o.filter ?? "bandpass";
-  filter.Q.value = o.q ?? 1.2;
-  filter.frequency.setValueAtTime(o.from, at);
-  filter.frequency.exponentialRampToValueAtTime(o.to, at + dur);
-  src.connect(filter).connect(envelope(ac, at, dur, o.gain ?? 0.3, o.attack ?? dur * 0.4)).connect(out);
-  src.start(at, Math.random() * 0.5);
-  src.stop(at + dur + 0.02);
-}
-
 const jitter = (value: number, spread = 0.06) => value * (1 + (Math.random() * 2 - 1) * spread);
-const note = (semitones: number) => 523.25 * 2 ** (semitones / 12); // from C5
 
-/** Bands sweeping over the page: a muffled paper rush landing on a soft thump. */
+const files = import.meta.glob<string>("../assets/sfx/*.m4a", { eager: true, query: "?url", import: "default" });
+const URLS = Object.fromEntries(Object.entries(files).map(([path, url]) => [path.slice(path.lastIndexOf("/") + 1, -4), url]));
+const buffers = new Map<string, Promise<AudioBuffer | null>>();
+/** A sound that decodes later than this after its moment is dropped instead of playing out of step. */
+const LATE_S = 0.25;
+
+function decoded(ac: AudioContext, name: string): Promise<AudioBuffer | null> {
+  let buffer = buffers.get(name);
+  if (!buffer) {
+    buffer = fetch(URLS[name]!).then((r) => r.arrayBuffer()).then((b) => ac.decodeAudioData(b)).catch(() => null);
+    buffers.set(name, buffer);
+  }
+  return buffer;
+}
+
+/** Decodes every recording ahead of the draw. Decoding works while the context waits for its first click. */
+export function prime(): void {
+  const a = audio();
+  if (a) for (const name of Object.keys(URLS)) void decoded(a.ac, name);
+}
+
+function sample(name: string, gain: number, rate = 1): void {
+  const a = audio();
+  if (!a || !URLS[name]) return;
+  const asked = a.ac.currentTime;
+  void decoded(a.ac, name).then((buffer) => {
+    if (!buffer || a.ac.currentTime - asked > LATE_S) return;
+    const src = a.ac.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = rate;
+    const level = a.ac.createGain();
+    level.gain.value = gain;
+    src.connect(level).connect(a.out);
+    src.start();
+  });
+}
+
+const anyOf = (prefix: string, count: number) => `${prefix}-${1 + Math.floor(Math.random() * count)}`;
+
+/** Bands sweep over the page as a pack tears open. */
 export function pageTurn(): void {
-  const a = audio();
-  if (!a) return;
-  const t = a.ac.currentTime;
-  sweep(a, t, 0.3, { from: jitter(350), to: jitter(1400), q: 0.8, gain: 0.16 });
-  tone(a, 110, t + 0.22, 0.12, { to: 55, gain: 0.22 });
+  sample("pack-open", 1.6);
 }
 
-/**
- * One card turning over: pure paper, no pitch. The edge lifts, then the card lands a beat later.
- * `soft` for the quick ripple of many cards.
- */
+/** A card turned face up and set down; one of four takes, slightly retuned. `soft` for the quick ripple. */
 export function flip(soft = false): void {
-  const a = audio();
-  if (!a) return;
-  const t = a.ac.currentTime;
-  const gain = soft ? 0.1 : 0.17;
-  sweep(a, t, 0.06, { from: jitter(1700, 0.12), to: jitter(1100, 0.12), q: 0.9, gain, attack: 0.008 });
-  sweep(a, t + 0.05, 0.07, { from: jitter(900, 0.12), to: jitter(500, 0.12), q: 0.9, gain: gain * 0.8, attack: 0.004 });
+  sample(anyOf("flip", 4), soft ? 0.8 : 1.4, jitter(1, 0.04));
 }
 
-/**
- * The bands announce the best result. Plain batches stay silent; epic gets a low swell of air;
- * hidden cards and skins rise into an impact and the only chord of the whole draw.
- */
+/** Plain batches stay silent; epic gets a short pizzicato rise, hidden cards and skins the longer one. */
 export function announce(tell: Tell): void {
   if (tell === "plain") return;
-  const a = audio();
-  if (!a) return;
-  const t = a.ac.currentTime;
-  if (tell === "epic") {
-    sweep(a, t, 0.5, { from: 180, to: 900, q: 0.7, gain: 0.2, filter: "lowpass", attack: 0.32 });
-    tone(a, 95, t + 0.3, 0.25, { to: 50, gain: 0.2 });
-    return;
-  }
-  // The riser tracks the tell band sliding in; the hit lands with it.
-  const hit = t + 0.26;
-  sweep(a, t, 0.28, { from: 400, to: 3600, q: 1, gain: 0.22, attack: 0.26 });
-  tone(a, 120, hit, 0.55, { to: 40, gain: 0.45 });
-  sweep(a, hit, 0.4, { from: 1800, to: 250, q: 0.6, gain: 0.25, filter: "lowpass", attack: 0.004 });
-  for (const s of [-12, -8, -5, 0]) tone(a, note(s), hit, 1.6, { wave: "triangle", gain: 0.055, attack: 0.02, vibrato: [5, 1.5] });
+  sample(tell === "epic" ? "jingle-epic" : "jingle-rare", 0.8);
 }
 
-/** A card rises into the spotlight on a soft rush; only hidden cards and skins add a bell. */
-export function lift(rarity: string): void {
-  const a = audio();
-  if (!a) return;
-  const t = a.ac.currentTime;
-  sweep(a, t, 0.3, { from: 250, to: 1800, q: 0.9, gain: 0.12 });
-  if (rarity !== "legendary" && rarity !== "skin") return;
-  tone(a, note(12), t + 0.24, 1, { gain: 0.09 });
-  tone(a, note(19), t + 0.24, 0.6, { gain: 0.035 });
+/** A card slides off its tile into the spotlight. */
+export function lift(): void {
+  sample(anyOf("slide", 3), 1.2);
 }
 
 /** Poking the alpaca: one of a few silly noises, never the same twice in a row. */
