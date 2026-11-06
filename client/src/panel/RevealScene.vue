@@ -253,7 +253,7 @@ onDeactivated(() => {
             <h3>{{ solo.title }}</h3>
             <p class="who"><i :style="{ background: characterColor(solo.item.characters[0] ?? '') }"></i>{{ solo.who }}</p>
             <p class="own">
-              <template v-if="solo.drop.new"><Icon name="spark" :size="14" />首次获得</template>
+              <template v-if="solo.drop.new"><Icon name="spark" :size="17" />首次获得</template>
               <template v-else>已拥有 <b>×{{ solo.drop.count }}</b></template>
               <small v-if="solo.drop.shards">重复返还 {{ solo.drop.shards }} 碎片</small>
             </p>
@@ -450,9 +450,10 @@ onDeactivated(() => {
   text-shadow: 0 2px 0 rgba(var(--shadow-rgb), 0.08);
 }
 .solo-kind {
-  padding: 0 10px;
-  font-size: var(--fs-body);
-  line-height: 24px;
+  padding: 0 12px;
+  font-size: 17px;
+  line-height: 30px;
+  border-radius: var(--radius-key-s);
 }
 .solo-facts h3 {
   margin: 12px 0 10px;
@@ -470,13 +471,13 @@ onDeactivated(() => {
   background: var(--surface);
   box-shadow: var(--shadow-paper);
   color: var(--ink);
-  font-size: var(--fs-strong);
+  font-size: 18px;
   font-weight: 800;
 }
 .solo-facts .who i {
   flex: none;
   width: 4px;
-  height: 14px;
+  height: 17px;
 }
 .solo-facts .own {
   display: flex;
@@ -484,15 +485,15 @@ onDeactivated(() => {
   align-items: center;
   gap: 4px 6px;
   margin: 14px 0 0;
-  font-size: var(--fs-body);
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 800;
 }
 .solo-facts .own b {
   font: 800 var(--fs-number)/1 var(--font-latin);
 }
 .solo-facts .own small {
   flex-basis: 100%;
-  font-size: var(--fs-label);
+  font-size: 14px;
   font-weight: 700;
   opacity: 0.8;
 }

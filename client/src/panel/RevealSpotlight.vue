@@ -329,7 +329,7 @@ defineExpose({ close });
         <h3>{{ entry.title }}</h3>
         <p class="who"><i :style="{ background: memberColor }"></i>{{ entry.who }}</p>
         <p class="own">
-          <template v-if="entry.drop.new"><Icon name="spark" :size="14" />首次获得</template>
+          <template v-if="entry.drop.new"><Icon name="spark" :size="17" />首次获得</template>
           <template v-else>已拥有 <b>×{{ entry.drop.count }}</b></template>
           <small v-if="entry.drop.shards">重复返还 {{ entry.drop.shards }} 碎片</small>
         </p>
@@ -599,8 +599,13 @@ defineExpose({ close });
 .calm .word i {
   animation: none;
 }
+/* Chinese reads small beside the Latin word, so the facts run a size or two above body text. */
 .kind {
   margin-top: 14px;
+  padding: 0 12px;
+  font-size: 17px;
+  line-height: 30px;
+  border-radius: var(--radius-key-s);
 }
 h3 {
   margin: 10px 0 8px;
@@ -618,13 +623,13 @@ h3 {
   background: var(--surface);
   box-shadow: var(--shadow-paper);
   color: var(--ink);
-  font-size: var(--fs-strong);
+  font-size: 18px;
   font-weight: 800;
 }
 .who i {
   flex: none;
   width: 4px;
-  height: 14px;
+  height: 17px;
 }
 .own {
   display: flex;
@@ -632,7 +637,7 @@ h3 {
   align-items: center;
   gap: 4px 6px;
   margin: 16px 0 0;
-  font-size: var(--fs-body);
+  font-size: 17px;
   font-weight: 800;
 }
 .own b {
@@ -640,7 +645,7 @@ h3 {
 }
 .own small {
   flex-basis: 100%;
-  font-size: var(--fs-label);
+  font-size: 14px;
   font-weight: 700;
   opacity: 0.8;
 }
