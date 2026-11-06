@@ -128,6 +128,11 @@ global_config.json
 .pytest_cache/
 .env
 *.pem
+/.local/
+
+# local design notes (not tracked)
+/docs/UNIFIED_ACCOUNT_DESIGN.md
+/docs/PRODUCT_PLAN.md
 
 # server runtime data (sqlite)
 /server/data/
