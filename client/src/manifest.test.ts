@@ -25,7 +25,7 @@ describe("manifest", () => {
     expect(getEmote(manifest.emoteSets[0].emotes[0].key)).toBeTruthy();
     expect(manifest.decor).toEqual([]);
     expect(manifest.accessories).toEqual([]);
-    expect(manifest.cards).toHaveLength(88);
+    expect(manifest.cards).toHaveLength(85);
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
     expect(characterColor("贝拉山海经")).toBe(characterColor("贝拉"));
@@ -42,7 +42,7 @@ describe("manifest", () => {
   });
   it("ships every dynamic card video as a local client asset", () => {
     const videos = manifest.cards.flatMap((c) => c.video ? [c.video] : []);
-    expect(videos).toHaveLength(36);
+    expect(videos).toHaveLength(33);
     for (const video of videos) {
       expect(video).toMatch(/^bundle:cards\/.+\.mp4$/);
       expect(resolveAsset(video, "http://room-server:8000")).toMatch(/^\/assets\/cards\//);

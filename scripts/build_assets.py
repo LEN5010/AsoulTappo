@@ -11,7 +11,7 @@ Outputs
   assets-packs/index.json         pack list with per-file size + sha256
   client/src/data/manifest.json   copy of manifest.json used by the client build
 
-Requires Pillow (WebP) and ffmpeg (libx264, aac).  Everything is selected from
+Requires Pillow (WebP) and ffmpeg (libx264); card audio is copied from the source untouched.  Everything is selected from
 scripts/asset_catalog.py (allowlists); unlisted source files are never touched.
 """
 from __future__ import annotations
@@ -389,7 +389,7 @@ def ffmpeg_video(src: Path, out: Path) -> None:
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
            "-vf", f"scale={VIDEO_W}:-2:flags=lanczos,fps={VIDEO_FPS}",
            "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", "slow",
-           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "48k", "-movflags", "+faststart", "-threads", "2", str(out)]
+           "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-threads", "2", str(out)]
     subprocess.run(cmd, check=True)
 
 

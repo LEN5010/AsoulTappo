@@ -4,7 +4,7 @@
   {
    "id": "cards-bloom",
    "title": "A-SOUL 绽放收藏集 · 卡面",
-   "size": 3639484,
+   "size": 3251296,
    "files": [
     {
      "path": "cards/bloom/c1700742793002.webp",
@@ -110,21 +110,6 @@
      "path": "cards/bloom/c1700742793033.webp",
      "size": 232988,
      "sha256": "f43faa70b9f16c5c01d14be40ee5271baff3fa6795e24c23e9d8e2815c473b9d"
-    },
-    {
-     "path": "cards/bloom/c1700799218001.webp",
-     "size": 129490,
-     "sha256": "72e27aab765b213130dac9c4771813c777500633bc07bc9e1ca3fae08f5b067d"
-    },
-    {
-     "path": "cards/bloom/c1700799218003.webp",
-     "size": 128268,
-     "sha256": "fd4ca5f378600366a06d84cbdbdc374960e77481f49d9bf2060de702b9ee7fde"
-    },
-    {
-     "path": "cards/bloom/c1700799218004.webp",
-     "size": 130430,
-     "sha256": "2704a88df138efd749eccced90f0240b655024a98d39752633aa678653226337"
     }
    ]
   },

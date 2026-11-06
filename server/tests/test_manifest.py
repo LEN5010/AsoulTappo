@@ -74,7 +74,7 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    assert len(cards) == 88
+    assert len(cards) == 85
     assert sum(c["tier"] == "big" for c in cards) == 10
     assert sum(c["tier"] == "small" for c in cards) == 10
     assert M.cards["c1748345610010"]["tier"] == "big"
@@ -97,7 +97,7 @@ def test_new_collections_have_all_nine_cards_and_confirmed_hidden_tiers():
 
 def test_every_card_video_is_bundled_in_the_client():
     videos = [c["video"] for c in M.cards.values() if c["video"]]
-    assert len(videos) == 36
+    assert len(videos) == 33
     assert all(ref.startswith("bundle:cards/") for ref in videos)
     assert not list(PACKS.rglob("*.mp4"))
     index = json.loads((PACKS / "index.json").read_text(encoding="utf-8"))
@@ -126,13 +126,13 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 550
+    assert len(dropped) == 547
     assert len(M.items) == len(dropped) + len(M.starter)
     assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [372, 75, 60, 26, 10, 7]
+    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [372, 75, 60, 23, 10, 7]
     for c in M.cards.values():
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
     assert all(set(r) == {"name"} for r in M.data["rarities"].values())

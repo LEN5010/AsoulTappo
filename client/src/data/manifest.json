@@ -822,7 +822,7 @@
   {
    "id": "bloom",
    "name": "A-SOUL 绽放收藏集",
-   "total": 24
+   "total": 21
   },
   {
    "id": "brilliant",
@@ -1378,48 +1378,6 @@
    "thumb": "bundle:cards/thumb/c1700742793033.webp",
    "full": "pack:cards/bloom/c1700742793033.webp",
    "video": "bundle:cards/bloom/c1700742793033.mp4"
-  },
-  {
-   "id": "c1700799218001",
-   "name": "《Shiny Dancer》",
-   "series": "bloom",
-   "sub": null,
-   "characters": [
-    "贝拉"
-   ],
-   "rarity": "epic",
-   "tier": "normal",
-   "thumb": "bundle:cards/thumb/c1700799218001.webp",
-   "full": "pack:cards/bloom/c1700799218001.webp",
-   "video": "bundle:cards/bloom/c1700799218001.mp4"
-  },
-  {
-   "id": "c1700799218003",
-   "name": "《Sweet Counter》",
-   "series": "bloom",
-   "sub": null,
-   "characters": [
-    "乃琳"
-   ],
-   "rarity": "epic",
-   "tier": "normal",
-   "thumb": "bundle:cards/thumb/c1700799218003.webp",
-   "full": "pack:cards/bloom/c1700799218003.webp",
-   "video": "bundle:cards/bloom/c1700799218003.mp4"
-  },
-  {
-   "id": "c1700799218004",
-   "name": "《Hopeful Dreamer》",
-   "series": "bloom",
-   "sub": null,
-   "characters": [
-    "嘉然"
-   ],
-   "rarity": "epic",
-   "tier": "normal",
-   "thumb": "bundle:cards/thumb/c1700799218004.webp",
-   "full": "pack:cards/bloom/c1700799218004.webp",
-   "video": "bundle:cards/bloom/c1700799218004.mp4"
   },
   {
    "id": "c1762331702001",
