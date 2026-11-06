@@ -107,6 +107,7 @@ async function run(count = props.remaining ?? 1) {
   asking.value = Math.max(1, Math.min(count, 100));
 
   // A repeat's bands sweep over the board it leaves; only then does the board go.
+  sfx.stopBed();
   if (!calm.value) {
     sfx.pageTurn();
     await bands.value?.cover();
@@ -125,9 +126,9 @@ async function run(count = props.remaining ?? 1) {
   const list = entriesOf(result);
   preload(list);
   tell.value = tellOf(result);
+  if (list.some((e) => e.spot)) sfx.startBed();
   if (!calm.value) {
     await nextTick();
-    sfx.announce(tell.value);
     await bands.value?.announce();
     if (!alive || mine !== round) return;
   }
@@ -141,6 +142,7 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
+  sfx.stopBed();
   sfx.lift();
   spot.value = { index, tile: root.value?.querySelectorAll<HTMLElement>(".tile")[index] ?? null };
   return new Promise((resolve) => (spotDone = resolve));
@@ -205,6 +207,7 @@ const closing = ref(false);
 const OUT_MS = 460;
 async function fadeOut() {
   if (closing.value) return;
+  sfx.stopBed();
   if (calm.value) {
     emit("close");
     return;
@@ -242,6 +245,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   alive = false;
+  sfx.stopBed(0.2);
   window.removeEventListener("keydown", onKey);
   release?.();
 });

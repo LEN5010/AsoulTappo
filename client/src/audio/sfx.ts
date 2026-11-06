@@ -1,7 +1,6 @@
-// Interface sounds. The draw uses Kenney's CC0 card recordings and two phrases cut from the Quiet
-// backing track (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
+// Interface sounds. The draw uses Kenney's CC0 card recordings and a few bars cut from a backing track
+// (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
 import { settings } from "../stores/settings";
-import type { Tell } from "../reveal";
 
 type Wave = OscillatorType;
 
@@ -123,10 +122,42 @@ export function flip(soft = false): void {
   sample(anyOf("flip", 4), soft ? 0.56 : 0.98, jitter(1, 0.04));
 }
 
-/** Plain batches stay silent; epic gets the band coming in, hidden cards and skins the closing phrase of Quiet. */
-export function announce(tell: Tell): void {
-  if (tell === "plain") return;
-  sample(tell === "epic" ? "jingle-epic" : "jingle-rare", 1.1);
+let bed: { ac: AudioContext; src: AudioBufferSourceNode; level: GainNode } | null = null;
+let bedRound = 0;
+
+/**
+ * Music under a board that holds cards worth opening (hidden, animated, skins). It plays until one of
+ * them opens and its own sound takes over, or runs out on its own fade.
+ */
+export function startBed(): void {
+  stopBed(0.1);
+  const a = audio();
+  if (!a) return;
+  const mine = ++bedRound;
+  const asked = a.ac.currentTime;
+  void decoded(a.ac, "reveal-bed").then((buffer) => {
+    if (!buffer || mine !== bedRound || a.ac.currentTime - asked > 1) return;
+    const src = a.ac.createBufferSource();
+    src.buffer = buffer;
+    const level = a.ac.createGain();
+    level.gain.value = 1;
+    src.connect(level).connect(a.out);
+    src.onended = () => { if (bed?.src === src) bed = null; };
+    src.start();
+    bed = { ac: a.ac, src, level };
+  });
+}
+
+export function stopBed(fade = 0.5): void {
+  bedRound++;
+  if (!bed) return;
+  const { ac, src, level } = bed;
+  bed = null;
+  const t = ac.currentTime;
+  level.gain.cancelScheduledValues(t);
+  level.gain.setValueAtTime(level.gain.value, t);
+  level.gain.linearRampToValueAtTime(0.0001, t + fade);
+  src.stop(t + fade + 0.05);
 }
 
 /** A card slides off its tile into the spotlight. */
