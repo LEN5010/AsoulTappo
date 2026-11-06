@@ -84,60 +84,59 @@ function sweep(a: { ac: AudioContext; out: AudioNode }, at: number, dur: number,
 const jitter = (value: number, spread = 0.06) => value * (1 + (Math.random() * 2 - 1) * spread);
 const note = (semitones: number) => 523.25 * 2 ** (semitones / 12); // from C5
 
-/** Bands sweeping over the page: a paper whoosh landing on a soft thump. */
+/** Bands sweeping over the page: a muffled paper rush landing on a soft thump. */
 export function pageTurn(): void {
   const a = audio();
   if (!a) return;
   const t = a.ac.currentTime;
-  sweep(a, t, 0.34, { from: 500, to: 3200, q: 0.9, gain: 0.22 });
-  tone(a, 140, t + 0.26, 0.12, { to: 60, gain: 0.35 });
+  sweep(a, t, 0.3, { from: jitter(350), to: jitter(1400), q: 0.8, gain: 0.16 });
+  tone(a, 110, t + 0.22, 0.12, { to: 55, gain: 0.22 });
 }
 
-/** One card turning over: a dry snap with a tiny click on top. `soft` for the quick ripple of many cards. */
+/**
+ * One card turning over: pure paper, no pitch. The edge lifts, then the card lands a beat later.
+ * `soft` for the quick ripple of many cards.
+ */
 export function flip(soft = false): void {
   const a = audio();
   if (!a) return;
   const t = a.ac.currentTime;
-  sweep(a, t, 0.07, { from: jitter(5200), to: jitter(2400), q: 0.7, gain: soft ? 0.14 : 0.24, filter: "highpass", attack: 0.004 });
-  tone(a, jitter(1900, 0.08), t, 0.04, { wave: "triangle", gain: soft ? 0.05 : 0.09, attack: 0.002 });
+  const gain = soft ? 0.1 : 0.17;
+  sweep(a, t, 0.06, { from: jitter(1700, 0.12), to: jitter(1100, 0.12), q: 0.9, gain, attack: 0.008 });
+  sweep(a, t + 0.05, 0.07, { from: jitter(900, 0.12), to: jitter(500, 0.12), q: 0.9, gain: gain * 0.8, attack: 0.004 });
 }
 
-const ARPEGGIO = [0, 4, 7, 12, 16, 19, 24];
-
-/** The bands announce the best result: higher rarities climb further and ring longer. */
+/**
+ * The bands announce the best result. Plain batches stay silent; epic gets a low swell of air;
+ * hidden cards and skins rise into an impact and the only chord of the whole draw.
+ */
 export function announce(tell: Tell): void {
+  if (tell === "plain") return;
   const a = audio();
   if (!a) return;
   const t = a.ac.currentTime;
-  if (tell === "plain") {
-    tone(a, note(7), t, 0.35, { gain: 0.16 });
-    tone(a, note(12), t + 0.09, 0.45, { gain: 0.14 });
+  if (tell === "epic") {
+    sweep(a, t, 0.5, { from: 180, to: 900, q: 0.7, gain: 0.2, filter: "lowpass", attack: 0.32 });
+    tone(a, 95, t + 0.3, 0.25, { to: 50, gain: 0.2 });
     return;
   }
-  const steps = tell === "epic" ? 4 : ARPEGGIO.length;
-  const gap = tell === "epic" ? 0.075 : 0.06;
-  ARPEGGIO.slice(0, steps).forEach((s, i) => {
-    tone(a, note(s), t + i * gap, 0.4, { wave: "triangle", gain: 0.12 });
-    tone(a, note(s + 12), t + i * gap, 0.25, { gain: 0.05 });
-  });
-  if (tell === "epic") return;
-  // Hidden cards and skins hold a bright chord with a glittering tail.
-  const end = t + steps * gap;
-  for (const s of [12, 16, 19, 24]) tone(a, note(s), end, 1.4, { gain: 0.07, attack: 0.03, vibrato: [5, 2] });
-  sweep(a, end, 1.1, { from: 6000, to: 11000, q: 6, gain: 0.06, filter: "bandpass", attack: 0.05 });
+  // The riser tracks the tell band sliding in; the hit lands with it.
+  const hit = t + 0.26;
+  sweep(a, t, 0.28, { from: 400, to: 3600, q: 1, gain: 0.22, attack: 0.26 });
+  tone(a, 120, hit, 0.55, { to: 40, gain: 0.45 });
+  sweep(a, hit, 0.4, { from: 1800, to: 250, q: 0.6, gain: 0.25, filter: "lowpass", attack: 0.004 });
+  for (const s of [-12, -8, -5, 0]) tone(a, note(s), hit, 1.6, { wave: "triangle", gain: 0.055, attack: 0.02, vibrato: [5, 1.5] });
 }
 
-const LIFT_PITCH: Record<string, number> = { legendary: 24, skin: 19, epic: 16, rare: 12 };
-
-/** A card rises into the spotlight: an upward rush and a bell pitched by rarity. */
+/** A card rises into the spotlight on a soft rush; only hidden cards and skins add a bell. */
 export function lift(rarity: string): void {
   const a = audio();
   if (!a) return;
   const t = a.ac.currentTime;
-  sweep(a, t, 0.32, { from: 300, to: 5200, q: 1.1, gain: 0.18 });
-  const p = LIFT_PITCH[rarity] ?? 12;
-  tone(a, note(p), t + 0.24, 0.9, { gain: 0.14 });
-  tone(a, note(p + 7), t + 0.24, 0.6, { gain: 0.06 });
+  sweep(a, t, 0.3, { from: 250, to: 1800, q: 0.9, gain: 0.12 });
+  if (rarity !== "legendary" && rarity !== "skin") return;
+  tone(a, note(12), t + 0.24, 1, { gain: 0.09 });
+  tone(a, note(19), t + 0.24, 0.6, { gain: 0.035 });
 }
 
 /** Poking the alpaca: one of a few silly noises, never the same twice in a row. */
