@@ -109,6 +109,7 @@ export class Api {
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
   info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
+  account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
   /** Binds the account to this device's guest save (when given) or to a new save. */
   link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},
     { Authorization: `Bearer ${accountToken}`, ...(guestToken ? { "X-Player-Token": guestToken } : {}) });

@@ -40,7 +40,7 @@ function startCooldown() {
 }
 
 const title = computed(() => ({
-  login: "登录主站账号", register: "注册主站账号", reset: "重设密码", bind: "绑定邮箱", choose: "选择存档",
+  login: "账号登录", register: "注册账号", reset: "重设密码", bind: "绑定邮箱", choose: "选择存档",
 }[step.value]));
 const tabs = [{ id: "login" as const, label: "登录" }, { id: "register" as const, label: "注册" }];
 

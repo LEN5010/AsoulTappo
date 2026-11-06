@@ -4,6 +4,10 @@ import { DEFAULT_SETTINGS, loadSettings } from "./settings";
 const store = (v: string | null) => ({ getItem: () => v });
 
 describe("loadSettings", () => {
+  it("moves devices on the old server address to the current one and keeps custom servers", () => {
+    expect(loadSettings(store(JSON.stringify({ serverUrl: "http://121.36.224.230:8000" }))).serverUrl).toBe("https://len5010.top/tappo");
+    expect(loadSettings(store(JSON.stringify({ serverUrl: "http://127.0.0.1:8010" }))).serverUrl).toBe("http://127.0.0.1:8010");
+  });
   it("returns defaults when nothing is stored or JSON is corrupt", () => {
     expect(loadSettings(store(null))).toEqual(DEFAULT_SETTINGS);
     expect(loadSettings(store("{oops"))).toEqual(DEFAULT_SETTINGS);

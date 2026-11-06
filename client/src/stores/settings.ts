@@ -31,9 +31,10 @@ export interface Settings {
 }
 
 const KEY = "asoultappo.settings.v1";
+const LEGACY_SERVER_URL = "http://121.36.224.230:8000";
 
 export const DEFAULT_SETTINGS: Settings = {
-  serverUrl: "http://121.36.224.230:8000",
+  serverUrl: "https://len5010.top/tappo",
   nick: "",
   character: defaultCharacter,
   scale: 1,
@@ -69,6 +70,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   } catch {
     /* corrupted -> defaults */
   }
+  // The server moved behind len5010.top; devices still on the old address follow it.
+  if (out.serverUrl === LEGACY_SERVER_URL) out.serverUrl = DEFAULT_SETTINGS.serverUrl;
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));

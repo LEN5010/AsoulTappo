@@ -1,7 +1,7 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
 
 export type DesktopAction = "sync" | "resonate" | "craftItem" | "sendEmote" |
-  "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" | "restoreSaveCode" | "setAccount";
+  "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" | "setAccount";
 
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[] }
 interface DesktopReply<T> { result: T; error?: string }

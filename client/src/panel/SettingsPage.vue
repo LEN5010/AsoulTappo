@@ -2,30 +2,21 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { isTauri } from "../composables/tauri";
-import { online, status, saveCode, restoreSaveCode, account, setAccount } from "../stores/player";
+import { isTauri, openAboutLink } from "../composables/tauri";
+import { status, saveCode, account, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
 import AccountDialog from "./AccountDialog.vue";
+import Modal from "../ui/Modal.vue";
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
-const serverDraft = ref(settings.serverUrl);
-const serverError = ref("");
-const saveDraft = ref("");
-const saveNotice = ref("");
-async function copySave() {
-  try { await navigator.clipboard.writeText(saveCode.value); saveNotice.value = "存档码已复制"; }
-  catch { saveNotice.value = "复制失败，请手动复制存档码"; }
-}
-async function restoreSave() {
-  try { await restoreSaveCode(saveDraft.value); saveDraft.value = ""; saveNotice.value = "已切换存档"; }
-  catch (error) { saveNotice.value = error instanceof Error ? error.message : "切换存档失败"; }
-}
-// Main-site account: offered when the selected server is linked to the main site.
+const notice = ref("");
+
+// Account sign-in is offered when the server is connected to the account service.
 const info = ref<ServerInfo | null>(null);
 async function loadInfo() {
   const server = toHttpBase(settings.serverUrl);
@@ -33,44 +24,34 @@ async function loadInfo() {
   try {
     const result = await new Api(() => server, () => saveCode.value).info();
     if (server === toHttpBase(settings.serverUrl)) info.value = result;
-  } catch { /* offline or an older server: guest saves only */ }
+  } catch { /* offline: sign-in shows once the server answers */ }
 }
-onMounted(loadInfo);
+onMounted(() => { void loadInfo(); void refreshAccount(); });
 watch(() => settings.serverUrl, loadInfo);
 const signedIn = computed(() => account.value && account.value.server === toHttpBase(settings.serverUrl) ? account.value : null);
 const dialog = ref<"login" | "register" | null>(null);
 function accountDone(message: string) {
   dialog.value = null;
-  saveNotice.value = message;
+  notice.value = message;
 }
 async function signOut() {
   const session = signedIn.value;
   if (!session) return;
   if (info.value?.mainApi) await new MainAccountApi(info.value.mainApi).revoke(session.token).catch(() => {});
   await setAccount(null);
-  saveNotice.value = "已退出登录，现在使用这台设备的游客存档";
+  notice.value = "已退出登录";
 }
-const portrait = computed(() => getCharacter(settings.character)?.bg);
-watch(
-  () => settings.serverUrl,
-  (url) => {
-    serverDraft.value = url;
-  },
-);
 
-function applyServer() {
-  try {
-    const url = new URL(serverDraft.value.trim());
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-      throw new Error("invalid URL");
-    }
-    settings.serverUrl = url.toString().replace(/\/+$/, "");
-    serverDraft.value = settings.serverUrl;
-    serverError.value = "";
-  } catch {
-    serverError.value = "请输入有效的 HTTP 或 HTTPS 地址";
-  }
+const REPO = "https://github.com/LEN5010/AsoulTappo";
+const SPACE = "https://space.bilibili.com/107261543";
+const MAIL = "len5010@qq.com";
+const contactOpen = ref(false);
+const copied = ref(false);
+async function copyMail() {
+  try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
 }
+const version = __APP_VERSION__;
+const portrait = computed(() => getCharacter(settings.character)?.bg);
 </script>
 
 <template>
@@ -89,35 +70,23 @@ function applyServer() {
       </div>
     </section>
 
-    <section data-rise>
-      <h4 class="ui-label"><span>存档</span></h4>
-      <div class="ui-group ui-frame saves">
-        <div v-if="info?.accountLogin" class="ui-row">
-          <span>主站账号</span>
-          <div v-if="signedIn" class="who">
+    <section v-if="info?.accountLogin" data-rise>
+      <h4 class="ui-label"><span>账号</span></h4>
+      <div class="ui-group ui-frame">
+        <div class="ui-row">
+          <span>账号登录</span>
+          <span v-if="signedIn" class="who">
             <b>{{ signedIn.user.username }}</b>
             <small v-if="signedIn.user.email">{{ signedIn.user.email }}</small>
-          </div>
-          <div v-else class="who"><small>未登录</small></div>
+          </span>
+          <span v-else class="who"><small>未登录</small></span>
           <span v-if="signedIn" class="acts"><button class="ui-btn" type="button" @click="signOut">退出登录</button></span>
           <span v-else class="acts">
             <button class="ui-btn primary" type="button" @click="dialog = 'login'">登录</button>
             <button class="ui-btn" type="button" @click="dialog = 'register'">注册</button>
           </span>
         </div>
-        <template v-if="!signedIn">
-        <div class="ui-row">
-          <span>当前存档码</span>
-          <div class="ui-input save-read" role="textbox" aria-readonly="true" aria-label="当前存档码">{{ saveCode }}</div>
-          <button class="ui-btn" type="button" @click="copySave">复制</button>
-        </div>
-        <form class="ui-row" @submit.prevent="restoreSave">
-          <span>切换存档码</span>
-          <input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" />
-          <button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button>
-        </form>
-        </template>
-        <p v-if="saveNotice" role="status" class="err">{{ saveNotice }}</p>
+        <p v-if="notice" role="status" class="note">{{ notice }}</p>
       </div>
       <AccountDialog v-if="dialog && info?.mainApi" :main-api="info.mainApi" :start="dialog" @close="dialog = null" @done="accountDone" />
     </section>
@@ -174,27 +143,39 @@ function applyServer() {
         </section>
 
         <section data-rise>
-          <h4 class="ui-label"><span>服务器连接</span></h4>
+          <h4 class="ui-label"><span>关于</span></h4>
           <div class="ui-group ui-frame">
             <div class="ui-row">
-              <span class="state" :class="{ ok: online }"><i></i>{{ online ? "已连接" : "未连接" }}</span>
-              <span class="ui-ctl wide">
-                <input v-model.trim="serverDraft" class="ui-input" spellcheck="false" placeholder="http://121.36.224.230:8000" @keydown.enter="applyServer" />
-                <button type="button" class="ui-btn" :disabled="serverDraft === settings.serverUrl" @click="applyServer">应用</button>
-              </span>
+              <span>版本</span>
+              <b class="ui-val version">{{ version }}</b>
             </div>
-            <p v-if="serverError" class="ui-error err" role="alert">{{ serverError }}</p>
-            <label class="ui-row">
-              <span>敲击同步间隔</span>
-              <span class="ui-ctl">
-                <RangeInput v-model="settings.batchMs" :min="100" :max="200" :step="10" />
-                <b class="ui-val">{{ settings.batchMs }}ms</b>
-              </span>
-            </label>
+            <div class="ui-row">
+              <span>项目主页</span>
+              <button type="button" class="ui-btn small" @click="openAboutLink(REPO)">GitHub</button>
+            </div>
+            <div class="ui-row">
+              <span>作者</span>
+              <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
+            </div>
           </div>
         </section>
       </div>
     </div>
+
+    <Modal v-if="contactOpen" title="联系作者" heading @close="contactOpen = false">
+      <div class="contact">
+        <button type="button" class="way ui-frame" @click="openAboutLink(SPACE)">
+          <b>哔哩哔哩</b>
+          <span>space.bilibili.com/107261543</span>
+          <small>打开个人空间</small>
+        </button>
+        <button type="button" class="way ui-frame" @click="copyMail">
+          <b>QQ 邮箱</b>
+          <span>{{ MAIL }}</span>
+          <small>{{ copied ? "已复制" : "点击复制" }}</small>
+        </button>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -206,26 +187,6 @@ function applyServer() {
 }
 .settings > * {
   flex: none;
-}
-/* Both code fields share one column. A bare input stays 20 characters wide and clips the token. */
-.saves {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-.saves > .ui-row {
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-column: 1 / -1;
-  align-items: center;
-  column-gap: 16px;
-}
-.saves > .err {
-  grid-column: 1 / -1;
-}
-.saves .ui-input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
 }
 .who {
   min-width: 0;
@@ -247,19 +208,61 @@ function applyServer() {
   color: var(--ink-3);
 }
 .acts {
+  flex: none;
   display: flex;
   gap: 6px;
-  justify-content: flex-end;
 }
-.save-read {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  overflow-x: auto;
+.who {
+  flex: 1;
+}
+.version {
   white-space: nowrap;
+}
+.note {
+  margin: 0;
+  padding: 8px 14px;
+  font-size: var(--fs-label);
   font-weight: 700;
+  color: var(--ink-2);
+}
+.contact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: min(420px, 100%);
+  margin: 0 auto;
+  padding-bottom: 6px;
+}
+.way {
+  --radius: var(--radius-key);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  border: 0;
+  background: var(--c-100);
+  font: inherit;
   text-align: left;
-  user-select: text;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
+}
+.way:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px var(--c-500);
+}
+.way span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 var(--fs-label)/1.2 var(--font-latin);
+}
+.way small {
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--c-700);
 }
 
 .profile {
@@ -359,37 +362,6 @@ function applyServer() {
 }
 .columns .ui-ctl {
   width: 172px;
-}
-.columns .ui-ctl.wide {
-  width: auto;
-  flex: 1;
-  min-width: 0;
-  gap: 6px;
-}
-.wide .ui-input {
-  flex: 1;
-  min-width: 0;
-}
-.state {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--ink-2);
-  font-weight: 800;
-}
-.state i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ink-3);
-}
-.state.ok i {
-  background: var(--ok);
-}
-.err {
-  margin: 0;
-  padding: 8px 14px;
 }
 
 @container panel (max-width: 860px) {

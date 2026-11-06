@@ -78,3 +78,9 @@ export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { 
 export const setHitRegions = (rects: HitRect[]) => call("set_hit_regions", { rects });
 /** Keep the overlay clickable while something is being dragged. */
 export const setDragging = (active: boolean) => call("set_dragging", { active });
+
+/** Opens one of the About links (repository, author's space, mail) outside the app. */
+export function openAboutLink(url: string): void {
+  if (isTauri) void invoke("open_about_link", { url });
+  else window.open(url, "_blank", "noopener");
+}

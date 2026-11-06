@@ -26,25 +26,23 @@ async function setup() {
   return { settings, p: player };
 }
 
-it("switches save credentials while pending input stays with its original save", async () => {
+it("signing in moves new input to the account save while pending input stays with the guest save", async () => {
   const activities: string[] = [];
-  const writes = vi.fn();
-  vi.stubGlobal("localStorage", { getItem: () => null, setItem: writes });
+  vi.stubGlobal("localStorage", { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/activity")) activities.push((init!.headers as Record<string, string>)["X-Player-Token"]!);
+    const headers = init!.headers as Record<string, string>;
+    if (url.endsWith("/activity")) activities.push(headers.Authorization ?? headers["X-Player-Token"]!);
     return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 0 });
   });
-  const { p } = await setup();
+  const { p, settings } = await setup();
   await vi.advanceTimersByTimeAsync(0);
-  const previous = p.token;
+  const guest = p.token;
   p.countInput();
-  const next = "a".repeat(48);
-  await p.restoreSaveCode(next);
+  await p.setAccount({ server: settings.serverUrl, token: "acct", user: { id: "u", username: "alice", email: "a@example.com" } }, true);
   p.countInput();
   await vi.advanceTimersByTimeAsync(20000);
-  expect(p.token).toBe(next);
-  expect(writes).toHaveBeenCalledWith("asoultappo.token.v1", next);
-  expect(activities).toEqual([previous, next]);
+  expect(p.token).not.toBe(guest);
+  expect(activities).toEqual([guest, "Bearer acct"]);
 });
 
 it("keeps pending batches and their retries at the original server", async () => {

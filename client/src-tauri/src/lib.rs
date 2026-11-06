@@ -109,6 +109,27 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
     open_panel(app, None, None).await
 }
 
+/// Links the About section may open in the system browser or mail app.
+const ABOUT_LINKS: [&str; 3] = [
+    "https://github.com/LEN5010/AsoulTappo",
+    "https://space.bilibili.com/107261543",
+    "mailto:len5010@qq.com",
+];
+
+#[tauri::command]
+fn open_about_link(url: String) -> Result<(), String> {
+    if !ABOUT_LINKS.contains(&url.as_str()) {
+        return Err("unknown link".into());
+    }
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Areas (CSS px) where the overlay draws something and should take the mouse.
 #[tauri::command]
 fn set_hit_regions(overlay: tauri::State<'_, Arc<Overlay>>, rects: Vec<HitRect>) {
@@ -183,7 +204,8 @@ pub fn run() {
             open_panel,
             toggle_panel,
             show_panel,
-            hide_panel
+            hide_panel,
+            open_about_link
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {

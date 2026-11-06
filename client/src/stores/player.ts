@@ -27,17 +27,6 @@ function loadToken(): string {
 export let token = loadToken();
 export const saveCode = ref(token);
 
-export async function restoreSaveCode(value: string): Promise<string> {
-  const code = value.trim();
-  if (!/^[A-Za-z0-9_-]{16,128}$/.test(code)) throw new Error("存档码格式不正确");
-  if (isPanelWindow) {
-    saveCode.value = await requestDesktop<string>("restoreSaveCode", code);
-    return saveCode.value;
-  }
-  localStorage.setItem(TOKEN_KEY, code);
-  saveCode.value = code;
-  return code;
-}
 // ---------------------------------------------------------------- account
 // A main-site account signed in on one server. While it is active the save linked to it replaces the guest save.
 const ACCOUNT_KEY = "asoultappo.account.v1";
@@ -83,6 +72,20 @@ if (isPanelWindow) {
     if (e.key === ACCOUNT_KEY) account.value = loadAccount();
     if (e.key === TOKEN_KEY) saveCode.value = loadToken();
   });
+}
+
+/** Picks up a username or email changed on the website. */
+export async function refreshAccount(): Promise<void> {
+  const a = activeAccount();
+  if (!a) return;
+  try {
+    const { user } = await new Api(() => a.server, () => ({ bearer: a.token })).account();
+    if (account.value?.token === a.token && (user.username !== a.user.username || user.email !== a.user.email)) {
+      await setAccount({ ...a, user });
+    }
+  } catch (e) {
+    if (e instanceof ApiError && e.code === "account_expired") await setAccount(null);
+  }
 }
 
 function credential(base: string): Credential {
