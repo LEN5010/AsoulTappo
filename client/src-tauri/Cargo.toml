@@ -1,6 +1,6 @@
 [package]
 name = "asoultappo-client"
-version = "0.1.0-beta.5"
+version = "0.1.0-beta.6"
 description = "AsoulTappo desktop pet client (Tauri 2)"
 edition = "2021"
 rust-version = "1.77"
