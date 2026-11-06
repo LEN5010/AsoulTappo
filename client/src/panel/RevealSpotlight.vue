@@ -1,119 +1,506 @@
 <script setup lang="ts">
-import { computed, watch } from "vue";
+// A hidden card, a skin or a first animated card, lifted off its tile onto a band of its tone.
+// The art flies between the tile and the stage, so the board below never loses its place. Once it
+// lands it follows the pointer in 3D, with glare, and a holo sheen on hidden cards. Glare and holo
+// are oversized layers that only move, with no blend modes, so a playing video stays smooth under them.
+import { computed, onMounted, ref } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { getCharacter, skinSeries } from "../characters";
-import { cardLabel, TIER_LABEL } from "../cards";
-import { getItem, RARITY_LABEL } from "../items";
-import { characterColor, memberOf, type ManifestCard, type Rarity } from "../manifest";
-import type { Drop } from "../net/api";
-import { reducedMotion } from "../stores/theme";
-import { isRevealHighlight } from "../reveal";
+import { characterColor } from "../manifest";
+import { EASE_IN_OUT, EASE_OUT } from "../ui/motion";
+import Icon from "../ui/Icon.vue";
+import type { BoardEntry } from "./reveal-board";
+
+const props = defineProps<{ entry: BoardEntry; from: DOMRect | null; calm: boolean }>();
+const emit = defineEmits<{ done: [] }>();
+
+const LEFT = "translateX(-104%)";
+const RIGHT = "translateX(104%)";
+const IN_MS = 560;
+const OUT_MS = 340;
+const TILT_DEG = 14;
 
 const pageActive = usePageActive();
-const props = defineProps<{ drop: Drop; card?: ManifestCard; art?: string; settled: boolean }>();
-const emit = defineEmits<{ done: [] }>();
-const item = computed(() => getItem(props.drop.item)!);
-const skin = computed(() => props.drop.rarity === "skin");
-const special = computed(() => isRevealHighlight(props.drop) || props.card?.tier === "small");
-const label = computed(() => props.card ? cardLabel(props.card) : {
-  title: item.value.name,
-  who: skin.value ? memberOf(item.value.ref) : item.value.group,
+const landed = ref(props.calm);
+const leaving = ref(false);
+const fullReady = ref(false);
+const card = computed(() => props.entry.card);
+const skin = computed(() => props.entry.item.kind === "character");
+const hidden = computed(() => card.value?.tier === "big" || card.value?.tier === "small");
+const big = computed(() => props.entry.drop.rarity === "legendary");
+const word = computed(() => {
+  if (skin.value) return "SKIN";
+  if (card.value?.tier === "big") return "SECRET";
+  if (card.value?.tier === "small") return "HIDDEN";
+  return card.value?.video ? "DANCE" : "NEW";
 });
-const tier = computed(() => skin.value ? "桌宠皮肤" : props.card && props.card.tier !== "normal"
-  ? TIER_LABEL[props.card.tier] : `${RARITY_LABEL[props.drop.rarity as Rarity]}${props.card ? '卡片' : '表情'}`);
-const duration = computed(() => special.value ? "1400ms" : props.drop.rarity === "common" ? "620ms" : "860ms");
-watch(reducedMotion, (value) => { if (value) emit("done"); });
+const playing = computed(() => !!card.value?.video && landed.value && !leaving.value && pageActive.value);
+const memberColor = computed(() => characterColor(props.entry.item.characters[0] ?? ""));
+const BURST = Array.from({ length: 12 }, (_, n) => ({
+  angle: `${n * 30 + (n % 2) * 11}deg`,
+  reach: `${170 + (n % 4) * 40}px`,
+  size: n % 3 === 0 ? 26 : n % 3 === 1 ? 14 : 20,
+}));
+
+const veil = ref<HTMLElement>();
+const band = ref<HTMLElement>();
+const hero = ref<HTMLElement>();
+const tilt = ref<HTMLElement>();
+
+/** Where the hero would sit to cover its tile, from its resting box. */
+function onTile(): string | null {
+  const from = props.from;
+  const to = hero.value?.getBoundingClientRect();
+  if (!from || !to?.width) return null;
+  const scale = from.width / to.width;
+  return `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${scale}) rotate(${props.entry.tilt}deg)`;
+}
+
+/** Pointer over the art: lean toward it and move the glare there. */
+function lean(e: PointerEvent) {
+  const el = tilt.value;
+  if (!el || !landed.value || leaving.value || props.calm) return;
+  const box = el.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
+  const y = Math.min(1, Math.max(0, (e.clientY - box.top) / box.height));
+  el.style.setProperty("--rx", `${(0.5 - y) * TILT_DEG}deg`);
+  el.style.setProperty("--ry", `${(x - 0.5) * TILT_DEG}deg`);
+  el.style.setProperty("--px", `${x}`);
+  el.style.setProperty("--py", `${y}`);
+  el.classList.add("leaning");
+}
+function rest() {
+  const el = tilt.value;
+  if (!el) return;
+  for (const name of ["--rx", "--ry", "--px", "--py"]) el.style.removeProperty(name);
+  el.classList.remove("leaning");
+}
+
+const go = ref<HTMLButtonElement>();
+onMounted(() => {
+  go.value?.focus({ preventScroll: true });
+  if (props.calm) return;
+  band.value?.animate([{ transform: LEFT }, { transform: "none" }], { duration: 300, easing: EASE_IN_OUT, fill: "both" });
+  const start = onTile();
+  const flight = hero.value?.animate(
+    start
+      ? [{ transform: start }, { transform: "translateY(-14px) scale(1.04)", offset: 0.7 }, { transform: "none" }]
+      : [{ transform: "scale(.6)", opacity: 0 }, { transform: "none", opacity: 1 }],
+    { duration: IN_MS, easing: EASE_OUT, fill: "both" },
+  );
+  void flight?.finished.then(() => (landed.value = true), () => {});
+});
+
+async function close() {
+  if (leaving.value) return;
+  leaving.value = true;
+  rest();
+  if (props.calm) {
+    emit("done");
+    return;
+  }
+  const back = onTile();
+  const moves = [
+    band.value?.animate([{ transform: "none" }, { transform: RIGHT }], { duration: OUT_MS, easing: EASE_IN_OUT, fill: "both" }),
+    hero.value?.animate([{ transform: "none" }, back ? { transform: back } : { transform: "scale(.6)", opacity: 0 }], { duration: OUT_MS, easing: EASE_IN_OUT, fill: "both" }),
+    veil.value?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: OUT_MS, easing: EASE_IN_OUT, fill: "both" }),
+  ];
+  await Promise.allSettled(moves.map((m) => m?.finished));
+  emit("done");
+}
+
+defineExpose({ close });
 </script>
 
 <template>
-  <div class="reveal-spotlight" :class="[`rarity-${drop.rarity}`, { special, skin, settled: settled || reducedMotion }]" :style="{ '--reveal-ms': duration }">
-    <div class="reveal-layout">
-      <div class="display">
-        <i class="ground" aria-hidden="true"></i>
-        <i v-if="special" class="edge-flash" aria-hidden="true"></i>
-        <div v-if="special && !settled && !reducedMotion" class="particles" aria-hidden="true">
-          <i v-for="n in 12" :key="n" :style="{ '--angle': `${n * 30}deg`, '--reach': `${100 + n % 3 * 34}px`, '--delay': `${450 + n % 4 * 35}ms` }"></i>
-        </div>
-        <div class="reveal-object" @animationend.self="emit('done')">
-          <div class="front" :class="{ illustration: !!card }">
-            <template v-if="card">
-              <video v-if="settled && card.video && !reducedMotion && pageActive" class="card-image" :src="assetUrl(card.video)" :poster="art" autoplay loop muted playsinline></video>
-              <img v-else class="card-image" :src="art" :alt="card.name" draggable="false" />
-            </template>
-            <template v-else>
-              <span class="artifact-type">A-SOUL <i></i> {{ skin ? 'DESKTOP PET' : 'STICKER' }}</span>
-              <img class="artifact-image" :src="skin ? getCharacter(item.ref)?.bg : assetUrl(item.art)" :alt="item.name" draggable="false" />
-              <span class="artifact-caption">{{ skin ? skinSeries(item.ref) : item.characters.join(' · ') }}</span>
-            </template>
-            <i v-if="special" class="foil" aria-hidden="true"></i>
+  <div
+    class="spot" :class="[entry.tone, { skin, hidden, big, landed, leaving, calm }]" :style="entry.toneStyle"
+    role="group" :aria-label="`${entry.kind}：${entry.title}`" @click="close"
+  >
+    <i ref="veil" class="veil" aria-hidden="true"></i>
+    <div ref="band" class="band" aria-hidden="true">
+      <i v-if="landed && !calm" class="flash"></i>
+    </div>
+    <div class="stage">
+      <div class="hero-cell" @pointermove="lean" @pointerleave="rest" @click.stop>
+        <i v-if="landed && !calm" class="ring" aria-hidden="true"></i>
+        <div ref="hero" class="hero">
+          <div ref="tilt" class="tilt">
+            <img v-if="skin" class="pet" :src="entry.art" :alt="entry.title" draggable="false" />
+            <span v-else-if="card" class="card">
+              <img class="art" :src="entry.art" :alt="entry.title" draggable="false" />
+              <img v-if="!card.video" class="art full" :class="{ ready: fullReady }" :src="assetUrl(card.full)" alt="" draggable="false" @load="fullReady = true" />
+              <video v-if="playing" class="art" :src="assetUrl(card.video)" :poster="entry.art" autoplay loop muted playsinline></video>
+              <i v-if="hidden" class="holo" aria-hidden="true"></i>
+              <i class="glare" aria-hidden="true"></i>
+              <i class="sheen" aria-hidden="true"></i>
+            </span>
           </div>
+          <template v-if="landed && !calm">
+            <span class="burst" aria-hidden="true">
+              <i v-for="(s, n) in BURST" :key="n" :style="{ '--a': s.angle, '--d': s.reach }"><Icon name="spark" :size="s.size" /></i>
+            </span>
+            <Icon v-for="n in 6" :key="n" name="spark" :size="[26, 14, 20, 12, 22, 16][n - 1]" class="spark" :class="`s${n}`" />
+          </template>
         </div>
       </div>
-      <div class="reveal-facts">
-        <span class="reveal-tier"><i></i>{{ tier }}</span>
-        <h3>{{ label.title }}</h3>
-        <p class="member"><i :style="{ background: characterColor(item.characters[0] ?? '') }"></i>{{ label.who }}</p>
-        <div class="ownership">
-          <span v-if="drop.new" class="new-label">首次获得</span>
-          <span v-else>已拥有 <b>×{{ drop.count }}</b></span>
-          <small v-if="drop.shards">重复返还 {{ drop.shards }} 碎片</small>
-        </div>
-        <p v-if="skin" class="skin-hint">在背包中装备，换上新的桌宠形象</p>
+      <div class="facts">
+        <b class="word" aria-hidden="true"><i v-for="(c, n) in [...word]" :key="n" :style="{ '--n': n }">{{ c }}</i></b>
+        <span class="ui-tag dark kind">{{ entry.kind }}</span>
+        <h3>{{ entry.title }}</h3>
+        <p class="who"><i :style="{ background: memberColor }"></i>{{ entry.who }}</p>
+        <p class="own">
+          <template v-if="entry.drop.new"><Icon name="spark" :size="14" />首次获得</template>
+          <template v-else>已拥有 <b>×{{ entry.drop.count }}</b></template>
+          <small v-if="entry.drop.shards">重复返还 {{ entry.drop.shards }} 碎片</small>
+        </p>
       </div>
     </div>
+    <button ref="go" type="button" class="ui-btn primary large go" @click.stop="close">继续</button>
   </div>
 </template>
 
 <style scoped>
-.reveal-spotlight { position: absolute; inset: 0; overflow: hidden; color: var(--draw-white); --reveal-ms: 620ms; }
-.reveal-layout { position: relative; z-index: 1; height: 100%; max-width: 880px; margin: auto; padding: 80px 64px 96px; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .8fr); align-items: center; gap: 52px; }
-.display { position: relative; display: grid; place-items: center; height: min(420px, 65cqh); perspective: 1400px; }
-.ground { position: absolute; width: 86%; height: 20px; bottom: -22px; border-radius: 50%; background: rgba(0, 0, 0, .34); filter: blur(10px); }
-.reveal-object { position: relative; height: 100%; aspect-ratio: 2 / 3; transform-style: preserve-3d; animation: reveal-turn var(--reveal-ms) cubic-bezier(.2,.7,.16,1) both; }
-.special .reveal-object { animation-name: reveal-special; }
-.front { position: absolute; inset: 0; border-radius: 6px; backface-visibility: hidden; animation: front-visible var(--reveal-ms) step-end both; }
-.special .front { animation-name: special-front-visible; }
-.front { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 22px 16px 18px; box-sizing: border-box; overflow: hidden; background: var(--draw-paper); color: #23313a; box-shadow: 0 12px 32px -12px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.4); }
-.special .front { box-shadow: 0 16px 40px -16px rgba(0,0,0,.6), 0 0 0 1px var(--draw-tone); }
-.front.illustration { padding: 3px; background: #c8c9c0; }
-.special .front.illustration { background: var(--draw-tone); }
-.card-image { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
-.artifact-type { display: flex; align-items: center; gap: 8px; font: 800 10px/1.4 var(--font-latin); letter-spacing: .15em; color: #69747a; }
-.artifact-type i { width: 2px; height: 2px; background: currentColor; }
-.artifact-image { display: block; width: 94%; height: 68%; object-fit: contain; }
-.artifact-caption { font: 500 var(--fs-label)/1.3 var(--font); color: #69747a; letter-spacing: .12em; }
-.skin .reveal-object { width: 100%; height: 86%; aspect-ratio: auto; }
-.skin .artifact-image { width: 100%; height: 72%; }
-.foil { position: absolute; inset: -20%; background: linear-gradient(115deg, transparent 42%, rgba(255,255,255,.34) 49%, rgba(255,255,255,.08) 53%, transparent 60%); transform: translateX(-120%); animation: reveal-foil 500ms var(--ease-out) 850ms both; pointer-events: none; }
-.edge-flash { position: absolute; left: 50%; top: -8%; width: 2px; height: 116%; background: var(--draw-tone); box-shadow: 0 0 14px 2px color-mix(in srgb, var(--draw-tone) 36%, transparent); animation: reveal-edge 1200ms var(--ease-out) both; }
-.particles { position: absolute; left: 50%; top: 50%; pointer-events: none; }
-.particles i { position: absolute; width: 3px; height: 3px; background: var(--draw-tone); animation: reveal-particle 650ms var(--ease-out) var(--delay) both; }
-.reveal-facts { min-width: 0; animation: reveal-facts 450ms var(--ease-out) calc(var(--reveal-ms) - 220ms) both; }
-.reveal-tier { display: flex; align-items: center; gap: 8px; color: var(--draw-tone); font: 500 var(--fs-body)/1.4 var(--font); letter-spacing: .12em; }
-.reveal-tier i { width: 18px; height: 1px; background: currentColor; }
-h3 { margin: 18px 0 16px; font: 800 clamp(24px, 4.5cqw, 42px)/1.3 var(--font); letter-spacing: -.025em; text-wrap: balance; }
-.member { display: flex; align-items: center; gap: 8px; margin: 0; font: 500 var(--fs-body)/1.7 var(--font); color: var(--draw-muted); }
-.member i { flex: none; width: 3px; height: 12px; }
-.ownership { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--draw-line); color: var(--draw-muted); font-size: var(--fs-body); }
-.ownership b { margin-left: 6px; color: var(--draw-white); font-weight: 500; }
-.ownership small { font-size: var(--fs-label); }
-.new-label { border: 1px solid color-mix(in srgb, var(--draw-tone) 45%, transparent); border-radius: 3px; padding: 5px 10px; color: var(--draw-tone); font-size: var(--fs-label); }
-.skin-hint { margin: 20px 0 0; color: var(--draw-muted); font-size: var(--fs-label); line-height: 1.7; }
-.settled .reveal-object, .settled .reveal-facts { animation: none; }
-.settled .front { animation: none; visibility: visible; }
-.settled .edge-flash, .settled .particles { display: none; }
-.settled .foil { animation: none; transform: translateX(120%); }
-@keyframes reveal-turn { 0% { opacity: 0; transform: translate(-20px, 24px) rotateY(160deg) rotateZ(-4deg) scale(.94); } 18% { opacity: 1; } 48% { transform: translate(0, -6px) rotateY(86deg) rotateZ(-1deg); } 100% { opacity: 1; transform: none; } }
-@keyframes reveal-special { 0% { opacity: 0; transform: translateY(24px) rotateY(180deg) scale(.94); } 16%, 36% { opacity: 1; transform: rotateY(180deg) scale(.97); } 55% { transform: translateY(-8px) rotateY(90deg); } 78% { transform: rotateY(-3deg) scale(1.015); } 100% { opacity: 1; transform: none; } }
-@keyframes front-visible { 0% { visibility: hidden; } 48%, 100% { visibility: visible; } }
-@keyframes special-front-visible { 0% { visibility: hidden; } 55%, 100% { visibility: visible; } }
-@keyframes reveal-facts { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-@keyframes reveal-foil { to { transform: translateX(120%); } }
-@keyframes reveal-edge { 0%, 24% { opacity: 0; transform: scaleY(.05); } 42% { opacity: .95; transform: scaleY(1); } 70%, 100% { opacity: 0; transform: scaleY(1.08); } }
-@keyframes reveal-particle { 0% { opacity: 0; transform: rotate(var(--angle)) translateX(35px) scale(.5); } 20% { opacity: .8; } 100% { opacity: 0; transform: rotate(var(--angle)) translateX(var(--reach)) scale(0); } }
-@container cinema (max-width: 660px) { .reveal-layout { padding: 76px 28px 88px; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, .85fr); } .display { height: min(340px, 54cqh); } .artifact-type { font-size: 8px; gap: 4px; letter-spacing: .06em; } .front { padding: 16px 10px; } h3 { font-size: 24px; } }
-@container cinema (max-width: 480px) { .reveal-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 22px; padding: 70px 24px 88px; } .display { height: min(290px, 42cqh); } .reveal-facts { text-align: center; } .reveal-tier, .member { justify-content: center; } h3 { margin: 10px 0 8px; font-size: 23px; } .ownership { align-items: center; flex-direction: row; justify-content: center; margin-top: 14px; padding-top: 12px; } .skin-hint { margin-top: 10px; } }
-@container cinema (max-height: 540px) { .reveal-layout { padding-top: 64px; padding-bottom: 72px; } .display { height: 64cqh; } h3 { font-size: 26px; margin: 12px 0; } .ownership { margin-top: 18px; padding-top: 14px; } }
-@container cinema (max-width: 480px) and (max-height: 540px) { .reveal-layout { padding: 60px 20px 72px; gap: 12px; } .display { height: 32cqh; } h3 { margin: 8px 0; font-size: 21px; } .ownership { margin-top: 10px; padding-top: 10px; } }
+.spot {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  cursor: pointer;
+}
+/* The board stays faintly behind, so the card visibly comes from and returns to it. */
+.veil {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--page) 90%, transparent);
+  animation: veil-in 220ms var(--ease-out) both;
+}
+.calm .veil {
+  animation: none;
+}
+.band {
+  position: absolute;
+  left: -4%;
+  right: -4%;
+  top: 23%;
+  height: 54%;
+  overflow: hidden;
+  background: var(--tone-fill);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.55), 0 18px 40px -24px var(--tone-glow);
+}
+.flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  animation: flash-out 480ms var(--ease-out) both;
+}
+.big.landed .stage {
+  animation: hit 380ms var(--ease-out) both;
+}
+.stage {
+  position: absolute;
+  inset: 0 0 64px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+}
+.hero-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+.ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(70cqh, 460px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px #fff, 0 0 30px 6px var(--tone-glow), inset 0 0 30px 6px var(--tone-glow);
+  pointer-events: none;
+  animation: ring-out 700ms var(--ease-out) both;
+}
+.hero {
+  position: relative;
+  height: min(76cqh, 540px);
+  aspect-ratio: 0.7;
+  transform-origin: 0 0;
+}
+.tilt {
+  position: absolute;
+  inset: 0;
+  transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 420ms var(--ease-out);
+}
+.landed:not(.calm) .tilt:not(.leaning) {
+  animation: sway 6s var(--ease-in-out) infinite;
+}
+.tilt.leaning {
+  transition: transform 80ms linear;
+}
+.card {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--ink-rgb), 0.55);
+}
+.art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.full {
+  opacity: 0;
+  transition: opacity var(--dur-slow);
+}
+.full.ready {
+  opacity: 1;
+}
+/* Twice the card's size and centred on it; moving it by half its offset puts the light under the pointer. */
+.glare,
+.holo {
+  position: absolute;
+  inset: -50%;
+  pointer-events: none;
+  translate: calc((var(--px, 0.3) - 0.5) * 50%) calc((var(--py, 0.2) - 0.5) * 50%);
+  transition: translate 420ms var(--ease-out);
+}
+.leaning .glare,
+.leaning .holo {
+  transition: translate 80ms linear;
+}
+.glare {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.34), transparent 26%);
+}
+/* Holo foil on hidden cards: a band of pale hues that slides against the pointer. */
+.holo {
+  translate: calc((0.5 - var(--px, 0.3)) * 40%) calc((0.5 - var(--py, 0.2)) * 40%);
+  background: linear-gradient(115deg, transparent 34%, rgba(255, 154, 213, 0.22) 41%, rgba(255, 224, 138, 0.22) 46%, rgba(138, 245, 208, 0.22) 51%, rgba(138, 184, 255, 0.22) 56%, rgba(215, 155, 255, 0.22) 61%, transparent 68%);
+}
+.sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.6) 50%, transparent 62%) 160% 0 / 260% 100% no-repeat;
+}
+.landed .sheen {
+  animation: hero-sheen 760ms var(--ease-out) both;
+}
+/* A skin shows the whole desk scene, the way it will sit on the desktop. */
+.skin .hero {
+  width: min(52cqw, 600px);
+  height: auto;
+  aspect-ratio: 240 / 135;
+}
+.pet {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: var(--sticker-lg);
+}
+.skin.landed:not(.calm) .pet {
+  animation: pet-hop 520ms var(--ease-spring) both;
+}
+
+.burst {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+.burst i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  rotate: var(--a);
+  transform-origin: 0 0;
+}
+.burst svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  stroke-width: 0;
+  fill: #fff;
+  filter: drop-shadow(0 0 3px var(--tone-glow));
+  animation: burst-fly 860ms var(--ease-out) both;
+}
+.spark {
+  position: absolute;
+  z-index: 2;
+  stroke-width: 0;
+  fill: #fff;
+  filter: drop-shadow(0 1px 2px rgba(var(--ink-rgb), 0.25));
+  animation: spark-in 600ms var(--ease-pop) 300ms both, twinkle 2.6s var(--ease-in-out) 1200ms infinite;
+}
+.s1 { right: -30px; top: 6%; }
+.s2 { right: -14px; top: -4%; animation-delay: 380ms, 1400ms; }
+.s3 { left: -34px; top: 36%; animation-delay: 440ms, 1600ms; }
+.s4 { left: -16px; top: 28%; animation-delay: 500ms, 1800ms; }
+.s5 { right: -36px; bottom: 16%; animation-delay: 420ms, 2000ms; }
+.s6 { left: -22px; bottom: 6%; animation-delay: 540ms, 1500ms; }
+
+.facts {
+  position: relative;
+  min-width: 0;
+  padding-right: 36px;
+  color: var(--tone-ink);
+  animation: facts-in 380ms var(--ease-out) 220ms both;
+}
+.calm .facts {
+  animation: none;
+}
+.leaving .facts {
+  animation: facts-out 140ms var(--ease-in) both;
+}
+.word {
+  display: flex;
+  margin-left: -4px;
+  font: 800 clamp(48px, 11cqw, 96px)/0.86 var(--font-latin);
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(var(--ink-rgb), 0.08);
+}
+.word i {
+  display: block;
+  font-style: normal;
+  animation: letter-stamp 420ms var(--ease-out) calc(260ms + var(--n) * 50ms) both;
+}
+.calm .word i {
+  animation: none;
+}
+.kind {
+  margin-top: 14px;
+}
+h3 {
+  margin: 10px 0 8px;
+  font: 800 clamp(22px, 4cqw, 34px)/1.25 var(--font);
+  text-wrap: balance;
+}
+/* A white tab, so the member's name colour reads on any band. */
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 3px 12px 3px 8px;
+  border-radius: var(--radius-s);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font-size: var(--fs-strong);
+  font-weight: 800;
+}
+.who i {
+  flex: none;
+  width: 5px;
+  height: 14px;
+}
+.own {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 16px 0 0;
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+.own b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+}
+.own small {
+  flex-basis: 100%;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  opacity: 0.8;
+}
+.own svg {
+  stroke-width: 0;
+  fill: currentColor;
+}
+.go {
+  position: absolute;
+  z-index: 2;
+  right: 24px;
+  bottom: 18px;
+  min-width: 132px;
+}
+
+@keyframes veil-in {
+  from { opacity: 0; }
+}
+@keyframes flash-out {
+  from { opacity: 0.9; }
+  to { opacity: 0; }
+}
+@keyframes hit {
+  0% { translate: 0 0; }
+  20% { translate: -7px 3px; }
+  40% { translate: 6px -3px; }
+  60% { translate: -4px 2px; }
+  80% { translate: 2px -1px; }
+  100% { translate: 0 0; }
+}
+@keyframes ring-out {
+  from { opacity: 1; scale: 0.5; }
+  to { opacity: 0; scale: 1.5; }
+}
+@keyframes sway {
+  0%, 100% { transform: perspective(1000px) rotateX(2deg) rotateY(-5deg); }
+  50% { transform: perspective(1000px) rotateX(-2deg) rotateY(5deg); }
+}
+@keyframes hero-sheen {
+  from { background-position: 160% 0; }
+  to { background-position: -60% 0; }
+}
+@keyframes pet-hop {
+  0% { transform: translateY(0) scale(1, 1); }
+  35% { transform: translateY(-14%) scale(0.96, 1.05); }
+  65% { transform: translateY(0) scale(1.05, 0.95); }
+  100% { transform: none; }
+}
+@keyframes burst-fly {
+  0% { opacity: 0; translate: -50% -50%; scale: 0.2; }
+  15% { opacity: 1; }
+  100% { opacity: 0; translate: calc(var(--d) - 50%) -50%; scale: 1.1; }
+}
+@keyframes spark-in {
+  from { opacity: 0; transform: scale(0) rotate(-60deg); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes twinkle {
+  50% { transform: scale(0.7) rotate(20deg); opacity: 0.7; }
+}
+@keyframes letter-stamp {
+  0% { opacity: 0; transform: scale(2.2); }
+  55% { opacity: 1; transform: scale(0.92); }
+  80% { transform: scale(1.04); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes facts-out {
+  to { opacity: 0; transform: translateX(10px); }
+}
+@keyframes facts-in {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@container reveal (max-width: 600px) {
+  .stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .hero { height: min(62cqh, 420px); }
+  .facts { padding-right: 18px; }
+  .spark.s3, .spark.s4 { display: none; }
+}
+@container reveal (max-height: 480px) {
+  .band { top: 18%; height: 64%; }
+  .hero { height: 70cqh; }
+  h3 { margin: 6px 0; }
+  .own { margin-top: 8px; }
+}
 </style>

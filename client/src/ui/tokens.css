@@ -42,9 +42,6 @@
   --ink-3: #766D7C;
   --surface: #FFFFFF;
   --page: #FFF4EE;
-  /* Behind the full-panel reveals. Aubergine rather than black, so it sits with coral. */
-  --stage-dark: #231730;
-  --stage-dark-rgb: 35, 23, 48;
 
   --line: #F6E3DA;
   --line-2: #EFD3C6;
@@ -70,6 +67,8 @@
   /* Large blocks: dusk, warm at the top and coral at the bottom. */
   --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, var(--tone-top)), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, var(--tone-bottom)));
   --grad-paper: linear-gradient(180deg, var(--surface), var(--accent-tint));
+  /* The dusk sinking further into its lower hue. */
+  --grad-deep: linear-gradient(180deg, var(--grad-to), color-mix(in oklab, var(--accent-surface) 30%, var(--tone-bottom)));
   --glow-s: 0 4px 12px -4px rgba(var(--accent-rgb), 0.62);
   --glow-m: 0 6px 16px -4px rgba(var(--accent-rgb), 0.76), 0 0 0 3px rgba(var(--accent-rgb), 0.14);
   --glow-l: 0 0 20px 2px rgba(var(--accent-rgb), 0.55);
@@ -99,6 +98,8 @@
   --gold: #E59B35;
   --gold-rgb: 229, 155, 53;
   --gold-soft: #FFE3A6;
+  /* Lit like --grad-main and shading toward rose, which keeps gold from turning ochre. */
+  --grad-gold: linear-gradient(180deg, var(--gold-soft), var(--gold) 54%, color-mix(in oklab, var(--gold) 78%, #E8386E));
   --rar-common-bg: var(--surface);
   --rar-uncommon-bg: var(--accent-tint);
   --rar-rare-bg: var(--accent-soft);
@@ -478,6 +479,27 @@
 .ui-tag.gold {
   --tag-bg: var(--gold);
   --tag-fg: var(--ink);
+}
+
+/*
+ * Draw tones, rare upward: dusk, deeper dusk, gold. Seals, bands and spotlights fill with --tone-fill,
+ * glow with --tone-glow and write in --tone-ink. A skin brings its member's theme inline (panel/reveal-tone.ts).
+ */
+.tone-rare,
+.tone-skin {
+  --tone-fill: var(--grad-sky);
+  --tone-glow: rgba(var(--accent-rgb), 0.72);
+  --tone-ink: var(--on-accent-surface);
+}
+.tone-epic {
+  --tone-fill: var(--grad-deep);
+  --tone-glow: color-mix(in srgb, var(--tone-bottom) 72%, transparent);
+  --tone-ink: #fff;
+}
+.tone-legendary {
+  --tone-fill: var(--grad-gold);
+  --tone-glow: rgba(var(--gold-rgb), 0.85);
+  --tone-ink: var(--ink);
 }
 
 /* Settings-style list: chamfered white block of rows. */

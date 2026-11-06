@@ -1,23 +1,26 @@
-// Order and pacing of a draw's results. Pure, so the scene only has to play them back.
+// What a draw shows and in which order. Pure, so the scene only has to play it back.
 import type { Rarity } from "./manifest";
 
 export interface Revealed {
   rarity: Rarity;
   item: string;
   new: boolean;
-  tier?: "big" | "small" | "normal";
 }
+type CardTier = "big" | "small" | "normal";
 
 const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const rank = (d: Revealed) => ORDER.indexOf(d.rarity);
 
-/** Results for the summary: rarest first, then new before duplicates, otherwise in draw order. */
+/** Up to this many results are dealt one tile per draw. Bigger batches group repeats. */
+export const DEAL_LIMIT = 10;
+
+/** Rarest first, then new before duplicates, otherwise in draw order. */
 export function sortDrops<T extends Revealed>(drops: readonly T[]): T[] {
   return [...drops].sort((a, b) => rank(a) - rank(b) || Number(b.new) - Number(a.new));
 }
 
 /** One tile per item, so a big batch is not a wall of repeats. `got` is how many landed in this batch. */
-export function groupDrops<T extends Revealed & { item: string; count: number; shards: number }>(
+export function groupDrops<T extends Revealed & { count: number; shards: number }>(
   drops: readonly T[],
 ): (T & { got: number })[] {
   const groups = new Map<string, T & { got: number }>();
@@ -35,27 +38,30 @@ export function groupDrops<T extends Revealed & { item: string; count: number; s
   return [...groups.values()];
 }
 
-/** Reveal every result in draw order, including duplicates and emotes. */
-export function spotlightQueue<T extends Revealed>(drops: readonly T[]): T[] {
-  return [...drops];
+/** A dealt batch keeps draw order, like cards out of a pack. A grouped one is sorted for reading. */
+export function boardOf<T extends Revealed & { count: number; shards: number }>(drops: readonly T[]): (T & { got: number })[] {
+  return drops.length <= DEAL_LIMIT ? drops.map((d) => ({ ...d, got: 1 })) : groupDrops(sortDrops(drops));
 }
 
-export const needsSummary = (drops: readonly Revealed[]) => drops.length > 1;
-
-/** Hidden cards and skins always reveal; first-time animated cards and rare emotes also reveal. */
-export function isRevealHighlight(drop: Revealed): boolean {
-  if (drop.rarity === "skin" || drop.tier === "big" || drop.tier === "small" || drop.rarity === "legendary") return true;
-  if (!drop.new) return false;
-  // Non-hidden epic cards are the catalog's cards with bundled videos.
-  if (drop.item.startsWith("card:")) return drop.rarity === "epic";
-  return drop.item.startsWith("emote:") && ["rare", "epic", "legendary"].includes(drop.rarity);
+/**
+ * The opening bands announce the best result before anything turns over, and never overstate it.
+ * Rare emotes come up in four of ten 10-draws, so they get no announcement.
+ */
+export type Tell = "plain" | "epic" | "skin" | "legendary";
+export function tellOf(drops: readonly Revealed[]): Tell {
+  if (drops.some((d) => d.rarity === "legendary")) return "legendary";
+  if (drops.some((d) => d.rarity === "skin")) return "skin";
+  return drops.some((d) => d.rarity === "epic") ? "epic" : "plain";
 }
 
-/** Fast-forward to the next result whose reveal should be watched. */
-export function nextRevealIndex(drops: readonly Revealed[], start: number, highlightsOnly: boolean): number {
-  for (let i = start; i < drops.length; i++) {
-    const drop = drops[i]!;
-    if (!highlightsOnly || isRevealHighlight(drop)) return i;
-  }
-  return -1;
+/** Results that take the whole scene when they turn over: hidden cards, skins, a first animated card. */
+export function spotlights(drop: Revealed, tier?: CardTier): boolean {
+  if (drop.rarity === "legendary" || drop.rarity === "skin" || tier === "big" || tier === "small") return true;
+  return drop.new && drop.rarity === "epic" && drop.item.startsWith("card:");
+}
+
+const SEALED: Rarity[] = ["rare", "epic", "skin", "legendary"];
+/** Face down until turned. A grouped batch only seals what spotlights, so a hundred draws stay quick. */
+export function sealed(drop: Revealed, grouped: boolean, tier?: CardTier): boolean {
+  return grouped ? spotlights(drop, tier) : SEALED.includes(drop.rarity);
 }

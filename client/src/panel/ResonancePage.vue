@@ -18,6 +18,10 @@ const rates = computed(() => effectiveRates(pool, collection.owned));
 const commonRates = computed(() => commonKindRates(pool, collection.owned));
 const revealing = ref(false);
 const pending = ref(0);
+/** Size of the last request, offered again from the result board. */
+const last = ref(0);
+const again = computed(() =>
+  (last.value === 1 || last.value === 10) && online.value && !complete.value && draws.value >= last.value ? last.value : 0);
 const probabilities = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
@@ -33,11 +37,15 @@ const pityPercent = (r: "legendary" | "skin") =>
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
   pending.value = count;
+  last.value = count;
   revealing.value = true;
+}
+function drawAgain() {
+  pending.value = last.value;
 }
 async function nextBatch() {
   const result = await resonate(Math.min(pending.value, 100));
-  pending.value = result ? pending.value - result.length : 0;
+  pending.value = result ? Math.max(0, pending.value - result.length) : 0;
   return result;
 }
 </script>
@@ -85,7 +93,7 @@ async function nextBatch() {
     </Modal>
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
-    <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" @close="revealing = false" />
+    <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" :again="again" @again="drawAgain" @close="revealing = false" />
   </div>
 </template>
 

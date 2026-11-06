@@ -1,13 +1,16 @@
 <script setup lang="ts">
-// The reverse of a card, sealed until the draw scene turns it over.
+// The back of a sealed result. It fills with the parent's --tone-fill, so the colour alone says how
+// rare the front is; a band of light keeps crossing it because it is waiting to be pressed.
+import Icon from "../ui/Icon.vue";
 </script>
 
 <template>
   <span class="back" aria-hidden="true">
-    <span class="edition">RESONANCE COLLECTION</span>
-    <i class="record"></i>
+    <i class="rule"></i>
+    <Icon name="spark" :size="14" class="star" />
     <i class="mark"></i>
-    <span class="signature">此间共鸣</span>
+    <b class="word">RESONANCE</b>
+    <i class="sheen"></i>
   </span>
 </template>
 
@@ -17,25 +20,60 @@
   inset: 0;
   display: block;
   overflow: hidden;
-  border-radius: 5px;
-  color: #d9bd88;
-  background: repeating-linear-gradient(125deg, transparent 0 13px, rgba(217, 189, 136, .035) 13px 14px), linear-gradient(145deg, #293943, #14212b 64%);
-  box-shadow: inset 0 0 0 1px rgba(217, 189, 136, .55), inset 0 0 0 4px #17242e;
+  border-radius: var(--radius-m);
+  background: var(--tone-fill, var(--grad-sky));
+  box-shadow: inset 0 0 0 3px #fff, inset 0 1px 0 4px rgba(255, 255, 255, 0.35);
+  color: #fff;
+  container-type: inline-size;
 }
-.back::before { content: ''; position: absolute; inset: 11px; border: 1px solid rgba(217, 189, 136, .3); border-radius: 2px; }
-.edition, .signature { position: absolute; left: 12%; right: 12%; text-align: center; }
-.edition { top: 10%; font: 800 clamp(7px, 1cqw, 10px)/1.5 var(--font-latin); letter-spacing: .2em; }
-.signature { bottom: 12%; font: 500 clamp(10px, 1.4cqw, 14px)/1 var(--font); letter-spacing: .3em; }
-.record { position: absolute; width: 76%; aspect-ratio: 1; left: 12%; top: 27%; border: 1px solid rgba(217, 189, 136, .2); border-radius: 50%; box-shadow: 0 0 0 9px rgba(217, 189, 136, .035), inset 0 0 0 9px rgba(217, 189, 136, .035); }
+.rule {
+  position: absolute;
+  inset: 9px;
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+.star {
+  position: absolute;
+  right: 15px;
+  top: 15px;
+  width: 10cqw;
+  height: auto;
+  stroke-width: 0;
+  fill: currentColor;
+}
 .mark {
   position: absolute;
-  left: 23%;
-  right: 23%;
+  left: 22%;
+  right: 22%;
   top: 50%;
   aspect-ratio: 3.172;
   background: currentColor;
   transform: translateY(-50%);
+  filter: drop-shadow(0 1px 1px rgba(var(--ink-rgb), 0.18));
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
+}
+.word {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 15%;
+  text-align: center;
+  font: 800 max(8px, 8.5cqw)/1 var(--font-latin);
+  letter-spacing: 0.16em;
+  opacity: 0.85;
+}
+.sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.5) 50%, transparent 62%) 160% 0 / 260% 100% no-repeat;
+  animation: back-sheen 3.2s var(--ease-in-out) infinite;
+}
+@keyframes back-sheen {
+  0%, 55% { background-position: 160% 0; }
+  100% { background-position: -60% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheen { animation: none; opacity: 0; }
 }
 </style>
