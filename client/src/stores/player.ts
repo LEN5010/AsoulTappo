@@ -24,7 +24,20 @@ function loadToken(): string {
   }
 }
 
-export const token = loadToken();
+export let token = loadToken();
+export const saveCode = ref(token);
+
+export async function restoreSaveCode(value: string): Promise<string> {
+  const code = value.trim();
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(code)) throw new Error("存档码格式不正确");
+  if (isPanelWindow) {
+    saveCode.value = await requestDesktop<string>("restoreSaveCode", code);
+    return saveCode.value;
+  }
+  localStorage.setItem(TOKEN_KEY, code);
+  saveCode.value = code;
+  return code;
+}
 export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
@@ -69,9 +82,11 @@ let generation = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function sessionFor(base: string): Session {
-  const found = sessions.get(base);
+  const credential = token;
+  const key = `${base}|${credential}`;
+  const found = sessions.get(key);
   if (found) return found;
-  const api = new Api(() => base, () => token);
+  const api = new Api(() => base, () => credential);
   const session: Session = { api, tail: Promise.resolve(), reporter: new ActivityReporter(async (batch) => {
     const gen = generation;
     const result = await serial(session, () => api.activity(batch));
@@ -81,7 +96,7 @@ function sessionFor(base: string): Session {
       error.value = "";
     }
   }) };
-  sessions.set(base, session);
+  sessions.set(key, session);
   return session;
 }
 
@@ -133,9 +148,10 @@ async function flush(session: Session): Promise<boolean> {
   return ok;
 }
 
-watch(() => settings.serverUrl, (url) => {
+watch(() => [settings.serverUrl, saveCode.value] as const, ([url, code]) => {
   if (isPanelWindow) return;
   const previous = current;
+  token = code;
   generation++;
   current = sessionFor(toHttpBase(url));
   status.value = null;

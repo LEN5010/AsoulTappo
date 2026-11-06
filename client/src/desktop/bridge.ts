@@ -177,6 +177,7 @@ export async function initDesktop(): Promise<() => void> {
         case "sync": result = { settings, page: ui.page, craftTarget: ui.craftTarget, state: groups() }; break;
         case "resonate": result = await player.resonate(args[0] as number); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
+        case "restoreSaveCode": result = await player.restoreSaveCode(args[0] as string); break;
         case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number); break;
         case "createRoom": result = await room.createRoom(); break;
         case "joinRoom": room.joinRoom(args[0] as string); break;

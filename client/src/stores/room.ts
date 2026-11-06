@@ -9,7 +9,7 @@ import { getEmote } from "../manifest";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
-import { collection, token } from "./player";
+import { collection, token, saveCode } from "./player";
 import { isPanelWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 
@@ -203,6 +203,12 @@ watch(() => settings.serverUrl, () => {
   if (isPanelWindow) return;
   leaveRoom();
   lastError.value = "";
+}, { flush: "sync" });
+watch(saveCode, () => {
+  if (isPanelWindow) return;
+  const previous = roomId.value;
+  leaveRoom();
+  if (previous) joinRoom(previous);
 }, { flush: "sync" });
 watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });

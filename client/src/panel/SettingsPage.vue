@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import { characters, getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { isTauri } from "../composables/tauri";
-import { online, status } from "../stores/player";
+import { online, status, saveCode, restoreSaveCode } from "../stores/player";
 import { counter } from "../stores/counter";
 import { THEME_COLORS, themeSwatch } from "../stores/theme";
 import { arrowSelect } from "../ui/focus";
@@ -15,6 +15,16 @@ const emit = defineEmits<{ resetPet: [] }>();
 const swatches = ref<HTMLElement>();
 const serverDraft = ref(settings.serverUrl);
 const serverError = ref("");
+const saveDraft = ref("");
+const saveNotice = ref("");
+async function copySave() {
+  try { await navigator.clipboard.writeText(saveCode.value); saveNotice.value = "存档码已复制"; }
+  catch { saveNotice.value = "复制失败，请手动复制存档码"; }
+}
+async function restoreSave() {
+  try { await restoreSaveCode(saveDraft.value); saveDraft.value = ""; saveNotice.value = "已切换存档"; }
+  catch (error) { saveNotice.value = error instanceof Error ? error.message : "切换存档失败"; }
+}
 const portrait = computed(() => getCharacter(settings.character)?.bg);
 watch(
   () => settings.serverUrl,
@@ -51,6 +61,15 @@ function applyServer() {
         <span><b>{{ status?.totals.activeMinutes ?? "-" }}</b>活跃分钟</span>
         <span><b>{{ status?.resonance.total ?? "-" }}</b>已共鸣</span>
         <span><b>{{ status ? `${status.totals.owned}/${status.totals.items}` : "-" }}</b>收集进度</span>
+      </div>
+    </section>
+
+    <section data-rise>
+      <h4 class="ui-label"><span>存档</span><em>SAVE</em></h4>
+      <div class="ui-group ui-frame ui-ring">
+        <div class="ui-row"><span>当前存档码</span><input class="ui-input" readonly :value="saveCode" aria-label="当前存档码" /><button class="ui-btn" type="button" @click="copySave">复制</button></div>
+        <form class="ui-row" @submit.prevent="restoreSave"><input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" /><button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button></form>
+        <p v-if="saveNotice" role="status" class="err">{{ saveNotice }}</p>
       </div>
     </section>
 

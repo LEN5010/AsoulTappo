@@ -26,6 +26,27 @@ async function setup() {
   return { settings, p: player };
 }
 
+it("switches save credentials while pending input stays with its original save", async () => {
+  const activities: string[] = [];
+  const writes = vi.fn();
+  vi.stubGlobal("localStorage", { getItem: () => null, setItem: writes });
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/activity")) activities.push((init!.headers as Record<string, string>)["X-Player-Token"]!);
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 0 });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  const previous = p.token;
+  p.countInput();
+  const next = "a".repeat(48);
+  await p.restoreSaveCode(next);
+  p.countInput();
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(p.token).toBe(next);
+  expect(writes).toHaveBeenCalledWith("asoultappo.token.v1", next);
+  expect(activities).toEqual([previous, next]);
+});
+
 it("keeps pending batches and their retries at the original server", async () => {
   const activities: { url: string; body: unknown }[] = [];
   let failA = true;
