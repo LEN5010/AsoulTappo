@@ -3,17 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from .game import Game, GameError
+from .accounts import MainAccounts
+from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
 from .models import (
     EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg, LeaveMsg, Member,
@@ -31,6 +33,11 @@ PACKS_DIR = find_packs_dir()
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
 # ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
 game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest)
+
+# MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
+# self-hosted servers, which then offer guest saves only.
+MAIN_API_URL = os.environ.get("MAIN_API_URL", "").strip().rstrip("/")
+accounts = MainAccounts(MAIN_API_URL) if MAIN_API_URL else None
 
 # CORS for the browser/Tauri webview calling the HTTP API.
 # ASOULTAPPO_CORS_ORIGINS: comma-separated origins, default "*" (no cookies are used).
@@ -60,12 +67,42 @@ async def create_room() -> dict:
 
 
 # ------------------------------------------------------------------ HTTP API
+STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
+          "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
+
+
 def _guard(fn, *args):
     try:
         return fn(*args)
     except GameError as e:
-        status = 401 if e.code == "bad_token" else 409 if e.code in ("no_shards", "owned") else 400
-        raise HTTPException(status_code=status, detail={"code": e.code, "message": e.message})
+        raise HTTPException(status_code=STATUS.get(e.code, 400), detail={"code": e.code, "message": e.message})
+
+
+def _bearer(authorization: str) -> str:
+    return authorization[7:].strip() if authorization[:7].lower() == "bearer " else ""
+
+
+def _main_user(authorization: str) -> dict:
+    if not accounts:
+        raise GameError("accounts_disabled", "这个服务器没有接入主站账号")
+    return accounts.user_for(_bearer(authorization))
+
+
+def _who(token: str, authorization: str) -> PlayerId:
+    """The save a request acts on: the account's linked save, or the guest token's own save."""
+    if authorization:
+        pid = game.store.linked_player(_main_user(authorization)["id"])
+        if pid is None:
+            raise GameError("account_not_linked", "账号还没有桌宠存档")
+        return PlayerId(pid)
+    pid = player_id_for(token)
+    if game.store.account_for_player(pid):
+        raise GameError("save_linked", "这份存档已绑定主站账号，请登录账号使用")
+    return PlayerId(pid)
+
+
+def player(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> PlayerId:
+    return _guard(_who, x_player_token, authorization)
 
 
 class ActivityBody(BaseModel):
@@ -99,44 +136,85 @@ def api_manifest() -> dict:
 
 
 @app.get("/api/me")
-def api_me(x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.status, x_player_token)
+def api_me(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.status, who)
 
 
 @app.post("/api/activity")
-def api_activity(body: ActivityBody, x_player_token: str = Header(default="")) -> dict:
+def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
-    return _guard(game.report_activity, x_player_token, body.taps, body.session, body.sequence)
+    return _guard(game.report_activity, who, body.taps, body.session, body.sequence)
 
 
 @app.post("/api/presence")
-def api_presence(body: PresenceBody, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.presence, x_player_token, body.session)
+def api_presence(body: PresenceBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.presence, who, body.session)
 
 
 @app.post("/api/resonance/draw")
-def api_resonate(body: ResonanceBody, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.resonate, x_player_token, body.count)
+def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.resonate, who, body.count)
 
 
 @app.post("/api/craft")
-def api_craft(body: CraftBody, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.craft, x_player_token, body.item)
+def api_craft(body: CraftBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.craft, who, body.item)
 
 
 @app.get("/api/loadout")
-def api_loadout(x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.get_loadout, x_player_token)
+def api_loadout(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.get_loadout, who)
 
 
 @app.post("/api/loadout")
-def api_set_loadout(body: LoadoutBody, x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.set_loadout, x_player_token, body.model_dump(exclude_unset=True))
+def api_set_loadout(body: LoadoutBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.set_loadout, who, body.model_dump(exclude_unset=True))
+
+
+@app.get("/api/info")
+def api_info() -> dict:
+    return {"accountLogin": accounts is not None, "mainApi": MAIN_API_URL or None}
+
+
+def _public_user(user: dict) -> dict:
+    return {"id": user["id"], "username": user["username"], "email": user.get("email")}
+
+
+@app.get("/api/account")
+def api_account(authorization: str = Header(default="")) -> dict:
+    user = _guard(_main_user, authorization)
+    pid = game.store.linked_player(user["id"])
+    return {"user": _public_user(user), "save": game.save_summary(pid) if pid else None}
+
+
+def _link(token: str, authorization: str) -> dict:
+    """Binds the account to this device's guest save, a new save, or reports two saves to choose from."""
+    user = _main_user(authorization)
+    guest = player_id_for(token) if token else None
+    with game.store.transaction() as st:
+        linked = st.linked_player(user["id"])
+        if linked:
+            if guest and guest != linked and st.has_player(guest) and not st.account_for_player(guest):
+                summary = game.save_summary(guest)
+                if summary["taps"] or summary["owned"]:
+                    raise HTTPException(409, {"code": "account_has_save", "message": "账号已有桌宠存档",
+                                              "account": game.save_summary(linked), "guest": summary})
+            return {"user": _public_user(user), "save": game.save_summary(linked), "linkedGuest": False}
+        if guest and st.account_for_player(guest):
+            raise GameError("save_linked", "这份存档已绑定其他账号")
+        pid = guest or secrets.token_hex(8)
+        st.link_account(user["id"], pid, game.now())
+    return {"user": _public_user(user), "save": game.save_summary(pid), "linkedGuest": guest is not None}
+
+
+@app.post("/api/account/link")
+def api_account_link(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> dict:
+    return _guard(_link, x_player_token, authorization)
 
 
 @app.get("/api/collection")
-def api_collection(x_player_token: str = Header(default="")) -> dict:
-    return _guard(game.collection, x_player_token)
+def api_collection(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.collection, who)
 
 
 # Heavy assets (card art, videos, theme backgrounds) as downloadable packs: /packs/index.json
@@ -149,6 +227,14 @@ async def _leave(room_id: str | None, peer: Peer | None) -> None:
     if room_id and peer:
         if manager.leave(room_id, peer.id):
             await manager.broadcast(room_id, MemberLeftMsg(id=peer.id).model_dump())
+
+
+def _room_identity(token: str | None, account_token: str | None) -> PlayerId | None:
+    """Rooms resolve the same save as HTTP; an unknown identity joins without unlocks."""
+    try:
+        return _who(token or "", f"Bearer {account_token}" if account_token else "")
+    except GameError:
+        return None
 
 
 @app.websocket("/ws")
@@ -185,9 +271,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer is not None:
                     await err("already_joined")
                     continue
-                profile = await run_in_threadpool(game.profile_for, msg.token, msg.room)
+                who = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
+                profile = await run_in_threadpool(game.profile_for, who, msg.room)
                 try:
-                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=msg.token, **profile)
+                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=who, **profile)
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue

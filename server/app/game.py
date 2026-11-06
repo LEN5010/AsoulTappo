@@ -28,7 +28,13 @@ class GameError(Exception):
         self.message = message or code
 
 
+class PlayerId(str):
+    """A player ID already resolved from a guest token or a linked main-site account."""
+
+
 def player_id_for(token: str) -> str:
+    if isinstance(token, PlayerId):
+        return token
     if not (TOKEN_MIN <= len(token) <= TOKEN_MAX):
         raise GameError("bad_token", f"token must be {TOKEN_MIN}-{TOKEN_MAX} chars")
     return hashlib.sha256(token.encode()).hexdigest()[:16]
@@ -206,6 +212,12 @@ class Game:
                        "owned": owned_count,
                        "items": len(self.manifest.items) - len(self.manifest.starter)},
         }
+
+    def save_summary(self, pid: str) -> dict[str, Any]:
+        """What the account choice dialog shows about one save."""
+        p = self.store.get_player(pid, self.now())
+        return {"shards": p["shards"], "owned": self.store.count_items(pid, self.collectible_ids),
+                "taps": p["taps_total"], "lastActive": p["last_activity"] or p["created"]}
 
     def collection(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)

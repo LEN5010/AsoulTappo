@@ -21,6 +21,21 @@ describe("Api", () => {
     await api.resonate(10);
     expect(f).toHaveBeenCalledWith("http://h/api/resonance/draw", expect.objectContaining({ method: "POST", body: JSON.stringify({ count: 10 }) }));
   });
+  it("uses the account token for a linked save and sends both tokens when linking", async () => {
+    const f = vi.fn(() => resp(200, {}));
+    const api = new Api(() => "http://h", () => ({ bearer: "acct" }), f);
+    await api.me();
+    expect(f).toHaveBeenLastCalledWith("http://h/api/me", expect.objectContaining({ headers: { Authorization: "Bearer acct" } }));
+    await api.link("acct", "guest");
+    expect(f).toHaveBeenLastCalledWith("http://h/api/account/link", expect.objectContaining({
+      method: "POST", headers: expect.objectContaining({ Authorization: "Bearer acct", "X-Player-Token": "guest" }),
+    }));
+  });
+  it("keeps the choice details of a 409", async () => {
+    const detail = { code: "account_has_save", message: "账号已有桌宠存档", account: { shards: 1 }, guest: { shards: 2 } };
+    const api = new Api(() => "http://h", () => "t", () => resp(409, { detail }));
+    await expect(api.link("acct", "t")).rejects.toMatchObject({ code: "account_has_save", detail: { account: { shards: 1 }, guest: { shards: 2 } } });
+  });
   it("turns server errors into ApiError with the code", async () => {
     const api = new Api(() => "http://h", () => "t", () => resp(409, { detail: { code: "no_shards", message: "碎片不足" } }));
     await expect(api.resonate()).rejects.toMatchObject({ status: 409, code: "no_shards", message: "碎片不足" });

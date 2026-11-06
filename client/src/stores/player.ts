@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type Collection, type Drop, type LoadoutPatch, type PlayerStatus,
+  type Collection, type Credential, type Drop, type LoadoutPatch, type MainUser, type PlayerStatus,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { ownsCharacter, ownsEmote } from "../items";
@@ -38,6 +38,58 @@ export async function restoreSaveCode(value: string): Promise<string> {
   saveCode.value = code;
   return code;
 }
+// ---------------------------------------------------------------- account
+// A main-site account signed in on one server. While it is active the save linked to it replaces the guest save.
+const ACCOUNT_KEY = "asoultappo.account.v1";
+export interface AccountSession { server: string; token: string; user: MainUser }
+
+function loadAccount(): AccountSession | null {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? "null");
+    return raw?.token && raw?.server && raw?.user?.id ? raw : null;
+  } catch {
+    return null;
+  }
+}
+export const account = ref<AccountSession | null>(loadAccount());
+
+/** The account for the selected server, if any. */
+export function activeAccount(): AccountSession | null {
+  const a = account.value;
+  return a && a.server === toHttpBase(settings.serverUrl) ? a : null;
+}
+
+/** Signs this device into [session] (null signs out). A guest save that now belongs to the account gets replaced. */
+export async function setAccount(session: AccountSession | null, retireGuest = false): Promise<AccountSession | null> {
+  if (isPanelWindow) {
+    account.value = await requestDesktop<AccountSession | null>("setAccount", session, retireGuest);
+    if (retireGuest) saveCode.value = loadToken();
+    return account.value;
+  }
+  if (session) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(session));
+  else localStorage.removeItem(ACCOUNT_KEY);
+  if (retireGuest) {
+    const fresh = newToken();
+    localStorage.setItem(TOKEN_KEY, fresh);
+    saveCode.value = fresh;
+  }
+  account.value = session;
+  return session;
+}
+
+// The panel window follows sign-ins and sign-outs made by the desk window (same origin, shared storage).
+if (isPanelWindow) {
+  window.addEventListener?.("storage", (e) => {
+    if (e.key === ACCOUNT_KEY) account.value = loadAccount();
+    if (e.key === TOKEN_KEY) saveCode.value = loadToken();
+  });
+}
+
+function credential(base: string): Credential {
+  const a = account.value;
+  return a && a.server === base ? { bearer: a.token } : token;
+}
+
 export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
@@ -82,11 +134,11 @@ let generation = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function sessionFor(base: string): Session {
-  const credential = token;
-  const key = `${base}|${credential}`;
+  const auth = credential(base);
+  const key = `${base}|${typeof auth === "string" ? auth : `account:${auth.bearer}`}`;
   const found = sessions.get(key);
   if (found) return found;
-  const api = new Api(() => base, () => credential);
+  const api = new Api(() => base, () => auth);
   const session: Session = { api, tail: Promise.resolve(), reporter: new ActivityReporter(async (batch) => {
     const gen = generation;
     const result = await serial(session, () => api.activity(batch));
@@ -106,6 +158,7 @@ function fail(e: unknown): void {
   // A rejected request (4xx) means the server is reachable; only network / 5xx errors are "offline".
   if (!(e instanceof ApiError) || e.status >= 500) online.value = false;
   error.value = e instanceof ApiError ? e.message : "无法连接服务器";
+  if (e instanceof ApiError && e.code === "account_expired") void setAccount(null);
 }
 
 /** Run a request on the current session; results of older server selections are dropped (null). */
@@ -148,7 +201,7 @@ async function flush(session: Session): Promise<boolean> {
   return ok;
 }
 
-watch(() => [settings.serverUrl, saveCode.value] as const, ([url, code]) => {
+watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, ([url, code]) => {
   if (isPanelWindow) return;
   const previous = current;
   token = code;

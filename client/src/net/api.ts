@@ -1,5 +1,5 @@
-// HTTP client for the progression API (see protocol/PROTOCOL.md). The player token is a random
-// secret kept in localStorage; the server only ever stores its hash.
+// HTTP client for the progression API (see protocol/PROTOCOL.md). A guest save is identified by a random
+// token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
 import { manifest, type Rarity } from "../manifest";
 
 export interface PlayerStatus {
@@ -33,7 +33,7 @@ export interface Loadout { character: string | null; favorites: string[] }
 export type LoadoutPatch = Partial<Loadout>;
 
 export class ApiError extends Error {
-  constructor(public status: number, public code: string, message: string) {
+  constructor(public status: number, public code: string, message: string, public detail: Record<string, unknown> = {}) {
     super(message);
   }
 }
@@ -44,6 +44,17 @@ export function newToken(rand: (n: number) => Uint8Array = (n) => crypto.getRand
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** A guest save's token, or a main-site account token for the save linked to that account. */
+export type Credential = string | { bearer: string };
+export function authHeaders(credential: Credential): Record<string, string> {
+  return typeof credential === "string" ? { "X-Player-Token": credential } : { Authorization: `Bearer ${credential.bearer}` };
+}
+
+export interface MainUser { id: string; username: string; email: string | null }
+export interface SaveSummary { shards: number; owned: number; taps: number; lastActive: number }
+export interface ServerInfo { accountLogin: boolean; mainApi: string | null }
+export interface LinkResult { user: MainUser; save: SaveSummary; linkedGuest: boolean }
+
 export interface ActivityBatch {
   taps: number;
   session: string;
@@ -53,33 +64,35 @@ export interface ActivityBatch {
 export class Api {
   constructor(
     private base: () => string,
-    private token: () => string,
+    private credential: () => Credential,
     private f: FetchLike = (u, i) => fetch(u, i),
   ) {}
 
-  private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await this.f(`${this.base().replace(/\/+$/, "")}${path}`, {
         method,
-        headers: { "X-Player-Token": this.token(), ...(body ? { "Content-Type": "application/json" } : {}) },
+        headers: { ...(headers ?? authHeaders(this.credential())), ...(body ? { "Content-Type": "application/json" } : {}) },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
       if (!res.ok) {
         let code = "http_error";
         let message = `服务器返回 ${res.status}`;
+        let detail: Record<string, unknown> = {};
         try {
           const d = (await res.json()).detail;
           if (d?.code) {
             code = d.code;
             message = d.message || message;
+            detail = d;
           }
         } catch {
           /* not json */
         }
-        throw new ApiError(res.status, code, message);
+        throw new ApiError(res.status, code, message, detail);
       }
       return (await res.json()) as T;
     } finally {
@@ -95,6 +108,10 @@ export class Api {
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
+  info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
+  /** Binds the account to this device's guest save (when given) or to a new save. */
+  link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},
+    { Authorization: `Bearer ${accountToken}`, ...(guestToken ? { "X-Player-Token": guestToken } : {}) });
 
 }
 

@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS presets (
   data TEXT NOT NULL,
   PRIMARY KEY (player_id, slot)
 );
+CREATE TABLE IF NOT EXISTS account_links (
+  main_user_id TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL UNIQUE,
+  linked_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS presence_sessions (
   player_id TEXT NOT NULL,
   session TEXT NOT NULL,
@@ -194,6 +199,27 @@ class Store:
                 "ON CONFLICT(player_id, session) DO UPDATE SET last_seen=excluded.last_seen", (pid, session, now))
             self._commit()
             return row["last_seen"] if row else None
+
+    # --- main-site accounts: one save per account, one account per save
+    def has_player(self, pid: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM players WHERE id=?", (pid,)).fetchone() is not None
+
+    def linked_player(self, main_user_id: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT player_id FROM account_links WHERE main_user_id=?", (main_user_id,)).fetchone()
+        return row["player_id"] if row else None
+
+    def account_for_player(self, pid: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT main_user_id FROM account_links WHERE player_id=?", (pid,)).fetchone()
+        return row["main_user_id"] if row else None
+
+    def link_account(self, main_user_id: str, pid: str, now: float) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO account_links (main_user_id, player_id, linked_at) VALUES (?, ?, ?)",
+                             (main_user_id, pid, now))
+            self._commit()
 
     def owned(self, pid: str) -> dict[str, int]:
         with self._lock:

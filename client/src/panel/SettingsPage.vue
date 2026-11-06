@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { isTauri } from "../composables/tauri";
-import { online, status, saveCode, restoreSaveCode } from "../stores/player";
+import { online, status, saveCode, restoreSaveCode, account, setAccount } from "../stores/player";
+import { Api, type ServerInfo } from "../net/api";
+import { MainAccountApi } from "../net/mainAccount";
+import { toHttpBase } from "../net/protocol";
+import AccountDialog from "./AccountDialog.vue";
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
@@ -20,6 +24,31 @@ async function copySave() {
 async function restoreSave() {
   try { await restoreSaveCode(saveDraft.value); saveDraft.value = ""; saveNotice.value = "已切换存档"; }
   catch (error) { saveNotice.value = error instanceof Error ? error.message : "切换存档失败"; }
+}
+// Main-site account: offered when the selected server is linked to the main site.
+const info = ref<ServerInfo | null>(null);
+async function loadInfo() {
+  const server = toHttpBase(settings.serverUrl);
+  info.value = null;
+  try {
+    const result = await new Api(() => server, () => saveCode.value).info();
+    if (server === toHttpBase(settings.serverUrl)) info.value = result;
+  } catch { /* offline or an older server: guest saves only */ }
+}
+onMounted(loadInfo);
+watch(() => settings.serverUrl, loadInfo);
+const signedIn = computed(() => account.value && account.value.server === toHttpBase(settings.serverUrl) ? account.value : null);
+const dialog = ref<"login" | "register" | null>(null);
+function accountDone(message: string) {
+  dialog.value = null;
+  saveNotice.value = message;
+}
+async function signOut() {
+  const session = signedIn.value;
+  if (!session) return;
+  if (info.value?.mainApi) await new MainAccountApi(info.value.mainApi).revoke(session.token).catch(() => {});
+  await setAccount(null);
+  saveNotice.value = "已退出登录，现在使用这台设备的游客存档";
 }
 const portrait = computed(() => getCharacter(settings.character)?.bg);
 watch(
@@ -63,6 +92,20 @@ function applyServer() {
     <section data-rise>
       <h4 class="ui-label"><span>存档</span></h4>
       <div class="ui-group ui-frame saves">
+        <div v-if="info?.accountLogin" class="ui-row">
+          <span>主站账号</span>
+          <div v-if="signedIn" class="who">
+            <b>{{ signedIn.user.username }}</b>
+            <small v-if="signedIn.user.email">{{ signedIn.user.email }}</small>
+          </div>
+          <div v-else class="who"><small>未登录</small></div>
+          <span v-if="signedIn" class="acts"><button class="ui-btn" type="button" @click="signOut">退出登录</button></span>
+          <span v-else class="acts">
+            <button class="ui-btn primary" type="button" @click="dialog = 'login'">登录</button>
+            <button class="ui-btn" type="button" @click="dialog = 'register'">注册</button>
+          </span>
+        </div>
+        <template v-if="!signedIn">
         <div class="ui-row">
           <span>当前存档码</span>
           <div class="ui-input save-read" role="textbox" aria-readonly="true" aria-label="当前存档码">{{ saveCode }}</div>
@@ -73,8 +116,10 @@ function applyServer() {
           <input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" />
           <button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button>
         </form>
+        </template>
         <p v-if="saveNotice" role="status" class="err">{{ saveNotice }}</p>
       </div>
+      <AccountDialog v-if="dialog && info?.mainApi" :main-api="info.mainApi" :start="dialog" @close="dialog = null" @done="accountDone" />
     </section>
 
     <div class="columns">
@@ -181,6 +226,30 @@ function applyServer() {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
+}
+.who {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.who b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.acts {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }
 .save-read {
   display: flex;

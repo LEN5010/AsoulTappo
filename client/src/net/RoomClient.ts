@@ -21,6 +21,8 @@ export interface JoinInfo {
   character: string;
   /** Secret player token (enables frame/badge); never shown to others. */
   token?: string;
+  /** Main-site account token; the room uses the save linked to the account. */
+  accountToken?: string;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */

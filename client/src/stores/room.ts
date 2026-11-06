@@ -9,7 +9,7 @@ import { getEmote } from "../manifest";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
-import { collection, token, saveCode } from "./player";
+import { activeAccount, account, collection, token, saveCode } from "./player";
 import { isPanelWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 
@@ -182,7 +182,7 @@ export function joinRoom(room: string): void {
     room: id,
     nick: settings.nick.trim() || "匿名小面包",
     character: settings.character,
-    token,
+    ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
   });
 }
 
@@ -204,7 +204,7 @@ watch(() => settings.serverUrl, () => {
   leaveRoom();
   lastError.value = "";
 }, { flush: "sync" });
-watch(saveCode, () => {
+watch(() => [saveCode.value, account.value?.token], () => {
   if (isPanelWindow) return;
   const previous = roomId.value;
   leaveRoom();

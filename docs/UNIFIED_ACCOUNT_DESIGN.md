@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS account_links (
 | 主站 2.1 到 2.5 | dynamic_asoul `codex/unified-accounts` 已提交，测试通过，未推送、未部署 |
 | Asasfans 第 3 节 | as-as-fans `codex/unified-accounts` 已提交，未推送；真机登录、同步未验证 |
 | 桌宠 4.1 存档码 | 已合入 main |
-| 桌宠 4.2 到 4.5 | 未开始，依赖主站上线 |
+| 桌宠 4.2 到 4.5 | 已实现：服务端 `account_links`、`/api/info`、`/api/account`、`/api/account/link`，客户端设置里的原生登录、注册、找回、绑定邮箱和存档选择；主站跨域放行 `ca1056f` 已构建，待切换上线 |
 
 主站上线前先备份 user.db，再在 lbot 配置 `RESEND_API_KEY` 和 `MAIL_FROM`；0018、0019 两个迁移在 API 启动时执行。
 

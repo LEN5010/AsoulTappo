@@ -24,6 +24,8 @@ class JoinMsg(_Msg):
     character: str = Field(default="default", max_length=32)
     # optional secret player token: lets the server show the player's unlocked frame/badge
     token: Optional[str] = Field(default=None, max_length=128)
+    # main-site Bearer token; wins over token once the account has a save
+    accountToken: Optional[str] = Field(default=None, max_length=512)
 
 
 class LeaveMsg(_Msg):
