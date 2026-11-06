@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -38,6 +38,10 @@ game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manife
 # self-hosted servers, which then offer guest saves only.
 MAIN_API_URL = os.environ.get("MAIN_API_URL", "").strip().rstrip("/")
 accounts = MainAccounts(MAIN_API_URL) if MAIN_API_URL else None
+
+# ASOULTAPPO_ADMIN_KEY: shared secret the main site's admin backend sends as X-Admin-Key. Unset
+# disables /admin. Keep /admin off the public proxy; the main site calls it on the same host.
+ADMIN_KEY = os.environ.get("ASOULTAPPO_ADMIN_KEY", "")
 
 # CORS for the browser/Tauri webview calling the HTTP API.
 # ASOULTAPPO_CORS_ORIGINS: comma-separated origins, default "*" (no cookies are used).
@@ -210,6 +214,43 @@ def _link(token: str, authorization: str) -> dict:
 @app.post("/api/account/link")
 def api_account_link(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> dict:
     return _guard(_link, x_player_token, authorization)
+
+
+# ------------------------------------------------------------------ admin
+def admin(x_admin_key: str = Header(default="")) -> None:
+    if not ADMIN_KEY or not secrets.compare_digest(x_admin_key.encode(), ADMIN_KEY.encode()):
+        raise HTTPException(status_code=404)
+
+
+class ShardsBody(BaseModel):
+    delta: int = Field(ge=-1_000_000, le=1_000_000)
+
+
+@app.get("/admin/stats", dependencies=[Depends(admin)])
+def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
+    out = game.admin_stats(days)
+    out["totals"]["rooms"] = len(manager.rooms)
+    out["totals"]["online"] = sum(len(r.peers) for r in manager.rooms.values())
+    return out
+
+
+@app.get("/admin/accounts", dependencies=[Depends(admin)])
+def admin_accounts(ids: str | None = None, offset: int = Query(default=0, ge=0),
+                   limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    """[ids]: comma-separated main-site user ids to narrow to (the main site resolves its search)."""
+    user_ids = None if ids is None else [i for i in ids.split(",") if i][:100]
+    return game.admin_accounts(user_ids, offset, limit)
+
+
+@app.post("/admin/accounts/{user_id}/shards", dependencies=[Depends(admin)])
+def admin_shards(user_id: str, body: ShardsBody) -> dict:
+    return _guard(game.admin_adjust_shards, user_id, body.delta)
+
+
+@app.post("/admin/accounts/{user_id}/unlink", dependencies=[Depends(admin)])
+def admin_unlink(user_id: str) -> dict:
+    _guard(game.admin_unlink, user_id)
+    return {"ok": True}
 
 
 @app.get("/api/collection")

@@ -13,6 +13,8 @@ from .manifest import Manifest
 from .store import Store
 
 TOKEN_MIN, TOKEN_MAX = 16, 128
+# Statistics count days in China Standard Time.
+DAY_OFFSET = 8 * 3600
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
@@ -30,6 +32,10 @@ class GameError(Exception):
 
 class PlayerId(str):
     """A player ID already resolved from a guest token or a linked main-site account."""
+
+
+def day_of(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts + DAY_OFFSET))
 
 
 def player_id_for(token: str) -> str:
@@ -84,6 +90,8 @@ class Game:
                 last_activity=max(now, previous), last_minute_taps=last_minute_taps,
                 minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted)
             st.save_activity_budget(pid, budget - credited)
+            if credited:
+                st.mark_active(pid, day_of(now))
             if session is not None:
                 st.save_activity_sequence(pid, session, sequence)
         out = self.status(token)
@@ -98,6 +106,7 @@ class Game:
             now = self.now()
             p = st.get_player(pid, now)
             previous = st.presence(pid, session, now)
+            st.mark_active(pid, day_of(now))
             elapsed = 0.0
             if previous is not None and 0 <= now - previous <= 60:
                 elapsed = max(0.0, now - max(previous, p["presence_last"]))
@@ -218,6 +227,39 @@ class Game:
         p = self.store.get_player(pid, self.now())
         return {"shards": p["shards"], "owned": self.store.count_items(pid, self.collectible_ids),
                 "taps": p["taps_total"], "lastActive": p["last_activity"] or p["created"]}
+
+    # ------------------------------------------------------------------ admin
+    def admin_stats(self, days: int) -> dict[str, Any]:
+        """Totals and one row per China Standard Time day, oldest first."""
+        now = self.now()
+        labels = [day_of(now - i * 86400) for i in range(days - 1, -1, -1)]
+        daily = self.store.daily(labels[0], DAY_OFFSET)
+        totals = self.store.totals(labels[-1])
+        keys = ("active", "newSaves", "items")
+        return {"totals": {**totals, "guests": totals["saves"] - totals["linked"]},
+                "series": [{"day": d, **{k: daily.get(d, {}).get(k, 0) for k in keys}} for d in labels]}
+
+    def admin_accounts(self, user_ids: list[str] | None, offset: int, limit: int) -> dict[str, Any]:
+        rows, total = self.store.account_links(user_ids, offset, limit)
+        return {"total": total, "accounts": [
+            {"userId": r["main_user_id"], "linkedAt": r["linked_at"], **self.save_summary(r["player_id"])}
+            for r in rows]}
+
+    def admin_adjust_shards(self, main_user_id: str, delta: int) -> dict[str, Any]:
+        pid = self.store.linked_player(main_user_id)
+        if pid is None:
+            raise GameError("account_not_linked", "这个账号没有桌宠存档")
+        with self.store.transaction() as st:
+            shards = st.get_player(pid, self.now())["shards"] + delta
+            if shards < 0:
+                raise GameError("no_shards", "碎片不够扣")
+            st.update_player(pid, shards=shards)
+        return {"shards": shards}
+
+    def admin_unlink(self, main_user_id: str) -> None:
+        """The save stays; its guest token works again and the account may link another save."""
+        if not self.store.unlink_account(main_user_id):
+            raise GameError("account_not_linked", "这个账号没有桌宠存档")
 
     def collection(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)

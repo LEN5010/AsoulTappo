@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS account_links (
   player_id TEXT NOT NULL UNIQUE,
   linked_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS daily_active (
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  PRIMARY KEY (day, player_id)
+);
 CREATE TABLE IF NOT EXISTS presence_sessions (
   player_id TEXT NOT NULL,
   session TEXT NOT NULL,
@@ -220,6 +225,55 @@ class Store:
             self._db.execute("INSERT INTO account_links (main_user_id, player_id, linked_at) VALUES (?, ?, ?)",
                              (main_user_id, pid, now))
             self._commit()
+
+    def unlink_account(self, main_user_id: str) -> bool:
+        with self._lock:
+            cur = self._db.execute("DELETE FROM account_links WHERE main_user_id=?", (main_user_id,))
+            self._commit()
+            return cur.rowcount > 0
+
+    def account_links(self, user_ids: list[str] | None, offset: int, limit: int) -> tuple[list[dict], int]:
+        """Linked saves, most recently active first; [user_ids] narrows to those accounts."""
+        where, args = "", ()
+        if user_ids is not None:
+            where = f"WHERE l.main_user_id IN ({','.join('?' for _ in user_ids)})" if user_ids else "WHERE 0"
+            args = tuple(user_ids)
+        with self._lock:
+            total = self._db.execute(f"SELECT COUNT(*) FROM account_links l {where}", args).fetchone()[0]
+            rows = self._db.execute(
+                f"SELECT l.main_user_id, l.player_id, l.linked_at FROM account_links l "
+                f"LEFT JOIN players p ON p.id = l.player_id {where} "
+                f"ORDER BY COALESCE(NULLIF(p.last_activity, 0), p.created, l.linked_at) DESC LIMIT ? OFFSET ?",
+                (*args, limit, offset)).fetchall()
+        return [dict(r) for r in rows], total
+
+    # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
+    def mark_active(self, pid: str, day: str) -> None:
+        with self._lock:
+            self._db.execute("INSERT OR IGNORE INTO daily_active (day, player_id) VALUES (?, ?)", (day, pid))
+            self._commit()
+
+    def totals(self, today: str) -> dict[str, int]:
+        with self._lock:
+            one = lambda sql, *a: self._db.execute(sql, a).fetchone()[0]  # noqa: E731
+            return {"saves": one("SELECT COUNT(*) FROM players"),
+                    "linked": one("SELECT COUNT(*) FROM account_links"),
+                    "activeToday": one("SELECT COUNT(*) FROM daily_active WHERE day=?", today)}
+
+    def daily(self, since: str, offset_seconds: int) -> dict[str, dict[str, int]]:
+        """Per day since [since]: active saves, new saves and items obtained."""
+        shift = f"{offset_seconds} seconds"
+        out: dict[str, dict[str, int]] = {}
+        with self._lock:
+            queries = {
+                "active": ("SELECT day, COUNT(*) FROM daily_active WHERE day >= ? GROUP BY day", (since,)),
+                "newSaves": ("SELECT date(created, 'unixepoch', ?) d, COUNT(*) FROM players GROUP BY d HAVING d >= ?", (shift, since)),
+                "items": ("SELECT date(ts, 'unixepoch', ?) d, COUNT(*) FROM drops GROUP BY d HAVING d >= ?", (shift, since)),
+            }
+            for key, (sql, args) in queries.items():
+                for day, n in self._db.execute(sql, args).fetchall():
+                    out.setdefault(day, {})[key] = n
+        return out
 
     def owned(self, pid: str) -> dict[str, int]:
         with self._lock:

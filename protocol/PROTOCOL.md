@@ -63,6 +63,19 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 错误沿用 `{detail:{code,message}}`，碎片不足为 `no_shards`（409），兑换已拥有物品为 `owned`（409），装备未拥有皮肤为 `locked`（400）。
 
+## 管理接口
+
+主站后台用来查看和管理桌宠账号。服务端配置 `ASOULTAPPO_ADMIN_KEY` 后启用，请求需带 `X-Admin-Key`；未配置或密钥不符时一律返回 404。`/admin` 不经过公网反向代理，只由同机的主站 API 访问。统计按北京时间（UTC+8）切分日期；当天有活动上报（敲击被计入）或在线心跳的存档记为活跃。
+
+| 路由 | 请求与响应 |
+|---|---|
+| GET /admin/stats?days= | days 为 1–180，默认 30。totals：saves（存档数）、linked（已绑定账号）、guests（游客存档）、activeToday、rooms、online；series：每天一行 `{day,active,newSaves,items}`，从旧到新 |
+| GET /admin/accounts?ids=&offset=&limit= | 已绑定账号的存档，按最近活动倒序；ids 为逗号分隔的主站用户 ID（最多 100 个），用于按主站搜索结果筛选。返回 total、accounts（`userId,linkedAt,shards,owned,taps,lastActive`） |
+| POST /admin/accounts/{userId}/shards | `{delta}`，正数补发、负数扣减，扣到负数时返回 409 `no_shards`；返回新的 shards |
+| POST /admin/accounts/{userId}/unlink | 解除绑定。存档保留，原游客令牌恢复可用，账号可以重新绑定 |
+
+账号没有绑定存档时返回 409 `account_not_linked`。
+
 ## 在线收益与活动
 
 客户端每 20 秒发送心跳和累计敲击数。碎片收益为每分钟 `16 × (1 + 4 × min(上一分钟有效敲击数, 60) / 60)`，倍率最高 ×5。只挂机每分钟 16 碎片，上一分钟 30 下为 48 碎片，60 下及以上为 80 碎片。超过一分钟没有敲击上报后倍率回到 ×1，小数碎片留到下次结算。
