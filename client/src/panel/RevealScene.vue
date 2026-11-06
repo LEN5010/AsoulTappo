@@ -315,7 +315,7 @@ onDeactivated(() => {
 /* Clear while the bands sweep over the page, opaque once they cover it. */
 .reveal.phase-board,
 .reveal.calm {
-  background: var(--page);
+  background: var(--c-50);
 }
 
 .board {
@@ -359,14 +359,16 @@ onDeactivated(() => {
   --tile-w: 100%;
 }
 
+/* A sheet of paper along the bottom edge, as on the resonance page. */
 .foot {
   flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 20px;
-  padding: 12px 4px 16px;
-  border-top: 2px solid var(--line-2);
+  padding: 12px 20px 15px 24px;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface);
+  box-shadow: 0 -10px 28px -18px rgba(var(--c-900-rgb), 0.38), 0 -1px 2px rgba(var(--c-900-rgb), 0.05);
 }
 .tally {
   flex: 1;
@@ -393,7 +395,7 @@ onDeactivated(() => {
 .tally svg {
   align-self: center;
   stroke-width: 0;
-  fill: var(--accent);
+  fill: var(--c-500);
 }
 .foot .ui-btn {
   min-width: 132px;
@@ -410,7 +412,7 @@ onDeactivated(() => {
 
 /* A warm floor under the board, so the page is not bare white. */
 .board {
-  background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--accent-soft) 75%, transparent));
+  background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--c-200) 75%, transparent));
 }
 
 /* Single draw: the card on a band of its tone, the facts beside it. */
@@ -433,7 +435,7 @@ onDeactivated(() => {
   right: 0;
   top: 24%;
   height: 46%;
-  background: var(--tone-fill, var(--grad-sky));
+  background: var(--tone-fill, var(--c-500));
   box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.55);
   animation: solo-band-in 420ms var(--ease-in-out) both;
 }
@@ -443,7 +445,7 @@ onDeactivated(() => {
   max-width: 100%;
   /* Sits a little above the band's middle, so the name reads first. */
   translate: 0 -24px;
-  color: var(--tone-ink, var(--on-accent-surface));
+  color: var(--tone-ink, var(--ink));
   animation: solo-facts-in 380ms var(--ease-out) 160ms both;
 }
 .solo-band.calm,
@@ -456,7 +458,7 @@ onDeactivated(() => {
   margin-bottom: 12px;
   font: 800 clamp(48px, 10cqw, 88px)/0.86 var(--font-latin);
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--ink-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
 }
 .solo-kind {
   padding: 0 10px;
@@ -465,24 +467,26 @@ onDeactivated(() => {
 }
 .solo-facts h3 {
   margin: 12px 0 10px;
-  font: 800 clamp(26px, 4.8cqw, 42px)/1.2 var(--font);
+  font: 800 clamp(28px, 4.8cqw, 40px)/1.2 var(--font);
   text-wrap: balance;
 }
+/* White paper, so the member's tick reads on any band. */
 .solo-facts .who {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   margin: 0;
-  padding: 3px 12px 3px 8px;
-  border-radius: var(--radius-s);
-  background: rgba(255, 255, 255, 0.9);
+  padding: 4px 12px 4px 9px;
+  border-radius: var(--radius-key-s);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
   color: var(--ink);
   font-size: var(--fs-strong);
   font-weight: 800;
 }
 .solo-facts .who i {
   flex: none;
-  width: 5px;
+  width: 4px;
   height: 14px;
 }
 .solo-facts .own {
@@ -492,7 +496,7 @@ onDeactivated(() => {
   gap: 4px 6px;
   margin: 14px 0 0;
   font-size: var(--fs-body);
-  font-weight: 800;
+  font-weight: 700;
 }
 .solo-facts .own b {
   font: 800 var(--fs-number)/1 var(--font-latin);

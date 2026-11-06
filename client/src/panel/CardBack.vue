@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The back of a sealed result. It fills with the parent's --tone-fill, so the colour alone says how
 // rare the front is; a band of light keeps crossing it because it is waiting to be pressed.
-// The plain tiers bring --seal-fill, --seal-mark and --seal-rule instead: paper with the mark in accent.
+// Tiers below legendary bring --seal-fill, --seal-mark and --seal-rule instead (tokens.css): the rarity ladder.
 import Icon from "../ui/Icon.vue";
 </script>
 
@@ -22,7 +22,7 @@ import Icon from "../ui/Icon.vue";
   display: block;
   overflow: hidden;
   border-radius: var(--radius-m);
-  background: var(--seal-fill, var(--tone-fill, var(--grad-sky)));
+  background: var(--seal-fill, var(--tone-fill, var(--c-500)));
   box-shadow: inset 0 0 0 3px #fff, inset 0 1px 0 4px rgba(255, 255, 255, 0.35);
   color: var(--seal-mark, #fff);
   container-type: inline-size;
@@ -50,7 +50,7 @@ import Icon from "../ui/Icon.vue";
   aspect-ratio: 3.172;
   background: currentColor;
   transform: translateY(-50%);
-  filter: drop-shadow(0 1px 1px rgba(var(--ink-rgb), 0.18));
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.18));
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }

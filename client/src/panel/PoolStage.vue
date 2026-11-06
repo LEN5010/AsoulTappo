@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// Resonance stage: a banner washed in the colours of the card on show. The dynamic cards are held
-// as a fanned hand in front of slow rays, with the card on show at the front; the banner names it
-// and sums up the collection, its skins and the lineup. The lineup deals the next card on its own.
+// Resonance stage: the page itself. The dynamic cards are held as a fanned hand in front of slow rays
+// and a soft wash of the front card's colours; the front card leans toward the pointer. Beside it the
+// page names the card and sums up the collection and its skins. The lineup deals the next card on its own.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { cardLabel, poolName, TIER_LABEL } from "../cards";
-import { getCharacter, skinSeries } from "../characters";
-import { getCard, characterColor, manifest, memberOf, type ManifestCard, type Rarity } from "../manifest";
+import { cardFrame, cardLabel, poolName, TIER_LABEL } from "../cards";
+import { getCharacter } from "../characters";
+import { getCard, characterColor, manifest, type ManifestCard, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { poolOf } from "../resonance";
 import { collection } from "../stores/player";
@@ -25,7 +25,7 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "skin", label: "皮肤", icon: "shirt" },
   { rarity: "epic", label: "史诗", icon: "spark" },
   { rarity: "rare", label: "稀有", icon: "gem" },
-  { rarity: "uncommon", label: "罕见", icon: "gem" },
+  { rarity: "uncommon", label: "罕见", icon: "layers" },
   { rarity: "common", label: "普通", icon: "star5" },
 ];
 /** The words the reveal stamps on these cards, so the banner speaks the same language. */
@@ -67,7 +67,7 @@ const fan = computed(() =>
   Array.from({ length: Math.min(FAN_SIZE, previews.length) }, (_, step) => {
     const item = neighbour(step);
     const c = cardOf(item);
-    return { item, step, card: c, gold: c?.tier === "big", frame: c?.tier === "big" ? "frame-gold" : c?.tier === "small" ? "frame-rose" : "" };
+    return { item, step, card: c, gold: c?.tier === "big", frame: cardFrame(c) };
   }),
 );
 const feature = computed(() => {
@@ -99,6 +99,45 @@ const lineup = computed(() =>
 const pointing = ref(false);
 watch(() => props.busy, () => (pointing.value = false));
 
+// The front card leans toward the pointer, up to LEAN_DEG, and the light on its frame and face
+// follows. The pointer is read once per frame and written as custom properties on the hand.
+const LEAN_DEG = 8;
+const fanEl = ref<HTMLElement>();
+let leanBox: DOMRect | null = null;
+let leanFrame = 0;
+let leanAt = { x: 0, y: 0 };
+function writeLean(x: number, y: number) {
+  const el = fanEl.value;
+  if (!el) return;
+  el.style.setProperty("--lx", x.toFixed(3));
+  el.style.setProperty("--ly", y.toFixed(3));
+  el.style.setProperty("--frame-x", (0.3 + x * 0.25).toFixed(3));
+  el.style.setProperty("--frame-y", (0.2 + y * 0.25).toFixed(3));
+}
+function leanStart(e: PointerEvent) {
+  pointing.value = true;
+  leanBox = (e.currentTarget as HTMLElement).getBoundingClientRect();
+}
+function leanMove(e: PointerEvent) {
+  if (!leanBox || !playing.value) return;
+  const clampUnit = (v: number) => Math.max(-1, Math.min(1, v));
+  leanAt = {
+    x: clampUnit(((e.clientX - leanBox.left) / leanBox.width) * 2 - 1),
+    y: clampUnit(((e.clientY - leanBox.top) / leanBox.height) * 2 - 1),
+  };
+  if (!leanFrame) leanFrame = requestAnimationFrame(() => {
+    leanFrame = 0;
+    writeLean(leanAt.x, leanAt.y);
+  });
+}
+function leanEnd() {
+  pointing.value = false;
+  leanBox = null;
+  cancelAnimationFrame(leanFrame);
+  leanFrame = 0;
+  writeLean(0, 0);
+}
+
 const skinViewport = ref<HTMLElement>();
 const skinGroup = ref<HTMLElement[]>();
 const skinFocused = ref(false);
@@ -113,6 +152,7 @@ const viewportWidth = ref(0);
 const scrolling = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused
   && !skinFocused.value && skinWidth.value > viewportWidth.value);
 const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
+watch(playing, (on) => { if (!on) writeLean(0, 0); });
 let skinFrame = 0;
 let skinTime = 0;
 let skinOffset = 0;
@@ -147,7 +187,7 @@ onMounted(() => {
 });
 onActivated(startSkins);
 onDeactivated(stopSkins);
-onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
+onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); cancelAnimationFrame(leanFrame); });
 </script>
 
 <template>
@@ -159,7 +199,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
     </div>
 
     <div class="hand">
-      <div class="fan" @pointerenter="pointing = true" @pointerleave="pointing = false">
+      <div ref="fanEl" class="fan" :style="{ '--lean': `${LEAN_DEG}deg` }" @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd">
         <i class="rays" aria-hidden="true"></i>
         <TransitionGroup :name="dealing > 0 ? 'fan-fwd' : 'fan-back'" :css="!reducedMotion">
           <button
@@ -169,24 +209,27 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
             :aria-label="f.step ? `换到${f.item.name}` : `查看${f.item.name}`"
             @click="f.step ? go(f.step) : emit('inspect', f.item)"
           >
-            <span class="art ui-frame">
-              <video
-                v-if="!f.step && f.card?.video && playing" :key="f.card.id"
-                :src="assetUrl(f.card.video)" :poster="assetUrl(f.card.thumb)" autoplay loop muted playsinline
-              ></video>
-              <img
-                v-else-if="f.card" :src="assetUrl(f.step || f.card.video ? f.card.thumb : f.card.full)" alt=""
-                :style="{ backgroundImage: `url(${assetUrl(f.card.thumb)})` }" draggable="false"
-              />
+            <span class="face">
+              <span class="art ui-frame">
+                <video
+                  v-if="!f.step && f.card?.video && playing" :key="f.card.id"
+                  :src="assetUrl(f.card.video)" :poster="assetUrl(f.card.thumb)" autoplay loop muted playsinline
+                ></video>
+                <img
+                  v-else-if="f.card" :src="assetUrl(f.step || f.card.video ? f.card.thumb : f.card.full)" alt=""
+                  :style="{ backgroundImage: `url(${assetUrl(f.card.thumb)})` }" draggable="false"
+                />
+                <i v-if="!f.step" class="glare" aria-hidden="true"></i>
+              </span>
+              <b class="crest">A-SOUL</b>
             </span>
-            <b class="crest">A-SOUL</b>
           </button>
         </TransitionGroup>
         <Icon name="spark" :size="26" class="twinkle top" />
         <Icon name="spark" :size="14" class="twinkle side" />
       </div>
       <div class="lineup" @pointerenter="pointing = true" @pointerleave="pointing = false">
-        <button v-if="previews.length > 1" type="button" class="flip" aria-label="上一张" :disabled="busy" @click="go(-1)">
+        <button v-if="previews.length > 1" type="button" class="flip ui-btn ghost" aria-label="上一张" :disabled="busy" @click="go(-1)">
           <Icon name="back" :size="18" />
         </button>
         <TransitionGroup tag="div" name="strip" class="row" :css="!reducedMotion">
@@ -198,7 +241,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
             <i v-if="!step && !reducedMotion && previews.length > 1" class="tick" aria-hidden="true" @animationend="go(1)"></i>
           </button>
         </TransitionGroup>
-        <button v-if="previews.length > 1" type="button" class="flip next" aria-label="下一张" :disabled="busy" @click="go(1)">
+        <button v-if="previews.length > 1" type="button" class="flip next ui-btn ghost" aria-label="下一张" :disabled="busy" @click="go(1)">
           <Icon name="back" :size="18" />
         </button>
       </div>
@@ -206,12 +249,8 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
 
     <div class="info">
       <header class="title">
-        <svg class="orbit" viewBox="0 0 320 110" aria-hidden="true">
-          <ellipse cx="160" cy="55" rx="150" ry="34" transform="rotate(-8 160 55)" />
-        </svg>
+        <span class="ui-eyebrow">RESONANCE</span>
         <h3>此间共鸣</h3>
-        <em>Resonance</em>
-        <small>A-SOUL TAPPO</small>
       </header>
 
       <Transition name="feature" mode="out-in" :css="!reducedMotion">
@@ -223,18 +262,18 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
           </p>
           <h4>{{ feature.title }}</h4>
           <p class="owned" :class="{ yes: feature.owned }">
-            <template v-if="feature.owned"><Icon name="check" :size="13" />已拥有<b v-if="feature.owned > 1">×{{ feature.owned }}</b></template>
+            <template v-if="feature.owned"><Icon name="check" :size="14" />已拥有<b v-if="feature.owned > 1">×{{ feature.owned }}</b></template>
             <template v-else><Icon name="lock" :size="13" />未获得</template>
           </p>
         </div>
       </Transition>
 
       <div class="meter">
-        <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i><small>COLLECTED</small></p>
+        <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i></p>
         <ul class="tiers">
-          <li v-for="t in meter" :key="t.rarity" :class="t.rarity">
-            <span class="t-head"><Icon :name="t.icon" :size="12" />{{ t.label }}<b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
-            <span class="t-bar"><i :style="{ width: t.fill }"></i></span>
+          <li v-for="t in meter" :key="t.rarity" :class="t.rarity" :title="`${t.label} ${t.got}/${t.total}`">
+            <span class="t-head"><Icon :name="t.icon" :size="12" /><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
+            <span class="t-bar" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`"><i :style="{ width: t.fill }"></i></span>
           </li>
         </ul>
       </div>
@@ -248,13 +287,12 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
         <div class="skin-track">
         <div v-for="copy in reducedMotion ? 1 : 2" :key="copy" ref="skinGroup" class="skin-group" :aria-hidden="copy === 2 ? true : undefined">
         <button
-          v-for="{ item, bg } in skins" :key="item.id" type="button" class="skin-tile"
-          :style="{ '--member': characterColor(item.ref) }"
+          v-for="{ item, bg } in skins" :key="item.id" type="button" class="skin-stand"
           :tabindex="copy === 2 ? -1 : undefined"
           :disabled="busy" :title="item.name" :aria-label="`查看${item.name}`" @click="emit('inspect', item)"
         >
-          <PetBust class="skin-bust" :src="bg" />
-          <span class="skin-label"><b>{{ memberOf(item.ref) }}</b><small>{{ skinSeries(item.ref) }}</small></span>
+          <span class="stand"><PetBust class="skin-bust" :src="bg" /></span>
+          <b class="skin-name">{{ item.name }}</b>
         </button>
         </div>
         </div>
@@ -266,47 +304,39 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
 
 <style scoped>
 .pool-stage {
-  /* 330px covers the page title, the dock below, the lineup under the hand and the paddings. */
-  --hero-h: max(220px, min(36cqw, 100cqh - 330px));
+  /* About seven tenths of the page, short of what the lineup and the action bar need, and of the width the text needs. */
+  --hero-h: max(200px, min(0.7 * (100cqh - 46px), 100cqh - 262px, 44cqw));
   --card-w: calc(var(--hero-h) * 0.7);
   position: relative;
   flex: 1 0 auto;
   display: flex;
   align-items: stretch;
-  gap: 18px;
-  min-height: calc(var(--hero-h) + 64px);
-  margin-top: 26px;
-  padding: 18px 18px 14px 26px;
+  gap: 28px;
+  padding: 26px 26px 12px 34px;
   box-sizing: border-box;
 }
 
-/* The card on show, blurred and lifted to a pale wash, so every card brings its own colours. */
+/* The front card, blurred into a soft blob behind the hand only. It is gone well before the page's
+ * left edge, where the sidebar tab joins the page, and before the text. */
 .wash {
   position: absolute;
-  inset: 0;
+  left: 24px;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--card-w) * 1.3 + 90px);
   overflow: hidden;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.7), 0 14px 30px -22px rgba(var(--accent-rgb), 0.9);
+  pointer-events: none;
+  mask: radial-gradient(closest-side, #000 25%, transparent 100%);
+  -webkit-mask: radial-gradient(closest-side, #000 25%, transparent 100%);
 }
 .wash img {
   position: absolute;
-  left: -10%;
-  top: -20%;
-  width: 70%;
-  height: 140%;
+  inset: 8% 10%;
+  width: 80%;
+  height: 84%;
   object-fit: cover;
-  filter: blur(34px) saturate(1.6) brightness(1.15);
-  opacity: 0.58;
-}
-/* Fades to paper under the words; a soft floor of the accent along the bottom. */
-.wash::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(98deg, transparent 18%, rgba(255, 255, 255, 0.78) 50%, rgba(255, 255, 255, 0.9) 70%),
-    linear-gradient(180deg, transparent 70%, color-mix(in srgb, var(--accent-tint) 70%, transparent));
+  filter: blur(36px) saturate(1.5) brightness(1.12);
+  opacity: 0.55;
 }
 .wash-enter-active,
 .wash-leave-active {
@@ -330,11 +360,11 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
 }
 /* The hand of cards. Cards pivot on their bottom edge, so the ones behind fan out at the top. */
 .fan {
+  --lx: 0;
+  --ly: 0;
   position: relative;
   flex: none;
   height: var(--hero-h);
-  /* The front card stands proud of the banner's top edge. */
-  margin-top: -38px;
 }
 .rays {
   position: absolute;
@@ -346,9 +376,9 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   background: repeating-conic-gradient(rgba(255, 255, 255, 0.85) 0 4deg, transparent 4deg 20deg);
   mask: radial-gradient(circle, #000 18%, transparent 66%);
   -webkit-mask: radial-gradient(circle, #000 18%, transparent 66%);
-  opacity: 0.8;
+  opacity: 0.45;
   pointer-events: none;
-  animation: rays-turn 48s linear infinite;
+  animation: rays-turn 96s linear infinite;
 }
 .hold .rays,
 .calm .rays {
@@ -360,20 +390,33 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   bottom: 0;
   width: var(--card-w);
   height: var(--hero-h);
-  /* The same share of the width as the reveal's framed cards. */
-  padding: calc(var(--card-w) * 0.015);
-  box-sizing: border-box;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-m);
-  background: var(--frame-fill, var(--surface)) var(--frame-at, 0 0) / var(--frame-size, auto);
-  box-shadow: 0 0 0 3px #fff, 0 16px 28px -16px rgba(var(--ink-rgb), 0.6);
+  background: none;
   cursor: pointer;
   transform-origin: 50% 100%;
-  transition: transform 520ms var(--ease-out), opacity 320ms, box-shadow var(--dur-base);
+  transition: transform 520ms var(--ease-out), opacity 320ms;
+}
+/* The card itself: a metal frame (the same share of the width as the reveal's framed cards) around the art. */
+.face {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: calc(var(--card-w) * 0.015);
+  box-sizing: border-box;
+  border-radius: var(--radius-m);
+  background: var(--frame-fill, var(--surface)) var(--frame-at, 0 0) / var(--frame-size, auto);
+  box-shadow: 0 0 0 3px #fff, 0 16px 28px -16px rgba(var(--c-900-rgb), 0.6);
+  transform: perspective(900px) rotateX(0deg) rotateY(0deg);
+  transition: transform 160ms var(--ease-out), box-shadow var(--dur-base);
 }
 .s0 {
   z-index: 3;
-  transform: rotate(-3deg);
+  transform: translateY(0) rotate(-3deg);
+}
+.s0 .face {
+  transform: perspective(900px) rotateX(calc(var(--ly) * -1 * var(--lean))) rotateY(calc(var(--lx) * var(--lean)));
 }
 .s1 {
   z-index: 2;
@@ -383,27 +426,52 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   z-index: 1;
   transform: translateX(16%) rotate(8deg) scale(0.86);
 }
+/* Under the pointer the front card stands up straight and the ones behind spread out. */
+.fan:hover .s0:not(:disabled) {
+  transform: translateY(-6px) rotate(0deg);
+}
+.fan:hover .s0:not(:disabled) .face {
+  box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--c-500-rgb), 0.45), 0 24px 32px -16px rgba(var(--c-900-rgb), 0.6);
+}
+.fan:hover .s1:not(:disabled) {
+  transform: translateX(17%) rotate(8deg) scale(0.93);
+}
+.fan:hover .s2:not(:disabled) {
+  transform: translateX(31%) rotate(15deg) scale(0.86);
+}
 /* The ones behind sit in its shade until the pointer picks one out. */
-.fan-card:not(.s0)::after {
+.fan-card:not(.s0) .face::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: rgba(var(--ink-rgb), 0.22);
+  background: rgba(var(--c-900-rgb), 0.22);
   transition: opacity var(--dur-base);
 }
-.fan-card.s0:hover:not(:disabled) {
-  transform: translateY(-6px) rotate(0deg);
-  box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--accent-rgb), 0.55), 0 22px 30px -16px rgba(var(--ink-rgb), 0.6);
-}
-.fan-card.s1:hover:not(:disabled) {
-  transform: translateX(9%) translateY(-10px) rotate(5deg) scale(0.93);
-}
-.fan-card.s2:hover:not(:disabled) {
-  transform: translateX(16%) translateY(-10px) rotate(9deg) scale(0.86);
-}
-.fan-card:not(.s0):hover::after {
+.fan-card:not(.s0):hover .face::after {
   opacity: 0.4;
+}
+/* A soft glare on the face, sliding opposite the lean. */
+.glare {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.42), transparent 34%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(calc(var(--lx) * 22%), calc(var(--ly) * 22%));
+  transition: opacity var(--dur-base), transform 160ms var(--ease-out);
+}
+.fan:hover .glare {
+  opacity: 1;
+}
+.calm .s0 .face {
+  --lean: 0deg;
+}
+.calm .glare {
+  display: none;
 }
 /* Forward: the front card is thrown off to the left, a new one slips in at the back. */
 .fan-fwd-leave-active,
@@ -435,7 +503,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   display: block;
   width: 100%;
   height: 100%;
-  background: var(--ink);
+  background: var(--c-900);
 }
 .art img,
 .art video {
@@ -452,8 +520,7 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   transform: translateX(-50%);
   padding: 3px 18px 4px;
   border-radius: 0 0 var(--radius-l) var(--radius-l);
-  background: var(--ink);
-  box-shadow: 0 0 0 1px var(--accent-mid);
+  background: var(--c-800);
   color: #fff;
   font: 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.18em;
@@ -488,44 +555,17 @@ onBeforeUnmount(() => { stopSkins(); resize?.disconnect(); });
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
+  gap: 14px;
+  padding-top: 4px;
 }
 
-.title {
-  position: relative;
-  padding: 2px 0 0 10px;
-}
-.orbit {
-  position: absolute;
-  left: -14px;
-  top: -10px;
-  width: min(100%, 280px);
-  height: auto;
-  fill: none;
-  stroke: var(--accent-mid);
-  stroke-width: 1.4;
-  pointer-events: none;
+.title .ui-eyebrow {
+  margin-bottom: 6px;
 }
 h3 {
-  position: relative;
   margin: 0;
-  font: 800 clamp(26px, 3.8cqw, 38px)/1.15 var(--font);
+  font: 800 clamp(28px, 3.7cqw, 36px)/1.15 var(--font);
   letter-spacing: 0.03em;
-}
-.title em {
-  position: relative;
-  display: block;
-  margin: -5px 0 0 30px;
-  font: italic 400 clamp(15px, 2.2cqw, 21px)/1 "Snell Roundhand", "Segoe Script", "Brush Script MT", cursive;
-  color: var(--accent-deep);
-}
-.title small {
-  position: absolute;
-  top: 0;
-  right: 0;
-  font: 800 var(--fs-caption)/1 var(--font-latin);
-  letter-spacing: 0.14em;
-  color: var(--ink-3);
 }
 
 /* What the front card is: its tier, its member and its name, big. */
@@ -541,8 +581,6 @@ h3 {
   white-space: nowrap;
 }
 .tier {
-  --tag-bg: var(--grad-deep);
-  --tag-fg: #fff;
   padding: 0 8px 0 6px;
   line-height: 19px;
   font-size: var(--fs-label);
@@ -577,11 +615,13 @@ h3 {
   color: var(--ink-3);
 }
 .feature h4 {
-  margin: 6px 0 4px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin: 8px 0 6px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 800 clamp(24px, 4.2cqw, 42px)/1.2 var(--font);
+  text-wrap: balance;
+  font: 800 clamp(22px, 3.1cqw, 30px)/1.25 var(--font);
   letter-spacing: 0.02em;
 }
 .owned {
@@ -594,7 +634,7 @@ h3 {
   color: var(--ink-3);
 }
 .owned.yes {
-  color: var(--ok);
+  color: var(--c-700);
 }
 .owned b {
   margin-left: 2px;
@@ -619,68 +659,54 @@ h3 {
 .meter {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 9px 12px 10px;
-  border-radius: var(--radius-m);
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  gap: 10px;
 }
 .total {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 6px;
   margin: 0;
 }
 .total b {
-  font: 800 28px/0.9 var(--font-latin);
-  color: var(--accent-deep);
+  font: 800 44px/0.9 var(--font-latin);
+  color: var(--ink);
 }
 .total i {
-  font: 800 var(--fs-strong)/1 var(--font-latin);
+  font: 800 22px/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
 }
-.total small {
-  margin-left: auto;
-  font: 800 var(--fs-caption)/1 var(--font-latin);
-  letter-spacing: 0.14em;
-  color: var(--ink-3);
-}
 .tiers {
-  flex: 1;
-  min-width: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px 14px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+/* Fills climb the rarity ladder, a step deeper wherever the ladder colour is too pale to read as a fill. */
 .tiers li {
-  --fill: var(--accent);
+  --fill: var(--c-500);
   min-width: 0;
 }
-.tiers .legendary { --fill: linear-gradient(90deg, var(--gold-soft), var(--gold)); }
-.tiers .skin { --fill: linear-gradient(90deg, var(--grad-from), var(--accent)); }
-.tiers .epic { --fill: linear-gradient(90deg, var(--accent), var(--tone-bottom)); }
-.tiers .rare { --fill: var(--accent); }
-.tiers .uncommon { --fill: var(--accent-mid); }
-.tiers .common { --fill: var(--ink-3); }
+.tiers .legendary { --fill: var(--grad-gold); --mark: var(--gold); }
+.tiers .skin { --fill: var(--c-500); }
+.tiers .epic { --fill: var(--c-800); }
+.tiers .rare { --fill: var(--c-500); }
+.tiers .uncommon { --fill: var(--c-400); }
+.tiers .common { --fill: var(--c-300); }
 .t-head {
   display: flex;
   align-items: center;
   gap: 3px;
   white-space: nowrap;
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  color: var(--ink-2);
 }
 .t-head svg {
   flex: none;
-  color: var(--accent-deep);
+  margin-right: 1px;
+  color: var(--mark, var(--c-700));
 }
 .t-head b {
-  margin-left: auto;
   font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink);
 }
@@ -692,9 +718,9 @@ h3 {
 .t-bar {
   display: block;
   height: 4px;
-  margin-top: 3px;
+  margin-top: 4px;
   border-radius: 2px;
-  background: var(--accent-soft);
+  background: var(--c-100);
   overflow: hidden;
 }
 .t-bar i {
@@ -705,12 +731,11 @@ h3 {
   transition: width var(--dur-stage) var(--ease-out);
 }
 
-/* Skins stand up out of their tiles like acrylic standees. */
+/* Skins as acrylic standees: the bust in a wide clear outline, on an oval base, its name underneath. */
 .skins {
   min-width: 0;
   overflow-x: auto;
-  padding: 14px 0 2px;
-  margin-top: -10px;
+  padding: 10px 0 2px;
   scrollbar-width: none;
 }
 .skins::-webkit-scrollbar { display: none; }
@@ -718,53 +743,58 @@ h3 {
 .skin-group {
   flex: none;
   display: flex;
-  gap: 8px;
-  padding-right: 8px;
+  gap: 6px;
+  padding-right: 6px;
 }
-.skin-tile {
+.skin-stand {
   position: relative;
   flex: none;
-  width: 118px;
-  height: 50px;
-  padding: 0 8px 0 2px;
-  box-sizing: border-box;
+  width: 84px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-m);
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  background: linear-gradient(180deg, var(--surface) 40%, color-mix(in oklab, var(--member) 16%, var(--surface)));
-  box-shadow: inset 0 0 0 1px var(--line-2), inset 0 -3px 0 var(--member);
-  color: var(--ink);
-  cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
-}
-.skin-tile:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: inset 0 0 0 1px var(--accent-mid), inset 0 -3px 0 var(--member), var(--glow-s);
-}
-.skin-bust {
-  flex: none;
-  width: 52px;
-  height: 60px;
-  margin-bottom: 3px;
-  filter: var(--contour);
-}
-.skin-label {
-  align-self: center;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
 }
-.skin-label b {
-  font: 800 var(--fs-body)/1.25 var(--font);
+.stand {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 66px;
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.skin-label small {
+.stand::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -3px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 0 var(--c-200), 0 4px 6px -2px rgba(var(--c-900-rgb), 0.3);
+}
+.skin-bust {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  filter: var(--contour) drop-shadow(3px 0 0 rgba(255, 255, 255, 0.5)) drop-shadow(-3px 0 0 rgba(255, 255, 255, 0.5))
+    drop-shadow(0 -3px 0 rgba(255, 255, 255, 0.5));
+}
+.skin-stand:hover:not(:disabled) .stand {
+  transform: translateY(-3px);
+}
+.skin-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  font: 500 var(--fs-caption)/1.25 var(--font);
-  color: var(--ink-2);
+  font: 700 var(--fs-caption)/1.3 var(--font);
 }
 
 .lineup {
@@ -775,18 +805,9 @@ h3 {
 }
 .flip {
   flex: none;
-  width: 18px;
+  width: 22px;
   height: 40px;
   padding: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: none;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.flip:hover:not(:disabled) {
-  color: var(--accent-deep);
 }
 .flip.next svg {
   transform: rotate(180deg);
@@ -804,8 +825,7 @@ h3 {
   padding: 2px;
   border: 0;
   border-radius: var(--radius-s);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+  background: var(--c-100);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
 }
@@ -813,7 +833,7 @@ h3 {
   transform: translateY(-2px);
 }
 .mini.on {
-  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
+  box-shadow: 0 0 0 2px var(--c-500);
 }
 /* The rotation's clock: reaching the end deals the next card. */
 .tick {
@@ -823,7 +843,7 @@ h3 {
   bottom: -8px;
   height: 3px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--c-500);
   transform-origin: 0 50%;
   animation: tick 6s linear both;
 }
@@ -865,31 +885,30 @@ h3 {
 }
 
 @container panel (max-width: 820px) {
-  .title small,
   .series {
     display: none;
   }
   .pool-stage {
-    gap: 12px;
-    padding-right: 12px;
+    gap: 18px;
+    padding-right: 18px;
   }
   .hand {
     width: calc(var(--card-w) * 1.22);
   }
   .s1 { transform: translateX(7%) rotate(3deg) scale(0.93); }
   .s2 { transform: translateX(12%) rotate(6deg) scale(0.86); }
-  .meter { padding: 8px 10px; }
-  .total b { font-size: 24px; }
-  .tiers { gap: 6px 10px; }
-  .skin-tile { width: 112px; }
+  .fan:hover .s1:not(:disabled) { transform: translateX(13%) rotate(6deg) scale(0.93); }
+  .fan:hover .s2:not(:disabled) { transform: translateX(23%) rotate(11deg) scale(0.86); }
+  .total b { font-size: 36px; }
+  .tiers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
 }
 @container panel (max-width: 660px) {
-  .pool-stage { flex-direction: column; align-items: center; gap: 18px; padding: 16px; }
+  .pool-stage { flex-direction: column; align-items: center; gap: 18px; padding: 18px 16px 12px; }
   .hand { --hero-h: 214px; --card-w: 150px; }
-  .fan { margin-top: 0; }
+  .wash { left: 50%; transform: translateX(-50%); height: 300px; bottom: auto; }
   .info { width: 100%; }
 }
-/* Keeps the draw buttons above the fold: the total still sums up what the tier gauges break down. */
+/* Keeps the action bar above the fold: the total still sums up what the tier gauges break down. */
 @container panel (max-height: 600px) {
   .tiers {
     display: none;

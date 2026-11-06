@@ -7,6 +7,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
+import { cardFrame } from "../cards";
 import { PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import { EASE_IN_OUT, EASE_OUT } from "../ui/motion";
@@ -40,7 +41,7 @@ const skin = computed(() => props.entry.item.kind === "character");
 const hidden = computed(() => card.value?.tier === "big" || card.value?.tier === "small");
 const big = computed(() => props.entry.drop.rarity === "legendary");
 /** Hidden cards wear their tier's frame, the same one their tile and the pool's hand show. */
-const frameTier = computed(() => (card.value?.tier === "big" ? "frame-gold" : card.value?.tier === "small" ? "frame-rose" : ""));
+const frameTier = computed(() => cardFrame(card.value));
 const word = computed(() => {
   if (skin.value) return "SKIN";
   if (card.value?.tier === "big") return "SECRET";
@@ -347,7 +348,7 @@ defineExpose({ close });
 .veil {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--page) 90%, transparent);
+  background: color-mix(in srgb, var(--c-50) 90%, transparent);
   animation: veil-in 220ms var(--ease-out) both;
 }
 .calm .veil {
@@ -417,7 +418,7 @@ defineExpose({ close });
   overflow: hidden;
   border-radius: var(--radius-l);
   background: var(--surface);
-  box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--ink-rgb), 0.55);
+  box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--c-900-rgb), 0.55);
 }
 /* A band of the tier's metal inside the white edge. Same proportions as RevealTile's frame. */
 .card.frame-gold,
@@ -479,7 +480,7 @@ defineExpose({ close });
 /* Holo foil on hidden cards: a band of pale hues that slides against the pointer. */
 .holo {
   translate: calc((0.5 - var(--px, 0.3)) * 40%) calc((0.5 - var(--py, 0.2)) * 40%);
-  background: linear-gradient(115deg, transparent 34%, rgba(255, 154, 213, 0.22) 41%, rgba(255, 224, 138, 0.22) 46%, rgba(138, 245, 208, 0.22) 51%, rgba(138, 184, 255, 0.22) 56%, rgba(215, 155, 255, 0.22) 61%, transparent 68%);
+  background: var(--holo-film);
 }
 .sheen {
   position: absolute;
@@ -547,7 +548,7 @@ defineExpose({ close });
   z-index: 2;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--ink-rgb), 0.25));
+  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.25));
   animation: spark-in 600ms var(--ease-pop) 300ms both, twinkle 2.6s var(--ease-in-out) 1200ms infinite;
 }
 .s1 { right: -30px; top: 6%; }
@@ -585,7 +586,7 @@ defineExpose({ close });
   font: 800 clamp(48px, 11cqw, 96px)/0.86 var(--font-latin);
   letter-spacing: 0.01em;
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--ink-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
 }
 .word i {
   display: block;
@@ -600,25 +601,26 @@ defineExpose({ close });
 }
 h3 {
   margin: 10px 0 8px;
-  font: 800 clamp(22px, 4cqw, 34px)/1.25 var(--font);
+  font: 800 clamp(28px, 4cqw, 40px)/1.2 var(--font);
   text-wrap: balance;
 }
-/* A white tab, so the member's name colour reads on any band. */
+/* White paper, so the member's tick reads on any band. */
 .who {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   margin: 0;
-  padding: 3px 12px 3px 8px;
-  border-radius: var(--radius-s);
-  background: rgba(255, 255, 255, 0.9);
+  padding: 4px 12px 4px 9px;
+  border-radius: var(--radius-key-s);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
   color: var(--ink);
   font-size: var(--fs-strong);
   font-weight: 800;
 }
 .who i {
   flex: none;
-  width: 5px;
+  width: 4px;
   height: 14px;
 }
 .own {

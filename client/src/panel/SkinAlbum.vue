@@ -33,13 +33,14 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
 .skin-album { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
 header > span { font-size: var(--fs-label); color: var(--ink-2); white-space: nowrap; }
-header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--accent-deep); }
+header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--c-700); }
 .wall { flex: 1; min-height: 0; overflow: auto; padding: 3px 6px 12px 2px; }
 .skin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 24px 18px; }
 .skin-card { min-width: 0; max-width: 260px; align-items: stretch; text-align: left; }
 .cover { position: relative; display: block; transition: transform var(--dur-base) var(--ease-out); }
-.skin-card:hover .cover { transform: translateY(-4px); }
-.skin-card:hover :deep(.figure) { transform: translateY(-3px); }
+.skin-card:hover :deep(.figure) { transform: translateY(-4px); }
+/* Unowned skins stay a dimmed original until the pointer lights them up. */
+.skin-card:hover :deep(.locked .figure) { filter: var(--contour) drop-shadow(0 0 2.5px rgba(255, 255, 255, 0.9)); }
 .state { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 4px; font-size: var(--fs-caption); }
 .meta { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
 .meta b { font-size: var(--fs-strong); font-weight: 800; }

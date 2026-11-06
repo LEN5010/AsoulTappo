@@ -51,9 +51,9 @@ async function copy() {
     <div class="front">
       <RoomStage />
 
-      <section class="ticket ui-frame ui-ring" data-rise>
-        <div class="stub ui-plate">
-          <span class="stub-mark">ROOM</span>
+      <section class="ticket" data-rise>
+        <div class="stub">
+          <span class="ui-eyebrow">ROOM</span>
           <span class="status">
             <img
               v-if="(conn === 'connecting' || conn === 'reconnecting') && skin.loading && !reducedMotion"
@@ -84,8 +84,8 @@ async function copy() {
     </div>
 
     <section data-rise>
-      <h4 class="ui-label"><span>同桌显示</span><em>TOGETHER</em></h4>
-      <div class="ui-group ui-frame ui-ring">
+      <h4 class="ui-label"><span>同桌显示</span></h4>
+      <div class="ui-group ui-frame">
         <label class="ui-row">
           <span>伙伴桌宠大小</span>
           <span class="ui-ctl">
@@ -102,13 +102,13 @@ async function copy() {
 
     <section v-if="inRoom" data-rise>
       <header class="cap">
-        <h4 class="ui-label"><span>房间成员</span><em>MEMBERS</em><small>{{ members.size }} / {{ MAX_ROOM_SIZE }}</small></h4>
+        <h4 class="ui-label"><span>房间成员</span><small>{{ members.size }} / {{ MAX_ROOM_SIZE }}</small></h4>
         <button type="button" class="ui-btn small" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes">
           <Icon name="refresh" :size="13" />整理位置
         </button>
       </header>
       <ul class="members">
-        <li v-for="m in members.values()" :key="m.id" class="member ui-frame ui-ring">
+        <li v-for="m in members.values()" :key="m.id" class="member">
           <CharacterAvatar :character="m.character" :size="32" />
           <span class="who">
             <b>{{ m.nick }}<em v-if="m.id === youId" class="ui-tag">我</em></b>
@@ -125,40 +125,27 @@ async function copy() {
 .front {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
+/* The room ticket: one sheet of paper, the connection on the left and the room on the right. */
 .ticket {
-  --radius: var(--radius-m);
   display: flex;
   align-items: stretch;
-  min-height: 64px;
+  min-height: 68px;
+  border-radius: var(--radius-l);
   background: var(--surface);
+  box-shadow: var(--shadow-paper);
 }
 .stub {
-  --plate-bg: var(--grad-sky);
   flex: none;
-  width: 156px;
-  margin-left: -8px;
-  padding: 8px 14px 8px 24px;
+  width: 132px;
+  padding: 12px 10px 12px 20px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
-  color: var(--on-accent);
-}
-.stub::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: -7px;
-  border-right: 2px dashed var(--line-2);
-}
-.stub-mark {
-  font: 800 var(--fs-heading)/1 var(--font-latin);
-  letter-spacing: 0.08em;
+  gap: 6px;
 }
 .status {
   display: flex;
@@ -166,16 +153,14 @@ async function copy() {
   gap: 6px;
   font-size: var(--fs-label);
   font-weight: 700;
+  color: var(--ink-2);
 }
+/* The only place green and amber appear: whether the room connection is up. */
 .dot {
-  width: 6px;
-  height: 12px;
-  background: var(--surface);
-}
-.dot.open,
-.dot.connecting,
-.dot.reconnecting {
-  box-shadow: 0 0 0 1.5px var(--surface);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-3);
 }
 .dot.open {
   background: var(--ok);
@@ -195,11 +180,16 @@ async function copy() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px 10px 22px;
+  padding: 12px 18px 15px 6px;
 }
 .ticket-body .ui-input {
   flex: 1;
   min-width: 0;
+  background: var(--c-100);
+  box-shadow: none;
+}
+.ticket-body .ui-input:focus {
+  box-shadow: 0 0 0 2px var(--ink);
 }
 .code {
   flex: 1;
@@ -207,47 +197,54 @@ async function copy() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 800 var(--fs-section)/1.2 var(--font-latin);
-  letter-spacing: 0.03em;
+  font: 800 28px/1.1 var(--font-latin);
+  letter-spacing: 0.04em;
   user-select: text;
 }
 .err {
   margin: 0;
 }
 
+/* The heading on the left with its count, the tidy key on the right. */
 .cap {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 16px;
+  margin-bottom: 10px;
 }
 .cap .ui-label {
+  flex: 1;
+  min-width: 0;
   margin: 0;
+}
+.cap .ui-btn {
+  flex: none;
 }
 .members {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
-  gap: 8px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .member {
-  --radius: var(--radius-s);
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 52px;
-  padding: 7px 14px 7px 10px;
+  padding: 8px 14px 8px 10px;
   box-sizing: border-box;
+  border-radius: var(--radius-m);
   background: var(--surface);
+  box-shadow: var(--shadow-paper);
 }
 .who {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .who b {
   overflow: hidden;
@@ -268,8 +265,8 @@ async function copy() {
   color: var(--ink-2);
 }
 .who small i {
-  width: 3px;
-  height: 9px;
+  width: 4px;
+  height: 10px;
 }
 .taps {
   flex: none;

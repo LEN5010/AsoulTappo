@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { characterColor, getCard, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet, type Rarity } from "../manifest";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
-import { collection, error, shards } from "../stores/player";
+import { collection, error } from "../stores/player";
 import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
@@ -136,7 +136,7 @@ function toggleFav(item: Item) {
   const at = settings.favorites.indexOf(item.ref);
   if (at >= 0) settings.favorites.splice(at, 1);
   else if (settings.favorites.length < 8) settings.favorites.push(item.ref);
-  else actionNote.value = "预设已满 8/8";
+  else actionNote.value = "快捷表情已满 8/8";
 }
 
 function fireSelectedEmote(item: Item) {
@@ -172,7 +172,6 @@ if (ui.craftTarget) {
       <SegTabs v-model="category" class="dex-kind" :tabs="CATEGORIES" label="图鉴分类" />
       <FilterChips v-if="category === 'card'" v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
       <span v-else-if="category === 'emote'" class="progress">已解锁 <b>{{ progress.owned }}</b> / {{ progress.total }}</span>
-      <div class="dex-wallet"><Icon name="shard" :size="14" /><b>{{ shards }}</b><button class="ui-btn small" type="button" @click="ui.page = 'resonance'">去共鸣</button></div>
     </div>
     <template v-if="category === 'card'">
       <SegTabs v-model="selectedSeries" plain :tabs="poolTabs" label="卡片系列" />
@@ -205,7 +204,6 @@ if (ui.craftTarget) {
               <span>{{ RARITY_LABEL[group.rarity] }}</span>
               <svg class="group-arrow" :class="{ expanded: !collapsedGroups.has(group.rarity) }" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 3.5 11 8 5 12.5Z" /></svg>
               <small>{{ group.albums.length }} 套</small>
-              <i class="group-line" aria-hidden="true"></i>
             </button>
           </h3>
           <div v-show="!collapsedGroups.has(group.rarity)" :id="`emote-group-${group.rarity}`" class="albums">
@@ -272,7 +270,7 @@ if (ui.craftTarget) {
           <p class="held">已拥有<template v-if="selectedItemCount > 1"> ×{{ selectedItemCount }}</template></p>
           <div v-if="selectedItem.kind === 'emote'" class="buttons">
             <button type="button" class="ui-btn" @click="toggleFav(selectedItem)">
-              {{ settings.favorites.includes(selectedItem.ref) ? "移出预设" : "装入预设" }}
+              {{ settings.favorites.includes(selectedItem.ref) ? "移出快捷表情" : "装入快捷表情" }}
             </button>
             <button type="button" class="ui-btn primary" @click="fireSelectedEmote(selectedItem)">发表情</button>
           </div>
@@ -301,19 +299,6 @@ if (ui.craftTarget) {
 }
 .dex-kind {
   flex: 0 0 222px;
-}
-.dex-wallet {
-  flex: none;
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--accent-deep);
-}
-.dex-wallet b {
-  margin-right: 6px;
-  color: var(--ink);
-  font: 800 var(--fs-section)/1 var(--font-latin);
 }
 .emote-bar {
   flex: none;
@@ -357,20 +342,14 @@ if (ui.craftTarget) {
 }
 .progress b {
   font: 800 var(--fs-section)/1 var(--font-latin);
-  color: var(--accent-deep);
+  color: var(--c-700);
 }
 .search-input {
   flex: none;
-  width: 132px;
-  height: 30px;
+  width: 140px;
+  height: 32px;
   padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-s);
-  box-shadow: inset 0 0 0 1.5px var(--line);
   font-size: var(--fs-label);
-}
-.search-input:focus {
-  box-shadow: inset 0 0 0 1.5px var(--accent-deep);
 }
 
 .wall {
@@ -389,7 +368,7 @@ if (ui.craftTarget) {
 .rarity-group { min-width: 0; }
 .group-heading { margin: 0 0 10px; }
 .group-toggle {
-  width: 100%;
+  width: auto;
   min-height: 32px;
   padding: 4px 4px 4px 0;
   display: flex;
@@ -405,10 +384,8 @@ if (ui.craftTarget) {
 .group-toggle small { color: var(--ink-3); font: 500 var(--fs-label)/1 var(--font); white-space: nowrap; }
 .group-arrow { flex: none; color: var(--ink-2); transition: transform var(--dur-fast) var(--ease-out); }
 .group-arrow.expanded { transform: rotate(90deg); }
-.group-line { flex: 1; height: 1px; margin-left: 3px; background: var(--line-2); transition: background var(--dur-fast); }
-.group-toggle:hover { color: var(--accent-deep); }
-.group-toggle:hover .group-line { background: var(--accent); }
-.group-toggle:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; border-radius: var(--radius-s); }
+.group-toggle:hover { color: var(--c-700); }
+.group-toggle:focus-visible { outline-offset: 3px; border-radius: var(--radius-s); }
 .albums {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
@@ -487,7 +464,7 @@ if (ui.craftTarget) {
 }
 .album-count b {
   font: inherit;
-  color: var(--accent-deep);
+  color: var(--c-700);
 }
 .album-bar {
   height: 5px;
@@ -500,6 +477,13 @@ if (ui.craftTarget) {
   gap: 12px 10px;
   padding: 2px 4px 2px 0;
 }
+/* Unowned stickers are a dimmed original that lights up under the pointer. */
+.emote-grid .ui-tile.locked .ui-well img {
+  transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base);
+}
+.emote-grid .ui-tile.locked:hover .ui-well img {
+  filter: var(--contour);
+}
 
 .emote-detail {
   display: flex;
@@ -509,9 +493,9 @@ if (ui.craftTarget) {
   text-align: center;
 }
 .detail-well {
-  --radius: var(--radius-m);
-  padding: 14px;
-  background: var(--dots) 0 0 / 9px 9px, var(--surface);
+  --radius: var(--radius-l);
+  padding: 16px;
+  background: var(--c-100);
 }
 .emote-detail h3 {
   margin: 4px 0 0;
@@ -523,7 +507,7 @@ if (ui.craftTarget) {
   color: var(--ink-2);
 }
 .note {
-  color: var(--accent-deep);
+  color: var(--c-700);
   font-weight: 700;
 }
 .held {
@@ -536,7 +520,7 @@ if (ui.craftTarget) {
   color: var(--ink-2);
 }
 .held :deep(.icon) {
-  color: var(--accent-deep);
+  color: var(--c-700);
 }
 .buttons {
   display: flex;

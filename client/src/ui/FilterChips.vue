@@ -19,10 +19,12 @@ const root = ref<HTMLElement>();
 </template>
 
 <style scoped>
+/* Toggle keys; the bottom padding makes room for their lip so a row of them centres with its neighbours. */
 .chips {
   display: flex;
-  gap: 5px;
-  padding-left: 3px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 2px 3px;
   flex: none;
 }
 </style>

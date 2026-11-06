@@ -155,16 +155,16 @@ defineExpose({ cover, announce, leave });
   will-change: transform;
 }
 .under {
-  background: var(--accent-soft);
+  background: var(--c-200);
 }
 .over {
-  background: var(--grad-sky);
+  background: var(--c-500);
 }
-/* An epic batch sinks the dusk toward the epic back's colour. */
+/* An epic batch sinks the band to the epic back's wine. */
 .deepen {
   position: absolute;
   inset: 0;
-  background: var(--grad-deep);
+  background: var(--c-800);
   animation: deepen-in 320ms var(--ease-out) both;
 }
 .tell {
@@ -187,7 +187,7 @@ defineExpose({ cover, announce, leave });
   font: 800 clamp(64px, 17cqw, 112px)/0.9 var(--font-latin);
   letter-spacing: 0.01em;
   color: #fff;
-  text-shadow: 0 2px 0 rgba(var(--ink-rgb), 0.08);
+  text-shadow: 0 2px 0 rgba(var(--c-900-rgb), 0.08);
 }
 .letters i {
   display: block;
@@ -201,7 +201,7 @@ defineExpose({ cover, announce, leave });
 .title small {
   margin-top: 6px;
   font: 800 var(--fs-title) var(--font);
-  color: var(--on-accent);
+  color: var(--ink);
   animation: label-in 320ms var(--ease-out) 120ms both;
 }
 .tell .title small {
@@ -253,14 +253,14 @@ defineExpose({ cover, announce, leave });
   top: 0;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--ink-rgb), 0.2));
+  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.2));
   animation: burst-fly 820ms var(--ease-out) calc(120ms + var(--delay)) both;
 }
 .spark {
   position: absolute;
   stroke-width: 0;
   fill: #fff;
-  filter: drop-shadow(0 1px 2px rgba(var(--ink-rgb), 0.2));
+  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.2));
   animation: spark-pop 620ms var(--ease-pop) 260ms both;
 }
 .s1 { left: -14%; top: -18%; animation-delay: 260ms; }

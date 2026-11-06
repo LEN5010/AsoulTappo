@@ -1,8 +1,3 @@
-/*
- * Idol-stage design tokens: #FC966E and white, soft radii. Light belongs to what can be pressed.
- * Tilt means one thing: a physical object stuck onto the page (a sticker, a card). Anything read or operated
- * stays upright, and a tilted object straightens under the pointer.
- */
 @font-face {
   font-family: "Noto Sans SC";
   font-weight: 400 800;
@@ -16,35 +11,38 @@
   font-display: swap;
 }
 
+/*
+ * One colour, three materials. The coral ramp is the only hue; gold is the legendary material.
+ * - Keycaps are everything pressable: a lit face over a lip of the same hue, sinking when pressed. Only keys have a lip.
+ * - Collectibles (stickers, framed cards, skins) are the only things that tilt.
+ * - Paper is everything read: flat white or cream, no hairlines, never paper on paper.
+ */
 :root {
   --font: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --font-latin: "Barlow Condensed", var(--font);
 
-  --accent: #FC966E;
-  --accent-rgb: 252, 150, 110;
-  /* #FC966E on white is only 2.16:1: small orange text uses this instead (4.5:1 on --page) */
-  --accent-deep: #C0461E;
-  --accent-hover: #FFA883;
-  --accent-mid: #FDC5AF;
-  --accent-soft: #FFE3D6;
-  --accent-tint: #FFF3ED;
-  --on-accent: #2B2530;
-  --accent-surface: var(--accent);
-  --on-accent-surface: var(--on-accent);
-  /* The hues gradients lean toward: warmer at the top, deeper at the bottom. Each theme picks neighbours of its accent. */
-  --tone-top: #FFD7AE;
-  --tone-bottom: #E8386E;
+  /* Hand-tuned in OKLCH: hue drifts from peach (55) at the light end to rose (12) at the dark end, so deep steps never turn brown. */
+  --c-50: #FFF7F2;
+  --c-100: #FFEEE3;
+  --c-200: #FFDDCA;
+  --c-300: #FFC6AA;
+  --c-400: #FFAD8A;
+  --c-500: #FC966E;
+  --c-600: #F17D5C;
+  /* Coral text on light ground (4.67:1 on --c-50). */
+  --c-700: #C34637;
+  --c-800: #A12F35;
+  --c-900: #652330;
+  --c-500-rgb: 252, 150, 110;
+  --c-900-rgb: 101, 35, 48;
 
-  --ink: #2B2530;
-  --ink-rgb: 43, 37, 48;
+  --ink: #3A222B;
+  --ink-2: #674F58;
+  --ink-3: #7D666E;
   --on-ink: #FFFFFF;
-  --ink-2: #625968;
-  --ink-3: #766D7C;
   --surface: #FFFFFF;
-  --page: #FFF4EE;
-
-  --line: #F6E3DA;
-  --line-2: #EFD3C6;
+  /* The bottom of a white key's face: white warming toward the ramp. */
+  --key-white-shade: #FFF9F5;
 
   --fs-caption: 11px;
   --fs-label: 12px;
@@ -54,32 +52,32 @@
   --fs-section: 18px;
   --fs-heading: 20px;
   --fs-title: 25px;
-  --fs-display: 46px;
-  --fs-burst: 72px;
 
   --radius-s: 6px;
   --radius-m: 10px;
   --radius-l: 16px;
-  /* Lit from above and shading toward coral: darkening orange would turn it brown. */
-  --grad-from: color-mix(in oklab, var(--accent) 80%, #fff);
-  --grad-to: color-mix(in oklab, var(--accent) 80%, var(--tone-bottom));
-  --grad-main: linear-gradient(180deg, var(--grad-from), var(--accent) 52%, var(--grad-to));
-  /* Large blocks: dusk, warm at the top and coral at the bottom. */
-  --grad-sky: linear-gradient(180deg, color-mix(in oklab, var(--accent-surface) 84%, var(--tone-top)), var(--accent-surface) 48%, color-mix(in oklab, var(--accent-surface) 74%, var(--tone-bottom)));
-  --grad-paper: linear-gradient(180deg, var(--surface), var(--accent-tint));
-  /* The dusk sinking further into its lower hue. */
-  --grad-deep: linear-gradient(180deg, var(--grad-to), color-mix(in oklab, var(--accent-surface) 30%, var(--tone-bottom)));
-  --glow-s: 0 4px 12px -4px rgba(var(--accent-rgb), 0.62);
-  --glow-m: 0 6px 16px -4px rgba(var(--accent-rgb), 0.76), 0 0 0 3px rgba(var(--accent-rgb), 0.14);
-  --glow-l: 0 0 20px 2px rgba(var(--accent-rgb), 0.55);
-  --dots: radial-gradient(rgba(var(--accent-rgb), 0.28) 1.1px, transparent 1.3px);
-  --halftone: url("../assets/patterns/halftone.svg");
+  --radius-key: 10px;
+  --radius-key-s: 8px;
+
+  --shadow-key: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.25);
+  --shadow-paper: 0 1px 2px rgba(var(--c-900-rgb), 0.06), 0 8px 24px -16px rgba(var(--c-900-rgb), 0.28);
+  /* The coral backlight under a primary key. */
+  --shadow-backlight: 0 7px 16px -5px rgba(var(--c-500-rgb), 0.85);
+
+  /* Large coral blocks: flat, with a little light across the top. */
+  --grad-sky: linear-gradient(180deg, var(--c-400), var(--c-500) 30%);
+  --grad-deep: linear-gradient(180deg, var(--c-700), var(--c-800) 40%);
+  /* Holo foil on hidden cards: a band of pale hues, slid against the pointer. A card material, not chrome. */
+  --holo-film: linear-gradient(115deg, transparent 34%, rgba(255, 154, 213, 0.22) 41%, rgba(255, 224, 138, 0.22) 46%,
+    rgba(138, 245, 208, 0.22) 51%, rgba(138, 184, 255, 0.22) 56%, rgba(215, 155, 255, 0.22) 61%, transparent 68%);
+  /* The breathing glow of a primary key that can be pressed. */
+  --glow-l: 0 0 20px 2px rgba(var(--c-500-rgb), 0.55);
 
   /* Die-cut sticker contour: four offset passes grow the silhouette, the last pass of --sticker lifts it off the tile. */
   --contour: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff);
   --contour-lg: drop-shadow(2.5px 0 0 #fff) drop-shadow(-2.5px 0 0 #fff) drop-shadow(0 2.5px 0 #fff) drop-shadow(0 -2.5px 0 #fff);
-  --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(43, 37, 48, 0.38));
-  --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(43, 37, 48, 0.38));
+  --sticker: var(--contour) drop-shadow(0 1px 1.2px rgba(var(--c-900-rgb), 0.38));
+  --sticker-lg: var(--contour-lg) drop-shadow(0 1.5px 1.5px rgba(var(--c-900-rgb), 0.38));
   /* Not owned yet. Stays opaque: stickers overlap, and any transparency shows one through the other. */
   --dim: brightness(0.74);
 
@@ -87,6 +85,8 @@
   --dur-base: 220ms;
   --dur-slow: 340ms;
   --dur-stage: 480ms;
+  --dur-press: 70ms;
+  --dur-release: 180ms;
   /* Mirrored in ui/motion.ts for Web Animations. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
@@ -94,101 +94,121 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-pop: cubic-bezier(0.34, 1.8, 0.64, 1);
 
-  /* Each step up the ladder gets stronger: paper, soft, mid, gold. */
+  /* Gold is the legendary material; its shade leans toward the ramp's rose so it never turns ochre. */
   --gold: #E59B35;
   --gold-rgb: 229, 155, 53;
   --gold-soft: #FFE3A6;
-  /* Lit like --grad-main and shading toward rose, which keeps gold from turning ochre. */
-  --grad-gold: linear-gradient(180deg, var(--gold-soft), var(--gold) 54%, color-mix(in oklab, var(--gold) 78%, #E8386E));
+  --grad-gold: linear-gradient(180deg, var(--gold-soft), var(--gold) 54%, color-mix(in oklab, var(--gold) 78%, var(--c-700)));
+  /* Rarity ladder inside the one hue, gold on top. */
   --rar-common-bg: var(--surface);
-  --rar-uncommon-bg: var(--accent-tint);
-  --rar-rare-bg: var(--accent-soft);
-  --rar-epic-bg: var(--accent-mid);
+  --rar-uncommon-bg: var(--c-100);
+  --rar-rare-bg: var(--c-300);
+  --rar-epic-bg: var(--c-800);
   --rar-legendary-bg: var(--gold-soft);
 
   --ok: #2F9E68;
   --warn: #D98A1F;
   --bad: #D9483F;
+  --bad-soft: #FDECEA;
 }
 
-/* Plates paint their fill on a ::before layer, themed through --plate-bg and --plate-edge. */
-.ui-plate,
+/*
+ * Keycap. The face is a vertical gradient (--key-top to --key-bottom); the lip is a hard shadow
+ * --key-lip-h tall. Pressing moves the face down by the lip's height while the lip shrinks to
+ * nothing, so the bottom edge of the key never moves. Press is quick, release springs back.
+ */
 .ui-btn,
-.ui-chip,
-.ui-tag {
+.ui-chip {
+  --key-top: #FFFFFF;
+  --key-bottom: var(--key-white-shade);
+  --key-lip: var(--c-200);
+  --key-lip-h: 3px;
+  --key-y: 0px;
+  --key-glow: 0 0 0 transparent;
   position: relative;
   isolation: isolate;
-}
-.ui-plate::before,
-.ui-btn::before,
-.ui-chip::before,
-.ui-tag::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--plate-bg);
-  border-radius: var(--radius-s);
-  box-shadow: var(--plate-edge, none);
-  transition: background var(--dur-fast), box-shadow var(--dur-fast);
-}
-.ui-btn {
-  --plate-bg: var(--grad-paper);
-  --plate-edge: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(var(--ink-rgb), 0.06);
-  font: inherit;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  height: 36px;
-  padding: 0 18px;
+  box-sizing: border-box;
   border: 0;
-  background: none;
+  border-radius: var(--radius-key);
+  background: linear-gradient(180deg, var(--key-top), var(--key-bottom));
+  box-shadow:
+    0 var(--key-lip-h) 0 var(--key-lip),
+    0 calc(var(--key-lip-h) + 1px) calc(var(--key-lip-h) * 2 + 2px) -3px rgba(var(--c-900-rgb), 0.25),
+    var(--key-glow);
+  transform: translateY(var(--key-y));
   color: var(--ink);
+  font: inherit;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   white-space: nowrap;
-  transition: transform var(--dur-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    box-shadow var(--dur-release) var(--ease-spring),
+    color var(--dur-fast);
 }
-.ui-btn:hover:not(:disabled) {
-  --plate-bg: linear-gradient(180deg, var(--surface), var(--accent-soft));
-  --plate-edge: inset 0 0 0 1px var(--accent-mid), 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+.ui-btn {
+  font-size: var(--fs-body);
+  font-weight: 800;
+  height: 36px;
+  padding: 0 18px;
+  gap: 6px;
 }
-.ui-btn:active:not(:disabled) {
-  transform: translateY(1px);
+.ui-btn:hover:not(:disabled),
+.ui-chip:hover {
+  --key-top: #FFFFFF;
+  --key-bottom: #FFFFFF;
+  --key-y: -1px;
+}
+/* Latched: selected or expanded. Sits part way down with a sliver of lip left. */
+.ui-btn.on:not(:disabled),
+.ui-btn[aria-pressed="true"]:not(:disabled),
+.ui-btn[aria-expanded="true"]:not(:disabled) {
+  --key-top: var(--c-100);
+  --key-bottom: var(--c-100);
+  --key-y: 2px;
+  --key-lip-h: 1px;
+}
+.ui-btn:active:not(:disabled),
+.ui-chip:active {
+  --key-y: 3px;
+  --key-lip-h: 0px;
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
 }
 .ui-btn.primary {
-  --plate-bg: var(--grad-main);
-  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.5), var(--glow-s);
-  color: var(--on-accent);
+  --key-top: var(--c-400);
+  --key-bottom: var(--c-500);
+  --key-lip: var(--c-600);
+  --key-glow: var(--shadow-backlight);
+  color: var(--ink);
 }
 .ui-btn.primary:hover:not(:disabled) {
-  --plate-bg: var(--grad-main);
-  --plate-edge: inset 0 1px 0 rgba(255, 255, 255, 0.6), var(--glow-m);
+  --key-top: color-mix(in oklab, var(--c-400) 70%, #fff);
+  --key-bottom: var(--c-400);
+}
+.ui-btn.primary.on:not(:disabled),
+.ui-btn.primary[aria-pressed="true"]:not(:disabled),
+.ui-btn.primary[aria-expanded="true"]:not(:disabled) {
+  --key-top: var(--c-500);
+  --key-bottom: var(--c-500);
 }
 .ui-btn.primary:active:not(:disabled) {
-  --plate-edge: inset 0 2px 5px rgba(var(--ink-rgb), 0.16);
-}
-/* A band of light crosses the button on hover. */
-.ui-btn.primary:not(:disabled)::before {
-  background:
-    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.44) 50%, transparent 58%) 140% 0 / 260% 100% no-repeat,
-    var(--grad-main);
-  transition: background-position 560ms var(--ease-out), box-shadow var(--dur-base);
-}
-.ui-btn.primary:hover:not(:disabled)::before {
-  background-position: -40% 0, 0 0;
+  --key-top: var(--c-500);
+  --key-bottom: var(--c-600);
 }
 /* Breathes while the action is available, so a glow always means there is something to press. */
 .ui-btn.pulse:not(:disabled)::after {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: -2;
-  border-radius: var(--radius-s);
+  z-index: -1;
+  border-radius: inherit;
   box-shadow: var(--glow-l);
   opacity: 0;
+  pointer-events: none;
   animation: breathe 2.8s var(--ease-in-out) infinite;
 }
 @keyframes breathe {
@@ -202,35 +222,82 @@
     animation: none;
   }
 }
+/* Quiet key: no lip and no shadow; the face only comes up under the pointer. */
 .ui-btn.ghost {
-  --plate-bg: transparent;
-  --plate-edge: none;
+  --key-top: transparent;
+  --key-bottom: transparent;
+  --key-lip-h: 0px;
+  --key-glow: 0 0 0 transparent;
   color: var(--ink-2);
 }
-.ui-btn.ghost:hover:not(:disabled) {
+.ui-btn.ghost:hover:not(:disabled),
+.ui-btn.ghost.on:not(:disabled),
+.ui-btn.ghost[aria-expanded="true"]:not(:disabled) {
+  --key-top: var(--c-100);
+  --key-bottom: var(--c-100);
+  --key-y: 0px;
+  --key-lip-h: 0px;
   color: var(--ink);
 }
+.ui-btn.ghost:active:not(:disabled) {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
+  --key-y: 1px;
+}
 .ui-btn.small {
-  height: 30px;
-  padding: 0 14px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-key-s);
   font-size: var(--fs-label);
 }
 .ui-btn.large {
-  height: 46px;
+  height: 48px;
   padding: 0 26px;
-  font-size: var(--fs-strong);
-  font-weight: 800;
+  font-size: var(--fs-number);
 }
-.ui-btn:disabled {
-  --plate-bg: var(--accent-tint);
-  --plate-edge: inset 0 0 0 1.5px var(--line);
+.ui-btn:disabled,
+.ui-btn.primary:disabled {
+  --key-top: var(--c-100);
+  --key-bottom: var(--c-100);
+  --key-lip-h: 0px;
+  --key-y: 0px;
+  --key-glow: 0 0 0 transparent;
   color: var(--ink-3);
   cursor: default;
 }
-.ui-btn.primary:disabled {
-  --plate-bg: var(--accent-soft);
-  --plate-edge: none;
+.ui-btn.ghost:disabled {
+  --key-top: transparent;
+  --key-bottom: transparent;
+}
+
+/* Small toggle key. `.on` latches it in coral. */
+.ui-chip {
+  --key-lip-h: 2px;
+  height: 28px;
+  padding: 0 11px;
+  gap: 5px;
+  border-radius: var(--radius-key-s);
+  font: 700 var(--fs-label) var(--font);
   color: var(--ink-2);
+}
+.ui-chip:hover {
+  color: var(--ink);
+}
+.ui-chip.on {
+  --key-top: var(--c-500);
+  --key-bottom: var(--c-500);
+  --key-lip: var(--c-600);
+  --key-y: 1px;
+  --key-lip-h: 1px;
+  color: var(--ink);
+}
+.ui-chip.on:active {
+  --key-y: 2px;
+  --key-lip-h: 0px;
+}
+.ui-chip > i {
+  width: 4px;
+  height: 11px;
 }
 
 .ui-input {
@@ -239,72 +306,58 @@
   font-weight: 600;
   height: 36px;
   padding: 0 12px;
-  border-radius: 0;
+  border: 0;
+  border-radius: var(--radius-key);
   min-width: 0;
   box-sizing: border-box;
-  border: 0;
-  border-bottom: 2px solid var(--line-2);
   background: var(--surface);
+  box-shadow: var(--shadow-paper);
   color: var(--ink);
   outline: none;
-  transition: border-color var(--dur-fast), background var(--dur-fast);
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+/* Already on paper: a tonal field instead of a second sheet. */
+.ui-group .ui-input {
+  background: var(--c-100);
+  box-shadow: none;
 }
 .ui-input::placeholder {
   color: var(--ink-3);
   font-weight: 500;
 }
 .ui-input:focus {
-  background: var(--surface);
-  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 2px var(--ink);
 }
 
+/* Section heading: the Chinese title and a count. */
 .ui-label {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  margin: 0 0 8px;
-  font: 800 var(--fs-section)/1 var(--font);
+  gap: 8px;
+  margin: 0 0 10px;
+  font: 800 16px/1.2 var(--font);
   color: var(--ink);
 }
-.ui-label::before {
-  content: "";
-  align-self: center;
-  width: 7px;
-  height: 14px;
-  background: var(--accent);
-}
-.ui-label em {
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  letter-spacing: 0.08em;
-  color: var(--accent-deep);
-}
-.ui-label em::after {
-  content: "";
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-left: 5px;
-  background: currentColor;
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
-}
 .ui-label small {
-  margin-left: auto;
   font: 800 var(--fs-strong)/1 var(--font-latin);
-  color: var(--ink-3);
+  color: var(--c-700);
+}
+/* Eyebrow: a line of small English above a large title. --c-700, the lightest coral that reads as text on cream. */
+.ui-eyebrow {
+  display: block;
+  font: 800 10px/1 var(--font-latin);
+  letter-spacing: 0.2em;
+  color: var(--c-700);
 }
 .ui-muted {
   color: var(--ink-2);
-}
-.ui-hint {
-  color: var(--ink-3);
-  font-size: var(--fs-label);
 }
 
 .ui-error {
   margin: 0 0 8px;
   padding: 4px 10px;
-  background: #FDECEA;
-  box-shadow: inset 3px 0 0 var(--bad);
+  border-radius: var(--radius-s);
+  background: var(--bad-soft);
   color: var(--bad);
   font-size: var(--fs-label);
   font-weight: 700;
@@ -317,24 +370,14 @@
   font-weight: 700;
 }
 
-/* Rounded block. Content is clipped to the corners, so .ui-ring lays the hairline on top. */
+/* Rounded block; content is clipped to the corners. */
 .ui-frame {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius, var(--radius-s));
 }
-.ui-tile::before {
-  border-radius: var(--radius, var(--radius-s));
-}
-.ui-ring::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1.5px var(--ring, var(--line-2));
-}
+
+/* A tonal slot that holds an object. No hairline: the slot is a step of the ramp. */
 .ui-well {
   width: 100%;
   aspect-ratio: var(--well-ratio, 1);
@@ -343,8 +386,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line);
+  background: var(--c-100);
 }
 .ui-well img {
   max-width: 100%;
@@ -357,7 +399,7 @@
   transition: transform var(--dur-base) var(--ease-out);
 }
 
-/* A well plus its name. Hover and selection slide an offset block out from behind the well. */
+/* A well plus its name. Hover lifts the object out of its slot; picked rings the slot in coral. */
 .ui-tile {
   position: relative;
   min-width: 0;
@@ -372,29 +414,16 @@
   font: inherit;
   color: var(--ink);
   user-select: none;
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.ui-tile::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  aspect-ratio: var(--well-ratio, 1);
-  background: var(--accent);
-  opacity: 0;
-  transition: transform var(--dur-base) var(--ease-out), opacity var(--dur-fast);
-}
-.ui-tile:hover {
-  transform: translate(-2px, -2px);
-}
-.ui-tile:hover::before,
-.ui-tile.picked::before {
-  opacity: 1;
-  transform: translate(4px, 4px);
 }
 .ui-tile:hover .ui-well img {
-  transform: scale(1.06);
+  transform: translateY(-3px) scale(1.05);
+}
+.ui-tile.picked .ui-well {
+  outline: 2px solid var(--c-500);
+  outline-offset: -2px;
+}
+.ui-tile.common .ui-well {
+  background: var(--rar-common-bg);
 }
 .ui-tile.uncommon .ui-well {
   background: var(--rar-uncommon-bg);
@@ -410,7 +439,7 @@
 }
 /* Unowned stickers keep their colors with the same dimming as unowned cards. */
 .ui-tile.locked .ui-well {
-  background: var(--accent-tint);
+  background: var(--c-100);
 }
 .ui-tile.locked .ui-well img {
   filter: var(--dim);
@@ -430,51 +459,26 @@
   text-align: center;
 }
 
-.ui-chip {
-  --plate-bg: var(--surface);
-  height: 26px;
-  padding: 0 11px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  background: none;
-  color: var(--ink-2);
-  font: 700 var(--fs-label) var(--font);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color var(--dur-fast);
-}
-.ui-chip:hover {
-  --plate-bg: var(--accent-soft);
-}
-.ui-chip.on {
-  --plate-bg: var(--grad-main);
-  color: var(--on-accent);
-}
-.ui-chip > i {
-  width: 4px;
-  height: 11px;
-}
-
+/* Flat label: no lip, it cannot be pressed. */
 .ui-tag {
-  --plate-bg: var(--tag-bg, var(--accent));
   display: inline-block;
+  border-radius: var(--radius-s);
+  background: var(--tag-bg, var(--c-500));
   padding: 0 7px;
   font-size: var(--fs-caption);
   font-style: normal;
   font-weight: 800;
   line-height: 17px;
-  color: var(--tag-fg, var(--on-accent));
+  color: var(--tag-fg, var(--ink));
   white-space: nowrap;
 }
 .ui-tag.dark {
-  --tag-bg: var(--ink);
+  --tag-bg: var(--c-800);
   --tag-fg: #fff;
 }
 .ui-tag.light {
   --tag-bg: var(--surface);
-  --tag-fg: var(--accent-deep);
+  --tag-fg: var(--c-700);
 }
 .ui-tag.gold {
   --tag-bg: var(--gold);
@@ -482,18 +486,18 @@
 }
 
 /*
- * Draw tones, rare upward: dusk, deeper dusk, gold. Seals, bands and spotlights fill with --tone-fill,
- * glow with --tone-glow and write in --tone-ink. A skin brings its member's theme inline (panel/reveal-tone.ts).
+ * Draw tones, rare upward: coral, wine, gold. Seals, bands and spotlights fill with --tone-fill,
+ * glow with --tone-glow and write in --tone-ink. A skin brings its member's tone inline (panel/reveal-board.ts).
  */
 .tone-rare,
 .tone-skin {
   --tone-fill: var(--grad-sky);
-  --tone-glow: rgba(var(--accent-rgb), 0.72);
-  --tone-ink: var(--on-accent-surface);
+  --tone-glow: rgba(var(--c-500-rgb), 0.72);
+  --tone-ink: var(--ink);
 }
 .tone-epic {
   --tone-fill: var(--grad-deep);
-  --tone-glow: color-mix(in srgb, var(--tone-bottom) 72%, transparent);
+  --tone-glow: color-mix(in srgb, var(--c-800) 72%, transparent);
   --tone-ink: #fff;
 }
 .tone-legendary {
@@ -501,10 +505,30 @@
   --tone-glow: rgba(var(--gold-rgb), 0.85);
   --tone-ink: var(--ink);
 }
+/* Card backs climb the rarity ladder: paper, tint, light coral, wine. Legendary and skin backs take --tone-fill. */
+.tone-common {
+  --seal-fill: var(--surface);
+  --seal-mark: var(--c-500);
+  --seal-rule: var(--c-200);
+}
+.tone-uncommon {
+  --seal-fill: var(--c-100);
+  --seal-mark: var(--c-500);
+  --seal-rule: var(--c-300);
+}
+.tone-rare {
+  --seal-fill: var(--c-300);
+  --seal-mark: var(--c-700);
+  --seal-rule: rgba(255, 255, 255, 0.7);
+}
+.tone-epic {
+  --seal-fill: var(--c-800);
+  --seal-mark: #fff;
+  --seal-rule: rgba(255, 255, 255, 0.4);
+}
 
 /*
- * Card frames by tier: gold for big hidden cards, rose for small ones. Set on the framed element
- * itself, so the gradient resolves against the theme in force there. Bands of light and shade
+ * Card frames by tier: gold for big hidden cards, coral for small ones. Bands of light and shade
  * read as metal; drawn at 220% and slid by --frame-x / --frame-y, the light moves across the
  * frame as the card leans. At rest both sit where the spotlight's lean rests (30% 20%).
  */
@@ -516,26 +540,27 @@
 .frame-gold {
   --frame-fill: linear-gradient(125deg,
     var(--gold) 0%, var(--gold-soft) 15%, color-mix(in oklab, var(--gold-soft) 45%, #fff) 21%, var(--gold-soft) 27%,
-    var(--gold) 40%, color-mix(in oklab, var(--gold) 78%, #E8386E) 54%, var(--gold) 66%,
+    var(--gold) 40%, color-mix(in oklab, var(--gold) 78%, var(--c-700)) 54%, var(--gold) 66%,
     color-mix(in oklab, var(--gold-soft) 45%, #fff) 80%, var(--gold-soft) 88%, var(--gold) 100%);
 }
 .frame-rose {
   --frame-fill: linear-gradient(125deg,
-    var(--accent) 0%, var(--accent-mid) 15%, color-mix(in oklab, var(--accent-mid) 40%, #fff) 21%, var(--accent-mid) 27%,
-    var(--accent) 40%, var(--tone-bottom) 54%, var(--accent) 66%,
-    color-mix(in oklab, var(--accent-mid) 40%, #fff) 80%, var(--accent-mid) 88%, var(--accent) 100%);
+    var(--c-500) 0%, var(--c-300) 15%, var(--c-100) 21%, var(--c-300) 27%,
+    var(--c-500) 40%, var(--c-700) 54%, var(--c-500) 66%,
+    var(--c-100) 80%, var(--c-300) 88%, var(--c-500) 100%);
 }
 
-/* Settings-style list: chamfered white block of rows. */
+/* Settings-style list: a sheet of paper whose rows are split by the only hairline allowed. */
 .ui-group {
-  --radius: var(--radius-m);
+  --radius: var(--radius-l);
   margin: 0;
   padding: 0;
   list-style: none;
   background: var(--surface);
+  box-shadow: var(--shadow-paper);
 }
 .ui-group > * + * {
-  border-top: 1.5px solid var(--line);
+  border-top: 1px solid var(--c-100);
 }
 .ui-row {
   display: flex;
@@ -571,7 +596,7 @@
 .ui-bar {
   height: 8px;
   border-radius: 4px;
-  background: var(--accent-soft);
+  background: var(--c-200);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -579,43 +604,50 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--grad-from), var(--accent) 55%, var(--grad-to));
+  background: linear-gradient(90deg, var(--c-400), var(--c-500));
   transition: width var(--dur-stage) var(--ease-out);
 }
 
+/* Toggle: a coral track with a small white key riding on it. */
 .ui-switch {
   appearance: none;
   margin: 0;
   width: 42px;
-  height: 22px;
-  border-radius: 11px;
-  background: var(--accent-soft);
+  height: 24px;
+  border-radius: 12px;
+  background: var(--c-200);
   position: relative;
   cursor: pointer;
-  transition: box-shadow var(--dur-base);
+  transition: background var(--dur-fast);
   flex: none;
 }
 .ui-switch::after {
   content: "";
   position: absolute;
   left: 3px;
-  top: 3px;
-  width: 16px;
-  height: 16px;
+  top: 2px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 1px 3px rgba(var(--ink-rgb), 0.24);
-  transition: transform var(--dur-base) var(--ease-out);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 5px -2px rgba(var(--c-900-rgb), 0.3);
+  transition: transform var(--dur-release) var(--ease-spring), box-shadow var(--dur-fast);
 }
 .ui-switch:checked {
-  background: var(--grad-main);
-  box-shadow: var(--glow-s);
+  background: var(--c-500);
 }
 .ui-switch:checked::after {
-  transform: translateX(20px);
+  transform: translateX(18px);
+  box-shadow: 0 2px 0 var(--c-600), 0 3px 5px -2px rgba(var(--c-900-rgb), 0.3);
+}
+.ui-switch:active::after {
+  transform: translateY(1px);
+}
+.ui-switch:checked:active::after {
+  transform: translate(18px, 1px);
 }
 
-/* range: track filled up to --fill (set by RangeInput.vue) */
+/* range: track filled up to --fill (set by RangeInput.vue); the thumb is a small white key */
 .ui-range {
   appearance: none;
   -webkit-appearance: none;
@@ -628,42 +660,47 @@
 .ui-range::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 3px;
-  background: linear-gradient(to right, var(--grad-from) 0%, var(--grad-to) var(--fill, 50%), var(--accent-soft) var(--fill, 50%), var(--accent-soft) 100%);
+  background: linear-gradient(to right, var(--c-500) var(--fill, 50%), var(--c-200) var(--fill, 50%));
 }
 .ui-range::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -5px;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--c-900-rgb), 0.35);
+  transition: transform var(--dur-fast);
 }
 .ui-range:hover::-webkit-slider-thumb {
-  box-shadow: 0 0 0 2px var(--accent), var(--glow-m);
+  transform: translateY(-1px);
+}
+.ui-range:active::-webkit-slider-thumb {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 var(--c-300), 0 2px 4px -2px rgba(var(--c-900-rgb), 0.35);
 }
 .ui-range::-moz-range-track {
   height: 6px;
   border-radius: 3px;
-  background: var(--accent-soft);
+  background: var(--c-200);
 }
 .ui-range::-moz-range-progress {
   height: 6px;
   border-radius: 3px;
-  background: var(--accent);
+  background: var(--c-500);
 }
 .ui-range::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 0;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 0 0 2px var(--accent), var(--glow-s);
+  box-shadow: 0 2px 0 var(--c-300), 0 3px 6px -2px rgba(var(--c-900-rgb), 0.35);
 }
 
 .ui-scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--accent) transparent;
+  scrollbar-color: var(--c-300) transparent;
 }
 .ui-scroll::-webkit-scrollbar {
   width: 5px;
@@ -673,30 +710,27 @@
   background: transparent;
 }
 .ui-scroll::-webkit-scrollbar-thumb {
-  background: var(--accent);
+  border-radius: 3px;
+  background: var(--c-300);
 }
 
+/* Focus: 2px ink on light ground. Coral surfaces set --focus to white. */
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus, var(--ink));
   outline-offset: 2px;
 }
-/* Plates ring their fill layer; overflow would clip an inner outline on a framed block. */
-.ui-btn:focus-visible,
-.ui-chip:focus-visible,
-button.ui-plate:focus-visible,
+.ui-input:focus-visible {
+  outline: none;
+}
+/* Overflow would clip an outer outline on a framed block, so framed blocks and tiles ring inside their edge. */
 .ui-tile:focus-visible,
 .ui-frame:focus-visible {
   outline: none;
 }
-.ui-btn:focus-visible::before,
-.ui-chip:focus-visible::before,
-button.ui-plate:focus-visible::before {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 .ui-frame:focus-visible,
 .ui-tile:focus-visible .ui-well {
-  box-shadow: inset 0 0 0 2.5px var(--ink);
+  outline: 2px solid var(--focus, var(--ink));
+  outline-offset: -2px;
 }
 
 button, input, b, small {

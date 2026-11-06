@@ -61,15 +61,18 @@ onBeforeUnmount(() => observer.disconnect());
 </template>
 
 <style scoped>
+/* A row of joined keys. The lip is a bottom border rather than a shadow, so the edge fades of a
+ * scrolling row cannot cut it off. The picked key is the sliding thumb, latched in coral. */
 .seg {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 6px;
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line);
+  gap: 0;
+  padding: 0 2px;
+  border-radius: var(--radius-key);
+  border-bottom: 3px solid var(--c-200);
+  background: linear-gradient(180deg, #fff, var(--key-white-shade));
+  box-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.25);
   overflow-x: auto;
   scrollbar-width: none;
   flex: none;
@@ -91,11 +94,18 @@ onBeforeUnmount(() => observer.disconnect());
   left: 0;
   top: 0;
   opacity: 0;
-  border-radius: var(--radius-s);
-  background: var(--grad-main);
-  box-shadow: var(--glow-s);
   transform-origin: 0 50%;
   will-change: transform;
+}
+/* The row's 3px lip counts as rim, so the face sits 4px from every visible edge: 4px above,
+ * 2px inset + 2px row padding at the sides, and below its own 1px lip, 1px of white + the 3px row lip. */
+.thumb::before {
+  content: "";
+  position: absolute;
+  inset: 4px 2px 2px;
+  border-radius: var(--radius-key-s);
+  background: var(--c-500);
+  box-shadow: 0 1px 0 var(--c-600);
 }
 .seg button {
   position: relative;
@@ -114,7 +124,7 @@ onBeforeUnmount(() => observer.disconnect());
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: color var(--dur-base);
+  transition: color var(--dur-base), transform var(--dur-press) ease-out;
 }
 .seg button + button::before {
   content: "";
@@ -122,8 +132,8 @@ onBeforeUnmount(() => observer.disconnect());
   left: 0;
   top: 8px;
   bottom: 8px;
-  width: 1.5px;
-  background: var(--line-2);
+  width: 1px;
+  background: var(--c-200);
   transition: opacity var(--dur-fast);
 }
 .seg button.on::before,
@@ -136,8 +146,15 @@ onBeforeUnmount(() => observer.disconnect());
 .seg button:hover:not(:disabled):not(.on) {
   color: var(--ink);
 }
+.seg button:active:not(:disabled):not(.on) {
+  transform: translateY(1px);
+}
 .seg button.on {
-  color: var(--on-accent);
+  color: var(--ink);
+}
+/* The picked face is centred 1px below the button's middle; its label follows. */
+.seg:not(.plain) button.on > * {
+  transform: translateY(1px);
 }
 .seg button:disabled {
   opacity: 0.6;
@@ -147,21 +164,23 @@ onBeforeUnmount(() => observer.disconnect());
   font: 800 var(--fs-strong) var(--font-latin);
   opacity: 0.72;
 }
-/* Underline in place of the orange block. */
+/* Underline tabs, for series: a coral bar under the picked one. */
 .seg.plain {
+  padding: 0 6px;
   border-radius: 0;
-  box-shadow: inset 0 -2px 0 var(--line);
+  border-bottom: 0;
+  background: none;
+  box-shadow: inset 0 -2px 0 var(--c-100);
 }
-.plain .thumb {
+.plain .thumb::before {
+  inset: auto 0 0;
+  height: 3px;
   border-radius: 0;
-  background: var(--grad-main) bottom / 100% 3px no-repeat;
+  background: var(--c-500);
   box-shadow: none;
 }
 .plain button + button::before {
   display: none;
-}
-.seg.plain button.on {
-  color: var(--ink);
 }
 .plain small {
   font: 500 var(--fs-label) var(--font);

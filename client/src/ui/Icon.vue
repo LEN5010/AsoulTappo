@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Icon set (24x24, stroke = currentColor). Square ends match the chamfers; soft shapes stay round.
+// Icon set (24x24, stroke = currentColor). Round caps and joins throughout.
 const PATHS: Record<string, string[]> = {
   box: ["M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z", "M3 8h18v3H3z", "M12 8v13", "M12 8c-2-3.5-5.5-3.5-5.5-1S9 8 12 8", "M12 8c2-3.5 5.5-3.5 5.5-1S15 8 12 8"],
   bag: ["M6 9a6 6 0 0 1 12 0v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z", "M9 9V7a3 3 0 0 1 6 0v2", "M9.5 14a2.5 2.5 0 0 0 5 0"],
@@ -35,15 +35,29 @@ const PATHS: Record<string, string[]> = {
   layers: ["M12 3l9 4.5-9 4.5-9-4.5z", "M3 12l9 4.5 9-4.5", "M3 16.5l9 4.5 9-4.5"],
   clock: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 7.5V12l3 2"],
   info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 11v5.5", "M12 7.5v1.5"],
+  // Navigation.
+  backpack: [
+    "M9.5 5V4a2.5 2.5 0 0 1 5 0v1", "M5 11a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z",
+    "M8.5 21v-4.5A1.5 1.5 0 0 1 10 15h4a1.5 1.5 0 0 1 1.5 1.5V21", "M9 11h6",
+  ],
+  "card-spark": [
+    "M6 4h8a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
+    "M10 9l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z", "M19.5 3v4", "M17.5 5h4",
+  ],
+  codex: ["M7.5 3H19v14H7.5A2.5 2.5 0 0 0 5 19.5v-14A2.5 2.5 0 0 1 7.5 3z", "M5 19.5A2.5 2.5 0 0 0 7.5 22H19v-5", "M10 3v6l2-1.5L14 9V3"],
+  people: ["M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1", "M15 5a3 3 0 0 1 0 6", "M18 14.5a5 5 0 0 1 3 4.5v1"],
+  gear: [
+    "M19 9.7l2.4.4v3.8l-2.4.4-.4 1 1.4 2-2.7 2.7-2-1.4-1 .4-.4 2.4h-3.8l-.4-2.4-1-.4-2 1.4L4 17.3l1.4-2-.4-1-2.4-.4v-3.8l2.4-.4.4-1-1.4-2L6.7 4l2 1.4 1-.4.4-2.4h3.8l.4 2.4 1 .4 2-1.4L20 6.7l-1.4 2z",
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  ],
 };
-const ROUND = new Set(["heart"]);
 defineProps<{ name: string; size?: number }>();
 </script>
 
 <template>
   <svg
     :width="size ?? 20" :height="size ?? 20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    stroke-width="2.2" :stroke-linecap="ROUND.has(name) ? 'round' : 'butt'" :stroke-linejoin="ROUND.has(name) ? 'round' : 'miter'"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
     aria-hidden="true" class="icon"
   >
     <path v-for="(d, i) in PATHS[name] ?? []" :key="i" :d="d" />

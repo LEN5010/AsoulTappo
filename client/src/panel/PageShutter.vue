@@ -18,6 +18,8 @@ const root = ref<HTMLElement>();
 const under = ref<HTMLElement>();
 const over = ref<HTMLElement>();
 let held: Animation[] = [];
+/** Bumped on every cover so the title's letters rise again. */
+const take = ref(0);
 let revealing = false;
 let rewound = false;
 
@@ -33,11 +35,13 @@ function sweep(first: HTMLElement, second: HTMLElement, from: string, to: string
 
 /** Start out covered, for the panel's opening frame. */
 function hold() {
+  take.value++;
   show(true);
   held = [under.value!, over.value!].map((el) => el.animate([{ transform: HOME }], { duration: 0, fill: "forwards" }));
 }
 
 async function cover() {
+  take.value++;
   show(true);
   held = sweep(under.value!, over.value!, LEFT, HOME, COVER_MS, TURN.lagMs);
   await settled(held);
@@ -73,8 +77,8 @@ defineExpose({ hold, cover, reveal, rewind });
   <div ref="root" class="shutter" aria-hidden="true">
     <div ref="under" class="band under"></div>
     <div ref="over" class="band over">
-      <span class="title">
-        <b>{{ title }}</b>
+      <span :key="take" class="title">
+        <b><i v-for="(c, n) in [...title]" :key="n" :style="{ '--n': n }">{{ c }}</i></b>
         <small>{{ label }}</small>
       </span>
     </div>
@@ -100,10 +104,10 @@ defineExpose({ hold, cover, reveal, rewind });
   will-change: transform;
 }
 .under {
-  background: var(--accent-soft);
+  background: var(--c-200);
 }
 .over {
-  background: var(--grad-sky);
+  background: var(--c-500);
   overflow: hidden;
 }
 .title {
@@ -117,13 +121,24 @@ defineExpose({ hold, cover, reveal, rewind });
   white-space: nowrap;
 }
 .title b {
+  display: flex;
   font: 800 112px/0.9 var(--font-latin);
   letter-spacing: 0.01em;
-  color: var(--on-ink);
+  color: #fff;
+}
+/* Letter by letter, the same rise as the draw's opening title. */
+.title i {
+  display: block;
+  font-style: normal;
+  animation: letter-rise 420ms var(--ease-spring) calc(60ms + var(--n) * 24ms) both;
 }
 .title small {
   margin-top: 6px;
   font: 800 var(--fs-title) var(--font);
-  color: var(--on-accent);
+  color: var(--ink);
+}
+@keyframes letter-rise {
+  0% { opacity: 0; transform: translateY(60%) scaleY(1.3); }
+  100% { opacity: 1; transform: none; }
 }
 </style>

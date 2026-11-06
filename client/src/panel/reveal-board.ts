@@ -6,8 +6,6 @@ import { getItem, RARITY_LABEL, type Item } from "../items";
 import { getCard, manifest, memberOf, type ManifestCard, type Rarity } from "../manifest";
 import type { Drop } from "../net/api";
 import { boardOf, DEAL_LIMIT, sealed, spotlights } from "../reveal";
-import { THEME_COLORS, themeSwatch } from "../stores/theme";
-import { accentTokens } from "../ui/palette";
 
 export interface BoardEntry {
   key: string;
@@ -29,16 +27,29 @@ export interface BoardEntry {
   art: string;
 }
 
-/** A skin's tone is its member's theme, so it reads as hers whichever theme is on. */
+/**
+ * Member colours, hand-tuned for large bands: livelier than the name-tag colour, with a gradient that
+ * leans toward neighbouring hues. `light` members take dark ink, the rest white.
+ */
+const MEMBER_TONES: Record<string, { color: string; top: string; bottom: string; light: boolean }> = {
+  jiaran: { color: "#F48FB1", top: "#FFD9B0", bottom: "#E8389A", light: true },
+  nailin: { color: "#4F63C9", top: "#5FD0FF", bottom: "#8A3CF0", light: false },
+  beila: { color: "#EE7F78", top: "#FFD09A", bottom: "#E8386E", light: true },
+  xinyi: { color: "#D02F7C", top: "#FF8FB0", bottom: "#8A2BE2", light: false },
+  sinuo: { color: "#7A52D6", top: "#7FB0FF", bottom: "#D63CC8", light: false },
+};
+const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ");
+
+/** A skin's tone is its member's colour, so the reveal reads as hers. */
 export function memberTone(skin: string): Record<string, string> {
   const id = manifest.characters.find((c) => c.name === memberOf(skin))?.id;
-  const theme = THEME_COLORS.find((t) => t.id === id);
-  if (!theme) return {};
-  const tokens = accentTokens(theme.color, theme);
+  const tone = id ? MEMBER_TONES[id] : undefined;
+  if (!tone) return {};
+  const { color, top, bottom, light } = tone;
   return {
-    "--tone-fill": themeSwatch(theme),
-    "--tone-glow": `rgba(${tokens["--accent-rgb"]}, 0.72)`,
-    "--tone-ink": tokens["--on-accent"]!,
+    "--tone-fill": `linear-gradient(180deg, color-mix(in oklab, ${color} 84%, ${top}), ${color} 48%, color-mix(in oklab, ${color} 74%, ${bottom}))`,
+    "--tone-glow": `rgba(${rgbOf(color)}, 0.72)`,
+    "--tone-ink": light ? "var(--ink)" : "#fff",
   };
 }
 

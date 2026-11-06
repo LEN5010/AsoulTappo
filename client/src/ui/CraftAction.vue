@@ -36,8 +36,8 @@ async function craft() {
 <style scoped>
 .craft-action { width: 100%; margin-top: auto; padding-top: 22px; display: flex; flex-direction: column; gap: 10px; }
 .price { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: var(--fs-body); color: var(--ink-2); }
-.price b { display: flex; align-items: center; gap: 5px; color: var(--accent-deep); font: 800 26px/1 var(--font-latin); }
+.price b { display: flex; align-items: center; gap: 5px; color: var(--c-700); font: 800 26px/1 var(--font-latin); }
 .balance { text-align: center; color: var(--ink-3); font-size: var(--fs-label); }
 .balance b { font-variant-numeric: tabular-nums; }
-.success { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ok); font-size: var(--fs-body); font-weight: 700; }
+.success { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--c-700); font-size: var(--fs-body); font-weight: 700; }
 </style>

@@ -62,3 +62,58 @@ export function rise(scope: Element | null | undefined, view: Element | null | u
     );
   }
 }
+
+const ARC_MS = 420;
+const ARC_STEPS = 6;
+/**
+ * Flies a copy of `src` along a short arc from the `from` box to the `to` box, as a sticker thrown
+ * onto a key or peeled back off it. With no `to` the copy drops a little and fades where it is.
+ * The copy lives in the panel overlay, so scroll containers cannot clip it; `host` is any element
+ * inside the panel. Resolves when the flight is over (at once under reduced motion).
+ */
+export function flyArc(host: Element, src: string, from: DOMRect, to: DOMRect | null, peel = false): Promise<void> {
+  const overlay = host.closest(".panel")?.querySelector(".panel-overlay");
+  if (!overlay || reducedMotion.value || !from.width) return Promise.resolve();
+  const base = overlay.getBoundingClientRect();
+  const end = to ?? new DOMRect(from.left, from.top + 28, from.width, from.height);
+  const ghost = new Image();
+  ghost.src = src;
+  ghost.alt = "";
+  Object.assign(ghost.style, {
+    position: "absolute",
+    left: `${end.left - base.left}px`,
+    top: `${end.top - base.top}px`,
+    width: `${end.width}px`,
+    height: `${end.height}px`,
+    objectFit: "contain",
+    filter: "var(--sticker)",
+    transformOrigin: "50% 50%",
+    pointerEvents: "none",
+    zIndex: "45",
+  });
+  overlay.append(ghost);
+  const dx = from.left + from.width / 2 - (end.left + end.width / 2);
+  const dy = from.top + from.height / 2 - (end.top + end.height / 2);
+  const scale = from.width / end.width;
+  const lift = to ? Math.min(90, 24 + Math.hypot(dx, dy) * 0.18) : 0;
+  // Sampled from a quadratic curve whose control point sits above the midpoint.
+  const frames: Keyframe[] = Array.from({ length: ARC_STEPS + 1 }, (_, i) => {
+    const t = i / ARC_STEPS;
+    const x = dx * (1 - t);
+    const y = dy * (1 - t) - 4 * lift * t * (1 - t);
+    const s = scale + (1 - scale) * t;
+    const turn = peel ? -10 * Math.sin(Math.PI * t) : 6 * Math.sin(Math.PI * t);
+    return { transform: `translate(${x}px, ${y}px) rotate(${turn}deg) scale(${s})`, opacity: to ? 1 : 1 - t };
+  });
+  const flight = ghost.animate(frames, { duration: to ? ARC_MS : 300, easing: to ? EASE_IN_OUT : "ease-in" });
+  return flight.finished.catch(() => undefined).then(() => ghost.remove());
+}
+
+/** The landing of a stuck-on sticker: squashed flat, then a little proud, then at rest. */
+export function squash(el: Element | null | undefined): void {
+  if (!el || reducedMotion.value) return;
+  el.animate(
+    [{ transform: "scale(0.92, 0.92)" }, { transform: "scale(1.04, 1.04)", offset: 0.55 }, { transform: "scale(1, 1)" }],
+    { duration: 260, easing: "ease-out" },
+  );
+}

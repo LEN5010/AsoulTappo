@@ -11,6 +11,7 @@ import NamePill from "./pet/NamePill.vue";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
+import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet } from "./stores/pet";
@@ -132,7 +133,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
         :emote="m.emote" :combo="m.combo" :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
-      <NamePill v-if="settings.showNames" :nick="m.nick" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />
+      <NamePill
+        v-if="settings.showNames" :nick="m.nick" :color="characterColor(m.character)"
+        :width="Math.max(120, PET_BASE.width * settings.remoteScale)"
+      />
     </PetActor>
 
     <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
@@ -143,10 +147,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
+        :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
-        @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel"
+        @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
       >
-        <button v-if="draws > 0" class="ticket-bubble ui-btn small primary" data-hit data-no-drag @click="openPanel('resonance')">共鸣 ×{{ draws }}</button>
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
 
@@ -171,11 +175,6 @@ html.browser-preview body {
 </style>
 
 <style scoped>
-.ticket-bubble {
-  position: absolute;
-  left: 4px;
-  bottom: calc(100% + 8px);
-}
 .desk { position: fixed; inset: 0; pointer-events: none; }
 .desk > :deep(*) { pointer-events: auto; }
 </style>

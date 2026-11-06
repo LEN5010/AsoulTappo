@@ -57,7 +57,7 @@ function onWheel(e: WheelEvent) {
     <button
       v-if="needsPager"
       type="button"
-      class="nav-arrow"
+      class="nav-arrow ui-btn ghost"
       :disabled="!canPrev"
       aria-label="上一组表情"
       @click.stop="prev"
@@ -70,7 +70,7 @@ function onWheel(e: WheelEvent) {
     <div class="row">
       <button
         v-for="x in visible" :key="x.key" type="button"
-        class="emo" role="menuitem" :title="x.e!.name"
+        class="emo ui-btn" role="menuitem" :title="x.e!.name"
         @click="$emit('pick', x.key)"
       >
         <img :src="assetUrl(x.e!.thumb ?? x.e!.img)" :alt="x.e!.name" draggable="false" />
@@ -80,7 +80,7 @@ function onWheel(e: WheelEvent) {
     <button
       v-if="needsPager"
       type="button"
-      class="nav-arrow"
+      class="nav-arrow ui-btn ghost"
       :disabled="!canNext"
       aria-label="下一组表情"
       @click.stop="next"
@@ -93,7 +93,7 @@ function onWheel(e: WheelEvent) {
 </template>
 
 <style scoped>
-/* Single-row dock under the counter bar; tiles are never clipped in half */
+/* A paper plate of keys under the counter strip, one row; keys are never clipped in half. */
 .dock {
   position: absolute;
   left: 50%;
@@ -102,11 +102,12 @@ function onWheel(e: WheelEvent) {
   z-index: 20;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
+  gap: 4px;
+  padding: 8px 8px 11px;
   box-sizing: border-box;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: var(--glow-s), 0 8px 20px rgba(var(--ink-rgb), 0.2);
+  box-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.12), 0 8px 20px -6px rgba(var(--c-900-rgb), 0.35);
   font-family: var(--font);
   animation: drop-in var(--dur-base) var(--ease-out);
   cursor: default;
@@ -122,37 +123,15 @@ function onWheel(e: WheelEvent) {
   gap: 5px;
 }
 .emo {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 46px;
-  padding: 5px;
-  margin: 0;
-  box-sizing: border-box;
-  border: 0;
-  background: var(--accent-tint);
-  border-radius: var(--radius-s);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform var(--dur-base) var(--ease-out), background var(--dur-fast);
-}
-.dock.compact .emo {
-  width: 41px;
-  height: 41px;
-  flex: 0 0 41px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   padding: 4px;
 }
-.emo:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2.5px var(--ink);
-}
-.emo:hover {
-  background: var(--accent-soft);
-  transform: translate(-1px, -2px);
-}
-.emo:active {
-  transform: translate(1px, 1px);
+.dock.compact .emo {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
 }
 .emo img {
   max-width: 34px;
@@ -170,27 +149,14 @@ function onWheel(e: WheelEvent) {
 }
 
 .nav-arrow {
-  width: 20px;
-  height: 36px;
-  flex: 0 0 20px;
+  width: 22px;
+  height: 40px;
+  flex: 0 0 22px;
   padding: 0;
-  margin: 0;
-  box-sizing: border-box;
-  border: 0;
-  background: var(--accent-tint);
   color: var(--ink);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--dur-fast);
-}
-.nav-arrow:hover:not(:disabled) {
-  background: var(--accent);
 }
 .nav-arrow:disabled {
   opacity: 0.35;
-  cursor: default;
 }
 
 @keyframes drop-in {

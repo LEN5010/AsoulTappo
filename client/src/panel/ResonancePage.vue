@@ -3,10 +3,9 @@ import { computed, ref } from "vue";
 import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
 import { type Item, RARITY_LABEL } from "../items";
 import { poolOf, effectiveRates, commonKindRates } from "../resonance";
-import { collection, resonate, draws, shards, status, online, error } from "../stores/player";
+import { collection, resonate, draws, status, online, error } from "../stores/player";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
-import ShardCrystal from "../ui/ShardCrystal.vue";
 import PoolStage from "./PoolStage.vue";
 import RevealScene from "./RevealScene.vue";
 import CardDetail from "./CardDetail.vue";
@@ -33,6 +32,8 @@ function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
 }
+/** Past this share of the hard pity the legendary gauge glows. */
+const PITY_NEAR = 90;
 const pityPercent = (r: "legendary" | "skin") =>
   Math.min(100, (status.value?.resonance.pity[r] ?? 0) / manifest.economy.resonance.pity[r] * 100);
 function draw(count: number) {
@@ -55,38 +56,39 @@ async function nextBatch() {
   <div class="resonance-page ui-scroll">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
     <PoolStage :busy="revealing" :paused="probabilities || !!detail || !!skin" @inspect="inspect" />
-    <section class="dock">
+    <footer class="console">
       <div class="pities">
         <template v-for="r in pityTiers" :key="r">
-          <div v-if="missingTier(r)" class="pity" :class="r">
+          <div v-if="missingTier(r)" class="pity" :class="[r, { near: r === 'legendary' && pityPercent(r) >= PITY_NEAR }]">
             <span>
-              <Icon :name="r === 'legendary' ? 'crown' : 'shirt'" :size="15" />
-              {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b> / {{ manifest.economy.resonance.pity[r] }}
+              <Icon :name="r === 'legendary' ? 'crown' : 'shirt'" :size="14" />
+              {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b><i>/ {{ manifest.economy.resonance.pity[r] }}</i>
             </span>
             <div class="ui-bar"><i :style="{ width: `${pityPercent(r)}%` }"></i></div>
           </div>
         </template>
-        <button type="button" class="ui-btn small ghost rates-btn" @click="probabilities = true"><Icon name="info" :size="14" />概率说明</button>
       </div>
-      <footer class="console">
-        <ShardCrystal class="crystal" :size="58" />
-        <div class="wallet">
-          <p><span class="wallet-label">碎片</span><b>{{ shards }}</b></p>
-          <small><Icon name="clock" :size="14" />收益 ×{{ status?.income.multiplier ?? 1 }} · 每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</small>
-        </div>
-        <b v-if="complete" class="done">已集齐</b>
+      <div class="supply">
+        <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
+        <small>收益 ×{{ status?.income.multiplier ?? 1 }} · 每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</small>
+      </div>
+      <b v-if="complete" class="done">已集齐</b>
+      <div class="keys">
         <button v-if="draws >= 2" type="button" class="ui-btn ghost all" :disabled="revealing || !online || complete" @click="draw(draws)">全部 ×{{ draws }}</button>
-        <button type="button" class="ui-btn large act" :disabled="revealing || !online || draws < 1 || complete" @click="draw(1)">
-          <span class="act-label"><Icon name="spark" :size="16" />共鸣一次</span>
+        <button type="button" class="ui-btn large act once" :disabled="revealing || !online || draws < 1 || complete" @click="draw(1)">
+          <span class="act-label">共鸣一次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
-        <button type="button" class="ui-btn large act primary pulse" :disabled="revealing || !online || draws < 10 || complete" @click="draw(10)">
-          <span class="act-label"><Icon name="spark" :size="18" />共鸣十次</span>
+        <button type="button" class="ui-btn act ten primary pulse" :disabled="revealing || !online || draws < 10 || complete" @click="draw(10)">
+          <span class="act-label">共鸣十次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
-      </footer>
-    </section>
-    <Modal v-if="probabilities" title="共鸣概率" @close="probabilities = false">
+        <button type="button" class="ui-btn ghost rates-btn" title="概率说明" aria-label="概率说明" @click="probabilities = true">
+          <Icon name="info" :size="18" />
+        </button>
+      </div>
+    </footer>
+    <Modal v-if="probabilities" title="共鸣概率" heading @close="probabilities = false">
       <table class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
         <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ manifest.economy.resonance.rates[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' ? '400 次' : r === 'skin' ? '200 次' : '—' }}</td></tr>
       </tbody></table>
@@ -101,112 +103,141 @@ async function nextBatch() {
 </template>
 
 <style scoped>
+/* The page is the stage; the action bar is a sheet of paper fixed to its bottom edge. */
 .resonance-page {
   height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 20px 14px 16px;
   overflow-y: auto;
 }
-.dock {
+.resonance-page > .ui-error {
+  margin: 10px 20px 0 16px;
+}
+.console {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   flex: none;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 16px 14px 24px;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface);
+  box-shadow: 0 -10px 28px -18px rgba(var(--c-900-rgb), 0.38), 0 -1px 2px rgba(var(--c-900-rgb), 0.05);
+}
+.pities {
+  flex: 0 1 190px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px 12px;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line-2);
-}
-.pities {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 0 4px;
 }
 .pity {
-  flex: 1;
   min-width: 0;
   font-size: var(--fs-label);
+  font-weight: 700;
   color: var(--ink-2);
-}
-.pity + .pity {
-  padding-left: 20px;
-  border-left: 1px solid var(--line-2);
 }
 .pity span {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: baseline;
+  gap: 4px;
   white-space: nowrap;
 }
 .pity b {
+  margin-left: auto;
   font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink);
 }
+.pity span i {
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  font-style: normal;
+  color: var(--ink-3);
+}
 .pity svg {
-  color: var(--accent-deep);
+  align-self: center;
+  color: var(--c-700);
 }
 .pity .ui-bar {
-  margin-top: 5px;
+  height: 6px;
+  margin-top: 4px;
 }
 .pity.legendary svg {
   color: var(--gold);
 }
 .pity.legendary .ui-bar > i {
-  background: linear-gradient(90deg, var(--gold-soft), var(--gold) 60%, color-mix(in oklab, var(--gold) 78%, var(--tone-bottom)));
+  background: var(--grad-gold);
 }
-.rates-btn {
-  margin-left: auto;
+/* Nearly there: the legendary gauge glows and breathes slowly. */
+.pity.near .ui-bar {
+  overflow: visible;
 }
-.console {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: var(--radius-m);
-  background: linear-gradient(90deg, var(--accent-tint), var(--surface) 70%);
-  box-shadow: inset 0 0 0 1px var(--line);
+.pity.near .ui-bar > i {
+  box-shadow: 0 0 10px 1px rgba(var(--gold-rgb), 0.7);
+  animation: near-breathe 2.8s var(--ease-in-out) infinite;
 }
-.wallet {
+@keyframes near-breathe {
+  50% {
+    box-shadow: 0 0 4px 0 rgba(var(--gold-rgb), 0.35);
+  }
+}
+.supply {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.wallet p {
+.supply p {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin: 0;
-  font: 800 var(--fs-heading)/1 var(--font);
-  white-space: nowrap;
-}
-.wallet b {
-  font: 800 34px/1 var(--font-latin);
-  color: var(--accent-deep);
-}
-.wallet small {
-  display: flex;
-  align-items: center;
   gap: 5px;
-  font-size: var(--fs-label);
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
   color: var(--ink-2);
   white-space: nowrap;
 }
+.supply b {
+  font: 800 26px/1 var(--font-latin);
+  color: var(--ink);
+}
+.supply small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-label);
+  font-weight: 500;
+  color: var(--ink-3);
+}
 .done {
+  flex: none;
   font-size: var(--fs-strong);
-  color: var(--accent-deep);
+  color: var(--c-700);
+}
+.keys {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 3px;
 }
 .act {
-  min-width: clamp(116px, 15cqw, 158px);
-  height: 54px;
   flex-direction: column;
   gap: 3px;
-  font-size: var(--fs-number);
+}
+.once {
+  min-width: 112px;
+}
+/* The space bar of the row: taller and wider than any other key. */
+.ten {
+  height: 60px;
+  min-width: clamp(150px, 24cqw, 230px);
+  padding: 0 28px;
+  font-size: 18px;
 }
 .act-label {
   display: inline-flex;
@@ -222,33 +253,59 @@ async function nextBatch() {
   letter-spacing: 0.04em;
   opacity: 0.75;
 }
-.act:not(.primary):not(:disabled) svg {
-  color: var(--accent);
+.once:not(:disabled) .act-cost svg {
+  color: var(--c-500);
+}
+.rates-btn {
+  width: 36px;
+  padding: 0;
 }
 @container panel (max-width: 820px) {
-  .crystal,
-  .wallet small {
+  .console {
+    gap: 12px;
+    padding-left: 18px;
+  }
+  .supply small {
     display: none;
   }
-  .wallet b {
-    font-size: 26px;
+  .ten {
+    min-width: 140px;
+    padding: 0 18px;
   }
-  .act {
+  .once {
     min-width: 0;
     padding: 0 16px;
   }
 }
-/* Narrow: the number speaks for itself, so the buttons keep their row. */
+/* Narrow: the keys keep their row; the supply line gives way first. */
 @container panel (max-width: 720px) {
-  .wallet-label {
+  .console {
+    gap: 8px;
+    padding: 10px 10px 12px 14px;
+  }
+  .supply {
     display: none;
   }
-  .console {
+  .pities {
+    flex: 1 1 auto;
+  }
+  .keys {
     gap: 6px;
-    padding: 8px 10px;
   }
   .all {
-    padding: 0 6px;
+    padding: 0 8px;
+  }
+  .ten {
+    min-width: 0;
+  }
+}
+@container panel (max-height: 600px) {
+  .ten {
+    height: 52px;
+  }
+  .console {
+    padding-top: 8px;
+    padding-bottom: 10px;
   }
 }
 .rates {
@@ -259,6 +316,6 @@ async function nextBatch() {
 th, td {
   text-align: left;
   padding: 10px 6px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--c-100);
 }
 </style>

@@ -1,18 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { characters, getCharacter } from "../characters";
+import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { isTauri } from "../composables/tauri";
 import { online, status, saveCode, restoreSaveCode } from "../stores/player";
 import { counter } from "../stores/counter";
-import { THEME_COLORS, themeSwatch } from "../stores/theme";
-import { arrowSelect } from "../ui/focus";
-import Icon from "../ui/Icon.vue";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
-const swatches = ref<HTMLElement>();
 const serverDraft = ref(settings.serverUrl);
 const serverError = ref("");
 const saveDraft = ref("");
@@ -50,7 +46,7 @@ function applyServer() {
 
 <template>
   <div class="settings">
-    <section class="profile ui-frame ui-ring" data-rise>
+    <section class="profile ui-frame" data-rise>
       <span class="portrait" aria-hidden="true"><PetBust v-if="portrait" class="bust" :src="portrait" /></span>
       <label class="nick">
         <span>昵称</span>
@@ -65,36 +61,18 @@ function applyServer() {
     </section>
 
     <section data-rise>
-      <h4 class="ui-label"><span>存档</span><em>SAVE</em></h4>
-      <div class="ui-group ui-frame ui-ring">
+      <h4 class="ui-label"><span>存档</span></h4>
+      <div class="ui-group ui-frame">
         <div class="ui-row"><span>当前存档码</span><input class="ui-input" readonly :value="saveCode" aria-label="当前存档码" /><button class="ui-btn" type="button" @click="copySave">复制</button></div>
         <form class="ui-row" @submit.prevent="restoreSave"><input v-model="saveDraft" class="ui-input" placeholder="粘贴存档码" aria-label="导入存档码" maxlength="128" /><button class="ui-btn" type="submit" :disabled="!saveDraft.trim()">切换存档</button></form>
         <p v-if="saveNotice" role="status" class="err">{{ saveNotice }}</p>
       </div>
     </section>
 
-    <section data-rise>
-      <h4 class="ui-label"><span>主题色</span><em>THEME</em></h4>
-      <div ref="swatches" class="themes" role="radiogroup" aria-label="主题色" @keydown="arrowSelect($event, swatches)">
-        <button
-          v-for="t in THEME_COLORS" :key="t.id" type="button" role="radio"
-          class="theme" :class="{ on: settings.themeColor === t.id }"
-          :aria-checked="settings.themeColor === t.id" @click="settings.themeColor = t.id"
-        >
-          <span class="theme-art" :style="{ background: themeSwatch(t) }" aria-hidden="true">
-            <PetBust v-if="characters[t.name]" class="theme-bust" :src="characters[t.name]!.bg" />
-            <i v-else class="theme-logo"></i>
-          </span>
-          <b>{{ t.name }}</b>
-          <span v-if="settings.themeColor === t.id" class="mark" aria-hidden="true"><Icon name="check" :size="11" /></span>
-        </button>
-      </div>
-    </section>
-
     <div class="columns">
       <section data-rise>
-        <h4 class="ui-label"><span>桌宠表现</span><em>PET</em></h4>
-        <div class="ui-group ui-frame ui-ring">
+        <h4 class="ui-label"><span>桌宠表现</span></h4>
+        <div class="ui-group ui-frame">
           <label class="ui-row">
             <span>桌宠大小</span>
             <span class="ui-ctl">
@@ -129,8 +107,8 @@ function applyServer() {
 
       <div class="column">
         <section v-if="isTauri" data-rise>
-          <h4 class="ui-label"><span>窗口设置</span><em>WINDOW</em></h4>
-          <div class="ui-group ui-frame ui-ring">
+          <h4 class="ui-label"><span>窗口设置</span></h4>
+          <div class="ui-group ui-frame">
             <label class="ui-row">
               <span>桌宠置顶</span>
               <input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" />
@@ -143,8 +121,8 @@ function applyServer() {
         </section>
 
         <section data-rise>
-          <h4 class="ui-label"><span>服务器连接</span><em>SERVER</em></h4>
-          <div class="ui-group ui-frame ui-ring">
+          <h4 class="ui-label"><span>服务器连接</span></h4>
+          <div class="ui-group ui-frame">
             <div class="ui-row">
               <span class="state" :class="{ ok: online }"><i></i>{{ online ? "已连接" : "未连接" }}</span>
               <span class="ui-ctl wide">
@@ -186,8 +164,9 @@ function applyServer() {
   padding: 0 8px 0 12px;
   box-sizing: border-box;
   background: var(--surface);
+  box-shadow: var(--shadow-paper);
 }
-/* The current pet rises from a disc cut off by the card's bottom edge. */
+/* The current pet rises from a coral disc cut off by the card's bottom edge. */
 .portrait {
   position: relative;
   flex: none;
@@ -204,7 +183,7 @@ function applyServer() {
   aspect-ratio: 1;
   border-radius: 50%;
   transform: translateX(-50%);
-  background: var(--grad-sky);
+  background: var(--c-500);
 }
 .bust {
   position: absolute;
@@ -241,7 +220,6 @@ function applyServer() {
   flex-direction: column;
   gap: 4px;
   padding: 2px 8px 2px 14px;
-  border-left: 1.5px solid var(--line);
   font-size: var(--fs-caption);
   font-weight: 700;
   color: var(--ink-3);
@@ -252,80 +230,6 @@ function applyServer() {
   text-overflow: ellipsis;
   font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
-}
-
-/* Each theme is picked by its member, on the gradient that theme paints the sidebar with. */
-.themes {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-}
-.theme {
-  position: relative;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-m);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1.5px var(--line-2);
-  color: var(--ink);
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-fast);
-}
-.theme:hover {
-  transform: translateY(-2px);
-}
-.theme.on {
-  box-shadow: 0 0 0 2px var(--ink);
-}
-.theme-art {
-  position: relative;
-  display: block;
-  height: 92px;
-  overflow: hidden;
-}
-.theme-bust {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 108px;
-  height: 82px;
-  transform: translateX(-50%);
-  filter: var(--contour);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.theme:hover .theme-bust {
-  transform: translateX(-50%) scale(1.06);
-  transform-origin: 50% 100%;
-}
-.theme-logo {
-  position: absolute;
-  inset: 28px 12px;
-  background: var(--surface);
-  mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
-  -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
-}
-.theme b {
-  padding: 5px 2px 6px;
-  font-size: var(--fs-body);
-  font-weight: 800;
-  line-height: 1.2;
-}
-.mark {
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: 22px;
-  height: 20px;
-  border-radius: 0 0 0 var(--radius-s);
-  background: var(--ink);
-  color: var(--on-ink);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .columns {
@@ -367,7 +271,8 @@ function applyServer() {
 }
 .state i {
   width: 8px;
-  height: 14px;
+  height: 8px;
+  border-radius: 50%;
   background: var(--ink-3);
 }
 .state.ok i {
@@ -402,16 +307,6 @@ function applyServer() {
   .stats {
     flex: 0 0 100%;
     margin: 8px 0 10px;
-  }
-  .theme-art {
-    height: 52px;
-  }
-  .theme-bust {
-    width: 60px;
-    height: 46px;
-  }
-  .theme-logo {
-    inset: 14px 8px;
   }
 }
 </style>

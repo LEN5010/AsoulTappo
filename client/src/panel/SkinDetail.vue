@@ -39,11 +39,11 @@ function resonate() { ui.page = 'resonance'; emit('close'); }
 .skin-detail { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); align-items: stretch; gap: 24px; }
 .portrait { width: 100%; align-self: center; }
 .info { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 9px; padding-top: 4px; }
-h3 { margin: 4px 0 0; font: 800 var(--fs-heading)/1.3 var(--font); text-wrap: balance; }
-.member { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ink-2); font-size: var(--fs-body); font-weight: 700; }
+h3 { margin: 6px 0 2px; font: 800 clamp(22px, 3cqw, 28px)/1.25 var(--font); text-wrap: balance; }
+.member { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ink); font-size: var(--fs-body); font-weight: 700; }
 .member i { width: 4px; height: 11px; }
 dl { width: 100%; margin: 12px 0 0; font-size: var(--fs-body); }
-dl div { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
+dl div { display: flex; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--c-100); }
 dt { color: var(--ink-3); } dd { margin: 0; font-weight: 700; }
 .live-preview { display: flex; flex: 1; width: 100%; align-items: center; justify-content: flex-end; flex-direction: column; padding: 12px 0; }
 .live-preview small { font-size: var(--fs-caption); color: var(--ink-3); }

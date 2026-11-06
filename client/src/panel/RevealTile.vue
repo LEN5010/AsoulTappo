@@ -5,6 +5,7 @@
 // first copy turns quietly off a paper back. An animated emote stays on a plate of its tone, a
 // plain sticker peels off the paper it was turned on.
 import { computed } from "vue";
+import { cardFrame } from "../cards";
 import type { BoardEntry } from "./reveal-board";
 import CardBack from "./CardBack.vue";
 import PetBust from "./PetBust.vue";
@@ -30,7 +31,7 @@ const quiet = computed(() => props.entry.drop.rarity === "common" || props.entry
 /** Animated emotes sit on a plate of their tone, so they read apart from plain stickers at a glance. */
 const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare");
 /** Hidden cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
-const frame = computed(() => (props.entry.card?.tier === "big" ? "frame-gold" : props.entry.card?.tier === "small" ? "frame-rose" : ""));
+const frame = computed(() => cardFrame(props.entry.card));
 const actionable = computed(() => !props.open || props.entry.spot);
 const label = computed(() => (props.open ? `再看一次${props.entry.title}` : `翻开${props.entry.hint}`));
 const note = computed(() => {
@@ -94,7 +95,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
 <style scoped>
 .tile {
   --dot: var(--ink-3);
-  --burst: var(--tone-glow, rgba(var(--accent-rgb), 0.7));
+  --burst: var(--tone-glow, rgba(var(--c-500-rgb), 0.7));
   position: relative;
   width: var(--tile-w);
   min-width: 0;
@@ -122,16 +123,13 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
 .actionable {
   cursor: pointer;
 }
-.tone-uncommon { --dot: var(--accent-mid); }
-/* Plain first copies: a paper back with the mark in accent and a faint glow. */
+.tone-uncommon { --dot: var(--c-300); }
+/* Plain first copies: the back comes from the ladder in tokens.css, with a faint glow. */
 .quiet {
-  --seal-fill: linear-gradient(180deg, var(--surface), var(--accent-soft));
-  --seal-mark: var(--accent);
-  --seal-rule: var(--accent-mid);
-  --tone-glow: rgba(var(--accent-rgb), 0.35);
+  --tone-glow: rgba(var(--c-500-rgb), 0.35);
 }
-.tone-rare { --dot: var(--accent); }
-.tone-epic { --dot: var(--tone-bottom); }
+.tone-rare { --dot: var(--c-500); }
+.tone-epic { --dot: var(--c-800); }
 .tone-skin { --dot: var(--tone-glow); }
 .tone-legendary { --dot: var(--gold); }
 
@@ -197,7 +195,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   object-fit: cover;
   border-radius: var(--radius-m);
   background: var(--surface);
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
 }
 /* Same proportions as the spotlight's framed card, so the card flying home lands on this frame. */
 .card-frame {
@@ -205,7 +203,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   inset: 0;
   border-radius: 5cqw;
   background: var(--frame-fill) var(--frame-at) / var(--frame-size);
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
 }
 /* An image keeps its own size under auto, so the size inside the frame is spelled out. */
 .card-frame .card-art {
@@ -229,8 +227,8 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   position: absolute;
   inset: 0;
   border-radius: var(--radius-m);
-  background: var(--tone-fill, var(--grad-sky));
-  box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.45);
+  background: var(--tone-fill, var(--c-500));
+  box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.45);
 }
 .pad::after {
   content: "";
@@ -271,7 +269,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   overflow: hidden;
   border-radius: var(--radius-m);
   background: linear-gradient(180deg, var(--surface) 35%, color-mix(in srgb, var(--tone-glow) 34%, var(--surface)));
-  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--ink-rgb), 0.5);
+  box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--c-900-rgb), 0.5);
 }
 .bust {
   display: block;

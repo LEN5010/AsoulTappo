@@ -4,7 +4,8 @@ import { takeFocus, trapTab } from "./focus";
 import Icon from "./Icon.vue";
 
 // `still` drops the sheet's slide for content that animates into place on its own.
-defineProps<{ title?: string; wide?: boolean; still?: boolean }>();
+// `title` names the dialog; `heading` also draws it in the header row, for callers without a heading of their own.
+defineProps<{ title?: string; wide?: boolean; still?: boolean; heading?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
@@ -31,8 +32,10 @@ onDeactivated(() => emit("close"));
     <div class="backdrop" data-overlay @click.self="emit('close')">
       <slot name="behind" />
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
-        <div class="sheet-band" aria-hidden="true"></div>
-        <button type="button" class="x ui-plate" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="15" /></button>
+        <div class="sheet-head">
+          <h3 v-if="heading && title" class="sheet-title">{{ title }}</h3>
+          <button type="button" class="x ui-btn ghost" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="16" /></button>
+        </div>
         <div class="sheet-body">
           <slot />
         </div>
@@ -53,9 +56,10 @@ onDeactivated(() => emit("close"));
   padding: 20px;
   box-sizing: border-box;
   overflow: hidden;
-  background: rgba(var(--ink-rgb), 0.46);
+  background: rgba(var(--c-900-rgb), 0.42);
   animation: fade var(--dur-fast) var(--ease-out);
 }
+/* White paper with a quiet close key in its corner. */
 .sheet {
   position: relative;
   outline: none;
@@ -64,8 +68,8 @@ onDeactivated(() => emit("close"));
   overflow: auto;
   box-sizing: border-box;
   background: var(--surface);
-  border-radius: var(--radius-l);
-  box-shadow: var(--glow-l), 0 18px 44px rgba(var(--ink-rgb), 0.26);
+  border-radius: 20px;
+  box-shadow: 0 2px 4px rgba(var(--c-900-rgb), 0.08), 0 24px 48px -20px rgba(var(--c-900-rgb), 0.45);
   animation: slide var(--dur-slow) var(--ease-out);
 }
 .sheet.wide {
@@ -74,34 +78,33 @@ onDeactivated(() => emit("close"));
 .sheet.still {
   animation: fade var(--dur-base) var(--ease-out);
 }
-.sheet-band {
-  position: relative;
-  height: 22px;
-  overflow: hidden;
-  background: var(--grad-sky);
+/* The close key owns its own row, so no content can slide under it. */
+.sheet-head {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px 0 24px;
+  box-sizing: border-box;
 }
-.sheet-body {
-  padding: 18px 24px 24px;
+.sheet-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 18px/1.2 var(--font);
+  color: var(--ink);
 }
 .x {
-  --plate-bg: var(--ink);
-  position: absolute;
-  right: 10px;
-  top: 0;
-  width: 42px;
-  height: 22px;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
   padding: 0;
-  border: 0;
-  background: none;
-  color: var(--on-ink);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
 }
-.x:hover {
-  --plate-bg: var(--accent-deep);
+.sheet-body {
+  padding: 0 24px 24px;
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }

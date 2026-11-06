@@ -3,7 +3,7 @@
 import { computed, onBeforeUnmount, watch, type ObjectDirective } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { byTier, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
+import { byTier, cardFrame, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
@@ -72,7 +72,7 @@ const visible = computed(() =>
         :title="card.name" data-rise
         @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined)"
       >
-        <span class="art ui-frame ui-well" :class="{ 'ui-ring': card.tier !== 'normal' }">
+        <span class="art ui-frame ui-well" :class="[cardFrame(card), { framed: !!cardFrame(card) }]">
           <video
             v-if="playsCardVideo(card, owned(card), reducedMotion)" v-visible-video
             :data-src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
@@ -109,10 +109,18 @@ const visible = computed(() =>
   --well-ratio: 2 / 3;
   --radius: var(--radius-m);
 }
+/* Photocards: hidden and dance cards sit in their metal frame, the rest are bare. */
 .art {
   padding: 0;
-  background: var(--accent-tint);
-  box-shadow: none;
+  background: var(--c-100);
+}
+.art.framed {
+  padding: 4px;
+  background: var(--frame-fill) var(--frame-at) / var(--frame-size);
+}
+.art.framed img,
+.art.framed video {
+  border-radius: calc(var(--radius-m) - 3px);
 }
 .art img,
 .art video {
@@ -126,17 +134,22 @@ const visible = computed(() =>
 }
 .slot.locked .art img,
 .slot.locked .art video {
-  filter: brightness(0.74);
+  filter: var(--dim);
   transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base);
 }
-.slot.small .art {
-  --ring: var(--accent);
+/* Unowned cards are a dimmed original that lights up under the pointer. */
+.slot.locked:hover .art img,
+.slot.locked:hover .art video {
+  filter: none;
 }
-.slot.big .art {
-  --ring: var(--gold);
+/* A photo fills its frame, so it zooms in place rather than lifting out of it. */
+.slot:hover .art img,
+.slot:hover .art video {
+  transform: scale(1.04);
 }
-.slot.locked:not(:hover) .art {
-  --ring: var(--line-2);
+/* Unowned: the frame stays plain until the pointer lights it, as the ring did before. */
+.slot.locked:not(:hover) .art.framed {
+  background: var(--c-200);
 }
 .tier {
   position: absolute;
@@ -161,8 +174,9 @@ const visible = computed(() =>
   z-index: 1;
   width: 22px;
   height: 16px;
-  background: var(--ink);
-  color: var(--on-ink);
+  border-radius: var(--radius-s);
+  background: var(--c-800);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;

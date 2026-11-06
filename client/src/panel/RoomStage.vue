@@ -2,6 +2,7 @@
 // The room as one table: the own pet and the members' live pets, empty seats outlined. A full row opens the next.
 import { computed } from "vue";
 import { PET_BASE } from "../characters";
+import { characterColor } from "../manifest";
 import { MAX_ROOM_SIZE } from "../net/protocol";
 import { pet } from "../stores/pet";
 import { localPet, others } from "../stores/room";
@@ -21,7 +22,6 @@ const vacant = computed(() => {
 
 <template>
   <section class="table ui-frame" data-rise>
-    <i class="halftone" aria-hidden="true"></i>
     <div class="seats">
       <div class="seat">
         <PetView
@@ -29,13 +29,13 @@ const vacant = computed(() => {
           :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
           :left-down="pet.left" :right-down="pet.right" :emote="localPet.emote"
         />
-        <NamePill :nick="settings.nick.trim() || '我'" :width="PILL_WIDTH" />
+        <NamePill :nick="settings.nick.trim() || '我'" :color="characterColor(settings.character)" :width="PILL_WIDTH" />
       </div>
       <div v-for="m in others" :key="m.id" class="seat">
         <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo"
           :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
           :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse />
-        <NamePill :nick="m.nick" :width="PILL_WIDTH" />
+        <NamePill :nick="m.nick" :color="characterColor(m.character)" :width="PILL_WIDTH" />
       </div>
       <div v-for="n in vacant" :key="n" class="seat vacant"><i aria-hidden="true"></i></div>
     </div>
@@ -43,19 +43,11 @@ const vacant = computed(() => {
 </template>
 
 <style scoped>
+/* A light wall behind one long table. */
 .table {
   --radius: var(--radius-l);
-  background: var(--grad-sky);
+  background: var(--c-100);
   padding: 50px 12px 12px;
-}
-.halftone {
-  position: absolute;
-  inset: auto 0 0;
-  height: 110px;
-  background: var(--surface);
-  opacity: 0.34;
-  mask: var(--halftone) left bottom / 280px auto repeat-x;
-  -webkit-mask: var(--halftone) left bottom / 280px auto repeat-x;
 }
 .seats {
   position: relative;
@@ -80,6 +72,7 @@ const vacant = computed(() => {
   height: 58px;
   margin-bottom: 12px;
   box-sizing: border-box;
-  border: 2px dashed rgba(255, 255, 255, 0.72);
+  border: 2px dashed var(--c-300);
+  border-radius: var(--radius-m);
 }
 </style>

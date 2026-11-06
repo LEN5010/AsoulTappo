@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byTier, cardLabel, playsCardVideo, poolName } from "./cards";
+import { byTier, cardFrame, cardLabel, playsCardVideo, poolName } from "./cards";
 import { manifest } from "./manifest";
 
 describe("poolName", () => {
@@ -54,4 +54,14 @@ it("plays resonance demo cards at every ownership level", () => {
   expect(playsCardVideo(card, 0, false, true)).toBe(true);
   expect(playsCardVideo(card, undefined, false, true)).toBe(true);
   expect(playsCardVideo(card, 0, true, true)).toBe(false);
+});
+
+describe("cardFrame", () => {
+  it("frames big hidden cards in gold, small hidden and dance cards in coral", () => {
+    expect(cardFrame({ tier: "big", rarity: "legendary" })).toBe("frame-gold");
+    expect(cardFrame({ tier: "small", rarity: "epic" })).toBe("frame-rose");
+    expect(cardFrame({ tier: "normal", rarity: "epic" })).toBe("frame-rose");
+    expect(cardFrame({ tier: "normal", rarity: "common" })).toBe("");
+    expect(cardFrame(undefined)).toBe("");
+  });
 });

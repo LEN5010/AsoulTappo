@@ -3,7 +3,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
+import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { getItem } from "../items";
 import { collection } from "../stores/player";
@@ -45,7 +45,7 @@ function togglePlay() {
 <template>
   <Modal :title="card.name" wide :still="!!from" @close="emit('close')">
     <div class="detail" :class="card.tier">
-      <div ref="artEl" class="art ui-frame" :class="{ 'ui-ring': card.tier !== 'normal', locked: !preview && !count }">
+      <div ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count }]">
           <video
             v-if="animated && pageActive" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :muted="muted" autoplay loop playsinline
@@ -54,10 +54,10 @@ function togglePlay() {
           <img v-else :src="assetUrl(count || preview ? card.full : card.thumb)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
 
         <div v-if="animated" class="controls">
-          <button type="button" class="ui-plate" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
+          <button type="button" class="ui-btn small ghost" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
-          <button type="button" class="ui-plate" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
+          <button type="button" class="ui-btn small ghost" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
             <Icon :name="muted ? 'mute' : 'sound'" :size="14" />
           </button>
         </div>
@@ -90,13 +90,13 @@ function togglePlay() {
   flex: none;
   height: min(440px, calc(100cqh - 120px));
   aspect-ratio: 2 / 3;
-  background: var(--accent-tint);
+  box-sizing: border-box;
+  background: var(--c-100);
 }
-.small .art {
-  --ring: var(--accent);
-}
-.big .art {
-  --ring: var(--gold);
+/* Hidden and dance cards sit in their metal frame, as in the album and on the resonance page. */
+.art.framed {
+  padding: 6px;
+  background: var(--frame-fill) var(--frame-at) / var(--frame-size);
 }
 .art video,
 .art img {
@@ -105,6 +105,10 @@ function togglePlay() {
   display: block;
   object-fit: cover;
   background: center / cover no-repeat;
+}
+.art.framed video,
+.art.framed img {
+  border-radius: calc(var(--radius-l) - 5px);
 }
 .art.locked video,
 .art.locked img {
@@ -119,21 +123,17 @@ function togglePlay() {
   display: flex;
   gap: 8px;
 }
+/* Quiet keys on a frosted face, so they read over any artwork. */
 .controls button {
-  --plate-bg: var(--ink);
-  width: 34px;
-  height: 26px;
+  --key-top: rgba(255, 255, 255, 0.82);
+  --key-bottom: rgba(255, 255, 255, 0.82);
+  width: 32px;
   padding: 0;
-  border: 0;
-  background: none;
-  color: var(--on-ink);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  color: var(--ink);
 }
-.controls button:hover {
-  --plate-bg: var(--accent-deep);
+.controls button:hover:not(:disabled) {
+  --key-top: #fff;
+  --key-bottom: #fff;
 }
 
 .info {
@@ -146,8 +146,9 @@ function togglePlay() {
   padding-top: 4px;
 }
 h3 {
-  margin: 4px 0 0;
-  font: 800 var(--fs-heading)/1.2 var(--font);
+  margin: 6px 0 2px;
+  font: 800 clamp(22px, 3cqw, 28px)/1.25 var(--font);
+  text-wrap: balance;
 }
 .who {
   margin: 0;
@@ -156,7 +157,7 @@ h3 {
   gap: 6px;
   font-size: var(--fs-body);
   font-weight: 700;
-  color: var(--ink-2);
+  color: var(--ink);
 }
 .who i {
   width: 4px;
@@ -170,8 +171,8 @@ dl > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 0;
-  border-top: 1.5px solid var(--line);
+  padding: 10px 0;
+  border-top: 1px solid var(--c-100);
   font-size: var(--fs-body);
 }
 dt {
@@ -180,7 +181,8 @@ dt {
 }
 dd {
   margin: 0;
-  font-weight: 800;
+  font-weight: 700;
+  color: var(--ink);
 }
 dd.missing {
   color: var(--ink-3);

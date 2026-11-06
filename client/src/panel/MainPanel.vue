@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
-import { draws, online } from "../stores/player";
+import { draws, online, shards, status } from "../stores/player";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
@@ -9,7 +9,7 @@ import { closePanel, ui, type Page } from "../stores/ui";
 import { isPanelWindow, setDragging } from "../composables/tauri";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
-import { nextFrame, rise } from "../ui/motion";
+import { EASE_OUT, nextFrame, rise } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
 import CollectionPage from "./CollectionPage.vue";
 import ResonancePage from "./ResonancePage.vue";
@@ -18,15 +18,14 @@ import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
 import SettingsPage from "./SettingsPage.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
-import SideDesk from "./SideDesk.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
-  { id: "emotes", label: "背包", en: "BACKPACK", icon: "bag" },
-  { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card" },
-  { id: "dex", label: "图鉴", en: "CODEX", icon: "book" },
-  { id: "room", label: "联机", en: "ONLINE", icon: "users" },
-  { id: "settings", label: "设置", en: "SETTINGS", icon: "nut" },
+  { id: "emotes", label: "背包", en: "BACKPACK", icon: "backpack" },
+  { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card-spark" },
+  { id: "dex", label: "图鉴", en: "CODEX", icon: "codex" },
+  { id: "room", label: "联机", en: "ONLINE", icon: "people" },
+  { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
 /**
  * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
@@ -71,15 +70,25 @@ function up(e: PointerEvent) {
   }
   live.value = null;
 }
+// Escape closes the panel; digit keys 1-5 pick a page. Both stand down while an overlay is open,
+// and digits also while typing.
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Escape" && !document.querySelector("[data-overlay]")) closePanel();
+  if (document.querySelector("[data-overlay]")) return;
+  if (e.key === "Escape") {
+    closePanel();
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  const n = Number(e.key);
+  if (!Number.isInteger(n) || n < 1 || n > NAV.length) return;
+  if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
+  ui.page = NAV[n - 1]!.id;
 }
 
 // ---- page turns
 // ui.page moves at once (the nav highlight follows it); the shown page swaps behind the
 // shutter. Clicks that outrun the animation only ever leave the latest page pending.
 const shown = ref<Page>(ui.page);
-const shownNav = computed(() => NAV.find((n) => n.id === shown.value) ?? NAV[0]!);
 const nextNav = computed(() => NAV.find((n) => n.id === ui.page) ?? NAV[0]!);
 const shutter = ref<InstanceType<typeof PageShutter>>();
 const body = ref<HTMLElement>();
@@ -117,8 +126,31 @@ async function turnPage() {
 }
 watch(() => ui.page, turnPage);
 
+// ---- opening: the nav keys light up top to bottom and the alpaca peeks out of the bottom edge
+const deco = ref<InstanceType<typeof AlpacaEasterEgg>>();
+const NAV_STEP_MS = 30;
+function lightUp() {
+  if (reducedMotion.value) return;
+  navEl.value?.querySelectorAll<HTMLElement>("button").forEach((el, i) =>
+    el.animate(
+      [{ opacity: 0, transform: "translateX(-10px)" }, { opacity: 1, transform: "none" }],
+      { duration: 320, delay: 90 + i * NAV_STEP_MS, easing: EASE_OUT, fill: "backwards" },
+    ),
+  );
+  (deco.value?.$el as HTMLElement | undefined)?.animate(
+    [{ transform: "translateY(70%)" }, { transform: "none" }],
+    { duration: 520, delay: 240, easing: "cubic-bezier(0.34, 1.56, 0.64, 1)", fill: "backwards" },
+  );
+}
+// Kept alive in the panel window: reopening activates it again rather than mounting it.
+let activations = 0;
+onActivated(() => {
+  if (activations++ > 0) lightUp();
+});
+
 onMounted(async () => {
   window.addEventListener("keydown", onKey);
+  lightUp();
   if (reducedMotion.value) return;
   turning = true;
   shutter.value?.hold();
@@ -134,6 +166,32 @@ onBeforeUnmount(() => {
 const navEl = ref<HTMLElement>();
 const navThumb = ref<HTMLElement>();
 useSlider(navEl, navThumb, () => ui.page);
+
+// ---- shard balance: rolls to each new value, flashing coral when it grows
+const ROLL_MS = 400;
+const shownShards = ref(shards.value);
+const flash = ref(0);
+let primed = status.value !== null;
+let roll = 0;
+watch(shards, (to, from) => {
+  cancelAnimationFrame(roll);
+  if (!primed || reducedMotion.value) {
+    primed = true;
+    shownShards.value = to;
+    return;
+  }
+  if (to > from) flash.value++;
+  const base = shownShards.value;
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / ROLL_MS);
+    shownShards.value = Math.round(base + (to - base) * (1 - (1 - t) ** 3));
+    if (t < 1) roll = requestAnimationFrame(step);
+  };
+  roll = requestAnimationFrame(step);
+});
+onBeforeUnmount(() => cancelAnimationFrame(roll));
+const walletTip = computed(() => `收益 ×${status.value?.income.multiplier ?? 1} · 每分钟 ${status.value?.income.perMinute ?? 16} 碎片`);
 
 function badgeOf(id: Page): number {
   if (id === "resonance") return draws.value;
@@ -154,13 +212,16 @@ function badgeOf(id: Page): number {
     <div class="face">
       <div class="main">
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
-          <h1 class="page-title">{{ shownNav.label }}<em>{{ shownNav.en }}</em></h1>
-          <span v-if="!online" class="offline ui-tag dark" role="status"><i aria-hidden="true"></i>未连接</span>
-          <button v-if="isPanelWindow" type="button" class="close ui-plate" title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
-            <Icon name="minus" :size="15" />
+          <span v-if="!online" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
+          <span class="wallet" :title="walletTip">
+            <Icon name="shard" :size="16" />
+            <b :key="flash" :class="{ gain: flash > 0 }">{{ shownShards.toLocaleString("en-US") }}</b>
+          </span>
+          <button v-if="isPanelWindow" type="button" class="win ui-btn ghost" title="最小化" aria-label="最小化" @click="getCurrentWindow().minimize()">
+            <Icon name="minus" :size="16" />
           </button>
-          <button type="button" class="close ui-plate" title="关闭面板" aria-label="关闭面板" @click="closePanel">
-            <Icon name="close" :size="15" />
+          <button type="button" class="win ui-btn ghost" title="关闭面板" aria-label="关闭面板" @click="closePanel">
+            <Icon name="close" :size="16" />
           </button>
         </div>
 
@@ -178,32 +239,27 @@ function badgeOf(id: Page): number {
       <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
 
       <aside class="side">
-        <span class="side-fill" aria-hidden="true"></span>
-
-        <div class="side-inner">
-          <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
-            <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
-            <span class="logo-word ui-plate">TAPPO</span>
-          </div>
-
-          <nav ref="navEl" aria-label="主导航">
-            <i ref="navThumb" class="nav-thumb" aria-hidden="true"></i>
-            <button
-              v-for="n in NAV" :key="n.id" type="button"
-              :class="{ on: ui.page === n.id }" :title="n.label"
-              :aria-current="ui.page === n.id ? 'page' : undefined"
-              @click="ui.page = n.id"
-            >
-              <span class="nav-icon"><Icon :name="n.icon" :size="20" /></span>
-              <span class="nav-text"><b>{{ n.label }}</b><small>{{ n.en }}</small></span>
-              <span v-if="badgeOf(n.id) > 0" class="pip" :class="{ soft: n.id === 'room' }">{{ badgeOf(n.id) }}</span>
-            </button>
-          </nav>
-
-          <SideDesk class="side-desk" />
-
-          <AlpacaEasterEgg class="side-deco" />
+        <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+          <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
+          <span class="logo-word">TAPPO</span>
         </div>
+
+        <nav ref="navEl" aria-label="主导航">
+          <i ref="navThumb" class="nav-thumb" aria-hidden="true"></i>
+          <button
+            v-for="(n, i) in NAV" :key="n.id" type="button"
+            :class="{ on: ui.page === n.id }" :title="`${n.label}（${i + 1}）`"
+            :aria-current="ui.page === n.id ? 'page' : undefined"
+            @click="ui.page = n.id"
+          >
+            <span class="nav-face" aria-hidden="true"></span>
+            <Icon class="nav-icon" :name="n.icon" :size="20" />
+            <b class="nav-label">{{ n.label }}</b>
+            <span v-if="badgeOf(n.id) > 0" class="pip">{{ badgeOf(n.id) }}</span>
+          </button>
+        </nav>
+
+        <AlpacaEasterEgg ref="deco" class="side-deco" />
       </aside>
 
       <div class="panel-overlay"></div>
@@ -213,7 +269,7 @@ function badgeOf(id: Page): number {
 
 <style scoped>
 .panel {
-  --side-w: 196px;
+  --side-w: 168px;
   position: absolute;
   z-index: 40;
   box-sizing: border-box;
@@ -242,7 +298,7 @@ function badgeOf(id: Page): number {
 .glow {
   position: absolute;
   inset: 24px 16px 10px 24px;
-  background: rgba(var(--ink-rgb), 0.42);
+  background: rgba(var(--c-900-rgb), 0.42);
   filter: blur(24px);
   will-change: transform;
 }
@@ -260,77 +316,73 @@ function badgeOf(id: Page): number {
   z-index: 0;
   display: flex;
   flex-direction: column;
-  background: var(--page);
+  background: var(--c-50);
 }
+/* The drag handle: the shard balance and the window keys sit on its right. */
 .topbar {
   position: relative;
   z-index: 3;
   height: 46px;
   flex: none;
   margin-left: var(--side-w);
+  padding-right: 8px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
+  gap: 4px;
   cursor: grab;
   user-select: none;
 }
 .topbar:active {
   cursor: grabbing;
 }
-.topbar::after {
-  content: "";
-  position: absolute;
-  left: 16px;
-  right: 20px;
-  bottom: 0;
-  height: 2px;
-  background: var(--line-2);
-}
-.page-title {
-  align-self: center;
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  margin: 0 auto 0 16px;
-  font: 800 var(--fs-title)/1 var(--font);
-  color: var(--ink);
-}
-.page-title em {
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  letter-spacing: 0.1em;
-  color: var(--accent-deep);
-}
 .offline {
-  align-self: center;
-  margin-right: 14px;
-  padding: 0 9px 0 7px;
-  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--c-700);
 }
 .offline i {
-  display: inline-block;
-  width: 4px;
-  height: 10px;
-  margin-right: 5px;
-  background: var(--bad);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-700);
 }
-.close {
-  --plate-bg: transparent;
-  width: 34px;
-  height: 30px;
-  margin: 8px 8px 0 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink-2);
-  cursor: pointer;
-  display: flex;
+.wallet {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: color var(--dur-fast);
+  gap: 6px;
+  height: 30px;
+  margin-right: 6px;
+  padding: 0 12px 0 10px;
+  box-sizing: border-box;
+  border-radius: var(--radius-key);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+  color: var(--c-500);
+  cursor: default;
 }
-.close:hover {
-  --plate-bg: var(--accent-soft);
+.wallet b {
+  min-width: 2ch;
+  font: 800 18px/1 var(--font-latin);
   color: var(--ink);
+}
+.wallet b.gain {
+  animation: shard-gain 600ms var(--ease-out);
+}
+@keyframes shard-gain {
+  0%,
+  30% {
+    color: var(--c-600);
+  }
+}
+.win {
+  width: 32px;
+  height: 32px;
+  padding: 0;
 }
 
 .body {
@@ -357,8 +409,9 @@ function badgeOf(id: Page): number {
   pointer-events: auto;
 }
 
-/* The outer shape is the pale edge strip; the orange fill sits inside it. */
+/* Flat coral with a little light across the top. White focus rings on this ground. */
 .side {
+  --focus: #fff;
   position: absolute;
   left: 0;
   top: 0;
@@ -366,30 +419,20 @@ function badgeOf(id: Page): number {
   z-index: 2;
   width: var(--side-w);
   overflow: hidden;
-  background: var(--accent-soft);
-  user-select: none;
-}
-.side-fill {
-  position: absolute;
-  inset: 0 12px 0 0;
-  background: var(--grad-sky);
-}
-.side-inner {
-  position: absolute;
-  inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px 0 12px;
   box-sizing: border-box;
+  padding-top: 22px;
+  background: var(--grad-sky);
+  user-select: none;
 }
 
 .logo {
-  position: relative;
-  width: 146px;
-  height: 84px;
   flex: none;
-  margin-left: 14px;
-  filter: var(--contour) drop-shadow(0 2px 3px rgba(var(--ink-rgb), 0.22));
+  width: 120px;
+  margin-left: 22px;
+  display: flex;
+  flex-direction: column;
   cursor: grab;
 }
 .logo:active {
@@ -397,206 +440,194 @@ function badgeOf(id: Page): number {
 }
 .logo-mark {
   display: block;
-  width: 146px;
+  width: 100%;
   aspect-ratio: 3.172;
-  background: var(--ink);
+  background: #fff;
   mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
-.logo-word.ui-plate {
-  position: absolute;
-  right: 0;
-  top: 52px;
-  padding: 0 10px 0 12px;
-  font: 800 var(--fs-section)/22px var(--font-latin);
-  letter-spacing: 0.22em;
-  color: var(--on-ink);
-  --plate-bg: var(--ink);
+/* Right-aligned under the mark; the negative margin takes back the trailing letter-spacing. */
+.logo-word {
+  align-self: flex-end;
+  margin: 5px -0.32em 0 0;
+  font: 800 13px/1 var(--font-latin);
+  letter-spacing: 0.32em;
+  color: #fff;
 }
 
 nav {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 20px;
 }
+/* The selected page is a cream tab that runs off the sidebar's edge into the page, curving away above and below. */
 .nav-thumb {
+  --seam: 12px;
   position: absolute;
   left: 0;
   top: 0;
   opacity: 0;
-  border-radius: var(--radius-m) 0 0 var(--radius-m);
-  background: var(--surface);
-  box-shadow: 0 6px 16px -8px rgba(var(--ink-rgb), 0.34);
+  border-radius: var(--seam) 0 0 var(--seam);
+  background: var(--c-50);
   transform-origin: 0 50%;
   will-change: transform;
 }
-.nav-thumb::before {
+.nav-thumb::before,
+.nav-thumb::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 4px;
-  border-radius: 2px;
-  background: var(--grad-main);
+  right: 0;
+  width: var(--seam);
+  height: var(--seam);
+}
+.nav-thumb::before {
+  bottom: 100%;
+  background: radial-gradient(circle at 0 0, transparent var(--seam), var(--c-50) calc(var(--seam) + 0.5px));
+}
+.nav-thumb::after {
+  top: 100%;
+  background: radial-gradient(circle at 0 100%, transparent var(--seam), var(--c-50) calc(var(--seam) + 0.5px));
 }
 nav button {
   position: relative;
-  width: calc(100% - 14px);
-  height: 46px;
-  margin-left: 14px;
+  isolation: isolate;
+  width: calc(100% - 12px);
+  height: 44px;
+  margin-left: 12px;
   flex: none;
-  padding: 0 0 0 16px;
+  /* Right padding = face right inset + left padding, so the pip sits as far inside the face as the icon. */
+  padding: 0 26px 0 14px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border: 0;
   background: none;
-  color: var(--on-accent-surface);
+  color: #fff;
+  font: inherit;
   cursor: pointer;
-  transition: color var(--dur-base), transform var(--dur-base) var(--ease-out);
-}
-nav button:hover:not(.on) {
-  transform: translateX(4px);
-}
-nav button:focus-visible {
-  outline: none;
-}
-nav button:focus-visible .nav-icon {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-.nav-icon {
-  flex: none;
-  width: 38px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  color: var(--accent-deep);
-  transition: color var(--dur-base), box-shadow var(--dur-base);
-}
-nav button:hover:not(.on) .nav-icon {
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.7);
-}
-.nav-icon .icon {
-  stroke-width: 2.4;
-}
-nav button.on {
-  color: var(--accent-deep);
-}
-nav button.on .nav-icon {
-  background: var(--grad-main);
-  box-shadow: var(--glow-s);
-  color: var(--on-accent);
-}
-.nav-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-}
-.nav-text b {
-  font: 800 var(--fs-heading)/1 var(--font);
-}
-.nav-text small {
-  font: 800 var(--fs-caption)/1 var(--font-latin);
-  letter-spacing: 0.1em;
-  color: var(--on-accent-surface);
   transition: color var(--dur-base);
 }
-nav button.on .nav-text small {
-  color: inherit;
+nav button:focus-visible {
+  outline-offset: -3px;
 }
-/* At the end of the row, clear of the label and of the 12px pale strip on the sidebar's right edge, even at three digits. */
-.pip {
+nav button.on {
+  --focus: var(--ink);
+  color: var(--ink);
+  cursor: default;
+}
+/* A low coral key: invisible at rest, its face comes up under the pointer and sinks when pressed.
+ * Equal top and bottom insets keep the face centred on the content, which moves with it. */
+.nav-face {
   position: absolute;
-  right: 18px;
-  top: 50%;
+  inset: 5px 12px 5px 0;
+  z-index: -1;
+  border-radius: var(--radius-key);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--c-400) 70%, #fff), var(--c-400));
+  box-shadow: 0 3px 0 var(--c-600), var(--shadow-key);
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity var(--dur-fast),
+    transform var(--dur-release) var(--ease-spring),
+    box-shadow var(--dur-release) var(--ease-spring);
+}
+nav button:not(.on):hover .nav-face {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+nav button:not(.on):active .nav-face {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--c-600), 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
+  transition-duration: var(--dur-press), var(--dur-press), var(--dur-press);
+  transition-timing-function: ease-out;
+}
+.nav-icon,
+.nav-label,
+.pip {
+  transition: transform var(--dur-release) var(--ease-spring);
+}
+nav button:not(.on):hover > :not(.nav-face) {
+  transform: translateY(-1px);
+}
+nav button:not(.on):active > :not(.nav-face) {
+  transform: translateY(2px);
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
+}
+.nav-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: 800 16px/1 var(--font);
+  white-space: nowrap;
+}
+nav button.on .nav-label {
+  color: var(--c-700);
+}
+.pip {
+  flex: none;
   min-width: 22px;
   height: 18px;
-  padding: 0 5px;
+  padding: 0 6px;
   box-sizing: border-box;
   border-radius: 9px;
-  transform: translateY(-50%);
-  background: var(--ink);
-  color: var(--on-ink);
+  background: #fff;
+  color: var(--c-700);
   font: 800 var(--fs-body)/18px var(--font-latin);
   text-align: center;
 }
-.pip.soft {
-  background: var(--accent-deep);
+nav button.on .pip {
+  background: var(--c-500);
+  color: var(--ink);
 }
-/* Under the nav, with headroom for the bust standing out of its top edge. */
-.side-desk {
-  flex: none;
-  margin: 40px 26px 0 14px;
-}
-/* The alpaca and its surprise sticker share the bottom corner. */
+/* The alpaca and its surprise sticker peek up from the bottom edge. */
 .side-deco {
   position: absolute;
-  left: 16px;
-  bottom: -30px;
-  width: 112px;
+  left: 30px;
+  bottom: -46px;
+  width: 104px;
   aspect-ratio: 420 / 620;
 }
 
 @container panel (max-width: 760px) {
   .face {
-    --side-w: 176px;
+    --side-w: 140px;
   }
   .logo {
-    width: 128px;
-    height: 74px;
-    margin-left: 16px;
+    width: 100px;
+    margin-left: 18px;
   }
-  .logo-mark {
-    width: 128px;
-  }
-  .logo-word.ui-plate {
-    top: 45px;
-    font-size: var(--fs-number);
-    line-height: 19px;
+  .logo-word {
+    font-size: var(--fs-label);
   }
   nav button {
-    width: calc(100% - 10px);
-    margin-left: 10px;
-    gap: 9px;
-    padding-left: 10px;
+    width: calc(100% - 8px);
+    margin-left: 8px;
+    gap: 8px;
+    padding: 0 20px 0 10px;
   }
-  .nav-text small {
-    display: none;
-  }
-  .pip {
-    right: 16px;
+  .nav-face {
+    right: 10px;
   }
   .side-deco {
-    left: 14px;
-    bottom: -24px;
-    width: 92px;
+    left: 18px;
+    bottom: -40px;
+    width: 96px;
   }
 }
 /* Below these heights the alpaca would run into the last nav item. */
 @container panel (max-height: 600px) {
   .side-deco {
-    left: 14px;
-    bottom: -22px;
+    left: 22px;
+    bottom: -34px;
     width: 84px;
   }
 }
 @container panel (max-height: 500px) {
   .side-deco {
-    display: none;
-  }
-}
-/* Below this the card would crowd the alpaca. */
-@container panel (max-height: 640px) {
-  .side-desk {
     display: none;
   }
 }
