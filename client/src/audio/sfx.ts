@@ -1,5 +1,5 @@
-// Interface sounds. The draw uses Kenney's CC0 card recordings and a few bars cut from a backing track
-// (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
+// Interface sounds. The draw uses Kenney's CC0 card recordings, and a skin's spotlight a phrase cut
+// from the Quiet backing track (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
 import { settings } from "../stores/settings";
 
 type Wave = OscillatorType;
@@ -122,37 +122,34 @@ export function flip(soft = false): void {
   sample(anyOf("flip", 4), soft ? 0.56 : 0.98, jitter(1, 0.04));
 }
 
-let bed: { ac: AudioContext; src: AudioBufferSourceNode; level: GainNode } | null = null;
-let bedRound = 0;
+let theme: { ac: AudioContext; src: AudioBufferSourceNode; level: GainNode } | null = null;
+let themeRound = 0;
 
-/**
- * Music under a board that holds cards worth opening (hidden, animated, skins). It plays until one of
- * them opens and its own sound takes over, or runs out on its own fade.
- */
-export function startBed(): void {
-  stopBed(0.1);
+/** A skin brings no sound of its own to the spotlight, so it gets the closing phrase of Quiet. */
+export function startTheme(): void {
+  stopTheme(0.1);
   const a = audio();
   if (!a) return;
-  const mine = ++bedRound;
+  const mine = ++themeRound;
   const asked = a.ac.currentTime;
-  void decoded(a.ac, "reveal-bed").then((buffer) => {
-    if (!buffer || mine !== bedRound || a.ac.currentTime - asked > 1) return;
+  void decoded(a.ac, "skin-theme").then((buffer) => {
+    if (!buffer || mine !== themeRound || a.ac.currentTime - asked > LATE_S) return;
     const src = a.ac.createBufferSource();
     src.buffer = buffer;
     const level = a.ac.createGain();
     level.gain.value = 1;
     src.connect(level).connect(a.out);
-    src.onended = () => { if (bed?.src === src) bed = null; };
+    src.onended = () => { if (theme?.src === src) theme = null; };
     src.start();
-    bed = { ac: a.ac, src, level };
+    theme = { ac: a.ac, src, level };
   });
 }
 
-export function stopBed(fade = 0.5): void {
-  bedRound++;
-  if (!bed) return;
-  const { ac, src, level } = bed;
-  bed = null;
+export function stopTheme(fade = 0.5): void {
+  themeRound++;
+  if (!theme) return;
+  const { ac, src, level } = theme;
+  theme = null;
   const t = ac.currentTime;
   level.gain.cancelScheduledValues(t);
   level.gain.setValueAtTime(level.gain.value, t);

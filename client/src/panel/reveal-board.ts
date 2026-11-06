@@ -3,7 +3,7 @@ import { assetUrl } from "../asset";
 import { cardLabel, TIER_LABEL } from "../cards";
 import { getCharacter } from "../characters";
 import { getItem, RARITY_LABEL, type Item } from "../items";
-import { getCard, manifest, memberOf, type ManifestCard, type Rarity } from "../manifest";
+import { getCard, manifest, memberOf, type ManifestCard } from "../manifest";
 import type { Drop } from "../net/api";
 import { boardOf, DEAL_LIMIT, sealed, spotlights } from "../reveal";
 
@@ -16,8 +16,6 @@ export interface BoardEntry {
   who: string;
   /** What it is once turned over: 大隐藏, 桌宠皮肤, 稀有表情. */
   kind: string;
-  /** What a face-down tile admits to: its rarity, which its colour already gives away. */
-  hint: string;
   sealed: boolean;
   spot: boolean;
   tone: string;
@@ -55,7 +53,6 @@ export function memberTone(skin: string): Record<string, string> {
 
 // Stuck on by hand: a few degrees either way, never twice the same in a row.
 const TILTS = [-3, 2.2, -1.4, 3.2, -2.4, 1.6, -2, 2.8, -1, 3.6];
-const HINT: Partial<Record<Rarity, string>> = { legendary: "大隐藏", skin: "皮肤" };
 
 export function entriesOf(drops: readonly Drop[]): BoardEntry[] {
   const grouped = drops.length > DEAL_LIMIT;
@@ -76,7 +73,6 @@ export function entriesOf(drops: readonly Drop[]): BoardEntry[] {
       title: label.title,
       who: label.who,
       kind,
-      hint: HINT[drop.rarity] ?? RARITY_LABEL[drop.rarity],
       sealed: sealed(drop, grouped, card?.tier),
       spot: spotlights(drop, card?.tier),
       tone: `tone-${drop.rarity}`,

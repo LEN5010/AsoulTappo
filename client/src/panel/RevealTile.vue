@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // One result on the reveal board. Cards land like cards stuck onto the page and stickers get
-// slapped on, both tilted until the pointer straightens them. Sealed ones lie face down and glow
-// until they are turned. Rare and above turn with a flash, a ring and a burst of stars; a plain
-// first copy turns quietly off a paper back. An animated emote stays on a plate of its tone, a
+// slapped on, both tilted until the pointer straightens them. Sealed ones all lie face down behind
+// the same card-sized back and glow alike, so nothing shows until a tile turns. Rare and above turn
+// with a flash, a ring and a burst of stars; plain ones turn quietly. An animated emote stays on a plate of its tone, a
 // plain sticker peels off the paper it was turned on.
 import { computed } from "vue";
 import { cardFrame } from "../cards";
@@ -33,7 +33,7 @@ const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare
 /** Hidden cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
 const frame = computed(() => cardFrame(props.entry.card));
 const actionable = computed(() => !props.open || props.entry.spot);
-const label = computed(() => (props.open ? `再看一次${props.entry.title}` : `翻开${props.entry.hint}`));
+const label = computed(() => (props.open ? `再看一次${props.entry.title}` : "翻开这一张"));
 const note = computed(() => {
   const d = props.entry.drop;
   if (d.shards) return `+${d.shards} 碎片`;
@@ -86,7 +86,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
       <span v-if="open && entry.drop.new" class="ui-tag fresh">新</span>
     </span>
     <span class="caption">
-      <b>{{ open ? entry.title : entry.hint }}</b>
+      <b>{{ open ? entry.title : "？" }}</b>
       <small v-if="open"><i class="dot"></i>{{ entry.kind }}<em v-if="note">{{ note }}</em></small>
     </span>
   </component>
@@ -110,7 +110,8 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   user-select: none;
     animation: card-drop 460ms var(--ease-spring) calc(var(--deal-at, 0ms) + var(--i) * 42ms) backwards;
 }
-.sticker {
+/* Only a sticker dealt face up is slapped on; a sealed one lands like any other card. */
+.sticker.open {
   animation-name: sticker-slap;
   animation-duration: 420ms;
   animation-timing-function: var(--ease-out);
@@ -153,8 +154,9 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   rotate: var(--tilt);
   transition: rotate var(--dur-base) var(--ease-out), translate var(--dur-base) var(--ease-out);
 }
-/* A sticker is a smaller square than a card, sitting a little low in the card's slot. */
-.sticker .flipper {
+/* A sticker is a smaller square than a card, sitting a little low in the card's slot. Only its face
+   is: face down it shares the card-sized back with everything else. */
+.sticker .face-front {
   inset: 22% 8% auto;
   aspect-ratio: 1;
 }
@@ -184,7 +186,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
+/* One back for every rarity: the tone ladder in tokens.css stops at the front face. */
 .face-back {
+  --seal-fill: var(--c-500);
+  --seal-mark: #fff;
+  --seal-rule: rgba(255, 255, 255, 0.55);
   transform: rotateY(180deg);
 }
 
@@ -284,15 +290,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   position: absolute;
   inset: 3px;
   border-radius: var(--radius-m);
-  box-shadow: 0 0 22px 5px var(--tone-glow);
+  box-shadow: 0 0 22px 5px rgba(var(--c-500-rgb), 0.55);
   rotate: var(--tilt);
   opacity: 0.4;
   animation: seal-breathe 2.4s var(--ease-in-out) infinite;
   transition: rotate var(--dur-base) var(--ease-out);
-}
-.sticker.sealed .body::before {
-  inset: 22% 8% auto;
-  aspect-ratio: 1;
 }
 .sealed:hover .body::before {
   rotate: 0deg;

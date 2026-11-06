@@ -43,29 +43,17 @@ export function boardOf<T extends Revealed & { count: number; shards: number }>(
   return drops.length <= DEAL_LIMIT ? drops.map((d) => ({ ...d, got: 1 })) : groupDrops(sortDrops(drops));
 }
 
-/**
- * The opening bands announce the best result before anything turns over, and never overstate it.
- * Rare emotes come up in four of ten 10-draws, so they get no announcement.
- */
-export type Tell = "plain" | "epic" | "skin" | "legendary";
-export function tellOf(drops: readonly Revealed[]): Tell {
-  if (drops.some((d) => d.rarity === "legendary")) return "legendary";
-  if (drops.some((d) => d.rarity === "skin")) return "skin";
-  return drops.some((d) => d.rarity === "epic") ? "epic" : "plain";
-}
-
 /** Results that take the whole scene when they turn over: hidden cards, skins, a first animated card. */
 export function spotlights(drop: Revealed, tier?: CardTier): boolean {
   if (drop.rarity === "legendary" || drop.rarity === "skin" || tier === "big" || tier === "small") return true;
   return drop.new && drop.rarity === "epic" && drop.item.startsWith("card:");
 }
 
-const SEALED: Rarity[] = ["rare", "epic", "skin", "legendary"];
 /**
- * Face down until turned: rare and above, and in a dealt batch anything new, so a first copy is
- * always turned over by hand. A grouped batch only seals what spotlights and the rare tier, which
- * is the animated emotes: face up they would start playing the moment they land.
+ * Face down until turned. A dealt batch (ten or fewer) seals everything behind the same back, so no
+ * tile gives away what the others are. A grouped batch only seals what spotlights and the rare tier,
+ * which is the animated emotes: face up they would start playing the moment they land.
  */
 export function sealed(drop: Revealed, grouped: boolean, tier?: CardTier): boolean {
-  return grouped ? spotlights(drop, tier) || drop.rarity === "rare" : SEALED.includes(drop.rarity) || drop.new;
+  return grouped ? spotlights(drop, tier) || drop.rarity === "rare" : true;
 }

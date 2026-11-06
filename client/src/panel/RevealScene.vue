@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // The reveal of a draw, played over the whole panel, sidebar and title bar included.
 // Page-turn bands cover the page before the request goes out, because the stores update as soon
-// as a response lands and the page underneath would give the result away. They announce the best
-// result, then uncover a board where every result lands like a card stuck onto the page.
+// as a response lands and the page underneath would give the result away. They give nothing away
+// either: they uncover a board of identical backs, and only turning a tile shows what it is.
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef } from "vue";
 import { assetUrl } from "../asset";
 import * as sfx from "../audio/sfx";
 import { characterColor } from "../manifest";
 import type { Drop } from "../net/api";
-import { DEAL_LIMIT, tellOf, type Tell } from "../reveal";
+import { DEAL_LIMIT } from "../reveal";
 import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import { takeFocus, trapTab } from "../ui/focus";
@@ -16,7 +16,7 @@ import Icon from "../ui/Icon.vue";
 import RevealBands from "./RevealBands.vue";
 import RevealSpotlight from "./RevealSpotlight.vue";
 import RevealTile from "./RevealTile.vue";
-import { entriesOf, memberTone, type BoardEntry } from "./reveal-board";
+import { entriesOf, type BoardEntry } from "./reveal-board";
 
 const props = defineProps<{
   /** Runs once the page is covered. null closes the scene, leaving the error to the page. */
@@ -34,14 +34,12 @@ const DEAL_AT_MS = 90;
 /** Time into a tile's turn when its face shows, so the spotlight lifts the face, not the back. */
 const SPOT_AFTER_MS = 300;
 const TURN_STEP_MS = 70;
-const TELL_LABEL: Record<"legendary" | "skin", string> = { legendary: "大隐藏", skin: "皮肤" };
 
 const calm = computed(() => reducedMotion.value);
 const phase = ref<"cover" | "board">("cover");
 const asking = ref(1);
 const drops = shallowRef<Drop[]>([]);
 const entries = shallowRef<BoardEntry[]>([]);
-const tell = ref<Tell>("plain");
 const opened = reactive(new Set<number>());
 const turned = reactive(new Set<number>());
 const spot = shallowRef<{ index: number; tile: HTMLElement | null } | null>(null);
@@ -69,23 +67,6 @@ const sealedLeft = computed(() => entries.value.some((_, i) => !opened.has(i)));
 const newCount = computed(() => drops.value.filter((d) => d.new).length);
 const refund = computed(() => drops.value.reduce((n, d) => n + d.shards, 0));
 
-const tellLabel = computed(() => {
-  if (tell.value === "epic") {
-    const n = drops.value.filter((d) => d.rarity === "epic").length;
-    return n > 1 ? `史诗 ×${n}` : "史诗";
-  }
-  if (tell.value !== "legendary" && tell.value !== "skin") return "";
-  const counts = (["legendary", "skin"] as const)
-    .map((r) => [r, drops.value.filter((d) => d.rarity === r).length] as const)
-    .filter(([, n]) => n > 0);
-  return counts.map(([r, n]) => (n > 1 ? `${TELL_LABEL[r]} ×${n}` : TELL_LABEL[r])).join(" · ");
-});
-const tellStyle = computed(() => {
-  if (tell.value !== "skin") return undefined;
-  const skin = drops.value.find((d) => d.rarity === "skin");
-  return skin ? memberTone(skin.item.slice(5)) : undefined;
-});
-
 function preload(list: BoardEntry[]) {
   for (const e of list) {
     if (!e.spot || !e.card || e.card.video) continue;
@@ -103,11 +84,10 @@ async function run(count = props.remaining ?? 1) {
   spot.value = null;
   spotDone = undefined;
   auto.value = false;
-  tell.value = "plain";
   asking.value = Math.max(1, Math.min(count, 100));
 
   // A repeat's bands sweep over the board it leaves; only then does the board go.
-  sfx.stopBed();
+  sfx.stopTheme();
   if (!calm.value) {
     sfx.pageTurn();
     await bands.value?.cover();
@@ -125,13 +105,6 @@ async function run(count = props.remaining ?? 1) {
   drops.value = result;
   const list = entriesOf(result);
   preload(list);
-  tell.value = tellOf(result);
-  if (list.some((e) => e.spot)) sfx.startBed();
-  if (!calm.value) {
-    await nextTick();
-    await bands.value?.announce();
-    if (!alive || mine !== round) return;
-  }
   entries.value = list;
   list.forEach((e, i) => (!e.sealed || calm.value) && opened.add(i));
   phase.value = "board";
@@ -142,12 +115,15 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
-  sfx.stopBed();
+  sfx.stopTheme();
   sfx.lift();
+  // Cards bring their own sound to the spotlight; a skin has none, so it gets a theme.
+  if (entries.value[index]?.item.kind === "character") sfx.startTheme();
   spot.value = { index, tile: root.value?.querySelectorAll<HTMLElement>(".tile")[index] ?? null };
   return new Promise((resolve) => (spotDone = resolve));
 }
 function spotClosed() {
+  sfx.stopTheme();
   spot.value = null;
   void nextTick(() => root.value?.querySelector<HTMLElement>(".foot .primary")?.focus({ preventScroll: true }));
   const done = spotDone;
@@ -207,7 +183,7 @@ const closing = ref(false);
 const OUT_MS = 460;
 async function fadeOut() {
   if (closing.value) return;
-  sfx.stopBed();
+  sfx.stopTheme();
   if (calm.value) {
     emit("close");
     return;
@@ -245,7 +221,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   alive = false;
-  sfx.stopBed(0.2);
+  sfx.stopTheme(0.2);
   window.removeEventListener("keydown", onKey);
   release?.();
 });
@@ -265,7 +241,7 @@ onDeactivated(() => {
     >
       <section v-if="phase === 'board'" class="board" :class="{ grouped, single }">
         <div class="deal ui-scroll" :class="{ solo: !!solo }" :style="shape">
-          <i v-if="solo" class="solo-band" :class="[solo.tone, { calm }]" :style="solo.toneStyle" aria-hidden="true"></i>
+          <i v-if="solo" class="solo-band" :class="[opened.has(0) ? solo.tone : 'tone-sealed', { calm }]" :style="opened.has(0) ? solo.toneStyle : undefined" aria-hidden="true"></i>
           <RevealTile
             v-for="(e, i) in entries" :key="e.key"
             :entry="e" :index="i" :open="opened.has(i)" :turned="turned.has(i)" :lifted="spot?.index === i" :calm="calm" :dense="grouped"
@@ -309,7 +285,7 @@ onDeactivated(() => {
         />
       </section>
 
-      <RevealBands v-if="!calm" ref="bands" :count="asking" :tell="tell" :tell-label="tellLabel" :tell-style="tellStyle" />
+      <RevealBands v-if="!calm" ref="bands" :count="asking" />
     </div>
   </Teleport>
 </template>
