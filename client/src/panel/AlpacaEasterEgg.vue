@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onDeactivated, ref } from "vue";
+import { silly } from "../audio/sfx";
 import EmoteBubble from "../pet/EmoteBubble.vue";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 
@@ -17,6 +18,7 @@ const frame = ref<EmoteFrame | null>(null);
 const player = new EmotePlayer((value) => (frame.value = value), () => 2500);
 
 function surprise() {
+  silly();
   shown.value = emotes[Math.floor(Math.random() * emotes.length)]!;
   player.play(shown.value.src);
 }

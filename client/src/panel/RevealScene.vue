@@ -5,6 +5,7 @@
 // result, then uncover a board where every result lands like a card stuck onto the page.
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef } from "vue";
 import { assetUrl } from "../asset";
+import * as sfx from "../audio/sfx";
 import { characterColor } from "../manifest";
 import type { Drop } from "../net/api";
 import { DEAL_LIMIT, tellOf, type Tell } from "../reveal";
@@ -106,7 +107,10 @@ async function run(count = props.remaining ?? 1) {
   asking.value = Math.max(1, Math.min(count, 100));
 
   // A repeat's bands sweep over the board it leaves; only then does the board go.
-  if (!calm.value) await bands.value?.cover();
+  if (!calm.value) {
+    sfx.pageTurn();
+    await bands.value?.cover();
+  }
   if (!alive || mine !== round) return;
   phase.value = "cover";
   opened.clear();
@@ -123,6 +127,7 @@ async function run(count = props.remaining ?? 1) {
   tell.value = tellOf(result);
   if (!calm.value) {
     await nextTick();
+    sfx.announce(tell.value);
     await bands.value?.announce();
     if (!alive || mine !== round) return;
   }
@@ -136,6 +141,7 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
+  sfx.lift(entries.value[index]?.drop.rarity ?? "");
   spot.value = { index, tile: root.value?.querySelectorAll<HTMLElement>(".tile")[index] ?? null };
   return new Promise((resolve) => (spotDone = resolve));
 }
@@ -156,6 +162,7 @@ async function turn(index: number) {
   }
   opened.add(index);
   if (!calm.value) turned.add(index);
+  sfx.flip();
   if (!entry.spot) return;
   const mine = round;
   await wait(calm.value ? 0 : SPOT_AFTER_MS);
@@ -177,6 +184,7 @@ async function turnAll() {
   for (const i of quiet) {
     opened.add(i);
     if (!calm.value) turned.add(i);
+    sfx.flip(true);
     if (!calm.value) await wait(TURN_STEP_MS);
     if (!alive || mine !== round) return;
   }

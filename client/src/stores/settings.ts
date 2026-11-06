@@ -28,6 +28,10 @@ export interface Settings {
   panelY: number;
   /** Counter bar shows today's or all-time taps. */
   tapView: "today" | "total";
+  /** Dynamic cards play their own sound in the reveal and the card preview. */
+  cardAudio: boolean;
+  /** Synthesized interface sounds: page turns, card flips, the alpaca. */
+  sfx: boolean;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -53,6 +57,8 @@ export const DEFAULT_SETTINGS: Settings = {
   panelX: -1,
   panelY: -1,
   tapView: "today",
+  cardAudio: true,
+  sfx: true,
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {

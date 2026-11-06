@@ -143,6 +143,20 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
         </section>
 
         <section data-rise>
+          <h4 class="ui-label"><span>声音</span></h4>
+          <div class="ui-group ui-frame">
+            <label class="ui-row">
+              <span>播放卡面音频</span>
+              <input v-model="settings.cardAudio" class="ui-switch" type="checkbox" />
+            </label>
+            <label class="ui-row">
+              <span>界面音效</span>
+              <input v-model="settings.sfx" class="ui-switch" type="checkbox" />
+            </label>
+          </div>
+        </section>
+
+        <section data-rise>
           <h4 class="ui-label"><span>关于</span></h4>
           <div class="ui-group ui-frame">
             <div class="ui-row">

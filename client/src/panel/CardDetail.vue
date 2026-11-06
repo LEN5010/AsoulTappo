@@ -1,12 +1,14 @@
 <script setup lang="ts">
-// Card detail: the artwork beside its facts. Videos loop muted until sound is turned on.
-import { computed, nextTick, onMounted, ref } from "vue";
+// Card detail: the artwork beside its facts. Videos start with sound when the card audio setting is on.
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
+import { playCardVideo } from "../audio/cardSound";
 import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { getItem } from "../items";
 import { collection } from "../stores/player";
+import { settings } from "../stores/settings";
 import { ui } from "../stores/ui";
 import CraftAction from "../ui/CraftAction.vue";
 import { reducedMotion } from "../stores/theme";
@@ -33,7 +35,8 @@ onMounted(async () => {
 
 const video = ref<HTMLVideoElement>();
 const paused = ref(false);
-const muted = ref(true);
+const muted = ref(!settings.cardAudio);
+watch(video, (v) => v && playCardVideo(v, () => (muted.value = true)));
 function togglePlay() {
   const v = video.value;
   if (!v) return;
@@ -48,7 +51,7 @@ function togglePlay() {
       <div ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count }]">
           <video
             v-if="animated && pageActive" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
-            :muted="muted" autoplay loop playsinline
+            :muted="muted" loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>
           <img v-else :src="assetUrl(count || preview ? card.full : card.thumb)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />

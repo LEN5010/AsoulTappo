@@ -7,6 +7,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
+import { vCardSound } from "../audio/cardSound";
 import { cardFrame } from "../cards";
 import { PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
@@ -306,7 +307,7 @@ defineExpose({ close });
               <i v-if="frameTier" class="metal" aria-hidden="true"></i>
               <img class="art" :src="entry.art" :alt="entry.title" draggable="false" />
               <img v-if="!card.video" class="art full" :class="{ ready: fullReady }" :src="assetUrl(card.full)" alt="" draggable="false" @load="fullReady = true" />
-              <video v-if="playing" class="art" :src="assetUrl(card.video)" :poster="entry.art" autoplay loop muted playsinline></video>
+              <video v-if="playing" v-card-sound class="art" :src="assetUrl(card.video)" :poster="entry.art" loop playsinline></video>
               <i v-if="hidden" ref="holo" class="holo" aria-hidden="true"></i>
               <i ref="glare" class="glare" aria-hidden="true"></i>
               <i class="sheen" aria-hidden="true"></i>
