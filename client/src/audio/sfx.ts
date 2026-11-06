@@ -1,5 +1,5 @@
-// Interface sounds. The draw uses short CC0 recordings from Kenney (Casino Audio, Music Jingles; see
-// assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
+// Interface sounds. The draw uses Kenney's CC0 card recordings and two phrases cut from the Quiet
+// backing track (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
 import { settings } from "../stores/settings";
 import type { Tell } from "../reveal";
 
@@ -106,10 +106,10 @@ export function flip(soft = false): void {
   sample(anyOf("flip", 4), soft ? 0.8 : 1.4, jitter(1, 0.04));
 }
 
-/** Plain batches stay silent; epic gets a short pizzicato rise, hidden cards and skins the longer one. */
+/** Plain batches stay silent; epic gets the band coming in, hidden cards and skins the closing phrase of Quiet. */
 export function announce(tell: Tell): void {
   if (tell === "plain") return;
-  sample(tell === "epic" ? "jingle-epic" : "jingle-rare", 0.8);
+  sample(tell === "epic" ? "jingle-epic" : "jingle-rare", 1.1);
 }
 
 /** A card slides off its tile into the spotlight. */
