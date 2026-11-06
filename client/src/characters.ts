@@ -85,6 +85,10 @@ const HEADS: Record<string, { x: number; y: number }> = {
   贝拉: { x: 146, y: 10 },
   心宜: { x: 152, y: 10 },
   思诺: { x: 142, y: 9 },
+  乃琳山海经: { x: 150, y: 0 },
+  乃琳睡衣派对: { x: 150, y: 0 },
+  贝拉2025生日: { x: 144, y: 0 },
+  贝拉睡衣派对: { x: 144, y: 0 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
   return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };

@@ -3,6 +3,7 @@
 // images) plus the emote bubble and the tap combo.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { getCharacter, headAnchor, PET_BASE } from "../characters";
+import { characterColor } from "../manifest";
 import EmoteBubble from "./EmoteBubble.vue";
 import ComboBubble from "./ComboBubble.vue";
 import type { EmoteFrame } from "./EmotePlayer";
@@ -70,6 +71,8 @@ const mouseStyle = computed(() => {
     transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)`,
   };
 });
+const clickColor = computed(() => characterColor(assets.value?.name ?? props.character));
+const clickMask = (src: string) => ({ maskImage: `url("${src}")`, WebkitMaskImage: `url("${src}")` });
 
 const head = computed(() => headAnchor(props.character));
 
@@ -87,8 +90,8 @@ const bubbleAnchor = computed(() => ({
       <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="box" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="leftDown" class="layer mouse" :src="assets.leftClick" :style="mouseStyle" draggable="false" alt="" />
-      <img v-if="rightDown" class="layer mouse" :src="assets.rightClick" :style="mouseStyle" draggable="false" alt="" />
+      <span v-if="leftDown" class="layer mouse click" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
+      <span v-if="rightDown" class="layer mouse click" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
 
@@ -105,5 +108,6 @@ const bubbleAnchor = computed(() => ({
 .kb { transition: transform var(--dur-fast) var(--ease-pop); }
 .kb.down { transition: transform 50ms var(--ease-out); }
 .smooth-mouse .mouse { transition: transform 60ms linear; }
+.click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
 </style>
