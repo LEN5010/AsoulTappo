@@ -32,6 +32,8 @@ const SWAY_MS = 6000;
 /** How fast the lean catches up: quick behind the pointer, slower back into the sway. */
 const FOLLOW_MS = 70;
 const SETTLE_MS = 240;
+/** A drawn card's own sound plays a little above full volume. */
+const DRAWN_GAIN = 1.15;
 
 const pageActive = usePageActive();
 const landed = ref(props.calm);
@@ -307,7 +309,7 @@ defineExpose({ close });
               <i v-if="frameTier" class="metal" aria-hidden="true"></i>
               <img class="art" :src="entry.art" :alt="entry.title" draggable="false" />
               <img v-if="!card.video" class="art full" :class="{ ready: fullReady }" :src="assetUrl(card.full)" alt="" draggable="false" @load="fullReady = true" />
-              <video v-if="playing" v-card-sound class="art" :src="assetUrl(card.video)" :poster="entry.art" loop playsinline></video>
+              <video v-if="playing" v-card-sound="DRAWN_GAIN" class="art" :src="assetUrl(card.video)" :poster="entry.art" loop playsinline></video>
               <i v-if="hidden" ref="holo" class="holo" aria-hidden="true"></i>
               <i ref="glare" class="glare" aria-hidden="true"></i>
               <i class="sheen" aria-hidden="true"></i>

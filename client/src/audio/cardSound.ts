@@ -1,6 +1,7 @@
 // Card videos play with their own sound when settings.cardAudio is on.
 import type { Directive } from "vue";
 import { settings } from "../stores/settings";
+import { boost } from "./sfx";
 
 /**
  * Starts [video] audible if the setting allows it. A webview that refuses audible playback without a
@@ -16,7 +17,10 @@ export function playCardVideo(video: HTMLVideoElement, onMuted?: () => void): vo
   });
 }
 
-/** `v-card-sound` on a card `<video>` without `autoplay`/`muted`. */
-export const vCardSound: Directive<HTMLVideoElement> = {
-  mounted: (video) => playCardVideo(video),
+/** `v-card-sound` on a card `<video>` without `autoplay`/`muted`; a value above 1 plays it louder. */
+export const vCardSound: Directive<HTMLVideoElement, number | undefined> = {
+  mounted: (video, binding) => {
+    if (binding.value && binding.value !== 1) boost(video, binding.value);
+    playCardVideo(video);
+  },
 };

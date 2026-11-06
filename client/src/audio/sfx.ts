@@ -8,9 +8,9 @@ type Wave = OscillatorType;
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 
-/** The context starts on the first sound, which always follows a click, so autoplay rules allow it. */
-function audio(): { ac: AudioContext; out: GainNode } | null {
-  if (!settings.sfx || typeof AudioContext === "undefined") return null;
+/** One context for every sound. It starts suspended when created before a click and resumes on the next sound. */
+function context(): AudioContext | null {
+  if (typeof AudioContext === "undefined") return null;
   if (!ctx) {
     ctx = new AudioContext();
     const limiter = ctx.createDynamicsCompressor();
@@ -21,7 +21,24 @@ function audio(): { ac: AudioContext; out: GainNode } | null {
     master.connect(limiter).connect(ctx.destination);
   }
   if (ctx.state === "suspended") void ctx.resume();
-  return { ac: ctx, out: master! };
+  return ctx;
+}
+
+function audio(): { ac: AudioContext; out: GainNode } | null {
+  if (!settings.sfx) return null;
+  const ac = context();
+  return ac ? { ac, out: master! } : null;
+}
+
+/** Plays [media] [gain] times louder than its own full volume, which an element cannot do alone. */
+export function boost(media: HTMLMediaElement, gain: number): void {
+  const ac = context();
+  if (!ac) return;
+  try {
+    const level = ac.createGain();
+    level.gain.value = gain;
+    ac.createMediaElementSource(media).connect(level).connect(ac.destination);
+  } catch { /* already routed, or the browser refuses: it plays at its own volume */ }
 }
 
 /** Gain envelope: quick attack, exponential tail. */
@@ -98,12 +115,12 @@ const anyOf = (prefix: string, count: number) => `${prefix}-${1 + Math.floor(Mat
 
 /** Bands sweep over the page as a pack tears open. */
 export function pageTurn(): void {
-  sample("pack-open", 1.6);
+  sample("pack-open", 1.12);
 }
 
 /** A card turned face up and set down; one of four takes, slightly retuned. `soft` for the quick ripple. */
 export function flip(soft = false): void {
-  sample(anyOf("flip", 4), soft ? 0.8 : 1.4, jitter(1, 0.04));
+  sample(anyOf("flip", 4), soft ? 0.56 : 0.98, jitter(1, 0.04));
 }
 
 /** Plain batches stay silent; epic gets the band coming in, hidden cards and skins the closing phrase of Quiet. */
@@ -114,7 +131,7 @@ export function announce(tell: Tell): void {
 
 /** A card slides off its tile into the spotlight. */
 export function lift(): void {
-  sample(anyOf("slide", 3), 1.2);
+  sample(anyOf("slide", 3), 0.84);
 }
 
 /** Poking the alpaca: one of a few silly noises, never the same twice in a row. */
