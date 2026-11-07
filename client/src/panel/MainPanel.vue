@@ -214,7 +214,7 @@ function badgeOf(id: Page): number {
 
     <div class="face">
       <div class="main">
-        <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+        <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span v-if="!online" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
           <span class="wallet" :title="walletTip">
             <Icon name="shard" :size="16" />
@@ -242,7 +242,7 @@ function badgeOf(id: Page): number {
       <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
 
       <aside class="side">
-        <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up">
+        <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
           <span class="logo-word">TAPPO</span>
         </div>

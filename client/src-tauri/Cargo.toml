@@ -29,7 +29,7 @@ rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # XInput for game controllers (src/gamepad.rs).
-windows-sys = { version = "0.61", features = ["Win32_UI_Input_XboxController"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_XboxController", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 panic = "abort"
