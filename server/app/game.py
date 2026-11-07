@@ -20,7 +20,7 @@ MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
 # emote keys every member may send besides the starter emotes: the theme like
 FREE_EMOTES = frozenset({"thumbup"})
-LOADOUT_KEYS = ("character", "favorites")
+LOADOUT_KEYS = ("character", "favorites", "plate")
 
 
 class GameError(Exception):
@@ -289,14 +289,27 @@ class Game:
                 if key not in FREE_EMOTES and not self._owns(owned, f"emote:{key}"):
                     raise GameError("locked", "emote not owned")
             out["favorites"] = favs
+        if "plate" in patch:
+            out["plate"] = self._check_plate(patch["plate"], owned)
         return out
+
+    def _check_plate(self, card_id: Any, owned: dict[str, int]) -> str | None:
+        """A big hidden card the player owns, worn as a name plate; empty means none."""
+        if not card_id:
+            return None
+        card = self.manifest.cards.get(card_id) if isinstance(card_id, str) else None
+        if card is None or card.get("tier") != "big":
+            raise GameError("bad_item", "not a big hidden card")
+        if f"card:{card_id}" not in owned:
+            raise GameError("locked", "card not owned")
+        return card_id
 
     def _stored_loadout(self, p: dict[str, Any], owned: dict[str, int]) -> dict[str, Any]:
         try:
             raw = json.loads(p["loadout"]) if p["loadout"] else {}
         except ValueError:
             raw = {}
-        out: dict[str, Any] = {"character": None, "favorites": []}
+        out: dict[str, Any] = {"character": None, "favorites": [], "plate": None}
         for key in LOADOUT_KEYS:  # drop parts that the manifest no longer knows
             try:
                 out.update(self._check_loadout({key: raw.get(key)}, owned))
@@ -311,7 +324,7 @@ class Game:
         return self._stored_loadout(p, owned)
 
     def set_loadout(self, token: str, patch: dict[str, Any]) -> dict[str, Any]:
-        """Update the selected character and favorite emotes."""
+        """Update the selected character, favorite emotes and name plate."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             p = st.get_player(pid, self.now())
@@ -329,6 +342,15 @@ class Game:
         except GameError:
             return {"uid": None}
         return {"uid": hashlib.sha256(f"{pid}:{room}".encode()).hexdigest()[:10]}
+
+    def room_plate(self, token: str | None, card_id: str | None) -> str | None:
+        """The name plate a room member shows: the card when their save owns it, else none."""
+        if not token or not card_id:
+            return None
+        try:
+            return self._check_plate(card_id, self.store.owned(player_id_for(token)))
+        except GameError:
+            return None
 
     def owns_emote(self, token: str | None, key: str) -> bool:
         if key in FREE_EMOTES or f"emote:{key}" in self.manifest.starter:

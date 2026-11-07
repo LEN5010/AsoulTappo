@@ -25,9 +25,11 @@ export interface Member {
   /** Equipped accessory ids (null = none). */
   head?: string | null;
   desk?: string | null;
+  /** Big hidden card id worn as a name plate, checked by the server (null = none). */
+  plate?: string | null;
 }
 
-/** Profile fields a member can change with `state` ("" clears frame / badge / head / desk). */
+/** Profile fields a member can change with `state` ("" clears frame / badge / head / desk / plate). */
 export interface ProfilePatch {
   character?: string;
   nick?: string;
@@ -35,6 +37,7 @@ export interface ProfilePatch {
   badge?: string;
   head?: string;
   desk?: string;
+  plate?: string;
 }
 
 export interface StateUpdate {
@@ -46,10 +49,11 @@ export interface StateUpdate {
   badge?: string | null;
   head?: string | null;
   desk?: string | null;
+  plate?: string | null;
 }
 
 export type ClientMessage =
-  | { type: "join"; room: string; nick: string; character: string; token?: string }
+  | { type: "join"; room: string; nick: string; character: string; token?: string; accountToken?: string; plate?: string }
   | { type: "leave" }
   | { type: "tap"; count: number }
   | ({ type: "motion" } & PetMotion)

@@ -142,3 +142,21 @@ it("equips an original member when a saved skin is locked after collection loads
   p.sanitizeLoadout();
   expect(settings.character).toBe("贝拉山海经");
 });
+
+it("takes off a plate the save does not own and sends the one it does", async () => {
+  const sent: unknown[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/loadout") && init?.body) sent.push(JSON.parse(String(init.body)));
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 1600 });
+  });
+  const { settings, p } = await setup();
+  settings.plate = "c1762331462002";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settings.plate).toBe("");
+  p.collection.owned["card:c1762331462002"] = 1;
+  settings.plate = "c1762331462002";
+  p.sanitizeLoadout();
+  expect(settings.plate).toBe("c1762331462002");
+  await vi.advanceTimersByTimeAsync(500);
+  expect(sent.at(-1)).toMatchObject({ plate: "c1762331462002" });
+});

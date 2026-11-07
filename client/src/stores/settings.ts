@@ -21,6 +21,12 @@ export interface Settings {
   /** Size of other members' pets relative to the base canvas. */
   remoteScale: number;
   showNames: boolean;
+  /** Partners' name plates; off shows their plain name tags. */
+  showPlates: boolean;
+  /** Shows partners by their pet's member name instead of their nickname, for streaming. */
+  hideNicks: boolean;
+  /** Big hidden card id worn as a name plate on partners' desks ("" = none). */
+  plate: string;
   /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
   petX: number;
   petY: number;
@@ -52,6 +58,9 @@ export const DEFAULT_SETTINGS: Settings = {
   emoteHoldMs: 2500,
   remoteScale: 1,
   showNames: true,
+  showPlates: true,
+  hideNicks: false,
+  plate: "",
   petX: -1,
   petY: -1,
   panelX: -1,

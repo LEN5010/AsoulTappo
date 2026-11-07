@@ -159,4 +159,21 @@ describe("RoomClient", () => {
     FakeWs.all[1].open();
     expect(FakeWs.all[1].sent[0]).toMatchObject({ type: "join", character: "贝拉" });
   });
+
+  it("a plate put on or taken off is remembered for re-join", () => {
+    const { c } = setup();
+    c.join("http://h:1", { ...INFO });
+    FakeWs.all[0].open();
+    c.sendState({ plate: "c1" });
+    expect(FakeWs.all[0].sent.at(-1)).toEqual({ type: "state", plate: "c1" });
+    FakeWs.all[0].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[1].open();
+    expect(FakeWs.all[1].sent[0]).toMatchObject({ type: "join", plate: "c1" });
+    c.sendState({ plate: "" });
+    FakeWs.all[1].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[2].open();
+    expect(FakeWs.all[2].sent[0]).not.toHaveProperty("plate");
+  });
 });

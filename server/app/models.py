@@ -26,6 +26,8 @@ class JoinMsg(_Msg):
     token: Optional[str] = Field(default=None, max_length=128)
     # main-site Bearer token; wins over token once the account has a save
     accountToken: Optional[str] = Field(default=None, max_length=512)
+    # big hidden card worn as a name plate; dropped unless the save owns it
+    plate: Optional[str] = Field(default=None, max_length=64)
 
 
 class LeaveMsg(_Msg):
@@ -55,16 +57,17 @@ class MotionMsg(PetMotion):
 
 
 class StateMsg(_Msg):
-    """Update the displayed character or nickname."""
+    """Update the displayed character, nickname or name plate ("" takes the plate off)."""
 
     type: Literal["state"] = "state"
     character: Optional[str] = Field(default=None, min_length=1, max_length=32)
     nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
+    plate: Optional[str] = Field(default=None, max_length=64)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> "StateMsg":
-        if all(v is None for v in (self.character, self.nick)):
-            raise ValueError("state needs character or nick")
+        if all(v is None for v in (self.character, self.nick, self.plate)):
+            raise ValueError("state needs character, nick or plate")
         return self
 
 
@@ -88,6 +91,8 @@ class Member(BaseModel):
     character: str
     taps: int = 0
     motion: Optional[PetMotion] = None
+    # big hidden card id worn as a name plate, null for none
+    plate: Optional[str] = None
 
 
 class JoinedMsg(BaseModel):
@@ -125,6 +130,7 @@ class StateBroadcast(BaseModel):
     id: str
     character: str
     nick: str
+    plate: Optional[str] = None
 
 
 class PongMsg(BaseModel):

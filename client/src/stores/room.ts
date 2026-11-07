@@ -5,7 +5,7 @@ import { MotionPlayback } from "../net/MotionPlayback";
 import { MotionSender } from "../net/MotionSender";
 import { restingMotion, toHttpBase, type Member, type PetMotion, type ProfilePatch } from "../net/protocol";
 import { ownsEmote } from "../items";
-import { getEmote } from "../manifest";
+import { getEmote, memberOf } from "../manifest";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
@@ -31,6 +31,9 @@ const players = new Map<string, { emote: EmotePlayer; combo: TapCombo; motion: M
 export const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
 export const me = computed(() => members.get(youId.value) ?? null);
 export const inRoom = computed(() => conn.value === "open" && !!youId.value);
+
+/** A partner's name as shown: their pet's member name while nicknames are hidden. */
+export const shownNick = (m: Member) => (settings.hideNicks ? memberOf(m.character) : m.nick);
 
 /** Stable key of a member for remembering where their pet stands on the desk. */
 export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
@@ -102,6 +105,7 @@ const events: RoomEvents = {
     m.nick = u.nick;
     m.frame = u.frame ?? null;
     m.badge = u.badge ?? null;
+    m.plate = u.plate ?? null;
   },
   onError(code, message) {
     if (code === "rate_limited") return;
@@ -182,6 +186,7 @@ export function joinRoom(room: string): void {
     room: id,
     nick: settings.nick.trim() || "匿名小面包",
     character: settings.character,
+    ...(settings.plate ? { plate: settings.plate } : {}),
     ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
   });
 }
@@ -194,7 +199,7 @@ export function leaveRoom(): void {
   roomId.value = "";
 }
 
-/** Push profile changes (character / nick / frame / badge / accessories) to the room. */
+/** Push profile changes (character / nick / name plate) to the room. */
 export function syncProfile(patch: ProfilePatch): void {
   client.sendState({ ...patch, ...(patch.nick !== undefined ? { nick: patch.nick.trim() || "匿名小面包" } : {}) });
 }
@@ -212,4 +217,5 @@ watch(() => [saveCode.value, account.value?.token], () => {
 }, { flush: "sync" });
 watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });
+watch(() => settings.plate, (plate) => { if (!isPanelWindow) syncProfile({ plate }); }, { flush: "sync" });
 watch(() => settings.batchMs, (ms) => { if (!isPanelWindow) setBatchMs(ms); });

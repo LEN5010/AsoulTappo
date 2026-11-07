@@ -8,15 +8,15 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 | 客户端 type | 字段 |
 |---|---|
-| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选）、accountToken（可选，主站令牌，优先于 token） |
+| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌卡 ID，存档未拥有时忽略） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并 |
 | motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 50ms 合并，按键状态即时发送 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
-| state | character、nick，至少提供一个 |
+| state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌，存档未拥有时返回 `locked` 并忽略整条消息 |
 | ping | 无 |
 
-服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`emote {id,emote}`、`state {id,character,nick}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion`，加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`emote {id,emote}`、`state {id,character,nick,plate}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌卡 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
 连续位移由服务端按房间每 50ms 汇总为一条 `motion_batch`，每个成员保留最新位置。按键、左右键边沿仍即时发送 `motion`，入房、离房、表情和敲击消息按连接顺序发送。动作仅发给同房间的其他成员。每个连接独立发送，连续位置批次合并，发送超时或有序消息积压达到 256 条时断开该连接。客户端将短按状态保持至少 70ms，供桌宠呈现点击和按键动作。
 
@@ -33,13 +33,15 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
-| GET /api/loadout | character、favorites |
-| POST /api/loadout | 更新 character 或 favorites（最多 8 个且已拥有）；五位原皮直接可用，皮肤要求已拥有 |
+| GET /api/loadout | character、favorites、plate |
+| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已拥有的大隐藏卡 ID，null 或空字符串取下铭牌 |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
 | GET /api/account | Bearer；user、save（账号存档摘要，未绑定时为 null） |
 | POST /api/account/link | Bearer，可带 `X-Player-Token`。账号未绑定时把这份游客存档（或新存档）绑定到账号，返回 user、save、linkedGuest；账号已有存档且游客存档玩过时返回 409 `account_has_save`，附 account 和 guest 两份摘要；游客存档已属于其他账号时返回 401 `save_linked` |
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
 | GET /packs/... | 卡面原图及主题动画资源 |
+
+铭牌是玩家装备的一张大隐藏卡，显示在其他成员桌面上该玩家桌宠的下方。客户端取卡面眼睛所在的一条横条，播放卡面视频；裁切位置保存在客户端 `client/src/pet/plates.ts`。联机页的座位仍显示普通名牌。
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 

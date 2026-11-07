@@ -29,7 +29,7 @@ export interface Collection {
   owned: Record<string, number>;
   recent: { item: string; rarity: string; new: boolean; ts: number }[];
 }
-export interface Loadout { character: string | null; favorites: string[] }
+export interface Loadout { character: string | null; favorites: string[]; plate: string | null }
 export type LoadoutPatch = Partial<Loadout>;
 
 export class ApiError extends Error {

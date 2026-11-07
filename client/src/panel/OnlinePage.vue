@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { MAX_ROOM_SIZE } from "../net/protocol";
 import { settings } from "../stores/settings";
-import { conn, createRoom, inRoom, joinRoom, lastError, leaveRoom, members, roomId, youId } from "../stores/room";
+import { conn, createRoom, inRoom, joinRoom, lastError, leaveRoom, members, roomId, shownNick, youId } from "../stores/room";
 import { tidyRemotes } from "../stores/desk";
 import { characterColor } from "../manifest";
 import { reducedMotion, skin } from "../stores/theme";
@@ -111,7 +111,7 @@ async function copy() {
         <li v-for="m in members.values()" :key="m.id" class="member">
           <CharacterAvatar :character="m.character" :size="32" />
           <span class="who">
-            <b>{{ m.nick }}<em v-if="m.id === youId" class="ui-tag">我</em></b>
+            <b>{{ m.id === youId ? m.nick : shownNick(m) }}<em v-if="m.id === youId" class="ui-tag">我</em></b>
             <small><i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ m.character }}</small>
           </span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}<small>敲击</small></span>

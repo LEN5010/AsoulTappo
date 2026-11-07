@@ -8,6 +8,8 @@ import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
 import NamePill from "./pet/NamePill.vue";
+import NamePlate from "./pet/NamePlate.vue";
+import { plateCard, plateSize } from "./pet/plates";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
@@ -16,7 +18,7 @@ import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet } from "./stores/pet";
 import { draws, startReporting, stopReporting } from "./stores/player";
-import { localPet, memberKey, others, roomId, sendEmote, type RemoteMember } from "./stores/room";
+import { localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
@@ -59,9 +61,13 @@ function closeQuick(e: Event) {
 }
 
 // ---- other members on the desk
+const remotePlate = computed(() => plateSize(settings.remoteScale));
+/** A partner's name plate, when they wear one and plates are shown. */
+const plateOf = (m: RemoteMember) => (settings.showPlates ? plateCard(m.plate)?.id : undefined);
+const nameBand = computed(() => (settings.showNames ? Math.max(22, settings.showPlates ? remotePlate.value.height + 1 : 0) : 0));
 const remoteSize = computed<Size>(() => ({
   w: Math.max(PET_BASE.width * settings.remoteScale, 64),
-  h: PET_BASE.height * settings.remoteScale + (settings.showNames ? 22 : 0),
+  h: PET_BASE.height * settings.remoteScale + nameBand.value,
 }));
 watch(roomId, (r) => enterRoom(r), { immediate: true });
 // also re-runs when positions are forgotten (enterRoom / tidyRemotes) with the same members
@@ -139,7 +145,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
 <template>
   <div class="desk" :style="skinVars">
     <PetActor
-      v-for="m in others" :key="m.id" :pos="remoteAt(m)" :label="m.nick"
+      v-for="m in others" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
       @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick"
     >
       <PetView
@@ -148,10 +154,13 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
         :emote="m.emote" :combo="m.combo" :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
-      <NamePill
-        v-if="settings.showNames" :nick="m.nick" :color="characterColor(m.character)"
-        :width="Math.max(120, PET_BASE.width * settings.remoteScale)"
-      />
+      <template v-if="settings.showNames">
+        <NamePlate
+          v-if="plateOf(m)" :card="plateOf(m)!" :nick="shownNick(m)" :color="characterColor(m.character)"
+          :width="remotePlate.width" :height="remotePlate.height"
+        />
+        <NamePill v-else :nick="shownNick(m)" :color="characterColor(m.character)" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />
+      </template>
     </PetActor>
 
     <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">

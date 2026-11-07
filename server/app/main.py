@@ -56,7 +56,8 @@ app.add_middleware(
 
 
 def _member(p: Peer) -> Member:
-    return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion)
+    return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion,
+                  plate=p.plate)
 
 
 @app.get("/healthz")
@@ -128,10 +129,11 @@ class ResonanceBody(BaseModel):
 
 
 class LoadoutBody(BaseModel):
-    """Selected character and favorite emotes."""
+    """Selected character, favorite emotes and name plate (null or "" for none)."""
 
     character: str | None = Field(default=None, max_length=32)
     favorites: list[str] | None = Field(default=None, max_length=16)
+    plate: str | None = Field(default=None, max_length=64)
 
 
 @app.get("/api/manifest")
@@ -314,8 +316,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 who = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
                 profile = await run_in_threadpool(game.profile_for, who, msg.room)
+                plate = await run_in_threadpool(game.room_plate, who, msg.plate)
                 try:
-                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=who, **profile)
+                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=who, plate=plate, **profile)
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
@@ -355,12 +358,20 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, StateMsg):
+                if msg.plate:
+                    plate = await run_in_threadpool(game.room_plate, peer.token, msg.plate)
+                    if plate is None:
+                        await err("locked", "plate not owned")
+                        continue
+                    peer.plate = plate
+                elif msg.plate == "":
+                    peer.plate = None
                 if msg.character is not None:
                     peer.character = msg.character
                 if msg.nick is not None:
                     peer.nick = msg.nick
                 await manager.broadcast(room_id, StateBroadcast(
-                    id=peer.id, character=peer.character, nick=peer.nick).model_dump())
+                    id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
     except (WebSocketDisconnect, ConnectionError):
         pass
     except asyncio.TimeoutError:

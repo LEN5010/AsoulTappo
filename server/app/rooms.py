@@ -33,6 +33,8 @@ class Peer:
     taps: int = 0
     uid: str | None = None
     token: str | None = None
+    # big hidden card id worn as a name plate, checked against the save
+    plate: str | None = None
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     motion: dict[str, float | bool] | None = None

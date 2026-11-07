@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app.cards import DropConfig
-from app.game import Game
+from app.game import Game, player_id_for
 from app.store import Store
 
 from fixtures import Clock, SeqRng, tiny_manifest
@@ -53,7 +53,7 @@ def test_craft_and_loadout_routes(client):
     assert client.post("/api/craft", json={"item": "emote:e.03"}, headers=H).json()["shards"] == 1120
     assert client.post("/api/craft", json={"item": "nope"}, headers=H).status_code == 400
     lo = client.post("/api/loadout", json={"character": "嘉然", "favorites": ["e.01"]}, headers=H).json()
-    assert lo == {"character": "嘉然", "favorites": ["e.01"]}
+    assert lo == {"character": "嘉然", "favorites": ["e.01"], "plate": None}
     assert client.get("/api/loadout", headers=H).json() == lo
     assert client.post("/api/craft", json={"item": "card:c1"}, headers=H).status_code == 200
     assert client.post("/api/loadout", json={"character": "嘉然山海经"}, headers=H).status_code == 400
@@ -70,6 +70,25 @@ def test_ws_emotes_need_ownership_and_are_rate_limited(client):
         assert ws.receive_json() == {"type": "emote", "id": joined["you"], "emote": "e.01"}
         ws.send_json({"type": "emote", "emote": "e.01"})          # too soon
         assert ws.receive_json()["code"] == "rate_limited"
+
+
+def test_ws_plates_are_checked_against_the_save(client):
+    main.game.store.add_item(player_id_for(TOKEN), "card:c5", 0)
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+        a.send_json({"type": "join", "room": "r", "nick": "a", "token": TOKEN, "plate": "c5"})
+        ja = a.receive_json()
+        assert ja["members"][0]["plate"] == "c5"
+        b.send_json({"type": "join", "room": "r", "nick": "b", "token": "u" * 32, "plate": "c5"})
+        jb = b.receive_json()
+        assert [m["plate"] for m in jb["members"] if m["id"] == jb["you"]] == [None]  # not owned: dropped
+        a.receive_json()  # member_joined(b)
+        b.send_json({"type": "state", "plate": "c5"})
+        assert b.receive_json()["code"] == "locked"
+        a.send_json({"type": "state", "plate": ""})
+        off = {"type": "state", "id": ja["you"], "character": "default", "nick": "a", "plate": None}
+        assert a.receive_json() == off and b.receive_json() == off
+        a.send_json({"type": "state", "plate": "c5"})
+        assert b.receive_json()["plate"] == "c5"
 
 
 def test_activity_validation(client):

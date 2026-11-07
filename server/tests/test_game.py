@@ -74,9 +74,9 @@ def test_craft_insufficient_shards():
 
 def test_loadout_validates_favorites_and_ignores_retired_equipment():
     g, _ = make()
-    assert g.get_loadout(TOKEN) == {"character": None, "favorites": []}
+    assert g.get_loadout(TOKEN) == {"character": None, "favorites": [], "plate": None}
     lo = g.set_loadout(TOKEN, {"character": "嘉然", "favorites": ["e.01", "thumbup", "e.01"], "head": "hat"})
-    assert lo == {"character": "嘉然", "favorites": ["e.01", "thumbup"]}
+    assert lo == {"character": "嘉然", "favorites": ["e.01", "thumbup"], "plate": None}
     for patch, code in (({"favorites": ["e.02"]}, "locked"), ({"character": "路人"}, "bad_item")):
         with pytest.raises(GameError) as e:
             g.set_loadout(TOKEN, patch)
@@ -94,6 +94,35 @@ def test_loadout_requires_owned_skin_and_accepts_original():
     with pytest.raises(GameError) as e:
         g.set_loadout(TOKEN, {"character": "嘉然不存在"})
     assert e.value.code == "bad_item"
+
+
+def test_plate_must_be_an_owned_big_hidden_card():
+    g, _ = make()
+    pid = player_id_for(TOKEN)
+    with pytest.raises(GameError) as e:
+        g.set_loadout(TOKEN, {"plate": "c5"})
+    assert e.value.code == "locked"
+    g.store.add_item(pid, "card:c5", 0)
+    g.store.add_item(pid, "card:c1", 0)
+    assert g.set_loadout(TOKEN, {"plate": "c5"})["plate"] == "c5"
+    assert g.set_loadout(TOKEN, {"favorites": ["e.01"]})["plate"] == "c5"  # other keys keep it
+    for card in ("c1", "c4", "nope"):  # owned but not big hidden, small hidden, unknown
+        with pytest.raises(GameError) as e:
+            g.set_loadout(TOKEN, {"plate": card})
+        assert e.value.code == "bad_item"
+    assert g.set_loadout(TOKEN, {"plate": ""})["plate"] is None
+    assert g.set_loadout(TOKEN, {"plate": "c5"})["plate"] == "c5"
+    assert g.set_loadout(TOKEN, {"plate": None})["plate"] is None
+
+
+def test_room_plate_shows_only_owned_big_hidden_cards():
+    g, _ = make()
+    assert g.room_plate(TOKEN, "c5") is None
+    assert g.room_plate(None, "c5") is None and g.room_plate("bad", "c5") is None
+    g.store.add_item(player_id_for(TOKEN), "card:c5", 0)
+    g.store.add_item(player_id_for(TOKEN), "card:c1", 0)
+    assert g.room_plate(TOKEN, "c5") == "c5"
+    assert g.room_plate(TOKEN, "c1") is None and g.room_plate(TOKEN, None) is None
 
 
 def test_room_profile_and_emote_ownership():

@@ -5,7 +5,7 @@ import { PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import { MAX_ROOM_SIZE } from "../net/protocol";
 import { pet } from "../stores/pet";
-import { localPet, others } from "../stores/room";
+import { localPet, others, shownNick } from "../stores/room";
 import { settings } from "../stores/settings";
 import NamePill from "../pet/NamePill.vue";
 import PetView from "../pet/PetView.vue";
@@ -35,7 +35,7 @@ const vacant = computed(() => {
         <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo"
           :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
           :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse />
-        <NamePill :nick="m.nick" :color="characterColor(m.character)" :width="PILL_WIDTH" />
+        <NamePill :nick="shownNick(m)" :color="characterColor(m.character)" :width="PILL_WIDTH" />
       </div>
       <div v-for="n in vacant" :key="n" class="seat vacant"><i aria-hidden="true"></i></div>
     </div>

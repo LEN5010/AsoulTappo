@@ -5,6 +5,7 @@ import {
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { ownsCharacter, ownsEmote } from "../items";
+import { plateCard } from "../pet/plates";
 import { manifest, memberOf } from "../manifest";
 import { settings } from "./settings";
 import { isPanelWindow } from "../composables/tauri";
@@ -271,12 +272,13 @@ export async function craftItem(item: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------- loadout
-// Sync the selected character and favorites.
+// Sync the selected character, favorites and name plate.
 
 export function localLoadout(): LoadoutPatch {
   return {
     character: settings.character,
     favorites: [...settings.favorites],
+    plate: settings.plate || null,
   };
 }
 
@@ -287,6 +289,7 @@ export function sanitizeLoadout(): void {
   if (!ownsCharacter(settings.character, owned)) settings.character = memberOf(settings.character);
   const favs = settings.favorites.filter((k) => ownsEmote(k, owned));
   if (favs.length !== settings.favorites.length) settings.favorites = favs;
+  if (settings.plate && !(plateCard(settings.plate) && owned[`card:${settings.plate}`])) settings.plate = "";
 }
 
 export async function pushLoadout(): Promise<boolean> {
@@ -296,7 +299,7 @@ export async function pushLoadout(): Promise<boolean> {
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
-  () => [settings.character, settings.favorites.join(",")],
+  () => [settings.character, settings.favorites.join(","), settings.plate],
   () => {
     if (isPanelWindow) return;
     clearTimeout(pushTimer);

@@ -23,6 +23,8 @@ export interface JoinInfo {
   token?: string;
   /** Main-site account token; the room uses the save linked to the account. */
   accountToken?: string;
+  /** Big hidden card worn as a name plate; the server drops it unless the save owns it. */
+  plate?: string;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -106,6 +108,7 @@ export class RoomClient {
     if (this.joinInfo) {
       if (patch.character) this.joinInfo.character = patch.character;
       if (patch.nick) this.joinInfo.nick = patch.nick;
+      if (patch.plate !== undefined) this.joinInfo.plate = patch.plate || undefined;
     }
     this.send({ type: "state", ...patch });
   }

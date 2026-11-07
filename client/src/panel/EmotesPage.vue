@@ -13,12 +13,16 @@ import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
 import MemberStrip from "./MemberStrip.vue";
 import StagePet from "./StagePet.vue";
 import PetBust from "./PetBust.vue";
+import NamePill from "../pet/NamePill.vue";
+import NamePlate from "../pet/NamePlate.vue";
+import { plateCards, plateSize } from "../pet/plates";
+import { usePageActive } from "../composables/usePageActive";
 import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import Icon from "../ui/Icon.vue";
 import { flyArc, rise, squash } from "../ui/motion";
 
-type MainKind = "all" | "emote" | "pet";
+type MainKind = "all" | "emote" | "pet" | "plate";
 const mainTab = ref<MainKind>("all");
 const query = ref("");
 const actionNote = ref("");
@@ -69,9 +73,21 @@ const petSkins = computed(() =>
       || a.name.localeCompare(b.name, "zh-CN")),
 );
 
+// Big hidden cards worn as name plates on partners' desks: owned ones first, each group in manifest order.
+// Shown as a partner at x0.8 would see it.
+const { width: PLATE_W, height: PLATE_H } = plateSize(0.8);
+const pageActive = usePageActive();
+const ownsPlate = (id: string) => !!collection.owned[`card:${id}`];
+const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
+const plates = computed(() =>
+  plateCards()
+    .filter((c) => c.characters.some(inMember) && (!query.value || c.name.includes(query.value)))
+    .sort((a, b) => Number(ownsPlate(b.id)) - Number(ownsPlate(a.id))),
+);
+
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)
 const ownedEmotes = computed(() => {
-  if (mainTab.value === "pet") return [];
+  if (mainTab.value === "pet" || mainTab.value === "plate") return [];
   const list: { key: string; name: string; img: string; animated?: boolean; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
     if (!inMember(s.character)) continue;
@@ -102,10 +118,13 @@ const mainTabs = computed(() => [
   { id: "all" as const, label: "全部" },
   { id: "emote" as const, label: "表情", count: totalOwnedEmotes.value },
   { id: "pet" as const, label: "桌宠", count: petSkins.value.length },
+  { id: "plate" as const, label: "铭牌", count: plates.value.length },
 ]);
 
+const showPets = computed(() => mainTab.value === "all" || mainTab.value === "pet");
+const showPlates = computed(() => mainTab.value === "all" || mainTab.value === "plate");
 const nothingFound = computed(
-  () => !ownedEmotes.value.length && (mainTab.value === "emote" || !petSkins.value.length),
+  () => !ownedEmotes.value.length && !(showPets.value && petSkins.value.length) && !(showPlates.value && plates.value.length),
 );
 
 const favorites = computed(() => Array.from({ length: 8 }, (_, n) => getItem(`emote:${settings.favorites[n]}`)));
@@ -254,7 +273,7 @@ function fireEmote(key: string) {
 
     <div ref="root" class="scroller ui-scroll" @dragend="dragDepth = 0">
       <div ref="listing" class="shelves">
-        <section v-if="mainTab !== 'emote' && petSkins.length" class="shelf">
+        <section v-if="showPets && petSkins.length" class="shelf">
           <h4 class="ui-label shelf-head"><span>桌宠形象</span><small>{{ petSkins.length }}</small></h4>
           <div class="pet-grid">
             <button
@@ -274,7 +293,44 @@ function fireEmote(key: string) {
           </div>
         </section>
 
-        <section v-if="mainTab !== 'pet'" class="shelf">
+        <section v-if="showPlates && plates.length" class="shelf">
+          <h4 class="ui-label shelf-head"><span>铭牌</span><small>{{ plates.length }}</small></h4>
+          <div class="plate-grid">
+            <button
+              type="button" class="plate-card ui-tile" :class="{ picked: !settings.plate }"
+              title="伙伴桌面上显示普通名牌" data-rise @click="settings.plate = ''"
+            >
+              <span class="plate-well ui-frame">
+                <NamePill :nick="plateNick" :color="characterColor(settings.character)" :width="PLATE_W" />
+              </span>
+              <b class="ui-tile-name">
+                不使用铭牌
+                <span v-if="!settings.plate" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="9" /></span>
+              </b>
+            </button>
+            <button
+              v-for="card in plates" :key="`plate:${card.id}`" type="button"
+              class="plate-card ui-tile" :class="{ picked: settings.plate === card.id, locked: !ownsPlate(card.id) }"
+              :disabled="!ownsPlate(card.id)"
+              :title="`${ownsPlate(card.id) ? '使用铭牌' : '未获得'}：${card.name}`" data-rise
+              @click="settings.plate = card.id"
+            >
+              <span class="plate-well ui-frame">
+                <NamePlate
+                  :card="card.id" :nick="plateNick" :color="characterColor(settings.character)"
+                  :width="PLATE_W" :height="PLATE_H" :still="!ownsPlate(card.id) || !pageActive"
+                />
+              </span>
+              <b class="ui-tile-name">
+                <i :style="{ background: characterColor(card.characters[0]!) }" aria-hidden="true"></i>{{ card.name }}
+                <span v-if="settings.plate === card.id" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="9" /></span>
+                <span v-else-if="!ownsPlate(card.id)" class="badge lock" aria-label="未获得"><Icon name="lock" :size="9" /></span>
+              </b>
+            </button>
+          </div>
+        </section>
+
+        <section v-if="mainTab === 'all' || mainTab === 'emote'" class="shelf">
           <h4 class="ui-label shelf-head"><span>表情贴纸</span><small>{{ ownedEmotes.length }}</small></h4>
           <VirtualGrid class="emote-grid" :items="ownedEmotes" :item-key="(e) => e.key" extra>
             <template #default="{ item: e }">
@@ -584,6 +640,58 @@ function fireEmote(key: string) {
   flex: none;
   width: 4px;
   height: 11px;
+}
+.plate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 10px;
+}
+.plate-card {
+  --radius: var(--radius-m);
+}
+.plate-well {
+  width: 100%;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-100);
+}
+.plate-card.picked .plate-well {
+  outline: 2px solid var(--c-500);
+  outline-offset: -2px;
+}
+.plate-well > :first-child {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.plate-card:hover:not(:disabled) .plate-well > :first-child {
+  transform: translateY(-2px);
+}
+.plate-card:disabled {
+  cursor: default;
+}
+.plate-card.locked .plate-well > :first-child {
+  filter: var(--dim);
+}
+.plate-card .ui-tile-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 4px;
+  font: 800 var(--fs-label) var(--font);
+}
+.plate-card .ui-tile-name i {
+  flex: none;
+  width: 4px;
+  height: 11px;
+}
+/* The plate fills most of its well, so the status sits after the name instead of on the well. */
+.plate-card .ui-tile-name .badge {
+  position: static;
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 .badge {
   position: absolute;

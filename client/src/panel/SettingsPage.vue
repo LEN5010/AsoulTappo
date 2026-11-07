@@ -17,7 +17,7 @@ import PetBust from "./PetBust.vue";
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
 
-// Account sign-in is offered when the server is connected to the account service.
+// The account row is always shown; signing in needs a server connected to the account service.
 const info = ref<ServerInfo | null>(null);
 async function loadInfo() {
   const server = toHttpBase(settings.serverUrl);
@@ -71,7 +71,7 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
       </div>
     </section>
 
-    <section v-if="info?.accountLogin" data-rise>
+    <section data-rise>
       <h4 class="ui-label"><span>账号</span></h4>
       <div class="ui-group ui-frame">
         <div class="ui-row">
@@ -80,9 +80,12 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
             <b>{{ signedIn.user.username }}</b>
             <small v-if="signedIn.user.email">{{ signedIn.user.email }}</small>
           </span>
-          <span v-else class="who"><small>未登录</small></span>
+          <span v-else class="who">
+            <small>未登录</small>
+            <small v-if="!info?.accountLogin">{{ info ? "当前服务器未开放账号登录" : "连接服务器后可登录" }}</small>
+          </span>
           <span v-if="signedIn" class="acts"><button class="ui-btn" type="button" @click="signOut">退出登录</button></span>
-          <span v-else class="acts">
+          <span v-else-if="info?.accountLogin" class="acts">
             <button class="ui-btn primary" type="button" @click="dialog = 'login'">登录</button>
             <button class="ui-btn" type="button" @click="dialog = 'register'">注册</button>
           </span>
@@ -93,40 +96,50 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
     </section>
 
     <div class="columns">
-      <section data-rise>
-        <h4 class="ui-label"><span>桌宠表现</span></h4>
-        <div class="ui-group ui-frame">
-          <label class="ui-row">
-            <span>桌宠大小</span>
-            <span class="ui-ctl">
-              <RangeInput v-model="settings.scale" :min="0.5" :max="2" :step="0.1" />
-              <b class="ui-val">×{{ settings.scale.toFixed(1) }}</b>
-            </span>
-          </label>
-          <label class="ui-row">
-            <span>表情停留时间</span>
-            <span class="ui-ctl">
-              <RangeInput v-model="settings.emoteHoldMs" :min="1200" :max="6000" :step="100" />
-              <b class="ui-val">{{ (settings.emoteHoldMs / 1000).toFixed(1) }} 秒</b>
-            </span>
-          </label>
-          <label class="ui-row">
-            <span>鼠标爪跟随光标</span>
-            <input v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
-          </label>
-          <label v-if="settings.mouseFollow" class="ui-row">
-            <span>跟随灵敏度</span>
-            <span class="ui-ctl">
-              <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" />
-              <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
-            </span>
-          </label>
-          <div class="ui-row">
-            <span>桌宠位置</span>
-            <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
+      <div class="column">
+        <section data-rise>
+          <h4 class="ui-label"><span>桌宠表现</span></h4>
+          <div class="ui-group ui-frame">
+            <label class="ui-row">
+              <span>桌宠大小</span>
+              <span class="ui-ctl">
+                <RangeInput v-model="settings.scale" :min="0.5" :max="2" :step="0.1" />
+                <b class="ui-val">×{{ settings.scale.toFixed(1) }}</b>
+              </span>
+            </label>
+            <label class="ui-row">
+              <span>表情停留时间</span>
+              <span class="ui-ctl">
+                <RangeInput v-model="settings.emoteHoldMs" :min="1200" :max="6000" :step="100" />
+                <b class="ui-val">{{ (settings.emoteHoldMs / 1000).toFixed(1) }} 秒</b>
+              </span>
+            </label>
+            <label class="ui-row">
+              <span>鼠标爪跟随光标</span>
+              <input v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
+            </label>
+            <label class="ui-row" :class="{ off: !settings.mouseFollow }">
+              <span>跟随灵敏度</span>
+              <span class="ui-ctl">
+                <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" :disabled="!settings.mouseFollow" />
+                <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
+              </span>
+            </label>
+            <div class="ui-row">
+              <span>桌宠位置</span>
+              <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
+            </div>
+            <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
+              <span>显示伙伴铭牌</span>
+              <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
+            </label>
+            <label class="ui-row" title="伙伴昵称换成他们桌宠的成员名，直播时用">
+              <span>隐藏伙伴 ID</span>
+              <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
+            </label>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
       <div class="column">
         <section v-if="isTauri" data-rise>
@@ -377,12 +390,28 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  align-items: start;
 }
 .column {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+/* The last group in each column grows so both columns end on the same line. */
+.column > section:last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.column > section:last-child > .ui-group {
+  flex: 1;
+}
+.columns .ui-row.off > span:first-child {
+  color: var(--ink-3);
+}
+.columns .ui-range:disabled,
+.columns .ui-switch:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .columns .ui-row {
   gap: 10px;
