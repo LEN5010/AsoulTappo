@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { reducedMotion } from "../stores/theme";
 import { takeFocus, trapTab } from "./focus";
 import Icon from "./Icon.vue";
 
@@ -10,8 +11,30 @@ const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
 let release: (() => void) | undefined;
+
+/** Matches --dur-fast, the length of the closing animation below. */
+const CLOSE_MS = 140;
+const closing = ref(false);
+let alive = true;
+let timer: ReturnType<typeof setTimeout> | undefined;
+/** The backdrop, Escape and the close key play the closing animation before the caller unmounts the dialog. */
+function close() {
+  if (closing.value) return;
+  if (reducedMotion.value) {
+    emit("close");
+    return;
+  }
+  closing.value = true;
+  timer = setTimeout(async () => {
+    emit("close");
+    await nextTick();
+    // The caller kept it open (an update still downloading): show it again.
+    if (alive) closing.value = false;
+  }, CLOSE_MS);
+}
+
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Escape") emit("close");
+  if (e.key === "Escape") close();
   else if (e.key === "Tab" && sheet.value) trapTab(sheet.value, e);
 }
 onMounted(async () => {
@@ -20,6 +43,8 @@ onMounted(async () => {
   release = takeFocus(sheet.value);
 });
 onBeforeUnmount(() => {
+  alive = false;
+  clearTimeout(timer);
   window.removeEventListener("keydown", onKey);
   release?.();
 });
@@ -29,12 +54,12 @@ onDeactivated(() => emit("close"));
 
 <template>
   <Teleport defer to=".panel-overlay">
-    <div class="backdrop" data-overlay @click.self="emit('close')">
+    <div class="backdrop" :class="{ closing }" data-overlay @click.self="close">
       <slot name="behind" />
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <div class="sheet-head">
           <h3 v-if="heading && title" class="sheet-title">{{ title }}</h3>
-          <button type="button" class="x ui-btn ghost" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="16" /></button>
+          <button type="button" class="x ui-btn ghost" aria-label="关闭" @click="close"><Icon name="close" :size="16" /></button>
         </div>
         <div class="sheet-body">
           <slot />
@@ -56,7 +81,7 @@ onDeactivated(() => emit("close"));
   padding: 20px;
   box-sizing: border-box;
   overflow: hidden;
-  background: rgba(var(--c-900-rgb), 0.42);
+  background: rgba(var(--shadow-rgb), 0.4);
   animation: fade var(--dur-fast) var(--ease-out);
 }
 /* White paper with a quiet close key in its corner. */
@@ -77,6 +102,17 @@ onDeactivated(() => emit("close"));
 }
 .sheet.still {
   animation: fade var(--dur-base) var(--ease-out);
+}
+/* Closing runs faster than opening and eases in, so the dialog leaves without a tail. */
+.backdrop.closing {
+  pointer-events: none;
+  animation: fade-out var(--dur-fast) var(--ease-in) forwards;
+}
+.closing .sheet {
+  animation: slide-out var(--dur-fast) var(--ease-in) forwards;
+}
+.closing .sheet.still {
+  animation: fade-out var(--dur-fast) var(--ease-in) forwards;
 }
 /* The close key owns its own row, so no content can slide under it. */
 .sheet-head {
@@ -108,4 +144,6 @@ onDeactivated(() => emit("close"));
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes slide-out { to { opacity: 0; transform: translate(-10px, 8px) scale(0.98); } }
 </style>

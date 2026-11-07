@@ -417,6 +417,10 @@ onDeactivated(() => {
 .solo :deep(.caption) {
   visibility: hidden;
 }
+/* NEW and 首次获得 beside the card already say it is new. */
+.solo :deep(.fresh) {
+  display: none;
+}
 .solo-band {
   position: absolute;
   z-index: -1;
