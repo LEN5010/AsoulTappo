@@ -72,3 +72,28 @@ def test_release_endpoint(monkeypatch):
     res = client.get("/api/client/release")
     assert res.status_code == 503
     assert res.json()["detail"]["code"] == "release_unavailable"
+
+
+def test_a_slow_main_site_does_not_block_other_callers():
+    import threading
+    from app.releases import ReleaseFeed
+
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def slow(url):
+        calls.append(url)
+        started.set()
+        release.wait(5)
+        return {"releases": [{"version": "0.1.0", "notes": ""}]}
+
+    feed = ReleaseFeed("u", fetch=slow)
+    t = threading.Thread(target=feed.latest)
+    t.start()
+    assert started.wait(5)
+    # while the first caller waits on the main site, others answer at once from the (empty) cache
+    assert feed.latest() is None
+    release.set()
+    t.join(5)
+    assert feed.latest() == {"version": "0.1.0", "notes": ""}
+    assert len(calls) == 1

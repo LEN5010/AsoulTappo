@@ -51,17 +51,30 @@ class ReleaseFeed:
         self._latest: dict[str, str] | None = None
         self._got = float("-inf")
         self._next = float("-inf")
+        self._fetching = False
 
     def latest(self) -> dict[str, str] | None:
+        """The cached release; refreshes it when due. The main site is asked outside the lock and by
+        one caller at a time, so a slow main site never holds up other requests or worker threads."""
         with self._lock:
             now = self.now()
-            if now >= self._next:
-                try:
-                    found = newest(self.fetch(self.url))
-                except (OSError, ValueError):
-                    found = None
-                if found:
-                    self._latest, self._got, self._next = found, now, now + FRESH_SECONDS
-                else:
-                    self._next = now + RETRY_SECONDS
-            return self._latest if now - self._got <= STALE_SECONDS else None
+            due = now >= self._next and not self._fetching
+            if due:
+                self._fetching = True
+            else:
+                return self._fresh(now)
+        try:
+            found = newest(self.fetch(self.url))
+        except (OSError, ValueError):
+            found = None
+        with self._lock:
+            self._fetching = False
+            done = self.now()
+            if found:
+                self._latest, self._got, self._next = found, done, done + FRESH_SECONDS
+            else:
+                self._next = done + RETRY_SECONDS
+            return self._fresh(done)
+
+    def _fresh(self, now: float) -> dict[str, str] | None:
+        return self._latest if now - self._got <= STALE_SECONDS else None
