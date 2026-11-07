@@ -1,35 +1,87 @@
+// Update check. The newest version comes from the room server, which reads the main site's release
+// list: many players cannot reach GitHub. The signed package itself still comes from GitHub through
+// the Tauri updater; when that fails, the download page on the main site opens instead.
 import { ref } from "vue";
 import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
-import { isTauri } from "../composables/tauri";
+import { isTauri, openAboutLink } from "../composables/tauri";
+import { Api, type ReleaseInfo } from "../net/api";
+import { toHttpBase } from "../net/protocol";
+import { isNewer } from "../semver";
+import { settings } from "./settings";
 
 const DISMISS_KEY = "asoultappo.update.dismissed";
+/** Every installer, mirrored on the main site. Also listed in ABOUT_LINKS (src-tauri/src/lib.rs). */
+export const DOWNLOAD_PAGE = "https://len5010.top/dynamics/download?app=tappo";
+const GITHUB_TIMEOUT_MS = 15000;
 
-export const updateOffer = ref<{ version: string; notes: string } | null>(null);
+export const updateOffer = ref<ReleaseInfo | null>(null);
 export const updateDialogOpen = ref(false);
 export const updateBusy = ref(false);
 export const updateFailed = ref(false);
 /** Download percent when the server reports a length. Null leaves the label indeterminate. */
 export const updatePercent = ref<number | null>(null);
+/** The check started from the settings page: running, nothing newer, or no answer from anywhere. */
+export const checkState = ref<"idle" | "checking" | "latest" | "failed">("idle");
 
-let pending: Update | null = null;
+type GithubAnswer = { ok: true; update: Update | null } | { ok: false };
+let github: Promise<GithubAnswer> | null = null;
 let looked = false;
 
-export async function lookForUpdate(): Promise<void> {
-  if (!isTauri || looked) return;
-  looked = true;
+/** The Tauri updater's answer from GitHub, asked once and shared; asked again after a failure. */
+function askGithub(again = false): Promise<GithubAnswer> {
+  if (!isTauri) return Promise.resolve({ ok: false });
+  if (!github || again) {
+    github = import("@tauri-apps/plugin-updater")
+      .then(({ check }) => check({ timeout: GITHUB_TIMEOUT_MS }))
+      .then((update): GithubAnswer => ({ ok: true, update }), (): GithubAnswer => ({ ok: false }));
+  }
+  return github;
+}
+
+async function askServer(): Promise<ReleaseInfo | null> {
   try {
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const found = await check();
-    if (!found) return;
-    pending = found;
-    updateOffer.value = { version: found.version, notes: found.body?.trim() ?? "" };
-    let dismissed: string | null = null;
-    try {
-      dismissed = localStorage.getItem(DISMISS_KEY);
-    } catch { /* private mode */ }
-    updateDialogOpen.value = dismissed !== found.version;
+    const found = await new Api(() => toHttpBase(settings.serverUrl), () => "").latestRelease();
+    return typeof found?.version === "string" ? { version: found.version, notes: found.notes?.trim() ?? "" } : null;
   } catch {
-    pending = null;
+    return null;
+  }
+}
+
+function offer(found: ReleaseInfo, manual: boolean): void {
+  updateOffer.value = found;
+  checkState.value = "idle";
+  if (!updateBusy.value) updateFailed.value = false;
+  let dismissed: string | null = null;
+  try {
+    dismissed = localStorage.getItem(DISMISS_KEY);
+  } catch { /* private mode */ }
+  updateDialogOpen.value = manual || dismissed !== found.version;
+}
+
+/** Looks for a newer version: once by itself when the panel opens, or again from the settings page. */
+export async function lookForUpdate(manual = false): Promise<void> {
+  if (checkState.value === "checking" || updateBusy.value) return;
+  if (!manual) {
+    if (looked) return;
+    looked = true;
+  } else {
+    checkState.value = "checking";
+  }
+  const fromGithub = askGithub(manual);
+  const latest = await askServer();
+  if (latest) {
+    if (isNewer(latest.version, __APP_VERSION__)) offer(latest, manual);
+    else if (manual) checkState.value = "latest";
+    return;
+  }
+  // The server could not say: GitHub, if this device reaches it.
+  const answer = await fromGithub;
+  if (!answer.ok) {
+    if (manual) checkState.value = "failed";
+  } else if (answer.update) {
+    offer({ version: answer.update.version, notes: answer.update.body?.trim() ?? "" }, manual);
+  } else if (manual) {
+    checkState.value = "latest";
   }
 }
 
@@ -51,12 +103,31 @@ export function dismissUpdate(): void {
   updateFailed.value = false;
 }
 
-export async function installUpdate(): Promise<void> {
-  const found = pending;
-  if (!found || updateBusy.value) return;
-  updateBusy.value = true;
-  updateFailed.value = false;
+function failed(): void {
+  updateBusy.value = false;
+  updateFailed.value = true;
   updatePercent.value = null;
+  openAboutLink(DOWNLOAD_PAGE);
+}
+
+/** Installs the offered version from GitHub and restarts; opens the download page if that fails. */
+export async function installUpdate(): Promise<void> {
+  const want = updateOffer.value?.version;
+  if (!want || updateBusy.value) return;
+  if (updateFailed.value || !isTauri) {
+    openAboutLink(DOWNLOAD_PAGE);
+    return;
+  }
+  updateBusy.value = true;
+  updatePercent.value = null;
+  let answer = await askGithub();
+  if (!answer.ok) answer = await askGithub(true);
+  // GitHub's package must be the version offered; an older or missing one means the download page.
+  const found = answer.ok && answer.update?.version === want ? answer.update : null;
+  if (!found) {
+    failed();
+    return;
+  }
   let total = 0;
   let downloaded = 0;
   const onEvent = (event: DownloadEvent) => {
@@ -76,8 +147,6 @@ export async function installUpdate(): Promise<void> {
     const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   } catch {
-    updateBusy.value = false;
-    updateFailed.value = true;
-    updatePercent.value = null;
+    failed();
   }
 }

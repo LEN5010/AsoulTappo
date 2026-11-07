@@ -53,6 +53,7 @@ export function authHeaders(credential: Credential): Record<string, string> {
 export interface MainUser { id: string; username: string; email: string | null }
 export interface SaveSummary { shards: number; owned: number; taps: number; lastActive: number }
 export interface ServerInfo { accountLogin: boolean; mainApi: string | null }
+export interface ReleaseInfo { version: string; notes: string }
 export interface LinkResult { user: MainUser; save: SaveSummary; linkedGuest: boolean }
 
 export interface ActivityBatch {
@@ -109,6 +110,8 @@ export class Api {
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
   info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
+  /** The newest client release, which the server reads from the main site. */
+  latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});
   account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
   /** Binds the account to this device's guest save (when given) or to a new save. */
   link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},

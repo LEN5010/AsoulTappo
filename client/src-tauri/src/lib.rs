@@ -110,10 +110,11 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 /// Links the About section may open in the system browser or mail app.
-const ABOUT_LINKS: [&str; 3] = [
+const ABOUT_LINKS: [&str; 4] = [
     "https://github.com/LEN5010/AsoulTappo",
     "https://space.bilibili.com/107261543",
     "mailto:len5010@qq.com",
+    "https://len5010.top/dynamics/download?app=tappo",
 ];
 
 #[tauri::command]

@@ -36,6 +36,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | GET /api/loadout | character、favorites、plate |
 | POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已拥有的大隐藏卡 ID，null 或空字符串取下铭牌 |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
+| GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |
 | GET /api/account | Bearer；user、save（账号存档摘要，未绑定时为 null） |
 | POST /api/account/link | Bearer，可带 `X-Player-Token`。账号未绑定时把这份游客存档（或新存档）绑定到账号，返回 user、save、linkedGuest；账号已有存档且游客存档玩过时返回 409 `account_has_save`，附 account 和 guest 两份摘要；游客存档已属于其他账号时返回 401 `save_linked` |
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |

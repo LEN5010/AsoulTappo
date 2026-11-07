@@ -6,7 +6,7 @@ import {
 } from "../stores/update";
 
 const label = computed(() => {
-  if (updateFailed.value) return "再试一次";
+  if (updateFailed.value) return "去下载页";
   if (updateBusy.value) return updatePercent.value == null ? "下载中" : `${updatePercent.value}%`;
   return "更新";
 });
@@ -16,6 +16,7 @@ const label = computed(() => {
   <Modal v-if="updateDialogOpen && updateOffer" title="发现新版本" heading @close="dismissUpdate">
     <p class="ver">{{ updateOffer.version }}</p>
     <p v-if="updateOffer.notes" class="notes">{{ updateOffer.notes }}</p>
+    <p v-if="updateFailed" role="status" class="failed">自动更新失败，已打开下载页</p>
     <div class="acts">
       <button type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
       <button type="button" class="ui-btn primary" :class="{ pulse: !updateBusy }" @click="installUpdate">{{ label }}</button>
@@ -36,6 +37,12 @@ const label = computed(() => {
   font-weight: 700;
   line-height: 1.55;
   color: var(--ink);
+}
+.failed {
+  margin: 14px 0 0;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--c-700);
 }
 .acts {
   display: flex;

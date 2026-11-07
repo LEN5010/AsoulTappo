@@ -9,7 +9,7 @@ import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
 import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
-import { openUpdateDialog, updateOffer } from "../stores/update";
+import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
@@ -52,6 +52,7 @@ async function copyMail() {
   try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
 }
 const version = __APP_VERSION__;
+const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
 </script>
 
@@ -176,8 +177,13 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
             <div class="ui-row">
               <span>版本</span>
               <span class="version-side">
+                <small v-if="checkNote" role="status" class="check-note">{{ checkNote }}</small>
                 <b class="version">{{ version }}</b>
                 <button v-if="updateOffer" type="button" class="ui-btn small primary" @click="openUpdateDialog">更新</button>
+                <button
+                  v-else type="button" class="ui-btn small" :disabled="checkState === 'checking'"
+                  @click="lookForUpdate(true)"
+                >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
               </span>
             </div>
             <div class="ui-row">
@@ -252,6 +258,12 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
   align-items: center;
   gap: 10px;
   padding-right: 4px;
+}
+.check-note {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 .version {
   flex: none;

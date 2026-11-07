@@ -22,6 +22,7 @@ from .models import (
     MemberJoinedMsg, MemberLeftMsg, MotionMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
     TapMsg, client_message_adapter,
 )
+from .releases import ReleaseFeed
 from .rooms import Peer, RoomFull, RoomManager
 from .store import Store
 
@@ -38,6 +39,9 @@ game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manife
 # self-hosted servers, which then offer guest saves only.
 MAIN_API_URL = os.environ.get("MAIN_API_URL", "").strip().rstrip("/")
 accounts = MainAccounts(MAIN_API_URL) if MAIN_API_URL else None
+# The panel's update check reads the official release list even on self-hosted servers.
+OFFICIAL_MAIN_API = "https://len5010.top/dynamics/api"
+releases = ReleaseFeed(f"{MAIN_API_URL or OFFICIAL_MAIN_API}/tappo/release")
 
 # ASOULTAPPO_ADMIN_KEY: shared secret the main site's admin backend sends as X-Admin-Key. Unset
 # disables /admin. Keep /admin off the public proxy; the main site calls it on the same host.
@@ -180,6 +184,14 @@ def api_set_loadout(body: LoadoutBody, who: PlayerId = Depends(player)) -> dict:
 @app.get("/api/info")
 def api_info() -> dict:
     return {"accountLogin": accounts is not None, "mainApi": MAIN_API_URL or None}
+
+
+@app.get("/api/client/release")
+def api_client_release() -> dict:
+    latest = releases.latest()
+    if not latest:
+        raise HTTPException(503, {"code": "release_unavailable", "message": "暂时查不到最新版本"})
+    return latest
 
 
 def _public_user(user: dict) -> dict:

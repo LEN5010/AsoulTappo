@@ -1,0 +1,74 @@
+from fastapi.testclient import TestClient
+
+import app.main as main
+from app.releases import FRESH_SECONDS, RETRY_SECONDS, STALE_SECONDS, ReleaseFeed, newest
+
+URL = "https://main.test/api/tappo/release"
+FEED = {"releases": [{"version": "0.1.0-beta.7", "notes": "新版本"}, {"version": "0.1.0-beta.6", "notes": ""}],
+        "checkedAt": "2026-11-07T00:00:00Z"}
+
+
+class FakeMain:
+    def __init__(self):
+        self.calls = 0
+        self.feed = FEED
+        self.down = False
+
+    def __call__(self, url):
+        assert url == URL
+        self.calls += 1
+        if self.down:
+            raise OSError("unreachable")
+        return self.feed
+
+
+def feed_with(fake):
+    clock = [0.0]
+    return ReleaseFeed(URL, fake, lambda: clock[0]), clock
+
+
+def test_newest_takes_the_first_release():
+    assert newest(FEED) == {"version": "0.1.0-beta.7", "notes": "新版本"}
+    assert newest({"releases": []}) is None
+    assert newest({"releases": [{"version": "latest"}]}) is None
+    assert newest([]) is None
+
+
+def test_feed_caches_and_retries():
+    fake = FakeMain()
+    feed, clock = feed_with(fake)
+    assert feed.latest()["version"] == "0.1.0-beta.7"
+    clock[0] = FRESH_SECONDS - 1
+    feed.latest()
+    assert fake.calls == 1
+
+    fake.down = True
+    clock[0] = FRESH_SECONDS
+    assert feed.latest()["version"] == "0.1.0-beta.7"  # last good answer while the main site fails
+    clock[0] = FRESH_SECONDS + RETRY_SECONDS - 1
+    feed.latest()
+    assert fake.calls == 2
+
+    clock[0] = STALE_SECONDS + 1
+    assert feed.latest() is None
+
+
+def test_feed_without_a_first_answer():
+    fake = FakeMain()
+    fake.down = True
+    feed, _ = feed_with(fake)
+    assert feed.latest() is None
+
+
+def test_release_endpoint(monkeypatch):
+    fake = FakeMain()
+    feed, _ = feed_with(fake)
+    monkeypatch.setattr(main, "releases", feed)
+    client = TestClient(main.app)
+    assert client.get("/api/client/release").json() == {"version": "0.1.0-beta.7", "notes": "新版本"}
+
+    fake.down = True
+    monkeypatch.setattr(main, "releases", feed_with(fake)[0])
+    res = client.get("/api/client/release")
+    assert res.status_code == 503
+    assert res.json()["detail"]["code"] == "release_unavailable"
