@@ -10,6 +10,7 @@ import QuickEmote from "./pet/QuickEmote.vue";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { plateCard, plateSize } from "./pet/plates";
+import { remotePetSize } from "./pet/bounds";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
@@ -64,11 +65,7 @@ function closeQuick(e: Event) {
 const remotePlate = computed(() => plateSize(settings.remoteScale));
 /** A partner's name plate, when they wear one and plates are shown. */
 const plateOf = (m: RemoteMember) => (settings.showPlates ? plateCard(m.plate)?.id : undefined);
-const nameBand = computed(() => (settings.showNames ? Math.max(22, settings.showPlates ? remotePlate.value.height + 1 : 0) : 0));
-const remoteSize = computed<Size>(() => ({
-  w: Math.max(PET_BASE.width * settings.remoteScale, 64),
-  h: PET_BASE.height * settings.remoteScale + nameBand.value,
-}));
+const remoteSize = computed<Size>(() => remotePetSize(settings.remoteScale, settings.showNames, settings.showPlates));
 watch(roomId, (r) => enterRoom(r), { immediate: true });
 // also re-runs when positions are forgotten (enterRoom / tidyRemotes) with the same members
 watch(
