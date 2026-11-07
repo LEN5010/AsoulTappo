@@ -2,7 +2,7 @@ mod hit;
 mod input;
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hit::{HitRect, HitState};
 use tauri::{
@@ -13,6 +13,11 @@ use tauri::{
 
 /// How often the cursor is checked against the overlay's hit rectangles.
 const HIT_TEST_INTERVAL: Duration = Duration::from_millis(30);
+/// Poll interval while the overlay is hidden or click-through, when nothing can be hit.
+const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
+/// How often the overlay checks that it still covers its monitor's work area
+/// (monitor plugged/unplugged, resolution, scaling or taskbar changed).
+const REFIT_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 struct Overlay {
@@ -170,11 +175,49 @@ fn primary_index(window: &WebviewWindow) -> usize {
         .unwrap_or(0)
 }
 
+/// Whether the window no longer covers the work area of the monitor it should be on.
+fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
+    let (Ok(monitors), Ok(primary), Ok(pos), Ok(size)) = (
+        window.available_monitors(),
+        window.primary_monitor(),
+        window.outer_position(),
+        window.outer_size(),
+    ) else {
+        return false;
+    };
+    let Some(m) = monitors.get(index).or(primary.as_ref()).or(monitors.first()) else {
+        return false;
+    };
+    let area = m.work_area();
+    area.position.x != pos.x
+        || area.position.y != pos.y
+        || area.size.width != size.width
+        || area.size.height != size.height
+}
+
 /// Let the cursor fall through the overlay everywhere except on drawn parts.
+/// Polls slowly while nothing can be hit, and keeps the overlay fitted to its monitor.
 fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
+        let mut last_refit = Instant::now();
         loop {
+            if last_refit.elapsed() >= REFIT_INTERVAL {
+                last_refit = Instant::now();
+                let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
+                if needs_refit(&window, index) {
+                    let _ = fit_to_monitor(&window, index);
+                }
+            }
+            let idle = !window.is_visible().unwrap_or(true)
+                || overlay.hit.lock().map(|st| st.click_through).unwrap_or(false);
+            if idle {
+                if ignoring != Some(true) && window.set_ignore_cursor_events(true).is_ok() {
+                    ignoring = Some(true);
+                }
+                std::thread::sleep(HIT_TEST_IDLE_INTERVAL);
+                continue;
+            }
             std::thread::sleep(HIT_TEST_INTERVAL);
             let (Ok(cursor), Ok(origin), Ok(scale)) =
                 (window.cursor_position(), window.inner_position(), window.scale_factor())
@@ -293,7 +336,8 @@ pub fn run() {
             // ---- global input hook (counts / deltas only) ----
             let handle = app.handle().clone();
             input::spawn_hook(move |ev| {
-                let _ = handle.emit("input", ev);
+                // Only the desk overlay consumes input; the panel never needs it.
+                let _ = handle.emit_to("main", "input", ev);
             });
 
             Ok(())
