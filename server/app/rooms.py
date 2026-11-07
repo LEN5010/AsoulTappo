@@ -37,6 +37,8 @@ class Peer:
     plate: str | None = None
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
+    tap_budget: float = 0.0
+    tap_at: float = 0.0
     motion: dict[str, float | bool] | None = None
     active: bool = True
     outbox: deque = field(default_factory=deque)

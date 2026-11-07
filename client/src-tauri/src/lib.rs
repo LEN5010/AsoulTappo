@@ -1,3 +1,4 @@
+mod gamepad;
 mod hit;
 mod input;
 mod update;
@@ -196,11 +197,30 @@ fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
         || area.size.height != size.height
 }
 
+/// Polls in a row with the mouse button up before a stuck drag is dropped (~300 ms).
+const DRAG_RELEASE_POLLS: u32 = 10;
+
+/// Whether the primary mouse button is physically held (left, or right when swapped).
+#[cfg(target_os = "windows")]
+fn primary_button_down() -> bool {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_SWAPBUTTON};
+    let key = if unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0 { VK_RBUTTON } else { VK_LBUTTON };
+    (unsafe { GetAsyncKeyState(key as i32) } as u16 & 0x8000) != 0
+}
+
+/// Elsewhere the frontend's pointer-up stays the only way a drag ends.
+#[cfg(not(target_os = "windows"))]
+fn primary_button_down() -> bool {
+    true
+}
+
 /// Let the cursor fall through the overlay everywhere except on drawn parts.
 /// Polls slowly while nothing can be hit, and keeps the overlay fitted to its monitor.
 fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
+        let mut released_for = 0u32;
         let mut last_refit = Instant::now();
         loop {
             if last_refit.elapsed() >= REFIT_INTERVAL {
@@ -223,8 +243,26 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
             let (Ok(cursor), Ok(origin), Ok(scale)) =
                 (window.cursor_position(), window.inner_position(), window.scale_factor())
             else {
+                // No cursor (lock screen, UAC, remote desktop): let clicks through rather than
+                // keep whatever was last decided, which could leave the whole screen unclickable.
+                if ignoring != Some(true) && window.set_ignore_cursor_events(true).is_ok() {
+                    ignoring = Some(true);
+                }
                 continue;
             };
+            // A drag whose pointer-up never reached the frontend (webview hung, capture lost)
+            // must not keep the full-screen overlay taking every click.
+            if let Ok(mut st) = overlay.hit.lock() {
+                if st.dragging && !primary_button_down() {
+                    released_for += 1;
+                    if released_for >= DRAG_RELEASE_POLLS {
+                        st.dragging = false;
+                        released_for = 0;
+                    }
+                } else {
+                    released_for = 0;
+                }
+            }
             let ignore = match overlay.hit.lock() {
                 Ok(st) => !st.interactive((cursor.x, cursor.y), (origin.x as f64, origin.y as f64), scale),
                 Err(_) => continue,
@@ -267,6 +305,11 @@ pub fn run() {
         .setup(move |app| {
             // ---- overlay window over the work area, mouse passes through until something is hit ----
             if let Some(w) = main_window(app.handle()) {
+                // `focus: false` only controls initial focus. Keep clicks on the Windows
+                // overlay from activating it over a game or hardware-accelerated video.
+                // This maps to WS_EX_NOACTIVATE; the separate panel stays focusable.
+                #[cfg(target_os = "windows")]
+                let _ = w.set_focusable(false);
                 let index = primary_index(&w);
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
@@ -310,6 +353,12 @@ pub fn run() {
                         let _ = app.emit_to("main", "tray", "toggle-panel");
                     }
                     "toggle_click_through" => {
+                        // Flip it here too, so the tray still frees the screen when the page is hung;
+                        // the page flips its setting from the same old value and ends up agreeing.
+                        if let Ok(mut st) = tray_overlay.hit.lock() {
+                            st.click_through = !st.click_through;
+                            st.dragging = false;
+                        }
                         let _ = app.emit_to("main", "tray", "toggle-click-through");
                     }
                     "reset_position" => {
@@ -340,6 +389,11 @@ pub fn run() {
             input::spawn_hook(move |ev| {
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
                 let _ = handle.emit("input", ev);
+            });
+            // Controller presses feed the pet like key presses (Windows/XInput; works under fullscreen games).
+            let pad_handle = app.handle().clone();
+            gamepad::spawn_poller(move |ev| {
+                let _ = pad_handle.emit("input", ev);
             });
 
             Ok(())

@@ -59,7 +59,7 @@ onBeforeUnmount(() => {
   <div
     ref="root" class="actor" :class="{ grabbing: !!live }" data-hit :aria-label="label"
     :style="{ transform: `translate(${(live ?? pos).x}px, ${(live ?? pos).y}px)` }"
-    @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up"
+    @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up"
   >
     <slot />
   </div>

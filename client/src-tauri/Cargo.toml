@@ -3,7 +3,7 @@ name = "asoultappo-client"
 version = "1.0.0"
 description = "AsoulTappo desktop pet client (Tauri 2)"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 license = "GPL-2.0-only"
 
 [lib]
@@ -22,7 +22,14 @@ serde_json = "1"
 url = "2"
 # Global keyboard/mouse hooks (Windows low-level hooks under the hood).
 # We only ever forward event *kinds* and mouse deltas — never key identities.
-rdev = "0.5"
+# rdev 0.5 reads the keyboard layout off the main thread on every key and crashes on
+# macOS 14+ (Narsil/rdev#146). The unreleased 0.6 can hand that lookup to the main
+# thread (`set_is_main_thread(false)`); pinned to a reviewed commit.
+rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366f277d29fe732b9c1" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# XInput for game controllers (src/gamepad.rs).
+windows-sys = { version = "0.61", features = ["Win32_UI_Input_XboxController", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 panic = "abort"

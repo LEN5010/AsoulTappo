@@ -10,7 +10,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 |---|---|
 | join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌卡 ID，存档未拥有时忽略） |
 | leave | 无 |
-| tap | count（1–500），客户端每 100–200ms 合并 |
+| tap | count（1–500），客户端每 100–200ms 合并；服务端按连接限速（每秒 15、最多攒 75），超出部分不广播。这只限制房间显示，每条连接各算各的，重连会重新计，不是每人总上限；收益只看 `POST /api/activity`，按存档共用一份额度（存在数据库里，并发、多连接、重连都不叠加） |
 | motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 50ms 合并，按键状态即时发送 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
 | state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌，存档未拥有时返回 `locked` 并忽略整条消息 |

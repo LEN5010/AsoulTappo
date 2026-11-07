@@ -99,19 +99,61 @@ fn map_button(b: &Button) -> MouseButton {
 
 /// Spawn the blocking hook on a background thread; `emit` is called for every
 /// filtered event.
+///
+/// The OS hook callback only timestamps the event and queues it: Windows silently
+/// removes a low-level hook whose callback runs past `LowLevelHooksTimeout`, which
+/// a busy fullscreen game easily causes if the callback does IPC itself. Filtering
+/// and emitting happen on a separate thread.
 pub fn spawn_hook<F>(emit: F)
 where
     F: Fn(InputEvent) + Send + 'static,
 {
+    let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant)>();
+
     std::thread::spawn(move || {
         let mut state = InputState::new();
-        let result = rdev::listen(move |event| {
-            if let Some(out) = state.handle(&event.event_type, Instant::now()) {
+        for (ev, at) in rx {
+            if let Some(out) = state.handle(&ev, at) {
                 emit(out);
             }
-        });
-        if let Err(e) = result {
-            eprintln!("global input hook stopped: {e:?}");
+        }
+    });
+
+    std::thread::spawn(move || {
+        // rdev otherwise looks up the keyboard layout (TIS/TSM) on this thread for
+        // every key, which macOS 14+ only allows on the main thread and aborts on.
+        #[cfg(target_os = "macos")]
+        rdev::set_is_main_thread(false);
+
+        loop {
+            let tx = tx.clone();
+            // Coalesce raw mouse moves at the producer: high-polling mice can fire
+            // thousands of moves per second, and an unbounded queue would grow if
+            // the consumer stalls. Positions are absolute, so skipping intermediate
+            // moves loses nothing. Key and button down/up are always queued.
+            let mut last_move: Option<Instant> = None;
+            let result = rdev::listen(move |event| {
+                let now = Instant::now();
+                match event.event_type {
+                    EventType::Wheel { .. } => return,
+                    EventType::MouseMove { .. } => {
+                        if last_move.is_some_and(|t| now.duration_since(t) < Duration::from_millis(4)) {
+                            return;
+                        }
+                        last_move = Some(now);
+                    }
+                    _ => {}
+                }
+                let _ = tx.send((event.event_type, now));
+            });
+            match result {
+                // listen only returns on explicit failure (e.g. no accessibility permission on
+                // macOS); retry instead of losing input until restart. This does NOT cover
+                // Windows silently removing a slow low-level hook: listen never returns then.
+                Err(e) => eprintln!("global input hook stopped: {e:?}; retrying"),
+                Ok(()) => {}
+            }
+            std::thread::sleep(Duration::from_secs(5));
         }
     });
 }
