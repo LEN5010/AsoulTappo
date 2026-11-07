@@ -59,6 +59,18 @@ def test_craft_and_loadout_routes(client):
     assert client.post("/api/loadout", json={"character": "嘉然山海经"}, headers=H).status_code == 400
 
 
+def test_checkin_routes_once_a_day(client):
+    assert client.get("/api/me", headers=H).json()["checkin"] == {"available": True}
+    month = client.get("/api/checkin", headers=H).json()
+    assert month["available"] and month["days"] == []
+    r = client.post("/api/checkin", headers=H).json()
+    assert r["prize"] == {"index": 0, "shards": 80, "day": month["today"]} and r["shards"] == 1680
+    again = client.post("/api/checkin", headers=H)
+    assert again.status_code == 409 and again.json()["detail"]["code"] == "checked_in"
+    assert client.get("/api/checkin", headers=H).json()["days"] == [{"day": month["today"], "prize": 0, "shards": 80}]
+    assert client.post("/api/checkin").status_code == 401
+
+
 def test_ws_emotes_need_ownership_and_are_rate_limited(client):
     with client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "join", "room": "r", "nick": "a", "token": TOKEN})

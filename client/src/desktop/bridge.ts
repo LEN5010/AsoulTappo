@@ -13,14 +13,15 @@ import { requestDesktop, type DesktopRequest } from "./transport";
 const groupSources = {
   player: () => ({ status: player.status.value, online: player.online.value, error: player.error.value }),
   collection: () => player.collection,
+  checkins: () => player.checkins.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, frame, badge, head, desk }) =>
     ({ id, uid, nick, character, frame, badge, head, desk })),
 };
 function groups() {
-  return { player: groupSources.player(), collection: groupSources.collection(), freshItems: groupSources.freshItems(),
-    counter: groupSources.counter(), room: groupSources.room(), members: groupSources.members() };
+  return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
+    freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
@@ -36,6 +37,7 @@ function applyGroups(s: Partial<Groups>) {
     player.error.value = s.player.error;
   }
   if (s.collection) Object.assign(player.collection, s.collection);
+  if (s.checkins !== undefined) player.checkins.value = s.checkins;
   if (s.freshItems) {
     player.freshItems.clear();
     s.freshItems.forEach((id) => player.freshItems.add(id));
@@ -177,6 +179,8 @@ export async function initDesktop(): Promise<() => void> {
         case "sync": result = { settings, page: ui.page, craftTarget: ui.craftTarget, state: groups() }; break;
         case "resonate": result = await player.resonate(args[0] as number); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
+        case "checkin": result = await player.checkin(); break;
+        case "loadCheckins": await player.loadCheckins(); break;
         case "setAccount": result = await player.setAccount(args[0] as player.AccountSession | null, args[1] as boolean); break;
         case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number); break;
         case "createRoom": result = await room.createRoom(); break;

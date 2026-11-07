@@ -257,6 +257,11 @@ RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, 
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
              "duplicateRefund": 10}
 CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
+# Daily check-in prizes by amount; weights are percentages (1.7 draws on average, the top prize 10).
+# A prize pays its shards give or take `spread` (uniform), so the amounts are seldom round; the mean is unchanged.
+CHECKIN = {"prizes": [{"shards": 80, "weight": 30}, {"shards": 160, "weight": 30}, {"shards": 320, "weight": 20},
+                      {"shards": 480, "weight": 12}, {"shards": 800, "weight": 6}, {"shards": 1600, "weight": 2}],
+           "spread": 0.1}
 
 
 # -------------------------------------------------------- frames and badges

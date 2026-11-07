@@ -102,6 +102,11 @@ class Manifest:
         return dict(self.data.get("economy", {}).get("craftCost", {}))
 
     @cached_property
+    def checkin(self) -> dict:
+        """The daily check-in: prizes by amount, each {shards, weight}; weights are percentages."""
+        return self.data["economy"]["checkin"]
+
+    @cached_property
     def series_total(self) -> dict[str, int]:
         return {s["id"]: s["total"] for s in self.data["series"]}
 

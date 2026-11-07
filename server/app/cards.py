@@ -56,3 +56,13 @@ def pick_common_group(groups, rng: Rng):
         if x < weight:
             return items[min(int(x / weight * len(items)), len(items) - 1)]
         x -= weight
+
+
+def pick_weighted(weights, rng: Rng) -> int:
+    """Index chosen with probability proportional to its weight."""
+    x = rng.random() * sum(weights)
+    for i, weight in enumerate(weights):
+        if x < weight:
+            return i
+        x -= weight
+    return len(weights) - 1

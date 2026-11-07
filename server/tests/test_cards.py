@@ -1,8 +1,15 @@
 import pytest
-from app.cards import pick_common, roll_tier
+from app.cards import pick_common, pick_weighted, roll_tier
+from app.manifest import Manifest
 from fixtures import SeqRng, tiny_manifest
 
 CFG = tiny_manifest().resonance
+
+@pytest.mark.parametrize("x,prize", [(0, 0), (.2999, 0), (.30, 1), (.5999, 1), (.60, 2), (.7999, 2), (.80, 3),
+                                     (.9199, 3), (.92, 4), (.9799, 4), (.98, 5), (.9999, 5)])
+def test_checkin_prize_boundaries(x, prize):
+    weights = [p["weight"] for p in Manifest.load().checkin["prizes"]]
+    assert pick_weighted(weights, SeqRng(x)) == prize
 
 @pytest.mark.parametrize("x,tier", [(0, "legendary"), (.004999, "legendary"), (.005, "skin"), (.009999, "skin"),
                                     (.01, "epic"), (.054999, "epic"), (.055, "rare"), (.084999, "rare"),

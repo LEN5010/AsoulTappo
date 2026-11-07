@@ -12,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
 import { EASE_OUT, nextFrame, rise } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
+import CheckinPage from "./CheckinPage.vue";
 import CollectionPage from "./CollectionPage.vue";
 import ResonancePage from "./ResonancePage.vue";
 import EmotesPage from "./EmotesPage.vue";
@@ -27,6 +28,7 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "emotes", label: "背包", en: "BACKPACK", icon: "backpack" },
   { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card-spark" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "codex" },
+  { id: "checkin", label: "签到", en: "CHECK-IN", icon: "calendar" },
   { id: "room", label: "联机", en: "ONLINE", icon: "people" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
@@ -73,7 +75,7 @@ function up(e: PointerEvent) {
   }
   live.value = null;
 }
-// Escape closes the panel; digit keys 1-5 pick a page. Both stand down while an overlay is open,
+// Escape closes the panel; digit keys pick a page in nav order. Both stand down while an overlay is open,
 // and digits also while typing.
 function onKey(e: KeyboardEvent) {
   if (document.querySelector("[data-overlay]")) return;
@@ -201,6 +203,7 @@ const walletTip = computed(
 
 function badgeOf(id: Page): number {
   if (id === "resonance") return draws.value;
+  if (id === "checkin") return status.value?.checkin?.available ? 1 : 0;
   if (id === "room" && inRoom.value) return members.size;
   return 0;
 }
@@ -235,6 +238,7 @@ function badgeOf(id: Page): number {
           <KeepAlive>
             <EmotesPage v-if="shown === 'emotes'" />
             <CollectionPage v-else-if="shown === 'dex'" />
+            <CheckinPage v-else-if="shown === 'checkin'" />
             <ResonancePage v-else-if="shown === 'resonance'" />
             <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
             <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />

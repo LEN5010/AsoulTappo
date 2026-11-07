@@ -79,6 +79,8 @@ export interface Manifest {
     income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number };
     resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number }; duplicateRefund: number };
     craftCost: Partial<Record<Rarity, number>>;
+    /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */
+    checkin: { prizes: { shards: number; weight: number }[]; spread: number };
   };
 }
 

@@ -42,7 +42,8 @@ def tiny_manifest() -> Manifest:
                     "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
                                   "pity": {"legendary": 400, "skin": 200},
                                   "commonKindWeights": {"card": 45, "emote": 40.5}, "duplicateRefund": 10},
-                    "craftCost": {"common": 480, "uncommon": 960, "rare": 1600}},
+                    "craftCost": {"common": 480, "uncommon": 960, "rare": 1600},
+                    "checkin": {"prizes": [{"shards": 80, "weight": 60}, {"shards": 1600, "weight": 40}]}},
     })
 
 

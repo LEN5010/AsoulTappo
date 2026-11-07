@@ -4855,6 +4855,35 @@
    "common": 480,
    "uncommon": 960,
    "rare": 1600
+  },
+  "checkin": {
+   "prizes": [
+    {
+     "shards": 80,
+     "weight": 30
+    },
+    {
+     "shards": 160,
+     "weight": 30
+    },
+    {
+     "shards": 320,
+     "weight": 20
+    },
+    {
+     "shards": 480,
+     "weight": 12
+    },
+    {
+     "shards": 800,
+     "weight": 6
+    },
+    {
+     "shards": 1600,
+     "weight": 2
+    }
+   ],
+   "spread": 0.1
   }
  }
 }

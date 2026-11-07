@@ -79,7 +79,7 @@ async def create_room() -> dict:
 
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
-          "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
+          "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
 
 
 def _guard(fn, *args):
@@ -171,6 +171,16 @@ def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/craft")
 def api_craft(body: CraftBody, who: PlayerId = Depends(player)) -> dict:
     return _guard(game.craft, who, body.item)
+
+
+@app.get("/api/checkin")
+def api_checkin_month(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.checkin_month, who)
+
+
+@app.post("/api/checkin")
+def api_checkin(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.checkin, who)
 
 
 @app.get("/api/loadout")

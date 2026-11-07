@@ -547,7 +547,8 @@ def main() -> None:
         "accessories": accessories,
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
-        "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST},
+        "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST,
+                    "checkin": cat.CHECKIN},
     }
     from build_previews import build_emote_covers, build_pet_previews
     build_emote_covers(manifest)

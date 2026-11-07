@@ -8,6 +8,8 @@ export interface PlayerStatus {
   income: { multiplier: number; perMinute: number };
   resonance: { pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number };
   totals: { taps: number; activeMinutes: number; owned: number; items: number };
+  /** Missing on servers without daily check-in. */
+  checkin?: { available: boolean };
   credited?: number;
 }
 export interface Drop {
@@ -24,6 +26,16 @@ export interface ResonanceResult extends PlayerStatus {
 }
 export interface CraftResult extends PlayerStatus {
   item: string;
+}
+export interface CheckinResult extends PlayerStatus {
+  /** The prize drawn (index into economy.checkin.prizes), its shards and the China day it counts for. */
+  prize: { index: number; shards: number; day: string };
+}
+/** This month's check-ins; days are China dates (YYYY-MM-DD), prize an index into economy.checkin.prizes. */
+export interface CheckinMonth {
+  today: string;
+  available: boolean;
+  days: { day: string; prize: number; shards: number }[];
 }
 export interface Collection {
   owned: Record<string, number>;
@@ -106,6 +118,8 @@ export class Api {
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
+  checkinMonth = () => this.call<CheckinMonth>("GET", "/api/checkin");
+  checkin = () => this.call<CheckinResult>("POST", "/api/checkin");
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);

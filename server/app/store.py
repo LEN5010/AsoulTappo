@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS presence_sessions (
   last_seen REAL NOT NULL,
   PRIMARY KEY (player_id, session)
 );
+CREATE TABLE IF NOT EXISTS checkins (
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  prize INTEGER NOT NULL,
+  shards INTEGER NOT NULL,
+  ts REAL NOT NULL,
+  PRIMARY KEY (player_id, day)
+);
 """
 
 STARTER_SHARDS = 1600
@@ -246,6 +254,23 @@ class Store:
                 f"ORDER BY COALESCE(NULLIF(p.last_activity, 0), p.created, l.linked_at) DESC LIMIT ? OFFSET ?",
                 (*args, limit, offset)).fetchall()
         return [dict(r) for r in rows], total
+
+    # --- daily check-in (days are China Standard Time dates, YYYY-MM-DD)
+    def checked_in(self, pid: str, day: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM checkins WHERE player_id=? AND day=?", (pid, day)).fetchone() is not None
+
+    def add_checkin(self, pid: str, day: str, prize: int, shards: int, ts: float) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO checkins (player_id, day, prize, shards, ts) VALUES (?, ?, ?, ?, ?)",
+                             (pid, day, prize, shards, ts))
+            self._commit()
+
+    def checkins_since(self, pid: str, first_day: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT day, prize, shards FROM checkins WHERE player_id=? AND day >= ? ORDER BY day",
+                                    (pid, first_day)).fetchall()
+        return [dict(r) for r in rows]
 
     # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
     def mark_active(self, pid: str, day: str) -> None:

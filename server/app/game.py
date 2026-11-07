@@ -203,6 +203,32 @@ class Game:
         out["item"] = item_id
         return out
 
+    # ----------------------------------------------------------------- checkin
+    def checkin(self, token: str) -> dict[str, Any]:
+        """Check in once per China Standard Time day: one prize drawn by weight, its shards (give or take the
+        manifest's spread) credited."""
+        pid = player_id_for(token)
+        prizes = self.manifest.checkin["prizes"]
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            today = day_of(now)
+            if st.checked_in(pid, today):
+                raise GameError("checked_in", "今天已经签到了")
+            index = cardlogic.pick_weighted([w["weight"] for w in prizes], self.rng)
+            spread = self.manifest.checkin.get("spread", 0)
+            gained = round(prizes[index]["shards"] * (1 + spread * (2 * self.rng.random() - 1)))
+            st.add_checkin(pid, today, index, gained, now)
+            st.update_player(pid, shards=p["shards"] + gained)
+        return {**self.status(token), "prize": {"index": index, "shards": gained, "day": today}}
+
+    def checkin_month(self, token: str) -> dict[str, Any]:
+        """Today and this China Standard Time month's check-ins, for the calendar."""
+        pid = player_id_for(token)
+        today = day_of(self.now())
+        days = self.store.checkins_since(pid, today[:8] + "01")
+        return {"today": today, "available": all(d["day"] != today for d in days), "days": days}
+
     # ------------------------------------------------------------------ status
     def status(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
@@ -220,6 +246,7 @@ class Game:
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
                        "owned": owned_count,
                        "items": len(self.manifest.items) - len(self.manifest.starter)},
+            "checkin": {"available": not self.store.checked_in(pid, day_of(now))},
         }
 
     def save_summary(self, pid: str) -> dict[str, Any]:

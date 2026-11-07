@@ -27,11 +27,13 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、resonance、totals |
+| GET /api/me | player、shards、income、resonance、totals、checkin |
 | POST /api/activity | `{taps,session,sequence}`，返回状态和 credited |
 | POST /api/presence | `{session}`，按实际在线秒数结算碎片并返回状态 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
+| GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
+| POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
 | GET /api/loadout | character、favorites、plate |
 | POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已拥有的大隐藏卡 ID，null 或空字符串取下铭牌 |
@@ -60,7 +62,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
     "hardPity": { "legendary": 400, "skin": 200 },
     "total": 1234
   },
-  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 547 }
+  "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 547 },
+  "checkin": { "available": true }
 }
 ```
 
