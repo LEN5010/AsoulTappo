@@ -13,6 +13,7 @@ import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import { takeFocus, trapTab } from "../ui/focus";
 import Icon from "../ui/Icon.vue";
+import { createImagePreloader } from "../ui/imagePreloader";
 import RevealBands from "./RevealBands.vue";
 import RevealSpotlight from "./RevealSpotlight.vue";
 import RevealTile from "./RevealTile.vue";
@@ -67,14 +68,10 @@ const sealedLeft = computed(() => entries.value.some((_, i) => !opened.has(i)));
 const newCount = computed(() => drops.value.filter((d) => d.new).length);
 const refund = computed(() => drops.value.reduce((n, d) => n + d.shards, 0));
 
-function preload(list: BoardEntry[]) {
-  for (const e of list) {
-    if (!e.spot || !e.card || e.card.video) continue;
-    const img = new Image();
-    img.src = assetUrl(e.card.full);
-    // Decode now, while the bands hold the screen, so the spotlight does not stall on it later.
-    void img.decode().catch(() => {});
-  }
+const artPreloader = createImagePreloader();
+function preload(list: BoardEntry[], from = 0) {
+  artPreloader.setWindow(list.slice(from).filter((e) => e.spot && e.card && !e.card.video)
+    .map((e) => assetUrl(e.card!.full)));
 }
 
 /** `count` names the batch on the bands; a repeat passes it because its props have not caught up yet. */
@@ -82,6 +79,7 @@ async function run(count = props.remaining ?? 1) {
   const mine = ++round;
   frozen.value = phase.value === "board" ? left.value : null;
   spot.value = null;
+  artPreloader.clear();
   spotDone = undefined;
   auto.value = false;
   asking.value = Math.max(1, Math.min(count, 100));
@@ -115,6 +113,7 @@ async function run(count = props.remaining ?? 1) {
 }
 
 function showSpot(index: number): Promise<void> {
+  preload(entries.value, index);
   sfx.stopTheme();
   sfx.lift();
   // Cards bring their own sound to the spotlight; a skin has none, so it gets a theme.
@@ -221,6 +220,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   alive = false;
+  artPreloader.clear();
   sfx.stopTheme(0.2);
   window.removeEventListener("keydown", onKey);
   release?.();
