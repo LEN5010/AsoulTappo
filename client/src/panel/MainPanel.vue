@@ -2,6 +2,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
 import { draws, online, shards, status } from "../stores/player";
+import { manifest } from "../manifest";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
@@ -194,7 +195,9 @@ watch(shards, (to, from) => {
   roll = requestAnimationFrame(step);
 });
 onBeforeUnmount(() => cancelAnimationFrame(roll));
-const walletTip = computed(() => `收益 ×${status.value?.income.multiplier ?? 1} · 每分钟 ${status.value?.income.perMinute ?? 16} 碎片`);
+const walletTip = computed(
+  () => `收益 ×${status.value?.income.multiplier ?? 1} · 每分钟 ${status.value?.income.perMinute ?? manifest.economy.income.perMinute} 碎片`,
+);
 
 function badgeOf(id: Page): number {
   if (id === "resonance") return draws.value;

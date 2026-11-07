@@ -4827,8 +4827,8 @@
  ],
  "economy": {
   "income": {
-   "perMinute": 16,
-   "maxMultiplier": 5,
+   "perMinute": 4,
+   "maxMultiplier": 8,
    "fullTapsPerMinute": 60
   },
   "resonance": {

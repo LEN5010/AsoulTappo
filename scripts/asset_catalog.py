@@ -252,7 +252,7 @@ SKINS = [{"name": f"{member}{series}", "member": member}
     {"name": "嘉然2025生日", "member": "嘉然"},
     {"name": "乃琳2025生日", "member": "乃琳"},
 ]
-INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
+INCOME = {"perMinute": 4, "maxMultiplier": 8, "fullTapsPerMinute": 60}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
              "duplicateRefund": 10}
