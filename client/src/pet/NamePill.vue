@@ -1,10 +1,14 @@
 <script setup lang="ts">
 // A paper name tag under a pet, led by a tick in the member's colour.
-defineProps<{ nick: string; width: number; color?: string }>();
+// `height` and `font` (px) override the default size, for partners drawn small.
+defineProps<{ nick: string; width: number; color?: string; height?: number; font?: number }>();
 </script>
 
 <template>
-  <div class="pill" :style="{ maxWidth: `${width}px` }">
+  <div
+    class="pill"
+    :style="{ maxWidth: `${width}px`, height: height ? `${height}px` : undefined, fontSize: font ? `${font}px` : undefined }"
+  >
     <i v-if="color" :style="{ background: color }" aria-hidden="true"></i>
     <span>{{ nick }}</span>
   </div>

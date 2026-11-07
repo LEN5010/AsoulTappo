@@ -8,8 +8,8 @@ import { PLATE_CROPS, plateArt, plateCard, videoFace } from "./plates";
 import { followVideo } from "./plateVideo";
 
 const props = withDefaults(
-  defineProps<{ card: string; nick: string; width: number; height: number; color?: string; still?: boolean }>(),
-  { color: undefined, still: false },
+  defineProps<{ card: string; nick: string; width: number; height: number; color?: string; still?: boolean; font?: number }>(),
+  { color: undefined, still: false, font: undefined },
 );
 
 const FRAME = 2;
@@ -57,7 +57,7 @@ const px = (n: number) => `${n}px`;
         :style="{ width: px(stillArt.width), height: px(stillArt.height), left: px(stillArt.left), top: px(stillArt.top) }"
       />
       <canvas v-if="playing" ref="canvas" class="art" :class="{ on: drawn }" :style="{ width: px(inner.w), height: px(inner.h) }"></canvas>
-      <div class="name" :style="{ maxWidth: px(inner.w - 8) }">
+      <div class="name" :style="{ maxWidth: px(inner.w - 8), fontSize: font ? px(font) : undefined }">
         <i v-if="color" :style="{ background: color }" aria-hidden="true"></i>
         <span>{{ nick }}</span>
       </div>

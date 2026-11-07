@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { manifest } from "../manifest";
-import { PAN_CYCLE_MS, PLATE_ANCHOR, PLATE_CROPS, panAt, plateArt, plateCard, plateCards, plateSize, videoFace } from "./plates";
+import {
+  PAN_CYCLE_MS, PLATE_ANCHOR, PLATE_CROPS, nameBand, panAt, plateArt, plateCard, plateCards, plateSize, videoFace,
+} from "./plates";
 
 describe("name plates", () => {
   it("covers every big hidden card and nothing else", () => {
@@ -22,7 +24,7 @@ describe("name plates", () => {
 
   it("never shows past the card's edges", () => {
     for (const crop of Object.values(PLATE_CROPS)) {
-      for (const [w, h] of [[224, 26], [116, 20], [336, 36]] as const) {
+      for (const [w, h] of [[224, 26], [116, 20], [336, 36], [87, 12]] as const) {
         for (const face of [crop, videoFace(crop, 0), videoFace(crop, PAN_CYCLE_MS / 2)]) {
           const art = plateArt(face, w, h);
           expect(art.left).toBeLessThanOrEqual(0);
@@ -53,7 +55,16 @@ describe("name plates", () => {
 
   it("scales with partners' pets within bounds", () => {
     expect(plateSize(1)).toEqual({ width: 228, height: 30 });
-    expect(plateSize(0.4)).toEqual({ width: 120, height: 24 });
+    expect(plateSize(0.8)).toEqual({ width: 182, height: 24 });
+    expect(plateSize(0.6)).toEqual({ width: 137, height: 18 });
+    expect(plateSize(0.4)).toEqual({ width: 91, height: 16 });
     expect(plateSize(1.5)).toEqual({ width: 342, height: 40 });
+  });
+
+  it("keeps the nickname full size down to 0.8 and shrinks it below, within a floor", () => {
+    expect(nameBand(1.5)).toEqual({ font: 12, pill: 22 });
+    expect(nameBand(0.8)).toEqual({ font: 12, pill: 22 });
+    expect(nameBand(0.6)).toEqual({ font: 10, pill: 16 });
+    expect(nameBand(0.4)).toEqual({ font: 10, pill: 16 });
   });
 });
