@@ -168,3 +168,13 @@ def test_room_taps_are_rate_limited():
         ws.send_json({"type": "tap", "count": 500})  # budget spent: dropped silently
         ws.send_json({"type": "ping"})
         assert ws.receive_json()["type"] == "pong"
+
+
+def test_room_tap_limit_is_per_connection_and_resets_on_reconnect():
+    # Display-only: each socket has its own bucket. Rewards use the per-save budget instead.
+    c = TestClient(app).__enter__()
+    for nick in ("a", "a-again"):
+        with c.websocket_connect("/ws") as ws:
+            join(ws, room="r2", nick=nick)
+            ws.send_json({"type": "tap", "count": 500})
+            assert ws.receive_json()["count"] == 75

@@ -81,3 +81,11 @@ def test_sequence_and_budget_rollback_with_progress(monkeypatch):
     monkeypatch.setattr(game.store, "save_activity_sequence", original)
     assert game.report_activity(TOKEN, 200, "session", 1)["credited"] == 200
     assert game.status(TOKEN)["totals"]["taps"] == 200
+
+
+def test_concurrent_sessions_share_one_budget_per_save():
+    game, clock = make()
+    clock.t += 1
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda i: game.report_activity(TOKEN, 5000, f"conn-{i}", 1), range(16)))
+    assert game.status(TOKEN)["totals"]["taps"] == 15
