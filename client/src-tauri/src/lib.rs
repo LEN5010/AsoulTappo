@@ -1,4 +1,5 @@
 mod hit;
+mod gamepad;
 mod input;
 mod update;
 
@@ -236,6 +237,25 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     });
 }
 
+/// Clicking the pet must not make this full-screen overlay the foreground window: activation
+/// takes focus from the browser or game underneath, and a video playing there can flash black
+/// while the compositor rearranges. `focus: false` in the config only covers creation.
+/// The panel is a separate window and still takes focus normally.
+#[cfg(target_os = "windows")]
+fn no_activate(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+    if let Ok(hwnd) = window.hwnd() {
+        let hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE as isize);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_activate(_window: &tauri::WebviewWindow) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let overlay = Arc::new(Overlay::default());
@@ -273,6 +293,7 @@ pub fn run() {
                 }
                 let _ = fit_to_monitor(&w, index);
                 let _ = w.set_ignore_cursor_events(true);
+                no_activate(&w);
                 let _ = w.show();
                 spawn_hit_test(w, overlay.clone());
             }
@@ -340,6 +361,10 @@ pub fn run() {
             input::spawn_hook(move |ev| {
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
                 let _ = handle.emit("input", ev);
+            });
+            let pad = app.handle().clone();
+            gamepad::spawn_gamepad(move |ev| {
+                let _ = pad.emit("input", ev);
             });
 
             Ok(())

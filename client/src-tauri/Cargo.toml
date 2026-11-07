@@ -23,6 +23,12 @@ url = "2"
 # Global keyboard/mouse hooks (Windows low-level hooks under the hood).
 # We only ever forward event *kinds* and mouse deltas — never key identities.
 rdev = "0.5"
+# Gamepad buttons, counted like keys. XInput instead of the default Windows.Gaming.Input,
+# which may stop reporting while another window (a full-screen game) has focus.
+gilrs = { version = "0.11", default-features = false, features = ["xinput"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 panic = "abort"
