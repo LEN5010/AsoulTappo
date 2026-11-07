@@ -126,13 +126,13 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 547
+    assert len(dropped) == 549
     assert len(M.items) == len(dropped) + len(M.starter)
     assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [372, 75, 60, 23, 10, 7]
+    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [372, 75, 60, 23, 10, 9]
     for c in M.cards.values():
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
     assert all(set(r) == {"name"} for r in M.data["rarities"].values())

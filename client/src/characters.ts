@@ -88,6 +88,7 @@ const HEADS: Record<string, { x: number; y: number }> = {
   // Skins drawn on the member's layout whose ears or headwear reach the top edge.
   乃琳山海经: { x: 150, y: 0 },
   乃琳睡衣派对: { x: 150, y: 0 },
+  嘉然2025生日: { x: 152, y: 0 },
   贝拉2025生日: { x: 146, y: 0 },
   贝拉睡衣派对: { x: 146, y: 0 },
 };

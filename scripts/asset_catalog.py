@@ -249,6 +249,8 @@ STARTER_EMOTES = 4
 SKINS = [{"name": f"{member}{series}", "member": member}
          for series in ("山海经", "睡衣派对") for member in ("嘉然", "乃琳", "贝拉")] + [
     {"name": "贝拉2025生日", "member": "贝拉"},
+    {"name": "嘉然2025生日", "member": "嘉然"},
+    {"name": "乃琳2025生日", "member": "乃琳"},
 ]
 INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},

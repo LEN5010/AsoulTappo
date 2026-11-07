@@ -17,9 +17,9 @@ describe("skins", () => {
   it("show the member when this client does not have the skin", () => {
     expect(getCharacter("思诺新皮肤")).toBe(characters["思诺"]);
   });
-  it("ships the birthday skin with previews and the member's input layers", () => {
-    const skin = characters["贝拉2025生日"]!;
-    const base = characters["贝拉"]!;
+  it.each([["贝拉2025生日", "贝拉"], ["嘉然2025生日", "嘉然"], ["乃琳2025生日", "乃琳"]])("ships %s with previews and %s's input layers", (name, member) => {
+    const skin = characters[name]!;
+    const base = characters[member]!;
     expect(getCharacter(skin.name)).toBe(skin);
     expect(skin.bg).not.toBe(base.bg);
     expect(skin.bgSmall).not.toBe(skin.bg);
