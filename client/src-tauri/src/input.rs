@@ -99,19 +99,46 @@ fn map_button(b: &Button) -> MouseButton {
 
 /// Spawn the blocking hook on a background thread; `emit` is called for every
 /// filtered event.
+///
+/// The OS hook callback only timestamps the event and queues it: Windows silently
+/// removes a low-level hook whose callback runs past `LowLevelHooksTimeout`, which
+/// a busy fullscreen game easily causes if the callback does IPC itself. Filtering
+/// and emitting happen on a separate thread.
 pub fn spawn_hook<F>(emit: F)
 where
     F: Fn(InputEvent) + Send + 'static,
 {
+    let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant)>();
+
     std::thread::spawn(move || {
         let mut state = InputState::new();
-        let result = rdev::listen(move |event| {
-            if let Some(out) = state.handle(&event.event_type, Instant::now()) {
+        for (ev, at) in rx {
+            if let Some(out) = state.handle(&ev, at) {
                 emit(out);
             }
-        });
-        if let Err(e) = result {
-            eprintln!("global input hook stopped: {e:?}");
+        }
+    });
+
+    std::thread::spawn(move || {
+        // rdev otherwise looks up the keyboard layout (TIS/TSM) on this thread for
+        // every key, which macOS 14+ only allows on the main thread and aborts on.
+        #[cfg(target_os = "macos")]
+        rdev::set_is_main_thread(false);
+
+        loop {
+            let tx = tx.clone();
+            let result = rdev::listen(move |event| {
+                if !matches!(event.event_type, EventType::Wheel { .. }) {
+                    let _ = tx.send((event.event_type, Instant::now()));
+                }
+            });
+            match result {
+                // listen only returns on failure (e.g. no accessibility permission on macOS);
+                // try again later instead of losing input until the app restarts.
+                Err(e) => eprintln!("global input hook stopped: {e:?}; retrying"),
+                Ok(()) => {}
+            }
+            std::thread::sleep(Duration::from_secs(5));
         }
     });
 }
