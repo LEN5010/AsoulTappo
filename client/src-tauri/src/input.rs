@@ -127,14 +127,29 @@ where
 
         loop {
             let tx = tx.clone();
+            // Coalesce raw mouse moves at the producer: high-polling mice can fire
+            // thousands of moves per second, and an unbounded queue would grow if
+            // the consumer stalls. Positions are absolute, so skipping intermediate
+            // moves loses nothing. Key and button down/up are always queued.
+            let mut last_move: Option<Instant> = None;
             let result = rdev::listen(move |event| {
-                if !matches!(event.event_type, EventType::Wheel { .. }) {
-                    let _ = tx.send((event.event_type, Instant::now()));
+                let now = Instant::now();
+                match event.event_type {
+                    EventType::Wheel { .. } => return,
+                    EventType::MouseMove { .. } => {
+                        if last_move.is_some_and(|t| now.duration_since(t) < Duration::from_millis(4)) {
+                            return;
+                        }
+                        last_move = Some(now);
+                    }
+                    _ => {}
                 }
+                let _ = tx.send((event.event_type, now));
             });
             match result {
-                // listen only returns on failure (e.g. no accessibility permission on macOS);
-                // try again later instead of losing input until the app restarts.
+                // listen only returns on explicit failure (e.g. no accessibility permission on
+                // macOS); retry instead of losing input until restart. This does NOT cover
+                // Windows silently removing a slow low-level hook: listen never returns then.
                 Err(e) => eprintln!("global input hook stopped: {e:?}; retrying"),
                 Ok(()) => {}
             }
