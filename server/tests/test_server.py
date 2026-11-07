@@ -156,3 +156,15 @@ def test_member_left_on_disconnect():
             jb = join(b, nick="b")
             assert a.receive_json()["type"] == "member_joined"
         assert a.receive_json() == {"type": "member_left", "id": jb["you"]}
+
+
+def test_room_taps_are_rate_limited():
+    c = TestClient(app).__enter__()
+    with c.websocket_connect("/ws") as ws:
+        join(ws)
+        ws.send_json({"type": "tap", "count": 500})
+        first = ws.receive_json()
+        assert first["type"] == "tap" and first["count"] == 75 and first["total"] == 75
+        ws.send_json({"type": "tap", "count": 500})  # budget spent: dropped silently
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json()["type"] == "pong"
