@@ -40,7 +40,7 @@ function startCooldown() {
 }
 
 const title = computed(() => ({
-  login: "账号登录", register: "注册账号", reset: "重设密码", bind: "绑定邮箱", choose: "选择存档",
+  login: "Asasfans 账号登录", register: "注册 Asasfans 账号", reset: "重设密码", bind: "绑定邮箱", choose: "选择存档",
 }[step.value]));
 const tabs = [{ id: "login" as const, label: "登录" }, { id: "register" as const, label: "注册" }];
 
@@ -137,6 +137,8 @@ const ago = (seconds: number) => new Date(seconds * 1000).toLocaleDateString("zh
   <Modal :title="title" heading @close="cancel">
     <div class="account">
       <SegTabs v-if="step === 'login' || step === 'register'" :tabs="tabs" :model-value="step" label="登录或注册" @update:model-value="switchTo" />
+      <p v-if="step === 'login'" class="scope">Asasfans 账号通用于 Asasfans Web、Asasfans Next 与本桌宠。</p>
+      <p v-else-if="step === 'register'" class="scope">已在 Asasfans Web 或 Asasfans Next 注册的账号可直接登录。</p>
 
       <Transition name="step" mode="out-in">
         <form v-if="step === 'login'" key="login" class="fields" @submit.prevent="login">
@@ -284,6 +286,12 @@ const ago = (seconds: number) => new Date(seconds * 1000).toLocaleDateString("zh
 }
 .fields > .ui-btn.primary {
   margin-top: 4px;
+}
+.scope {
+  margin: -4px 0 0;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--ink-2);
 }
 .lead {
   margin: 0;

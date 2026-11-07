@@ -75,7 +75,7 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
       <h4 class="ui-label"><span>账号</span></h4>
       <div class="ui-group ui-frame">
         <div class="ui-row">
-          <span>账号登录</span>
+          <span>Asasfans 账号</span>
           <span v-if="signedIn" class="who">
             <b>{{ signedIn.user.username }}</b>
             <small v-if="signedIn.user.email">{{ signedIn.user.email }}</small>
