@@ -16,6 +16,7 @@ import PetBust from "./PetBust.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
+const isWindows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
 // The account row is always shown; signing in needs a server connected to the account service.
 const info = ref<ServerInfo | null>(null);
@@ -155,6 +156,7 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
               <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
             </label>
           </div>
+          <p v-if="isWindows" class="note">部分管理员权限或启用反作弊的游戏可能限制输入监听。若只在某款游戏中失效，请先对比窗口化模式；不建议默认以管理员身份运行桌宠，也不要关闭反作弊。</p>
         </section>
 
         <section data-rise>

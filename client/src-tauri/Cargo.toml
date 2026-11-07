@@ -27,9 +27,6 @@ rdev = "0.5"
 # which may stop reporting while another window (a full-screen game) has focus.
 gilrs = { version = "0.11", default-features = false, features = ["xinput"] }
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
-
 [profile.release]
 panic = "abort"
 codegen-units = 1

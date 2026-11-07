@@ -237,25 +237,6 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     });
 }
 
-/// Clicking the pet must not make this full-screen overlay the foreground window: activation
-/// takes focus from the browser or game underneath, and a video playing there can flash black
-/// while the compositor rearranges. `focus: false` in the config only covers creation.
-/// The panel is a separate window and still takes focus normally.
-#[cfg(target_os = "windows")]
-fn no_activate(window: &tauri::WebviewWindow) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
-    if let Ok(hwnd) = window.hwnd() {
-        let hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
-        unsafe {
-            let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE as isize);
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn no_activate(_window: &tauri::WebviewWindow) {}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let overlay = Arc::new(Overlay::default());
@@ -293,7 +274,11 @@ pub fn run() {
                 }
                 let _ = fit_to_monitor(&w, index);
                 let _ = w.set_ignore_cursor_events(true);
-                no_activate(&w);
+                // `focus: false` only controls initial focus. Update Tao's focusable state too,
+                // so later click-through/style changes preserve WS_EX_NOACTIVATE.
+                // The separate settings panel must still be able to take focus.
+                #[cfg(target_os = "windows")]
+                w.set_focusable(false)?;
                 let _ = w.show();
                 spawn_hit_test(w, overlay.clone());
             }
