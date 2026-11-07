@@ -6,7 +6,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { cardFrame, cardLabel, poolName, TIER_LABEL } from "../cards";
-import { getCharacter } from "../characters";
+import { characters, getCharacter } from "../characters";
 import { getCard, characterColor, manifest, type ManifestCard, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { poolOf } from "../resonance";
@@ -133,6 +133,37 @@ const feature = computed(() => {
   };
 });
 
+/** The members on the front card, peeking over the top of the sheet. No card has more than two. */
+const peek = computed(() => {
+  const c = card.value;
+  const busts = (c?.characters ?? []).slice(0, 2).flatMap((name) => {
+    const bg = characters[name]?.bg;
+    return bg ? [{ name, bg }] : [];
+  });
+  return busts.length ? { key: busts.map((b) => b.name).join("+"), busts } : null;
+});
+// The corner it stands in is what the title leaves of the sheet's width. The hand and the title both scale with
+// the panel, so it is measured: the peek takes the room clear of the title, or stays down if there is too little.
+const PEEK_MAX = 96;
+const PEEK_MIN = 52;
+/** Kept clear of the last glyph, plus .peek's inset from the sheet's right edge. */
+const PEEK_MARGIN = 22;
+const titleEl = ref<HTMLElement>();
+const sheetEl = ref<HTMLElement>();
+const peekRoom = ref(0);
+function measurePeek() {
+  if (!titleEl.value || !sheetEl.value) return;
+  const glyphs = document.createRange();
+  glyphs.selectNodeContents(titleEl.value);
+  peekRoom.value = sheetEl.value.getBoundingClientRect().right - glyphs.getBoundingClientRect().right;
+}
+const peekSize = computed(() => {
+  // A pair reaches past the box on the left (.pair in the styles).
+  const span = (peek.value?.busts.length ?? 1) > 1 ? 1.16 : 1;
+  const size = Math.min(PEEK_MAX, (peekRoom.value - PEEK_MARGIN) / span);
+  return size >= PEEK_MIN ? Math.round(size) : 0;
+});
+
 // The shown card keeps the middle of the strip while the others slide past it. The progress
 // bar under it times the rotation, so pausing that animation pauses everything.
 const stripSize = Math.min(LINEUP_SIZE, previews.length);
@@ -206,9 +237,13 @@ onMounted(() => {
   resize = new ResizeObserver(() => {
     skinWidth.value = skinGroup.value?.[0]?.offsetWidth ?? 0;
     viewportWidth.value = skinViewport.value?.clientWidth ?? 0;
+    measurePeek();
   });
   if (skinViewport.value) resize.observe(skinViewport.value);
   if (skinGroup.value?.[0]) resize.observe(skinGroup.value[0]);
+  if (sheetEl.value) resize.observe(sheetEl.value);
+  // The title's width changes once the bundled font replaces the fallback.
+  void document.fonts.ready.then(measurePeek);
 });
 onBeforeUnmount(() => {
   resize?.disconnect();
@@ -284,10 +319,17 @@ onBeforeUnmount(() => {
     <div class="info">
       <header class="title">
         <span class="ui-eyebrow">RESONANCE</span>
-        <h3>此间共鸣</h3>
+        <h3 ref="titleEl">此间共鸣</h3>
       </header>
 
-      <div class="sheet">
+      <div ref="sheetEl" class="sheet">
+      <div v-if="peekSize" class="peek" :style="{ '--peek-w': `${peekSize}px` }" aria-hidden="true">
+        <Transition name="peek" mode="out-in" :css="!reducedMotion">
+          <span v-if="peek" :key="peek.key" class="peek-row" :class="{ pair: peek.busts.length > 1 }">
+            <PetBust v-for="b in peek.busts" :key="b.name" class="peek-bust" :src="b.bg" />
+          </span>
+        </Transition>
+      </div>
       <div class="feature-slot">
       <Transition name="feature" mode="out-in" :css="!reducedMotion">
         <div v-if="feature" :key="active?.id" class="feature">
@@ -631,6 +673,55 @@ onBeforeUnmount(() => {
 }
 .feature-slot {
   min-height: 108px;
+}
+
+/* The front card's member stands behind the sheet with only her head over its top edge, in the corner the title
+ * leaves free. She ducks behind the paper and the next one comes up whenever the card changes. */
+.sheet {
+  position: relative;
+}
+.peek {
+  position: absolute;
+  z-index: -1;
+  right: 8px;
+  bottom: calc(100% - var(--peek-w) * 0.2);
+  width: var(--peek-w);
+  height: calc(var(--peek-w) * 1.04);
+  pointer-events: none;
+}
+.peek-row {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.peek-bust {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  rotate: 7deg;
+  filter: var(--contour) drop-shadow(0 2px 3px rgba(var(--shadow-rgb), 0.18));
+}
+/* Two members: the second one a step behind and to the left, leaning the other way. */
+.pair .peek-bust {
+  inset: 4% 0 0 16%;
+  width: 84%;
+  height: 96%;
+}
+.pair .peek-bust + .peek-bust {
+  z-index: -1;
+  inset: 0 30% 4% -14%;
+  rotate: -8deg;
+}
+.peek-enter-active {
+  transition: translate 520ms var(--ease-pop);
+}
+.peek-leave-active {
+  transition: translate 200ms var(--ease-in);
+}
+.peek-enter-from,
+.peek-leave-to {
+  translate: 0 88%;
 }
 
 .title .ui-eyebrow {
