@@ -272,7 +272,7 @@ pub fn run() {
                 // overlay from activating it over a game or hardware-accelerated video.
                 // This maps to WS_EX_NOACTIVATE; the separate panel stays focusable.
                 #[cfg(target_os = "windows")]
-                w.set_focusable(false)?;
+                let _ = w.set_focusable(false);
                 let index = primary_index(&w);
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
