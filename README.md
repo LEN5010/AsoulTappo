@@ -62,8 +62,14 @@ DOMAIN=tappo.example.com docker compose up -d --build
 cd client
 npm install
 npm run tauri dev        # 启动桌面客户端
-npm run tauri build      # 打包安装包
+npm run tauri build      # Windows 打 NSIS，macOS 打 .app 和 .dmg
 ```
+
+在 Windows 上这个命令生成 NSIS 安装器，在 macOS 上生成 `.app` 和 `.dmg`。macOS 安装包未做 Apple 签名。拖进应用程序后如果系统提示已损坏，在终端执行 `xattr -dr com.apple.quarantine /Applications/AsoulTappo.app`。键鼠跟随需要在系统设置的隐私与安全性里允许辅助功能。
+
+配置里开了更新包签名。本机没有环境变量 `TAURI_SIGNING_PRIVATE_KEY` 时，打包会在签名这一步失败。只要安装包时加 `--no-sign`。发布用的 GitHub Actions 里有这把密钥，打出来的更新包会签名。
+
+推送 `v*` 标签后，Actions 会打 Windows NSIS，再打一份 macOS 通用 DMG，Apple 芯片和 Intel 用同一个包。两份安装包写进同一个 GitHub Release，并更新 `latest.json`。
 
 仅在浏览器中调试前端界面：
 

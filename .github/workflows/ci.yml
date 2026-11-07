@@ -64,3 +64,30 @@ jobs:
       - name: cargo test (input state machine)
         working-directory: client/src-tauri
         run: cargo test --lib --locked
+
+  client-tauri-macos:
+    name: client (Tauri / cargo check on macOS)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+      - run: npm ci
+      # tauri::generate_context! needs the built frontend (../dist)
+      - run: npm run build
+      - name: cargo check
+        working-directory: client/src-tauri
+        run: cargo check --all-targets --locked
+      - name: cargo test (input state machine)
+        working-directory: client/src-tauri
+        run: cargo test --lib --locked

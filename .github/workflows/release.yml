@@ -40,17 +40,85 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            内测包，Windows NSIS 安装器。安装包未签名，SmartScreen 可能拦截，选择仍要运行即可。
+            内测包。Windows 是 NSIS 安装器，macOS 是通用 DMG，Apple 芯片和 Intel 都能装。安装包没有 Microsoft 或 Apple 签名。
+
+            Windows 上 SmartScreen 可能拦截，选择仍要运行即可。
+
+            macOS 第一次打开如果提示已损坏或无法验证开发者，把 AsoulTappo.app 拖进应用程序后执行：
+            xattr -dr com.apple.quarantine /Applications/AsoulTappo.app
+            键鼠跟随需要在系统设置的隐私与安全性里允许辅助功能。
 
             - Tauri 2 + Vue 3 桌宠与同桌联机
             - 面板改版：立式导航、各页布局，皮肤与表情展示优化
             - 新增三款睡衣派对皮肤与阿草彩蛋
             - 共鸣开包与揭晓演出重做，结果按抽取顺序展示
             - 联机动作同步拆分，最小化时保留抽卡结果
+            - 设置里可以检查更新
             - 服务端可自行部署，见 README
 
-            仅 Windows。
+            Windows 与 macOS。
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           args: --bundles nsis
+
+  # 两边都会写同一份 latest.json。并行时后写的会把先写的平台条目盖掉，所以 macOS 等 Windows 结束再跑。
+  macos-dmg:
+    name: macOS DMG
+    needs: windows-nsis
+    if: ${{ !cancelled() }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: client
+          tagName: v__VERSION__
+          releaseName: AsoulTappo v__VERSION__
+          releaseBody: |
+            内测包。Windows 是 NSIS 安装器，macOS 是通用 DMG，Apple 芯片和 Intel 都能装。安装包没有 Microsoft 或 Apple 签名。
+
+            Windows 上 SmartScreen 可能拦截，选择仍要运行即可。
+
+            macOS 第一次打开如果提示已损坏或无法验证开发者，把 AsoulTappo.app 拖进应用程序后执行：
+            xattr -dr com.apple.quarantine /Applications/AsoulTappo.app
+            键鼠跟随需要在系统设置的隐私与安全性里允许辅助功能。
+
+            - Tauri 2 + Vue 3 桌宠与同桌联机
+            - 面板改版：立式导航、各页布局，皮肤与表情展示优化
+            - 新增三款睡衣派对皮肤与阿草彩蛋
+            - 共鸣开包与揭晓演出重做，结果按抽取顺序展示
+            - 联机动作同步拆分，最小化时保留抽卡结果
+            - 设置里可以检查更新
+            - 服务端可自行部署，见 README
+
+            Windows 与 macOS。
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          args: --target universal-apple-darwin --bundles app,dmg
