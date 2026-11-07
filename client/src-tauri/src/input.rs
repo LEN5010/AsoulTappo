@@ -4,7 +4,7 @@
 //! only learns "a key went down/up", which mouse button, and relative mouse
 //! movement (used to animate the local pet; never sent over the network).
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use rdev::{Button, EventType, Key};
@@ -32,11 +32,16 @@ pub enum InputEvent {
 /// Minimum spacing between emitted mouse-move events (~60 Hz).
 const MOVE_INTERVAL: Duration = Duration::from_millis(16);
 
+/// A key held longer than this without any OS auto-repeat is treated as released:
+/// its key-up was lost (secure desktop, UAC prompt, lock screen, another hook).
+const STUCK_KEY: Duration = Duration::from_millis(1500);
+
 /// Pure state machine: raw rdev events in, privacy-filtered events out.
 /// Kept separate from the hook thread so it is unit-testable.
 #[derive(Default)]
 pub struct InputState {
-    held: HashSet<Key>,
+    /// Held keys and when the OS last reported them down (auto-repeat refreshes it).
+    held: HashMap<Key, Instant>,
     last_pos: Option<(f64, f64)>,
     acc: (f64, f64),
     last_move_emit: Option<Instant>,
@@ -50,8 +55,15 @@ impl InputState {
     pub fn handle(&mut self, ev: &EventType, now: Instant) -> Option<InputEvent> {
         match ev {
             // OS auto-repeat sends repeated presses: only report the first.
-            EventType::KeyPress(k) => self.held.insert(*k).then_some(InputEvent::KeyDown),
-            EventType::KeyRelease(k) => self.held.remove(k).then_some(InputEvent::KeyUp),
+            EventType::KeyPress(k) => {
+                let fresh = self
+                    .held
+                    .get(k)
+                    .map_or(true, |seen| now.duration_since(*seen) >= STUCK_KEY);
+                self.held.insert(*k, now);
+                fresh.then_some(InputEvent::KeyDown)
+            }
+            EventType::KeyRelease(k) => self.held.remove(k).map(|_| InputEvent::KeyUp),
             EventType::ButtonPress(b) => Some(InputEvent::MouseDown { button: map_button(b) }),
             EventType::ButtonRelease(b) => Some(InputEvent::MouseUp { button: map_button(b) }),
             EventType::MouseMove { x, y } => {
@@ -116,6 +128,22 @@ mod tests {
         assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), None);
         assert_eq!(s.handle(&EventType::KeyRelease(Key::KeyA), t), Some(InputEvent::KeyUp));
         assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), Some(InputEvent::KeyDown));
+    }
+
+    #[test]
+    fn a_key_whose_release_was_lost_counts_again() {
+        let mut s = InputState::new();
+        let t = Instant::now();
+        assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), t), Some(InputEvent::KeyDown));
+        // auto-repeat keeps refreshing the key, so it stays deduplicated
+        let mut at = t;
+        for _ in 0..100 {
+            at += Duration::from_millis(33);
+            assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), at), None);
+        }
+        // no event for a while: the key-up was lost, the next press is a new one
+        let later = at + STUCK_KEY;
+        assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), later), Some(InputEvent::KeyDown));
     }
 
     #[test]

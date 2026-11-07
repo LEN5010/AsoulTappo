@@ -16,7 +16,7 @@ const label = computed(() => {
   <Modal v-if="updateDialogOpen && updateOffer" title="发现新版本" heading @close="dismissUpdate">
     <p class="ver">{{ updateOffer.version }}</p>
     <p v-if="updateOffer.notes" class="notes">{{ updateOffer.notes }}</p>
-    <p v-if="updateFailed" role="status" class="failed">自动更新失败，已打开下载页</p>
+    <p v-if="updateFailed" role="status" class="failed">自动更新失败，请到下载页手动安装</p>
     <div class="acts">
       <button type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
       <button type="button" class="ui-btn primary" :class="{ pulse: !updateBusy }" @click="installUpdate">{{ label }}</button>

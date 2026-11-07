@@ -1,8 +1,8 @@
 // Update check. The newest version comes from the room server, which reads the main site's release
 // list: many players cannot reach GitHub. The signed package itself still comes from GitHub through
-// the Tauri updater; when that fails, the download page on the main site opens instead.
+// the Tauri updater; when that fails, the dialog offers the download page on the main site.
 import { ref } from "vue";
-import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
+import type { Update } from "@tauri-apps/plugin-updater";
 import { isTauri, openAboutLink } from "../composables/tauri";
 import { Api, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
@@ -67,7 +67,6 @@ export async function lookForUpdate(manual = false): Promise<void> {
   } else {
     checkState.value = "checking";
   }
-  const fromGithub = askGithub(manual);
   const latest = await askServer();
   if (latest) {
     if (isNewer(latest.version, __APP_VERSION__)) offer(latest, manual);
@@ -75,7 +74,7 @@ export async function lookForUpdate(manual = false): Promise<void> {
     return;
   }
   // The server could not say: GitHub, if this device reaches it.
-  const answer = await fromGithub;
+  const answer = await askGithub(manual);
   if (!answer.ok) {
     if (manual) checkState.value = "failed";
   } else if (answer.update) {
@@ -107,10 +106,17 @@ function failed(): void {
   updateBusy.value = false;
   updateFailed.value = true;
   updatePercent.value = null;
-  openAboutLink(DOWNLOAD_PAGE);
 }
 
-/** Installs the offered version from GitHub and restarts; opens the download page if that fails. */
+type InstallEvent =
+  | { event: "Started"; data: { content_length: number | null } }
+  | { event: "Progress"; data: { chunk_length: number } }
+  | { event: "Finished" };
+
+/**
+ * Installs the offered version from its own GitHub release (`v<version>`) and restarts; on failure the
+ * dialog's button turns into a link to the download page. Not `releases/latest`: GitHub never points that at a pre-release.
+ */
 export async function installUpdate(): Promise<void> {
   const want = updateOffer.value?.version;
   if (!want || updateBusy.value) return;
@@ -120,30 +126,29 @@ export async function installUpdate(): Promise<void> {
   }
   updateBusy.value = true;
   updatePercent.value = null;
-  let answer = await askGithub();
-  if (!answer.ok) answer = await askGithub(true);
-  // GitHub's package must be the version offered; an older or missing one means the download page.
-  const found = answer.ok && answer.update?.version === want ? answer.update : null;
-  if (!found) {
-    failed();
-    return;
-  }
   let total = 0;
   let downloaded = 0;
-  const onEvent = (event: DownloadEvent) => {
-    if (event.event === "Started") {
-      downloaded = 0;
-      total = event.data.contentLength ?? 0;
-      updatePercent.value = total > 0 ? 0 : null;
-    } else if (event.event === "Progress") {
-      downloaded += event.data.chunkLength;
-      updatePercent.value = total > 0 ? Math.min(99, Math.round((downloaded / total) * 100)) : null;
-    } else if (total > 0) {
-      updatePercent.value = 100;
-    }
-  };
   try {
-    await found.downloadAndInstall(onEvent);
+    const { invoke, Channel } = await import("@tauri-apps/api/core");
+    const onEvent = new Channel<InstallEvent>();
+    onEvent.onmessage = (event) => {
+      if (event.event === "Started") {
+        downloaded = 0;
+        total = event.data.content_length ?? 0;
+        updatePercent.value = total > 0 ? 0 : null;
+      } else if (event.event === "Progress") {
+        downloaded += event.data.chunk_length;
+        updatePercent.value = total > 0 ? Math.min(99, Math.round((downloaded / total) * 100)) : null;
+      } else if (total > 0) {
+        updatePercent.value = 100;
+      }
+    };
+    // False: that release has no package for this version yet (still uploading); the dialog offers the download page.
+    const installed = await invoke<boolean>("install_version", { version: want.replace(/^v/, "").split("+")[0], onEvent });
+    if (!installed) {
+      failed();
+      return;
+    }
     const { relaunch } = await import("@tauri-apps/plugin-process");
     await relaunch();
   } catch {
