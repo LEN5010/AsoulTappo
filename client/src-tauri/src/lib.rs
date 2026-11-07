@@ -1,4 +1,3 @@
-mod gamepad;
 mod hit;
 mod input;
 mod update;
@@ -346,11 +345,6 @@ pub fn run() {
             input::spawn_hook(move |ev| {
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
                 let _ = handle.emit("input", ev);
-            });
-            // Controller presses feed the pet like key presses (Windows/XInput; works under fullscreen games).
-            let pad_handle = app.handle().clone();
-            gamepad::spawn_poller(move |ev| {
-                let _ = pad_handle.emit("input", ev);
             });
 
             Ok(())

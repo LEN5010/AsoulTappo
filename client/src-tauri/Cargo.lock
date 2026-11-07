@@ -59,7 +59,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "url",
- "windows-sys 0.61.2",
 ]
 
 [[package]]
