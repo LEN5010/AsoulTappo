@@ -1,6 +1,6 @@
 // Update check. The newest version comes from the room server, which reads the main site's release
 // list: many players cannot reach GitHub. The signed package itself still comes from GitHub through
-// the Tauri updater; when that fails, the download page on the main site opens instead.
+// the Tauri updater; when that fails, the dialog offers the download page on the main site.
 import { ref } from "vue";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { isTauri, openAboutLink } from "../composables/tauri";
@@ -114,8 +114,8 @@ type InstallEvent =
   | { event: "Finished" };
 
 /**
- * Installs the offered version from its own GitHub release (`v<version>`) and restarts; opens the
- * download page if that fails. Not `releases/latest`: GitHub never points that at a pre-release.
+ * Installs the offered version from its own GitHub release (`v<version>`) and restarts; on failure the
+ * dialog's button turns into a link to the download page. Not `releases/latest`: GitHub never points that at a pre-release.
  */
 export async function installUpdate(): Promise<void> {
   const want = updateOffer.value?.version;
@@ -143,7 +143,7 @@ export async function installUpdate(): Promise<void> {
         updatePercent.value = 100;
       }
     };
-    // False: that release has no package for this version yet (still uploading), so the download page.
+    // False: that release has no package for this version yet (still uploading); the dialog offers the download page.
     const installed = await invoke<boolean>("install_version", { version: want.replace(/^v/, "").split("+")[0], onEvent });
     if (!installed) {
       failed();

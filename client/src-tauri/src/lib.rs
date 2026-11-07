@@ -338,8 +338,8 @@ pub fn run() {
             // ---- global input hook (counts / deltas only) ----
             let handle = app.handle().clone();
             input::spawn_hook(move |ev| {
-                // Only the desk overlay consumes input; the panel never needs it.
-                let _ = handle.emit_to("main", "input", ev);
+                // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
+                let _ = handle.emit("input", ev);
             });
 
             Ok(())
