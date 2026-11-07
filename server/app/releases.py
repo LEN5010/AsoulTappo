@@ -18,7 +18,8 @@ RETRY_SECONDS = 60
 # A last good answer keeps being served this long while the main site fails.
 STALE_SECONDS = 24 * 3600
 NOTES_LIMIT = 4000
-VERSION = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+# Same forms the client accepts (`client/src/semver.ts`): a leading `v` and `+build` are dropped.
+VERSION = re.compile(r"^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+[0-9A-Za-z.-]+)?$")
 
 Fetch = Callable[[str], Any]
 
@@ -34,8 +35,10 @@ def newest(feed: Any) -> dict[str, str] | None:
     releases = feed.get("releases") if isinstance(feed, dict) else None
     first = releases[0] if isinstance(releases, list) and releases else None
     version = first.get("version") if isinstance(first, dict) else None
-    if not isinstance(version, str) or not VERSION.match(version):
+    match = VERSION.match(version.strip()) if isinstance(version, str) else None
+    if not match:
         return None
+    version = match.group(1)
     notes = first.get("notes")
     return {"version": version, "notes": notes[:NOTES_LIMIT] if isinstance(notes, str) else ""}
 

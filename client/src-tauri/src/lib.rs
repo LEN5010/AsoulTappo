@@ -1,5 +1,6 @@
 mod hit;
 mod input;
+mod update;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -251,7 +252,8 @@ pub fn run() {
             toggle_panel,
             show_panel,
             hide_panel,
-            open_about_link
+            open_about_link,
+            update::install_version
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {

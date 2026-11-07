@@ -19,6 +19,7 @@ tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+url = "2"
 # Global keyboard/mouse hooks (Windows low-level hooks under the hood).
 # We only ever forward event *kinds* and mouse deltas — never key identities.
 rdev = "0.5"

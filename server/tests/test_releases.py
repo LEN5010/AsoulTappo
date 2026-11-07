@@ -97,3 +97,10 @@ def test_a_slow_main_site_does_not_block_other_callers():
     t.join(5)
     assert feed.latest() == {"version": "0.1.0", "notes": ""}
     assert len(calls) == 1
+
+
+def test_newest_accepts_tag_forms_the_client_accepts():
+    for raw, want in [("v1.2.3", "1.2.3"), ("1.2.3+b5", "1.2.3"), ("v0.1.0-beta.7+ci", "0.1.0-beta.7")]:
+        assert newest({"releases": [{"version": raw}]})["version"] == want
+    for bad in ["1.2", "1.2.3/x", "vv1.2.3"]:
+        assert newest({"releases": [{"version": bad}]}) is None
