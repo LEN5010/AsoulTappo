@@ -267,6 +267,11 @@ pub fn run() {
         .setup(move |app| {
             // ---- overlay window over the work area, mouse passes through until something is hit ----
             if let Some(w) = main_window(app.handle()) {
+                // `focus: false` only controls initial focus. Keep clicks on the Windows
+                // overlay from activating it over a game or hardware-accelerated video.
+                // This maps to WS_EX_NOACTIVATE; the separate panel stays focusable.
+                #[cfg(target_os = "windows")]
+                w.set_focusable(false)?;
                 let index = primary_index(&w);
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
