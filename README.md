@@ -1,79 +1,89 @@
-<p align="center">
-  <img src="client/src-tauri/icons/128x128.png" width="96" height="96" alt="AsoulTappo">
-</p>
-
-<h1 align="center">AsoulTappo</h1>
-
-<p align="center">
-  A-SOUL 五位成员的桌面桌宠。敲键盘、动鼠标，桌宠跟着动；和朋友进同一个房间，就能在桌面上看到彼此的桌宠。
-</p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/readme/banner-dark.svg" />
+  <img src=".github/readme/banner.svg" alt="AsoulTappo" width="100%" />
+</picture>
 
 <p align="center">
-  <a href="https://len5010.top/download?app=tappo"><b>下载</b></a> ·
-  <a href="https://github.com/LEN5010/AsoulTappo/releases">GitHub Releases</a> ·
-  Windows / macOS
+  <a href="https://github.com/LEN5010/AsoulTappo/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/LEN5010/AsoulTappo?label=%E7%89%88%E6%9C%AC&color=FC966E" /></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-Windows%20%7C%20macOS-C34637" />
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white" />
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/LEN5010/AsoulTappo?label=%E8%AE%B8%E5%8F%AF%E8%AF%81" /></a>
 </p>
 
-非官方粉丝作品，开源，免费。
+<p align="center">
+  <a href="https://github.com/LEN5010/AsoulTappo/releases/latest"><b>下载</b></a> ·
+  <a href="https://len5010.top/download?app=tappo">国内下载</a> ·
+  <a href="https://github.com/LEN5010/AsoulTappo/issues">反馈</a>
+</p>
 
-## 安装
+AsoulTappo 是一款为枝江开发的开源联机桌宠软件
 
-**Windows**：下载 `AsoulTappo_<版本>_x64-setup.exe` 并运行。安装包没有 Microsoft 签名，SmartScreen 拦截时点更多信息，再选仍要运行。
+## 下载
 
-**macOS**：下载 `.dmg`，Apple 芯片和 Intel 用同一个包。把 AsoulTappo 拖进应用程序。第一次打开如果提示已损坏或无法验证开发者，在终端执行：
+在 [Releases](https://github.com/LEN5010/AsoulTappo/releases/latest) 页面下载对应平台的文件；无法访问 GitHub 时，可在 [len5010.top/download](https://len5010.top/download?app=tappo) 下载相同的文件。
 
-```bash
+| 平台 | 文件 | 说明 |
+| --- | --- | --- |
+| Windows（x64） | `_x64-setup.exe` | NSIS 安装器，未经 Microsoft 签名；SmartScreen 拦截时选择仍要运行 |
+| macOS 10.15+ | `_universal.dmg` | 通用包，支持 Apple 芯片和 Intel；未经 Apple 公证 |
+
+macOS 首次打开如提示已损坏或无法验证开发者，将应用拖入应用程序文件夹后在终端执行：
+
+```sh
 xattr -dr com.apple.quarantine /Applications/AsoulTappo.app
 ```
 
-桌宠跟随键鼠需要在系统设置的隐私与安全性 → 辅助功能里允许 AsoulTappo。
-
-**更新**：设置里点检查更新，有新版本时会自动下载安装。1.0.0 之前的测试版不能自动更新，需要重新下载安装一次。
+键鼠响应依赖辅助功能权限，需在系统设置的隐私与安全性 → 辅助功能中允许 AsoulTappo。
 
 ## 功能
 
-- **桌宠**：嘉然、贝拉、乃琳、心宜、思诺。敲键盘会跳，会跟随鼠标，左右键点击有反馈。可以置顶，也可以开点击穿透。
-- **同桌**：创建房间或输入房间号，最多 20 人。伙伴的桌宠、表情和敲击计数会出现在你的桌面上，位置可以拖，按房间记住。
-- **收集**：475 个表情（26 套）、85 张卡片（其中 33 张动态卡）和 9 款皮肤。背包里选角色、皮肤和 8 个常用表情；图鉴里看全部内容，并可以用碎片兑换普通卡和普通、罕见、稀有表情。
-- **账号**：可以登录 Asasfans 账号，和 Asasfans Web、Asasfans Next 通用，换电脑也能拿回存档。不登录时使用游客存档。
+| | |
+| --- | --- |
+| 桌宠 | 五位成员与 9 款皮肤。键盘输入、鼠标移动动画支持窗口置顶和点击穿透。 |
+| 同桌联机 | 通过房间号加入，单个房间最多 20 人。其他成员的桌宠显示在本机桌面，位置可拖动。 |
+| 收集 | 475 个表情（26 套）与 85 张卡片，其中 33 张为动态卡。背包用于选择角色、皮肤和 8 个常用表情。 |
+| 账号 | 支持 Asasfans 账号登录，与 Asasfans Web、Asasfans Next 共用同一账号。 |
 
-### 此间共鸣
+<details>
+<summary>此间共鸣的概率与碎片规则</summary>
 
-五位成员共用一个池子，每次 160 碎片。
+五位成员共用一个卡池，每次共鸣消耗 160 碎片。
 
-| 结果 | 概率 |
-|---|---|
-| 大隐藏 | 0.5%，400 次保底 |
-| 皮肤 | 0.5%，200 次保底 |
-| 小隐藏与跳舞卡 | 4.5% |
-| 稀有表情 | 3% |
-| 罕见表情 | 6% |
-| 普通卡 | 45% |
-| 普通表情 | 40.5% |
+| 结果 | 概率 | 保底 |
+| --- | --- | --- |
+| 大隐藏 | 0.5% | 400 次 |
+| 皮肤 | 0.5% | 200 次 |
+| 小隐藏与跳舞卡 | 4.5% | |
+| 稀有表情 | 3% | |
+| 罕见表情 | 6% | |
+| 普通卡 | 45% | |
+| 普通表情 | 40.5% | |
 
-两个保底分开计数。重复的表情返还 10 碎片，重复的卡片累计数量。
+两项保底分别计数。重复的表情返还 10 碎片，重复的卡片累计数量。
 
-碎片的来源：新玩家送 1600；在线每分钟 16，上一分钟敲得越多倍数越高，满 60 下是 5 倍。
+新用户获得 1600 碎片。在线期间每分钟获得 16 碎片，倍率由上一分钟的有效敲击次数决定，从 1 倍线性增加，60 次时达到上限 5 倍。
 
-## 自己部署服务端
+</details>
 
-客户端默认连官方服务器 `https://len5010.top/tappo`，可以在设置里换成自己的地址。
+## 自建服务端
 
-```bash
+客户端默认连接官方服务器 `https://len5010.top/tappo`，可在设置中改为其他地址。`deploy/` 提供 Docker Compose 配置，同时启动服务端和负责 HTTPS 的 Caddy：
+
+```sh
 cd deploy
 DOMAIN=tappo.example.com docker compose up -d --build
 ```
 
-这会启动服务端和 Caddy，Caddy 自动申请 HTTPS 证书。自建服务器没有配 `MAIN_API_URL` 时不能登录 Asasfans 账号，只有游客存档；检查更新仍然读取官方的版本列表。
+未设置 `MAIN_API_URL` 的服务端不提供 Asasfans 账号登录，仅支持游客存档。
 
-## 开发
+## 从源码构建
 
-需要 [Node.js 20+](https://nodejs.org/)、[Rust](https://rustup.rs/) 和对应平台的 [Tauri 依赖](https://tauri.app/start/prerequisites/)；服务端需要 Python 3.12。
+客户端使用 Tauri 2、Vue 3 和 TypeScript，需要 [Node.js 20+](https://nodejs.org/)、[Rust](https://rustup.rs/) 及对应平台的 [Tauri 依赖](https://tauri.app/start/prerequisites/)。服务端使用 FastAPI，需要 Python 3.12。
 
-```bash
+```sh
 # 服务端
 cd server
-python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest -q
 uvicorn app.main:app --port 8000
@@ -81,34 +91,44 @@ uvicorn app.main:app --port 8000
 # 客户端
 cd client
 npm install
-npm run tauri dev        # 桌面客户端
-npm run dev              # 只在浏览器里调界面，http://localhost:1420
-npm test                 # 单元测试
-npm run build            # 类型检查和前端构建
+npm run tauri dev
+npm test
 ```
 
-`npm run tauri build` 在 Windows 上生成 NSIS 安装器，在 macOS 上生成 `.app` 和 `.dmg`。配置里开了更新包签名，本机没有 `TAURI_SIGNING_PRIVATE_KEY` 时加 `--no-sign`。
+<details>
+<summary>打包、发版与目录结构</summary>
 
-发版：推送 `v*` 标签后，GitHub Actions 先打 Windows 安装器，再打 macOS 通用 DMG，写进同一个 Release 并更新 `latest.json`。标签要和 `client/src-tauri/tauri.conf.json` 里的版本一致。
+`npm run tauri build` 在 Windows 上生成 NSIS 安装器，在 macOS 上生成 `.app` 和 `.dmg`。配置启用了更新包签名，本地没有 `TAURI_SIGNING_PRIVATE_KEY` 时需加 `--no-sign`。
 
-```
-client/        Tauri 2 + Vue 3 + TypeScript 客户端；src-tauri/ 是全局键鼠钩子、托盘和透明覆盖层窗口
-server/        FastAPI + WebSocket 的房间和存档服务，SQLite 存储
-assets-packs/  服务端提供下载的高清卡面和主题素材
-scripts/       素材压缩和 manifest 生成
-protocol/      HTTP 和 WebSocket 协议
-deploy/        Docker Compose 和 Caddy 配置
-```
+推送 `v*` 标签会触发 Release workflow：先构建 Windows 安装器，再构建 macOS 通用 DMG，两者写入同一个 Release 并更新 `latest.json`。标签需与 `client/src-tauri/tauri.conf.json` 中的版本一致。
 
-更多文档：[素材构建](ASSETS.md)、[协议](protocol/PROTOCOL.md)、[架构](docs/ARCHITECTURE.md)。
+| 目录 | 内容 |
+| --- | --- |
+| `client/` | 客户端；`src-tauri/` 包含全局键鼠钩子、托盘和透明覆盖层窗口 |
+| `server/` | 房间与存档服务，SQLite 存储 |
+| `assets-packs/` | 服务端提供下载的高清卡面与主题素材 |
+| `scripts/` | 素材压缩与 manifest 生成 |
+| `protocol/` | HTTP 与 WebSocket 协议 |
+| `deploy/` | Docker Compose 与 Caddy 配置 |
+
+相关文档：[素材构建](ASSETS.md)、[协议](protocol/PROTOCOL.md)、[架构](docs/ARCHITECTURE.md)。
+
+</details>
 
 ## 致谢
 
-- 角色皮肤由画师 [神秘三文鱼_](https://space.bilibili.com/2061322519) 绘制。
-- 界面字体使用 [Noto Sans SC](https://github.com/notofonts/noto-cjk) 和 [Barlow](https://github.com/jpt/barlow)，均为 SIL Open Font License 1.1。
-- A-SOUL 标志和角色美术的版权归其权利人所有，不在本项目的许可范围内。
-- 项目最早基于 [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun)，五位成员的基础桌宠素材来自该项目，已获作者许可。
+角色皮肤由画师 [神秘三文鱼_](https://space.bilibili.com/2061322519) 绘制。
 
-## 许可证
+界面字体使用 [Noto Sans SC](https://github.com/notofonts/noto-cjk) 和 [Barlow](https://github.com/jpt/barlow)，均以 SIL Open Font License 1.1 授权。
 
-[GPL-2.0](LICENSE)
+项目最初基于 [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun)，五位成员的基础桌宠素材来自该项目，已获作者许可。
+
+## 反馈
+
+问题反馈和功能建议请提交到 [GitHub Issues](https://github.com/LEN5010/AsoulTappo/issues)。
+
+## 声明与许可证
+
+AsoulTappo 是非官方粉丝项目，与 A-SOUL 及相关公司没有官方关联。A-SOUL 标志和角色美术的版权归其权利人所有，不在本项目的许可范围内。
+
+本项目代码基于 GNU General Public License v2.0 发布，详见 [LICENSE](LICENSE)。
