@@ -37,8 +37,8 @@ describe("prizes", () => {
   });
 
   it("gives every prize its own reaction", () => {
-    expect([0, 1, 2, 3, 4, 5].map((i) => reactionOf(i, 6))).toEqual(["微笑", "肯定", "观察", "流汗", "生无可恋", "对不起"]);
-    expect(reactionOf(0, 3)).toBe("微笑");
+    expect([0, 1, 2, 3, 4, 5].map((i) => reactionOf(i, 6))).toEqual(["比心", "肯定", "观察", "流汗", "生无可恋", "对不起"]);
+    expect(reactionOf(0, 3)).toBe("比心");
     expect(reactionOf(2, 3)).toBe("对不起");
   });
 });

@@ -35,8 +35,9 @@ export function prizeTone(index: number, count = PRIZES.length): string {
   return "tone-rare";
 }
 
-/** 阿草 hates paying out: the bigger the prize, the worse it takes it. Smallest first. */
-const REACTIONS = ["微笑", "肯定", "观察", "流汗", "生无可恋", "对不起"];
+/** 阿草 hates paying out: the bigger the prize, the worse it takes it. Smallest first. Cutouts only, since they
+ *  stand big in the head; 微笑 is a framed square picture. */
+const REACTIONS = ["比心", "肯定", "观察", "流汗", "生无可恋", "对不起"];
 
 /** 阿草's sticker for prize `index`, spread over the reactions however many prizes there are. */
 export function reactionOf(index: number, count = PRIZES.length): string {

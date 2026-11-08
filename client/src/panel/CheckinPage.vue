@@ -144,7 +144,7 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
         <ol class="days" :class="{ deal: dealing }">
           <li
             v-for="(c, i) in cells" :key="c?.date ?? `pad-${i}`"
-            :class="c ? [c.when, { turning: turning === c.date }] : 'pad'"
+            :class="c ? [c.when, { turning: turning === c.date, missed: c.when === 'past' && !c.won }] : 'pad'"
             :style="{ '--wave': (i % 7) + Math.floor(i / 7) }"
           >
             <template v-if="c">
@@ -357,6 +357,10 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 .days .future {
   background: var(--c-50);
 }
+/* A missed day is a slot left empty: drawn in dashes, no fill. */
+.days .missed {
+  border: 2px dashed var(--c-200);
+}
 /* The turning card throws its burst over the squares around it. */
 .days .turning {
   z-index: 3;
@@ -371,23 +375,23 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 .num {
   position: absolute;
   z-index: 1;
-  left: 9px;
-  top: 8px;
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  color: var(--ink-2);
+  left: 8px;
+  top: 6px;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink);
 }
-/* Days to come carry their numeral large and faint in the middle of the slot, like a printed calendar. */
-.future .num {
+/* Empty slots carry their numeral large and faint in the middle, like a printed calendar. */
+.future .num,
+.missed .num {
   inset: 0;
   display: grid;
   place-items: center;
   font-size: 30px;
   color: var(--c-300);
 }
-/* A missed day is gone: no square, only its number. */
-.past > .num {
+.missed .num {
   color: var(--ink-3);
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .today .num {
   color: var(--c-700);
@@ -414,8 +418,12 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 }
 .tile.frame-gold .num,
 .tile.frame-rose .num {
-  left: 6px;
-  top: 5px;
+  left: 5px;
+  top: 3px;
+}
+/* The sticker can reach under the number: a white edge keeps it legible. */
+.tile .num {
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
 }
 /* Today, checked in: a coral ring around its tile. */
 .today .tile {
@@ -424,7 +432,7 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 }
 .won {
   position: absolute;
-  inset: 10px 6px 5px;
+  inset: 3px 3px 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -439,9 +447,9 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 }
 .amount {
   position: relative;
-  margin-top: -7px;
-  padding: 0 6px;
-  font: 800 var(--fs-label)/17px var(--font-latin);
+  margin-top: -14px;
+  padding: 0 7px;
+  font: 800 var(--fs-number)/20px var(--font-latin);
 }
 .twinkle {
   position: absolute;
@@ -531,6 +539,11 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 .back b {
   font: 800 var(--fs-strong)/1 var(--font);
   letter-spacing: 0.12em;
+  transition: opacity var(--dur-press) var(--ease-out);
+}
+/* Once pressed the card shows only its seal. */
+.card:is(.asking, .turn) .back b {
+  opacity: 0;
 }
 /* A band of light keeps crossing it while it waits to be pressed. */
 .back .sheen {
