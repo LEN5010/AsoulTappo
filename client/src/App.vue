@@ -28,7 +28,7 @@ import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stor
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  isTauri, listenInput, listenTray, setAlwaysOnTop, setClickThrough, setHitRegions,
+  isTauri, listenInput, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHitRegions,
 } from "./composables/tauri";
 
 // ---- viewport
@@ -87,16 +87,19 @@ const nearRight = (x: number, scale: number, minEmote: number) =>
 // ---- window, input and tray
 let unInput: (() => void) | undefined;
 let unTray: (() => void) | undefined;
+let unOutside: (() => void) | undefined;
 let hits: ReturnType<typeof startHitReporter> | undefined;
 const kick = () => hits?.kick();
-const closeQuickOnBlur = () => (ui.quickOpen = false);
+/** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
+const closeQuickAway = () => (ui.quickOpen = false);
 
 onMounted(async () => {
   window.addEventListener("resize", onResize);
   window.addEventListener("pointerdown", closeQuick, true);
-  window.addEventListener("blur", closeQuickOnBlur);
+  window.addEventListener("blur", closeQuickAway);
   startReporting();
   unInput = await listenInput(onInput);
+  unOutside = await listenOutsideClick(closeQuickAway);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "reset-position") resetPet();
@@ -121,10 +124,11 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener("resize", onResize);
-  window.removeEventListener("blur", closeQuickOnBlur);
+  window.removeEventListener("blur", closeQuickAway);
   window.removeEventListener("pointerdown", closeQuick, true);
   stopReporting();
   unInput?.();
+  unOutside?.();
   unTray?.();
   hits?.stop();
   stopPet();

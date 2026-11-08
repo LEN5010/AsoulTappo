@@ -29,6 +29,8 @@ from .store import Store
 app = FastAPI(title="AsoulTappo server", version="0.4.0")
 manager = RoomManager()
 EMOTE_INTERVAL = 0.25  # seconds between emotes of one member
+TAP_RATE = 15.0  # room taps per second one member may broadcast (matches activity crediting)
+TAP_BURST = 75.0  # taps that may pile up while idle, a few seconds' worth
 
 PACKS_DIR = find_packs_dir()
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
@@ -351,9 +353,19 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await _leave(room_id, peer)
                 room_id, peer = None, None
             elif isinstance(msg, TapMsg):
-                peer.taps += msg.count
+                # Token bucket: an auto-clicker or forged client can't inflate room totals
+                # or flood the room faster than a human tapping rate.
+                now = time.monotonic()
+                elapsed = now - peer.tap_at if peer.tap_at else TAP_BURST / TAP_RATE
+                peer.tap_budget = min(peer.tap_budget + elapsed * TAP_RATE, TAP_BURST)
+                peer.tap_at = now
+                count = min(msg.count, int(peer.tap_budget))
+                if count <= 0:
+                    continue
+                peer.tap_budget -= count
+                peer.taps += count
                 await manager.broadcast(room_id, TapBroadcast(
-                    id=peer.id, count=msg.count, total=peer.taps).model_dump())
+                    id=peer.id, count=count, total=peer.taps).model_dump())
             elif isinstance(msg, MotionMsg):
                 await manager.motion(room_id, peer, msg.model_dump(exclude={"type"}))
             elif isinstance(msg, EmoteMsg):

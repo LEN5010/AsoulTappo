@@ -63,6 +63,12 @@ export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenF
   return listen<TrayAction>("tray", (ev) => cb(ev.payload));
 }
 
+/** A mouse press that fell through the overlay onto another window. */
+export async function listenOutsideClick(cb: () => void): Promise<UnlistenFn> {
+  if (!isTauri) return () => {};
+  return listen("outside-click", () => cb());
+}
+
 async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
   if (!isTauri) return;
   try {

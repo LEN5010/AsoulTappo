@@ -5,6 +5,7 @@
 //! movement (used to animate the local pet; never sent over the network).
 
 use std::collections::HashMap;
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use rdev::{Button, EventType, Key};
@@ -97,23 +98,173 @@ fn map_button(b: &Button) -> MouseButton {
     }
 }
 
-/// Spawn the blocking hook on a background thread; `emit` is called for every
-/// filtered event.
+/// Pause before installing the hook again after it failed (e.g. no accessibility
+/// permission on macOS yet).
+const RETRY: Duration = Duration::from_secs(5);
+
+/// The system saw input this long (ms) after the hook last heard anything: the hook is gone.
+const STALE_MS: i32 = 3000;
+
+/// Spawn the global hook and the thread that filters its events; `emit` is called
+/// for every filtered event.
+///
+/// The OS hook callback only timestamps the event and queues it: Windows silently
+/// removes a low-level hook whose callback runs past `LowLevelHooksTimeout`, which
+/// a busy fullscreen game easily causes if the callback does IPC itself. Filtering
+/// and emitting happen on a separate thread.
+///
+/// Each hook gets a thread of its own that ends when `rdev::listen` returns. rdev
+/// never unhooks; the OS removes a thread's hooks when the thread exits, so ending
+/// the thread is how a hook is replaced without leaving the old one installed.
 pub fn spawn_hook<F>(emit: F)
 where
     F: Fn(InputEvent) + Send + 'static,
 {
+    let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant)>();
+
     std::thread::spawn(move || {
         let mut state = InputState::new();
-        let result = rdev::listen(move |event| {
-            if let Some(out) = state.handle(&event.event_type, Instant::now()) {
+        for (ev, at) in rx {
+            if let Some(out) = state.handle(&ev, at) {
                 emit(out);
             }
-        });
-        if let Err(e) = result {
-            eprintln!("global input hook stopped: {e:?}");
         }
     });
+
+    std::thread::spawn(move || loop {
+        let hook = {
+            let tx = tx.clone();
+            std::thread::spawn(move || run_hook(tx))
+        };
+        let replaced = watchdog::watch(&hook);
+        // The old hook thread must be gone before the next `listen` replaces rdev's global callback.
+        let _ = hook.join();
+        if !replaced {
+            std::thread::sleep(RETRY);
+        }
+    });
+}
+
+/// Install the hook and pump its events until `listen` returns.
+fn run_hook(tx: Sender<(EventType, Instant)>) {
+    // rdev otherwise looks up the keyboard layout (TIS/TSM) on this thread for
+    // every key, which macOS 14+ only allows on the main thread and aborts on.
+    #[cfg(target_os = "macos")]
+    rdev::set_is_main_thread(false);
+    watchdog::enter();
+
+    // Coalesce raw mouse moves at the producer: high-polling mice can fire
+    // thousands of moves per second, and an unbounded queue would grow if
+    // the consumer stalls. Positions are absolute, so skipping intermediate
+    // moves loses nothing. Key and button down/up are always queued.
+    let mut last_move: Option<Instant> = None;
+    let result = rdev::listen(move |event| {
+        watchdog::heard();
+        let now = Instant::now();
+        match event.event_type {
+            EventType::Wheel { .. } => return,
+            EventType::MouseMove { .. } => {
+                if last_move.is_some_and(|t| now.duration_since(t) < Duration::from_millis(4)) {
+                    return;
+                }
+                last_move = Some(now);
+            }
+            _ => {}
+        }
+        let _ = tx.send((event.event_type, now));
+    });
+    if let Err(e) = result {
+        eprintln!("global input hook stopped: {e:?}; retrying");
+    }
+}
+
+/// Whether the system saw input more than `STALE_MS` after the hook last heard any.
+/// Both are `GetTickCount` values, which wrap every 49.7 days.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn went_silent(last_input: u32, last_heard: u32) -> bool {
+    last_input.wrapping_sub(last_heard) as i32 > STALE_MS
+}
+
+/// Windows drops a low-level hook without telling anyone. The system's own last-input
+/// time keeps moving while the hook hears nothing; then the hook thread is ended and
+/// `spawn_hook` installs a new one.
+///
+/// It also fires, harmlessly, while the hook is muted rather than gone: an elevated
+/// window in front, the secure desktop (UAC, lock screen), pen or touch input that
+/// never reaches the mouse hook. `MIN_LIFE` keeps that from replacing it on every check.
+#[cfg(target_os = "windows")]
+mod watchdog {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::thread::JoinHandle;
+    use std::time::{Duration, Instant};
+
+    use windows_sys::Win32::System::SystemInformation::GetTickCount;
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+    };
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
+
+    const CHECK: Duration = Duration::from_secs(2);
+    /// A hook lives at least this long before it may be replaced.
+    const MIN_LIFE: Duration = Duration::from_secs(10);
+
+    static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
+    static LAST_HEARD: AtomicU32 = AtomicU32::new(0);
+
+    /// Called on the hook thread before it installs the hook.
+    pub fn enter() {
+        unsafe {
+            HOOK_THREAD.store(GetCurrentThreadId(), Ordering::Release);
+            LAST_HEARD.store(GetTickCount(), Ordering::Relaxed);
+            // The thread sleeps in GetMessage and its callback only timestamps and queues (plus
+            // rdev's key-name lookup), so the top priority costs nothing and keeps a game that
+            // saturates the CPU from pushing the callback past the hook timeout.
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+        }
+    }
+
+    pub fn heard() {
+        LAST_HEARD.store(unsafe { GetTickCount() }, Ordering::Relaxed);
+    }
+
+    /// Wait for the hook thread to end; returns true when it was ended for going silent.
+    pub fn watch(hook: &JoinHandle<()>) -> bool {
+        let started = Instant::now();
+        while !hook.is_finished() {
+            std::thread::sleep(CHECK);
+            if started.elapsed() >= MIN_LIFE && missed_input() {
+                eprintln!("global input hook went silent; replacing it");
+                // WM_QUIT makes rdev's GetMessage return, so `listen` and the thread end.
+                // Posting fails until the thread has a message queue: keep trying.
+                let id = HOOK_THREAD.load(Ordering::Acquire);
+                while !hook.is_finished() {
+                    unsafe { PostThreadMessageW(id, WM_QUIT, 0, 0) };
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    fn missed_input() -> bool {
+        let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+        if unsafe { GetLastInputInfo(&mut info) } == 0 {
+            return false;
+        }
+        super::went_silent(info.dwTime, LAST_HEARD.load(Ordering::Relaxed))
+    }
+}
+
+/// Only Windows drops hooks silently; elsewhere this just waits for the hook thread.
+#[cfg(not(target_os = "windows"))]
+mod watchdog {
+    pub fn enter() {}
+    pub fn heard() {}
+    pub fn watch(_hook: &std::thread::JoinHandle<()>) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -144,6 +295,18 @@ mod tests {
         // no event for a while: the key-up was lost, the next press is a new one
         let later = at + STUCK_KEY;
         assert_eq!(s.handle(&EventType::KeyPress(Key::KeyA), later), Some(InputEvent::KeyDown));
+    }
+
+    #[test]
+    fn a_hook_is_silent_once_input_outruns_it() {
+        assert!(!went_silent(1_000, 1_000));
+        assert!(!went_silent(3_500, 1_000));
+        assert!(went_silent(5_000, 1_000));
+        // the hook heard something after the last input the system reports
+        assert!(!went_silent(1_000, 5_000));
+        // GetTickCount wrapped between the two
+        assert!(went_silent(2_000, u32::MAX - 2_000));
+        assert!(!went_silent(500, u32::MAX - 500));
     }
 
     #[test]
