@@ -216,11 +216,20 @@ BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724
 SMALL_HIDDEN_IDS = {'1762331462009', '1700742793026', '1756378523010', '1700742793022', '1781070981010', '1745315724008', '1700742793023', '1748345610011'}
 BIG_HIDDEN_IDS.update({'1787896765003', '1785126321002'})
 SMALL_HIDDEN_IDS.update({'1787896765010', '1785126321010'})
+# Cards whose video holds one still picture over its sound: no dancing, only the voice track.
+STILL_VIDEO_IDS = {
+    '1762331462004', '1745315724003', '1748345610002', '1748345610003', '1756378523003',
+    '1700742793022', '1700742793023', '1700742793026',
+}
 RARITIES = ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 def card_tier(card_id: str) -> str:
     return "big" if card_id in BIG_HIDDEN_IDS else "small" if card_id in SMALL_HIDDEN_IDS else "normal"
+
+
+def card_still(card_id: str) -> bool:
+    return card_id in STILL_VIDEO_IDS
 
 
 def card_rarity(card_id: str, name: str, has_video: bool) -> str:

@@ -5,9 +5,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { cardFrame, cardLabel, poolName, TIER_LABEL } from "../cards";
+import { cardFrame, cardLabel, cardWord, poolName, TIER_LABEL } from "../cards";
 import { characters, getCharacter } from "../characters";
-import { getCard, characterColor, manifest, type ManifestCard, type Rarity } from "../manifest";
+import { getCard, characterColor, manifest, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { poolOf } from "../resonance";
 import { collection } from "../stores/player";
@@ -28,8 +28,6 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "uncommon", label: "罕见", icon: "layers" },
   { rarity: "common", label: "普通", icon: "star5" },
 ];
-/** The words the reveal stamps on these cards, so the banner speaks the same language. */
-const WORD: Record<ManifestCard["tier"], string> = { big: "SECRET", small: "HIDDEN", normal: "DANCE" };
 
 const pool = poolOf();
 const all = Object.values(pool).flat();
@@ -126,8 +124,9 @@ const feature = computed(() => {
     who,
     color: characterColor(c.characters[0] ?? ""),
     gold: c.tier === "big",
-    label: c.tier === "normal" ? "跳舞卡" : TIER_LABEL[c.tier],
-    word: WORD[c.tier],
+    label: c.tier !== "normal" ? TIER_LABEL[c.tier] : c.still ? "有声卡" : "跳舞卡",
+    // The reveal stamps the same word, so the banner speaks its language.
+    word: cardWord(c),
     series: poolName(manifest.series.find((x) => x.id === c.series)?.name ?? ""),
     owned: collection.owned[item.id] ?? 0,
   };

@@ -873,7 +873,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1762331462002.webp",
    "full": "pack:cards/tavern/c1762331462002.webp",
-   "video": "bundle:cards/tavern/c1762331462002.mp4"
+   "video": "bundle:cards/tavern/c1762331462002.mp4",
+   "still": false
   },
   {
    "id": "c1781070981009",
@@ -887,7 +888,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1781070981009.webp",
    "full": "pack:cards/moon/c1781070981009.webp",
-   "video": "bundle:cards/moon/c1781070981009.mp4"
+   "video": "bundle:cards/moon/c1781070981009.mp4",
+   "still": false
   },
   {
    "id": "c1781070981002",
@@ -901,7 +903,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981002.webp",
    "full": "pack:cards/moon/c1781070981002.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981003",
@@ -915,7 +918,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981003.webp",
    "full": "pack:cards/moon/c1781070981003.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981004",
@@ -929,7 +933,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981004.webp",
    "full": "pack:cards/moon/c1781070981004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981005",
@@ -943,7 +948,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981005.webp",
    "full": "pack:cards/moon/c1781070981005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981006",
@@ -957,7 +963,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981006.webp",
    "full": "pack:cards/moon/c1781070981006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981007",
@@ -971,7 +978,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981007.webp",
    "full": "pack:cards/moon/c1781070981007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981008",
@@ -985,7 +993,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1781070981008.webp",
    "full": "pack:cards/moon/c1781070981008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1762331462009",
@@ -999,7 +1008,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1762331462009.webp",
    "full": "pack:cards/tavern/c1762331462009.webp",
-   "video": "bundle:cards/tavern/c1762331462009.mp4"
+   "video": "bundle:cards/tavern/c1762331462009.mp4",
+   "still": false
   },
   {
    "id": "c1762331462003",
@@ -1013,7 +1023,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462003.webp",
    "full": "pack:cards/tavern/c1762331462003.webp",
-   "video": "bundle:cards/tavern/c1762331462003.mp4"
+   "video": "bundle:cards/tavern/c1762331462003.mp4",
+   "still": false
   },
   {
    "id": "c1762331462004",
@@ -1027,7 +1038,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462004.webp",
    "full": "pack:cards/tavern/c1762331462004.webp",
-   "video": "bundle:cards/tavern/c1762331462004.mp4"
+   "video": "bundle:cards/tavern/c1762331462004.mp4",
+   "still": true
   },
   {
    "id": "c1762331462005",
@@ -1041,7 +1053,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462005.webp",
    "full": "pack:cards/tavern/c1762331462005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1762331462006",
@@ -1055,7 +1068,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462006.webp",
    "full": "pack:cards/tavern/c1762331462006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1762331462007",
@@ -1069,7 +1083,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462007.webp",
    "full": "pack:cards/tavern/c1762331462007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1762331462008",
@@ -1083,7 +1098,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331462008.webp",
    "full": "pack:cards/tavern/c1762331462008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793002",
@@ -1097,7 +1113,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793002.webp",
    "full": "pack:cards/bloom/c1700742793002.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793004",
@@ -1111,7 +1128,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793004.webp",
    "full": "pack:cards/bloom/c1700742793004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793005",
@@ -1125,7 +1143,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793005.webp",
    "full": "pack:cards/bloom/c1700742793005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793007",
@@ -1139,7 +1158,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793007.webp",
    "full": "pack:cards/bloom/c1700742793007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793008",
@@ -1153,7 +1173,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793008.webp",
    "full": "pack:cards/bloom/c1700742793008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793010",
@@ -1167,7 +1188,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793010.webp",
    "full": "pack:cards/bloom/c1700742793010.webp",
-   "video": "bundle:cards/bloom/c1700742793010.mp4"
+   "video": "bundle:cards/bloom/c1700742793010.mp4",
+   "still": false
   },
   {
    "id": "c1700742793012",
@@ -1181,7 +1203,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793012.webp",
    "full": "pack:cards/bloom/c1700742793012.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793013",
@@ -1195,7 +1218,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793013.webp",
    "full": "pack:cards/bloom/c1700742793013.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793014",
@@ -1209,7 +1233,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793014.webp",
    "full": "pack:cards/bloom/c1700742793014.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793015",
@@ -1223,7 +1248,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793015.webp",
    "full": "pack:cards/bloom/c1700742793015.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793016",
@@ -1237,7 +1263,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793016.webp",
    "full": "pack:cards/bloom/c1700742793016.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793017",
@@ -1251,7 +1278,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793017.webp",
    "full": "pack:cards/bloom/c1700742793017.webp",
-   "video": "bundle:cards/bloom/c1700742793017.mp4"
+   "video": "bundle:cards/bloom/c1700742793017.mp4",
+   "still": false
   },
   {
    "id": "c1700742793018",
@@ -1265,7 +1293,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793018.webp",
    "full": "pack:cards/bloom/c1700742793018.webp",
-   "video": "bundle:cards/bloom/c1700742793018.mp4"
+   "video": "bundle:cards/bloom/c1700742793018.mp4",
+   "still": false
   },
   {
    "id": "c1700742793020",
@@ -1279,7 +1308,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793020.webp",
    "full": "pack:cards/bloom/c1700742793020.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793021",
@@ -1293,7 +1323,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1700742793021.webp",
    "full": "pack:cards/bloom/c1700742793021.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1700742793022",
@@ -1307,7 +1338,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793022.webp",
    "full": "pack:cards/bloom/c1700742793022.webp",
-   "video": "bundle:cards/bloom/c1700742793022.mp4"
+   "video": "bundle:cards/bloom/c1700742793022.mp4",
+   "still": true
   },
   {
    "id": "c1700742793023",
@@ -1321,7 +1353,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793023.webp",
    "full": "pack:cards/bloom/c1700742793023.webp",
-   "video": "bundle:cards/bloom/c1700742793023.mp4"
+   "video": "bundle:cards/bloom/c1700742793023.mp4",
+   "still": true
   },
   {
    "id": "c1700742793026",
@@ -1335,7 +1368,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1700742793026.webp",
    "full": "pack:cards/bloom/c1700742793026.webp",
-   "video": "bundle:cards/bloom/c1700742793026.mp4"
+   "video": "bundle:cards/bloom/c1700742793026.mp4",
+   "still": true
   },
   {
    "id": "c1700742793031",
@@ -1349,7 +1383,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793031.webp",
    "full": "pack:cards/bloom/c1700742793031.webp",
-   "video": "bundle:cards/bloom/c1700742793031.mp4"
+   "video": "bundle:cards/bloom/c1700742793031.mp4",
+   "still": false
   },
   {
    "id": "c1700742793032",
@@ -1363,7 +1398,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793032.webp",
    "full": "pack:cards/bloom/c1700742793032.webp",
-   "video": "bundle:cards/bloom/c1700742793032.mp4"
+   "video": "bundle:cards/bloom/c1700742793032.mp4",
+   "still": false
   },
   {
    "id": "c1700742793033",
@@ -1377,7 +1413,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1700742793033.webp",
    "full": "pack:cards/bloom/c1700742793033.webp",
-   "video": "bundle:cards/bloom/c1700742793033.mp4"
+   "video": "bundle:cards/bloom/c1700742793033.mp4",
+   "still": false
   },
   {
    "id": "c1762331702001",
@@ -1391,7 +1428,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1762331702001.webp",
    "full": "pack:cards/tavern/c1762331702001.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1781070981010",
@@ -1405,7 +1443,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1781070981010.webp",
    "full": "pack:cards/moon/c1781070981010.webp",
-   "video": "bundle:cards/moon/c1781070981010.mp4"
+   "video": "bundle:cards/moon/c1781070981010.mp4",
+   "still": false
   },
   {
    "id": "c1745315724002",
@@ -1419,7 +1458,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1745315724002.webp",
    "full": "pack:cards/brilliant/c1745315724002.webp",
-   "video": "bundle:cards/brilliant/c1745315724002.mp4"
+   "video": "bundle:cards/brilliant/c1745315724002.mp4",
+   "still": false
   },
   {
    "id": "c1745315724003",
@@ -1433,7 +1473,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724003.webp",
    "full": "pack:cards/brilliant/c1745315724003.webp",
-   "video": "bundle:cards/brilliant/c1745315724003.mp4"
+   "video": "bundle:cards/brilliant/c1745315724003.mp4",
+   "still": true
   },
   {
    "id": "c1745315724004",
@@ -1447,7 +1488,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724004.webp",
    "full": "pack:cards/brilliant/c1745315724004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1745315724005",
@@ -1461,7 +1503,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724005.webp",
    "full": "pack:cards/brilliant/c1745315724005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1745315724006",
@@ -1475,7 +1518,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724006.webp",
    "full": "pack:cards/brilliant/c1745315724006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1745315724007",
@@ -1489,7 +1533,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724007.webp",
    "full": "pack:cards/brilliant/c1745315724007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1745315724008",
@@ -1503,7 +1548,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1745315724008.webp",
    "full": "pack:cards/brilliant/c1745315724008.webp",
-   "video": "bundle:cards/brilliant/c1745315724008.mp4"
+   "video": "bundle:cards/brilliant/c1745315724008.mp4",
+   "still": false
   },
   {
    "id": "c1745315724009",
@@ -1517,7 +1563,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745315724009.webp",
    "full": "pack:cards/brilliant/c1745315724009.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1745398468001",
@@ -1531,7 +1578,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1745398468001.webp",
    "full": "pack:cards/brilliant/c1745398468001.webp",
-   "video": "bundle:cards/brilliant/c1745398468001.mp4"
+   "video": "bundle:cards/brilliant/c1745398468001.mp4",
+   "still": false
   },
   {
    "id": "c1748345610002",
@@ -1545,7 +1593,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610002.webp",
    "full": "pack:cards/symphony/c1748345610002.webp",
-   "video": "bundle:cards/symphony/c1748345610002.mp4"
+   "video": "bundle:cards/symphony/c1748345610002.mp4",
+   "still": true
   },
   {
    "id": "c1748345610003",
@@ -1560,7 +1609,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610003.webp",
    "full": "pack:cards/symphony/c1748345610003.webp",
-   "video": "bundle:cards/symphony/c1748345610003.mp4"
+   "video": "bundle:cards/symphony/c1748345610003.mp4",
+   "still": true
   },
   {
    "id": "c1748345610004",
@@ -1574,7 +1624,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610004.webp",
    "full": "pack:cards/symphony/c1748345610004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1748345610005",
@@ -1588,7 +1639,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610005.webp",
    "full": "pack:cards/symphony/c1748345610005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1748345610006",
@@ -1602,7 +1654,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610006.webp",
    "full": "pack:cards/symphony/c1748345610006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1748345610007",
@@ -1616,7 +1669,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610007.webp",
    "full": "pack:cards/symphony/c1748345610007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1748345610008",
@@ -1630,7 +1684,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610008.webp",
    "full": "pack:cards/symphony/c1748345610008.webp",
-   "video": "bundle:cards/symphony/c1748345610008.mp4"
+   "video": "bundle:cards/symphony/c1748345610008.mp4",
+   "still": false
   },
   {
    "id": "c1748345610009",
@@ -1644,7 +1699,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1748345610009.webp",
    "full": "pack:cards/symphony/c1748345610009.webp",
-   "video": "bundle:cards/symphony/c1748345610009.mp4"
+   "video": "bundle:cards/symphony/c1748345610009.mp4",
+   "still": false
   },
   {
    "id": "c1748345610010",
@@ -1659,7 +1715,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1748345610010.webp",
    "full": "pack:cards/symphony/c1748345610010.webp",
-   "video": "bundle:cards/symphony/c1748345610010.mp4"
+   "video": "bundle:cards/symphony/c1748345610010.mp4",
+   "still": false
   },
   {
    "id": "c1748345610011",
@@ -1674,7 +1731,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1748345610011.webp",
    "full": "pack:cards/symphony/c1748345610011.webp",
-   "video": "bundle:cards/symphony/c1748345610011.mp4"
+   "video": "bundle:cards/symphony/c1748345610011.mp4",
+   "still": false
   },
   {
    "id": "c1756378523002",
@@ -1688,7 +1746,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1756378523002.webp",
    "full": "pack:cards/voyage/c1756378523002.webp",
-   "video": "bundle:cards/voyage/c1756378523002.mp4"
+   "video": "bundle:cards/voyage/c1756378523002.mp4",
+   "still": false
   },
   {
    "id": "c1756378523003",
@@ -1702,7 +1761,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523003.webp",
    "full": "pack:cards/voyage/c1756378523003.webp",
-   "video": "bundle:cards/voyage/c1756378523003.mp4"
+   "video": "bundle:cards/voyage/c1756378523003.mp4",
+   "still": true
   },
   {
    "id": "c1756378523004",
@@ -1716,7 +1776,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523004.webp",
    "full": "pack:cards/voyage/c1756378523004.webp",
-   "video": "bundle:cards/voyage/c1756378523004.mp4"
+   "video": "bundle:cards/voyage/c1756378523004.mp4",
+   "still": false
   },
   {
    "id": "c1756378523005",
@@ -1730,7 +1791,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523005.webp",
    "full": "pack:cards/voyage/c1756378523005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1756378523006",
@@ -1744,7 +1806,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523006.webp",
    "full": "pack:cards/voyage/c1756378523006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1756378523007",
@@ -1758,7 +1821,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523007.webp",
    "full": "pack:cards/voyage/c1756378523007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1756378523008",
@@ -1772,7 +1836,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523008.webp",
    "full": "pack:cards/voyage/c1756378523008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1756378523009",
@@ -1786,7 +1851,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1756378523009.webp",
    "full": "pack:cards/voyage/c1756378523009.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1756378523010",
@@ -1800,7 +1866,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1756378523010.webp",
    "full": "pack:cards/voyage/c1756378523010.webp",
-   "video": "bundle:cards/voyage/c1756378523010.mp4"
+   "video": "bundle:cards/voyage/c1756378523010.mp4",
+   "still": false
   },
   {
    "id": "c1787896765002",
@@ -1814,7 +1881,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765002.webp",
    "full": "pack:cards/reverie/c1787896765002.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765003",
@@ -1828,7 +1896,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1787896765003.webp",
    "full": "pack:cards/reverie/c1787896765003.webp",
-   "video": "bundle:cards/reverie/c1787896765003.mp4"
+   "video": "bundle:cards/reverie/c1787896765003.mp4",
+   "still": false
   },
   {
    "id": "c1787896765004",
@@ -1842,7 +1911,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765004.webp",
    "full": "pack:cards/reverie/c1787896765004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765005",
@@ -1856,7 +1926,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765005.webp",
    "full": "pack:cards/reverie/c1787896765005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765006",
@@ -1870,7 +1941,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765006.webp",
    "full": "pack:cards/reverie/c1787896765006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765007",
@@ -1884,7 +1956,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765007.webp",
    "full": "pack:cards/reverie/c1787896765007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765008",
@@ -1898,7 +1971,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765008.webp",
    "full": "pack:cards/reverie/c1787896765008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765009",
@@ -1912,7 +1986,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1787896765009.webp",
    "full": "pack:cards/reverie/c1787896765009.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1787896765010",
@@ -1926,7 +2001,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1787896765010.webp",
    "full": "pack:cards/reverie/c1787896765010.webp",
-   "video": "bundle:cards/reverie/c1787896765010.mp4"
+   "video": "bundle:cards/reverie/c1787896765010.mp4",
+   "still": false
   },
   {
    "id": "c1785126321002",
@@ -1940,7 +2016,8 @@
    "tier": "big",
    "thumb": "bundle:cards/thumb/c1785126321002.webp",
    "full": "pack:cards/casket/c1785126321002.webp",
-   "video": "bundle:cards/casket/c1785126321002.mp4"
+   "video": "bundle:cards/casket/c1785126321002.mp4",
+   "still": false
   },
   {
    "id": "c1785126321003",
@@ -1954,7 +2031,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321003.webp",
    "full": "pack:cards/casket/c1785126321003.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321004",
@@ -1968,7 +2046,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321004.webp",
    "full": "pack:cards/casket/c1785126321004.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321005",
@@ -1982,7 +2061,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321005.webp",
    "full": "pack:cards/casket/c1785126321005.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321006",
@@ -1996,7 +2076,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321006.webp",
    "full": "pack:cards/casket/c1785126321006.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321007",
@@ -2010,7 +2091,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321007.webp",
    "full": "pack:cards/casket/c1785126321007.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321008",
@@ -2024,7 +2106,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321008.webp",
    "full": "pack:cards/casket/c1785126321008.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321009",
@@ -2038,7 +2121,8 @@
    "tier": "normal",
    "thumb": "bundle:cards/thumb/c1785126321009.webp",
    "full": "pack:cards/casket/c1785126321009.webp",
-   "video": null
+   "video": null,
+   "still": false
   },
   {
    "id": "c1785126321010",
@@ -2052,7 +2136,8 @@
    "tier": "small",
    "thumb": "bundle:cards/thumb/c1785126321010.webp",
    "full": "pack:cards/casket/c1785126321010.webp",
-   "video": "bundle:cards/casket/c1785126321010.mp4"
+   "video": "bundle:cards/casket/c1785126321010.mp4",
+   "still": false
   }
  ],
  "emoteSets": [

@@ -13,6 +13,15 @@ export function cardFrame(card: Pick<ManifestCard, "tier" | "rarity"> | undefine
   return card.tier === "small" || card.rarity === "epic" ? "frame-rose" : "";
 }
 
+/** The word stamped on a card in the reveal and on the resonance page: VOICE when its video is a still picture
+ *  over its sound, DANCE when it moves. */
+export function cardWord(card: Pick<ManifestCard, "tier" | "video" | "still">): string {
+  if (card.tier === "big") return "SECRET";
+  if (card.tier === "small") return "HIDDEN";
+  if (!card.video) return "NEW";
+  return card.still ? "VOICE" : "DANCE";
+}
+
 export const byTier = (a: { tier: CardTier }, b: { tier: CardTier }) => TIER_RANK[a.tier] - TIER_RANK[b.tier];
 
 export function playsCardVideo(card: Pick<ManifestCard, "video">, owned: number | undefined, reducedMotion: boolean, preview = false): boolean {

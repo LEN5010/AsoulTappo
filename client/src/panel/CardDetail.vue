@@ -73,7 +73,7 @@ function togglePlay() {
         <dl>
           <div><dt>卡池</dt><dd>{{ pool }}</dd></div>
           <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
-          <div v-if="card.video"><dt>卡面</dt><dd>动态</dd></div>
+          <div v-if="card.video"><dt>卡面</dt><dd>{{ card.still ? "有声" : "动态" }}</dd></div>
         </dl>
         <CraftAction :key="item.id" :item="item" />
         <button v-if="!count && !manifest.economy.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>

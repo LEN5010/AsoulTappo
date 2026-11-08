@@ -422,6 +422,7 @@ def build_cards(ctx: Ctx, series_ids: set[str] | None = None) -> list[dict]:
             "rarity": cat.card_rarity(card_id, name, vid is not None),
             "tier": cat.card_tier(card_id),
             "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None,
+            "still": cat.card_still(card_id),
         }
         if vid is not None:
             vrel = f"cards/{series}/{cid}.mp4"

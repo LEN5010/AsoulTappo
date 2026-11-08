@@ -19,6 +19,8 @@ export interface ManifestCard {
   thumb: string;
   full: string;
   video: string | null;
+  /** The video is one still picture over the card's sound. */
+  still: boolean;
 }
 export interface ThemeIcon { n: string; s: string }
 export interface ManifestTheme {

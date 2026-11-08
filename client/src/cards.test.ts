@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { byTier, cardFrame, cardLabel, playsCardVideo, poolName } from "./cards";
+import { byTier, cardFrame, cardLabel, cardWord, playsCardVideo, poolName } from "./cards";
 import { manifest } from "./manifest";
+
+describe("cardWord", () => {
+  it("stamps hidden cards by tier and normal cards by what their video does", () => {
+    const card = (tier: "big" | "small" | "normal", video: string | null, still = false) => ({ tier, video, still });
+    expect(cardWord(card("big", "v.mp4"))).toBe("SECRET");
+    expect(cardWord(card("small", "v.mp4", true))).toBe("HIDDEN");
+    expect(cardWord(card("normal", "v.mp4"))).toBe("DANCE");
+    expect(cardWord(card("normal", "v.mp4", true))).toBe("VOICE");
+    expect(cardWord(card("normal", null))).toBe("NEW");
+  });
+  it("marks only video cards as still", () => {
+    const still = manifest.cards.filter((c) => c.still);
+    expect(still.map((c) => c.name)).toContain("海中密语");
+    expect(still.every((c) => c.video)).toBe(true);
+  });
+});
 
 describe("poolName", () => {
   it("keeps only the distinguishing part", () => {
