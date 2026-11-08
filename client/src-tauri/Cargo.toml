@@ -10,6 +10,11 @@ license = "GPL-2.0-only"
 name = "asoultappo_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Debug build for testers: more detailed log lines and a larger log file (src/applog.rs).
+# Built by .github/workflows/debug-build.yml, never by the release workflow.
+debug-log = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

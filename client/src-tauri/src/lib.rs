@@ -30,6 +30,11 @@ const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
 const REFIT_INTERVAL: Duration = Duration::from_secs(2);
 /// How often the hit test writes how many times the overlay took the mouse.
 const HIT_SUMMARY_INTERVAL: Duration = Duration::from_secs(60);
+/// Debug build: how often the hit test writes its full state while the pet can be hit.
+const HIT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(5);
+/// How long the pet window's real style may differ from what the hit test set before that is
+/// logged (the style is applied on the main thread, a little after the hit test asks).
+const STYLE_MISMATCH_GRACE: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 struct Overlay {
@@ -84,7 +89,48 @@ struct ExportedLog {
 
 /// Copies the log to the desktop (or downloads) and shows it in the file manager.
 #[tauri::command]
-fn export_log(app: tauri::AppHandle) -> Result<ExportedLog, String> {
+fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) -> Result<ExportedLog, String> {
+    log_state(&overlay, "export from the panel");
+    export_log_files(&app)
+}
+
+/// Whether this is the debug build (`--features debug-log`), which logs more from the page too.
+#[tauri::command]
+fn debug_log() -> bool {
+    applog::DEBUG
+}
+
+/// One line with the pet window's mouse state, the cursor and the foreground window, so an
+/// exported log shows the moment it was exported.
+fn log_state(overlay: &Overlay, why: &str) {
+    let hit = overlay
+        .hit
+        .lock()
+        .map(|st| {
+            format!(
+                "click-through {}, dragging {}, {} hit rects, page scale {}",
+                on_off(st.click_through),
+                st.dragging,
+                st.rects.len(),
+                st.page_scale.map_or_else(|| "not reported".to_string(), |s| s.to_string())
+            )
+        })
+        .unwrap_or_else(|_| "hit state unavailable".into());
+    let style = match diag::overlay_passes() {
+        Some(true) => "passes the mouse",
+        Some(false) => "takes the mouse",
+        None => "unknown",
+    };
+    let set = if overlay.passing.load(Ordering::Relaxed) { "pass" } else { "take" };
+    applog!(
+        "app",
+        "{why}: {hit}; hit test set the pet window to {set} the mouse, its style {style}; {}; {}",
+        diag::under_cursor(),
+        diag::foreground_detail()
+    );
+}
+
+fn export_log_files(app: &tauri::AppHandle) -> Result<ExportedLog, String> {
     let paths = app.path();
     let targets: Vec<(PathBuf, bool)> = [(paths.desktop_dir(), true), (paths.download_dir(), false)]
         .into_iter()
@@ -227,11 +273,28 @@ fn open_about_link(url: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// Areas (CSS px) where the overlay draws something and should take the mouse.
+/// Areas (CSS px) where the overlay draws something and should take the mouse, and the
+/// page's device pixel ratio that turns them into screen pixels.
 #[tauri::command]
-fn set_hit_regions(overlay: tauri::State<'_, Arc<Overlay>>, rects: Vec<HitRect>) {
-    if let Ok(mut st) = overlay.hit.lock() {
-        st.rects = rects;
+fn set_hit_regions(
+    window: WebviewWindow,
+    overlay: tauri::State<'_, Arc<Overlay>>,
+    rects: Vec<HitRect>,
+    scale: Option<f64>,
+) {
+    let scale = scale.filter(|s| s.is_finite() && *s > 0.0);
+    let changed = match overlay.hit.lock() {
+        Ok(mut st) => {
+            st.rects = rects;
+            std::mem::replace(&mut st.page_scale, scale) != scale
+        }
+        Err(_) => false,
+    };
+    if let (true, Some(page)) = (changed, scale) {
+        match window.scale_factor() {
+            Ok(monitor) => applog!("overlay", "page scale {page}, monitor scale {monitor}"),
+            Err(e) => applog!("overlay", "page scale {page}, monitor scale unavailable: {e}"),
+        }
     }
 }
 
@@ -351,7 +414,35 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
         let mut last_refit = Instant::now();
         let mut last_refit_key: Option<String> = None;
         let mut last_summary = Instant::now();
+        let mut last_snapshot = Instant::now();
+        let mut style_mismatch: Option<Instant> = None;
+        let mut style_mismatch_logged = false;
         loop {
+            // The style the pet window really has, against what the hit test last set: if they stay
+            // apart, clicks land where the hit test thinks they pass (or the other way round).
+            let set = overlay.passing.load(Ordering::Relaxed);
+            match diag::overlay_passes() {
+                Some(actual) if actual != set => {
+                    let since = *style_mismatch.get_or_insert_with(Instant::now);
+                    if !style_mismatch_logged && since.elapsed() >= STYLE_MISMATCH_GRACE {
+                        style_mismatch_logged = true;
+                        applog!(
+                            "overlay",
+                            "pet window {} the mouse but the hit test set it to {}; {}",
+                            if actual { "passes" } else { "takes" },
+                            if set { "pass" } else { "take" },
+                            diag::under_cursor()
+                        );
+                    }
+                }
+                _ => {
+                    if style_mismatch_logged {
+                        applog!("overlay", "pet window style matches the hit test again");
+                    }
+                    style_mismatch = None;
+                    style_mismatch_logged = false;
+                }
+            }
             if last_refit.elapsed() >= REFIT_INTERVAL {
                 last_refit = Instant::now();
                 let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
@@ -412,11 +503,37 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     released_for = 0;
                 }
             }
-            let ignore = match overlay.hit.lock() {
-                Ok(st) => !st.interactive((cursor.x, cursor.y), (origin.x as f64, origin.y as f64), scale),
+            let snapshot = applog::DEBUG && last_snapshot.elapsed() >= HIT_SNAPSHOT_INTERVAL;
+            let (ignore, state) = match overlay.hit.lock() {
+                Ok(st) => (
+                    !st.interactive((cursor.x, cursor.y), (origin.x as f64, origin.y as f64), scale),
+                    snapshot.then(|| {
+                        format!(
+                            "{} hit rects, page scale {}, dragging {}",
+                            st.rects.len(),
+                            st.page_scale.map_or_else(|| "not reported".to_string(), |s| s.to_string()),
+                            st.dragging
+                        )
+                    }),
+                ),
                 Err(_) => continue,
             };
             set_ignoring(ignore);
+            if let Some(state) = state {
+                last_snapshot = Instant::now();
+                debuglog!(
+                    "hit",
+                    "cursor ({:.0},{:.0}), window origin ({},{}), window scale {scale}, {state}; wants the mouse: {}; \
+                     style passes: {:?}; {}",
+                    cursor.x,
+                    cursor.y,
+                    origin.x,
+                    origin.y,
+                    !ignore,
+                    diag::overlay_passes(),
+                    diag::under_cursor()
+                );
+            }
         }
     });
 }
@@ -439,6 +556,7 @@ pub fn run() {
             hide_panel,
             open_about_link,
             export_log,
+            debug_log,
             write_log,
             update::install_version
         ])
@@ -480,7 +598,12 @@ pub fn run() {
                 Some(false) => "not as admin",
                 None => "admin unknown",
             };
-            applog!("app", "AsoulTappo {} on {}, {admin}", app.package_info().version, diag::os_version());
+            let build = if applog::DEBUG {
+                format!(", debug build {}", option_env!("ASOULTAPPO_BUILD").unwrap_or("local"))
+            } else {
+                String::new()
+            };
+            applog!("app", "AsoulTappo {} on {}, {admin}{build}", app.package_info().version, diag::os_version());
             match tauri::webview_version() {
                 Ok(v) => applog!("app", "webview {v}"),
                 Err(e) => applog!("app", "webview version unavailable: {e}"),
@@ -498,6 +621,10 @@ pub fn run() {
                 // While the cursor is on a pet the overlay is opaque to the mouse; as a tool window it
                 // still doesn't count as covering a browser, which would stop drawing (src/tool_window.rs).
                 #[cfg(target_os = "windows")]
+                if let Ok(hwnd) = w.hwnd() {
+                    diag::set_overlay(hwnd.0 as isize);
+                }
+                #[cfg(target_os = "windows")]
                 match tool_window::keep(&w) {
                     Ok(true) => {}
                     Ok(false) => applog!("overlay", "tool window subclass not installed"),
@@ -514,6 +641,7 @@ pub fn run() {
                     applog!("overlay", "show failed: {e}");
                 }
                 spawn_hit_test(w, overlay.clone());
+                diag::spawn_foreground_watch();
             } else {
                 applog!("overlay", "main window missing");
             }
@@ -527,10 +655,11 @@ pub fn run() {
             let reset = MenuItem::with_id(app, "reset_position", "桌宠放回右下角", true, None::<&str>)?;
             let next_monitor =
                 MenuItem::with_id(app, "next_monitor", "换到下一个显示器", true, None::<&str>)?;
+            let export = MenuItem::with_id(app, "export_log", "导出运行日志", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
-                &[&toggle_visible, &panel, &click_through, &reset, &next_monitor, &quit],
+                &[&toggle_visible, &panel, &click_through, &reset, &next_monitor, &export, &quit],
             )?;
 
             let tray_overlay = overlay.clone();
@@ -578,6 +707,11 @@ pub fn run() {
                             }
                         }
                     }
+                    // Here too: when the pet window blocks clicks the panel may be unreachable.
+                    "export_log" => {
+                        log_state(&tray_overlay, "export from the tray");
+                        let _ = export_log_files(app);
+                    }
                     "quit" => {
                         applog!("tray", "quit");
                         app.exit(0)
@@ -592,14 +726,36 @@ pub fn run() {
             // ---- global input hook (counts / deltas only) ----
             let handle = app.handle().clone();
             let input_overlay = overlay.clone();
+            // Debug build: when the last click line was written, and clicks skipped since.
+            let click_log: Mutex<(Option<Instant>, u32)> = Mutex::new((None, 0));
             input::spawn_hook(move |ev| {
+                let down = matches!(ev, input::InputEvent::MouseDown { .. });
+                let passing = input_overlay.passing.load(Ordering::Relaxed);
                 // A press that fell through the overlay landed on another window. The Windows overlay
                 // never takes focus, so the desk gets no blur for it and is told here instead.
-                if matches!(ev, input::InputEvent::MouseDown { .. }) && input_overlay.passing.load(Ordering::Relaxed) {
+                if down && passing {
                     let _ = handle.emit_to("main", "outside-click", ());
                 }
+                if applog::DEBUG && down {
+                    if let Ok(mut c) = click_log.lock() {
+                        if c.0.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+                            let skipped = std::mem::take(&mut c.1);
+                            c.0 = Some(Instant::now());
+                            debuglog!(
+                                "click",
+                                "{}; hit test set the pet window to {} ({skipped} more clicks since the last line)",
+                                diag::under_cursor(),
+                                if passing { "pass" } else { "take the mouse" }
+                            );
+                        } else {
+                            c.1 += 1;
+                        }
+                    }
+                }
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
-                let _ = handle.emit("input", ev);
+                if handle.emit("input", ev).is_err() {
+                    input::note_emit_failure();
+                }
             });
             // Controller presses feed the pet like key presses (Windows/XInput; works under fullscreen games).
             let pad_handle = app.handle().clone();

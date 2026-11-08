@@ -32,6 +32,20 @@ it("sends rectangles once at start and then only when they change", () => {
   expect(sent).toHaveLength(3);
 });
 
+it("sends the page scale and resends when only the scale changes", () => {
+  const rects: HitRect[] = [{ x: 1, y: 2, w: 3, h: 4 }];
+  let scale = 1.5;
+  const sent: [HitRect[], number][] = [];
+  const r = startHitReporter((x, s) => sent.push([x, s]), () => rects.map((v) => ({ ...v })), 200, () => scale);
+  expect(sent).toEqual([[rects, 1.5]]);
+  vi.advanceTimersByTime(200);
+  expect(sent).toHaveLength(1);
+  scale = 1.875;
+  vi.advanceTimersByTime(200);
+  expect(sent.at(-1)).toEqual([rects, 1.875]);
+  r.stop();
+});
+
 it("compares rectangle lists by value", () => {
   expect(sameRects([{ x: 1, y: 1, w: 1, h: 1 }], [{ x: 1, y: 1, w: 1, h: 1 }])).toBe(true);
   expect(sameRects([{ x: 1, y: 1, w: 1, h: 1 }], [])).toBe(false);

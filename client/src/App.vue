@@ -19,8 +19,9 @@ import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
-import { draws, startReporting, stopReporting } from "./stores/player";
-import { localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { draws, online, startReporting, stopReporting } from "./stores/player";
+import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { startDebugLog } from "./debugLog";
 import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
@@ -29,7 +30,7 @@ import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stor
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  isTauri, listenInput, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHitRegions,
+  debugLogEnabled, isTauri, listenInput, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHitRegions,
 } from "./composables/tauri";
 
 // ---- viewport
@@ -91,6 +92,7 @@ let unInput: (() => void) | undefined;
 let unTray: (() => void) | undefined;
 let unOutside: (() => void) | undefined;
 let hits: ReturnType<typeof startHitReporter> | undefined;
+let stopDebugLog: (() => void) | undefined;
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => (ui.quickOpen = false);
@@ -107,7 +109,11 @@ onMounted(async () => {
     else if (a === "reset-position") resetPet();
     else settings.clickThrough = !settings.clickThrough;
   });
-  if (isTauri) hits = startHitReporter((rects) => void setHitRegions(rects));
+  if (isTauri) hits = startHitReporter((rects, scale) => void setHitRegions(rects, scale));
+  if (await debugLogEnabled()) {
+    stopDebugLog = startDebugLog(() => `online ${online.value}, in room ${inRoom.value}, ` +
+      `click-through ${settings.clickThrough}, always on top ${settings.alwaysOnTop}`);
+  }
   else document.documentElement.classList.add("browser-preview");
   // Dev-only look at the update dialog. Production builds drop this branch.
   if (import.meta.env.DEV && !isTauri && new URLSearchParams(location.search).get("preview") === "update") {
@@ -133,6 +139,7 @@ onBeforeUnmount(() => {
   unOutside?.();
   unTray?.();
   hits?.stop();
+  stopDebugLog?.();
   stopPet();
 });
 
