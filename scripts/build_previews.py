@@ -44,7 +44,7 @@ def build_emote_covers(manifest: dict) -> int:
 
 def build_pet_previews() -> int:
     count = 0
-    for source in sorted(CHARACTERS.glob("*/bgImage.png")):
+    for source in sorted(CHARACTERS.glob("*/bgImage.webp")):
         out = PREVIEWS / source.parent.name
         with Image.open(source) as im:
             save(im, out / "bg-480.webp", (480, 270))

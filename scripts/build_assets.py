@@ -54,6 +54,9 @@ WEBP_Q = 82
 ICON_Q = 90
 THUMBUP_Q = 70
 VIDEO_CRF = "28"
+# veryslow keeps CRF 28's picture (VMAF a little higher) in about a fifth less space than slow.
+VIDEO_PRESET = "veryslow"
+VIDEO_AUDIO_KBPS = 192
 VIDEO_W = 640
 VIDEO_FPS = 30
 ICON_KEYS = ["main", "channel", "dynamic", "myself"]
@@ -384,12 +387,21 @@ def find_card_files(ctx: Ctx, series: str, card_id: str) -> tuple[Path | None, P
     return img, vid
 
 
+def audio_kbps(src: Path) -> int:
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=bit_rate",
+                        "-of", "csv=p=0", str(src)], capture_output=True, text=True).stdout.strip()
+    return int(r) // 1000 if r.isdigit() else 0
+
+
 def ffmpeg_video(src: Path, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
+    # Sound above the cap is re-encoded to it; the rest is copied untouched.
+    audio = (["-c:a", "copy"] if audio_kbps(src) <= VIDEO_AUDIO_KBPS
+             else ["-c:a", "aac", "-b:a", f"{VIDEO_AUDIO_KBPS}k"])
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
            "-vf", f"scale={VIDEO_W}:-2:flags=lanczos,fps={VIDEO_FPS}",
-           "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", "slow",
-           "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", "-threads", "2", str(out)]
+           "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", VIDEO_PRESET,
+           "-pix_fmt", "yuv420p", *audio, "-movflags", "+faststart", "-threads", "2", str(out)]
     subprocess.run(cmd, check=True)
 
 
