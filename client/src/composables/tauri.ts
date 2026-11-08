@@ -85,6 +85,36 @@ export const setHitRegions = (rects: HitRect[]) => call("set_hit_regions", { rec
 /** Keep the overlay clickable while something is being dragged. */
 export const setDragging = (active: boolean) => call("set_dragging", { active });
 
+/** Where the exported log went: the desktop, or the downloads folder when that failed. */
+export interface ExportedLog { path: string; desktop: boolean }
+
+/** Copies the log next to the player (desktop, else downloads) and shows it in the file manager. */
+export function exportLog(): Promise<ExportedLog> {
+  if (!isTauri) return Promise.reject(new Error("not in the desktop app"));
+  return invoke<ExportedLog>("export_log");
+}
+
+const LOG_LINES_PER_MINUTE = 30;
+let logMinute = 0;
+let logLines = 0;
+let lastLogLine = "";
+
+/** Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute, repeats skipped. */
+export function writeLog(tag: string, msg: string): void {
+  if (!isTauri) return;
+  const line = `${tag}\n${msg}`;
+  if (line === lastLogLine) return;
+  const now = Date.now();
+  if (now - logMinute >= 60_000) {
+    logMinute = now;
+    logLines = 0;
+  }
+  if (logLines >= LOG_LINES_PER_MINUTE) return;
+  logLines += 1;
+  lastLogLine = line;
+  invoke("write_log", { tag, msg }).catch(() => {});
+}
+
 /** Opens one of the About links (repository, author's space, mail) outside the app. */
 export function openAboutLink(url: string): void {
   if (isTauri) void invoke("open_about_link", { url });

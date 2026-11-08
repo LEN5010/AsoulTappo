@@ -10,7 +10,7 @@ import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlay
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
 import { activeAccount, account, collection, token, saveCode } from "./player";
-import { isPanelWindow } from "../composables/tauri";
+import { isPanelWindow, writeLog } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 
 export interface RemoteMember extends Member {
@@ -61,8 +61,13 @@ function clearMembers(): void {
   for (const id of [...members.keys()]) remove(id);
 }
 
+/** `rate_limited` errors since the last log line; counted instead of logged one by one. */
+let rateLimited = 0;
+
 const events: RoomEvents = {
   onConnState(s) {
+    writeLog("room", rateLimited ? `${s} (${rateLimited} rate_limited before)` : s);
+    rateLimited = 0;
     conn.value = s;
     if (s !== "open") {
       motionSender.clear();
@@ -77,7 +82,7 @@ const events: RoomEvents = {
     lastError.value = "";
     clearMembers();
     list.forEach(add);
-
+    writeLog("room", `joined, ${list.length} member(s)`);
   },
   onMemberJoined: add,
   onMemberLeft: remove,
@@ -108,7 +113,12 @@ const events: RoomEvents = {
     m.plate = u.plate ?? null;
   },
   onError(code, message) {
-    if (code === "rate_limited") return;
+    if (code === "rate_limited") {
+      rateLimited += 1;
+      return;
+    }
+    writeLog("room", `error ${code}${rateLimited ? ` (${rateLimited} rate_limited before)` : ""}`);
+    rateLimited = 0;
     lastError.value = errorText(code, message);
   },
 };

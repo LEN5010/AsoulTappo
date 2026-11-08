@@ -5,7 +5,17 @@
 //! button was pressed leaves this module: every press becomes a plain key-down
 //! for the pet, every release a key-up.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use crate::input::InputEvent;
+
+/// Presses since the last `take_presses`, for the log's per-minute summary.
+static PRESSES: AtomicU32 = AtomicU32::new(0);
+
+/// Controller presses since the last call.
+pub fn take_presses() -> u32 {
+    PRESSES.swap(0, Ordering::Relaxed)
+}
 
 /// Trigger travel (0-255) past which a trigger counts as pressed.
 const TRIGGER_THRESHOLD: u8 = 64;
@@ -71,7 +81,11 @@ where
                 } else {
                     0
                 };
+                if connected[slot] != ok {
+                    applog!("pad", "controller {slot} {}", if ok { "connected" } else { "disconnected" });
+                }
                 connected[slot] = ok;
+                PRESSES.fetch_add((now & !last[slot]).count_ones(), Ordering::Relaxed);
                 diff(last[slot], now, &mut out);
                 last[slot] = now;
             }

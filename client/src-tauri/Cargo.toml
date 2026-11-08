@@ -20,7 +20,9 @@ tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
-# Global keyboard/mouse hooks (Windows low-level hooks under the hood).
+# Local timestamps in the exportable log (src/applog.rs).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Global keyboard/mouse hooks on macOS and Linux; Windows uses its own hook (src/input.rs).
 # We only ever forward event *kinds* and mouse deltas — never key identities.
 # rdev 0.5 reads the keyboard layout off the main thread on every key and crashes on
 # macOS 14+ (Narsil/rdev#146). The unreleased 0.6 can hand that lookup to the main
@@ -28,12 +30,17 @@ url = "2"
 rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366f277d29fe732b9c1" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs) and
-# the input hook watchdog (src/input.rs).
+# XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
+# input hook and its watchdog (src/input.rs), the overlay's tool-window subclass
+# (src/tool_window.rs) and the diagnostics written to the log (src/diag.rs).
 windows-sys = { version = "0.61", features = [
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
     "Win32_UI_Input_XboxController",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
 ] }

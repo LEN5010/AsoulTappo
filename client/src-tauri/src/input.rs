@@ -1,10 +1,11 @@
-//! Global keyboard / mouse hook (via `rdev`).
+//! Global keyboard / mouse hook (own low-level hooks on Windows, `rdev` elsewhere).
 //!
 //! PRIVACY: this module never forwards *which* key was pressed. The frontend
 //! only learns "a key went down/up", which mouse button, and relative mouse
 //! movement (used to animate the local pet; never sent over the network).
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
@@ -105,6 +106,17 @@ const RETRY: Duration = Duration::from_secs(5);
 /// The system saw input this long (ms) after the hook last heard anything: the hook is gone.
 const STALE_MS: i32 = 3000;
 
+/// Raw mouse moves closer together than this are dropped at the hook.
+const MOVE_COALESCE: Duration = Duration::from_millis(4);
+
+/// How often a summary of what the hook heard goes to the log.
+const STATS_EVERY: Duration = Duration::from_secs(60);
+
+/// Filtered events emitted in the current stats interval (counts only).
+static KEYS: AtomicU32 = AtomicU32::new(0);
+static CLICKS: AtomicU32 = AtomicU32::new(0);
+static MOVES: AtomicU32 = AtomicU32::new(0);
+
 /// Spawn the global hook and the thread that filters its events; `emit` is called
 /// for every filtered event.
 ///
@@ -113,9 +125,9 @@ const STALE_MS: i32 = 3000;
 /// a busy fullscreen game easily causes if the callback does IPC itself. Filtering
 /// and emitting happen on a separate thread.
 ///
-/// Each hook gets a thread of its own that ends when `rdev::listen` returns. rdev
-/// never unhooks; the OS removes a thread's hooks when the thread exits, so ending
-/// the thread is how a hook is replaced without leaving the old one installed.
+/// Each hook gets a thread of its own. On Windows it unhooks and ends on WM_QUIT,
+/// which is how the watchdog replaces a hook that went silent. rdev (macOS, Linux)
+/// never unhooks; the OS removes a thread's hooks when the thread exits.
 pub fn spawn_hook<F>(emit: F)
 where
     F: Fn(InputEvent) + Send + 'static,
@@ -126,6 +138,15 @@ where
         let mut state = InputState::new();
         for (ev, at) in rx {
             if let Some(out) = state.handle(&ev, at) {
+                let counter = match out {
+                    InputEvent::KeyDown => Some(&KEYS),
+                    InputEvent::MouseDown { .. } => Some(&CLICKS),
+                    InputEvent::MouseMove { .. } => Some(&MOVES),
+                    _ => None,
+                };
+                if let Some(counter) = counter {
+                    counter.fetch_add(1, Ordering::Relaxed);
+                }
                 emit(out);
             }
         }
@@ -133,48 +154,205 @@ where
 
     std::thread::spawn(move || loop {
         let hook = {
-            let tx = tx.clone();
-            std::thread::spawn(move || run_hook(tx))
+            let producer = Producer { tx: tx.clone(), last_move: None };
+            std::thread::spawn(move || run_hook(producer))
         };
-        let replaced = watchdog::watch(&hook);
-        // The old hook thread must be gone before the next `listen` replaces rdev's global callback.
-        let _ = hook.join();
-        if !replaced {
+        if watchdog::watch(&hook) {
+            // A thread that did not take its WM_QUIT is left behind: on Windows each hook
+            // thread keeps its own state, so a new one can start next to it.
+            if hook.is_finished() {
+                let _ = hook.join();
+            } else {
+                applog!("hook", "old hook thread did not end; starting a new one anyway");
+            }
+        } else {
+            let _ = hook.join();
             std::thread::sleep(RETRY);
         }
     });
+
+    spawn_stats();
 }
 
-/// Install the hook and pump its events until `listen` returns.
-fn run_hook(tx: Sender<(EventType, Instant)>) {
+/// Once a minute, while anything happened, log what the hook heard next to what the
+/// system saw and which window was in front. Counts only, never keys.
+fn spawn_stats() {
+    std::thread::spawn(|| loop {
+        std::thread::sleep(STATS_EVERY);
+        let keys = KEYS.swap(0, Ordering::Relaxed);
+        let clicks = CLICKS.swap(0, Ordering::Relaxed);
+        let moves = MOVES.swap(0, Ordering::Relaxed);
+        let pad = crate::gamepad::take_presses();
+        let replaced = watchdog::take_replaced();
+        let age = watchdog::input_age_secs();
+        let user_active = age.is_some_and(|s| s < STATS_EVERY.as_secs());
+        if keys + clicks + moves + pad + replaced == 0 && !user_active {
+            continue;
+        }
+        let system = age.map_or_else(|| "?".to_string(), |s| format!("{s}s"));
+        applog!(
+            "input",
+            "last minute: keys {keys}, clicks {clicks}, moves {moves}, pad {pad}, hooks replaced {replaced}; \
+             system input {system} ago; {}",
+            crate::diag::foreground()
+        );
+    });
+}
+
+/// What a hook callback does with an event: note that the hook is alive, drop wheel
+/// events, thin out mouse moves, queue the rest for the filter thread.
+struct Producer {
+    tx: Sender<(EventType, Instant)>,
+    last_move: Option<Instant>,
+}
+
+impl Producer {
+    fn push(&mut self, ev: EventType) {
+        watchdog::heard();
+        let now = Instant::now();
+        match ev {
+            EventType::Wheel { .. } => return,
+            // High-polling mice can fire thousands of moves per second and an unbounded
+            // queue would grow if the consumer stalls. Positions are absolute, so skipping
+            // intermediate moves loses nothing. Key and button down/up are always queued.
+            EventType::MouseMove { .. } => {
+                if self.last_move.is_some_and(|t| now.duration_since(t) < MOVE_COALESCE) {
+                    return;
+                }
+                self.last_move = Some(now);
+            }
+            _ => {}
+        }
+        let _ = self.tx.send((ev, now));
+    }
+}
+
+/// Install the hook and pump its events until it stops.
+fn run_hook(producer: Producer) {
+    watchdog::enter();
+    match listen(producer) {
+        Ok(()) => applog!("hook", "hook thread ended"),
+        Err(e) => applog!("hook", "could not install the hook: {e}; retrying in {}s", RETRY.as_secs()),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn listen(producer: Producer) -> Result<(), String> {
+    win_hook::listen(producer)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn listen(mut producer: Producer) -> Result<(), String> {
     // rdev otherwise looks up the keyboard layout (TIS/TSM) on this thread for
     // every key, which macOS 14+ only allows on the main thread and aborts on.
     #[cfg(target_os = "macos")]
     rdev::set_is_main_thread(false);
-    watchdog::enter();
+    applog!("hook", "listening");
+    rdev::listen(move |event| producer.push(event.event_type)).map_err(|e| format!("{e:?}"))
+}
 
-    // Coalesce raw mouse moves at the producer: high-polling mice can fire
-    // thousands of moves per second, and an unbounded queue would grow if
-    // the consumer stalls. Positions are absolute, so skipping intermediate
-    // moves loses nothing. Key and button down/up are always queued.
-    let mut last_move: Option<Instant> = None;
-    let result = rdev::listen(move |event| {
-        watchdog::heard();
-        let now = Instant::now();
-        match event.event_type {
-            EventType::Wheel { .. } => return,
-            EventType::MouseMove { .. } => {
-                if last_move.is_some_and(|t| now.duration_since(t) < Duration::from_millis(4)) {
-                    return;
+/// Plain low-level hooks whose callbacks only read the event and queue it.
+///
+/// rdev's Windows hook looked up a name for every key press inside the keyboard callback:
+/// it attached this thread to the foreground thread's input queue (AttachThreadInput),
+/// read its keyboard state and ran ToUnicodeEx, with a loop that retries while ToUnicodeEx
+/// reports a dead key. None of that is needed to count presses, and all of it runs while
+/// the system waits on the callback.
+#[cfg(target_os = "windows")]
+mod win_hook {
+    use std::cell::RefCell;
+
+    use rdev::{Button, EventType, Key};
+    use windows_sys::Win32::Foundation::{GetLastError, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, MSG,
+        MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        WM_XBUTTONDOWN, WM_XBUTTONUP,
+    };
+
+    use super::Producer;
+
+    thread_local! {
+        /// The hook procedures run on the thread that installed them, inside its GetMessageW.
+        static PRODUCER: RefCell<Option<Producer>> = const { RefCell::new(None) };
+    }
+
+    fn push(ev: EventType) {
+        PRODUCER.with(|p| {
+            if let Ok(mut p) = p.try_borrow_mut() {
+                if let Some(p) = p.as_mut() {
+                    p.push(ev);
                 }
-                last_move = Some(now);
             }
-            _ => {}
+        });
+    }
+
+    unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 && lparam != 0 {
+            // The virtual-key code only tells auto-repeat apart from a new press; it never leaves this process.
+            let vk = unsafe { (*(lparam as *const KBDLLHOOKSTRUCT)).vkCode };
+            match wparam as u32 {
+                WM_KEYDOWN | WM_SYSKEYDOWN => push(EventType::KeyPress(Key::Unknown(vk))),
+                WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk))),
+                _ => {}
+            }
         }
-        let _ = tx.send((event.event_type, now));
-    });
-    if let Err(e) = result {
-        eprintln!("global input hook stopped: {e:?}; retrying");
+        unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
+    }
+
+    unsafe extern "system" fn mouse(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if code == HC_ACTION as i32 && lparam != 0 {
+            let info = unsafe { &*(lparam as *const MSLLHOOKSTRUCT) };
+            let x_button = Button::Unknown((info.mouseData >> 16) as u8);
+            let ev = match wparam as u32 {
+                WM_MOUSEMOVE => Some(EventType::MouseMove { x: info.pt.x as f64, y: info.pt.y as f64 }),
+                WM_LBUTTONDOWN => Some(EventType::ButtonPress(Button::Left)),
+                WM_LBUTTONUP => Some(EventType::ButtonRelease(Button::Left)),
+                WM_RBUTTONDOWN => Some(EventType::ButtonPress(Button::Right)),
+                WM_RBUTTONUP => Some(EventType::ButtonRelease(Button::Right)),
+                WM_MBUTTONDOWN => Some(EventType::ButtonPress(Button::Middle)),
+                WM_MBUTTONUP => Some(EventType::ButtonRelease(Button::Middle)),
+                WM_XBUTTONDOWN => Some(EventType::ButtonPress(x_button)),
+                WM_XBUTTONUP => Some(EventType::ButtonRelease(x_button)),
+                // Wheel events are not used.
+                _ => None,
+            };
+            if let Some(ev) = ev {
+                push(ev);
+            }
+        }
+        unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
+    }
+
+    /// Install both hooks on this thread and pump its messages until WM_QUIT, then unhook.
+    pub fn listen(producer: Producer) -> Result<(), String> {
+        PRODUCER.with(|p| *p.borrow_mut() = Some(producer));
+        let result = unsafe {
+            let module = GetModuleHandleW(std::ptr::null());
+            let keyboard_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0);
+            if keyboard_hook.is_null() {
+                Err(format!("keyboard hook error {}", GetLastError()))
+            } else {
+                let mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse), module, 0);
+                if mouse_hook.is_null() {
+                    let error = GetLastError();
+                    UnhookWindowsHookEx(keyboard_hook);
+                    Err(format!("mouse hook error {error}"))
+                } else {
+                    applog!("hook", "keyboard and mouse hooks installed");
+                    let mut msg: MSG = std::mem::zeroed();
+                    // 0 on WM_QUIT, -1 on error; other thread messages are skipped.
+                    while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {}
+                    UnhookWindowsHookEx(mouse_hook);
+                    UnhookWindowsHookEx(keyboard_hook);
+                    Ok(())
+                }
+            }
+        };
+        PRODUCER.with(|p| *p.borrow_mut() = None);
+        result
     }
 }
 
@@ -200,7 +378,7 @@ mod watchdog {
 
     use windows_sys::Win32::System::SystemInformation::GetTickCount;
     use windows_sys::Win32::System::Threading::{
-        GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
+        GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_HIGHEST,
     };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
     use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
@@ -208,19 +386,22 @@ mod watchdog {
     const CHECK: Duration = Duration::from_secs(2);
     /// A hook lives at least this long before it may be replaced.
     const MIN_LIFE: Duration = Duration::from_secs(10);
+    /// How long a silent hook thread gets to take its WM_QUIT before a new one starts anyway.
+    const QUIT_WAIT: Duration = Duration::from_secs(2);
 
     static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
     static LAST_HEARD: AtomicU32 = AtomicU32::new(0);
+    static REPLACED: AtomicU32 = AtomicU32::new(0);
 
     /// Called on the hook thread before it installs the hook.
     pub fn enter() {
         unsafe {
             HOOK_THREAD.store(GetCurrentThreadId(), Ordering::Release);
             LAST_HEARD.store(GetTickCount(), Ordering::Relaxed);
-            // The thread sleeps in GetMessage and its callback only timestamps and queues (plus
-            // rdev's key-name lookup), so the top priority costs nothing and keeps a game that
-            // saturates the CPU from pushing the callback past the hook timeout.
-            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+            // The thread sleeps in GetMessageW and its callbacks only read and queue, so a raised
+            // priority costs little and keeps a game that saturates the CPU from pushing them past
+            // the hook timeout. Not TIME_CRITICAL: if a callback ever spun, that would starve a core.
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
         }
     }
 
@@ -228,17 +409,35 @@ mod watchdog {
         LAST_HEARD.store(unsafe { GetTickCount() }, Ordering::Relaxed);
     }
 
-    /// Wait for the hook thread to end; returns true when it was ended for going silent.
+    /// Hooks replaced since the last call.
+    pub fn take_replaced() -> u32 {
+        REPLACED.swap(0, Ordering::Relaxed)
+    }
+
+    /// Seconds since the system last saw keyboard or mouse input.
+    pub fn input_age_secs() -> Option<u64> {
+        let last = last_input()?;
+        Some(u64::from(unsafe { GetTickCount() }.wrapping_sub(last)) / 1000)
+    }
+
+    /// Wait for the hook thread to end; returns true when it was told to end for going silent.
     pub fn watch(hook: &JoinHandle<()>) -> bool {
         let started = Instant::now();
         while !hook.is_finished() {
             std::thread::sleep(CHECK);
             if started.elapsed() >= MIN_LIFE && missed_input() {
-                eprintln!("global input hook went silent; replacing it");
-                // WM_QUIT makes rdev's GetMessage return, so `listen` and the thread end.
-                // Posting fails until the thread has a message queue: keep trying.
+                let silent = last_input().map_or(0, |t| t.wrapping_sub(LAST_HEARD.load(Ordering::Relaxed)) / 1000);
+                applog!(
+                    "hook",
+                    "heard nothing for {silent}s while the system saw input; replacing it; {}",
+                    crate::diag::foreground()
+                );
+                REPLACED.fetch_add(1, Ordering::Relaxed);
+                // WM_QUIT makes GetMessageW return, so the hook thread unhooks and ends.
+                // Posting fails until the thread has a message queue: keep trying for a while.
                 let id = HOOK_THREAD.load(Ordering::Acquire);
-                while !hook.is_finished() {
+                let asked = Instant::now();
+                while !hook.is_finished() && asked.elapsed() < QUIT_WAIT {
                     unsafe { PostThreadMessageW(id, WM_QUIT, 0, 0) };
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -248,12 +447,13 @@ mod watchdog {
         false
     }
 
-    fn missed_input() -> bool {
+    fn last_input() -> Option<u32> {
         let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
-        if unsafe { GetLastInputInfo(&mut info) } == 0 {
-            return false;
-        }
-        super::went_silent(info.dwTime, LAST_HEARD.load(Ordering::Relaxed))
+        (unsafe { GetLastInputInfo(&mut info) } != 0).then_some(info.dwTime)
+    }
+
+    fn missed_input() -> bool {
+        last_input().is_some_and(|t| super::went_silent(t, LAST_HEARD.load(Ordering::Relaxed)))
     }
 }
 
@@ -262,6 +462,12 @@ mod watchdog {
 mod watchdog {
     pub fn enter() {}
     pub fn heard() {}
+    pub fn take_replaced() -> u32 {
+        0
+    }
+    pub fn input_age_secs() -> Option<u64> {
+        None
+    }
     pub fn watch(_hook: &std::thread::JoinHandle<()>) -> bool {
         false
     }

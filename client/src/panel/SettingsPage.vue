@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { isTauri, openAboutLink } from "../composables/tauri";
+import { exportLog, isTauri, openAboutLink } from "../composables/tauri";
 import { status, saveCode, account, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
@@ -55,6 +55,20 @@ async function copyMail() {
 const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
+
+const logNote = ref("");
+const exporting = ref(false);
+async function exportLogFile() {
+  exporting.value = true;
+  logNote.value = "";
+  try {
+    logNote.value = (await exportLog()).desktop ? "已导出到桌面" : "已导出";
+  } catch {
+    logNote.value = "导出失败";
+  } finally {
+    exporting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -156,7 +170,7 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
               <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
             </label>
           </div>
-          <p v-if="isWindows" class="note">部分管理员权限或启用反作弊的游戏可能限制输入监听。若只在某款游戏中失效，请先对比窗口化模式；不建议默认以管理员身份运行桌宠，也不要关闭反作弊。</p>
+          <p v-if="isWindows" class="note">以管理员身份运行或带反作弊的游戏里，桌宠可能收不到输入。</p>
         </section>
 
         <section data-rise>
@@ -186,6 +200,13 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
                   v-else type="button" class="ui-btn small" :disabled="checkState === 'checking'"
                   @click="lookForUpdate(true)"
                 >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
+              </span>
+            </div>
+            <div v-if="isTauri" class="ui-row">
+              <span>运行日志</span>
+              <span class="version-side">
+                <small v-if="logNote" role="status" class="check-note">{{ logNote }}</small>
+                <button type="button" class="ui-btn small" :disabled="exporting" @click="exportLogFile">导出</button>
               </span>
             </div>
             <div class="ui-row">
