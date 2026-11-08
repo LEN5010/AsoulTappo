@@ -1,8 +1,15 @@
+#[macro_use]
+mod applog;
+mod diag;
 mod gamepad;
 mod hit;
 mod input;
+#[cfg(target_os = "windows")]
+mod tool_window;
 mod update;
 
+use std::cell::Cell;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,6 +28,8 @@ const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often the overlay checks that it still covers its monitor's work area
 /// (monitor plugged/unplugged, resolution, scaling or taskbar changed).
 const REFIT_INTERVAL: Duration = Duration::from_secs(2);
+/// How often the hit test writes how many times the overlay took the mouse.
+const HIT_SUMMARY_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 struct Overlay {
@@ -39,6 +48,9 @@ fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
 #[tauri::command]
 fn set_click_through(overlay: tauri::State<'_, Arc<Overlay>>, enabled: bool) {
     if let Ok(mut st) = overlay.hit.lock() {
+        if st.click_through != enabled {
+            applog!("overlay", "click-through {}", on_off(enabled));
+        }
         st.click_through = enabled;
     }
 }
@@ -46,9 +58,79 @@ fn set_click_through(overlay: tauri::State<'_, Arc<Overlay>>, enabled: bool) {
 #[tauri::command]
 fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     if let Some(window) = main_window(&app) {
-        window.set_always_on_top(enabled).map_err(|e| e.to_string())?;
+        if let Err(e) = window.set_always_on_top(enabled) {
+            applog!("overlay", "always on top {} failed: {e}", on_off(enabled));
+            return Err(e.to_string());
+        }
+        applog!("overlay", "always on top {}", on_off(enabled));
     }
     Ok(())
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on {
+        "on"
+    } else {
+        "off"
+    }
+}
+
+/// Where `export_log` wrote the file, and whether that is the desktop (else the downloads folder).
+#[derive(serde::Serialize)]
+struct ExportedLog {
+    path: String,
+    desktop: bool,
+}
+
+/// Copies the log to the desktop (or downloads) and shows it in the file manager.
+#[tauri::command]
+fn export_log(app: tauri::AppHandle) -> Result<ExportedLog, String> {
+    let paths = app.path();
+    let targets: Vec<(PathBuf, bool)> = [(paths.desktop_dir(), true), (paths.download_dir(), false)]
+        .into_iter()
+        .filter_map(|(dir, desktop)| dir.ok().map(|d| (d, desktop)))
+        .collect();
+    let mut last_error = String::from("no desktop or downloads folder");
+    for (dir, desktop) in targets {
+        match applog::export(&dir) {
+            Ok(path) => {
+                applog!("app", "log exported");
+                reveal(&path);
+                return Ok(ExportedLog { path: path.display().to_string(), desktop });
+            }
+            Err(e) => last_error = e.to_string(),
+        }
+    }
+    applog!("app", "log export failed: {last_error}");
+    Err(last_error)
+}
+
+/// Opens the file manager with `path` selected.
+fn reveal(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer")
+            .raw_arg(format!("/select,\"{}\"", path.display()))
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let _ = path;
+}
+
+/// A line from the page (errors, room connection), tagged `web:<tag>`.
+#[tauri::command]
+fn write_log(tag: String, msg: String) {
+    let tag: String = tag
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(16)
+        .collect();
+    let msg: String = msg.chars().take(500).map(|c| if c == '\r' || c == '\n' { ' ' } else { c }).collect();
+    applog::write(&format!("web:{tag}"), &msg);
 }
 
 #[tauri::command]
@@ -96,7 +178,11 @@ async fn open_panel(
         .visible(false)
         .focused(false)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            applog!("panel", "create failed: {e}");
+            e.to_string()
+        })?;
+    applog!("panel", "created");
     if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
@@ -158,16 +244,42 @@ fn set_dragging(overlay: tauri::State<'_, Arc<Overlay>>, active: bool) {
 }
 
 /// Cover the work area (the monitor minus the taskbar) of monitor `index`;
-/// an unknown index falls back to the primary monitor.
-fn fit_to_monitor(window: &WebviewWindow, index: usize) -> tauri::Result<()> {
+/// an unknown index falls back to the primary monitor. Returns the area and the
+/// monitor's scale factor, for the log.
+fn fit_to_monitor(window: &WebviewWindow, index: usize) -> tauri::Result<Option<String>> {
     let monitors = window.available_monitors()?;
     let primary = window.primary_monitor()?;
-    if let Some(m) = monitors.get(index).or(primary.as_ref()).or(monitors.first()) {
-        let area = m.work_area();
-        window.set_position(PhysicalPosition::new(area.position.x, area.position.y))?;
-        window.set_size(PhysicalSize::new(area.size.width, area.size.height))?;
+    let Some(m) = monitors.get(index).or(primary.as_ref()).or(monitors.first()) else {
+        return Ok(None);
+    };
+    let area = m.work_area();
+    window.set_position(PhysicalPosition::new(area.position.x, area.position.y))?;
+    window.set_size(PhysicalSize::new(area.size.width, area.size.height))?;
+    Ok(Some(format!(
+        "{} at scale {}",
+        rect_text(area.position.x, area.position.y, area.size.width, area.size.height),
+        m.scale_factor()
+    )))
+}
+
+/// Fit to monitor `index` and log the result under `why`.
+fn fit_and_log(window: &WebviewWindow, index: usize, why: &str) {
+    match fit_to_monitor(window, index) {
+        Ok(Some(area)) => applog!("overlay", "{why}: monitor {index}, work area {area}"),
+        Ok(None) => applog!("overlay", "{why}: no monitor found"),
+        Err(e) => applog!("overlay", "{why}: fit to monitor {index} failed: {e}"),
     }
-    Ok(())
+}
+
+fn rect_text(x: i32, y: i32, w: u32, h: u32) -> String {
+    format!("{w}x{h}+{x}+{y}")
+}
+
+fn window_rect(window: &WebviewWindow) -> String {
+    match (window.outer_position(), window.outer_size()) {
+        (Ok(p), Ok(s)) => rect_text(p.x, p.y, s.width, s.height),
+        _ => "unknown".into(),
+    }
 }
 
 fn primary_index(window: &WebviewWindow) -> usize {
@@ -223,20 +335,43 @@ fn primary_button_down() -> bool {
 fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
+        // Times the overlay started taking the mouse since the last summary line.
+        let took = Cell::new(0u32);
         let mut set_ignoring = |ignore: bool| {
             if ignoring != Some(ignore) && window.set_ignore_cursor_events(ignore).is_ok() {
                 ignoring = Some(ignore);
                 overlay.passing.store(ignore, Ordering::Relaxed);
+                if !ignore {
+                    took.set(took.get() + 1);
+                }
             }
         };
         let mut released_for = 0u32;
+        let mut cursor_lost = false;
         let mut last_refit = Instant::now();
+        let mut last_refit_key: Option<String> = None;
+        let mut last_summary = Instant::now();
         loop {
             if last_refit.elapsed() >= REFIT_INTERVAL {
                 last_refit = Instant::now();
                 let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
                 if needs_refit(&window, index) {
-                    let _ = fit_to_monitor(&window, index);
+                    let was = window_rect(&window);
+                    // A refit that does not stick repeats on every check: log it once, not every 2 s.
+                    let key = format!("{index} {was}");
+                    if last_refit_key.as_deref() != Some(key.as_str()) {
+                        fit_and_log(&window, index, &format!("refit from {was}"));
+                        last_refit_key = Some(key);
+                    } else {
+                        let _ = fit_to_monitor(&window, index);
+                    }
+                }
+            }
+            if last_summary.elapsed() >= HIT_SUMMARY_INTERVAL {
+                last_summary = Instant::now();
+                let n = took.replace(0);
+                if n > 0 {
+                    applog!("overlay", "took the mouse {n} times in the last minute");
                 }
             }
             let idle = !window.is_visible().unwrap_or(true)
@@ -252,9 +387,17 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
             else {
                 // No cursor (lock screen, UAC, remote desktop): let clicks through rather than
                 // keep whatever was last decided, which could leave the whole screen unclickable.
+                if !cursor_lost {
+                    cursor_lost = true;
+                    applog!("overlay", "cursor unavailable, letting clicks through; {}", diag::foreground());
+                }
                 set_ignoring(true);
                 continue;
             };
+            if cursor_lost {
+                cursor_lost = false;
+                applog!("overlay", "cursor available again");
+            }
             // A drag whose pointer-up never reached the frontend (webview hung, capture lost)
             // must not keep the full-screen overlay taking every click.
             if let Ok(mut st) = overlay.hit.lock() {
@@ -263,6 +406,7 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     if released_for >= DRAG_RELEASE_POLLS {
                         st.dragging = false;
                         released_for = 0;
+                        applog!("overlay", "drag ended by the button check: the page missed the pointer-up");
                     }
                 } else {
                     released_for = 0;
@@ -294,6 +438,8 @@ pub fn run() {
             show_panel,
             hide_panel,
             open_about_link,
+            export_log,
+            write_log,
             update::install_version
         ])
         .on_window_event(|window, event| {
@@ -306,21 +452,70 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // ---- exportable log, first so everything after it is recorded ----
+            if let Ok(dir) = app.path().app_log_dir() {
+                applog::init(dir);
+            }
+            let previous_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                let thread = std::thread::current();
+                let location = info
+                    .location()
+                    .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                    .unwrap_or_else(|| "unknown location".into());
+                let payload = info.payload();
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "non-text panic".into());
+                applog::write_now(
+                    "panic",
+                    &format!("thread '{}' at {location}: {message}", thread.name().unwrap_or("unnamed")),
+                );
+                previous_hook(info);
+            }));
+            let admin = match diag::elevated() {
+                Some(true) => "as admin",
+                Some(false) => "not as admin",
+                None => "admin unknown",
+            };
+            applog!("app", "AsoulTappo {} on {}, {admin}", app.package_info().version, diag::os_version());
+            match tauri::webview_version() {
+                Ok(v) => applog!("app", "webview {v}"),
+                Err(e) => applog!("app", "webview version unavailable: {e}"),
+            }
+
             // ---- overlay window over the work area, mouse passes through until something is hit ----
             if let Some(w) = main_window(app.handle()) {
                 // `focus: false` only controls initial focus. Keep clicks on the Windows
                 // overlay from activating it over a game or hardware-accelerated video.
                 // This maps to WS_EX_NOACTIVATE; the separate panel stays focusable.
                 #[cfg(target_os = "windows")]
-                let _ = w.set_focusable(false);
+                if let Err(e) = w.set_focusable(false) {
+                    applog!("overlay", "set_focusable(false) failed: {e}");
+                }
+                // While the cursor is on a pet the overlay is opaque to the mouse; as a tool window it
+                // still doesn't count as covering a browser, which would stop drawing (src/tool_window.rs).
+                #[cfg(target_os = "windows")]
+                match tool_window::keep(&w) {
+                    Ok(true) => {}
+                    Ok(false) => applog!("overlay", "tool window subclass not installed"),
+                    Err(e) => applog!("overlay", "tool window subclass failed: {e}"),
+                }
                 let index = primary_index(&w);
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
                 }
-                let _ = fit_to_monitor(&w, index);
+                let count = w.available_monitors().map(|m| m.len()).unwrap_or(0);
+                fit_and_log(&w, index, &format!("start, {count} monitor(s)"));
                 let _ = w.set_ignore_cursor_events(true);
-                let _ = w.show();
+                if let Err(e) = w.show() {
+                    applog!("overlay", "show failed: {e}");
+                }
                 spawn_hit_test(w, overlay.clone());
+            } else {
+                applog!("overlay", "main window missing");
             }
 
             // ---- tray ----
@@ -346,8 +541,10 @@ pub fn run() {
                     "toggle_visible" => {
                         if let Some(w) = main_window(app) {
                             if w.is_visible().unwrap_or(true) {
+                                applog!("tray", "hide pet");
                                 let _ = w.hide();
                             } else {
+                                applog!("tray", "show pet");
                                 let _ = w.show();
                             }
                         }
@@ -361,10 +558,12 @@ pub fn run() {
                         if let Ok(mut st) = tray_overlay.hit.lock() {
                             st.click_through = !st.click_through;
                             st.dragging = false;
+                            applog!("tray", "click-through {}", on_off(st.click_through));
                         }
                         let _ = app.emit_to("main", "tray", "toggle-click-through");
                     }
                     "reset_position" => {
+                        applog!("tray", "reset pet position");
                         if let Some(w) = main_window(app) {
                             let _ = w.show();
                         }
@@ -375,11 +574,14 @@ pub fn run() {
                             let count = w.available_monitors().map(|m| m.len()).unwrap_or(1).max(1);
                             if let Ok(mut m) = tray_overlay.monitor.lock() {
                                 *m = (*m + 1) % count;
-                                let _ = fit_to_monitor(&w, *m);
+                                fit_and_log(&w, *m, &format!("tray next monitor, {count} monitor(s)"));
                             }
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        applog!("tray", "quit");
+                        app.exit(0)
+                    }
                     _ => {}
                 });
             if let Some(icon) = app.default_window_icon() {
