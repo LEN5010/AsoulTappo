@@ -1,6 +1,7 @@
 #[macro_use]
 mod applog;
 mod diag;
+mod elevation;
 mod gamepad;
 mod hit;
 mod input;
@@ -98,6 +99,60 @@ fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) ->
 #[tauri::command]
 fn debug_log() -> bool {
     applog::DEBUG
+}
+
+/// Whether this runs elevated, whether the account could, and the player's choice.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdminStatus {
+    supported: bool,
+    elevated: bool,
+    can_elevate: bool,
+    run_as_admin: bool,
+}
+
+#[tauri::command]
+fn admin_status() -> AdminStatus {
+    AdminStatus {
+        supported: cfg!(target_os = "windows"),
+        elevated: elevation::is_elevated(),
+        can_elevate: elevation::can_elevate(),
+        run_as_admin: elevation::run_as_admin(),
+    }
+}
+
+/// Turn "start as administrator" on or off. Turning it on while not elevated restarts through
+/// UAC and answers "restarting" (this instance then exits); declining UAC answers "cancelled".
+/// Runs on the main thread: ShellExecuteEx wants COM, and the pet may as well wait for UAC.
+#[tauri::command]
+fn set_run_as_admin(app: tauri::AppHandle, enabled: bool) -> Result<&'static str, String> {
+    if !cfg!(target_os = "windows") {
+        return Err("unsupported".into());
+    }
+    if !enabled || elevation::is_elevated() {
+        elevation::set_run_as_admin(enabled).map_err(|e| e.to_string())?;
+        applog!("app", "start as administrator {}", on_off(enabled));
+        return Ok(if enabled { "on" } else { "off" });
+    }
+    if !elevation::can_elevate() {
+        return Err("unavailable".into());
+    }
+    elevation::set_run_as_admin(true).map_err(|e| e.to_string())?;
+    match elevation::restart_elevated() {
+        Ok(()) => {
+            applog!("app", "start as administrator on; restarting through UAC");
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                app.exit(0);
+            });
+            Ok("restarting")
+        }
+        Err(e) => {
+            let _ = elevation::set_run_as_admin(false);
+            applog!("app", "restart as administrator failed: {e}");
+            Err(e)
+        }
+    }
 }
 
 /// One line with the pet window's mouse state, the cursor and the foreground window, so an
@@ -264,8 +319,14 @@ fn open_about_link(url: String) -> Result<(), String> {
     if !ABOUT_LINKS.contains(&url.as_str()) {
         return Err("unknown link".into());
     }
+    // Started from an elevated process the browser would run elevated too; explorer hands the
+    // link to the shell, which runs with the player's normal rights.
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn();
+    let result = if elevation::is_elevated() {
+        std::process::Command::new("explorer").arg(&url).spawn()
+    } else {
+        std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn()
+    };
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -540,6 +601,8 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any window: restart through UAC when the player chose to run as administrator.
+    let startup = elevation::startup();
     let overlay = Arc::new(Overlay::default());
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -557,6 +620,8 @@ pub fn run() {
             open_about_link,
             export_log,
             debug_log,
+            admin_status,
+            set_run_as_admin,
             write_log,
             update::install_version
         ])
@@ -604,6 +669,14 @@ pub fn run() {
                 String::new()
             };
             applog!("app", "AsoulTappo {} on {}, {admin}{build}", app.package_info().version, diag::os_version());
+            match &startup {
+                elevation::Startup::Normal if elevation::run_as_admin() => applog!("app", "start as administrator is on"),
+                elevation::Startup::Normal => {}
+                elevation::Startup::CannotElevate => {
+                    applog!("app", "start as administrator is on, but this account cannot run as administrator")
+                }
+                elevation::Startup::Declined(e) => applog!("app", "start as administrator is on, but UAC was not granted: {e}"),
+            }
             match tauri::webview_version() {
                 Ok(v) => applog!("app", "webview {v}"),
                 Err(e) => applog!("app", "webview version unavailable: {e}"),
@@ -642,6 +715,7 @@ pub fn run() {
                 }
                 spawn_hit_test(w, overlay.clone());
                 diag::spawn_foreground_watch();
+                elevation::spawn_watch(app.handle().clone());
             } else {
                 applog!("overlay", "main window missing");
             }

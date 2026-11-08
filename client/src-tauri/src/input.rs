@@ -407,9 +407,10 @@ fn went_silent(last_input: u32, last_heard: u32) -> bool {
 /// time keeps moving while the hook hears nothing; then the hook thread is ended and
 /// `spawn_hook` installs a new one.
 ///
-/// It also fires, harmlessly, while the hook is muted rather than gone: an elevated
-/// window in front, the secure desktop (UAC, lock screen), pen or touch input that
-/// never reaches the mouse hook. `MIN_LIFE` keeps that from replacing it on every check.
+/// It also fires, harmlessly, while the hook is muted rather than gone: the secure desktop
+/// (UAC, lock screen), pen or touch input that never reaches the mouse hook. `MIN_LIFE`
+/// keeps that from replacing it on every check. An elevated window in front mutes it for as
+/// long as it stays there (src/elevation.rs); the hook is left alone meanwhile.
 #[cfg(target_os = "windows")]
 mod watchdog {
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -465,6 +466,12 @@ mod watchdog {
         let started = Instant::now();
         while !hook.is_finished() {
             std::thread::sleep(CHECK);
+            if crate::elevation::blocked() {
+                // Silent because the input goes to an elevated window, which a new hook would
+                // not hear either; counting it as heard keeps the check quiet once it leaves.
+                heard();
+                continue;
+            }
             if started.elapsed() >= MIN_LIFE && missed_input() {
                 let silent = last_input().map_or(0, |t| t.wrapping_sub(LAST_HEARD.load(Ordering::Relaxed)) / 1000);
                 applog!(

@@ -19,6 +19,12 @@ pub fn foreground() -> String {
     imp::foreground()
 }
 
+/// The foreground program's file name and whether it surely runs elevated (Windows).
+#[cfg(target_os = "windows")]
+pub fn foreground_process() -> Option<(String, bool)> {
+    imp::foreground_process()
+}
+
 /// Remember the pet window, so the lines below can tell it apart from the panel.
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub fn set_overlay(hwnd: isize) {
@@ -263,33 +269,56 @@ mod imp {
             }
             let mut pid = 0u32;
             GetWindowThreadProcessId(hwnd, &mut pid);
-            let mut out = if pid == GetCurrentProcessId() {
-                "fg=self".to_string()
-            } else {
-                let process = if pid == 0 {
-                    std::ptr::null_mut()
-                } else {
-                    OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid)
-                };
-                if process.is_null() {
-                    format!("fg=pid:{pid} elevated=?")
-                } else {
-                    let name = exe_name(process).unwrap_or_else(|| "?".into());
-                    let elevated = match token_elevated(process) {
+            let full = if covers_monitor(hwnd) { " fullscreen" } else { "" };
+            if pid == GetCurrentProcessId() {
+                return format!("fg=self{full}");
+            }
+            match process_info(pid) {
+                Some((name, elevated)) => {
+                    let elevated = match elevated {
                         Some(true) => "yes",
                         Some(false) => "no",
                         None => "?",
                     };
-                    CloseHandle(process);
-                    format!("fg={name} elevated={elevated}")
+                    format!("fg={name}{full} elevated={elevated}")
                 }
-            };
-            if covers_monitor(hwnd) {
-                // "fg=name fullscreen elevated=..."
-                let at = out.find(' ').unwrap_or(out.len());
-                out.insert_str(at, " fullscreen");
+                None => format!("fg=pid:{pid}{full} elevated=?"),
             }
-            out
+        }
+    }
+
+    /// File name of process `pid` and whether it runs elevated; None when it cannot be opened.
+    fn process_info(pid: u32) -> Option<(String, Option<bool>)> {
+        if pid == 0 {
+            return None;
+        }
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return None;
+            }
+            let name = exe_name(process).unwrap_or_else(|| format!("pid:{pid}"));
+            let elevated = token_elevated(process);
+            CloseHandle(process);
+            Some((name, elevated))
+        }
+    }
+
+    /// The foreground program's file name and whether it surely runs elevated; None for
+    /// no foreground window, our own, or a process that cannot be opened.
+    pub fn foreground_process() -> Option<(String, bool)> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd.is_null() {
+                return None;
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == GetCurrentProcessId() {
+                return None;
+            }
+            let (name, elevated) = process_info(pid)?;
+            Some((name, elevated == Some(true)))
         }
     }
 
