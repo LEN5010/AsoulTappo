@@ -159,7 +159,7 @@ function measurePeek() {
 }
 const peekSize = computed(() => {
   // A pair reaches past the box on the left (.pair in the styles).
-  const span = (peek.value?.busts.length ?? 1) > 1 ? 1.16 : 1;
+  const span = (peek.value?.busts.length ?? 1) > 1 ? 1.32 : 1;
   const size = Math.min(PEEK_MAX, (peekRoom.value - PEEK_MARGIN) / span);
   return size >= PEEK_MIN ? Math.round(size) : 0;
 });
@@ -684,7 +684,7 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: -1;
   right: 8px;
-  bottom: calc(100% - var(--peek-w) * 0.2);
+  bottom: calc(100% - var(--peek-w) * 0.08);
   width: var(--peek-w);
   height: calc(var(--peek-w) * 1.04);
   pointer-events: none;
@@ -710,7 +710,7 @@ onBeforeUnmount(() => {
 }
 .pair .peek-bust + .peek-bust {
   z-index: -1;
-  inset: 0 30% 4% -14%;
+  inset: 0 46% 4% -30%;
   rotate: -8deg;
 }
 .peek-enter-active {
@@ -721,7 +721,7 @@ onBeforeUnmount(() => {
 }
 .peek-enter-from,
 .peek-leave-to {
-  translate: 0 88%;
+  translate: 0 100%;
 }
 
 .title .ui-eyebrow {
