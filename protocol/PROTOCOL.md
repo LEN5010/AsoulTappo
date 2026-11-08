@@ -27,8 +27,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、resonance、totals、checkin |
-| POST /api/activity | `{taps,session,sequence}`，返回状态和 credited |
+| GET /api/me | player、shards、income、resonance、totals、checkin、tapCooldown |
+| POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，按实际在线秒数结算碎片并返回状态 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
@@ -63,7 +63,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
     "total": 1234
   },
   "totals": { "taps": 0, "activeMinutes": 0, "owned": 0, "items": 547 },
-  "checkin": { "available": true }
+  "checkin": { "available": true },
+  "tapCooldown": 0
 }
 ```
 
@@ -84,9 +85,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 ## 在线收益与活动
 
-客户端每 20 秒发送心跳和累计敲击数。碎片收益为每分钟 `4 × (1 + 7 × min(上一分钟有效敲击数, 60) / 60)`，倍率最高 ×8。只挂机每分钟 4 碎片，上一分钟 30 下为 18 碎片，60 下及以上为 32 碎片。超过一分钟没有敲击上报后倍率回到 ×1，小数碎片留到下次结算。
+客户端每 20 秒发送心跳和累计敲击数。碎片收益为每分钟 `4 × (1 + 7 × min(上一分钟有效敲击数, 60) / 60)`，倍率最高 ×8。只挂机每分钟 4 碎片，上一分钟 30 下为 18 碎片，60 下及以上为 32 碎片。超过一分钟没有敲击上报后倍率回到 ×1，小数碎片留到下次结算。倍率每个北京时间自然日最多生效 manifest `economy.income.boostMinutesPerDay` 分钟（现为 480），用完后当天只按每分钟 4 碎片计，`income.multiplier` 显示 1，次日零点恢复。
 
-服务端只接收敲击次数，按每秒 15 下限速；相同 session 的 sequence 去重。每个 UTC 分钟累计 10 下计一个活跃分钟。多个运行客户端共用玩家的在线时间基准；心跳间隔超过 60 秒时重新建立在线基准。
+服务端只接收敲击次数，按每秒 15 下限速；相同 session 的 sequence 去重。同一 session 相邻两次上报之间平均每秒 10 下及以上算过快，过快连续 30 秒及以上时，这份存档进入 60 秒冷却：触发的那一批和冷却期间所有 session 的上报都不计入，倍率按 ×1 结算。状态里的 `tapCooldown` 是冷却剩余秒数，没有冷却时为 0。客户端按同样的门槛逐秒判断（连续 30 秒每秒都有 10 下及以上），触发后 60 秒内不计数、不广播敲击，并在桌宠上方提示剩余秒数；触发时立刻上报一批（没有敲击也报），带上 `cooldown` 剩余秒数，服务端据此让这份存档进入冷却（最多 60 秒，只会延长不会缩短），这一批不计入。服务端判定的冷却客户端也照样显示。每个 UTC 分钟累计 10 下计一个活跃分钟。多个运行客户端共用玩家的在线时间基准；心跳间隔超过 60 秒时重新建立在线基准。
 
 ## 共鸣与兑换
 

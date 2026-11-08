@@ -89,3 +89,55 @@ def test_concurrent_sessions_share_one_budget_per_save():
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(lambda i: game.report_activity(TOKEN, 5000, f"conn-{i}", 1), range(16)))
     assert game.status(TOKEN)["totals"]["taps"] == 15
+
+
+def test_input_too_fast_for_a_hand_sits_out_a_cooldown():
+    game, clock = make()
+    clock.t += 20
+    game.report_activity(TOKEN, 300, "fast", 1)
+    clock.t += 20
+    result = game.report_activity(TOKEN, 300, "fast", 2)
+    assert result["credited"] == 300 and result["tapCooldown"] == 0
+    clock.t += 20
+    # 15 a second for 40 seconds: the batch is dropped and the multiplier stops paying.
+    result = game.report_activity(TOKEN, 300, "fast", 3)
+    assert result["credited"] == 0 and result["tapCooldown"] == 60
+    assert result["income"]["multiplier"] == 1
+    clock.t += 30
+    assert game.report_activity(TOKEN, 10, "other", 1)["credited"] == 0
+    result = game.report_activity(TOKEN, 10, "fast", 4)
+    assert result["credited"] == 0 and result["tapCooldown"] == 30
+    clock.t += 30
+    result = game.report_activity(TOKEN, 10, "fast", 5)
+    assert result["credited"] == 10 and result["tapCooldown"] == 0
+
+
+def test_a_fast_typist_keeps_counting():
+    game, clock = make()
+    for sequence in range(1, 7):
+        clock.t += 20
+        result = game.report_activity(TOKEN, 160, "typing", sequence)
+        assert result["credited"] == 160 and result["tapCooldown"] == 0
+
+
+def test_a_fast_burst_with_a_slow_batch_between_starts_over():
+    game, clock = make()
+    for sequence, taps in enumerate((300, 300, 40, 300), start=1):
+        clock.t += 20
+        result = game.report_activity(TOKEN, taps, "bursts", sequence)
+    assert result["tapCooldown"] == 0 and result["credited"] == 300
+
+
+def test_a_cooldown_the_client_reports_stops_the_multiplier():
+    game, clock = make()
+    clock.t += 20
+    game.report_activity(TOKEN, 300, "guarded", 1)
+    clock.t += 40
+    assert game.status(TOKEN)["income"]["multiplier"] > 1
+    result = game.report_activity(TOKEN, 100, "guarded", 2, cooldown=50)
+    assert result["credited"] == 0 and result["tapCooldown"] == 50
+    assert result["income"]["multiplier"] == 1
+    clock.t += 20
+    # Never longer than the server's own cooldown, and a shorter report does not cut one short.
+    assert game.report_activity(TOKEN, 0, "guarded", 3, cooldown=3600)["tapCooldown"] == 60
+    assert game.report_activity(TOKEN, 0, "other", 1, cooldown=5)["tapCooldown"] == 60

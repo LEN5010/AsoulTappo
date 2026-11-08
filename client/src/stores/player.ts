@@ -227,13 +227,19 @@ export function countInput(): void {
   current.reporter.add(1);
 }
 
+/** The input guard stopped counting taps until `until` (ms): tell the server now, so the multiplier stops too. */
+export function reportCooldown(until: number): void {
+  current.reporter.cool(until);
+  void flush(current);
+}
+
 export function startReporting(everyMs = 20000): void {
   if (timer) return;
   void refresh().then(heartbeat); // establishes the input and running-time baselines
   timer = setInterval(() => {
     void heartbeat();
     for (const session of sessions.values()) {
-      if (session.reporter.size > 0) void flush(session);
+      if (session.reporter.due()) void flush(session);
     }
   }, everyMs);
 }

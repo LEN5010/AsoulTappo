@@ -120,6 +120,8 @@ class ActivityBody(BaseModel):
     taps: int = Field(ge=0, le=100000)
     session: str = Field(min_length=16, max_length=128)
     sequence: int = Field(ge=1)
+    # Seconds left of a cooldown the client's own input guard started.
+    cooldown: int = Field(default=0, ge=0, le=3600)
 
 
 class CraftBody(BaseModel):
@@ -155,7 +157,7 @@ def api_me(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/activity")
 def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
-    return _guard(game.report_activity, who, body.taps, body.session, body.sequence)
+    return _guard(game.report_activity, who, body.taps, body.session, body.sequence, body.cooldown)
 
 
 @app.post("/api/presence")

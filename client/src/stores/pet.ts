@@ -1,10 +1,11 @@
 // State of the local pet, driven by the global input hook. Shared by the desk pet and the
 // live preview in the backpack page.
-import { reactive, watch } from "vue";
+import { reactive, ref, watch } from "vue";
 import type { InputEvent } from "../composables/tauri";
 import { MouseMotion } from "../MouseMotion";
+import { TapGuard } from "../pet/TapGuard";
 import { bumpCounter } from "./counter";
-import { countInput } from "./player";
+import { countInput, reportCooldown, status } from "./player";
 import { inRoom, registerTap, syncMotion, youId } from "./room";
 import { settings } from "./settings";
 
@@ -15,7 +16,22 @@ const motion = new MouseMotion(pet);
 watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, youId.value],
   () => syncMotion({ ...pet }), { flush: "sync" });
 
+const guard = new TapGuard();
+/** When inputs count again after going faster than a hand; in the past while they count. */
+export const tapCooldown = ref(0);
+// A cooldown the server called (another client, or a batch it measured) holds here too.
+watch(() => status.value?.tapCooldown, (seconds) => {
+  if (seconds) guard.cool(Date.now() + seconds * 1000);
+  tapCooldown.value = guard.until;
+});
+
 function tap(): void {
+  const was = guard.until;
+  if (!guard.allow(Date.now())) {
+    if (guard.until !== was) reportCooldown(guard.until);
+    tapCooldown.value = guard.until;
+    return;
+  }
   registerTap();
   countInput();
   bumpCounter();

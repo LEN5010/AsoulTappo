@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from app.game import Game, GameError, player_id_for
+from app.game import Game, GameError, day_of, player_id_for
 from app.manifest import Manifest
 from app.store import Store
 from fixtures import Clock, SeqRng
@@ -45,6 +45,27 @@ def test_previous_minute_income(taps, multiplier, rate):
     assert g.presence(TOKEN, SESSION)["shards"] == 1600 + rate
     clock.t += 120
     assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 4}
+
+
+def test_boost_stops_after_the_daily_allowance_and_returns_the_next_day():
+    g, clock = game()
+    allowance = g.manifest.income["boostMinutesPerDay"] * 60
+    g.store.update_player(player_id_for(TOKEN), boost_day=day_of(clock.t), boost_used=allowance - 30)
+    clock.t += 20
+    g.report_activity(TOKEN, 60)
+    clock.t += 40
+    g.presence(TOKEN, SESSION)
+    assert g.status(TOKEN)["income"]["multiplier"] == 8
+    clock.t += 20
+    g.report_activity(TOKEN, 60)
+    clock.t += 40
+    # The last 30 boosted seconds pay x8, the rest of the minute the base rate: 4 / 60 * (60 + 30 * 7).
+    assert g.presence(TOKEN, SESSION)["shards"] == 1618
+    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 4}
+    clock.t += 86400
+    g.report_activity(TOKEN, 60)
+    clock.t += 60
+    assert g.status(TOKEN)["income"]["multiplier"] == 8
 
 
 def test_fractional_shards_accumulate():

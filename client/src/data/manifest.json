@@ -4914,7 +4914,8 @@
   "income": {
    "perMinute": 4,
    "maxMultiplier": 8,
-   "fullTapsPerMinute": 60
+   "fullTapsPerMinute": 60,
+   "boostMinutesPerDay": 480
   },
   "resonance": {
    "cost": 160,

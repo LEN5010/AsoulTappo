@@ -10,6 +10,8 @@ export interface PlayerStatus {
   totals: { taps: number; activeMinutes: number; owned: number; items: number };
   /** Missing on servers without daily check-in. */
   checkin?: { available: boolean };
+  /** Seconds before taps count again after input too fast for a hand; missing on older servers. */
+  tapCooldown?: number;
   credited?: number;
 }
 export interface Drop {
@@ -72,6 +74,8 @@ export interface ActivityBatch {
   taps: number;
   session: string;
   sequence: number;
+  /** Seconds left of a cooldown the input guard started, on the first batch after it trips. */
+  cooldown?: number;
 }
 
 export class Api {
@@ -139,6 +143,8 @@ export class ActivityReporter {
   private sequence = 0;
   private batch: ActivityBatch | null = null;
   private busy: Promise<boolean> | null = null;
+  /** When a cooldown the server has not heard about yet ends (ms). */
+  private coolUntil = 0;
   constructor(private send: (batch: ActivityBatch) => Promise<unknown>, private session = newToken()) {}
 
   add(n = 1): void {
@@ -147,12 +153,23 @@ export class ActivityReporter {
   get size(): number {
     return this.pending + (this.batch?.taps ?? 0);
   }
+  /** Taps stop counting until `until` (ms); the next batch tells the server, even one without taps. */
+  cool(until: number): void {
+    this.coolUntil = Math.max(this.coolUntil, until);
+  }
+  /** Whether there is anything to send: taps, or a cooldown the server should hear about. */
+  due(now = Date.now()): boolean {
+    return this.size > 0 || this.coolUntil > now;
+  }
   /** Send what we have; on failure the count is kept for the next try. */
-  flush(): Promise<boolean> {
+  flush(now = Date.now()): Promise<boolean> {
     if (this.busy) return this.busy;
-    if (!this.batch && !this.pending) return Promise.resolve(true);
+    if (!this.batch && !this.due(now)) return Promise.resolve(true);
     if (!this.batch) {
       this.batch = { taps: this.pending, session: this.session, sequence: ++this.sequence };
+      const cooldown = Math.ceil((this.coolUntil - now) / 1000);
+      if (cooldown > 0) this.batch.cooldown = cooldown;
+      this.coolUntil = 0;
       this.pending = 0;
     }
     this.busy = this.send(this.batch).then(() => {

@@ -45,6 +45,22 @@ describe("Api", () => {
 });
 
 describe("ActivityReporter", () => {
+  it("tells the server about a cooldown once, with or without taps", async () => {
+    const batches: unknown[] = [];
+    const r = new ActivityReporter(async (batch) => { batches.push(batch); }, "s".repeat(24));
+    r.add(3);
+    r.cool(41_500);
+    expect(r.due(1_000)).toBe(true);
+    expect(await r.flush(1_000)).toBe(true);
+    expect(r.due(2_000)).toBe(false);
+    r.cool(80_000);
+    expect(await r.flush(30_000)).toBe(true);
+    expect(await r.flush(31_000)).toBe(true);
+    expect(batches).toEqual([
+      { taps: 3, session: "s".repeat(24), sequence: 1, cooldown: 41 },
+      { taps: 0, session: "s".repeat(24), sequence: 2, cooldown: 50 },
+    ]);
+  });
   it("retries the committed batch identity without crediting new input twice", async () => {
     const seen = new Set<string>();
     let credited = 0;

@@ -106,6 +106,13 @@ def test_ws_plates_are_checked_against_the_save(client):
 def test_activity_validation(client):
     assert client.post("/api/activity", json={**BATCH, "taps": -1}, headers=H).status_code == 422
     assert client.post("/api/activity", json={}, headers=H).status_code == 422
+    assert client.post("/api/activity", json={**BATCH, "taps": 1, "cooldown": -1}, headers=H).status_code == 422
+
+
+def test_activity_takes_the_client_cooldown(client):
+    r = client.post("/api/activity", json={**BATCH, "taps": 30, "cooldown": 45}, headers=H).json()
+    assert r["credited"] == 0 and r["tapCooldown"] == 45
+    assert client.get("/api/me", headers=H).json()["tapCooldown"] == 45
 
 
 def test_manifest_and_packs_routes():

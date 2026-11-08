@@ -7,6 +7,7 @@ import PetActor from "./pet/PetActor.vue";
 import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
+import CooldownBubble from "./pet/CooldownBubble.vue";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { nameBand, plateCard, plateSize } from "./pet/plates";
@@ -17,7 +18,7 @@ import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
-import { onInput, pet, stopPet } from "./stores/pet";
+import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { draws, startReporting, stopReporting } from "./stores/player";
 import { localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import {
@@ -176,6 +177,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
+      <CooldownBubble :until="tapCooldown" />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"
