@@ -115,12 +115,12 @@ onMounted(async () => {
     else settings.clickThrough = !settings.clickThrough;
   });
   if (isTauri) hits = startHitReporter((rects, scale) => void setHitRegions(rects, scale));
+  else document.documentElement.classList.add("browser-preview");
   unBlocked = await listenInputBlocked((b) => { if (b.by) adminHint.value = b; });
   if (await debugLogEnabled()) {
     stopDebugLog = startDebugLog(() => `online ${online.value}, in room ${inRoom.value}, ` +
       `click-through ${settings.clickThrough}, always on top ${settings.alwaysOnTop}`);
   }
-  else document.documentElement.classList.add("browser-preview");
   // Dev-only look at the update dialog. Production builds drop this branch.
   if (import.meta.env.DEV && !isTauri && new URLSearchParams(location.search).get("preview") === "update") {
     const shot = new URLSearchParams(location.search).get("shot");
