@@ -38,10 +38,17 @@ jobs:
         shell: bash
         env:
           ASOULTAPPO_BUILD: ${{ github.ref_name }} ${{ github.sha }}
+        # Bundling downloads the NSIS tools from GitHub releases, which sometimes answers 504;
+        # a retry only repeats the bundling, the compiled program is reused.
         run: |
           version="${GITHUB_REF_NAME#debug-}"
-          npm run tauri build -- --bundles nsis --features debug-log \
-            --config "{\"version\":\"$version\",\"bundle\":{\"createUpdaterArtifacts\":false}}"
+          for attempt in 1 2 3; do
+            npm run tauri build -- --bundles nsis --features debug-log \
+              --config "{\"version\":\"$version\",\"bundle\":{\"createUpdaterArtifacts\":false}}" && exit 0
+            echo "build attempt $attempt failed"
+            sleep 30
+          done
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:
