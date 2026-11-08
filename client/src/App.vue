@@ -8,6 +8,7 @@ import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
+import AdminBubble from "./pet/AdminBubble.vue";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { nameBand, plateCard, plateSize } from "./pet/plates";
@@ -19,8 +20,9 @@ import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
-import { draws, startReporting, stopReporting } from "./stores/player";
-import { localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { draws, online, startReporting, stopReporting } from "./stores/player";
+import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { startDebugLog } from "./debugLog";
 import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
@@ -29,7 +31,8 @@ import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stor
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  isTauri, listenInput, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHitRegions,
+  debugLogEnabled, isTauri, listenInput, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough,
+  setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
 // ---- viewport
@@ -91,6 +94,10 @@ let unInput: (() => void) | undefined;
 let unTray: (() => void) | undefined;
 let unOutside: (() => void) | undefined;
 let hits: ReturnType<typeof startHitReporter> | undefined;
+let stopDebugLog: (() => void) | undefined;
+let unBlocked: (() => void) | undefined;
+// Shown from the first time an elevated program kept the pet from hearing input, until closed.
+const adminHint = ref<InputBlocked | null>(null);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => (ui.quickOpen = false);
@@ -107,7 +114,12 @@ onMounted(async () => {
     else if (a === "reset-position") resetPet();
     else settings.clickThrough = !settings.clickThrough;
   });
-  if (isTauri) hits = startHitReporter((rects) => void setHitRegions(rects));
+  if (isTauri) hits = startHitReporter((rects, scale) => void setHitRegions(rects, scale));
+  unBlocked = await listenInputBlocked((b) => { if (b.by) adminHint.value = b; });
+  if (await debugLogEnabled()) {
+    stopDebugLog = startDebugLog(() => `online ${online.value}, in room ${inRoom.value}, ` +
+      `click-through ${settings.clickThrough}, always on top ${settings.alwaysOnTop}`);
+  }
   else document.documentElement.classList.add("browser-preview");
   // Dev-only look at the update dialog. Production builds drop this branch.
   if (import.meta.env.DEV && !isTauri && new URLSearchParams(location.search).get("preview") === "update") {
@@ -133,6 +145,8 @@ onBeforeUnmount(() => {
   unOutside?.();
   unTray?.();
   hits?.stop();
+  stopDebugLog?.();
+  unBlocked?.();
   stopPet();
 });
 
@@ -178,6 +192,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />
+      <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"

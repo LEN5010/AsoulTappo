@@ -109,13 +109,23 @@ const STALE_MS: i32 = 3000;
 /// Raw mouse moves closer together than this are dropped at the hook.
 const MOVE_COALESCE: Duration = Duration::from_millis(4);
 
-/// How often a summary of what the hook heard goes to the log.
-const STATS_EVERY: Duration = Duration::from_secs(60);
+/// How often a summary of what the hook heard goes to the log (every 10 s in the debug build).
+const STATS_EVERY: Duration = Duration::from_secs(if crate::applog::DEBUG { 10 } else { 60 });
 
 /// Filtered events emitted in the current stats interval (counts only).
 static KEYS: AtomicU32 = AtomicU32::new(0);
 static CLICKS: AtomicU32 = AtomicU32::new(0);
 static MOVES: AtomicU32 = AtomicU32::new(0);
+/// Debug build: key and button presses as the hook callbacks saw them (auto-repeat included),
+/// how many of those other software injected, and emits that failed.
+static RAW_PRESSES: AtomicU32 = AtomicU32::new(0);
+static INJECTED: AtomicU32 = AtomicU32::new(0);
+static EMIT_FAILURES: AtomicU32 = AtomicU32::new(0);
+
+/// An `input` event could not be sent to the page.
+pub fn note_emit_failure() {
+    EMIT_FAILURES.fetch_add(1, Ordering::Relaxed);
+}
 
 /// Spawn the global hook and the thread that filters its events; `emit` is called
 /// for every filtered event.
@@ -174,8 +184,8 @@ where
     spawn_stats();
 }
 
-/// Once a minute, while anything happened, log what the hook heard next to what the
-/// system saw and which window was in front. Counts only, never keys.
+/// Once a minute (every 10 s in the debug build), while anything happened, log what the
+/// hook heard next to what the system saw and which window was in front. Counts only, never keys.
 fn spawn_stats() {
     std::thread::spawn(|| loop {
         std::thread::sleep(STATS_EVERY);
@@ -190,13 +200,36 @@ fn spawn_stats() {
             continue;
         }
         let system = age.map_or_else(|| "?".to_string(), |s| format!("{s}s"));
-        applog!(
-            "input",
-            "last minute: keys {keys}, clicks {clicks}, moves {moves}, pad {pad}, hooks replaced {replaced}; \
-             system input {system} ago; {}",
-            crate::diag::foreground()
-        );
+        let raw = RAW_PRESSES.swap(0, Ordering::Relaxed);
+        let injected = INJECTED.swap(0, Ordering::Relaxed);
+        let failed = EMIT_FAILURES.swap(0, Ordering::Relaxed);
+        if crate::applog::DEBUG {
+            applog!(
+                "input",
+                "last {}s: keys {keys}, clicks {clicks}, presses seen by the hook {raw} (injected {injected}), \
+                 moves {moves}, pad {pad}, hooks replaced {replaced}, emits failed {failed}; \
+                 system input {system} ago; {}",
+                STATS_EVERY.as_secs(),
+                crate::diag::foreground_detail()
+            );
+        } else {
+            applog!(
+                "input",
+                "last minute: keys {keys}, clicks {clicks}, moves {moves}, pad {pad}, hooks replaced {replaced}; \
+                 system input {system} ago; {}",
+                crate::diag::foreground()
+            );
+        }
     });
+}
+
+/// A key or button press reached a hook callback; `injected` when software sent it.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn note_raw_press(injected: bool) {
+    RAW_PRESSES.fetch_add(1, Ordering::Relaxed);
+    if injected {
+        INJECTED.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// What a hook callback does with an event: note that the hook is alive, drop wheel
@@ -266,8 +299,8 @@ mod win_hook {
     use windows_sys::Win32::Foundation::{GetLastError, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, MSG,
-        MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT,
+        LLKHF_INJECTED, LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
         WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
         WM_XBUTTONDOWN, WM_XBUTTONUP,
     };
@@ -292,9 +325,13 @@ mod win_hook {
     unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 && lparam != 0 {
             // The virtual-key code only tells auto-repeat apart from a new press; it never leaves this process.
-            let vk = unsafe { (*(lparam as *const KBDLLHOOKSTRUCT)).vkCode };
+            let info = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
+            let vk = info.vkCode;
             match wparam as u32 {
-                WM_KEYDOWN | WM_SYSKEYDOWN => push(EventType::KeyPress(Key::Unknown(vk))),
+                WM_KEYDOWN | WM_SYSKEYDOWN => {
+                    super::note_raw_press(info.flags & LLKHF_INJECTED != 0);
+                    push(EventType::KeyPress(Key::Unknown(vk)))
+                }
                 WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk))),
                 _ => {}
             }
@@ -320,6 +357,9 @@ mod win_hook {
                 _ => None,
             };
             if let Some(ev) = ev {
+                if matches!(ev, EventType::ButtonPress(_)) {
+                    super::note_raw_press(info.flags & LLMHF_INJECTED != 0);
+                }
                 push(ev);
             }
         }
@@ -367,9 +407,10 @@ fn went_silent(last_input: u32, last_heard: u32) -> bool {
 /// time keeps moving while the hook hears nothing; then the hook thread is ended and
 /// `spawn_hook` installs a new one.
 ///
-/// It also fires, harmlessly, while the hook is muted rather than gone: an elevated
-/// window in front, the secure desktop (UAC, lock screen), pen or touch input that
-/// never reaches the mouse hook. `MIN_LIFE` keeps that from replacing it on every check.
+/// It also fires, harmlessly, while the hook is muted rather than gone: the secure desktop
+/// (UAC, lock screen), pen or touch input that never reaches the mouse hook. `MIN_LIFE`
+/// keeps that from replacing it on every check. An elevated window in front mutes it for as
+/// long as it stays there (src/elevation.rs); the hook is left alone meanwhile.
 #[cfg(target_os = "windows")]
 mod watchdog {
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -425,6 +466,12 @@ mod watchdog {
         let started = Instant::now();
         while !hook.is_finished() {
             std::thread::sleep(CHECK);
+            if crate::elevation::blocked() {
+                // Silent because the input goes to an elevated window, which a new hook would
+                // not hear either; counting it as heard keeps the check quiet once it leaves.
+                heard();
+                continue;
+            }
             if started.elapsed() >= MIN_LIFE && missed_input() {
                 let silent = last_input().map_or(0, |t| t.wrapping_sub(LAST_HEARD.load(Ordering::Relaxed)) / 1000);
                 applog!(

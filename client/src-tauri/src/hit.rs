@@ -22,19 +22,25 @@ pub struct HitState {
     pub dragging: bool,
     /// User setting: never take the mouse.
     pub click_through: bool,
+    /// The page's device pixel ratio, sent with the rects. On Windows the webview
+    /// multiplies the monitor scale by the system text size, so this can differ
+    /// from the window scale factor.
+    pub page_scale: Option<f64>,
 }
 
 impl HitState {
     /// Whether the overlay should take the mouse with the cursor at `cursor`
     /// (physical px, desktop coordinates), given the client area origin
-    /// (physical px, desktop coordinates) and the window scale factor.
-    pub fn interactive(&self, cursor: (f64, f64), origin: (f64, f64), scale: f64) -> bool {
+    /// (physical px, desktop coordinates) and the window scale factor, which is
+    /// only used until the page has reported its own scale.
+    pub fn interactive(&self, cursor: (f64, f64), origin: (f64, f64), window_scale: f64) -> bool {
         if self.click_through {
             return false;
         }
         if self.dragging {
             return true;
         }
+        let scale = self.page_scale.unwrap_or(window_scale);
         let scale = if scale > 0.0 { scale } else { 1.0 };
         let x = (cursor.0 - origin.0) / scale;
         let y = (cursor.1 - origin.1) / scale;
@@ -66,6 +72,16 @@ mod tests {
         // window client area at (1920, 40) on a 150% monitor: css (110, 55) -> physical (2085, 122.5)
         assert!(s.interactive((2085.0, 122.5), (1920.0, 40.0), 1.5));
         assert!(!s.interactive((110.0, 55.0), (1920.0, 40.0), 1.5));
+    }
+
+    #[test]
+    fn page_scale_replaces_the_window_scale() {
+        // 100% monitor with 125% Windows text size: the page draws css (100, 50) at physical (125, 62.5)
+        let mut s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0 }]);
+        assert!(!s.interactive((130.0, 65.0), (0.0, 0.0), 1.0));
+        s.page_scale = Some(1.25);
+        assert!(s.interactive((130.0, 65.0), (0.0, 0.0), 1.0));
+        assert!(!s.interactive((105.0, 55.0), (0.0, 0.0), 1.0));
     }
 
     #[test]

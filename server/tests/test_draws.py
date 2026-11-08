@@ -104,7 +104,7 @@ def test_simultaneous_pities_then_independent_resets():
     assert r["resonance"]["pity"] == {"legendary": 1, "skin": 0}
 
 
-@pytest.mark.parametrize("roll,tier,counters", [(0, "legendary", {"legendary": 0, "skin": 88}), (.005, "skin", {"legendary": 213, "skin": 0})])
+@pytest.mark.parametrize("roll,tier,counters", [(0, "legendary", {"legendary": 0, "skin": 88}), (.002, "skin", {"legendary": 213, "skin": 0})])
 def test_natural_roll_resets_only_its_own_counter(roll, tier, counters):
     g, _ = game(SeqRng(roll, .5))
     g.store.update_player(player_id_for(TOKEN), draw_pity=212, skin_pity=87)
@@ -128,7 +128,7 @@ def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
     assert g.resonate(TOKEN)["drops"][0]["item"] == "char:心宜新皮肤"
 
 
-@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .005), ("epic", .01), ("rare", .055), ("uncommon", .085)])
+@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .002), ("epic", .01), ("rare", .055), ("uncommon", .085)])
 def test_completed_high_tier_rolls_into_common(rarity, roll):
     g, _ = game(SeqRng(roll, .5))
     for item in g.manifest.resonance_pool[rarity]:

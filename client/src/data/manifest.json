@@ -4920,12 +4920,12 @@
   "resonance": {
    "cost": 160,
    "rates": {
-    "legendary": 0.5,
-    "skin": 0.5,
+    "legendary": 0.1,
+    "skin": 0.2,
     "epic": 4.5,
     "rare": 3,
     "uncommon": 6,
-    "common": 85.5
+    "common": 86.2
    },
    "pity": {
     "legendary": 400,
@@ -4933,7 +4933,7 @@
    },
    "commonKindWeights": {
     "card": 45,
-    "emote": 40.5
+    "emote": 41.2
    },
    "duplicateRefund": 10
   },

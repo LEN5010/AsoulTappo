@@ -20,20 +20,31 @@ export function sameRects(a: HitRect[], b: HitRect[]): boolean {
   return a.length === b.length && a.every((r, i) => r.x === b[i].x && r.y === b[i].y && r.w === b[i].w && r.h === b[i].h);
 }
 
-/** Observe layout changes and sample only while a hit target is animating. */
+/**
+ * Observe layout changes and sample only while a hit target is animating.
+ * Each report carries the page's device pixel ratio: on Windows the webview multiplies the monitor
+ * scale by the system text size, so the monitor scale alone misplaces the rectangles.
+ */
 export function startHitReporter(
-  send: (rects: HitRect[]) => void,
+  send: (rects: HitRect[], scale: number) => void,
   collect: () => HitRect[] = () => collectRects(),
   intervalMs?: number,
+  readScale: () => number = () => globalThis.devicePixelRatio || 1,
 ): { kick(): void; stop(): void } {
   let last: HitRect[] | null = null;
+  let lastScale = 0;
   let frame: number | null = null;
   const animating = new Set<Element>();
   const kick = () => { if (frame === null) frame = requestAnimationFrame(report); };
   const report = () => {
     frame = null;
     const rects = collect();
-    if (!last || !sameRects(last, rects)) { last = rects; send(rects); }
+    const scale = readScale();
+    if (!last || !sameRects(last, rects) || scale !== lastScale) {
+      last = rects;
+      lastScale = scale;
+      send(rects, scale);
+    }
     if (animating.size) kick();
   };
   let resize: ResizeObserver | undefined;

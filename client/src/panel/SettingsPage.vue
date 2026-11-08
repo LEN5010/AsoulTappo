@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { exportLog, isTauri, openAboutLink } from "../composables/tauri";
+import { adminStatus, exportLog, isTauri, openAboutLink, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
 import { status, saveCode, account, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
@@ -16,7 +16,6 @@ import PetBust from "./PetBust.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
-const isWindows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
 // The account row is always shown; signing in needs a server connected to the account service.
 const info = ref<ServerInfo | null>(null);
@@ -55,6 +54,36 @@ async function copyMail() {
 const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
+
+// Windows: start as administrator, so games run as administrator still reach the pet.
+const admin = ref<AdminStatus | null>(null);
+const adminBusy = ref(false);
+const adminMsg = ref("");
+onMounted(async () => { admin.value = await adminStatus(); });
+const adminNote = computed(() => {
+  if (adminMsg.value) return adminMsg.value;
+  if (admin.value && !admin.value.canElevate && !admin.value.elevated) return "当前账户没有管理员权限，以管理员身份运行的游戏里收不到按键。";
+  return "以管理员身份运行的游戏里，打开它才收得到按键。";
+});
+async function toggleAdmin(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const want = input.checked;
+  adminBusy.value = true;
+  adminMsg.value = "";
+  try {
+    const result = await setRunAsAdmin(want);
+    if (result === "restarting") adminMsg.value = "正在以管理员身份重启";
+    else if (admin.value) {
+      admin.value = { ...admin.value, runAsAdmin: want };
+      if (!want && admin.value.elevated) adminMsg.value = "下次启动起按普通权限运行";
+    }
+  } catch (err) {
+    input.checked = !want;
+    adminMsg.value = String(err) === "cancelled" ? "已取消" : "没能切换";
+  } finally {
+    adminBusy.value = false;
+  }
+}
 
 const logNote = ref("");
 const exporting = ref(false);
@@ -169,8 +198,15 @@ async function exportLogFile() {
               <span>点击穿透</span>
               <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
             </label>
+            <label v-if="admin?.supported" class="ui-row">
+              <span>以管理员身份启动</span>
+              <input
+                class="ui-switch" type="checkbox" :checked="admin.runAsAdmin"
+                :disabled="adminBusy || (!admin.canElevate && !admin.elevated)" @change="toggleAdmin"
+              />
+            </label>
           </div>
-          <p v-if="isWindows" class="note">以管理员身份运行或带反作弊的游戏里，桌宠可能收不到输入。</p>
+          <p v-if="admin?.supported" class="note" role="status">{{ adminNote }}</p>
         </section>
 
         <section data-rise>

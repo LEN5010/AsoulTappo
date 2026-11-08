@@ -40,10 +40,10 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 关闭点击穿透时，鼠标碰到桌宠不会再让浏览器里的直播变白
-            - Windows 键鼠监听重写，处理联机后收不到键盘输入、快速按键后卡退的问题
-            - 自动更新改走 github.com 下载地址
-            - 设置里可以导出运行日志
+            - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
+            - 设置里新增以管理员身份启动：以管理员身份运行的游戏里普通权限收不到按键，打开后每次启动经 UAC 确认；遇到这类游戏时桌宠头上会提示
+            - 托盘菜单可以导出运行日志
+            - 共鸣概率调整：大隐藏 0.5% 改为 0.1%，皮肤 0.5% 改为 0.2%，保底次数不变
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -88,10 +88,10 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 关闭点击穿透时，鼠标碰到桌宠不会再让浏览器里的直播变白
-            - Windows 键鼠监听重写，处理联机后收不到键盘输入、快速按键后卡退的问题
-            - 自动更新改走 github.com 下载地址
-            - 设置里可以导出运行日志
+            - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
+            - 设置里新增以管理员身份启动：以管理员身份运行的游戏里普通权限收不到按键，打开后每次启动经 UAC 确认；遇到这类游戏时桌宠头上会提示
+            - 托盘菜单可以导出运行日志
+            - 共鸣概率调整：大隐藏 0.5% 改为 0.1%，皮肤 0.5% 改为 0.2%，保底次数不变
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true

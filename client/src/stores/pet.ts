@@ -17,6 +17,8 @@ watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, you
   () => syncMotion({ ...pet }), { flush: "sync" });
 
 const guard = new TapGuard();
+/** Presses this page received and what became of them, for the debug build's log (src/debugLog.ts). */
+export const tapStats = { keys: 0, mouse: 0, counted: 0, blocked: 0 };
 /** When inputs count again after going faster than a hand; in the past while they count. */
 export const tapCooldown = ref(0);
 // A cooldown the server called (another client, or a batch it measured) holds here too.
@@ -28,10 +30,12 @@ watch(() => status.value?.tapCooldown, (seconds) => {
 function tap(): void {
   const was = guard.until;
   if (!guard.allow(Date.now())) {
+    tapStats.blocked += 1;
     if (guard.until !== was) reportCooldown(guard.until);
     tapCooldown.value = guard.until;
     return;
   }
+  tapStats.counted += 1;
   registerTap();
   countInput();
   bumpCounter();
@@ -40,6 +44,7 @@ function tap(): void {
 export function onInput(e: InputEvent, count = true): void {
   switch (e.kind) {
     case "key_down":
+      tapStats.keys += 1;
       keysHeld += 1;
       pet.keyDown = true;
       if (count) tap();
@@ -49,6 +54,7 @@ export function onInput(e: InputEvent, count = true): void {
       pet.keyDown = keysHeld > 0;
       break;
     case "mouse_down":
+      tapStats.mouse += 1;
       if (e.button === "left") pet.left = true;
       else if (e.button === "right") pet.right = true;
       if (count) tap();

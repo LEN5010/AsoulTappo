@@ -1,6 +1,6 @@
 [package]
 name = "asoultappo-client"
-version = "1.0.2"
+version = "1.0.4"
 description = "AsoulTappo desktop pet client (Tauri 2)"
 edition = "2021"
 rust-version = "1.85"
@@ -9,6 +9,11 @@ license = "GPL-2.0-only"
 [lib]
 name = "asoultappo_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Debug build for testers: more detailed log lines and a larger log file (src/applog.rs).
+# Built by .github/workflows/debug-build.yml, never by the release workflow.
+debug-log = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -32,7 +37,8 @@ rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366
 [target.'cfg(target_os = "windows")'.dependencies]
 # XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
 # input hook and its watchdog (src/input.rs), the overlay's tool-window subclass
-# (src/tool_window.rs) and the diagnostics written to the log (src/diag.rs).
+# (src/tool_window.rs), the diagnostics written to the log (src/diag.rs) and restarting as
+# administrator (src/elevation.rs; ShellExecuteExW's struct needs Win32_System_Registry).
 windows-sys = { version = "0.61", features = [
     "Win32_Graphics_Gdi",
     "Win32_Security",
@@ -41,6 +47,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
 ] }

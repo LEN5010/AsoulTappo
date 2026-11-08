@@ -10,7 +10,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-const MAX_BYTES: u64 = 1024 * 1024;
+/// Debug build (`--features debug-log`): extra lines through `debuglog!`, and a larger file.
+pub const DEBUG: bool = cfg!(feature = "debug-log");
+const MAX_BYTES: u64 = if DEBUG { 8 * 1024 * 1024 } else { 1024 * 1024 };
 const CURRENT: &str = "asoultappo.log";
 const PREVIOUS: &str = "asoultappo.old.log";
 
@@ -97,6 +99,16 @@ pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
     let path = to_dir.join(format!("AsoulTappo-log-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
     std::fs::write(&path, out)?;
     Ok(path)
+}
+
+/// `debuglog!("tag", "format {}", args)`: like `applog!`, only in the debug build.
+#[macro_export]
+macro_rules! debuglog {
+    ($tag:expr, $($arg:tt)*) => {
+        if $crate::applog::DEBUG {
+            $crate::applog::write($tag, &format!($($arg)*))
+        }
+    };
 }
 
 /// `applog!("tag", "format {}", args)`: format and append one line.

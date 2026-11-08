@@ -263,8 +263,8 @@ SKINS = [{"name": f"{member}{series}", "member": member}
 ]
 # The multiplier pays for at most boostMinutesPerDay on one China day; base income keeps running after that.
 INCOME = {"perMinute": 4, "maxMultiplier": 8, "fullTapsPerMinute": 60, "boostMinutesPerDay": 480}
-RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
-             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
+RESONANCE = {"cost": 160, "rates": {"legendary": 0.1, "skin": 0.2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2},
+             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 41.2},
              "duplicateRefund": 10}
 CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
 # Daily check-in prizes by amount; weights are percentages (1.7 draws on average, the top prize 10).

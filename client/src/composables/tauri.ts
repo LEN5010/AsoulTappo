@@ -63,6 +63,29 @@ export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenF
   return listen<TrayAction>("tray", (ev) => cb(ev.payload));
 }
 
+/** Windows: whether the pet runs as administrator, whether this account could, and the player's choice. */
+export interface AdminStatus { supported: boolean; elevated: boolean; canElevate: boolean; runAsAdmin: boolean }
+export async function adminStatus(): Promise<AdminStatus | null> {
+  if (!isTauri) return null;
+  try {
+    return await invoke<AdminStatus>("admin_status");
+  } catch {
+    return null;
+  }
+}
+/**
+ * Turns "start as administrator" on or off: "on" / "off", or "restarting" while the app restarts through UAC.
+ * Rejects with "cancelled" when UAC was declined and "unavailable" when this account cannot run as administrator.
+ */
+export const setRunAsAdmin = (enabled: boolean) => invoke<"on" | "off" | "restarting">("set_run_as_admin", { enabled });
+
+/** An elevated program stayed in front, so its keys and clicks cannot reach the pet; `by` is null once they can again. */
+export interface InputBlocked { by: string | null; canElevate: boolean }
+export async function listenInputBlocked(cb: (b: InputBlocked) => void): Promise<UnlistenFn> {
+  if (!isTauri) return () => {};
+  return listen<InputBlocked>("input-blocked", (ev) => cb(ev.payload));
+}
+
 /** A mouse press that fell through the overlay onto another window. */
 export async function listenOutsideClick(cb: () => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
@@ -80,8 +103,11 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
-/** Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through. */
-export const setHitRegions = (rects: HitRect[]) => call("set_hit_regions", { rects });
+/**
+ * Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through.
+ * `scale` is the page's device pixel ratio, used to turn CSS px into screen pixels.
+ */
+export const setHitRegions = (rects: HitRect[], scale: number) => call("set_hit_regions", { rects, scale });
 /** Keep the overlay clickable while something is being dragged. */
 export const setDragging = (active: boolean) => call("set_dragging", { active });
 
@@ -95,11 +121,12 @@ export function exportLog(): Promise<ExportedLog> {
 }
 
 const LOG_LINES_PER_MINUTE = 30;
+let logCap = LOG_LINES_PER_MINUTE;
 let logMinute = 0;
 let logLines = 0;
 let lastLogLine = "";
 
-/** Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute, repeats skipped. */
+/** Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute (240 in the debug build), repeats skipped. */
 export function writeLog(tag: string, msg: string): void {
   if (!isTauri) return;
   const line = `${tag}\n${msg}`;
@@ -109,10 +136,22 @@ export function writeLog(tag: string, msg: string): void {
     logMinute = now;
     logLines = 0;
   }
-  if (logLines >= LOG_LINES_PER_MINUTE) return;
+  if (logLines >= logCap) return;
   logLines += 1;
   lastLogLine = line;
   invoke("write_log", { tag, msg }).catch(() => {});
+}
+
+/** Whether this is the debug build for testers; there the page logs more and the per-minute cap is higher. */
+export async function debugLogEnabled(): Promise<boolean> {
+  if (!isTauri) return false;
+  try {
+    const on = await invoke<boolean>("debug_log");
+    if (on) logCap = 240;
+    return on;
+  } catch {
+    return false;
+  }
 }
 
 /** Opens one of the About links (repository, author's space, mail) outside the app. */
