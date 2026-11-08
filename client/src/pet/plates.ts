@@ -44,7 +44,17 @@ export const plateCards = (): ManifestCard[] => manifest.cards.filter((c) => pla
 
 /** Plate size under a partner's pet drawn at `scale`. */
 export function plateSize(scale: number): { width: number; height: number } {
-  return { width: Math.max(120, Math.round(228 * scale)), height: Math.round(Math.min(40, Math.max(24, 30 * scale))) };
+  return { width: Math.round(228 * scale), height: Math.round(Math.min(40, Math.max(16, 30 * scale))) };
+}
+
+/** Partner scale down to which the nickname keeps its full size; smaller partners shrink it. */
+const FULL_NAME_SCALE = 0.8;
+
+/** Nickname font size and plain name tag height (px) under a partner's pet drawn at `scale`. */
+export function nameBand(scale: number): { font: number; pill: number } {
+  const k = Math.min(1, scale / FULL_NAME_SCALE);
+  // 12px is --fs-label, 22px the tag's own height.
+  return { font: Math.round(Math.max(10, 12 * k)), pill: Math.round(Math.max(16, 22 * k)) };
 }
 
 export interface ArtBox { width: number; height: number; left: number; top: number }

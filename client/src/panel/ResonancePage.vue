@@ -72,7 +72,7 @@ async function nextBatch() {
       </div>
       <div class="supply">
         <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
-        <small><span>收益 ×{{ status?.income.multiplier ?? 1 }}</span><span>每分钟 {{ status?.income.perMinute ?? 16 }} 碎片</span></small>
+        <small><span>收益 ×{{ status?.income.multiplier ?? 1 }}</span><span>每分钟 {{ status?.income.perMinute ?? manifest.economy.income.perMinute }} 碎片</span></small>
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">

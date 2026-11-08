@@ -79,7 +79,7 @@ async def create_room() -> dict:
 
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
-          "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
+          "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
 
 
 def _guard(fn, *args):
@@ -120,6 +120,8 @@ class ActivityBody(BaseModel):
     taps: int = Field(ge=0, le=100000)
     session: str = Field(min_length=16, max_length=128)
     sequence: int = Field(ge=1)
+    # Seconds left of a cooldown the client's own input guard started.
+    cooldown: int = Field(default=0, ge=0, le=3600)
 
 
 class CraftBody(BaseModel):
@@ -155,7 +157,7 @@ def api_me(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/activity")
 def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
-    return _guard(game.report_activity, who, body.taps, body.session, body.sequence)
+    return _guard(game.report_activity, who, body.taps, body.session, body.sequence, body.cooldown)
 
 
 @app.post("/api/presence")
@@ -171,6 +173,16 @@ def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/craft")
 def api_craft(body: CraftBody, who: PlayerId = Depends(player)) -> dict:
     return _guard(game.craft, who, body.item)
+
+
+@app.get("/api/checkin")
+def api_checkin_month(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.checkin_month, who)
+
+
+@app.post("/api/checkin")
+def api_checkin(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.checkin, who)
 
 
 @app.get("/api/loadout")

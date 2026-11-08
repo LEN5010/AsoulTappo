@@ -94,6 +94,7 @@ def test_resonance_migration_converts_once_and_preserves_items_and_pity(tmp_path
         INSERT INTO players (id, created, shards, boxes, draw_tickets, draw_pity, drawn_total)
         VALUES ('old', 1, 23, 4, 7, 321, 456);
         INSERT INTO items VALUES ('old', 'emote:e.02', 2, 1);
+        INSERT INTO activity_sessions VALUES ('old', 'session-1', 5);
     """)
     db.close()
     for _ in range(2):
@@ -103,5 +104,7 @@ def test_resonance_migration_converts_once_and_preserves_items_and_pity(tmp_path
         assert p["boxes"] == p["draw_tickets"] == 0
         assert p["draw_pity"] == 321 and p["drawn_total"] == 456
         assert p["skin_pity"] == p["last_minute_taps"] == p["shard_remainder"] == 0
+        assert p["boost_day"] == "" and p["boost_used"] == p["tap_cooldown_until"] == 0
+        assert store.activity_session("old", "session-1") == {"sequence": 5, "last_at": 0, "fast_since": 0}
         assert store.owned("old") == {"emote:e.02": 2}
         store.close()

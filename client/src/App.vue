@@ -7,9 +7,10 @@ import PetActor from "./pet/PetActor.vue";
 import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
+import CooldownBubble from "./pet/CooldownBubble.vue";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
-import { plateCard, plateSize } from "./pet/plates";
+import { nameBand, plateCard, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
@@ -17,7 +18,7 @@ import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
-import { onInput, pet, stopPet } from "./stores/pet";
+import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { draws, startReporting, stopReporting } from "./stores/player";
 import { localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import {
@@ -63,6 +64,7 @@ function closeQuick(e: Event) {
 
 // ---- other members on the desk
 const remotePlate = computed(() => plateSize(settings.remoteScale));
+const remoteName = computed(() => nameBand(settings.remoteScale));
 /** A partner's name plate, when they wear one and plates are shown. */
 const plateOf = (m: RemoteMember) => (settings.showPlates ? plateCard(m.plate)?.id : undefined);
 const remoteSize = computed<Size>(() => remotePetSize(settings.remoteScale, settings.showNames, settings.showPlates));
@@ -160,9 +162,12 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <template v-if="settings.showNames">
         <NamePlate
           v-if="plateOf(m)" :card="plateOf(m)!" :nick="shownNick(m)" :color="characterColor(m.character)"
-          :width="remotePlate.width" :height="remotePlate.height"
+          :width="remotePlate.width" :height="remotePlate.height" :font="remoteName.font"
         />
-        <NamePill v-else :nick="shownNick(m)" :color="characterColor(m.character)" :width="Math.max(120, PET_BASE.width * settings.remoteScale)" />
+        <NamePill
+          v-else :nick="shownNick(m)" :color="characterColor(m.character)" :width="PET_BASE.width * settings.remoteScale"
+          :height="remoteName.pill" :font="remoteName.font"
+        />
       </template>
     </PetActor>
 
@@ -172,6 +177,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
+      <CooldownBubble :until="tapCooldown" />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"

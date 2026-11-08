@@ -10,5 +10,5 @@ used with the original author's permission.
 Copyright of the artwork belongs to its respective owners. The GPL-2.0 license covers the code only, not this artwork.
 Non-commercial fan project. Rights holders: open an issue and the assets will be removed promptly.
 
-Per character: `bgImage.png`, `keyboardImage.png`, `mouseImage.png`, `leftClickImage.png`, `rightClickImage.png`.
-Skin folders start with the member's name, such as `贝拉山海经`. Only `bgImage.png` is required; any other layer falls back to the member's.
+Per character: `bgImage.webp`, `keyboardImage.webp`, `mouseImage.webp`, `leftClickImage.webp`, `rightClickImage.webp` (the original PNGs, stored as lossless WebP).
+Skin folders start with the member's name, such as `贝拉山海经`. Only `bgImage.webp` is required; any other layer falls back to the member's.

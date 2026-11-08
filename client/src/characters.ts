@@ -1,10 +1,10 @@
-// Character assets live in src/assets/characters/<name>/{bgImage,keyboardImage,mouseImage,leftClickImage,rightClickImage}.png
+// Character assets live in src/assets/characters/<name>/{bgImage,keyboardImage,mouseImage,leftClickImage,rightClickImage}.webp
 // Imported from Evelynall/ASoul-Little-Bun (see assets/characters/COPYRIGHT.md).
-// A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.png
+// A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.webp
 // is required, the other layers come from the member.
 import { memberOf } from "./manifest";
 
-const files = import.meta.glob("./assets/characters/*/*.png", {
+const files = import.meta.glob("./assets/characters/*/*.webp", {
   eager: true,
   query: "?url",
   import: "default",
@@ -30,7 +30,7 @@ export interface CharacterAssets {
 function build(): Record<string, CharacterAssets> {
   const tmp: Record<string, Record<string, string>> = {};
   for (const [path, url] of Object.entries(files)) {
-    const m = path.match(/characters\/([^/]+)\/([^/]+)\.png$/);
+    const m = path.match(/characters\/([^/]+)\/([^/]+)\.webp$/);
     if (!m) continue;
     (tmp[m[1]] ??= {})[m[2]] = url;
   }
@@ -77,7 +77,7 @@ export const PET_BASE = {
   monitor: { x: 50, y: 46 },
 };
 
-// Top of each character's head on the base canvas (measured from bgImage.png).
+// Top of each character's head on the base canvas (measured from bgImage.webp).
 // Head accessories sit here and emote bubbles grow from its upper right.
 const HEADS: Record<string, { x: number; y: number }> = {
   嘉然: { x: 152, y: 10 },

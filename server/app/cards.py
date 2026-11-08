@@ -14,6 +14,10 @@ class Rng(Protocol):
 class DropConfig:
     min_taps_active_minute: int = 10
     max_taps_per_sec: int = 15
+    # A session reporting at least this fast for the streak sits out the cooldown: no taps, no multiplier.
+    fast_taps_per_sec: int = 10
+    fast_streak_sec: float = 30.0
+    tap_cooldown_sec: float = 60.0
 
 
 def roll_tier(rates, available, pity, hard_pity, rng: Rng) -> str:
@@ -56,3 +60,13 @@ def pick_common_group(groups, rng: Rng):
         if x < weight:
             return items[min(int(x / weight * len(items)), len(items) - 1)]
         x -= weight
+
+
+def pick_weighted(weights, rng: Rng) -> int:
+    """Index chosen with probability proportional to its weight."""
+    x = rng.random() * sum(weights)
+    for i, weight in enumerate(weights):
+        if x < weight:
+            return i
+        x -= weight
+    return len(weights) - 1

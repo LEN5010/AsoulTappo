@@ -58,14 +58,30 @@ class Game:
 
     # ---------------------------------------------------------------- activity
     def report_activity(self, token: str, taps: int, session: str | None = None,
-                        sequence: int = 0) -> dict[str, Any]:
+                        sequence: int = 0, cooldown: int = 0) -> dict[str, Any]:
         pid = player_id_for(token)
         taps = max(0, min(int(taps), MAX_REPORT_TAPS))
         cfg = self.cfg
         with self.store.transaction() as st:
             now = self.now()
             p = st.get_player(pid, now)
-            if session is not None and sequence <= st.activity_sequence(pid, session):
+            if session is not None:
+                last = st.activity_session(pid, session)
+                if sequence <= last["sequence"]:
+                    return {**self.status(token), "credited": 0}
+                # Measured on what the session sent, before the budget clips it, so any rate above it still shows.
+                fast_since = 0.0
+                if 0 < last["last_at"] < now and taps / (now - last["last_at"]) >= cfg.fast_taps_per_sec:
+                    fast_since = last["fast_since"] or last["last_at"]
+                if fast_since and now - fast_since >= cfg.fast_streak_sec:
+                    st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
+                    p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
+                st.save_activity_sequence(pid, session, sequence, now, fast_since)
+            # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
+            if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
+                p["tap_cooldown_until"] = now + min(cooldown, cfg.tap_cooldown_sec)
+                st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"])
+            if now < p["tap_cooldown_until"]:
                 return {**self.status(token), "credited": 0}
             previous = p["last_activity"] or p["created"]
             elapsed = min(max(now - previous, 0.0), MAX_ELAPSED)
@@ -92,8 +108,6 @@ class Game:
             st.save_activity_budget(pid, budget - credited)
             if credited:
                 st.mark_active(pid, day_of(now))
-            if session is not None:
-                st.save_activity_sequence(pid, session, sequence)
         out = self.status(token)
         out["credited"] = credited
         return out
@@ -111,12 +125,31 @@ class Game:
             if previous is not None and 0 <= now - previous <= 60:
                 elapsed = max(0.0, now - max(previous, p["presence_last"]))
             inc = self.manifest.income
-            earned = p["shard_remainder"] + elapsed / 60 * inc["perMinute"] * self._multiplier(p, now)
+            multiplier = self._paid_multiplier(p, now)
+            # Only the boosted time left today earns above the base rate.
+            boosted = min(elapsed, self._boost_left(p, now)) if multiplier > 1 else 0.0
+            earned = p["shard_remainder"] + inc["perMinute"] / 60 * (elapsed + boosted * (multiplier - 1))
             # Absorb floating-point noise at whole-shard boundaries.
             whole = int(earned + 1e-9)
+            today = day_of(now)
+            used = p["boost_used"] if p["boost_day"] == today else 0.0
             st.update_player(pid, shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
-                             presence_last=max(now, p["presence_last"]) if previous is not None else p["presence_last"])
+                             presence_last=max(now, p["presence_last"]) if previous is not None else p["presence_last"],
+                             boost_day=today, boost_used=used + boosted)
         return self.status(token)
+
+    def _boost_left(self, p, now) -> float:
+        """Seconds of boosted income left on this China day; unlimited when the manifest sets no cap."""
+        cap = self.manifest.income.get("boostMinutesPerDay")
+        if cap is None:
+            return math.inf
+        return cap * 60 - (p["boost_used"] if p["boost_day"] == day_of(now) else 0.0)
+
+    def _paid_multiplier(self, p, now) -> float:
+        """The multiplier income pays: none during a tap cooldown or once today's boosted time is spent."""
+        if now < p["tap_cooldown_until"] or self._boost_left(p, now) <= 0:
+            return 1.0
+        return self._multiplier(p, now)
 
     def _multiplier(self, p, now):
         bucket = int(now // 60)
@@ -203,13 +236,39 @@ class Game:
         out["item"] = item_id
         return out
 
+    # ----------------------------------------------------------------- checkin
+    def checkin(self, token: str) -> dict[str, Any]:
+        """Check in once per China Standard Time day: one prize drawn by weight, its shards (give or take the
+        manifest's spread) credited."""
+        pid = player_id_for(token)
+        prizes = self.manifest.checkin["prizes"]
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            today = day_of(now)
+            if st.checked_in(pid, today):
+                raise GameError("checked_in", "今天已经签到了")
+            index = cardlogic.pick_weighted([w["weight"] for w in prizes], self.rng)
+            spread = self.manifest.checkin.get("spread", 0)
+            gained = round(prizes[index]["shards"] * (1 + spread * (2 * self.rng.random() - 1)))
+            st.add_checkin(pid, today, index, gained, now)
+            st.update_player(pid, shards=p["shards"] + gained)
+        return {**self.status(token), "prize": {"index": index, "shards": gained, "day": today}}
+
+    def checkin_month(self, token: str) -> dict[str, Any]:
+        """Today and this China Standard Time month's check-ins, for the calendar."""
+        pid = player_id_for(token)
+        today = day_of(self.now())
+        days = self.store.checkins_since(pid, today[:8] + "01")
+        return {"today": today, "available": all(d["day"] != today for d in days), "days": days}
+
     # ------------------------------------------------------------------ status
     def status(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
         now = self.now()
         p = self.store.get_player(pid, now)
         owned_count = self.store.count_items(pid, self.collectible_ids)
-        multiplier = self._multiplier(p, now)
+        multiplier = self._paid_multiplier(p, now)
         return {
             "player": pid,
             "shards": p["shards"],
@@ -220,6 +279,8 @@ class Game:
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
                        "owned": owned_count,
                        "items": len(self.manifest.items) - len(self.manifest.starter)},
+            "checkin": {"available": not self.store.checked_in(pid, day_of(now))},
+            "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
         }
 
     def save_summary(self, pid: str) -> dict[str, Any]:

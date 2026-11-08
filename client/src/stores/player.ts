@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type Collection, type Credential, type Drop, type LoadoutPatch, type MainUser, type PlayerStatus,
+  type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type LoadoutPatch, type MainUser, type PlayerStatus,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { ownsCharacter, ownsEmote } from "../items";
@@ -214,6 +214,7 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   status.value = null;
   collection.owned = {};
   collection.recent = [];
+  checkins.value = null;
   freshItems.clear();
   online.value = false;
   error.value = "";
@@ -226,13 +227,19 @@ export function countInput(): void {
   current.reporter.add(1);
 }
 
+/** The input guard stopped counting taps until `until` (ms): tell the server now, so the multiplier stops too. */
+export function reportCooldown(until: number): void {
+  current.reporter.cool(until);
+  void flush(current);
+}
+
 export function startReporting(everyMs = 20000): void {
   if (timer) return;
   void refresh().then(heartbeat); // establishes the input and running-time baselines
   timer = setInterval(() => {
     void heartbeat();
     for (const session of sessions.values()) {
-      if (session.reporter.size > 0) void flush(session);
+      if (session.reporter.due()) void flush(session);
     }
   }, everyMs);
 }
@@ -269,6 +276,44 @@ export async function craftItem(item: string): Promise<boolean> {
   freshItems.add(item);
   await reloadCollection();
   return true;
+}
+
+// ---------------------------------------------------------------- daily check-in
+/** This month's check-ins, loaded by the check-in page. */
+export const checkins = ref<CheckinMonth | null>(null);
+
+export async function loadCheckins(): Promise<void> {
+  if (isPanelWindow) return requestDesktop("loadCheckins");
+  const month = await call((api) => api.checkinMonth());
+  if (month) checkins.value = month;
+}
+
+let checkingIn = false;
+
+/** Checks in for today. null when the request failed or today was taken on another device; the month reloads then. */
+export async function checkin(): Promise<CheckinResult | null> {
+  if (isPanelWindow) return requestDesktop("checkin");
+  if (checkingIn) return null;
+  checkingIn = true;
+  try {
+    const r = await call((api) => api.checkin());
+    if (!r) {
+      await loadCheckins();
+      return null;
+    }
+    status.value = r;
+    const { day, index: prize, shards } = r.prize;
+    const month = checkins.value;
+    if (month && month.today.slice(0, 7) === day.slice(0, 7)) {
+      const days = [...month.days.filter((d) => d.day !== day), { day, prize, shards }].sort((x, y) => x.day.localeCompare(y.day));
+      checkins.value = { today: day, available: false, days };
+    } else {
+      await loadCheckins();
+    }
+    return r;
+  } finally {
+    checkingIn = false;
+  }
 }
 
 // ---------------------------------------------------------------- loadout

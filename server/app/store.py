@@ -77,13 +77,22 @@ CREATE TABLE IF NOT EXISTS presence_sessions (
   last_seen REAL NOT NULL,
   PRIMARY KEY (player_id, session)
 );
+CREATE TABLE IF NOT EXISTS checkins (
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  prize INTEGER NOT NULL,
+  shards INTEGER NOT NULL,
+  ts REAL NOT NULL,
+  PRIMARY KEY (player_id, day)
+);
 """
 
 STARTER_SHARDS = 1600
 
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
-    "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder"
+    "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
+    "boost_day boost_used tap_cooldown_until"
 ).split()
 
 
@@ -124,6 +133,16 @@ class Store:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
                 self._db.execute("UPDATE players SET shards = shards * 16 + (draw_tickets + boxes) * 160, "
                                  "draw_tickets = 0, boxes = 0")
+            # Boosted income spent on one China day, and the cooldown after input too fast for a hand.
+            if "boost_day" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN boost_day TEXT NOT NULL DEFAULT ''")
+            for field in ("boost_used", "tap_cooldown_until"):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} REAL NOT NULL DEFAULT 0")
+            sessions = self._columns("activity_sessions")
+            for field in ("last_at", "fast_since"):
+                if field not in sessions:
+                    self._db.execute(f"ALTER TABLE activity_sessions ADD COLUMN {field} REAL NOT NULL DEFAULT 0")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(
@@ -180,17 +199,22 @@ class Store:
                 "ON CONFLICT(player_id) DO UPDATE SET balance=excluded.balance", (pid, balance))
             self._commit()
 
-    def activity_sequence(self, pid: str, session: str) -> int:
+    def activity_session(self, pid: str, session: str) -> dict[str, float]:
+        """The session's last batch: its sequence, when it came, and since when it has been too fast."""
         with self._lock:
             row = self._db.execute(
-                "SELECT sequence FROM activity_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
-            return row["sequence"] if row else 0
+                "SELECT sequence, last_at, fast_since FROM activity_sessions WHERE player_id=? AND session=?",
+                (pid, session)).fetchone()
+            return dict(row) if row else {"sequence": 0, "last_at": 0.0, "fast_since": 0.0}
 
-    def save_activity_sequence(self, pid: str, session: str, sequence: int) -> None:
+    def save_activity_sequence(self, pid: str, session: str, sequence: int,
+                               last_at: float = 0.0, fast_since: float = 0.0) -> None:
         with self._lock:
             self._db.execute(
-                "INSERT INTO activity_sessions VALUES (?, ?, ?) "
-                "ON CONFLICT(player_id, session) DO UPDATE SET sequence=excluded.sequence", (pid, session, sequence))
+                "INSERT INTO activity_sessions (player_id, session, sequence, last_at, fast_since) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(player_id, session) DO UPDATE SET "
+                "sequence=excluded.sequence, last_at=excluded.last_at, fast_since=excluded.fast_since",
+                (pid, session, sequence, last_at, fast_since))
             self._commit()
 
     # --- items
@@ -246,6 +270,23 @@ class Store:
                 f"ORDER BY COALESCE(NULLIF(p.last_activity, 0), p.created, l.linked_at) DESC LIMIT ? OFFSET ?",
                 (*args, limit, offset)).fetchall()
         return [dict(r) for r in rows], total
+
+    # --- daily check-in (days are China Standard Time dates, YYYY-MM-DD)
+    def checked_in(self, pid: str, day: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM checkins WHERE player_id=? AND day=?", (pid, day)).fetchone() is not None
+
+    def add_checkin(self, pid: str, day: str, prize: int, shards: int, ts: float) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO checkins (player_id, day, prize, shards, ts) VALUES (?, ?, ?, ?, ?)",
+                             (pid, day, prize, shards, ts))
+            self._commit()
+
+    def checkins_since(self, pid: str, first_day: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT day, prize, shards FROM checkins WHERE player_id=? AND day >= ? ORDER BY day",
+                                    (pid, first_day)).fetchall()
+        return [dict(r) for r in rows]
 
     # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
     def mark_active(self, pid: str, day: str) -> None:

@@ -19,6 +19,8 @@ export interface ManifestCard {
   thumb: string;
   full: string;
   video: string | null;
+  /** The video is one still picture over the card's sound. */
+  still: boolean;
 }
 export interface ThemeIcon { n: string; s: string }
 export interface ManifestTheme {
@@ -76,9 +78,11 @@ export interface Manifest {
   starter: { emotes: string[]; theme: string };
   skins: { name: string; member: string }[];
   economy: {
-    income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number };
+    income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number; boostMinutesPerDay: number };
     resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number }; duplicateRefund: number };
     craftCost: Partial<Record<Rarity, number>>;
+    /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */
+    checkin: { prizes: { shards: number; weight: number }[]; spread: number };
   };
 }
 

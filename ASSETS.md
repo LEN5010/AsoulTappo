@@ -52,7 +52,7 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --card
 |---|---|
 | 表情 | 等比缩放到 ≤ 320px，WebP；动态图保留所有帧、帧时长和循环设置 |
 | 卡片 | 原图 1080 宽 WebP q82；缩略图 414×621 |
-| 卡片视频 | 客户端内置，H.264 640px 宽、30 fps、crf 28，音轨原样复制源文件，`+faststart` |
+| 卡片视频 | 客户端内置，H.264 640px 宽、30 fps、crf 28、preset veryslow；音轨不超过 192kbps 的原样复制，超过的转成 AAC 192kbps；`+faststart` |
 
 增量补入成员目录中的收藏集表情：
 

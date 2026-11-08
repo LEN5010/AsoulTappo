@@ -216,11 +216,20 @@ BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724
 SMALL_HIDDEN_IDS = {'1762331462009', '1700742793026', '1756378523010', '1700742793022', '1781070981010', '1745315724008', '1700742793023', '1748345610011'}
 BIG_HIDDEN_IDS.update({'1787896765003', '1785126321002'})
 SMALL_HIDDEN_IDS.update({'1787896765010', '1785126321010'})
+# Cards whose video holds one still picture over its sound: no dancing, only the voice track.
+STILL_VIDEO_IDS = {
+    '1762331462004', '1745315724003', '1748345610002', '1748345610003', '1756378523003',
+    '1700742793022', '1700742793023', '1700742793026',
+}
 RARITIES = ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 def card_tier(card_id: str) -> str:
     return "big" if card_id in BIG_HIDDEN_IDS else "small" if card_id in SMALL_HIDDEN_IDS else "normal"
+
+
+def card_still(card_id: str) -> bool:
+    return card_id in STILL_VIDEO_IDS
 
 
 def card_rarity(card_id: str, name: str, has_video: bool) -> str:
@@ -252,11 +261,17 @@ SKINS = [{"name": f"{member}{series}", "member": member}
     {"name": "嘉然2025生日", "member": "嘉然"},
     {"name": "乃琳2025生日", "member": "乃琳"},
 ]
-INCOME = {"perMinute": 16, "maxMultiplier": 5, "fullTapsPerMinute": 60}
+# The multiplier pays for at most boostMinutesPerDay on one China day; base income keeps running after that.
+INCOME = {"perMinute": 4, "maxMultiplier": 8, "fullTapsPerMinute": 60, "boostMinutesPerDay": 480}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.5, "skin": 0.5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 40.5},
              "duplicateRefund": 10}
 CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
+# Daily check-in prizes by amount; weights are percentages (1.7 draws on average, the top prize 10).
+# A prize pays its shards give or take `spread` (uniform), so the amounts are seldom round; the mean is unchanged.
+CHECKIN = {"prizes": [{"shards": 80, "weight": 30}, {"shards": 160, "weight": 30}, {"shards": 320, "weight": 20},
+                      {"shards": 480, "weight": 12}, {"shards": 800, "weight": 6}, {"shards": 1600, "weight": 2}],
+           "spread": 0.1}
 
 
 # -------------------------------------------------------- frames and badges
