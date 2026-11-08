@@ -1,18 +1,22 @@
 name: Debug build
 
-# Windows installer for testers, built with the detailed log (cargo feature debug-log, see
-# client/src-tauri/src/applog.rs). Not a release: the installer is only a workflow artifact,
+# Windows installer for testers. Not a release: the installer is only a workflow artifact,
 # with no GitHub release and no updater files.
-# Push a tag named debug-<version>, e.g. debug-1.0.3-debug.1; <version> becomes the app version.
-# A pre-release version sorts below the next real release, so testers are offered that update.
+# - debug-<version>, e.g. debug-1.0.3-debug.1: built with the detailed log (cargo feature
+#   debug-log, see client/src-tauri/src/applog.rs).
+# - test-<version>, e.g. test-1.0.5-rc.1: built like a release, without debug-log. The debug
+#   build takes other code paths, so check this one on the test machine before tagging v*.
+# <version> becomes the app version. A pre-release version sorts below the next real release,
+# so testers are offered that update.
 on:
   push:
     tags:
       - "debug-*"
+      - "test-*"
 
 jobs:
   windows-nsis:
-    name: Windows NSIS (debug log)
+    name: Windows NSIS (tester build)
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -41,9 +45,12 @@ jobs:
         # Bundling downloads the NSIS tools from GitHub releases, which sometimes answers 504;
         # a retry only repeats the bundling, the compiled program is reused.
         run: |
-          version="${GITHUB_REF_NAME#debug-}"
+          case "$GITHUB_REF_NAME" in
+            debug-*) version="${GITHUB_REF_NAME#debug-}"; features="--features debug-log" ;;
+            test-*) version="${GITHUB_REF_NAME#test-}"; features="" ;;
+          esac
           for attempt in 1 2 3; do
-            npm run tauri build -- --bundles nsis --features debug-log \
+            npm run tauri build -- --bundles nsis $features \
               --config "{\"version\":\"$version\",\"bundle\":{\"createUpdaterArtifacts\":false}}" && exit 0
             echo "build attempt $attempt failed"
             sleep 30

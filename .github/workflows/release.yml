@@ -41,9 +41,9 @@ jobs:
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
             - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
-            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。受 Windows 用户界面特权隔离（UIPI）限制，普通权限进程无法接收管理员权限窗口的键鼠输入；前台为管理员权限程序持续 10 秒后，桌宠上方显示提示
+            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。
             - 托盘菜单可以导出运行日志
-            - 共鸣概率调整：大隐藏 0.5% 改为 0.1%，皮肤 0.5% 改为 0.2%，保底次数不变
+            - 修复 1.0.4 打开后整个屏幕被背景盖住的问题
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -89,9 +89,9 @@ jobs:
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
             - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
-            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。受 Windows 用户界面特权隔离（UIPI）限制，普通权限进程无法接收管理员权限窗口的键鼠输入；前台为管理员权限程序持续 10 秒后，桌宠上方显示提示
+            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。
             - 托盘菜单可以导出运行日志
-            - 共鸣概率调整：大隐藏 0.5% 改为 0.1%，皮肤 0.5% 改为 0.2%，保底次数不变
+            - 修复 1.0.4 打开后整个屏幕被背景盖住的问题
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
