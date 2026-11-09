@@ -58,28 +58,17 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
 // Windows: start as administrator, so games run as administrator still reach the pet.
 const admin = ref<AdminStatus | null>(null);
 const adminBusy = ref(false);
-const adminMsg = ref("");
 onMounted(async () => { admin.value = await adminStatus(); });
-const adminNote = computed(() => {
-  if (adminMsg.value) return adminMsg.value;
-  if (admin.value && !admin.value.canElevate && !admin.value.elevated) return "当前账户没有管理员权限，以管理员身份运行的游戏里收不到按键。";
-  return "以管理员身份运行的游戏里，打开它才收得到按键。";
-});
+// No note under the switch: a cancelled or failed change just flips it back.
 async function toggleAdmin(e: Event) {
   const input = e.target as HTMLInputElement;
   const want = input.checked;
   adminBusy.value = true;
-  adminMsg.value = "";
   try {
     const result = await setRunAsAdmin(want);
-    if (result === "restarting") adminMsg.value = "正在以管理员身份重启";
-    else if (admin.value) {
-      admin.value = { ...admin.value, runAsAdmin: want };
-      if (!want && admin.value.elevated) adminMsg.value = "下次启动起按普通权限运行";
-    }
-  } catch (err) {
+    if (result !== "restarting" && admin.value) admin.value = { ...admin.value, runAsAdmin: want };
+  } catch {
     input.checked = !want;
-    adminMsg.value = String(err) === "cancelled" ? "已取消" : "没能切换";
   } finally {
     adminBusy.value = false;
   }
@@ -206,7 +195,6 @@ async function exportLogFile() {
               />
             </label>
           </div>
-          <p v-if="admin?.supported" class="note" role="status">{{ adminNote }}</p>
         </section>
 
         <section data-rise>

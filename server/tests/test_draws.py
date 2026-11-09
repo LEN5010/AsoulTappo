@@ -24,11 +24,11 @@ def test_new_player_and_idle_income():
     for _ in range(3):
         clock.t += 20
         r = g.presence(TOKEN, SESSION)
-    assert r["shards"] == 1604 and r["income"] == {"multiplier": 1, "perMinute": 4}
+    assert r["shards"] == 1606 and r["income"] == {"multiplier": 1, "perMinute": 6}
     assert r["totals"]["items"] == 549
 
 
-@pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 4), (30, 4.5, 18), (60, 8, 32), (120, 8, 32)])
+@pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 6), (30, 4.5, 27), (60, 8, 48), (120, 8, 48)])
 def test_previous_minute_income(taps, multiplier, rate):
     g, clock = game()
     clock.t += 20
@@ -44,7 +44,7 @@ def test_previous_minute_income(taps, multiplier, rate):
         clock.t += 20
     assert g.presence(TOKEN, SESSION)["shards"] == 1600 + rate
     clock.t += 120
-    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 4}
+    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 6}
 
 
 def test_boost_stops_after_the_daily_allowance_and_returns_the_next_day():
@@ -59,9 +59,9 @@ def test_boost_stops_after_the_daily_allowance_and_returns_the_next_day():
     clock.t += 20
     g.report_activity(TOKEN, 60)
     clock.t += 40
-    # The last 30 boosted seconds pay x8, the rest of the minute the base rate: 4 / 60 * (60 + 30 * 7).
-    assert g.presence(TOKEN, SESSION)["shards"] == 1618
-    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 4}
+    # The last 30 boosted seconds pay x8, the rest of the minute the base rate: 6 / 60 * (60 + 30 * 7).
+    assert g.presence(TOKEN, SESSION)["shards"] == 1627
+    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 6}
     clock.t += 86400
     g.report_activity(TOKEN, 60)
     clock.t += 60
@@ -74,7 +74,7 @@ def test_fractional_shards_accumulate():
     for _ in range(60):
         clock.t += 1
         g.presence(TOKEN, SESSION)
-    assert g.status(TOKEN)["shards"] == 1604
+    assert g.status(TOKEN)["shards"] == 1606
     assert g.store.get_player(player_id_for(TOKEN), clock.t)["shard_remainder"] == pytest.approx(0)
 
 
@@ -86,11 +86,11 @@ def test_heartbeats_overlap_once_and_pause_resumes_from_new_baseline():
     clock.t += 10
     g.presence(TOKEN, SESSION)
     g.presence(TOKEN, "second-session-0001")
-    assert g.status(TOKEN)["shards"] == 1601
+    assert g.status(TOKEN)["shards"] == 1602
     clock.t += 3600
-    assert g.presence(TOKEN, SESSION)["shards"] == 1601
+    assert g.presence(TOKEN, SESSION)["shards"] == 1602
     clock.t += 40
-    assert g.presence(TOKEN, SESSION)["shards"] == 1604
+    assert g.presence(TOKEN, SESSION)["shards"] == 1606
 
 
 def test_simultaneous_pities_then_independent_resets():
