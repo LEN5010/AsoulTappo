@@ -4912,10 +4912,10 @@
  ],
  "economy": {
   "income": {
-   "perMinute": 4,
+   "perMinute": 6,
    "maxMultiplier": 8,
    "fullTapsPerMinute": 60,
-   "boostMinutesPerDay": 480
+   "boostMinutesPerDay": 300
   },
   "resonance": {
    "cost": 160,
