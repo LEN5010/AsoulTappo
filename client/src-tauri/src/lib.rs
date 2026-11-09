@@ -320,10 +320,14 @@ fn open_about_link(url: String) -> Result<(), String> {
         return Err("unknown link".into());
     }
     // Started from an elevated process the browser would run elevated too; explorer hands the
-    // link to the shell, which runs with the player's normal rights.
+    // link to the shell, which runs with the player's normal rights. Explorer reads `=` and `,`
+    // in its argument as option separators, so a link with a query string opened the Documents
+    // folder; the link goes into an Internet Shortcut file and explorer opens that file instead.
     #[cfg(target_os = "windows")]
     let result = if elevation::is_elevated() {
-        std::process::Command::new("explorer").arg(&url).spawn()
+        let shortcut = std::env::temp_dir().join("AsoulTappo-link.url");
+        std::fs::write(&shortcut, format!("[InternetShortcut]\r\nURL={url}\r\n"))
+            .and_then(|()| std::process::Command::new("explorer").arg(&shortcut).spawn())
     } else {
         std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", &url]).spawn()
     };
