@@ -17,80 +17,61 @@ def game(rng=None, path=":memory:"):
     return g, clock
 
 
-def test_new_player_and_idle_income():
+def test_new_player_and_online_time_pays_nothing():
     g, clock = game()
     assert g.status(TOKEN)["shards"] == 1600
-    g.presence(TOKEN, SESSION)
-    for _ in range(3):
-        clock.t += 20
+    for _ in range(4):
         r = g.presence(TOKEN, SESSION)
-    assert r["shards"] == 1606 and r["income"] == {"multiplier": 1, "perMinute": 6}
+        clock.t += 20
+    assert r["shards"] == 1600
+    assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 10400, "taps": 0, "perTap": 2.8, "multiplier": 1, "perMinute": 168.0}
     assert r["totals"]["items"] == 549
 
 
-@pytest.mark.parametrize("taps,multiplier,rate", [(0, 1, 6), (30, 4.5, 27), (60, 8, 48), (120, 8, 48)])
-def test_previous_minute_income(taps, multiplier, rate):
+def test_taps_pay_along_the_log_curve():
     g, clock = game()
     clock.t += 20
-    g.report_activity(TOKEN, taps)
-    clock.t += 40
-    assert g.status(TOKEN)["income"] == {"multiplier": multiplier, "perMinute": rate}
-    g.presence(TOKEN, SESSION)
-    clock.t += 20
-    # Repeated reports keep the previous-minute sample available.
-    g.report_activity(TOKEN, taps)
-    for _ in range(2):
-        g.presence(TOKEN, SESSION)
-        clock.t += 20
-    assert g.presence(TOKEN, SESSION)["shards"] == 1600 + rate
-    clock.t += 120
-    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 6}
+    r = g.report_activity(TOKEN, 100)
+    # 2800 * ln(1 + 100 / 1000) = 266.9
+    assert r["shards"] == 1866
+    assert r["income"] == {"day": day_of(clock.t), "today": 266, "cap": 10400, "taps": 100, "perTap": 2.545, "multiplier": 1, "perMinute": 152.7}
 
 
-def test_boost_stops_after_the_daily_allowance_and_returns_the_next_day():
+def test_a_minute_pays_for_its_first_taps_only():
     g, clock = game()
-    allowance = g.manifest.income["boostMinutesPerDay"] * 60
-    g.store.update_player(player_id_for(TOKEN), boost_day=day_of(clock.t), boost_used=allowance - 30)
     clock.t += 20
-    g.report_activity(TOKEN, 60)
-    clock.t += 40
-    g.presence(TOKEN, SESSION)
-    assert g.status(TOKEN)["income"]["multiplier"] == 8
-    clock.t += 20
-    g.report_activity(TOKEN, 60)
-    clock.t += 40
-    # The last 30 boosted seconds pay x8, the rest of the minute the base rate: 6 / 60 * (60 + 30 * 7).
-    assert g.presence(TOKEN, SESSION)["shards"] == 1627
-    assert g.status(TOKEN)["income"] == {"multiplier": 1, "perMinute": 6}
-    clock.t += 86400
-    g.report_activity(TOKEN, 60)
+    r = g.report_activity(TOKEN, 200)
+    # Only 120 of the 200 pay: 2800 * ln(1.12) = 317.3.
+    assert r["totals"]["taps"] == 200 and r["income"]["taps"] == 120 and r["shards"] == 1917
+    r = g.report_activity(TOKEN, 0)
     clock.t += 60
-    assert g.status(TOKEN)["income"]["multiplier"] == 8
+    r = g.report_activity(TOKEN, 100)
+    # A new minute: 220 paid taps, 2800 * ln(1.22) = 556.8, the fraction carried between reports.
+    assert r["income"]["taps"] == 220 and r["shards"] == 2156
 
 
-def test_fractional_shards_accumulate():
+def test_the_day_stops_at_the_cap_and_starts_over_the_next_day():
     g, clock = game()
-    g.presence(TOKEN, SESSION)
-    for _ in range(60):
-        clock.t += 1
-        g.presence(TOKEN, SESSION)
-    assert g.status(TOKEN)["shards"] == 1606
-    assert g.store.get_player(player_id_for(TOKEN), clock.t)["shard_remainder"] == pytest.approx(0)
+    pid = player_id_for(TOKEN)
+    g.store.update_player(pid, tap_day=day_of(clock.t), day_taps=42200)
+    clock.t += 20
+    r = g.report_activity(TOKEN, 100)
+    assert r["shards"] == 1600
+    assert r["income"]["today"] == 10400 and r["income"]["perTap"] == 0 and r["income"]["perMinute"] == 0
+    clock.t += 86400
+    r = g.report_activity(TOKEN, 100)
+    assert r["shards"] == 1866 and r["income"]["taps"] == 100
 
 
-def test_heartbeats_overlap_once_and_pause_resumes_from_new_baseline():
-    g, clock = game()
-    g.presence(TOKEN, SESSION)
-    clock.t += 10
-    g.presence(TOKEN, "second-session-0001")
-    clock.t += 10
-    g.presence(TOKEN, SESSION)
-    g.presence(TOKEN, "second-session-0001")
-    assert g.status(TOKEN)["shards"] == 1602
-    clock.t += 3600
-    assert g.presence(TOKEN, SESSION)["shards"] == 1602
-    clock.t += 40
-    assert g.presence(TOKEN, SESSION)["shards"] == 1606
+def test_fractional_shards_do_not_depend_on_batch_size():
+    split, split_clock = game()
+    whole, whole_clock = game()
+    whole_clock.t += 20
+    expected = whole.report_activity(TOKEN, 100)["shards"]
+    for _ in range(100):
+        split_clock.t += 0.5
+        r = split.report_activity(TOKEN, 1)
+    assert r["shards"] == expected == 1866
 
 
 def test_simultaneous_pities_then_independent_resets():
@@ -128,7 +109,7 @@ def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
     assert g.resonate(TOKEN)["drops"][0]["item"] == "char:心宜新皮肤"
 
 
-@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .002), ("epic", .01), ("rare", .055), ("uncommon", .085)])
+@pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .002), ("rare", .055), ("uncommon", .085)])
 def test_completed_high_tier_rolls_into_common(rarity, roll):
     g, _ = game(SeqRng(roll, .5))
     for item in g.manifest.resonance_pool[rarity]:
@@ -146,10 +127,44 @@ def test_common_prefers_unowned_within_kind_then_refunds_duplicates(kind, roll):
     r = g.resonate(TOKEN, 2)
     assert r["drops"][0]["item"] == pool[-1]["id"]
     assert [d["new"] for d in r["drops"]] == [True, False]
-    refund = 10 if kind == "emote" else 0
+    refund = 5 if kind == "emote" else 20
     assert [d["shards"] for d in r["drops"]] == [0, refund]
     assert r["shards"] == 1280 + refund
     assert all(d["item"].startswith(f"{kind}:") for d in r["drops"])
+    # The repeat turned into shards and was not kept.
+    assert r["drops"][1]["count"] == 1 and g.store.owned(pid)[pool[-1]["id"]] == 1
+
+
+@pytest.mark.parametrize("tier,shards", [("small", 360), ("normal", 20)])
+def test_the_hidden_tier_keeps_rolling_once_complete_and_repeats_pay_by_tier(tier, shards):
+    g, _ = game(SeqRng(.01, .0))
+    pid = player_id_for(TOKEN)
+    epic = g.manifest.resonance_pool["epic"]
+    for item in epic:
+        g.store.add_item(pid, item["id"], 0)
+    # Every repeat pick in the tier lands on its first item; put a card of the wanted tier there.
+    first = next(i for i in epic if i["kind"] == "card" and g.manifest.cards[i["id"][5:]]["tier"] == tier)
+    g.manifest.resonance_pool["epic"].remove(first)
+    g.manifest.resonance_pool["epic"].insert(0, first)
+    r = g.resonate(TOKEN)
+    assert r["drops"][0]["rarity"] == "epic" and r["drops"][0]["item"] == first["id"]
+    assert r["drops"][0]["shards"] == shards and r["shards"] == 1600 - 160 + shards
+    assert g.store.owned(pid)[first["id"]] == 1
+
+
+def test_repeats_kept_before_1_1_pay_out_once():
+    g, _ = game()
+    pid = player_id_for(TOKEN)
+    cards = {g.manifest.cards[c]["tier"]: f"card:{c}" for c in g.manifest.cards}
+    g.store.add_items(pid, {cards["normal"]: 4, cards["small"]: 2, cards["big"]: 2, "emote:" + "x": 3}, 0)
+    assert g.refund_duplicate_cards() == (1, 3 * 20 + 1 * 360)
+    owned = g.store.owned(pid)
+    assert owned[cards["normal"]] == owned[cards["small"]] == 1 and owned["emote:x"] == 3
+    # A big hidden card has no exchange value, so its copies stay.
+    assert owned[cards["big"]] == 2
+    assert g.status(TOKEN)["shards"] == 1600 + 420
+    assert g.refund_duplicate_cards() == (0, 0)
+    assert g.status(TOKEN)["shards"] == 1600 + 420
 
 
 def test_shared_card_has_one_pool_entry_and_one_ownership_record():

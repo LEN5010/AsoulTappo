@@ -24,6 +24,8 @@ const props = withDefaults(
     smoothMouse?: boolean;
     emote?: EmoteFrame | null;
     combo?: ComboFrame | null;
+    /** Icon before the combo's number: a partner's combo counts taps, the own pet's counts shards. */
+    comboIcon?: string;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
     /** largest emote picture height in px, for frames too short for a scaled-up bubble */
@@ -95,7 +97,7 @@ const bubbleAnchor = computed(() => ({
     </div>
     <div v-else class="missing">?</div>
 
-    <ComboBubble :frame="combo" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
+    <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
     <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
   </div>
 </template>

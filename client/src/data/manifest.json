@@ -4912,10 +4912,10 @@
  ],
  "economy": {
   "income": {
-   "perMinute": 6,
-   "maxMultiplier": 8,
-   "fullTapsPerMinute": 60,
-   "boostMinutesPerDay": 300
+   "shardScale": 2800,
+   "tapScale": 1000,
+   "dailyCap": 10400,
+   "tapsPerMinute": 120
   },
   "resonance": {
    "cost": 160,
@@ -4935,7 +4935,14 @@
     "card": 45,
     "emote": 41.2
    },
-   "duplicateRefund": 10
+   "duplicateRefund": {
+    "emote": 5,
+    "normal": 20,
+    "small": 360
+   },
+   "repeatTiers": [
+    "epic"
+   ]
   },
   "craftCost": {
    "common": 480,

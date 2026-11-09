@@ -34,7 +34,8 @@ def test_token_required(client):
 def test_activity_resonance_collection_flow(client):
     r = client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H).json()
     assert r["credited"] == r["totals"]["taps"] == 25
-    assert r["shards"] == 1600
+    # 2800 * ln(1.025) = 69.1
+    assert r["shards"] == 1669 and r["income"]["taps"] == 25
     r = client.post("/api/resonance/draw", json={"count": 10}, headers=H).json()
     assert len(r["drops"]) == 10 and r["resonance"]["total"] == 10
     assert client.get("/api/collection", headers=H).json()["owned"]
@@ -85,7 +86,8 @@ def test_ws_emotes_need_ownership_and_are_rate_limited(client):
 
 
 def test_ws_plates_are_checked_against_the_save(client):
-    main.game.store.add_item(player_id_for(TOKEN), "card:c5", 0)
+    for cid in ("c4", "c5"):
+        main.game.store.add_item(player_id_for(TOKEN), f"card:{cid}", 0)
     with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
         a.send_json({"type": "join", "room": "r", "nick": "a", "token": TOKEN, "plate": "c5"})
         ja = a.receive_json()

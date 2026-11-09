@@ -102,6 +102,11 @@ export function dismissUpdate(): void {
   updateFailed.value = false;
 }
 
+/** The main site's download page, for players whose connection to GitHub is too slow or blocked. */
+export function openDownloadPage(): void {
+  openAboutLink(DOWNLOAD_PAGE);
+}
+
 function failed(): void {
   updateBusy.value = false;
   updateFailed.value = true;

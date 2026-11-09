@@ -1,5 +1,5 @@
 // Character assets live in src/assets/characters/<name>/{bgImage,keyboardImage,mouseImage,leftClickImage,rightClickImage}.webp
-// Imported from Evelynall/ASoul-Little-Bun (see assets/characters/COPYRIGHT.md).
+// Pet images under assets/characters (copyright: assets/characters/COPYRIGHT.md).
 // A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.webp
 // is required, the other layers come from the member.
 import { memberOf } from "./manifest";

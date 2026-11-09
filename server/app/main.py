@@ -36,6 +36,10 @@ PACKS_DIR = find_packs_dir()
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
 # ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
 game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest)
+# 1.1: repeats turn into shards when drawn; cards kept as repeats before that are paid out once.
+_paid_players, _paid_shards = game.refund_duplicate_cards()
+if _paid_players:
+    print(f"refunded duplicate cards: {_paid_shards} shards to {_paid_players} players", flush=True)
 
 # MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
 # self-hosted servers, which then offer guest saves only.
@@ -397,7 +401,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if msg.plate:
                     plate = await run_in_threadpool(game.room_plate, peer.token, msg.plate)
                     if plate is None:
-                        await err("locked", "plate not owned")
+                        await err("locked", "set not collected")
                         continue
                     peer.plate = plate
                 elif msg.plate == "":

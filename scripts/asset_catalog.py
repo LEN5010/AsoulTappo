@@ -261,11 +261,15 @@ SKINS = [{"name": f"{member}{series}", "member": member}
     {"name": "嘉然2025生日", "member": "嘉然"},
     {"name": "乃琳2025生日", "member": "乃琳"},
 ]
-# The multiplier pays for at most boostMinutesPerDay on one China day; base income keeps running after that.
-INCOME = {"perMinute": 6, "maxMultiplier": 8, "fullTapsPerMinute": 60, "boostMinutesPerDay": 300}
+# Shards come from taps only: shardScale × ln(1 + taps / tapScale) over one China day, at most dailyCap;
+# a minute pays for its first tapsPerMinute taps.
+INCOME = {"shardScale": 2800, "tapScale": 1000, "dailyCap": 10400, "tapsPerMinute": 120}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.1, "skin": 0.2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2},
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 41.2},
-             "duplicateRefund": 10}
+             # Shards a duplicate turns into at once: emotes, and cards by tier (big hidden cards never repeat).
+             "duplicateRefund": {"emote": 5, "normal": 20, "small": 360},
+             # Tiers that keep their odds once everything in them is owned; their repeats turn into shards.
+             "repeatTiers": ["epic"]}
 CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
 # Daily check-in prizes by amount; weights are percentages (1.7 draws on average, the top prize 10).
 # A prize pays its shards give or take `spread` (uniform), so the amounts are seldom round; the mean is unchanged.

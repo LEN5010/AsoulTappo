@@ -38,6 +38,8 @@ export interface Settings {
   cardAudio: boolean;
   /** Synthesized interface sounds: page turns, card flips, the alpaca. */
   sfx: boolean;
+  /** "+N" shards over the own pet while typing. */
+  shardPop: boolean;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -68,6 +70,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tapView: "today",
   cardAudio: true,
   sfx: true,
+  shardPop: true,
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {

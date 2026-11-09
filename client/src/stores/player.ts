@@ -5,7 +5,7 @@ import {
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { ownsCharacter, ownsEmote } from "../items";
-import { plateCard } from "../pet/plates";
+import { plateUnlocked } from "../pet/plates";
 import { manifest, memberOf } from "../manifest";
 import { settings } from "./settings";
 import { isPanelWindow } from "../composables/tauri";
@@ -334,7 +334,7 @@ export function sanitizeLoadout(): void {
   if (!ownsCharacter(settings.character, owned)) settings.character = memberOf(settings.character);
   const favs = settings.favorites.filter((k) => ownsEmote(k, owned));
   if (favs.length !== settings.favorites.length) settings.favorites = favs;
-  if (settings.plate && !(plateCard(settings.plate) && owned[`card:${settings.plate}`])) settings.plate = "";
+  if (settings.plate && !plateUnlocked(settings.plate, owned)) settings.plate = "";
 }
 
 export async function pushLoadout(): Promise<boolean> {

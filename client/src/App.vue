@@ -20,6 +20,7 @@ import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
+import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, stopReporting } from "./stores/player";
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
@@ -188,7 +189,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
     <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
-        :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote"
+        :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />

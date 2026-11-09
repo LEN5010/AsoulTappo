@@ -147,7 +147,8 @@ def test_emote_tiers_match_the_curated_sets():
         "bloom-jiaran", "bloom-nailin", "bloom-beila"}
     for sid in ("jiaran-garden", "nailin-raccoon", "beila-rabbit", "symphony-xinyi", "symphony-sinuo"):
         assert sets[sid] == "common"
-    assert M.resonance["duplicateRefund"] == 10
+    assert M.resonance["duplicateRefund"] == {"emote": 5, "normal": 20, "small": 360}
+    assert M.resonance["repeatTiers"] == ["epic"]
     assert M.resonance["commonKindWeights"] == {"card": 45, "emote": 41.2}
     assert M.resonance["rates"] == {"legendary": .1, "skin": .2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2}
 

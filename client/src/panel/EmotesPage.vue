@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { characterColor, emoteCover, manifest, memberOf } from "../manifest";
+import { characterColor, emoteCover, manifest, memberOf, type ManifestCard } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -15,7 +15,8 @@ import StagePet from "./StagePet.vue";
 import PetBust from "./PetBust.vue";
 import NamePill from "../pet/NamePill.vue";
 import NamePlate from "../pet/NamePlate.vue";
-import { plateCards, plateSize } from "../pet/plates";
+import PlateDetail from "./PlateDetail.vue";
+import { plateCards, plateSize, plateUnlocked } from "../pet/plates";
 import { usePageActive } from "../composables/usePageActive";
 import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
@@ -73,16 +74,18 @@ const petSkins = computed(() =>
       || a.name.localeCompare(b.name, "zh-CN")),
 );
 
-// Big hidden cards worn as name plates on partners' desks: owned ones first, each group in manifest order.
+// Big hidden cards worn as name plates on partners' desks: unlocked ones first, each group in manifest order.
 // Shown as a partner at x0.8 would see it.
 const { width: PLATE_W, height: PLATE_H } = plateSize(0.8);
 const pageActive = usePageActive();
-const ownsPlate = (id: string) => !!collection.owned[`card:${id}`];
+/** The plate open in the preview dialog. */
+const plateView = ref<ManifestCard | null>(null);
+const plateOpen = (id: string) => plateUnlocked(id, collection.owned);
 const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
 const plates = computed(() =>
   plateCards()
     .filter((c) => c.characters.some(inMember) && (!query.value || c.name.includes(query.value)))
-    .sort((a, b) => Number(ownsPlate(b.id)) - Number(ownsPlate(a.id))),
+    .sort((a, b) => Number(plateOpen(b.id)) - Number(plateOpen(a.id))),
 );
 
 // Single flat list of OWNED emotes for the Backpack (no 21 Bilibili pack accordions!)
@@ -310,24 +313,24 @@ function fireEmote(key: string) {
             </button>
             <button
               v-for="card in plates" :key="`plate:${card.id}`" type="button"
-              class="plate-card ui-tile" :class="{ picked: settings.plate === card.id, locked: !ownsPlate(card.id) }"
-              :disabled="!ownsPlate(card.id)"
-              :title="`${ownsPlate(card.id) ? '使用铭牌' : '未获得'}：${card.name}`" data-rise
-              @click="settings.plate = card.id"
+              class="plate-card ui-tile" :class="{ picked: settings.plate === card.id, locked: !plateOpen(card.id) }"
+              :title="`预览铭牌：${card.name}`" data-rise
+              @click="plateView = card"
             >
               <span class="plate-well ui-frame">
                 <NamePlate
                   :card="card.id" :nick="plateNick" :color="characterColor(settings.character)"
-                  :width="PLATE_W" :height="PLATE_H" :still="!ownsPlate(card.id) || !pageActive"
+                  :width="PLATE_W" :height="PLATE_H" :still="!plateOpen(card.id) || !pageActive"
                 />
               </span>
               <b class="ui-tile-name">
                 <i :style="{ background: characterColor(card.characters[0]!) }" aria-hidden="true"></i>{{ card.name }}
                 <span v-if="settings.plate === card.id" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="9" /></span>
-                <span v-else-if="!ownsPlate(card.id)" class="badge lock" aria-label="未获得"><Icon name="lock" :size="9" /></span>
+                <span v-else-if="!plateOpen(card.id)" class="badge lock" aria-label="未解锁"><Icon name="lock" :size="9" /></span>
               </b>
             </button>
           </div>
+          <PlateDetail v-if="plateView" :card="plateView" @close="plateView = null" />
         </section>
 
         <section v-if="mainTab === 'all' || mainTab === 'emote'" class="shelf">
@@ -664,11 +667,8 @@ function fireEmote(key: string) {
 .plate-well > :first-child {
   transition: transform var(--dur-base) var(--ease-out);
 }
-.plate-card:hover:not(:disabled) .plate-well > :first-child {
+.plate-card:hover .plate-well > :first-child {
   transform: translateY(-2px);
-}
-.plate-card:disabled {
-  cursor: default;
 }
 .plate-card.locked .plate-well > :first-child {
   filter: var(--dim);

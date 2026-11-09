@@ -3,7 +3,7 @@
 // slapped on, both tilted until the pointer straightens them. Sealed ones all lie face down behind
 // the same card-sized back and glow alike, so nothing shows until a tile turns. Rare and above turn
 // with a flash, a ring and a burst of stars; plain ones turn quietly. An animated emote stays on a plate of its tone, a
-// plain sticker peels off the paper it was turned on.
+// plain sticker peels off the paper it was turned on. A repeat gets a stamp of the shards it turned into.
 import { computed } from "vue";
 import { cardFrame } from "../cards";
 import type { BoardEntry } from "./reveal-board";
@@ -22,6 +22,8 @@ const props = defineProps<{
   calm: boolean;
   /** A grouped board of many tiles: lighter filters. */
   dense?: boolean;
+  /** Its repeats have turned into shards: the stamp is on. */
+  exchanged?: boolean;
 }>();
 const emit = defineEmits<{ press: [] }>();
 
@@ -34,11 +36,15 @@ const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare
 const frame = computed(() => cardFrame(props.entry.card));
 const actionable = computed(() => !props.open || props.entry.spot);
 const label = computed(() => (props.open ? `再看一次${props.entry.title}` : "翻开这一张"));
+/** Nothing of it was kept: the art steps back under the stamp. */
+const spent = computed(() => !!props.exchanged && !props.entry.drop.new);
+/** A hidden card pays in gold. */
+const gold = computed(() => props.entry.card?.tier === "small");
 const note = computed(() => {
   const d = props.entry.drop;
-  if (d.shards) return `+${d.shards} 碎片`;
   if (d.got > 1) return `本次 +${d.got}`;
-  return d.count > 1 ? `×${d.count}` : "";
+  if (spent.value) return "已兑换";
+  return d.count > 1 && !d.shards ? `×${d.count}` : "";
 });
 const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   angle: `${n * 45 + (n % 2) * 12}deg`,
@@ -51,7 +57,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   <component
     :is="actionable ? 'button' : 'div'" :type="actionable ? 'button' : undefined"
     class="tile"
-    :class="[entry.tone, `kind-${entry.item.kind}`, { sticker, plated, quiet, open, sealed: !open, turned, lifted, calm, dense, actionable }]"
+    :class="[entry.tone, `kind-${entry.item.kind}`, { sticker, plated, quiet, open, sealed: !open, turned, lifted, calm, dense, actionable, spent }]"
     :style="{ '--i': Math.min(index, 14), '--tilt': `${entry.tilt}deg`, ...entry.toneStyle }"
     :aria-label="actionable ? label : undefined"
     @click="actionable && emit('press')"
@@ -84,6 +90,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
         </span>
       </template>
       <span v-if="open && entry.drop.new" class="ui-tag fresh">新</span>
+      <span v-if="exchanged" class="stamp" :class="{ gold }"><Icon name="shard" :size="16" /><b>+{{ entry.drop.shards }}</b></span>
     </span>
     <span class="caption">
       <b>{{ open ? entry.title : "？" }}</b>
@@ -185,6 +192,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   inset: 0;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  transition: filter 420ms var(--ease-out), opacity 420ms var(--ease-out);
+}
+.spent .face-front {
+  filter: saturate(0.3);
+  opacity: 0.68;
 }
 /* One back for every rarity: the tone ladder in tokens.css stops at the front face. */
 .face-back {
@@ -367,6 +379,44 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   top: 18%;
 }
 
+/* Slapped on over the art, sized in the tile's width so a grouped board and a single draw read alike. */
+.stamp {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 56%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.16em;
+  padding: 0.24em 0.5em 0.24em 0.36em;
+  border-radius: var(--radius-key-s);
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--c-500), 0 6px 14px -6px rgba(var(--shadow-rgb), 0.45);
+  color: var(--c-700);
+  font: 800 clamp(13px, 14cqw, 30px)/1 var(--font-latin);
+  white-space: nowrap;
+  translate: -50% -50%;
+  rotate: -6deg;
+  pointer-events: none;
+  animation: stamp-in 460ms var(--ease-pop) both;
+}
+.stamp svg {
+  width: 0.92em;
+  height: 0.92em;
+  stroke-width: 2.4;
+}
+.stamp.gold {
+  background: var(--grad-gold);
+  color: var(--ink);
+  box-shadow: 0 0 0 2px #fff, 0 0 18px 2px rgba(var(--gold-rgb), 0.65), 0 6px 14px -6px rgba(var(--shadow-rgb), 0.45);
+}
+.calm .stamp {
+  animation: none;
+}
+.lifted .stamp {
+  visibility: hidden;
+}
+
 .caption {
   display: flex;
   flex-direction: column;
@@ -467,6 +517,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   0% { opacity: 0; translate: -50% -50%; scale: 0.2; }
   20% { opacity: 1; }
   100% { opacity: 0; translate: calc(var(--d) - 50%) -50%; scale: 1; }
+}
+@keyframes stamp-in {
+  0% { opacity: 0; scale: 1.9; rotate: -18deg; }
+  50% { opacity: 1; scale: 0.9; }
+  100% { opacity: 1; scale: 1; rotate: -6deg; }
 }
 @keyframes caption-in {
   from { opacity: 0; transform: translateY(4px); }

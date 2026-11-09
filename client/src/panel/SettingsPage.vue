@@ -163,6 +163,10 @@ async function exportLogFile() {
               <span>桌宠位置</span>
               <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
             </div>
+            <label class="ui-row">
+              <span>显示敲击碎片</span>
+              <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
+            </label>
             <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
               <span>显示伙伴铭牌</span>
               <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
