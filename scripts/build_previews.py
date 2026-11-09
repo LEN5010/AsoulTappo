@@ -24,6 +24,11 @@ def save(im: Image.Image, out: Path, size: tuple[int, int]) -> None:
     im.save(out, "WEBP", quality=86, method=6)
 
 
+def save_width(im: Image.Image, out: Path, width: int) -> None:
+    """Scale to a fixed width. Pet pictures taller than the canvas keep their extra height."""
+    save(im, out, (width, 1 << 16))
+
+
 def build_emote_covers(manifest: dict) -> int:
     count = 0
     for group in manifest["emoteSets"]:
@@ -47,11 +52,13 @@ def build_pet_previews() -> int:
     for source in sorted(CHARACTERS.glob("*/bgImage.webp")):
         out = PREVIEWS / source.parent.name
         with Image.open(source) as im:
-            save(im, out / "bg-480.webp", (480, 270))
-            save(im, out / "bg-960.webp", (960, 540))
-            # Same crop as FACE_CROP in characters.ts, measured on a 240x135 canvas.
-            crop = im.crop((round(im.width * 90 / 240), 0,
-                            round(im.width * 222 / 240), round(im.height * 112 / 135)))
+            save_width(im, out / "bg-480.webp", 480)
+            save_width(im, out / "bg-960.webp", 960)
+            # Same crop as FACE_CROP in characters.ts, measured on a 240x135 canvas. The pet is
+            # drawn bottom-aligned at the canvas width, so rows above the 16:9 canvas are headroom.
+            top = max(0, round(im.height - im.width * 135 / 240))
+            crop = im.crop((round(im.width * 90 / 240), top,
+                            round(im.width * 222 / 240), top + round((im.height - top) * 112 / 135)))
             save(crop, out / "face.webp", (264, 224))
         count += 1
     return count

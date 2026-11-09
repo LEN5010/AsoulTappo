@@ -79,18 +79,21 @@ export const PET_BASE = {
 
 // Top of each character's head on the base canvas (measured from bgImage.webp).
 // Head accessories sit here and emote bubbles grow from its upper right.
+// Negative when the picture is taller than the canvas and the headwear reaches above it.
 const HEADS: Record<string, { x: number; y: number }> = {
-  嘉然: { x: 152, y: 10 },
+  嘉然: { x: 152, y: -4 },
   乃琳: { x: 150, y: 18 },
   贝拉: { x: 146, y: 10 },
   心宜: { x: 152, y: 10 },
   思诺: { x: 142, y: 9 },
-  // Skins drawn on the member's layout whose ears or headwear reach the top edge.
-  乃琳山海经: { x: 150, y: 0 },
+  // Skins drawn on the member's layout whose head top differs from the member's.
+  乃琳山海经: { x: 150, y: -11 },
   乃琳睡衣派对: { x: 150, y: 0 },
-  嘉然2025生日: { x: 152, y: 0 },
-  贝拉2025生日: { x: 146, y: 0 },
-  贝拉睡衣派对: { x: 146, y: 0 },
+  嘉然山海经: { x: 152, y: 10 },
+  嘉然睡衣派对: { x: 152, y: 10 },
+  嘉然2025生日: { x: 152, y: -2 },
+  贝拉2025生日: { x: 146, y: -10 },
+  贝拉睡衣派对: { x: 146, y: -9 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
   return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };

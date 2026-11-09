@@ -87,7 +87,7 @@ const bubbleAnchor = computed(() => ({
 <template>
   <div class="pet" :class="{ 'smooth-mouse': smoothMouse }" :style="box">
     <div v-if="assets" class="art">
-      <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="box" draggable="false" alt="" />
+      <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="{ width: box.width }" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <span v-if="leftDown" class="layer mouse click" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
@@ -104,7 +104,8 @@ const bubbleAnchor = computed(() => ({
 .pet { position: relative; user-select: none; }
 .art { position: absolute; inset: 0; }
 .layer { position: absolute; pointer-events: none; }
-.bg { left: 0; top: 0; }
+/* Width only, bottom-aligned: a picture taller than the canvas holds headwear above it and draws past the top. */
+.bg { left: 0; bottom: 0; height: auto; }
 .kb { transition: transform var(--dur-fast) var(--ease-pop); }
 .kb.down { transition: transform 50ms var(--ease-out); }
 .smooth-mouse .mouse { transition: transform 60ms linear; }
