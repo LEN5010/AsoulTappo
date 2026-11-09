@@ -40,13 +40,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 碎片改为按敲击获得，挂机不再获得碎片
-            - 敲击时桌宠旁显示获得的碎片，可在设置中关闭
-            - 重复获得的物品自动兑换为碎片
-            - 铭牌改为集齐对应收藏集后解锁，可在背包中预览；未集齐的已装备铭牌会被取下
-            - 更新弹窗增加网页下载入口
-            - 修复下载较慢时自动更新失败
-            - 修复锁屏或切换窗口后桌宠按键动作卡住
+            - 修复以管理员身份运行时，点击去网页下载会打开文档文件夹
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -91,13 +85,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 碎片改为按敲击获得，挂机不再获得碎片
-            - 敲击时桌宠旁显示获得的碎片，可在设置中关闭
-            - 重复获得的物品自动兑换为碎片
-            - 铭牌改为集齐对应收藏集后解锁，可在背包中预览；未集齐的已装备铭牌会被取下
-            - 更新弹窗增加网页下载入口
-            - 修复下载较慢时自动更新失败
-            - 修复锁屏或切换窗口后桌宠按键动作卡住
+            - 修复以管理员身份运行时，点击去网页下载会打开文档文件夹
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
