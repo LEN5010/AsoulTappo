@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import Modal from "../ui/Modal.vue";
 import {
-  dismissUpdate, installUpdate, updateBusy, updateDialogOpen, updateFailed, updateOffer, updatePercent,
+  dismissUpdate, installUpdate, openDownloadPage, updateBusy, updateDialogOpen, updateFailed, updateOffer, updatePercent,
 } from "../stores/update";
 
 const label = computed(() => {
@@ -19,6 +19,7 @@ const label = computed(() => {
     <p v-if="updateFailed" role="status" class="failed">自动更新失败，请到下载页手动安装</p>
     <div class="acts">
       <button type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
+      <button v-if="!updateFailed" type="button" class="ui-btn" @click="openDownloadPage">去网页下载</button>
       <button type="button" class="ui-btn primary" :class="{ pulse: !updateBusy }" @click="installUpdate">{{ label }}</button>
     </div>
   </Modal>

@@ -8,12 +8,12 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 | 客户端 type | 字段 |
 |---|---|
-| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌卡 ID，存档未拥有时忽略） |
+| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌卡 ID，存档未解锁时忽略） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并；服务端按连接限速（每秒 15、最多攒 75），超出部分不广播。这只限制房间显示，每条连接各算各的，重连会重新计，不是每人总上限；收益只看 `POST /api/activity`，按存档共用一份额度（存在数据库里，并发、多连接、重连都不叠加） |
 | motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 50ms 合并，按键状态即时发送 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
-| state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌，存档未拥有时返回 `locked` 并忽略整条消息 |
+| state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌，存档未解锁时返回 `locked` 并忽略整条消息 |
 | ping | 无 |
 
 服务端消息：`joined {room,you,members}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`emote {id,emote}`、`state {id,character,nick,plate}`、`pong`、`error {code,message}`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌卡 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
@@ -29,14 +29,14 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
 | GET /api/me | player、shards、income、resonance、totals、checkin、tapCooldown |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
-| POST /api/presence | `{session}`，按实际在线秒数结算碎片并返回状态 |
+| POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
 | GET /api/loadout | character、favorites、plate |
-| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已拥有的大隐藏卡 ID，null 或空字符串取下铭牌 |
+| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁铭牌的大隐藏卡 ID，null 或空字符串取下铭牌 |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
 | GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |
 | GET /api/account | Bearer；user、save（账号存档摘要，未绑定时为 null） |
@@ -44,11 +44,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
 | GET /packs/... | 卡面原图及主题动画资源 |
 
-铭牌是玩家装备的一张大隐藏卡，显示在其他成员桌面上该玩家桌宠的下方。客户端取卡面眼睛所在的一条横条，播放卡面视频；裁切位置保存在客户端 `client/src/pet/plates.ts`。联机页的座位仍显示普通名牌。
+铭牌是玩家装备的一张大隐藏卡，显示在其他成员桌面上该玩家桌宠的下方。解锁条件是集齐这张卡所在收藏集里该成员的全部卡片（包括大隐藏本身）：几位成员共用的收藏集只要求该成员的卡，双人卡要求整个双人收藏集。存档里已装备但未集齐的铭牌，读取装备和进房间时会被取下。客户端取卡面眼睛所在的一条横条，播放卡面视频；裁切位置保存在客户端 `client/src/pet/plates.ts`。联机页的座位仍显示普通名牌。
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 
-物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。rarity 为 `legendary`、`skin`、`epic`、`rare`、`uncommon` 或 `common`。新物品及重复卡片的 shards 为 0，重复表情的 shards 为 10。
+物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。rarity 为 `legendary`、`skin`、`epic`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
 
 状态示例：
 
@@ -56,7 +56,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 {
   "player": "hash",
   "shards": 7360,
-  "income": { "multiplier": 3.2, "perMinute": 19.2 },
+  "income": { "day": "2026-11-10", "today": 3752, "cap": 10400, "taps": 2820, "perTap": 0.733, "multiplier": 1, "perMinute": 44.0 },
   "resonance": {
     "pity": { "legendary": 212, "skin": 87 },
     "hardPity": { "legendary": 400, "skin": 200 },
@@ -83,11 +83,13 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 
 账号没有绑定存档时返回 409 `account_not_linked`。
 
-## 在线收益与活动
+## 敲击收益与活动
 
-客户端每 20 秒发送心跳和累计敲击数。碎片收益为每分钟 `6 × (1 + 7 × min(上一分钟有效敲击数, 60) / 60)`，倍率最高 ×8。只挂机每分钟 6 碎片，上一分钟 30 下为 27 碎片，60 下及以上为 48 碎片。超过一分钟没有敲击上报后倍率回到 ×1，小数碎片留到下次结算。倍率每个北京时间自然日最多生效 manifest `economy.income.boostMinutesPerDay` 分钟（现为 300），用完后当天只按每分钟 6 碎片计，`income.multiplier` 显示 1，次日零点恢复。
+客户端每 20 秒发送心跳和累计敲击数。碎片只来自敲击，在线本身不给碎片。每个北京时间自然日按当天计入的敲击数 n 累计发放 `min(2800 × ln(1 + n / 1000), 10400)` 碎片：开头每下约 2.8 碎片，1 万下累计约 6710，约 4 万下达到每天上限 10400，之后当天不再增加，次日零点重新计算。每个 UTC 分钟只有前 120 下计入 n，超出的仍计入总敲击数和活跃分钟。小数碎片留到下次结算。参数在 manifest `economy.income`：`shardScale`（2800）、`tapScale`（1000）、`dailyCap`（10400）、`tapsPerMinute`（120）。
 
-服务端只接收敲击次数，按每秒 15 下限速；相同 session 的 sequence 去重。同一 session 相邻两次上报之间平均每秒 10 下及以上算过快，过快连续 30 秒及以上时，这份存档进入 60 秒冷却：触发的那一批和冷却期间所有 session 的上报都不计入，倍率按 ×1 结算。状态里的 `tapCooldown` 是冷却剩余秒数，没有冷却时为 0。客户端按同样的门槛逐秒判断（连续 30 秒每秒都有 10 下及以上），触发后 60 秒内不计数、不广播敲击，并在桌宠上方提示剩余秒数；触发时立刻上报一批（没有敲击也报），带上 `cooldown` 剩余秒数，服务端据此让这份存档进入冷却（最多 60 秒，只会延长不会缩短），这一批不计入。服务端判定的冷却客户端也照样显示。每个 UTC 分钟累计 10 下计一个活跃分钟。多个运行客户端共用玩家的在线时间基准；心跳间隔超过 60 秒时重新建立在线基准。
+状态里的 `income`：`day` 是这些数字所属的北京时间日期（YYYY-MM-DD），`today` 是今天已从敲击拿到的碎片，`cap` 是每天上限，`taps` 是今天计入的敲击数，`perTap` 是下一下值多少碎片（达到上限后为 0）。`multiplier` 固定为 1、`perMinute` 为 `perTap × 60`，只给 1.0 版客户端显示，新客户端不读。
+
+服务端只接收敲击次数，按每秒 15 下限速；相同 session 的 sequence 去重。同一 session 相邻两次上报之间平均每秒 10 下及以上算过快，过快连续 30 秒及以上时，这份存档进入 60 秒冷却：触发的那一批和冷却期间所有 session 的上报都不计入，也不给碎片。状态里的 `tapCooldown` 是冷却剩余秒数，没有冷却时为 0。客户端按同样的门槛逐秒判断（连续 30 秒每秒都有 10 下及以上），触发后 60 秒内不计数、不广播敲击，并在桌宠上方提示剩余秒数；触发时立刻上报一批（没有敲击也报），带上 `cooldown` 剩余秒数，服务端据此让这份存档进入冷却（最多 60 秒，只会延长不会缩短），这一批不计入。服务端判定的冷却客户端也照样显示。每个 UTC 分钟累计 10 下计一个活跃分钟。
 
 ## 共鸣与兑换
 
@@ -102,7 +104,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。
 | 罕见 | 绽放收藏集与脑洞波表情 | 6% | — |
 | 普通 | 普通卡与普通表情 | 86.2% | — |
 
-每次消耗 160 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档。普通档先按 `commonKindWeights`（普卡 45 : 表情 41.2）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复；只有表情重复返还 10 碎片，卡片重复累计数量。初始单抽概率为普卡 45%、普通表情 41.2%；某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
+每次消耗 160 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档，`repeatTiers` 里的档位（目前只有史诗档）除外：史诗档集齐后保留 4.5%，在整档里等概率抽，出的都是重复。普通档先按 `commonKindWeights`（普卡 45 : 表情 41.2）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复。重复按上面的标准兑换成碎片。初始单抽概率为普卡 45%、普通表情 41.2%；某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
 
 稀有表情为此间为爱、绮梦漫游、匣中惊鸿三套动态表情，共 60 个；罕见为绽放收藏集与脑洞波各三套，共 75 个；普通表情共 320 个。已有物品按原 ID 保留。
 

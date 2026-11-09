@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
-from typing import Any
+from typing import Callable, Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS players (
@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS checkins (
   ts REAL NOT NULL,
   PRIMARY KEY (player_id, day)
 );
+-- One-time data changes already applied to this database.
+CREATE TABLE IF NOT EXISTS migrations (
+  name TEXT PRIMARY KEY,
+  at REAL NOT NULL
+);
 """
 
 STARTER_SHARDS = 1600
@@ -92,7 +97,7 @@ STARTER_SHARDS = 1600
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
-    "boost_day boost_used tap_cooldown_until"
+    "boost_day boost_used tap_cooldown_until tap_day day_taps"
 ).split()
 
 
@@ -139,6 +144,11 @@ class Store:
             for field in ("boost_used", "tap_cooldown_until"):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} REAL NOT NULL DEFAULT 0")
+            # Taps that paid shards on one China day (tap income since 1.1; boost_* is no longer used).
+            if "tap_day" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN tap_day TEXT NOT NULL DEFAULT ''")
+            if "day_taps" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN day_taps INTEGER NOT NULL DEFAULT 0")
             sessions = self._columns("activity_sessions")
             for field in ("last_at", "fast_since"):
                 if field not in sessions:
@@ -350,6 +360,29 @@ class Store:
                 "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + excluded.count",
                 [(pid, item, count, now) for item, count in counts.items()])
             self._commit()
+
+    def refund_duplicates(self, name: str, prefix: str, shards_for: Callable[[str], int], now: float) -> tuple[int, int]:
+        """Once per database (recorded as `name`): every item under `prefix` held more than once goes back to
+        one copy, and each extra copy pays `shards_for(item)`. Items that pay nothing keep their copies.
+        Returns (players paid, shards paid)."""
+        with self._lock:
+            if self._db.execute("SELECT 1 FROM migrations WHERE name=?", (name,)).fetchone():
+                return 0, 0
+            rows = self._db.execute(
+                "SELECT player_id, item_id, count FROM items WHERE item_id LIKE ? AND count > 1", (prefix + "%",)).fetchall()
+            paid: dict[str, int] = {}
+            exchanged: list[tuple[str, str]] = []
+            for r in rows:
+                each = shards_for(r["item_id"])
+                if each > 0:
+                    paid[r["player_id"]] = paid.get(r["player_id"], 0) + (r["count"] - 1) * each
+                    exchanged.append((r["player_id"], r["item_id"]))
+            with self._db:
+                self._db.executemany("UPDATE players SET shards = shards + ? WHERE id=?",
+                                     [(n, pid) for pid, n in paid.items()])
+                self._db.executemany("UPDATE items SET count = 1 WHERE player_id=? AND item_id=?", exchanged)
+                self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, now))
+            return sum(1 for n in paid.values() if n), sum(paid.values())
 
     def log_drops(self, pid: str, drops: list[dict], now: float) -> None:
         with self._lock:

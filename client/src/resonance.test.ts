@@ -19,18 +19,26 @@ it("allocates 45 percent to common cards and 41.2 percent to ordinary emotes", (
   for (const tier of ["legendary", "skin", "epic", "rare", "uncommon"] as const) {
     for (const item of p[tier]) owned[item.id] = 1;
   }
-  expect(commonKindRates(p, owned).card).toBeCloseTo(100 * 45 / 86.2);
-  expect(commonKindRates(p, owned).emote).toBeCloseTo(100 * 41.2 / 86.2);
+  // The hidden tier keeps its 4.5 for repeats; the other completed tiers go to common.
+  const common = 100 - 4.5;
+  expect(commonKindRates(p, owned).card).toBeCloseTo(common * 45 / 86.2);
+  expect(commonKindRates(p, owned).emote).toBeCloseTo(common * 41.2 / 86.2);
 });
 it("moves exactly the completed tier weights into common and keeps the total at 100", () => {
   const p = poolOf();
-  for (const tier of ["legendary", "skin", "epic", "rare", "uncommon"] as const) {
+  for (const tier of ["legendary", "skin", "rare", "uncommon"] as const) {
     const owned = Object.fromEntries(p[tier].map((i) => [i.id, 1]));
     const rates = effectiveRates(p, owned);
     expect(rates[tier]).toBe(0);
     expect(rates.common).toBeCloseTo(86.2 + manifest.economy.resonance.rates[tier]);
     expect(Object.values(rates).reduce((a, b) => a + b)).toBeCloseTo(100);
   }
+});
+it("keeps the hidden tier's odds once it is complete, for repeats", () => {
+  const p = poolOf();
+  const rates = effectiveRates(p, Object.fromEntries(p.epic.map((i) => [i.id, 1])));
+  expect(rates.epic).toBe(manifest.economy.resonance.rates.epic);
+  expect(rates.common).toBeCloseTo(86.2);
 });
 it("includes shared member cards exactly once", () => {
   const shared = manifest.cards.filter((c) => c.characters.length === 2);

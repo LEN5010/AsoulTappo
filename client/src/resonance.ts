@@ -9,10 +9,12 @@ export function poolOf(): ResonancePool {
   return pool;
 }
 
+/** A tier with nothing left to find gives its odds to common, unless it keeps rolling repeats (the server does the same). */
 export function effectiveRates(pool: ResonancePool, owned: Record<string, number>): Record<Rarity, number> {
   const rates = { ...manifest.economy.resonance.rates };
+  const repeating = new Set(manifest.economy.resonance.repeatTiers ?? []);
   for (const rarity of ["legendary", "skin", "epic", "rare", "uncommon"] as const) {
-    if (!pool[rarity].some((item) => !owned[item.id])) {
+    if (!repeating.has(rarity) && !pool[rarity].some((item) => !owned[item.id])) {
       rates.common += rates[rarity];
       rates[rarity] = 0;
     }

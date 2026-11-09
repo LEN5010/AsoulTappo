@@ -5,7 +5,11 @@ import { manifest, type Rarity } from "../manifest";
 export interface PlayerStatus {
   player: string;
   shards: number;
-  income: { multiplier: number; perMinute: number };
+  /**
+   * Tap income: shards earned from taps today, the daily cap, today's counted taps and what the next tap
+   * pays. Missing on servers before 1.1, which send only `multiplier` and `perMinute`.
+   */
+  income: { day?: string; today?: number; cap?: number; taps?: number; perTap?: number; multiplier: number; perMinute: number };
   resonance: { pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number };
   totals: { taps: number; activeMinutes: number; owned: number; items: number };
   /** Missing on servers without daily check-in. */

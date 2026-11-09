@@ -8,6 +8,7 @@ import { bumpCounter } from "./counter";
 import { countInput, reportCooldown, status } from "./player";
 import { inRoom, registerTap, syncMotion, youId } from "./room";
 import { settings } from "./settings";
+import { popShards } from "./shardPop";
 
 export const pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
 let keysHeld = 0;
@@ -39,6 +40,7 @@ function tap(): void {
   registerTap();
   countInput();
   bumpCounter();
+  popShards();
 }
 
 export function onInput(e: InputEvent, count = true): void {

@@ -2,6 +2,7 @@ import pytest
 
 from app.cards import DropConfig
 from app.game import Game, GameError, player_id_for
+from app.manifest import Manifest
 from app.store import Store
 
 from fixtures import Clock, SeqRng, tiny_manifest
@@ -96,7 +97,7 @@ def test_loadout_requires_owned_skin_and_accepts_original():
     assert e.value.code == "bad_item"
 
 
-def test_plate_must_be_an_owned_big_hidden_card():
+def test_plate_needs_its_big_hidden_card_and_the_rest_of_its_set():
     g, _ = make()
     pid = player_id_for(TOKEN)
     with pytest.raises(GameError) as e:
@@ -104,6 +105,10 @@ def test_plate_must_be_an_owned_big_hidden_card():
     assert e.value.code == "locked"
     g.store.add_item(pid, "card:c5", 0)
     g.store.add_item(pid, "card:c1", 0)
+    with pytest.raises(GameError) as e:  # the big hidden card alone is not enough
+        g.set_loadout(TOKEN, {"plate": "c5"})
+    assert e.value.code == "locked"
+    g.store.add_item(pid, "card:c4", 0)
     assert g.set_loadout(TOKEN, {"plate": "c5"})["plate"] == "c5"
     assert g.set_loadout(TOKEN, {"favorites": ["e.01"]})["plate"] == "c5"  # other keys keep it
     for card in ("c1", "c4", "nope"):  # owned but not big hidden, small hidden, unknown
@@ -115,12 +120,14 @@ def test_plate_must_be_an_owned_big_hidden_card():
     assert g.set_loadout(TOKEN, {"plate": None})["plate"] is None
 
 
-def test_room_plate_shows_only_owned_big_hidden_cards():
+def test_room_plate_shows_only_collected_sets():
     g, _ = make()
     assert g.room_plate(TOKEN, "c5") is None
     assert g.room_plate(None, "c5") is None and g.room_plate("bad", "c5") is None
     g.store.add_item(player_id_for(TOKEN), "card:c5", 0)
     g.store.add_item(player_id_for(TOKEN), "card:c1", 0)
+    assert g.room_plate(TOKEN, "c5") is None
+    g.store.add_item(player_id_for(TOKEN), "card:c4", 0)
     assert g.room_plate(TOKEN, "c5") == "c5"
     assert g.room_plate(TOKEN, "c1") is None and g.room_plate(TOKEN, None) is None
 
@@ -141,3 +148,24 @@ def test_players_are_isolated():
     g.resonate(TOKEN)
     other = "o" * 32
     assert g.status(other)["shards"] == 1600 and g.collection(other)["owned"] == {}
+
+
+def test_plate_sets_follow_the_members_of_the_card():
+    g = Game(Store(":memory:"), Manifest.load())
+    by_name = {c["name"]: c for c in g.manifest.cards.values()}
+    # A collection of three members: only the plate member's cards.
+    jiaran = g.plate_set(by_name["时序系列-嘉然"])
+    assert len(jiaran) == 7 and all(g.manifest.cards[c]["characters"] == ["嘉然"] for c in jiaran)
+    # A duo collection: every card, both members'.
+    assert len(g.plate_set(by_name["巡梦漫游"])) == 10
+    # A member's own collection: all of it.
+    assert len(g.plate_set(by_name["蝶影共醉"])) == 9
+
+
+def test_a_plate_worn_under_the_old_rule_drops_without_its_set():
+    g, _ = make()
+    pid = player_id_for(TOKEN)
+    g.store.add_item(pid, "card:c5", 0)
+    g.store.update_player(pid, loadout='{"plate": "c5"}')
+    assert g.get_loadout(TOKEN)["plate"] is None
+    assert g.room_plate(TOKEN, "c5") is None

@@ -78,8 +78,15 @@ export interface Manifest {
   starter: { emotes: string[]; theme: string };
   skins: { name: string; member: string }[];
   economy: {
-    income: { perMinute: number; maxMultiplier: number; fullTapsPerMinute: number; boostMinutesPerDay: number };
-    resonance: { cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number }; duplicateRefund: number };
+    /** Shards per day: shardScale × ln(1 + taps / tapScale), at most dailyCap; a minute counts tapsPerMinute taps at most. */
+    income: { shardScale: number; tapScale: number; dailyCap: number; tapsPerMinute: number };
+    resonance: {
+      cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number };
+      /** Shards a repeat turns into: every emote, and cards by tier. */
+      duplicateRefund: Partial<Record<"emote" | "big" | "small" | "normal", number>>;
+      /** Tiers that keep their odds once complete, rolling repeats. */
+      repeatTiers?: Rarity[];
+    };
     craftCost: Partial<Record<Rarity, number>>;
     /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */
     checkin: { prizes: { shards: number; weight: number }[]; spread: number };

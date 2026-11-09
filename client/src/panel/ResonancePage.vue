@@ -4,6 +4,7 @@ import { prime } from "../audio/sfx";
 import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
 import { type Item, RARITY_LABEL } from "../items";
 import { poolOf, effectiveRates } from "../resonance";
+import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, status, online, error } from "../stores/player";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
@@ -29,6 +30,7 @@ const skin = ref<Item | null>(null);
 const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const pityTiers = ["legendary", "skin"] as const;
 const cost = manifest.economy.resonance.cost;
+const income = computed(() => todayIncome(status.value));
 const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
@@ -72,7 +74,9 @@ async function nextBatch() {
       </div>
       <div class="supply">
         <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
-        <small><span>收益 ×{{ status?.income.multiplier ?? 1 }}</span><span>每分钟 {{ status?.income.perMinute ?? manifest.economy.income.perMinute }} 碎片</span></small>
+        <p v-if="income" class="today" :title="nextTapText(income)">
+          <Icon name="shard" :size="13" />今日已获得<b>{{ formatCount(income.today) }}</b>
+        </p>
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">
@@ -203,17 +207,18 @@ async function nextBatch() {
   font: 800 26px/1 var(--font-latin);
   color: var(--ink);
 }
-/* Two short pieces that wrap onto a second line instead of cutting off when the keys crowd them. */
-.supply small {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 8px;
+/* Today's tap shards, set like the pity counts beside them. */
+.supply .today {
+  gap: 4px;
   font-size: var(--fs-label);
-  font-weight: 500;
-  color: var(--ink-3);
 }
-.supply small span {
-  white-space: nowrap;
+.supply .today svg {
+  align-self: center;
+  color: var(--c-700);
+}
+.supply .today b {
+  margin-left: 2px;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
 }
 .done {
   flex: none;
@@ -267,7 +272,7 @@ async function nextBatch() {
     gap: 12px;
     padding-left: 18px;
   }
-  .supply small {
+  .supply .today {
     display: none;
   }
   .ten {

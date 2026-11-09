@@ -328,8 +328,8 @@ defineExpose({ close });
         <p class="who"><i :style="{ background: memberColor }"></i>{{ entry.who }}</p>
         <p class="own">
           <template v-if="entry.drop.new"><Icon name="spark" :size="17" />首次获得</template>
-          <template v-else>已拥有 <b>×{{ entry.drop.count }}</b></template>
-          <small v-if="entry.drop.shards">重复返还 {{ entry.drop.shards }} 碎片</small>
+          <template v-else>已拥有</template>
+          <small v-if="entry.drop.shards"><Icon name="shard" :size="14" />自动兑换 <b>+{{ entry.drop.shards }}</b> 碎片</small>
         </p>
       </div>
     </div>
@@ -642,10 +642,15 @@ h3 {
   font: 800 var(--fs-number)/1 var(--font-latin);
 }
 .own small {
+  display: flex;
   flex-basis: 100%;
+  align-items: center;
+  gap: 4px;
   font-size: 14px;
   font-weight: 700;
-  opacity: 0.8;
+}
+.own small b {
+  font-size: 17px;
 }
 .own svg {
   stroke-width: 0;

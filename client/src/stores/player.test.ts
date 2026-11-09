@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { plateCard, plateSet } from "../pet/plates";
 
 let player: typeof import("./player") | undefined;
 const response = (data: unknown) => ({ ok: true, json: async () => data }) as Response;
@@ -143,7 +144,7 @@ it("equips an original member when a saved skin is locked after collection loads
   expect(settings.character).toBe("贝拉山海经");
 });
 
-it("takes off a plate the save does not own and sends the one it does", async () => {
+it("takes off a plate whose set is not collected and sends the one that is", async () => {
   const sent: unknown[] = [];
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     if (url.endsWith("/loadout") && init?.body) sent.push(JSON.parse(String(init.body)));
@@ -153,7 +154,12 @@ it("takes off a plate the save does not own and sends the one it does", async ()
   settings.plate = "c1762331462002";
   await vi.advanceTimersByTimeAsync(0);
   expect(settings.plate).toBe("");
+  // The big hidden card alone no longer unlocks its plate.
   p.collection.owned["card:c1762331462002"] = 1;
+  settings.plate = "c1762331462002";
+  p.sanitizeLoadout();
+  expect(settings.plate).toBe("");
+  for (const c of plateSet(plateCard("c1762331462002")!)) p.collection.owned[`card:${c.id}`] = 1;
   settings.plate = "c1762331462002";
   p.sanitizeLoadout();
   expect(settings.plate).toBe("c1762331462002");

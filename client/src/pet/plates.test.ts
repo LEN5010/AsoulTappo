@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { manifest } from "../manifest";
 import {
-  PAN_CYCLE_MS, PLATE_ANCHOR, PLATE_CROPS, nameBand, panAt, plateArt, plateCard, plateCards, plateSize, videoFace,
+  PAN_CYCLE_MS, PLATE_ANCHOR, PLATE_CROPS, nameBand, panAt, plateArt, plateCard, plateCards, plateSet, plateSize,
+  plateUnlocked, videoFace,
 } from "./plates";
 
 describe("name plates", () => {
@@ -66,5 +67,28 @@ describe("name plates", () => {
     expect(nameBand(0.8)).toEqual({ font: 12, pill: 22 });
     expect(nameBand(0.6)).toEqual({ font: 10, pill: 16 });
     expect(nameBand(0.4)).toEqual({ font: 10, pill: 16 });
+  });
+});
+
+describe("plate sets", () => {
+  const byName = (name: string) => manifest.cards.find((c) => c.name === name)!;
+  const owning = (cards: { id: string }[]) => Object.fromEntries(cards.map((c) => [`card:${c.id}`, 1]));
+
+  it("asks for the plate member's cards in a shared collection and the whole duo collection", () => {
+    const jiaran = plateSet(byName("时序系列-嘉然"));
+    expect(jiaran).toHaveLength(7);
+    expect(jiaran[0]!.name).toBe("时序系列-嘉然");
+    expect(jiaran.every((c) => c.characters.join() === "嘉然")).toBe(true);
+    expect(plateSet(byName("巡梦漫游"))).toHaveLength(10);
+    expect(plateSet(byName("蝶影共醉"))).toHaveLength(9);
+  });
+
+  it("unlocks only with the whole set", () => {
+    const card = byName("蝶影共醉");
+    const set = plateSet(card);
+    expect(plateUnlocked(card.id, owning([card]))).toBe(false);
+    expect(plateUnlocked(card.id, owning(set.slice(1)))).toBe(false);
+    expect(plateUnlocked(card.id, owning(set))).toBe(true);
+    expect(plateUnlocked(set[1]!.id, owning(set))).toBe(false);
   });
 });

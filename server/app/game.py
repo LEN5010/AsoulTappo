@@ -1,4 +1,4 @@
-"""Server-authoritative activity income, resonance and item ownership."""
+"""Server-authoritative tap income, resonance and item ownership."""
 from __future__ import annotations
 
 import hashlib
@@ -95,16 +95,26 @@ class Game:
             if bucket != p["minute_bucket"]:
                 last_minute_taps = minute_taps if bucket == p["minute_bucket"] + 1 else 0
                 minute_taps, counted = 0, 0
+            # Only the first tapsPerMinute taps of a minute pay shards.
+            per_minute = self.manifest.income["tapsPerMinute"]
+            paid_taps = min(minute_taps + credited, per_minute) - min(minute_taps, per_minute)
             minute_taps += credited
             active_minutes = p["active_minutes"]
             if not counted and minute_taps >= cfg.min_taps_active_minute:
                 counted = 1
                 active_minutes += 1
 
+            today = day_of(now)
+            day_taps = p["day_taps"] if p["tap_day"] == today else 0
+            earned = p["shard_remainder"] + self._tap_shards(day_taps + paid_taps) - self._tap_shards(day_taps)
+            # Absorb floating-point noise at whole-shard boundaries.
+            whole = int(earned + 1e-9)
             st.update_player(
                 pid, taps_total=p["taps_total"] + credited, active_minutes=active_minutes,
                 last_activity=max(now, previous), last_minute_taps=last_minute_taps,
-                minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted)
+                minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted,
+                shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
+                tap_day=today, day_taps=day_taps + paid_taps)
             st.save_activity_budget(pid, budget - credited)
             if credited:
                 st.mark_active(pid, day_of(now))
@@ -114,53 +124,30 @@ class Game:
 
     # ------------------------------------------------------------------ income
     def presence(self, token: str, session: str) -> dict[str, Any]:
-        """Accumulate connected running time, shared across simultaneous clients."""
+        """Marks a running client online for today's statistics. Being online pays nothing; taps do."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             now = self.now()
-            p = st.get_player(pid, now)
-            previous = st.presence(pid, session, now)
+            st.get_player(pid, now)
+            st.presence(pid, session, now)
             st.mark_active(pid, day_of(now))
-            elapsed = 0.0
-            if previous is not None and 0 <= now - previous <= 60:
-                elapsed = max(0.0, now - max(previous, p["presence_last"]))
-            inc = self.manifest.income
-            multiplier = self._paid_multiplier(p, now)
-            # Only the boosted time left today earns above the base rate.
-            boosted = min(elapsed, self._boost_left(p, now)) if multiplier > 1 else 0.0
-            earned = p["shard_remainder"] + inc["perMinute"] / 60 * (elapsed + boosted * (multiplier - 1))
-            # Absorb floating-point noise at whole-shard boundaries.
-            whole = int(earned + 1e-9)
-            today = day_of(now)
-            used = p["boost_used"] if p["boost_day"] == today else 0.0
-            st.update_player(pid, shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
-                             presence_last=max(now, p["presence_last"]) if previous is not None else p["presence_last"],
-                             boost_day=today, boost_used=used + boosted)
         return self.status(token)
 
-    def _boost_left(self, p, now) -> float:
-        """Seconds of boosted income left on this China day; unlimited when the manifest sets no cap."""
-        cap = self.manifest.income.get("boostMinutesPerDay")
-        if cap is None:
-            return math.inf
-        return cap * 60 - (p["boost_used"] if p["boost_day"] == day_of(now) else 0.0)
-
-    def _paid_multiplier(self, p, now) -> float:
-        """The multiplier income pays: none during a tap cooldown or once today's boosted time is spent."""
-        if now < p["tap_cooldown_until"] or self._boost_left(p, now) <= 0:
-            return 1.0
-        return self._multiplier(p, now)
-
-    def _multiplier(self, p, now):
-        bucket = int(now // 60)
-        if p["minute_bucket"] == bucket:
-            taps = p["last_minute_taps"]
-        elif p["minute_bucket"] == bucket - 1:
-            taps = p["minute_taps"]
-        else:
-            taps = 0
+    def _tap_shards(self, taps: float) -> float:
+        """Shards one China day's paid taps earn in all: a log curve that stops at the daily cap."""
         inc = self.manifest.income
-        return 1 + (inc["maxMultiplier"] - 1) * min(taps, inc["fullTapsPerMinute"]) / inc["fullTapsPerMinute"]
+        return min(inc["shardScale"] * math.log1p(taps / inc["tapScale"]), inc["dailyCap"])
+
+    def _income(self, p, now) -> dict[str, Any]:
+        inc = self.manifest.income
+        day = day_of(now)
+        taps = p["day_taps"] if p["tap_day"] == day else 0
+        today = self._tap_shards(taps)
+        per_tap = inc["shardScale"] / (inc["tapScale"] + taps) if today < inc["dailyCap"] else 0.0
+        return {"day": day, "today": int(today + 1e-9), "cap": inc["dailyCap"], "taps": taps, "perTap": round(per_tap, 3),
+                # Shown by 1.0 clients, which predate the tap curve: no multiplier, and what a minute of
+                # typing at 60 taps pays from here.
+                "multiplier": 1, "perMinute": round(per_tap * 60, 1)}
 
     def resonate(self, token: str, count: int = 1) -> dict[str, Any]:
         pool = self.manifest.resonance_pool
@@ -182,8 +169,10 @@ class Game:
                       for kind in cfg["commonKindWeights"]}
             common_missing = {kind: [item for item in items if item["id"] not in owned]
                               for kind, items in common.items()}
+            # A tier with nothing left to find drops out and its odds go to common, unless it keeps rolling repeats.
+            repeating = set(cfg.get("repeatTiers", ()))
             for _ in range(n):
-                available = {r for r in missing if missing[r]}
+                available = {r for r in missing if missing[r]} | repeating
                 rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng)
                 candidates = missing[rarity] or pool[rarity]
                 if rarity == "common":
@@ -194,10 +183,12 @@ class Game:
                     item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
                 iid = item["id"]
                 fresh = iid not in owned
-                gained = cfg["duplicateRefund"] if not fresh and item["kind"] == "emote" else 0
+                gained = 0 if fresh else self.duplicate_shards(iid)
                 refund += gained
-                owned[iid] = owned.get(iid, 0) + 1
-                increments[iid] = increments.get(iid, 0) + 1
+                # A repeat that turns into shards is not kept.
+                if fresh or not gained:
+                    owned[iid] = owned.get(iid, 0) + 1
+                    increments[iid] = increments.get(iid, 0) + 1
                 if fresh:
                     missing[rarity].remove(item)
                     if rarity == "common":
@@ -215,6 +206,18 @@ class Game:
         return {**self.status(token), "drops": drops}
 
     # ------------------------------------------------------------------- craft
+    def duplicate_shards(self, item_id: str) -> int:
+        """Shards a repeat of this item turns into: emotes alike, cards by tier."""
+        refunds = self.manifest.resonance["duplicateRefund"]
+        if item_id.startswith("emote:"):
+            return int(refunds.get("emote", 0))
+        card = self.manifest.cards.get(item_id[5:]) if item_id.startswith("card:") else None
+        return int(refunds.get(card["tier"], 0)) if card else 0
+
+    def refund_duplicate_cards(self) -> tuple[int, int]:
+        """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
+        return self.store.refund_duplicates("duplicate-cards-1.1", "card:", self.duplicate_shards, self.now())
+
     def craft(self, token: str, item_id: str) -> dict[str, Any]:
         """Spend shards on a chosen missing item."""
         pid = player_id_for(token)
@@ -268,12 +271,10 @@ class Game:
         now = self.now()
         p = self.store.get_player(pid, now)
         owned_count = self.store.count_items(pid, self.collectible_ids)
-        multiplier = self._paid_multiplier(p, now)
         return {
             "player": pid,
             "shards": p["shards"],
-            "income": {"multiplier": round(multiplier, 2),
-                       "perMinute": round(self.manifest.income["perMinute"] * multiplier, 1)},
+            "income": self._income(p, now),
             "resonance": {"pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]},
                           "hardPity": self.manifest.resonance["pity"], "total": p["drawn_total"]},
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
@@ -354,15 +355,22 @@ class Game:
             out["plate"] = self._check_plate(patch["plate"], owned)
         return out
 
+    def plate_set(self, card: dict[str, Any]) -> list[str]:
+        """Cards a name plate asks for: those of its collection that show one of its members. A collection of
+        several members asks only for the plate member's cards; a duo card asks for the whole duo collection."""
+        members = set(card["characters"])
+        return [c["id"] for c in self.manifest.cards.values()
+                if c["series"] == card["series"] and members & set(c["characters"])]
+
     def _check_plate(self, card_id: Any, owned: dict[str, int]) -> str | None:
-        """A big hidden card the player owns, worn as a name plate; empty means none."""
+        """A big hidden card worn as a name plate once its set is collected; empty means none."""
         if not card_id:
             return None
         card = self.manifest.cards.get(card_id) if isinstance(card_id, str) else None
         if card is None or card.get("tier") != "big":
             raise GameError("bad_item", "not a big hidden card")
-        if f"card:{card_id}" not in owned:
-            raise GameError("locked", "card not owned")
+        if any(f"card:{cid}" not in owned for cid in self.plate_set(card)):
+            raise GameError("locked", "set not collected")
         return card_id
 
     def _stored_loadout(self, p: dict[str, Any], owned: dict[str, int]) -> dict[str, Any]:
@@ -405,7 +413,7 @@ class Game:
         return {"uid": hashlib.sha256(f"{pid}:{room}".encode()).hexdigest()[:10]}
 
     def room_plate(self, token: str | None, card_id: str | None) -> str | None:
-        """The name plate a room member shows: the card when their save owns it, else none."""
+        """The name plate a room member shows: the card when their save has its set, else none."""
         if not token or not card_id:
             return None
         try:

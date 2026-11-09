@@ -42,6 +42,25 @@ export function plateCard(id: string | null | undefined): ManifestCard | null {
 /** Every card that can be worn as a plate, in manifest order. */
 export const plateCards = (): ManifestCard[] => manifest.cards.filter((c) => plateCard(c.id));
 
+const TIER_ORDER = { big: 0, small: 1, normal: 2 } as const;
+
+/**
+ * Cards a plate asks for, its big hidden card first: those of its collection that show one of its members.
+ * A collection of several members asks only for the plate member's cards; a duo card asks for the whole
+ * duo collection. Same rule as the server (game.py plate_set).
+ */
+export function plateSet(card: ManifestCard): ManifestCard[] {
+  return manifest.cards
+    .filter((c) => c.series === card.series && c.characters.some((m) => card.characters.includes(m)))
+    .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
+}
+
+/** A plate is worn once its whole set is collected. */
+export function plateUnlocked(id: string | null | undefined, owned: Readonly<Record<string, number>>): boolean {
+  const card = plateCard(id);
+  return !!card && plateSet(card).every((c) => owned[`card:${c.id}`]);
+}
+
 /** Plate size under a partner's pet drawn at `scale`. */
 export function plateSize(scale: number): { width: number; height: number } {
   return { width: Math.round(228 * scale), height: Math.round(Math.min(40, Math.max(16, 30 * scale))) };
