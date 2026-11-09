@@ -1,12 +1,11 @@
 <script setup lang="ts">
-// A pet standing somewhere on the desktop overlay. Drag it anywhere; a click without
-// movement is reported as `poke`.
+// A pet standing somewhere on the desktop overlay. Drag it anywhere.
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { setDragging } from "../composables/tauri";
 import { clamp, type Pos, type Size } from "../stores/desk";
 
 const props = defineProps<{ pos: Pos; label?: string }>();
-const emit = defineEmits<{ moved: [pos: Pos]; poke: []; size: [size: Size]; dragging: [] }>();
+const emit = defineEmits<{ moved: [pos: Pos]; size: [size: Size]; dragging: [] }>();
 
 const root = ref<HTMLElement | null>(null);
 const live = ref<Pos | null>(null);
@@ -41,7 +40,6 @@ function up(e: PointerEvent) {
   start = null;
   void setDragging(false);
   if (moved && live.value) emit("moved", live.value);
-  else emit("poke");
   live.value = null;
 }
 

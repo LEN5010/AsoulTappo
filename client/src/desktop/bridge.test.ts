@@ -88,10 +88,11 @@ it("mirrors remote pet animation poses into the panel without another room socke
   const panel = await context(true);
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
-  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5,
+  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
     pulse: 0, emote: null, combo: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
+  expect(panel.room.members.get('friend')!.plate).toBe('c1');
   Object.assign(desk.room.members.get('friend')!.motion, { dx: 0, dy: 0, keyDown: false, left: false });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion.left).toBe(false);

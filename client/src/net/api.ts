@@ -1,6 +1,6 @@
 // HTTP client for the progression API (see protocol/PROTOCOL.md). A guest save is identified by a random
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
-import { manifest, type Rarity } from "../manifest";
+import type { Rarity } from "../manifest";
 
 export interface PlayerStatus {
   player: string;
@@ -182,12 +182,4 @@ export class ActivityReporter {
     }, () => false).finally(() => { this.busy = null; });
     return this.busy;
   }
-}
-
-/** Series progress for the collection screen. */
-export function seriesProgress(owned: Record<string, number>) {
-  return manifest.series.map((s) => ({
-    ...s,
-    have: manifest.cards.filter((c) => c.series === s.id && (owned[`card:${c.id}`] ?? 0) > 0).length,
-  }));
 }

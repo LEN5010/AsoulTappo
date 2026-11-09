@@ -227,17 +227,12 @@ class Store:
                 (pid, session, sequence, last_at, fast_since))
             self._commit()
 
-    # --- items
-    def presence(self, pid: str, session: str, now: float) -> float | None:
-        """Return this running session's previous heartbeat and record the new one."""
+    def prune_activity_sessions(self, before: float) -> int:
+        """Delete sessions last seen before [before]; rows from before last_at existed hold 0 and go too."""
         with self._lock:
-            row = self._db.execute(
-                "SELECT last_seen FROM presence_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
-            self._db.execute(
-                "INSERT INTO presence_sessions VALUES (?, ?, ?) "
-                "ON CONFLICT(player_id, session) DO UPDATE SET last_seen=excluded.last_seen", (pid, session, now))
+            cur = self._db.execute("DELETE FROM activity_sessions WHERE last_at < ?", (before,))
             self._commit()
-            return row["last_seen"] if row else None
+            return cur.rowcount
 
     # --- main-site accounts: one save per account, one account per save
     def has_player(self, pid: str) -> bool:

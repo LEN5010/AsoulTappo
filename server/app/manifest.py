@@ -1,6 +1,6 @@
 """Asset manifest loader (assets-packs/manifest.json, produced by scripts/build_assets.py).
 
-The server only needs the *metadata* (items, rarities, frames/badges); the image
+The server only needs the *metadata* (items, rarities, economy); the image
 and video files are served statically from the packs directory.
 
 Collectible items have namespaced ids:
@@ -78,18 +78,6 @@ class Manifest:
         return pool
 
     @cached_property
-    def accessories(self) -> dict[str, dict]:
-        return {a["id"]: a for a in self.data.get("accessories", [])}
-
-    @cached_property
-    def themes(self) -> dict[str, dict]:
-        return {t["id"]: t for t in self.data.get("themes", [])}
-
-    @cached_property
-    def default_theme(self) -> str:
-        return self.data.get("defaultTheme", "")
-
-    @cached_property
     def income(self) -> dict:
         return self.data["economy"]["income"]
 
@@ -109,10 +97,6 @@ class Manifest:
     @cached_property
     def series_total(self) -> dict[str, int]:
         return {s["id"]: s["total"] for s in self.data["series"]}
-
-    @cached_property
-    def decor(self) -> dict[str, dict]:
-        return {d["id"]: d for d in self.data["decor"]}
 
     @cached_property
     def character_names(self) -> set[str]:

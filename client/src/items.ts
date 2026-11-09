@@ -73,14 +73,6 @@ export function ownsEmote(key: string, owned: Record<string, number>): boolean {
   return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
 }
 
-export function ownsAccessory(id: string, owned: Record<string, number>): boolean {
-  return (owned[`acc:${id}`] ?? 0) > 0;
-}
-
-export function ownsTheme(id: string, owned: Record<string, number>): boolean {
-  return id === manifest.starter.theme || (owned[`theme:${id}`] ?? 0) > 0;
-}
-
 export function craftCost(item: Item): number | null {
   return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] ?? null : null;
 }

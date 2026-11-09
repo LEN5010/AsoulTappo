@@ -6,7 +6,6 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +39,9 @@ game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manife
 _paid_players, _paid_shards = game.refund_duplicate_cards()
 if _paid_players:
     print(f"refunded duplicate cards: {_paid_shards} shards to {_paid_players} players", flush=True)
+_pruned = game.prune_activity_sessions()
+if _pruned:
+    print(f"pruned {_pruned} old tap sessions", flush=True)
 
 # MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
 # self-hosted servers, which then offer guest saves only.
@@ -235,7 +237,8 @@ def _link(token: str, authorization: str) -> dict:
                 if summary["taps"] or summary["owned"]:
                     raise HTTPException(409, {"code": "account_has_save", "message": "账号已有桌宠存档",
                                               "account": game.save_summary(linked), "guest": summary})
-            return {"user": _public_user(user), "save": game.save_summary(linked), "linkedGuest": False}
+            # The guest may already be the linked save (an earlier link whose answer never arrived).
+            return {"user": _public_user(user), "save": game.save_summary(linked), "linkedGuest": guest == linked}
         if guest and st.account_for_player(guest):
             raise GameError("save_linked", "这份存档已绑定其他账号")
         pid = guest or secrets.token_hex(8)
@@ -327,7 +330,12 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
     try:
         while True:
-            raw = await ws.receive_json()
+            try:
+                raw = await ws.receive_json()
+            except (ValueError, KeyError, TypeError):
+                # Not JSON text: a bad JSON text frame, or a binary frame (no "text", or "text": None on
+                # some ASGI servers). Validation below answers it as bad_message.
+                raw = None
             if peer is not None and not peer.active:
                 break
             try:
@@ -347,8 +355,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 who = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
                 profile = await run_in_threadpool(game.profile_for, who, msg.room)
                 plate = await run_in_threadpool(game.room_plate, who, msg.plate)
+                character = msg.character
+                # A skin the save does not own shows its member instead; the join itself goes through.
+                if (character not in game.manifest.character_names
+                        and not await run_in_threadpool(game.owns_character, who, character)):
+                    character = game.base_character(character)
                 try:
-                    peer = manager.join(msg.room, msg.nick, msg.character, ws, token=who, plate=plate, **profile)
+                    peer = manager.join(msg.room, msg.nick, character, ws, token=who, plate=plate, **profile)
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
@@ -398,6 +411,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, StateMsg):
+                # Checked before anything is applied: a locked part drops the whole message.
+                if (msg.character is not None and msg.character not in game.manifest.character_names
+                        and not await run_in_threadpool(game.owns_character, peer.token, msg.character)):
+                    await err("locked", "skin not owned")
+                    continue
                 if msg.plate:
                     plate = await run_in_threadpool(game.room_plate, peer.token, msg.plate)
                     if plate is None:

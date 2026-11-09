@@ -3,10 +3,11 @@ import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { adminStatus, exportLog, isTauri, openAboutLink, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
-import { status, saveCode, account, setAccount, refreshAccount } from "../stores/player";
+import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
+import { accountLoginTrusted } from "../net/trust";
 import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
 import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
@@ -18,18 +19,20 @@ const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
 
 // The account row is always shown; signing in needs a server connected to the account service.
+// A server or account service off the official origin looks like a server without account login.
 const info = ref<ServerInfo | null>(null);
 async function loadInfo() {
   const server = toHttpBase(settings.serverUrl);
   info.value = null;
   try {
     const result = await new Api(() => server, () => saveCode.value).info();
-    if (server === toHttpBase(settings.serverUrl)) info.value = result;
+    if (server !== toHttpBase(settings.serverUrl)) return;
+    info.value = accountLoginTrusted(server, result.mainApi) ? result : { ...result, accountLogin: false, mainApi: null };
   } catch { /* offline: sign-in shows once the server answers */ }
 }
 onMounted(() => { void loadInfo(); void refreshAccount(); });
 watch(() => settings.serverUrl, loadInfo);
-const signedIn = computed(() => account.value && account.value.server === toHttpBase(settings.serverUrl) ? account.value : null);
+const signedIn = computed(() => activeAccount());
 const dialog = ref<"login" | "register" | null>(null);
 function accountDone(message: string) {
   dialog.value = null;
@@ -38,7 +41,8 @@ function accountDone(message: string) {
 async function signOut() {
   const session = signedIn.value;
   if (!session) return;
-  if (info.value?.mainApi) await new MainAccountApi(info.value.mainApi).revoke(session.token).catch(() => {});
+  const mainApi = info.value?.mainApi;
+  if (mainApi && accountLoginTrusted(session.server, mainApi)) await new MainAccountApi(mainApi).revoke(session.token).catch(() => {});
   await setAccount(null);
   notice.value = "已退出登录";
 }

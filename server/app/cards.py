@@ -14,7 +14,7 @@ class Rng(Protocol):
 class DropConfig:
     min_taps_active_minute: int = 10
     max_taps_per_sec: int = 15
-    # A session reporting at least this fast for the streak sits out the cooldown: no taps, no multiplier.
+    # A session reporting at least this fast for the streak sits out the cooldown: no taps count.
     fast_taps_per_sec: int = 10
     fast_streak_sec: float = 30.0
     tap_cooldown_sec: float = 60.0

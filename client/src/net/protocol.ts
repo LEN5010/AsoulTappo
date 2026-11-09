@@ -19,24 +19,14 @@ export interface Member {
   character: string;
   taps: number;
   motion?: PetMotion | null;
-  /** Unlocked avatar frame / badge decor ids (null = none). */
-  frame?: string | null;
-  badge?: string | null;
-  /** Equipped accessory ids (null = none). */
-  head?: string | null;
-  desk?: string | null;
   /** Big hidden card id worn as a name plate, checked by the server (null = none). */
   plate?: string | null;
 }
 
-/** Profile fields a member can change with `state` ("" clears frame / badge / head / desk / plate). */
+/** Profile fields a member can change with `state` ("" takes off the plate). */
 export interface ProfilePatch {
   character?: string;
   nick?: string;
-  frame?: string;
-  badge?: string;
-  head?: string;
-  desk?: string;
   plate?: string;
 }
 
@@ -45,10 +35,6 @@ export interface StateUpdate {
   id: string;
   character: string;
   nick: string;
-  frame?: string | null;
-  badge?: string | null;
-  head?: string | null;
-  desk?: string | null;
   plate?: string | null;
 }
 

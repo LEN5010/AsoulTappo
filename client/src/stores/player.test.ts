@@ -19,9 +19,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup() {
+async function setup(server = "http://a") {
   const { settings } = await import("./settings");
-  settings.serverUrl = "http://a";
+  settings.serverUrl = server;
   player = await import("./player");
   player.startReporting();
   return { settings, p: player };
@@ -35,7 +35,8 @@ it("signing in moves new input to the account save while pending input stays wit
     if (url.endsWith("/activity")) activities.push(headers.Authorization ?? headers["X-Player-Token"]!);
     return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 0 });
   });
-  const { p, settings } = await setup();
+  // Account tokens only go to trusted servers; tests run as a dev build, which trusts localhost.
+  const { p, settings } = await setup("http://localhost:1");
   await vi.advanceTimersByTimeAsync(0);
   const guest = p.token;
   p.countInput();
@@ -165,4 +166,157 @@ it("takes off a plate whose set is not collected and sends the one that is", asy
   expect(settings.plate).toBe("c1762331462002");
   await vi.advanceTimersByTimeAsync(500);
   expect(sent.at(-1)).toMatchObject({ plate: "c1762331462002" });
+});
+
+// ---------------------------------------------------------------- loadout ownership
+const OWNER = "asoultappo.loadoutOwner.v1";
+function memoryStorage(initial: Record<string, string> = {}) {
+  const saved = new Map(Object.entries(initial));
+  return {
+    saved,
+    getItem: (k: string) => saved.get(k) ?? null,
+    setItem: (k: string, v: string) => void saved.set(k, v),
+    removeItem: (k: string) => void saved.delete(k),
+  };
+}
+function loadoutServer(stored: unknown, failPull = false, pullGate: Promise<void> = Promise.resolve()) {
+  const calls: string[] = [];
+  const pushed: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/loadout")) {
+      if (init?.method === "POST") {
+        calls.push("push");
+        pushed.push(JSON.parse(String(init.body)));
+        return response(stored);
+      }
+      calls.push("pull");
+      await pullGate;
+      return failPull ? ({ ok: false, status: 500, json: async () => ({}) } as Response) : response(stored);
+    }
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: "p1", shards: 0 });
+  });
+  return { calls, pushed };
+}
+
+it("pushes the local loadout to the save it belongs to", async () => {
+  vi.stubGlobal("localStorage", memoryStorage({ [OWNER]: "http://a|p1" }));
+  const { calls, pushed } = loadoutServer({ character: "贝拉", favorites: [], plate: null });
+  const { settings } = await setup();
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["push"]);
+  expect(pushed[0]).toMatchObject({ character: "乃琳" });
+  expect(settings.character).toBe("乃琳");
+});
+
+it("loads the stored loadout of another save instead of pushing the local one to it", async () => {
+  const storage = memoryStorage({ [OWNER]: "http://a|old" });
+  vi.stubGlobal("localStorage", storage);
+  const { starterEmotesOf } = await import("../items");
+  const favorites = starterEmotesOf("贝拉").slice(0, 2);
+  const { calls, pushed } = loadoutServer({ character: "贝拉", favorites, plate: null });
+  const { settings } = await setup();
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["pull"]);
+  expect(settings.character).toBe("贝拉");
+  expect(settings.favorites).toEqual(favorites);
+  expect(storage.saved.get(OWNER)).toBe("http://a|p1");
+  // From now on local changes belong to this save.
+  settings.character = "嘉然";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["pull", "push"]);
+  expect(pushed[0]).toMatchObject({ character: "嘉然" });
+});
+
+it("does not push local changes to another save while its loadout is loading", async () => {
+  vi.stubGlobal("localStorage", memoryStorage({ [OWNER]: "http://a|old" }));
+  let release!: () => void;
+  const { calls } = loadoutServer({ character: "贝拉", favorites: [], plate: null }, false, new Promise((r) => { release = r; }));
+  const { settings } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(calls).toEqual(["pull"]);
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["pull"]);
+  release();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["pull"]);
+  expect(settings.character).toBe("贝拉");
+});
+
+it("a save that never chose a character keeps the member of the local one", async () => {
+  vi.stubGlobal("localStorage", memoryStorage({ [OWNER]: "http://a|old" }));
+  loadoutServer({ character: null, favorites: [], plate: null });
+  const { settings } = await setup();
+  settings.character = "贝拉山海经";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(settings.character).toBe("贝拉");
+});
+
+it("pushes nothing to another save when its loadout cannot be loaded", async () => {
+  const storage = memoryStorage({ [OWNER]: "http://a|old" });
+  vi.stubGlobal("localStorage", storage);
+  const { calls } = loadoutServer(null, true);
+  const { settings } = await setup();
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  settings.character = "嘉然";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.every((c) => c === "pull")).toBe(true);
+  expect(storage.saved.get(OWNER)).toBe("http://a|old");
+});
+
+it("tries again after a heartbeat when another save's loadout could not be loaded", async () => {
+  const storage = memoryStorage({ [OWNER]: "http://a|old" });
+  vi.stubGlobal("localStorage", storage);
+  let fail = true;
+  let pulls = 0;
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/loadout") && init?.method !== "POST") {
+      pulls++;
+      return fail ? ({ ok: false, status: 500, json: async () => ({}) } as Response) : response({ character: "贝拉", favorites: [], plate: null });
+    }
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: "p1", shards: 0 });
+  });
+  const { settings } = await setup();
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(storage.saved.get(OWNER)).toBe("http://a|old");
+  fail = false;
+  const before = pulls;
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(pulls).toBe(before + 1);
+  expect(settings.character).toBe("贝拉");
+  expect(storage.saved.get(OWNER)).toBe("http://a|p1");
+});
+
+it("the first run adopts the current save and keeps the local loadout", async () => {
+  const storage = memoryStorage();
+  vi.stubGlobal("localStorage", storage);
+  const { calls, pushed } = loadoutServer({ character: "贝拉", favorites: [], plate: null });
+  const { settings } = await setup();
+  settings.character = "乃琳";
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["push"]);
+  expect(pushed[0]).toMatchObject({ character: "乃琳" });
+  expect(storage.saved.get(OWNER)).toBe("http://a|p1");
+});
+
+it("never uses a stored account session on an untrusted server", async () => {
+  const session = { server: "http://a", token: "acct", user: { id: "u", username: "alice", email: null } };
+  vi.stubGlobal("localStorage", memoryStorage({ "asoultappo.account.v1": JSON.stringify(session) }));
+  const auth: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const headers = init!.headers as Record<string, string>;
+    auth.push(headers.Authorization ?? "guest");
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: "p1", shards: 0 });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(p.account.value?.token).toBe("acct");
+  expect(p.activeAccount()).toBeNull();
+  expect(auth.length).toBeGreaterThan(0);
+  expect(auth.every((a) => a === "guest")).toBe(true);
 });

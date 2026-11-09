@@ -108,8 +108,6 @@ const events: RoomEvents = {
     if (!m) return;
     m.character = u.character;
     m.nick = u.nick;
-    m.frame = u.frame ?? null;
-    m.badge = u.badge ?? null;
     m.plate = u.plate ?? null;
   },
   onError(code, message) {
@@ -131,6 +129,8 @@ function errorText(code: string, message: string): string {
       return "服务器地址无效";
     case "locked":
       return "还没有获得这个物品";
+    case "bad_message":
+      return "请求无效";
     default:
       return message || code;
   }

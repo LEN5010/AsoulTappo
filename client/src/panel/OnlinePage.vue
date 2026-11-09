@@ -64,7 +64,7 @@ async function copy() {
           </span>
         </div>
         <div v-if="conn === 'idle'" class="ticket-body">
-          <input v-model="input" class="ui-input" placeholder="房间号" aria-label="房间号" spellcheck="false" @keydown.enter="joinRoom(input)" />
+          <input v-model="input" class="ui-input" maxlength="64" placeholder="房间号" aria-label="房间号" spellcheck="false" @keydown.enter="joinRoom(input)" />
           <button type="button" class="ui-btn" :disabled="!input.trim()" @click="joinRoom(input)">加入</button>
           <button type="button" class="ui-btn primary" :disabled="busy" @click="onCreate">
             <Icon name="plus" :size="15" />创建房间

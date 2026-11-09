@@ -1,10 +1,12 @@
+import http.client
+
 import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.accounts import MainAccounts
+from app.accounts import CACHE_SECONDS, RETRY_SECONDS, STALE_SECONDS, MainAccounts
 from app.cards import DropConfig
-from app.game import Game
+from app.game import Game, GameError, player_id_for
 from app.store import Store
 
 from fixtures import Clock, SeqRng, tiny_manifest
@@ -23,13 +25,20 @@ class FakeMain:
     def __init__(self):
         self.calls = 0
         self.down = False
+        self.status = None  # an answer other than 200/401, e.g. 502
+        self.error = None  # raised instead of answering
+        self.revoked = set()
 
     def __call__(self, url, token):
         assert url == "https://main.test/api/auth/me"
         self.calls += 1
         if self.down:
             raise OSError("unreachable")
-        return (200, {"user": USERS[token]}) if token in USERS else (401, None)
+        if self.error:
+            raise self.error
+        if self.status:
+            return self.status, None
+        return (200, {"user": USERS[token]}) if token in USERS and token not in self.revoked else (401, None)
 
 
 @pytest.fixture()
@@ -77,6 +86,16 @@ def test_linking_keeps_the_guest_save_and_retires_the_guest_token(env):
     assert old.status_code == 401 and old.json()["detail"]["code"] == "save_linked"
 
 
+def test_linking_again_reports_the_guest_that_already_is_the_account_save(env):
+    # The first answer never reached the client, so it signs in and links again with the same guest token.
+    c, *_ = env
+    guest = {"X-Player-Token": GUEST}
+    play(c, guest)
+    assert c.post("/api/account/link", headers={**guest, **bearer("tok-alice")}).json()["linkedGuest"] is True
+    again = c.post("/api/account/link", headers={**guest, **bearer("tok-alice")})
+    assert again.status_code == 200 and again.json()["linkedGuest"] is True
+
+
 def test_new_device_gets_a_choice_between_saves(env):
     c, *_ = env
     c.post("/api/account/link", headers={"X-Player-Token": GUEST, **bearer("tok-alice")})
@@ -114,12 +133,105 @@ def test_expired_tokens_and_cache(env):
         assert c.get("/api/me", headers=bearer("tok-alice")).status_code == 200
     assert fake.calls == calls
     fake.down = True
-    clock[0] += 301
+    clock[0] += 3601
     r = c.get("/api/me", headers=bearer("tok-alice"))
     assert r.status_code == 503 and r.json()["detail"]["code"] == "account_unavailable"
     fake.down = False
+    clock[0] += RETRY_SECONDS
     r = c.get("/api/me", headers=bearer("tok-unknown"))
     assert r.status_code == 401 and r.json()["detail"]["code"] == "account_expired"
+
+
+def accounts_with(fake):
+    clock = [0.0]
+    return MainAccounts("https://main.test/api", fake, lambda: clock[0]), clock
+
+
+@pytest.mark.parametrize("failure", ["down", "status", "error"])
+def test_a_failing_main_site_serves_the_last_answer_for_an_hour(failure):
+    fake = FakeMain()
+    accounts, clock = accounts_with(fake)
+    alice = accounts.user_for("tok-alice")
+    clock[0] = CACHE_SECONDS
+    setattr(fake, failure, {"down": True, "status": 502,
+                            "error": http.client.IncompleteRead(b"{")}[failure])
+    assert accounts.user_for("tok-alice") == alice
+    assert fake.calls == 2
+    # A token never answered before has nothing to fall back to.
+    with pytest.raises(GameError) as e:
+        accounts.user_for("tok-bob")
+    assert e.value.code == "account_unavailable"
+    clock[0] = STALE_SECONDS
+    assert accounts.user_for("tok-alice") == alice
+    clock[0] = STALE_SECONDS + 1
+    with pytest.raises(GameError) as e:
+        accounts.user_for("tok-alice")
+    assert e.value.code == "account_unavailable"
+
+
+def test_after_a_failure_the_main_site_rests_for_the_retry_window():
+    fake = FakeMain()
+    accounts, clock = accounts_with(fake)
+    accounts.user_for("tok-alice")
+    clock[0] = CACHE_SECONDS
+    fake.down = True
+    accounts.user_for("tok-alice")
+    fake.down = False
+    clock[0] += RETRY_SECONDS - 1
+    # Inside the window no token reaches the main site: stale answers or account_unavailable at once.
+    assert accounts.user_for("tok-alice")["id"] == "u-alice"
+    with pytest.raises(GameError) as e:
+        accounts.user_for("tok-bob")
+    assert e.value.code == "account_unavailable"
+    assert fake.calls == 2
+    clock[0] += 1
+    assert accounts.user_for("tok-bob")["id"] == "u-bob"
+    assert accounts.user_for("tok-alice")["id"] == "u-alice"
+    assert fake.calls == 4
+
+
+def test_a_failing_main_site_is_tried_by_one_request_at_a_time():
+    fake = FakeMain()
+    accounts, clock = accounts_with(fake)
+    fake.down = True
+    with pytest.raises(GameError):
+        accounts.user_for("tok-alice")
+    fake.down = False
+    clock[0] += RETRY_SECONDS
+    seen = []
+
+    def slow(url, token):
+        # A request arriving while this one waits on the main site is answered at once.
+        with pytest.raises(GameError) as e:
+            accounts.user_for("tok-bob")
+        seen.append(e.value.code)
+        return fake(url, token)
+
+    accounts.fetch = slow
+    assert accounts.user_for("tok-alice")["id"] == "u-alice"
+    assert seen == ["account_unavailable"]
+    assert fake.calls == 2
+    # The main site answered, so nobody is held back any longer.
+    accounts.fetch = fake
+    assert accounts.user_for("tok-bob")["id"] == "u-bob"
+    assert fake.calls == 3
+
+
+def test_an_expired_token_is_forgotten_at_once():
+    fake = FakeMain()
+    accounts, clock = accounts_with(fake)
+    accounts.user_for("tok-alice")
+    clock[0] = CACHE_SECONDS
+    fake.revoked.add("tok-alice")
+    with pytest.raises(GameError) as e:
+        accounts.user_for("tok-alice")
+    assert e.value.code == "account_expired"
+    # A 401 is an answer, not a failure: no retry window, and no stale fallback afterwards.
+    fake.down = True
+    with pytest.raises(GameError) as e:
+        accounts.user_for("tok-alice")
+    assert e.value.code == "account_unavailable"
+    assert fake.calls == 3
 
 
 def test_room_join_uses_the_account_save(env):
@@ -134,3 +246,40 @@ def test_room_join_uses_the_account_save(env):
         a.receive_json()
     uid = joined["members"][0]["uid"]
     assert uid == g.profile_for(main.PlayerId(pid), "r1")["uid"]
+
+
+def test_room_skins_are_checked_against_the_save(env):
+    c, g, *_ = env
+    skin = {"type": "join", "room": "r1", "nick": "a", "token": GUEST, "character": "嘉然山海经"}
+    with c.websocket_connect("/ws") as a:
+        # not owned: the member is shown instead, and the join still goes through
+        a.send_json(skin)
+        assert a.receive_json()["members"][0]["character"] == "嘉然"
+    g.store.add_item(player_id_for(GUEST), "char:嘉然山海经", g.now())
+    with c.websocket_connect("/ws") as a:
+        a.send_json(skin)
+        assert a.receive_json()["members"][0]["character"] == "嘉然山海经"
+
+
+def test_unknown_characters_fall_back_to_the_first_member(env):
+    c, *_ = env
+    with c.websocket_connect("/ws") as a:
+        a.send_json({"type": "join", "room": "r1", "nick": "a", "character": "nobody"})
+        assert a.receive_json()["members"][0]["character"] == "嘉然"
+
+
+def test_state_with_an_unowned_skin_is_locked_and_not_broadcast(env):
+    c, *_ = env
+    with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
+        # base characters need no token
+        a.send_json({"type": "join", "room": "r1", "nick": "a", "character": "嘉然"})
+        you = a.receive_json()["you"]
+        b.send_json({"type": "join", "room": "r1", "nick": "b", "token": GUEST})
+        b.receive_json()
+        a.receive_json()  # member_joined(b)
+        a.send_json({"type": "state", "character": "嘉然山海经", "nick": "a2"})
+        assert a.receive_json()["code"] == "locked"
+        a.send_json({"type": "state", "character": "嘉然", "nick": "a3"})
+        expected = {"type": "state", "id": you, "character": "嘉然", "nick": "a3", "plate": None}
+        assert b.receive_json() == expected  # the locked message never reached b
+        assert a.receive_json() == expected

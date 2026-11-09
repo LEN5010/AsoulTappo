@@ -18,7 +18,9 @@ DAY_OFFSET = 8 * 3600
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
-# emote keys every member may send besides the starter emotes: the theme like
+# A tap session silent this long is pruned at startup; if it reports again it starts a new row.
+SESSION_DAYS = 30
+# emote keys every member may send besides the starter emotes: thumbup, the theme's like burst
 FREE_EMOTES = frozenset({"thumbup"})
 LOADOUT_KEYS = ("character", "favorites", "plate")
 
@@ -124,12 +126,12 @@ class Game:
 
     # ------------------------------------------------------------------ income
     def presence(self, token: str, session: str) -> dict[str, Any]:
-        """Marks a running client online for today's statistics. Being online pays nothing; taps do."""
+        """Marks a running client online for today's statistics. Being online pays nothing; taps do.
+        [session] is accepted from clients but no longer recorded."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             now = self.now()
             st.get_player(pid, now)
-            st.presence(pid, session, now)
             st.mark_active(pid, day_of(now))
         return self.status(token)
 
@@ -217,6 +219,10 @@ class Game:
     def refund_duplicate_cards(self) -> tuple[int, int]:
         """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
         return self.store.refund_duplicates("duplicate-cards-1.1", "card:", self.duplicate_shards, self.now())
+
+    def prune_activity_sessions(self) -> int:
+        """Forgets tap sessions silent for SESSION_DAYS (one row per client launch). Returns rows removed."""
+        return self.store.prune_activity_sessions(self.now() - SESSION_DAYS * 86400)
 
     def craft(self, token: str, item_id: str) -> dict[str, Any]:
         """Spend shards on a chosen missing item."""
@@ -333,7 +339,7 @@ class Game:
         return item_id in owned or item_id in self.manifest.starter
 
     def _check_loadout(self, patch: dict[str, Any], owned: dict[str, int]) -> dict[str, Any]:
-        """Validate the given loadout keys; raises GameError.  "" / None clear head and desk."""
+        """Validate the given loadout keys; raises GameError.  "" / None take the plate off."""
         out: dict[str, Any] = {}
         if "character" in patch and patch["character"] is not None:
             name = patch["character"]
@@ -420,6 +426,23 @@ class Game:
             return self._check_plate(card_id, self.store.owned(player_id_for(token)))
         except GameError:
             return None
+
+    def owns_character(self, token: str | None, name: str) -> bool:
+        """Whether a room member may show this character: members always, a skin only when the save owns it."""
+        if name in self.manifest.character_names:
+            return True
+        if not token or name not in self.manifest.skins:
+            return False
+        try:
+            pid = player_id_for(token)
+        except GameError:
+            return False
+        return f"char:{name}" in self.store.owned(pid)
+
+    def base_character(self, name: str) -> str:
+        """The member a skin belongs to (skin names start with it, e.g. 贝拉山海经), else the first member."""
+        names = [c["name"] for c in self.manifest.data["characters"]]
+        return next((n for n in names if name.startswith(n)), names[0])
 
     def owns_emote(self, token: str | None, key: str) -> bool:
         if key in FREE_EMOTES or f"emote:{key}" in self.manifest.starter:

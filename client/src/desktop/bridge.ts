@@ -16,8 +16,8 @@ const groupSources = {
   checkins: () => player.checkins.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value }),
-  members: () => [...room.members.values()].map(({ id, uid, nick, character, frame, badge, head, desk }) =>
-    ({ id, uid, nick, character, frame, badge, head, desk })),
+  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
+    ({ id, uid, nick, character, plate })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),

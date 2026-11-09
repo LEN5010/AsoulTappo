@@ -18,7 +18,7 @@ import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
-import { counter } from "./stores/counter";
+import { counter, watchDay } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, stopReporting } from "./stores/player";
@@ -97,6 +97,7 @@ let unOutside: (() => void) | undefined;
 let hits: ReturnType<typeof startHitReporter> | undefined;
 let stopDebugLog: (() => void) | undefined;
 let unBlocked: (() => void) | undefined;
+let stopDay: (() => void) | undefined;
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
 const adminHint = ref<InputBlocked | null>(null);
 const kick = () => hits?.kick();
@@ -108,6 +109,7 @@ onMounted(async () => {
   window.addEventListener("pointerdown", closeQuick, true);
   window.addEventListener("blur", closeQuickAway);
   startReporting();
+  stopDay = watchDay();
   unInput = await listenInput(onInput);
   unOutside = await listenOutsideClick(closeQuickAway);
   unTray = await listenTray((a) => {
@@ -148,6 +150,7 @@ onBeforeUnmount(() => {
   hits?.stop();
   stopDebugLog?.();
   unBlocked?.();
+  stopDay?.();
   stopPet();
 });
 

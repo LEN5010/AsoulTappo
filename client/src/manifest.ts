@@ -98,14 +98,12 @@ export const manifest = raw as unknown as Manifest;
 const cardIndex = new Map(manifest.cards.map((c) => [c.id, c]));
 const emoteIndex = new Map(manifest.emoteSets.flatMap((s) => s.emotes.map((e) => [e.key, e] as const)));
 const decorIndex = new Map(manifest.decor.map((d) => [d.id, d]));
-const accessoryIndex = new Map(manifest.accessories.map((a) => [a.id, a]));
 const emoteSetIndex = new Map(manifest.emoteSets.flatMap((s) => s.emotes.map((e) => [e.key, s] as const)));
 
 export const getCard = (id: string) => cardIndex.get(id);
 export const getEmote = (key: string) => emoteIndex.get(key);
 export const emoteCover = (key: string) => { const emote = getEmote(key); return emote?.thumb ?? emote?.img; };
 export const getDecor = (id: string | null | undefined) => (id ? decorIndex.get(id) : undefined);
-export const getAccessory = (id: string | null | undefined) => (id ? accessoryIndex.get(id) : undefined);
 /** The emote set an emote key belongs to. */
 export const getEmoteSet = (key: string) => emoteSetIndex.get(key);
 export const getTheme = (id: string) =>

@@ -19,7 +19,7 @@ export interface JoinInfo {
   room: string;
   nick: string;
   character: string;
-  /** Secret player token (enables frame/badge); never shown to others. */
+  /** Secret guest-save token (stable uid, plate check); never shown to others. */
   token?: string;
   /** Main-site account token; the room uses the save linked to the account. */
   accountToken?: string;
@@ -62,6 +62,8 @@ export class RoomClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private gotPong = true;
+  /** `join` was sent on this socket and `joined` has not arrived yet. */
+  private joinPending = false;
   private readonly opts: Required<RoomClientOptions>;
 
   constructor(
@@ -141,7 +143,10 @@ export class RoomClient {
       this.attempt = 0;
       this.gotPong = true;
       this.events.onConnState("open");
-      if (this.joinInfo) this.send({ type: "join", ...this.joinInfo });
+      if (this.joinInfo) {
+        this.send({ type: "join", ...this.joinInfo });
+        this.joinPending = true;
+      }
       this.startPing();
     };
     ws.onmessage = (ev) => {
@@ -157,6 +162,7 @@ export class RoomClient {
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.ws = null;
+      this.joinPending = false;
       this.stopPing();
       if (this.wantOpen) this.scheduleReconnect();
       else this.events.onConnState("idle");
@@ -169,6 +175,7 @@ export class RoomClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.type) {
       case "joined":
+        this.joinPending = false;
         this.events.onJoined(msg.room, msg.you, msg.members);
         break;
       case "member_joined":
@@ -195,8 +202,8 @@ export class RoomClient {
         this.events.onState(msg);
         break;
       case "error":
-        // A full room is permanent for this attempt: stop retrying.
-        if (msg.code === "room_full") this.stop(true);
+        // A full room, or a join the server rejected as invalid, is permanent for this attempt: stop retrying.
+        if (msg.code === "room_full" || (msg.code === "bad_message" && this.joinPending)) this.stop(true);
         this.events.onError(msg.code, msg.message);
         break;
       case "pong":
@@ -221,8 +228,18 @@ export class RoomClient {
     this.stopPing();
     this.pingTimer = setInterval(() => {
       if (!this.gotPong) {
-        // No pong since last ping: connection is dead, force a reconnect.
-        this.ws?.close();
+        // No pong since last ping: the connection is dead. Its close handshake can take a minute,
+        // so drop the socket now (its late onclose is ignored) and reconnect right away.
+        const dead = this.ws;
+        this.ws = null;
+        this.joinPending = false;
+        this.stopPing();
+        try {
+          dead?.close();
+        } catch {
+          /* ignore */
+        }
+        this.scheduleReconnect();
         return;
       }
       this.gotPong = false;
@@ -237,6 +254,7 @@ export class RoomClient {
 
   private stop(emit: boolean): void {
     this.wantOpen = false;
+    this.joinPending = false;
     this.joinInfo = emit ? null : this.joinInfo;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;

@@ -22,7 +22,7 @@ class JoinMsg(_Msg):
     room: str = Field(min_length=1, max_length=64)
     nick: str = Field(min_length=1, max_length=MAX_NICK_LEN)
     character: str = Field(default="default", max_length=32)
-    # optional secret player token: lets the server show the player's unlocked frame/badge
+    # optional secret player token: the save that unlocks skins, emotes and the plate, and gives a uid
     token: Optional[str] = Field(default=None, max_length=128)
     # main-site Bearer token; wins over token once the account has a save
     accountToken: Optional[str] = Field(default=None, max_length=512)
@@ -139,6 +139,6 @@ class PongMsg(BaseModel):
 
 class ErrorMsg(BaseModel):
     type: Literal["error"] = "error"
-    # room_full | bad_message | not_joined | already_joined | locked | bad_decor | bad_item | rate_limited
+    # room_full | bad_message | not_joined | already_joined | locked | rate_limited
     code: str
     message: str = ""

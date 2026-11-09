@@ -72,6 +72,17 @@ def test_not_joined_and_bad_message():
         assert ws.receive_json()["code"] == "bad_message"
 
 
+def test_malformed_frames_get_bad_message_and_keep_the_connection():
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
+    with c.websocket_connect("/ws") as ws:
+        ws.send_text("hello")
+        assert ws.receive_json()["code"] == "bad_message"
+        ws.send_bytes(b"x")
+        assert ws.receive_json()["code"] == "bad_message"
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json() == {"type": "pong"}
+
+
 def test_room_full_over_websocket():
     c = TestClient(app).__enter__()  # single portal/loop for every socket
     socks = []

@@ -605,8 +605,9 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Before any window: restart through UAC when the player chose to run as administrator.
-    let startup = elevation::startup();
+    // Before any window or hook: exit when another instance is running (Windows), restart
+    // through UAC when the player chose to run as administrator.
+    let (instance, startup) = elevation::startup();
     let overlay = Arc::new(Overlay::default());
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -680,6 +681,13 @@ pub fn run() {
                     applog!("app", "start as administrator is on, but this account cannot run as administrator")
                 }
                 elevation::Startup::Declined(e) => applog!("app", "start as administrator is on, but UAC was not granted: {e}"),
+            }
+            match &instance {
+                elevation::Instance::Only => {}
+                elevation::Instance::AfterWait(waited) => {
+                    applog!("app", "waited {} ms for the previous instance to exit", waited.as_millis())
+                }
+                elevation::Instance::Unchecked(e) => applog!("app", "single-instance check failed ({e}); running without it"),
             }
             match tauri::webview_version() {
                 Ok(v) => applog!("app", "webview {v}"),

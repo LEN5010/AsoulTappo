@@ -5,6 +5,7 @@ import SegTabs from "../ui/SegTabs.vue";
 import { Api, ApiError, type SaveSummary } from "../net/api";
 import { MainAccountApi, type MainSession } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
+import { accountLoginTrusted, trustedOrigin } from "../net/trust";
 import { settings } from "../stores/settings";
 import { saveCode, setAccount } from "../stores/player";
 
@@ -14,6 +15,12 @@ const emit = defineEmits<{ close: []; done: [message: string] }>();
 type Step = "login" | "register" | "reset" | "bind" | "choose";
 const step = ref<Step>(props.start);
 const main = new MainAccountApi(props.mainApi);
+/** The selected server; passwords and tokens only go out while it and the account service are trusted. */
+function trustedServer(): string {
+  const server = toHttpBase(settings.serverUrl);
+  if (!accountLoginTrusted(server, props.mainApi)) throw new Error("当前服务器未开放账号登录");
+  return server;
+}
 
 const account = ref("");
 const username = ref("");
@@ -49,7 +56,7 @@ async function run(action: () => Promise<void>) {
   busy.value = true;
   error.value = "";
   notice.value = "";
-  try { await action(); }
+  try { trustedServer(); await action(); }
   catch (e) { error.value = e instanceof Error ? e.message : "操作没有完成，请重试"; }
   finally { busy.value = false; }
 }
@@ -69,7 +76,7 @@ async function proceed(session: MainSession) {
   confirm.value = "";
   code.value = "";
   if (!session.user.email) { step.value = "bind"; return; }
-  const server = toHttpBase(settings.serverUrl);
+  const server = trustedServer();
   try {
     const result = await new Api(() => server, () => saveCode.value).link(session.token, saveCode.value);
     await setAccount({ server, token: session.token, user: result.user }, result.linkedGuest);
@@ -117,7 +124,7 @@ const verifyBind = () => run(async () => {
 });
 const useAccountSave = () => run(async () => {
   const session = pending.value!;
-  await setAccount({ server: toHttpBase(settings.serverUrl), token: session.token, user: session.user });
+  await setAccount({ server: trustedServer(), token: session.token, user: session.user });
   emit("done", `已登录 ${session.user.username}，正在使用账号存档`);
 });
 const keepGuest = () => run(async () => {
@@ -127,7 +134,7 @@ const keepGuest = () => run(async () => {
 
 function cancel() {
   // A main-site token that never became active on this device is signed out again.
-  if (pending.value) void main.revoke(pending.value.token).catch(() => {});
+  if (pending.value && trustedOrigin(props.mainApi)) void main.revoke(pending.value.token).catch(() => {});
   emit("close");
 }
 const ago = (seconds: number) => new Date(seconds * 1000).toLocaleDateString("zh-CN");

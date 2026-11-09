@@ -77,7 +77,7 @@ def test_overlapping_broadcasts_remove_failed_peer_only_once():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("method", ["profile_for", "owns_emote"])
+@pytest.mark.parametrize("method", ["profile_for", "owns_emote", "owns_character"])
 def test_database_work_does_not_block_other_event_loop_tasks(monkeypatch, method):
     entered, release = threading.Event(), threading.Event()
 

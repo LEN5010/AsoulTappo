@@ -130,6 +130,52 @@ describe("RoomClient", () => {
     expect(FakeWs.all).toHaveLength(2);
   });
 
+  it("drops a dead connection at once instead of waiting for its close handshake", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const dead = FakeWs.all[0];
+    let closeCalled = false;
+    dead.close = () => { closeCalled = true; }; // a dead peer never answers the close frame
+    dead.open();
+    vi.advanceTimersByTime(1000); // ping #1
+    vi.advanceTimersByTime(1000); // no pong
+    expect(closeCalled).toBe(true);
+    expect(ev.onConnState).toHaveBeenLastCalledWith("reconnecting");
+    vi.advanceTimersByTime(400);
+    expect(FakeWs.all).toHaveLength(2);
+    FakeWs.all[1].open();
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    dead.readyState = 3;
+    dead.onclose?.({}); // the late close of the abandoned socket
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    vi.advanceTimersByTime(900); // past any backoff, before the new socket's first ping
+    expect(FakeWs.all).toHaveLength(2);
+  });
+
+  it("a join rejected as invalid is final: no reconnect, error surfaced", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
+    expect(ev.onConnState).toHaveBeenLastCalledWith("idle");
+    vi.advanceTimersByTime(60000);
+    expect(FakeWs.all).toHaveLength(1);
+  });
+
+  it("a bad message after joining keeps the connection", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [] });
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    expect(ws.readyState).toBe(1);
+  });
+
   it("keeps the connection when pongs arrive", () => {
     const { c } = setup();
     c.join("http://h:1", INFO);
