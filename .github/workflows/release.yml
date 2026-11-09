@@ -40,10 +40,8 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
-            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。
-            - 托盘菜单可以导出运行日志
-            - 修复 1.0.4 打开后整个屏幕被背景盖住的问题
+            - 嘉然原皮和三款皮肤更新为新版立绘
+            - 修复部分皮肤顶部的耳朵和头饰显示不全
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -88,10 +86,8 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 修复 Windows 文本大小超过 100% 时桌宠点不到、屏幕上多出挡住点击的透明区域
-            - 新增以管理员身份启动选项（设置 → 窗口设置），开启后每次启动经 UAC 提权。
-            - 托盘菜单可以导出运行日志
-            - 修复 1.0.4 打开后整个屏幕被背景盖住的问题
+            - 嘉然原皮和三款皮肤更新为新版立绘
+            - 修复部分皮肤顶部的耳朵和头饰显示不全
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
