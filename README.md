@@ -33,7 +33,7 @@ macOS 首次打开如提示已损坏或无法验证开发者，将应用拖入�
 xattr -dr com.apple.quarantine /Applications/AsoulTappo.app
 ```
 
-键鼠响应依赖辅助功能权限，需在系统设置的隐私与安全性 → 辅助功能中允许 AsoulTappo。
+键鼠响应需要在系统设置的隐私与安全性 → 输入监控或辅助功能中允许 AsoulTappo，任选一项即可。更新版本后如果已允许但桌宠仍不响应，在列表中删除 AsoulTappo 后重新添加。
 
 ## 功能
 
