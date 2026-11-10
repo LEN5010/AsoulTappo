@@ -39,3 +39,24 @@ it("rolls today over at midnight while no keys are pressed", async () => {
   bumpCounter(1, day(10, 1));
   expect(counter).toMatchObject({ today: 1, total: 4 });
 });
+
+it("catches up with larger server counts and never goes down", async () => {
+  const { counter, bumpCounter, followServer } = await import("./counter");
+  bumpCounter(10, day(9));
+  followServer(500, 40, day(9));
+  expect(counter).toMatchObject({ today: 40, total: 500 });
+  followServer(300, 5, day(9));
+  expect(counter).toMatchObject({ today: 40, total: 500 });
+});
+
+it("leaves today's count alone when the server's day is not given", async () => {
+  const { counter, bumpCounter, followServer } = await import("./counter");
+  bumpCounter(10, day(9));
+  followServer(500, undefined, day(9));
+  expect(counter).toMatchObject({ today: 10, total: 500 });
+});
+
+it("writes the local date the way the server does", async () => {
+  const { serverDayName } = await import("./counter");
+  expect(serverDayName(day(9))).toBe("2026-11-09");
+});

@@ -8,6 +8,12 @@ export function dayKey(d = new Date()): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
+/** The local date as the server writes its day, YYYY-MM-DD. */
+export function serverDayName(d = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
+
 /** The stored counters; a count saved on an earlier day starts today at 0. */
 export function load(now = new Date(), storage?: Pick<Storage, "getItem">): { day: string; today: number; total: number } {
   const day = dayKey(now);
@@ -42,10 +48,7 @@ export function watchDay(everyMs = 60000): () => void {
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-export function bumpCounter(n = 1, now = new Date()): void {
-  rollDay(now);
-  counter.today += n;
-  counter.total += n;
+function saveSoon(): void {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = undefined;
@@ -55,4 +58,30 @@ export function bumpCounter(n = 1, now = new Date()): void {
       /* storage unavailable */
     }
   }, 2000);
+}
+
+export function bumpCounter(n = 1, now = new Date()): void {
+  rollDay(now);
+  counter.today += n;
+  counter.total += n;
+  saveSoon();
+}
+
+/**
+ * Catches up with the server's counts, which include taps made on the player's other devices.
+ * The counts only go up: the server leaves out taps past its per-minute limit, so the local ones are often larger.
+ * `today` is passed only when the server's day is the local one.
+ */
+export function followServer(total: number, today?: number, now = new Date()): void {
+  rollDay(now);
+  let changed = false;
+  if (total > counter.total) {
+    counter.total = total;
+    changed = true;
+  }
+  if (today !== undefined && today > counter.today) {
+    counter.today = today;
+    changed = true;
+  }
+  if (changed) saveSoon();
 }

@@ -24,10 +24,10 @@ import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
-import { counter, watchDay } from "./stores/counter";
+import { counter, followServer, serverDayName, watchDay } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { shardCombo } from "./stores/shardPop";
-import { draws, online, startReporting, stopReporting } from "./stores/player";
+import { draws, online, startReporting, status, stopReporting } from "./stores/player";
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import {
@@ -113,6 +113,12 @@ function toggleFold() {
 }
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 watch([peek, () => ui.quickOpen], keepPeek);
+// Taps made on the player's other devices arrive with the status. The server's day is China's; today's count is
+// taken only where the local date is the same one.
+watch(() => [status.value?.totals.taps, status.value?.income.taps, status.value?.income.day] as const, ([total, today, day]) => {
+  if (typeof total !== "number") return;
+  followServer(total, typeof today === "number" && day === serverDayName() ? today : undefined);
+}, { immediate: true });
 const shownCount = computed(() => (settings.tapView === "today" ? counter.today : counter.total));
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
 
