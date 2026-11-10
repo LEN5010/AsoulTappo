@@ -5,7 +5,7 @@ import { ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-// `grip` draws the handle on the strip's lower edge: "fold" tucks a pinned strip away until the pet is clicked,
+// `grip` draws the handle on the strip's left end: "fold" tucks a pinned strip away until the pet is clicked,
 // "pin" keeps a strip that a click brought out.
 const props = defineProps<{
   count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "fold" | "pin";
@@ -90,33 +90,35 @@ watch(
   font-family: var(--font);
   color: var(--ink);
 }
-/* A drawer handle on the lower edge: a short line, with a larger area to press. */
+/* A handle on the strip's left end, away from the keys: a short upright line with a larger area to press. */
 .grip {
   position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 44px;
-  height: 14px;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 100%;
   padding: 0;
-  translate: -50% 0;
   border: none;
+  border-radius: 12px 0 0 12px;
   background: transparent;
   cursor: pointer;
 }
 .grip::before {
   content: "";
   position: absolute;
-  left: 50%;
-  bottom: 6px;
-  width: 22px;
-  height: 3px;
-  translate: -50% 0;
+  left: 5px;
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  translate: 0 -50%;
   border-radius: 2px;
   background: var(--c-200);
-  transition: background var(--dur-fast), width var(--dur-fast) var(--ease-out);
+  transition: background var(--dur-fast), height var(--dur-fast) var(--ease-out);
 }
+/* The count moves right by the handle's width, so its hover face does not reach under the line. */
+.bar:has(.grip) { padding-left: 13px; }
 .grip.pin::before { background: var(--c-400); }
-.grip:hover::before { width: 30px; background: var(--c-500); }
+.grip:hover::before { height: 20px; background: var(--c-500); }
 /* A quiet key: its face comes up under the pointer. */
 /* The count face and the keys share one 28px face height; the bottom margin makes room for the
  * keys' 3px lip, so the group (lip included) sits centred and every top and bottom edge lines up. */
