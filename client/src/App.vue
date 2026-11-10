@@ -47,9 +47,15 @@ const onResize = () => (viewport.value = { w: window.innerWidth, h: window.inner
 onResize();
 
 // ---- own pet
+const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
+/** Height of the strip under the pet, measured while it shows. */
+const stripHeight = ref(36);
 /** The own pet's size with the strip under it, which a docked or folded pet does not have. */
-const fullSize = ref<Size>({ ...ownSize.value });
+const fullSize = computed<Size>(() => ({
+  w: Math.max(ownSize.value.w, barWidth.value),
+  h: Math.round(PET_BASE.height * settings.scale) + stripHeight.value,
+}));
 /** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
 const dragDock = ref<boolean | null>(null);
 const docked = computed(() => dragDock.value ?? settings.petDocked);
@@ -74,7 +80,9 @@ const ownPos = computed<Pos>(() => {
     const x = clamp({ x: settings.petX, y: 0 }, ownSize.value).x;
     return peek.value ? clamp({ x, y: dockY(settings.scale) }, fullSize.value) : { x, y: dockY(settings.scale) };
   }
-  return settings.petX < 0 ? defaultPetPos(ownSize.value) : clamp({ x: settings.petX, y: settings.petY }, ownSize.value);
+  // Room for the strip is kept under the pet also while the strip is away, so a click can always show it.
+  const size = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  return settings.petX < 0 ? defaultPetPos(size) : clamp({ x: settings.petX, y: settings.petY }, size);
 });
 function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
@@ -90,7 +98,8 @@ function onOwnMoved(p: Pos) {
 }
 function onOwnSize(size: Size) {
   ownSize.value = size;
-  if (barShown.value) fullSize.value = size;
+  const strip = size.h - Math.round(PET_BASE.height * settings.scale);
+  if (barShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
 }
 function resetPet() {
   settings.petDocked = false;
@@ -104,7 +113,6 @@ function toggleFold() {
 }
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 watch([peek, () => ui.quickOpen], keepPeek);
-const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
 const shownCount = computed(() => (settings.tapView === "today" ? counter.today : counter.total));
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
 

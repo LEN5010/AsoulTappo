@@ -26,8 +26,9 @@ async function fitFigure() {
   text.style.fontSize = `${FIGURE_PX}px`;
   const need = text.scrollWidth;
   const room = box.clientWidth;
-  text.style.fontSize = "";
   figurePx.value = need > room && room > 0 ? Math.max(FIGURE_MIN_PX, Math.floor((FIGURE_PX * room) / need)) : FIGURE_PX;
+  // Set here as well: the binding does not write again when the size comes out the same as before.
+  text.style.fontSize = `${figurePx.value}px`;
 }
 onMounted(fitFigure);
 watch(
