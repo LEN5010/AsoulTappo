@@ -1,5 +1,6 @@
 #[macro_use]
 mod applog;
+mod access;
 mod diag;
 mod elevation;
 mod gamepad;
@@ -627,6 +628,8 @@ pub fn run() {
             admin_status,
             set_run_as_admin,
             write_log,
+            access::input_access_missing,
+            access::open_input_settings,
             update::install_version
         ])
         .on_window_event(|window, event| {
@@ -720,6 +723,7 @@ pub fn run() {
                 spawn_hit_test(w, overlay.clone());
                 diag::spawn_foreground_watch();
                 elevation::spawn_watch(app.handle().clone());
+                access::spawn_watch(app.handle().clone());
             } else {
                 applog!("overlay", "main window missing");
             }

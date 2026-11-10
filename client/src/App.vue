@@ -9,6 +9,7 @@ import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
+import AccessBubble from "./pet/AccessBubble.vue";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { nameBand, plateCard, plateSize } from "./pet/plates";
@@ -32,7 +33,7 @@ import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stor
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  debugLogEnabled, isTauri, listenInput, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough,
+  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough,
   setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
@@ -99,6 +100,9 @@ let stopDebugLog: (() => void) | undefined;
 let unBlocked: (() => void) | undefined;
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
 const adminHint = ref<InputBlocked | null>(null);
+let unAccess: (() => void) | undefined;
+// macOS: shown while the hook lacks the input permission, until granted or closed.
+const accessHint = ref(false);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => (ui.quickOpen = false);
@@ -118,6 +122,7 @@ onMounted(async () => {
   if (isTauri) hits = startHitReporter((rects, scale) => void setHitRegions(rects, scale));
   else document.documentElement.classList.add("browser-preview");
   unBlocked = await listenInputBlocked((b) => { if (b.by) adminHint.value = b; });
+  unAccess = await listenInputAccess((missing) => (accessHint.value = missing));
   if (await debugLogEnabled()) {
     stopDebugLog = startDebugLog(() => `online ${online.value}, in room ${inRoom.value}, ` +
       `click-through ${settings.clickThrough}, always on top ${settings.alwaysOnTop}`);
@@ -148,6 +153,7 @@ onBeforeUnmount(() => {
   hits?.stop();
   stopDebugLog?.();
   unBlocked?.();
+  unAccess?.();
   stopPet();
 });
 
@@ -194,6 +200,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       />
       <CooldownBubble :until="tapCooldown" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
+      <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"

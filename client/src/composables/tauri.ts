@@ -86,6 +86,23 @@ export async function listenInputBlocked(cb: (b: InputBlocked) => void): Promise
   return listen<InputBlocked>("input-blocked", (ev) => cb(ev.payload));
 }
 
+/**
+ * macOS: called with true while the hook lacks Input Monitoring and Accessibility, false once either is granted.
+ * Reports the current state first, then each change.
+ */
+export async function listenInputAccess(cb: (missing: boolean) => void): Promise<UnlistenFn> {
+  if (!isTauri) return () => {};
+  const un = await listen<boolean>("input-access", (ev) => cb(ev.payload));
+  try {
+    cb(await invoke<boolean>("input_access_missing"));
+  } catch {
+    /* older shell without the command */
+  }
+  return un;
+}
+/** Opens the Input Monitoring page of System Settings. */
+export const openInputSettings = () => call("open_input_settings", {});
+
 /** A mouse press that fell through the overlay onto another window. */
 export async function listenOutsideClick(cb: () => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
