@@ -137,7 +137,7 @@ COUNT_CACHE_LIMIT = 20000
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
-    "boost_day boost_used tap_cooldown_until tap_day day_taps scratch_pity"
+    "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity"
 ).split()
 
 
@@ -175,6 +175,8 @@ class Store:
     def _migrate(self) -> None:
         """Bring databases created by older versions up to the current schema."""
         with self._db:
+            # Keep schema additions and their initial values in the same transaction.
+            self._db.execute("BEGIN")
             players = self._columns("players")
             if "shards" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN shards INTEGER NOT NULL DEFAULT 0")
@@ -202,6 +204,10 @@ class Store:
                 self._db.execute("ALTER TABLE players ADD COLUMN tap_day TEXT NOT NULL DEFAULT ''")
             if "day_taps" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN day_taps INTEGER NOT NULL DEFAULT 0")
+            # Daily tap statistics include every credited tap, including those beyond the income cap.
+            if "day_taps_total" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN day_taps_total INTEGER NOT NULL DEFAULT 0")
+                self._db.execute("UPDATE players SET day_taps_total = day_taps")
             # Scratch cards bought since the last one that gave an emote.
             if "scratch_pity" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN scratch_pity INTEGER NOT NULL DEFAULT 0")

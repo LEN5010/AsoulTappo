@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from app.game import Game
 from app.store import Store
@@ -42,6 +43,30 @@ def test_first_twenty_second_batch_is_fully_credited():
     assert game.report_activity(TOKEN, 200)["credited"] == 200
 
 
+def test_daily_taps_include_credit_beyond_the_income_cap():
+    game, clock = make()
+    clock.t += 20
+    result = game.report_activity(TOKEN, 200, "typing", 1)
+    assert result["credited"] == result["totals"]["taps"] == result["dailyTaps"]["count"] == 200
+    assert result["income"]["taps"] == 120
+    assert result["dailyTaps"]["day"] == result["income"]["day"]
+    clock.t += 20
+    assert game.report_activity(TOKEN, 50, "other-device", 1)["dailyTaps"]["count"] == 250
+
+
+def test_daily_taps_roll_at_china_midnight_on_presence_and_activity():
+    clock = Clock(datetime(2026, 11, 9, 15, 59, 20, tzinfo=timezone.utc).timestamp())
+    game = Game(Store(), tiny_manifest(), now=clock)
+    game.status(TOKEN)
+    clock.t += 20
+    assert game.report_activity(TOKEN, 200)["dailyTaps"] == {"day": "2026-11-09", "count": 200}
+    clock.t += 20
+    assert game.presence(TOKEN, "present")["dailyTaps"] == {"day": "2026-11-10", "count": 0}
+    result = game.report_activity(TOKEN, 10)
+    assert result["dailyTaps"] == {"day": "2026-11-10", "count": 10}
+    assert result["totals"]["taps"] == 210
+
+
 def test_replay_does_not_change_progress_even_after_restart(tmp_path):
     path = tmp_path / "progress.db"
     game, clock = make(path)
@@ -52,6 +77,7 @@ def test_replay_does_not_change_progress_even_after_restart(tmp_path):
     clock.t += 60
     replay = game.report_activity(TOKEN, 600, "session", 1)
     assert replay["totals"] == first["totals"]
+    assert replay["dailyTaps"] == first["dailyTaps"]
     assert replay["totals"]["taps"] == first["totals"]["taps"] == 600
     assert replay["credited"] == 0
     assert game.report_activity(TOKEN, 10, "session", 2)["credited"] == 10
@@ -63,24 +89,27 @@ def test_concurrent_duplicate_batches_commit_once():
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(lambda _: game.report_activity(TOKEN, 200, "session", 1), range(4)))
     assert game.status(TOKEN)["totals"]["taps"] == 200
+    assert game.status(TOKEN)["dailyTaps"]["count"] == 200
 
 
 def test_sequence_and_budget_rollback_with_progress(monkeypatch):
     game, clock = make()
     clock.t += 20
-    original = game.store.save_activity_sequence
+    original = game.store.save_activity_budget
 
     def fail(*args):
         original(*args)
         raise RuntimeError("transaction interrupted")
 
-    monkeypatch.setattr(game.store, "save_activity_sequence", fail)
+    monkeypatch.setattr(game.store, "save_activity_budget", fail)
     import pytest
     with pytest.raises(RuntimeError):
         game.report_activity(TOKEN, 200, "session", 1)
-    monkeypatch.setattr(game.store, "save_activity_sequence", original)
+    monkeypatch.setattr(game.store, "save_activity_budget", original)
+    assert game.status(TOKEN)["dailyTaps"]["count"] == 0
     assert game.report_activity(TOKEN, 200, "session", 1)["credited"] == 200
     assert game.status(TOKEN)["totals"]["taps"] == 200
+    assert game.status(TOKEN)["dailyTaps"]["count"] == 200
 
 
 def test_concurrent_sessions_share_one_budget_per_save():

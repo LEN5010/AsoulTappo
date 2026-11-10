@@ -15,6 +15,34 @@ def test_player_defaults_and_update():
         s.update_player("p1", nope=1)
 
 
+def test_daily_tap_statistics_migrate_atomically_and_keep_existing_progress(tmp_path):
+    from app.store import SCHEMA
+    path = str(tmp_path / "legacy-taps.db")
+    with sqlite3.connect(path) as db:
+        db.executescript(SCHEMA)
+        db.execute("ALTER TABLE players ADD COLUMN tap_day TEXT NOT NULL DEFAULT ''")
+        db.execute("ALTER TABLE players ADD COLUMN day_taps INTEGER NOT NULL DEFAULT 0")
+        db.execute("INSERT INTO players (id, created, taps_total, tap_day, day_taps) VALUES (?, ?, ?, ?, ?)",
+                   ("p1", 0, 200, "2026-11-10", 120))
+        db.execute("CREATE TRIGGER interrupt_tap_migration BEFORE UPDATE OF day_taps_total ON players "
+                   "BEGIN SELECT RAISE(ABORT, 'interrupted migration'); END")
+    with pytest.raises(sqlite3.IntegrityError, match="interrupted migration"):
+        Store(path)
+    with sqlite3.connect(path) as db:
+        assert "day_taps_total" not in {row[1] for row in db.execute("PRAGMA table_info(players)")}
+        db.execute("DROP TRIGGER interrupt_tap_migration")
+    store = Store(path)
+    player = store.get_player("p1", 0)
+    assert player["taps_total"] == 200
+    assert player["tap_day"] == "2026-11-10"
+    assert player["day_taps"] == player["day_taps_total"] == 120
+    store.update_player("p1", day_taps_total=170)
+    store.close()
+    reopened = Store(path)
+    assert reopened.get_player("p1", 0)["day_taps_total"] == 170
+    reopened.close()
+
+
 def test_items_count_and_drop_log():
     s = Store(":memory:")
     s.get_player("p1", 0)

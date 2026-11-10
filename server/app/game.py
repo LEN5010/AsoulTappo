@@ -111,6 +111,7 @@ class Game:
 
             today = day_of(now)
             day_taps = p["day_taps"] if p["tap_day"] == today else 0
+            day_taps_total = p["day_taps_total"] if p["tap_day"] == today else 0
             earned = p["shard_remainder"] + self._tap_shards(day_taps + paid_taps) - self._tap_shards(day_taps)
             # Absorb floating-point noise at whole-shard boundaries.
             whole = int(earned + 1e-9)
@@ -119,7 +120,7 @@ class Game:
                 last_activity=max(now, previous), last_minute_taps=last_minute_taps,
                 minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted,
                 shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
-                tap_day=today, day_taps=day_taps + paid_taps)
+                tap_day=today, day_taps=day_taps + paid_taps, day_taps_total=day_taps_total + credited)
             st.save_activity_budget(pid, budget - credited)
             if credited:
                 st.mark_active(pid, today)
@@ -445,6 +446,7 @@ class Game:
             "player": pid,
             "shards": p["shards"],
             "income": self._income(p, day),
+            "dailyTaps": {"day": day, "count": p["day_taps_total"] if p["tap_day"] == day else 0},
             "resonance": {"pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]},
                           "hardPity": self.manifest.resonance["pity"], "total": p["drawn_total"]},
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],

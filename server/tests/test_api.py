@@ -50,6 +50,19 @@ def test_activity_resonance_collection_flow(client):
     assert client.post("/api/presence", json={"session": "test-session-0001"}, headers=H).status_code == 200
 
 
+def test_daily_taps_sync_through_activity_presence_and_me(client):
+    report = {**BATCH, "taps": 200}
+    result = client.post("/api/activity", json=report, headers=H).json()
+    daily = {"day": result["income"]["day"], "count": 200}
+    assert result["dailyTaps"] == daily
+    assert result["income"]["taps"] == 120
+    assert client.get("/api/me", headers=H).json()["dailyTaps"] == daily
+    presence = client.post("/api/presence", json={"session": "other-device-session-0001"}, headers=H)
+    assert presence.status_code == 200 and presence.json()["dailyTaps"] == daily
+    replay = client.post("/api/activity", json=report, headers=H).json()
+    assert replay["credited"] == 0 and replay["dailyTaps"] == daily
+
+
 def test_craft_and_loadout_routes(client):
     assert client.post("/api/craft", json={"item": "emote:e.03"}, headers=H).json()["shards"] == 1120
     assert client.post("/api/craft", json={"item": "nope"}, headers=H).status_code == 400
