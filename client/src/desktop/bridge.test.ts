@@ -169,6 +169,29 @@ it("counts input only in the desk while the panel preview reacts to the same key
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it.each(["keyDown", "left", "right"] as const)("shows a short remote %s press in the panel", async (button) => {
+  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  const resting = { dx: 0, dy: 0, keyDown: false, left: false, right: false };
+  desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
+    pulse: 0, emote: null, combo: null, win: null, motion: { ...resting } });
+  await vi.advanceTimersByTimeAsync(50);
+  const drawn: boolean[] = [];
+  stops.push(panel.motion.subscribe("friend", (pose) => drawn.push(pose[button])));
+  await vi.advanceTimersByTimeAsync(50);
+  desk.motion.update("friend", { ...resting, [button]: true });
+  expect(panel.room.members.get("friend")!.motion[button]).toBe(true);
+  await vi.advanceTimersByTimeAsync(5);
+  desk.motion.update("friend", resting);
+  expect(panel.room.members.get("friend")!.motion[button]).toBe(false);
+  await vi.advanceTimersByTimeAsync(16);
+  expect(drawn.at(-1)).toBe(true);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(drawn.at(-1)).toBe(false);
+});
+
 it("opens the regular panel while the pet is click-through and closes it separately", async () => {
   const desk = await context(false);
   const { invoke } = await import("@tauri-apps/api/core");

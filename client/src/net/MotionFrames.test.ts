@@ -107,7 +107,7 @@ it("reports the pets being painted, and paints nothing for the others", () => {
   const heard = vi.fn();
   frames.onUpdate(heard);
   frames.update("b", { ...restingMotion(), dx: 3 });
-  expect(heard).toHaveBeenCalledWith("b", { ...restingMotion(), dx: 3 });
+  expect(heard).toHaveBeenCalledWith("b", { ...restingMotion(), dx: 3 }, false);
   expect(requested).not.toHaveBeenCalled();
   stopA();
   expect(interest).toHaveBeenCalledTimes(2);
@@ -119,4 +119,19 @@ it("reports the pets being painted, and paints nothing for the others", () => {
   const b = painter();
   frames.subscribe("b", b.paint);
   expect(b.last().dx).toBe(3);
+});
+
+it("reports every button edge immediately while identifying coordinate-only updates", () => {
+  const { frames } = setup();
+  const heard = vi.fn();
+  frames.onUpdate(heard);
+  const moving = { ...restingMotion(), dx: 3 };
+  frames.update("a", moving);
+  frames.update("a", { ...moving, left: true });
+  frames.update("a", moving);
+  expect(heard.mock.calls).toEqual([
+    ["a", moving, false],
+    ["a", { ...moving, left: true }, true],
+    ["a", moving, true],
+  ]);
 });

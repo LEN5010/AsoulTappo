@@ -17,7 +17,7 @@ export class MotionFrames {
   private paints = new Map<string, Set<Paint>>();
   private dirty = new Set<string>();
   private interests = new Set<(ids: string[]) => void>();
-  private updates = new Set<(id: string, pose: PetMotion) => void>();
+  private updates = new Set<(id: string, pose: PetMotion, edge: boolean) => void>();
   private frame: number | null = null;
   private release: ReturnType<typeof setTimeout> | null = null;
   /** Pets shown with a button down that the member has already let go. */
@@ -32,9 +32,10 @@ export class MotionFrames {
   update(id: string, target: PetMotion): void {
     const pose = this.pose(id);
     const now = this.now();
+    const edge = buttons.some((key) => target[key] !== pose.target[key]);
     for (const key of buttons) if (target[key] && !pose.target[key]) pose.held[key] = now + HOLD_MS;
     pose.target = { ...target };
-    for (const notify of this.updates) notify(id, pose.target);
+    for (const notify of this.updates) notify(id, pose.target, edge);
     this.touch(id);
   }
 
@@ -68,7 +69,7 @@ export class MotionFrames {
     notify(this.ids());
     return () => this.interests.delete(notify);
   }
-  onUpdate(notify: (id: string, pose: PetMotion) => void): () => void {
+  onUpdate(notify: (id: string, pose: PetMotion, edge: boolean) => void): () => void {
     this.updates.add(notify);
     return () => this.updates.delete(notify);
   }

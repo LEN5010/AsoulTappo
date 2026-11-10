@@ -165,6 +165,7 @@ export async function initDesktop(): Promise<() => void> {
     }, { deep: true, flush: "sync" },
   ));
   function sendMotion() {
+    clearTimeout(motionTimer);
     motionTimer = undefined;
     if (!visible || !live) return;
     const updates = [...dirty.values()];
@@ -191,8 +192,11 @@ export async function initDesktop(): Promise<() => void> {
     }
   }, { flush: "sync" });
   // Poses stay out of the reactive graph (net/MotionFrames.ts), so they are forwarded as they arrive.
-  const stopMotion = remoteMotion.onUpdate((id, pose) => {
-    if (live && interested.has(id)) queue({ id, motion: pose });
+  const stopMotion = remoteMotion.onUpdate((id, pose, edge) => {
+    if (!live || !interested.has(id)) return;
+    queue({ id, motion: pose });
+    // Every press and release reaches the panel's 70ms hold, including both edges within one frame.
+    if (edge) sendMotion();
   });
   const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win] : null, () => {
     if (liveRef.value) motionTimer ??= setTimeout(sendMotion, 50);
