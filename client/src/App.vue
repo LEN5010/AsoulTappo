@@ -97,6 +97,11 @@ function resetPet() {
   settings.petX = -1;
   settings.petY = -1;
 }
+/** The strip's handle: tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
+function toggleFold() {
+  settings.barFolded = !settings.barFolded;
+  peek.value = false;
+}
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 watch([peek, () => ui.quickOpen], keepPeek);
 const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
@@ -285,6 +290,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
+        :grip="docked ? undefined : barPinned ? 'fold' : 'pin'" @grip="toggleFold"
       >
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>

@@ -5,8 +5,12 @@ import { ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number }>();
-defineEmits<{ toggleView: []; quick: []; menu: []; resonance: [] }>();
+// `grip` draws the handle on the strip's lower edge: "fold" tucks a pinned strip away until the pet is clicked,
+// "pin" keeps a strip that a click brought out.
+const props = defineProps<{
+  count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "fold" | "pin";
+}>();
+defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; grip: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const MILESTONE = 1000;
@@ -60,6 +64,10 @@ watch(
     <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
       <Icon name="menu" :size="15" />
     </button>
+    <button
+      v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : '收起'"
+      :aria-label="grip === 'pin' ? '固定' : '收起'" @click="$emit('grip')"
+    ></button>
   </div>
 </template>
 
@@ -82,6 +90,33 @@ watch(
   font-family: var(--font);
   color: var(--ink);
 }
+/* A drawer handle on the lower edge: a short line, with a larger area to press. */
+.grip {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 44px;
+  height: 14px;
+  padding: 0;
+  translate: -50% 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.grip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 22px;
+  height: 3px;
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--c-200);
+  transition: background var(--dur-fast), width var(--dur-fast) var(--ease-out);
+}
+.grip.pin::before { background: var(--c-400); }
+.grip:hover::before { width: 30px; background: var(--c-500); }
 /* A quiet key: its face comes up under the pointer. */
 /* The count face and the keys share one 28px face height; the bottom margin makes room for the
  * keys' 3px lip, so the group (lip included) sits centred and every top and bottom edge lines up. */
