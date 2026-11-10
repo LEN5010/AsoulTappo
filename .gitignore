@@ -130,9 +130,10 @@ global_config.json
 *.pem
 /.local/
 
-# local design notes (not tracked)
-/docs/UNIFIED_ACCOUNT_DESIGN.md
-/docs/PRODUCT_PLAN.md
+# docs/ holds local working notes (plans, designs, measurements) and stays out of the repository.
+# The one exception is the architecture overview the README links to.
+/docs/*
+!/docs/ARCHITECTURE.md
 
 # server runtime data (sqlite)
 /server/data/
