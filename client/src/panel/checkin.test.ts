@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHECKIN_LINES, monthCells, pickLine, prizeTone, reactionOf } from "./checkin";
+import { CHECKIN_LINES, STANDING_STICKERS, WHOLE_STICKERS, monthCells, padRuns, pickLine, prizeTone, reactionOf } from "./checkin";
 
 describe("monthCells", () => {
   it("starts on Monday and pads a month that begins on Sunday", () => {
@@ -25,6 +25,40 @@ describe("monthCells", () => {
 
   it("knows leap Februaries", () => {
     expect(monthCells({ today: "2028-02-10", available: true, days: [] }).filter(Boolean)).toHaveLength(29);
+  });
+});
+
+describe("padRuns", () => {
+  const month = (today: string) => monthCells({ today, available: true, days: [] });
+
+  it("finds the blank runs at both ends and puts three stickers at most on them", () => {
+    // November 2026: six blanks before the 1st, six after the 30th.
+    const runs = padRuns(month("2026-11-09"), 11);
+    expect(runs.map((r) => [r.at, r.span, r.stand])).toEqual([[0, 6, true], [36, 6, false]]);
+    expect(runs.map((r) => r.stickers.length)).toEqual([2, 1]);
+    expect(new Set(runs.flatMap((r) => r.stickers)).size).toBe(3);
+  });
+
+  it("leaves out an end with no blanks and gives a single blank one sticker", () => {
+    // June 2026 starts on a Monday; February 2026 has one blank after the 28th.
+    expect(padRuns(month("2026-06-03"), 6).map((r) => [r.at, r.span, r.stickers.length])).toEqual([[30, 5, 2]]);
+    expect(padRuns(month("2026-02-15"), 2).map((r) => [r.span, r.stickers.length])).toEqual([[6, 2], [1, 1]]);
+    // February 2027 fills four whole weeks.
+    expect(padRuns(month("2027-02-10"), 2)).toEqual([]);
+  });
+
+  it("stands the flat-bottomed cutouts only before the 1st and puts whole figures after the last day", () => {
+    for (const today of ["2026-02-15", "2026-06-03", "2026-08-20", "2026-09-10", "2026-11-09"]) {
+      for (const r of padRuns(month(today), Number(today.slice(5, 7)))) {
+        for (const name of r.stickers) expect(r.stand ? STANDING_STICKERS : WHOLE_STICKERS).toContain(name);
+      }
+    }
+    expect([...STANDING_STICKERS, ...WHOLE_STICKERS]).not.toContain("微笑");
+    expect([...STANDING_STICKERS, ...WHOLE_STICKERS]).not.toContain("谢谢观看");
+  });
+
+  it("picks the same stickers for a month every time", () => {
+    expect(padRuns(month("2026-08-20"), 8)).toEqual(padRuns(month("2026-08-20"), 8));
   });
 });
 

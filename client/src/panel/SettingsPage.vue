@@ -14,6 +14,7 @@ import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../sto
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
+import AsasfansPromo from "./AsasfansPromo.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
@@ -51,6 +52,7 @@ const REPO = "https://github.com/LEN5010/AsoulTappo";
 const SPACE = "https://space.bilibili.com/107261543";
 const MAIL = "len5010@qq.com";
 const contactOpen = ref(false);
+const promoOpen = ref(false);
 const copied = ref(false);
 async function copyMail() {
   try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
@@ -179,6 +181,10 @@ async function exportLogFile() {
               <span>隐藏伙伴 ID</span>
               <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
             </label>
+            <label class="ui-row">
+              <span>猜拳免打扰</span>
+              <input v-model="settings.duelDnd" class="ui-switch" type="checkbox" />
+            </label>
           </div>
         </section>
       </div>
@@ -249,11 +255,18 @@ async function exportLogFile() {
               <span>作者</span>
               <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
             </div>
+            <div class="ui-row">
+              <span>神秘按钮</span>
+              <button type="button" class="ui-btn small" @click="promoOpen = true">点我试试</button>
+            </div>
           </div>
         </section>
       </div>
     </div>
 
+    <Modal v-if="promoOpen" title="Asasfans" heading @close="promoOpen = false">
+      <AsasfansPromo />
+    </Modal>
     <Modal v-if="contactOpen" title="联系作者" heading @close="contactOpen = false">
       <div class="contact">
         <button type="button" class="way ui-frame" @click="openAboutLink(SPACE)">

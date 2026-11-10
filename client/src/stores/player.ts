@@ -2,7 +2,7 @@ import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
   type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type Loadout, type LoadoutPatch, type MainUser,
-  type PlayerStatus,
+  type PlayerStatus, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
@@ -240,6 +240,7 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   collection.owned = {};
   collection.recent = [];
   checkins.value = null;
+  scratchCard.value = null;
   freshItems.clear();
   online.value = false;
   error.value = "";
@@ -275,6 +276,16 @@ export function stopReporting(): void {
   if (timer) clearInterval(timer);
   timer = undefined;
   for (const session of sessions.values()) void flush(session);
+}
+
+/**
+ * Reloads the status after the room server moved shards (a duel's bets and prize). It waits behind requests already
+ * on their way, so an older answer cannot put the previous balance back afterwards.
+ */
+export async function reloadStatus(): Promise<void> {
+  if (isPanelWindow) return;
+  const s = await call((api) => api.me());
+  if (s) status.value = s;
 }
 
 async function reloadCollection(): Promise<void> {
@@ -341,6 +352,52 @@ export async function checkin(): Promise<CheckinResult | null> {
   } finally {
     checkingIn = false;
   }
+}
+
+// ---------------------------------------------------------------- scratch cards
+/** The card bought and not revealed yet, loaded by the scratch page. Its prize is paid when it is revealed. */
+export const scratchCard = ref<ScratchCard | null>(null);
+
+export async function loadScratch(): Promise<void> {
+  // A server without scratch cards says so in its status; asking it anyway would only raise an error.
+  if (!status.value?.scratch) return;
+  if (isPanelWindow) return requestDesktop("loadScratch");
+  const state = await call((api) => api.scratchState());
+  if (state) scratchCard.value = state.card;
+}
+
+let buyingScratch = false;
+
+/** Buys a card, or picks up the one still on the table. null when the server refused or could not be reached. */
+export async function buyScratch(): Promise<ScratchCard | null> {
+  if (isPanelWindow) return requestDesktop("buyScratch");
+  if (buyingScratch) return null;
+  buyingScratch = true;
+  try {
+    const r = await call((api) => api.scratchBuy());
+    if (!r) return null;
+    const { card, ...rest } = r;
+    status.value = rest;
+    scratchCard.value = card;
+    return card;
+  } finally {
+    buyingScratch = false;
+  }
+}
+
+/** Collects a card's prize. null when the request failed: the card stays on the table and can be revealed again. */
+export async function revealScratch(card: number): Promise<ScratchRevealResult["prize"] | null> {
+  if (isPanelWindow) return requestDesktop("revealScratch", card);
+  const r = await call((api) => api.scratchReveal(card));
+  if (!r) return null;
+  const { prize, ...rest } = r;
+  status.value = rest;
+  if (scratchCard.value?.id === card) scratchCard.value = null;
+  if (prize.item) {
+    freshItems.add(prize.item);
+    await reloadCollection();
+  }
+  return prize;
 }
 
 // ---------------------------------------------------------------- loadout

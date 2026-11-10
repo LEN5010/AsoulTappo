@@ -23,11 +23,14 @@ TEXT_WEIGHTS = (400, 400, 800)
 
 
 def ui_text() -> str:
-    """Printable ASCII plus every non-ASCII character in the client source and catalog."""
+    """Printable ASCII plus every non-ASCII character in the client source and catalog, and in the server
+    source, whose refusal messages the client shows as they come."""
     chars = {chr(c) for c in range(0x20, 0x7f)}
     for path in (CLIENT / "src").rglob("*"):
         if path.suffix in {".vue", ".ts", ".json"} and not path.name.endswith(".test.ts"):
             chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
+    for path in (ROOT / "server" / "app").rglob("*.py"):
+        chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
     return "".join(sorted(chars))
 
 

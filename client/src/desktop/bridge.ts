@@ -14,21 +14,26 @@ const groupSources = {
   player: () => ({ status: player.status.value, online: player.online.value, error: player.error.value }),
   collection: () => player.collection,
   checkins: () => player.checkins.value,
+  scratchCard: () => player.scratchCard.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
-  room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value }),
-  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
-    ({ id, uid, nick, character, plate })),
+  room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
+    info: room.roomInfo.value, duel: room.duel.value }),
+  publicRooms: () => room.publicRooms.value,
+  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, sticker }) =>
+    ({ id, uid, nick, character, plate, sticker })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
-    freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(), members: groupSources.members() };
+    scratchCard: groupSources.scratchCard(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
+    publicRooms: groupSources.publicRooms(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
-type Runtime = Pick<room.RemoteMember, "id" | "motion" | "taps" | "pulse" | "emote" | "combo">;
+type Runtime = Pick<room.RemoteMember, "id" | "motion" | "taps" | "pulse" | "emote" | "combo" | "win">;
 const runtime = (m: room.RemoteMember): Runtime => ({
-  id: m.id, motion: { ...m.motion }, taps: m.taps, pulse: m.pulse, emote: m.emote, combo: m.combo,
+  id: m.id, motion: { ...m.motion }, taps: m.taps, pulse: m.pulse, emote: m.emote, combo: m.combo, win: m.win,
 });
+type LocalPet = typeof room.localPet;
 const pendingRuntime = new Map<string, Runtime>();
 function applyGroups(s: Partial<Groups>) {
   if (s.player) {
@@ -38,6 +43,7 @@ function applyGroups(s: Partial<Groups>) {
   }
   if (s.collection) Object.assign(player.collection, s.collection);
   if (s.checkins !== undefined) player.checkins.value = s.checkins;
+  if (s.scratchCard !== undefined) player.scratchCard.value = s.scratchCard;
   if (s.freshItems) {
     player.freshItems.clear();
     s.freshItems.forEach((id) => player.freshItems.add(id));
@@ -48,7 +54,10 @@ function applyGroups(s: Partial<Groups>) {
     room.roomId.value = s.room.roomId;
     room.youId.value = s.room.youId;
     room.lastError.value = s.room.lastError;
+    room.roomInfo.value = s.room.info;
+    room.duel.value = s.room.duel;
   }
+  if (s.publicRooms !== undefined) room.publicRooms.value = s.publicRooms;
   if (s.members) {
     const ids = new Set(s.members.map((m) => m.id));
     for (const id of room.members.keys()) if (!ids.has(id)) {
@@ -59,18 +68,20 @@ function applyGroups(s: Partial<Groups>) {
       const pose = pendingRuntime.get(m.id);
       const existing = room.members.get(m.id);
       if (existing) Object.assign(existing, m, pose);
-      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, motion: restingMotion(), ...pose });
+      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, win: null, motion: restingMotion(), ...pose });
       if (pose) pendingRuntime.delete(m.id);
     }
   }
 }
-function applyRuntime(updates: Runtime[], emote: typeof room.localPet.emote) {
+function applyRuntime(updates: Runtime[], local: LocalPet) {
   for (const update of updates) {
     const member = room.members.get(update.id);
     if (member) Object.assign(member, update);
     else pendingRuntime.set(update.id, update);
   }
-  room.localPet.emote = emote;
+  room.localPet.emote = local.emote;
+  room.localPet.win = local.win;
+  room.localPet.sticker = local.sticker;
 }
 
 /** Settings travel as patches so activity updates preserve edits in the panel. */
@@ -98,8 +109,8 @@ export async function initDesktop(): Promise<() => void> {
   if (!isTauri) return () => {};
   if (isPanelWindow) {
     const unState = await listen<Partial<Groups>>("desktop:state", ({ payload }) => applyGroups(payload), { target: "panel" });
-    const unMotion = await listen<{ members: Runtime[]; emote: typeof room.localPet.emote }>("desktop:motion",
-      ({ payload }) => applyRuntime(payload.members, payload.emote), { target: "panel" });
+    const unMotion = await listen<{ members: Runtime[]; local: LocalPet }>("desktop:motion",
+      ({ payload }) => applyRuntime(payload.members, payload.local), { target: "panel" });
     const syncedSettings = await syncSettings();
     const initial = await requestDesktop<{ settings: Settings; page: typeof ui.page; craftTarget: string; state: Groups }>("sync");
     syncedSettings.apply(initial.settings);
@@ -139,7 +150,8 @@ export async function initDesktop(): Promise<() => void> {
     if (!visible || !live) return;
     const updates = [...dirty.values()];
     dirty.clear();
-    void emitTo("panel", "desktop:motion", { members: updates, emote: room.localPet.emote });
+    void emitTo("panel", "desktop:motion", { members: updates,
+      local: { emote: room.localPet.emote, win: room.localPet.win, sticker: room.localPet.sticker } });
   }
   const memberStops = new Map<string, () => void>();
   const stopMembers = watch(() => liveRef.value ? [...room.members.keys()] : [], (ids) => {
@@ -155,7 +167,7 @@ export async function initDesktop(): Promise<() => void> {
       }, { deep: true, immediate: true, flush: "sync" }));
     }
   }, { flush: "sync" });
-  const stopEmote = watch(() => liveRef.value ? room.localPet.emote : null, () => {
+  const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win, room.localPet.sticker] : null, () => {
     if (liveRef.value) motionTimer ??= setTimeout(sendMotion, 50);
   }, { deep: true });
   const unInterest = await listen<{ visible: boolean; live: boolean }>("desktop:interest", async ({ payload }) => {
@@ -181,11 +193,18 @@ export async function initDesktop(): Promise<() => void> {
         case "craftItem": result = await player.craftItem(args[0] as string); break;
         case "checkin": result = await player.checkin(); break;
         case "loadCheckins": await player.loadCheckins(); break;
+        case "loadScratch": await player.loadScratch(); break;
+        case "buyScratch": result = await player.buyScratch(); break;
+        case "revealScratch": result = await player.revealScratch(args[0] as number); break;
         case "setAccount": result = await player.setAccount(args[0] as player.AccountSession | null, args[1] as boolean); break;
         case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number); break;
         case "createRoom": result = await room.createRoom(); break;
         case "joinRoom": room.joinRoom(args[0] as string); break;
         case "leaveRoom": room.leaveRoom(); break;
+        case "setRoomPublic": room.setRoomPublic(args[0] as boolean); break;
+        case "kickMember": room.kickMember(args[0] as string); break;
+        case "loadPublicRooms": await room.loadPublicRooms(); break;
+        case "inviteDuel": room.inviteDuel(args[0] as string, args[1] as number); break;
         case "tidyRemotes": tidyRemotes(); break;
       }
       await publish();

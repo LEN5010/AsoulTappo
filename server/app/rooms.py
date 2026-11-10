@@ -20,6 +20,14 @@ class RoomFull(Exception):
     pass
 
 
+class Banned(Exception):
+    """The save was removed from this room by its host."""
+
+
+class NeedSave(Exception):
+    """Public rooms take members with a save only."""
+
+
 def new_room_id() -> str:
     return secrets.token_urlsafe(16)
 
@@ -33,8 +41,12 @@ class Peer:
     taps: int = 0
     uid: str | None = None
     token: str | None = None
-    # big hidden card id worn as a name plate, checked against the save
+    # name plate worn (a big hidden card id or a manifest `plates` id), checked against the save
     plate: str | None = None
+    # turns rock-paper-scissors invites down; never shown to the room
+    dnd: bool = False
+    # joined with a valid main-site account token: may make the room public on a server with accounts
+    account: bool = False
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     tap_budget: float = 0.0
@@ -108,9 +120,20 @@ class Peer:
 @dataclass
 class Room:
     id: str
+    # in join order: the host passes to the earliest remaining member
     peers: dict[str, Peer] = field(default_factory=dict)
     motions: dict[str, dict] = field(default_factory=dict)
     motion_timer: asyncio.TimerHandle | None = None
+    host: str | None = None
+    public: bool = False
+    # saves the host removed; gone with the room
+    banned: set[str] = field(default_factory=set)
+    # save -> (emote key, monotonic expiry): a duel loser's sticker, shown again when it rejoins
+    stickers: dict[str, tuple[str, float]] = field(default_factory=dict)
+
+    def info(self) -> dict:
+        """Room-wide state sent in `joined` and `room_info`."""
+        return {"host": self.host, "public": self.public}
 
 
 class RoomManager:
@@ -120,27 +143,36 @@ class RoomManager:
         self.send_timeout = send_timeout
         self.motion_interval = motion_interval
         self.rooms: dict[str, Room] = {}
+        # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
+        self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
 
     def create_room(self) -> str:
         return new_room_id()
 
     def join(self, room_id: str, nick: str, character: str, ws: Sender,
              token: str | None = None, **profile: str | None) -> Peer:
+        """[token]: the joining save's player id, None without a save."""
         room = self.rooms.get(room_id)
+        if room is not None:
+            if token and token in room.banned:
+                raise Banned(room_id)
+            if room.public and not token:
+                raise NeedSave(room_id)
+            if len(room.peers) >= self.max_size:
+                raise RoomFull(room_id)
         if room is None:
             room = self.rooms[room_id] = Room(room_id)
-        if len(room.peers) >= self.max_size:
-            raise RoomFull(room_id)
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
         room.peers[peer.id] = peer
+        if room.host is None:
+            room.host = peer.id
         return peer
 
     async def _failed(self, room_id: str, peer: Peer) -> None:
-        if not self.leave(room_id, peer.id):
+        if not await self.depart(room_id, peer.id):
             return
-        await self.broadcast(room_id, {"type": "member_left", "id": peer.id})
         try:
             await asyncio.wait_for(peer.ws.close(code=1013), self.send_timeout)
         except (asyncio.TimeoutError, RuntimeError, OSError):
@@ -161,7 +193,34 @@ class RoomManager:
             if room.motion_timer:
                 room.motion_timer.cancel()
             del self.rooms[room_id]
+        elif room.host == peer_id:
+            room.host = next(iter(room.peers))
         return True
+
+    async def depart(self, room_id: str, peer_id: str) -> bool:
+        """Remove a member and tell the room, including a new host."""
+        room = self.rooms.get(room_id)
+        host = room.host if room else None
+        peer = room.peers.get(peer_id) if room else None
+        if not self.leave(room_id, peer_id):
+            return False
+        await self.broadcast(room_id, {"type": "member_left", "id": peer_id})
+        if room is not None and room_id in self.rooms and room.host != host:
+            await self.broadcast(room_id, {"type": "room_info", **room.info()})
+        if peer is not None and self.on_depart is not None:
+            await self.on_depart(room_id, peer)
+        return True
+
+    def public_rooms(self, limit: int) -> list[dict]:
+        """Public rooms with space first, then by member count."""
+        listed = [r for r in self.rooms.values() if r.public and r.host in r.peers]
+        listed.sort(key=lambda r: (len(r.peers) >= self.max_size, -len(r.peers)))
+        out = []
+        for room in listed[:limit]:
+            host = room.peers[room.host]
+            out.append({"room": room.id, "host": {"nick": host.nick, "character": host.character},
+                        "members": len(room.peers), "max": self.max_size})
+        return out
 
     def members(self, room_id: str) -> list[Peer]:
         room = self.rooms.get(room_id)

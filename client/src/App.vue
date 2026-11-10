@@ -9,9 +9,14 @@ import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
+import DuelBubble from "./pet/DuelBubble.vue";
+import DuelPick from "./pet/DuelPick.vue";
+import {
+  DUEL_HEIGHT, DUEL_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
+} from "./pet/duelPick";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
-import { nameBand, plateCard, plateSize } from "./pet/plates";
+import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
 import MainPanel from "./panel/MainPanel.vue";
 import { PET_BASE } from "./characters";
@@ -64,13 +69,16 @@ function pickQuick(key: string) {
 function closeQuick(e: Event) {
   const t = e.target as HTMLElement | null;
   if (!t?.closest?.(".dock, .spark")) ui.quickOpen = false;
+  // The duel key over a partner's pet closes on a press anywhere else; a click on a pet shows it again.
+  if (!insidePick(e.target)) closePick();
 }
+const closeOnEscape = (e: KeyboardEvent) => { if (e.key === "Escape") closePick(); };
 
 // ---- other members on the desk
 const remotePlate = computed(() => plateSize(settings.remoteScale));
 const remoteName = computed(() => nameBand(settings.remoteScale));
 /** A partner's name plate, when they wear one and plates are shown. */
-const plateOf = (m: RemoteMember) => (settings.showPlates ? plateCard(m.plate)?.id : undefined);
+const plateOf = (m: RemoteMember) => (settings.showPlates ? getPlate(m.plate)?.id : undefined);
 const remoteSize = computed<Size>(() => remotePetSize(settings.remoteScale, settings.showNames, settings.showPlates));
 watch(roomId, (r) => enterRoom(r), { immediate: true });
 // also re-runs when positions are forgotten (enterRoom / tidyRemotes) with the same members
@@ -86,6 +94,9 @@ watch(
   { immediate: true },
 );
 const remoteAt = (m: RemoteMember) => clamp(remotePos.get(memberKey(m)) ?? ownPos.value, remoteSize.value);
+/** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
+const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
+const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 const nearRight = (x: number, scale: number, minEmote: number) =>
   x + 172 * scale + Math.max(minEmote, 72 * scale) + 24 > viewport.value.w;
@@ -102,12 +113,16 @@ let stopDay: (() => void) | undefined;
 const adminHint = ref<InputBlocked | null>(null);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
-const closeQuickAway = () => (ui.quickOpen = false);
+const closeQuickAway = () => {
+  ui.quickOpen = false;
+  closePick();
+};
 
 onMounted(async () => {
   window.addEventListener("resize", onResize);
   window.addEventListener("pointerdown", closeQuick, true);
   window.addEventListener("blur", closeQuickAway);
+  window.addEventListener("keydown", closeOnEscape);
   startReporting();
   stopDay = watchDay();
   unInput = await listenInput(onInput);
@@ -143,6 +158,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("resize", onResize);
   window.removeEventListener("blur", closeQuickAway);
   window.removeEventListener("pointerdown", closeQuick, true);
+  window.removeEventListener("keydown", closeOnEscape);
   stopReporting();
   unInput?.();
   unOutside?.();
@@ -169,13 +185,14 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
   <div class="desk" :style="skinVars">
     <PetActor
       v-for="m in others" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
-      @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick"
+      @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
         :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
         :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
-        :emote="m.emote" :combo="m.combo" :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
+        :emote="m.emote" :combo="m.combo" :win="m.win" :sticker="m.sticker?.key"
+        :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
       <template v-if="settings.showNames">
         <NamePlate
@@ -187,16 +204,19 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
           :height="remoteName.pill" :font="remoteName.font"
         />
       </template>
+      <DuelPick :id="m.id" v-bind="pickPlace(m)" />
     </PetActor>
 
     <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
+        :win="localPet.win" :sticker="localPet.sticker?.key"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
+      <DuelBubble v-bind="duelPlace" />
       <CounterBar
         v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"

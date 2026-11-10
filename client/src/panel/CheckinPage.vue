@@ -10,7 +10,7 @@ import { alpacaSay } from "../stores/alpaca";
 import { reducedMotion } from "../stores/theme";
 import { ACHAO } from "../ui/achao";
 import Icon from "../ui/Icon.vue";
-import { monthCells, pickLine, prizeTone, reactionOf, type DayCell } from "./checkin";
+import { monthCells, padRuns, pickLine, prizeTone, reactionOf, type DayCell } from "./checkin";
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 /** Day tags in the tone of the prize: gold, wine, coral. */
@@ -21,6 +21,8 @@ const FRAMES: Record<string, string> = { "tone-legendary": "frame-gold", "tone-e
 const frameOf = (prize: number) => FRAMES[prizeTone(prize)];
 /** Stickers on the calendar lean a little, each day its own way. */
 const leanOf = (day: number) => `${((day * 7) % 5) * 2 - 4}deg`;
+/** The stickers pasted over the blank squares lean further, alternately. */
+const PAD_LEANS = ["-7deg", "5deg", "-4deg"];
 const SPARKS = Array.from({ length: 10 }, (_, n) => ({
   angle: `${n * 36 + (n % 2) * 12}deg`,
   reach: `${64 + (n % 3) * 20}px`,
@@ -40,6 +42,11 @@ const DEAL_MS = 1100;
 const calm = computed(() => reducedMotion.value);
 const month = computed(() => checkins.value);
 const cells = computed(() => (month.value ? monthCells(month.value) : []));
+/** The square of its run a standing sticker stands over, so its cut lies on one square below and not across a gap. */
+const padColumn = (n: number, run: { span: number; stickers: string[] }) =>
+  Math.floor(((n + 0.5) * run.span) / run.stickers.length) + 1;
+/** The blank runs by the index of their first square. */
+const pads = computed(() => new Map(padRuns(cells.value, monthNo.value).map((r) => [r.at, r])));
 const signedDays = computed(() => month.value?.days.length ?? 0);
 const monthShards = computed(() => month.value?.days.reduce((n, d) => n + d.shards, 0) ?? 0);
 const monthNo = computed(() => Number(month.value?.today.slice(5, 7)) || 0);
@@ -144,7 +151,7 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
         <ol class="days" :class="{ deal: dealing }">
           <li
             v-for="(c, i) in cells" :key="c?.date ?? `pad-${i}`"
-            :class="c ? [c.when, { turning: turning === c.date, missed: c.when === 'past' && !c.won }] : 'pad'"
+            :class="c ? [c.when, { turning: turning === c.date, missed: c.when === 'past' && !c.won, weekend: i % 7 >= 5 }] : 'pad'"
             :style="{ '--wave': (i % 7) + Math.floor(i / 7) }"
           >
             <template v-if="c">
@@ -189,6 +196,16 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
               </span>
               <span v-else class="num">{{ c.day }}</span>
             </template>
+            <!-- Over the blank squares at either end of the month: 阿草's stickers, pasted on. -->
+            <span
+              v-else-if="pads.get(i)" class="collage" :class="{ stand: pads.get(i)!.stand }" aria-hidden="true"
+              :style="{ '--span': pads.get(i)!.span, '--n': pads.get(i)!.stickers.length }"
+            >
+              <img
+                v-for="(name, n) in pads.get(i)!.stickers" :key="name" :src="ACHAO[name]" alt="" draggable="false"
+                :style="{ '--lean': PAD_LEANS[(n + i) % PAD_LEANS.length], '--col': padColumn(n, pads.get(i)!) }"
+              />
+            </span>
           </li>
         </ol>
       </div>
@@ -227,11 +244,34 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
   display: flex;
   align-items: flex-end;
   gap: 20px;
-  min-height: 92px;
+  min-height: 104px;
   padding: 14px 22px 14px;
   box-sizing: border-box;
   border-radius: var(--radius-l) var(--radius-l) 0 0;
   background: var(--grad-sky);
+}
+/* Printed into the coral, faint and behind the type: halftone dots that grow toward the sheet. */
+.head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  pointer-events: none;
+  opacity: 0.32;
+  mask:
+    url("../assets/patterns/halftone.svg") 0 -28px / 280px 140px repeat-x,
+    linear-gradient(90deg, transparent 34%, #000 72%);
+  mask-composite: intersect;
+}
+.title,
+.tally,
+.host {
+  z-index: 1;
+}
+.title,
+.tally {
+  position: relative;
 }
 .title {
   display: flex;
@@ -254,7 +294,8 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
   white-space: nowrap;
 }
 .month b {
-  font: 800 60px/0.8 var(--font-latin);
+  font: 800 84px/0.8 var(--font-latin);
+  letter-spacing: -0.01em;
 }
 .month small {
   margin-left: 10px;
@@ -325,9 +366,10 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
 }
 .weekdays,
 .days {
+  --gap: 8px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--gap);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -353,13 +395,20 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
   min-width: 0;
   border-radius: var(--radius-m);
 }
-/* A day still to come is an empty slot, a step of the ramp. */
+/* A day still to come is an empty slot, a step of the ramp; weekends a step deeper, as the weekday row marks them. */
 .days .future {
   background: var(--c-50);
+}
+.days .future.weekend {
+  background: var(--c-100);
 }
 /* A missed day is a slot left empty: drawn in dashes, no fill. */
 .days .missed {
   border: 2px dashed var(--c-200);
+}
+/* Today's square stays above the stickers pasted over the blanks next to it. */
+.days .today {
+  z-index: 2;
 }
 /* The turning card throws its burst over the squares around it. */
 .days .turning {
@@ -389,9 +438,76 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
   font-size: 30px;
   color: var(--c-300);
 }
+.future.weekend .num {
+  color: var(--c-400);
+}
 .missed .num {
   color: var(--ink-3);
   opacity: 0.5;
+}
+
+/* ---- the blank squares at either end: 阿草's stickers over the run */
+.collage {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: -6px;
+  bottom: -4px;
+  width: calc(var(--span) * 100% + (var(--span) - 1) * var(--gap));
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  pointer-events: none;
+}
+.collage img {
+  height: 100%;
+  translate: 0 var(--drop, 0px);
+  min-width: 0;
+  max-width: calc(96% / var(--n));
+  object-fit: contain;
+  rotate: var(--lean);
+  filter: var(--sticker);
+  pointer-events: auto;
+  user-select: none;
+  transition: rotate var(--dur-base) var(--ease-out);
+}
+.collage img:nth-child(2n) {
+  --drop: 4px;
+}
+.collage img:nth-child(2n + 1) {
+  --drop: -2px;
+}
+.collage img:hover {
+  rotate: 0deg;
+}
+/* Before the 1st: figures cut off flat at the bottom stand straight on the next row, the cut along its top edge,
+ * as if peeking out from behind the squares. */
+.collage.stand {
+  bottom: calc(-1 * var(--gap));
+  display: grid;
+  grid-template: minmax(0, 1fr) / repeat(var(--span), minmax(0, 1fr));
+  column-gap: var(--gap);
+  align-items: end;
+}
+.collage.stand img {
+  grid-row: 1;
+  grid-column: var(--col);
+  justify-self: center;
+  width: auto;
+  min-height: 0;
+  /* No wider than its square and the gaps beside it, so it never reaches over the next day. */
+  max-width: calc(100% + var(--gap));
+  --drop: 0px;
+  rotate: 0deg;
+  object-position: 50% 100%;
+  /* The white edge on three sides only: the cut stays flush with the squares. */
+  filter: drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 -1.5px 0 #fff);
+}
+.deal .collage {
+  animation: deal-in 440ms var(--ease-out) calc(140ms + var(--wave) * 26ms) both;
+}
+.calm .collage img {
+  transition: none;
 }
 .today .num {
   color: var(--c-700);
@@ -708,7 +824,7 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
     padding-inline: 18px;
   }
   .month b {
-    font-size: 50px;
+    font-size: 64px;
   }
   .month small {
     display: none;
@@ -732,11 +848,11 @@ watch(() => [status.value?.player, status.value?.checkin?.available] as const, (
     min-height: 78px;
   }
   .month b {
-    font-size: 48px;
+    font-size: 52px;
   }
   .days {
+    --gap: 6px;
     grid-auto-rows: minmax(54px, 1fr);
-    gap: 6px;
   }
 }
 </style>

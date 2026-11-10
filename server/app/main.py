@@ -4,30 +4,35 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import threading
 import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .accounts import MainAccounts
+from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
 from .models import (
-    EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg, LeaveMsg, Member,
-    MemberJoinedMsg, MemberLeftMsg, MotionMsg, PingMsg, PongMsg, StateBroadcast, StateMsg, TapBroadcast,
-    TapMsg, client_message_adapter,
+    DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
+    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PingMsg, PongMsg, RoomInfo, RoomInfoMsg,
+    ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
+from .moderation import Blocklist
 from .releases import ReleaseFeed
-from .rooms import Peer, RoomFull, RoomManager
+from .rooms import Banned, NeedSave, Peer, RoomFull, RoomManager
 from .store import Store
 
 app = FastAPI(title="AsoulTappo server", version="0.4.0")
 manager = RoomManager()
 EMOTE_INTERVAL = 0.25  # seconds between emotes of one member
+PUBLIC_LIST_LIMIT = 50
 TAP_RATE = 15.0  # room taps per second one member may broadcast (matches activity crediting)
 TAP_BURST = 75.0  # taps that may pile up while idle, a few seconds' worth
 
@@ -42,6 +47,33 @@ if _paid_players:
 _pruned = game.prune_activity_sessions()
 if _pruned:
     print(f"pruned {_pruned} old tap sessions", flush=True)
+_pruned = game.prune_scratch_cards()
+if _pruned:
+    print(f"pruned {_pruned} old scratch cards", flush=True)
+# Rooms live in memory: a duel the last run left open cannot go on, so both bets go back.
+_refunded = game.refund_open_duels()
+if _refunded:
+    print(f"refunded {_refunded} unfinished duels", flush=True)
+# Rock-paper-scissors in rooms; a member leaving in any way loses the duel it plays.
+duels = Duels(lambda: game, lambda: manager)
+
+
+def load_blocklist(store: Store) -> Blocklist:
+    return Blocklist(store.blocked_words())
+
+
+# Nickname blocklist kept by the main site's admin backend (PUT /admin/blocked-words); rooms show masked nicks.
+blocklist = load_blocklist(game.store)
+# Nicks as members sent them, by member id: a new list is applied to these, never to already masked text.
+raw_nicks: dict[str, str] = {}
+
+
+async def _departed(room_id: str, peer: Peer) -> None:
+    raw_nicks.pop(peer.id, None)
+    await duels.departed(room_id, peer)
+
+
+manager.on_depart = _departed
 
 # MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
 # self-hosted servers, which then offer guest saves only.
@@ -83,9 +115,22 @@ async def create_room() -> dict:
     return {"room": manager.create_room()}
 
 
+@app.get("/rooms")
+async def public_rooms(authorization: str = Header(default="")) -> dict:
+    """Rooms their host made public: host nick and character, member count and room size. A server with main-site
+    accounts shows them to signed-in accounts only (a linked save is not needed), so guest saves made in bulk cannot
+    crowd them; joining by room id needs no account."""
+    if accounts:
+        if not _bearer(authorization):
+            raise HTTPException(401, {"code": "account_required", "message": "登录账号后才能查看公开房间"})
+        await run_in_threadpool(_guard, _main_user, authorization)
+    return {"rooms": manager.public_rooms(PUBLIC_LIST_LIMIT)}
+
+
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
-          "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404}
+          "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,
+          "sold_out": 409, "no_card": 404, "no_scratch": 404}
 
 
 def _guard(fn, *args):
@@ -142,6 +187,10 @@ class ResonanceBody(BaseModel):
     count: int = Field(default=1, ge=1, le=100)
 
 
+class ScratchRevealBody(BaseModel):
+    card: int = Field(ge=1, le=2**63 - 1)
+
+
 class LoadoutBody(BaseModel):
     """Selected character, favorite emotes and name plate (null or "" for none)."""
 
@@ -189,6 +238,27 @@ def api_checkin_month(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/checkin")
 def api_checkin(who: PlayerId = Depends(player)) -> dict:
     return _guard(game.checkin, who)
+
+
+@app.get("/api/scratch")
+def api_scratch_state(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.scratch_state, who)
+
+
+@app.post("/api/scratch")
+def api_scratch_buy(who: PlayerId = Depends(player)) -> dict:
+    return _guard(game.scratch_buy, who)
+
+
+@app.post("/api/scratch/reveal")
+async def api_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depends(player)) -> dict:
+    out = await run_in_threadpool(_guard, game.scratch_reveal, who, body.card)
+    if out.pop("announce"):
+        # Every room this save sits in sees the win over that member's pet.
+        for room_id, room in list(manager.rooms.items()):
+            for peer in [p for p in room.peers.values() if p.token == who]:
+                await manager.broadcast(room_id, ScratchBroadcast(id=peer.id, shards=out["prize"]["shards"]).model_dump())
+    return out
 
 
 @app.get("/api/loadout")
@@ -288,6 +358,65 @@ def admin_unlink(user_id: str) -> dict:
     return {"ok": True}
 
 
+MAX_BLOCKED_WORDS = 20000
+MAX_BLOCKED_WORD_LEN = 64
+
+
+class BlockedWordsBody(BaseModel):
+    words: list[str] = Field(max_length=MAX_BLOCKED_WORDS)
+
+    @field_validator("words")
+    @classmethod
+    def _trim(cls, words: list[str]) -> list[str]:
+        trimmed = [w.strip() for w in words]
+        if any(not 1 <= len(w) <= MAX_BLOCKED_WORD_LEN for w in trimmed):
+            raise ValueError(f"each word needs 1-{MAX_BLOCKED_WORD_LEN} characters after trimming")
+        return list(dict.fromkeys(trimmed))
+
+
+async def _remask() -> None:
+    """Apply the current blocklist to everyone online; rooms hear of each nick that changed."""
+    changed: list[tuple[str, Peer]] = []
+    online: set[str] = set()
+    for room_id, room in list(manager.rooms.items()):
+        for peer in room.peers.values():
+            online.add(peer.id)
+            nick = blocklist.mask(raw_nicks.get(peer.id, peer.nick))
+            if nick != peer.nick:
+                peer.nick = nick
+                changed.append((room_id, peer))
+    for gone in raw_nicks.keys() - online:
+        del raw_nicks[gone]
+    for room_id, peer in changed:
+        await manager.broadcast(room_id, StateBroadcast(
+            id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
+
+
+@app.get("/admin/blocked-words", dependencies=[Depends(admin)])
+def admin_blocked_words() -> dict:
+    words = game.store.blocked_words()
+    return {"words": words, "count": len(words)}
+
+
+_blocklist_saving = threading.Lock()
+
+
+def _save_blocklist(words: list[str]) -> None:
+    """Store and swap in one step, so the list in use is always the last one stored."""
+    global blocklist
+    with _blocklist_saving:
+        game.store.replace_blocked_words(words)
+        blocklist = Blocklist(words)
+
+
+@app.put("/admin/blocked-words", dependencies=[Depends(admin)])
+async def admin_set_blocked_words(body: BlockedWordsBody) -> dict:
+    """Replace the whole list; it applies to members online at once."""
+    await run_in_threadpool(_save_blocklist, body.words)
+    await _remask()
+    return {"count": len(body.words)}
+
+
 @app.get("/api/collection")
 def api_collection(who: PlayerId = Depends(player)) -> dict:
     return _guard(game.collection, who)
@@ -301,16 +430,51 @@ if Path(PACKS_DIR).is_dir():
 # ----------------------------------------------------------------- WebSocket
 async def _leave(room_id: str | None, peer: Peer | None) -> None:
     if room_id and peer:
-        if manager.leave(room_id, peer.id):
-            await manager.broadcast(room_id, MemberLeftMsg(id=peer.id).model_dump())
+        await manager.depart(room_id, peer.id)
 
 
-def _room_identity(token: str | None, account_token: str | None) -> PlayerId | None:
-    """Rooms resolve the same save as HTTP; an unknown identity joins without unlocks."""
+def _final(reason: str, message: str) -> dict:
+    """A refusal that ends the session. Clients before 1.2 stop reconnecting on room_full only."""
+    return ErrorMsg(code="room_full", message=message, reason=reason).model_dump()
+
+
+async def _kick(room_id: str, target: Peer, ban: bool) -> None:
+    """Tell the member why, then remove it; with [ban] its save stays out until the room closes."""
+    room = manager.rooms.get(room_id)
+    if room is None:
+        return
+    if ban and target.token:
+        room.banned.add(target.token)
     try:
-        return _who(token or "", f"Bearer {account_token}" if account_token else "")
+        await target.send(_final("kicked", "你已被移出这个房间"), manager.send_timeout)
+    except Exception:  # a dead connection is removed all the same
+        pass
+    if await manager.depart(room_id, target.id):
+        try:
+            await asyncio.wait_for(target.ws.close(code=1000), manager.send_timeout)
+        except (asyncio.TimeoutError, RuntimeError, OSError):
+            pass
+
+
+def _room_info(room_id: str) -> dict:
+    room = manager.rooms[room_id]
+    return RoomInfoMsg(**room.info()).model_dump()
+
+
+def _room_identity(token: str | None, account_token: str | None) -> tuple[PlayerId | None, bool]:
+    """Rooms resolve the same save as HTTP; an unknown identity joins without unlocks. The flag tells whether the
+    join carried a valid main-site account token (with or without a linked save)."""
+    signed_in = False
+    if account_token and accounts:
+        try:
+            _main_user(f"Bearer {account_token}")
+            signed_in = True
+        except GameError:
+            pass
+    try:
+        return _who(token or "", f"Bearer {account_token}" if account_token else ""), signed_in
     except GameError:
-        return None
+        return None, signed_in
 
 
 @app.websocket("/ws")
@@ -320,13 +484,14 @@ async def ws_endpoint(ws: WebSocket) -> None:
     peer: Peer | None = None
 
     async def send(data: dict) -> None:
-        if peer:
+        # A member removed during an await answers on the bare connection, like one that never joined.
+        if peer and peer.active:
             await peer.send(data, manager.send_timeout)
         else:
             await asyncio.wait_for(ws.send_json(data), manager.send_timeout)
 
     async def err(code: str, message: str = "") -> None:
-        await send(ErrorMsg(code=code, message=message).model_dump())
+        await send(ErrorMsg(code=code, message=message).model_dump(exclude_none=True))
 
     try:
         while True:
@@ -337,7 +502,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 # some ASGI servers). Validation below answers it as bad_message.
                 raw = None
             if peer is not None and not peer.active:
-                break
+                # Removed from the room (kicked, or its writer failed). The server closed that connection: stop
+                # reading (clients send a last `leave` on the way out). Still open: it counts as not joined.
+                if getattr(ws, "application_state", None) == WebSocketState.DISCONNECTED:
+                    break
+                room_id, peer = None, None
             try:
                 msg = client_message_adapter.validate_python(raw)
             except ValidationError:
@@ -352,7 +521,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer is not None:
                     await err("already_joined")
                     continue
-                who = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
+                who, signed_in = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
                 profile = await run_in_threadpool(game.profile_for, who, msg.room)
                 plate = await run_in_threadpool(game.room_plate, who, msg.plate)
                 character = msg.character
@@ -361,17 +530,34 @@ async def ws_endpoint(ws: WebSocket) -> None:
                         and not await run_in_threadpool(game.owns_character, who, character)):
                     character = game.base_character(character)
                 try:
-                    peer = manager.join(msg.room, msg.nick, character, ws, token=who, plate=plate, **profile)
+                    peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
+                                        **profile)
+                    raw_nicks[peer.id] = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
+                except Banned:
+                    await send(_final("banned", "你已被移出这个房间"))
+                    continue
+                except NeedSave:
+                    await send(_final("need_save", "公开房间需要存档才能加入"))
+                    continue
                 room_id = msg.room
+                peer.dnd = msg.dnd
+                peer.account = signed_in
                 await send(JoinedMsg(
                     room=room_id, you=peer.id,
                     members=[_member(p) for p in manager.members(room_id)],
+                    info=RoomInfo(**manager.rooms[room_id].info()),
                 ).model_dump())
+                # Duel losers' stickers still running, the joining save's own included.
+                for sticker in duels.stickers(room_id):
+                    await send(sticker)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
+                own = duels.sticker_of(room_id, peer)
+                if own:
+                    await manager.broadcast(room_id, own, exclude=peer.id)
                 continue
 
             if peer is None or room_id is None:
@@ -410,6 +596,56 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 peer.last_emote = now
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
+            elif isinstance(msg, (SetPublicMsg, KickMsg)):
+                room = manager.rooms.get(room_id)
+                if room is None or room.host != peer.id:
+                    await err("not_host", "only the host can do this")
+                elif isinstance(msg, SetPublicMsg):
+                    if msg.public and accounts and not peer.account:
+                        # With main-site accounts, only a host signed in to one lists a room.
+                        await err("host_needs_account", "a public room needs a host signed in to an account")
+                        continue
+                    if msg.public and not peer.token:
+                        # A host without a save could not come back to its own public room.
+                        await err("host_needs_save", "a public room needs a host with a save")
+                        continue
+                    if room.public == msg.public:
+                        # Nothing changed: only the sender hears the current state, so repeats cannot flood the room.
+                        await send(_room_info(room_id))
+                        continue
+                    room.public = msg.public
+                    await manager.broadcast(room_id, _room_info(room_id))
+                else:
+                    target = room.peers.get(msg.id)
+                    if target is None or target.id == peer.id:
+                        await err("no_member", "no such member")
+                        continue
+                    # The save is barred, so its other connections go too. The host's own save on
+                    # another connection is only removed: barring it would lock the host out.
+                    ban = bool(target.token) and target.token != peer.token
+                    targets = [target] + [p for p in room.peers.values()
+                                          if ban and p.token == target.token and p.id != target.id]
+                    # Removing a member mid-duel would lose it the duel, which a host could play for.
+                    if any(duels.in_duel(t) for t in targets):
+                        await err("in_duel", "member is in a duel")
+                        continue
+                    for t in targets:
+                        await _kick(room_id, t, ban)
+            elif isinstance(msg, DuelInviteMsg):
+                try:
+                    await duels.invite(room_id, peer, msg.id, msg.bet)
+                except GameError as e:
+                    await err(e.code, e.message if e.message != e.code else "")
+            elif isinstance(msg, (DuelAnswerMsg, DuelThrowMsg)):
+                try:
+                    if isinstance(msg, DuelAnswerMsg):
+                        await duels.answer(peer, msg.duel, msg.accept)
+                    else:
+                        await duels.throw(peer, msg.duel, msg.hand)
+                except GameError as e:
+                    await err(e.code, e.message if e.message != e.code else "")
+            elif isinstance(msg, DndMsg):
+                duels.set_dnd(peer, msg.dnd)
             elif isinstance(msg, StateMsg):
                 # Checked before anything is applied: a locked part drops the whole message.
                 if (msg.character is not None and msg.character not in game.manifest.character_names
@@ -427,7 +663,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if msg.character is not None:
                     peer.character = msg.character
                 if msg.nick is not None:
-                    peer.nick = msg.nick
+                    raw_nicks[peer.id] = msg.nick
+                    peer.nick = blocklist.mask(msg.nick)
                 await manager.broadcast(room_id, StateBroadcast(
                     id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
     except (WebSocketDisconnect, ConnectionError):

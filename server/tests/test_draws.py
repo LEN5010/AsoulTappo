@@ -25,7 +25,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 10400, "taps": 0, "perTap": 2.8, "multiplier": 1, "perMinute": 168.0}
-    assert r["totals"]["items"] == 549
+    # 549 from resonance and the 20 scratch emotes
+    assert r["totals"]["items"] == 569
 
 
 def test_taps_pay_along_the_log_curve():

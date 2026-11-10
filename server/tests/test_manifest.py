@@ -62,7 +62,9 @@ def test_only_the_five_characters():
     for t in M.data["themes"]:
         assert set(t["characters"]) <= FIVE
     for s in M.data["emoteSets"]:
-        assert s["character"] in FIVE
+        # 阿草's set, won from scratch cards, is the one set that belongs to no member
+        assert s["character"] in FIVE or s.get("source") == "scratch"
+    assert [s["id"] for s in M.data["emoteSets"] if s.get("source")] == ["achao"]
     assert {t["id"] for t in M.data["themes"]}  # sanity
     # every character has cards, themes and emotes
     for name in FIVE:
@@ -127,7 +129,9 @@ def test_accessories_starter_and_economy():
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
     assert len(dropped) == 549
-    assert len(M.items) == len(dropped) + len(M.starter)
+    # scratch emotes are collectible but stay out of the pool
+    assert len(M.scratch_emotes) == 20 and not dropped & {f"emote:{k}" for k in M.scratch_emotes}
+    assert len(M.items) == len(dropped) + len(M.starter) + len(M.scratch_emotes)
     assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 

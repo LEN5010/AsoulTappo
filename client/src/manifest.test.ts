@@ -17,7 +17,9 @@ describe("manifest", () => {
     expect(manifest.characters.map((c) => c.name)).toEqual(["嘉然", "乃琳", "贝拉", "心宜", "思诺"]);
     const ok = new Set(manifest.characters.map((c) => c.name));
     for (const c of manifest.cards) c.characters.forEach((n) => expect(ok.has(n)).toBe(true));
-    for (const s of manifest.emoteSets) expect(ok.has(s.character)).toBe(true);
+    // 阿草's set, won from scratch cards, is the one set that belongs to no member
+    for (const s of manifest.emoteSets) expect(ok.has(s.character) || s.source === "scratch").toBe(true);
+    expect(manifest.emoteSets.filter((s) => s.source).map((s) => s.id)).toEqual(["achao"]);
   });
   it("indexes work and ids are unique", () => {
     expect(new Set(manifest.cards.map((c) => c.id)).size).toBe(manifest.cards.length);
@@ -36,6 +38,13 @@ describe("manifest", () => {
     expect(d.pack).toBeNull();
     expect(getTheme("nope").id).toBe(d.id);
     expect(Object.values(d.parts).flat().every((r) => (r as string).startsWith("bundle:"))).toBe(true);
+  });
+  it("lists 阿草's plate, unlocked by the scratch set, under an id no card has", () => {
+    expect(manifest.plates).toEqual([{ id: "achao", name: "阿草", emoteSet: manifest.economy.scratch.emote.set }]);
+    for (const p of manifest.plates) {
+      expect(getCard(p.id)).toBeUndefined();
+      expect(manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes).toHaveLength(20);
+    }
   });
   it("wire emote keys fit the server limit", () => {
     for (const s of manifest.emoteSets) for (const e of s.emotes) expect(e.key.length).toBeLessThanOrEqual(32);
@@ -67,4 +76,14 @@ it("ships manifest v4 skins for exactly the non-member character directories", (
     .map((path) => path.split("/")[3]!).filter((name) => !members.has(name)).sort();
   expect(dirs).toEqual(manifest.skins.map((s) => s.name).sort());
   expect(Object.values(manifest.rarities).every((r) => Object.keys(r).join() === "name")).toBe(true);
+});
+
+describe("duel numbers", () => {
+  it("are the approved ones, read from the manifest the server uses", () => {
+    const duel = manifest.economy.duel!;
+    expect(duel.stakes).toEqual([{ bet: 150, prize: 250 }, { bet: 1500, prize: 2500 }, { bet: 15000, prize: 25000 }]);
+    expect([duel.inviteSec, duel.throwSec, duel.dailyWinCap, duel.minTaps]).toEqual([15, 10, 10000, 10000]);
+    expect(duel.sticker).toEqual({ set: "achao", sec: 300 });
+    expect(manifest.emoteSets.find((s) => s.id === duel.sticker.set)?.emotes).toHaveLength(20);
+  });
 });

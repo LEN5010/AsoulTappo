@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { characterColor, emoteCover, manifest, memberOf, type ManifestCard } from "../manifest";
+import { characterColor, emoteCover, manifest, memberOf } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -16,7 +16,7 @@ import PetBust from "./PetBust.vue";
 import NamePill from "../pet/NamePill.vue";
 import NamePlate from "../pet/NamePlate.vue";
 import PlateDetail from "./PlateDetail.vue";
-import { plateCards, plateSize, plateUnlocked } from "../pet/plates";
+import { allPlates, plateSize, plateUnlocked, type Plate } from "../pet/plates";
 import { usePageActive } from "../composables/usePageActive";
 import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
@@ -35,6 +35,8 @@ function pickMember(name: string) {
   if (name !== "all") settings.character = name;
 }
 const inMember = (name: string) => member.value === "all" || memberOf(name) === member.value;
+/** 阿草's emotes belong to no member: they stay on the shelf whoever is picked. */
+const setShown = (s: { character: string; source?: string }) => !!s.source || inMember(s.character);
 
 // ---- live stage preview
 const preview = ref<EmoteFrame | null>(null);
@@ -74,17 +76,19 @@ const petSkins = computed(() =>
       || a.name.localeCompare(b.name, "zh-CN")),
 );
 
-// Big hidden cards worn as name plates on partners' desks: unlocked ones first, each group in manifest order.
+// Name plates on partners' desks (big hidden cards, then 阿草's): unlocked ones first, each group in manifest order.
 // Shown as a partner at x0.8 would see it.
 const { width: PLATE_W, height: PLATE_H } = plateSize(0.8);
 const pageActive = usePageActive();
 /** The plate open in the preview dialog. */
-const plateView = ref<ManifestCard | null>(null);
+const plateView = ref<Plate | null>(null);
 const plateOpen = (id: string) => plateUnlocked(id, collection.owned);
 const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
+/** 阿草's plate belongs to no member: it stays on the shelf whoever is picked. */
+const plateShown = (p: Plate) => p.kind !== "card" || p.card.characters.some(inMember);
 const plates = computed(() =>
-  plateCards()
-    .filter((c) => c.characters.some(inMember) && (!query.value || c.name.includes(query.value)))
+  allPlates()
+    .filter((p) => plateShown(p) && (!query.value || p.name.includes(query.value)))
     .sort((a, b) => Number(plateOpen(b.id)) - Number(plateOpen(a.id))),
 );
 
@@ -93,7 +97,7 @@ const ownedEmotes = computed(() => {
   if (mainTab.value === "pet" || mainTab.value === "plate") return [];
   const list: { key: string; name: string; img: string; animated?: boolean; character: string; setName: string; rarity: string }[] = [];
   for (const s of manifest.emoteSets) {
-    if (!inMember(s.character)) continue;
+    if (!setShown(s)) continue;
     for (const e of s.emotes) {
       if (!ownsEmote(e.key, collection.owned)) continue;
       if (query.value && !e.name.includes(query.value) && !s.name.includes(query.value)) continue;
@@ -113,7 +117,7 @@ const ownedEmotes = computed(() => {
 
 const totalOwnedEmotes = computed(() =>
   manifest.emoteSets
-    .filter((s) => inMember(s.character))
+    .filter(setShown)
     .reduce((acc, s) => acc + s.emotes.filter((e) => ownsEmote(e.key, collection.owned)).length, 0),
 );
 
@@ -312,25 +316,25 @@ function fireEmote(key: string) {
               </b>
             </button>
             <button
-              v-for="card in plates" :key="`plate:${card.id}`" type="button"
-              class="plate-card ui-tile" :class="{ picked: settings.plate === card.id, locked: !plateOpen(card.id) }"
-              :title="`预览铭牌：${card.name}`" data-rise
-              @click="plateView = card"
+              v-for="p in plates" :key="`plate:${p.id}`" type="button"
+              class="plate-card ui-tile" :class="{ picked: settings.plate === p.id, locked: !plateOpen(p.id), sweep: p.kind === 'sweep' }"
+              :title="`预览铭牌：${p.name}`" data-rise
+              @click="plateView = p"
             >
               <span class="plate-well ui-frame">
                 <NamePlate
-                  :card="card.id" :nick="plateNick" :color="characterColor(settings.character)"
-                  :width="PLATE_W" :height="PLATE_H" :still="!plateOpen(card.id) || !pageActive"
+                  :card="p.id" :nick="plateNick" :color="characterColor(settings.character)"
+                  :width="PLATE_W" :height="PLATE_H" :still="!plateOpen(p.id) || !pageActive"
                 />
               </span>
               <b class="ui-tile-name">
-                <i :style="{ background: characterColor(card.characters[0]!) }" aria-hidden="true"></i>{{ card.name }}
-                <span v-if="settings.plate === card.id" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="9" /></span>
-                <span v-else-if="!plateOpen(card.id)" class="badge lock" aria-label="未解锁"><Icon name="lock" :size="9" /></span>
+                <i v-if="p.kind === 'card'" :style="{ background: characterColor(p.card.characters[0]!) }" aria-hidden="true"></i>{{ p.name }}
+                <span v-if="settings.plate === p.id" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="9" /></span>
+                <span v-else-if="!plateOpen(p.id)" class="badge lock" aria-label="未解锁"><Icon name="lock" :size="9" /></span>
               </b>
             </button>
           </div>
-          <PlateDetail v-if="plateView" :card="plateView" @close="plateView = null" />
+          <PlateDetail v-if="plateView" :plate="plateView" @close="plateView = null" />
         </section>
 
         <section v-if="mainTab === 'all' || mainTab === 'emote'" class="shelf">
@@ -672,6 +676,10 @@ function fireEmote(key: string) {
 }
 .plate-card.locked .plate-well > :first-child {
   filter: var(--dim);
+}
+/* 阿草's plate is grey until its emotes are all collected, as under the scratch album. */
+.plate-card.locked.sweep .plate-well > :first-child {
+  filter: grayscale(1);
 }
 .plate-card .ui-tile-name {
   display: flex;

@@ -4,6 +4,8 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { getCharacter, headAnchor, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
+import { emoteView } from "../emotes";
+import { serverBase } from "../asset";
 import EmoteBubble from "./EmoteBubble.vue";
 import ComboBubble from "./ComboBubble.vue";
 import type { EmoteFrame } from "./EmotePlayer";
@@ -26,6 +28,10 @@ const props = withDefaults(
     combo?: ComboFrame | null;
     /** Icon before the combo's number: a partner's combo counts taps, the own pet's counts shards. */
     comboIcon?: string;
+    /** Shards a scratch card or a duel just paid, shown large beside the head. */
+    win?: ComboFrame | null;
+    /** Emote key stuck on the head: the sticker a duel's loser wears. */
+    sticker?: string | null;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
     /** largest emote picture height in px, for frames too short for a scaled-up bubble */
@@ -37,7 +43,7 @@ const props = withDefaults(
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
-    emote: null, combo: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
+    emote: null, combo: null, win: null, sticker: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
   },
 );
 
@@ -80,6 +86,13 @@ const head = computed(() => headAnchor(props.character));
 
 // ---- emote bubble / combo
 const emoteSize = computed(() => Math.min(props.maxEmote, Math.max(props.minEmote, 72 * s.value)));
+const stickerImg = computed(() =>
+  props.sticker ? emoteView(props.sticker, { serverBase: serverBase.value, appBase: import.meta.env.BASE_URL })?.img : undefined,
+);
+const stickerStyle = computed(() => {
+  const size = Math.max(26, 38 * s.value);
+  return { left: `${head.value.x * s.value - size / 2}px`, top: `${head.value.y * s.value - size * 0.2}px`, height: `${size}px` };
+});
 const bubbleAnchor = computed(() => ({
   x: (head.value.x + (props.flipBubble ? -20 : 20)) * s.value + props.bubbleShift.x,
   y: (head.value.y + 16) * s.value + props.bubbleShift.y,
@@ -97,7 +110,11 @@ const bubbleAnchor = computed(() => ({
     </div>
     <div v-else class="missing">?</div>
 
+    <img v-if="stickerImg" class="sticker" :src="stickerImg" :style="stickerStyle" draggable="false" alt="" />
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
+    <ComboBubble
+      :frame="win" icon="shard" :x="(head.x + (flipBubble ? 34 : -34)) * s" :y="(head.y + 8) * s" :size="Math.max(20, 26 * s)"
+    />
     <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
   </div>
 </template>
@@ -113,4 +130,10 @@ const bubbleAnchor = computed(() => ({
 .smooth-mouse .mouse { transition: transform 60ms linear; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
+/* A duel loser's sticker, slapped on the head slightly askew. */
+.sticker {
+  position: absolute; z-index: 3; width: auto; pointer-events: none;
+  filter: var(--sticker); transform: rotate(-12deg); animation: slap var(--dur-base) var(--ease-pop);
+}
+@keyframes slap { from { opacity: 0; transform: rotate(-24deg) scale(1.6); } }
 </style>

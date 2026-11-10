@@ -45,7 +45,16 @@ export interface ManifestTheme {
   };
 }
 export interface ManifestEmote { key: string; name: string; img: string; thumb?: string; animated?: boolean }
-export interface ManifestEmoteSet { id: string; name: string; character: string; rarity: Rarity; emotes: ManifestEmote[] }
+export interface ManifestEmoteSet {
+  id: string;
+  name: string;
+  /** A member, or 阿草 for the scratch card set. */
+  character: string;
+  rarity: Rarity;
+  /** Set on a set won elsewhere than resonance: never in the pool, never crafted. */
+  source?: "scratch";
+  emotes: ManifestEmote[];
+}
 export interface ManifestAccessory {
   id: string;
   name: string;
@@ -64,6 +73,8 @@ export interface ManifestDecor {
   unlock: { series: string; min: number };
 }
 export interface ManifestSeries { id: string; name: string; total: number }
+/** A name plate besides the big hidden cards: worn once every emote of `emoteSet` is owned. */
+export interface ManifestPlate { id: string; name: string; emoteSet: string }
 export interface Manifest {
   version: number;
   characters: ManifestCharacter[];
@@ -90,7 +101,34 @@ export interface Manifest {
     craftCost: Partial<Record<Rarity, number>>;
     /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */
     checkin: { prizes: { shards: number; weight: number }[]; spread: number };
+    /**
+     * Scratch cards: `price` shards each, `daily` a China day. Weights are percentages; the rest of 100 wins nothing.
+     * The emote tier gives a missing emote of `set`, for certain on the `pity`-th card since the last one. Once the
+     * set is whole the tier and its pity are gone and its weight wins nothing. The room is told about `announce`
+     * shards or more.
+     */
+    scratch: {
+      price: number;
+      daily: number;
+      prizes: { shards: number; weight: number }[];
+      emote: { set: string; weight: number; pity: number };
+      announce: number;
+    };
+    /**
+     * Rock-paper-scissors in rooms: both pay `bet`, the winner gets `prize`. An invite waits `inviteSec`, a round
+     * `throwSec`. A save's net win of a China day stays at or below `dailyWinCap`; both saves need `minTaps` taps in
+     * all. The loser wears a sticker of emote set `sticker.set` for `sticker.sec` seconds.
+     */
+    duel?: {
+      stakes: { bet: number; prize: number }[];
+      inviteSec: number;
+      throwSec: number;
+      dailyWinCap: number;
+      minTaps: number;
+      sticker: { set: string; sec: number };
+    };
   };
+  plates: ManifestPlate[];
 }
 
 export const manifest = raw as unknown as Manifest;

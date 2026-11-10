@@ -1,4 +1,6 @@
-import type { ClientMessage, Member, PetMotion, ProfilePatch, ServerMessage, StateUpdate } from "./protocol";
+import type {
+  ClientMessage, DuelMessage, Hand, Member, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
+} from "./protocol";
 import { toWsUrl } from "./protocol";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
@@ -6,12 +8,20 @@ export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
 export interface RoomEvents {
   onConnState(state: ConnState): void;
   onJoined(room: string, you: string, members: Member[]): void;
+  /** Right after `onJoined` (null from servers without room info), and on every `room_info`. */
+  onRoomInfo(info: RoomInfo | null): void;
   onMemberJoined(member: Member): void;
   onMemberLeft(id: string): void;
   onTap(id: string, count: number, total: number): void;
   onMotion(id: string, pose: PetMotion): void;
   onEmote(id: string, emote: string): void;
+  onScratch(id: string, shards: number): void;
   onState(update: StateUpdate): void;
+  /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
+  onDuel(msg: DuelMessage): void;
+  /** A member wears an emote as a sticker for `sec` seconds. */
+  onSticker(id: string, key: string, sec: number): void;
+  /** A final room_full carries its reason as the code: kicked, banned or need_save. */
   onError(code: string, message: string): void;
 }
 
@@ -23,8 +33,10 @@ export interface JoinInfo {
   token?: string;
   /** Main-site account token; the room uses the save linked to the account. */
   accountToken?: string;
-  /** Big hidden card worn as a name plate; the server drops it unless the save owns it. */
+  /** Name plate (a big hidden card id or a manifest `plates` id); the server drops it unless the save has unlocked it. */
   plate?: string;
+  /** Turns rock-paper-scissors invites down; kept for every rejoin. */
+  dnd?: boolean;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -106,6 +118,27 @@ export class RoomClient {
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
   }
+  sendSetPublic(isPublic: boolean): void {
+    this.send({ type: "set_public", public: isPublic });
+  }
+  sendKick(id: string): void {
+    this.send({ type: "kick", id });
+  }
+  /** Do-not-disturb for the next joins; [tell] also sends it now, only to servers with duels (older ones answer an
+   * unknown type with bad_message). */
+  setDnd(on: boolean, tell: boolean): void {
+    if (this.joinInfo) this.joinInfo.dnd = on || undefined;
+    if (tell) this.send({ type: "dnd", dnd: on });
+  }
+  sendDuelInvite(id: string, bet: number): void {
+    this.send({ type: "duel_invite", id, bet });
+  }
+  sendDuelAnswer(duel: string, accept: boolean): void {
+    this.send({ type: "duel_answer", duel, accept });
+  }
+  sendDuelThrow(duel: string, hand: Hand): void {
+    this.send({ type: "duel_throw", duel, hand });
+  }
   sendState(patch: ProfilePatch): void {
     if (this.joinInfo) {
       if (patch.character) this.joinInfo.character = patch.character;
@@ -177,7 +210,13 @@ export class RoomClient {
       case "joined":
         this.joinPending = false;
         this.events.onJoined(msg.room, msg.you, msg.members);
+        this.events.onRoomInfo(msg.info ? { ...msg.info } : null);
         break;
+      case "room_info": {
+        const { type: _, ...info } = msg;
+        this.events.onRoomInfo(info);
+        break;
+      }
       case "member_joined":
         this.events.onMemberJoined(msg.member);
         break;
@@ -198,13 +237,27 @@ export class RoomClient {
       case "emote":
         this.events.onEmote(msg.id, msg.emote);
         break;
+      case "scratch":
+        this.events.onScratch(msg.id, msg.shards);
+        break;
       case "state":
         this.events.onState(msg);
         break;
+      case "duel_invite":
+      case "duel_start":
+      case "duel_round":
+      case "duel_result":
+      case "duel_over":
+        this.events.onDuel(msg);
+        break;
+      case "sticker":
+        this.events.onSticker(msg.id, msg.key, msg.sec);
+        break;
       case "error":
         // A full room, or a join the server rejected as invalid, is permanent for this attempt: stop retrying.
+        // Being removed by the host or refused by a public room also comes as room_full, with a reason.
         if (msg.code === "room_full" || (msg.code === "bad_message" && this.joinPending)) this.stop(true);
-        this.events.onError(msg.code, msg.message);
+        this.events.onError(msg.code === "room_full" && msg.reason ? msg.reason : msg.code, msg.message);
         break;
       case "pong":
         this.gotPong = true;

@@ -16,7 +16,20 @@ export interface PlayerStatus {
   checkin?: { available: boolean };
   /** Seconds before taps count again after input too fast for a hand; missing on older servers. */
   tapCooldown?: number;
+  /** Scratch cards left today and cards since the last emote; missing on servers without them. */
+  scratch?: { left: number; pity: number };
+  /** Rock-paper-scissors: today's net win (prizes minus bets). Missing on servers without duels. */
+  duel?: { net: number };
   credited?: number;
+}
+/** A scratch card: nine cells, each a shard amount in digits or an emote key. Three alike is the prize. */
+export interface ScratchCard { id: number; cells: string[] }
+/** Today (China date), cards left, cards since the last emote, and the card bought but not revealed yet. */
+export interface ScratchState { day: string; left: number; pity: number; card: ScratchCard | null }
+export interface ScratchBuyResult extends PlayerStatus { card: ScratchCard }
+export interface ScratchRevealResult extends PlayerStatus {
+  /** What the card paid: shards, or an item id (emote:<key>). */
+  prize: { shards: number; item: string | null };
 }
 export interface Drop {
   item: string;
@@ -128,6 +141,11 @@ export class Api {
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
   checkinMonth = () => this.call<CheckinMonth>("GET", "/api/checkin");
   checkin = () => this.call<CheckinResult>("POST", "/api/checkin");
+  scratchState = () => this.call<ScratchState>("GET", "/api/scratch");
+  /** Buys a card, or hands back the one still to reveal at no charge. */
+  scratchBuy = () => this.call<ScratchBuyResult>("POST", "/api/scratch");
+  /** Pays the card's prize; safe to repeat. */
+  scratchReveal = (card: number) => this.call<ScratchRevealResult>("POST", "/api/scratch/reveal", { card });
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);

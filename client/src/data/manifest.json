@@ -4843,6 +4843,115 @@
      "animated": true
     }
    ]
+  },
+  {
+   "id": "achao",
+   "name": "阿草和TA的朋友们",
+   "character": "阿草",
+   "source": "scratch",
+   "emotes": [
+    {
+     "key": "achao.01",
+     "name": "兜风",
+     "img": "bundle:emotes/achao/01.webp"
+    },
+    {
+     "key": "achao.02",
+     "name": "安慰",
+     "img": "bundle:emotes/achao/02.webp"
+    },
+    {
+     "key": "achao.03",
+     "name": "对不起",
+     "img": "bundle:emotes/achao/03.webp"
+    },
+    {
+     "key": "achao.04",
+     "name": "微笑",
+     "img": "bundle:emotes/achao/04.webp"
+    },
+    {
+     "key": "achao.05",
+     "name": "惊恐",
+     "img": "bundle:emotes/achao/05.webp"
+    },
+    {
+     "key": "achao.06",
+     "name": "才八点",
+     "img": "bundle:emotes/achao/06.webp"
+    },
+    {
+     "key": "achao.07",
+     "name": "打call",
+     "img": "bundle:emotes/achao/07.webp"
+    },
+    {
+     "key": "achao.08",
+     "name": "拒绝",
+     "img": "bundle:emotes/achao/08.webp"
+    },
+    {
+     "key": "achao.09",
+     "name": "招商",
+     "img": "bundle:emotes/achao/09.webp"
+    },
+    {
+     "key": "achao.10",
+     "name": "收到",
+     "img": "bundle:emotes/achao/10.webp"
+    },
+    {
+     "key": "achao.11",
+     "name": "晚安",
+     "img": "bundle:emotes/achao/11.webp"
+    },
+    {
+     "key": "achao.12",
+     "name": "欢呼",
+     "img": "bundle:emotes/achao/12.webp"
+    },
+    {
+     "key": "achao.13",
+     "name": "比心",
+     "img": "bundle:emotes/achao/13.webp"
+    },
+    {
+     "key": "achao.14",
+     "name": "流汗",
+     "img": "bundle:emotes/achao/14.webp"
+    },
+    {
+     "key": "achao.15",
+     "name": "生无可恋",
+     "img": "bundle:emotes/achao/15.webp"
+    },
+    {
+     "key": "achao.16",
+     "name": "看直播",
+     "img": "bundle:emotes/achao/16.webp"
+    },
+    {
+     "key": "achao.17",
+     "name": "索嗨嗨",
+     "img": "bundle:emotes/achao/17.webp"
+    },
+    {
+     "key": "achao.18",
+     "name": "肯定",
+     "img": "bundle:emotes/achao/18.webp"
+    },
+    {
+     "key": "achao.19",
+     "name": "观察",
+     "img": "bundle:emotes/achao/19.webp"
+    },
+    {
+     "key": "achao.20",
+     "name": "谢谢观看",
+     "img": "bundle:emotes/achao/20.webp"
+    }
+   ],
+   "rarity": "common"
   }
  ],
  "decor": [],
@@ -4977,6 +5086,69 @@
     }
    ],
    "spread": 0.1
+  },
+  "scratch": {
+   "price": 500,
+   "daily": 20,
+   "prizes": [
+    {
+     "shards": 200,
+     "weight": 30
+    },
+    {
+     "shards": 500,
+     "weight": 12
+    },
+    {
+     "shards": 1000,
+     "weight": 5
+    },
+    {
+     "shards": 2500,
+     "weight": 2
+    },
+    {
+     "shards": 30000,
+     "weight": 0.1
+    }
+   ],
+   "emote": {
+    "set": "achao",
+    "weight": 5,
+    "pity": 10
+   },
+   "announce": 2500
+  },
+  "duel": {
+   "stakes": [
+    {
+     "bet": 150,
+     "prize": 250
+    },
+    {
+     "bet": 1500,
+     "prize": 2500
+    },
+    {
+     "bet": 15000,
+     "prize": 25000
+    }
+   ],
+   "inviteSec": 15,
+   "throwSec": 10,
+   "dailyWinCap": 10000,
+   "minTaps": 10000,
+   "sticker": {
+    "set": "achao",
+    "sec": 300
+   }
   }
- }
+ },
+ "plates": [
+  {
+   "id": "achao",
+   "name": "阿草",
+   "emoteSet": "achao"
+  }
+ ]
 }

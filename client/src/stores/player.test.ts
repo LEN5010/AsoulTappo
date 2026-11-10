@@ -168,6 +168,27 @@ it("takes off a plate whose set is not collected and sends the one that is", asy
   expect(sent.at(-1)).toMatchObject({ plate: "c1762331462002" });
 });
 
+it("takes off 阿草's plate before a server without the set ever hears of it", async () => {
+  const sent: unknown[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/loadout") && init?.body) {
+      const body = JSON.parse(String(init.body));
+      sent.push(body);
+      // an older server knows no such plate
+      if (body.plate === "achao") return { ok: false, status: 400, json: async () => ({ detail: { code: "bad_item", message: "not a big hidden card" } }) } as Response;
+    }
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: "p1", shards: 1600 });
+  });
+  const { settings } = await import("./settings");
+  settings.plate = "achao";
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(settings.plate).toBe("");
+  expect(sent.length).toBeGreaterThan(0);
+  expect(sent.some((b) => (b as { plate?: unknown }).plate === "achao")).toBe(false);
+  expect(p.error.value).toBe("");
+});
+
 // ---------------------------------------------------------------- loadout ownership
 const OWNER = "asoultappo.loadoutOwner.v1";
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -319,4 +340,98 @@ it("never uses a stored account session on an untrusted server", async () => {
   expect(p.activeAccount()).toBeNull();
   expect(auth.length).toBeGreaterThan(0);
   expect(auth.every((a) => a === "guest")).toBe(true);
+});
+
+it("keeps a scratch card's prize out of the balance until the card is revealed", async () => {
+  const calls: string[] = [];
+  const card = { id: 7, cells: ["200", "200", "200", "500", "1000", "500", "1000", "achao.01", "achao.01"] };
+  let revealed = false;
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const path = new URL(url).pathname;
+    calls.push(`${init?.method ?? "GET"} ${path}`);
+    const status = { player: "p1", shards: revealed ? 1300 : 1100, scratch: { left: 19, pity: 1 } };
+    if (path === "/api/scratch" && init?.method === "POST") return response({ ...status, card });
+    if (path === "/api/scratch") return response({ day: "2026-11-09", left: 19, pity: 1, card: revealed ? null : card });
+    if (path === "/api/scratch/reveal") {
+      expect(JSON.parse(init!.body as string)).toEqual({ card: 7 });
+      revealed = true;
+      return response({ ...status, shards: 1300, prize: { shards: 200, item: null } });
+    }
+    return response(path === "/api/collection" ? { owned: {}, recent: [] } : status);
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(await p.buyScratch()).toEqual(card);
+  expect(p.scratchCard.value).toEqual(card);
+  expect(p.shards.value).toBe(1100);
+  expect(p.status.value).not.toHaveProperty("card");
+  // another visit to the page finds the same card
+  p.scratchCard.value = null;
+  await p.loadScratch();
+  expect(p.scratchCard.value).toEqual(card);
+  expect(await p.revealScratch(7)).toEqual({ shards: 200, item: null });
+  expect(p.shards.value).toBe(1300);
+  expect(p.scratchCard.value).toBeNull();
+  expect(p.status.value).not.toHaveProperty("prize");
+  expect(calls.filter((c) => c.includes("scratch"))).toEqual(
+    ["POST /api/scratch", "GET /api/scratch", "POST /api/scratch/reveal"]);
+});
+
+it("adds a scratch emote to the collection and leaves a card that could not be revealed on the table", async () => {
+  const card = { id: 3, cells: Array.from({ length: 9 }, (_, n) => (n < 3 ? "achao.02" : String(n))) };
+  let down = true;
+  let owned: Record<string, number> = {};
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    const status = { player: "p1", shards: 500, scratch: { left: 19, pity: 0 } };
+    if (path === "/api/scratch") return response({ ...status, card });
+    if (path === "/api/scratch/reveal") {
+      if (down) throw new TypeError("offline");
+      owned = { "emote:achao.02": 1 };
+      return response({ ...status, prize: { shards: 0, item: "emote:achao.02" } });
+    }
+    return response(path === "/api/collection" ? { owned, recent: [] } : status);
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  await p.buyScratch();
+  expect(await p.revealScratch(3)).toBeNull();
+  expect(p.scratchCard.value).toEqual(card);
+  expect(p.error.value).toBe("无法连接服务器");
+  down = false;
+  expect(await p.revealScratch(3)).toEqual({ shards: 0, item: "emote:achao.02" });
+  expect(p.collection.owned).toEqual({ "emote:achao.02": 1 });
+  expect(p.freshItems.has("emote:achao.02")).toBe(true);
+  expect(p.scratchCard.value).toBeNull();
+});
+
+it("forgets the scratch card on the table when another save is selected", async () => {
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    const status = { player: new URL(url).hostname, shards: 500, scratch: { left: 19, pity: 0 } };
+    if (path === "/api/scratch") return response({ ...status, card: { id: 1, cells: [] } });
+    return response(path === "/api/collection" ? { owned: {}, recent: [] } : status);
+  });
+  const { p, settings } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  await p.buyScratch();
+  expect(p.scratchCard.value).not.toBeNull();
+  settings.serverUrl = "http://b";
+  expect(p.scratchCard.value).toBeNull();
+});
+
+it("asks nothing about scratch cards from a server that has none", async () => {
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", async (url: string) => {
+    const path = new URL(url).pathname;
+    calls.push(path);
+    if (path.startsWith("/api/scratch")) return { ok: false, status: 404, json: async () => ({ detail: "Not Found" }) } as Response;
+    return response(path === "/api/collection" ? { owned: {}, recent: [] } : { player: "p1", shards: 500 });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  await p.loadScratch();
+  expect(calls.filter((c) => c.includes("scratch"))).toEqual([]);
+  expect(p.error.value).toBe("");
+  expect(p.scratchCard.value).toBeNull();
 });

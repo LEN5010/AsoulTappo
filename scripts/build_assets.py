@@ -458,6 +458,14 @@ def starter_items(emotes: list[dict]) -> dict:
     return {"emotes": keys, "theme": cat.DEFAULT_THEME}
 
 
+def scratch_emote_set() -> dict:
+    """阿草's stickers as an emote set of their own; `source` keeps them out of resonance and crafting."""
+    sid, title, owner, names = cat.SCRATCH_EMOTE_SET
+    return {"id": sid, "name": title, "character": owner, "source": "scratch",
+            "emotes": [{"key": f"{sid}.{n:02d}", "name": name, "img": f"bundle:emotes/{sid}/{n:02d}.webp"}
+                       for n, name in enumerate(names, 1)]}
+
+
 # ---------------------------------------------------------------- manifest
 def write_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -534,6 +542,8 @@ def main() -> None:
         previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
         collection_ids = {s[0] for s in cat.COLLECTION_EMOTE_SETS}
         emotes += [s for s in previous["emoteSets"] if s["id"] in collection_ids]
+    # Listed last and in every mode, whatever the emote sets came from.
+    emotes = [s for s in emotes if s["id"] != cat.SCRATCH_EMOTE_SET[0]] + [scratch_emote_set()]
     for es in emotes:
         es["rarity"] = ("rare" if es["id"] in cat.RARE_EMOTE_SETS else
                         "uncommon" if es["id"] in cat.UNCOMMON_EMOTE_SETS else "common")
@@ -561,7 +571,8 @@ def main() -> None:
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
         "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST,
-                    "checkin": cat.CHECKIN},
+                    "checkin": cat.CHECKIN, "scratch": cat.SCRATCH, "duel": cat.DUEL},
+        "plates": cat.PLATES,
     }
     from build_previews import build_emote_covers, build_pet_previews
     build_emote_covers(manifest)
