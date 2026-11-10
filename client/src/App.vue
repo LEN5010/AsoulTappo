@@ -53,7 +53,7 @@ const fullSize = ref<Size>({ ...ownSize.value });
 /** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
 const dragDock = ref<boolean | null>(null);
 const docked = computed(() => dragDock.value ?? settings.petDocked);
-/** The strip stays under the pet: not folded away, and not on the bottom edge where it has no room. */
+/** The strip stays under the pet: not folded away in the settings, and not on the bottom edge where it has no room. */
 const barPinned = computed(() => !settings.barFolded && !docked.value);
 /** A click on the pet shows an unpinned strip for a few seconds; a docked pet rises off the edge to make room. */
 const peek = ref(false);
@@ -96,11 +96,6 @@ function resetPet() {
   settings.petDocked = false;
   settings.petX = -1;
   settings.petY = -1;
-}
-/** The strip's last key: folds a pinned strip away, pins one shown by a click. A docked pet cannot pin it. */
-function toggleFold() {
-  settings.barFolded = !settings.barFolded;
-  peek.value = false;
 }
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 watch([peek, () => ui.quickOpen], keepPeek);
@@ -284,15 +279,16 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
+      <Transition name="strip">
       <CounterBar
         v-if="barShown" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
-        :fold="docked ? undefined : barPinned ? 'fold' : 'pin'" @fold="toggleFold"
       >
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
+      </Transition>
 
     </PetActor>
 
@@ -316,5 +312,12 @@ html.browser-preview body {
 
 <style scoped>
 .desk { position: fixed; inset: 0; pointer-events: none; }
+/* The strip comes out from under the desk and goes back there. It keeps its place in the layout while leaving. */
+.strip-enter-active { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-spring); }
+.strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }
+.strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 -14px; }
+@media (prefers-reduced-motion: reduce) {
+  .strip-enter-active, .strip-leave-active { transition: none; }
+}
 .desk > :deep(*) { pointer-events: auto; }
 </style>

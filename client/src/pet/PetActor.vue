@@ -71,5 +71,5 @@ onBeforeUnmount(() => {
 <style scoped>
 .actor { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; cursor: grab; touch-action: none; will-change: transform; }
 .actor.grabbing { cursor: grabbing; z-index: 30; }
-.actor.glide { transition: transform var(--dur-base, 220ms) var(--ease-out, ease-out); }
+.actor.glide { transition: transform var(--dur-slow) var(--ease-out); }
 </style>
