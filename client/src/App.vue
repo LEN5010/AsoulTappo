@@ -133,6 +133,7 @@ onMounted(async () => {
   unOutside = await listenOutsideClick(closeQuickAway);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
+    else if (a === "open-panel") openPanel();
     else if (a === "reset-position") resetPet();
     else settings.clickThrough = !settings.clickThrough;
   });

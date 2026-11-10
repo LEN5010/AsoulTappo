@@ -46,6 +46,8 @@ jobs:
             - 新增阿草铭牌
             - 房间昵称支持屏蔽词
             - macOS 缺少输入权限时显示提示
+            - macOS 点击程序坞图标打开面板
+            - 屏蔽网页右键菜单
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -96,6 +98,8 @@ jobs:
             - 新增阿草铭牌
             - 房间昵称支持屏蔽词
             - macOS 缺少输入权限时显示提示
+            - macOS 点击程序坞图标打开面板
+            - 屏蔽网页右键菜单
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
