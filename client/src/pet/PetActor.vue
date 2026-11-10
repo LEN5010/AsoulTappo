@@ -6,7 +6,8 @@ import { clamp, type Pos, type Size } from "../stores/desk";
 import { dragged, isTap } from "./drag";
 
 // `place` replaces the default rule for where a drag may go (anywhere fully on screen).
-const props = defineProps<{ pos: Pos; label?: string; place?: (p: Pos) => Pos }>();
+// `glide` eases the pet to a new `pos` instead of jumping there; a drag still follows the pointer.
+const props = defineProps<{ pos: Pos; label?: string; place?: (p: Pos) => Pos; glide?: boolean }>();
 const emit = defineEmits<{ moved: [pos: Pos]; size: [size: Size]; dragging: []; tap: [] }>();
 
 const root = ref<HTMLElement | null>(null);
@@ -59,7 +60,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-    ref="root" class="actor" :class="{ grabbing: !!live }" data-hit :aria-label="label"
+    ref="root" class="actor" :class="{ grabbing: !!live, glide: glide && !live }" data-hit :aria-label="label"
     :style="{ transform: `translate(${(live ?? pos).x}px, ${(live ?? pos).y}px)` }"
     @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up"
   >
@@ -70,4 +71,5 @@ onBeforeUnmount(() => {
 <style scoped>
 .actor { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; cursor: grab; touch-action: none; will-change: transform; }
 .actor.grabbing { cursor: grabbing; z-index: 30; }
+.actor.glide { transition: transform var(--dur-base, 220ms) var(--ease-out, ease-out); }
 </style>

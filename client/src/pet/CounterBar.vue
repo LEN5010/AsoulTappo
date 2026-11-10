@@ -5,7 +5,10 @@ import { ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number }>();
+// `fold` is the last key: "fold" hides the strip until the pet is clicked, "pin" keeps a strip shown that way.
+const props = defineProps<{
+  count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; fold?: "fold" | "pin";
+}>();
 defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; fold: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -60,8 +63,11 @@ watch(
     <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
       <Icon name="menu" :size="15" />
     </button>
-    <button type="button" class="key ui-btn small ghost" title="收起" aria-label="收起" @click="$emit('fold')">
-      <Icon name="down" :size="15" />
+    <button
+      v-if="fold" type="button" class="key ui-btn small ghost" :title="fold === 'pin' ? '固定' : '收起'"
+      :aria-label="fold === 'pin' ? '固定' : '收起'" @click="$emit('fold')"
+    >
+      <Icon :name="fold === 'pin' ? 'lock' : 'down'" :size="15" />
     </button>
   </div>
 </template>
