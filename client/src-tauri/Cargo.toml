@@ -57,6 +57,9 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [profile.release]
+# macOS builds override this with CARGO_PROFILE_RELEASE_PANIC=unwind (see the workflows):
+# wry answers custom-protocol requests inside an Objective-C exception guard, and with
+# abort an exception from an already cancelled request kills the app.
 panic = "abort"
 codegen-units = 1
 lto = true

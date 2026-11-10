@@ -95,6 +95,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: AsoulTappo Signing
+          # wry 在 Objective-C 异常保护里回应自定义协议请求；panic = "abort" 下，请求已被页面取消时抛出的异常会直接终止程序。
+          CARGO_PROFILE_RELEASE_PANIC: unwind
         with:
           projectPath: client
           tagName: v__VERSION__

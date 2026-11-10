@@ -101,6 +101,8 @@ jobs:
         env:
           ASOULTAPPO_BUILD: ${{ github.ref_name }} ${{ github.sha }}
           APPLE_SIGNING_IDENTITY: AsoulTappo Signing
+          # Same as release.yml: with panic = "abort" an Objective-C exception inside wry kills the app.
+          CARGO_PROFILE_RELEASE_PANIC: unwind
         run: |
           version="${GITHUB_REF_NAME#test-}"
           export ASOULTAPPO_VERSION="$version"
