@@ -51,6 +51,7 @@ function togglePlay() {
       <div ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count }]">
           <video
             v-if="animated && pageActive" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
             :muted="muted" loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>

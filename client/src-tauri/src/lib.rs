@@ -7,6 +7,8 @@ mod gamepad;
 mod hotkey;
 mod hit;
 mod input;
+#[cfg(target_os = "macos")]
+mod media;
 #[cfg(target_os = "windows")]
 mod tool_window;
 mod update;
@@ -613,7 +615,11 @@ pub fn run() {
     // through UAC when the player chose to run as administrator.
     let (instance, startup) = elevation::startup();
     let overlay = Arc::new(Overlay::default());
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // WebKit needs byte ranges to play the bundled card videos (src/media.rs).
+    #[cfg(target_os = "macos")]
+    let builder = builder.register_asynchronous_uri_scheme_protocol("tauri", media::serve);
+    builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())

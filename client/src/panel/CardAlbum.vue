@@ -2,7 +2,7 @@
 // The album keeps card colors and plays visible owned videos; unowned cards stay still.
 import { computed, onBeforeUnmount, watch, type ObjectDirective } from "vue";
 import { usePageActive } from "../composables/usePageActive";
-import { assetUrl } from "../asset";
+import { assetUrl, warmVideo } from "../asset";
 import { byTier, cardFrame, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
 import { characterColor, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
@@ -70,12 +70,14 @@ const visible = computed(() =>
         v-for="card in visible" :key="card.id" type="button"
         class="slot ui-tile" :class="[card.tier, { locked: !owned(card) }]"
         :title="card.name" data-rise
+        @pointerenter="playsCardVideo(card, owned(card), reducedMotion) && warmVideo(assetUrl(card.video))"
         @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined)"
       >
         <span class="art ui-frame ui-well" :class="[cardFrame(card), { framed: !!cardFrame(card) }]">
           <video
             v-if="playsCardVideo(card, owned(card), reducedMotion)" v-visible-video
             :data-src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
             :aria-label="card.name" autoplay loop muted playsinline preload="none"
           ></video>
           <img v-else :src="assetUrl(card.thumb)" :alt="card.name" loading="lazy" decoding="async" draggable="false" />
@@ -121,6 +123,10 @@ const visible = computed(() =>
 .art.framed img,
 .art.framed video {
   border-radius: calc(var(--radius-m) - 3px);
+}
+/* The thumbnail also sits behind the video: WebKit drops the poster while a video loads. */
+.art video {
+  background: center / cover no-repeat;
 }
 .art img,
 .art video {

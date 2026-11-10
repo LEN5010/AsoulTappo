@@ -28,3 +28,17 @@ export async function freshAnimationUrl(url: string): Promise<{ url: string; rel
   const u = URL.createObjectURL(blob);
   return { url: u, release: () => URL.revokeObjectURL(u) };
 }
+
+const warmed = new Set<string>();
+/**
+ * Asks for the first byte of a bundled video ahead of its playback. On macOS the app unpacks the whole
+ * video for that (src-tauri/src/media.rs), so the player that follows starts without the wait.
+ * Other platforms answer a range with the whole file and are left alone.
+ */
+export function warmVideo(url: string): void {
+  if (!url || location.protocol !== "tauri:" || warmed.has(url)) return;
+  warmed.add(url);
+  // The app keeps only a few videos; let a later hover warm this one again.
+  setTimeout(() => warmed.delete(url), 30_000);
+  void fetch(url, { headers: { Range: "bytes=0-0" } }).catch(() => {});
+}
