@@ -857,6 +857,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running AsoulTappo");
+        .build(tauri::generate_context!())
+        .expect("error while running AsoulTappo")
+        .run(|_app, _event| {
+            // macOS: a click on the Dock icon opens the panel, the pet window itself has nothing to show.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                applog!("tray", "dock icon: open panel");
+                let _ = _app.emit_to("main", "tray", "open-panel");
+            }
+        });
 }

@@ -56,7 +56,7 @@ export async function listenInput(cb: (e: InputEvent) => void): Promise<() => vo
   };
 }
 
-export type TrayAction = "toggle-panel" | "toggle-click-through" | "reset-position";
+export type TrayAction = "toggle-panel" | "open-panel" | "toggle-click-through" | "reset-position";
 
 export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
