@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "../version";
 import { RoomClient, type RoomEvents, type WsLike } from "./RoomClient";
 
 class FakeWs implements WsLike {
@@ -65,7 +66,7 @@ describe("RoomClient", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);
     const ws = FakeWs.all[0];
-    expect(ws.url).toBe("ws://h:1/ws");
+    expect(ws.url).toBe(`ws://h:1/ws?v=${APP_VERSION}`);
     ws.open();
     expect(ws.sent[0]).toEqual({ type: "join", ...INFO });
     ws.recv({ type: "joined", room: "r", you: "me", members: [] });

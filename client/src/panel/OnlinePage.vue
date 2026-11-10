@@ -183,6 +183,10 @@ async function copy() {
       <h4 class="ui-label"><span>同桌显示</span></h4>
       <div class="ui-group ui-frame">
         <label class="ui-row">
+          <span>显示伙伴桌宠</span>
+          <input v-model="settings.showPartners" class="ui-switch" type="checkbox" />
+        </label>
+        <label class="ui-row">
           <span>伙伴桌宠大小</span>
           <span class="ui-ctl">
             <RangeInput v-model="settings.remoteScale" :min="0.4" :max="1.5" :step="0.1" />

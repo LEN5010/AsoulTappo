@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { APP_VERSION } from "../version";
 import { Api, ActivityReporter, ApiError, newToken } from "./api";
 
 const resp = (status: number, body: unknown) =>
@@ -25,7 +26,7 @@ describe("Api", () => {
     const f = vi.fn(() => resp(200, {}));
     const api = new Api(() => "http://h", () => ({ bearer: "acct" }), f);
     await api.me();
-    expect(f).toHaveBeenLastCalledWith("http://h/api/me", expect.objectContaining({ headers: { Authorization: "Bearer acct" } }));
+    expect(f).toHaveBeenLastCalledWith("http://h/api/me", expect.objectContaining({ headers: { Authorization: "Bearer acct", "X-Client-Version": APP_VERSION } }));
     await api.link("acct", "guest");
     expect(f).toHaveBeenLastCalledWith("http://h/api/account/link", expect.objectContaining({
       method: "POST", headers: expect.objectContaining({ Authorization: "Bearer acct", "X-Player-Token": "guest" }),

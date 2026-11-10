@@ -22,7 +22,8 @@ import ScratchPage from "./ScratchPage.vue";
 import SettingsPage from "./SettingsPage.vue";
 import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
-import { lookForUpdate } from "../stores/update";
+import NoticeDialog from "./NoticeDialog.vue";
+import { lookForUpdate, watchRelease } from "../stores/update";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -152,12 +153,17 @@ function lightUp() {
 // Kept alive in the panel window: reopening activates it again rather than mounting it.
 let activations = 0;
 onActivated(() => {
-  if (activations++ > 0) lightUp();
+  if (activations++ === 0) return;
+  lightUp();
+  // A minimum version or an announcement may have been set while the panel was closed.
+  void lookForUpdate(false, true);
 });
+let stopRelease: (() => void) | undefined;
+onBeforeUnmount(() => stopRelease?.());
 
 onMounted(async () => {
   window.addEventListener("keydown", onKey);
-  void lookForUpdate();
+  stopRelease = watchRelease();
   lightUp();
   if (reducedMotion.value) return;
   turning = true;
@@ -274,6 +280,7 @@ function badgeOf(id: Page): number {
       </aside>
 
       <UpdateDialog />
+      <NoticeDialog />
       <div class="panel-overlay"></div>
     </div>
   </section>

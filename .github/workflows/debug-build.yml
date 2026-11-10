@@ -1,7 +1,7 @@
 name: Debug build
 
 # Windows installer for testers. Not a release: the installer is only a workflow artifact,
-# with no GitHub release and no updater files.
+# with no GitHub release and no updater files. test-* tags also build the signed macOS app.
 # - debug-<version>, e.g. debug-1.0.3-debug.1: built with the detailed log (cargo feature
 #   debug-log, see client/src-tauri/src/applog.rs).
 # - test-<version>, e.g. test-1.0.5-rc.1: built like a release, without debug-log. The debug
@@ -63,4 +63,55 @@ jobs:
         with:
           name: AsoulTappo-${{ github.ref_name }}
           path: client/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  macos-app:
+    name: macOS app (tester build)
+    if: startsWith(github.ref_name, 'test-')
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: import the signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: scripts/macos_signing.sh import
+
+      - name: build
+        working-directory: client
+        env:
+          ASOULTAPPO_BUILD: ${{ github.ref_name }} ${{ github.sha }}
+          APPLE_SIGNING_IDENTITY: AsoulTappo Signing
+        run: |
+          version="${GITHUB_REF_NAME#test-}"
+          export ASOULTAPPO_VERSION="$version"
+          npm run tauri build -- --target universal-apple-darwin --bundles app,dmg \
+            --config "{\"version\":\"$version\",\"bundle\":{\"createUpdaterArtifacts\":false}}"
+
+      - name: check the signature
+        run: scripts/macos_signing.sh verify client/src-tauri/target/universal-apple-darwin/release/bundle/macos/AsoulTappo.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AsoulTappo-${{ github.ref_name }}-macos
+          path: client/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error

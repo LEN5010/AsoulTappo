@@ -40,14 +40,11 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 新增刮刮乐
-            - 新增公开房间列表，登录 Asasfans 账号后可公开和浏览房间
-            - 新增房间内猜拳
-            - 新增阿草铭牌
-            - 房间昵称支持屏蔽词
-            - macOS 缺少输入权限时显示提示
-            - macOS 点击程序坞图标打开面板
-            - 屏蔽网页右键菜单
+            - 新增音量调节
+            - 新增隐藏伙伴桌宠的开关
+            - 新增隐藏热键，一键隐藏桌宠和面板
+            - 新增公告
+            - macOS 使用固定签名，更新后不再需要重新授权输入监控（本次更新后需删除条目重新添加一次）
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -82,28 +79,36 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # 自签证书，让每个版本的签名身份一致，更新后输入监控权限不失效（scripts/macos_signing.sh）。
+      - name: import the signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: scripts/macos_signing.sh import
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: AsoulTappo Signing
         with:
           projectPath: client
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 新增刮刮乐
-            - 新增公开房间列表，登录 Asasfans 账号后可公开和浏览房间
-            - 新增房间内猜拳
-            - 新增阿草铭牌
-            - 房间昵称支持屏蔽词
-            - macOS 缺少输入权限时显示提示
-            - macOS 点击程序坞图标打开面板
-            - 屏蔽网页右键菜单
+            - 新增音量调节
+            - 新增隐藏伙伴桌宠的开关
+            - 新增隐藏热键，一键隐藏桌宠和面板
+            - 新增公告
+            - macOS 使用固定签名，更新后不再需要重新授权输入监控（本次更新后需删除条目重新添加一次）
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           args: --target universal-apple-darwin --bundles app,dmg
+
+      - name: check the signature
+        run: scripts/macos_signing.sh verify client/src-tauri/target/universal-apple-darwin/release/bundle/macos/AsoulTappo.app
 
   # tauri-action 把 latest.json 的下载地址写成 api.github.com 的资产接口，不带令牌时每个 IP 每小时只能请求 60 次，
   # 共用出口 IP 的玩家容易用完，有的网络也只连得上 github.com。两个平台都写完后，改成 release 页面下载按钮用的地址。

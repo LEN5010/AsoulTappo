@@ -123,6 +123,11 @@ CREATE TABLE IF NOT EXISTS migrations (
 CREATE TABLE IF NOT EXISTS blocked_words (
   word TEXT PRIMARY KEY
 );
+-- Single values the operator sets through /admin, as JSON (the notice: minimum version and announcements).
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 """
 
 STARTER_SHARDS = 1600
@@ -541,6 +546,16 @@ class Store:
         with self._lock, self._db:
             self._db.execute("DELETE FROM blocked_words")
             self._db.executemany("INSERT INTO blocked_words (word) VALUES (?)", [(w,) for w in words])
+
+    def setting(self, key: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._lock, self._db:
+            self._db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
 
     def close(self) -> None:
         with self._lock:
