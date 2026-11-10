@@ -254,15 +254,6 @@ class DuelOver(BaseModel):
     reason: str
 
 
-class StickerBroadcast(BaseModel):
-    """A member wears emote [key] for `sec` more seconds (a duel's loser)."""
-
-    type: Literal["sticker"] = "sticker"
-    id: str
-    key: str
-    sec: int
-
-
 class PongMsg(BaseModel):
     type: Literal["pong"] = "pong"
 

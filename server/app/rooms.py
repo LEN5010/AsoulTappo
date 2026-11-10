@@ -128,8 +128,6 @@ class Room:
     public: bool = False
     # saves the host removed; gone with the room
     banned: set[str] = field(default_factory=set)
-    # save -> (emote key, monotonic expiry): a duel loser's sticker, shown again when it rejoins
-    stickers: dict[str, tuple[str, float]] = field(default_factory=dict)
 
     def info(self) -> dict:
         """Room-wide state sent in `joined` and `room_info`."""

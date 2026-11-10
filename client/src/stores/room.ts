@@ -25,12 +25,8 @@ export interface RemoteMember extends Member {
   combo: ComboFrame | null;
   /** Shards a scratch card or a duel just paid this member, shown over the pet for a moment. */
   win: ComboFrame | null;
-  /** Emote worn on the head after losing a duel, until `until` (local ms). */
-  sticker: Sticker | null;
   motion: PetMotion;
 }
-
-export interface Sticker { key: string; until: number }
 
 /** This client's rock-paper-scissors duel, from the invite to a short look at how it ended. */
 export interface DuelState {
@@ -70,7 +66,7 @@ export const youId = ref("");
 export const lastError = ref("");
 export const members = reactive(new Map<string, RemoteMember>());
 const players = new Map<string, {
-  emote: EmotePlayer; combo: TapCombo; win: TapCombo; motion: MotionPlayback; sticker?: ReturnType<typeof setTimeout>;
+  emote: EmotePlayer; combo: TapCombo; win: TapCombo; motion: MotionPlayback;
 }>();
 
 export const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
@@ -93,7 +89,7 @@ export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
 
 function add(m: Member): void {
   members.set(m.id, {
-    ...m, pulse: 0, emote: null, combo: null, win: null, sticker: null, motion: m.motion ? { ...m.motion } : restingMotion(),
+    ...m, pulse: 0, emote: null, combo: null, win: null, motion: m.motion ? { ...m.motion } : restingMotion(),
   });
   const rm = members.get(m.id)!;
   players.set(m.id, {
@@ -110,7 +106,6 @@ function remove(id: string): void {
   p?.combo.stop();
   p?.win.stop();
   p?.motion.clear();
-  clearTimeout(p?.sticker);
   players.delete(id);
   members.delete(id);
 }
@@ -134,7 +129,6 @@ const events: RoomEvents = {
       youId.value = "";
       roomInfo.value = null;
       endDuel();
-      wearSticker(null);
     }
   },
   onJoined(room, you, list) {
@@ -181,17 +175,6 @@ const events: RoomEvents = {
   },
   onDuel(msg) {
     onDuelMessage(msg);
-  },
-  onSticker(id, key, sec) {
-    if (!getEmote(key) || !(sec > 0)) return;
-    const sticker = { key, until: Date.now() + sec * 1000 };
-    if (id === youId.value) wearSticker(sticker);
-    const m = members.get(id);
-    const p = players.get(id);
-    if (!m || !p) return;
-    m.sticker = sticker;
-    clearTimeout(p.sticker);
-    p.sticker = setTimeout(() => { if (m.sticker?.until === sticker.until) m.sticker = null; }, sec * 1000);
   },
   onState(u) {
     const m = members.get(u.id);
@@ -273,21 +256,11 @@ const client = new RoomClient(events);
 const motionSender = new MotionSender((pose) => client.sendMotion(pose));
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 
-/** Emote bubble of the local pet (shown immediately, also when offline), its scratch card or duel win, and the
- * sticker it wears after losing a duel. */
-export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null; sticker: Sticker | null }>({
-  emote: null, win: null, sticker: null,
-});
+/** Emote bubble of the local pet (shown immediately, also when offline) and its scratch card or duel win. */
+export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null }>({ emote: null, win: null });
 const localPlayer = new EmotePlayer((f) => (localPet.emote = f), () => settings.emoteHoldMs);
 const localWin = new TapCombo((f) => (localPet.win = f), WIN_MS);
-let localSticker: ReturnType<typeof setTimeout> | undefined;
 let lastSent = 0;
-
-function wearSticker(sticker: Sticker | null): void {
-  clearTimeout(localSticker);
-  localPet.sticker = sticker;
-  if (sticker) localSticker = setTimeout(() => { if (localPet.sticker?.until === sticker.until) localPet.sticker = null; }, sticker.until - Date.now());
-}
 
 // ---------------------------------------------------------------- rock-paper-scissors
 export const duel = ref<DuelState | null>(null);
@@ -354,7 +327,7 @@ function onDuelMessage(msg: DuelMessage): void {
       else void reloadStatus(); // the bet is paid
       return;
     case "duel_result":
-      // The whole room sees the prize go up over the winner's pet; the loser's sticker comes as its own message.
+      // The whole room sees the prize go up over the winner's pet.
       if (msg.winner === you) localWin.add(msg.prize);
       else players.get(msg.winner)?.win.add(msg.prize);
       if (d?.id !== msg.duel) return;

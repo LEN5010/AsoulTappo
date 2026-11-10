@@ -119,7 +119,7 @@ it("mirrors remote pet animation poses into the panel without another room socke
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
   desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
-    pulse: 0, emote: null, combo: null, win: null, sticker: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
   expect(panel.room.members.get('friend')!.plate).toBe('c1');
@@ -160,7 +160,7 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   const panel = await context(true);
   panel.ui.ui.page = "room";
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 1,
-    pulse: 0, emote: null, combo: null, win: null, sticker: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   const owned = panel.player.collection.owned;
   const { emitTo } = await import("@tauri-apps/api/event");
@@ -190,7 +190,7 @@ it("mirrors scratch card wins over partner pets and the own pet into the panel r
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, sticker: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   desk.room.members.get("friend")!.win = { count: 2500, seq: 1, beat: 1 };
   desk.room.localPet.win = { count: 30000, seq: 1, beat: 1 };
@@ -229,7 +229,7 @@ it("mirrors the host, public flag and public list, and runs host actions in the 
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("mirrors the duel and stickers into the panel and runs invites in the desk", async () => {
+it("mirrors the duel into the panel and runs invites in the desk", async () => {
   const desk = await context(false);
   const panel = await context(true);
   panel.ui.ui.page = "room";
@@ -239,22 +239,15 @@ it("mirrors the duel and stickers into the panel and runs invites in the desk", 
   await vi.advanceTimersByTimeAsync(50);
   expect(invite).toHaveBeenCalledWith("friend", 1500);
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0, pulse: 0, emote: null,
-    combo: null, win: null, sticker: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   desk.room.duel.value = { id: "d1", other: { id: "friend", nick: "朋友", character: "乃琳" }, sent: true, bet: 1500,
     prize: 2500, phase: "invite", answered: false, round: 0, sec: 15, until: Date.now() + 15000, hand: null, shown: null,
     won: false, reason: "" };
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.duel.value).toMatchObject({ id: "d1", phase: "invite" });
   expect(panel.room.duelBusy.value).toBe(true);
-  desk.room.members.get("friend")!.sticker = { key: "achao.03", until: Date.now() + 300000 };
-  desk.room.localPet.sticker = { key: "achao.04", until: Date.now() + 300000 };
-  await vi.advanceTimersByTimeAsync(50);
-  expect(panel.room.members.get("friend")!.sticker).toMatchObject({ key: "achao.03" });
-  expect(panel.room.localPet.sticker).toMatchObject({ key: "achao.04" });
   desk.room.duel.value = null;
-  desk.room.localPet.sticker = null;
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.duel.value).toBeNull();
-  expect(panel.room.localPet.sticker).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });

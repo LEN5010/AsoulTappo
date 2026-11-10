@@ -19,8 +19,8 @@ const groupSources = {
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
     info: room.roomInfo.value, duel: room.duel.value }),
   publicRooms: () => room.publicRooms.value,
-  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, sticker }) =>
-    ({ id, uid, nick, character, plate, sticker })),
+  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
+    ({ id, uid, nick, character, plate })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
@@ -81,7 +81,6 @@ function applyRuntime(updates: Runtime[], local: LocalPet) {
   }
   room.localPet.emote = local.emote;
   room.localPet.win = local.win;
-  room.localPet.sticker = local.sticker;
 }
 
 /** Settings travel as patches so activity updates preserve edits in the panel. */
@@ -151,7 +150,7 @@ export async function initDesktop(): Promise<() => void> {
     const updates = [...dirty.values()];
     dirty.clear();
     void emitTo("panel", "desktop:motion", { members: updates,
-      local: { emote: room.localPet.emote, win: room.localPet.win, sticker: room.localPet.sticker } });
+      local: { emote: room.localPet.emote, win: room.localPet.win } });
   }
   const memberStops = new Map<string, () => void>();
   const stopMembers = watch(() => liveRef.value ? [...room.members.keys()] : [], (ids) => {
@@ -167,7 +166,7 @@ export async function initDesktop(): Promise<() => void> {
       }, { deep: true, immediate: true, flush: "sync" }));
     }
   }, { flush: "sync" });
-  const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win, room.localPet.sticker] : null, () => {
+  const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win] : null, () => {
     if (liveRef.value) motionTimer ??= setTimeout(sendMotion, 50);
   }, { deep: true });
   const unInterest = await listen<{ visible: boolean; live: boolean }>("desktop:interest", async ({ payload }) => {

@@ -7,7 +7,6 @@ an answer and a hand, and hear the hands only once both are in or the round is o
 from __future__ import annotations
 
 import asyncio
-import math
 import random
 import secrets
 import time
@@ -17,7 +16,7 @@ from typing import Any, Awaitable, Callable
 from starlette.concurrency import run_in_threadpool
 
 from .game import Game, GameError
-from .models import DuelInvited, DuelOver, DuelResult, DuelRound, DuelStarted, StickerBroadcast
+from .models import DuelInvited, DuelOver, DuelResult, DuelRound, DuelStarted
 from .rooms import Peer, RoomManager
 
 BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
@@ -286,32 +285,3 @@ class Duels:
         manager = self.manager
         await manager.broadcast(duel.room, DuelResult(duel=duel.id, winner=winner.id, loser=loser.id,
                                                       prize=duel.prize, hands=hands).model_dump())
-        room = manager.rooms.get(duel.room)
-        keys = game.manifest.duel_stickers
-        if room is None or not keys or not loser.token:
-            return
-        key = keys[min(int(self.rng.random() * len(keys)), len(keys) - 1)]
-        sec = game.duel_cfg()["sticker"]["sec"]
-        room.stickers[loser.token] = (key, self.clock() + sec)
-        for p in list(room.peers.values()):
-            if p.token == loser.token:
-                await manager.broadcast(duel.room, StickerBroadcast(id=p.id, key=key, sec=sec).model_dump())
-
-    # ----------------------------------------------------------------- stickers
-    def stickers(self, room_id: str) -> list[dict]:
-        """`sticker` messages for every member still wearing one, for a member who just joined."""
-        room = self.manager.rooms.get(room_id)
-        if room is None:
-            return []
-        now = self.clock()
-        for save in [s for s, (_, until) in room.stickers.items() if until <= now]:
-            del room.stickers[save]
-        out = []
-        for p in room.peers.values():
-            if p.token in room.stickers:
-                key, until = room.stickers[p.token]
-                out.append(StickerBroadcast(id=p.id, key=key, sec=max(1, math.ceil(until - now))).model_dump())
-        return out
-
-    def sticker_of(self, room_id: str, peer: Peer) -> dict | None:
-        return next((m for m in self.stickers(room_id) if m["id"] == peer.id), None)

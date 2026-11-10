@@ -296,11 +296,9 @@ SCRATCH = {"price": 500, "daily": 20,
 # Rock-paper-scissors between two room members. Both pay `bet` when the invite is accepted and the winner gets
 # `prize`: a sixth of the two bets is burnt. An invite waits `inviteSec`, each round `throwSec`. A save's net
 # win (prizes minus bets of the duels settled that China day) stays at or below `dailyWinCap`; losses are not
-# capped. Both saves need `minTaps` taps in all, so fresh guest saves cannot feed shards to another one. The
-# loser wears one sticker of emote set `sticker.set` for `sticker.sec` seconds.
+# capped. Both saves need `minTaps` taps in all, so fresh guest saves cannot feed shards to another one.
 DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
-        "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000,
-        "sticker": {"set": SCRATCH_EMOTE_SET[0], "sec": 300}}
+        "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
 
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote

@@ -317,14 +317,9 @@ it("plays a duel from the invite to the result, with the balance read again", as
   expect(r.localPet.win).toMatchObject({ count: 250 });
   await vi.advanceTimersByTimeAsync(0);
   expect(fetchMock.mock.calls.length).toBe(reads + 1); // the prize is read back too
-  socket.recv({ type: "sticker", id: "friend", key: "achao.07", sec: 6 });
-  expect(r.members.get("friend")!.sticker).toMatchObject({ key: "achao.07" });
   await vi.advanceTimersByTimeAsync(r.DUEL_END_MS);
   expect(r.duel.value).toBeNull();
   expect(r.duelBusy.value).toBe(false);
-  expect(r.members.get("friend")!.sticker).not.toBeNull();
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(r.members.get("friend")!.sticker).toBeNull();
 });
 
 it("answers an invite on the desk, and a refusal closes it at once", async () => {
@@ -356,24 +351,15 @@ it("answers an invite on the desk, and a refusal closes it at once", async () =>
   expect(r.lastError.value).toBe("");
 });
 
-it("shows other members' results and the loser's sticker, own sticker included", async () => {
+it("shows other members' results", async () => {
   const { r, socket } = await duelSetup();
   socket.recv({ type: "duel_result", duel: "x", winner: "friend", loser: "me", prize: 2500, hands: { friend: "rock", me: null } });
   expect(r.members.get("friend")!.win).toMatchObject({ count: 2500 });
   expect(r.duel.value).toBeNull(); // not this client's duel as far as it knows
-  socket.recv({ type: "sticker", id: "me", key: "achao.02", sec: 12 });
-  expect(r.localPet.sticker).toMatchObject({ key: "achao.02" });
-  expect(r.members.get("me")!.sticker).toMatchObject({ key: "achao.02" });
-  socket.recv({ type: "sticker", id: "friend", key: "nonsense", sec: 12 }); // unknown emotes are ignored
-  expect(r.members.get("friend")!.sticker).toBeNull();
-  await vi.advanceTimersByTimeAsync(12_000);
-  expect(r.localPet.sticker).toBeNull();
-  // the connection going away ends a duel on screen and the sticker with it
-  socket.recv({ type: "sticker", id: "me", key: "achao.02", sec: 120 });
+  // the connection going away ends a duel on screen
   socket.recv({ type: "duel_invite", duel: "d5", from: "friend", to: "me", bet: 150, prize: 250, sec: 15 });
   socket.close();
   expect(r.duel.value).toBeNull();
-  expect(r.localPet.sticker).toBeNull();
 });
 
 it("tells the server about do-not-disturb, counting click-through, only when it has duels", async () => {

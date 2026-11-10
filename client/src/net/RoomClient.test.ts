@@ -41,7 +41,6 @@ function setup() {
     onScratch: vi.fn(),
     onState: vi.fn(),
     onDuel: vi.fn(),
-    onSticker: vi.fn(),
     onError: vi.fn(),
   } satisfies RoomEvents;
   const c = new RoomClient(ev, {
@@ -259,7 +258,7 @@ describe("RoomClient", () => {
     expect(FakeWs.all[2].sent[0]).not.toHaveProperty("plate");
   });
 
-  it("hands duel messages and stickers over and sends the duel messages", () => {
+  it("hands duel messages over and sends the duel messages", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);
     const ws = FakeWs.all[0];
@@ -272,8 +271,6 @@ describe("RoomClient", () => {
       { type: "duel_over", duel: "d2", reason: "declined" }]) ws.recv(m);
     expect(ev.onDuel.mock.calls.map(([m]) => m.type)).toEqual(["duel_invite", "duel_start", "duel_round", "duel_result", "duel_over"]);
     expect(ev.onDuel).toHaveBeenCalledWith(invite);
-    ws.recv({ type: "sticker", id: "x", key: "achao.03", sec: 300 });
-    expect(ev.onSticker).toHaveBeenCalledWith("x", "achao.03", 300);
     const sent = ws.sent.length;
     c.sendDuelInvite("x", 1500);
     c.sendDuelAnswer("d1", true);

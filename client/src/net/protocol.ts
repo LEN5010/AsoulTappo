@@ -102,7 +102,6 @@ export type ServerMessage =
   | StateUpdate
   | DuelMessage
   /** A member wears emote [key] for `sec` more seconds: a duel's loser. */
-  | { type: "sticker"; id: string; key: string; sec: number }
   /** reason: why a room_full ends the session (kicked | banned | need_save). */
   | { type: "error"; code: string; message: string; reason?: string }
   | { type: "pong" };

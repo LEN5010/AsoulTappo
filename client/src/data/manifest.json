@@ -5137,11 +5137,7 @@
    "inviteSec": 15,
    "throwSec": 10,
    "dailyWinCap": 10000,
-   "minTaps": 10000,
-   "sticker": {
-    "set": "achao",
-    "sec": 300
-   }
+   "minTaps": 10000
   }
  },
  "plates": [

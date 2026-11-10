@@ -1,4 +1,4 @@
-"""Rock-paper-scissors in rooms: eligibility, invites, rounds, stakes, settling once and stickers."""
+"""Rock-paper-scissors in rooms: eligibility, invites, rounds, stakes, and settling once."""
 import asyncio
 import copy
 import threading
@@ -25,8 +25,6 @@ def test_the_approved_numbers():
     for s in CFG["stakes"]:
         assert s["prize"] * 6 == s["bet"] * 2 * 5
     assert (CFG["inviteSec"], CFG["throwSec"], CFG["dailyWinCap"], CFG["minTaps"]) == (15, 10, 10000, 10000)
-    assert CFG["sticker"] == {"set": "achao", "sec": 300}
-    assert len(M.duel_stickers) == 20 and M.duel_stickers[0] == "achao.01"
 
 
 # ------------------------------------------------------------------ helpers
@@ -311,7 +309,6 @@ def test_rock_scissors_paper(ha, hb, a_wins):
                   "hands": {a.id: ha, b.id: hb}}
         for s in (sa, sb, sc):
             assert s.of("duel_result") == [result]
-            assert s.of("sticker") == [{"type": "sticker", "id": loser.id, "key": "achao.01", "sec": 300}]
         assert w.shards(a_pid) == SHARDS - 150 + (250 if a_wins else 0)
         assert w.shards(b_pid) == SHARDS - 150 + (0 if a_wins else 250)
         assert w.g.duel_net(a_pid) == (100 if a_wins else -150)
@@ -348,7 +345,7 @@ def test_ten_draws_in_a_row_give_both_bets_back():
         assert len(sa.of("duel_round")) == MAX_DRAWS - 1
         assert sa.of("duel_over") == [{"type": "duel_over", "duel": duel, "reason": "draws"}]
         assert w.shards(a_pid) == w.shards(b_pid) == SHARDS
-        assert w.g.duel_net(a_pid) == 0 and sa.of("sticker") == []
+        assert w.g.duel_net(a_pid) == 0
     run(go())
 
 
@@ -591,24 +588,6 @@ def test_a_database_from_before_duels_is_migrated(tmp_path):
     assert g.duel_settle(g.duel_start(a, b, 150), b)
 
 
-# ------------------------------------------------------------------ stickers
-def test_the_losers_sticker_is_seen_by_later_members_and_after_reconnecting():
-    async def go():
-        w = World()
-        a, sa, a_pid, b, sb, b_pid, duel = await w.started()
-        await w.d.throw(a, duel, "rock")
-        await w.d.throw(b, duel, "paper")
-        await settle()
-        w.mono += 100
-        assert w.d.stickers("r") == [{"type": "sticker", "id": a.id, "key": "achao.01", "sec": 200}]
-        await w.m.depart("r", a.id)
-        (a2, _) = w.join("a", a_pid)
-        assert w.d.sticker_of("r", a2) == {"type": "sticker", "id": a2.id, "key": "achao.01", "sec": 200}
-        w.mono += 200
-        assert w.d.stickers("r") == [] and w.m.rooms["r"].stickers == {}
-    run(go())
-
-
 # ------------------------------------------------------------------ over the socket
 @pytest.fixture()
 def api(monkeypatch):
@@ -662,24 +641,12 @@ def test_a_duel_over_the_socket(api):
         assert result == {"type": "duel_result", "duel": invite["duel"], "winner": ja["you"], "loser": jb["you"],
                           "prize": 2500, "hands": {ja["you"]: "paper", jb["you"]: "rock"}}
         assert b.receive_json() == result
-        sticker = {"type": "sticker", "id": jb["you"], "key": "achao.20", "sec": 300}
-        assert a.receive_json() == sticker and b.receive_json() == sticker
         me = c.get("/api/me", headers={"X-Player-Token": tok("a")}).json()
         assert me["shards"] == SHARDS + 1000 and me["duel"] == {"net": 1000}
-        # someone joining later sees the sticker right after joined, and so does the loser coming back
-        with c.websocket_connect("/ws") as d:
-            d.send_json({"type": "join", "room": "r1", "nick": "d"})
-            assert d.receive_json()["type"] == "joined"
-            assert d.receive_json() == sticker
-            a.receive_json()
-            b.receive_json()  # member_joined d
-        assert a.receive_json()["type"] == b.receive_json()["type"] == "member_left"
         b.send_json({"type": "leave"})
         a.receive_json()
         jb2 = joined(b, "b")
-        assert b.receive_json() == {**sticker, "id": jb2["you"]}
         assert a.receive_json()["type"] == "member_joined"
-        assert a.receive_json() == {**sticker, "id": jb2["you"]}
         # and now the host may remove that member
         a.send_json({"type": "kick", "id": jb2["you"]})
         assert b.receive_json()["reason"] == "kicked"

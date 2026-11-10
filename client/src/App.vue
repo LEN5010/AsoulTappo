@@ -191,7 +191,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
         :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
         :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
-        :emote="m.emote" :combo="m.combo" :win="m.win" :sticker="m.sticker?.key"
+        :emote="m.emote" :combo="m.combo" :win="m.win"
         :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />
       <template v-if="settings.showNames">
@@ -211,7 +211,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
-        :win="localPet.win" :sticker="localPet.sticker?.key"
+        :win="localPet.win"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />

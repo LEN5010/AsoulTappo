@@ -19,8 +19,6 @@ export interface RoomEvents {
   onState(update: StateUpdate): void;
   /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
   onDuel(msg: DuelMessage): void;
-  /** A member wears an emote as a sticker for `sec` seconds. */
-  onSticker(id: string, key: string, sec: number): void;
   /** A final room_full carries its reason as the code: kicked, banned or need_save. */
   onError(code: string, message: string): void;
 }
@@ -249,9 +247,6 @@ export class RoomClient {
       case "duel_result":
       case "duel_over":
         this.events.onDuel(msg);
-        break;
-      case "sticker":
-        this.events.onSticker(msg.id, msg.key, msg.sec);
         break;
       case "error":
         // A full room, or a join the server rejected as invalid, is permanent for this attempt: stop retrying.

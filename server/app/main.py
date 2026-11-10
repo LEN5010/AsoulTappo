@@ -550,14 +550,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     members=[_member(p) for p in manager.members(room_id)],
                     info=RoomInfo(**manager.rooms[room_id].info()),
                 ).model_dump())
-                # Duel losers' stickers still running, the joining save's own included.
-                for sticker in duels.stickers(room_id):
-                    await send(sticker)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
-                own = duels.sticker_of(room_id, peer)
-                if own:
-                    await manager.broadcast(room_id, own, exclude=peer.id)
                 continue
 
             if peer is None or room_id is None:

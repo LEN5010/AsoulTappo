@@ -28,12 +28,3 @@ describe("member click colors", () => {
     },
   );
 });
-
-describe("duel sticker", () => {
-  it("sticks the loser's emote on the head, and nothing for an unknown key", async () => {
-    const html = await renderToString(createSSRApp(PetView, { character: "嘉然", sticker: "achao.03" }));
-    expect(html).toMatch(/<img class="sticker" src="[^"]*achao\/03\.webp"/);
-    const none = await renderToString(createSSRApp(PetView, { character: "嘉然", sticker: "nonsense" }));
-    expect(none).not.toContain('class="sticker"');
-  });
-});

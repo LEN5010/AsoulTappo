@@ -105,16 +105,9 @@ class Manifest:
 
     @cached_property
     def duel(self) -> dict | None:
-        """Rock-paper-scissors in rooms: {stakes: [{bet, prize}], inviteSec, throwSec, dailyWinCap, minTaps,
-        sticker: {set, sec}}. None on a manifest without it, which turns the game off."""
+        """Rock-paper-scissors in rooms: {stakes: [{bet, prize}], inviteSec, throwSec, dailyWinCap, minTaps}.
+        None on a manifest without it, which turns the game off."""
         return self.data.get("economy", {}).get("duel")
-
-    @cached_property
-    def duel_stickers(self) -> tuple[str, ...]:
-        """Emote keys a duel's loser may wear: the set named by `duel.sticker.set`."""
-        cfg = self.duel
-        return tuple(e["key"] for s in self.data.get("emoteSets", []) if cfg and s["id"] == cfg["sticker"]["set"]
-                     for e in s["emotes"])
 
     @cached_property
     def scratch_emotes(self) -> tuple[str, ...]:

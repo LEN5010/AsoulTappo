@@ -117,7 +117,7 @@ export interface Manifest {
     /**
      * Rock-paper-scissors in rooms: both pay `bet`, the winner gets `prize`. An invite waits `inviteSec`, a round
      * `throwSec`. A save's net win of a China day stays at or below `dailyWinCap`; both saves need `minTaps` taps in
-     * all. The loser wears a sticker of emote set `sticker.set` for `sticker.sec` seconds.
+     * all.
      */
     duel?: {
       stakes: { bet: number; prize: number }[];
@@ -125,7 +125,6 @@ export interface Manifest {
       throwSec: number;
       dailyWinCap: number;
       minTaps: number;
-      sticker: { set: string; sec: number };
     };
   };
   plates: ManifestPlate[];

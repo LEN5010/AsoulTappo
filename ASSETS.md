@@ -9,6 +9,7 @@
 | `client/public/assets/` | **客户端内置**：表情（495 个 / 27 套）、卡片缩略图（414×621）、33 段动态卡视频、默认主题部件 | ≈ 96 MB |
 | `assets-packs/` | **服务端素材包**（按需加载）：卡片高清原图（1080 宽）及扩展主题资源 | ≈ 27 MB |
 | `client/src/assets/sfx/` | 抽卡音效：Kenney 的 CC0 卡牌录音和截取自《Quiet》伴奏的皮肤聚光音乐，AAC 192kbps，来源见目录内 `LICENSE.md` | ≈ 0.2 MB |
+| `client/src/ui/Icon.vue` | 石头、剪刀、布三个图标取自 Tabler Icons（MIT）的 `hand-grab`、`hand-two-fingers`、`hand-stop` | — |
 
 ### 素材包结构
 

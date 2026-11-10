@@ -83,7 +83,5 @@ describe("duel numbers", () => {
     const duel = manifest.economy.duel!;
     expect(duel.stakes).toEqual([{ bet: 150, prize: 250 }, { bet: 1500, prize: 2500 }, { bet: 15000, prize: 25000 }]);
     expect([duel.inviteSec, duel.throwSec, duel.dailyWinCap, duel.minTaps]).toEqual([15, 10, 10000, 10000]);
-    expect(duel.sticker).toEqual({ set: "achao", sec: 300 });
-    expect(manifest.emoteSets.find((s) => s.id === duel.sticker.set)?.emotes).toHaveLength(20);
   });
 });
