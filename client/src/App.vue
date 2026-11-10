@@ -2,7 +2,7 @@
 // The desk overlay holds the own pet and room members. Tauri opens the panel in a
 // separate regular window; the browser preview keeps it inside the overlay.
 // Only the drawn parts take the mouse (see hit.ts); everything else clicks through.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import PetActor from "./pet/PetActor.vue";
 import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
@@ -19,7 +19,7 @@ import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
-import MainPanel from "./panel/MainPanel.vue";
+const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
 import { PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
@@ -283,8 +283,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
-        :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
-        :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse
+        :motion-id="m.id"
         :emote="m.emote" :combo="m.combo" :win="m.win"
         :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
       />

@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 STARTER_SHARDS = 1600
+# Saves whose collectible count is remembered (see Store.count_items); the cache starts over when full.
+COUNT_CACHE_LIMIT = 20000
 
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
@@ -150,7 +152,20 @@ class Store:
         self._lock = threading.RLock()
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
+        # Saves marked active on `_active_day`, and collectible counts per save: both are read on every
+        # status call and change rarely. Every write goes through this class, which keeps them current;
+        # a rollback drops them (see _Tx).
+        self._active_day = ""
+        self._active: set[str] = set()
+        self._counts: dict[str, tuple[frozenset[str], int]] = {}
         with self._lock:
+            if path != ":memory:":
+                # WAL: a commit appends to the log without rewriting and syncing the database file, and
+                # readers of other connections (backups, sqlite3 on the host) do not block the writer.
+                # NORMAL syncs at checkpoints only: after a power cut the last commits may be missing,
+                # the database stays consistent. The mode is stored in the file; older builds keep using it.
+                self._db.execute("PRAGMA journal_mode=WAL")
+                self._db.execute("PRAGMA synchronous=NORMAL")
             self._db.executescript(SCHEMA)
             self._migrate()
 
@@ -407,15 +422,23 @@ class Store:
     def duel_net(self, pid: str, day: str) -> int:
         """Prizes minus bets of the save's duels won or lost on [day]; refunded and open duels count nothing."""
         with self._lock:
+            # `+state` keeps the planner off duels_state, which would walk every duel ever won; the two
+            # day indexes (duels_a, duels_b) find this save's few rows of the day.
             return self._db.execute(
                 "SELECT COALESCE(SUM(CASE WHEN winner=? THEN prize - bet ELSE -bet END), 0) FROM duels "
-                "WHERE state='won' AND (a=? OR b=?) AND day=?", (pid, pid, pid, day)).fetchone()[0]
+                "WHERE ((a=? AND day=?) OR (b=? AND day=?)) AND +state='won'", (pid, pid, day, pid, day)).fetchone()[0]
 
     # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
     def mark_active(self, pid: str, day: str) -> None:
         with self._lock:
+            if day != self._active_day:
+                self._active_day, self._active = day, set()
+            elif pid in self._active:
+                # Heartbeats and activity reports repeat this all day; the row is there after the first.
+                return
             self._db.execute("INSERT OR IGNORE INTO daily_active (day, player_id) VALUES (?, ?)", (day, pid))
             self._commit()
+            self._active.add(pid)
 
     def totals(self, today: str) -> dict[str, int]:
         with self._lock:
@@ -444,14 +467,26 @@ class Store:
             rows = self._db.execute("SELECT item_id, count FROM items WHERE player_id=?", (pid,)).fetchall()
         return {r["item_id"]: r["count"] for r in rows}
 
-    def count_items(self, pid: str, item_ids: tuple[str, ...]) -> int:
+    def count_items(self, pid: str, item_ids: frozenset[str]) -> int:
         if not item_ids:
             return 0
-        placeholders = ",".join("?" for _ in item_ids)
         with self._lock:
-            return self._db.execute(
-                f"SELECT COUNT(*) FROM items WHERE player_id=? AND item_id IN ({placeholders})",
-                (pid, *item_ids)).fetchone()[0]
+            hit = self._counts.get(pid)
+            if hit is not None and hit[0] is item_ids:
+                return hit[1]
+            # Walk this player's covering index once. A large IN list probes the index once per
+            # collectible, including the hundreds a new player has yet to collect.
+            rows = self._db.execute("SELECT item_id FROM items WHERE player_id=?", (pid,))
+            count = sum(row[0] in item_ids for row in rows)
+            if len(self._counts) >= COUNT_CACHE_LIMIT:
+                self._counts.clear()
+            self._counts[pid] = (item_ids, count)
+            return count
+
+    def has_item(self, pid: str, item_id: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM items WHERE player_id=? AND item_id=?",
+                                    (pid, item_id)).fetchone() is not None
 
     def add_item(self, pid: str, item_id: str, now: float) -> int:
         """Increment the owned count; returns the new count."""
@@ -460,6 +495,7 @@ class Store:
                 "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,1,?) "
                 "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + 1",
                 (pid, item_id, now))
+            self._counts.pop(pid, None)
             row = self._db.execute(
                 "SELECT count FROM items WHERE player_id=? AND item_id=?", (pid, item_id)).fetchone()
             self._commit()
@@ -472,6 +508,7 @@ class Store:
                 "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,?,?) "
                 "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + excluded.count",
                 [(pid, item, count, now) for item, count in counts.items()])
+            self._counts.pop(pid, None)
             self._commit()
 
     def refund_duplicates(self, name: str, prefix: str, shards_for: Callable[[str], int], now: float) -> tuple[int, int]:
@@ -577,6 +614,9 @@ class _Tx:
                 self.store._db.commit()
             else:
                 self.store._db.rollback()
+                # Rows the caches answered for may be gone again.
+                self.store._active.clear()
+                self.store._counts.clear()
         finally:
             self.store._in_tx = False
             self.store._lock.release()

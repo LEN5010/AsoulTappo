@@ -1,7 +1,8 @@
-"""In-memory rooms with ordered per-connection writers and 50ms motion batches."""
+"""In-memory rooms with ordered writers, subscriptions and 100ms motion batches."""
 from __future__ import annotations
 
 import asyncio
+import math
 import secrets
 from collections import deque
 from dataclasses import dataclass, field
@@ -9,6 +10,12 @@ from typing import Any, Awaitable, Callable, Protocol
 
 MAX_ROOM_SIZE = 20
 MAX_OUTBOX = 256
+RESTING = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False}
+
+
+def pack_motion(pose: dict) -> dict[str, int]:
+    return {"x": math.floor(pose["dx"] * 4 + .5), "y": math.floor(pose["dy"] * 4 + .5),
+            "b": int(pose["keyDown"]) | int(pose["left"]) << 1 | int(pose["right"]) << 2}
 
 
 class Sender(Protocol):
@@ -52,6 +59,9 @@ class Peer:
     tap_budget: float = 0.0
     tap_at: float = 0.0
     motion: dict[str, float | bool] | None = None
+    motion_version: int = 1
+    motion_ids: set[str] = field(default_factory=set)
+    sent_motion: dict[str, dict[str, int]] = field(default_factory=dict)
     active: bool = True
     outbox: deque = field(default_factory=deque)
     ready: asyncio.Event = field(default_factory=asyncio.Event)
@@ -66,11 +76,12 @@ class Peer:
                 done.set_exception(ConnectionError("member left"))
             return
         # Only coalesce adjacent position batches: ordered edges remain between them.
-        if data["type"] == "motion_batch" and self.outbox and self.outbox[-1][0]["type"] == "motion_batch":
+        if data["type"] in ("motion_batch", "motion_delta") and self.outbox and self.outbox[-1][0]["type"] == data["type"]:
             previous, _ = self.outbox[-1]
-            latest = {m["id"]: m for m in previous["motions"]}
-            latest.update({m["id"]: m for m in data["motions"]})
-            self.outbox[-1] = ({"type": "motion_batch", "motions": list(latest.values())}, None)
+            latest = {m["id"]: m.copy() for m in previous["motions"]}
+            for motion in data["motions"]:
+                latest.setdefault(motion["id"], {}).update(motion)
+            self.outbox[-1] = ({"type": data["type"], "motions": list(latest.values())}, None)
         elif len(self.outbox) >= MAX_OUTBOX:
             self.overloaded = True
             if done is not None:
@@ -136,7 +147,7 @@ class Room:
 
 class RoomManager:
     def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0,
-                 motion_interval: float = 0.05) -> None:
+                 motion_interval: float = 0.1) -> None:
         self.max_size = max_size
         self.send_timeout = send_timeout
         self.motion_interval = motion_interval
@@ -187,6 +198,9 @@ class RoomManager:
         if peer.writer and peer.writer is not asyncio.current_task():
             peer.writer.cancel()
         room.motions.pop(peer_id, None)
+        for other in room.peers.values():
+            other.motion_ids.discard(peer_id)
+            other.sent_motion.pop(peer_id, None)
         if not room.peers:
             if room.motion_timer:
                 room.motion_timer.cancel()
@@ -238,7 +252,10 @@ class RoomManager:
         edge = previous is None or any(previous[k] != pose[k] for k in ("keyDown", "left", "right"))
         if edge:
             room.motions.pop(peer.id, None)
-            await self.broadcast(room_id, {"type": "motion", "id": peer.id, **pose}, exclude=peer.id)
+            for receiver in room.peers.values():
+                update = self._motion_for(receiver, peer.id, pose)
+                if update:
+                    receiver.enqueue({"type": "motion_edge" if receiver.motion_version == 2 else "motion", **update})
         else:
             room.motions[peer.id] = {"id": peer.id, **pose}
             if room.motion_timer is None:
@@ -249,6 +266,43 @@ class RoomManager:
         updates = list(room.motions.values())
         room.motions.clear()
         for peer in list(room.peers.values()):
-            motions = [m for m in updates if m["id"] != peer.id]
+            motions = [delta for m in updates if (delta := self._motion_for(peer, m["id"], m))]
             if motions:
-                peer.enqueue({"type": "motion_batch", "motions": motions})
+                peer.enqueue({"type": "motion_delta" if peer.motion_version == 2 else "motion_batch", "motions": motions})
+
+    def _motion_for(self, receiver: Peer, sender: str, pose: dict) -> dict | None:
+        if receiver.id == sender:
+            return None
+        if receiver.motion_version != 2:
+            return {"id": sender, **pose}
+        if sender not in receiver.motion_ids:
+            return None
+        packed = pack_motion(pose)
+        previous = receiver.sent_motion.get(sender, {})
+        delta = {key: value for key, value in packed.items() if previous.get(key) != value}
+        receiver.sent_motion[sender] = packed
+        return {"id": sender, **delta} if delta else None
+
+    def subscribe_motion(self, room_id: str, peer: Peer, ids: list[str]) -> None:
+        room = self.rooms[room_id]
+        wanted = (set(ids) & room.peers.keys()) - {peer.id}
+        peer.sent_motion = {pid: pose for pid, pose in peer.sent_motion.items() if pid in wanted}
+        peer.motion_ids = wanted
+        snapshot = []
+        for pid in sorted(wanted):
+            if pid not in peer.sent_motion:
+                pose = pack_motion(room.peers[pid].motion or RESTING)
+                peer.sent_motion[pid] = pose
+                snapshot.append({"id": pid, **pose})
+        if snapshot:
+            peer.enqueue({"type": "motion_snapshot", "motions": snapshot})
+
+    async def pose(self, room_id: str, peer: Peer, patch: dict) -> None:
+        pose = dict(peer.motion or RESTING)
+        if "x" in patch:
+            pose["dx"] = patch["x"] / 4
+        if "y" in patch:
+            pose["dy"] = patch["y"] / 4
+        if "b" in patch:
+            pose.update(keyDown=bool(patch["b"] & 1), left=bool(patch["b"] & 2), right=bool(patch["b"] & 4))
+        await self.motion(room_id, peer, pose)

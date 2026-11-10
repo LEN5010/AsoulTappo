@@ -30,6 +30,7 @@ class JoinMsg(_Msg):
     plate: Optional[str] = Field(default=None, max_length=64)
     # turns down rock-paper-scissors invites; servers before 1.2 ignore it
     dnd: bool = False
+    motionVersion: int = Field(default=1, ge=1, le=2)
 
 
 class LeaveMsg(_Msg):
@@ -56,6 +57,19 @@ class PetMotion(_Msg):
 
 class MotionMsg(PetMotion):
     type: Literal["motion"] = "motion"
+
+
+class PoseMsg(_Msg):
+    """Quarter-pixel coordinates and keyboard/left/right button bits; omitted fields stay unchanged."""
+    type: Literal["pose"] = "pose"
+    x: int | None = Field(default=None, ge=-80, le=80, strict=True)
+    y: int | None = Field(default=None, ge=-80, le=80, strict=True)
+    b: int | None = Field(default=None, ge=0, le=7, strict=True)
+
+
+class MotionSubscribeMsg(_Msg):
+    type: Literal["motion_subscribe"] = "motion_subscribe"
+    ids: list[Annotated[str, Field(min_length=1, max_length=32)]] = Field(max_length=20)
 
 
 class StateMsg(_Msg):
@@ -122,7 +136,7 @@ class DuelThrowMsg(_Msg):
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
+    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
           DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
     Field(discriminator="type"),
 ]

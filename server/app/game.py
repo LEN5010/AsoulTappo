@@ -59,7 +59,7 @@ class Game:
         self.cfg = cfg or DropConfig()
         self.rng = rng or cardlogic.default_rng()
         self.now = now
-        self.collectible_ids = tuple(i for i in manifest.items if i not in manifest.starter)
+        self.collectible_ids = frozenset(manifest.items) - manifest.starter
 
     # ---------------------------------------------------------------- activity
     def report_activity(self, token: str, taps: int, session: str | None = None,
@@ -122,7 +122,7 @@ class Game:
                 tap_day=today, day_taps=day_taps + paid_taps)
             st.save_activity_budget(pid, budget - credited)
             if credited:
-                st.mark_active(pid, day_of(now))
+                st.mark_active(pid, today)
         out = self.status(token)
         out["credited"] = credited
         return out
@@ -143,9 +143,8 @@ class Game:
         inc = self.manifest.income
         return min(inc["shardScale"] * math.log1p(taps / inc["tapScale"]), inc["dailyCap"])
 
-    def _income(self, p, now) -> dict[str, Any]:
+    def _income(self, p, day: str) -> dict[str, Any]:
         inc = self.manifest.income
-        day = day_of(now)
         taps = p["day_taps"] if p["tap_day"] == day else 0
         today = self._tap_shards(taps)
         per_tap = inc["shardScale"] / (inc["tapScale"] + taps) if today < inc["dailyCap"] else 0.0
@@ -282,8 +281,8 @@ class Game:
             raise GameError("no_scratch", "这个服务器没有刮刮乐")
         return cfg
 
-    def _scratch_left(self, pid: str, now: float) -> int:
-        return max(0, self.manifest.scratch["daily"] - self.store.scratch_count(pid, day_of(now)))
+    def _scratch_left(self, pid: str, day: str) -> int:
+        return max(0, self.manifest.scratch["daily"] - self.store.scratch_count(pid, day))
 
     @staticmethod
     def _scratch_view(card: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -295,7 +294,8 @@ class Game:
         pid = player_id_for(token)
         now = self.now()
         p = self.store.get_player(pid, now)
-        return {"day": day_of(now), "left": self._scratch_left(pid, now), "pity": p["scratch_pity"],
+        day = day_of(now)
+        return {"day": day, "left": self._scratch_left(pid, day), "pity": p["scratch_pity"],
                 "card": self._scratch_view(self.store.pending_scratch(pid))}
 
     def scratch_buy(self, token: str) -> dict[str, Any]:
@@ -438,24 +438,25 @@ class Game:
     def status(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
         now = self.now()
+        day = day_of(now)
         p = self.store.get_player(pid, now)
         owned_count = self.store.count_items(pid, self.collectible_ids)
         out = {
             "player": pid,
             "shards": p["shards"],
-            "income": self._income(p, now),
+            "income": self._income(p, day),
             "resonance": {"pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]},
                           "hardPity": self.manifest.resonance["pity"], "total": p["drawn_total"]},
             "totals": {"taps": p["taps_total"], "activeMinutes": p["active_minutes"],
                        "owned": owned_count,
                        "items": len(self.manifest.items) - len(self.manifest.starter)},
-            "checkin": {"available": not self.store.checked_in(pid, day_of(now))},
+            "checkin": {"available": not self.store.checked_in(pid, day)},
             "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
         }
         if self.manifest.scratch:
-            out["scratch"] = {"left": self._scratch_left(pid, now), "pity": p["scratch_pity"]}
+            out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:
-            out["duel"] = {"net": self.store.duel_net(pid, day_of(now))}
+            out["duel"] = {"net": self.store.duel_net(pid, day)}
         return out
 
     def save_summary(self, pid: str) -> dict[str, Any]:
@@ -617,7 +618,7 @@ class Game:
             pid = player_id_for(token)
         except GameError:
             return False
-        return f"char:{name}" in self.store.owned(pid)
+        return self.store.has_item(pid, f"char:{name}")
 
     def base_character(self, name: str) -> str:
         """The member a skin belongs to (skin names start with it, e.g. 贝拉山海经), else the first member."""
@@ -633,4 +634,4 @@ class Game:
             pid = player_id_for(token)
         except GameError:
             return False
-        return f"emote:{key}" in self.store.owned(pid)
+        return self.store.has_item(pid, f"emote:{key}")

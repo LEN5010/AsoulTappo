@@ -68,7 +68,7 @@ describe("RoomClient", () => {
     const ws = FakeWs.all[0];
     expect(ws.url).toBe(`ws://h:1/ws?v=${APP_VERSION}`);
     ws.open();
-    expect(ws.sent[0]).toEqual({ type: "join", ...INFO });
+    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
     ws.recv({ type: "joined", room: "r", you: "me", members: [] });
     expect(ev.onJoined).toHaveBeenCalledWith("r", "me", []);
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
@@ -81,10 +81,53 @@ describe("RoomClient", () => {
     expect(ev.onMotion).toHaveBeenCalledWith("y", { dx: 9, dy: 1, keyDown: true, left: true, right: false });
     c.sendTap(2);
     c.sendEmote("thumbup");
+    // A server from before packed motion keeps getting whole poses and no subscriptions.
+    c.subscribeMotion(["x"]);
+    c.sendMotion({ dx: 1.5, dy: 0, keyDown: true, left: false, right: false });
     expect(ws.sent.slice(1)).toEqual([
       { type: "tap", count: 2 },
       { type: "emote", emote: "thumbup" },
+      { type: "motion", dx: 1.5, dy: 0, keyDown: true, left: false, right: false },
     ]);
+  });
+
+  it("speaks packed motion with a server that offers it: changed fields out, subscribed members in", () => {
+    const { c, ev } = setup();
+    const still = { dx: 0, dy: 0, keyDown: false, left: false, right: false };
+    c.subscribeMotion(["y", "x", "x"]);
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", motionVersion: 2, members: [
+      { id: "x", nick: "x", character: "嘉然", taps: 0, motion: { ...still, dx: 2, left: true } },
+    ] });
+    // The interest named before the room was joined is sent once it is.
+    expect(ws.sent.slice(1)).toEqual([{ type: "motion_subscribe", ids: ["x", "y"] }]);
+    c.subscribeMotion(["x", "y"]);
+    c.sendMotion({ ...still, dx: 1.25 });
+    c.sendMotion({ ...still, dx: 1.25 });
+    c.sendMotion({ ...still, dx: 1.25, dy: -3, right: true });
+    c.subscribeMotion([]);
+    expect(ws.sent.slice(2)).toEqual([
+      { type: "pose", x: 5, y: 0, b: 0 }, { type: "pose", y: -12, b: 4 }, { type: "motion_subscribe", ids: [] },
+    ]);
+    // Absent fields keep what the member's last pose held, starting from the one in `joined`.
+    ws.recv({ type: "motion_delta", motions: [{ id: "x", y: 6 }] });
+    expect(ev.onMotion).toHaveBeenLastCalledWith("x", { ...still, dx: 2, dy: 1.5, left: true });
+    ws.recv({ type: "motion_edge", id: "x", b: 1 });
+    expect(ev.onMotion).toHaveBeenLastCalledWith("x", { ...still, dx: 2, dy: 1.5, keyDown: true });
+    ws.recv({ type: "motion_snapshot", motions: [{ id: "y", x: -80, y: 80, b: 6 }] });
+    expect(ev.onMotion).toHaveBeenLastCalledWith("y", { dx: -20, dy: 20, keyDown: false, left: true, right: true });
+    // A new connection starts over: everything is said again.
+    ws.close();
+    vi.advanceTimersByTime(400);
+    const next = FakeWs.all[1];
+    next.open();
+    next.recv({ type: "joined", room: "r", you: "me", motionVersion: 2, members: [] });
+    c.sendMotion({ ...still, dx: 1.25, dy: -3, right: true });
+    expect(next.sent.slice(1)).toEqual([{ type: "pose", x: 5, y: -12, b: 4 }]);
+    c.subscribeMotion(["x"]);
+    expect(next.sent.at(-1)).toEqual({ type: "motion_subscribe", ids: ["x"] });
   });
 
   it("reconnects with backoff and re-joins the room", () => {
@@ -97,7 +140,7 @@ describe("RoomClient", () => {
     vi.advanceTimersByTime(400);
     expect(FakeWs.all).toHaveLength(2);
     FakeWs.all[1].open();
-    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO });
+    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
   });
 
   it("leave() stops reconnecting", () => {

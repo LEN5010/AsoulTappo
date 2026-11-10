@@ -23,7 +23,7 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
-    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PingMsg, PongMsg, RoomInfo, RoomInfoMsg,
+    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PongMsg, RoomInfo, RoomInfoMsg,
     ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
@@ -606,11 +606,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 room_id = msg.room
                 peer.dnd = msg.dnd
                 peer.account = signed_in
-                await send(JoinedMsg(
+                peer.motion_version = msg.motionVersion
+                joined = JoinedMsg(
                     room=room_id, you=peer.id,
                     members=[_member(p) for p in manager.members(room_id)],
                     info=RoomInfo(**manager.rooms[room_id].info()),
-                ).model_dump())
+                ).model_dump()
+                # Only a client that asked for packed motion hears that it gets it; older ones keep the 1.1 shape.
+                if peer.motion_version == 2:
+                    joined["motionVersion"] = 2
+                await send(joined)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
                 continue
@@ -638,6 +643,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     id=peer.id, count=count, total=peer.taps).model_dump())
             elif isinstance(msg, MotionMsg):
                 await manager.motion(room_id, peer, msg.model_dump(exclude={"type"}))
+            elif isinstance(msg, PoseMsg):
+                await manager.pose(room_id, peer, msg.model_dump(exclude={"type"}, exclude_none=True))
+            elif isinstance(msg, MotionSubscribeMsg):
+                if peer.motion_version == 2:
+                    manager.subscribe_motion(room_id, peer, msg.ids)
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
                 if now - peer.last_emote < EMOTE_INTERVAL:

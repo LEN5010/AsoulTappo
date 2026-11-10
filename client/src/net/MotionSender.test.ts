@@ -11,13 +11,19 @@ it("coalesces mouse frames, sends the final resting pose, and preserves short bu
   for (let i = 1; i <= 10; i++) sender.update({ ...restingMotion(), dx: i });
   expect(send).toHaveBeenCalledTimes(1);
   vi.advanceTimersByTime(50);
+  expect(send).toHaveBeenCalledTimes(1);
+  vi.advanceTimersByTime(50);
   expect(send).toHaveBeenLastCalledWith({ ...restingMotion(), dx: 10 });
   sender.update({ ...restingMotion(), left: true });
   sender.update(restingMotion());
   expect(send.mock.calls.slice(-2).map(([pose]) => pose.left)).toEqual([true, false]);
   sender.update(restingMotion());
-  vi.advanceTimersByTime(50);
+  vi.advanceTimersByTime(100);
   expect(send).toHaveBeenCalledTimes(4);
+  // Positions travel in quarter pixels.
+  sender.update({ ...restingMotion(), dx: 3.14, dy: -7.9 });
+  vi.advanceTimersByTime(100);
+  expect(send).toHaveBeenLastCalledWith({ ...restingMotion(), dx: 3.25, dy: -8 });
 });
 
 it("discards pending movement when leaving so a new room starts with its own pose", () => {

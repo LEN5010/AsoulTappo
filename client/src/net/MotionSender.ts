@@ -6,10 +6,10 @@ export class MotionSender {
   private pending: PetMotion | null = null;
   private last: PetMotion | null = null;
 
-  constructor(private send: (pose: PetMotion) => void, private interval = 50) {}
+  constructor(private send: (pose: PetMotion) => void, private interval = 100) {}
 
   update(pose: PetMotion): void {
-    this.pending = { ...pose, dx: Math.round(pose.dx * 10) / 10, dy: Math.round(pose.dy * 10) / 10 };
+    this.pending = { ...pose, dx: Math.round(pose.dx * 4) / 4, dy: Math.round(pose.dy * 4) / 4 };
     if (!this.last || pose.keyDown !== this.last.keyDown || pose.left !== this.last.left || pose.right !== this.last.right) {
       this.flush();
     } else if (!this.timer) {

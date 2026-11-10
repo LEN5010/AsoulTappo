@@ -32,8 +32,7 @@ const vacant = computed(() => {
         <NamePill :nick="settings.nick.trim() || '我'" :color="characterColor(settings.character)" :width="PILL_WIDTH" />
       </div>
       <div v-for="m in others" :key="m.id" class="seat">
-        <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo" :win="m.win" :key-down="m.motion.keyDown" :mouse-dx="m.motion.dx" :mouse-dy="m.motion.dy"
-          :left-down="m.motion.left" :right-down="m.motion.right" smooth-mouse />
+        <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo" :win="m.win" :motion-id="m.id" />
         <NamePill :nick="shownNick(m)" :color="characterColor(m.character)" :width="PILL_WIDTH" />
       </div>
       <div v-for="n in vacant" :key="n" class="seat vacant"><i aria-hidden="true"></i></div>

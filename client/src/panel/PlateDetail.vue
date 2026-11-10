@@ -66,12 +66,12 @@ function go(page: "resonance" | "scratch") { ui.page = page; emit("close"); }
             v-for="c in set" :key="c.id" :class="[cardFrame(c), { missing: !has(c) }]"
             :title="`${c.name}：${has(c) ? '已拥有' : '未获得'}`"
           >
-            <img :src="assetUrl(c.thumb)" :alt="c.name" />
+            <img :src="assetUrl(c.thumb)" :alt="c.name" loading="lazy" decoding="async" />
           </li>
         </ul>
         <ul v-else class="emotes" aria-label="解锁需要的表情">
           <li v-for="e in emotes" :key="e.key" :class="{ missing: !hasEmote(e) }" :title="`${e.name}：${hasEmote(e) ? '已拥有' : '未获得'}`">
-            <img :src="assetUrl(emoteCover(e.key))" :alt="e.name" draggable="false" />
+            <img :src="assetUrl(emoteCover(e.key))" :alt="e.name" loading="lazy" decoding="async" draggable="false" />
           </li>
         </ul>
         <div class="live-preview">

@@ -1,10 +1,12 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { ref, watch } from "vue";
+import { markRaw, ref, watch } from "vue";
 import { isPanelWindow, isTauri } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
 import * as player from "../stores/player";
 import * as room from "../stores/room";
-import { restingMotion } from "../net/protocol";
+import { restingMotion, type PetMotion } from "../net/protocol";
+import { remoteMotion } from "../net/MotionFrames";
+import { windowVisible } from "../stores/activity";
 import { counter } from "../stores/counter";
 import { tidyRemotes } from "../stores/desk";
 import { ui } from "../stores/ui";
@@ -29,9 +31,13 @@ function groups() {
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
-type Runtime = Pick<room.RemoteMember, "id" | "motion" | "taps" | "pulse" | "emote" | "combo" | "win">;
+/**
+ * What changed about one member's pet since the last message. Taps, emote, combo and win go to the panel for
+ * every member (its member list counts taps); the pose only for the pets the panel is drawing.
+ */
+type Runtime = { id: string; motion?: PetMotion } & Partial<Pick<room.RemoteMember, "taps" | "pulse" | "emote" | "combo" | "win">>;
 const runtime = (m: room.RemoteMember): Runtime => ({
-  id: m.id, motion: { ...m.motion }, taps: m.taps, pulse: m.pulse, emote: m.emote, combo: m.combo, win: m.win,
+  id: m.id, taps: m.taps, pulse: m.pulse, emote: m.emote, combo: m.combo, win: m.win,
 });
 type LocalPet = typeof room.localPet;
 const pendingRuntime = new Map<string, Runtime>();
@@ -63,21 +69,31 @@ function applyGroups(s: Partial<Groups>) {
     for (const id of room.members.keys()) if (!ids.has(id)) {
       room.members.delete(id);
       pendingRuntime.delete(id);
+      remoteMotion.remove(id);
     }
     for (const m of s.members) {
-      const pose = pendingRuntime.get(m.id);
       const existing = room.members.get(m.id);
-      if (existing) Object.assign(existing, m, pose);
-      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, win: null, motion: restingMotion(), ...pose });
-      if (pose) pendingRuntime.delete(m.id);
+      if (existing) Object.assign(existing, m);
+      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, win: null, motion: markRaw(restingMotion()) });
+      // What its pet was doing may have arrived ahead of the member itself.
+      const early = pendingRuntime.get(m.id);
+      if (early) { pendingRuntime.delete(m.id); applyMember(early); }
     }
   }
 }
+function applyMember({ motion, ...rest }: Runtime): boolean {
+  const member = room.members.get(rest.id);
+  if (!member) return false;
+  Object.assign(member, rest);
+  if (motion) {
+    Object.assign(member.motion, motion);
+    remoteMotion.update(rest.id, motion);
+  }
+  return true;
+}
 function applyRuntime(updates: Runtime[], local: LocalPet) {
   for (const update of updates) {
-    const member = room.members.get(update.id);
-    if (member) Object.assign(member, update);
-    else pendingRuntime.set(update.id, update);
+    if (!applyMember(update)) pendingRuntime.set(update.id, { ...pendingRuntime.get(update.id), ...update });
   }
   room.localPet.emote = local.emote;
   room.localPet.win = local.win;
@@ -116,13 +132,17 @@ export async function initDesktop(): Promise<() => void> {
     applyGroups(initial.state);
     ui.page = initial.page;
     ui.craftTarget = initial.craftTarget;
-    const stop = watch(() => [ui.panelOpen && !ui.panelMinimized, ui.page === "room"] as const,
-      ([visible, live]) => { void emitTo("main", "desktop:interest", { visible, live }); }, { immediate: true });
-    return () => { unState(); unMotion(); stop(); syncedSettings.stop(); };
+    const motionIds = ref<string[]>([]);
+    const stopInterest = remoteMotion.onInterest((ids) => { motionIds.value = ids; });
+    // The pets the room page is drawing: the desk subscribes to their movement and passes it on.
+    const stop = watch(() => [ui.panelOpen && !ui.panelMinimized && windowVisible.value, ui.page === "room", motionIds.value] as const,
+      ([visible, live, ids]) => { void emitTo("main", "desktop:interest", { visible, live, motionIds: visible ? ids : [] }); }, { immediate: true });
+    return () => { unState(); unMotion(); stop(); stopInterest(); syncedSettings.stop(); };
   }
 
   const visibleRef = ref(false);
   const liveRef = ref(false);
+  let interested = new Set<string>();
   let visible = false;
   let live = false;
   let pending: Partial<Groups> = {};
@@ -152,6 +172,11 @@ export async function initDesktop(): Promise<() => void> {
     void emitTo("panel", "desktop:motion", { members: updates,
       local: { emote: room.localPet.emote, win: room.localPet.win } });
   }
+  /** Changes to one member merge until the next message; one frame's worth goes out together. */
+  const queue = (update: Runtime) => {
+    dirty.set(update.id, { ...dirty.get(update.id), ...update });
+    motionTimer ??= setTimeout(sendMotion, 16);
+  };
   const memberStops = new Map<string, () => void>();
   const stopMembers = watch(() => liveRef.value ? [...room.members.keys()] : [], (ids) => {
     for (const [id, stop] of memberStops) if (!ids.includes(id)) { stop(); memberStops.delete(id); dirty.delete(id); }
@@ -160,21 +185,33 @@ export async function initDesktop(): Promise<() => void> {
         const member = room.members.get(id);
         return member ? runtime(member) : null;
       }, (value) => {
-        if (!value) { dirty.delete(id); return; }
-        dirty.set(id, value);
-        motionTimer ??= setTimeout(sendMotion, 50);
+        if (value) queue(value);
+        else dirty.delete(id);
       }, { deep: true, immediate: true, flush: "sync" }));
     }
   }, { flush: "sync" });
+  // Poses stay out of the reactive graph (net/MotionFrames.ts), so they are forwarded as they arrive.
+  const stopMotion = remoteMotion.onUpdate((id, pose) => {
+    if (live && interested.has(id)) queue({ id, motion: pose });
+  });
   const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win] : null, () => {
     if (liveRef.value) motionTimer ??= setTimeout(sendMotion, 50);
   }, { deep: true });
-  const unInterest = await listen<{ visible: boolean; live: boolean }>("desktop:interest", async ({ payload }) => {
+  const unInterest = await listen<{ visible: boolean; live: boolean; motionIds?: string[] }>("desktop:interest", async ({ payload }) => {
     const opening = payload.visible && !visible;
     visible = payload.visible;
     live = visible && payload.live;
+    const before = interested;
+    interested = new Set(live ? payload.motionIds ?? room.members.keys() : []);
+    // The room socket subscribes for the panel's pets as well as the desk's own.
+    room.setPanelMotionInterest([...interested]);
     visibleRef.value = visible;
     liveRef.value = live;
+    // A pet the panel starts drawing begins from the pose held now, whenever the next update comes.
+    for (const id of interested) {
+      const member = before.has(id) ? undefined : room.members.get(id);
+      if (member) queue({ id, motion: { ...member.motion } });
+    }
     if (!visible) {
       pending = {}; dirty.clear(); clearTimeout(stateTimer); clearTimeout(motionTimer);
       stateTimer = motionTimer = undefined;
@@ -214,7 +251,8 @@ export async function initDesktop(): Promise<() => void> {
   }, { target: "main" });
   const syncedSettings = await syncSettings();
   return () => {
-    unlisten(); unInterest(); stops.forEach((stop) => stop()); stopMembers(); stopEmote();
+    unlisten(); unInterest(); stops.forEach((stop) => stop()); stopMembers(); stopEmote(); stopMotion();
+    room.setPanelMotionInterest([]);
     memberStops.forEach((stop) => stop()); clearTimeout(motionTimer); clearTimeout(stateTimer); syncedSettings.stop();
   };
 }

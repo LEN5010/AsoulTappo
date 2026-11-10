@@ -16,7 +16,8 @@ static VIDEOS: Mutex<Vec<(String, Arc<Vec<u8>>)>> = Mutex::new(Vec::new());
 
 pub fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>, responder: UriSchemeResponder) {
     let app = ctx.app_handle().clone();
-    tauri::async_runtime::spawn(async move {
+    // Asset decompression and range copies are synchronous work; keep them off Tokio's async workers.
+    tauri::async_runtime::spawn_blocking(move || {
         responder.respond(respond(&app, &request));
     });
 }

@@ -3,6 +3,8 @@
 // A big hidden card plays its video; a sweep plate (a still picture on coral) glides between its two bands.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
+import { usePageActive } from "../composables/usePageActive";
+import { renderActive } from "../stores/activity";
 import { reducedMotion } from "../stores/theme";
 import { getPlate, plateArt, sweepArt, sweepFrames, panCycle, videoFace } from "./plates";
 import { followVideo } from "./plateVideo";
@@ -23,7 +25,9 @@ const sweepBoxes = computed(() => (sweep.value ? sweepArt(sweep.value, inner.val
 const stillArt = computed(() =>
   sweepBoxes.value?.face ?? (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
 const artSrc = computed(() => sweep.value?.src ?? (card.value ? assetUrl(card.value.thumb) : ""));
-const moving = computed(() => !props.still && !reducedMotion.value);
+const pageActive = usePageActive();
+// The video and the sweep loop for as long as they are let: they stop with the idle desk too.
+const moving = computed(() => pageActive.value && renderActive.value && !props.still && !reducedMotion.value);
 const playing = computed(() => !!card.value?.video && moving.value);
 
 const canvas = ref<HTMLCanvasElement>();

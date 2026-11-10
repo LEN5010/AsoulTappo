@@ -30,6 +30,15 @@ use tauri::{
 const HIT_TEST_INTERVAL: Duration = Duration::from_millis(30);
 /// Poll interval while the overlay is hidden or click-through, when nothing can be hit.
 const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
+/// Poll interval once the cursor has stayed where it is for `HIT_TEST_STILL_AFTER`: what is under it changes
+/// only when a pet's drawn parts do, and the first poll after it moves again brings the fast pace back.
+const HIT_TEST_STILL_INTERVAL: Duration = Duration::from_millis(100);
+const HIT_TEST_STILL_AFTER: Duration = Duration::from_secs(2);
+/// How long the hit test trusts what the window last said about being shown, and about where it is and
+/// its scale. Each of those questions is answered on the main thread, so asking all of them on every poll
+/// keeps the app's event loop busy while nothing changes; only the cursor is read every time.
+const HIT_VISIBLE_INTERVAL: Duration = Duration::from_millis(250);
+const HIT_GEOMETRY_INTERVAL: Duration = Duration::from_millis(500);
 /// How often the overlay checks that it still covers its monitor's work area
 /// (monitor plugged/unplugged, resolution, scaling or taskbar changed).
 const REFIT_INTERVAL: Duration = Duration::from_secs(2);
@@ -513,6 +522,14 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
         let mut last_snapshot = Instant::now();
         let mut style_mismatch: Option<Instant> = None;
         let mut style_mismatch_logged = false;
+        let mut shown: Option<bool> = None;
+        let mut visible = true;
+        let mut visible_at: Option<Instant> = None;
+        let mut geometry: Option<(PhysicalPosition<i32>, f64)> = None;
+        let mut geometry_at = Instant::now();
+        let mut pause = HIT_TEST_INTERVAL;
+        let mut last_cursor: Option<(f64, f64)> = None;
+        let mut still_since = Instant::now();
         loop {
             // The style the pet window really has, against what the hit test last set: if they stay
             // apart, clicks land where the hit test thinks they pass (or the other way round).
@@ -543,6 +560,8 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 last_refit = Instant::now();
                 let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
                 if needs_refit(&window, index) {
+                    // The window is about to move: ask where it is again on the next poll.
+                    geometry = None;
                     let was = window_rect(&window);
                     // A refit that does not stick repeats on every check: log it once, not every 2 s.
                     let key = format!("{index} {was}");
@@ -561,17 +580,30 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     applog!("overlay", "took the mouse {n} times in the last minute");
                 }
             }
-            let idle = !window.is_visible().unwrap_or(true)
-                || overlay.hit.lock().map(|st| st.click_through).unwrap_or(false);
+            if visible_at.is_none_or(|at| at.elapsed() >= HIT_VISIBLE_INTERVAL) {
+                visible = window.is_visible().unwrap_or(true);
+                visible_at = Some(Instant::now());
+            }
+            // The page stops drawing and drops its room subscriptions while the pet is hidden (stores/activity.ts).
+            if shown != Some(visible) {
+                shown = Some(visible);
+                let _ = window.emit_to("main", "window:visible", visible);
+            }
+            let idle = !visible || overlay.hit.lock().map(|st| st.click_through).unwrap_or(false);
             if idle {
                 set_ignoring(true);
                 std::thread::sleep(HIT_TEST_IDLE_INTERVAL);
                 continue;
             }
-            std::thread::sleep(HIT_TEST_INTERVAL);
-            let (Ok(cursor), Ok(origin), Ok(scale)) =
-                (window.cursor_position(), window.inner_position(), window.scale_factor())
-            else {
+            std::thread::sleep(pause);
+            if geometry.is_none() || geometry_at.elapsed() >= HIT_GEOMETRY_INTERVAL {
+                geometry = match (window.inner_position(), window.scale_factor()) {
+                    (Ok(origin), Ok(scale)) => Some((origin, scale)),
+                    _ => None,
+                };
+                geometry_at = Instant::now();
+            }
+            let (Ok(cursor), Some((origin, scale))) = (window.cursor_position(), geometry) else {
                 // No cursor (lock screen, UAC, remote desktop): let clicks through rather than
                 // keep whatever was last decided, which could leave the whole screen unclickable.
                 if !cursor_lost {
@@ -585,9 +617,18 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 cursor_lost = false;
                 applog!("overlay", "cursor available again");
             }
+            if last_cursor != Some((cursor.x, cursor.y)) {
+                last_cursor = Some((cursor.x, cursor.y));
+                still_since = Instant::now();
+            }
+            pause = if still_since.elapsed() >= HIT_TEST_STILL_AFTER { HIT_TEST_STILL_INTERVAL } else { HIT_TEST_INTERVAL };
             // A drag whose pointer-up never reached the frontend (webview hung, capture lost)
             // must not keep the full-screen overlay taking every click.
             if let Ok(mut st) = overlay.hit.lock() {
+                if st.dragging {
+                    // The button check below counts polls at the fast pace.
+                    pause = HIT_TEST_INTERVAL;
+                }
                 if st.dragging && !primary_button_down() {
                     released_for += 1;
                     if released_for >= DRAG_RELEASE_POLLS {

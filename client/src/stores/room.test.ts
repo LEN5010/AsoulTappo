@@ -63,10 +63,9 @@ it("receives a remote pet's movement and button release without changing its tap
   socket.recv({ type: 'motion', id: 'friend', dx: 15.2, dy: -3, keyDown: true, left: true, right: false });
   expect(r.members.get('friend')!.motion).toEqual({ dx: 15.2, dy: -3, keyDown: true, left: true, right: false });
   expect(r.members.get('friend')!.taps).toBe(12);
+  // The pose a member holds is what the room last said; a short press is kept visible where it is drawn (MotionFrames).
   socket.recv({ type: 'motion', id: 'friend', dx: 0, dy: 0, keyDown: false, left: false, right: false });
-  expect(r.members.get('friend')!.motion.left).toBe(true);
-  await vi.advanceTimersByTimeAsync(70);
-  expect(r.members.get('friend')!.motion.left).toBe(false);
+  expect(r.members.get('friend')!.motion).toEqual({ dx: 0, dy: 0, keyDown: false, left: false, right: false });
   r.leaveRoom();
   expect(r.members.size).toBe(0);
 });

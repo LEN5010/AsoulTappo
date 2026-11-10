@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // The layered desk pet from ASoul-Little-Bun (background, keyboard paw, mouse paw, click
 // images) plus the emote bubble and the tap combo.
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
+import { remoteMotion } from "../net/MotionFrames";
 import { getCharacter, headAnchor, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import EmoteBubble from "./EmoteBubble.vue";
@@ -12,6 +14,7 @@ import type { ComboFrame } from "./TapCombo";
 const props = withDefaults(
   defineProps<{
     character: string;
+    motionId?: string;
     scale?: number;
     /** Local pet: keyboard layer pressed state (driven by global key hook). */
     keyDown?: boolean;
@@ -44,6 +47,40 @@ const props = withDefaults(
 );
 
 const assets = computed(() => getCharacter(props.character));
+const active = usePageActive();
+const root = ref<HTMLElement>();
+const inView = ref(false);
+let visibility: IntersectionObserver | undefined;
+let stopMotion: (() => void) | undefined;
+onMounted(() => {
+  visibility = new IntersectionObserver(([entry]) => { inView.value = !!entry?.isIntersecting; });
+  if (root.value) visibility.observe(root.value);
+});
+// Another member's pet is drawn from the room's updates, straight onto its layers: each update sets where
+// the mouse layer goes and the stylesheet glides it there, so nothing renders or runs between updates.
+// Subscribed only while it can be seen, which is also what the room is asked to send (net/MotionFrames.ts).
+watch([() => props.motionId, () => props.scale, assets, active, inView, root], () => {
+  stopMotion?.(); stopMotion = undefined;
+  const el = root.value;
+  if (!props.motionId || !el || !active.value || !inView.value) return;
+  const mouse = [...el.querySelectorAll<HTMLElement>(".mouse")];
+  const keyboard = el.querySelector<HTMLElement>(".kb");
+  const [left, right] = [el.querySelector<HTMLElement>(".click-left"), el.querySelector<HTMLElement>(".click-right")];
+  const scale = props.scale;
+  stopMotion = remoteMotion.subscribe(props.motionId, (pose) => {
+    const at = `translate(${pose.dx * scale}px, ${pose.dy * scale}px)`;
+    for (const layer of mouse) layer.style.transform = at;
+    if (keyboard) {
+      keyboard.style.transform = `translateY(${(pose.keyDown ? PET_BASE.keyboard.pressOffset : 0) * scale}px)`;
+      // The quick way down, the springy way back up, as for the own pet (.kb.down below).
+      keyboard.classList.toggle("down", pose.keyDown);
+    }
+    // Not drawn at all while the button is up: a masked layer that travels with the mouse costs a frame each step.
+    if (left) left.style.display = pose.left ? "block" : "none";
+    if (right) right.style.display = pose.right ? "block" : "none";
+  });
+}, { flush: "post" });
+onBeforeUnmount(() => { stopMotion?.(); visibility?.disconnect(); });
 const s = computed(() => props.scale);
 const u = (v: number) => `${v * s.value}px`;
 
@@ -53,6 +90,8 @@ onBeforeUnmount(() => clearTimeout(pulseTimer));
 watch(
   () => props.pulse,
   () => {
+    if (!active.value) return;
+    if (props.motionId) { remoteMotion.pulse(props.motionId); return; }
     pulseDown.value = true;
     clearTimeout(pulseTimer);
     pulseTimer = setTimeout(() => (pulseDown.value = false), 70);
@@ -63,17 +102,14 @@ const pressed = computed(() => props.keyDown || pulseDown.value);
 const box = computed(() => ({ width: u(PET_BASE.width), height: u(PET_BASE.height) }));
 const kbStyle = computed(() => {
   const k = PET_BASE.keyboard;
-  return {
-    left: u(k.x), top: u(k.y), width: u(k.size), height: u(k.size),
-    transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)`,
-  };
+  const box = { left: u(k.x), top: u(k.y), width: u(k.size), height: u(k.size) };
+  // Another member's layers are moved by the motion painter above, never by a render.
+  return props.motionId ? box : { ...box, transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)` };
 });
 const mouseStyle = computed(() => {
   const m = PET_BASE.mouse;
-  return {
-    left: u(m.x), top: u(m.y), width: u(m.size), height: u(m.size),
-    transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)`,
-  };
+  const box = { left: u(m.x), top: u(m.y), width: u(m.size), height: u(m.size) };
+  return props.motionId ? box : { ...box, transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)` };
 });
 const clickColor = computed(() => characterColor(assets.value?.name ?? props.character));
 const clickMask = (src: string) => ({ maskImage: `url("${src}")`, WebkitMaskImage: `url("${src}")` });
@@ -89,13 +125,13 @@ const bubbleAnchor = computed(() => ({
 </script>
 
 <template>
-  <div class="pet" :class="{ 'smooth-mouse': smoothMouse }" :style="box">
+  <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
     <div v-if="assets" class="art">
       <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="{ width: box.width }" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
-      <span v-if="leftDown" class="layer mouse click" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
-      <span v-if="rightDown" class="layer mouse click" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
+      <span v-if="motionId || leftDown" class="layer mouse click" :class="{ 'click-left': motionId }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
+      <span v-if="motionId || rightDown" class="layer mouse click" :class="{ 'click-right': motionId }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
 
@@ -113,9 +149,15 @@ const bubbleAnchor = computed(() => ({
 .layer { position: absolute; pointer-events: none; }
 /* Width only, bottom-aligned: a picture taller than the canvas holds headwear above it and draws past the top. */
 .bg { left: 0; bottom: 0; height: auto; }
+/* The two paws are layers of their own: moving one changes where its layer is put, and nothing is painted
+   again. Without this every step of a paw repaints the tiles under the pet. */
+.kb, .mouse { will-change: transform; }
 .kb { transition: transform var(--dur-fast) var(--ease-pop); }
 .kb.down { transition: transform 50ms var(--ease-out); }
 .smooth-mouse .mouse { transition: transform 60ms linear; }
+/* Updates come every 100ms (net/MotionSender.ts): the layer takes that long to reach each one. */
+.remote-motion .mouse { transition: transform 100ms linear; }
+.remote-motion .click-left, .remote-motion .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
 </style>

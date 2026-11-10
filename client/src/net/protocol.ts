@@ -11,6 +11,16 @@ export interface PetMotion {
 
 export const restingMotion = (): PetMotion => ({ dx: 0, dy: 0, keyDown: false, left: false, right: false });
 
+/** Quarter-pixel coordinates and keyboard/left/right bits. Absent fields retain their last value. */
+export interface PackedMotion { x: number; y: number; b: number }
+export type MotionDelta = Partial<PackedMotion> & { id: string };
+export const packMotion = (p: PetMotion): PackedMotion => ({
+  x: Math.round(p.dx * 4), y: Math.round(p.dy * 4), b: Number(p.keyDown) | Number(p.left) << 1 | Number(p.right) << 2,
+});
+export const unpackMotion = (p: PackedMotion): PetMotion => ({
+  dx: p.x / 4, dy: p.y / 4, keyDown: !!(p.b & 1), left: !!(p.b & 2), right: !!(p.b & 4),
+});
+
 export interface Member {
   id: string;
   /** Stable per room for players with a token (null otherwise); used to remember desk positions. */
@@ -74,10 +84,13 @@ export type ClientMessage =
     type: "join"; room: string; nick: string; character: string; token?: string; accountToken?: string; plate?: string;
     /** Turns rock-paper-scissors invites down; servers without duels ignore it. */
     dnd?: boolean;
+    motionVersion?: 2;
   }
   | { type: "leave" }
   | { type: "tap"; count: number }
   | ({ type: "motion" } & PetMotion)
+  | ({ type: "pose" } & Partial<PackedMotion>)
+  | { type: "motion_subscribe"; ids: string[] }
   | { type: "emote"; emote: string }
   | ({ type: "state" } & ProfilePatch)
   | { type: "ping" }
@@ -89,13 +102,15 @@ export type ClientMessage =
   | { type: "duel_throw"; duel: string; hand: Hand };
 
 export type ServerMessage =
-  | { type: "joined"; room: string; you: string; members: Member[]; info?: RoomInfo }
+  | { type: "joined"; room: string; you: string; members: Member[]; info?: RoomInfo; motionVersion?: number }
   | ({ type: "room_info" } & RoomInfo)
   | { type: "member_joined"; member: Member }
   | { type: "member_left"; id: string }
   | { type: "tap"; id: string; count: number; total: number }
   | ({ type: "motion"; id: string } & PetMotion)
   | { type: "motion_batch"; motions: ({ id: string } & PetMotion)[] }
+  | { type: "motion_delta" | "motion_snapshot"; motions: MotionDelta[] }
+  | ({ type: "motion_edge" } & MotionDelta)
   | { type: "emote"; id: string; emote: string }
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }

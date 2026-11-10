@@ -1,7 +1,7 @@
 import type {
-  ClientMessage, DuelMessage, Hand, Member, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
+  ClientMessage, DuelMessage, Hand, Member, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
 } from "./protocol";
-import { toWsUrl } from "./protocol";
+import { packMotion, unpackMotion, toWsUrl } from "./protocol";
 import { APP_VERSION } from "../version";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
@@ -75,6 +75,12 @@ export class RoomClient {
   private gotPong = true;
   /** `join` was sent on this socket and `joined` has not arrived yet. */
   private joinPending = false;
+  private motionV2 = false;
+  private interest: string[] = [];
+  /** The subscription the server holds, as JSON; a member who just joined is subscribed to nobody. */
+  private sentInterest = "[]";
+  private sentPose: PackedMotion | null = null;
+  private poses = new Map<string, PackedMotion>();
   private readonly opts: Required<RoomClientOptions>;
 
   constructor(
@@ -111,8 +117,30 @@ export class RoomClient {
   sendTap(count: number): void {
     this.send({ type: "tap", count });
   }
+  /** Packed motion names the fields that changed since the last pose sent; a pose that packs the same is not sent. */
   sendMotion(pose: PetMotion): void {
-    this.send({ type: "motion", ...pose });
+    if (!this.motionV2) { this.send({ type: "motion", ...pose }); return; }
+    const packed = packMotion(pose);
+    const patch: Partial<PackedMotion> = {};
+    for (const key of ["x", "y", "b"] as const) if (packed[key] !== this.sentPose?.[key]) patch[key] = packed[key];
+    if (!Object.keys(patch).length) return;
+    this.sentPose = packed;
+    this.send({ type: "pose", ...patch });
+  }
+  /** The members whose movement this client shows. Kept across reconnects; without packed motion the server sends everyone's. */
+  subscribeMotion(ids: string[]): void {
+    // The server takes a room's worth of ids at most (MAX_ROOM_SIZE).
+    this.interest = [...new Set(ids)].sort().slice(0, 20);
+    const key = JSON.stringify(this.interest);
+    if (this.motionV2 && this.connected && key !== this.sentInterest) {
+      this.send({ type: "motion_subscribe", ids: this.interest });
+      this.sentInterest = key;
+    }
+  }
+  private motionDelta({ id, ...patch }: MotionDelta): void {
+    const pose = { ...(this.poses.get(id) ?? { x: 0, y: 0, b: 0 }), ...patch };
+    this.poses.set(id, pose);
+    this.events.onMotion(id, unpackMotion(pose));
   }
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
@@ -152,6 +180,10 @@ export class RoomClient {
   }
 
   private open(): void {
+    this.motionV2 = false;
+    this.sentPose = null;
+    this.sentInterest = "[]";
+    this.poses.clear();
     let url: string;
     try {
       url = `${toWsUrl(this.serverUrl)}?v=${encodeURIComponent(APP_VERSION)}`;
@@ -176,7 +208,7 @@ export class RoomClient {
       this.gotPong = true;
       this.events.onConnState("open");
       if (this.joinInfo) {
-        this.send({ type: "join", ...this.joinInfo });
+        this.send({ type: "join", ...this.joinInfo, motionVersion: 2 });
         this.joinPending = true;
       }
       this.startPing();
@@ -208,8 +240,16 @@ export class RoomClient {
     switch (msg.type) {
       case "joined":
         this.joinPending = false;
+        // A server that knows packed motion says so; every other one keeps hearing and sending full poses.
+        this.motionV2 = msg.motionVersion === 2;
+        // A room joined again on the same connection starts from nothing, like the server's side of it.
+        this.sentPose = null;
+        this.sentInterest = "[]";
+        this.poses.clear();
+        for (const member of msg.members) if (member.motion) this.poses.set(member.id, packMotion(member.motion));
         this.events.onJoined(msg.room, msg.you, msg.members);
         this.events.onRoomInfo(msg.info ? { ...msg.info } : null);
+        this.subscribeMotion(this.interest);
         break;
       case "room_info": {
         const { type: _, ...info } = msg;
@@ -220,6 +260,7 @@ export class RoomClient {
         this.events.onMemberJoined(msg.member);
         break;
       case "member_left":
+        this.poses.delete(msg.id);
         this.events.onMemberLeft(msg.id);
         break;
       case "tap":
@@ -232,6 +273,13 @@ export class RoomClient {
       }
       case "motion_batch":
         for (const { id, ...pose } of msg.motions) this.events.onMotion(id, pose);
+        break;
+      case "motion_edge":
+        this.motionDelta(msg);
+        break;
+      case "motion_snapshot":
+      case "motion_delta":
+        for (const delta of msg.motions) this.motionDelta(delta);
         break;
       case "emote":
         this.events.onEmote(msg.id, msg.emote);

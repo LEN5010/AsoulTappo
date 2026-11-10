@@ -9,6 +9,7 @@ import { countInput, reportCooldown, status } from "./player";
 import { inRoom, registerTap, syncMotion, youId } from "./room";
 import { settings } from "./settings";
 import { popShards } from "./shardPop";
+import { noteActivity, windowVisible } from "./activity";
 
 export const pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
 let keysHeld = 0;
@@ -44,6 +45,7 @@ function tap(): void {
 }
 
 export function onInput(e: InputEvent, count = true): void {
+  noteActivity();
   switch (e.kind) {
     case "key_down":
       tapStats.keys += 1;
@@ -66,7 +68,8 @@ export function onInput(e: InputEvent, count = true): void {
       else if (e.button === "right") pet.right = false;
       break;
     case "mouse_move":
-      if (!settings.mouseFollow) break;
+      // A hidden pet runs no inertia frames; keys and buttons still reach the room.
+      if (!settings.mouseFollow || !windowVisible.value) break;
       motion.move(e.dx, e.dy, settings.mouseSensitivity);
       break;
   }
@@ -79,3 +82,4 @@ export function stopPet(): void {
 }
 
 watch(() => settings.mouseFollow, (enabled) => { if (!enabled) motion.stop(); }, { flush: "sync" });
+watch(windowVisible, (visible) => { if (!visible) motion.stop(); }, { flush: "sync" });

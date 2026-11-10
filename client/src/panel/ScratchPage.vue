@@ -396,7 +396,7 @@ watch(() => [status.value?.player, status.value?.scratch?.left] as const, ([play
               :class="{ has: ownedKeys.has(e.key), fresh: fresh === e.key }" :title="ownedKeys.has(e.key) ? e.name : undefined"
               :style="{ '--lean': leanOf(i) }"
             >
-              <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" draggable="false" />
+              <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" loading="lazy" decoding="async" draggable="false" />
             </li>
           </ol>
           <b v-if="complete" class="done">已集齐</b>

@@ -25,6 +25,8 @@ beforeEach(() => {
   const saved = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, v: string) => saved.set(key, v) });
   vi.stubGlobal("fetch", vi.fn());
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16));
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
 });
 afterEach(async () => {
   stops.forEach((stop) => stop());
@@ -50,6 +52,7 @@ async function context(panel: boolean) {
     counter: (await import("../stores/counter")).counter,
     pet: await import("../stores/pet"),
     ui: await import("../stores/ui"),
+    motion: (await import("../net/MotionFrames")).remoteMotion,
   };
 }
 
@@ -118,14 +121,39 @@ it("mirrors remote pet animation poses into the panel without another room socke
   const panel = await context(true);
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
-  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
-    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
+  const subscribed = vi.spyOn(desk.room, "setPanelMotionInterest");
+  const resting = { dx: 0, dy: 0, keyDown: false, left: false, right: false };
+  const pose = { dx: 8, dy: -4, keyDown: true, left: true, right: false };
+  for (const id of ["friend", "unseen"]) {
+    desk.room.members.set(id, { id, nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
+      pulse: 0, emote: null, combo: null, win: null, motion: { ...pose } });
+  }
   await vi.advanceTimersByTimeAsync(50);
-  expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
   expect(panel.room.members.get('friend')!.plate).toBe('c1');
-  Object.assign(desk.room.members.get('friend')!.motion, { dx: 0, dy: 0, keyDown: false, left: false });
+  // The panel draws no pet yet, so no pose has come over.
+  expect(panel.room.members.get('friend')!.motion).toEqual(resting);
+  const drawn: unknown[] = [];
+  panel.motion.subscribe('friend', (shown) => drawn.push({ ...shown }));
   await vi.advanceTimersByTimeAsync(50);
-  expect(panel.room.members.get('friend')!.motion.left).toBe(false);
+  // Drawing one starts from the pose the desk holds, and the room is asked for that member's movement.
+  expect(subscribed).toHaveBeenLastCalledWith(['friend']);
+  expect(panel.room.members.get('friend')!.motion).toEqual(pose);
+  expect(panel.room.members.get('unseen')!.motion).toEqual(resting);
+  // The room's updates reach the panel's painter the way they reach the desk's.
+  for (const id of ["friend", "unseen"]) {
+    Object.assign(desk.room.members.get(id)!.motion, resting);
+    desk.motion.update(id, resting);
+  }
+  await vi.advanceTimersByTimeAsync(200);
+  expect(panel.room.members.get('friend')!.motion).toEqual(resting);
+  expect(drawn.at(-1)).toEqual(resting);
+  // Taps are counted for every member, drawn or not.
+  desk.room.members.get('unseen')!.taps = 9;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.members.get('unseen')!.taps).toBe(9);
+  panel.ui.ui.page = "emotes";
+  await vi.advanceTimersByTimeAsync(50);
+  expect(subscribed).toHaveBeenLastCalledWith([]);
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -165,7 +193,13 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   const owned = panel.player.collection.owned;
   const { emitTo } = await import("@tauri-apps/api/event");
   vi.mocked(emitTo).mockClear();
-  desk.room.members.get("friend")!.motion.dx = 7;
+  panel.motion.subscribe("friend", () => {});
+  await vi.advanceTimersByTimeAsync(50);
+  const move = (dx: number) => {
+    desk.room.members.get("friend")!.motion.dx = dx;
+    desk.motion.update("friend", { ...desk.room.members.get("friend")!.motion });
+  };
+  move(7);
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get("friend")!.motion.dx).toBe(7);
   expect(panel.player.collection.owned).toBe(owned);
@@ -174,7 +208,7 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   await vi.advanceTimersByTimeAsync(0);
   vi.mocked(emitTo).mockClear();
   desk.counter.total = 99;
-  desk.room.members.get("friend")!.motion.dx = 13;
+  move(13);
   await vi.advanceTimersByTimeAsync(200);
   expect(emitTo).not.toHaveBeenCalledWith("panel", "desktop:motion", expect.anything());
   expect(panel.counter.total).not.toBe(99);

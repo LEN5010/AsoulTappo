@@ -36,6 +36,18 @@ def test_presets_save_and_clear():
     assert s.presets("p1") == {}
 
 
+def test_collectible_count_uses_distinct_known_items_for_one_player():
+    s = Store()
+    collectible = frozenset({"card:c1", "emote:e1", "char:skin"})
+    s.add_items("p1", {"card:c1": 5, "emote:e1": 1, "emote:starter": 1, "card:removed": 2}, 0)
+    s.add_items("p2", {"char:skin": 1}, 0)
+    assert s.count_items("p1", collectible) == 2
+    assert s.count_items("p2", collectible) == 1
+    assert s.count_items("new", collectible) == 0
+    assert s.count_items("p1", frozenset()) == 0
+    s.close()
+
+
 def test_migrates_v1_card_tables(tmp_path):
     path = str(tmp_path / "old.db")
     db = sqlite3.connect(path)
@@ -108,3 +120,71 @@ def test_resonance_migration_converts_once_and_preserves_items_and_pity(tmp_path
         assert store.activity_session("old", "session-1") == {"sequence": 5, "last_at": 0, "fast_since": 0}
         assert store.owned("old") == {"emote:e.02": 2}
         store.close()
+
+
+def test_a_database_file_uses_the_write_ahead_log(tmp_path):
+    s = Store(str(tmp_path / "wal.db"))
+    assert s._db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert s._db.execute("PRAGMA synchronous").fetchone()[0] == 1
+    s.close()
+
+
+def test_collectible_count_follows_new_items_and_rollbacks():
+    s = Store()
+    collectible = frozenset({"card:c1", "emote:e1"})
+    assert s.count_items("p1", collectible) == 0
+    s.add_item("p1", "card:c1", 0)
+    assert s.count_items("p1", collectible) == 1
+    s.add_items("p1", {"emote:e1": 2}, 0)
+    assert s.count_items("p1", collectible) == 2
+    with pytest.raises(RuntimeError):
+        with s.transaction():
+            s.add_items("p2", {"card:c1": 1}, 0)
+            assert s.count_items("p2", collectible) == 1
+            raise RuntimeError("undo")
+    assert s.count_items("p2", collectible) == 0
+    # Another set of collectibles (another manifest) is counted afresh.
+    assert s.count_items("p1", frozenset({"card:c1"})) == 1
+    assert s.has_item("p1", "emote:e1") and not s.has_item("p1", "emote:e2") and not s.has_item("p2", "card:c1")
+    s.close()
+
+
+def test_marking_a_save_active_writes_once_a_day_and_survives_a_rollback():
+    s = Store()
+    statements = []
+    s.mark_active("p1", "2026-11-10")
+    s._db.set_trace_callback(statements.append)
+    s.mark_active("p1", "2026-11-10")
+    assert statements == []
+    s.mark_active("p1", "2026-11-11")
+    s.mark_active("p2", "2026-11-11")
+    s._db.set_trace_callback(None)
+    assert s.totals("2026-11-10")["activeToday"] == 1 and s.totals("2026-11-11")["activeToday"] == 2
+    with pytest.raises(RuntimeError):
+        with s.transaction():
+            s.mark_active("p3", "2026-11-11")
+            raise RuntimeError("undo")
+    s.mark_active("p3", "2026-11-11")
+    assert s.totals("2026-11-11")["activeToday"] == 3
+    s.close()
+
+
+def test_duel_net_counts_won_duels_of_the_day_through_the_day_indexes():
+    s = Store()
+    won = s.add_duel("p1", "p2", 100, 190, "2026-11-10", 0)
+    lost = s.add_duel("p3", "p1", 50, 95, "2026-11-10", 0)
+    s.add_duel("p1", "p2", 70, 133, "2026-11-10", 0)  # still open
+    other_day = s.add_duel("p1", "p2", 30, 57, "2026-11-09", 0)
+    refunded = s.add_duel("p1", "p2", 20, 38, "2026-11-10", 0)
+    s.close_duel(won, "won", "p1", 1)
+    s.close_duel(lost, "won", "p3", 1)
+    s.close_duel(other_day, "won", "p1", 1)
+    s.close_duel(refunded, "refunded", "", 1)
+    assert s.duel_net("p1", "2026-11-10") == 90 - 50
+    assert s.duel_net("p2", "2026-11-10") == -100
+    assert s.duel_net("p3", "2026-11-10") == 45
+    plan = " ".join(r[3] for r in s._db.execute(
+        "EXPLAIN QUERY PLAN SELECT SUM(bet) FROM duels WHERE ((a=? AND day=?) OR (b=? AND day=?)) AND +state='won'",
+        ("p1", "d", "p1", "d")))
+    assert "duels_a" in plan and "duels_b" in plan and "duels_state" not in plan
+    s.close()

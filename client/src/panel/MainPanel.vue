@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
 import { draws, online, shards, status } from "../stores/player";
 import { incomeTip } from "../income";
@@ -12,18 +12,44 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
 import { EASE_OUT, nextFrame, rise } from "../ui/motion";
 import { useSlider } from "../ui/useSlider";
-import CheckinPage from "./CheckinPage.vue";
-import CollectionPage from "./CollectionPage.vue";
-import ResonancePage from "./ResonancePage.vue";
-import EmotesPage from "./EmotesPage.vue";
-import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
-import ScratchPage from "./ScratchPage.vue";
-import SettingsPage from "./SettingsPage.vue";
 import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
 import NoticeDialog from "./NoticeDialog.vue";
 import { lookForUpdate, watchRelease } from "../stores/update";
+
+// Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
+// behind the shutter, and the rest are fetched one by one once the first page is up (see warmPages).
+const PAGES: Record<Page, () => Promise<unknown>> = {
+  emotes: () => import("./EmotesPage.vue"),
+  resonance: () => import("./ResonancePage.vue"),
+  dex: () => import("./CollectionPage.vue"),
+  checkin: () => import("./CheckinPage.vue"),
+  scratch: () => import("./ScratchPage.vue"),
+  room: () => import("./OnlinePage.vue"),
+  settings: () => import("./SettingsPage.vue"),
+};
+const EmotesPage = defineAsyncComponent(() => import("./EmotesPage.vue"));
+const ResonancePage = defineAsyncComponent(() => import("./ResonancePage.vue"));
+const CollectionPage = defineAsyncComponent(() => import("./CollectionPage.vue"));
+const CheckinPage = defineAsyncComponent(() => import("./CheckinPage.vue"));
+const ScratchPage = defineAsyncComponent(() => import("./ScratchPage.vue"));
+const OnlinePage = defineAsyncComponent(() => import("./OnlinePage.vue"));
+const SettingsPage = defineAsyncComponent(() => import("./SettingsPage.vue"));
+/** Resolves once the page's code is in; a failed load is left for the page itself to show. */
+const loadPage = (page: Page) => PAGES[page]().catch(() => {});
+const WARM_STEP_MS = 400;
+let warming: ReturnType<typeof setTimeout> | undefined;
+function warmPages() {
+  const rest = (Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
+  const next = () => {
+    const page = rest.shift();
+    if (!page) { warming = undefined; return; }
+    void loadPage(page);
+    warming = setTimeout(next, WARM_STEP_MS);
+  };
+  warming = setTimeout(next, WARM_STEP_MS);
+}
 
 const emit = defineEmits<{ resetPet: [] }>();
 const NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -109,6 +135,8 @@ async function settle(opening = false) {
   for (;;) {
     const covered = performance.now();
     shown.value = ui.page;
+    // The shutter stays down until the page's code is there, so it never lifts on an empty body.
+    await loadPage(shown.value);
     await nextTick();
     await nextFrame();
     await pause(dwell - (performance.now() - covered));
@@ -127,6 +155,7 @@ async function turnPage() {
     return;
   }
   turning = true;
+  void loadPage(ui.page);
   await shutter.value?.cover();
   await settle();
   turning = false;
@@ -165,14 +194,16 @@ onMounted(async () => {
   window.addEventListener("keydown", onKey);
   stopRelease = watchRelease();
   lightUp();
-  if (reducedMotion.value) return;
+  if (reducedMotion.value) { warmPages(); return; }
   turning = true;
   shutter.value?.hold();
   await settle(true);
   turning = false;
+  warmPages();
   if (ui.page !== shown.value) void turnPage();
 });
 onBeforeUnmount(() => {
+  clearTimeout(warming);
   window.removeEventListener("keydown", onKey);
   if (drag) void setDragging(false);
 });

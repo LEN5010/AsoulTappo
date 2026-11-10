@@ -1,7 +1,8 @@
-import { computed, reactive, ref, watch } from "vue";
+import { computed, markRaw, reactive, ref, watch } from "vue";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
-import { MotionPlayback } from "../net/MotionPlayback";
+import { remoteMotion } from "../net/MotionFrames";
+import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
   restingMotion, toHttpBase, type DuelMessage, type Hand, type Member, type PetMotion, type ProfilePatch, type PublicRoom,
@@ -66,7 +67,7 @@ export const youId = ref("");
 export const lastError = ref("");
 export const members = reactive(new Map<string, RemoteMember>());
 const players = new Map<string, {
-  emote: EmotePlayer; combo: TapCombo; win: TapCombo; motion: MotionPlayback;
+  emote: EmotePlayer; combo: TapCombo; win: TapCombo;
 }>();
 
 export const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
@@ -89,14 +90,14 @@ export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
 
 function add(m: Member): void {
   members.set(m.id, {
-    ...m, pulse: 0, emote: null, combo: null, win: null, motion: m.motion ? { ...m.motion } : restingMotion(),
+    ...m, pulse: 0, emote: null, combo: null, win: null, motion: markRaw(m.motion ? { ...m.motion } : restingMotion()),
   });
   const rm = members.get(m.id)!;
+  remoteMotion.update(m.id, rm.motion);
   players.set(m.id, {
     emote: new EmotePlayer((f) => (rm.emote = f), () => settings.emoteHoldMs),
     combo: new TapCombo((f) => (rm.combo = f)),
     win: new TapCombo((f) => (rm.win = f), WIN_MS),
-    motion: new MotionPlayback(rm.motion),
   });
 }
 
@@ -105,7 +106,7 @@ function remove(id: string): void {
   p?.emote.clear();
   p?.combo.stop();
   p?.win.stop();
-  p?.motion.clear();
+  remoteMotion.remove(id);
   players.delete(id);
   members.delete(id);
 }
@@ -149,17 +150,20 @@ const events: RoomEvents = {
     if (!m) return;
     m.taps = total;
     if (id === youId.value) return; // local pet already reacted instantly
+    noteActivity();
     m.pulse += 1;
     players.get(id)?.combo.add(count);
   },
   onEmote(id, name) {
     if (id === youId.value) return; // shown locally on send
     if (!getEmote(name)) return;
+    noteActivity();
     players.get(id)?.emote.play(name);
   },
   onScratch(id, shards) {
     // The shards go up over the winner's pet, and 阿草 takes it as badly as it does at the stall.
     const face = faceKey(faceOf({ kind: "shards", amount: shards, at: [] }));
+    noteActivity();
     if (id === youId.value) {
       localWin.add(shards);
       if (face) localPlayer.play(face);
@@ -171,9 +175,15 @@ const events: RoomEvents = {
   },
   onMotion(id, pose) {
     const member = members.get(id);
-    if (member && id !== youId.value) players.get(id)?.motion.update(pose);
+    if (member && id !== youId.value) {
+      noteActivity();
+      // Kept for the panel's mirror (desktop/bridge.ts) and never watched: pets are drawn from remoteMotion.
+      Object.assign(member.motion, pose);
+      remoteMotion.update(id, pose);
+    }
   },
   onDuel(msg) {
+    noteActivity();
     onDuelMessage(msg);
   },
   onState(u) {
@@ -253,6 +263,22 @@ function errorText(code: string, message: string): string {
 }
 
 const client = new RoomClient(events);
+let panelMotionIds: string[] = [];
+let subscribing = false;
+/** Pets mount and leave one by one within a render; the room hears the outcome once. */
+function subscribeMotion() {
+  if (subscribing) return;
+  subscribing = true;
+  queueMicrotask(() => {
+    subscribing = false;
+    client.subscribeMotion([...remoteMotion.ids(), ...panelMotionIds]);
+  });
+}
+if (!isPanelWindow) remoteMotion.onInterest(subscribeMotion);
+export function setPanelMotionInterest(ids: string[]): void {
+  panelMotionIds = ids;
+  subscribeMotion();
+}
 const motionSender = new MotionSender((pose) => client.sendMotion(pose));
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 

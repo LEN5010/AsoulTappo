@@ -9,6 +9,7 @@ import { viewport } from "./stores/desk";
 import { settings } from "./stores/settings";
 import { onInput, stopPet } from "./stores/pet";
 import { ui, type Page } from "./stores/ui";
+import { windowVisible } from "./stores/activity";
 
 const resize = () => { viewport.value = { w: window.innerWidth, h: window.innerHeight }; };
 resize();
@@ -18,7 +19,7 @@ let unVisibility: (() => void) | undefined;
 let unFocus: (() => void) | undefined;
 let unResize: (() => void) | undefined;
 let inputGeneration = 0;
-const previewActive = computed(() => ui.panelOpen && !ui.panelMinimized && (ui.page === "emotes" || ui.page === "room"));
+const previewActive = computed(() => windowVisible.value && ui.panelOpen && !ui.panelMinimized && (ui.page === "emotes" || ui.page === "room"));
 watch(previewActive, async (active) => {
   const generation = ++inputGeneration;
   unInput?.();
