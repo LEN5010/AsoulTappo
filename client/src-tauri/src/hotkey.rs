@@ -1,4 +1,4 @@
-//! The hide key: one global shortcut that hides the pet and the panel, and shows them again.
+//! The hide key: one global shortcut that hides the pet, the panel and the capture window, and shows them again.
 //! Registered with the system, so it needs no input permission and does not go through the hook.
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -7,10 +7,13 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// Whether the panel was on screen when the key hid it, so the next press brings it back too.
 static PANEL_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
+/// The same for the capture window.
+static CAPTURE_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 
 fn toggle(app: &AppHandle) {
     let Some(main) = app.get_webview_window("main") else { return };
     let panel = app.get_webview_window("panel");
+    let capture = app.get_webview_window("capture");
     if main.is_visible().unwrap_or(true) {
         applog!("hotkey", "hide");
         let shown = panel.as_ref().is_some_and(|p| p.is_visible().unwrap_or(false));
@@ -19,6 +22,11 @@ fn toggle(app: &AppHandle) {
             let _ = p.hide();
             let _ = app.emit_to("panel", "panel:visible", false);
         }
+        let shown = capture.as_ref().is_some_and(|c| c.is_visible().unwrap_or(false));
+        CAPTURE_WAS_SHOWN.store(shown, Ordering::Relaxed);
+        if let Some(c) = capture.filter(|_| shown) {
+            let _ = c.hide();
+        }
         let _ = main.hide();
     } else {
         applog!("hotkey", "show");
@@ -26,6 +34,9 @@ fn toggle(app: &AppHandle) {
         if let Some(p) = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
             let _ = p.show();
             let _ = app.emit_to("panel", "panel:visible", true);
+        }
+        if let Some(c) = capture.filter(|_| CAPTURE_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
+            let _ = c.show();
         }
     }
 }

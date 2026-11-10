@@ -244,6 +244,14 @@ async function exportLogFile() {
               <span>点击穿透</span>
               <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
             </label>
+            <label class="ui-row" title="单独一个普通窗口，只有自己的桌宠，给 OBS 窗口采集和截图用">
+              <span>采集窗口</span>
+              <input v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
+            </label>
+            <label v-if="settings.captureOpen" class="ui-row" title="在 OBS 里用色度键去掉">
+              <span>采集背景色</span>
+              <input v-model="settings.captureBg" class="swatch" type="color" />
+            </label>
             <label v-if="admin?.supported" class="ui-row">
               <span>以管理员身份启动</span>
               <input
@@ -376,6 +384,26 @@ async function exportLogFile() {
   align-items: center;
   gap: 10px;
   padding-right: 4px;
+}
+/* The colour itself, the size of a switch. */
+.swatch {
+  appearance: none;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px var(--c-200);
+}
+.swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.swatch::-webkit-color-swatch {
+  border: 0;
 }
 .check-note {
   font-size: var(--fs-label);

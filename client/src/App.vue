@@ -30,6 +30,7 @@ import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
+import { startCapture } from "./desktop/capture";
 import {
   DESK_GAP, clamp, defaultPetPos, dockY, enterRoom, nextDockSlot, nextSlot, placePet, placeRemote, remotePos, viewport,
   type Pos, type Size,
@@ -190,6 +191,7 @@ let stopDebugLog: (() => void) | undefined;
 let unBlocked: (() => void) | undefined;
 let stopDay: (() => void) | undefined;
 let stopRelease: (() => void) | undefined;
+let stopCapture: (() => void) | undefined;
 // The desk window watches the server's minimum version itself; the panel, which holds the dialog, may never be opened.
 watch(updateForced, (must) => { if (must) openPanel(); });
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
@@ -219,12 +221,14 @@ onMounted(async () => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "open-panel") openPanel();
     else if (a === "reset-position") resetPet();
+    else if (a === "toggle-capture") settings.captureOpen = !settings.captureOpen;
     else settings.clickThrough = !settings.clickThrough;
   });
   if (isTauri) hits = startHitReporter((rects, scale) => void setHitRegions(rects, scale));
   else document.documentElement.classList.add("browser-preview");
   unBlocked = await listenInputBlocked((b) => { if (b.by) adminHint.value = b; });
   unAccess = await listenInputAccess((missing) => (accessHint.value = missing));
+  if (isTauri) stopCapture = await startCapture();
   if (await debugLogEnabled()) {
     stopDebugLog = startDebugLog(() => `online ${online.value}, in room ${inRoom.value}, ` +
       `click-through ${settings.clickThrough}, always on top ${settings.alwaysOnTop}`);
@@ -258,6 +262,7 @@ onBeforeUnmount(() => {
   unBlocked?.();
   stopDay?.();
   stopRelease?.();
+  stopCapture?.();
   unAccess?.();
   stopPet();
 });

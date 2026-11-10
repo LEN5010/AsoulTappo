@@ -336,6 +336,78 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
     open_panel(app, None, None).await
 }
 
+/// WebKit stops painting a web view once its window is fully covered. The capture window is usually behind
+/// the game being recorded, and recording software reads covered windows as well, so its web view is told
+/// not to check. `_setWindowOcclusionDetectionEnabled:` is WebKit's own switch for this, not public API:
+/// without it the pet stands still while covered and nothing else changes.
+#[cfg(target_os = "macos")]
+fn paint_when_covered(window: &WebviewWindow) {
+    use objc2::{msg_send, runtime::AnyObject, sel};
+    let result = window.with_webview(|webview| {
+        let view = webview.inner() as *mut AnyObject;
+        // SAFETY: Tauri hands out the window's live WKWebView and runs this on the main thread; the
+        // message is sent only when the view answers to it.
+        let known = unsafe {
+            match view.as_ref() {
+                Some(view) if msg_send![view, respondsToSelector: sel!(_setWindowOcclusionDetectionEnabled:)] => {
+                    let _: () = msg_send![view, _setWindowOcclusionDetectionEnabled: false];
+                    true
+                }
+                _ => false,
+            }
+        };
+        applog!("capture", "paints while covered: {}", if known { "on" } else { "not available in this WebKit" });
+    });
+    if let Err(e) = result {
+        applog!("capture", "paints while covered: failed ({e})");
+    }
+}
+
+/// Opens or closes the capture window: a regular window (title bar, taskbar entry, not a tool window, not
+/// on top) with the own pet on a flat colour. OBS's window capture leaves tool windows out of its list
+/// (`check_window_valid`, plugins/win-capture/window-capture.c), which is what the desk overlay is
+/// (src/tool_window.rs). Its close button reports to the desk, which keeps the setting. The arrangement is
+/// the one WuwaTappoNative uses for the same purpose (src/Pet/CaptureWindow.cs there).
+#[tauri::command]
+async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, height: f64) -> Result<(), String> {
+    let existing = app.get_webview_window("capture");
+    if !open {
+        if let Some(window) = existing {
+            applog!("capture", "close");
+            window.destroy().map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+    if let Some(window) = existing {
+        window.unminimize().map_err(|e| e.to_string())?;
+        return window.show().map_err(|e| e.to_string());
+    }
+    let (width, height) = (width.clamp(160.0, 1600.0), height.clamp(160.0, 1600.0));
+    let window = WebviewWindowBuilder::new(&app, "capture", WebviewUrl::App("capture.html".into()))
+        .title("AsoulTappo 采集窗口")
+        // The size it was last dragged to (settings.captureW, captureH), reported from the window's own
+        // resize events below: the same measure as this one, which the page's viewport is not on macOS
+        // (shorter by the title bar).
+        .inner_size(width, height)
+        .min_inner_size(160.0, 160.0)
+        .max_inner_size(1600.0, 1600.0)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        // Opened from the panel or the tray, or at startup: none of them should lose the keyboard to it.
+        .focused(false)
+        .build()
+        .map_err(|e| {
+            applog!("capture", "create failed: {e}");
+            e.to_string()
+        })?;
+    applog!("capture", "created");
+    #[cfg(target_os = "macos")]
+    paint_when_covered(&window);
+    #[cfg(not(target_os = "macos"))]
+    let _ = window;
+    Ok(())
+}
+
 /// Links the About section may open in the system browser or mail app.
 const ABOUT_LINKS: [&str; 6] = [
     "https://github.com/LEN5010/AsoulTappo",
@@ -699,6 +771,7 @@ pub fn run() {
             toggle_panel,
             show_panel,
             hide_panel,
+            set_capture_window,
             open_about_link,
             export_log,
             debug_log,
@@ -716,6 +789,22 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                     let _ = window.emit("panel:visible", false);
+                }
+            }
+            if window.label() == "capture" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { .. } => {
+                        applog!("capture", "closed from its title bar");
+                        let _ = window.emit_to("main", "capture:closed", ());
+                    }
+                    // A minimized window reports no size; that one is not kept.
+                    tauri::WindowEvent::Resized(size) => {
+                        let size = size.to_logical::<f64>(window.scale_factor().unwrap_or(1.0));
+                        if size.width >= 160.0 && size.height >= 160.0 {
+                            let _ = window.emit_to("main", "capture:size", (size.width, size.height));
+                        }
+                    }
+                    _ => {}
                 }
             }
         })
@@ -819,6 +908,7 @@ pub fn run() {
             let toggle_visible =
                 MenuItem::with_id(app, "toggle_visible", "显示 / 隐藏桌宠", true, None::<&str>)?;
             let panel = MenuItem::with_id(app, "toggle_panel", "打开 / 关闭面板", true, None::<&str>)?;
+            let capture = MenuItem::with_id(app, "toggle_capture", "打开 / 关闭采集窗口", true, None::<&str>)?;
             let click_through =
                 MenuItem::with_id(app, "toggle_click_through", "切换点击穿透", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset_position", "桌宠放回右下角", true, None::<&str>)?;
@@ -828,7 +918,7 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
-                &[&toggle_visible, &panel, &click_through, &reset, &next_monitor, &export, &quit],
+                &[&toggle_visible, &panel, &capture, &click_through, &reset, &next_monitor, &export, &quit],
             )?;
 
             let tray_overlay = overlay.clone();
@@ -849,6 +939,9 @@ pub fn run() {
                     }
                     "toggle_panel" => {
                         let _ = app.emit_to("main", "tray", "toggle-panel");
+                    }
+                    "toggle_capture" => {
+                        let _ = app.emit_to("main", "tray", "toggle-capture");
                     }
                     "toggle_click_through" => {
                         // Flip it here too, so the tray still frees the screen when the page is hung;

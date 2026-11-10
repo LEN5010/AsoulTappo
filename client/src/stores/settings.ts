@@ -52,6 +52,13 @@ export interface Settings {
   petDocked: boolean;
   /** Global shortcut that hides the pet and the panel and brings them back ("" = none), e.g. "Control+Alt+KeyH". */
   bossKey: string;
+  /** The capture window is open: a regular window with the own pet on a flat colour, for OBS and screenshots. */
+  captureOpen: boolean;
+  /** Background of the capture window, "#rrggbb"; keyed out in the recording software. */
+  captureBg: string;
+  /** Size of the capture window, CSS px: the size it was last dragged to. */
+  captureW: number;
+  captureH: number;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -89,6 +96,10 @@ export const DEFAULT_SETTINGS: Settings = {
   barFolded: false,
   petDocked: false,
   bossKey: "",
+  captureOpen: false,
+  captureBg: "#00ff00",
+  captureW: 560,
+  captureH: 412,
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
@@ -117,6 +128,9 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
+  if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
+  out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
+  out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
   return out;
 }
 

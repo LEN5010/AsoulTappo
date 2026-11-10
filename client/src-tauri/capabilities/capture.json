@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "capture",
+  "description": "Capture window: hears input events and its view from the desk, and asks the desk for it.",
+  "windows": [
+    "capture"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

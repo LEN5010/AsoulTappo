@@ -1,8 +1,8 @@
 // State of the local pet, driven by the global input hook. Shared by the desk pet and the
 // live preview in the backpack page.
-import { reactive, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import type { InputEvent } from "../composables/tauri";
-import { MouseMotion } from "../MouseMotion";
+import { PetPose } from "../pet/PetPose";
 import { TapGuard } from "../pet/TapGuard";
 import { bumpCounter } from "./counter";
 import { countInput, reportCooldown, status } from "./player";
@@ -11,9 +11,8 @@ import { settings } from "./settings";
 import { popShards } from "./shardPop";
 import { noteActivity, windowVisible } from "./activity";
 
-export const pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
-let keysHeld = 0;
-const motion = new MouseMotion(pet);
+const pose = new PetPose();
+export const pet = pose.pet;
 
 watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, youId.value],
   () => syncMotion({ ...pet }), { flush: "sync" });
@@ -46,40 +45,14 @@ function tap(): void {
 
 export function onInput(e: InputEvent, count = true): void {
   noteActivity();
-  switch (e.kind) {
-    case "key_down":
-      tapStats.keys += 1;
-      keysHeld += 1;
-      pet.keyDown = true;
-      if (count) tap();
-      break;
-    case "key_up":
-      keysHeld = Math.max(0, keysHeld - 1);
-      pet.keyDown = keysHeld > 0;
-      break;
-    case "mouse_down":
-      tapStats.mouse += 1;
-      if (e.button === "left") pet.left = true;
-      else if (e.button === "right") pet.right = true;
-      if (count) tap();
-      break;
-    case "mouse_up":
-      if (e.button === "left") pet.left = false;
-      else if (e.button === "right") pet.right = false;
-      break;
-    case "mouse_move":
-      // A hidden pet runs no inertia frames; keys and buttons still reach the room.
-      if (!settings.mouseFollow || !windowVisible.value) break;
-      motion.move(e.dx, e.dy, settings.mouseSensitivity);
-      break;
-  }
+  // A hidden pet runs no inertia frames; keys and buttons still reach the room.
+  pose.input(e, settings.mouseFollow && windowVisible.value ? settings.mouseSensitivity : null);
+  if (e.kind !== "key_down" && e.kind !== "mouse_down") return;
+  tapStats[e.kind === "key_down" ? "keys" : "mouse"] += 1;
+  if (count) tap();
 }
 
-export function stopPet(): void {
-  motion.stop();
-  keysHeld = 0;
-  Object.assign(pet, { keyDown: false, left: false, right: false, dx: 0, dy: 0 });
-}
+export function stopPet(): void { pose.stop(); }
 
-watch(() => settings.mouseFollow, (enabled) => { if (!enabled) motion.stop(); }, { flush: "sync" });
-watch(windowVisible, (visible) => { if (!visible) motion.stop(); }, { flush: "sync" });
+watch(() => settings.mouseFollow, (enabled) => { if (!enabled) pose.stopMouse(); }, { flush: "sync" });
+watch(windowVisible, (visible) => { if (!visible) pose.stopMouse(); }, { flush: "sync" });

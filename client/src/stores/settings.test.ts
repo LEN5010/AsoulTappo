@@ -27,4 +27,9 @@ describe("loadSettings", () => {
     loadSettings(store(null)).favorites.push("x");
     expect(DEFAULT_SETTINGS.favorites).toEqual([]);
   });
+  it("keeps a capture background only as a six-digit hex colour and the capture size within limits", () => {
+    expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
+    expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");
+    expect(loadSettings(store(JSON.stringify({ captureW: 9000, captureH: 12.4 })))).toMatchObject({ captureW: 1600, captureH: 160 });
+  });
 });

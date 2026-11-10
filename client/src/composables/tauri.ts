@@ -56,7 +56,7 @@ export async function listenInput(cb: (e: InputEvent) => void): Promise<() => vo
   };
 }
 
-export type TrayAction = "toggle-panel" | "open-panel" | "toggle-click-through" | "reset-position";
+export type TrayAction = "toggle-panel" | "open-panel" | "toggle-click-through" | "reset-position" | "toggle-capture";
 
 export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
@@ -177,4 +177,18 @@ export async function debugLogEnabled(): Promise<boolean> {
 export function openAboutLink(url: string): void {
   if (isTauri) void invoke("open_about_link", { url });
   else window.open(url, "_blank", "noopener");
+}
+
+/**
+ * What every window does first: uncaught errors go to the exportable log tagged [kind], and the webview's
+ * own context menu (reload, inspect) is left out of the app; text fields keep theirs for paste.
+ */
+export function prepareWindow(kind: string): void {
+  const describe = (reason: unknown) => (reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason));
+  window.addEventListener("error", (e) => writeLog(kind, `error: ${e.message} at ${e.filename}:${e.lineno}:${e.colno}`));
+  window.addEventListener("unhandledrejection", (e) => writeLog(kind, `unhandled rejection: ${describe(e.reason)}`));
+  if (import.meta.env.DEV) return;
+  window.addEventListener("contextmenu", (e) => {
+    if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) e.preventDefault();
+  });
 }
