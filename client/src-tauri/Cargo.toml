@@ -38,6 +38,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # thread (`set_is_main_thread(false)`); pinned to a reviewed commit.
 rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366f277d29fe732b9c1" }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Puts the pet window on every Space, full-screen apps included (src/lib.rs); already in the tree through Tauri.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSWindow"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 # XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
 # input hook and its watchdog (src/input.rs), the overlay's tool-window subclass

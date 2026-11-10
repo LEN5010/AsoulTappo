@@ -54,6 +54,23 @@ fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
 }
 
+/// macOS gives a full-screen app a Space of its own. Without these flags the pet stays on the Space it
+/// started on and is gone while another desktop or a full-screen app is shown.
+#[cfg(target_os = "macos")]
+fn join_all_spaces(w: &WebviewWindow) {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
+    match w.ns_window() {
+        Ok(ptr) if !ptr.is_null() => {
+            // SAFETY: Tauri hands out the window's live NSWindow; setup runs on the main thread.
+            let ns = unsafe { &*(ptr as *const NSWindow) };
+            ns.setCollectionBehavior(ns.collectionBehavior() | B::CanJoinAllSpaces | B::FullScreenAuxiliary);
+            applog!("overlay", "joins all Spaces and full-screen apps");
+        }
+        Ok(_) => applog!("overlay", "no NSWindow to join all Spaces"),
+        Err(e) => applog!("overlay", "join all Spaces failed: {e}"),
+    }
+}
+
 /// Click-through: the overlay never takes the mouse (turn it off from the tray menu).
 #[tauri::command]
 fn set_click_through(overlay: tauri::State<'_, Arc<Overlay>>, enabled: bool) {
@@ -737,6 +754,8 @@ pub fn run() {
                     Ok(false) => applog!("overlay", "tool window subclass not installed"),
                     Err(e) => applog!("overlay", "tool window subclass failed: {e}"),
                 }
+                #[cfg(target_os = "macos")]
+                join_all_spaces(&w);
                 let index = primary_index(&w);
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
