@@ -51,7 +51,7 @@
       "icons/icon.ico"
     ],
     "license": "GPL-2.0-only",
-    "copyright": "AsoulTappo contributors; derived from Evelynall/ASoul-Little-Bun (GPL-2.0)",
+    "copyright": "Copyright © 2026 AsoulTappo contributors. Character artwork © A-SOUL.",
     "createUpdaterArtifacts": true
   },
   "plugins": {
