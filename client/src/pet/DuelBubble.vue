@@ -7,6 +7,7 @@ import { HANDS, type Hand } from "../net/protocol";
 import { answerDuel, duel, throwHand } from "../stores/room";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import Icon from "../ui/Icon.vue";
+import HandImg from "./HandImg.vue";
 import PetBubble from "./PetBubble.vue";
 import { DUEL_WIDTH } from "./duelPick";
 
@@ -52,8 +53,8 @@ const left = computed(() => {
       <div v-if="d.phase === 'throw' && d.shown" class="draw">
         <span class="ui-tag light">平局</span>
         <span class="face small">
-          <Icon v-if="d.shown.mine" class="hand mine" :name="`hand-${d.shown.mine}`" :size="22" />
-          <Icon v-if="d.shown.theirs" class="hand theirs" :name="`hand-${d.shown.theirs}`" :size="22" />
+          <HandImg v-if="d.shown.mine" class="hand mine" :name="d.shown.mine" :size="22" />
+          <HandImg v-if="d.shown.theirs" class="hand theirs" :name="d.shown.theirs" :size="22" />
         </span>
       </div>
 
@@ -72,20 +73,20 @@ const left = computed(() => {
             :aria-pressed="d.hand === h" :disabled="!!d.hand && d.hand !== h" :title="HAND_NAMES[h]" :aria-label="HAND_NAMES[h]"
             @click="throwHand(h)"
           >
-            <Icon :name="`hand-${h}`" :size="28" />
+            <HandImg :name="h" :size="28" />
           </button>
         </div>
 
         <div v-else-if="d.phase === 'result'" class="face">
           <span class="slot" :class="{ lost: !d.won }">
-            <Icon v-if="d.shown?.mine" class="hand mine" :name="`hand-${d.shown.mine}`" :size="34" />
+            <HandImg v-if="d.shown?.mine" class="hand mine" :name="d.shown.mine" :size="34" />
             <i v-else class="none">?</i>
           </span>
           <b class="verdict" :class="{ won: d.won }">
             {{ d.won ? "赢了" : "输了" }}<span v-if="d.won" class="gain"><Icon name="shard" :size="14" />+{{ d.prize.toLocaleString("en-US") }}</span>
           </b>
           <span class="slot" :class="{ lost: d.won }">
-            <Icon v-if="d.shown?.theirs" class="hand theirs" :name="`hand-${d.shown.theirs}`" :size="34" />
+            <HandImg v-if="d.shown?.theirs" class="hand theirs" :name="d.shown.theirs" :size="34" />
             <i v-else class="none">?</i>
           </span>
         </div>

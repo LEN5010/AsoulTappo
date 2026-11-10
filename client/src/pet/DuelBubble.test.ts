@@ -25,7 +25,7 @@ it("writes what a win paid into the result, and nothing extra for a loss", async
 it("draws the hands face to face, an empty slot for a hand never thrown, and equal hand keys", async () => {
   duel.value = { ...result(true), shown: { mine: "scissors", theirs: null } };
   const html = await renderToString(createSSRApp(DuelBubble));
-  expect(html.match(/class="icon hand mine"/g)).toHaveLength(1);
+  expect(html.match(/class="hand mine"/g)).toHaveLength(1);
   expect(html).not.toContain("hand theirs");
   expect(html).toContain('<i class="none"');
   expect(html).not.toContain("—");

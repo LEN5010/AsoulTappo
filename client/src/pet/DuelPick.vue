@@ -2,7 +2,7 @@
 // Over a partner's pet after a click on it: one key, and the three bets once that key is pressed. A press on a bet
 // sends the invite. Closing on a press elsewhere, Escape and the timeout is in duelPick.ts and the app root.
 import { ASK_WIDTH, PICK_WIDTH, keepPick, pickStake, picking, showStakes, staking } from "./duelPick";
-import Icon from "../ui/Icon.vue";
+import HandImg from "./HandImg.vue";
 import PetBubble from "./PetBubble.vue";
 import StakeKeys from "./StakeKeys.vue";
 
@@ -14,7 +14,7 @@ defineProps<{ id: string; shift: number; below: boolean }>();
     <div data-duel-pick role="dialog" aria-label="猜拳" @pointermove="keepPick">
       <StakeKeys v-if="staking" @pick="pickStake" />
       <button v-else type="button" class="ui-btn small ask" @click="showStakes">
-        <Icon name="hand-scissors" :size="15" />猜拳
+        <HandImg name="scissors" :size="18" />猜拳
       </button>
     </div>
   </PetBubble>

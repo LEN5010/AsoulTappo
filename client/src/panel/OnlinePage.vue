@@ -14,6 +14,7 @@ import { characterColor } from "../manifest";
 import { reducedMotion, skin } from "../stores/theme";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import Icon from "../ui/Icon.vue";
+import HandImg from "../pet/HandImg.vue";
 import Modal from "../ui/Modal.vue";
 import StakeKeys from "../pet/StakeKeys.vue";
 import RangeInput from "../ui/RangeInput.vue";
@@ -219,7 +220,7 @@ async function copy() {
               v-if="duelOn" type="button" class="ui-btn small" title="猜拳" aria-label="猜拳" :disabled="!canDuel(m)"
               @click="picking = m"
             >
-              <Icon name="hand-scissors" :size="16" />
+              <HandImg name="scissors" :size="18" />
             </button>
             <button v-if="isHost" type="button" class="ui-btn small" title="移出房间" aria-label="移出房间" @click="kickMember(m.id)">
               <Icon name="close" :size="13" />
