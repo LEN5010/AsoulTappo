@@ -19,6 +19,8 @@ from .accounts import MainAccounts
 from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
+from . import notice as notices
+from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PingMsg, PongMsg, RoomInfo, RoomInfoMsg,
@@ -66,6 +68,14 @@ def load_blocklist(store: Store) -> Blocklist:
 blocklist = load_blocklist(game.store)
 # Nicks as members sent them, by member id: a new list is applied to these, never to already masked text.
 raw_nicks: dict[str, str] = {}
+
+
+def load_notice(store: Store) -> Notice:
+    return Notice.load(store.setting(notices.KEY))
+
+
+# Minimum client version and announcements, set through PUT /admin/notice.
+notice = load_notice(game.store)
 
 
 async def _departed(room_id: str, peer: Peer) -> None:
@@ -163,7 +173,10 @@ def _who(token: str, authorization: str) -> PlayerId:
     return PlayerId(pid)
 
 
-def player(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> PlayerId:
+def player(x_player_token: str = Header(default=""), authorization: str = Header(default=""),
+           x_client_version: str = Header(default="")) -> PlayerId:
+    if notice.outdated(x_client_version):
+        raise HTTPException(426, {"code": "client_outdated", "message": OUTDATED_MESSAGE})
     return _guard(_who, x_player_token, authorization)
 
 
@@ -278,10 +291,14 @@ def api_info() -> dict:
 
 @app.get("/api/client/release")
 def api_client_release() -> dict:
+    """The newest release, with the minimum version and the announcements riding along."""
     latest = releases.latest()
+    if not latest and notice.min_version:
+        # The main site does not answer: the minimum is still a version to update to.
+        latest = {"version": notice.min_version, "notes": ""}
     if not latest:
         raise HTTPException(503, {"code": "release_unavailable", "message": "暂时查不到最新版本"})
-    return latest
+    return {**latest, "minVersion": notice.min_version or None, "announcements": notice.current()}
 
 
 def _public_user(user: dict) -> dict:
@@ -417,6 +434,44 @@ async def admin_set_blocked_words(body: BlockedWordsBody) -> dict:
     return {"count": len(body.words)}
 
 
+class Announcement(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=40)
+    body: str = Field(default="", max_length=2000)
+    # Unix seconds after which it is no longer shown; 0 = no end.
+    until: float = Field(default=0, ge=0)
+
+
+class NoticeBody(BaseModel):
+    """minVersion "" lifts the minimum."""
+
+    minVersion: str = Field(default="", max_length=32)
+    announcements: list[Announcement] = Field(default_factory=list, max_length=notices.MAX_ANNOUNCEMENTS)
+
+    @field_validator("minVersion")
+    @classmethod
+    def _version(cls, v: str) -> str:
+        v = v.strip()
+        if v and version_key(v) is None:
+            raise ValueError("minVersion is not a version like 1.2.3")
+        return v
+
+
+@app.get("/admin/notice", dependencies=[Depends(admin)])
+def admin_notice() -> dict:
+    return {"minVersion": notice.min_version, "announcements": notice.announcements}
+
+
+@app.put("/admin/notice", dependencies=[Depends(admin)])
+def admin_set_notice(body: NoticeBody) -> dict:
+    """Replace the minimum version and the announcements; requests after this one see them."""
+    global notice
+    new = Notice(body.minVersion, [a.model_dump() for a in body.announcements])
+    game.store.set_setting(notices.KEY, new.dump())
+    notice = new
+    return admin_notice()
+
+
 @app.get("/api/collection")
 def api_collection(who: PlayerId = Depends(player)) -> dict:
     return _guard(game.collection, who)
@@ -482,6 +537,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     room_id: str | None = None
     peer: Peer | None = None
+    # Clients from 1.1.3 on name their version in the address (`/ws?v=1.1.3`).
+    params = getattr(ws, "query_params", None)
+    client_version = params.get("v") if params is not None else None
 
     async def send(data: dict) -> None:
         # A member removed during an await answers on the bare connection, like one that never joined.
@@ -523,6 +581,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 who, signed_in = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
                 profile = await run_in_threadpool(game.profile_for, who, msg.room)
+                if notice.outdated(client_version):
+                    await send(_final("client_outdated", OUTDATED_MESSAGE))
+                    continue
                 plate = await run_in_threadpool(game.room_plate, who, msg.plate)
                 character = msg.character
                 # A skin the save does not own shows its member instead; the join itself goes through.

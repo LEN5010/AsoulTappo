@@ -1,13 +1,14 @@
 // Update check. The newest version comes from the room server, which reads the main site's release
 // list: many players cannot reach GitHub. The signed package itself still comes from GitHub through
 // the Tauri updater; when that fails, the dialog offers the download page on the main site.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { isTauri, openAboutLink } from "../composables/tauri";
-import { Api, type ReleaseInfo } from "../net/api";
+import { Api, type Announcement, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { isNewer } from "../semver";
 import { settings } from "./settings";
+import { APP_VERSION } from "../version";
 
 const DISMISS_KEY = "asoultappo.update.dismissed";
 /** Every installer, mirrored on the main site. Also listed in ABOUT_LINKS (src-tauri/src/lib.rs). */
@@ -22,6 +23,35 @@ export const updateFailed = ref(false);
 export const updatePercent = ref<number | null>(null);
 /** The check started from the settings page: running, nothing newer, or no answer from anywhere. */
 export const checkState = ref<"idle" | "checking" | "latest" | "failed">("idle");
+
+/** This version is below the server's minimum: the dialog stays until the update is installed. */
+export const updateForced = ref(false);
+
+// ---- announcements, read with the update check and shown once each
+const SEEN_KEY = "asoultappo.notices.seen";
+const SEEN_KEPT = 50;
+function loadSeen(): string[] {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+const announcements = ref<Announcement[]>([]);
+const seen = ref<string[]>(loadSeen());
+/** The oldest announcement this device has not closed yet. */
+export const unreadNotice = computed(() => announcements.value.find((a) => !seen.value.includes(a.id)) ?? null);
+export function readNotice(id: string): void {
+  seen.value = [...seen.value.filter((s) => s !== id), id].slice(-SEEN_KEPT);
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(seen.value));
+  } catch { /* private mode */ }
+}
+const isNotice = (a: unknown): a is Announcement => {
+  const n = a as Partial<Announcement> | null;
+  return typeof n?.id === "string" && typeof n.title === "string" && typeof (n.body ?? "") === "string";
+};
 
 type GithubAnswer = { ok: true; update: Update | null } | { ok: false };
 let github: Promise<GithubAnswer> | null = null;
@@ -41,7 +71,12 @@ function askGithub(again = false): Promise<GithubAnswer> {
 async function askServer(): Promise<ReleaseInfo | null> {
   try {
     const found = await new Api(() => toHttpBase(settings.serverUrl), () => "").latestRelease();
-    return typeof found?.version === "string" ? { version: found.version, notes: found.notes?.trim() ?? "" } : null;
+    if (typeof found?.version !== "string") return null;
+    return {
+      version: found.version, notes: found.notes?.trim() ?? "",
+      minVersion: typeof found.minVersion === "string" ? found.minVersion : null,
+      announcements: Array.isArray(found.announcements) ? found.announcements.filter(isNotice).map((a) => ({ ...a, body: a.body ?? "" })) : [],
+    };
   } catch {
     return null;
   }
@@ -58,18 +93,25 @@ function offer(found: ReleaseInfo, manual: boolean): void {
   updateDialogOpen.value = manual || dismissed !== found.version;
 }
 
-/** Looks for a newer version: once by itself when the panel opens, or again from the settings page. */
-export async function lookForUpdate(manual = false): Promise<void> {
+/**
+ * Looks for a newer version: once by itself when the panel opens, again from the settings page ([manual]),
+ * or again on the release watch ([again]). The server's answer also carries its minimum version and announcements.
+ */
+export async function lookForUpdate(manual = false, again = false): Promise<void> {
   if (checkState.value === "checking" || updateBusy.value) return;
   if (!manual) {
-    if (looked) return;
+    if (looked && !again) return;
     looked = true;
   } else {
     checkState.value = "checking";
   }
   const latest = await askServer();
   if (latest) {
-    if (isNewer(latest.version, __APP_VERSION__)) offer(latest, manual);
+    announcements.value = latest.announcements ?? [];
+    const must = !!latest.minVersion && isNewer(latest.minVersion, APP_VERSION);
+    updateForced.value = must;
+    if (isNewer(latest.version, APP_VERSION)) offer(latest, manual || must);
+    else if (must) offer({ version: latest.minVersion!, notes: "" }, true);
     else if (manual) checkState.value = "latest";
     return;
   }
@@ -84,6 +126,14 @@ export async function lookForUpdate(manual = false): Promise<void> {
   }
 }
 
+const WATCH_MS = 30 * 60 * 1000;
+/** Asks again now and every half hour, so a minimum version or an announcement set later still arrives. */
+export function watchRelease(): () => void {
+  void lookForUpdate(false, true);
+  const timer = setInterval(() => void lookForUpdate(false, true), WATCH_MS);
+  return () => clearInterval(timer);
+}
+
 export function openUpdateDialog(): void {
   if (!updateOffer.value) return;
   if (!updateBusy.value) updateFailed.value = false;
@@ -91,7 +141,7 @@ export function openUpdateDialog(): void {
 }
 
 export function dismissUpdate(): void {
-  if (updateBusy.value) return;
+  if (updateBusy.value || updateForced.value) return;
   const version = updateOffer.value?.version;
   if (version) {
     try {

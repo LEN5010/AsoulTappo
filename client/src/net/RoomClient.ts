@@ -2,6 +2,7 @@ import type {
   ClientMessage, DuelMessage, Hand, Member, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
 } from "./protocol";
 import { toWsUrl } from "./protocol";
+import { APP_VERSION } from "../version";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
 
@@ -153,7 +154,7 @@ export class RoomClient {
   private open(): void {
     let url: string;
     try {
-      url = toWsUrl(this.serverUrl);
+      url = `${toWsUrl(this.serverUrl)}?v=${encodeURIComponent(APP_VERSION)}`;
     } catch {
       this.events.onError("bad_url", "服务器地址无效");
       this.wantOpen = false;

@@ -34,7 +34,7 @@ import {
   clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
-import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stores/update";
+import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
@@ -112,6 +112,9 @@ let hits: ReturnType<typeof startHitReporter> | undefined;
 let stopDebugLog: (() => void) | undefined;
 let unBlocked: (() => void) | undefined;
 let stopDay: (() => void) | undefined;
+let stopRelease: (() => void) | undefined;
+// The desk window watches the server's minimum version itself; the panel, which holds the dialog, may never be opened.
+watch(updateForced, (must) => { if (must) openPanel(); });
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
 const adminHint = ref<InputBlocked | null>(null);
 let unAccess: (() => void) | undefined;
@@ -131,6 +134,7 @@ onMounted(async () => {
   window.addEventListener("keydown", closeOnEscape);
   startReporting();
   stopDay = watchDay();
+  if (isTauri) stopRelease = watchRelease();
   unInput = await listenInput(onInput);
   unOutside = await listenOutsideClick(closeQuickAway);
   unTray = await listenTray((a) => {
@@ -175,6 +179,7 @@ onBeforeUnmount(() => {
   stopDebugLog?.();
   unBlocked?.();
   stopDay?.();
+  stopRelease?.();
   unAccess?.();
   stopPet();
 });

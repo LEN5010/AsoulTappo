@@ -6,7 +6,8 @@ import Icon from "./Icon.vue";
 
 // `still` drops the sheet's slide for content that animates into place on its own.
 // `title` names the dialog; `heading` also draws it in the header row, for callers without a heading of their own.
-defineProps<{ title?: string; wide?: boolean; still?: boolean; heading?: boolean }>();
+// `locked` leaves no way to close it: no close key, and the backdrop and Escape do nothing.
+const props = defineProps<{ title?: string; wide?: boolean; still?: boolean; heading?: boolean; locked?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
@@ -19,7 +20,7 @@ let alive = true;
 let timer: ReturnType<typeof setTimeout> | undefined;
 /** The backdrop, Escape and the close key play the closing animation before the caller unmounts the dialog. */
 function close() {
-  if (closing.value) return;
+  if (closing.value || props.locked) return;
   if (reducedMotion.value) {
     emit("close");
     return;
@@ -59,7 +60,7 @@ onDeactivated(() => emit("close"));
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <div class="sheet-head">
           <h3 v-if="heading && title" class="sheet-title">{{ title }}</h3>
-          <button type="button" class="x ui-btn ghost" aria-label="关闭" @click="close"><Icon name="close" :size="16" /></button>
+          <button v-if="!locked" type="button" class="x ui-btn ghost" aria-label="关闭" @click="close"><Icon name="close" :size="16" /></button>
         </div>
         <div class="sheet-body">
           <slot />

@@ -1,5 +1,6 @@
 // HTTP client for the progression API (see protocol/PROTOCOL.md). A guest save is identified by a random
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
+import { APP_VERSION } from "../version";
 import type { Rarity } from "../manifest";
 
 export interface PlayerStatus {
@@ -84,7 +85,14 @@ export function authHeaders(credential: Credential): Record<string, string> {
 export interface MainUser { id: string; username: string; email: string | null }
 export interface SaveSummary { shards: number; owned: number; taps: number; lastActive: number }
 export interface ServerInfo { accountLogin: boolean; mainApi: string | null }
-export interface ReleaseInfo { version: string; notes: string }
+export interface Announcement { id: string; title: string; body: string }
+export interface ReleaseInfo {
+  version: string;
+  notes: string;
+  /** Versions below this one are refused by the server and must update. */
+  minVersion?: string | null;
+  announcements?: Announcement[];
+}
 export interface LinkResult { user: MainUser; save: SaveSummary; linkedGuest: boolean }
 
 export interface ActivityBatch {
@@ -108,7 +116,10 @@ export class Api {
     try {
       const res = await this.f(`${this.base().replace(/\/+$/, "")}${path}`, {
         method,
-        headers: { ...(headers ?? authHeaders(this.credential())), ...(body ? { "Content-Type": "application/json" } : {}) },
+        headers: {
+          ...(headers ?? authHeaders(this.credential())), "X-Client-Version": APP_VERSION,
+          ...(body ? { "Content-Type": "application/json" } : {}),
+        },
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });

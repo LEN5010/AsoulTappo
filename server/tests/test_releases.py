@@ -86,8 +86,10 @@ def test_release_endpoint(monkeypatch):
     fake = FakeMain()
     feed, _ = feed_with(fake)
     monkeypatch.setattr(main, "releases", feed)
+    monkeypatch.setattr(main, "notice", main.Notice())
     client = TestClient(main.app)
-    assert client.get("/api/client/release").json() == {"version": "0.1.0-beta.7", "notes": "新版本"}
+    assert client.get("/api/client/release").json() == {
+        "version": "0.1.0-beta.7", "notes": "新版本", "minVersion": None, "announcements": []}
 
     fake.down = True
     monkeypatch.setattr(main, "releases", feed_with(fake)[0])

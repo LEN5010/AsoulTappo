@@ -2,7 +2,8 @@
 import { computed } from "vue";
 import Modal from "../ui/Modal.vue";
 import {
-  dismissUpdate, installUpdate, openDownloadPage, updateBusy, updateDialogOpen, updateFailed, updateOffer, updatePercent,
+  dismissUpdate, installUpdate, openDownloadPage, updateBusy, updateDialogOpen, updateFailed, updateForced, updateOffer,
+  updatePercent,
 } from "../stores/update";
 
 const label = computed(() => {
@@ -13,12 +14,12 @@ const label = computed(() => {
 </script>
 
 <template>
-  <Modal v-if="updateDialogOpen && updateOffer" title="发现新版本" heading @close="dismissUpdate">
+  <Modal v-if="updateDialogOpen && updateOffer" :title="updateForced ? '需要更新' : '发现新版本'" heading :locked="updateForced" @close="dismissUpdate">
     <p class="ver">{{ updateOffer.version }}</p>
     <p v-if="updateOffer.notes" class="notes">{{ updateOffer.notes }}</p>
     <p v-if="updateFailed" role="status" class="failed">自动更新失败，请到下载页手动安装</p>
     <div class="acts">
-      <button type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
+      <button v-if="!updateForced" type="button" class="ui-btn" :disabled="updateBusy" @click="dismissUpdate">稍后</button>
       <button v-if="!updateFailed" type="button" class="ui-btn" @click="openDownloadPage">去网页下载</button>
       <button type="button" class="ui-btn primary" :class="{ pulse: !updateBusy }" @click="installUpdate">{{ label }}</button>
     </div>
