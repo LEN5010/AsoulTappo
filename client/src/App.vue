@@ -31,7 +31,7 @@ import { draws, online, startReporting, stopReporting } from "./stores/player";
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import {
-  clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
+  clamp, defaultPetPos, dockY, enterRoom, nextSlot, placeOwn, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
@@ -47,19 +47,72 @@ const onResize = () => (viewport.value = { w: window.innerWidth, h: window.inner
 onResize();
 
 // ---- own pet
+const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
-const ownPos = computed<Pos>(() =>
-  settings.petX < 0 ? defaultPetPos(ownSize.value) : clamp({ x: settings.petX, y: settings.petY }, ownSize.value),
-);
+/** Height of the strip under the pet, measured while it shows. */
+const stripHeight = ref(36);
+/** The own pet's size with the strip under it, which a docked or folded pet does not have. */
+const fullSize = computed<Size>(() => ({
+  w: Math.max(ownSize.value.w, barWidth.value),
+  h: Math.round(PET_BASE.height * settings.scale) + stripHeight.value,
+}));
+/** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
+const dragDock = ref<boolean | null>(null);
+const docked = computed(() => dragDock.value ?? settings.petDocked);
+/** The strip stays under the pet: not folded away in the settings, and not on the bottom edge where it has no room. */
+const barPinned = computed(() => !settings.barFolded && !docked.value);
+/** A click on the pet shows an unpinned strip for a few seconds; a docked pet rises off the edge to make room. */
+const peek = ref(false);
+const PEEK_MS = 6000;
+let peekTimer: ReturnType<typeof setTimeout> | undefined;
+/** Restarts the countdown; the quick emotes hold the strip open while they are. */
+function keepPeek() {
+  clearTimeout(peekTimer);
+  if (peek.value && !ui.quickOpen) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
+}
+function onOwnTap() {
+  if (barPinned.value || settings.clickThrough) return;
+  peek.value = !peek.value;
+}
+const barShown = computed(() => !settings.clickThrough && (barPinned.value || peek.value));
+const ownPos = computed<Pos>(() => {
+  if (settings.petDocked) {
+    const x = clamp({ x: settings.petX, y: 0 }, ownSize.value).x;
+    return peek.value ? clamp({ x, y: dockY(settings.scale) }, fullSize.value) : { x, y: dockY(settings.scale) };
+  }
+  // Room for the strip is kept under the pet also while the strip is away, so a click can always show it.
+  const size = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  return settings.petX < 0 ? defaultPetPos(size) : clamp({ x: settings.petX, y: settings.petY }, size);
+});
+function placeOwnDrag(p: Pos): Pos {
+  peek.value = false;
+  const placed = placeOwn(p, fullSize.value, settings.scale);
+  dragDock.value = placed.docked;
+  return placed.pos;
+}
 function onOwnMoved(p: Pos) {
+  settings.petDocked = dragDock.value ?? false;
+  dragDock.value = null;
   settings.petX = p.x;
   settings.petY = p.y;
 }
+function onOwnSize(size: Size) {
+  ownSize.value = size;
+  const strip = size.h - Math.round(PET_BASE.height * settings.scale);
+  if (barShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
+}
 function resetPet() {
+  settings.petDocked = false;
   settings.petX = -1;
   settings.petY = -1;
 }
-const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
+/** The strip's handle: tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
+function toggleFold() {
+  settings.barFolded = !settings.barFolded;
+  peek.value = false;
+}
+watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
+watch([peek, () => ui.quickOpen], keepPeek);
 const shownCount = computed(() => (settings.tapView === "today" ? counter.today : counter.total));
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
 
@@ -70,6 +123,7 @@ function pickQuick(key: string) {
 function closeQuick(e: Event) {
   const t = e.target as HTMLElement | null;
   if (!t?.closest?.(".dock, .spark")) ui.quickOpen = false;
+  if (!t?.closest?.("[data-own-pet]")) peek.value = false;
   // The duel key over a partner's pet closes on a press anywhere else; a click on a pet shows it again.
   if (!insidePick(e.target)) closePick();
 }
@@ -124,6 +178,7 @@ const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
   ui.quickOpen = false;
+  peek.value = false;
   closePick();
 };
 
@@ -223,7 +278,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
     </PetActor>
 
-    <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
+    <PetActor
+      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet
+      @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @tap="onOwnTap" @pointermove="keepPeek"
+    >
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
@@ -234,14 +292,17 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
+      <Transition name="strip">
       <CounterBar
-        v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
+        v-if="barShown" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
+        :grip="docked ? undefined : barPinned ? 'fold' : 'pin'" @grip="toggleFold"
       >
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
+      </Transition>
 
     </PetActor>
 
@@ -265,5 +326,12 @@ html.browser-preview body {
 
 <style scoped>
 .desk { position: fixed; inset: 0; pointer-events: none; }
+/* The strip comes out from under the desk and goes back there. It keeps its place in the layout while leaving. */
+.strip-enter-active { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-spring); }
+.strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }
+.strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 -14px; }
+@media (prefers-reduced-motion: reduce) {
+  .strip-enter-active, .strip-leave-active { transition: none; }
+}
 .desk > :deep(*) { pointer-events: auto; }
 </style>

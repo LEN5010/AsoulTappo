@@ -1,13 +1,40 @@
 <script setup lang="ts">
 // The paper strip under the pet: the tap count, the draw key while draws are available, the quick
 // emote key and the panel key. Each thousand taps the number pops and throws a few sparks.
-import { ref, watch } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number }>();
-defineEmits<{ toggleView: []; quick: []; menu: []; resonance: [] }>();
+// `grip` draws the handle on the strip's left end: "fold" tucks a pinned strip away until the pet is clicked,
+// "pin" keeps a strip that a click brought out.
+const props = defineProps<{
+  count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "fold" | "pin";
+}>();
+defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; grip: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+// A long count gets a smaller type instead of being cut off: millions still fit beside the keys.
+const FIGURE_PX = 22;
+const FIGURE_MIN_PX = 13;
+const figure = ref<HTMLElement>();
+const figurePx = ref(FIGURE_PX);
+async function fitFigure() {
+  const box = figure.value;
+  const text = box?.querySelector("b");
+  if (!box || !text) return;
+  // Measured at full size: the text's own width against the room the strip leaves it.
+  text.style.fontSize = `${FIGURE_PX}px`;
+  const need = text.scrollWidth;
+  const room = box.clientWidth;
+  figurePx.value = need > room && room > 0 ? Math.max(FIGURE_MIN_PX, Math.floor((FIGURE_PX * room) / need)) : FIGURE_PX;
+  // Set here as well: the binding does not write again when the size comes out the same as before.
+  text.style.fontSize = `${figurePx.value}px`;
+}
+onMounted(fitFigure);
+watch(
+  () => [fmt(props.count).length, props.width, props.draws > 0, props.view, props.grip] as const,
+  () => nextTick(fitFigure),
+);
 
 const MILESTONE = 1000;
 /** A larger jump is a reload or a sync, not taps crossing the line. */
@@ -32,8 +59,8 @@ watch(
       :title="view === 'today' ? '今日敲击，点击切换累计' : '累计敲击，点击切换今日'"
       @click="$emit('toggleView')"
     >
-      <span class="figure">
-        <b :key="burst" :class="{ pop: burst > 0 }">{{ fmt(count) }}</b>
+      <span ref="figure" class="figure">
+        <b :key="burst" :class="{ pop: burst > 0 }" :style="{ fontSize: `${figurePx}px` }">{{ fmt(count) }}</b>
         <span v-if="burst" :key="burst" class="burst" aria-hidden="true">
           <i v-for="n in SPARKS" :key="n" :style="{ '--a': `${(n - 1) * (360 / SPARKS) + 30}deg` }"></i>
         </span>
@@ -60,6 +87,10 @@ watch(
     <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
       <Icon name="menu" :size="15" />
     </button>
+    <button
+      v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : '收起'"
+      :aria-label="grip === 'pin' ? '固定' : '收起'" @click="$emit('grip')"
+    ></button>
   </div>
 </template>
 
@@ -82,6 +113,35 @@ watch(
   font-family: var(--font);
   color: var(--ink);
 }
+/* A handle on the strip's left end, away from the keys: a short upright line with a larger area to press. */
+.grip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 12px 0 0 12px;
+  background: transparent;
+  cursor: pointer;
+}
+.grip::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: var(--c-200);
+  transition: background var(--dur-fast), height var(--dur-fast) var(--ease-out);
+}
+/* The count moves right by the handle's width, so its hover face does not reach under the line. */
+.bar:has(.grip) { padding-left: 13px; }
+.grip.pin::before { background: var(--c-400); }
+.grip:hover::before { height: 20px; background: var(--c-500); }
 /* A quiet key: its face comes up under the pointer. */
 /* The count face and the keys share one 28px face height; the bottom margin makes room for the
  * keys' 3px lip, so the group (lip included) sits centred and every top and bottom edge lines up. */

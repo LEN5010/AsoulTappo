@@ -198,6 +198,10 @@ async function exportLogFile() {
               <span>桌宠位置</span>
               <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
             </div>
+            <label class="ui-row" title="收起后点击桌宠显示">
+              <span>收起任务栏</span>
+              <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
+            </label>
             <label class="ui-row">
               <span>显示敲击碎片</span>
               <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />

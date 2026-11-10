@@ -1,3 +1,4 @@
+import { PET_BASE } from "../characters";
 // Where pets stand on the desktop overlay. Own pet and panel positions live in settings;
 // other members' pets are remembered per room (by member key) in localStorage, so a
 // friend you dragged next to your pet stays there next time.
@@ -45,6 +46,26 @@ export function clamp(p: Pos, size: Size, vp: Size = viewport.value, margin = 8)
     x: Math.round(Math.min(Math.max(margin, p.x), Math.max(margin, vp.w - size.w - margin))),
     y: Math.round(Math.min(Math.max(margin, p.y), Math.max(margin, vp.h - size.h - margin))),
   };
+}
+
+/** Canvas pixels of empty picture under the desk; a docked pet sinks by this much so the desk stands on the edge. */
+export const DESK_GAP = 12;
+/** A pet dragged this close to its docked place snaps into it. */
+export const DOCK_SNAP = 18;
+
+/** Top of a pet of [scale] docked on the bottom edge. */
+export function dockY(scale: number, vp: Size = viewport.value): number {
+  return Math.round(vp.h - (PET_BASE.height - DESK_GAP) * scale);
+}
+
+/**
+ * Where the own pet dragged to [p] goes: onto the bottom edge once it is close to it, else anywhere on
+ * screen that keeps the strip under it visible ([full] is its size with the strip).
+ */
+export function placeOwn(p: Pos, full: Size, scale: number, vp: Size = viewport.value): { pos: Pos; docked: boolean } {
+  const bottom = dockY(scale, vp);
+  if (p.y >= bottom - DOCK_SNAP) return { pos: { x: clamp(p, full, vp).x, y: bottom }, docked: true };
+  return { pos: clamp(p, full, vp), docked: false };
 }
 
 /** Default place of the own pet: bottom right, leaving room below for the quick emote dock. */
