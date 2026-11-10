@@ -31,7 +31,8 @@ import { draws, online, startReporting, status, stopReporting } from "./stores/p
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import {
-  clamp, defaultPetPos, dockY, enterRoom, nextSlot, placeOwn, placeRemote, remotePos, viewport, type Pos, type Size,
+  DESK_GAP, clamp, defaultPetPos, dockY, enterRoom, nextDockSlot, nextSlot, placePet, placeRemote, remotePos, viewport,
+  type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
@@ -86,7 +87,7 @@ const ownPos = computed<Pos>(() => {
 });
 function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
-  const placed = placeOwn(p, fullSize.value, settings.scale);
+  const placed = placePet(p, fullSize.value, settings.scale);
   dragDock.value = placed.docked;
   return placed.pos;
 }
@@ -151,12 +152,28 @@ watch(
     for (const key of keys) {
       if (remotePos.has(key)) continue;
       const taken = keys.map((k) => remotePos.get(k)).filter((p): p is Pos => !!p);
-      remotePos.set(key, nextSlot(ownPos.value, ownSize.value, remoteSize.value, taken));
+      // Next to a docked own pet newcomers stand on the edge too, while it has room.
+      const edge = settings.petDocked ? nextDockSlot(ownPos.value, ownSize.value, remoteSize.value, taken) : null;
+      remotePos.set(key, edge ?? nextSlot(ownPos.value, ownSize.value, remoteSize.value, taken));
     }
   },
   { immediate: true },
 );
-const remoteAt = (m: RemoteMember) => clamp(remotePos.get(memberKey(m)) ?? ownPos.value, remoteSize.value);
+const remoteDocked = (m: RemoteMember) => !!remotePos.get(memberKey(m))?.docked;
+const remoteAt = (m: RemoteMember): Pos => {
+  const p = remotePos.get(memberKey(m)) ?? ownPos.value;
+  const at = clamp(p, remoteSize.value);
+  return remoteDocked(m) ? { x: at.x, y: dockY(settings.remoteScale) } : at;
+};
+/** A partner docks on the bottom edge like the own pet. */
+const placeRemoteDrag = (p: Pos) => placePet(p, remoteSize.value, settings.remoteScale).pos;
+function onRemoteMoved(m: RemoteMember, p: Pos) {
+  const placed = placePet(p, remoteSize.value, settings.remoteScale);
+  placeRemote(memberKey(m), placed.docked ? { ...placed.pos, docked: true } : placed.pos);
+}
+/** A docked partner's name has no room under the desk; it goes over the desk's front instead. */
+const nameOnDesk = (m: RemoteMember) =>
+  remoteDocked(m) ? { position: "absolute" as const, bottom: `${Math.round(DESK_GAP * settings.remoteScale) + 4}px` } : undefined;
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
@@ -259,10 +276,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
 </script>
 
 <template>
-  <div class="desk" :style="skinVars">
+  <div class="desk" :style="skinVars" @dragstart.prevent>
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
-      @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick" @tap="openPick(m)"
+      :place="placeRemoteDrag" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
@@ -274,11 +291,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <template v-if="settings.showNames">
         <NamePlate
           v-if="plateOf(m)" :card="plateOf(m)!" :nick="shownNick(m)" :color="characterColor(m.character)"
-          :width="remotePlate.width" :height="remotePlate.height" :font="remoteName.font"
+          :width="remotePlate.width" :height="remotePlate.height" :font="remoteName.font" :style="nameOnDesk(m)"
         />
         <NamePill
           v-else :nick="shownNick(m)" :color="characterColor(m.character)" :width="PET_BASE.width * settings.remoteScale"
-          :height="remoteName.pill" :font="remoteName.font"
+          :height="remoteName.pill" :font="remoteName.font" :style="nameOnDesk(m)"
         />
       </template>
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
@@ -331,7 +348,9 @@ html.browser-preview body {
 </style>
 
 <style scoped>
-.desk { position: fixed; inset: 0; pointer-events: none; }
+/* Nothing on the desk is selectable or draggable by the webview itself (template: dragstart), so pets leave no
+   selection box or drag picture behind. */
+.desk { position: fixed; inset: 0; pointer-events: none; -webkit-user-select: none; user-select: none; }
 /* The strip comes out from under the desk and goes back there. It keeps its place in the layout while leaving. */
 .strip-enter-active { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-spring); }
 .strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }

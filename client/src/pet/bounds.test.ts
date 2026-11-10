@@ -14,7 +14,7 @@ it("preserves normal-size bounds", () => {
   expect(remotePetSize(1, true, false)).toEqual({ w: PET_BASE.width, h: PET_BASE.height + 22 });
 });
 
-import { DESK_GAP, DOCK_SNAP, dockY, placeOwn } from "../stores/desk";
+import { DESK_GAP, DOCK_SNAP, dockY, placePet } from "../stores/desk";
 
 describe("the own pet on the bottom edge", () => {
   const vp = { w: 1000, h: 700 };
@@ -27,15 +27,39 @@ describe("the own pet on the bottom edge", () => {
 
   it("snaps into place once dragged close, and keeps the strip on screen above that", () => {
     const edge = dockY(1, vp);
-    expect(placeOwn({ x: 300, y: edge - DOCK_SNAP }, full, 1, vp)).toEqual({ pos: { x: 300, y: edge }, docked: true });
-    expect(placeOwn({ x: 300, y: 5000 }, full, 1, vp)).toEqual({ pos: { x: 300, y: edge }, docked: true });
-    const above = placeOwn({ x: 300, y: edge - DOCK_SNAP - 1 }, full, 1, vp);
+    expect(placePet({ x: 300, y: edge - DOCK_SNAP }, full, 1, vp)).toEqual({ pos: { x: 300, y: edge }, docked: true });
+    expect(placePet({ x: 300, y: 5000 }, full, 1, vp)).toEqual({ pos: { x: 300, y: edge }, docked: true });
+    const above = placePet({ x: 300, y: edge - DOCK_SNAP - 1 }, full, 1, vp);
     expect(above).toEqual({ pos: { x: 300, y: 700 - full.h - 8 }, docked: false });
-    expect(placeOwn({ x: 300, y: 200 }, full, 1, vp)).toEqual({ pos: { x: 300, y: 200 }, docked: false });
+    expect(placePet({ x: 300, y: 200 }, full, 1, vp)).toEqual({ pos: { x: 300, y: 200 }, docked: false });
   });
 
   it("stays between the side edges while docked", () => {
-    expect(placeOwn({ x: -50, y: 5000 }, full, 1, vp).pos.x).toBe(8);
-    expect(placeOwn({ x: 5000, y: 5000 }, full, 1, vp).pos.x).toBe(1000 - 240 - 8);
+    expect(placePet({ x: -50, y: 5000 }, full, 1, vp).pos.x).toBe(8);
+    expect(placePet({ x: 5000, y: 5000 }, full, 1, vp).pos.x).toBe(1000 - 240 - 8);
+  });
+});
+
+import { nextDockSlot } from "../stores/desk";
+
+describe("partners next to a docked own pet", () => {
+  const vp = { w: 1000, h: 700 };
+  const own = { x: 600, y: 0 };
+  const ownSize = { w: 240, h: 135 };
+  const size = { w: 150, h: 110 };
+
+  it("stand on the edge, first to the left of the own pet", () => {
+    expect(nextDockSlot(own, ownSize, size, [], vp)).toEqual({ x: 600 - 166, y: 0, docked: true });
+  });
+
+  it("skip places taken by docked partners and ignore those standing higher up", () => {
+    const left = { x: 434, y: 0, docked: true };
+    expect(nextDockSlot(own, ownSize, size, [left], vp)).toEqual({ x: 600 - 2 * 166, y: 0, docked: true });
+    expect(nextDockSlot(own, ownSize, size, [{ x: 434, y: 200 }], vp)?.x).toBe(434);
+  });
+
+  it("give up when the edge is full", () => {
+    const narrow = { w: 420, h: 700 };
+    expect(nextDockSlot({ x: 100, y: 0 }, ownSize, size, [], narrow)).toBeNull();
   });
 });

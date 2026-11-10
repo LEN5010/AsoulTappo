@@ -11,11 +11,13 @@ const MAX_ROOMS = 10;
 
 export interface Pos { x: number; y: number }
 export interface Size { w: number; h: number }
+/** A partner's place; a docked one stands on the bottom edge at `x`. */
+export interface Spot extends Pos { docked?: boolean }
 
 /** Overlay viewport size (CSS px), kept up to date by the app root. */
 export const viewport = ref<Size>({ w: 1280, h: 720 });
 
-type Saved = Record<string, Record<string, Pos>>;
+type Saved = Record<string, Record<string, Spot>>;
 
 function load(): Saved {
   try {
@@ -28,7 +30,7 @@ function load(): Saved {
 
 const saved: Saved = load();
 /** Positions of other members' pets in the current room. */
-export const remotePos = reactive(new Map<string, Pos>());
+export const remotePos = reactive(new Map<string, Spot>());
 let currentRoom = "";
 
 function persist(): void {
@@ -59,10 +61,10 @@ export function dockY(scale: number, vp: Size = viewport.value): number {
 }
 
 /**
- * Where the own pet dragged to [p] goes: onto the bottom edge once it is close to it, else anywhere on
- * screen that keeps the strip under it visible ([full] is its size with the strip).
+ * Where a pet dragged to [p] goes: onto the bottom edge once it is close to it, else anywhere on screen that
+ * keeps what hangs under it visible ([full] is its size with the own pet's strip or a partner's name).
  */
-export function placeOwn(p: Pos, full: Size, scale: number, vp: Size = viewport.value): { pos: Pos; docked: boolean } {
+export function placePet(p: Pos, full: Size, scale: number, vp: Size = viewport.value): { pos: Pos; docked: boolean } {
   const bottom = dockY(scale, vp);
   if (p.y >= bottom - DOCK_SNAP) return { pos: { x: clamp(p, full, vp).x, y: bottom }, docked: true };
   return { pos: clamp(p, full, vp), docked: false };
@@ -97,13 +99,33 @@ export function nextSlot(own: Pos, ownSize: Size, size: Size, taken: Pos[], vp: 
   return clamp({ x: own.x - size.w - gap, y: baseY }, size, vp);
 }
 
+/**
+ * A free place on the bottom edge next to the docked own pet, first to its left; null when the edge is full.
+ * Only docked partners in `taken` count, the others stand higher up.
+ */
+export function nextDockSlot(own: Pos, ownSize: Size, size: Size, taken: Spot[], vp: Size = viewport.value): Spot | null {
+  const gap = 16;
+  const margin = 8;
+  const free = (x: number) =>
+    x >= margin && x + size.w <= vp.w - margin &&
+    !(x < own.x + ownSize.w && x + size.w > own.x) &&
+    !taken.some((t) => t.docked && Math.abs(t.x - x) < size.w + gap / 2);
+  for (let col = 1; col < 12; col++) {
+    for (const dir of [-1, 1]) {
+      const x = Math.round(dir < 0 ? own.x - col * (size.w + gap) : own.x + ownSize.w + gap + (col - 1) * (size.w + gap));
+      if (free(x)) return { x, y: 0, docked: true };
+    }
+  }
+  return null;
+}
+
 export function enterRoom(room: string): void {
   currentRoom = room;
   remotePos.clear();
   for (const [k, p] of Object.entries(saved[room] ?? {})) remotePos.set(k, p);
 }
 
-export function placeRemote(key: string, p: Pos): void {
+export function placeRemote(key: string, p: Spot): void {
   remotePos.set(key, p);
   if (!currentRoom) return;
   delete saved[currentRoom]; // re-insert: most recently used rooms are kept
