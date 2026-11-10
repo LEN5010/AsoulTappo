@@ -386,14 +386,25 @@ fn fit_to_monitor(window: &WebviewWindow, index: usize) -> tauri::Result<Option<
     let Some(m) = monitors.get(index).or(primary.as_ref()).or(monitors.first()) else {
         return Ok(None);
     };
+    let (x, y, w, h) = overlay_area(m);
+    window.set_position(PhysicalPosition::new(x, y))?;
+    window.set_size(PhysicalSize::new(w, h))?;
+    Ok(Some(format!("{} at scale {}", rect_text(x, y, w, h), m.scale_factor())))
+}
+
+/// The rectangle the overlay takes on a monitor: its work area.
+///
+/// On Windows an auto-hiding taskbar leaves the work area as large as the monitor. A topmost
+/// window covering the whole monitor counts as a full-screen app there, and the hidden taskbar
+/// stops coming up at the screen edge, so the overlay then keeps one pixel clear on every side.
+fn overlay_area(m: &tauri::Monitor) -> (i32, i32, u32, u32) {
     let area = m.work_area();
-    window.set_position(PhysicalPosition::new(area.position.x, area.position.y))?;
-    window.set_size(PhysicalSize::new(area.size.width, area.size.height))?;
-    Ok(Some(format!(
-        "{} at scale {}",
-        rect_text(area.position.x, area.position.y, area.size.width, area.size.height),
-        m.scale_factor()
-    )))
+    let (x, y, w, h) = (area.position.x, area.position.y, area.size.width, area.size.height);
+    #[cfg(windows)]
+    if area.position == *m.position() && area.size == *m.size() && w > 2 && h > 2 {
+        return (x + 1, y + 1, w - 2, h - 2);
+    }
+    (x, y, w, h)
 }
 
 /// Fit to monitor `index` and log the result under `why`.
@@ -439,11 +450,8 @@ fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
     let Some(m) = monitors.get(index).or(primary.as_ref()).or(monitors.first()) else {
         return false;
     };
-    let area = m.work_area();
-    area.position.x != pos.x
-        || area.position.y != pos.y
-        || area.size.width != size.width
-        || area.size.height != size.height
+    let (x, y, w, h) = overlay_area(m);
+    x != pos.x || y != pos.y || w != size.width || h != size.height
 }
 
 /// Polls in a row with the mouse button up before a stuck drag is dropped (~300 ms).
