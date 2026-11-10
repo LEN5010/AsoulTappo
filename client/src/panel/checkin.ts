@@ -26,6 +26,53 @@ export function monthCells(month: CheckinMonth): (DayCell | null)[] {
   return cells;
 }
 
+/** A run of blank squares before the 1st or after the last day, with the stickers pasted over it. */
+export interface PadRun {
+  /** Index of the run's first square in monthCells. */
+  at: number;
+  span: number;
+  stickers: string[];
+  /** The run before the 1st: its stickers stand on the top edge of the next row, cut edge down. */
+  stand: boolean;
+}
+
+/**
+ * 阿草's cutouts for the blank squares: none of the faces the calendar already shows (the host and the prizes), no
+ * framed pictures (微笑, 谢谢观看) and none with words (才八点, 晚安). Whole figures can sit anywhere; figures cut off flat at
+ * the bottom only stand on the row under the first week, where the cut lies along the squares' top edge.
+ */
+export const WHOLE_STICKERS = ["兜风", "索嗨嗨"];
+export const STANDING_STICKERS = ["欢呼", "打call", "安慰", "收到"];
+
+/**
+ * The blank runs of a month's grid and which stickers go on each: two on a run of three squares or more, one on a
+ * shorter run, three at most in the month. The month picks where each list starts, so each month has its own and a
+ * month never changes them.
+ */
+export function padRuns(cells: readonly (DayCell | null)[], month: number): PadRun[] {
+  const first = cells.findIndex((c) => c !== null);
+  if (first < 0) return [];
+  let last = cells.length - 1;
+  while (last > first && cells[last] === null) last--;
+  const runs = [
+    { at: 0, span: first, stand: true },
+    { at: last + 1, span: cells.length - 1 - last, stand: false },
+  ].filter((r) => r.span > 0);
+  const m = Math.max(1, month) - 1;
+  let standing = m % STANDING_STICKERS.length;
+  let whole = m % WHOLE_STICKERS.length;
+  let left = 3;
+  return runs.map((r, n) => {
+    const want = Math.min(r.span >= 3 ? 2 : 1, r.stand ? STANDING_STICKERS.length : WHOLE_STICKERS.length);
+    // The first run leaves the second at least one.
+    const count = Math.min(want, left - (n === 0 && runs.length > 1 ? 1 : 0));
+    left -= count;
+    const stickers = Array.from({ length: count }, () =>
+      r.stand ? STANDING_STICKERS[standing++ % STANDING_STICKERS.length]! : WHOLE_STICKERS[whole++ % WHOLE_STICKERS.length]!);
+    return { ...r, stickers };
+  });
+}
+
 const PRIZES = manifest.economy.checkin.prizes;
 
 /** Draw tone of prize `index`: gold for the top one, wine for the next, coral below. */

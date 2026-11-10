@@ -83,15 +83,46 @@ it("applies action results to both windows before resolving an awaited draw", as
   expect(panel.player.collection.owned["card:test"]).toBe(1);
 });
 
+it("runs scratch card requests in the desk and mirrors the card on the table into the panel", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const card = { id: 5, cells: ["200"] };
+  const buy = vi.spyOn(desk.player, "buyScratch").mockImplementation(async () => (desk.player.scratchCard.value = card));
+  const load = vi.spyOn(desk.player, "loadScratch").mockImplementation(async () => { desk.player.scratchCard.value = card; });
+  const reveal = vi.spyOn(desk.player, "revealScratch").mockImplementation(async () => {
+    desk.player.scratchCard.value = null;
+    return { shards: 200, item: null };
+  });
+  expect(await panel.player.buyScratch()).toEqual(card);
+  expect(panel.player.scratchCard.value).toEqual(card);
+  expect(await panel.player.revealScratch(5)).toEqual({ shards: 200, item: null });
+  expect(reveal).toHaveBeenCalledWith(5);
+  expect(panel.player.scratchCard.value).toBeNull();
+  // Not asked while the status says nothing of scratch cards.
+  await panel.player.loadScratch();
+  expect(load).not.toHaveBeenCalled();
+  desk.player.status.value = panel.player.status.value = {
+    player: "p1", shards: 0, income: { multiplier: 1, perMinute: 0 },
+    resonance: { pity: { legendary: 0, skin: 0 }, hardPity: { legendary: 90, skin: 200 }, total: 0 },
+    totals: { taps: 0, activeMinutes: 0, owned: 0, items: 0 }, scratch: { left: 19, pity: 1 },
+  };
+  await panel.player.loadScratch();
+  expect(panel.player.scratchCard.value).toEqual(card);
+  expect(buy).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 it("mirrors remote pet animation poses into the panel without another room socket", async () => {
   const desk = await context(false);
   const panel = await context(true);
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
-  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5,
-    pulse: 0, emote: null, combo: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
+  desk.room.members.set('friend', { id: 'friend', nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 8, dy: -4, keyDown: true, left: true, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion).toEqual({ dx: 8, dy: -4, keyDown: true, left: true, right: false });
+  expect(panel.room.members.get('friend')!.plate).toBe('c1');
   Object.assign(desk.room.members.get('friend')!.motion, { dx: 0, dy: 0, keyDown: false, left: false });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.motion.left).toBe(false);
@@ -129,7 +160,7 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   const panel = await context(true);
   panel.ui.ui.page = "room";
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 1,
-    pulse: 0, emote: null, combo: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   const owned = panel.player.collection.owned;
   const { emitTo } = await import("@tauri-apps/api/event");
@@ -151,4 +182,72 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.counter.total).toBe(99);
   expect(panel.room.members.get("friend")!.motion.dx).toBe(13);
+});
+
+it("mirrors scratch card wins over partner pets and the own pet into the panel room", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.members.get("friend")!.win = { count: 2500, seq: 1, beat: 1 };
+  desk.room.localPet.win = { count: 30000, seq: 1, beat: 1 };
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.members.get("friend")!.win).toEqual({ count: 2500, seq: 1, beat: 1 });
+  expect(panel.room.localPet.win).toEqual({ count: 30000, seq: 1, beat: 1 });
+  desk.room.localPet.win = null;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.localPet.win).toBeNull();
+});
+
+it("mirrors the host, public flag and public list, and runs host actions in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const setPublic = vi.spyOn(desk.room, "setRoomPublic").mockImplementation(() => {
+    desk.room.roomInfo.value = { host: "me", public: true };
+  });
+  const kick = vi.spyOn(desk.room, "kickMember").mockImplementation(() => {});
+  const list = [{ room: "pub", host: { nick: "房主", character: "贝拉" }, members: 20, max: 20 }];
+  const load = vi.spyOn(desk.room, "loadPublicRooms").mockImplementation(async () => { desk.room.publicRooms.value = list; });
+  desk.room.roomInfo.value = { host: "me", public: false };
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.roomInfo.value).toEqual({ host: "me", public: false });
+  panel.room.setRoomPublic(true);
+  panel.room.kickMember("friend");
+  await panel.room.loadPublicRooms();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(setPublic).toHaveBeenCalledWith(true);
+  expect(kick).toHaveBeenCalledWith("friend");
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(panel.room.roomInfo.value).toEqual({ host: "me", public: true });
+  expect(panel.room.publicRooms.value).toEqual(list);
+  desk.room.roomInfo.value = null;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.roomInfo.value).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("mirrors the duel into the panel and runs invites in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  const invite = vi.spyOn(desk.room, "inviteDuel").mockImplementation(() => {});
+  panel.room.inviteDuel("friend", 1500);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(invite).toHaveBeenCalledWith("friend", 1500);
+  desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0, pulse: 0, emote: null,
+    combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+  desk.room.duel.value = { id: "d1", other: { id: "friend", nick: "朋友", character: "乃琳" }, sent: true, bet: 1500,
+    prize: 2500, phase: "invite", answered: false, round: 0, sec: 15, until: Date.now() + 15000, hand: null, shown: null,
+    won: false, reason: "" };
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.duel.value).toMatchObject({ id: "d1", phase: "invite" });
+  expect(panel.room.duelBusy.value).toBe(true);
+  desk.room.duel.value = null;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.duel.value).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
 });

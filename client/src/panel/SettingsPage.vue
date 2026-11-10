@@ -3,33 +3,37 @@ import { computed, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { adminStatus, exportLog, isTauri, openAboutLink, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
-import { status, saveCode, account, setAccount, refreshAccount } from "../stores/player";
+import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
+import { accountLoginTrusted } from "../net/trust";
 import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
 import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
+import AsasfansPromo from "./AsasfansPromo.vue";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
 
 // The account row is always shown; signing in needs a server connected to the account service.
+// A server or account service off the official origin looks like a server without account login.
 const info = ref<ServerInfo | null>(null);
 async function loadInfo() {
   const server = toHttpBase(settings.serverUrl);
   info.value = null;
   try {
     const result = await new Api(() => server, () => saveCode.value).info();
-    if (server === toHttpBase(settings.serverUrl)) info.value = result;
+    if (server !== toHttpBase(settings.serverUrl)) return;
+    info.value = accountLoginTrusted(server, result.mainApi) ? result : { ...result, accountLogin: false, mainApi: null };
   } catch { /* offline: sign-in shows once the server answers */ }
 }
 onMounted(() => { void loadInfo(); void refreshAccount(); });
 watch(() => settings.serverUrl, loadInfo);
-const signedIn = computed(() => account.value && account.value.server === toHttpBase(settings.serverUrl) ? account.value : null);
+const signedIn = computed(() => activeAccount());
 const dialog = ref<"login" | "register" | null>(null);
 function accountDone(message: string) {
   dialog.value = null;
@@ -38,7 +42,8 @@ function accountDone(message: string) {
 async function signOut() {
   const session = signedIn.value;
   if (!session) return;
-  if (info.value?.mainApi) await new MainAccountApi(info.value.mainApi).revoke(session.token).catch(() => {});
+  const mainApi = info.value?.mainApi;
+  if (mainApi && accountLoginTrusted(session.server, mainApi)) await new MainAccountApi(mainApi).revoke(session.token).catch(() => {});
   await setAccount(null);
   notice.value = "已退出登录";
 }
@@ -47,6 +52,7 @@ const REPO = "https://github.com/LEN5010/AsoulTappo";
 const SPACE = "https://space.bilibili.com/107261543";
 const MAIL = "len5010@qq.com";
 const contactOpen = ref(false);
+const promoOpen = ref(false);
 const copied = ref(false);
 async function copyMail() {
   try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
@@ -175,6 +181,10 @@ async function exportLogFile() {
               <span>隐藏伙伴 ID</span>
               <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
             </label>
+            <label class="ui-row">
+              <span>猜拳免打扰</span>
+              <input v-model="settings.duelDnd" class="ui-switch" type="checkbox" />
+            </label>
           </div>
         </section>
       </div>
@@ -245,11 +255,18 @@ async function exportLogFile() {
               <span>作者</span>
               <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
             </div>
+            <div class="ui-row">
+              <span>神秘按钮</span>
+              <button type="button" class="ui-btn small" @click="promoOpen = true">点我试试</button>
+            </div>
           </div>
         </section>
       </div>
     </div>
 
+    <Modal v-if="promoOpen" title="Asasfans" heading @close="promoOpen = false">
+      <AsasfansPromo />
+    </Modal>
     <Modal v-if="contactOpen" title="联系作者" heading @close="contactOpen = false">
       <div class="contact">
         <button type="button" class="way ui-frame" @click="openAboutLink(SPACE)">

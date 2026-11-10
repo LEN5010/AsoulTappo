@@ -1,23 +1,30 @@
 <script setup lang="ts">
-// A big hidden card worn as a name plate: the strip across the eyes in a gold frame, playing the
-// card video, with the nickname in white on a dark wash at the left.
+// A name plate: the strip across the eyes in a gold frame, with the nickname in white on a dark wash at the left.
+// A big hidden card plays its video; a sweep plate (a still picture on coral) glides between its two bands.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { reducedMotion } from "../stores/theme";
-import { PLATE_CROPS, plateArt, plateCard, videoFace } from "./plates";
+import { getPlate, plateArt, sweepArt, sweepFrames, panCycle, videoFace } from "./plates";
 import { followVideo } from "./plateVideo";
 
 const props = withDefaults(
+  /** `card` is the plate id: a big hidden card's id or a manifest plate's. */
   defineProps<{ card: string; nick: string; width: number; height: number; color?: string; still?: boolean; font?: number }>(),
   { color: undefined, still: false, font: undefined },
 );
 
 const FRAME = 2;
-const card = computed(() => plateCard(props.card));
-const crop = computed(() => PLATE_CROPS[props.card]);
+const plate = computed(() => getPlate(props.card));
+const card = computed(() => (plate.value?.kind === "card" ? plate.value.card : null));
+const crop = computed(() => (plate.value?.kind === "card" ? plate.value.crop : null));
+const sweep = computed(() => (plate.value?.kind === "sweep" ? plate.value.sweep : null));
 const inner = computed(() => ({ w: props.width - FRAME * 2, h: props.height - FRAME * 2 }));
-const stillArt = computed(() => (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
-const playing = computed(() => !!card.value?.video && !props.still && !reducedMotion.value);
+const sweepBoxes = computed(() => (sweep.value ? sweepArt(sweep.value, inner.value.w, inner.value.h) : null));
+const stillArt = computed(() =>
+  sweepBoxes.value?.face ?? (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
+const artSrc = computed(() => sweep.value?.src ?? (card.value ? assetUrl(card.value.thumb) : ""));
+const moving = computed(() => !props.still && !reducedMotion.value);
+const playing = computed(() => !!card.value?.video && moving.value);
 
 const canvas = ref<HTMLCanvasElement>();
 const drawn = ref(false);
@@ -43,17 +50,35 @@ watch([playing, card, canvas, inner], () => {
 }, { immediate: true, flush: "post" });
 onBeforeUnmount(() => stop?.());
 
+// A sweep plate moves its picture from the first band to the face and back: the face is where the picture sits,
+// the first band an offset from it.
+const img = ref<HTMLImageElement>();
+let sweeping: Animation | undefined;
+watch([moving, sweep, sweepBoxes, img], () => {
+  sweeping?.cancel();
+  sweeping = undefined;
+  const el = img.value, sw = sweep.value, boxes = sweepBoxes.value;
+  if (!moving.value || !el?.animate || !sw || !boxes) return;
+  const dx = boxes.from.left - boxes.face.left, dy = boxes.from.top - boxes.face.top;
+  sweeping = el.animate(
+    sweepFrames(sw.rhythm).map(({ offset, p, easing }) =>
+      ({ offset, easing, transform: `translate(${dx * (1 - p)}px, ${dy * (1 - p)}px)` })),
+    { duration: panCycle(sw.rhythm), iterations: Infinity },
+  );
+}, { immediate: true, flush: "post" });
+onBeforeUnmount(() => sweeping?.cancel());
+
 const px = (n: number) => `${n}px`;
 </script>
 
 <template>
   <div
-    v-if="card && stillArt" class="plate frame-gold"
+    v-if="plate && stillArt" class="plate frame-gold"
     :style="{ width: px(width), height: px(height), '--r': px(Math.round(height * 0.27)) }"
   >
-    <div class="win">
+    <div class="win" :class="{ sweep: !!sweep }">
       <img
-        class="art" :src="assetUrl(card.thumb)" alt="" draggable="false" decoding="async"
+        ref="img" class="art" :src="artSrc" alt="" draggable="false" decoding="async"
         :style="{ width: px(stillArt.width), height: px(stillArt.height), left: px(stillArt.left), top: px(stillArt.top) }"
       />
       <canvas v-if="playing" ref="canvas" class="art" :class="{ on: drawn }" :style="{ width: px(inner.w), height: px(inner.h) }"></canvas>
@@ -85,6 +110,10 @@ const px = (n: number) => `${n}px`;
   overflow: hidden;
   border-radius: calc(var(--r) - 2px);
   background: var(--ink);
+}
+/* A cut-out picture stands on the coral of the sidebar it comes from. */
+.win.sweep {
+  background: var(--c-500);
 }
 .art {
   position: absolute;

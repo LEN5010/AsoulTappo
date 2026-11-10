@@ -99,7 +99,8 @@ def test_ws_plates_are_checked_against_the_save(client):
         b.send_json({"type": "state", "plate": "c5"})
         assert b.receive_json()["code"] == "locked"
         a.send_json({"type": "state", "plate": ""})
-        off = {"type": "state", "id": ja["you"], "character": "default", "nick": "a", "plate": None}
+        # join without a character: the default "default" is not a character, so the first member shows
+        off = {"type": "state", "id": ja["you"], "character": "嘉然", "nick": "a", "plate": None}
         assert a.receive_json() == off and b.receive_json() == off
         a.send_json({"type": "state", "plate": "c5"})
         assert b.receive_json()["plate"] == "c5"

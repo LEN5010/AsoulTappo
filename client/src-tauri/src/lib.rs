@@ -1,5 +1,6 @@
 #[macro_use]
 mod applog;
+mod access;
 mod diag;
 mod elevation;
 mod gamepad;
@@ -307,11 +308,13 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 /// Links the About section may open in the system browser or mail app.
-const ABOUT_LINKS: [&str; 4] = [
+const ABOUT_LINKS: [&str; 6] = [
     "https://github.com/LEN5010/AsoulTappo",
     "https://space.bilibili.com/107261543",
     "mailto:len5010@qq.com",
     "https://len5010.top/dynamics/download?app=tappo",
+    "https://len5010.top",
+    "https://len5010.top/download",
 ];
 
 #[tauri::command]
@@ -605,8 +608,9 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Before any window: restart through UAC when the player chose to run as administrator.
-    let startup = elevation::startup();
+    // Before any window or hook: exit when another instance is running (Windows), restart
+    // through UAC when the player chose to run as administrator.
+    let (instance, startup) = elevation::startup();
     let overlay = Arc::new(Overlay::default());
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -627,6 +631,8 @@ pub fn run() {
             admin_status,
             set_run_as_admin,
             write_log,
+            access::input_access_missing,
+            access::open_input_settings,
             update::install_version
         ])
         .on_window_event(|window, event| {
@@ -681,6 +687,13 @@ pub fn run() {
                 }
                 elevation::Startup::Declined(e) => applog!("app", "start as administrator is on, but UAC was not granted: {e}"),
             }
+            match &instance {
+                elevation::Instance::Only => {}
+                elevation::Instance::AfterWait(waited) => {
+                    applog!("app", "waited {} ms for the previous instance to exit", waited.as_millis())
+                }
+                elevation::Instance::Unchecked(e) => applog!("app", "single-instance check failed ({e}); running without it"),
+            }
             match tauri::webview_version() {
                 Ok(v) => applog!("app", "webview {v}"),
                 Err(e) => applog!("app", "webview version unavailable: {e}"),
@@ -720,6 +733,7 @@ pub fn run() {
                 spawn_hit_test(w, overlay.clone());
                 diag::spawn_foreground_watch();
                 elevation::spawn_watch(app.handle().clone());
+                access::spawn_watch(app.handle().clone());
             } else {
                 applog!("overlay", "main window missing");
             }

@@ -18,6 +18,7 @@ import ResonancePage from "./ResonancePage.vue";
 import EmotesPage from "./EmotesPage.vue";
 import OnlinePage from "./OnlinePage.vue";
 import PageShutter from "./PageShutter.vue";
+import ScratchPage from "./ScratchPage.vue";
 import SettingsPage from "./SettingsPage.vue";
 import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
@@ -29,6 +30,7 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card-spark" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "codex" },
   { id: "checkin", label: "签到", en: "CHECK-IN", icon: "calendar" },
+  { id: "scratch", label: "刮刮乐", en: "SCRATCH", icon: "ticket" },
   { id: "room", label: "联机", en: "ONLINE", icon: "people" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
@@ -237,6 +239,7 @@ function badgeOf(id: Page): number {
             <EmotesPage v-if="shown === 'emotes'" />
             <CollectionPage v-else-if="shown === 'dex'" />
             <CheckinPage v-else-if="shown === 'checkin'" />
+            <ScratchPage v-else-if="shown === 'scratch'" />
             <ResonancePage v-else-if="shown === 'resonance'" />
             <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
             <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />

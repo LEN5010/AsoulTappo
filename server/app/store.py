@@ -85,10 +85,43 @@ CREATE TABLE IF NOT EXISTS checkins (
   ts REAL NOT NULL,
   PRIMARY KEY (player_id, day)
 );
+-- Scratch cards: the prize is decided when a card is bought and paid when it is revealed (revealed = 0 until then).
+CREATE TABLE IF NOT EXISTS scratch_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  cells TEXT NOT NULL,
+  shards INTEGER NOT NULL,
+  item TEXT NOT NULL DEFAULT '',
+  ts REAL NOT NULL,
+  revealed REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS scratch_cards_player ON scratch_cards (player_id, day);
+-- Rock-paper-scissors between saves a (inviter) and b. A row is written when both bets are taken; state goes from
+-- 'open' to 'won' (winner holds the save paid `prize`) or 'refunded' exactly once. day: China date of the stakes.
+CREATE TABLE IF NOT EXISTS duels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  a TEXT NOT NULL,
+  b TEXT NOT NULL,
+  bet INTEGER NOT NULL,
+  prize INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  ts REAL NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open',
+  winner TEXT NOT NULL DEFAULT '',
+  settled REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS duels_a ON duels (a, day);
+CREATE INDEX IF NOT EXISTS duels_b ON duels (b, day);
+CREATE INDEX IF NOT EXISTS duels_state ON duels (state);
 -- One-time data changes already applied to this database.
 CREATE TABLE IF NOT EXISTS migrations (
   name TEXT PRIMARY KEY,
   at REAL NOT NULL
+);
+-- Nickname blocklist as the main site's admin backend sent it (trimmed, not folded).
+CREATE TABLE IF NOT EXISTS blocked_words (
+  word TEXT PRIMARY KEY
 );
 """
 
@@ -97,7 +130,7 @@ STARTER_SHARDS = 1600
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
-    "boost_day boost_used tap_cooldown_until tap_day day_taps"
+    "boost_day boost_used tap_cooldown_until tap_day day_taps scratch_pity"
 ).split()
 
 
@@ -149,6 +182,9 @@ class Store:
                 self._db.execute("ALTER TABLE players ADD COLUMN tap_day TEXT NOT NULL DEFAULT ''")
             if "day_taps" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN day_taps INTEGER NOT NULL DEFAULT 0")
+            # Scratch cards bought since the last one that gave an emote.
+            if "scratch_pity" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN scratch_pity INTEGER NOT NULL DEFAULT 0")
             sessions = self._columns("activity_sessions")
             for field in ("last_at", "fast_since"):
                 if field not in sessions:
@@ -227,17 +263,12 @@ class Store:
                 (pid, session, sequence, last_at, fast_since))
             self._commit()
 
-    # --- items
-    def presence(self, pid: str, session: str, now: float) -> float | None:
-        """Return this running session's previous heartbeat and record the new one."""
+    def prune_activity_sessions(self, before: float) -> int:
+        """Delete sessions last seen before [before]; rows from before last_at existed hold 0 and go too."""
         with self._lock:
-            row = self._db.execute(
-                "SELECT last_seen FROM presence_sessions WHERE player_id=? AND session=?", (pid, session)).fetchone()
-            self._db.execute(
-                "INSERT INTO presence_sessions VALUES (?, ?, ?) "
-                "ON CONFLICT(player_id, session) DO UPDATE SET last_seen=excluded.last_seen", (pid, session, now))
+            cur = self._db.execute("DELETE FROM activity_sessions WHERE last_at < ?", (before,))
             self._commit()
-            return row["last_seen"] if row else None
+            return cur.rowcount
 
     # --- main-site accounts: one save per account, one account per save
     def has_player(self, pid: str) -> bool:
@@ -297,6 +328,83 @@ class Store:
             rows = self._db.execute("SELECT day, prize, shards FROM checkins WHERE player_id=? AND day >= ? ORDER BY day",
                                     (pid, first_day)).fetchall()
         return [dict(r) for r in rows]
+
+    # --- scratch cards (days are China Standard Time dates, YYYY-MM-DD)
+    def scratch_count(self, pid: str, day: str) -> int:
+        """Cards bought on [day]."""
+        with self._lock:
+            return self._db.execute("SELECT COUNT(*) FROM scratch_cards WHERE player_id=? AND day=?", (pid, day)).fetchone()[0]
+
+    def add_scratch(self, pid: str, day: str, cells: str, shards: int, item: str, ts: float) -> int:
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO scratch_cards (player_id, day, cells, shards, item, ts) VALUES (?, ?, ?, ?, ?, ?)",
+                (pid, day, cells, shards, item, ts))
+            self._commit()
+            return cur.lastrowid
+
+    def pending_scratch(self, pid: str) -> dict[str, Any] | None:
+        """The card bought and not revealed yet; a save holds one at most."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM scratch_cards WHERE player_id=? AND revealed=0 ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+        return dict(row) if row else None
+
+    def scratch_card(self, pid: str, card_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM scratch_cards WHERE id=? AND player_id=?", (card_id, pid)).fetchone()
+        return dict(row) if row else None
+
+    def reveal_scratch(self, card_id: int, ts: float) -> None:
+        with self._lock:
+            self._db.execute("UPDATE scratch_cards SET revealed=? WHERE id=?", (ts, card_id))
+            self._commit()
+
+    def prune_scratch_cards(self, before: float) -> int:
+        """Delete revealed cards bought before [before]; a card still to be revealed is kept however old."""
+        with self._lock:
+            cur = self._db.execute("DELETE FROM scratch_cards WHERE revealed > 0 AND ts < ?", (before,))
+            self._commit()
+            return cur.rowcount
+
+    # --- rock-paper-scissors (days are China Standard Time dates, YYYY-MM-DD)
+    def player_taps(self, pid: str) -> int | None:
+        """All-time taps of a save, None when there is no such save (never creates one)."""
+        with self._lock:
+            row = self._db.execute("SELECT taps_total FROM players WHERE id=?", (pid,)).fetchone()
+        return row["taps_total"] if row else None
+
+    def add_duel(self, a: str, b: str, bet: int, prize: int, day: str, ts: float) -> int:
+        with self._lock:
+            cur = self._db.execute("INSERT INTO duels (a, b, bet, prize, day, ts) VALUES (?, ?, ?, ?, ?, ?)",
+                                   (a, b, bet, prize, day, ts))
+            self._commit()
+            return cur.lastrowid
+
+    def duel(self, duel_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)).fetchone()
+        return dict(row) if row else None
+
+    def close_duel(self, duel_id: int, state: str, winner: str, ts: float) -> bool:
+        """Moves an open duel to [state]; False when it was closed already, so it is paid at most once."""
+        with self._lock:
+            cur = self._db.execute("UPDATE duels SET state=?, winner=?, settled=? WHERE id=? AND state='open'",
+                                   (state, winner, ts, duel_id))
+            self._commit()
+            return cur.rowcount == 1
+
+    def open_duels(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM duels WHERE state='open' ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def duel_net(self, pid: str, day: str) -> int:
+        """Prizes minus bets of the save's duels won or lost on [day]; refunded and open duels count nothing."""
+        with self._lock:
+            return self._db.execute(
+                "SELECT COALESCE(SUM(CASE WHEN winner=? THEN prize - bet ELSE -bet END), 0) FROM duels "
+                "WHERE state='won' AND (a=? OR b=?) AND day=?", (pid, pid, pid, day)).fetchone()[0]
 
     # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
     def mark_active(self, pid: str, day: str) -> None:
@@ -421,6 +529,18 @@ class Store:
                     "INSERT INTO presets VALUES (?, ?, ?) "
                     "ON CONFLICT(player_id, slot) DO UPDATE SET data=excluded.data", (pid, slot, data))
             self._commit()
+
+    # --- nickname blocklist
+    def blocked_words(self) -> list[str]:
+        with self._lock:
+            rows = self._db.execute("SELECT word FROM blocked_words ORDER BY rowid").fetchall()
+        return [r["word"] for r in rows]
+
+    def replace_blocked_words(self, words: list[str]) -> None:
+        """Replace the whole list in one transaction; [words] must be distinct."""
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM blocked_words")
+            self._db.executemany("INSERT INTO blocked_words (word) VALUES (?)", [(w,) for w in words])
 
     def close(self) -> None:
         with self._lock:

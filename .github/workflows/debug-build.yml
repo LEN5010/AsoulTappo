@@ -49,6 +49,8 @@ jobs:
             debug-*) version="${GITHUB_REF_NAME#debug-}"; features="--features debug-log" ;;
             test-*) version="${GITHUB_REF_NAME#test-}"; features="" ;;
           esac
+          # The page reads its version from this (client/vite.config.ts), not from package.json.
+          export ASOULTAPPO_VERSION="$version"
           for attempt in 1 2 3; do
             npm run tauri build -- --bundles nsis $features \
               --config "{\"version\":\"$version\",\"bundle\":{\"createUpdaterArtifacts\":false}}" && exit 0

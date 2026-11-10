@@ -25,8 +25,10 @@ export interface Settings {
   showPlates: boolean;
   /** Shows partners by their pet's member name instead of their nickname, for streaming. */
   hideNicks: boolean;
-  /** Big hidden card id worn as a name plate on partners' desks ("" = none). */
+  /** Name plate worn on partners' desks: a big hidden card id or a manifest `plates` id ("" = none). */
   plate: string;
+  /** Turns down every rock-paper-scissors invite; the room server answers them for this client. */
+  duelDnd: boolean;
   /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
   petX: number;
   petY: number;
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showPlates: true,
   hideNicks: false,
   plate: "",
+  duelDnd: false,
   petX: -1,
   petY: -1,
   panelX: -1,

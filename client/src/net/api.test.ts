@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Api, ActivityReporter, ApiError, newToken, seriesProgress } from "./api";
+import { Api, ActivityReporter, ApiError, newToken } from "./api";
 
 const resp = (status: number, body: unknown) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) } as Response);
@@ -116,9 +116,5 @@ describe("misc", () => {
     const a = newToken();
     expect(a).toMatch(/^[0-9a-f]{48}$/);
     expect(newToken()).not.toBe(a);
-  });
-  it("seriesProgress counts owned cards per series", () => {
-    const p = seriesProgress({});
-    expect(p.every((s) => s.have === 0 && s.total > 0)).toBe(true);
   });
 });

@@ -13,10 +13,14 @@ class FakeMain:
         self.calls = 0
         self.feed = FEED
         self.down = False
+        self.error = None  # raised by the next call only
 
     def __call__(self, url):
         assert url == URL
         self.calls += 1
+        if self.error:
+            error, self.error = self.error, None
+            raise error
         if self.down:
             raise OSError("unreachable")
         return self.feed
@@ -51,6 +55,24 @@ def test_feed_caches_and_retries():
 
     clock[0] = STALE_SECONDS + 1
     assert feed.latest() is None
+
+
+def test_a_broken_response_is_retried_like_any_failure():
+    import http.client
+
+    fake = FakeMain()
+    feed, clock = feed_with(fake)
+    feed.latest()
+    clock[0] = FRESH_SECONDS
+    fake.error = http.client.IncompleteRead(b"{")  # a truncated body, which is not an OSError
+    assert feed.latest()["version"] == "0.1.0-beta.7"  # the cached answer, not an exception
+    clock[0] = FRESH_SECONDS + RETRY_SECONDS - 1
+    feed.latest()
+    assert fake.calls == 2
+    clock[0] = FRESH_SECONDS + RETRY_SECONDS
+    fake.feed = {"releases": [{"version": "0.1.0-beta.8", "notes": ""}]}
+    assert feed.latest()["version"] == "0.1.0-beta.8"
+    assert fake.calls == 3
 
 
 def test_feed_without_a_first_answer():

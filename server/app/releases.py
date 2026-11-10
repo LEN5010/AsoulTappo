@@ -66,18 +66,23 @@ class ReleaseFeed:
                 self._fetching = True
             else:
                 return self._fresh(now)
+        found = None
         try:
             found = newest(self.fetch(self.url))
-        except (OSError, ValueError):
-            found = None
-        with self._lock:
-            self._fetching = False
-            done = self.now()
-            if found:
-                self._latest, self._got, self._next = found, done, done + FRESH_SECONDS
-            else:
-                self._next = done + RETRY_SECONDS
-            return self._fresh(done)
+        except Exception:
+            # Any failure counts, not only OSError: http.client.IncompleteRead and BadStatusLine are not.
+            pass
+        finally:
+            # Always clears the flag, or no caller would ever refresh again.
+            with self._lock:
+                self._fetching = False
+                done = self.now()
+                if found:
+                    self._latest, self._got, self._next = found, done, done + FRESH_SECONDS
+                else:
+                    self._next = done + RETRY_SECONDS
+                answer = self._fresh(done)
+        return answer
 
     def _fresh(self, now: float) -> dict[str, str] | None:
         return self._latest if now - self._got <= STALE_SECONDS else None

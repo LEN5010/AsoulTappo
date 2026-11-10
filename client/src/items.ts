@@ -20,6 +20,8 @@ export interface Item {
   /** set / series / theme name, used for grouping and details */
   group: string;
   starter: boolean;
+  /** Where else than resonance the item comes from: 阿草's emotes are won from scratch cards. */
+  source?: "scratch";
 }
 
 export const KIND_LABEL: Record<ItemKind, string> = {
@@ -48,7 +50,7 @@ function build(): Item[] {
     for (const e of s.emotes) {
       const starter = starterEmotes.has(e.key);
       out.push({ id: `emote:${e.key}`, ref: e.key, kind: "emote", name: e.name, rarity: starter ? null : s.rarity,
-        art: e.img, characters: [s.character], group: s.name, starter });
+        art: e.img, characters: [s.character], group: s.name, starter, ...(s.source ? { source: s.source } : {}) });
     }
   }
   for (const c of manifest.cards) {
@@ -63,7 +65,7 @@ const index = new Map(items.map((i) => [i.id, i]));
 export const getItem = (id: string) => index.get(id);
 
 /** Items available through resonance. */
-export const collectible = items.filter((i) => i.rarity !== null && !i.starter);
+export const collectible = items.filter((i) => i.rarity !== null && !i.starter && !i.source);
 
 export function ownsCharacter(name: string, owned: Record<string, number>): boolean {
   return manifest.characters.some((m) => m.name === name) || (owned[`char:${name}`] ?? 0) > 0;
@@ -73,16 +75,9 @@ export function ownsEmote(key: string, owned: Record<string, number>): boolean {
   return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
 }
 
-export function ownsAccessory(id: string, owned: Record<string, number>): boolean {
-  return (owned[`acc:${id}`] ?? 0) > 0;
-}
-
-export function ownsTheme(id: string, owned: Record<string, number>): boolean {
-  return id === manifest.starter.theme || (owned[`theme:${id}`] ?? 0) > 0;
-}
-
 export function craftCost(item: Item): number | null {
-  return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter ? manifest.economy.craftCost[item.rarity] ?? null : null;
+  return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter && !item.source
+    ? manifest.economy.craftCost[item.rarity] ?? null : null;
 }
 
 /** Starter emotes of one character (the default quick emotes). */

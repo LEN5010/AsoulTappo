@@ -142,3 +142,20 @@ def test_a_cooldown_the_client_reports_stops_paying():
     # Never longer than the server's own cooldown, and a shorter report does not cut one short.
     assert game.report_activity(TOKEN, 0, "guarded", 3, cooldown=3600)["tapCooldown"] == 60
     assert game.report_activity(TOKEN, 0, "other", 1, cooldown=5)["tapCooldown"] == 60
+
+
+def test_sessions_silent_for_thirty_days_are_pruned():
+    game, clock = make()
+    pid = game.status(TOKEN)["player"]
+    game.store.save_activity_sequence(pid, "before-last-at", 4)  # last_at 0, as rows written by older servers
+    game.report_activity(TOKEN, 10, "old", 3)
+    clock.t += 30 * 86400 - 1
+    game.report_activity(TOKEN, 10, "recent", 2)
+    clock.t += 2
+    assert game.prune_activity_sessions() == 2
+    assert game.store.activity_session(pid, "old")["sequence"] == 0
+    assert game.store.activity_session(pid, "before-last-at")["sequence"] == 0
+    assert game.store.activity_session(pid, "recent")["sequence"] == 2
+    # A pruned session that reports again starts over.
+    assert game.report_activity(TOKEN, 0, "old", 1)["credited"] == 0
+    assert game.store.activity_session(pid, "old")["sequence"] == 1

@@ -32,12 +32,15 @@ function setup() {
   const ev = {
     onConnState: vi.fn(),
     onJoined: vi.fn(),
+    onRoomInfo: vi.fn(),
     onMemberJoined: vi.fn(),
     onMemberLeft: vi.fn(),
     onTap: vi.fn(),
     onMotion: vi.fn(),
     onEmote: vi.fn(),
+    onScratch: vi.fn(),
     onState: vi.fn(),
+    onDuel: vi.fn(),
     onError: vi.fn(),
   } satisfies RoomEvents;
   const c = new RoomClient(ev, {
@@ -130,6 +133,52 @@ describe("RoomClient", () => {
     expect(FakeWs.all).toHaveLength(2);
   });
 
+  it("drops a dead connection at once instead of waiting for its close handshake", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const dead = FakeWs.all[0];
+    let closeCalled = false;
+    dead.close = () => { closeCalled = true; }; // a dead peer never answers the close frame
+    dead.open();
+    vi.advanceTimersByTime(1000); // ping #1
+    vi.advanceTimersByTime(1000); // no pong
+    expect(closeCalled).toBe(true);
+    expect(ev.onConnState).toHaveBeenLastCalledWith("reconnecting");
+    vi.advanceTimersByTime(400);
+    expect(FakeWs.all).toHaveLength(2);
+    FakeWs.all[1].open();
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    dead.readyState = 3;
+    dead.onclose?.({}); // the late close of the abandoned socket
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    vi.advanceTimersByTime(900); // past any backoff, before the new socket's first ping
+    expect(FakeWs.all).toHaveLength(2);
+  });
+
+  it("a join rejected as invalid is final: no reconnect, error surfaced", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
+    expect(ev.onConnState).toHaveBeenLastCalledWith("idle");
+    vi.advanceTimersByTime(60000);
+    expect(FakeWs.all).toHaveLength(1);
+  });
+
+  it("a bad message after joining keeps the connection", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [] });
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+    expect(ws.readyState).toBe(1);
+  });
+
   it("keeps the connection when pongs arrive", () => {
     const { c } = setup();
     c.join("http://h:1", INFO);
@@ -140,6 +189,38 @@ describe("RoomClient", () => {
       ws.recv({ type: "pong" });
     }
     expect(ws.readyState).toBe(1);
+  });
+
+  it("reports the host and public flag from joined and room_info, and null from older servers", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [] });
+    expect(ev.onRoomInfo).toHaveBeenLastCalledWith(null);
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], info: { host: "me", public: false } });
+    expect(ev.onRoomInfo).toHaveBeenLastCalledWith({ host: "me", public: false });
+    ws.recv({ type: "room_info", host: "x", public: true });
+    expect(ev.onRoomInfo).toHaveBeenLastCalledWith({ host: "x", public: true });
+    c.sendSetPublic(true);
+    c.sendKick("x");
+    expect(ws.sent.slice(1)).toEqual([{ type: "set_public", public: true }, { type: "kick", id: "x" }]);
+  });
+
+  it.each(["kicked", "banned", "need_save"])("a room_full with reason %s is final and reported as that reason", (reason) => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], info: { host: "x", public: false } });
+    ws.recv({ type: "error", code: "room_full", message: "你已被移出这个房间", reason });
+    expect(ev.onError).toHaveBeenCalledWith(reason, "你已被移出这个房间");
+    expect(ev.onConnState).toHaveBeenLastCalledWith("idle");
+    expect(ws.sent.at(-1)).toEqual({ type: "leave" });
+    // the server closing the socket afterwards does not bring the client back
+    ws.onclose?.({});
+    vi.advanceTimersByTime(60000);
+    expect(FakeWs.all).toHaveLength(1);
   });
 
   it("reports an invalid server URL without throwing", () => {
@@ -175,5 +256,48 @@ describe("RoomClient", () => {
     vi.advanceTimersByTime(400);
     FakeWs.all[2].open();
     expect(FakeWs.all[2].sent[0]).not.toHaveProperty("plate");
+  });
+
+  it("hands duel messages over and sends the duel messages", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [] });
+    const invite = { type: "duel_invite", duel: "d1", from: "x", to: "me", bet: 150, prize: 250, sec: 15 };
+    const result = { type: "duel_result", duel: "d1", winner: "me", loser: "x", prize: 250, hands: { me: "rock", x: null } };
+    for (const m of [invite, { type: "duel_start", duel: "d1", round: 1, sec: 10 },
+      { type: "duel_round", duel: "d1", round: 2, sec: 10, hands: { me: "rock", x: "rock" } }, result,
+      { type: "duel_over", duel: "d2", reason: "declined" }]) ws.recv(m);
+    expect(ev.onDuel.mock.calls.map(([m]) => m.type)).toEqual(["duel_invite", "duel_start", "duel_round", "duel_result", "duel_over"]);
+    expect(ev.onDuel).toHaveBeenCalledWith(invite);
+    const sent = ws.sent.length;
+    c.sendDuelInvite("x", 1500);
+    c.sendDuelAnswer("d1", true);
+    c.sendDuelThrow("d1", "paper");
+    expect(ws.sent.slice(sent)).toEqual([
+      { type: "duel_invite", id: "x", bet: 1500 }, { type: "duel_answer", duel: "d1", accept: true },
+      { type: "duel_throw", duel: "d1", hand: "paper" },
+    ]);
+    expect(ev.onError).not.toHaveBeenCalled();
+  });
+
+  it("keeps do-not-disturb for every rejoin and sends it only when told to", () => {
+    const { c } = setup();
+    c.join("http://h:1", { ...INFO });
+    FakeWs.all[0].open();
+    expect(FakeWs.all[0].sent[0]).not.toHaveProperty("dnd");
+    c.setDnd(true, false);
+    expect(FakeWs.all[0].sent).toHaveLength(1);
+    FakeWs.all[0].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[1].open();
+    expect(FakeWs.all[1].sent[0]).toMatchObject({ type: "join", dnd: true });
+    c.setDnd(false, true);
+    expect(FakeWs.all[1].sent.at(-1)).toEqual({ type: "dnd", dnd: false });
+    FakeWs.all[1].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[2].open();
+    expect(FakeWs.all[2].sent[0]).not.toHaveProperty("dnd");
   });
 });

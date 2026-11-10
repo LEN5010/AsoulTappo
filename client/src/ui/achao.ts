@@ -1,6 +1,8 @@
-// 阿草, the alpaca: its sticker set, by name.
-const files = import.meta.glob<string>("../assets/emotes/achao/*.webp", { eager: true, query: "?url", import: "default" });
+// 阿草, the alpaca: its stickers by name. They are the emotes of the scratch card set, bundled with the client.
+import { manifest, resolveAsset } from "../manifest";
+
+const emotes = manifest.emoteSets.find((s) => s.id === manifest.economy.scratch.emote.set)?.emotes ?? [];
 
 export const ACHAO: Record<string, string> = Object.fromEntries(
-  Object.entries(files).map(([path, src]) => [path.slice(path.lastIndexOf("/") + 1, -5), src]),
+  emotes.map((e) => [e.name, resolveAsset(e.img, "", import.meta.env.BASE_URL || "/")]),
 );

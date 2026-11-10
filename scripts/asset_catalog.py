@@ -98,6 +98,14 @@ COLLECTION_EMOTE_SETS = [
     ("beila-casket-motion", "匣中惊鸿 · 贝拉（动态）", "贝拉", "贝拉的冒险-匣中惊鸿", "动态表情包"),
 ]
 
+# 阿草's stickers: won from scratch cards only, never in the resonance pool and never crafted.
+# id, title, owner, sticker names in emote order. The pictures (表情包/阿草和TA的朋友们/AI高清, trimmed and scaled
+# to 320px) are kept in client/public/assets/emotes/achao/<nn>.webp; the pipeline only lists them.
+SCRATCH_EMOTE_SET = ("achao", "阿草和TA的朋友们", "阿草", [
+    "兜风", "安慰", "对不起", "微笑", "惊恐", "才八点", "打call", "拒绝", "招商", "收到",
+    "晚安", "欢呼", "比心", "流汗", "生无可恋", "看直播", "索嗨嗨", "肯定", "观察", "谢谢观看",
+])
+
 # --------------------------------------------------------------------- cards
 # series id -> (display name, source dir under <assets>/收藏集卡牌)
 CARD_SERIES = {
@@ -276,6 +284,27 @@ CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
 CHECKIN = {"prizes": [{"shards": 80, "weight": 30}, {"shards": 160, "weight": 30}, {"shards": 320, "weight": 20},
                       {"shards": 480, "weight": 12}, {"shards": 800, "weight": 6}, {"shards": 1600, "weight": 2}],
            "spread": 0.1}
+# Scratch cards: `price` shards each, `daily` of them a China day. Weights are percentages and what is left
+# of 100 wins nothing; the shard prizes return half the price on average. The emote tier gives one emote of
+# `set` the save lacks, for certain on the `pity`-th card since the last one. Once the set is whole the tier and
+# its pity are gone: its weight wins nothing. The server tells the room about `announce` shards or more.
+SCRATCH = {"price": 500, "daily": 20,
+           "prizes": [{"shards": 200, "weight": 30}, {"shards": 500, "weight": 12}, {"shards": 1000, "weight": 5},
+                      {"shards": 2500, "weight": 2}, {"shards": 30000, "weight": 0.1}],
+           "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10},
+           "announce": 2500}
+# Rock-paper-scissors between two room members. Both pay `bet` when the invite is accepted and the winner gets
+# `prize`: a sixth of the two bets is burnt. An invite waits `inviteSec`, each round `throwSec`. A save's net
+# win (prizes minus bets of the duels settled that China day) stays at or below `dailyWinCap`; losses are not
+# capped. Both saves need `minTaps` taps in all, so fresh guest saves cannot feed shards to another one.
+DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
+        "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
+
+# --------------------------------------------------------------- name plates
+# Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote
+# of `emoteSet` is owned; the client keeps the picture and its crop (client/src/pet/plates.ts). Ids must never
+# be card ids (those are "c" and digits).
+PLATES = [{"id": "achao", "name": "阿草", "emoteSet": SCRATCH_EMOTE_SET[0]}]
 
 
 # -------------------------------------------------------- frames and badges

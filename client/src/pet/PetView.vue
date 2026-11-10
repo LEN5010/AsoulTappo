@@ -26,6 +26,8 @@ const props = withDefaults(
     combo?: ComboFrame | null;
     /** Icon before the combo's number: a partner's combo counts taps, the own pet's counts shards. */
     comboIcon?: string;
+    /** Shards a scratch card or a duel just paid, shown large beside the head. */
+    win?: ComboFrame | null;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
     /** largest emote picture height in px, for frames too short for a scaled-up bubble */
@@ -37,7 +39,7 @@ const props = withDefaults(
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
-    emote: null, combo: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
+    emote: null, combo: null, win: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
   },
 );
 
@@ -98,6 +100,9 @@ const bubbleAnchor = computed(() => ({
     <div v-else class="missing">?</div>
 
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
+    <ComboBubble
+      :frame="win" icon="shard" :x="(head.x + (flipBubble ? 34 : -34)) * s" :y="(head.y + 8) * s" :size="Math.max(20, 26 * s)"
+    />
     <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
   </div>
 </template>

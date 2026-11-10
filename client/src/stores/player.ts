@@ -1,9 +1,11 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type LoadoutPatch, type MainUser, type PlayerStatus,
+  type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type Loadout, type LoadoutPatch, type MainUser,
+  type PlayerStatus, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
 import { toHttpBase } from "../net/protocol";
+import { trustedOrigin } from "../net/trust";
 import { ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
 import { manifest, memberOf } from "../manifest";
@@ -43,10 +45,11 @@ function loadAccount(): AccountSession | null {
 }
 export const account = ref<AccountSession | null>(loadAccount());
 
-/** The account for the selected server, if any. */
+/** The account for the selected server, if any. A stored session never counts on an untrusted server. */
 export function activeAccount(): AccountSession | null {
   const a = account.value;
-  return a && a.server === toHttpBase(settings.serverUrl) ? a : null;
+  const base = toHttpBase(settings.serverUrl);
+  return a && a.server === base && trustedOrigin(base) ? a : null;
 }
 
 /** Signs this device into [session] (null signs out). A guest save that now belongs to the account gets replaced. */
@@ -91,7 +94,7 @@ export async function refreshAccount(): Promise<void> {
 
 function credential(base: string): Credential {
   const a = account.value;
-  return a && a.server === base ? { bearer: a.token } : token;
+  return a && a.server === base && trustedOrigin(base) ? { bearer: a.token } : token;
 }
 
 export const status = ref<PlayerStatus | null>(null);
@@ -113,6 +116,10 @@ export async function heartbeat(): Promise<void> {
       status.value = result;
       online.value = true;
       error.value = "";
+      if (loadoutPending) {
+        loadoutPending = false;
+        void refresh();
+      }
     }
   } catch (e) {
     if (session === current && gen === generation) {
@@ -181,9 +188,11 @@ async function call<T>(fn: (api: Api) => Promise<T>): Promise<T | null> {
 export async function refresh(): Promise<void> {
   const session = current;
   const gen = generation;
+  let player: string;
   try {
     const [s, c] = await serial(session, () => Promise.all([session.api.me(), session.api.collection()]));
     if (session !== current || gen !== generation) return;
+    player = s.player;
     status.value = s;
     collection.owned = c.owned;
     collection.recent = c.recent;
@@ -193,9 +202,25 @@ export async function refresh(): Promise<void> {
     if (session === current && gen === generation) fail(e);
     return;
   }
+  const save = saveKey(toHttpBase(settings.serverUrl), player);
+  if (loadoutOwner !== null && loadoutOwner !== save) {
+    // Another save: its stored loadout replaces the local one, which the previous save already holds.
+    const stored = await call((api) => api.loadout());
+    if (session !== current || gen !== generation) return;
+    if (!stored) {
+      // Nothing is pushed and no owner recorded; the next heartbeat that gets through refreshes again.
+      loadoutPending = true;
+      return;
+    }
+    applyLoadout(stored);
+    sanitizeLoadout();
+    lastPushed = JSON.stringify(localLoadout());
+    setLoadoutOwner(save);
+    return;
+  }
+  if (loadoutOwner === null) setLoadoutOwner(save); // first run: the local loadout belongs to this save
   sanitizeLoadout();
   void pushLoadout();
-
 }
 
 async function flush(session: Session): Promise<boolean> {
@@ -215,9 +240,12 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   collection.owned = {};
   collection.recent = [];
   checkins.value = null;
+  scratchCard.value = null;
   freshItems.clear();
   online.value = false;
   error.value = "";
+  lastPushed = "";
+  loadoutPending = false;
   // Each reporter keeps its original server and batch identity, including retries.
   void flush(previous);
   if (timer) { void refresh(); void heartbeat(); }
@@ -248,6 +276,16 @@ export function stopReporting(): void {
   if (timer) clearInterval(timer);
   timer = undefined;
   for (const session of sessions.values()) void flush(session);
+}
+
+/**
+ * Reloads the status after the room server moved shards (a duel's bets and prize). It waits behind requests already
+ * on their way, so an older answer cannot put the previous balance back afterwards.
+ */
+export async function reloadStatus(): Promise<void> {
+  if (isPanelWindow) return;
+  const s = await call((api) => api.me());
+  if (s) status.value = s;
 }
 
 async function reloadCollection(): Promise<void> {
@@ -316,8 +354,87 @@ export async function checkin(): Promise<CheckinResult | null> {
   }
 }
 
+// ---------------------------------------------------------------- scratch cards
+/** The card bought and not revealed yet, loaded by the scratch page. Its prize is paid when it is revealed. */
+export const scratchCard = ref<ScratchCard | null>(null);
+
+export async function loadScratch(): Promise<void> {
+  // A server without scratch cards says so in its status; asking it anyway would only raise an error.
+  if (!status.value?.scratch) return;
+  if (isPanelWindow) return requestDesktop("loadScratch");
+  const state = await call((api) => api.scratchState());
+  if (state) scratchCard.value = state.card;
+}
+
+let buyingScratch = false;
+
+/** Buys a card, or picks up the one still on the table. null when the server refused or could not be reached. */
+export async function buyScratch(): Promise<ScratchCard | null> {
+  if (isPanelWindow) return requestDesktop("buyScratch");
+  if (buyingScratch) return null;
+  buyingScratch = true;
+  try {
+    const r = await call((api) => api.scratchBuy());
+    if (!r) return null;
+    const { card, ...rest } = r;
+    status.value = rest;
+    scratchCard.value = card;
+    return card;
+  } finally {
+    buyingScratch = false;
+  }
+}
+
+/** Collects a card's prize. null when the request failed: the card stays on the table and can be revealed again. */
+export async function revealScratch(card: number): Promise<ScratchRevealResult["prize"] | null> {
+  if (isPanelWindow) return requestDesktop("revealScratch", card);
+  const r = await call((api) => api.scratchReveal(card));
+  if (!r) return null;
+  const { prize, ...rest } = r;
+  status.value = rest;
+  if (scratchCard.value?.id === card) scratchCard.value = null;
+  if (prize.item) {
+    freshItems.add(prize.item);
+    await reloadCollection();
+  }
+  return prize;
+}
+
 // ---------------------------------------------------------------- loadout
-// Sync the selected character, favorites and name plate.
+// Sync the selected character, favorites and name plate. The local values belong to one save (server and player
+// id): while that save is selected they are pushed to it; when another save is selected, its stored loadout is
+// loaded instead, so switching saves never overwrites one save's loadout with what another save owns.
+const LOADOUT_OWNER_KEY = "asoultappo.loadoutOwner.v1";
+const saveKey = (base: string, player: string) => `${base}|${player}`;
+
+function loadLoadoutOwner(): string | null {
+  try {
+    return localStorage.getItem(LOADOUT_OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+let loadoutOwner = loadLoadoutOwner();
+/** The loadout last pushed to or loaded from the current save, so an unchanged one is not sent again. */
+let lastPushed = "";
+/** The current save's stored loadout could not be loaded yet. */
+let loadoutPending = false;
+
+function setLoadoutOwner(save: string): void {
+  loadoutOwner = save;
+  try {
+    localStorage.setItem(LOADOUT_OWNER_KEY, save);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** A save that never chose a character keeps the member of the local one, never a skin it may not own. */
+function applyLoadout(l: Loadout): void {
+  settings.character = l.character || memberOf(settings.character);
+  settings.favorites = Array.isArray(l.favorites) ? l.favorites.slice(0, 8) : [];
+  settings.plate = l.plate || "";
+}
 
 export function localLoadout(): LoadoutPatch {
   return {
@@ -338,8 +455,13 @@ export function sanitizeLoadout(): void {
 }
 
 export async function pushLoadout(): Promise<boolean> {
-  if (!online.value) return false;
-  return (await call((api) => api.setLoadout(localLoadout()))) !== null;
+  // status is null between a save switch and its refresh; a different save must load its own loadout first.
+  const s = status.value;
+  if (!online.value || !s || saveKey(toHttpBase(settings.serverUrl), s.player) !== loadoutOwner) return false;
+  const loadout = localLoadout();
+  const ok = (await call((api) => api.setLoadout(loadout))) !== null;
+  if (ok) lastPushed = JSON.stringify(loadout);
+  return ok;
 }
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -348,6 +470,6 @@ watch(
   () => {
     if (isPanelWindow) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(() => void pushLoadout(), 400);
+    pushTimer = setTimeout(() => { if (JSON.stringify(localLoadout()) !== lastPushed) void pushLoadout(); }, 400);
   },
 );

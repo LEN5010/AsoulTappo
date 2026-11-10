@@ -362,11 +362,16 @@ mod win_hook {
                 // Wheel events are not used.
                 _ => None,
             };
-            if let Some(ev) = ev {
-                if matches!(ev, EventType::ButtonPress(_)) {
-                    super::note_raw_press(info.flags & LLMHF_INJECTED != 0);
+            match ev {
+                Some(ev) => {
+                    if matches!(ev, EventType::ButtonPress(_)) {
+                        super::note_raw_press(info.flags & LLMHF_INJECTED != 0);
+                    }
+                    push(ev);
                 }
-                push(ev);
+                // Not forwarded, but the system counts it as input: without this the watchdog
+                // takes a hook that only hears scrolling for a dead one.
+                None => super::watchdog::heard(),
             }
         }
         unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }

@@ -8,6 +8,7 @@ import time
 from typing import Any, Callable
 
 from . import cards as cardlogic
+from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
 from .manifest import Manifest
 from .store import Store
@@ -18,7 +19,11 @@ DAY_OFFSET = 8 * 3600
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
-# emote keys every member may send besides the starter emotes: the theme like
+# A tap session silent this long is pruned at startup; if it reports again it starts a new row.
+SESSION_DAYS = 30
+# Revealed scratch cards are kept this long; only the current day's are ever counted.
+SCRATCH_DAYS = 30
+# emote keys every member may send besides the starter emotes: thumbup, the theme's like burst
 FREE_EMOTES = frozenset({"thumbup"})
 LOADOUT_KEYS = ("character", "favorites", "plate")
 
@@ -124,12 +129,12 @@ class Game:
 
     # ------------------------------------------------------------------ income
     def presence(self, token: str, session: str) -> dict[str, Any]:
-        """Marks a running client online for today's statistics. Being online pays nothing; taps do."""
+        """Marks a running client online for today's statistics. Being online pays nothing; taps do.
+        [session] is accepted from clients but no longer recorded."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             now = self.now()
             st.get_player(pid, now)
-            st.presence(pid, session, now)
             st.mark_active(pid, day_of(now))
         return self.status(token)
 
@@ -218,13 +223,18 @@ class Game:
         """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
         return self.store.refund_duplicates("duplicate-cards-1.1", "card:", self.duplicate_shards, self.now())
 
+    def prune_activity_sessions(self) -> int:
+        """Forgets tap sessions silent for SESSION_DAYS (one row per client launch). Returns rows removed."""
+        return self.store.prune_activity_sessions(self.now() - SESSION_DAYS * 86400)
+
     def craft(self, token: str, item_id: str) -> dict[str, Any]:
         """Spend shards on a chosen missing item."""
         pid = player_id_for(token)
         now = self.now()
         item = self.manifest.items.get(item_id)
         cost = self.manifest.craft_cost.get(item["rarity"] or "") if item else None
-        if item is None or item["kind"] not in ("emote", "card") or item_id in self.manifest.starter or cost is None:
+        if (item is None or item["kind"] not in ("emote", "card") or item["source"]
+                or item_id in self.manifest.starter or cost is None):
             raise GameError("bad_item", "unknown item")
         with self.store.transaction() as st:
             p = st.get_player(pid, now)
@@ -265,13 +275,172 @@ class Game:
         days = self.store.checkins_since(pid, today[:8] + "01")
         return {"today": today, "available": all(d["day"] != today for d in days), "days": days}
 
+    # ----------------------------------------------------------------- scratch
+    def _scratch_cfg(self) -> dict[str, Any]:
+        cfg = self.manifest.scratch
+        if not cfg:
+            raise GameError("no_scratch", "这个服务器没有刮刮乐")
+        return cfg
+
+    def _scratch_left(self, pid: str, now: float) -> int:
+        return max(0, self.manifest.scratch["daily"] - self.store.scratch_count(pid, day_of(now)))
+
+    @staticmethod
+    def _scratch_view(card: dict[str, Any] | None) -> dict[str, Any] | None:
+        return {"id": card["id"], "cells": json.loads(card["cells"])} if card else None
+
+    def scratch_state(self, token: str) -> dict[str, Any]:
+        """Cards left today (China Standard Time), the count toward the emote pity, and the card still to reveal."""
+        self._scratch_cfg()
+        pid = player_id_for(token)
+        now = self.now()
+        p = self.store.get_player(pid, now)
+        return {"day": day_of(now), "left": self._scratch_left(pid, now), "pity": p["scratch_pity"],
+                "card": self._scratch_view(self.store.pending_scratch(pid))}
+
+    def scratch_buy(self, token: str) -> dict[str, Any]:
+        """Buy a card: its prize is decided now and paid by scratch_reveal. A card still to reveal is handed
+        back as it is, at no charge, so a save never holds two."""
+        cfg = self._scratch_cfg()
+        pid = player_id_for(token)
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            card = st.pending_scratch(pid)
+            if card is None:
+                today = day_of(now)
+                if st.scratch_count(pid, today) >= cfg["daily"]:
+                    raise GameError("sold_out", "今天的刮刮乐卖完了")
+                if p["shards"] < cfg["price"]:
+                    raise GameError("no_shards", "碎片不足")
+                # The card before was revealed (a save holds one at a time), so its emote is owned by now.
+                owned = st.owned(pid)
+                missing = [k for k in self.manifest.scratch_emotes if f"emote:{k}" not in owned]
+                # A whole set: no emote tier and no pity, which stays where the last emote left it.
+                kind, shards = scratchlogic.roll_prize(cfg, p["scratch_pity"], self.rng, complete=not missing)
+                item = ""
+                if kind == "emote":
+                    item = "emote:" + missing[min(int(self.rng.random() * len(missing)), len(missing) - 1)]
+                win = item[6:] if item else str(shards) if shards else None
+                cells = scratchlogic.layout(win, [x["shards"] for x in cfg["prizes"]],
+                                            self.manifest.scratch_emotes, self.rng)
+                card_id = st.add_scratch(pid, today, json.dumps(cells), shards, item, now)
+                pity = 0 if kind == "emote" else p["scratch_pity"] if not missing else p["scratch_pity"] + 1
+                st.update_player(pid, shards=p["shards"] - cfg["price"], scratch_pity=pity)
+                card = st.scratch_card(pid, card_id)
+        return {**self.status(token), "card": self._scratch_view(card)}
+
+    def scratch_reveal(self, token: str, card_id: int) -> dict[str, Any]:
+        """Pay a card's prize. Revealing it again answers the same prize and pays nothing; `announce` is set
+        the first time when the shards are worth telling the room."""
+        cfg = self._scratch_cfg()
+        pid = player_id_for(token)
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            card = st.scratch_card(pid, card_id)
+            if card is None:
+                raise GameError("no_card", "没有这张刮刮乐")
+            first = not card["revealed"]
+            if first:
+                st.reveal_scratch(card["id"], now)
+                if card["shards"]:
+                    st.update_player(pid, shards=p["shards"] + card["shards"])
+                if card["item"]:
+                    known = self.manifest.items.get(card["item"])
+                    st.add_item(pid, card["item"], now)
+                    st.log_drop(pid, card["item"], known["rarity"] if known else "common", True, now)
+        return {**self.status(token), "prize": {"shards": card["shards"], "item": card["item"] or None},
+                "announce": first and card["shards"] >= cfg["announce"]}
+
+    def prune_scratch_cards(self) -> int:
+        """Forgets revealed scratch cards older than SCRATCH_DAYS. Returns rows removed."""
+        return self.store.prune_scratch_cards(self.now() - SCRATCH_DAYS * 86400)
+
+    # ------------------------------------------------------------ rock-paper-scissors
+    def duel_cfg(self) -> dict[str, Any]:
+        cfg = self.manifest.duel
+        if not cfg:
+            raise GameError("no_duel", "这个服务器没有猜拳")
+        return cfg
+
+    def duel_stake(self, bet: int) -> dict[str, int]:
+        """The stake tier for [bet]; any other amount is refused."""
+        for stake in self.duel_cfg()["stakes"]:
+            if stake["bet"] == bet:
+                return stake
+        raise GameError("bad_message", "unknown bet")
+
+    def _duel_ready(self, st: Store, pid: str | None, code: str) -> None:
+        """Both sides need a save with enough taps; [code] says which side failed. Never creates a save."""
+        taps = st.player_taps(pid) if pid else None
+        if taps is None or taps < self.duel_cfg()["minTaps"]:
+            raise GameError(code, "")
+
+    def _duel_net_ok(self, st: Store, pids: tuple[str, ...], stake: dict[str, int], day: str) -> None:
+        """A win of this tier may not take either side's net win of [day] past the daily cap."""
+        cap = self.duel_cfg()["dailyWinCap"]
+        if any(st.duel_net(pid, day) + stake["prize"] - stake["bet"] > cap for pid in pids):
+            raise GameError("duel_cap", "")
+
+    def duel_check(self, a: str | None, b: str | None, bet: int) -> dict[str, int]:
+        """Whether save [a] may invite save [b] at [bet]; returns the stake. The bets are taken by duel_start."""
+        stake = self.duel_stake(bet)
+        with self.store.transaction() as st:
+            self._duel_ready(st, a, "duel_locked")
+            self._duel_ready(st, b, "duel_target_locked")
+            if st.get_player(a, self.now())["shards"] < bet:
+                raise GameError("no_shards", "")
+            self._duel_net_ok(st, (a, b), stake, day_of(self.now()))
+        return stake
+
+    def duel_start(self, a: str, b: str, bet: int) -> int:
+        """Takes both bets in one transaction and records the duel; returns its id. When either side is short of
+        shards nothing is taken (no_shards)."""
+        stake = self.duel_stake(bet)
+        with self.store.transaction() as st:
+            now = self.now()
+            self._duel_ready(st, a, "duel_locked")
+            self._duel_ready(st, b, "duel_target_locked")
+            day = day_of(now)
+            self._duel_net_ok(st, (a, b), stake, day)
+            pa, pb = st.get_player(a, now), st.get_player(b, now)
+            if pa["shards"] < bet or pb["shards"] < bet:
+                raise GameError("no_shards", "")
+            st.update_player(a, shards=pa["shards"] - bet)
+            st.update_player(b, shards=pb["shards"] - bet)
+            return st.add_duel(a, b, bet, stake["prize"], day, now)
+
+    def duel_settle(self, duel_id: int, winner: str | None) -> bool:
+        """Pays the duel's prize to [winner], or returns both bets when there is none. Only the first call for a
+        duel pays; later ones return False."""
+        with self.store.transaction() as st:
+            now = self.now()
+            d = st.duel(duel_id)
+            if d is None or (winner is not None and winner not in (d["a"], d["b"])):
+                return False
+            if not st.close_duel(duel_id, "won" if winner else "refunded", winner or "", now):
+                return False
+            for pid, gain in ([(winner, d["prize"])] if winner else [(d["a"], d["bet"]), (d["b"], d["bet"])]):
+                st.update_player(pid, shards=st.get_player(pid, now)["shards"] + gain)
+        return True
+
+    def refund_open_duels(self) -> int:
+        """At startup: duels left open by the last run cannot go on (rooms live in memory), so both bets go back.
+        Returns the duels refunded."""
+        return sum(self.duel_settle(d["id"], None) for d in self.store.open_duels())
+
+    def duel_net(self, pid: str) -> int:
+        """The save's net win today (China Standard Time): prizes minus bets of today's settled duels."""
+        return self.store.duel_net(pid, day_of(self.now()))
+
     # ------------------------------------------------------------------ status
     def status(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)
         now = self.now()
         p = self.store.get_player(pid, now)
         owned_count = self.store.count_items(pid, self.collectible_ids)
-        return {
+        out = {
             "player": pid,
             "shards": p["shards"],
             "income": self._income(p, now),
@@ -283,6 +452,11 @@ class Game:
             "checkin": {"available": not self.store.checked_in(pid, day_of(now))},
             "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
         }
+        if self.manifest.scratch:
+            out["scratch"] = {"left": self._scratch_left(pid, now), "pity": p["scratch_pity"]}
+        if self.manifest.duel:
+            out["duel"] = {"net": self.store.duel_net(pid, day_of(now))}
+        return out
 
     def save_summary(self, pid: str) -> dict[str, Any]:
         """What the account choice dialog shows about one save."""
@@ -333,7 +507,7 @@ class Game:
         return item_id in owned or item_id in self.manifest.starter
 
     def _check_loadout(self, patch: dict[str, Any], owned: dict[str, int]) -> dict[str, Any]:
-        """Validate the given loadout keys; raises GameError.  "" / None clear head and desk."""
+        """Validate the given loadout keys; raises GameError.  "" / None take the plate off."""
         out: dict[str, Any] = {}
         if "character" in patch and patch["character"] is not None:
             name = patch["character"]
@@ -362,16 +536,28 @@ class Game:
         return [c["id"] for c in self.manifest.cards.values()
                 if c["series"] == card["series"] and members & set(c["characters"])]
 
-    def _check_plate(self, card_id: Any, owned: dict[str, int]) -> str | None:
-        """A big hidden card worn as a name plate once its set is collected; empty means none."""
-        if not card_id:
+    def plate_needs(self, plate_id: Any) -> list[str] | None:
+        """Item ids a name plate asks for: a big hidden card's set, or every emote of a manifest plate's set.
+        None when the id is no plate."""
+        if not isinstance(plate_id, str):
             return None
-        card = self.manifest.cards.get(card_id) if isinstance(card_id, str) else None
+        if plate_id in self.manifest.plates:
+            return self.manifest.plates[plate_id]
+        card = self.manifest.cards.get(plate_id)
         if card is None or card.get("tier") != "big":
-            raise GameError("bad_item", "not a big hidden card")
-        if any(f"card:{cid}" not in owned for cid in self.plate_set(card)):
+            return None
+        return [f"card:{cid}" for cid in self.plate_set(card)]
+
+    def _check_plate(self, plate_id: Any, owned: dict[str, int]) -> str | None:
+        """A name plate (a big hidden card or a manifest plate) worn once its set is collected; empty means none."""
+        if not plate_id:
+            return None
+        needs = self.plate_needs(plate_id)
+        if needs is None:
+            raise GameError("bad_item", "not a name plate")
+        if any(item not in owned for item in needs):
             raise GameError("locked", "set not collected")
-        return card_id
+        return plate_id
 
     def _stored_loadout(self, p: dict[str, Any], owned: dict[str, int]) -> dict[str, Any]:
         try:
@@ -412,14 +598,31 @@ class Game:
             return {"uid": None}
         return {"uid": hashlib.sha256(f"{pid}:{room}".encode()).hexdigest()[:10]}
 
-    def room_plate(self, token: str | None, card_id: str | None) -> str | None:
-        """The name plate a room member shows: the card when their save has its set, else none."""
-        if not token or not card_id:
+    def room_plate(self, token: str | None, plate_id: str | None) -> str | None:
+        """The name plate a room member shows: the plate when their save has its set, else none."""
+        if not token or not plate_id:
             return None
         try:
-            return self._check_plate(card_id, self.store.owned(player_id_for(token)))
+            return self._check_plate(plate_id, self.store.owned(player_id_for(token)))
         except GameError:
             return None
+
+    def owns_character(self, token: str | None, name: str) -> bool:
+        """Whether a room member may show this character: members always, a skin only when the save owns it."""
+        if name in self.manifest.character_names:
+            return True
+        if not token or name not in self.manifest.skins:
+            return False
+        try:
+            pid = player_id_for(token)
+        except GameError:
+            return False
+        return f"char:{name}" in self.store.owned(pid)
+
+    def base_character(self, name: str) -> str:
+        """The member a skin belongs to (skin names start with it, e.g. 贝拉山海经), else the first member."""
+        names = [c["name"] for c in self.manifest.data["characters"]]
+        return next((n for n in names if name.startswith(n)), names[0])
 
     def owns_emote(self, token: str | None, key: str) -> bool:
         if key in FREE_EMOTES or f"emote:{key}" in self.manifest.starter:

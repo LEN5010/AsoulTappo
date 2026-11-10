@@ -6,9 +6,10 @@
 
 | 路径 | 内容 | 体积 |
 |---|---|---|
-| `client/public/assets/` | **客户端内置**：表情（475 个 / 26 套）、卡片缩略图（414×621）、33 段动态卡视频、默认主题部件 | ≈ 96 MB |
+| `client/public/assets/` | **客户端内置**：表情（495 个 / 27 套）、卡片缩略图（414×621）、33 段动态卡视频、默认主题部件 | ≈ 96 MB |
 | `assets-packs/` | **服务端素材包**（按需加载）：卡片高清原图（1080 宽）及扩展主题资源 | ≈ 27 MB |
 | `client/src/assets/sfx/` | 抽卡音效：Kenney 的 CC0 卡牌录音和截取自《Quiet》伴奏的皮肤聚光音乐，AAC 192kbps，来源见目录内 `LICENSE.md` | ≈ 0.2 MB |
+| `client/src/assets/duel/` | 猜拳的石头、剪刀、布：Fluent Emoji 扁平版（Microsoft，MIT）的 Raised fist、Victory hand、Raised hand | ≈ 11 KB |
 
 ### 素材包结构
 
@@ -65,7 +66,7 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --emot
 
 补入绮梦漫游、匣中惊鸿两套静态表情，以及此间为爱、绮梦漫游、匣中惊鸿三套动态表情，共 100 个。静态为普通，动态为稀有。静态使用高清 PNG，动态使用原始 GIF，旧套组与编号保留。完整重建可通过 `--collection-src` 指定同一目录。
 
-侧栏阿草彩蛋使用「表情包/阿草和TA的朋友们/AI高清」中的 20 张图片，裁去透明留白后等比缩小至 320px，保存到 `client/src/assets/emotes/achao/`。点击左下角羊驼随机展示一张，持续 2.5 秒。这组图片作为界面素材随客户端内置。
+侧栏阿草彩蛋使用「表情包/阿草和TA的朋友们/AI高清」中的 20 张图片，裁去透明留白后等比缩小至 320px，保存为 `client/public/assets/emotes/achao/<nn>.webp`，顺序和名称见 `scripts/asset_catalog.py` 的 `SCRATCH_EMOTE_SET`。点击左下角羊驼随机展示一张，持续 2.5 秒。这组图片同时是刮刮乐的表情套 `achao`，签到页和刮刮乐页的阿草也取自这里；素材管线只登记这一套，不重新生成图片。集齐这 20 个表情解锁阿草铭牌（`scripts/asset_catalog.py` 的 `PLATES`，写入 manifest 的 `plates`），铭牌图直接使用侧栏的 `client/src/assets/brand/side-alpaca.webp`，不另存图片。
 
 ## 界面字体与图形
 
@@ -76,6 +77,7 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --emot
 | `client/src/assets/patterns/halftone.svg` | 半调网点，作为 CSS 遮罩使用 | 由脚本生成 |
 | `client/src/assets/brand/asoul-logo.svg` | A-SOUL 标志的矢量描摹，作为 CSS 遮罩使用 | 版权归权利人所有，见同目录 `COPYRIGHT.md` |
 | `client/src/assets/brand/side-alpaca.webp` | 侧栏羊驼贴纸，透明底 | 原形象版权归权利人所有 |
+| `client/src/assets/brand/asasfans-icon.webp` | Asasfans 应用图标，设置页推广位使用，由 192px PNG 转为 WebP（质量 95） | Asasfans 品牌标 |
 
 新增界面文字后运行 `python scripts/build_ui_assets.py --noto <NotoSansSC[wght].ttf>`（需安装 fonttools 与 brotli）重新裁剪字体。未包含在子集内的字符会回退到系统字体。
 
@@ -97,7 +99,7 @@ python scripts/build_assets.py --src /path/to/A-SOUL装扮收藏集大全 --emot
 所有卡片进入同一个此间共鸣池。大隐藏卡为 legendary，小隐藏和带视频的跳舞卡为 epic，其余卡为 common；原有 tier 字段保留用于卡册展示。三张心宜与思诺共有卡各自只入池一次。
 
 - **共鸣概率**：大隐藏 0.5%、皮肤 0.5%、史诗 4.5%、稀有表情 3%、罕见表情 6%、普通 85.5%。普通档先按普卡 45 : 表情 40.5 的权重选类型，再在类型内优先补缺；对应类型集齐后产生重复。初始单抽普卡为 45%、普通表情为 40.5%。高档集齐后概率并入普通档。
-- **表情与皮肤**：共 475 个收藏表情，每位成员 4 个初始表情；455 个非初始表情入池，普通 320 个、罕见 75 个、稀有 60 个。脑洞波与绽放各三套为罕见，三套动态表情为稀有，其他为普通。山海经、睡衣派对各 3 款，以及嘉然、乃琳、贝拉的 2025 生日，共 9 款皮肤通过共鸣解锁，背包展示全部皮肤，未解锁项压暗且不可选择。
+- **表情与皮肤**：成员表情共 475 个，另有 20 个阿草表情只从刮刮乐获得，不入共鸣池，不可兑换。每位成员 4 个初始表情；455 个非初始表情入池，普通 320 个、罕见 75 个、稀有 60 个。脑洞波与绽放各三套为罕见，三套动态表情为稀有，其他为普通。山海经、睡衣派对各 3 款，以及嘉然、乃琳、贝拉的 2025 生日，共 9 款皮肤通过共鸣解锁，背包展示全部皮肤，未解锁项压暗且不可选择。
 - **图鉴卡册**：系列栏含「全部」；未拥有卡保持彩色并压暗。目录内可见且已拥有的动态卡循环播放；所有未拥有卡使用静态缩略图，跳舞卡同样显示其静态封面。滚出可视区域的视频卸载，回到视野时开始播放。共鸣页的卡池演示独立于持有状态，动态卡保持正常亮度并自动播放。
 - **碎片**：共鸣每次 160。重复表情返还 10 碎片，重复卡片累计持有数量。普通兑换价 480、罕见 960、稀有 1600；皮肤、史诗、传说和初始表情按共鸣与初始规则获取。
 

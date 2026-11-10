@@ -6,8 +6,12 @@
 //! file makes every start ask UAC, and the page offers it when an elevated window is in
 //! front. Accounts that cannot elevate themselves (standard users) are never asked, since
 //! another account's credentials would run the pet as that account, with its own data.
+//!
+//! The single-instance check lives here too: it has to run after waiting for an instance that
+//! restarted this one, and before the UAC prompt.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 /// Where the "start as administrator" choice is kept. It is read before Tauri starts, so it
 /// lives in a plain file under the app config dir (`%APPDATA%\<identifier>`), not in the page.
@@ -43,6 +47,19 @@ pub enum Startup {
     Declined(String),
 }
 
+/// What the single-instance check found, for the log once it is open. A second start never
+/// gets this far: it exits before opening anything.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub enum Instance {
+    /// No other instance was running, or not Windows.
+    Only,
+    /// Another instance was still running and exited within the grace period (a restart);
+    /// how long this one waited for it.
+    AfterWait(Duration),
+    /// The check itself failed; running without it.
+    Unchecked(String),
+}
+
 #[cfg(target_os = "windows")]
 pub use imp::{blocked, can_elevate, is_elevated, restart_elevated, spawn_watch, startup};
 
@@ -58,21 +75,30 @@ mod imp {
 
     use serde::Serialize;
     use tauri::Emitter;
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, ERROR_CANCELLED};
+    use windows_sys::Win32::Foundation::{
+        CloseHandle, GetLastError, HANDLE, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS, ERROR_CANCELLED,
+    };
     use windows_sys::Win32::Security::{
         GetTokenInformation, TokenElevationType, TokenElevationTypeLimited, TOKEN_ELEVATION_TYPE, TOKEN_QUERY,
     };
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken, WaitForSingleObject,
+        CreateMutexW, GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken, WaitForSingleObject,
         PROCESS_SYNCHRONIZE,
     };
     use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW};
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-    use super::Startup;
+    use super::{Instance, Startup};
 
     /// How long a new elevated instance waits for the one that started it to exit.
     const WAIT_FOR_OLD: u32 = 10_000;
+    /// Held by the running instance. `Local\` is the session's namespace, which elevated and
+    /// normal processes of the same session share; other sessions (other users) have their own.
+    const INSTANCE_MUTEX: &str = "Local\\io.github.len5010.asoultappo.instance";
+    /// How long a new start keeps trying while another instance holds the mutex: `relaunch`
+    /// starts the new process before the old one has exited.
+    const CLAIM_WAIT: Duration = Duration::from_secs(3);
+    const CLAIM_EVERY: Duration = Duration::from_millis(100);
     const WATCH_EVERY: Duration = Duration::from_secs(1);
     /// How long an elevated window stays in front before the page offers to restart elevated.
     const TELL_AFTER: Duration = Duration::from_secs(10);
@@ -134,9 +160,10 @@ mod imp {
         }
     }
 
-    /// Before Tauri starts: wait for the instance that restarted this one, then restart
-    /// elevated when the player chose it. Exits the process when the elevated one started.
-    pub fn startup() -> Startup {
+    /// Before Tauri starts: wait for the instance that restarted this one, exit when another
+    /// instance is running, then restart elevated when the player chose it. Exits the process
+    /// when the elevated one started.
+    pub fn startup() -> (Instance, Startup) {
         let args: Vec<String> = std::env::args().collect();
         if let Some(pid) = args.windows(2).find(|w| w[0] == "--wait-for").and_then(|w| w[1].parse::<u32>().ok()) {
             unsafe {
@@ -147,15 +174,48 @@ mod imp {
                 }
             }
         }
+        // After the wait, so an elevated restart takes over from the instance it replaces; before
+        // the UAC decision, so a second start never asks for it.
+        let instance = claim_instance();
         if !super::run_as_admin() || is_elevated() {
-            return Startup::Normal;
+            return (instance, Startup::Normal);
         }
         if !can_elevate() {
-            return Startup::CannotElevate;
+            return (instance, Startup::CannotElevate);
         }
         match restart_elevated() {
             Ok(()) => std::process::exit(0),
-            Err(e) => Startup::Declined(e),
+            Err(e) => (instance, Startup::Declined(e)),
+        }
+    }
+
+    /// Take the instance mutex, or exit when another instance still holds it after `CLAIM_WAIT`.
+    fn claim_instance() -> Instance {
+        let name = wide(INSTANCE_MUTEX);
+        let started = Instant::now();
+        let mut first = true;
+        loop {
+            let (mutex, error) = unsafe {
+                let mutex = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+                (mutex, GetLastError())
+            };
+            match (mutex.is_null(), error) {
+                // Running already. A normal process cannot open the mutex of an elevated instance at all.
+                (false, ERROR_ALREADY_EXISTS) | (true, ERROR_ACCESS_DENIED) => {}
+                (true, e) => return Instance::Unchecked(format!("error {e}")),
+                // The handle is never closed: it keeps the mutex for as long as this process runs.
+                (false, _) if first => return Instance::Only,
+                (false, _) => return Instance::AfterWait(started.elapsed()),
+            }
+            // An open handle keeps the mutex alive after the other instance exits.
+            if !mutex.is_null() {
+                unsafe { CloseHandle(mutex) };
+            }
+            if started.elapsed() >= CLAIM_WAIT {
+                std::process::exit(0);
+            }
+            first = false;
+            std::thread::sleep(CLAIM_EVERY);
         }
     }
 
@@ -225,7 +285,7 @@ mod imp {
 
 #[cfg(not(target_os = "windows"))]
 mod stub {
-    use super::Startup;
+    use super::{Instance, Startup};
 
     pub fn is_elevated() -> bool {
         false
@@ -236,8 +296,9 @@ mod stub {
     pub fn restart_elevated() -> Result<(), String> {
         Err("unsupported".into())
     }
-    pub fn startup() -> Startup {
-        Startup::Normal
+    /// Finder and the desktop start a running app only once, so there is no instance check here.
+    pub fn startup() -> (Instance, Startup) {
+        (Instance::Only, Startup::Normal)
     }
     pub fn spawn_watch(_app: tauri::AppHandle) {}
 }

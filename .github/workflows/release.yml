@@ -40,7 +40,12 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 修复以管理员身份运行时，点击去网页下载会打开文档文件夹
+            - 新增刮刮乐
+            - 新增公开房间列表，登录 Asasfans 账号后可公开和浏览房间
+            - 新增房间内猜拳
+            - 新增阿草铭牌
+            - 房间昵称支持屏蔽词
+            - macOS 缺少输入权限时显示提示
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -85,7 +90,12 @@ jobs:
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
           releaseBody: |
-            - 修复以管理员身份运行时，点击去网页下载会打开文档文件夹
+            - 新增刮刮乐
+            - 新增公开房间列表，登录 Asasfans 账号后可公开和浏览房间
+            - 新增房间内猜拳
+            - 新增阿草铭牌
+            - 房间昵称支持屏蔽词
+            - macOS 缺少输入权限时显示提示
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
