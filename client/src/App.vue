@@ -31,9 +31,10 @@ import { draws, online, startReporting, stopReporting } from "./stores/player";
 import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import {
-  clamp, defaultPetPos, enterRoom, nextSlot, placeRemote, remotePos, viewport, type Pos, type Size,
+  clamp, defaultPetPos, dockY, enterRoom, nextSlot, placeOwn, placeRemote, remotePos, viewport, type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
+import Icon from "./ui/Icon.vue";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
@@ -48,17 +49,38 @@ onResize();
 
 // ---- own pet
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
-const ownPos = computed<Pos>(() =>
-  settings.petX < 0 ? defaultPetPos(ownSize.value) : clamp({ x: settings.petX, y: settings.petY }, ownSize.value),
-);
+/** The own pet's size with the strip under it, which a docked or folded pet does not have. */
+const fullSize = ref<Size>({ ...ownSize.value });
+/** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
+const dragDock = ref<boolean | null>(null);
+const docked = computed(() => dragDock.value ?? settings.petDocked);
+const ownPos = computed<Pos>(() => {
+  if (settings.petDocked) return { x: clamp({ x: settings.petX, y: 0 }, ownSize.value).x, y: dockY(settings.scale) };
+  return settings.petX < 0 ? defaultPetPos(ownSize.value) : clamp({ x: settings.petX, y: settings.petY }, ownSize.value);
+});
+function placeOwnDrag(p: Pos): Pos {
+  const placed = placeOwn(p, fullSize.value, settings.scale);
+  dragDock.value = placed.docked;
+  return placed.pos;
+}
 function onOwnMoved(p: Pos) {
+  settings.petDocked = dragDock.value ?? false;
+  dragDock.value = null;
   settings.petX = p.x;
   settings.petY = p.y;
 }
+function onOwnSize(size: Size) {
+  ownSize.value = size;
+  if (barShown.value) fullSize.value = size;
+}
 function resetPet() {
+  settings.petDocked = false;
   settings.petX = -1;
   settings.petY = -1;
 }
+/** The strip under the own pet: gone with click-through, on the bottom edge, and when folded. */
+const barShown = computed(() => !settings.clickThrough && !docked.value && !settings.barFolded);
+watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
 const shownCount = computed(() => (settings.tapView === "today" ? counter.today : counter.total));
 const quickKeys = computed(() => (settings.favorites.length ? settings.favorites : starterEmotesOf(settings.character)));
@@ -223,7 +245,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
     </PetActor>
 
-    <PetActor :pos="ownPos" label="我的桌宠" @moved="onOwnMoved" @size="(s) => (ownSize = s)" @dragging="kick">
+    <PetActor
+      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" @moved="onOwnMoved" @size="onOwnSize" @dragging="kick"
+      @tap="docked && togglePanel()"
+    >
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
@@ -235,13 +260,20 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <DuelBubble v-bind="duelPlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <CounterBar
-        v-if="!settings.clickThrough" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
+        v-if="barShown" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
         :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
+        @fold="settings.barFolded = true"
       >
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
+      <button
+        v-else-if="!settings.clickThrough && !docked" type="button" class="unfold ui-btn small" data-no-drag
+        title="展开" aria-label="展开" @click="settings.barFolded = false"
+      >
+        <Icon name="down" :size="15" />
+      </button>
 
     </PetActor>
 
@@ -265,5 +297,8 @@ html.browser-preview body {
 
 <style scoped>
 .desk { position: fixed; inset: 0; pointer-events: none; }
+/* The key a folded strip leaves under the pet. */
+.unfold { margin-top: -4px; padding: 0 10px; }
+.unfold .icon { rotate: 180deg; }
 .desk > :deep(*) { pointer-events: auto; }
 </style>

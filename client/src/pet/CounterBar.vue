@@ -6,7 +6,7 @@ import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
 const props = defineProps<{ count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number }>();
-defineEmits<{ toggleView: []; quick: []; menu: []; resonance: [] }>();
+defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; fold: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const MILESTONE = 1000;
@@ -59,6 +59,9 @@ watch(
     </button>
     <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
       <Icon name="menu" :size="15" />
+    </button>
+    <button type="button" class="key ui-btn small ghost" title="收起" aria-label="收起" @click="$emit('fold')">
+      <Icon name="down" :size="15" />
     </button>
   </div>
 </template>

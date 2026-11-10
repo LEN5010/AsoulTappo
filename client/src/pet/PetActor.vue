@@ -5,7 +5,8 @@ import { setDragging } from "../composables/tauri";
 import { clamp, type Pos, type Size } from "../stores/desk";
 import { dragged, isTap } from "./drag";
 
-const props = defineProps<{ pos: Pos; label?: string }>();
+// `place` replaces the default rule for where a drag may go (anywhere fully on screen).
+const props = defineProps<{ pos: Pos; label?: string; place?: (p: Pos) => Pos }>();
 const emit = defineEmits<{ moved: [pos: Pos]; size: [size: Size]; dragging: []; tap: [] }>();
 
 const root = ref<HTMLElement | null>(null);
@@ -33,7 +34,8 @@ function move(e: PointerEvent) {
   const dy = e.clientY - start.py;
   if (!moved && !dragged(dx, dy)) return;
   moved = true;
-  live.value = clamp({ x: start.x + dx, y: start.y + dy }, size());
+  const raw = { x: start.x + dx, y: start.y + dy };
+  live.value = props.place ? props.place(raw) : clamp(raw, size());
   emit("dragging");
 }
 function up(e: PointerEvent) {

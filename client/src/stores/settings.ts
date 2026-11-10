@@ -46,6 +46,10 @@ export interface Settings {
   shardPop: boolean;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
+  /** The strip under the own pet is folded away, leaving a small key that brings it back. */
+  barFolded: boolean;
+  /** The own pet stands on the bottom edge of the screen: its desk on the edge, the strip hidden. */
+  petDocked: boolean;
   /** Global shortcut that hides the pet and the panel and brings them back ("" = none), e.g. "Control+Alt+KeyH". */
   bossKey: string;
 }
@@ -82,6 +86,8 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   shardPop: true,
   showPartners: true,
+  barFolded: false,
+  petDocked: false,
   bossKey: "",
 };
 
