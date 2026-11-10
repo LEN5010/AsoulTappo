@@ -38,7 +38,7 @@ import { updateBusy, updateDialogOpen, updateOffer, updatePercent } from "./stor
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough,
+  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setBossKey, setClickThrough,
   setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
@@ -76,6 +76,8 @@ function closeQuick(e: Event) {
 const closeOnEscape = (e: KeyboardEvent) => { if (e.key === "Escape") closePick(); };
 
 // ---- other members on the desk
+/** Empty with partners hidden: nothing of them is rendered, so they take no clicks either. */
+const shownOthers = computed(() => (settings.showPartners ? others.value : []));
 const remotePlate = computed(() => plateSize(settings.remoteScale));
 const remoteName = computed(() => nameBand(settings.remoteScale));
 /** A partner's name plate, when they wear one and plates are shown. */
@@ -179,6 +181,8 @@ onBeforeUnmount(() => {
 
 watch(() => settings.clickThrough, (v) => setClickThrough(v), { immediate: true });
 watch(() => settings.alwaysOnTop, (v) => setAlwaysOnTop(v), { immediate: true });
+// The settings page reports a refused shortcut when it is recorded; at startup it is only in the log.
+watch(() => settings.bossKey, (v) => void setBossKey(v).catch(() => {}), { immediate: true });
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {
@@ -191,7 +195,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
 <template>
   <div class="desk" :style="skinVars">
     <PetActor
-      v-for="m in others" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
+      v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
       @moved="(p) => placeRemote(memberKey(m), p)" @dragging="kick" @tap="openPick(m)"
     >
       <PetView

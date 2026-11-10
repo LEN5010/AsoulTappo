@@ -4,6 +4,7 @@ mod access;
 mod diag;
 mod elevation;
 mod gamepad;
+mod hotkey;
 mod hit;
 mod input;
 #[cfg(target_os = "windows")]
@@ -615,6 +616,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(overlay.clone())
         .invoke_handler(tauri::generate_handler![
             set_click_through,
@@ -633,6 +635,7 @@ pub fn run() {
             write_log,
             access::input_access_missing,
             access::open_input_settings,
+            hotkey::set_boss_key,
             update::install_version
         ])
         .on_window_event(|window, event| {

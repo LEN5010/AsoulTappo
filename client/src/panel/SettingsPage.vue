@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { adminStatus, exportLog, isTauri, openAboutLink, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
+import { adminStatus, exportLog, isTauri, openAboutLink, setBossKey, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
+import { shortcutLabel, shortcutOf } from "../desktop/bossKey";
 import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
@@ -60,6 +61,34 @@ async function copyMail() {
 const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
+
+// The hide key: the button waits for the next shortcut pressed; Escape leaves it as it was.
+const IS_MAC = /Mac/i.test(navigator.userAgent);
+const recording = ref(false);
+const keyNote = ref("");
+async function saveKey(keys: string) {
+  recording.value = false;
+  try {
+    await setBossKey(keys);
+    settings.bossKey = keys;
+    keyNote.value = "";
+  } catch {
+    keyNote.value = "无法使用";
+    await setBossKey(settings.bossKey).catch(() => {});
+  }
+}
+function onRecordKey(e: KeyboardEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.code === "Escape") { recording.value = false; return; }
+  const keys = shortcutOf(e);
+  if (keys) void saveKey(keys);
+}
+watch(recording, (on) => {
+  if (on) { keyNote.value = ""; window.addEventListener("keydown", onRecordKey, true); }
+  else window.removeEventListener("keydown", onRecordKey, true);
+});
+onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
 
 // Windows: start as administrator, so games run as administrator still reach the pet.
 const admin = ref<AdminStatus | null>(null);
@@ -185,6 +214,16 @@ async function exportLogFile() {
               <span>猜拳免打扰</span>
               <input v-model="settings.duelDnd" class="ui-switch" type="checkbox" />
             </label>
+            <div v-if="isTauri" class="ui-row" title="按下后隐藏桌宠和面板，再按一次恢复">
+              <span>隐藏热键</span>
+              <span class="version-side">
+                <small v-if="keyNote" role="status" class="check-note">{{ keyNote }}</small>
+                <button v-if="settings.bossKey && !recording" type="button" class="ui-btn small" @click="saveKey('')">清除</button>
+                <button type="button" class="ui-btn small" :class="{ primary: recording }" @click="recording = !recording">
+                  {{ recording ? "按下组合键" : settings.bossKey ? shortcutLabel(settings.bossKey, IS_MAC) : "未设置" }}
+                </button>
+              </span>
+            </div>
           </div>
         </section>
       </div>
@@ -221,6 +260,13 @@ async function exportLogFile() {
             <label class="ui-row">
               <span>界面音效</span>
               <input v-model="settings.sfx" class="ui-switch" type="checkbox" />
+            </label>
+            <label class="ui-row">
+              <span>音量</span>
+              <span class="ui-ctl">
+                <RangeInput v-model="settings.volume" :min="0" :max="1" :step="0.05" />
+                <b class="ui-val">{{ Math.round(settings.volume * 100) }}%</b>
+              </span>
             </label>
           </div>
         </section>

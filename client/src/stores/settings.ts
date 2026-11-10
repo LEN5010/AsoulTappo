@@ -40,8 +40,14 @@ export interface Settings {
   cardAudio: boolean;
   /** Synthesized interface sounds: page turns, card flips, the alpaca. */
   sfx: boolean;
+  /** Loudness of card audio and interface sounds, 0 to 1. */
+  volume: number;
   /** "+N" shards over the own pet while typing. */
   shardPop: boolean;
+  /** Partners' pets on the desk; off leaves only the own pet. */
+  showPartners: boolean;
+  /** Global shortcut that hides the pet and the panel and brings them back ("" = none), e.g. "Control+Alt+KeyH". */
+  bossKey: string;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -73,7 +79,10 @@ export const DEFAULT_SETTINGS: Settings = {
   tapView: "today",
   cardAudio: true,
   sfx: true,
+  volume: 1,
   shardPop: true,
+  showPartners: true,
+  bossKey: "",
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
@@ -97,6 +106,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.scale = Math.min(3, Math.max(0.5, out.scale));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
+  out.volume = Math.min(1, Math.max(0, out.volume));
   out.favorites = Array.isArray(out.favorites)
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
     : [];

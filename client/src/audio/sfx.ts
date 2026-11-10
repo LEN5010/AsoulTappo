@@ -1,11 +1,14 @@
 // Interface sounds. The draw uses Kenney's CC0 card recordings, and a skin's spotlight a phrase cut
 // from the Quiet backing track (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
+import { watch } from "vue";
 import { settings } from "../stores/settings";
 
 type Wave = OscillatorType;
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+/** Everything passes through here on its way out; its gain is settings.volume. */
+let output: GainNode | null = null;
 
 /** One context for every sound. It starts suspended when created before a click and resumes on the next sound. */
 function context(): AudioContext | null {
@@ -17,7 +20,9 @@ function context(): AudioContext | null {
     limiter.ratio.value = 8;
     master = ctx.createGain();
     master.gain.value = 0.5;
-    master.connect(limiter).connect(ctx.destination);
+    output = ctx.createGain();
+    output.gain.value = settings.volume;
+    master.connect(limiter).connect(output).connect(ctx.destination);
   }
   if (ctx.state === "suspended") void ctx.resume();
   return ctx;
@@ -29,15 +34,21 @@ function audio(): { ac: AudioContext; out: GainNode } | null {
   return ac ? { ac, out: master! } : null;
 }
 
-/** Plays [media] [gain] times louder than its own full volume, which an element cannot do alone. */
-export function boost(media: HTMLMediaElement, gain: number): void {
+watch(() => settings.volume, (v) => { if (output) output.gain.value = v; });
+
+/**
+ * Plays [media] [gain] times louder than its own full volume, which an element cannot do alone.
+ * True when it now plays through the shared output, which applies settings.volume to it.
+ */
+export function boost(media: HTMLMediaElement, gain: number): boolean {
   const ac = context();
-  if (!ac) return;
+  if (!ac || !output) return false;
   try {
     const level = ac.createGain();
     level.gain.value = gain;
-    ac.createMediaElementSource(media).connect(level).connect(ac.destination);
-  } catch { /* already routed, or the browser refuses: it plays at its own volume */ }
+    ac.createMediaElementSource(media).connect(level).connect(output);
+    return true;
+  } catch { return false; /* already routed, or the browser refuses: it plays at its own volume */ }
 }
 
 /** Gain envelope: quick attack, exponential tail. */

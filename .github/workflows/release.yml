@@ -82,11 +82,19 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # 自签证书，让每个版本的签名身份一致，更新后输入监控权限不失效（scripts/macos_signing.sh）。
+      - name: import the signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: scripts/macos_signing.sh import
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: AsoulTappo Signing
         with:
           projectPath: client
           tagName: v__VERSION__
@@ -104,6 +112,9 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: --target universal-apple-darwin --bundles app,dmg
+
+      - name: check the signature
+        run: scripts/macos_signing.sh verify client/src-tauri/target/universal-apple-darwin/release/bundle/macos/AsoulTappo.app
 
   # tauri-action 把 latest.json 的下载地址写成 api.github.com 的资产接口，不带令牌时每个 IP 每小时只能请求 60 次，
   # 共用出口 IP 的玩家容易用完，有的网络也只连得上 github.com。两个平台都写完后，改成 release 页面下载按钮用的地址。

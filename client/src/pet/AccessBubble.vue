@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // macOS: over the pet while the hook has neither Input Monitoring nor Accessibility, so it cannot
 // hear other apps. A grant only counts after a restart, so the key turns into one once the settings were opened.
+// A grant made for a build signed differently shows as on in the settings and does not count: the entry has to be
+// removed and added again.
 import { ref } from "vue";
 import { openInputSettings } from "../composables/tauri";
 
@@ -20,6 +22,7 @@ async function restart() {
   <div class="anchor">
     <div class="access" data-hit data-no-drag role="alert">
       <p>需要输入监控权限</p>
+      <small>已开启仍提示：删除条目后重新添加</small>
       <div class="actions">
         <button v-if="opened" type="button" class="ui-btn small primary" @click="restart">重启</button>
         <button type="button" class="ui-btn small" :class="{ primary: !opened }" @click="open">打开设置</button>
@@ -40,7 +43,8 @@ async function restart() {
   content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
   border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
 }
-.access p { margin: 0 0 6px; font: 800 var(--fs-label)/1.35 var(--font); }
+.access p { margin: 0 0 2px; font: 800 var(--fs-label)/1.35 var(--font); }
+.access small { display: block; margin: 0 0 6px; font: 700 var(--fs-caption)/1.35 var(--font); color: var(--ink-2); }
 .actions { display: flex; align-items: center; gap: 6px; }
 .actions .ghost { margin-left: auto; }
 </style>

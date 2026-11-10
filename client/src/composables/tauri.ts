@@ -120,6 +120,8 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
+/** Registers the hide key ("" removes it). Rejects when the system refuses the shortcut. */
+export const setBossKey = (keys: string): Promise<void> => (isTauri ? invoke<void>("set_boss_key", { keys }) : Promise.resolve());
 /**
  * Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through.
  * `scale` is the page's device pixel ratio, used to turn CSS px into screen pixels.
