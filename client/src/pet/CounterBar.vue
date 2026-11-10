@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The paper strip under the pet: the tap count, the draw key while draws are available, the quick
 // emote key and the panel key. Each thousand taps the number pops and throws a few sparks.
-import { ref, watch } from "vue";
+import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
@@ -12,6 +12,28 @@ const props = defineProps<{
 }>();
 defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; grip: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+// A long count gets a smaller type instead of being cut off: millions still fit beside the keys.
+const FIGURE_PX = 22;
+const FIGURE_MIN_PX = 13;
+const figure = ref<HTMLElement>();
+const figurePx = ref(FIGURE_PX);
+async function fitFigure() {
+  const box = figure.value;
+  const text = box?.querySelector("b");
+  if (!box || !text) return;
+  // Measured at full size: the text's own width against the room the strip leaves it.
+  text.style.fontSize = `${FIGURE_PX}px`;
+  const need = text.scrollWidth;
+  const room = box.clientWidth;
+  text.style.fontSize = "";
+  figurePx.value = need > room && room > 0 ? Math.max(FIGURE_MIN_PX, Math.floor((FIGURE_PX * room) / need)) : FIGURE_PX;
+}
+onMounted(fitFigure);
+watch(
+  () => [fmt(props.count).length, props.width, props.draws > 0, props.view, props.grip] as const,
+  () => nextTick(fitFigure),
+);
 
 const MILESTONE = 1000;
 /** A larger jump is a reload or a sync, not taps crossing the line. */
@@ -36,8 +58,8 @@ watch(
       :title="view === 'today' ? '今日敲击，点击切换累计' : '累计敲击，点击切换今日'"
       @click="$emit('toggleView')"
     >
-      <span class="figure">
-        <b :key="burst" :class="{ pop: burst > 0 }">{{ fmt(count) }}</b>
+      <span ref="figure" class="figure">
+        <b :key="burst" :class="{ pop: burst > 0 }" :style="{ fontSize: `${figurePx}px` }">{{ fmt(count) }}</b>
         <span v-if="burst" :key="burst" class="burst" aria-hidden="true">
           <i v-for="n in SPARKS" :key="n" :style="{ '--a': `${(n - 1) * (360 / SPARKS) + 30}deg` }"></i>
         </span>
