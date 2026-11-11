@@ -14,10 +14,12 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 | 客户端 type | 字段 |
 |---|---|
-| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`；存档未拥有的皮肤或未知名称改为显示名称开头的成员，都不匹配时显示第一位成员）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌 ID，存档未解锁或不认识时忽略）、dnd（可选，布尔，猜拳免打扰，见猜拳一节） |
+| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`；存档未拥有的皮肤或未知名称改为显示名称开头的成员，都不匹配时显示第一位成员）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌 ID，存档未解锁或不认识时忽略）、dnd（可选，布尔，猜拳免打扰，见猜拳一节）、motionVersion（可选，整数 ≥1，客户端能读的最新动作格式，见动作格式一节；不带为 1） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并；服务端按连接限速（每秒 15、最多攒 75），超出部分不广播。这只限制房间显示，每条连接各算各的，重连会重新计，不是每人总上限；收益只看 `POST /api/activity`，按存档共用一份额度（存在数据库里，并发、多连接、重连都不叠加） |
-| motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 50ms 合并，按键状态即时发送 |
+| motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 100ms 合并，按键状态即时发送。格式 1 的客户端用它 |
+| pose | x、y（四分之一像素，−80 至 80 的整数）、b（按键位：1 键盘、2 左键、4 右键，0 至 7），只带有变化的字段；格式 2 起的客户端用它代替 motion |
+| motion_subscribe | ids（成员 id，最多 20 个）：要接收谁的动作。格式 2 起有效，格式 1 的连接发来会被忽略；每次发送替换上一次的名单 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
 | state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌。character 为存档未拥有的皮肤（或未知名称）、plate 未解锁时返回 `locked` 并忽略整条消息 |
 | ping | 无 |
@@ -28,9 +30,17 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | duel_answer | duel（对局 id）、accept（布尔），只有被邀请的一方能回应 |
 | duel_throw | duel、hand（`rock` / `scissors` / `paper`），每局只认第一次 |
 
-服务端消息：`joined {room,you,members,info}`、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`pong`、`error {code,message,reason?}`。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开；房主变化或公开状态变化时服务端广播 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members,info}`、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`motion_snapshot`、`motion_delta`、`motion_edge`、`motion_edges`（见动作格式一节）、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`pong`、`error {code,message,reason?}`。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开；房主变化或公开状态变化时服务端广播 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
-连续位移由服务端按房间每 50ms 汇总为一条 `motion_batch`，每个成员保留最新位置。按键、左右键边沿仍即时发送 `motion`，入房、离房、表情和敲击消息按连接顺序发送。动作仅发给同房间的其他成员。每个连接独立发送，连续位置批次合并，发送超时或有序消息积压达到 256 条时断开该连接。客户端将短按状态保持至少 70ms，供桌宠呈现点击和按键动作。
+### 动作格式
+
+加入时客户端用 motionVersion 说明自己能读的最新格式，服务端取它和自己支持的最新格式（现在是 3）中较小的一个，格式 2 起在 `joined` 里回 `motionVersion`。旧服务端不认识这个字段，不回 motionVersion，客户端就按格式 1 收发。
+
+- 格式 1：收发完整动作。连续位移由服务端按房间每 100ms 汇总为一条 `motion_batch`，每个成员保留最新位置；按键、左右键边沿即时发送 `motion`。
+- 格式 2：客户端发 `pose`。服务端只发 `motion_subscribe` 名单里的成员，字段同 `pose`，只带相对这条连接上次收到的值有变化的字段：订阅时对新加进名单的成员发 `motion_snapshot {motions:[{id,x,y,b}, ...]}`（完整值），连续位移每 100ms 一条 `motion_delta {motions:[{id,...}, ...]}`，按键边沿即时发 `motion_edge {id,...}`。
+- 格式 3：同格式 2，按键边沿改为每 50ms 汇总：`motion_edges {edges:[{id,...}, ...]}` 按发生顺序排列，同一成员可以出现多次，短按的按下和松开都在里面。一个成员在一批里最多保留 6 个边沿，多出的丢掉最早的，最后的状态总会发出。边沿批次先于同一时刻的 `motion_delta` 发出，位置不会抢在边沿前面。20 人房间全员打字时，单个客户端收到的动作消息从每秒约 250 条降到约 20 条，压缩后流量少约 37%（`scripts/benchmark_server.py`）。
+
+同一房间里各连接的格式可以不同，服务端按每条连接的格式分别发送。入房、离房、表情和敲击消息按连接顺序发送。动作仅发给同房间的其他成员。每个连接独立发送，连续位置批次合并，发送超时或有序消息积压达到 256 条时断开该连接。客户端将短按状态保持至少 70ms，供桌宠呈现点击和按键动作。
 
 连接关闭时清除成员动作，重连后发送当前动作；敲击计数由 `tap` 累计。本次协议更新配套发布客户端和服务端。
 

@@ -11,6 +11,12 @@ export interface PetMotion {
 
 export const restingMotion = (): PetMotion => ({ dx: 0, dy: 0, keyDown: false, left: false, right: false });
 
+/**
+ * The newest room motion format this client reads: 2 packed deltas for subscribed members, 3 the same with each
+ * room's button edges gathered into one ordered `motion_edges` message.
+ */
+export const MOTION_VERSION = 3;
+
 /** Quarter-pixel coordinates and keyboard/left/right bits. Absent fields retain their last value. */
 export interface PackedMotion { x: number; y: number; b: number }
 export type MotionDelta = Partial<PackedMotion> & { id: string };
@@ -84,7 +90,7 @@ export type ClientMessage =
     type: "join"; room: string; nick: string; character: string; token?: string; accountToken?: string; plate?: string;
     /** Turns rock-paper-scissors invites down; servers without duels ignore it. */
     dnd?: boolean;
-    motionVersion?: 2;
+    motionVersion?: number;
   }
   | { type: "leave" }
   | { type: "tap"; count: number }
@@ -111,6 +117,8 @@ export type ServerMessage =
   | { type: "motion_batch"; motions: ({ id: string } & PetMotion)[] }
   | { type: "motion_delta" | "motion_snapshot"; motions: MotionDelta[] }
   | ({ type: "motion_edge" } & MotionDelta)
+  /** Button edges of the last 50ms, oldest first; one member may appear more than once. */
+  | { type: "motion_edges"; edges: MotionDelta[] }
   | { type: "emote"; id: string; emote: string }
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }

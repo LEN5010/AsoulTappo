@@ -86,7 +86,26 @@ def test_packed_motion_messages_are_bounded(message):
 def test_a_newer_motion_version_gets_the_newest_this_server_has():
     manager.rooms.clear()
     with TestClient(app) as client, client.websocket_connect('/ws') as ws:
-        ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 3})
+        ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 4})
         joined = ws.receive_json()
         assert joined['type'] == 'joined'
-        assert joined['motionVersion'] == 2
+        assert joined['motionVersion'] == 3
+
+
+def test_edges_reach_a_version_3_client_in_one_ordered_message():
+    manager.rooms.clear()
+    with TestClient(app) as client:
+        with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
+            a.send_json({'type': 'join', 'room': 'edges', 'nick': 'a', 'motionVersion': 3})
+            ja = a.receive_json()
+            assert ja['motionVersion'] == 3
+            b.send_json({'type': 'join', 'room': 'edges', 'nick': 'b', 'motionVersion': 3})
+            jb = b.receive_json()
+            a.receive_json()  # b joined
+            a.send_json({'type': 'motion_subscribe', 'ids': [jb['you']]})
+            assert a.receive_json()['type'] == 'motion_snapshot'
+            # A press and its release within one batch both arrive, in order.
+            b.send_json({'type': 'pose', 'b': 1})
+            b.send_json({'type': 'pose', 'x': 8, 'b': 0})
+            assert a.receive_json() == {'type': 'motion_edges', 'edges': [
+                {'id': jb['you'], 'b': 1}, {'id': jb['you'], 'x': 8, 'b': 0}]}

@@ -1,7 +1,7 @@
 import type {
   ClientMessage, DuelMessage, Hand, Member, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
 } from "./protocol";
-import { packMotion, unpackMotion, toWsUrl } from "./protocol";
+import { MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
 import { APP_VERSION } from "../version";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
@@ -208,7 +208,7 @@ export class RoomClient {
       this.gotPong = true;
       this.events.onConnState("open");
       if (this.joinInfo) {
-        this.send({ type: "join", ...this.joinInfo, motionVersion: 2 });
+        this.send({ type: "join", ...this.joinInfo, motionVersion: MOTION_VERSION });
         this.joinPending = true;
       }
       this.startPing();
@@ -240,8 +240,9 @@ export class RoomClient {
     switch (msg.type) {
       case "joined":
         this.joinPending = false;
-        // A server that knows packed motion says so; every other one keeps hearing and sending full poses.
-        this.motionV2 = msg.motionVersion === 2;
+        // A server that knows packed motion says which version it speaks; every other one keeps hearing and
+        // sending full poses. Version 3 only adds `motion_edges`, read below whatever was agreed.
+        this.motionV2 = (msg.motionVersion ?? 1) >= 2;
         // A room joined again on the same connection starts from nothing, like the server's side of it.
         this.sentPose = null;
         this.sentInterest = "[]";
@@ -280,6 +281,10 @@ export class RoomClient {
       case "motion_snapshot":
       case "motion_delta":
         for (const delta of msg.motions) this.motionDelta(delta);
+        break;
+      case "motion_edges":
+        // In the order they happened: a press and its release in one batch are both shown (MotionFrames).
+        for (const delta of msg.edges) this.motionDelta(delta);
         break;
       case "emote":
         this.events.onEmote(msg.id, msg.emote);

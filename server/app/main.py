@@ -28,7 +28,7 @@ from .models import (
 )
 from .moderation import Blocklist
 from .releases import ReleaseFeed
-from .rooms import Banned, NeedSave, Peer, RoomFull, RoomManager
+from .rooms import MOTION_VERSION, Banned, NeedSave, Peer, RoomFull, RoomManager
 from .store import Store
 
 app = FastAPI(title="AsoulTappo server", version="0.4.0")
@@ -606,15 +606,15 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 room_id = msg.room
                 peer.dnd = msg.dnd
                 peer.account = signed_in
-                peer.motion_version = min(msg.motionVersion, 2)
+                peer.motion_version = min(msg.motionVersion, MOTION_VERSION)
                 joined = JoinedMsg(
                     room=room_id, you=peer.id,
                     members=[_member(p) for p in manager.members(room_id)],
                     info=RoomInfo(**manager.rooms[room_id].info()),
                 ).model_dump()
-                # Only a client that asked for packed motion hears that it gets it; older ones keep the 1.1 shape.
-                if peer.motion_version == 2:
-                    joined["motionVersion"] = 2
+                # Only a client that asked for packed motion hears which version it gets; older ones keep the 1.1 shape.
+                if peer.motion_version >= 2:
+                    joined["motionVersion"] = peer.motion_version
                 await send(joined)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
@@ -646,7 +646,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, PoseMsg):
                 await manager.pose(room_id, peer, msg.model_dump(exclude={"type"}, exclude_none=True))
             elif isinstance(msg, MotionSubscribeMsg):
-                if peer.motion_version == 2:
+                if peer.motion_version >= 2:
                     manager.subscribe_motion(room_id, peer, msg.ids)
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()

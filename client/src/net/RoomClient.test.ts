@@ -68,7 +68,7 @@ describe("RoomClient", () => {
     const ws = FakeWs.all[0];
     expect(ws.url).toBe(`ws://h:1/ws?v=${APP_VERSION}`);
     ws.open();
-    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
+    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
     ws.recv({ type: "joined", room: "r", you: "me", members: [] });
     expect(ev.onJoined).toHaveBeenCalledWith("r", "me", []);
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
@@ -118,6 +118,14 @@ describe("RoomClient", () => {
     expect(ev.onMotion).toHaveBeenLastCalledWith("x", { ...still, dx: 2, dy: 1.5, keyDown: true });
     ws.recv({ type: "motion_snapshot", motions: [{ id: "y", x: -80, y: 80, b: 6 }] });
     expect(ev.onMotion).toHaveBeenLastCalledWith("y", { dx: -20, dy: 20, keyDown: false, left: true, right: true });
+    // A batch of edges is played in order, the same member possibly more than once.
+    ev.onMotion.mockClear();
+    ws.recv({ type: "motion_edges", edges: [{ id: "x", b: 0 }, { id: "y", b: 0 }, { id: "x", x: 4, b: 2 }] });
+    expect(ev.onMotion.mock.calls).toEqual([
+      ["x", { ...still, dx: 2, dy: 1.5 }],
+      ["y", { dx: -20, dy: 20, keyDown: false, left: false, right: false }],
+      ["x", { ...still, dx: 1, dy: 1.5, left: true }],
+    ]);
     // A new connection starts over: everything is said again.
     ws.close();
     vi.advanceTimersByTime(400);
@@ -140,7 +148,7 @@ describe("RoomClient", () => {
     vi.advanceTimersByTime(400);
     expect(FakeWs.all).toHaveLength(2);
     FakeWs.all[1].open();
-    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
+    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
   });
 
   it("leave() stops reconnecting", () => {

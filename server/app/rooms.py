@@ -1,4 +1,4 @@
-"""In-memory rooms with ordered writers, subscriptions and 100ms motion batches."""
+"""In-memory rooms with ordered writers, subscriptions, 100ms motion batches and 50ms button-edge batches."""
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +10,11 @@ from typing import Any, Awaitable, Callable, Protocol
 
 MAX_ROOM_SIZE = 20
 MAX_OUTBOX = 256
+# Motion formats: 1 full poses; 2 packed deltas for subscribed members, one message per button edge;
+# 3 as 2 with the edges of a room gathered into one ordered message per receiver.
+MOTION_VERSION = 3
+# Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
+MAX_EDGES_PER_BATCH = 6
 RESTING = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False}
 
 
@@ -82,6 +87,10 @@ class Peer:
             for motion in data["motions"]:
                 latest.setdefault(motion["id"], {}).update(motion)
             self.outbox[-1] = ({"type": data["type"], "motions": list(latest.values())}, None)
+        elif data["type"] == "motion_edges" and self.outbox and self.outbox[-1][0]["type"] == "motion_edges":
+            # Edge batches still waiting to go out join up; the order of their edges is kept.
+            previous, _ = self.outbox[-1]
+            self.outbox[-1] = ({"type": "motion_edges", "edges": previous["edges"] + data["edges"]}, None)
         elif len(self.outbox) >= MAX_OUTBOX:
             self.overloaded = True
             if done is not None:
@@ -135,6 +144,9 @@ class Room:
     peers: dict[str, Peer] = field(default_factory=dict)
     motions: dict[str, dict] = field(default_factory=dict)
     motion_timer: asyncio.TimerHandle | None = None
+    # Button edges for motion version 3 receivers, in the order they happened: (member id, full pose).
+    edges: list[tuple[str, dict]] = field(default_factory=list)
+    edge_timer: asyncio.TimerHandle | None = None
     host: str | None = None
     public: bool = False
     # saves the host removed; gone with the room
@@ -147,10 +159,11 @@ class Room:
 
 class RoomManager:
     def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0,
-                 motion_interval: float = 0.1) -> None:
+                 motion_interval: float = 0.1, edge_interval: float = 0.05) -> None:
         self.max_size = max_size
         self.send_timeout = send_timeout
         self.motion_interval = motion_interval
+        self.edge_interval = edge_interval
         self.rooms: dict[str, Room] = {}
         # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
@@ -198,12 +211,14 @@ class RoomManager:
         if peer.writer and peer.writer is not asyncio.current_task():
             peer.writer.cancel()
         room.motions.pop(peer_id, None)
+        room.edges = [edge for edge in room.edges if edge[0] != peer_id]
         for other in room.peers.values():
             other.motion_ids.discard(peer_id)
             other.sent_motion.pop(peer_id, None)
         if not room.peers:
-            if room.motion_timer:
-                room.motion_timer.cancel()
+            for timer in (room.motion_timer, room.edge_timer):
+                if timer:
+                    timer.cancel()
             del self.rooms[room_id]
         elif room.host == peer_id:
             room.host = next(iter(room.peers))
@@ -253,27 +268,59 @@ class RoomManager:
         if edge:
             room.motions.pop(peer.id, None)
             for receiver in room.peers.values():
+                if receiver.motion_version >= 3:
+                    continue
                 update = self._motion_for(receiver, peer.id, pose)
                 if update:
                     receiver.enqueue({"type": "motion_edge" if receiver.motion_version == 2 else "motion", **update})
+            self._queue_edge(room, peer.id, pose)
         else:
             room.motions[peer.id] = {"id": peer.id, **pose}
             if room.motion_timer is None:
                 room.motion_timer = asyncio.get_running_loop().call_later(self.motion_interval, self._flush_motion, room)
 
+    def _queue_edge(self, room: Room, sender: str, pose: dict) -> None:
+        """Holds an edge for the version 3 receivers until the room's edge batch goes out."""
+        if not any(p.motion_version >= 3 and p.id != sender for p in room.peers.values()):
+            return
+        mine = [i for i, (pid, _) in enumerate(room.edges) if pid == sender]
+        if len(mine) >= MAX_EDGES_PER_BATCH:
+            # Faster than anyone can watch: the oldest of this member's edges gives way.
+            del room.edges[mine[0]]
+        room.edges.append((sender, pose))
+        if room.edge_timer is None:
+            room.edge_timer = asyncio.get_running_loop().call_later(self.edge_interval, self._flush_edges, room)
+
+    def _flush_edges(self, room: Room) -> None:
+        """Each version 3 receiver gets the room's edges in order, as changes against what it already has."""
+        if room.edge_timer is not None:
+            room.edge_timer.cancel()
+            room.edge_timer = None
+        edges, room.edges = room.edges, []
+        if not edges:
+            return
+        for receiver in list(room.peers.values()):
+            if receiver.motion_version < 3:
+                continue
+            out = [delta for sender, pose in edges if (delta := self._motion_for(receiver, sender, pose))]
+            if out:
+                receiver.enqueue({"type": "motion_edges", "edges": out})
+
     def _flush_motion(self, room: Room) -> None:
         room.motion_timer = None
+        # Positions that came after an edge must not overtake it.
+        self._flush_edges(room)
         updates = list(room.motions.values())
         room.motions.clear()
         for peer in list(room.peers.values()):
             motions = [delta for m in updates if (delta := self._motion_for(peer, m["id"], m))]
             if motions:
-                peer.enqueue({"type": "motion_delta" if peer.motion_version == 2 else "motion_batch", "motions": motions})
+                peer.enqueue({"type": "motion_delta" if peer.motion_version >= 2 else "motion_batch", "motions": motions})
 
     def _motion_for(self, receiver: Peer, sender: str, pose: dict) -> dict | None:
         if receiver.id == sender:
             return None
-        if receiver.motion_version != 2:
+        if receiver.motion_version < 2:
             return {"id": sender, **pose}
         if sender not in receiver.motion_ids:
             return None

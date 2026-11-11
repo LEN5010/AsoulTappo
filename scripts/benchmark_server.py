@@ -13,6 +13,8 @@ Room traffic is what the server writes to one member's connection, counted three
 - binary: an estimate for the same updates in a fixed binary layout (see `binary_size`), uncompressed, with
   the same frame header.
 Members move the mouse layer along smooth two-axis curves; "typing" adds key presses, each two button edges.
+Rows with "edges batched" use motion version 3: button edges go out once per 50ms tick as one `motion_edges`
+message per receiver instead of one message per edge.
 """
 from __future__ import annotations
 
@@ -87,7 +89,7 @@ def database(root: Path, iterations: int) -> dict:
 def binary_size(data: dict) -> int:
     """Bytes of a fixed layout for packed motion: a type byte, then per member a room slot byte, a byte
     naming the fields that follow, and one signed byte per field (quarter pixels fit -80..80)."""
-    motions = data["motions"] if "motions" in data else [data]
+    motions = data.get("motions") or data.get("edges") or [data]
     return 2 + 1 + sum(2 + sum(key in motion for key in ("x", "y", "b")) for motion in motions)
 
 
@@ -105,7 +107,7 @@ class Socket:
         # permessage-deflate drops the four bytes that end a sync flush.
         payload = len(self.deflate.compress(text) + self.deflate.flush(zlib.Z_SYNC_FLUSH)) - 4
         self.wire += payload + (2 if payload < 126 else 4)
-        if data["type"] in ("motion_delta", "motion_edge", "motion_snapshot"):
+        if data["type"] in ("motion_delta", "motion_edge", "motion_edges", "motion_snapshot"):
             self.binary += binary_size(data)
 
     async def close(self, code=1000):
@@ -117,20 +119,22 @@ def curve(member: int, tick: int) -> tuple[float, float]:
     return (20 * math.sin(t * 4.4 + member * 1.7), 20 * math.sin(t * 3.1 + member * .9))
 
 
-async def room(manager_type, size: int, moving: int, shown: int | None, typing: bool, packed: bool) -> dict:
+async def room(manager_type, size: int, moving: int, shown: int | None, typing: bool, packed: bool,
+               batched: bool = False) -> dict:
     """[shown]: how many other members the watched client displays (packed motion only; older clients
     hear everyone). The watched client is the last member and sits still."""
     send_every = 2 if packed else 1  # client: 100ms with packed motion, 50ms before
     flush_every = 2 if packed else 1  # server batches at the same pace
     step = 4 if packed else 10  # quarter pixels, tenths before
-    manager = manager_type(motion_interval=60)  # flushed by hand below, one simulated tick at a time
+    # Flushed by hand below, one simulated tick at a time.
+    manager = manager_type(motion_interval=60, **({"edge_interval": 60} if batched else {}))
     peers = [manager.join("benchmark", str(i), "嘉然", Socket()) for i in range(size)]
     resting = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False}
     sent: list[dict | None] = [None] * size
     uplink = [0] * size
     if packed:
         for peer in peers:
-            peer.motion_version = 2
+            peer.motion_version = 3 if batched else 2
         watcher = peers[-1]
         others = [p.id for p in peers[:-1]]
         manager.subscribe_motion("benchmark", watcher, others if shown is None else others[:shown])
@@ -171,6 +175,10 @@ async def room(manager_type, size: int, moving: int, shown: int | None, typing: 
                 await move(i, {**pose, "keyDown": False})
             elif tick % send_every == 0:
                 await move(i, pose)
+        if batched:
+            manager._flush_edges(manager.rooms["benchmark"])
+            # As on a live server, each batch is written before the next tick's: none join up in the outbox.
+            await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
         if tick % flush_every == flush_every - 1:
             current = manager.rooms["benchmark"]
             if current.motion_timer:
@@ -181,7 +189,7 @@ async def room(manager_type, size: int, moving: int, shown: int | None, typing: 
     await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
     watched = peers[-1].ws
     kib = lambda n: round(n / SECONDS / 1024, 2)  # noqa: E731
-    result = {"members": size, "moving": moving, "typing": typing,
+    result = {"members": size, "moving": moving, "typing": typing, "edges_batched": batched,
               "shown": size - 1 if shown is None or not packed else shown,
               "client_messages_per_s": round(watched.messages / SECONDS, 1),
               "client_json_KiB_per_s": kib(watched.json), "client_wire_KiB_per_s": kib(watched.wire),
@@ -203,8 +211,13 @@ async def motion() -> dict:
                  (20, 19, None, True)]
     if packed:
         scenarios += [(20, 19, 5, False), (20, 19, 5, True), (20, 19, 0, True)]
+    rows = [await room(RoomManager, *scenario, packed) for scenario in scenarios]
+    batched = hasattr(RoomManager, "_flush_edges")
+    if batched:
+        rows += [await room(RoomManager, *scenario, packed, True)
+                 for scenario in scenarios if scenario[3] or scenario[:2] == (20, 19)]
     return {"protocol": "packed, 100ms" if packed else "full pose, 50ms",
-            "rows": [await room(RoomManager, *scenario, packed) for scenario in scenarios]}
+            "rows": rows}
 
 
 if __name__ == "__main__":

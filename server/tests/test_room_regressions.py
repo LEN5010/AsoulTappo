@@ -272,3 +272,100 @@ def test_queued_packed_batches_merge_field_by_field():
         manager.leave("r", a.id)
         manager.leave("r", b.id)
     asyncio.run(run())
+
+
+def _edges_room(versions, **options):
+    manager = RoomManager(edge_interval=60, motion_interval=60, **options)
+    peers = []
+    for i, version in enumerate(versions):
+        peer = manager.join("e", str(i), "c", Socket())
+        peer.motion_version = version
+        peers.append(peer)
+    return manager, peers
+
+
+def _pose(**changes):
+    return {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False, **changes}
+
+
+def test_edges_batch_for_version_3_and_stay_immediate_for_older_receivers():
+    async def run():
+        manager, (sender, old, packed, batched) = _edges_room([3, 1, 2, 3])
+        for peer in (packed, batched):
+            manager.subscribe_motion("e", peer, [sender.id])
+        await delivered(packed.ws, 1)
+        await delivered(batched.ws, 1)
+        for socket in (old.ws, packed.ws, batched.ws):
+            socket.messages.clear()
+        await manager.motion("e", sender, _pose(keyDown=True))
+        await manager.motion("e", sender, _pose(dx=1.0))
+        await delivered(old.ws, 2)
+        await delivered(packed.ws, 2)
+        assert [m["type"] for m in old.ws.messages] == ["motion", "motion"]
+        assert packed.ws.messages == [{"type": "motion_edge", "id": sender.id, "b": 1},
+                                      {"type": "motion_edge", "id": sender.id, "x": 4, "b": 0}]
+        assert batched.ws.messages == []
+        manager._flush_edges(manager.rooms["e"])
+        await delivered(batched.ws, 1)
+        assert batched.ws.messages == [{"type": "motion_edges", "edges": [
+            {"id": sender.id, "b": 1}, {"id": sender.id, "x": 4, "b": 0}]}]
+    asyncio.run(run())
+
+
+def test_a_position_batch_never_overtakes_a_pending_edge():
+    async def run():
+        manager, (sender, watcher) = _edges_room([3, 3])
+        manager.subscribe_motion("e", watcher, [sender.id])
+        await delivered(watcher.ws, 1)
+        watcher.ws.messages.clear()
+        await manager.motion("e", sender, _pose(left=True))
+        await manager.motion("e", sender, _pose(left=True, dx=2.0))
+        manager._flush_motion(manager.rooms["e"])
+        await delivered(watcher.ws, 2)
+        assert watcher.ws.messages == [
+            {"type": "motion_edges", "edges": [{"id": sender.id, "b": 2}]},
+            {"type": "motion_delta", "motions": [{"id": sender.id, "x": 8}]}]
+        assert manager.rooms["e"].edges == []
+    asyncio.run(run())
+
+
+def test_edge_batches_drop_a_flood_but_keep_the_latest_pose():
+    async def run():
+        manager, (sender, watcher) = _edges_room([3, 3])
+        manager.subscribe_motion("e", watcher, [sender.id])
+        await delivered(watcher.ws, 1)
+        watcher.ws.messages.clear()
+        for i in range(21):
+            await manager.motion("e", sender, _pose(keyDown=i % 2 == 0))
+        assert len(manager.rooms["e"].edges) == 6
+        manager._flush_edges(manager.rooms["e"])
+        await delivered(watcher.ws, 1)
+        edges = watcher.ws.messages[0]["edges"]
+        # An edge that matches what the watcher already has adds nothing.
+        assert 0 < len(edges) <= 6
+        assert edges[-1] == {"id": sender.id, "b": 1}
+    asyncio.run(run())
+
+
+def test_a_member_who_leaves_takes_pending_edges_along():
+    async def run():
+        manager, (sender, watcher) = _edges_room([3, 3])
+        manager.subscribe_motion("e", watcher, [sender.id])
+        await delivered(watcher.ws, 1)
+        await manager.motion("e", sender, _pose(right=True))
+        manager.leave("e", sender.id)
+        assert manager.rooms["e"].edges == []
+    asyncio.run(run())
+
+
+def test_waiting_edge_batches_join_up_in_the_outbox():
+    async def run():
+        peer = RoomManager().join("j", "a", "c", Socket(slow=True))
+        peer.enqueue({"type": "tap"})
+        await asyncio.sleep(0)  # the writer takes the tap and waits on the slow socket
+        peer.enqueue({"type": "motion_edges", "edges": [{"id": "x", "b": 1}]})
+        peer.enqueue({"type": "motion_edges", "edges": [{"id": "x", "b": 0}]})
+        assert [m for m, _ in peer.outbox] == [
+            {"type": "motion_edges", "edges": [{"id": "x", "b": 1}, {"id": "x", "b": 0}]}]
+        peer.writer.cancel()
+    asyncio.run(run())
