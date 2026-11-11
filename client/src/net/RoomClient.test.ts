@@ -138,6 +138,28 @@ describe("RoomClient", () => {
     expect(next.sent.at(-1)).toEqual({ type: "motion_subscribe", ids: ["x"] });
   });
 
+  it("asks the 1.1.4 server, which refuses motion version 3, for version 2 instead", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ws.sent[1]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
+    expect(ev.onError).not.toHaveBeenCalled();
+    ws.recv({ type: "joined", room: "r", you: "me", motionVersion: 2, members: [] });
+    expect(ev.onJoined).toHaveBeenCalled();
+    // A reconnect to the same server asks for 2 straight away.
+    ws.close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[1].open();
+    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
+    // Refused again at 2, the join is given up as before.
+    FakeWs.all[1].recv({ type: "error", code: "bad_message", message: "invalid message" });
+    expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
+    expect(FakeWs.all[1].sent.filter((m) => m.type === "join")).toHaveLength(1);
+  });
+
   it("reconnects with backoff and re-joins the room", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);
@@ -212,6 +234,8 @@ describe("RoomClient", () => {
     c.join("http://h:1", INFO);
     const ws = FakeWs.all[0];
     ws.open();
+    // The first refusal is taken as a server without motion version 3 (see below); the second is final.
+    ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
     ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
     expect(ev.onError).toHaveBeenCalledWith("bad_message", "invalid message");
     expect(ev.onConnState).toHaveBeenLastCalledWith("idle");

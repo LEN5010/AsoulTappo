@@ -75,6 +75,11 @@ export class RoomClient {
   private gotPong = true;
   /** `join` was sent on this socket and `joined` has not arrived yet. */
   private joinPending = false;
+  /**
+   * The motion version asked for in `join`. The 1.1.4 server takes 1 and 2 only and refuses the whole join otherwise
+   * (bad_message), so a refused join is sent again asking for 2; that server is then asked for 2 until `join()`.
+   */
+  private joinVersion = MOTION_VERSION;
   private motionV2 = false;
   private interest: string[] = [];
   /** The subscription the server holds, as JSON; a member who just joined is subscribed to nobody. */
@@ -100,6 +105,7 @@ export class RoomClient {
     this.stop(false);
     this.serverUrl = serverUrl;
     this.joinInfo = info;
+    this.joinVersion = MOTION_VERSION;
     this.wantOpen = true;
     this.attempt = 0;
     this.open();
@@ -208,7 +214,7 @@ export class RoomClient {
       this.gotPong = true;
       this.events.onConnState("open");
       if (this.joinInfo) {
-        this.send({ type: "join", ...this.joinInfo, motionVersion: MOTION_VERSION });
+        this.send({ type: "join", ...this.joinInfo, motionVersion: this.joinVersion });
         this.joinPending = true;
       }
       this.startPing();
@@ -303,6 +309,11 @@ export class RoomClient {
         this.events.onDuel(msg);
         break;
       case "error":
+        if (msg.code === "bad_message" && this.joinPending && this.joinVersion > 2 && this.joinInfo) {
+          this.joinVersion = 2;
+          this.send({ type: "join", ...this.joinInfo, motionVersion: 2 });
+          break;
+        }
         // A full room, or a join the server rejected as invalid, is permanent for this attempt: stop retrying.
         // Being removed by the host or refused by a public room also comes as room_full, with a reason.
         if (msg.code === "room_full" || (msg.code === "bad_message" && this.joinPending)) this.stop(true);
