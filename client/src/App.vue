@@ -52,6 +52,15 @@ onResize();
 
 // ---- own pet
 const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
+/** Room on each side of the own name plate for its handle (`.own-plate` padding). */
+const PLATE_GRIP = 14;
+/**
+ * The own pet's width, the same whether the strip, the name plate or nothing is under it. The pet stands centred in
+ * it and the actor is placed by its left edge, so a width that followed what is under the pet would move the pet
+ * when the strip folds, click-through hides it, or the handle swaps in the plate.
+ */
+const ownWidth = computed(() =>
+  Math.max(barWidth.value, settings.gripPlate ? Math.round(PET_BASE.width * settings.scale) + PLATE_GRIP * 2 : 0));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
 /** Height of the strip under the pet, measured while it shows. */
 const stripHeight = ref(36);
@@ -103,7 +112,8 @@ function onOwnMoved(p: Pos) {
 function onOwnSize(size: Size) {
   ownSize.value = size;
   const strip = size.h - Math.round(PET_BASE.height * settings.scale);
-  if (barShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
+  // The plate is lower than the strip; the room kept under the pet stays the strip's, so the pet does not rise.
+  if (barShown.value && !plateShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
 }
 function resetPet() {
   settings.petDocked = false;
@@ -335,7 +345,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
     </PetActor>
 
     <PetActor
-      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet
+      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :style="{ width: `${ownWidth}px` }"
       @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @tap="onOwnTap" @pointermove="keepPeek"
     >
       <PetView
