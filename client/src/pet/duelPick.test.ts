@@ -155,3 +155,91 @@ describe("the bets over a partner's pet", () => {
     expect(pick.bubblePlacement({ x: 400, y: 8 + 62 + 15 }, pet, bubble, screen).below).toBe(false);
   });
 });
+
+
+describe("poking and the plate key over a partner's pet", () => {
+  let leave: (() => void) | undefined;
+  beforeEach(() => {
+    vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+    vi.stubGlobal("WebSocket", Socket);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })));
+  });
+  afterEach(() => { leave?.(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  async function setup(features?: string[], plate?: string) {
+    const room = await import("../stores/room");
+    const pick = await import("./duelPick");
+    const ui = await import("../stores/ui");
+    leave = room.leaveRoom;
+    room.joinRoom("r");
+    const socket = Socket.all[0];
+    socket.open();
+    socket.recv({ type: "joined", room: "r", you: "me", features,
+      members: [ME, { ...FRIEND, plate }, GUEST] });
+    return { room, pick, ui: ui.ui, socket };
+  }
+
+  it("offers nothing on a server without pokes to a member a duel is not possible with", async () => {
+    const { room, pick } = await setup(undefined);
+    expect(pick.openPick(room.members.get("guest")!)).toBe(false);
+  });
+
+  it("pokes anyone else in the room, once per cooldown", async () => {
+    const { room, pick, socket } = await setup(["poke"]);
+    expect(pick.openPick(room.members.get("me")!)).toBe(false);
+    expect(pick.openPick(room.members.get("guest")!)).toBe(true);
+    expect(pick.pickKeys.value).toEqual({ poke: true, duel: false, plate: null });
+    expect(pick.pickSize().w).toBe(pick.ASK_WIDTH);
+    pick.pickPoke();
+    expect(pick.picking.value).toBeNull();
+    expect(socket.sent.at(-1)).toEqual({ type: "poke", id: "guest" });
+    // Within the cooldown the server would refuse it, so nothing goes out.
+    vi.advanceTimersByTime(room.POKE_MS - 1);
+    expect(room.poke("friend")).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(room.poke("friend")).toBe(true);
+    vi.advanceTimersByTime(room.POKE_MS);
+    expect(room.poke("guest")).toBe(false); // the same member waits longer
+    vi.advanceTimersByTime(room.POKE_SAME_MS);
+    expect(room.poke("guest")).toBe(true);
+  });
+
+  it("shows who poked the own pet, unless quiet, and bounces a partner's pet poked by someone else", async () => {
+    const { room, socket } = await setup(["poke"]);
+    socket.recv({ type: "poke", from: "friend", to: "guest" });
+    expect(room.members.get("guest")!.pulse).toBe(1);
+    expect(room.poked.value).toBeNull();
+    socket.recv({ type: "poke", from: "friend", to: "me", quiet: true });
+    expect(room.localPet.pulse).toBe(1);
+    expect(room.poked.value).toBeNull();
+    socket.recv({ type: "poke", from: "friend", to: "me" });
+    expect(room.localPet.pulse).toBe(2);
+    expect(room.poked.value).toEqual({ id: "friend", nick: "朋友" });
+    vi.advanceTimersByTime(room.POKED_MS);
+    expect(room.poked.value).toBeNull();
+  });
+
+  it("forgets pokes and the bubble when the connection drops", async () => {
+    const { room, socket } = await setup(["poke"]);
+    socket.recv({ type: "poke", from: "friend", to: "me" });
+    expect(room.poke("friend")).toBe(true);
+    socket.close();
+    expect(room.pokeOn.value).toBe(false);
+    expect(room.poked.value).toBeNull();
+  });
+
+  it("opens the panel on a partner's big hidden plate card as a preview", async () => {
+    const { plateCard } = await import("./plates");
+    const { manifest } = await import("../manifest");
+    const card = manifest.cards.find((c) => plateCard(c.id));
+    expect(card).toBeTruthy();
+    const { room, pick, ui } = await setup(undefined, card!.id);
+    expect(pick.openPick(room.members.get("friend")!)).toBe(true);
+    expect(pick.pickKeys.value.plate).toBe(card!.id);
+    pick.pickPlate();
+    expect(ui.page).toBe("dex");
+    expect(ui.craftTarget).toBe(`view:card:${card!.id}`);
+    expect(pick.picking.value).toBeNull();
+  });
+});

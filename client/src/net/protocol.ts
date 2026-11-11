@@ -97,6 +97,8 @@ export type ClientMessage =
   | ({ type: "motion" } & PetMotion)
   | ({ type: "pose" } & Partial<PackedMotion>)
   | { type: "motion_subscribe"; ids: string[] }
+  /** Only to servers that list "poke" in `joined.features`. */
+  | { type: "poke"; id: string }
   | { type: "emote"; emote: string }
   | ({ type: "state" } & ProfilePatch)
   | { type: "ping" }
@@ -108,7 +110,11 @@ export type ClientMessage =
   | { type: "duel_throw"; duel: string; hand: Hand };
 
 export type ServerMessage =
-  | { type: "joined"; room: string; you: string; members: Member[]; info?: RoomInfo; motionVersion?: number }
+  | {
+    type: "joined"; room: string; you: string; members: Member[]; info?: RoomInfo; motionVersion?: number;
+    /** Room messages this server takes beyond the 1.1 set, e.g. "poke"; missing on older servers. */
+    features?: string[];
+  }
   | ({ type: "room_info" } & RoomInfo)
   | { type: "member_joined"; member: Member }
   | { type: "member_left"; id: string }
@@ -120,6 +126,8 @@ export type ServerMessage =
   /** Button edges of the last 50ms, oldest first; one member may appear more than once. */
   | { type: "motion_edges"; edges: MotionDelta[] }
   | { type: "emote"; id: string; emote: string }
+  /** [from] poked [to]; `quiet` on the copy for a member poked while turning invites down. */
+  | { type: "poke"; from: string; to: string; quiet?: boolean }
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }
   | StateUpdate

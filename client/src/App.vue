@@ -10,9 +10,10 @@ import QuickEmote from "./pet/QuickEmote.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
 import DuelBubble from "./pet/DuelBubble.vue";
+import PokeBubble from "./pet/PokeBubble.vue";
 import DuelPick from "./pet/DuelPick.vue";
 import {
-  DUEL_HEIGHT, DUEL_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
+  DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
 } from "./pet/duelPick";
 import AccessBubble from "./pet/AccessBubble.vue";
 import NamePill from "./pet/NamePill.vue";
@@ -28,7 +29,7 @@ import { counter, followServer, watchDay } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
-import { inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { duel, inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import { startCapture } from "./desktop/capture";
 import {
@@ -177,6 +178,7 @@ const nameOnDesk = (m: RemoteMember) =>
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
+const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 const nearRight = (x: number, scale: number, minEmote: number) =>
   x + 172 * scale + Math.max(minEmote, 72 * scale) + 24 > viewport.value.w;
@@ -311,12 +313,13 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
-        :win="localPet.win"
+        :win="localPet.win" :pulse="localPet.pulse"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
+      <PokeBubble v-if="!duel" v-bind="pokedPlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip">
       <CounterBar

@@ -39,6 +39,7 @@ function setup() {
     onTap: vi.fn(),
     onMotion: vi.fn(),
     onEmote: vi.fn(),
+    onPoke: vi.fn(),
     onScratch: vi.fn(),
     onState: vi.fn(),
     onDuel: vi.fn(),
@@ -62,6 +63,16 @@ describe("RoomClient", () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it("sends a poke as its own message", () => {
+    const { c } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["poke"] });
+    c.sendPoke("x");
+    expect(ws.sent.at(-1)).toEqual({ type: "poke", id: "x" });
+  });
+
   it("connects to /ws, joins on open and dispatches events", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);
@@ -70,7 +81,14 @@ describe("RoomClient", () => {
     ws.open();
     expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
     ws.recv({ type: "joined", room: "r", you: "me", members: [] });
-    expect(ev.onJoined).toHaveBeenCalledWith("r", "me", []);
+    // A server without the list offers nothing beyond the 1.1 messages.
+    expect(ev.onJoined).toHaveBeenCalledWith("r", "me", [], []);
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["poke"] });
+    expect(ev.onJoined).toHaveBeenLastCalledWith("r", "me", [], ["poke"]);
+    ws.recv({ type: "poke", from: "x", to: "me" });
+    expect(ev.onPoke).toHaveBeenLastCalledWith("x", "me", false);
+    ws.recv({ type: "poke", from: "x", to: "me", quiet: true });
+    expect(ev.onPoke).toHaveBeenLastCalledWith("x", "me", true);
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
     expect(ev.onTap).toHaveBeenCalledWith("x", 3, 9);
     ws.recv({ type: "motion_batch", motions: [

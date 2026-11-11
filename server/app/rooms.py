@@ -15,6 +15,17 @@ MAX_OUTBOX = 256
 MOTION_VERSION = 3
 # Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
 MAX_EDGES_PER_BATCH = 6
+# Room messages beyond the 1.1 set, listed in `joined` for clients that announce a motion version.
+FEATURES = ("poke",)
+# Pokes: one per connection this often, and the same member again only after the longer wait.
+POKE_INTERVAL = 3.0
+POKE_SAME_INTERVAL = 10.0
+
+
+class PokeRefused(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 RESTING = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False}
 
 
@@ -65,6 +76,9 @@ class Peer:
     tap_at: float = 0.0
     motion: dict[str, float | bool] | None = None
     motion_version: int = 1
+    # Monotonic time of the last poke sent, and of the last one sent to each member.
+    poke_at: float = float("-inf")
+    poked: dict[str, float] = field(default_factory=dict)
     motion_ids: set[str] = field(default_factory=set)
     sent_motion: dict[str, dict[str, int]] = field(default_factory=dict)
     active: bool = True
@@ -343,6 +357,21 @@ class RoomManager:
                 snapshot.append({"id": pid, **pose})
         if snapshot:
             peer.enqueue({"type": "motion_snapshot", "motions": snapshot})
+
+    def poke(self, room_id: str, peer: Peer, target_id: str, now: float) -> None:
+        """Tells the room that [peer] poked [target_id]; raises PokeRefused (no_member, poke_cooldown)."""
+        room = self.rooms.get(room_id)
+        target = room.peers.get(target_id) if room else None
+        if target is None or target is peer:
+            raise PokeRefused("no_member")
+        if now - peer.poke_at < POKE_INTERVAL or now - peer.poked.get(target_id, float("-inf")) < POKE_SAME_INTERVAL:
+            raise PokeRefused("poke_cooldown")
+        peer.poke_at = now
+        peer.poked = {pid: at for pid, at in peer.poked.items() if now - at < POKE_SAME_INTERVAL and pid in room.peers}
+        peer.poked[target_id] = now
+        message = {"type": "poke", "from": peer.id, "to": target_id}
+        for receiver in list(room.peers.values()):
+            receiver.enqueue({**message, "quiet": True} if receiver is target and target.dnd else message)
 
     async def pose(self, room_id: str, peer: Peer, patch: dict) -> None:
         pose = dict(peer.motion or RESTING)

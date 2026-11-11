@@ -73,6 +73,13 @@ class MotionSubscribeMsg(_Msg):
     ids: list[Annotated[str, Field(min_length=1, max_length=32)]] = Field(max_length=20)
 
 
+class PokeMsg(_Msg):
+    """Poke another member of the room: every member sees that pet bounce; the member poked is told who did it."""
+
+    type: Literal["poke"] = "poke"
+    id: str = Field(min_length=1, max_length=32)
+
+
 class StateMsg(_Msg):
     """Update the displayed character, nickname or name plate ("" takes the plate off)."""
 
@@ -137,7 +144,7 @@ class DuelThrowMsg(_Msg):
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
+    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
           DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
     Field(discriminator="type"),
 ]

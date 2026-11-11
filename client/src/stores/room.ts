@@ -130,11 +130,13 @@ const events: RoomEvents = {
       youId.value = "";
       roomInfo.value = null;
       endDuel();
+      endPokes();
     }
   },
-  onJoined(room, you, list) {
+  onJoined(room, you, list, features) {
     roomId.value = room;
     youId.value = you;
+    pokeOn.value = features.includes("poke");
     lastError.value = "";
     clearMembers();
     list.forEach(add);
@@ -181,6 +183,17 @@ const events: RoomEvents = {
       Object.assign(member.motion, pose);
       remoteMotion.update(id, pose);
     }
+  },
+  onPoke(from, to, quiet) {
+    noteActivity();
+    if (to !== youId.value) {
+      const m = members.get(to);
+      if (m) m.pulse += 1;
+      return;
+    }
+    localPet.pulse += 1;
+    const m = members.get(from);
+    if (!quiet && m && from !== youId.value) showPoked(from, shownNick(m));
   },
   onDuel(msg) {
     noteActivity();
@@ -283,10 +296,57 @@ const motionSender = new MotionSender((pose) => client.sendMotion(pose));
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 
 /** Emote bubble of the local pet (shown immediately, also when offline) and its scratch card or duel win. */
-export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null }>({ emote: null, win: null });
+export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null; pulse: number }>({
+  emote: null, win: null, pulse: 0,
+});
 const localPlayer = new EmotePlayer((f) => (localPet.emote = f), () => settings.emoteHoldMs);
 const localWin = new TapCombo((f) => (localPet.win = f), WIN_MS);
 let lastSent = 0;
+
+// ---------------------------------------------------------------- poke
+/** The server takes pokes (it lists "poke" in `joined.features`); older servers do not know the message. */
+export const pokeOn = ref(false);
+/** Who just poked the own pet, for the bubble over it; null once it has closed. */
+export const poked = ref<{ id: string; nick: string } | null>(null);
+export const POKED_MS = 6000;
+/** The server's cooldowns (server/app/rooms.py), kept here too so a poke it would refuse is not sent. */
+export const POKE_MS = 3000;
+export const POKE_SAME_MS = 10000;
+let pokeAt = -Infinity;
+const pokedAt = new Map<string, number>();
+let pokedTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showPoked(id: string, nick: string): void {
+  poked.value = { id, nick };
+  clearTimeout(pokedTimer);
+  pokedTimer = setTimeout(() => (poked.value = null), POKED_MS);
+}
+export function closePoked(): void {
+  clearTimeout(pokedTimer);
+  poked.value = null;
+}
+function endPokes(): void {
+  pokeOn.value = false;
+  pokeAt = -Infinity;
+  pokedAt.clear();
+  closePoked();
+}
+
+/** Whether the pet of [m] offers a poke: another member, on a server that takes them, and not click-through. */
+export function canPoke(m: Member): boolean {
+  return pokeOn.value && !isPanelWindow && !settings.clickThrough && !!youId.value && m.id !== youId.value && members.has(m.id);
+}
+
+/** Pokes [id] unless a cooldown says the server would refuse; returns whether it was sent. */
+export function poke(id: string, now = Date.now()): boolean {
+  const m = members.get(id);
+  if (!m || !canPoke(m)) return false;
+  if (now - pokeAt < POKE_MS || now - (pokedAt.get(id) ?? -Infinity) < POKE_SAME_MS) return false;
+  pokeAt = now;
+  pokedAt.set(id, now);
+  client.sendPoke(id);
+  return true;
+}
 
 // ---------------------------------------------------------------- rock-paper-scissors
 export const duel = ref<DuelState | null>(null);

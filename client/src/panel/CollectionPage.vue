@@ -119,13 +119,24 @@ function inspect(key: string) {
   actionNote.value = "";
 }
 
+/** Opens what the panel was asked to show: `card:<id>` and `view:card:<id>` (a partner's plate card, as a preview
+ * whether or not this save owns it) open the card, anything else the item. */
+function openTarget(id: string) {
+  const view = id.startsWith('view:');
+  const target = view ? id.slice(5) : id;
+  if (target.startsWith('card:')) {
+    detail.value = getCard(target.slice(5)) ?? null;
+    detailPreview.value = view;
+    detailFrom.value = undefined;
+  } else selectedItem.value = getItem(target) ?? null;
+  actionNote.value = "";
+}
+
 watch(
   () => ui.craftTarget,
   (id) => {
     if (id) {
-      if (id.startsWith('card:')) detail.value = getCard(id.slice(5)) ?? null;
-      else selectedItem.value = getItem(id) ?? null;
-      actionNote.value = "";
+      openTarget(id);
       ui.craftTarget = "";
     }
   },
@@ -157,12 +168,12 @@ const poolTabs = computed(() => [
 ]);
 const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
-function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; }
+const detailPreview = ref(false);
+function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; detailPreview.value = false; }
 if (ui.craftTarget) {
   const target = ui.craftTarget;
   ui.craftTarget = '';
-  if (target.startsWith('card:')) detail.value = getCard(target.slice(5)) ?? null;
-  else selectedItem.value = getItem(target) ?? null;
+  openTarget(target);
 }
 </script>
 
@@ -256,7 +267,7 @@ if (ui.craftTarget) {
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
     </template>
-    <CardDetail v-if="detail" :card="detail" :from="detailFrom" @close="detail = null" />
+    <CardDetail v-if="detail" :card="detail" :from="detailFrom" :preview="detailPreview" @close="detail = null" />
 
     <Modal v-if="selectedItem" :title="selectedItem.name" @close="selectedItem = null">
       <div class="emote-detail">

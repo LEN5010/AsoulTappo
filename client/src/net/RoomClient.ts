@@ -8,7 +8,7 @@ export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
 
 export interface RoomEvents {
   onConnState(state: ConnState): void;
-  onJoined(room: string, you: string, members: Member[]): void;
+  onJoined(room: string, you: string, members: Member[], features: string[]): void;
   /** Right after `onJoined` (null from servers without room info), and on every `room_info`. */
   onRoomInfo(info: RoomInfo | null): void;
   onMemberJoined(member: Member): void;
@@ -16,6 +16,8 @@ export interface RoomEvents {
   onTap(id: string, count: number, total: number): void;
   onMotion(id: string, pose: PetMotion): void;
   onEmote(id: string, emote: string): void;
+  /** [from] poked [to]; [quiet] when the member poked turns invites down (no bubble then). */
+  onPoke(from: string, to: string, quiet: boolean): void;
   onScratch(id: string, shards: number): void;
   onState(update: StateUpdate): void;
   /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
@@ -148,6 +150,9 @@ export class RoomClient {
     this.poses.set(id, pose);
     this.events.onMotion(id, unpackMotion(pose));
   }
+  sendPoke(id: string): void {
+    this.send({ type: "poke", id });
+  }
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
   }
@@ -254,7 +259,7 @@ export class RoomClient {
         this.sentInterest = "[]";
         this.poses.clear();
         for (const member of msg.members) if (member.motion) this.poses.set(member.id, packMotion(member.motion));
-        this.events.onJoined(msg.room, msg.you, msg.members);
+        this.events.onJoined(msg.room, msg.you, msg.members, msg.features ?? []);
         this.events.onRoomInfo(msg.info ? { ...msg.info } : null);
         this.subscribeMotion(this.interest);
         break;
@@ -294,6 +299,9 @@ export class RoomClient {
         break;
       case "emote":
         this.events.onEmote(msg.id, msg.emote);
+        break;
+      case "poke":
+        this.events.onPoke(msg.from, msg.to, !!msg.quiet);
         break;
       case "scratch":
         this.events.onScratch(msg.id, msg.shards);

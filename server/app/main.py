@@ -23,12 +23,12 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
-    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PongMsg, RoomInfo, RoomInfoMsg,
+    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, PongMsg, RoomInfo, RoomInfoMsg,
     ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
 from .releases import ReleaseFeed
-from .rooms import MOTION_VERSION, Banned, NeedSave, Peer, RoomFull, RoomManager
+from .rooms import FEATURES, MOTION_VERSION, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager
 from .store import Store
 
 app = FastAPI(title="AsoulTappo server", version="0.4.0")
@@ -615,6 +615,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 # Only a client that asked for packed motion hears which version it gets; older ones keep the 1.1 shape.
                 if peer.motion_version >= 2:
                     joined["motionVersion"] = peer.motion_version
+                    joined["features"] = list(FEATURES)
                 await send(joined)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
@@ -648,6 +649,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, MotionSubscribeMsg):
                 if peer.motion_version >= 2:
                     manager.subscribe_motion(room_id, peer, msg.ids)
+            elif isinstance(msg, PokeMsg):
+                try:
+                    manager.poke(room_id, peer, msg.id, time.monotonic())
+                except PokeRefused as refused:
+                    await err(refused.code, "")
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
                 if now - peer.last_emote < EMOTE_INTERVAL:
