@@ -242,6 +242,10 @@ class Store:
             # Scratch cards bought since the last one that gave an emote.
             if "scratch_pity" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN scratch_pity INTEGER NOT NULL DEFAULT 0")
+            # The nick the save last used in a room ("" for the default one): the board's nick for clients
+            # before 1.2.0, which do not send one with the loadout.
+            if "room_nick" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN room_nick TEXT NOT NULL DEFAULT ''")
             sessions = self._columns("activity_sessions")
             for field in ("last_at", "fast_since"):
                 if field not in sessions:
@@ -561,6 +565,23 @@ class Store:
                 f"SELECT player_id, COUNT(*) AS cards, SUM(item_id IN ({big_marks})) AS big, MAX(first_ts) AS last "
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
+
+    def set_room_nick(self, pid: str, nick: str) -> None:
+        """Remember the nick an existing save uses in rooms; nothing happens for a token without a save."""
+        with self._lock:
+            self._db.execute("UPDATE players SET room_nick=? WHERE id=? AND room_nick != ?", (nick, pid, nick))
+            self._commit()
+
+    def room_nicks(self, pids: list[str]) -> dict[str, str]:
+        """The non-empty room nick of each save among [pids]."""
+        out: dict[str, str] = {}
+        with self._lock:
+            for i in range(0, len(pids), 500):
+                chunk = pids[i:i + 500]
+                rows = self._db.execute(f"SELECT id, room_nick FROM players WHERE room_nick != '' AND id IN "
+                                        f"({','.join('?' * len(chunk))})", chunk).fetchall()
+                out.update({r["id"]: r["room_nick"] for r in rows})
+        return out
 
     def loadouts(self, pids: list[str]) -> dict[str, str]:
         """The stored loadout text of each existing save among [pids]."""

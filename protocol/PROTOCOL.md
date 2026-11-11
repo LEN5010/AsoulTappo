@@ -101,7 +101,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
 | GET /api/loadout | character、favorites、plate、showcase、nick、board |
 | POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked`；showcase 为主页展示卡的卡片 ID 列表，最多 3 张、必须已拥有，超过或不认识返回 `bad_item`，未拥有返回 `locked`，空列表清空；nick 为收藏榜上显示的昵称（最多 24 字，空字符串用默认昵称），board 为 false 时不上收藏榜。这两项客户端只上传，读取装备时不会覆盖本地设置 |
-| GET /api/board | 全服收藏榜：`cards`（前 50：`[{id,rank,nick,character,plate,cards,big}]`，按卡片数、大隐藏数、最后一张卡的获得时间排序；昵称经屏蔽词处理，铭牌未集齐时为 null）、`total`（卡片总数）、`me`（`{rank,cards,big,off}`，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
+| GET /api/board | 全服收藏榜：`cards`（前 50：`[{id,rank,nick,character,plate,cards,big}]`，按卡片数、大隐藏数、最后一张卡的获得时间排序；昵称取 loadout 的 nick，为空时取这个存档最近一次在房间里用的昵称（加入或改名时记录，默认昵称不记），都没有时为默认昵称，经屏蔽词处理；铭牌未集齐时为 null）、`total`（卡片总数）、`me`（`{rank,cards,big,off}`，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
 | GET /api/board/profile/{id} | 收藏榜前 50 里某一行（`id`）的主页：`{showcase,progress}`，格式同房间消息 `profile`；不在榜上返回 404 `no_member` |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
 | GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。同时返回 minVersion（服务端要求的最低客户端版本，未设置时为 null）和 announcements（未过期的公告，每项 `{id,title,body,until}`）。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |

@@ -126,3 +126,38 @@ def test_the_board_over_http_masks_nicks(monkeypatch):
         assert c.get(f"/api/board/profile/{board['cards'][0]['id']}", headers=h).status_code == 200
         assert c.get("/api/board/profile/nobody", headers=h).status_code == 404
         assert c.post("/api/loadout", json={"nick": "x" * 30}, headers=h).status_code == 400
+
+
+def test_a_save_without_a_board_nick_shows_its_room_nick():
+    g = game()
+    t1, p1 = save(g, 1, NORMAL[:3])
+    t2, _ = save(g, 2, NORMAL[:2], nick="设的昵称")
+    save(g, 3, NORMAL[:1])
+    g.note_room_nick(t1, " 联机昵称 ")
+    g.note_room_nick(t2, "别的联机昵称")
+    g.note_room_nick(tok(3), BOARD_DEFAULT_NICK)
+    # A token that never made a save leaves nothing behind.
+    g.note_room_nick(tok(9), "路人")
+    g.note_room_nick(None, "无存档")
+    assert not g.store.has_player(player_id_for(tok(9)))
+    clock = g.now
+    clock.t += BOARD_SECONDS + 1
+    assert [r["nick"] for r in g.board(t1, False)["cards"]] == ["联机昵称", "设的昵称", BOARD_DEFAULT_NICK]
+    # Going back to the default nick in a room clears it again.
+    g.note_room_nick(t1, BOARD_DEFAULT_NICK)
+    clock.t += BOARD_SECONDS + 1
+    assert g.board(t1, False)["cards"][0]["nick"] == BOARD_DEFAULT_NICK
+
+
+def test_joining_and_renaming_in_a_room_keep_the_room_nick(monkeypatch):
+    g = game()
+    t, pid = save(g, 1, NORMAL[:1])
+    monkeypatch.setattr(main, "game", g)
+    main.manager.rooms.clear()
+    with TestClient(main.app) as c, c.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "join", "room": "nicks", "nick": "进房", "token": t, "motionVersion": 2})
+        ws.receive_json()
+        assert g.store.room_nicks([pid]) == {pid: "进房"}
+        ws.send_json({"type": "state", "nick": "改名"})
+        ws.receive_json()
+        assert g.store.room_nicks([pid]) == {pid: "改名"}

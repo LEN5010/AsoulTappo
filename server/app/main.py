@@ -685,6 +685,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 room_id = msg.room
                 peer.dnd = msg.dnd
+                await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
                 peer.motion_version = min(msg.motionVersion, MOTION_VERSION)
                 joined = JoinedMsg(
@@ -831,6 +832,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if msg.nick is not None:
                     raw_nicks[peer.id] = msg.nick
                     peer.nick = blocklist.mask(msg.nick)
+                    await run_in_threadpool(game.note_room_nick, peer.token, msg.nick)
                 await manager.broadcast(room_id, StateBroadcast(
                     id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
     except (WebSocketDisconnect, ConnectionError):

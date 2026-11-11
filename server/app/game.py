@@ -850,8 +850,9 @@ class Game:
         cards = [f"card:{cid}" for cid in self.manifest.cards]
         big = [f"card:{c['id']}" for c in self.manifest.cards.values() if c.get("tier") == "big"]
         counts = self.store.card_counts(cards, big)
-        loadouts = {pid: _loadout_json(raw) for pid, raw in
-                    self.store.loadouts(sorted({r["player_id"] for r in counts})).items()}
+        pids = sorted({r["player_id"] for r in counts})
+        loadouts = {pid: _loadout_json(raw) for pid, raw in self.store.loadouts(pids).items()}
+        room_nicks = self.store.room_nicks(pids)
         linked = self.store.linked_players() if require_account else None
         listed = (r for r in counts if self._listed(r["player_id"], loadouts.get(r["player_id"], {}), linked) is None)
         ranked = sorted(listed, key=lambda r: (-r["cards"], -r["big"], r["last"]))
@@ -862,7 +863,8 @@ class Game:
             needs = self.plate_needs(plate) if plate else None
             if needs is None or not set(needs) <= set(self.store.owned(pid)):
                 plate = None
-            nick = lo.get("nick") if isinstance(lo.get("nick"), str) and lo.get("nick") else BOARD_DEFAULT_NICK
+            # The nick set for the board (1.2.0 on), else the one last used in a room.
+            nick = (lo.get("nick") if isinstance(lo.get("nick"), str) else "") or room_nicks.get(pid) or BOARD_DEFAULT_NICK
             bid = board_id(pid)
             ids[bid] = pid
             rows.append({"id": bid, "rank": rank, "nick": nick, "character": lo.get("character") or "", "plate": plate,
@@ -902,6 +904,17 @@ class Game:
         return self._profile_of(pid)
 
     # -------------------------------------------------------------------- room
+    def note_room_nick(self, token: str | None, nick: str) -> None:
+        """Keep the nick a save joins a room with or changes to there; the default one counts as none."""
+        if not token:
+            return
+        try:
+            pid = player_id_for(token)
+        except GameError:
+            return
+        nick = nick.strip()[:MAX_BOARD_NICK]
+        self.store.set_room_nick(pid, "" if nick == BOARD_DEFAULT_NICK else nick)
+
     def profile_for(self, token: str | None, room: str) -> dict[str, Any]:
         if not token:
             return {"uid": None}
