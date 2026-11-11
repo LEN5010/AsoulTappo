@@ -216,3 +216,19 @@ def test_duel_net_counts_won_duels_of_the_day_through_the_day_indexes():
         ("p1", "d", "p1", "d")))
     assert "duels_a" in plan and "duels_b" in plan and "duels_state" not in plan
     s.close()
+
+
+def test_databases_from_before_the_shard_ledger_gain_it(tmp_path):
+    path = str(tmp_path / "pre-ledger.db")
+    s = Store(path)
+    s.get_player("p1", 0)
+    s.close()
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE shard_ledger")
+    s = Store(path)
+    assert s.get_player("p1", 0)["shards"] == 1600
+    assert s.ledger_of("p1", ["1970-01-01"]) == []
+    s.add_ledger("p1", "1970-01-01", "admin", 5)
+    s.add_ledger("p1", "1970-01-01", "admin", -2)
+    assert s.ledger_of("p1", ["1970-01-01"]) == [{"day": "1970-01-01", "source": "admin", "amount": 3, "count": 2}]
+    s.close()
