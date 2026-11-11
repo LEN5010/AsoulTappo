@@ -30,6 +30,17 @@ jobs:
         working-directory: client
         run: npm ci
 
+      # 发版说明只写在 .github/release-notes.md 一处。
+      - name: read the release notes
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo 'body<<RELEASE_NOTES_END'
+            cat .github/release-notes.md
+            echo 'RELEASE_NOTES_END'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,15 +50,7 @@ jobs:
           projectPath: client
           tagName: v__VERSION__
           releaseName: AsoulTappo v__VERSION__
-          releaseBody: |
-            - 新增采集窗口，支持 OBS 窗口采集和截图，可调整背景色
-            - 伙伴桌宠支持吸附屏幕底边
-            - 敲击计数支持跨设备同步，今日计数统一按北京时间统计
-            - 优化空闲资源占用、伙伴动作同步和面板加载
-            - 修复联机面板伙伴短按动作丢失
-            - 修复 macOS 浏览面板闪退、动态卡加载慢和卡面空白
-            - 修复 macOS 全屏应用与其他桌面中桌宠不显示
-            - 修复 Windows 自动隐藏任务栏无法从屏幕边缘唤出
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -89,6 +92,25 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: scripts/macos_signing.sh import
 
+      # tauri-action 按 tagName 找到已有的 Release 时会用 releaseBody 改写说明，Windows 跑完后在网页上手改的说明会被盖掉。
+      # 这里改按 releaseId 上传，它就只传文件、不动说明；Windows 任务没建成 Release 时由这一步按说明文件新建。
+      - name: find the release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "AsoulTappo $GITHUB_REF_NAME" --notes-file .github/release-notes.md
+          fi
+          echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" --jq .id)" >> "$GITHUB_OUTPUT"
+          # latest.json 的 notes 取 Release 页面上此刻的说明（tauri-action 用 releaseBody 写 notes）。
+          {
+            echo 'body<<RELEASE_NOTES_END'
+            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+            echo 'RELEASE_NOTES_END'
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,17 +121,8 @@ jobs:
           CARGO_PROFILE_RELEASE_PANIC: unwind
         with:
           projectPath: client
-          tagName: v__VERSION__
-          releaseName: AsoulTappo v__VERSION__
-          releaseBody: |
-            - 新增采集窗口，支持 OBS 窗口采集和截图，可调整背景色
-            - 伙伴桌宠支持吸附屏幕底边
-            - 敲击计数支持跨设备同步，今日计数统一按北京时间统计
-            - 优化空闲资源占用、伙伴动作同步和面板加载
-            - 修复联机面板伙伴短按动作丢失
-            - 修复 macOS 浏览面板闪退、动态卡加载慢和卡面空白
-            - 修复 macOS 全屏应用与其他桌面中桌宠不显示
-            - 修复 Windows 自动隐藏任务栏无法从屏幕边缘唤出
+          releaseId: ${{ steps.release.outputs.id }}
+          releaseBody: ${{ steps.release.outputs.body }}
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
@@ -120,6 +133,7 @@ jobs:
 
   # tauri-action 把 latest.json 的下载地址写成 api.github.com 的资产接口，不带令牌时每个 IP 每小时只能请求 60 次，
   # 共用出口 IP 的玩家容易用完，有的网络也只连得上 github.com。两个平台都写完后，改成 release 页面下载按钮用的地址。
+  # 同时把 latest.json 的 notes 换成 Release 页面上现在的说明，网页上手改过的以手改为准。之后再手改说明，本地重跑这个脚本即可同步。
   updater-urls:
     name: latest.json 改用 github.com 下载地址
     needs: [windows-nsis, macos-dmg]
