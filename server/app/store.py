@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import time
 from typing import Callable, Any
 
 SCHEMA = """
@@ -114,6 +115,16 @@ CREATE TABLE IF NOT EXISTS duels (
 CREATE INDEX IF NOT EXISTS duels_a ON duels (a, day);
 CREATE INDEX IF NOT EXISTS duels_b ON duels (b, day);
 CREATE INDEX IF NOT EXISTS duels_state ON duels (state);
+-- Shards each save gained (amount > 0) or spent (amount < 0) per China day and source, and how many times.
+-- Written in the same transaction as the change; there is no history from before the table existed.
+CREATE TABLE IF NOT EXISTS shard_ledger (
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, player_id, source)
+);
 -- One-time data changes already applied to this database.
 CREATE TABLE IF NOT EXISTS migrations (
   name TEXT PRIMARY KEY,
@@ -131,6 +142,8 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 STARTER_SHARDS = 1600
+# Statistics count days in China Standard Time.
+DAY_OFFSET = 8 * 3600
 # Saves whose collectible count is remembered (see Store.count_items); the cache starts over when full.
 COUNT_CACHE_LIMIT = 20000
 
@@ -139,6 +152,10 @@ PLAYER_FIELDS = (
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity"
 ).split()
+
+
+def day_of(ts: float) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(ts + DAY_OFFSET))
 
 
 class Store:
@@ -243,7 +260,7 @@ class Store:
             row = self._db.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
             if row is None:
                 self._db.execute("INSERT INTO players (id, created, shards) VALUES (?, ?, ?)", (pid, now, STARTER_SHARDS))
-                self._commit()
+                self.add_ledger(pid, day_of(now), "starter", STARTER_SHARDS)
                 row = self._db.execute("SELECT * FROM players WHERE id=?", (pid,)).fetchone()
             return dict(row)
 
@@ -467,6 +484,50 @@ class Store:
                 for day, n in self._db.execute(sql, args).fetchall():
                     out.setdefault(day, {})[key] = n
         return out
+
+    # --- shard ledger (days are China Standard Time dates, YYYY-MM-DD)
+    def add_ledger(self, pid: str, day: str, source: str, amount: int, count: int = 1) -> None:
+        """Adds to the save's [source] row of [day]; the caller's transaction, if any, keeps it with the change."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO shard_ledger (day, player_id, source, amount, count) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(day, player_id, source) DO UPDATE SET "
+                "amount = amount + excluded.amount, count = count + excluded.count",
+                (day, pid, source, amount, count))
+            self._commit()
+
+    def ledger_since(self, since: str) -> list[dict[str, Any]]:
+        """Every ledger row from [since] on, with the save's creation time (None when the save is gone)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT g.day, g.player_id, g.source, g.amount, g.count, p.created FROM shard_ledger g "
+                "LEFT JOIN players p ON p.id = g.player_id WHERE g.day >= ?", (since,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def ledger_of(self, pid: str, days: list[str]) -> list[dict[str, Any]]:
+        """One save's ledger rows on [days]; the day list keeps the lookup on the primary key."""
+        if not days:
+            return []
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT day, source, amount, count FROM shard_ledger "
+                f"WHERE day IN ({','.join('?' for _ in days)}) AND player_id=?", (*days, pid)).fetchall()
+        return [dict(r) for r in rows]
+
+    def find_saves(self, prefix: str | None, main_user_id: str, limit: int) -> list[dict[str, Any]]:
+        """Saves whose id starts with [prefix] (lowercase hex) or that are linked to [main_user_id], most
+        recently active first. Rows are player rows plus `main_user_id` (None for guest saves)."""
+        clauses, args = ["p.id IN (SELECT player_id FROM account_links WHERE main_user_id=?)"], [main_user_id]
+        if prefix:
+            # A range on the primary key; '~' sorts after every hex digit.
+            clauses.append("(p.id >= ? AND p.id < ?)")
+            args += [prefix, prefix + "~"]
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT p.*, l.main_user_id FROM players p LEFT JOIN account_links l ON l.player_id = p.id "
+                f"WHERE {' OR '.join(clauses)} "
+                f"ORDER BY COALESCE(NULLIF(p.last_activity, 0), p.created) DESC LIMIT ?", (*args, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     def owned(self, pid: str) -> dict[str, int]:
         with self._lock:

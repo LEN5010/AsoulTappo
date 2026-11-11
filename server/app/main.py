@@ -7,6 +7,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
@@ -140,7 +141,7 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
           "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,
-          "sold_out": 409, "no_card": 404, "no_scratch": 404}
+          "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_save": 404}
 
 
 def _guard(fn, *args):
@@ -373,6 +374,28 @@ def admin_shards(user_id: str, body: ShardsBody) -> dict:
 def admin_unlink(user_id: str) -> dict:
     _guard(game.admin_unlink, user_id)
     return {"ok": True}
+
+
+@app.get("/admin/economy", dependencies=[Depends(admin)])
+def admin_economy(days: int = Query(default=14, ge=1, le=90), scope: Literal["all", "new"] = "all",
+                  new_days: int = Query(default=7, ge=1, le=30, alias="newDays")) -> dict:
+    return game.admin_economy(days, scope, new_days)
+
+
+@app.get("/admin/saves", dependencies=[Depends(admin)])
+def admin_saves(q: str = Query(min_length=1, max_length=128), limit: int = Query(default=20, ge=1, le=50)) -> dict:
+    """[q]: a main-site user id, or a player id prefix of 4-16 hex characters; both are tried."""
+    return game.admin_saves(q, limit)
+
+
+@app.get("/admin/saves/{player}", dependencies=[Depends(admin)])
+def admin_save(player: str) -> dict:
+    return _guard(game.admin_save, player)
+
+
+@app.post("/admin/saves/{player}/shards", dependencies=[Depends(admin)])
+def admin_save_shards(player: str, body: ShardsBody) -> dict:
+    return _guard(game.admin_adjust_save_shards, player, body.delta)
 
 
 MAX_BLOCKED_WORDS = 20000

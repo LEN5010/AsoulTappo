@@ -5,17 +5,16 @@ import hashlib
 import json
 import math
 import time
-from typing import Any, Callable
+from datetime import date
+from typing import Any, Callable, Literal
 
 from . import cards as cardlogic
 from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
 from .manifest import Manifest
-from .store import Store
+from .store import DAY_OFFSET, Store, day_of
 
 TOKEN_MIN, TOKEN_MAX = 16, 128
-# Statistics count days in China Standard Time.
-DAY_OFFSET = 8 * 3600
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
 MAX_FAVORITES = 8
@@ -23,6 +22,10 @@ MAX_FAVORITES = 8
 SESSION_DAYS = 30
 # Revealed scratch cards are kept this long; only the current day's are ever counted.
 SCRATCH_DAYS = 30
+# Days of shard ledger the admin save view shows.
+ADMIN_LEDGER_DAYS = 7
+# Hex characters of a player id prefix the admin save search accepts (ids have 16).
+SAVE_PREFIX_MIN, SAVE_PREFIX_MAX = 4, 16
 # emote keys every member may send besides the starter emotes: thumbup, the theme's like burst
 FREE_EMOTES = frozenset({"thumbup"})
 LOADOUT_KEYS = ("character", "favorites", "plate")
@@ -35,12 +38,15 @@ class GameError(Exception):
         self.message = message or code
 
 
+def _nearest_rank(values: list[int], pct: int) -> int:
+    """The [pct]th percentile of sorted [values] by nearest rank; 0 when empty."""
+    if not values:
+        return 0
+    return values[max(1, math.ceil(pct / 100 * len(values))) - 1]
+
+
 class PlayerId(str):
     """A player ID already resolved from a guest token or a linked main-site account."""
-
-
-def day_of(ts: float) -> str:
-    return time.strftime("%Y-%m-%d", time.gmtime(ts + DAY_OFFSET))
 
 
 def player_id_for(token: str) -> str:
@@ -121,6 +127,8 @@ class Game:
                 minute_bucket=bucket, minute_taps=minute_taps, minute_counted=counted,
                 shards=p["shards"] + whole, shard_remainder=max(0.0, earned - whole),
                 tap_day=today, day_taps=day_taps + paid_taps, day_taps_total=day_taps_total + credited)
+            if whole or credited:
+                st.add_ledger(pid, today, "tap", whole, credited)
             st.save_activity_budget(pid, budget - credited)
             if credited:
                 st.mark_active(pid, today)
@@ -208,6 +216,10 @@ class Game:
             st.log_drops(pid, drops, now)
             st.update_player(pid, shards=p["shards"] - n * cfg["cost"] + refund,
                              draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
+            day = day_of(now)
+            st.add_ledger(pid, day, "draw", -n * cfg["cost"], n)
+            if refund:
+                st.add_ledger(pid, day, "duplicate", refund, sum(1 for d in drops if d["shards"] > 0))
         return {**self.status(token), "drops": drops}
 
     # ------------------------------------------------------------------- craft
@@ -245,6 +257,7 @@ class Game:
             st.add_item(pid, item_id, now)
             st.log_drop(pid, item_id, item["rarity"], True, now)
             st.update_player(pid, shards=p["shards"] - cost)
+            st.add_ledger(pid, day_of(now), "craft", -cost)
         out = self.status(token)
         out["item"] = item_id
         return out
@@ -266,6 +279,7 @@ class Game:
             gained = round(prizes[index]["shards"] * (1 + spread * (2 * self.rng.random() - 1)))
             st.add_checkin(pid, today, index, gained, now)
             st.update_player(pid, shards=p["shards"] + gained)
+            st.add_ledger(pid, today, "checkin", gained)
         return {**self.status(token), "prize": {"index": index, "shards": gained, "day": today}}
 
     def checkin_month(self, token: str) -> dict[str, Any]:
@@ -328,6 +342,7 @@ class Game:
                 card_id = st.add_scratch(pid, today, json.dumps(cells), shards, item, now)
                 pity = 0 if kind == "emote" else p["scratch_pity"] if not missing else p["scratch_pity"] + 1
                 st.update_player(pid, shards=p["shards"] - cfg["price"], scratch_pity=pity)
+                st.add_ledger(pid, today, "scratch_buy", -cfg["price"])
                 card = st.scratch_card(pid, card_id)
         return {**self.status(token), "card": self._scratch_view(card)}
 
@@ -347,6 +362,7 @@ class Game:
                 st.reveal_scratch(card["id"], now)
                 if card["shards"]:
                     st.update_player(pid, shards=p["shards"] + card["shards"])
+                    st.add_ledger(pid, day_of(now), "scratch_prize", card["shards"])
                 if card["item"]:
                     known = self.manifest.items.get(card["item"])
                     st.add_item(pid, card["item"], now)
@@ -410,6 +426,8 @@ class Game:
                 raise GameError("no_shards", "")
             st.update_player(a, shards=pa["shards"] - bet)
             st.update_player(b, shards=pb["shards"] - bet)
+            st.add_ledger(a, day, "duel_bet", -bet)
+            st.add_ledger(b, day, "duel_bet", -bet)
             return st.add_duel(a, b, bet, stake["prize"], day, now)
 
     def duel_settle(self, duel_id: int, winner: str | None) -> bool:
@@ -422,8 +440,10 @@ class Game:
                 return False
             if not st.close_duel(duel_id, "won" if winner else "refunded", winner or "", now):
                 return False
+            day = day_of(now)
             for pid, gain in ([(winner, d["prize"])] if winner else [(d["a"], d["bet"]), (d["b"], d["bet"])]):
                 st.update_player(pid, shards=st.get_player(pid, now)["shards"] + gain)
+                st.add_ledger(pid, day, "duel_prize" if winner else "duel_refund", gain)
         return True
 
     def refund_open_duels(self) -> int:
@@ -488,12 +508,92 @@ class Game:
         pid = self.store.linked_player(main_user_id)
         if pid is None:
             raise GameError("account_not_linked", "这个账号没有桌宠存档")
+        return self.admin_adjust_save_shards(pid, delta)
+
+    def admin_adjust_save_shards(self, pid: str, delta: int) -> dict[str, Any]:
+        """Adds [delta] shards to an existing save, guest or linked; never below zero."""
         with self.store.transaction() as st:
-            shards = st.get_player(pid, self.now())["shards"] + delta
+            if not st.has_player(pid):
+                raise GameError("no_save", "没有这份存档")
+            now = self.now()
+            shards = st.get_player(pid, now)["shards"] + delta
             if shards < 0:
                 raise GameError("no_shards", "碎片不够扣")
             st.update_player(pid, shards=shards)
+            if delta:
+                st.add_ledger(pid, day_of(now), "admin", delta)
         return {"shards": shards}
+
+    def _admin_save(self, p: dict[str, Any], user_id: str | None) -> dict[str, Any]:
+        """One save as the admin save list shows it; [p] is its player row."""
+        return {"player": p["id"], "userId": user_id, "created": p["created"],
+                "lastActive": p["last_activity"] or p["created"], "shards": p["shards"],
+                "owned": self.store.count_items(p["id"], self.collectible_ids), "taps": p["taps_total"],
+                "drawn": p["drawn_total"], "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - self.now()))}
+
+    def admin_saves(self, q: str, limit: int) -> dict[str, Any]:
+        """Saves linked to main-site user id [q], and, when [q] is 4-16 hex characters, saves whose player id
+        starts with it; most recently active first."""
+        q = q.strip()
+        prefix = q.lower()
+        hexed = SAVE_PREFIX_MIN <= len(prefix) <= SAVE_PREFIX_MAX and all(c in "0123456789abcdef" for c in prefix)
+        rows = self.store.find_saves(prefix if hexed else None, q, limit) if q else []
+        return {"saves": [self._admin_save(r, r["main_user_id"]) for r in rows]}
+
+    def admin_save(self, pid: str) -> dict[str, Any]:
+        """One save in full: the list summary, pity, today's taps, recent drops and the last days of ledger."""
+        if not self.store.has_player(pid):
+            raise GameError("no_save", "没有这份存档")
+        now = self.now()
+        p = self.store.get_player(pid, now)
+        today = day_of(now)
+        days = [day_of(now - i * 86400) for i in range(ADMIN_LEDGER_DAYS - 1, -1, -1)]
+        ledger: dict[str, dict[str, dict[str, int]]] = {d: {} for d in days}
+        for r in self.store.ledger_of(pid, days):
+            ledger[r["day"]][r["source"]] = {"amount": r["amount"], "count": r["count"]}
+        return {**self._admin_save(p, self.store.account_for_player(pid)),
+                "pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"], "scratch": p["scratch_pity"]},
+                "today": {"day": today, "taps": p["day_taps_total"] if p["tap_day"] == today else 0,
+                          "tapShards": ledger[today].get("tap", {}).get("amount", 0)},
+                "recent": self.store.recent_drops(pid),
+                "ledger": [{"day": d, "sources": ledger[d]} for d in days]}
+
+    def admin_economy(self, days: int, scope: Literal["all", "new"] = "all", new_days: int = 7) -> dict[str, Any]:
+        """Shard ledger per China Standard Time day, oldest first. scope "new" keeps saves created fewer than
+        [new_days] days before the row's day (1: their first day only). Tap percentiles are nearest-rank."""
+        now = self.now()
+        labels = [day_of(now - i * 86400) for i in range(days - 1, -1, -1)]
+        cap = self.manifest.income["dailyCap"]
+        by_day: dict[str, list[dict[str, Any]]] = {d: [] for d in labels}
+        for r in self.store.ledger_since(labels[0]):
+            if r["day"] not in by_day:
+                continue
+            if scope == "new":
+                if r["created"] is None:
+                    continue
+                age = date.fromisoformat(r["day"]).toordinal() - date.fromisoformat(day_of(r["created"])).toordinal()
+                if age >= new_days:
+                    continue
+            by_day[r["day"]].append(r)
+        series = []
+        for day in labels:
+            rows = by_day[day]
+            sources: dict[str, dict[str, int]] = {}
+            for r in rows:
+                s = sources.setdefault(r["source"], {"amount": 0, "count": 0})
+                s["amount"] += r["amount"]
+                s["count"] += r["count"]
+            taps = [r for r in rows if r["source"] == "tap"]
+            counts = sorted(r["count"] for r in taps)
+            series.append({
+                "day": day, "players": len({r["player_id"] for r in rows}),
+                "issued": sum(r["amount"] for r in rows if r["amount"] > 0),
+                "spent": -sum(r["amount"] for r in rows if r["amount"] < 0),
+                "sources": sources, "draws": sources.get("draw", {}).get("count", 0),
+                "taps": {"players": len(counts), "p50": _nearest_rank(counts, 50),
+                         "p90": _nearest_rank(counts, 90), "max": counts[-1] if counts else 0},
+                "capped": sum(1 for r in taps if r["amount"] >= cap - 1)})
+        return {"scope": scope, "newDays": new_days, "cap": cap, "series": series}
 
     def admin_unlink(self, main_user_id: str) -> None:
         """The save stays; its guest token works again and the account may link another save."""

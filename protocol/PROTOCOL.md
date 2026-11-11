@@ -149,10 +149,30 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /admin/accounts?ids=&offset=&limit= | 已绑定账号的存档，按最近活动倒序；ids 为逗号分隔的主站用户 ID（最多 100 个），用于按主站搜索结果筛选。返回 total、accounts（`userId,linkedAt,shards,owned,taps,lastActive`） |
 | POST /admin/accounts/{userId}/shards | `{delta}`，正数补发、负数扣减，扣到负数时返回 409 `no_shards`；返回新的 shards |
 | POST /admin/accounts/{userId}/unlink | 解除绑定。存档保留，原游客令牌恢复可用，账号可以重新绑定 |
+| GET /admin/economy?days=&scope=&newDays= | 碎片流水按天汇总。days 为 1–90，默认 14；scope 为 `all`（默认）或 `new`；newDays 为 1–30，默认 7。返回 `{scope,newDays,cap,series}`，cap 为每日敲击收入上限；series 每天一行，从旧到新，没有数据的日期也有一行。每行 `{day,players,issued,spent,sources,draws,taps,capped}`：players 为当天有流水的存档数；issued、spent 分别为正数流水之和、负数流水之和（取正值）；sources 为 `{来源:{amount,count}}`；draws 为当天共鸣次数；taps 为 `{players,p50,p90,max}`，按每个存档当天计入的敲击数统计，百分位取最近秩（nearest-rank），没人敲击时全为 0；capped 为当天敲击碎片达到 cap - 1 的存档数（整数取整可能差最后 1 个碎片）。scope=new 只统计创建日期距当天少于 newDays 天的存档，newDays=1 即只看创建当天 |
+| GET /admin/saves?q=&limit= | 查找存档，含游客存档。q 按主站用户 ID 精确匹配绑定的存档；q 为 4–16 位十六进制时，同时按存档 ID 前缀匹配（不分大小写），两者合并。q 缺省或为空返回 422，只有空白或匹配不到时返回空列表。limit 为 1–50，默认 20。返回 `{saves:[...]}`，按最近活动倒序，每项 `{player,userId,created,lastActive,shards,owned,taps,drawn,tapCooldown}`；userId 为绑定的主站用户 ID，游客存档为 null；tapCooldown 为敲击冷却剩余秒数 |
+| GET /admin/saves/{player} | 单个存档详情：上一行的字段，加 pity `{legendary,skin,scratch}`、today `{day,taps,tapShards}`（当天计入的敲击数和敲击得到的碎片）、recent（最近获得的物品，同 `/api/collection`）、ledger（最近 7 天流水，`[{day,sources}]`，从旧到新）。存档不存在时返回 404 `no_save` |
+| POST /admin/saves/{player}/shards | `{delta}`，调整任意存档（含游客存档）的碎片，规则同 `/admin/accounts/{userId}/shards`；存档不存在时返回 404 `no_save` |
 | GET /admin/blocked-words | 昵称屏蔽词表，返回 `{words,count}`，按上次保存时的顺序 |
 | PUT /admin/blocked-words | `{words:[...]}`，整表替换。每个词去掉首尾空白后为 1–64 个字符，最多 20000 个（按去重前的个数算），不符合时返回 422 且词表不变；去重后保存原词（不保存折叠结果）。返回 `{count}`，为去重后的个数。新词表立即对在线成员生效，见下节 |
 
 账号没有绑定存档时返回 409 `account_not_linked`。
+
+碎片流水：服务端在每次碎片变动的同一事务里记一笔，按北京时间日期、存档和来源累加金额（amount，获得为正、花费为负）和次数（count）。流水从带这张表的服务端版本开始记录，之前的变动没有历史数据。来源如下：
+
+| 来源 | 金额 | 次数 |
+|---|---|---|
+| `starter` | 新存档的初始碎片 | 1 |
+| `tap` | 敲击得到的整数碎片 | 计入的敲击数，含超过收入上限的部分 |
+| `draw` | 共鸣花费 | 共鸣次数 |
+| `duplicate` | 重复物品兑换的碎片 | 兑换成碎片的物品数 |
+| `craft` | 兑换物品花费 | 1 |
+| `checkin` | 签到奖励 | 1 |
+| `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
+| `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
+| `admin` | 管理接口的调整 | 1 |
+
+同一存档同一天的多次 `admin` 调整合并为一行，正负相抵，所以 `admin` 在 issued、spent 里是净值。
 
 ### 最低版本与公告
 
