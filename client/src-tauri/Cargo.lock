@@ -54,6 +54,7 @@ dependencies = [
  "chrono",
  "objc2",
  "objc2-app-kit",
+ "percent-encoding",
  "rdev",
  "serde",
  "serde_json",

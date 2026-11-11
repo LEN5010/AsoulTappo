@@ -606,7 +606,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 room_id = msg.room
                 peer.dnd = msg.dnd
                 peer.account = signed_in
-                peer.motion_version = msg.motionVersion
+                peer.motion_version = min(msg.motionVersion, 2)
                 joined = JoinedMsg(
                     room=room_id, you=peer.id,
                     members=[_member(p) for p in manager.members(room_id)],

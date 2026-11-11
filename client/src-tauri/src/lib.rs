@@ -57,6 +57,8 @@ struct Overlay {
     monitor: Mutex<usize>,
     /// The overlay currently lets clicks through, so a mouse press lands on another window.
     passing: AtomicBool,
+    /// The overlay was moved outside the hit test (tray: next monitor): its cached origin and scale are stale.
+    moved: AtomicBool,
 }
 
 fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
@@ -668,6 +670,9 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 continue;
             }
             std::thread::sleep(pause);
+            if overlay.moved.swap(false, Ordering::Relaxed) {
+                geometry = None;
+            }
             if geometry.is_none() || geometry_at.elapsed() >= HIT_GEOMETRY_INTERVAL {
                 geometry = match (window.inner_position(), window.scale_factor()) {
                     (Ok(origin), Ok(scale)) => Some((origin, scale)),
@@ -966,6 +971,7 @@ pub fn run() {
                             if let Ok(mut m) = tray_overlay.monitor.lock() {
                                 *m = (*m + 1) % count;
                                 fit_and_log(&w, *m, &format!("tray next monitor, {count} monitor(s)"));
+                                tray_overlay.moved.store(true, Ordering::Relaxed);
                             }
                         }
                     }

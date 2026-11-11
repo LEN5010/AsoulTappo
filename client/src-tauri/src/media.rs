@@ -25,7 +25,8 @@ pub fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>
 fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let uri = request.uri().to_string();
     let path = uri.split(['?', '#']).next().unwrap_or_default();
-    let path = path.strip_prefix("tauri://localhost").unwrap_or_default().to_string();
+    // Decoded as Tauri's own handler does: a file name with spaces or non-ASCII letters arrives escaped.
+    let path = request_path(path);
     let Some((bytes, mime, csp)) = load(app, &path) else {
         return plain(StatusCode::NOT_FOUND);
     };
@@ -86,6 +87,12 @@ fn kept(path: &str) -> Option<Arc<Vec<u8>>> {
     Some(bytes)
 }
 
+/// The asset path of a `tauri://localhost/...` URI without query, percent-decoded.
+fn request_path(uri: &str) -> String {
+    let path = uri.strip_prefix("tauri://localhost").unwrap_or_default();
+    percent_encoding::percent_decode_str(path).decode_utf8_lossy().into_owned()
+}
+
 /// The first and last byte of a single `bytes=` range within `len` bytes; `None` when it cannot be served.
 fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
     let spec = value.trim().strip_prefix("bytes=")?;
@@ -106,7 +113,14 @@ fn parse_range(value: &str, len: u64) -> Option<(u64, u64)> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_range;
+    use super::{parse_range, request_path};
+
+    #[test]
+    fn decodes_escaped_paths() {
+        assert_eq!(request_path("tauri://localhost/assets/a.mp4"), "/assets/a.mp4");
+        assert_eq!(request_path("tauri://localhost/assets/%E4%B9%83%E7%90%B3%20a.webp"), "/assets/乃琳 a.webp");
+        assert_eq!(request_path("http://elsewhere/x"), "");
+    }
 
     #[test]
     fn reads_the_three_range_forms() {

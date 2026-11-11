@@ -30,7 +30,8 @@ class JoinMsg(_Msg):
     plate: Optional[str] = Field(default=None, max_length=64)
     # turns down rock-paper-scissors invites; servers before 1.2 ignore it
     dnd: bool = False
-    motionVersion: int = Field(default=1, ge=1, le=2)
+    # The newest motion format the client reads; a higher number than this server knows gets its newest (2).
+    motionVersion: int = Field(default=1, ge=1)
 
 
 class LeaveMsg(_Msg):

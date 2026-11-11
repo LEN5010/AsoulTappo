@@ -20,7 +20,7 @@ import { lookForUpdate, watchRelease } from "../stores/update";
 
 // Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
 // behind the shutter, and the rest are fetched one by one once the first page is up (see warmPages).
-const PAGES: Record<Page, () => Promise<unknown>> = {
+const PAGES = {
   emotes: () => import("./EmotesPage.vue"),
   resonance: () => import("./ResonancePage.vue"),
   dex: () => import("./CollectionPage.vue"),
@@ -28,14 +28,14 @@ const PAGES: Record<Page, () => Promise<unknown>> = {
   scratch: () => import("./ScratchPage.vue"),
   room: () => import("./OnlinePage.vue"),
   settings: () => import("./SettingsPage.vue"),
-};
-const EmotesPage = defineAsyncComponent(() => import("./EmotesPage.vue"));
-const ResonancePage = defineAsyncComponent(() => import("./ResonancePage.vue"));
-const CollectionPage = defineAsyncComponent(() => import("./CollectionPage.vue"));
-const CheckinPage = defineAsyncComponent(() => import("./CheckinPage.vue"));
-const ScratchPage = defineAsyncComponent(() => import("./ScratchPage.vue"));
-const OnlinePage = defineAsyncComponent(() => import("./OnlinePage.vue"));
-const SettingsPage = defineAsyncComponent(() => import("./SettingsPage.vue"));
+} satisfies Record<Page, () => Promise<unknown>>;
+const EmotesPage = defineAsyncComponent(PAGES.emotes);
+const ResonancePage = defineAsyncComponent(PAGES.resonance);
+const CollectionPage = defineAsyncComponent(PAGES.dex);
+const CheckinPage = defineAsyncComponent(PAGES.checkin);
+const ScratchPage = defineAsyncComponent(PAGES.scratch);
+const OnlinePage = defineAsyncComponent(PAGES.room);
+const SettingsPage = defineAsyncComponent(PAGES.settings);
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
 const loadPage = (page: Page) => PAGES[page]().catch(() => {});
 const WARM_STEP_MS = 400;

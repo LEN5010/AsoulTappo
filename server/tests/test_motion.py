@@ -72,7 +72,7 @@ def test_a_client_that_asks_for_packed_motion_gets_it_and_subscribes():
 @pytest.mark.parametrize('message', [
     {'type': 'pose', 'x': 81}, {'type': 'pose', 'y': -81}, {'type': 'pose', 'x': 1.5}, {'type': 'pose', 'b': 8},
     {'type': 'motion_subscribe', 'ids': ['x'] * 21}, {'type': 'motion_subscribe', 'ids': ['']},
-    {'type': 'join', 'room': 'validation', 'nick': 'a', 'motionVersion': 3},
+    {'type': 'join', 'room': 'validation', 'nick': 'a', 'motionVersion': 0},
 ])
 def test_packed_motion_messages_are_bounded(message):
     with TestClient(app) as client, client.websocket_connect('/ws') as ws:
@@ -81,3 +81,12 @@ def test_packed_motion_messages_are_bounded(message):
             ws.receive_json()
         ws.send_json(message)
         assert ws.receive_json()['code'] == 'bad_message'
+
+
+def test_a_newer_motion_version_gets_the_newest_this_server_has():
+    manager.rooms.clear()
+    with TestClient(app) as client, client.websocket_connect('/ws') as ws:
+        ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 3})
+        joined = ws.receive_json()
+        assert joined['type'] == 'joined'
+        assert joined['motionVersion'] == 2

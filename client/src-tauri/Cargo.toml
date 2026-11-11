@@ -43,6 +43,8 @@ rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSWindow"] }
 # One message to the capture window's web view (src/lib.rs); already in the tree through Tauri.
 objc2 = "0.6"
+# Decodes request paths in the macOS asset handler (src/media.rs); already in the tree through Tauri.
+percent-encoding = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
