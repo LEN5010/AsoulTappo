@@ -714,3 +714,82 @@ def test_closing_the_connection_mid_duel_loses_it(api):
         assert c.get("/api/me", headers={"X-Player-Token": tok("b")}).json()["shards"] == SHARDS + 100
         assert c.get("/api/me", headers={"X-Player-Token": tok("a")}).json()["shards"] == SHARDS - 150
         assert g.store.open_duels() == []
+
+
+# ------------------------------------------------------------------ edges of the duel machinery
+def test_timers_run_the_function_later_on_the_running_loop():
+    from app.duel import Timers
+
+    async def go():
+        ran = asyncio.Event()
+
+        async def fn():
+            ran.set()
+        timers = Timers()
+        handle = timers.later(.01, fn)
+        await asyncio.wait_for(ran.wait(), .5)
+        assert not handle.cancelled()
+        await settle()
+        assert not timers._tasks  # finished tasks are let go
+    run(go())
+
+
+def test_a_target_who_leaves_while_the_bets_are_checked_gets_no_invite():
+    async def go():
+        w = World()
+        a, sa, a_pid, b, sb, b_pid = w.pair()
+        check = w.g.duel_check
+
+        def leaving(*args):
+            w.m.leave("r", b.id)
+            return check(*args)
+        w.g.duel_check = leaving
+        await refused("no_member", lambda: w.d.invite("r", a, b.id, 150))
+        assert not w.d.by_id and not w.d.by_save
+        assert sb.of("duel_invite") == []
+    run(go())
+
+
+def test_clearing_drops_every_duel_and_its_timer():
+    async def go():
+        w = World()
+        a, sa, a_pid, b, sb, b_pid = w.pair()
+        await w.d.invite("r", a, b.id, 150)
+        assert w.timers.live()
+        w.d.clear()
+        assert not w.d.by_id and not w.d.by_save and not w.d.refused
+        assert not w.timers.live()
+    run(go())
+
+
+def test_a_round_timer_from_an_earlier_round_does_nothing():
+    async def go():
+        w = World()
+        a, sa, a_pid, b, sb, b_pid, duel_id = await w.started()
+        duel = w.d.by_id[duel_id]
+        before = (duel.phase, duel.round, w.shards(a_pid), w.shards(b_pid))
+        await w.d._round_expired(duel, duel.round + 1)
+        assert (duel.phase, duel.round, w.shards(a_pid), w.shards(b_pid)) == before
+    run(go())
+
+
+def test_a_duel_settles_once_even_when_asked_twice_or_already_paid():
+    async def go():
+        w = World()
+        a, sa, a_pid, b, sb, b_pid, duel_id = await w.started()
+        duel = w.d.by_id.get(duel_id)
+        if duel is None or duel.phase != "throw":
+            await w.timers.fire()
+            await settle()
+            duel = w.d.by_id[duel_id]
+        paid = (w.shards(a_pid), w.shards(b_pid))
+        # The database already closed this duel (another path paid it): nothing is paid or said again.
+        assert w.g.duel_settle(duel.row, None)
+        refunded = (w.shards(a_pid), w.shards(b_pid))
+        sa.got.clear()
+        sb.got.clear()
+        await asyncio.gather(w.d._settle(duel, a), w.d._settle(duel, b))
+        assert (w.shards(a_pid), w.shards(b_pid)) == refunded != paid
+        assert sa.got == [] and sb.got == []
+        assert duel_id not in w.d.by_id
+    run(go())
