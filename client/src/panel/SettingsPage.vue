@@ -68,9 +68,9 @@ const portrait = computed(() => getCharacter(settings.character)?.bg);
 
 // The hide key and the click-through key: a key waits for the next shortcut pressed; Escape leaves it as it was.
 const IS_MAC = /Mac/i.test(navigator.userAgent);
-const HOTKEYS: { slot: HotkeySlot; label: string; title: string; key: "bossKey" | "clickThroughKey" }[] = [
-  { slot: "click-through", label: "点击穿透热键", title: "按下后切换点击穿透", key: "clickThroughKey" },
-  { slot: "hide", label: "隐藏热键", title: "按下后隐藏桌宠和面板，再按一次恢复", key: "bossKey" },
+const HOTKEYS: { slot: HotkeySlot; label: string; key: "bossKey" | "clickThroughKey" }[] = [
+  { slot: "click-through", label: "点击穿透热键", key: "clickThroughKey" },
+  { slot: "hide", label: "隐藏热键", key: "bossKey" },
 ];
 const recording = ref<HotkeySlot | null>(null);
 const keyNote = ref<Partial<Record<HotkeySlot, string>>>({});
@@ -106,7 +106,7 @@ watch(recording, (slot) => {
 type Group = "pet" | "window" | "online" | "sound" | "about";
 const COLUMNS: Group[][] = isTauri ? [["pet", "window"], ["online", "sound", "about"]] : [["pet", "sound"], ["online", "about"]];
 const rows = computed<Record<Group, number>>(() => ({
-  pet: 7,
+  pet: 8,
   window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0),
   online: 4,
   sound: 3,
@@ -223,9 +223,13 @@ async function exportLogFile() {
                 <span>桌宠位置</span>
                 <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
               </div>
-              <label class="ui-row" title="收起后点击桌宠显示">
+              <label class="ui-row">
                 <span>收起任务栏</span>
                 <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>把手切换铭牌</span>
+                <input v-model="settings.gripPlate" class="ui-switch" type="checkbox" />
               </label>
               <label class="ui-row">
                 <span>显示敲击碎片</span>
@@ -245,7 +249,7 @@ async function exportLogFile() {
                 <span>点击穿透</span>
                 <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
               </label>
-              <div v-for="h in HOTKEYS" :key="h.slot" class="ui-row" :title="h.title">
+              <div v-for="h in HOTKEYS" :key="h.slot" class="ui-row">
                 <span>{{ h.label }}</span>
                 <span class="version-side">
                   <small v-if="keyNote[h.slot]" role="status" class="check-note">{{ keyNote[h.slot] }}</small>
@@ -258,11 +262,11 @@ async function exportLogFile() {
                   </button>
                 </span>
               </div>
-              <label class="ui-row" title="单独一个普通窗口，只有自己的桌宠，给 OBS 窗口采集和截图用">
+              <label class="ui-row">
                 <span>采集窗口</span>
                 <input v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
               </label>
-              <label v-if="settings.captureOpen" class="ui-row" title="在 OBS 里用色度键去掉">
+              <label v-if="settings.captureOpen" class="ui-row">
                 <span>采集背景色</span>
                 <input v-model="settings.captureBg" class="swatch" type="color" />
               </label>
@@ -283,7 +287,7 @@ async function exportLogFile() {
                 <span>显示伙伴铭牌</span>
                 <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
               </label>
-              <label class="ui-row" title="伙伴昵称换成他们桌宠的成员名，直播时用">
+              <label class="ui-row">
                 <span>隐藏伙伴 ID</span>
                 <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
               </label>

@@ -56,7 +56,7 @@ watch(
   <div class="bar" :style="{ width: `${width}px` }">
     <button
       type="button" class="count"
-      :title="view === 'today' ? '今日敲击（北京时间），点击切换累计' : '累计敲击，点击切换今日'"
+      :title="view === 'today' ? '今日敲击' : '累计敲击'"
       @click="$emit('toggleView')"
     >
       <span ref="figure" class="figure">

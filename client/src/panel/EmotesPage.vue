@@ -305,7 +305,7 @@ function fireEmote(key: string) {
           <div class="plate-grid">
             <button
               type="button" class="plate-card ui-tile" :class="{ picked: !settings.plate }"
-              title="伙伴桌面上显示普通名牌" data-rise @click="settings.plate = ''"
+              data-rise @click="settings.plate = ''"
             >
               <span class="plate-well ui-frame">
                 <NamePill :nick="plateNick" :color="characterColor(settings.character)" :width="PLATE_W" />

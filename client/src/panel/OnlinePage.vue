@@ -284,7 +284,7 @@ async function copy() {
       </h4>
       <div class="cheer ui-frame">
         <div class="cheer-track">
-          <span class="cheer-faces" :title="`${cheer.count} 人出力`">
+          <span class="cheer-faces">
             <CharacterAvatar
               v-if="cheerFaces.me" :character="cheerFaces.me.character" :size="26" class="me" :class="{ off: !cheerFaces.on }"
               :title="faceTitle(cheerFaces.me)"
@@ -300,10 +300,7 @@ async function copy() {
           >
             <span v-for="(fill, i) in cheerCells" :key="i" class="ui-bar"><i :style="{ width: `${fill * 100}%` }"></i></span>
           </span>
-          <span
-            class="cheer-prize" :class="{ off: cheerCapped }"
-            :title="cheerCapped ? '今日应援奖励已满' : `${cheer.count} 人出力，满条每人 +${cheer.reward}`"
-          >
+          <span class="cheer-prize" :class="{ off: cheerCapped }">
             <template v-if="cheerCapped">今日已满</template>
             <template v-else><Icon name="shard" :size="18" />+{{ cheer.reward }}</template>
           </span>
@@ -315,7 +312,7 @@ async function copy() {
     <section v-if="inRoom" data-rise>
       <header class="cap">
         <h4 class="ui-label"><span>房间成员</span><small>{{ members.size }} / {{ MAX_ROOM_SIZE }}</small></h4>
-        <button type="button" class="ui-btn small" title="把大家的桌宠重新排到你的桌宠旁边" @click="tidyRemotes">
+        <button type="button" class="ui-btn small" @click="tidyRemotes">
           <Icon name="refresh" :size="13" />整理位置
         </button>
       </header>

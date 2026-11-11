@@ -115,6 +115,30 @@ function toggleFold() {
   settings.barFolded = !settings.barFolded;
   peek.value = false;
 }
+// With gripPlate the handle's click swaps the strip for the own name plate and back, and a double click does what
+// a click does without it. A click waits this long for a second one.
+const DOUBLE_CLICK_MS = 280;
+let gripClick: ReturnType<typeof setTimeout> | undefined;
+function onGrip() {
+  if (!settings.gripPlate) return toggleFold();
+  if (gripClick) {
+    clearTimeout(gripClick);
+    gripClick = undefined;
+    toggleFold();
+    return;
+  }
+  gripClick = setTimeout(() => {
+    gripClick = undefined;
+    settings.barPlate = !settings.barPlate;
+    keepPeek();
+  }, DOUBLE_CLICK_MS);
+}
+/** The own name plate in the strip's place, as partners see it under this pet; a docked pet keeps the strip. */
+const plateShown = computed(() => settings.gripPlate && settings.barPlate && !docked.value);
+const ownPlate = computed(() => getPlate(settings.plate)?.id);
+const ownPlateSize = computed(() => plateSize(settings.scale));
+const ownName = computed(() => nameBand(settings.scale));
+const ownNick = computed(() => settings.nick.trim() || settings.character);
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
 watch([peek, () => ui.quickOpen], keepPeek);
 // Daily tap statistics and the local counter use the same China calendar day.
@@ -325,13 +349,26 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <DuelBubble v-bind="duelPlace" />
       <PokeBubble v-if="!duel" v-bind="pokedPlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
-      <Transition name="strip">
+      <Transition name="strip" mode="out-in">
+      <div v-if="barShown && plateShown" key="plate" class="own-plate">
+        <NamePlate
+          v-if="ownPlate" :card="ownPlate" :nick="ownNick" :color="characterColor(settings.character)"
+          :width="ownPlateSize.width" :height="ownPlateSize.height" :font="ownName.font"
+        />
+        <NamePill
+          v-else :nick="ownNick" :color="characterColor(settings.character)" :width="PET_BASE.width * settings.scale"
+          :height="ownName.pill" :font="ownName.font"
+        />
+        <button
+          type="button" class="plate-grip" aria-label="换回任务栏" @click="onGrip"
+        ></button>
+      </div>
       <CounterBar
-        v-if="barShown" :count="shownCount" :view="settings.tapView" :width="barWidth" :quick-open="ui.quickOpen"
-        :draws="draws"
+        v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="barWidth"
+        :quick-open="ui.quickOpen" :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
-        :grip="docked ? undefined : barPinned ? 'fold' : 'pin'" @grip="toggleFold"
+        :grip="docked ? undefined : barPinned ? 'fold' : 'pin'" @grip="onGrip"
       >
         <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
       </CounterBar>
@@ -369,4 +406,36 @@ html.browser-preview body {
   .strip-enter-active, .strip-leave-active { transition: none; }
 }
 .desk > :deep(*) { pointer-events: auto; }
+/* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
+ * on any wallpaper. The side padding keeps the plate centred under the pet. */
+.own-plate {
+  position: relative;
+  display: flex;
+  padding: 2px 14px 0;
+}
+.plate-grip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.plate-grip::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 4px;
+  height: 14px;
+  translate: 0 -50%;
+  border-radius: 2px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(var(--shadow-rgb), 0.45);
+  transition: background var(--dur-fast), height var(--dur-fast) var(--ease-out);
+}
+.plate-grip:hover::before { height: 20px; background: var(--c-500); }
 </style>

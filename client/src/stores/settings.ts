@@ -52,6 +52,10 @@ export interface Settings {
   showPartners: boolean;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
   barFolded: boolean;
+  /** The strip's handle shows the own name plate on a click and folds the strip on a double click. */
+  gripPlate: boolean;
+  /** With gripPlate: the own name plate stands where the strip would. */
+  barPlate: boolean;
   /** The own pet stands on the bottom edge of the screen: its desk on the edge, the strip hidden. */
   petDocked: boolean;
   /** Global shortcut that hides the pet and the panel and brings them back ("" = none), e.g. "Control+Alt+KeyH". */
@@ -104,6 +108,8 @@ export const DEFAULT_SETTINGS: Settings = {
   shardPop: true,
   showPartners: true,
   barFolded: false,
+  gripPlate: false,
+  barPlate: false,
   petDocked: false,
   bossKey: "",
   clickThroughKey: "",
