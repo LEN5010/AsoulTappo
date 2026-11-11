@@ -94,6 +94,9 @@ const HEADS: Record<string, { x: number; y: number }> = {
   嘉然2025生日: { x: 152, y: -2 },
   贝拉2025生日: { x: 146, y: -10 },
   贝拉睡衣派对: { x: 146, y: -9 },
+  嘉然冬日奇迹: { x: 152, y: 0 },
+  贝拉冬日奇迹: { x: 146, y: -1 },
+  乃琳冬日奇迹: { x: 150, y: 3 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
   return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };

@@ -16,6 +16,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from .notice import version_key
+
 APP_DIR = Path(__file__).resolve().parent
 
 
@@ -58,7 +60,7 @@ class Manifest:
             for e in s["emotes"]:
                 add("emote", e["key"], s.get("rarity", "common"), e["name"], s.get("source"))
         for skin in self.data["skins"]:
-            add("char", skin["name"], "skin", skin["name"])
+            add("char", skin["name"], "skin", skin.get("title") or skin["name"])
         return out
 
     @cached_property
@@ -70,6 +72,23 @@ class Manifest:
     @cached_property
     def skins(self) -> dict[str, dict]:
         return {s["name"]: s for s in self.data["skins"]}
+
+    @cached_property
+    def skin_since(self) -> dict[str, tuple]:
+        """char:<name> -> (major, minor, patch) of the release that ships the skin, for skins that name one."""
+        return {f"char:{s['name']}": version_key(s["since"])[:3] for s in self.data["skins"] if s.get("since")}
+
+    def resonance_pool_for(self, version: str | None) -> dict[str, list[dict]]:
+        """The pool a client of [version] can show: skins from a later release are left out, as is every skin with a
+        `since` when the version is missing or unreadable. A pre-release counts as its release. None: the whole pool."""
+        if version is None:
+            return self.resonance_pool
+        key = version_key(version)
+        have = key[:3] if key else (0, 0, 0)
+        held = {iid for iid, since in self.skin_since.items() if since > have}
+        if not held:
+            return self.resonance_pool
+        return {r: [i for i in items if i["id"] not in held] for r, items in self.resonance_pool.items()}
 
     @cached_property
     def resonance_pool(self) -> dict[str, list[dict]]:

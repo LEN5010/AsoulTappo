@@ -17,6 +17,7 @@ import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
 import NoticeDialog from "./NoticeDialog.vue";
 import UpdateRewardDialog from "./UpdateRewardDialog.vue";
+import SkinSpotlight from "./SkinSpotlight.vue";
 import TermsDialog from "./TermsDialog.vue";
 import { agreed } from "../legal/consent";
 import { lookForUpdate, watchRelease } from "../stores/update";
@@ -319,6 +320,7 @@ function badgeOf(id: Page): number {
 
       <UpdateDialog />
       <NoticeDialog />
+      <SkinSpotlight v-if="agreed" />
       <UpdateRewardDialog v-if="agreed" />
       <TermsDialog v-if="!agreed" />
       <div class="panel-overlay"></div>

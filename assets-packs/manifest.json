@@ -4984,15 +4984,18 @@
  "skins": [
   {
    "name": "嘉然山海经",
-   "member": "嘉然"
+   "member": "嘉然",
+   "title": "帝江"
   },
   {
    "name": "乃琳山海经",
-   "member": "乃琳"
+   "member": "乃琳",
+   "title": "九尾狐"
   },
   {
    "name": "贝拉山海经",
-   "member": "贝拉"
+   "member": "贝拉",
+   "title": "毕方"
   },
   {
    "name": "嘉然睡衣派对",
@@ -5008,15 +5011,33 @@
   },
   {
    "name": "贝拉2025生日",
-   "member": "贝拉"
+   "member": "贝拉",
+   "title": "小滑板"
   },
   {
    "name": "嘉然2025生日",
-   "member": "嘉然"
+   "member": "嘉然",
+   "title": "小画嘉"
   },
   {
    "name": "乃琳2025生日",
-   "member": "乃琳"
+   "member": "乃琳",
+   "title": "酒馆"
+  },
+  {
+   "name": "嘉然冬日奇迹",
+   "member": "嘉然",
+   "since": "1.2.0"
+  },
+  {
+   "name": "乃琳冬日奇迹",
+   "member": "乃琳",
+   "since": "1.2.0"
+  },
+  {
+   "name": "贝拉冬日奇迹",
+   "member": "贝拉",
+   "since": "1.2.0"
   }
  ],
  "economy": {

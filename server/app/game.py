@@ -208,8 +208,9 @@ class Game:
                 # typing at 60 taps pays from here.
                 "multiplier": 1, "perMinute": round(per_tap * 60, 1)}
 
-    def resonate(self, token: str, count: int = 1) -> dict[str, Any]:
-        pool = self.manifest.resonance_pool
+    def resonate(self, token: str, count: int = 1, version: str | None = None) -> dict[str, Any]:
+        """[version] is the client's: skins it cannot show stay out of its pool (see Manifest.resonance_pool_for)."""
+        pool = self.manifest.resonance_pool_for(version)
         pid = player_id_for(token)
         cfg = self.manifest.resonance
         drops = []

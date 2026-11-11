@@ -87,7 +87,8 @@ export interface Manifest {
   decor: ManifestDecor[];
   accessories: ManifestAccessory[];
   starter: { emotes: string[]; theme: string };
-  skins: { name: string; member: string }[];
+  /** `name` is the id (folder, save item, room field); `title` replaces it on screen; `since` is the release that ships it. */
+  skins: { name: string; member: string; title?: string; since?: string }[];
   economy: {
     /** Shards per day: shardScale × ln(1 + taps / tapScale), at most dailyCap; a minute counts tapsPerMinute taps at most. */
     income: { shardScale: number; tapScale: number; dailyCap: number; tapsPerMinute: number };
@@ -148,6 +149,10 @@ export const getTheme = (id: string) =>
 /** Member a character or skin name belongs to: 贝拉山海经 -> 贝拉. */
 export const memberOf = (name: string) =>
   manifest.characters.find((c) => name.startsWith(c.name))?.name ?? name;
+
+const skinIndex = new Map(manifest.skins.map((s) => [s.name, s]));
+/** What the screen calls a character or skin: a skin's title when it has one, else its name. */
+export const skinTitle = (name: string) => skinIndex.get(name)?.title ?? name;
 
 export const characterColor = (name: string) =>
   manifest.characters.find((c) => c.name === memberOf(name))?.color ?? "#ff6b9d";

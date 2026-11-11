@@ -264,8 +264,9 @@ def api_presence(body: PresenceBody, who: PlayerId = Depends(player)) -> dict:
 
 
 @app.post("/api/resonance/draw")
-def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player)) -> dict:
-    return _guard(game.resonate, who, body.count)
+def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player),
+                 x_client_version: str = Header(default="")) -> dict:
+    return _guard(game.resonate, who, body.count, x_client_version)
 
 
 @app.post("/api/craft")

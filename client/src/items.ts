@@ -1,7 +1,7 @@
 // Collectible items shown in the backpack, collection and craft pages.
 // Ids match the server: card:<id>, emote:<key>, char:<skin name>.
 // Original characters are always owned; skins use char:<name> and drop from resonance.
-import { manifest, memberOf, RARITY_ORDER, type Rarity } from "./manifest";
+import { manifest, memberOf, RARITY_ORDER, skinTitle, type Rarity } from "./manifest";
 import type { CollectionProgress } from "./net/protocol";
 
 export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
@@ -44,7 +44,7 @@ function build(): Item[] {
       characters: [c.name], group: "初始角色", starter: true });
   }
   for (const skin of manifest.skins) {
-    out.push({ id: `char:${skin.name}`, ref: skin.name, kind: "character", name: skin.name,
+    out.push({ id: `char:${skin.name}`, ref: skin.name, kind: "character", name: skinTitle(skin.name),
       rarity: "skin", art: "", characters: [skin.member], group: "皮肤", starter: false });
   }
   for (const s of manifest.emoteSets) {

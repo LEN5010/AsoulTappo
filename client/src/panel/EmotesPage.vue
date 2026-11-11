@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { characterColor, emoteCover, manifest, memberOf } from "../manifest";
+import { characterColor, emoteCover, manifest, memberOf, skinTitle } from "../manifest";
 import { characters } from "../characters";
 import { assetUrl } from "../asset";
 import { getItem, ownsCharacter, ownsEmote, starterEmotesOf, type Item } from "../items";
@@ -237,7 +237,7 @@ function fireEmote(key: string) {
           <StagePet :character="settings.character" :emote="preview" />
         </div>
         <button type="button" class="stage-name ui-btn" title="更换桌宠" @click.stop="mainTab = 'pet'">
-          <i aria-hidden="true"></i>{{ settings.character }}<Icon name="down" :size="12" />
+          <i aria-hidden="true"></i>{{ skinTitle(settings.character) }}<Icon name="down" :size="12" />
         </button>
       </div>
 
@@ -287,7 +287,7 @@ function fireEmote(key: string) {
               v-for="skin in petSkins" :key="`pet:${skin.name}`" type="button"
               class="pet-card ui-tile" :class="{ picked: settings.character === skin.name, locked: !ownsCharacter(skin.name, collection.owned) }"
               :disabled="!ownsCharacter(skin.name, collection.owned)"
-              :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skin.name}`" data-rise
+              :title="`${ownsCharacter(skin.name, collection.owned) ? '切换桌宠' : '未解锁'}：${skinTitle(skin.name)}`" data-rise
               @click="settings.character = skin.name; pokeStage()"
             >
               <span class="pet-well ui-frame ui-well">
@@ -295,7 +295,7 @@ function fireEmote(key: string) {
                 <span v-if="settings.character === skin.name" class="badge in-use" aria-label="当前使用"><Icon name="check" :size="11" /></span>
                 <span v-else-if="!ownsCharacter(skin.name, collection.owned)" class="badge lock" aria-label="未解锁"><Icon name="lock" :size="11" /></span>
               </span>
-              <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skin.name }}</b>
+              <b class="ui-tile-name"><i :style="{ background: characterColor(skin.name) }" aria-hidden="true"></i>{{ skinTitle(skin.name) }}</b>
             </button>
           </div>
         </section>

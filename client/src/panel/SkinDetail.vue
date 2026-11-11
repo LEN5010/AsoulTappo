@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { characterColor, memberOf } from "../manifest";
+import { characterColor, memberOf, skinTitle } from "../manifest";
 import { skinSeries } from "../characters";
 import { ownsCharacter } from "../items";
 import { collection } from "../stores/player";
@@ -19,12 +19,12 @@ function resonate() { ui.page = 'resonance'; emit('close'); }
 </script>
 
 <template>
-  <Modal :title="name" wide @close="emit('close')">
+  <Modal :title="skinTitle(name)" wide @close="emit('close')">
     <div class="skin-detail">
       <SkinArt class="portrait" :name="name" :owned="owned" detail />
       <div class="info">
         <span class="ui-tag gold">皮肤藏品</span>
-        <h3>{{ name }}</h3>
+        <h3>{{ skinTitle(name) }}</h3>
         <p class="member"><i :style="{ background: characterColor(memberOf(name)) }"></i>{{ memberOf(name) }}</p>
         <dl><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
         <div class="live-preview"><PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" /><small>桌宠预览</small></div>

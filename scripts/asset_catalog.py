@@ -263,12 +263,29 @@ THEME_RARITY = "rare"
 # STARTER_EMOTES emotes of each character's first emote set.
 STARTER_EMOTES = 4
 # Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
-SKINS = [{"name": f"{member}{series}", "member": member}
-         for series in ("山海经", "睡衣派对") for member in ("嘉然", "乃琳", "贝拉")] + [
-    {"name": "贝拉2025生日", "member": "贝拉"},
-    {"name": "嘉然2025生日", "member": "嘉然"},
-    {"name": "乃琳2025生日", "member": "乃琳"},
-]
+# Pet skins. `name` is the id: the asset folder, the save's char:<name> item and the room's character field, so it
+# never changes; it is the member followed by the series. `title` is what the screen shows instead, when set.
+# `since` is the release (x.y.z) that ships the skin's picture: the server keeps the skin out of the resonance pool of
+# clients older than it, and the skins sharing the newest `since` are the launch spotlight (client/src/stores/spotlight.ts).
+SKIN_TITLES = {"嘉然山海经": "帝江", "贝拉山海经": "毕方", "乃琳山海经": "九尾狐",
+               "嘉然2025生日": "小画嘉", "贝拉2025生日": "小滑板", "乃琳2025生日": "酒馆"}
+
+
+def skin(member: str, series: str, since: str | None = None) -> dict:
+    name = f"{member}{series}"
+    out = {"name": name, "member": member}
+    if name in SKIN_TITLES:
+        out["title"] = SKIN_TITLES[name]
+    if since:
+        out["since"] = since
+    return out
+
+
+SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for member in ("嘉然", "乃琳", "贝拉")] + [
+    skin("贝拉", "2025生日"),
+    skin("嘉然", "2025生日"),
+    skin("乃琳", "2025生日"),
+] + [skin(member, "冬日奇迹", "1.2.0") for member in ("嘉然", "乃琳", "贝拉")]
 # Shards come from taps only: shardScale × ln(1 + taps / tapScale) over one China day, at most dailyCap;
 # a minute pays for its first tapsPerMinute taps.
 INCOME = {"shardScale": 2800, "tapScale": 1000, "dailyCap": 10400, "tapsPerMinute": 120}

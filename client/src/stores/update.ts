@@ -43,6 +43,8 @@ const announcements = ref<Announcement[]>([]);
 const seen = ref<string[]>(loadSeen());
 /** The oldest announcement this device has not closed yet. */
 export const unreadNotice = computed(() => announcements.value.find((a) => !seen.value.includes(a.id)) ?? null);
+/** Whether this device has closed the announcement [id]; the launch spotlight keeps its id in the same list. */
+export const noticeSeen = (id: string) => seen.value.includes(id);
 export function readNotice(id: string): void {
   seen.value = [...seen.value.filter((s) => s !== id), id].slice(-SEEN_KEPT);
   try {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSkin } from "./skin";
-import { characterColor, getCard, getDecor, getEmote, getTheme, manifest, resolveAsset } from "./manifest";
+import { characterColor, getCard, getDecor, getEmote, getTheme, manifest, resolveAsset, skinTitle } from "./manifest";
 
 describe("resolveAsset", () => {
   it("maps bundle: under the app base and pack: to the server", () => {
@@ -33,6 +33,13 @@ describe("manifest", () => {
     expect(characterColor("嘉然")).toBe("#e799b0");
     expect(characterColor("贝拉山海经")).toBe(characterColor("贝拉"));
     expect(characterColor("???")).toBe("#ff6b9d");
+  });
+  it("shows a skin by its title and anything else by its name", () => {
+    expect(skinTitle("嘉然山海经")).toBe("帝江");
+    expect(skinTitle("乃琳2025生日")).toBe("酒馆");
+    expect(skinTitle("嘉然冬日奇迹")).toBe("嘉然冬日奇迹");
+    expect(skinTitle("嘉然")).toBe("嘉然");
+    expect(skinTitle("???")).toBe("???");
   });
   it("default theme is fully bundled; unknown ids fall back to it", () => {
     const d = getTheme(manifest.defaultTheme);

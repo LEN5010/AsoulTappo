@@ -50,6 +50,15 @@ def test_activity_resonance_collection_flow(client):
     assert client.post("/api/presence", json={"session": "test-session-0001"}, headers=H).status_code == 200
 
 
+def test_resonance_draw_passes_the_client_version_to_the_pool(client, monkeypatch):
+    seen = []
+    real = main.game.manifest.resonance_pool_for
+    monkeypatch.setattr(main.game.manifest, "resonance_pool_for", lambda v: seen.append(v) or real(v))
+    client.post("/api/resonance/draw", json={}, headers={**H, "X-Client-Version": "1.1.4"})
+    client.post("/api/resonance/draw", json={}, headers=H)
+    assert seen == ["1.1.4", ""]
+
+
 def test_daily_taps_sync_through_activity_presence_and_me(client):
     report = {**BATCH, "taps": 200}
     result = client.post("/api/activity", json=report, headers=H).json()

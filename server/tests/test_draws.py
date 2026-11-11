@@ -25,8 +25,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 10400, "taps": 0, "perTap": 2.8, "multiplier": 1, "perMinute": 168.0}
-    # 549 from resonance and the 20 scratch emotes
-    assert r["totals"]["items"] == 569
+    # 552 from resonance and the 20 scratch emotes
+    assert r["totals"]["items"] == 572
 
 
 def test_taps_pay_along_the_log_curve():
@@ -108,6 +108,37 @@ def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
     g.manifest.data["skins"].append({"name": "心宜新皮肤", "member": "心宜"})
     g.manifest = Manifest(g.manifest.data)
     assert g.resonate(TOKEN)["drops"][0]["item"] == "char:心宜新皮肤"
+
+
+def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
+    M = Manifest.load()
+    later = set(M.skin_since)
+    assert later == {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
+    skins = lambda version: {i["id"] for i in M.resonance_pool_for(version)["skin"]}
+    every = {i["id"] for i in M.resonance_pool["skin"]}
+    for version in (None, "1.2.0", "v1.2.0", "1.2.0-rc.3", "1.3.0"):
+        assert skins(version) == every
+    for version in ("1.1.4", "1.2.0" + "x", ""):
+        assert skins(version) == every - later
+    # Only skins are held back.
+    assert {r: len(v) for r, v in M.resonance_pool_for("1.1.4").items() if r != "skin"} == \
+        {r: len(v) for r, v in M.resonance_pool.items() if r != "skin"}
+
+
+def test_an_older_client_on_skin_pity_gets_a_skin_it_can_show():
+    g, _ = game(SeqRng(.5, .99))
+    pid = player_id_for(TOKEN)
+    g.store.update_player(pid, skin_pity=199)
+    drop = g.resonate(TOKEN, 1, "1.1.4")["drops"][0]
+    assert drop["rarity"] == "skin" and drop["item"] not in g.manifest.skin_since
+    # Once the older skins are all owned the skin tier is closed to that client and its odds go to common.
+    for item in g.manifest.resonance_pool["skin"]:
+        if item["id"] not in g.manifest.skin_since:
+            g.store.add_item(pid, item["id"], 0)
+    g.store.update_player(pid, skin_pity=199)
+    assert g.resonate(TOKEN, 1, "1.1.4")["drops"][0]["rarity"] == "common"
+    g.store.update_player(pid, skin_pity=199)
+    assert g.resonate(TOKEN, 1, "1.2.0-rc.3")["drops"][0]["item"] in g.manifest.skin_since
 
 
 @pytest.mark.parametrize("rarity,roll", [("legendary", 0), ("skin", .002), ("rare", .055), ("uncommon", .085)])

@@ -10,7 +10,7 @@ import {
   lastError, leaveRoom, loadPublicRooms, members, publicRooms, roomId, roomInfo, setRoomPublic, shownNick, youId,
 } from "../stores/room";
 import { tidyRemotes } from "../stores/desk";
-import { characterColor } from "../manifest";
+import { characterColor, skinTitle } from "../manifest";
 import { reducedMotion, skin } from "../stores/theme";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
 import Icon from "../ui/Icon.vue";
@@ -324,7 +324,7 @@ async function copy() {
               {{ m.id === youId ? settings.nick.trim() || m.nick : shownNick(m) }}<em v-if="m.id === youId" class="ui-tag">我</em>
               <span v-if="roomInfo?.host === m.id" class="host" title="房主" aria-label="房主"><Icon name="crown" :size="14" /></span>
             </b>
-            <small><i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ m.character }}</small>
+            <small><i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ skinTitle(m.character) }}</small>
           </span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}<small>敲击</small></span>
           <!-- Keys acting on one member. -->

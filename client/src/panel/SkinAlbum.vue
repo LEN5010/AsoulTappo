@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { manifest, characterColor } from "../manifest";
+import { manifest, characterColor, skinTitle } from "../manifest";
 import { ownsCharacter } from "../items";
 import { collection } from "../stores/player";
 import { settings } from "../stores/settings";
@@ -20,9 +20,9 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
   <div class="skin-album">
     <header><FilterChips v-model="filter" :options="FILTERS" label="皮肤筛选" /><span>已解锁 <b>{{ unlocked }}</b> / {{ manifest.skins.length }}</span></header>
     <div class="wall ui-scroll"><div class="skin-grid">
-      <button v-for="skin in skins" :key="skin.name" type="button" class="skin-card ui-tile" :aria-label="`${skin.name}，${owned(skin.name) ? '已拥有' : '未解锁'}，查看详情`" @click="selected = skin.name">
+      <button v-for="skin in skins" :key="skin.name" type="button" class="skin-card ui-tile" :aria-label="`${skinTitle(skin.name)}，${owned(skin.name) ? '已拥有' : '未解锁'}，查看详情`" @click="selected = skin.name">
         <span class="cover"><SkinArt :name="skin.name" :owned="owned(skin.name)" /><span class="state ui-tag" :class="{ dark: owned(skin.name) }"><Icon :name="settings.character === skin.name ? 'check' : owned(skin.name) ? 'shirt' : 'lock'" :size="11" />{{ settings.character === skin.name ? '已装备' : owned(skin.name) ? '已拥有' : '未解锁' }}</span></span>
-        <span class="meta"><b>{{ skin.name }}</b><small><i :style="{ background: characterColor(skin.member) }"></i>{{ skin.member }}<span>查看详情 <Icon name="back" :size="11" /></span></small></span>
+        <span class="meta"><b>{{ skinTitle(skin.name) }}</b><small><i :style="{ background: characterColor(skin.member) }"></i>{{ skin.member }}<span>查看详情 <Icon name="back" :size="11" /></span></small></span>
       </button>
     </div><p v-if="!skins.length" class="ui-empty">当前筛选下没有皮肤</p></div>
     <SkinDetail v-if="selected" :name="selected" @close="selected = ''" />
