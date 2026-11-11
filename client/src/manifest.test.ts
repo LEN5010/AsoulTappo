@@ -35,8 +35,8 @@ describe("manifest", () => {
     expect(characterColor("???")).toBe("#ff6b9d");
   });
   it("shows a skin by its title and anything else by its name", () => {
-    expect(skinTitle("嘉然山海经")).toBe("帝江");
-    expect(skinTitle("乃琳2025生日")).toBe("酒馆");
+    expect(skinTitle("嘉然山海经")).toBe("嘉然帝江");
+    expect(skinTitle("乃琳2025生日")).toBe("乃琳酒馆");
     expect(skinTitle("嘉然冬日奇迹")).toBe("嘉然冬日奇迹");
     expect(skinTitle("嘉然")).toBe("嘉然");
     expect(skinTitle("???")).toBe("???");

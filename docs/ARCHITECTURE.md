@@ -57,7 +57,7 @@ Mouse pass-through is updated dynamically based on interactive regions:
 
 A skin is one entry in `SKINS` (`scripts/asset_catalog.py`) plus `client/src/assets/characters/<member><series>/bgImage.webp`, fitted to the member's canvas: the desk, monitor and keyboard where the member's are, so the member's paw layers line up. Then rebuild the previews (`build_previews.py`), add a `HEADS` entry in `characters.ts` when the head top differs, copy `SKINS` into both manifests and rebuild the UI font subset for new names.
 
-- `name` is the id (`<member><series>`, the save item and the room field) and never changes; `title` renames a skin on screen (`skinTitle` in `manifest.ts`).
+- `name` is the id (`<member><series>`, the save item and the room field) and never changes; `title` renames a skin on screen as the member followed by its own name, such as 嘉然帝江 (`skinTitle` in `manifest.ts`).
 - `since` is the release that ships the picture. The server keeps the skin out of the resonance pool of older clients (`Manifest.resonance_pool_for`), so the server can be deployed before the release.
 - The skins sharing the newest `since` are that release's launch spotlight (`stores/spotlight.ts`, `panel/SkinSpotlight.vue`): shown once per device after the terms, the update dialog and the server announcements, before the update reward, titled with their series. Nothing else needs writing; the closed state is kept as `skins:<since>` in the announcements' read list.
 

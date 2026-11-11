@@ -48,6 +48,8 @@ function resonate() {
   animation-delay: calc(var(--i) * 90ms + 120ms);
 }
 .lineup li :deep(.skin-art) { transform: rotate(var(--tilt)); }
+/* The dialog title already names the series. */
+.lineup li :deep(.edition) { display: none; }
 .lineup b { margin-top: 8px; font-size: var(--fs-strong); font-weight: 800; }
 .lineup small { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: var(--fs-label); }
 .lineup small i { width: 3px; height: 10px; }

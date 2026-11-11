@@ -264,7 +264,8 @@ THEME_RARITY = "rare"
 STARTER_EMOTES = 4
 # Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
 # Pet skins. `name` is the id: the asset folder, the save's char:<name> item and the room's character field, so it
-# never changes; it is the member followed by the series. `title` is what the screen shows instead, when set.
+# never changes; it is the member followed by the series. `title` is what the screen shows instead, when set: the
+# member followed by the skin's own name from SKIN_TITLES.
 # `since` is the release (x.y.z) that ships the skin's picture: the server keeps the skin out of the resonance pool of
 # clients older than it, and the skins sharing the newest `since` are the launch spotlight (client/src/stores/spotlight.ts).
 SKIN_TITLES = {"嘉然山海经": "帝江", "贝拉山海经": "毕方", "乃琳山海经": "九尾狐",
@@ -275,7 +276,7 @@ def skin(member: str, series: str, since: str | None = None) -> dict:
     name = f"{member}{series}"
     out = {"name": name, "member": member}
     if name in SKIN_TITLES:
-        out["title"] = SKIN_TITLES[name]
+        out["title"] = f"{member}{SKIN_TITLES[name]}"
     if since:
         out["since"] = since
     return out
