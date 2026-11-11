@@ -1,17 +1,20 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type Loadout, type LoadoutPatch, type MainUser,
+  type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type Loadout, type LoadoutPatch, type MainUser,
   type PlayerStatus, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
-import { toHttpBase } from "../net/protocol";
+import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
 import { ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
 import { manifest, memberOf } from "../manifest";
 import { settings } from "./settings";
 import { isPanelWindow } from "../composables/tauri";
+import { agreed } from "../legal/consent";
 import { requestDesktop } from "../desktop/transport";
+import { compareVersions } from "../semver";
+import { APP_VERSION } from "../version";
 
 const TOKEN_KEY = "asoultappo.token.v1";
 
@@ -135,8 +138,15 @@ export const shards = computed(() => status.value?.shards ?? 0);
 export const freshItems = reactive(new Set<string>());
 
 interface Session { api: Api; reporter: ActivityReporter; tail: Promise<unknown> }
+/**
+ * Runs the session's requests one after another. Nothing reaches the server before the player agrees to the terms
+ * (src/legal): a request that comes up before that fails unsent, and a batch of taps stays queued for later.
+ */
 function serial<T>(session: Session, fn: () => Promise<T>): Promise<T> {
-  const next = session.tail.then(fn);
+  const next = session.tail.then(() => {
+    if (!agreed.value) throw new Error("terms not agreed");
+    return fn();
+  });
   session.tail = next.catch(() => {});
   return next;
 }
@@ -214,8 +224,12 @@ export async function refresh(): Promise<void> {
     }
     applyLoadout(stored);
     sanitizeLoadout();
-    lastPushed = JSON.stringify(localLoadout());
+    // The board nick and opt-out belong to this device, not to the save: they count as pushed only as the save
+    // holds them, and a difference goes to the save now rather than with the next local change.
+    const local = localLoadout();
+    lastPushed = JSON.stringify({ ...local, nick: stored.nick ?? local.nick, board: stored.board ?? local.board });
     setLoadoutOwner(save);
+    if (JSON.stringify(local) !== lastPushed) void pushLoadout();
     return;
   }
   if (loadoutOwner === null) setLoadoutOwner(save); // first run: the local loadout belongs to this save
@@ -261,8 +275,21 @@ export function reportCooldown(until: number): void {
   void flush(current);
 }
 
+/** Set while reporting waits for the player to agree to the terms. */
+let waiting: (() => void) | undefined;
+
 export function startReporting(everyMs = 20000): void {
-  if (timer) return;
+  if (timer || waiting) return;
+  if (!agreed.value) {
+    // Nothing reaches the server before the player agrees to the terms (src/legal); agreeing starts it.
+    waiting = watch(agreed, (ok) => {
+      if (!ok) return;
+      waiting?.();
+      waiting = undefined;
+      startReporting(everyMs);
+    });
+    return;
+  }
   void refresh().then(heartbeat); // establishes the input and running-time baselines
   timer = setInterval(() => {
     void heartbeat();
@@ -273,6 +300,8 @@ export function startReporting(everyMs = 20000): void {
 }
 
 export function stopReporting(): void {
+  waiting?.();
+  waiting = undefined;
   if (timer) clearInterval(timer);
   timer = undefined;
   for (const session of sessions.values()) void flush(session);
@@ -351,6 +380,31 @@ export async function checkin(): Promise<CheckinResult | null> {
     return r;
   } finally {
     checkingIn = false;
+  }
+}
+
+// ---------------------------------------------------------------- update rewards
+/** Update rewards this client's version reaches and the save has not claimed; the server checks the version again. */
+export const updateRewards = computed(() =>
+  (status.value?.updateRewards ?? []).filter((r) => (compareVersions(APP_VERSION, r.version) ?? -1) >= 0));
+
+let claiming = false;
+
+/** Claims every reward in updateRewards at once; the shards paid, or null when nothing was (the status reloads). */
+export async function claimUpdateRewards(): Promise<number | null> {
+  if (isPanelWindow) return requestDesktop("claimUpdateRewards");
+  if (claiming) return null;
+  claiming = true;
+  try {
+    const r = await call((api) => api.claimUpdateReward());
+    if (!r) {
+      await reloadStatus();
+      return null;
+    }
+    status.value = r;
+    return r.reward.shards;
+  } finally {
+    claiming = false;
   }
 }
 
@@ -434,6 +488,7 @@ function applyLoadout(l: Loadout): void {
   settings.character = l.character || memberOf(settings.character);
   settings.favorites = Array.isArray(l.favorites) ? l.favorites.slice(0, 8) : [];
   settings.plate = l.plate || "";
+  settings.showcase = Array.isArray(l.showcase) ? l.showcase.slice(0, MAX_SHOWCASE) : [];
 }
 
 export function localLoadout(): LoadoutPatch {
@@ -441,6 +496,9 @@ export function localLoadout(): LoadoutPatch {
     character: settings.character,
     favorites: [...settings.favorites],
     plate: settings.plate || null,
+    showcase: [...settings.showcase],
+    nick: settings.nick.trim().slice(0, MAX_BOARD_NICK),
+    board: settings.onBoard,
   };
 }
 
@@ -452,6 +510,8 @@ export function sanitizeLoadout(): void {
   const favs = settings.favorites.filter((k) => ownsEmote(k, owned));
   if (favs.length !== settings.favorites.length) settings.favorites = favs;
   if (settings.plate && !plateUnlocked(settings.plate, owned)) settings.plate = "";
+  const shown = settings.showcase.filter((id) => (owned[`card:${id}`] ?? 0) > 0);
+  if (shown.length !== settings.showcase.length) settings.showcase = shown;
 }
 
 export async function pushLoadout(): Promise<boolean> {
@@ -466,10 +526,26 @@ export async function pushLoadout(): Promise<boolean> {
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
-  () => [settings.character, settings.favorites.join(","), settings.plate],
+  () => [settings.character, settings.favorites.join(","), settings.plate, settings.showcase.join(","), settings.nick, settings.onBoard],
   () => {
     if (isPanelWindow) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => { if (JSON.stringify(localLoadout()) !== lastPushed) void pushLoadout(); }, 400);
   },
 );
+
+// ---------------------------------------------------------------- board
+// Read-only and never fatal: a server from before the board answers 404, which must not show as an error.
+/** The collection board; null when the server has none or does not answer. */
+export async function loadBoard(): Promise<Board | null> {
+  if (isPanelWindow) return requestDesktop<Board | null>("loadBoard").catch(() => null);
+  const session = current;
+  return serial(session, () => session.api.board()).catch(() => null);
+}
+
+/** The profile of a save on the collection board; null when it is no longer on it or the server does not answer. */
+export async function loadBoardProfile(id: string): Promise<MemberProfile | null> {
+  if (isPanelWindow) return requestDesktop<MemberProfile | null>("loadBoardProfile", id).catch(() => null);
+  const session = current;
+  return serial(session, () => session.api.boardProfile(id)).catch(() => null);
+}

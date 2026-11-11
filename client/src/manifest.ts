@@ -159,6 +159,7 @@ export function resolveAsset(ref: string | null | undefined, serverBase: string,
   const scheme = ref.slice(0, i);
   const path = ref.slice(i + 1);
   if (scheme === "bundle") return `${appBase.replace(/\/?$/, "/")}assets/${path}`;
-  if (scheme === "pack") return `${serverBase.replace(/\/+$/, "")}/packs/${path}`;
+  // No server to ask yet (see asset.ts): nothing, rather than a path the app itself cannot serve.
+  if (scheme === "pack") return serverBase ? `${serverBase.replace(/\/+$/, "")}/packs/${path}` : "";
   return ref;
 }

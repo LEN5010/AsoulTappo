@@ -139,6 +139,20 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+-- Shards the operator gives once to every save that runs `version` or newer, until the reward is ended.
+CREATE TABLE IF NOT EXISTS update_rewards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version TEXT NOT NULL,
+  shards INTEGER NOT NULL,
+  created REAL NOT NULL,
+  ended REAL
+);
+CREATE TABLE IF NOT EXISTS update_reward_claims (
+  reward_id INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  at REAL NOT NULL,
+  PRIMARY KEY (reward_id, player_id)
+);
 """
 
 STARTER_SHARDS = 1600
@@ -372,6 +386,45 @@ class Store:
                                     (pid, first_day)).fetchall()
         return [dict(r) for r in rows]
 
+    # --- update rewards
+    def open_update_rewards(self, pid: str) -> list[dict[str, Any]]:
+        """Rewards not ended that [pid] has not claimed, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, version, shards FROM update_rewards r WHERE ended IS NULL AND NOT EXISTS "
+                "(SELECT 1 FROM update_reward_claims c WHERE c.reward_id = r.id AND c.player_id = ?) ORDER BY id",
+                (pid,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_update_claim(self, reward_id: int, pid: str, ts: float) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO update_reward_claims (reward_id, player_id, at) VALUES (?, ?, ?)",
+                             (reward_id, pid, ts))
+            self._commit()
+
+    def update_rewards(self) -> list[dict[str, Any]]:
+        """Every reward, newest first, with how many saves claimed it."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT r.id, r.version, r.shards, r.created, r.ended, COUNT(c.player_id) AS claims "
+                "FROM update_rewards r LEFT JOIN update_reward_claims c ON c.reward_id = r.id "
+                "GROUP BY r.id ORDER BY r.id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def add_update_reward(self, version: str, shards: int, ts: float) -> int:
+        with self._lock:
+            cur = self._db.execute("INSERT INTO update_rewards (version, shards, created) VALUES (?, ?, ?)",
+                                   (version, shards, ts))
+            self._commit()
+            return int(cur.lastrowid)
+
+    def end_update_reward(self, reward_id: int, ts: float) -> bool:
+        """Ends a reward still open; False when there is none by that id or it has ended."""
+        with self._lock:
+            cur = self._db.execute("UPDATE update_rewards SET ended = ? WHERE id = ? AND ended IS NULL", (ts, reward_id))
+            self._commit()
+            return cur.rowcount > 0
+
     # --- scratch cards (days are China Standard Time dates, YYYY-MM-DD)
     def scratch_count(self, pid: str, day: str) -> int:
         """Cards bought on [day]."""
@@ -495,6 +548,41 @@ class Store:
                 "amount = amount + excluded.amount, count = count + excluded.count",
                 (day, pid, source, amount, count))
             self._commit()
+
+    # --- boards
+    def card_counts(self, cards: list[str], big: list[str]) -> list[dict[str, Any]]:
+        """Per save holding any of [cards] (item ids): how many, how many of [big], and when the last came."""
+        if not cards:
+            return []
+        marks = ",".join("?" * len(cards))
+        big_marks = ",".join("?" * len(big)) or "''"
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT player_id, COUNT(*) AS cards, SUM(item_id IN ({big_marks})) AS big, MAX(first_ts) AS last "
+                f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
+        return [dict(r) for r in rows]
+
+    def loadouts(self, pids: list[str]) -> dict[str, str]:
+        """The stored loadout text of each existing save among [pids]."""
+        out: dict[str, str] = {}
+        with self._lock:
+            for i in range(0, len(pids), 500):
+                chunk = pids[i:i + 500]
+                rows = self._db.execute(
+                    f"SELECT id, loadout FROM players WHERE id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+                out.update({r["id"]: r["loadout"] for r in rows})
+        return out
+
+    def linked_players(self) -> set[str]:
+        with self._lock:
+            return {r["player_id"] for r in self._db.execute("SELECT player_id FROM account_links")}
+
+    def ledger_amount(self, pid: str, day: str, source: str) -> int:
+        """The save's ledger amount from [source] on [day]; 0 without a row."""
+        with self._lock:
+            row = self._db.execute("SELECT amount FROM shard_ledger WHERE day=? AND player_id=? AND source=?",
+                                   (day, pid, source)).fetchone()
+        return row["amount"] if row else 0
 
     def ledger_since(self, since: str) -> list[dict[str, Any]]:
         """Every ledger row from [since] on, with the save's creation time (None when the save is gone)."""

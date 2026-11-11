@@ -123,7 +123,7 @@ npm test
 
 界面字体使用 [Noto Sans SC](https://github.com/notofonts/noto-cjk) 和 [Barlow](https://github.com/jpt/barlow)，均以 SIL Open Font License 1.1 授权。
 
-项目最初基于 [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun)，五位成员的基础桌宠素材来自该项目，已获作者许可。
+五位成员的基础桌宠素材来自 [Evelynall/ASoul-Little-Bun](https://github.com/Evelynall/ASoul-Little-Bun)，已获作者许可。
 
 ## 反馈
 
@@ -134,3 +134,5 @@ npm test
 AsoulTappo 是非官方粉丝项目，与 A-SOUL 及相关公司没有官方关联。A-SOUL 标志和角色美术的版权归 A-SOUL 所有，不在本项目的许可范围内。
 
 本项目代码基于 GNU General Public License v2.0 发布，详见 [LICENSE](LICENSE)。
+
+使用官方联机服务前需要同意[用户协议](client/src/legal/terms.md)和[隐私政策](client/src/legal/privacy.md)。

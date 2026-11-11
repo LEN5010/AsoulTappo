@@ -37,11 +37,12 @@ import {
   type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
+import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setBossKey, setClickThrough,
+  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHotkey,
   setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
@@ -213,7 +214,9 @@ onMounted(async () => {
   window.addEventListener("pointerdown", closeQuick, true);
   window.addEventListener("blur", closeQuickAway);
   window.addEventListener("keydown", closeOnEscape);
+  // Reporting and the release watch wait for the terms; the panel holds the dialog that asks for them.
   startReporting();
+  if (!agreed.value) openPanel();
   stopDay = watchDay();
   if (isTauri) stopRelease = watchRelease();
   unInput = await listenInput(onInput);
@@ -271,7 +274,8 @@ onBeforeUnmount(() => {
 watch(() => settings.clickThrough, (v) => setClickThrough(v), { immediate: true });
 watch(() => settings.alwaysOnTop, (v) => setAlwaysOnTop(v), { immediate: true });
 // The settings page reports a refused shortcut when it is recorded; at startup it is only in the log.
-watch(() => settings.bossKey, (v) => void setBossKey(v).catch(() => {}), { immediate: true });
+watch(() => settings.bossKey, (v) => void setHotkey("hide", v).catch(() => {}), { immediate: true });
+watch(() => settings.clickThroughKey, (v) => void setHotkey("click-through", v).catch(() => {}), { immediate: true });
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {

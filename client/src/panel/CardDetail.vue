@@ -7,6 +7,7 @@ import { playCardVideo } from "../audio/cardSound";
 import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { getItem } from "../items";
+import { MAX_SHOWCASE } from "../net/protocol";
 import { collection } from "../stores/player";
 import { settings } from "../stores/settings";
 import { ui } from "../stores/ui";
@@ -25,6 +26,13 @@ const animated = computed(() => playsCardVideo(props.card, count.value, reducedM
 const item = computed(() => getItem(`card:${props.card.id}`)!);
 const label = computed(() => cardLabel(props.card));
 const pool = computed(() => poolName(manifest.series.find((s) => s.id === props.card.series)?.name ?? props.card.series));
+/** On the profile room members open: owned cards only, at most MAX_SHOWCASE. */
+const shown = computed(() => settings.showcase.includes(props.card.id));
+const showcaseFull = computed(() => !shown.value && settings.showcase.length >= MAX_SHOWCASE);
+function toggleShowcase() {
+  if (shown.value) settings.showcase = settings.showcase.filter((id) => id !== props.card.id);
+  else if (!showcaseFull.value) settings.showcase = [...settings.showcase, props.card.id];
+}
 
 // Modal teleports with `defer`, so the artwork exists only after the next tick.
 const artEl = ref<HTMLElement>();
@@ -77,6 +85,12 @@ function togglePlay() {
           <div v-if="card.video"><dt>卡面</dt><dd>{{ card.still ? "有声" : "动态" }}</dd></div>
         </dl>
         <CraftAction :key="item.id" :item="item" />
+        <button
+          v-if="count && !preview" type="button" class="ui-btn showcase" :disabled="showcaseFull"
+          :title="showcaseFull ? '主页最多展示 3 张，先取下一张' : undefined" :aria-pressed="shown" @click="toggleShowcase"
+        >
+          <Icon :name="shown ? 'check' : 'plus'" :size="15" />{{ shown ? "取消展示" : showcaseFull ? "展示位已满" : "展示到主页" }}
+        </button>
         <button v-if="!count && !manifest.economy.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
       </div>
     </div>
@@ -200,7 +214,7 @@ dd {
 dd.missing {
   color: var(--ink-3);
 }
-.resonance { align-self: stretch; margin-top: auto; }
+.resonance, .showcase { align-self: stretch; margin-top: auto; }
 @container panel (max-width: 660px) {
   .detail { gap: 16px; }
   .art { max-width: 44%; height: auto; align-self: flex-start; }

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TERMS_VERSION } from "../legal";
 
 // The server's answer to the update check also carries its minimum version and announcements.
 describe("minimum version and announcements", () => {
@@ -7,6 +8,7 @@ describe("minimum version and announcements", () => {
   beforeEach(() => {
     vi.resetModules();
     stored.clear();
+    stored.set("asoultappo.settings.v1", JSON.stringify({ termsAgreed: TERMS_VERSION }));
     vi.stubGlobal("localStorage", { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => stored.set(k, v) });
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => answer })));
   });
@@ -48,5 +50,24 @@ describe("minimum version and announcements", () => {
     u = await import("./update");
     await u.lookForUpdate();
     expect(u.unreadNotice.value).toBeNull();
+  });
+});
+
+describe("before the terms are agreed", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("asks nothing until the player agrees, then checks at once", async () => {
+    vi.resetModules();
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+    const fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ version: "0.0.1", notes: "" }) }));
+    vi.stubGlobal("fetch", fetch);
+    const { settings } = await import("./settings");
+    const u = await import("./update");
+    const stop = u.watchRelease();
+    await u.lookForUpdate();
+    expect(fetch).not.toHaveBeenCalled();
+    settings.termsAgreed = TERMS_VERSION;
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    stop();
   });
 });

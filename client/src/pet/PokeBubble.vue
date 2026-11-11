@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Over the own pet after a partner poked it: who did it, and a key to poke back. Closes by itself (stores/room.ts).
-import { closePoked, poke, poked } from "../stores/room";
+import { closePoked, poked, pokeSoon } from "../stores/room";
 import { POKED_WIDTH } from "./duelPick";
 import PetBubble from "./PetBubble.vue";
 
@@ -8,7 +8,7 @@ defineProps<{ shift: number; below: boolean }>();
 function pokeBack() {
   const from = poked.value?.id;
   closePoked();
-  if (from) poke(from);
+  if (from) pokeSoon(from);
 }
 </script>
 

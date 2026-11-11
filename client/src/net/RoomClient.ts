@@ -1,5 +1,6 @@
 import type {
-  ClientMessage, DuelMessage, Hand, Member, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage, StateUpdate,
+  CheerState, ClientMessage, DuelMessage, Hand, Member, MemberProfile, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage,
+  StateUpdate,
 } from "./protocol";
 import { MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
 import { APP_VERSION } from "../version";
@@ -18,6 +19,11 @@ export interface RoomEvents {
   onEmote(id: string, emote: string): void;
   /** [from] poked [to]; [quiet] when the member poked turns invites down (no bubble then). */
   onPoke(from: string, to: string, quiet: boolean): void;
+  /** The answer to `sendProfile`: member [id]'s profile. */
+  onProfile(id: string, profile: MemberProfile): void;
+  /** The room's cheer bar, and a round finished with each paid member's shards. */
+  onCheer(state: CheerState): void;
+  onCheerDone(round: number, rewards: Record<string, number>): void;
   onScratch(id: string, shards: number): void;
   onState(update: StateUpdate): void;
   /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
@@ -153,6 +159,9 @@ export class RoomClient {
   sendPoke(id: string): void {
     this.send({ type: "poke", id });
   }
+  sendProfile(id: string): void {
+    this.send({ type: "profile", id });
+  }
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });
   }
@@ -261,6 +270,7 @@ export class RoomClient {
         for (const member of msg.members) if (member.motion) this.poses.set(member.id, packMotion(member.motion));
         this.events.onJoined(msg.room, msg.you, msg.members, msg.features ?? []);
         this.events.onRoomInfo(msg.info ? { ...msg.info } : null);
+        if (msg.cheer) this.events.onCheer({ ...msg.cheer, shares: { ...msg.cheer.shares } });
         this.subscribeMotion(this.interest);
         break;
       case "room_info": {
@@ -302,6 +312,18 @@ export class RoomClient {
         break;
       case "poke":
         this.events.onPoke(msg.from, msg.to, !!msg.quiet);
+        break;
+      case "profile":
+        this.events.onProfile(msg.id, { showcase: msg.showcase ?? [], progress: msg.progress ?? null });
+        break;
+      case "cheer":
+        this.events.onCheer({
+          target: msg.target, minShare: msg.minShare, total: msg.total, shares: { ...msg.shares }, count: msg.count,
+          reward: msg.reward, rounds: msg.rounds,
+        });
+        break;
+      case "cheer_done":
+        this.events.onCheerDone(msg.round, { ...msg.rewards });
         break;
       case "scratch":
         this.events.onScratch(msg.id, msg.shards);

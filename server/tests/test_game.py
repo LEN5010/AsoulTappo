@@ -75,9 +75,9 @@ def test_craft_insufficient_shards():
 
 def test_loadout_validates_favorites_and_ignores_retired_equipment():
     g, _ = make()
-    assert g.get_loadout(TOKEN) == {"character": None, "favorites": [], "plate": None}
+    assert g.get_loadout(TOKEN) == {"character": None, "favorites": [], "plate": None, "showcase": [], "nick": "", "board": True}
     lo = g.set_loadout(TOKEN, {"character": "嘉然", "favorites": ["e.01", "thumbup", "e.01"], "head": "hat"})
-    assert lo == {"character": "嘉然", "favorites": ["e.01", "thumbup"], "plate": None}
+    assert lo == {"character": "嘉然", "favorites": ["e.01", "thumbup"], "plate": None, "showcase": [], "nick": "", "board": True}
     for patch, code in (({"favorites": ["e.02"]}, "locked"), ({"character": "路人"}, "bad_item")):
         with pytest.raises(GameError) as e:
             g.set_loadout(TOKEN, patch)

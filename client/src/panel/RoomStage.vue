@@ -1,14 +1,18 @@
 <script setup lang="ts">
 // The room as one table: the own pet and the members' live pets, empty seats outlined. A full row opens the next.
+// A press on a seat opens that member's profile: the own seat the 排行 page, a partner's on a server that answers.
 import { computed } from "vue";
 import { PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import { MAX_ROOM_SIZE } from "../net/protocol";
 import { pet } from "../stores/pet";
-import { localPet, others, shownNick } from "../stores/room";
+import { canProfile, localPet, others, shownNick } from "../stores/room";
 import { settings } from "../stores/settings";
 import NamePill from "../pet/NamePill.vue";
 import PetView from "../pet/PetView.vue";
+
+/** null for the own seat. */
+const emit = defineEmits<{ profile: [id: string | null] }>();
 
 const ROW = 6;
 const SCALE = 0.46;
@@ -23,18 +27,21 @@ const vacant = computed(() => {
 <template>
   <section class="table ui-frame" data-rise>
     <div class="seats">
-      <div class="seat">
+      <button type="button" class="seat" title="我的主页" aria-label="我的主页" @click="emit('profile', null)">
         <PetView
           :character="settings.character" :scale="SCALE" :min-emote="34"
           :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
           :left-down="pet.left" :right-down="pet.right" :emote="localPet.emote" :win="localPet.win"
         />
         <NamePill :nick="settings.nick.trim() || '我'" :color="characterColor(settings.character)" :width="PILL_WIDTH" />
-      </div>
-      <div v-for="m in others" :key="m.id" class="seat">
+      </button>
+      <component
+        :is="canProfile(m) ? 'button' : 'div'" v-for="m in others" :key="m.id" class="seat"
+        v-bind="canProfile(m) ? { type: 'button', title: `${shownNick(m)}的主页`, 'aria-label': `${shownNick(m)}的主页` } : {}" @click="canProfile(m) && emit('profile', m.id)"
+      >
         <PetView :character="m.character" :scale="SCALE" :min-emote="34" :pulse="m.pulse" :emote="m.emote" :combo="m.combo" :win="m.win" :motion-id="m.id" />
         <NamePill :nick="shownNick(m)" :color="characterColor(m.character)" :width="PILL_WIDTH" />
-      </div>
+      </component>
       <div v-for="n in vacant" :key="n" class="seat vacant"><i aria-hidden="true"></i></div>
     </div>
   </section>
@@ -61,6 +68,15 @@ const vacant = computed(() => {
   align-items: center;
   justify-content: flex-end;
   gap: 2px;
+}
+button.seat {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 .seat :deep(.bg) {
   filter: var(--contour);

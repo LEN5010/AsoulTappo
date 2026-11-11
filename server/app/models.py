@@ -80,6 +80,13 @@ class PokeMsg(_Msg):
     id: str = Field(min_length=1, max_length=32)
 
 
+class ProfileMsg(_Msg):
+    """Ask for a room member's profile: the showcase cards and collection progress of its save."""
+
+    type: Literal["profile"] = "profile"
+    id: str = Field(min_length=1, max_length=32)
+
+
 class StateMsg(_Msg):
     """Update the displayed character, nickname or name plate ("" takes the plate off)."""
 
@@ -144,7 +151,7 @@ class DuelThrowMsg(_Msg):
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
+    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
           DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
     Field(discriminator="type"),
 ]
@@ -214,6 +221,23 @@ class StateBroadcast(BaseModel):
     character: str
     nick: str
     plate: Optional[str] = None
+
+
+class CollectionProgress(BaseModel):
+    """[owned, total] of each kind, counted as the album does."""
+
+    cards: tuple[int, int]
+    emotes: tuple[int, int]
+    skins: tuple[int, int]
+
+
+class ProfileReply(BaseModel):
+    """To the member who asked: member [id]'s showcase card ids, and its progress (null without a save)."""
+
+    type: Literal["profile"] = "profile"
+    id: str
+    showcase: list[str]
+    progress: Optional[CollectionProgress] = None
 
 
 class ScratchBroadcast(BaseModel):

@@ -1,8 +1,9 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
 
-export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "loadCheckins" | "loadScratch" |
-  "buyScratch" | "revealScratch" | "sendEmote" | "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" | "setAccount" |
-  "setRoomPublic" | "kickMember" | "loadPublicRooms" | "inviteDuel";
+export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "claimUpdateRewards" | "loadCheckins" |
+  "loadScratch" | "buyScratch" | "revealScratch" | "sendEmote" | "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" |
+  "setAccount" | "setRoomPublic" | "kickMember" | "loadPublicRooms" | "inviteDuel" | "loadProfile" | "loadBoard" |
+  "loadBoardProfile";
 
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[] }
 interface DesktopReply<T> { result: T; error?: string }

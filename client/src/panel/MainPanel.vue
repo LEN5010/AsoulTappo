@@ -16,6 +16,9 @@ import PageShutter from "./PageShutter.vue";
 import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
 import NoticeDialog from "./NoticeDialog.vue";
+import UpdateRewardDialog from "./UpdateRewardDialog.vue";
+import TermsDialog from "./TermsDialog.vue";
+import { agreed } from "../legal/consent";
 import { lookForUpdate, watchRelease } from "../stores/update";
 
 // Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
@@ -27,6 +30,7 @@ const PAGES = {
   checkin: () => import("./CheckinPage.vue"),
   scratch: () => import("./ScratchPage.vue"),
   room: () => import("./OnlinePage.vue"),
+  cheer: () => import("./CheerPage.vue"),
   settings: () => import("./SettingsPage.vue"),
 } satisfies Record<Page, () => Promise<unknown>>;
 const EmotesPage = defineAsyncComponent(PAGES.emotes);
@@ -35,6 +39,7 @@ const CollectionPage = defineAsyncComponent(PAGES.dex);
 const CheckinPage = defineAsyncComponent(PAGES.checkin);
 const ScratchPage = defineAsyncComponent(PAGES.scratch);
 const OnlinePage = defineAsyncComponent(PAGES.room);
+const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
 const loadPage = (page: Page) => PAGES[page]().catch(() => {});
@@ -59,6 +64,7 @@ const NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "checkin", label: "签到", en: "CHECK-IN", icon: "calendar" },
   { id: "scratch", label: "刮刮乐", en: "SCRATCH", icon: "ticket" },
   { id: "room", label: "联机", en: "ONLINE", icon: "people" },
+  { id: "cheer", label: "排行", en: "RANKING", icon: "crown" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
 /**
@@ -272,13 +278,14 @@ function badgeOf(id: Page): number {
         </div>
 
         <main ref="body" class="body" :key="settings.serverUrl">
-          <KeepAlive>
+          <KeepAlive v-if="agreed">
             <EmotesPage v-if="shown === 'emotes'" />
             <CollectionPage v-else-if="shown === 'dex'" />
             <CheckinPage v-else-if="shown === 'checkin'" />
             <ScratchPage v-else-if="shown === 'scratch'" />
             <ResonancePage v-else-if="shown === 'resonance'" />
             <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
+            <CheerPage v-else-if="shown === 'cheer'" class="form-page ui-scroll" />
             <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
           </KeepAlive>
         </main>
@@ -312,6 +319,8 @@ function badgeOf(id: Page): number {
 
       <UpdateDialog />
       <NoticeDialog />
+      <UpdateRewardDialog v-if="agreed" />
+      <TermsDialog v-if="!agreed" />
       <div class="panel-overlay"></div>
     </div>
   </section>

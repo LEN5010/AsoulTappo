@@ -12,6 +12,7 @@ from . import cards as cardlogic
 from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
 from .manifest import Manifest
+from .notice import version_key
 from .store import DAY_OFFSET, Store, day_of
 
 TOKEN_MIN, TOKEN_MAX = 16, 128
@@ -28,7 +29,33 @@ ADMIN_LEDGER_DAYS = 7
 SAVE_PREFIX_MIN, SAVE_PREFIX_MAX = 4, 16
 # emote keys every member may send besides the starter emotes: thumbup, the theme's like burst
 FREE_EMOTES = frozenset({"thumbup"})
-LOADOUT_KEYS = ("character", "favorites", "plate")
+# Cheer rounds in rooms (rooms.py pays per cheering save): a save gets at most CHEER_DAILY_CAP shards from them a China
+# day; only saves with CHEER_MIN_TAPS taps in all put taps into rounds.
+CHEER_DAILY_CAP = 1000
+CHEER_MIN_TAPS = 10000
+# Cards a player may pin to the profile room members open.
+MAX_SHOWCASE = 3
+# The nickname a save shows on the boards, as long as room nicknames.
+MAX_BOARD_NICK = 24
+# `nick` and `board` (false keeps the save off the boards) are only sent, never applied back by clients.
+LOADOUT_KEYS = ("character", "favorites", "plate", "showcase", "nick", "board")
+# Rows of the collection board, and how long a worked-out board is served before it is worked out again.
+BOARD_SIZE = 50
+BOARD_SECONDS = 300
+BOARD_DEFAULT_NICK = "匿名小面包"
+
+
+def board_id(pid: str) -> str:
+    """What the boards call a save: stable, and not its player id."""
+    return hashlib.sha256(f"{pid}:board".encode()).hexdigest()[:12]
+
+
+def _loadout_json(raw: str) -> dict[str, Any]:
+    try:
+        out = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return out if isinstance(out, dict) else {}
 
 
 class GameError(Exception):
@@ -134,6 +161,25 @@ class Game:
                 st.mark_active(pid, today)
         out = self.status(token)
         out["credited"] = credited
+        # Taps for the room's cheer round (popped by the server before answering): those that paid shards.
+        out["cheerTaps"] = paid_taps if p["taps_total"] + credited >= CHEER_MIN_TAPS else 0
+        return out
+
+    def cheer_reward(self, pids: list[str], each: int) -> dict[str, int]:
+        """Pays a finished cheer round: [each] shards to each save, less what would pass CHEER_DAILY_CAP today.
+        Returns what each save got (0 once its cap is reached)."""
+        out: dict[str, int] = {}
+        with self.store.transaction() as st:
+            now = self.now()
+            day = day_of(now)
+            for pid in dict.fromkeys(pids):
+                if not st.has_player(pid):
+                    continue
+                got = max(0, min(each, CHEER_DAILY_CAP - st.ledger_amount(pid, day, "cheer")))
+                out[pid] = got
+                if got:
+                    st.update_player(pid, shards=st.get_player(pid, now)["shards"] + got)
+                    st.add_ledger(pid, day, "cheer", got)
         return out
 
     # ------------------------------------------------------------------ income
@@ -288,6 +334,26 @@ class Game:
         today = day_of(self.now())
         days = self.store.checkins_since(pid, today[:8] + "01")
         return {"today": today, "available": all(d["day"] != today for d in days), "days": days}
+
+    # ---------------------------------------------------------- update rewards
+    def claim_update_rewards(self, token: str, version: str) -> dict[str, Any]:
+        """Pays every open reward the save has not claimed whose version the client's [version] reaches, all at
+        once. A client that names no readable version reaches none."""
+        pid = player_id_for(token)
+        have = version_key(version)
+        with self.store.transaction() as st:
+            now = self.now()
+            p = st.get_player(pid, now)
+            due = [r for r in st.open_update_rewards(pid)
+                   if have is not None and (need := version_key(r["version"])) is not None and need <= have]
+            if not due:
+                raise GameError("no_reward", "没有可以领取的更新奖励")
+            gained = sum(r["shards"] for r in due)
+            for r in due:
+                st.add_update_claim(r["id"], pid, now)
+            st.update_player(pid, shards=p["shards"] + gained)
+            st.add_ledger(pid, day_of(now), "update", gained, len(due))
+        return {**self.status(token), "reward": {"shards": gained, "ids": [r["id"] for r in due]}}
 
     # ----------------------------------------------------------------- scratch
     def _scratch_cfg(self) -> dict[str, Any]:
@@ -479,6 +545,10 @@ class Game:
             out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:
             out["duel"] = {"net": self.store.duel_net(pid, day)}
+        out["cheer"] = {"day": day, "got": self.store.ledger_amount(pid, day, "cheer"), "cap": CHEER_DAILY_CAP,
+                        "minTaps": CHEER_MIN_TAPS}
+        # Every open reward this save has not claimed; the client offers those its own version reaches.
+        out["updateRewards"] = self.store.open_update_rewards(pid)
         return out
 
     def save_summary(self, pid: str) -> dict[str, Any]:
@@ -523,6 +593,28 @@ class Game:
             if delta:
                 st.add_ledger(pid, day_of(now), "admin", delta)
         return {"shards": shards}
+
+    def admin_update_rewards(self) -> dict[str, Any]:
+        """Every update reward, newest first, with its claims and the shards paid."""
+        rows = self.store.update_rewards()
+        return {"rewards": [{**r, "paid": r["shards"] * r["claims"]} for r in rows]}
+
+    def admin_add_update_reward(self, version: str, shards: int) -> dict[str, Any]:
+        """Opens a reward for [version] and newer. One open reward per version, so a second submit pays no one twice."""
+        key = version_key(version)
+        if key is None:
+            raise GameError("bad_version", "版本号格式应为 1.2.3")
+        with self.store.transaction() as st:
+            if any(r["ended"] is None and version_key(r["version"]) == key for r in st.update_rewards()):
+                raise GameError("reward_open", "这个版本已有进行中的更新奖励")
+            st.add_update_reward(version.strip().removeprefix("v"), shards, self.now())
+        return self.admin_update_rewards()
+
+    def admin_end_update_reward(self, reward_id: int) -> dict[str, Any]:
+        """Stops a reward: saves that have not claimed it no longer can."""
+        if not self.store.end_update_reward(reward_id, self.now()):
+            raise GameError("no_reward", "没有进行中的这个奖励")
+        return self.admin_update_rewards()
 
     def _admin_save(self, p: dict[str, Any], user_id: str | None) -> dict[str, Any]:
         """One save as the admin save list shows it; [p] is its player row."""
@@ -630,6 +722,21 @@ class Game:
             out["favorites"] = favs
         if "plate" in patch:
             out["plate"] = self._check_plate(patch["plate"], owned)
+        if "showcase" in patch and patch["showcase"] is not None:
+            cards = list(dict.fromkeys(patch["showcase"]))
+            if len(cards) > MAX_SHOWCASE or not all(isinstance(c, str) and c in self.manifest.cards for c in cards):
+                raise GameError("bad_item", f"at most {MAX_SHOWCASE} cards")
+            if any(f"card:{c}" not in owned for c in cards):
+                raise GameError("locked", "card not owned")
+            out["showcase"] = cards
+        if "nick" in patch and patch["nick"] is not None:
+            if not isinstance(patch["nick"], str) or len(patch["nick"].strip()) > MAX_BOARD_NICK:
+                raise GameError("bad_item", f"nick of at most {MAX_BOARD_NICK} characters")
+            out["nick"] = patch["nick"].strip()
+        if "board" in patch and patch["board"] is not None:
+            if not isinstance(patch["board"], bool):
+                raise GameError("bad_item", "board is true or false")
+            out["board"] = patch["board"]
         return out
 
     def plate_set(self, card: dict[str, Any]) -> list[str]:
@@ -667,10 +774,14 @@ class Game:
             raw = json.loads(p["loadout"]) if p["loadout"] else {}
         except ValueError:
             raw = {}
-        out: dict[str, Any] = {"character": None, "favorites": [], "plate": None}
+        out: dict[str, Any] = {"character": None, "favorites": [], "plate": None, "showcase": [], "nick": "", "board": True}
         for key in LOADOUT_KEYS:  # drop parts that the manifest no longer knows
+            value = raw.get(key)
+            if key == "showcase" and isinstance(value, list):
+                # a card the save no longer holds leaves its own slot, not the whole showcase
+                value = [c for c in value if isinstance(c, str) and f"card:{c}" in owned]
             try:
-                out.update(self._check_loadout({key: raw.get(key)}, owned))
+                out.update(self._check_loadout({key: value}, owned))
             except GameError:
                 pass
         return out
@@ -682,7 +793,7 @@ class Game:
         return self._stored_loadout(p, owned)
 
     def set_loadout(self, token: str, patch: dict[str, Any]) -> dict[str, Any]:
-        """Update the selected character, favorite emotes and name plate."""
+        """Update the selected character, favorite emotes, name plate and showcase cards."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             p = st.get_player(pid, self.now())
@@ -690,6 +801,104 @@ class Game:
             loadout = {**self._stored_loadout(p, owned), **self._check_loadout(patch, owned)}
             st.update_player(pid, loadout=json.dumps(loadout, ensure_ascii=False))
         return self.get_loadout(token)
+
+    def collection_progress(self, owned: dict[str, int]) -> dict[str, list[int]]:
+        """[owned, total] of cards, emotes and skins, counted as the client's album does: starter emotes count."""
+        counts = {"card": [0, 0], "emote": [0, 0], "char": [0, 0]}
+        for item_id, item in self.manifest.items.items():
+            count = counts[item["kind"]]
+            count[1] += 1
+            if self._owns(owned, item_id):
+                count[0] += 1
+        return {"cards": counts["card"], "emotes": counts["emote"], "skins": counts["char"]}
+
+    def member_profile(self, token: str | None) -> dict[str, Any]:
+        """What a room member's profile shows of a save: its showcase cards and collection progress.
+        A member without a save has neither."""
+        if not token:
+            return {"showcase": [], "progress": None}
+        try:
+            pid = player_id_for(token)
+        except GameError:
+            return {"showcase": [], "progress": None}
+        # A token no save was ever made for (a client that joined without one) shows nothing and makes no save.
+        if not self.store.has_player(pid):
+            return {"showcase": [], "progress": None}
+        return self._profile_of(pid)
+
+    def _profile_of(self, pid: str) -> dict[str, Any]:
+        p = self.store.get_player(pid, self.now())
+        owned = self.store.owned(pid)
+        return {"showcase": self._stored_loadout(p, owned)["showcase"], "progress": self.collection_progress(owned)}
+
+    # ------------------------------------------------------------------- boards
+    def _listed(self, pid: str, loadout: dict[str, Any], linked: set[str] | None) -> str | None:
+        """Why a save is off the collection board ("hidden": its own choice, "account": no main-site account);
+        None when it is on it. [linked] is None on a server without main-site accounts."""
+        if loadout.get("board") is False:
+            return "hidden"
+        if linked is not None and pid not in linked:
+            return "account"
+        return None
+
+    def _work_out_board(self, require_account: bool) -> dict[str, Any]:
+        now = self.now()
+        cached = getattr(self, "_board", None)
+        if cached and now - cached["at"] < BOARD_SECONDS and cached["require_account"] == require_account:
+            return cached
+        cards = [f"card:{cid}" for cid in self.manifest.cards]
+        big = [f"card:{c['id']}" for c in self.manifest.cards.values() if c.get("tier") == "big"]
+        counts = self.store.card_counts(cards, big)
+        loadouts = {pid: _loadout_json(raw) for pid, raw in
+                    self.store.loadouts(sorted({r["player_id"] for r in counts})).items()}
+        linked = self.store.linked_players() if require_account else None
+        listed = (r for r in counts if self._listed(r["player_id"], loadouts.get(r["player_id"], {}), linked) is None)
+        ranked = sorted(listed, key=lambda r: (-r["cards"], -r["big"], r["last"]))
+        rows, ids = [], {}
+        for rank, r in enumerate(ranked[:BOARD_SIZE], 1):
+            pid, lo = r["player_id"], loadouts.get(r["player_id"], {})
+            plate = lo.get("plate")
+            needs = self.plate_needs(plate) if plate else None
+            if needs is None or not set(needs) <= set(self.store.owned(pid)):
+                plate = None
+            nick = lo.get("nick") if isinstance(lo.get("nick"), str) and lo.get("nick") else BOARD_DEFAULT_NICK
+            bid = board_id(pid)
+            ids[bid] = pid
+            rows.append({"id": bid, "rank": rank, "nick": nick, "character": lo.get("character") or "", "plate": plate,
+                         "cards": r["cards"], "big": r["big"]})
+        self._board = {
+            "at": now, "require_account": require_account, "rows": rows, "ids": ids,
+            "rank": {r["player_id"]: i for i, r in enumerate(ranked, 1)},
+        }
+        return self._board
+
+    def board(self, token: str, require_account: bool) -> dict[str, Any]:
+        """The collection board's top rows and where the asking save stands. The board is worked out at most every
+        BOARD_SECONDS, so a rank may lag a few minutes."""
+        data = self._work_out_board(require_account)
+        pid = player_id_for(token)
+        p = self.store.get_player(pid, self.now())
+        loadout = _loadout_json(p["loadout"])
+        owned = self.store.owned(pid)
+        big = {c["id"] for c in self.manifest.cards.values() if c.get("tier") == "big"}
+        mine = [cid for cid in self.manifest.cards if owned.get(f"card:{cid}", 0) > 0]
+        # Only this save's own link matters here: no need to read every account link.
+        linked = ({pid} if self.store.account_for_player(pid) else set()) if require_account else None
+        return {
+            "total": len(self.manifest.cards), "cards": data["rows"],
+            "me": {
+                "rank": data["rank"].get(pid), "cards": len(mine), "big": sum(cid in big for cid in mine),
+                "off": self._listed(pid, loadout, linked),
+            },
+        }
+
+    def board_profile(self, bid: str, require_account: bool) -> dict[str, Any]:
+        """The profile of a save on the collection board's top rows; raises GameError("no_member") otherwise."""
+        data = self._work_out_board(require_account)
+        pid = data["ids"].get(bid)
+        if pid is None:
+            raise GameError("no_member", "not on the board")
+        return self._profile_of(pid)
 
     # -------------------------------------------------------------------- room
     def profile_for(self, token: str | None, room: str) -> dict[str, Any]:

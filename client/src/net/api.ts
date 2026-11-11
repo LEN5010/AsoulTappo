@@ -2,6 +2,7 @@
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
 import { APP_VERSION } from "../version";
 import type { Rarity } from "../manifest";
+import type { MemberProfile } from "./protocol";
 
 export interface PlayerStatus {
   player: string;
@@ -23,7 +24,21 @@ export interface PlayerStatus {
   scratch?: { left: number; pity: number };
   /** Rock-paper-scissors: today's net win (prizes minus bets). Missing on servers without duels. */
   duel?: { net: number };
+  /** Room cheer rounds: shards from them today, the daily cap, and the taps in all to take part. */
+  cheer?: { day: string; got: number; cap: number; minTaps: number };
+  /** Update rewards open on the server that this save has not claimed; missing on older servers. */
+  updateRewards?: UpdateReward[];
   credited?: number;
+}
+/** Shards every save on `version` or newer can claim once. */
+export interface UpdateReward {
+  id: number;
+  version: string;
+  shards: number;
+}
+export interface UpdateRewardResult extends PlayerStatus {
+  /** What this claim paid, for every reward the client's version reached. */
+  reward: { shards: number; ids: number[] };
 }
 /** A scratch card: nine cells, each a shard amount in digits or an emote key. Three alike is the prize. */
 export interface ScratchCard { id: number; cells: string[] }
@@ -63,7 +78,21 @@ export interface Collection {
   owned: Record<string, number>;
   recent: { item: string; rarity: string; new: boolean; ts: number }[];
 }
-export interface Loadout { character: string | null; favorites: string[]; plate: string | null }
+/** `showcase` is missing on servers from before profiles. `nick` and `board` (false keeps the save off the
+ *  collection board) are only sent: the local settings stay as they are. */
+export interface Loadout {
+  character: string | null; favorites: string[]; plate: string | null; showcase?: string[]; nick?: string; board?: boolean;
+}
+/** A row of the collection board; `id` names the save for its profile. */
+export interface BoardRow { id: string; rank: number; nick: string; character: string; plate: string | null; cards: number; big: number }
+/** Why the asking save is off the collection board: its own choice, or no main-site account on a server with them. */
+export type BoardOff = "hidden" | "account";
+/** The server-wide collection board: its top rows, the card total, and where the asking save stands. */
+export interface Board {
+  total: number;
+  cards: BoardRow[];
+  me: { rank: number | null; cards: number; big: number; off: BoardOff | null };
+}
 export type LoadoutPatch = Partial<Loadout>;
 
 export class ApiError extends Error {
@@ -154,6 +183,7 @@ export class Api {
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
   checkinMonth = () => this.call<CheckinMonth>("GET", "/api/checkin");
   checkin = () => this.call<CheckinResult>("POST", "/api/checkin");
+  claimUpdateReward = () => this.call<UpdateRewardResult>("POST", "/api/update-reward");
   scratchState = () => this.call<ScratchState>("GET", "/api/scratch");
   /** Buys a card, or hands back the one still to reveal at no charge. */
   scratchBuy = () => this.call<ScratchBuyResult>("POST", "/api/scratch");
@@ -162,6 +192,8 @@ export class Api {
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
+  board = () => this.call<Board>("GET", "/api/board");
+  boardProfile = (id: string) => this.call<MemberProfile>("GET", `/api/board/profile/${encodeURIComponent(id)}`);
   info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
   /** The newest client release, which the server reads from the main site. */
   latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});

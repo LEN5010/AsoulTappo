@@ -40,11 +40,11 @@ def next_midnight(t: float) -> float:
 
 def test_table_is_the_approved_one():
     assert (CFG["price"], CFG["daily"], CFG["announce"]) == (500, 20, 2500)
-    assert [(p["shards"], p["weight"]) for p in CFG["prizes"]] == [(200, 30), (500, 12), (1000, 5), (2500, 2), (30000, .1)]
+    assert [(p["shards"], p["weight"]) for p in CFG["prizes"]] == [(200, 25), (500, 20), (1000, 8), (2500, 3), (30000, .1)]
     assert CFG["emote"] == {"set": "achao", "weight": 5, "pity": 10}
-    # the shard prizes return half the price
-    assert sum(p["shards"] * p["weight"] for p in CFG["prizes"]) / 100 == pytest.approx(250)
-    assert 100 - CFG["emote"]["weight"] - sum(p["weight"] for p in CFG["prizes"]) == pytest.approx(45.9)
+    # the shard prizes return two thirds of the price
+    assert sum(p["shards"] * p["weight"] for p in CFG["prizes"]) / 100 == pytest.approx(335)
+    assert 100 - CFG["emote"]["weight"] - sum(p["weight"] for p in CFG["prizes"]) == pytest.approx(38.9)
     assert len(M.scratch_emotes) == 20 and M.scratch_emotes[0] == "achao.01"
 
 
@@ -59,8 +59,8 @@ def test_scratch_emotes_are_neither_drawn_nor_crafted():
 
 
 @pytest.mark.parametrize("roll,shards,item", [
-    (0, 0, "emote:achao.01"), (.0499, 0, "emote:achao.01"), (.05, 200, None), (.3499, 200, None), (.35, 500, None),
-    (.47, 1000, None), (.52, 2500, None), (.54, 30000, None), (.5405, 30000, None), (.5415, 0, None), (.99, 0, None),
+    (0, 0, "emote:achao.01"), (.0499, 0, "emote:achao.01"), (.05, 200, None), (.2999, 200, None), (.3, 500, None),
+    (.5, 1000, None), (.58, 2500, None), (.61, 30000, None), (.6105, 30000, None), (.6115, 0, None), (.99, 0, None),
 ])
 def test_one_draw_decides_the_prize(roll, shards, item):
     g, _ = game(roll, 0)
@@ -92,8 +92,8 @@ def test_prizes_come_at_their_rates():
         key = scratch.roll_prize(CFG, 0, rng)
         seen[key] = seen.get(key, 0) + 1
     assert seen[("emote", 0)] / n == pytest.approx(.05, abs=.003)
-    assert seen[("miss", 0)] / n == pytest.approx(.459, abs=.005)
-    assert sum(amount * count for (kind, amount), count in seen.items() if kind == "shards") / n == pytest.approx(250, abs=12)
+    assert seen[("miss", 0)] / n == pytest.approx(.389, abs=.005)
+    assert sum(amount * count for (kind, amount), count in seen.items() if kind == "shards") / n == pytest.approx(335, abs=12)
 
 
 def test_a_whole_set_rolls_only_the_shard_prizes():
@@ -105,15 +105,15 @@ def test_a_whole_set_rolls_only_the_shard_prizes():
         key = scratch.roll_prize(CFG, 99, rng, complete=True)
         seen[key] = seen.get(key, 0) + 1
     assert ("emote", 0) not in seen
-    assert seen[("miss", 0)] / n == pytest.approx(.509, abs=.005)
+    assert seen[("miss", 0)] / n == pytest.approx(.439, abs=.005)
     for prize in CFG["prizes"]:
         assert seen.get(("shards", prize["shards"]), 0) / n == pytest.approx(prize["weight"] / 100, abs=.004)
-    # half the price back, as the shard prizes alone return
-    assert sum(amount * count for (kind, amount), count in seen.items() if kind == "shards") / n == pytest.approx(250, abs=12)
+    # two thirds of the price back, as the shard prizes alone return
+    assert sum(amount * count for (kind, amount), count in seen.items() if kind == "shards") / n == pytest.approx(335, abs=12)
 
 
 def test_buying_charges_once_and_the_prize_waits_for_the_reveal():
-    g, _ = game(.52)
+    g, _ = game(.58)
     first = g.scratch_buy(TOKEN)
     assert first["shards"] == 99_500 and first["scratch"] == {"left": 19, "pity": 1}
     # the card on the table comes back as it is, at no charge
@@ -132,7 +132,7 @@ def test_buying_charges_once_and_the_prize_waits_for_the_reveal():
 
 
 def test_a_card_belongs_to_its_buyer():
-    g, _ = game(.52)
+    g, _ = game(.58)
     card = g.scratch_buy(TOKEN)["card"]
     for token, card_id in ((OTHER, card["id"]), (TOKEN, card["id"] + 1)):
         with pytest.raises(GameError) as e:
@@ -142,7 +142,7 @@ def test_a_card_belongs_to_its_buyer():
 
 
 def test_small_prizes_and_emotes_are_not_announced_by_the_server():
-    g, _ = game(.47)
+    g, _ = game(.5)
     assert play(g)[2]["announce"] is False
     g, _ = game(0)
     assert play(g)[2]["announce"] is False
@@ -268,7 +268,7 @@ H = {"X-Player-Token": TOKEN}
 
 @pytest.fixture()
 def api(monkeypatch):
-    g, _ = game(.52)
+    g, _ = game(.58)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
     with TestClient(main.app) as c:
@@ -326,7 +326,7 @@ def test_the_room_sees_a_big_win_once(api):
 
 def test_the_room_hears_nothing_of_a_small_prize(api):
     c, g = api
-    g.rng = SeqRng(.47)
+    g.rng = SeqRng(.5)
     with c.websocket_connect("/ws") as a:
         a.send_json({"type": "join", "room": "r1", "nick": "a", "token": TOKEN})
         a.receive_json()

@@ -3,8 +3,10 @@ import { computed } from "vue";
 import { resolveAsset } from "./manifest";
 import { toHttpBase } from "./net/protocol";
 import { settings } from "./stores/settings";
+import { agreed } from "./legal/consent";
 
-export const serverBase = computed(() => toHttpBase(settings.serverUrl));
+/** Empty until the player agrees to the terms (src/legal): files from the server wait for that too. */
+export const serverBase = computed(() => (agreed.value ? toHttpBase(settings.serverUrl) : ""));
 
 export function assetUrl(ref: string | null | undefined): string {
   return resolveAsset(ref, serverBase.value, import.meta.env.BASE_URL || "/");

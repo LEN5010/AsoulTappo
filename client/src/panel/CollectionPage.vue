@@ -135,7 +135,7 @@ function openTarget(id: string) {
 watch(
   () => ui.craftTarget,
   (id) => {
-    if (id) {
+    if (id && !id.startsWith("profile:")) {
       openTarget(id);
       ui.craftTarget = "";
     }
@@ -170,7 +170,7 @@ const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
 const detailPreview = ref(false);
 function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; detailPreview.value = false; }
-if (ui.craftTarget) {
+if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   const target = ui.craftTarget;
   ui.craftTarget = '';
   openTarget(target);

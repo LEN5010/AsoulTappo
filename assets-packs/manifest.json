@@ -5093,19 +5093,19 @@
    "prizes": [
     {
      "shards": 200,
-     "weight": 30
+     "weight": 25
     },
     {
      "shards": 500,
-     "weight": 12
+     "weight": 20
     },
     {
      "shards": 1000,
-     "weight": 5
+     "weight": 8
     },
     {
      "shards": 2500,
-     "weight": 2
+     "weight": 3
     },
     {
      "shards": 30000,

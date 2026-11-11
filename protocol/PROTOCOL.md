@@ -21,6 +21,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | pose | x、y（四分之一像素，−80 至 80 的整数）、b（按键位：1 键盘、2 左键、4 右键，0 至 7），只带有变化的字段；格式 2 起的客户端用它代替 motion |
 | motion_subscribe | ids（成员 id，最多 20 个）：要接收谁的动作。格式 2 起有效，格式 1 的连接发来会被忽略；每次发送替换上一次的名单 |
 | poke | id（成员 id）：戳一戳同房间的另一位成员。每条连接每 3 秒最多一次，同一位成员 10 秒内只能戳一次，没到时间返回 `poke_cooldown`；id 不在房间里或是自己返回 `no_member`。只发给 `joined.features` 里有 `poke` 的服务端 |
+| profile | id（成员 id，可以是自己）：要这位成员的主页。服务端回 `profile`，只发给请求的人。每条连接 0.3 秒最多一次，太快返回 `rate_limited`；id 不在房间里返回 `no_member`。只发给 `joined.features` 里有 `profile` 的服务端 |
 | emote | emote（≤32），表情 key；初始表情免费，其余验证所有权 |
 | state | character、nick、plate，至少提供一个；plate 为空字符串时取下铭牌。character 为存档未拥有的皮肤（或未知名称）、plate 未解锁时返回 `locked` 并忽略整条消息 |
 | ping | 无 |
@@ -31,7 +32,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | duel_answer | duel（对局 id）、accept（布尔），只有被邀请的一方能回应 |
 | duel_throw | duel、hand（`rock` / `scissors` / `paper`），每局只认第一次 |
 
-服务端消息：`joined {room,you,members,info,features}`、`poke {from,to,quiet?}`（全房间都收到，包括发起人；被戳的人开了猜拳免打扰时，发给被戳者的那份带 `quiet: true`，客户端只让桌宠弹一下，不出气泡）、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`motion_snapshot`、`motion_delta`、`motion_edge`、`motion_edges`（见动作格式一节）、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`pong`、`error {code,message,reason?}`。`features` 列出这个服务端在 1.1 之外支持的房间消息，现在是 `["poke"]`，只发给加入时带了 motionVersion（2 及以上）的客户端，更早的客户端收到的 `joined` 保持原样；旧服务端没有这个字段。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开；房主变化或公开状态变化时服务端广播 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members,info,features,cheer}`、`cheer {target,minShare,total,shares,rounds}`、`cheer_done {round,rewards}`（合力应援，见下文）、`profile {id,showcase,progress}`（回给请求的人：showcase 为这位成员存档里选的展示卡 ID，最多 3 张，没选时为空；progress 为 `{cards,emotes,skins}`，每项 `[已拥有, 总数]`，计法和图鉴一致，初始表情算已拥有；没有存档的成员为 null）、`poke {from,to,quiet?}`（全房间都收到，包括发起人；被戳的人开了猜拳免打扰时，发给被戳者的那份带 `quiet: true`，客户端只让桌宠弹一下，不出气泡）、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`motion_snapshot`、`motion_delta`、`motion_edge`、`motion_edges`（见动作格式一节）、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`pong`、`error {code,message,reason?}`。`features` 列出这个服务端在 1.1 之外支持的房间消息，现在是 `["poke", "profile", "cheer"]`，`features` 和 `cheer` 只发给加入时带了 motionVersion（2 及以上）的客户端，更早的客户端收到的 `joined` 保持原样；旧服务端没有这个字段。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开；房主变化或公开状态变化时服务端广播 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate`，plate 为经服务端核对的铭牌 ID，没有时为 null；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+
+合力应援：存档上报 `/api/activity` 后，服务端把这次计入收益的敲击（每分钟前 120 下，已过防连点冷却）加到这份存档最近加入的房间的应援条上；累计敲击不满 1 万下的存档不计入。房间里至少有 2 份不同存档时条才会涨。一份存档本轮出力满 50 下就算出力，从这时起它的出力才上条（不满 50 下的先记着，不上条）；条的目标是 300 × 出力人数（至少按 2 人算），所以满条等于出力的人平均每人 300 下，很多人各敲几十下凑不满条；条满并且至少 2 人出力时这一轮结束，每位出力的存档得 10 × 出力人数 碎片（账本来源 `cheer`，每份存档每天最多 1000），条清零。中途加入：出力立刻上条，满 50 下后计入人数，目标和每人奖励随之变大。中途离开：已出的力留在条上；离开后 60 秒内仍计入人数、仍能领本轮奖励（掉线重连的同一份存档接着算），过了 60 秒不再计入人数，但已上条的出力留在条上，目标随之变小，下一次有人上报时再判断是否满条。`cheer` 为条的现状：`target` 为当前目标，`total` 为已上条的出力（不超过 `target`），`shares` 为在场成员（按成员 id）本轮的出力，包括还没满 50 下的，`count` 为出力人数，`reward` 为现在满条时每人能得的碎片，`rounds` 为这个房间完成的轮数；条在涨时最多每 2 秒发一次，有人离开时、一轮结束后（跟在 `cheer_done` 后面）也发，加入时放在 `joined.cheer` 里。`cheer_done.rewards` 为这一轮每位在场得奖成员拿到的碎片，当天已到上限的为 0。状态里的 `cheer {day,got,cap,minTaps}` 为当天从应援拿到的碎片、每日上限和参与门槛。
 
 ### 动作格式
 
@@ -84,19 +87,22 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带） |
+| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
+| POST /api/update-reward | 领取更新奖励：`X-Client-Version` 不低于奖励版本的、进行中且还没领的奖励一次全部发放，返回状态和 `reward:{shards,ids}`。预发布版本低于同号正式版。没有可领的返回 409 `no_reward` |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
-| GET /api/loadout | character、favorites、plate |
-| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked` |
+| GET /api/loadout | character、favorites、plate、showcase、nick、board |
+| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked`；showcase 为主页展示卡的卡片 ID 列表，最多 3 张、必须已拥有，超过或不认识返回 `bad_item`，未拥有返回 `locked`，空列表清空；nick 为收藏榜上显示的昵称（最多 24 字，空字符串用默认昵称），board 为 false 时不上收藏榜。这两项客户端只上传，读取装备时不会覆盖本地设置 |
+| GET /api/board | 全服收藏榜：`cards`（前 50：`[{id,rank,nick,character,plate,cards,big}]`，按卡片数、大隐藏数、最后一张卡的获得时间排序；昵称经屏蔽词处理，铭牌未集齐时为 null）、`total`（卡片总数）、`me`（`{rank,cards,big,off}`，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
+| GET /api/board/profile/{id} | 收藏榜前 50 里某一行（`id`）的主页：`{showcase,progress}`，格式同房间消息 `profile`；不在榜上返回 404 `no_member` |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
 | GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。同时返回 minVersion（服务端要求的最低客户端版本，未设置时为 null）和 announcements（未过期的公告，每项 `{id,title,body,until}`）。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |
 | GET /api/account | Bearer；user、save（账号存档摘要，未绑定时为 null） |
@@ -168,6 +174,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | `duplicate` | 重复物品兑换的碎片 | 兑换成碎片的物品数 |
 | `craft` | 兑换物品花费 | 1 |
 | `checkin` | 签到奖励 | 1 |
+| `cheer` | 合力应援满条的奖励（受每日上限） | 1 |
+| `update` | 更新奖励 | 一次领取的奖励个数 |
 | `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
 | `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
 | `admin` | 管理接口的调整 | 1 |
@@ -182,6 +190,16 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | PUT /admin/notice | 整体替换。minVersion 为空字符串时取消限制；announcements 最多 20 条，每条 id、title（最多 40 字）、body（最多 2000 字）、until（Unix 秒，0 为不过期） |
 
 客户端从 1.1.3 起在每个 HTTP 请求里带 `X-Client-Version`，房间连接地址带 `?v=`。设置 minVersion 后，版本更低或没有带版本的请求返回 426 `client_outdated`，加入房间收到 reason 为 `client_outdated` 的最终拒绝；`GET /api/client/release` 不受限制。1.1.3 及以后的客户端读到 minVersion 高于自己时，更新弹窗不能关闭；更早的客户端不带版本，只会看到请求失败。公告在面板打开时每条显示一次，已读记录在本机。`scripts/notice.py` 是这两个接口的命令行包装。
+
+### 更新奖励
+
+| 接口 | 说明 |
+| --- | --- |
+| GET /admin/update-rewards | `{rewards:[...]}`，从新到旧，每项 `{id,version,shards,created,ended,claims,paid}`；ended 为结束时间（Unix 秒），进行中为 null；claims 为领取的存档数，paid 为已发出的碎片 |
+| POST /admin/update-rewards | `{version,shards}`，新建奖励：客户端版本不低于 version 的存档各能领一次 shards（1–1000000）。version 格式不对返回 400 `bad_version`；同一版本已有进行中的奖励返回 409 `reward_open`。返回同 GET |
+| POST /admin/update-rewards/{id}/end | 结束奖励，没领的存档不能再领。奖励不存在或已结束返回 409 `no_reward`（不用 404，主站把 404 当作服务不可用）。返回同 GET |
+
+新建档也能领，奖励按存档发，不看存档创建时间。客户端在面板里弹出可领的奖励，只列出自己版本够得着的。
 
 ### 昵称屏蔽
 
@@ -249,17 +267,17 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 |---|---|---|
 | 阿草表情 | 5% | 10 张 |
 | 30000 碎片 | 0.1% | — |
-| 2500 碎片 | 2% | — |
-| 1000 碎片 | 5% | — |
-| 500 碎片 | 12% | — |
-| 200 碎片 | 30% | — |
-| 没中 | 45.9% | — |
+| 2500 碎片 | 3% | — |
+| 1000 碎片 | 8% | — |
+| 500 碎片 | 20% | — |
+| 200 碎片 | 25% | — |
+| 没中 | 38.9% | — |
 
-奖品在买卡时由一次随机数决定，揭开时才发放，所以买卡后的余额只少了卡价。一个存档同时只有一张未揭开的卡；未揭开的卡跨天仍可揭开。碎片奖品平均返还卡价的一半。
+奖品在买卡时由一次随机数决定，揭开时才发放，所以买卡后的余额只少了卡价。一个存档同时只有一张未揭开的卡；未揭开的卡跨天仍可揭开。碎片奖品平均返还卡价的 67%（每张 335）。
 
 阿草表情是表情套 `achao` 的 20 个表情（`source: "scratch"`），只从刮刮乐获得，不进共鸣池，也不能兑换。每次给一个存档还没有的；保底按买卡张数累计，出表情时清零，计数方式与共鸣保底相同。
 
-20 个集齐后没有表情这一档，也不再触发保底：只按碎片奖品的权重抽，表情的 5% 并入没中，没中为 50.9%，不给重复表情。是否集齐在买卡时判断，拿到最后一个表情的那张卡揭开之后，下一张才按集齐后的规则抽。集齐后 `pity` 不再变化；最后一个表情出现时已清零，所以通常是 0。
+20 个集齐后没有表情这一档，也不再触发保底：只按碎片奖品的权重抽，表情的 5% 并入没中，没中为 43.9%，不给重复表情。是否集齐在买卡时判断，拿到最后一个表情的那张卡揭开之后，下一张才按集齐后的规则抽。集齐后 `pity` 不再变化；最后一个表情出现时已清零，所以通常是 0。
 
 `cells` 是九个格子的图案，碎片数额写成数字串，表情写成表情 key。中奖图案恰好出现三次，其余图案最多出现两次；没中的卡没有出现三次的图案。
 

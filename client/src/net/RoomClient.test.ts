@@ -40,6 +40,9 @@ function setup() {
     onMotion: vi.fn(),
     onEmote: vi.fn(),
     onPoke: vi.fn(),
+    onProfile: vi.fn(),
+    onCheer: vi.fn(),
+    onCheerDone: vi.fn(),
     onScratch: vi.fn(),
     onState: vi.fn(),
     onDuel: vi.fn(),
@@ -71,6 +74,36 @@ describe("RoomClient", () => {
     ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["poke"] });
     c.sendPoke("x");
     expect(ws.sent.at(-1)).toEqual({ type: "poke", id: "x" });
+  });
+
+  it("asks for a profile and hands the answer on", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["poke", "profile"] });
+    c.sendProfile("x");
+    expect(ws.sent.at(-1)).toEqual({ type: "profile", id: "x" });
+    const progress = { cards: [2, 85], emotes: [20, 495], skins: [0, 9] };
+    ws.recv({ type: "profile", id: "x", showcase: ["c1"], progress });
+    expect(ev.onProfile).toHaveBeenLastCalledWith("x", { showcase: ["c1"], progress });
+    ws.recv({ type: "profile", id: "y", showcase: [], progress: null });
+    expect(ev.onProfile).toHaveBeenLastCalledWith("y", { showcase: [], progress: null });
+  });
+
+  it("hands on the cheer bar and finished rounds", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", INFO);
+    const ws = FakeWs.all[0];
+    ws.open();
+    const empty = { target: 600, minShare: 50, total: 0, shares: {}, count: 0, reward: 20, rounds: 0 };
+    ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["cheer"], cheer: empty });
+    expect(ev.onCheer).toHaveBeenLastCalledWith(empty);
+    const state = { target: 600, minShare: 50, total: 300, shares: { me: 200, x: 100 }, count: 2, reward: 20, rounds: 2 };
+    ws.recv({ type: "cheer", ...state });
+    expect(ev.onCheer).toHaveBeenLastCalledWith(state);
+    ws.recv({ type: "cheer_done", round: 3, rewards: { me: 30, x: 0 } });
+    expect(ev.onCheerDone).toHaveBeenLastCalledWith(3, { me: 30, x: 0 });
   });
 
   it("connects to /ws, joins on open and dispatches events", () => {

@@ -24,12 +24,12 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
-    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, PongMsg, RoomInfo, RoomInfoMsg,
-    ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
+    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, PongMsg, ProfileMsg,
+    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
 from .releases import ReleaseFeed
-from .rooms import FEATURES, MOTION_VERSION, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager
+from .rooms import FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager
 from .store import Store
 
 app = FastAPI(title="AsoulTappo server", version="0.4.0")
@@ -141,7 +141,9 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
           "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,
-          "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_save": 404}
+          "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_save": 404, "no_member": 404,
+          # Admin calls answer these with 409: the main site reads a 404 from this server as "unavailable".
+          "no_reward": 409, "reward_open": 409}
 
 
 def _guard(fn, *args):
@@ -206,11 +208,28 @@ class ScratchRevealBody(BaseModel):
 
 
 class LoadoutBody(BaseModel):
-    """Selected character, favorite emotes and name plate (null or "" for none)."""
+    """Selected character, favorite emotes, name plate (null or "" for none) and showcase card ids."""
 
     character: str | None = Field(default=None, max_length=32)
     favorites: list[str] | None = Field(default=None, max_length=16)
     plate: str | None = Field(default=None, max_length=64)
+    showcase: list[str] | None = Field(default=None, max_length=16)
+    # The nickname the boards show, and false to stay off them.
+    nick: str | None = Field(default=None, max_length=64)
+    board: bool | None = None
+
+
+@app.get("/api/board")
+def api_board(who: PlayerId = Depends(player)) -> dict:
+    """The collection board; on a server with main-site accounts only saves linked to one are ranked."""
+    out = _guard(game.board, who, accounts is not None)
+    return {**out, "cards": [{**row, "nick": blocklist.mask(row["nick"])} for row in out["cards"]]}
+
+
+@app.get("/api/board/profile/{bid}")
+def api_board_profile(bid: str, who: PlayerId = Depends(player)) -> dict:
+    """The showcase and progress of a save on the collection board's top rows."""
+    return _guard(game.board_profile, bid, accounts is not None)
 
 
 @app.get("/api/manifest")
@@ -224,9 +243,19 @@ def api_me(who: PlayerId = Depends(player)) -> dict:
 
 
 @app.post("/api/activity")
-def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
+async def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
-    return _guard(game.report_activity, who, body.taps, body.session, body.sequence, body.cooldown)
+    out = await run_in_threadpool(_guard, game.report_activity, who, body.taps, body.session, body.sequence,
+                                  body.cooldown)
+    # The taps that paid shards also fill the cheer bar of the room this save sits in.
+    finished = manager.cheer(who, out.pop("cheerTaps", 0))
+    if finished:
+        room, number, earned, each = finished
+        paid = await run_in_threadpool(game.cheer_reward, earned, each)
+        await manager.cheer_done(room, number, paid)
+        if paid.get(who):
+            out = {**out, **await run_in_threadpool(game.status, who)}
+    return out
 
 
 @app.post("/api/presence")
@@ -252,6 +281,12 @@ def api_checkin_month(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/checkin")
 def api_checkin(who: PlayerId = Depends(player)) -> dict:
     return _guard(game.checkin, who)
+
+
+@app.post("/api/update-reward")
+def api_update_reward(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
+    """Claims every update reward the client's version reaches (status `updateRewards`)."""
+    return _guard(game.claim_update_rewards, who, x_client_version)
 
 
 @app.get("/api/scratch")
@@ -396,6 +431,27 @@ def admin_save(player: str) -> dict:
 @app.post("/admin/saves/{player}/shards", dependencies=[Depends(admin)])
 def admin_save_shards(player: str, body: ShardsBody) -> dict:
     return _guard(game.admin_adjust_save_shards, player, body.delta)
+
+
+class UpdateRewardBody(BaseModel):
+    version: str = Field(min_length=1, max_length=32)
+    shards: int = Field(ge=1, le=1_000_000)
+
+
+@app.get("/admin/update-rewards", dependencies=[Depends(admin)])
+def admin_update_rewards() -> dict:
+    return game.admin_update_rewards()
+
+
+@app.post("/admin/update-rewards", dependencies=[Depends(admin)])
+def admin_add_update_reward(body: UpdateRewardBody) -> dict:
+    """Every save on [version] or newer can claim [shards] once, until the reward is ended."""
+    return _guard(game.admin_add_update_reward, body.version, body.shards)
+
+
+@app.post("/admin/update-rewards/{reward_id}/end", dependencies=[Depends(admin)])
+def admin_end_update_reward(reward_id: int) -> dict:
+    return _guard(game.admin_end_update_reward, reward_id)
 
 
 MAX_BLOCKED_WORDS = 20000
@@ -639,6 +695,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer.motion_version >= 2:
                     joined["motionVersion"] = peer.motion_version
                     joined["features"] = list(FEATURES)
+                    # The newcomer's cheer bar starts as the room's stands.
+                    joined["cheer"] = {k: v for k, v in manager.cheer_state(manager.rooms[room_id]).items() if k != "type"}
                 await send(joined)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
@@ -677,6 +735,19 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     manager.poke(room_id, peer, msg.id, time.monotonic())
                 except PokeRefused as refused:
                     await err(refused.code, "")
+            elif isinstance(msg, ProfileMsg):
+                now = time.monotonic()
+                if now - peer.profile_at < PROFILE_INTERVAL:
+                    await err("rate_limited", "too many profile requests")
+                    continue
+                room = manager.rooms.get(room_id)
+                target = room.peers.get(msg.id) if room else None
+                if target is None:
+                    await err("no_member", "no such member")
+                    continue
+                peer.profile_at = now
+                shown = await run_in_threadpool(game.member_profile, target.token)
+                await send(ProfileReply(id=target.id, **shown).model_dump())
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
                 if now - peer.last_emote < EMOTE_INTERVAL:

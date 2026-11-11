@@ -2,6 +2,7 @@
 // Ids match the server: card:<id>, emote:<key>, char:<skin name>.
 // Original characters are always owned; skins use char:<name> and drop from resonance.
 import { manifest, memberOf, RARITY_ORDER, type Rarity } from "./manifest";
+import type { CollectionProgress } from "./net/protocol";
 
 export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
 
@@ -73,6 +74,16 @@ export function ownsCharacter(name: string, owned: Record<string, number>): bool
 
 export function ownsEmote(key: string, owned: Record<string, number>): boolean {
   return starterEmotes.has(key) || (owned[`emote:${key}`] ?? 0) > 0;
+}
+
+/** [owned, total] of cards, emotes and skins, as the album counts them; the server counts a partner's the same way. */
+export function collectionProgress(owned: Record<string, number>): CollectionProgress {
+  const count = <T>(list: readonly T[], has: (x: T) => boolean): [number, number] => [list.filter(has).length, list.length];
+  return {
+    cards: count(manifest.cards, (c) => (owned[`card:${c.id}`] ?? 0) > 0),
+    emotes: count(manifest.emoteSets.flatMap((s) => s.emotes), (e) => ownsEmote(e.key, owned)),
+    skins: count(manifest.skins, (s) => ownsCharacter(s.name, owned)),
+  };
 }
 
 export function craftCost(item: Item): number | null {

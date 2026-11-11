@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { manifest } from "../manifest";
 import {
-  ACHAO_ARMS_MS, ACHAO_FACE_MS, ACHAO_FALL_MS, ACHAO_RISE_MS, CARD_PAN, PAN_CYCLE_MS, PLATE_ANCHOR, PLATE_CROPS,
-  PLATE_SWEEPS, allPlates, getPlate, nameBand, panAt, panCycle, plateArt, plateCard, plateNeeds, plateSet, plateSize,
-  plateUnlocked, sweepArt, sweepFrames, videoFace,
+  ACHAO_ARMS_MS, ACHAO_FACE_MS, ACHAO_FALL_MS, ACHAO_RISE_MS, BANNER_ASPECT, BANNER_EYES, BANNER_FIT, CARD_PAN, PAN_CYCLE_MS,
+  PLATE_ANCHOR, PLATE_CROPS, PLATE_SWEEPS, allPlates, bannerArt, getPlate, nameBand, panAt, panCycle, plateArt, plateCard,
+  plateNeeds, plateSet, plateSize, plateUnlocked, sweepArt, sweepFrames, videoFace,
 } from "./plates";
 
 describe("name plates", () => {
@@ -168,5 +168,40 @@ describe("阿草's plate", () => {
     // narrower than the strip and the eyes would sit past the anchor: it goes as far right as it can, not to the left
     const art = plateArt({ fx: 0.5, fy: 0.5, fw: 0.2 }, 338, 36, PLATE_ANCHOR, 1.5);
     expect(art.left).toBeCloseTo(338 - art.width);
+  });
+});
+
+describe("the profile banner", () => {
+  const w = 540, h = w / BANNER_ASPECT;
+  it("draws each card exactly as wide as the banner, covering it, the eyes a little above the middle", () => {
+    for (const plate of allPlates()) {
+      if (plate.kind !== "card") continue;
+      const art = bannerArt(plate.crop, w, h);
+      expect(art.width).toBe(w);
+      expect(art.left).toBe(0);
+      expect(art.top).toBeLessThanOrEqual(0);
+      expect(art.top + art.height).toBeGreaterThanOrEqual(h);
+      const centre = plate.crop.bannerFy ?? plate.crop.fy;
+      expect(art.top + centre * art.height).toBeCloseTo(BANNER_EYES * h);
+    }
+  });
+
+  it("keeps both faces of 巡梦漫游 on the banner", () => {
+    const plate = getPlate("c1748345610010")!;
+    if (plate.kind !== "card") throw new Error("not a card plate");
+    const art = bannerArt(plate.crop, w, h);
+    // 思诺's eyes sit about 0.17 down the still, 心宜's at its crop's fy
+    for (const fy of [0.17, plate.crop.fy]) {
+      const y = art.top + fy * art.height;
+      expect(y).toBeGreaterThan(0);
+      expect(y).toBeLessThan(h);
+    }
+  });
+
+  it("keeps 阿草's cut-out whole on its coral", () => {
+    const boxes = sweepArt(PLATE_SWEEPS.achao!, w, h, BANNER_FIT);
+    expect(boxes.face.width).toBeLessThan(w);
+    expect(boxes.face.left).toBeGreaterThanOrEqual(0);
+    expect(boxes.face.left + boxes.face.width).toBeLessThanOrEqual(w);
   });
 });

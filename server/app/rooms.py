@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
@@ -16,10 +17,25 @@ MOTION_VERSION = 3
 # Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
 MAX_EDGES_PER_BATCH = 6
 # Room messages beyond the 1.1 set, listed in `joined` for clients that announce a motion version.
-FEATURES = ("poke",)
+FEATURES = ("poke", "profile", "cheer")
+# Cheer rounds: members' paid taps fill a bar. A save's taps go on the bar once it has put CHEER_MIN_SHARE into the
+# round, and from then it cheers; the bar holds CHEER_PER_SAVE taps for each cheering save (CHEER_MIN_SAVES at least),
+# so a full bar means they put in that many each on average, and many small shares cannot fill it early. When it is
+# full every cheering save gets CHEER_REWARD_PER_SAVE shards for each cheering save (game.cheer_reward keeps the daily
+# cap). Taps count only while CHEER_MIN_SAVES saves are in the room. A save that leaves still cheers, and is paid, for
+# CHEER_GRACE seconds, so a dropped connection that comes back loses nothing; after that its taps stay on the bar and
+# it no longer counts. Progress goes out at most every CHEER_SEND_INTERVAL.
+CHEER_PER_SAVE = 300
+CHEER_MIN_SHARE = 50
+CHEER_MIN_SAVES = 2
+CHEER_REWARD_PER_SAVE = 10
+CHEER_GRACE = 60.0
+CHEER_SEND_INTERVAL = 2.0
 # Pokes: one per connection this often, and the same member again only after the longer wait.
 POKE_INTERVAL = 3.0
 POKE_SAME_INTERVAL = 10.0
+# Profile requests: one per connection this often; each reads the save.
+PROFILE_INTERVAL = 0.3
 
 
 class PokeRefused(Exception):
@@ -79,6 +95,10 @@ class Peer:
     # Monotonic time of the last poke sent, and of the last one sent to each member.
     poke_at: float = float("-inf")
     poked: dict[str, float] = field(default_factory=dict)
+    # Monotonic time of the last profile request.
+    profile_at: float = float("-inf")
+    # Order of joining across all rooms: a save in two rooms cheers in the one it joined last.
+    join_seq: int = 0
     motion_ids: set[str] = field(default_factory=set)
     sent_motion: dict[str, dict[str, int]] = field(default_factory=dict)
     active: bool = True
@@ -165,6 +185,12 @@ class Room:
     public: bool = False
     # saves the host removed; gone with the room
     banned: set[str] = field(default_factory=set)
+    # This cheer round's paid taps by player id (a save that left keeps its taps on the bar), when each save with taps
+    # on it left (monotonic clock; gone again when it comes back), and rounds finished.
+    cheer: dict[str, int] = field(default_factory=dict)
+    cheer_gone: dict[str, float] = field(default_factory=dict)
+    cheer_rounds: int = 0
+    cheer_timer: asyncio.TimerHandle | None = None
 
     def info(self) -> dict:
         """Room-wide state sent in `joined` and `room_info`."""
@@ -173,11 +199,15 @@ class Room:
 
 class RoomManager:
     def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0,
-                 motion_interval: float = 0.1, edge_interval: float = 0.05) -> None:
+                 motion_interval: float = 0.1, edge_interval: float = 0.05,
+                 cheer_interval: float = CHEER_SEND_INTERVAL, clock: Callable[[], float] = time.monotonic) -> None:
         self.max_size = max_size
         self.send_timeout = send_timeout
         self.motion_interval = motion_interval
         self.edge_interval = edge_interval
+        self.cheer_interval = cheer_interval
+        self.clock = clock
+        self._joins = 0
         self.rooms: dict[str, Room] = {}
         # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
@@ -201,6 +231,10 @@ class RoomManager:
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
+        self._joins += 1
+        peer.join_seq = self._joins
+        if token:
+            room.cheer_gone.pop(token, None)
         room.peers[peer.id] = peer
         if room.host is None:
             room.host = peer.id
@@ -222,6 +256,8 @@ class RoomManager:
         if peer is None:
             return False
         peer.active = False
+        if peer.token in room.cheer and not any(p.token == peer.token for p in room.peers.values()):
+            room.cheer_gone[peer.token] = self.clock()
         if peer.writer and peer.writer is not asyncio.current_task():
             peer.writer.cancel()
         room.motions.pop(peer_id, None)
@@ -230,7 +266,7 @@ class RoomManager:
             other.motion_ids.discard(peer_id)
             other.sent_motion.pop(peer_id, None)
         if not room.peers:
-            for timer in (room.motion_timer, room.edge_timer):
+            for timer in (room.motion_timer, room.edge_timer, room.cheer_timer):
                 if timer:
                     timer.cancel()
             del self.rooms[room_id]
@@ -246,6 +282,9 @@ class RoomManager:
         if not self.leave(room_id, peer_id):
             return False
         await self.broadcast(room_id, {"type": "member_left", "id": peer_id})
+        if room is not None and room_id in self.rooms and room.cheer:
+            # The leaver's share moves to the others on everyone's bar.
+            await self.broadcast(room_id, self.cheer_state(room))
         if room is not None and room_id in self.rooms and room.host != host:
             await self.broadcast(room_id, {"type": "room_info", **room.info()})
         if peer is not None and self.on_depart is not None:
@@ -357,6 +396,74 @@ class RoomManager:
                 snapshot.append({"id": pid, **pose})
         if snapshot:
             peer.enqueue({"type": "motion_snapshot", "motions": snapshot})
+
+    # ------------------------------------------------------------------ cheer
+    def _cheer_saves(self, room: Room) -> set[str]:
+        """Saves that count for the round: those in the room, and those that left less than CHEER_GRACE ago."""
+        now = self.clock()
+        room.cheer_gone = {save: at for save, at in room.cheer_gone.items() if now - at < CHEER_GRACE}
+        return {p.token for p in room.peers.values() if p.token} | set(room.cheer_gone)
+
+    def _bar(self, room: Room, saves: set[str]) -> tuple[int, list[str]]:
+        """The taps on the bar (every save's that reached CHEER_MIN_SHARE, also one gone for good) and the saves among
+        [saves] that cheer."""
+        on_bar = {save: n for save, n in room.cheer.items() if n >= CHEER_MIN_SHARE}
+        return sum(on_bar.values()), [save for save in on_bar if save in saves]
+
+    def cheer_state(self, room: Room) -> dict:
+        """The cheer bar as members see it: the target for the saves cheering now, the taps on the bar up to it, each
+        present member's share (also one not on the bar yet), how many saves cheer and what each would get, and the
+        rounds finished."""
+        total, cheering = self._bar(room, self._cheer_saves(room))
+        count = len(cheering)
+        target = CHEER_PER_SAVE * max(CHEER_MIN_SAVES, count)
+        shares = {p.id: room.cheer[p.token] for p in room.peers.values() if p.token and room.cheer.get(p.token)}
+        return {"type": "cheer", "target": target, "minShare": CHEER_MIN_SHARE,
+                "total": min(total, target), "shares": shares, "count": count,
+                "reward": CHEER_REWARD_PER_SAVE * max(CHEER_MIN_SAVES, count), "rounds": room.cheer_rounds}
+
+    def cheer(self, pid: str, taps: int) -> tuple[Room, int, list[str], int] | None:
+        """Adds [taps] paid taps of save [pid] to the round of the room it joined last. When the round is then full,
+        returns the room, the round's number, the saves to pay and the shards for each; progress otherwise goes out
+        by itself. A round left full by a save whose grace ran out finishes with the next taps anyone puts in."""
+        seats = [(peer.join_seq, room) for room in self.rooms.values()
+                 for peer in room.peers.values() if peer.token == pid]
+        if taps <= 0 or not seats:
+            return None
+        room = max(seats, key=lambda seat: seat[0])[1]
+        saves = self._cheer_saves(room)
+        if len(saves) < CHEER_MIN_SAVES:
+            return None
+        room.cheer[pid] = room.cheer.get(pid, 0) + taps
+        total, cheering = self._bar(room, saves)
+        if len(cheering) < CHEER_MIN_SAVES or total < CHEER_PER_SAVE * len(cheering):
+            if room.cheer_timer is None:
+                room.cheer_timer = asyncio.get_running_loop().call_later(self.cheer_interval, self._send_cheer, room)
+            return None
+        room.cheer = {}
+        room.cheer_gone = {}
+        room.cheer_rounds += 1
+        if room.cheer_timer is not None:
+            room.cheer_timer.cancel()
+            room.cheer_timer = None
+        return room, room.cheer_rounds, cheering, CHEER_REWARD_PER_SAVE * len(cheering)
+
+    def _send_cheer(self, room: Room) -> None:
+        room.cheer_timer = None
+        if self.rooms.get(room.id) is not room:
+            return
+        state = self.cheer_state(room)
+        for peer in list(room.peers.values()):
+            peer.enqueue(state)
+
+    async def cheer_done(self, room: Room, number: int, paid: dict[str, int]) -> None:
+        """Tells the room round [number] finished, with the shards each paid member got (0 once its day's cheer is
+        used up), then the bar as it stands."""
+        if self.rooms.get(room.id) is not room:
+            return
+        rewards = {p.id: paid[p.token] for p in room.peers.values() if p.token in paid}
+        await self.broadcast(room.id, {"type": "cheer_done", "round": number, "rewards": rewards})
+        await self.broadcast(room.id, self.cheer_state(room))
 
     def poke(self, room_id: str, peer: Peer, target_id: str, now: float) -> None:
         """Tells the room that [peer] poked [target_id]; raises PokeRefused (no_member, poke_cooldown)."""

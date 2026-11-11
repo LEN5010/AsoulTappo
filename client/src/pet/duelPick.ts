@@ -1,11 +1,10 @@
 // A click on a partner's pet shows a row of keys over that pet: poke, rock-paper-scissors (whose key opens the bets)
-// and, for a partner wearing a big hidden card's plate, a look at that card. One such bubble at a time.
+// and the partner's profile. One such bubble at a time.
 import { computed, ref, watch } from "vue";
 import type { Member } from "../net/protocol";
-import { canDuel, canPoke, inviteDuel, members, poke } from "../stores/room";
+import { canDuel, canPoke, canProfile, inviteDuel, members, pokeSoon } from "../stores/room";
 import { openPanel } from "../stores/ui";
 import type { Pos, Size } from "../stores/desk";
-import { plateCard } from "./plates";
 
 /** The bubble closes after this long without the pointer on it. */
 export const PICK_MS = 6000;
@@ -29,13 +28,13 @@ export const picking = ref<string | null>(null);
 export const staking = ref(false);
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-export interface PickKeys { poke: boolean; duel: boolean; plate: string | null }
+export interface PickKeys { poke: boolean; duel: boolean; profile: boolean }
 const keysFor = (m: Member | undefined): PickKeys =>
-  m ? { poke: canPoke(m), duel: canDuel(m), plate: plateCard(m.plate)?.id ?? null } : { poke: false, duel: false, plate: null };
-const anyKey = (k: PickKeys) => k.poke || k.duel || !!k.plate;
+  m ? { poke: canPoke(m), duel: canDuel(m), profile: canProfile(m) } : { poke: false, duel: false, profile: false };
+const anyKey = (k: PickKeys) => k.poke || k.duel || k.profile;
 /** The keys the open bubble shows. */
 export const pickKeys = computed(() => keysFor(picking.value ? members.get(picking.value) : undefined));
-const keyCount = () => [pickKeys.value.poke, pickKeys.value.duel, !!pickKeys.value.plate].filter(Boolean).length;
+const keyCount = () => [pickKeys.value.poke, pickKeys.value.duel, pickKeys.value.profile].filter(Boolean).length;
 /** Width of the row of keys. */
 export const askWidth = (): number => {
   const n = Math.max(1, keyCount());
@@ -84,14 +83,15 @@ export function pickStake(bet: number): void {
 export function pickPoke(): void {
   const id = picking.value;
   closePick();
-  if (id) poke(id);
+  if (id) pokeSoon(id);
 }
 
-/** Opens the panel on the card of the partner's plate, shown as a preview (src/panel/CollectionPage.vue). */
-export function pickPlate(): void {
-  const card = pickKeys.value.plate;
+/** Opens the panel on the partner's profile, over the room page (src/panel/OnlinePage.vue). */
+export function pickProfile(): void {
+  const id = picking.value;
+  const open = pickKeys.value.profile;
   closePick();
-  if (card) openPanel("dex", { craftTarget: `view:card:${card}` });
+  if (id && open) openPanel("room", { craftTarget: `profile:${id}` });
 }
 
 /** Whether a press at [target] leaves the bubble alone: on the bubble itself. */

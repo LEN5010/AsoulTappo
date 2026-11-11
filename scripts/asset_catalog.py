@@ -285,12 +285,12 @@ CHECKIN = {"prizes": [{"shards": 80, "weight": 30}, {"shards": 160, "weight": 30
                       {"shards": 480, "weight": 12}, {"shards": 800, "weight": 6}, {"shards": 1600, "weight": 2}],
            "spread": 0.1}
 # Scratch cards: `price` shards each, `daily` of them a China day. Weights are percentages and what is left
-# of 100 wins nothing; the shard prizes return half the price on average. The emote tier gives one emote of
+# of 100 wins nothing; the shard prizes return two thirds of the price on average. The emote tier gives one emote of
 # `set` the save lacks, for certain on the `pity`-th card since the last one. Once the set is whole the tier and
 # its pity are gone: its weight wins nothing. The server tells the room about `announce` shards or more.
 SCRATCH = {"price": 500, "daily": 20,
-           "prizes": [{"shards": 200, "weight": 30}, {"shards": 500, "weight": 12}, {"shards": 1000, "weight": 5},
-                      {"shards": 2500, "weight": 2}, {"shards": 30000, "weight": 0.1}],
+           "prizes": [{"shards": 200, "weight": 25}, {"shards": 500, "weight": 20}, {"shards": 1000, "weight": 8},
+                      {"shards": 2500, "weight": 3}, {"shards": 30000, "weight": 0.1}],
            "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10},
            "announce": 2500}
 # Rock-paper-scissors between two room members. Both pay `bet` when the invite is accepted and the winner gets

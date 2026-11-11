@@ -19,7 +19,8 @@ const groupSources = {
   scratchCard: () => player.scratchCard.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
-    info: room.roomInfo.value, duel: room.duel.value }),
+    info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value,
+    cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value }),
   publicRooms: () => room.publicRooms.value,
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
     ({ id, uid, nick, character, plate })),
@@ -62,6 +63,10 @@ function applyGroups(s: Partial<Groups>) {
     room.lastError.value = s.room.lastError;
     room.roomInfo.value = s.room.info;
     room.duel.value = s.room.duel;
+    room.profileOn.value = s.room.profileOn;
+    room.cheerOn.value = s.room.cheerOn;
+    room.cheer.value = s.room.cheer;
+    room.cheerDone.value = s.room.cheerDone;
   }
   if (s.publicRooms !== undefined) room.publicRooms.value = s.publicRooms;
   if (s.members) {
@@ -109,7 +114,7 @@ async function syncSettings() {
   };
   const unlisten = await listen<Partial<Settings>>("desktop:settings", ({ payload }) => apply(payload),
     { target: isPanelWindow ? "panel" : "main" });
-  const stop = watch(() => ({ ...settings, favorites: [...settings.favorites] }), (value, old) => {
+  const stop = watch(() => ({ ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase] }), (value, old) => {
     if (receiving) return;
     const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>
       JSON.stringify(v) !== JSON.stringify(old[key as keyof Settings]),
@@ -232,6 +237,7 @@ export async function initDesktop(): Promise<() => void> {
         case "resonate": result = await player.resonate(args[0] as number); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
         case "checkin": result = await player.checkin(); break;
+        case "claimUpdateRewards": result = await player.claimUpdateRewards(); break;
         case "loadCheckins": await player.loadCheckins(); break;
         case "loadScratch": await player.loadScratch(); break;
         case "buyScratch": result = await player.buyScratch(); break;
@@ -245,6 +251,9 @@ export async function initDesktop(): Promise<() => void> {
         case "kickMember": room.kickMember(args[0] as string); break;
         case "loadPublicRooms": await room.loadPublicRooms(); break;
         case "inviteDuel": room.inviteDuel(args[0] as string, args[1] as number); break;
+        case "loadProfile": result = await room.loadProfile(args[0] as string); break;
+        case "loadBoard": result = await player.loadBoard(); break;
+        case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
         case "tidyRemotes": tidyRemotes(); break;
       }
       await publish();

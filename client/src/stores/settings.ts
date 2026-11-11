@@ -27,6 +27,10 @@ export interface Settings {
   hideNicks: boolean;
   /** Name plate worn on partners' desks: a big hidden card id or a manifest `plates` id ("" = none). */
   plate: string;
+  /** Card ids pinned to the profile room members open, at most three, in order. */
+  showcase: string[];
+  /** Ranked on the collection board (the 排行 page); off keeps the save off it. */
+  onBoard: boolean;
   /** Turns down every rock-paper-scissors invite; the room server answers them for this client. */
   duelDnd: boolean;
   /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
@@ -52,6 +56,8 @@ export interface Settings {
   petDocked: boolean;
   /** Global shortcut that hides the pet and the panel and brings them back ("" = none), e.g. "Control+Alt+KeyH". */
   bossKey: string;
+  /** Global shortcut that flips click-through ("" = none), in the same form as bossKey. */
+  clickThroughKey: string;
   /** The capture window is open: a regular window with the own pet on a flat colour, for OBS and screenshots. */
   captureOpen: boolean;
   /** Background of the capture window, "#rrggbb"; keyed out in the recording software. */
@@ -59,6 +65,8 @@ export interface Settings {
   /** Size of the capture window, CSS px: the size it was last dragged to. */
   captureW: number;
   captureH: number;
+  /** Version of the user agreement and privacy policy last agreed to ("" = never); see src/legal. */
+  termsAgreed: string;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -82,6 +90,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showPlates: true,
   hideNicks: false,
   plate: "",
+  showcase: [],
+  onBoard: true,
   duelDnd: false,
   petX: -1,
   petY: -1,
@@ -96,10 +106,12 @@ export const DEFAULT_SETTINGS: Settings = {
   barFolded: false,
   petDocked: false,
   bossKey: "",
+  clickThroughKey: "",
   captureOpen: false,
   captureBg: "#00ff00",
   captureW: 560,
   captureH: 412,
+  termsAgreed: "",
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
@@ -126,6 +138,9 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.volume = Math.min(1, Math.max(0, out.volume));
   out.favorites = Array.isArray(out.favorites)
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
+    : [];
+  out.showcase = Array.isArray(out.showcase)
+    ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, 3)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;

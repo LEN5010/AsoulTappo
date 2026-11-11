@@ -57,9 +57,9 @@ describe("odds", () => {
   it("lists the approved table and adds up to 100", () => {
     const rows = oddsRows(false);
     expect(rows.map((r) => [r.kind, r.shards, r.rate, r.pity])).toEqual([
-      ["emote", null, 5, 10], ["shards", 30000, 0.1, undefined], ["shards", 2500, 2, undefined],
-      ["shards", 1000, 5, undefined], ["shards", 500, 12, undefined], ["shards", 200, 30, undefined],
-      ["miss", null, 45.9, undefined],
+      ["emote", null, 5, 10], ["shards", 30000, 0.1, undefined], ["shards", 2500, 3, undefined],
+      ["shards", 1000, 8, undefined], ["shards", 500, 20, undefined], ["shards", 200, 25, undefined],
+      ["miss", null, 38.9, undefined],
     ]);
     expect(rows.reduce((n, r) => n + r.rate, 0)).toBeCloseTo(100);
   });
@@ -67,8 +67,8 @@ describe("odds", () => {
   it("drops the emote tier into the miss once the set is whole", () => {
     const rows = oddsRows(true);
     expect(rows.map((r) => [r.kind, r.shards, r.rate, r.pity])).toEqual([
-      ["shards", 30000, 0.1, undefined], ["shards", 2500, 2, undefined], ["shards", 1000, 5, undefined],
-      ["shards", 500, 12, undefined], ["shards", 200, 30, undefined], ["miss", null, 50.9, undefined],
+      ["shards", 30000, 0.1, undefined], ["shards", 2500, 3, undefined], ["shards", 1000, 8, undefined],
+      ["shards", 500, 20, undefined], ["shards", 200, 25, undefined], ["miss", null, 43.9, undefined],
     ]);
     expect(rows.reduce((n, r) => n + r.rate, 0)).toBeCloseTo(100);
   });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The layered desk pet from ASoul-Little-Bun (background, keyboard paw, mouse paw, click
-// images) plus the emote bubble and the tap combo.
+// The layered desk pet (background, keyboard paw, mouse paw, click images) plus the emote bubble and the tap
+// combo.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { remoteMotion } from "../net/MotionFrames";

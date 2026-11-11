@@ -7,6 +7,7 @@ describe("resolveAsset", () => {
     expect(resolveAsset("bundle:cards/thumb/a.webp", "http://h:8000")).toBe("/assets/cards/thumb/a.webp");
     expect(resolveAsset("bundle:x.webp", "", "/app")).toBe("/app/assets/x.webp");
     expect(resolveAsset("pack:cards/s/a.mp4", "http://h:8000/")).toBe("http://h:8000/packs/cards/s/a.mp4");
+    expect(resolveAsset("pack:cards/s/a.mp4", "")).toBe("");
     expect(resolveAsset(null, "")).toBe("");
     expect(resolveAsset("https://e/x.png", "")).toBe("https://e/x.png");
   });

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Board } from "../net/api";
+import type { MemberProfile } from "../net/protocol";
 
 type Handler = (event: { payload: unknown }) => unknown;
 const bus = vi.hoisted(() => ({ listeners: new Map<string, Set<Handler>>() }));
@@ -65,6 +67,10 @@ it("mirrors desk state and exchanges setting edits without starting panel reques
   panel.settings.favorites.push("example");
   expect(desk.settings.character).toBe("贝拉");
   expect(desk.settings.favorites).toEqual(["example"]);
+  panel.settings.showcase.push("card");
+  panel.settings.onBoard = false;
+  expect(desk.settings.showcase).toEqual(["card"]);
+  expect(desk.settings.onBoard).toBe(false);
   desk.settings.clickThrough = true;
   expect(panel.settings.clickThrough).toBe(true);
   desk.counter.total++;
@@ -283,6 +289,23 @@ it("mirrors the host, public flag and public list, and runs host actions in the 
   desk.room.roomInfo.value = null;
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.roomInfo.value).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("runs profile and board requests in the desk and hands the panel their answers", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const profile: MemberProfile = { showcase: ["card"], progress: { cards: [1, 85], emotes: [0, 495], skins: [0, 9] } };
+  const board: Board = { total: 85, cards: [], me: { rank: null, cards: 1, big: 0, off: "account" } };
+  const room = vi.spyOn(desk.room, "loadProfile").mockResolvedValue(profile);
+  const boards = vi.spyOn(desk.player, "loadBoard").mockResolvedValue(board);
+  const row = vi.spyOn(desk.player, "loadBoardProfile").mockResolvedValue(null);
+  expect(await panel.room.loadProfile("m2")).toEqual(profile);
+  expect(room).toHaveBeenCalledWith("m2");
+  expect(await panel.player.loadBoard()).toEqual(board);
+  expect(boards).toHaveBeenCalledTimes(1);
+  expect(await panel.player.loadBoardProfile("abc")).toBeNull();
+  expect(row).toHaveBeenCalledWith("abc");
   expect(fetch).not.toHaveBeenCalled();
 });
 

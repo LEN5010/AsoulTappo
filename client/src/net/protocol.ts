@@ -99,6 +99,8 @@ export type ClientMessage =
   | { type: "motion_subscribe"; ids: string[] }
   /** Only to servers that list "poke" in `joined.features`. */
   | { type: "poke"; id: string }
+  /** Only to servers that list "profile" in `joined.features`. */
+  | { type: "profile"; id: string }
   | { type: "emote"; emote: string }
   | ({ type: "state" } & ProfilePatch)
   | { type: "ping" }
@@ -114,6 +116,8 @@ export type ServerMessage =
     type: "joined"; room: string; you: string; members: Member[]; info?: RoomInfo; motionVersion?: number;
     /** Room messages this server takes beyond the 1.1 set, e.g. "poke"; missing on older servers. */
     features?: string[];
+    /** The room's cheer bar as it stands, from servers with cheer rounds. */
+    cheer?: CheerState;
   }
   | ({ type: "room_info" } & RoomInfo)
   | { type: "member_joined"; member: Member }
@@ -130,6 +134,12 @@ export type ServerMessage =
   | { type: "poke"; from: string; to: string; quiet?: boolean }
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }
+  /** To the member who asked: member [id]'s profile. */
+  | ({ type: "profile"; id: string } & MemberProfile)
+  /** The room's cheer bar: at most every 2 s while it fills, after a round, and on joining while one is under way. */
+  | ({ type: "cheer" } & CheerState)
+  /** Cheer round [round] finished: the shards each paid member got (0 once that save's cheer for the day is used up). */
+  | { type: "cheer_done"; round: number; rewards: Record<string, number> }
   | StateUpdate
   | DuelMessage
   /** A member wears emote [key] for `sec` more seconds: a duel's loser. */
@@ -137,7 +147,25 @@ export type ServerMessage =
   | { type: "error"; code: string; message: string; reason?: string }
   | { type: "pong" };
 
+/**
+ * A room's cheer bar: members' paid taps toward `target` this round (a member who left keeps theirs in `total`), each
+ * present member's share by member id, the share from which a save cheers, how many cheer (`target` grows with them),
+ * the shards each of them gets when the bar is full, and the rounds the room has finished.
+ */
+export interface CheerState {
+  target: number; minShare: number; total: number; shares: Record<string, number>; count: number; reward: number; rounds: number;
+}
+
+/** [owned, total] of each kind, counted as the album does. */
+export interface CollectionProgress { cards: [number, number]; emotes: [number, number]; skins: [number, number] }
+/** What a member's profile shows of its save: up to three showcase card ids, and progress (null without a save). */
+export interface MemberProfile { showcase: string[]; progress: CollectionProgress | null }
+
 export const MAX_ROOM_SIZE = 20;
+/** Cards a save may pin to its profile. */
+export const MAX_SHOWCASE = 3;
+/** Longest nick the boards keep; the same as game.py MAX_BOARD_NICK. */
+export const MAX_BOARD_NICK = 24;
 
 /** http(s)://host[:port][/base] -> ws(s)://host[:port][/base]/ws */
 export function toWsUrl(serverUrl: string): string {

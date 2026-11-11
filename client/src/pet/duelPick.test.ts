@@ -157,7 +157,7 @@ describe("the bets over a partner's pet", () => {
 });
 
 
-describe("poking and the plate key over a partner's pet", () => {
+describe("poking and the profile key over a partner's pet", () => {
   let leave: (() => void) | undefined;
   beforeEach(() => {
     vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
@@ -167,7 +167,7 @@ describe("poking and the plate key over a partner's pet", () => {
   });
   afterEach(() => { leave?.(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-  async function setup(features?: string[], plate?: string) {
+  async function setup(features?: string[]) {
     const room = await import("../stores/room");
     const pick = await import("./duelPick");
     const ui = await import("../stores/ui");
@@ -176,9 +176,24 @@ describe("poking and the plate key over a partner's pet", () => {
     const socket = Socket.all[0];
     socket.open();
     socket.recv({ type: "joined", room: "r", you: "me", features,
-      members: [ME, { ...FRIEND, plate }, GUEST] });
+      members: [ME, FRIEND, GUEST] });
     return { room, pick, ui: ui.ui, socket };
   }
+
+  it("keeps the cheer bar and shows a finished round's shards over the paid pets", async () => {
+    const { room, socket } = await setup(["cheer"]);
+    expect(room.cheerOn.value).toBe(true);
+    socket.recv({ type: "cheer", target: 600, minShare: 50, total: 300, shares: { me: 200, friend: 100 }, count: 2, reward: 20, rounds: 0 });
+    expect(room.cheer.value).toMatchObject({ total: 300, shares: { me: 200, friend: 100 } });
+    socket.recv({ type: "cheer_done", round: 1, rewards: { me: 30, friend: 30, guest: 0 } });
+    expect(room.cheerDone.value).toEqual({ round: 1, got: 30 });
+    expect(room.localPet.win).not.toBeNull();
+    expect(room.members.get("friend")!.win).not.toBeNull();
+    expect(room.members.get("guest")!.win).toBeNull();
+    socket.close();
+    expect(room.cheer.value).toBeNull();
+    expect(room.cheerOn.value).toBe(false);
+  });
 
   it("offers nothing on a server without pokes to a member a duel is not possible with", async () => {
     const { room, pick } = await setup(undefined);
@@ -189,7 +204,7 @@ describe("poking and the plate key over a partner's pet", () => {
     const { room, pick, socket } = await setup(["poke"]);
     expect(pick.openPick(room.members.get("me")!)).toBe(false);
     expect(pick.openPick(room.members.get("guest")!)).toBe(true);
-    expect(pick.pickKeys.value).toEqual({ poke: true, duel: false, plate: null });
+    expect(pick.pickKeys.value).toEqual({ poke: true, duel: false, profile: false });
     expect(pick.pickSize().w).toBe(pick.ASK_WIDTH);
     pick.pickPoke();
     expect(pick.picking.value).toBeNull();
@@ -203,6 +218,21 @@ describe("poking and the plate key over a partner's pet", () => {
     expect(room.poke("guest")).toBe(false); // the same member waits longer
     vi.advanceTimersByTime(room.POKE_SAME_MS);
     expect(room.poke("guest")).toBe(true);
+  });
+
+  it("sends a poke pressed inside the cooldown once it ends, and a refusal after all stays quiet", async () => {
+    const { room, socket } = await setup(["poke"]);
+    room.pokeSoon("guest");
+    expect(socket.sent.filter((m) => m.type === "poke")).toHaveLength(1);
+    vi.advanceTimersByTime(1000);
+    room.pokeSoon("guest"); // poking back right away
+    expect(socket.sent.filter((m) => m.type === "poke")).toHaveLength(1);
+    vi.advanceTimersByTime(room.POKE_SAME_MS - 1000 - 1);
+    expect(socket.sent.filter((m) => m.type === "poke")).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(socket.sent.filter((m) => m.type === "poke")).toHaveLength(2);
+    socket.recv({ type: "error", code: "poke_cooldown", message: "" });
+    expect(room.lastError.value).toBe("");
   });
 
   it("shows who poked the own pet, unless quiet, and bounces a partner's pet poked by someone else", async () => {
@@ -229,17 +259,38 @@ describe("poking and the plate key over a partner's pet", () => {
     expect(room.poked.value).toBeNull();
   });
 
-  it("opens the panel on a partner's big hidden plate card as a preview", async () => {
-    const { plateCard } = await import("./plates");
-    const { manifest } = await import("../manifest");
-    const card = manifest.cards.find((c) => plateCard(c.id));
-    expect(card).toBeTruthy();
-    const { room, pick, ui } = await setup(undefined, card!.id);
-    expect(pick.openPick(room.members.get("friend")!)).toBe(true);
-    expect(pick.pickKeys.value.plate).toBe(card!.id);
-    pick.pickPlate();
-    expect(ui.page).toBe("dex");
-    expect(ui.craftTarget).toBe(`view:card:${card!.id}`);
+  it("opens the panel on a partner's profile over the room page", async () => {
+    const { room, pick, ui } = await setup(["poke", "profile"]);
+    expect(pick.openPick(room.members.get("me")!)).toBe(false);
+    expect(pick.openPick(room.members.get("guest")!)).toBe(true);
+    expect(pick.pickKeys.value).toEqual({ poke: true, duel: false, profile: true });
+    pick.pickProfile();
+    expect(ui.page).toBe("room");
+    expect(ui.craftTarget).toBe("profile:guest");
     expect(pick.picking.value).toBeNull();
+  });
+
+  it("asks the server for profiles one at a time, and gives up on no answer or a dropped connection", async () => {
+    const { room, socket } = await setup(["profile"]);
+    const progress = { cards: [1, 85], emotes: [20, 495], skins: [0, 9] };
+    const friend = room.loadProfile("friend");
+    const again = room.loadProfile("friend");
+    const guest = room.loadProfile("guest");
+    await vi.advanceTimersByTimeAsync(0);
+    // one request answers both waits for the same member; the next waits for the server's spacing
+    expect(socket.sent.filter((m) => m.type === "profile")).toEqual([{ type: "profile", id: "friend" }]);
+    socket.recv({ type: "profile", id: "friend", showcase: ["c1"], progress });
+    await expect(friend).resolves.toEqual({ showcase: ["c1"], progress });
+    await expect(again).resolves.toEqual({ showcase: ["c1"], progress });
+    await vi.advanceTimersByTimeAsync(room.PROFILE_GAP_MS);
+    expect(socket.sent.at(-1)).toEqual({ type: "profile", id: "guest" });
+    await vi.advanceTimersByTimeAsync(room.PROFILE_TIMEOUT_MS);
+    await expect(guest).resolves.toBeNull();
+    expect(await room.loadProfile("me")).toBeNull(); // the own profile is read locally
+    const dropped = room.loadProfile("friend");
+    await vi.advanceTimersByTimeAsync(room.PROFILE_GAP_MS);
+    socket.close();
+    await expect(dropped).resolves.toBeNull();
+    expect(room.profileOn.value).toBe(false);
   });
 });

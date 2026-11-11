@@ -785,7 +785,7 @@ pub fn run() {
             write_log,
             access::input_access_missing,
             access::open_input_settings,
-            hotkey::set_boss_key,
+            hotkey::set_hotkey,
             update::install_version
         ])
         .on_window_event(|window, event| {

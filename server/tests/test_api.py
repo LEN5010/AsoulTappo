@@ -67,7 +67,7 @@ def test_craft_and_loadout_routes(client):
     assert client.post("/api/craft", json={"item": "emote:e.03"}, headers=H).json()["shards"] == 1120
     assert client.post("/api/craft", json={"item": "nope"}, headers=H).status_code == 400
     lo = client.post("/api/loadout", json={"character": "嘉然", "favorites": ["e.01"]}, headers=H).json()
-    assert lo == {"character": "嘉然", "favorites": ["e.01"], "plate": None}
+    assert lo == {"character": "嘉然", "favorites": ["e.01"], "plate": None, "showcase": [], "nick": "", "board": True}
     assert client.get("/api/loadout", headers=H).json() == lo
     assert client.post("/api/craft", json={"item": "card:c1"}, headers=H).status_code == 200
     assert client.post("/api/loadout", json={"character": "嘉然山海经"}, headers=H).status_code == 400

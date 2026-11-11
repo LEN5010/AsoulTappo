@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { adminStatus, exportLog, isTauri, openAboutLink, setBossKey, setRunAsAdmin, type AdminStatus } from "../composables/tauri";
+import { adminStatus, exportLog, isTauri, openAboutLink, setHotkey, setRunAsAdmin, type AdminStatus, type HotkeySlot } from "../composables/tauri";
 import { shortcutLabel, shortcutOf } from "../desktop/bossKey";
 import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
@@ -16,6 +16,8 @@ import { counter } from "../stores/counter";
 import RangeInput from "../ui/RangeInput.vue";
 import PetBust from "./PetBust.vue";
 import AsasfansPromo from "./AsasfansPromo.vue";
+import LegalDoc from "./LegalDoc.vue";
+import { DOC_TITLES, type DocName } from "../legal";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
@@ -54,6 +56,8 @@ const SPACE = "https://space.bilibili.com/107261543";
 const MAIL = "len5010@qq.com";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
+/** The legal text open for reading again. */
+const legalOpen = ref<DocName | null>(null);
 const copied = ref(false);
 async function copyMail() {
   try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
@@ -62,32 +66,52 @@ const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
 
-// The hide key: the button waits for the next shortcut pressed; Escape leaves it as it was.
+// The hide key and the click-through key: a key waits for the next shortcut pressed; Escape leaves it as it was.
 const IS_MAC = /Mac/i.test(navigator.userAgent);
-const recording = ref(false);
-const keyNote = ref("");
-async function saveKey(keys: string) {
-  recording.value = false;
+const HOTKEYS: { slot: HotkeySlot; label: string; title: string; key: "bossKey" | "clickThroughKey" }[] = [
+  { slot: "click-through", label: "点击穿透热键", title: "按下后切换点击穿透", key: "clickThroughKey" },
+  { slot: "hide", label: "隐藏热键", title: "按下后隐藏桌宠和面板，再按一次恢复", key: "bossKey" },
+];
+const recording = ref<HotkeySlot | null>(null);
+const keyNote = ref<Partial<Record<HotkeySlot, string>>>({});
+async function saveKey(slot: HotkeySlot, keys: string) {
+  recording.value = null;
+  const key = HOTKEYS.find((h) => h.slot === slot)!.key;
   try {
-    await setBossKey(keys);
-    settings.bossKey = keys;
-    keyNote.value = "";
-  } catch {
-    keyNote.value = "无法使用";
-    await setBossKey(settings.bossKey).catch(() => {});
+    await setHotkey(slot, keys);
+    settings[key] = keys;
+    keyNote.value = { ...keyNote.value, [slot]: "" };
+  } catch (e) {
+    keyNote.value = { ...keyNote.value, [slot]: String(e) === "taken" ? "和另一个热键重复" : "无法使用" };
+    await setHotkey(slot, settings[key]).catch(() => {});
   }
 }
 function onRecordKey(e: KeyboardEvent) {
   e.preventDefault();
   e.stopPropagation();
-  if (e.code === "Escape") { recording.value = false; return; }
+  const slot = recording.value;
+  if (!slot) return;
+  if (e.code === "Escape") { recording.value = null; return; }
   const keys = shortcutOf(e);
-  if (keys) void saveKey(keys);
+  if (keys) void saveKey(slot, keys);
 }
-watch(recording, (on) => {
-  if (on) { keyNote.value = ""; window.addEventListener("keydown", onRecordKey, true); }
-  else window.removeEventListener("keydown", onRecordKey, true);
+watch(recording, (slot) => {
+  window.removeEventListener("keydown", onRecordKey, true);
+  if (slot) { keyNote.value = { ...keyNote.value, [slot]: "" }; window.addEventListener("keydown", onRecordKey, true); }
 });
+
+// Both columns end on one line: groups are split so the rows come out about even (the desk-only window group goes
+// with the pet group), and each group then grows in step with its row count, so the shorter column's rows stretch
+// a few pixels each instead of leaving blank paper.
+type Group = "pet" | "window" | "online" | "sound" | "about";
+const COLUMNS: Group[][] = isTauri ? [["pet", "window"], ["online", "sound", "about"]] : [["pet", "sound"], ["online", "about"]];
+const rows = computed<Record<Group, number>>(() => ({
+  pet: 7,
+  window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0),
+  online: 4,
+  sound: 3,
+  about: isTauri ? 6 : 5,
+}));
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
 
 // Windows: start as administrator, so games run as administrator still reach the pet.
@@ -165,163 +189,186 @@ async function exportLogFile() {
     </section>
 
     <div class="columns">
-      <div class="column">
-        <section data-rise>
-          <h4 class="ui-label"><span>桌宠表现</span></h4>
-          <div class="ui-group ui-frame">
-            <label class="ui-row">
-              <span>桌宠大小</span>
-              <span class="ui-ctl">
-                <RangeInput v-model="settings.scale" :min="0.5" :max="2" :step="0.1" />
-                <b class="ui-val">×{{ settings.scale.toFixed(1) }}</b>
-              </span>
-            </label>
-            <label class="ui-row">
-              <span>表情停留时间</span>
-              <span class="ui-ctl">
-                <RangeInput v-model="settings.emoteHoldMs" :min="1200" :max="6000" :step="100" />
-                <b class="ui-val">{{ (settings.emoteHoldMs / 1000).toFixed(1) }} 秒</b>
-              </span>
-            </label>
-            <label class="ui-row">
-              <span>鼠标爪跟随光标</span>
-              <input v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row" :class="{ off: !settings.mouseFollow }">
-              <span>跟随灵敏度</span>
-              <span class="ui-ctl">
-                <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" :disabled="!settings.mouseFollow" />
-                <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
-              </span>
-            </label>
-            <div class="ui-row">
-              <span>桌宠位置</span>
-              <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
+      <div v-for="(column, ci) in COLUMNS" :key="ci" class="column">
+        <template v-for="group in column" :key="group">
+          <section v-if="group === 'pet'" data-rise :style="{ '--rows': rows.pet }">
+            <h4 class="ui-label"><span>桌宠表现</span></h4>
+            <div class="ui-group ui-frame">
+              <label class="ui-row">
+                <span>桌宠大小</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.scale" :min="0.5" :max="2" :step="0.1" />
+                  <b class="ui-val">×{{ settings.scale.toFixed(1) }}</b>
+                </span>
+              </label>
+              <label class="ui-row">
+                <span>表情停留时间</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.emoteHoldMs" :min="1200" :max="6000" :step="100" />
+                  <b class="ui-val">{{ (settings.emoteHoldMs / 1000).toFixed(1) }} 秒</b>
+                </span>
+              </label>
+              <label class="ui-row">
+                <span>鼠标爪跟随光标</span>
+                <input v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row" :class="{ off: !settings.mouseFollow }">
+                <span>跟随灵敏度</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" :disabled="!settings.mouseFollow" />
+                  <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
+                </span>
+              </label>
+              <div class="ui-row">
+                <span>桌宠位置</span>
+                <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
+              </div>
+              <label class="ui-row" title="收起后点击桌宠显示">
+                <span>收起任务栏</span>
+                <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>显示敲击碎片</span>
+                <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
+              </label>
             </div>
-            <label class="ui-row" title="收起后点击桌宠显示">
-              <span>收起任务栏</span>
-              <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row">
-              <span>显示敲击碎片</span>
-              <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
-              <span>显示伙伴铭牌</span>
-              <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
-            </label>
-            <label class="ui-row" title="伙伴昵称换成他们桌宠的成员名，直播时用">
-              <span>隐藏伙伴 ID</span>
-              <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row">
-              <span>猜拳免打扰</span>
-              <input v-model="settings.duelDnd" class="ui-switch" type="checkbox" />
-            </label>
-            <div v-if="isTauri" class="ui-row" title="按下后隐藏桌宠和面板，再按一次恢复">
-              <span>隐藏热键</span>
-              <span class="version-side">
-                <small v-if="keyNote" role="status" class="check-note">{{ keyNote }}</small>
-                <button v-if="settings.bossKey && !recording" type="button" class="ui-btn small" @click="saveKey('')">清除</button>
-                <button type="button" class="ui-btn small" :class="{ primary: recording }" @click="recording = !recording">
-                  {{ recording ? "按下组合键" : settings.bossKey ? shortcutLabel(settings.bossKey, IS_MAC) : "未设置" }}
-                </button>
-              </span>
-            </div>
-          </div>
-        </section>
-      </div>
+          </section>
 
-      <div class="column">
-        <section v-if="isTauri" data-rise>
-          <h4 class="ui-label"><span>窗口设置</span></h4>
-          <div class="ui-group ui-frame">
-            <label class="ui-row">
-              <span>桌宠置顶</span>
-              <input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row">
-              <span>点击穿透</span>
-              <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row" title="单独一个普通窗口，只有自己的桌宠，给 OBS 窗口采集和截图用">
-              <span>采集窗口</span>
-              <input v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
-            </label>
-            <label v-if="settings.captureOpen" class="ui-row" title="在 OBS 里用色度键去掉">
-              <span>采集背景色</span>
-              <input v-model="settings.captureBg" class="swatch" type="color" />
-            </label>
-            <label v-if="admin?.supported" class="ui-row">
-              <span>以管理员身份启动</span>
-              <input
-                class="ui-switch" type="checkbox" :checked="admin.runAsAdmin"
-                :disabled="adminBusy || (!admin.canElevate && !admin.elevated)" @change="toggleAdmin"
-              />
-            </label>
-          </div>
-        </section>
+          <section v-else-if="group === 'window'" data-rise :style="{ '--rows': rows.window }">
+            <h4 class="ui-label"><span>窗口设置</span></h4>
+            <div class="ui-group ui-frame">
+              <label class="ui-row">
+                <span>桌宠置顶</span>
+                <input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>点击穿透</span>
+                <input v-model="settings.clickThrough" class="ui-switch" type="checkbox" />
+              </label>
+              <div v-for="h in HOTKEYS" :key="h.slot" class="ui-row" :title="h.title">
+                <span>{{ h.label }}</span>
+                <span class="version-side">
+                  <small v-if="keyNote[h.slot]" role="status" class="check-note">{{ keyNote[h.slot] }}</small>
+                  <button v-if="settings[h.key] && recording !== h.slot" type="button" class="ui-btn small" @click="saveKey(h.slot, '')">清除</button>
+                  <button
+                    type="button" class="ui-btn small" :class="{ primary: recording === h.slot }"
+                    @click="recording = recording === h.slot ? null : h.slot"
+                  >
+                    {{ recording === h.slot ? "按下组合键" : settings[h.key] ? shortcutLabel(settings[h.key], IS_MAC) : "未设置" }}
+                  </button>
+                </span>
+              </div>
+              <label class="ui-row" title="单独一个普通窗口，只有自己的桌宠，给 OBS 窗口采集和截图用">
+                <span>采集窗口</span>
+                <input v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
+              </label>
+              <label v-if="settings.captureOpen" class="ui-row" title="在 OBS 里用色度键去掉">
+                <span>采集背景色</span>
+                <input v-model="settings.captureBg" class="swatch" type="color" />
+              </label>
+              <label v-if="admin?.supported" class="ui-row">
+                <span>以管理员身份启动</span>
+                <input
+                  class="ui-switch" type="checkbox" :checked="admin.runAsAdmin"
+                  :disabled="adminBusy || (!admin.canElevate && !admin.elevated)" @change="toggleAdmin"
+                />
+              </label>
+            </div>
+          </section>
 
-        <section data-rise>
-          <h4 class="ui-label"><span>声音</span></h4>
-          <div class="ui-group ui-frame">
-            <label class="ui-row">
-              <span>播放卡面音频</span>
-              <input v-model="settings.cardAudio" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row">
-              <span>界面音效</span>
-              <input v-model="settings.sfx" class="ui-switch" type="checkbox" />
-            </label>
-            <label class="ui-row">
-              <span>音量</span>
-              <span class="ui-ctl">
-                <RangeInput v-model="settings.volume" :min="0" :max="1" :step="0.05" />
-                <b class="ui-val">{{ Math.round(settings.volume * 100) }}%</b>
-              </span>
-            </label>
-          </div>
-        </section>
+          <section v-else-if="group === 'online'" data-rise :style="{ '--rows': rows.online }">
+            <h4 class="ui-label"><span>联机</span></h4>
+            <div class="ui-group ui-frame">
+              <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
+                <span>显示伙伴铭牌</span>
+                <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
+              </label>
+              <label class="ui-row" title="伙伴昵称换成他们桌宠的成员名，直播时用">
+                <span>隐藏伙伴 ID</span>
+                <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>猜拳免打扰</span>
+                <input v-model="settings.duelDnd" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>上收藏榜</span>
+                <input v-model="settings.onBoard" class="ui-switch" type="checkbox" />
+              </label>
+            </div>
+          </section>
 
-        <section data-rise>
-          <h4 class="ui-label"><span>关于</span></h4>
-          <div class="ui-group ui-frame">
-            <div class="ui-row">
-              <span>版本</span>
-              <span class="version-side">
-                <small v-if="checkNote" role="status" class="check-note">{{ checkNote }}</small>
-                <b class="version">{{ version }}</b>
-                <button v-if="updateOffer" type="button" class="ui-btn small primary" @click="openUpdateDialog">更新</button>
-                <button
-                  v-else type="button" class="ui-btn small" :disabled="checkState === 'checking'"
-                  @click="lookForUpdate(true)"
-                >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
-              </span>
+          <section v-else-if="group === 'sound'" data-rise :style="{ '--rows': rows.sound }">
+            <h4 class="ui-label"><span>声音</span></h4>
+            <div class="ui-group ui-frame">
+              <label class="ui-row">
+                <span>播放卡面音频</span>
+                <input v-model="settings.cardAudio" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>界面音效</span>
+                <input v-model="settings.sfx" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>音量</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.volume" :min="0" :max="1" :step="0.05" />
+                  <b class="ui-val">{{ Math.round(settings.volume * 100) }}%</b>
+                </span>
+              </label>
             </div>
-            <div v-if="isTauri" class="ui-row">
-              <span>运行日志</span>
-              <span class="version-side">
-                <small v-if="logNote" role="status" class="check-note">{{ logNote }}</small>
-                <button type="button" class="ui-btn small" :disabled="exporting" @click="exportLogFile">导出</button>
-              </span>
+          </section>
+
+          <section v-else data-rise :style="{ '--rows': rows.about }">
+            <h4 class="ui-label"><span>关于</span></h4>
+            <div class="ui-group ui-frame">
+              <div class="ui-row">
+                <span>版本</span>
+                <span class="version-side">
+                  <small v-if="checkNote" role="status" class="check-note">{{ checkNote }}</small>
+                  <b class="version">{{ version }}</b>
+                  <button v-if="updateOffer" type="button" class="ui-btn small primary" @click="openUpdateDialog">更新</button>
+                  <button
+                    v-else type="button" class="ui-btn small" :disabled="checkState === 'checking'"
+                    @click="lookForUpdate(true)"
+                  >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
+                </span>
+              </div>
+              <div v-if="isTauri" class="ui-row">
+                <span>运行日志</span>
+                <span class="version-side">
+                  <small v-if="logNote" role="status" class="check-note">{{ logNote }}</small>
+                  <button type="button" class="ui-btn small" :disabled="exporting" @click="exportLogFile">导出</button>
+                </span>
+              </div>
+              <div class="ui-row">
+                <span>项目主页</span>
+                <button type="button" class="ui-btn small" @click="openAboutLink(REPO)">GitHub</button>
+              </div>
+              <div class="ui-row">
+                <span>协议与隐私</span>
+                <span class="version-side">
+                  <button type="button" class="ui-btn small" @click="legalOpen = 'terms'">用户协议</button>
+                  <button type="button" class="ui-btn small" @click="legalOpen = 'privacy'">隐私政策</button>
+                </span>
+              </div>
+              <div class="ui-row">
+                <span>作者</span>
+                <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
+              </div>
+              <div class="ui-row">
+                <span>神秘按钮</span>
+                <button type="button" class="ui-btn small" @click="promoOpen = true">点我试试</button>
+              </div>
             </div>
-            <div class="ui-row">
-              <span>项目主页</span>
-              <button type="button" class="ui-btn small" @click="openAboutLink(REPO)">GitHub</button>
-            </div>
-            <div class="ui-row">
-              <span>作者</span>
-              <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
-            </div>
-            <div class="ui-row">
-              <span>神秘按钮</span>
-              <button type="button" class="ui-btn small" @click="promoOpen = true">点我试试</button>
-            </div>
-          </div>
-        </section>
+          </section>
+        </template>
       </div>
     </div>
 
+    <Modal v-if="legalOpen" :title="DOC_TITLES[legalOpen]" heading wide @close="legalOpen = null">
+      <LegalDoc :doc="legalOpen" />
+    </Modal>
     <Modal v-if="promoOpen" title="Asasfans" heading @close="promoOpen = false">
       <AsasfansPromo />
     </Modal>
@@ -554,14 +601,20 @@ async function exportLogFile() {
   flex-direction: column;
   gap: 14px;
 }
-/* The last group in each column grows so both columns end on the same line. */
-.column > section:last-child {
+/* Groups grow in step with their row count (--rows), so a shorter column spreads its rows evenly to end on the
+   same line as the other. */
+.column > section {
+  flex: var(--rows, 1) 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.column > section > .ui-group {
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-.column > section:last-child > .ui-group {
-  flex: 1;
+.column > section > .ui-group > .ui-row {
+  flex: 1 0 auto;
 }
 .columns .ui-row.off > span:first-child {
   color: var(--ink-3);

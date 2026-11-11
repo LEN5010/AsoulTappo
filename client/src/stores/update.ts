@@ -1,9 +1,10 @@
 // Update check. The newest version comes from the room server, which reads the main site's release
 // list: many players cannot reach GitHub. The signed package itself still comes from GitHub through
 // the Tauri updater; when that fails, the dialog offers the download page on the main site.
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { isTauri, openAboutLink } from "../composables/tauri";
+import { agreed } from "../legal/consent";
 import { Api, type Announcement, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { isNewer } from "../semver";
@@ -99,6 +100,7 @@ function offer(found: ReleaseInfo, manual: boolean): void {
  */
 export async function lookForUpdate(manual = false, again = false): Promise<void> {
   if (checkState.value === "checking" || updateBusy.value) return;
+  if (!manual && !agreed.value) return;
   if (!manual) {
     if (looked && !again) return;
     looked = true;
@@ -129,9 +131,14 @@ export async function lookForUpdate(manual = false, again = false): Promise<void
 const WATCH_MS = 30 * 60 * 1000;
 /** Asks again now and every half hour, so a minimum version or an announcement set later still arrives. */
 export function watchRelease(): () => void {
-  void lookForUpdate(false, true);
-  const timer = setInterval(() => void lookForUpdate(false, true), WATCH_MS);
-  return () => clearInterval(timer);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  // Nothing is asked before the player agrees to the terms (src/legal); agreeing starts the watch.
+  const stop = watch(agreed, (ok) => {
+    if (!ok || timer) return;
+    void lookForUpdate(false, true);
+    timer = setInterval(() => void lookForUpdate(false, true), WATCH_MS);
+  }, { immediate: true });
+  return () => { stop(); clearInterval(timer); };
 }
 
 export function openUpdateDialog(): void {

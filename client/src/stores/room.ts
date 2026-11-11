@@ -5,8 +5,8 @@ import { remoteMotion } from "../net/MotionFrames";
 import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
-  restingMotion, toHttpBase, type DuelMessage, type Hand, type Member, type PetMotion, type ProfilePatch, type PublicRoom,
-  type RoomInfo,
+  restingMotion, toHttpBase, type CheerState, type DuelMessage, type Hand, type Member, type MemberProfile, type PetMotion, type ProfilePatch,
+  type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote, manifest, memberOf } from "../manifest";
@@ -131,12 +131,17 @@ const events: RoomEvents = {
       roomInfo.value = null;
       endDuel();
       endPokes();
+      endProfiles();
+      endCheer();
     }
   },
   onJoined(room, you, list, features) {
     roomId.value = room;
     youId.value = you;
     pokeOn.value = features.includes("poke");
+    profileOn.value = features.includes("profile");
+    endCheer();
+    cheerOn.value = features.includes("cheer");
     lastError.value = "";
     clearMembers();
     list.forEach(add);
@@ -195,6 +200,24 @@ const events: RoomEvents = {
     const m = members.get(from);
     if (!quiet && m && from !== youId.value) showPoked(from, shownNick(m));
   },
+  onProfile(id, profile) {
+    settleProfile(id, profile);
+  },
+  onCheer(state) {
+    cheer.value = state;
+  },
+  onCheerDone(round, rewards) {
+    // Every paid pet shows its shards at once, the own one included; the shard count follows from the server.
+    noteActivity();
+    for (const [id, got] of Object.entries(rewards)) {
+      if (got <= 0) continue;
+      if (id === youId.value) localWin.add(got);
+      else players.get(id)?.win.add(got);
+    }
+    const mine = rewards[youId.value];
+    cheerDone.value = { round, got: mine ?? null };
+    if (mine) void reloadStatus();
+  },
   onDuel(msg) {
     noteActivity();
     onDuelMessage(msg);
@@ -207,8 +230,9 @@ const events: RoomEvents = {
     m.plate = u.plate ?? null;
   },
   onError(code, message) {
-    // A late answer or hand for a duel that already ended: nothing to tell.
-    if (code === "duel_gone") return;
+    // A late answer or hand for a duel that already ended, or a poke that arrived inside the server's cooldown
+    // after all: nothing to tell.
+    if (code === "duel_gone" || code === "poke_cooldown") return;
     if (code === "rate_limited") {
       rateLimited += 1;
       return;
@@ -309,12 +333,17 @@ export const pokeOn = ref(false);
 /** Who just poked the own pet, for the bubble over it; null once it has closed. */
 export const poked = ref<{ id: string; nick: string } | null>(null);
 export const POKED_MS = 6000;
-/** The server's cooldowns (server/app/rooms.py), kept here too so a poke it would refuse is not sent. */
-export const POKE_MS = 3000;
-export const POKE_SAME_MS = 10000;
+/**
+ * The server's cooldowns (server/app/rooms.py, 3 s and 10 s), kept here too so a poke it would refuse is not sent;
+ * the margin covers uneven delivery.
+ */
+export const POKE_MS = 3300;
+export const POKE_SAME_MS = 10300;
 let pokeAt = -Infinity;
 const pokedAt = new Map<string, number>();
 let pokedTimer: ReturnType<typeof setTimeout> | undefined;
+/** A poke asked for inside a cooldown, waiting for it to end (pokeSoon). */
+let pokeLater: ReturnType<typeof setTimeout> | undefined;
 
 function showPoked(id: string, nick: string): void {
   poked.value = { id, nick };
@@ -327,6 +356,8 @@ export function closePoked(): void {
 }
 function endPokes(): void {
   pokeOn.value = false;
+  clearTimeout(pokeLater);
+  pokeLater = undefined;
   pokeAt = -Infinity;
   pokedAt.clear();
   closePoked();
@@ -337,15 +368,91 @@ export function canPoke(m: Member): boolean {
   return pokeOn.value && !isPanelWindow && !settings.clickThrough && !!youId.value && m.id !== youId.value && members.has(m.id);
 }
 
+/** How long until a poke to [id] is allowed; 0 or less when it is now. */
+const pokeWait = (id: string, now: number) => Math.max(pokeAt + POKE_MS, (pokedAt.get(id) ?? -Infinity) + POKE_SAME_MS) - now;
+
 /** Pokes [id] unless a cooldown says the server would refuse; returns whether it was sent. */
 export function poke(id: string, now = Date.now()): boolean {
   const m = members.get(id);
   if (!m || !canPoke(m)) return false;
-  if (now - pokeAt < POKE_MS || now - (pokedAt.get(id) ?? -Infinity) < POKE_SAME_MS) return false;
+  if (pokeWait(id, now) > 0) return false;
   pokeAt = now;
   pokedAt.set(id, now);
   client.sendPoke(id);
   return true;
+}
+
+/** A poke key pressed: pokes [id] now, or once the cooldowns end, so a press that comes too early still lands. */
+export function pokeSoon(id: string, now = Date.now()): void {
+  clearTimeout(pokeLater);
+  pokeLater = undefined;
+  const wait = pokeWait(id, now);
+  if (wait <= 0) poke(id, now);
+  else pokeLater = setTimeout(() => { pokeLater = undefined; poke(id); }, wait);
+}
+
+// ---------------------------------------------------------------- profiles
+/** The server answers profile requests (it lists "profile" in `joined.features`); older servers do not. */
+export const profileOn = ref(false);
+/** The server takes one request per 300ms (server/app/rooms.py); the margin covers uneven delivery. */
+export const PROFILE_GAP_MS = 500;
+export const PROFILE_TIMEOUT_MS = 5000;
+/** Requests on their way, by member id: one request answers everyone waiting for that member. */
+const profileWaits = new Map<string, { waits: ((p: MemberProfile | null) => void)[]; timer: ReturnType<typeof setTimeout> }>();
+let profileQueue: Promise<void> = Promise.resolve();
+let profileSentAt = -Infinity;
+
+function settleProfile(id: string, profile: MemberProfile | null): void {
+  const entry = profileWaits.get(id);
+  if (!entry) return;
+  profileWaits.delete(id);
+  clearTimeout(entry.timer);
+  entry.waits.forEach((w) => w(profile));
+}
+function endProfiles(): void {
+  profileOn.value = false;
+  for (const id of [...profileWaits.keys()]) settleProfile(id, null);
+}
+
+/** Whether member [m]'s profile can be asked for: another member, on a server that answers. */
+export function canProfile(m: Member): boolean {
+  return profileOn.value && !!youId.value && m.id !== youId.value && members.has(m.id);
+}
+
+/** Panel or desk: member [id]'s showcase and progress; null when the server does not answer in time. */
+export function loadProfile(id: string): Promise<MemberProfile | null> {
+  if (isPanelWindow) return requestDesktop<MemberProfile | null>("loadProfile", id).catch(() => null);
+  const m = members.get(id);
+  if (!m || !canProfile(m)) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const entry = profileWaits.get(id);
+    if (entry) {
+      entry.waits.push(resolve);
+      return;
+    }
+    profileWaits.set(id, { waits: [resolve], timer: setTimeout(() => settleProfile(id, null), PROFILE_TIMEOUT_MS) });
+    // Sent one after another, never closer than the server allows.
+    profileQueue = profileQueue.then(async () => {
+      const wait = profileSentAt + PROFILE_GAP_MS - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      if (!profileWaits.has(id)) return;
+      profileSentAt = Date.now();
+      client.sendProfile(id);
+    });
+  });
+}
+
+// ---------------------------------------------------------------- cheer
+/** The server runs cheer rounds (it lists "cheer" in `joined.features`). */
+export const cheerOn = ref(false);
+/** The room's cheer bar; null until the server sends one (it sends none on joining a room with an empty bar). */
+export const cheer = ref<CheerState | null>(null);
+/** The last round finished while here, and the shards it gave this save (null when it was not paid). */
+export const cheerDone = ref<{ round: number; got: number | null } | null>(null);
+function endCheer(): void {
+  cheerOn.value = false;
+  cheer.value = null;
+  cheerDone.value = null;
 }
 
 // ---------------------------------------------------------------- rock-paper-scissors

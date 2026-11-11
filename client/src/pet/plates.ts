@@ -13,6 +13,8 @@ export interface PlateCrop extends PlateFace {
   video?: Partial<PlateFace>;
   /** Two faces the video strip glides between, for a card with two members one above the other. */
   pan?: readonly [Pick<PlateFace, "fx" | "fy">, Pick<PlateFace, "fx" | "fy">];
+  /** Where the profile banner centres instead of the eyes, as a fraction of the card's height. */
+  bannerFy?: number;
 }
 
 export const PLATE_CROPS: Readonly<Record<string, PlateCrop>> = {
@@ -23,7 +25,9 @@ export const PLATE_CROPS: Readonly<Record<string, PlateCrop>> = {
   c1700742793033: { fx: 0.505, fy: 0.25, fw: 0.1 }, // 时序系列-乃琳
   c1745315724002: { fx: 0.475, fy: 0.287, fw: 0.12 }, // 绘心物语
   // 巡梦漫游: 心宜 in front, 思诺 above and behind her.
-  c1748345610010: { fx: 0.42, fy: 0.232, fw: 0.13, pan: [{ fx: 0.415, fy: 0.245 }, { fx: 0.565, fy: 0.125 }] },
+  c1748345610010: {
+    fx: 0.42, fy: 0.232, fw: 0.13, pan: [{ fx: 0.415, fy: 0.245 }, { fx: 0.565, fy: 0.125 }], bannerFy: 0.2,
+  },
   c1756378523002: { fx: 0.34, fy: 0.355, fw: 0.11, video: { fy: 0.3 } }, // 时空行者
   c1787896765003: { fx: 0.47, fy: 0.208, fw: 0.1 }, // 歌剧之星
   c1785126321002: { fx: 0.48, fy: 0.167, fw: 0.15 }, // 月下童话
@@ -151,21 +155,43 @@ export interface ArtBox { width: number; height: number; left: number; top: numb
 /** `at`, moved as little as needed so art larger than the strip covers it and art smaller stays whole inside it. */
 const within = (at: number, slack: number) => Math.min(Math.max(at, Math.min(0, slack)), Math.max(0, slack));
 
+/** How large the face is drawn: `span` is face width over the frame's height. */
+export interface ArtFit { span: number }
+/** The plate under a pet: the band from the brows to the nose. */
+export const STRIP_FIT: ArtFit = { span: FACE_SPAN };
+/** A sweep plate on a profile namecard: its cut-out with more around the face, still standing on its coral. */
+export const BANNER_FIT: ArtFit = { span: 0.45 };
+/** A namecard's artwork spans at most this many times its height, the framing the banner crops are set for. */
+export const BANNER_ASPECT = 3;
+/** On the banner the eyes sit this far down, a little above the middle, leaving room for the shoulders. */
+export const BANNER_EYES = 0.45;
+
 /**
  * Where the picture (height `aspect` x its width) goes in a w x h strip: eyes at `anchor` across and mid-height,
  * never past the picture's edges where it is larger than the strip, never cut where it is smaller.
  */
-export function plateArt(face: PlateFace, w: number, h: number, anchor = PLATE_ANCHOR, aspect = CARD_ASPECT): ArtBox {
-  const width = (FACE_SPAN * h) / face.fw;
+export function plateArt(
+  face: PlateFace, w: number, h: number, anchor = PLATE_ANCHOR, aspect = CARD_ASPECT, fit: ArtFit = STRIP_FIT,
+): ArtBox {
+  const width = (fit.span * h) / face.fw;
   const height = width * aspect;
   return { width, height, left: within(anchor * w - face.fx * width, w - width), top: within(h / 2 - face.fy * height, h - height) };
 }
 
+/**
+ * Where a card goes on a profile namecard: the full-size still exactly as wide as the artwork, so it is drawn at about
+ * its own resolution (the video is too small for a banner), the eyes BANNER_EYES down.
+ */
+export function bannerArt(crop: PlateCrop, w: number, h: number, aspect = CARD_ASPECT): ArtBox {
+  const height = w * aspect;
+  return { width: w, height, left: 0, top: within(BANNER_EYES * h - (crop.bannerFy ?? crop.fy) * height, h - height) };
+}
+
 /** Where a sweep plate's picture goes on its face and on its first band. */
-export function sweepArt(sweep: PlateSweep, w: number, h: number): { face: ArtBox; from: ArtBox } {
+export function sweepArt(sweep: PlateSweep, w: number, h: number, fit: ArtFit = STRIP_FIT): { face: ArtBox; from: ArtBox } {
   return {
-    face: plateArt(sweep.face, w, h, PLATE_ANCHOR, sweep.aspect),
-    from: plateArt({ ...sweep.face, ...sweep.from }, w, h, PLATE_ANCHOR, sweep.aspect),
+    face: plateArt(sweep.face, w, h, PLATE_ANCHOR, sweep.aspect, fit),
+    from: plateArt({ ...sweep.face, ...sweep.from }, w, h, PLATE_ANCHOR, sweep.aspect, fit),
   };
 }
 

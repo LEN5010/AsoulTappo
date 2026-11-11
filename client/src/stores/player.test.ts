@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { plateCard, plateSet } from "../pet/plates";
+import { TERMS_VERSION } from "../legal";
 
 let player: typeof import("./player") | undefined;
 const response = (data: unknown) => ({ ok: true, json: async () => data }) as Response;
@@ -19,9 +20,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function setup(server = "http://a") {
+async function setup(server = "http://a", agreed = true) {
   const { settings } = await import("./settings");
   settings.serverUrl = server;
+  if (agreed) settings.termsAgreed = TERMS_VERSION;
   player = await import("./player");
   player.startReporting();
   return { settings, p: player };
@@ -109,6 +111,34 @@ it("discards a draw result after switching servers", async () => {
   release(response({ shards: 800, drops: [] }));
   expect(await draw).toBeNull();
   expect(p.status.value?.shards).toBe(0);
+});
+
+it("sends nothing to the server until the terms are agreed, then starts reporting", async () => {
+  const urls: string[] = [];
+  vi.stubGlobal("fetch", async (url: string) => {
+    urls.push(url);
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { shards: 0 });
+  });
+  const { p, settings } = await setup("http://a", false);
+  p.countInput();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(urls).toEqual([]);
+  settings.termsAgreed = TERMS_VERSION;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(urls.some((u) => u.endsWith("/me"))).toBe(true);
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(urls.some((u) => u.endsWith("/presence"))).toBe(true);
+});
+
+it("keeps a cooldown report and the last batch unsent before the terms are agreed", async () => {
+  const fetch = vi.fn(async () => response({ shards: 0 }));
+  vi.stubGlobal("fetch", fetch);
+  const { p } = await setup("http://a", false);
+  p.countInput();
+  p.reportCooldown(Date.now() + 5000);
+  p.stopReporting();
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it("reports running time even when there are no key presses", async () => {
@@ -248,6 +278,18 @@ it("loads the stored loadout of another save instead of pushing the local one to
   await vi.advanceTimersByTimeAsync(500);
   expect(calls).toEqual(["pull", "push"]);
   expect(pushed[0]).toMatchObject({ character: "嘉然" });
+});
+
+it("gives another save this device's board nick and opt-out once its loadout is loaded", async () => {
+  vi.stubGlobal("localStorage", memoryStorage({ [OWNER]: "http://a|old" }));
+  const { calls, pushed } = loadoutServer({ character: "贝拉", favorites: [], plate: null, showcase: [], nick: "", board: true });
+  const { settings: local } = await import("./settings");
+  local.nick = "LEN";
+  local.onBoard = false;
+  await setup();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(calls).toEqual(["pull", "push"]);
+  expect(pushed[0]).toMatchObject({ character: "贝拉", nick: "LEN", board: false });
 });
 
 it("does not push local changes to another save while its loadout is loading", async () => {
@@ -434,4 +476,25 @@ it("asks nothing about scratch cards from a server that has none", async () => {
   expect(calls.filter((c) => c.includes("scratch"))).toEqual([]);
   expect(p.error.value).toBe("");
   expect(p.scratchCard.value).toBeNull();
+});
+
+it("offers the update rewards this version reaches and claims them in one request", async () => {
+  const claims: string[] = [];
+  let open = [{ id: 1, version: "0.0.1", shards: 300 }, { id: 2, version: "999.0.0", shards: 900 }];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/collection")) return response({ owned: {}, recent: [] });
+    if (url.endsWith("/update-reward")) {
+      claims.push((init!.headers as Record<string, string>)["X-Client-Version"]!);
+      open = open.filter((r) => r.id !== 1);
+      return response({ shards: 1900, updateRewards: open, reward: { shards: 300, ids: [1] } });
+    }
+    return response({ shards: 1600, updateRewards: open });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(p.updateRewards.value.map((r) => r.id)).toEqual([1]);
+  expect(await p.claimUpdateRewards()).toBe(300);
+  expect(claims).toHaveLength(1);
+  expect(p.status.value?.shards).toBe(1900);
+  expect(p.updateRewards.value).toEqual([]);
 });

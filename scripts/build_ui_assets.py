@@ -27,7 +27,7 @@ def ui_text() -> str:
     source, whose refusal messages the client shows as they come."""
     chars = {chr(c) for c in range(0x20, 0x7f)}
     for path in (CLIENT / "src").rglob("*"):
-        if path.suffix in {".vue", ".ts", ".json"} and not path.name.endswith(".test.ts"):
+        if path.suffix in {".vue", ".ts", ".json", ".md"} and not path.name.endswith(".test.ts"):
             chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
     for path in (ROOT / "server" / "app").rglob("*.py"):
         chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
