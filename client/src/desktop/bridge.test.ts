@@ -308,3 +308,73 @@ it("mirrors the duel into the panel and runs invites in the desk", async () => {
   expect(panel.room.duel.value).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("keeps a pet's pose that reaches the panel before the member and applies it once the member arrives", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const pose = { dx: 3, dy: 2, keyDown: false, left: false, right: true };
+  // Two updates for a member the panel has not heard of yet (its state goes over more slowly): they merge.
+  await emitTo("panel", "desktop:motion", { members: [{ id: "late", motion: { ...pose, dx: 1 } }], local: { emote: null, win: null } });
+  await emitTo("panel", "desktop:motion", { members: [{ id: "late", motion: pose }], local: { emote: null, win: null } });
+  expect(panel.room.members.has("late")).toBe(false);
+  desk.room.members.set("late", { id: "late", nick: "迟到", character: "贝拉", taps: 0,
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+  await vi.advanceTimersByTimeAsync(50);
+  // The pose waits for the member; its taps come from the desk, which holds the current count.
+  const late = panel.room.members.get("late")!;
+  expect(late.motion).toEqual(pose);
+  expect(late.taps).toBe(0);
+  const drawn: unknown[] = [];
+  panel.motion.subscribe("late", (shown) => drawn.push({ ...shown }));
+  expect(drawn[0]).toEqual(pose);
+});
+
+it("forgets a member's pose in the panel once the member leaves", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  const pose = { dx: 6, dy: 0, keyDown: true, left: false, right: false };
+  desk.room.members.set("gone", { id: "gone", nick: "走了", character: "嘉然", taps: 0,
+    pulse: 0, emote: null, combo: null, win: null, motion: { ...pose } });
+  await vi.advanceTimersByTimeAsync(50);
+  const stop = panel.motion.subscribe("gone", () => {});
+  await vi.advanceTimersByTimeAsync(50);
+  stop();
+  desk.room.members.delete("gone");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.members.has("gone")).toBe(false);
+  // A pet drawn for that id again starts from rest, not from the old pose.
+  const drawn: unknown[] = [];
+  panel.motion.subscribe("gone", (shown) => drawn.push({ ...shown }));
+  expect(drawn[0]).toEqual({ dx: 0, dy: 0, keyDown: false, left: false, right: false });
+});
+
+it("asks the room for no poses while the panel window is off screen, and again once it is back", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const activity = await import("../stores/activity");
+  panel.ui.ui.page = "room";
+  desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
+    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+  await vi.advanceTimersByTimeAsync(50);
+  const subscribed = vi.spyOn(desk.room, "setPanelMotionInterest");
+  panel.motion.subscribe("friend", () => {});
+  await vi.advanceTimersByTimeAsync(50);
+  expect(subscribed).toHaveBeenLastCalledWith(["friend"]);
+  activity.windowVisible.value = false;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(subscribed).toHaveBeenLastCalledWith([]);
+  activity.windowVisible.value = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(subscribed).toHaveBeenLastCalledWith(["friend"]);
+});
+
+it("drops the panel's pose subscription when the desk bridge stops", async () => {
+  const desk = await context(false);
+  const subscribed = vi.spyOn(desk.room, "setPanelMotionInterest");
+  stops.shift()!();
+  expect(subscribed).toHaveBeenLastCalledWith([]);
+});
