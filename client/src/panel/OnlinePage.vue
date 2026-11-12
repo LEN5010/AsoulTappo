@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { MAX_ROOM_SIZE, toHttpBase, type Member } from "../net/protocol";
 import { Api, type ServerInfo } from "../net/api";
 import { accountLoginTrusted } from "../net/trust";
@@ -18,12 +18,35 @@ import HandImg from "../pet/HandImg.vue";
 import Modal from "../ui/Modal.vue";
 import StakeKeys from "../pet/StakeKeys.vue";
 import RangeInput from "../ui/RangeInput.vue";
+import StatusKeys from "../ui/StatusKeys.vue";
+import { roomStatus } from "../roomStatus";
 import RoomStage from "./RoomStage.vue";
 import ProfileDialog from "./ProfileDialog.vue";
 import { ui } from "../stores/ui";
 import AccountDialog from "./AccountDialog.vue";
 
 const input = ref(settings.lastRoom);
+/** The own status keys: none, then the list. */
+// The own status: one row that unfolds the status keys under it.
+const myStatus = computed(() => roomStatus(settings.status));
+const statusOpen = ref(false);
+function pickStatus(id: string) {
+  settings.status = id;
+  statusOpen.value = false;
+}
+function closeStatus(e: Event) {
+  if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as HTMLElement | null)?.closest?.(".status-pick, .status-keys")) {
+    statusOpen.value = false;
+  }
+}
+onMounted(() => {
+  window.addEventListener("pointerdown", closeStatus, true);
+  window.addEventListener("keydown", closeStatus);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("pointerdown", closeStatus, true);
+  window.removeEventListener("keydown", closeStatus);
+});
 const busy = ref(false);
 const notice = ref("");
 const copied = ref(false);
@@ -260,6 +283,17 @@ async function copy() {
     <section data-rise>
       <h4 class="ui-label"><span>同桌显示</span></h4>
       <div class="ui-group ui-frame">
+        <div class="ui-row">
+          <span>我的状态</span>
+          <button type="button" class="ui-btn small status-pick" :aria-expanded="statusOpen" @click="statusOpen = !statusOpen">
+            <Icon :name="myStatus?.icon ?? 'off'" :size="15" />
+            <span class="label">{{ myStatus?.label ?? "不显示" }}</span>
+            <Icon class="chev" name="down" :size="14" />
+          </button>
+        </div>
+        <div v-if="statusOpen" class="status-keys">
+          <StatusKeys row :model-value="settings.status" @update:model-value="pickStatus" />
+        </div>
         <label class="ui-row">
           <span>显示伙伴桌宠</span>
           <input v-model="settings.showPartners" class="ui-switch" type="checkbox" />
@@ -324,7 +358,10 @@ async function copy() {
               {{ m.id === youId ? settings.nick.trim() || m.nick : shownNick(m) }}<em v-if="m.id === youId" class="ui-tag">我</em>
               <span v-if="roomInfo?.host === m.id" class="host" title="房主" aria-label="房主"><Icon name="crown" :size="14" /></span>
             </b>
-            <small><i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ skinTitle(m.character) }}</small>
+            <small>
+              <i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ skinTitle(m.character) }}
+              <span v-if="roomStatus(m.status)" class="status"><Icon :name="roomStatus(m.status)!.icon" :size="12" />{{ roomStatus(m.status)!.label }}</span>
+            </small>
           </span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}<small>敲击</small></span>
           <!-- Keys acting on one member. -->
@@ -531,6 +568,41 @@ async function copy() {
 .who small i {
   width: 4px;
   height: 10px;
+}
+.who small .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  color: var(--c-700);
+  font-weight: 800;
+}
+/* The own status keys; the bottom padding makes room for their lip. */
+.status-pick {
+  gap: 5px;
+  padding: 0 8px 0 10px;
+}
+/* The font's ink sits below the middle of its line box; lifted, the label lines up with the icon. */
+.status-pick .label {
+  position: relative;
+  top: -0.03em;
+}
+.status-pick .chev {
+  color: var(--ink-2);
+  transition: rotate var(--dur-fast) var(--ease-out);
+}
+.status-pick[aria-expanded="true"] .chev {
+  rotate: 180deg;
+}
+.status-keys {
+  padding: 8px 18px;
+  animation: status-in var(--dur-base) var(--ease-out);
+}
+@keyframes status-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .taps {
   flex: none;

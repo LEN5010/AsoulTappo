@@ -228,10 +228,6 @@ async function exportLogFile() {
                 <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
               </label>
               <label class="ui-row">
-                <span>把手切换铭牌</span>
-                <input v-model="settings.gripPlate" class="ui-switch" type="checkbox" />
-              </label>
-              <label class="ui-row">
                 <span>显示敲击碎片</span>
                 <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
               </label>

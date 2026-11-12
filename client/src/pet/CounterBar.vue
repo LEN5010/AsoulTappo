@@ -5,10 +5,11 @@ import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-// `grip` draws the handle on the strip's left end: "fold" tucks a pinned strip away until the pet is clicked,
+// `grip` draws the handle on the strip's left end: "menu" opens the strip's menu (`gripOpen` while it is open),
 // "pin" keeps a strip that a click brought out.
 const props = defineProps<{
-  count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "fold" | "pin";
+  count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "menu" | "pin";
+  gripOpen?: boolean;
 }>();
 defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; grip: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -88,8 +89,9 @@ watch(
       <Icon name="menu" :size="15" />
     </button>
     <button
-      v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : '收起'"
-      :aria-label="grip === 'pin' ? '固定' : '收起'" @click="$emit('grip')"
+      v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : undefined"
+      :aria-label="grip === 'pin' ? '固定' : '任务栏'" :aria-expanded="grip === 'menu' ? !!gripOpen : undefined"
+      @click="$emit('grip')"
     ></button>
   </div>
 </template>

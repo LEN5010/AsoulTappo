@@ -6,14 +6,21 @@ import { assetUrl } from "../asset";
 import { usePageActive } from "../composables/usePageActive";
 import { renderActive } from "../stores/activity";
 import { reducedMotion } from "../stores/theme";
+import { roomStatus } from "../roomStatus";
+import Icon from "../ui/Icon.vue";
 import { getPlate, plateArt, sweepArt, sweepFrames, panCycle, videoFace } from "./plates";
 import { followVideo } from "./plateVideo";
 
 const props = withDefaults(
   /** `card` is the plate id: a big hidden card's id or a manifest plate's. */
-  defineProps<{ card: string; nick: string; width: number; height: number; color?: string; still?: boolean; font?: number }>(),
-  { color: undefined, still: false, font: undefined },
+  defineProps<{
+    card: string; nick: string; width: number; height: number; color?: string; still?: boolean; font?: number;
+    /** The member's room status, shown before the nickname. */
+    status?: string | null;
+  }>(),
+  { color: undefined, still: false, font: undefined, status: null },
 );
+const shownStatus = computed(() => roomStatus(props.status));
 
 const FRAME = 2;
 const plate = computed(() => getPlate(props.card));
@@ -86,9 +93,13 @@ const px = (n: number) => `${n}px`;
         :style="{ width: px(stillArt.width), height: px(stillArt.height), left: px(stillArt.left), top: px(stillArt.top) }"
       />
       <canvas v-if="playing" ref="canvas" class="art" :class="{ on: drawn }" :style="{ width: px(inner.w), height: px(inner.h) }"></canvas>
-      <div class="name" :style="{ maxWidth: px(inner.w - 8), fontSize: font ? px(font) : undefined }">
+      <div
+        class="name"
+        :style="{ maxWidth: px(inner.w - 8), fontSize: font ? px(font) : undefined }"
+      >
+        <span v-if="shownStatus" class="status"><Icon :name="shownStatus.icon" :size="Math.round((font ?? 12) * 1.25)" /><span class="label">{{ shownStatus.label }}</span></span>
         <i v-if="color" :style="{ background: color }" aria-hidden="true"></i>
-        <span>{{ nick }}</span>
+        <span class="nick">{{ nick }}</span>
       </div>
     </div>
   </div>
@@ -170,9 +181,25 @@ canvas.art.on {
   height: 11px;
   border-radius: 1px;
 }
-.name span {
+/* The room status, in the nickname's white; the icon gets the text's shadow as a filter. */
+.name .status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.name .status .icon {
+  filter: drop-shadow(0 1px 1px rgba(var(--shadow-rgb), 0.75));
+}
+.name .nick {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* The font's ink sits below the middle of its line box; lifted, the text lines up with the tick and the icon. */
+.name .label,
+.name .nick {
+  position: relative;
+  top: -0.03em;
 }
 </style>

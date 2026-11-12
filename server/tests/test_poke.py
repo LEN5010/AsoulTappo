@@ -85,7 +85,7 @@ def test_the_server_offers_pokes_when_joining_and_answers_over_the_socket():
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
             a.send_json({'type': 'join', 'room': 'pokes', 'nick': 'a', 'motionVersion': 3})
             ja = a.receive_json()
-            assert ja['features'] == ['poke', 'profile', 'cheer']
+            assert ja['features'] == ['poke', 'profile', 'cheer', 'status']
             # A client that announces no motion version is an older one: its `joined` keeps the 1.1 shape.
             b.send_json({'type': 'join', 'room': 'pokes', 'nick': 'b', 'dnd': True})
             jb = b.receive_json()

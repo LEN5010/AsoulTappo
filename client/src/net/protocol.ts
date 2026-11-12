@@ -37,6 +37,8 @@ export interface Member {
   motion?: PetMotion | null;
   /** Name plate worn: a big hidden card id or a manifest `plates` id, checked by the server (null = none). */
   plate?: string | null;
+  /** A `ROOM_STATUSES` id (roomStatus.ts), null for none; servers before it send none. */
+  status?: string | null;
 }
 
 /** Profile fields a member can change with `state` ("" takes off the plate). */
@@ -44,6 +46,8 @@ export interface ProfilePatch {
   character?: string;
   nick?: string;
   plate?: string;
+  /** "" shows none. Servers before it ignore it and need one of the other fields in the same state. */
+  status?: string;
 }
 
 export interface StateUpdate {
@@ -52,6 +56,7 @@ export interface StateUpdate {
   character: string;
   nick: string;
   plate?: string | null;
+  status?: string | null;
 }
 
 /** Room-wide state from `joined` and `room_info`; servers before 1.2 send none. */
@@ -90,6 +95,8 @@ export type ClientMessage =
     type: "join"; room: string; nick: string; character: string; token?: string; accountToken?: string; plate?: string;
     /** Turns rock-paper-scissors invites down; servers without duels ignore it. */
     dnd?: boolean;
+    /** A `ROOM_STATUSES` id to show the room; servers before it ignore it. */
+    status?: string;
     motionVersion?: number;
   }
   | { type: "leave" }

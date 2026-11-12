@@ -44,6 +44,8 @@ export interface JoinInfo {
   plate?: string;
   /** Turns rock-paper-scissors invites down; kept for every rejoin. */
   dnd?: boolean;
+  /** A `ROOM_STATUSES` id shown to the room. */
+  status?: string;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -191,6 +193,7 @@ export class RoomClient {
       if (patch.character) this.joinInfo.character = patch.character;
       if (patch.nick) this.joinInfo.nick = patch.nick;
       if (patch.plate !== undefined) this.joinInfo.plate = patch.plate || undefined;
+      if (patch.status !== undefined) this.joinInfo.status = patch.status || undefined;
     }
     this.send({ type: "state", ...patch });
   }

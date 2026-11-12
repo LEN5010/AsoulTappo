@@ -280,6 +280,6 @@ def test_state_with_an_unowned_skin_is_locked_and_not_broadcast(env):
         a.send_json({"type": "state", "character": "嘉然山海经", "nick": "a2"})
         assert a.receive_json()["code"] == "locked"
         a.send_json({"type": "state", "character": "嘉然", "nick": "a3"})
-        expected = {"type": "state", "id": you, "character": "嘉然", "nick": "a3", "plate": None}
+        expected = {"type": "state", "id": you, "character": "嘉然", "nick": "a3", "plate": None, "status": None}
         assert b.receive_json() == expected  # the locked message never reached b
         assert a.receive_json() == expected

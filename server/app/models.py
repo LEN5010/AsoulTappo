@@ -30,6 +30,8 @@ class JoinMsg(_Msg):
     plate: Optional[str] = Field(default=None, max_length=64)
     # turns down rock-paper-scissors invites; servers before 1.2 ignore it
     dnd: bool = False
+    # one of rooms.ROOM_STATUSES to show the room; anything else shows none
+    status: Optional[str] = Field(default=None, max_length=16)
     # The newest motion format the client reads; a higher number than this server knows gets its newest (rooms.MOTION_VERSION).
     motionVersion: int = Field(default=1, ge=1)
 
@@ -88,17 +90,19 @@ class ProfileMsg(_Msg):
 
 
 class StateMsg(_Msg):
-    """Update the displayed character, nickname or name plate ("" takes the plate off)."""
+    """Update the displayed character, nickname, name plate ("" takes the plate off) or status ("" or one not in
+    rooms.ROOM_STATUSES shows none)."""
 
     type: Literal["state"] = "state"
     character: Optional[str] = Field(default=None, min_length=1, max_length=32)
     nick: Optional[str] = Field(default=None, min_length=1, max_length=MAX_NICK_LEN)
     plate: Optional[str] = Field(default=None, max_length=64)
+    status: Optional[str] = Field(default=None, max_length=16)
 
     @model_validator(mode="after")
     def _at_least_one(self) -> "StateMsg":
-        if all(v is None for v in (self.character, self.nick, self.plate)):
-            raise ValueError("state needs character, nick or plate")
+        if all(v is None for v in (self.character, self.nick, self.plate, self.status)):
+            raise ValueError("state needs character, nick, plate or status")
         return self
 
 
@@ -169,6 +173,8 @@ class Member(BaseModel):
     motion: Optional[PetMotion] = None
     # name plate worn: a big hidden card id or a manifest `plates` id, null for none
     plate: Optional[str] = None
+    # one of rooms.ROOM_STATUSES, null for none; clients before it never read it
+    status: Optional[str] = None
 
 
 class RoomInfo(BaseModel):
@@ -221,6 +227,7 @@ class StateBroadcast(BaseModel):
     character: str
     nick: str
     plate: Optional[str] = None
+    status: Optional[str] = None
 
 
 class CollectionProgress(BaseModel):

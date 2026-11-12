@@ -7,6 +7,8 @@ import PetActor from "./pet/PetActor.vue";
 import PetView from "./pet/PetView.vue";
 import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
+import StatusDock from "./pet/StatusDock.vue";
+import GripMenu from "./pet/GripMenu.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
 import DuelBubble from "./pet/DuelBubble.vue";
@@ -60,7 +62,7 @@ const PLATE_GRIP = 14;
  * when the strip folds, click-through hides it, or the handle swaps in the plate.
  */
 const ownWidth = computed(() =>
-  Math.max(barWidth.value, settings.gripPlate ? Math.round(PET_BASE.width * settings.scale) + PLATE_GRIP * 2 : 0));
+  Math.max(barWidth.value, Math.round(PET_BASE.width * settings.scale) + PLATE_GRIP * 2));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
 /** Height of the strip under the pet, measured while it shows. */
 const stripHeight = ref(36);
@@ -76,12 +78,16 @@ const docked = computed(() => dragDock.value ?? settings.petDocked);
 const barPinned = computed(() => !settings.barFolded && !docked.value);
 /** A click on the pet shows an unpinned strip for a few seconds; a docked pet rises off the edge to make room. */
 const peek = ref(false);
+/** The status keys: under the own name tag, or in place of the quick emotes under the strip. */
+const statusOpen = ref(false);
+/** The strip's menu, from the handle on a pinned strip or on the own name plate. */
+const gripOpen = ref(false);
 const PEEK_MS = 6000;
 let peekTimer: ReturnType<typeof setTimeout> | undefined;
 /** Restarts the countdown; the quick emotes hold the strip open while they are. */
 function keepPeek() {
   clearTimeout(peekTimer);
-  if (peek.value && !ui.quickOpen) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
+  if (peek.value && !ui.quickOpen && !statusOpen.value) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
 }
 function onOwnTap() {
   if (barPinned.value || settings.clickThrough) return;
@@ -120,37 +126,37 @@ function resetPet() {
   settings.petX = -1;
   settings.petY = -1;
 }
-/** The strip's handle: tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
+/** Tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
 function toggleFold() {
   settings.barFolded = !settings.barFolded;
   peek.value = false;
 }
-// With gripPlate the handle's click swaps the strip for the own name plate and back, and a double click does what
-// a click does without it. A click waits this long for a second one.
-const DOUBLE_CLICK_MS = 280;
-let gripClick: ReturnType<typeof setTimeout> | undefined;
+/** The handle: pins a strip a click on the pet brought out, and opens the strip's menu on a pinned one. */
 function onGrip() {
-  if (!settings.gripPlate) return toggleFold();
-  if (gripClick) {
-    clearTimeout(gripClick);
-    gripClick = undefined;
-    toggleFold();
-    return;
-  }
-  gripClick = setTimeout(() => {
-    gripClick = undefined;
-    settings.barPlate = !settings.barPlate;
-    keepPeek();
-  }, DOUBLE_CLICK_MS);
+  if (!barPinned.value) return toggleFold();
+  gripOpen.value = !gripOpen.value;
+  statusOpen.value = ui.quickOpen = false;
+}
+function foldBar() {
+  gripOpen.value = false;
+  toggleFold();
+}
+function swapPlate() {
+  gripOpen.value = false;
+  settings.barPlate = !settings.barPlate;
+  keepPeek();
 }
 /** The own name plate in the strip's place, as partners see it under this pet; a docked pet keeps the strip. */
-const plateShown = computed(() => settings.gripPlate && settings.barPlate && !docked.value);
+const plateShown = computed(() => settings.barPlate && !docked.value);
 const ownPlate = computed(() => getPlate(settings.plate)?.id);
 const ownPlateSize = computed(() => plateSize(settings.scale));
 const ownName = computed(() => nameBand(settings.scale));
 const ownNick = computed(() => settings.nick.trim() || settings.character);
-watch(barShown, (shown) => { if (!shown) ui.quickOpen = false; });
-watch([peek, () => ui.quickOpen], keepPeek);
+// The room sees the status only while this desk is in one, so the own tag shows it only then too.
+const ownStatus = computed(() => (inRoom.value ? settings.status : null));
+watch(barShown, (shown) => { if (!shown) ui.quickOpen = statusOpen.value = gripOpen.value = false; });
+watch(inRoom, (inside) => { if (!inside) statusOpen.value = false; });
+watch([peek, () => ui.quickOpen, statusOpen], keepPeek);
 // Daily tap statistics and the local counter use the same China calendar day.
 watch(() => [status.value?.totals.taps, status.value?.dailyTaps] as const, ([total, daily]) => {
   if (typeof total !== "number") return;
@@ -163,9 +169,23 @@ const quickKeys = computed(() => (settings.favorites.length ? settings.favorites
 function pickQuick(key: string) {
   sendEmote(key);
 }
+function pickStatus(id: string) {
+  settings.status = id;
+  statusOpen.value = ui.quickOpen = false;
+}
+function toggleQuick() {
+  ui.quickOpen = !ui.quickOpen;
+  statusOpen.value = gripOpen.value = false;
+}
+function toggleStatus() {
+  statusOpen.value = !statusOpen.value;
+  gripOpen.value = false;
+}
 function closeQuick(e: Event) {
   const t = e.target as HTMLElement | null;
-  if (!t?.closest?.(".dock, .spark")) ui.quickOpen = false;
+  if (!t?.closest?.(".dock, .spark, .status-dock")) ui.quickOpen = false;
+  if (!t?.closest?.(".status-dock, .own-tag, .dock, .spark")) statusOpen.value = false;
+  if (!t?.closest?.(".grip-menu, .grip, .plate-grip")) gripOpen.value = false;
   if (!t?.closest?.("[data-own-pet]")) peek.value = false;
   // The duel key over a partner's pet closes on a press anywhere else; a click on a pet shows it again.
   if (!insidePick(e.target)) closePick();
@@ -238,7 +258,7 @@ const accessHint = ref(false);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
-  ui.quickOpen = false;
+  ui.quickOpen = statusOpen.value = gripOpen.value = false;
   peek.value = false;
   closePick();
 };
@@ -313,10 +333,10 @@ watch(() => settings.clickThroughKey, (v) => void setHotkey("click-through", v).
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {
-    ui.quickOpen = false;
+    ui.quickOpen = statusOpen.value = gripOpen.value = false;
   }
 });
-watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
+watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, draws.value], kick, { flush: "post" });
 </script>
 
 <template>
@@ -334,11 +354,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <template v-if="settings.showNames">
         <NamePlate
           v-if="plateOf(m)" :card="plateOf(m)!" :nick="shownNick(m)" :color="characterColor(m.character)"
-          :width="remotePlate.width" :height="remotePlate.height" :font="remoteName.font" :style="nameOnDesk(m)"
+          :width="remotePlate.width" :height="remotePlate.height" :font="remoteName.font" :status="m.status" :style="nameOnDesk(m)"
         />
         <NamePill
           v-else :nick="shownNick(m)" :color="characterColor(m.character)" :width="PET_BASE.width * settings.remoteScale"
-          :height="remoteName.pill" :font="remoteName.font" :style="nameOnDesk(m)"
+          :height="remoteName.pill" :font="remoteName.font" :status="m.status" :style="nameOnDesk(m)"
         />
       </template>
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
@@ -361,26 +381,43 @@ watch(() => [ui.panelOpen, ui.quickOpen, draws.value], kick, { flush: "post" });
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">
-        <NamePlate
-          v-if="ownPlate" :card="ownPlate" :nick="ownNick" :color="characterColor(settings.character)"
-          :width="ownPlateSize.width" :height="ownPlateSize.height" :font="ownName.font"
-        />
-        <NamePill
-          v-else :nick="ownNick" :color="characterColor(settings.character)" :width="PET_BASE.width * settings.scale"
-          :height="ownName.pill" :font="ownName.font"
-        />
+        <!-- In a room the tag opens the status keys. -->
+        <component
+          :is="inRoom ? 'button' : 'div'" class="own-tag"
+          v-bind="inRoom ? { type: 'button', 'aria-label': '我的状态', 'aria-expanded': statusOpen } : {}"
+          @click="inRoom && toggleStatus()"
+        >
+          <NamePlate
+            v-if="ownPlate" :card="ownPlate" :nick="ownNick" :color="characterColor(settings.character)"
+            :width="ownPlateSize.width" :height="ownPlateSize.height" :font="ownName.font" :status="ownStatus"
+          />
+          <NamePill
+            v-else :nick="ownNick" :color="characterColor(settings.character)" :width="PET_BASE.width * settings.scale"
+            :height="ownName.pill" :font="ownName.font" :status="ownStatus"
+          />
+        </component>
         <button
-          type="button" class="plate-grip" aria-label="换回任务栏" @click="onGrip"
+          type="button" class="plate-grip" aria-label="任务栏" :aria-expanded="barPinned ? gripOpen : undefined" @click="onGrip"
         ></button>
+        <GripMenu
+          v-if="gripOpen" plate :shard-pop="settings.shardPop"
+          @fold="foldBar" @swap="swapPlate" @shard-pop="settings.shardPop = !settings.shardPop"
+        />
+        <StatusDock v-if="statusOpen && inRoom" :model-value="settings.status" @update:model-value="pickStatus" />
       </div>
       <CounterBar
         v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="barWidth"
         :quick-open="ui.quickOpen" :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
-        @quick="ui.quickOpen = !ui.quickOpen" @menu="togglePanel" @resonance="openPanel('resonance')"
-        :grip="docked ? undefined : barPinned ? 'fold' : 'pin'" @grip="onGrip"
+        @quick="toggleQuick" @menu="togglePanel" @resonance="openPanel('resonance')"
+        :grip="docked ? undefined : barPinned ? 'menu' : 'pin'" :grip-open="gripOpen" @grip="onGrip"
       >
-        <QuickEmote v-if="ui.quickOpen" :keys="quickKeys" @pick="pickQuick" />
+        <GripMenu
+          v-if="gripOpen" :plate="false" :shard-pop="settings.shardPop"
+          @fold="foldBar" @swap="swapPlate" @shard-pop="settings.shardPop = !settings.shardPop"
+        />
+        <StatusDock v-if="ui.quickOpen && statusOpen" :model-value="settings.status" @update:model-value="pickStatus" />
+        <QuickEmote v-else-if="ui.quickOpen" :keys="quickKeys" :status="ownStatus" @pick="pickQuick" @status="statusOpen = true" />
       </CounterBar>
       </Transition>
 
@@ -423,10 +460,25 @@ html.browser-preview body {
   display: flex;
   padding: 2px 14px 0;
 }
+.own-tag {
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+button.own-tag {
+  cursor: pointer;
+}
+/* The tag starts at the plate's top padding, as tall as the handle beside it. */
+.own-tag > .pill {
+  margin-top: 0;
+}
 .plate-grip {
   position: absolute;
   left: 0;
-  top: 0;
+  top: 2px;
   bottom: 0;
   width: 14px;
   padding: 0;

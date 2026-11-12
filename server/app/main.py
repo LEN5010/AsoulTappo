@@ -32,7 +32,8 @@ from .models import (
 )
 from .moderation import Blocklist
 from .releases import ReleaseFeed
-from .rooms import FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager
+from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
+                    room_status)
 from .store import Store
 
 SAMPLE_SECONDS = 60
@@ -139,7 +140,11 @@ app.add_middleware(
 
 def _member(p: Peer) -> Member:
     return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion,
-                  plate=p.plate)
+                  plate=p.plate, status=p.status)
+
+
+def _state(p: Peer) -> dict:
+    return StateBroadcast(id=p.id, character=p.character, nick=p.nick, plate=p.plate, status=p.status).model_dump()
 
 
 @app.get("/healthz")
@@ -557,8 +562,7 @@ async def _remask() -> None:
     for gone in raw_nicks.keys() - online:
         del raw_nicks[gone]
     for room_id, peer in changed:
-        await manager.broadcast(room_id, StateBroadcast(
-            id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
+        await manager.broadcast(room_id, _state(peer))
 
 
 @app.get("/admin/blocked-words", dependencies=[Depends(admin)])
@@ -761,6 +765,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 room_id = msg.room
                 game.tracker.count("room_join")
                 peer.dnd = msg.dnd
+                peer.status = room_status(msg.status)
                 await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
                 peer.motion_version = min(msg.motionVersion, MOTION_VERSION)
@@ -909,12 +914,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     peer.plate = None
                 if msg.character is not None:
                     peer.character = msg.character
+                if msg.status is not None:
+                    peer.status = room_status(msg.status)
                 if msg.nick is not None:
                     raw_nicks[peer.id] = msg.nick
                     peer.nick = blocklist.mask(msg.nick)
                     await run_in_threadpool(game.note_room_nick, peer.token, msg.nick)
-                await manager.broadcast(room_id, StateBroadcast(
-                    id=peer.id, character=peer.character, nick=peer.nick, plate=peer.plate).model_dump())
+                await manager.broadcast(room_id, _state(peer))
     except (WebSocketDisconnect, ConnectionError):
         pass
     except asyncio.TimeoutError:

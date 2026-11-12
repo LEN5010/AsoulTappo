@@ -1,5 +1,6 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
+import { roomStatus } from "../roomStatus";
 
 export interface Settings {
   serverUrl: string;
@@ -33,6 +34,8 @@ export interface Settings {
   onBoard: boolean;
   /** Turns down every rock-paper-scissors invite; the room server answers them for this client. */
   duelDnd: boolean;
+  /** The status shown to rooms: a `ROOM_STATUSES` id, "" for none. */
+  status: string;
   /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
   petX: number;
   petY: number;
@@ -52,9 +55,7 @@ export interface Settings {
   showPartners: boolean;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
   barFolded: boolean;
-  /** The strip's handle shows the own name plate on a click and folds the strip on a double click. */
-  gripPlate: boolean;
-  /** With gripPlate: the own name plate stands where the strip would. */
+  /** The own name plate stands where the strip would (swapped from the strip's menu). */
   barPlate: boolean;
   /** The own pet stands on the bottom edge of the screen: its desk on the edge, the strip hidden. */
   petDocked: boolean;
@@ -97,6 +98,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showcase: [],
   onBoard: true,
   duelDnd: false,
+  status: "",
   petX: -1,
   petY: -1,
   panelX: -1,
@@ -108,7 +110,6 @@ export const DEFAULT_SETTINGS: Settings = {
   shardPop: true,
   showPartners: true,
   barFolded: false,
-  gripPlate: false,
   barPlate: false,
   petDocked: false,
   bossKey: "",
@@ -131,6 +132,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
           (out as unknown as Record<string, unknown>)[k] = parsed[k];
         }
       }
+      // Up to 1.2: the plate came up only with the handle's plate setting on; with it off a plate left up stays down.
+      if ("gripPlate" in parsed && (parsed as { gripPlate?: unknown }).gripPlate !== true) out.barPlate = false;
     }
   } catch {
     /* corrupted -> defaults */
@@ -149,6 +152,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, 3)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
+  if (!roomStatus(out.status)) out.status = "";
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));

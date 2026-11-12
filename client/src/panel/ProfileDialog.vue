@@ -49,7 +49,7 @@ const viewing = ref<ManifestCard | null>(null);
   <Modal v-else :title="`${name}的主页`" wide @close="emit('close')">
     <ProfileCard
       :plate="plate" :name="name" :character="who?.character ?? ''" :showcase="showcase" :progress="progress"
-      :failed="remote === null" @open="viewing = $event"
+      :status="partner?.status" :failed="remote === null" @open="viewing = $event"
     />
   </Modal>
 </template>

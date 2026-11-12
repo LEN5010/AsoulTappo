@@ -127,7 +127,7 @@ def test_state_updates_character_and_nick():
         join(b, nick="bob")
         a.receive_json()  # member_joined(bob)
         a.send_json({"type": "state", "character": "贝拉", "nick": "alice2"})
-        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2", "plate": None}
+        expected = {"type": "state", "id": ja["you"], "character": "贝拉", "nick": "alice2", "plate": None, "status": None}
         assert b.receive_json() == expected
         assert a.receive_json() == expected
         # nick only keeps the previous character

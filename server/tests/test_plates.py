@@ -85,4 +85,4 @@ def test_a_room_shows_the_plate_once_the_set_is_whole(monkeypatch):
         give(g, pid, ACHAO)
         ws.send_json({"type": "state", "plate": "achao"})
         assert ws.receive_json() == {"type": "state", "id": welcome["you"], "character": "嘉然", "nick": "a",
-                                     "plate": "achao"}
+                                     "plate": "achao", "status": None}

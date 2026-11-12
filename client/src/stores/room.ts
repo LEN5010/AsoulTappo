@@ -228,6 +228,7 @@ const events: RoomEvents = {
     m.character = u.character;
     m.nick = u.nick;
     m.plate = u.plate ?? null;
+    m.status = u.status ?? null;
   },
   onError(code, message) {
     // A late answer or hand for a duel that already ended, or a poke that arrived inside the server's cooldown
@@ -620,6 +621,7 @@ export function joinRoom(room: string): void {
     ...(settings.plate ? { plate: settings.plate } : {}),
     ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
     ...(duelDnd() ? { dnd: true } : {}),
+    ...(settings.status ? { status: settings.status } : {}),
   });
 }
 
@@ -690,7 +692,7 @@ export async function loadPublicRooms(): Promise<void> {
   if (base === settings.serverUrl && (signedOut || activeAccount()?.token === session?.token)) publicRooms.value = list;
 }
 
-/** Push profile changes (character / nick / name plate) to the room. */
+/** Push profile changes (character / nick / name plate / status) to the room. */
 export function syncProfile(patch: ProfilePatch): void {
   client.sendState({ ...patch, ...(patch.nick !== undefined ? { nick: patch.nick.trim() || "匿名小面包" } : {}) });
 }
@@ -712,6 +714,8 @@ watch(() => [saveCode.value, account.value?.token], () => {
 watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });
 watch(() => settings.plate, (plate) => { if (!isPanelWindow) syncProfile({ plate }); }, { flush: "sync" });
+// With the nick, which servers from before statuses need in a state.
+watch(() => settings.status, (status) => { if (!isPanelWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
 watch(() => settings.batchMs, (ms) => { if (!isPanelWindow) setBatchMs(ms); });
 // Told to the server only when it has duels; the next join carries it either way.
 watch(duelDnd, (on) => { if (!isPanelWindow) client.setDnd(on, duelOn.value); }, { flush: "sync" });

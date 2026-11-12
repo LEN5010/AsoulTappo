@@ -95,7 +95,7 @@ def test_room_members_ask_for_each_others_profiles(monkeypatch):
     with TestClient(main.app) as c, c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
         a.send_json({"type": "join", "room": "profiles", "nick": "a", "token": TOKEN, "motionVersion": 3})
         ja = a.receive_json()
-        assert ja["features"] == ["poke", "profile", "cheer"]
+        assert ja["features"] == ["poke", "profile", "cheer", "status"]
         b.send_json({"type": "join", "room": "profiles", "nick": "b", "motionVersion": 3})
         jb = b.receive_json()
         a.receive_json()  # b joined

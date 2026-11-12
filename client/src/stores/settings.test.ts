@@ -27,6 +27,16 @@ describe("loadSettings", () => {
     loadSettings(store(null)).favorites.push("x");
     expect(DEFAULT_SETTINGS.favorites).toEqual([]);
   });
+  it("keeps the name plate up only where the old handle setting let it show", () => {
+    expect(loadSettings(store(JSON.stringify({ gripPlate: true, barPlate: true }))).barPlate).toBe(true);
+    expect(loadSettings(store(JSON.stringify({ gripPlate: false, barPlate: true }))).barPlate).toBe(false);
+    expect(loadSettings(store(JSON.stringify({ barPlate: true }))).barPlate).toBe(true);
+    expect("gripPlate" in loadSettings(store(JSON.stringify({ gripPlate: true })))).toBe(false);
+  });
+  it("keeps a room status only when it is one of the list", () => {
+    expect(loadSettings(store(JSON.stringify({ status: "fish" }))).status).toBe("fish");
+    expect(loadSettings(store(JSON.stringify({ status: "chat" }))).status).toBe("");
+  });
   it("keeps a capture background only as a six-digit hex colour and the capture size within limits", () => {
     expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
     expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");

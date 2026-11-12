@@ -2,9 +2,12 @@
 import { computed, ref, watch } from "vue";
 import { getEmote } from "../manifest";
 import { assetUrl } from "../asset";
+import { roomStatus } from "../roomStatus";
+import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ keys: string[] }>();
-defineEmits<{ pick: [key: string] }>();
+/** `status` is the own room status ("" for none) and adds a key that opens the statuses; null leaves it out. */
+const props = defineProps<{ keys: string[]; status?: string | null }>();
+defineEmits<{ pick: [key: string]; status: [] }>();
 
 const list = computed(() => props.keys.map((k) => ({ key: k, e: getEmote(k) })).filter((x) => x.e));
 
@@ -54,6 +57,12 @@ function onWheel(e: WheelEvent) {
     aria-label="快捷表情"
     @wheel.prevent="onWheel"
   >
+    <template v-if="status != null">
+      <button type="button" class="emo ui-btn" role="menuitem" title="我的状态" aria-label="我的状态" @click="$emit('status')">
+        <Icon :name="roomStatus(status)?.icon ?? 'status'" :size="20" />
+      </button>
+      <i class="sep" aria-hidden="true"></i>
+    </template>
     <button
       v-if="needsPager"
       type="button"
@@ -146,6 +155,14 @@ function onWheel(e: WheelEvent) {
 .dock.compact .emo img {
   max-width: 30px;
   max-height: 30px;
+}
+
+.sep {
+  flex: none;
+  width: 1px;
+  height: 28px;
+  margin: 0 2px;
+  background: var(--c-100);
 }
 
 .nav-arrow {

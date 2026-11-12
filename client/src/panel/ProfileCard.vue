@@ -10,6 +10,7 @@ import { characters } from "../characters";
 import { characterColor, memberOf, type ManifestCard } from "../manifest";
 import { MAX_SHOWCASE, type CollectionProgress } from "../net/protocol";
 import { BANNER_ASPECT, BANNER_FIT, bannerArt, sweepArt, type Plate } from "../pet/plates";
+import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
@@ -25,7 +26,10 @@ const props = defineProps<{
   editable?: boolean;
   /** Whether the card offers a plate to wear; editable cards only. */
   swappable?: boolean;
+  /** A room partner's status, shown after the name. */
+  status?: string | null;
 }>();
+const shownStatus = computed(() => roomStatus(props.status));
 const emit = defineEmits<{ open: [card: ManifestCard]; swap: []; pick: []; drop: [card: ManifestCard] }>();
 
 /** The card's height. Its artwork spans at most BANNER_ASPECT times that, framed as the plate crops are set for,
@@ -84,7 +88,10 @@ const px = (n: number) => `${n}px`;
     </div>
 
     <span class="badge-bust" :style="{ '--member': color }" aria-hidden="true"><PetBust v-if="bust" class="bust" :src="bust" detail /></span>
-    <h3 class="name"><i :style="{ background: color }" aria-hidden="true"></i><span>{{ name }}</span></h3>
+    <h3 class="name">
+      <i :style="{ background: color }" aria-hidden="true"></i><span>{{ name }}</span>
+      <em v-if="shownStatus" class="status"><Icon :name="shownStatus.icon" :size="14" />{{ shownStatus.label }}</em>
+    </h3>
     <p v-if="failed" class="stats failed">没加载出来</p>
     <dl v-else class="stats">
       <div v-for="s in stats" :key="s.label">
@@ -214,6 +221,20 @@ button.art-box:hover .art {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.name .status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12);
+  font: 800 var(--fs-label)/1 var(--font);
+  font-style: normal;
+  color: var(--c-700);
+  text-shadow: none;
 }
 /* Collection counts as large numbers over small labels, split by short rules. */
 .stats {

@@ -385,6 +385,24 @@ describe("RoomClient", () => {
     expect(FakeWs.all[2].sent[0]).not.toHaveProperty("plate");
   });
 
+  it("a status set or cleared is remembered for re-join", () => {
+    const { c } = setup();
+    c.join("http://h:1", { ...INFO, status: "game" });
+    FakeWs.all[0].open();
+    expect(FakeWs.all[0].sent[0]).toMatchObject({ type: "join", status: "game" });
+    c.sendState({ nick: "n", status: "music" });
+    expect(FakeWs.all[0].sent.at(-1)).toEqual({ type: "state", nick: "n", status: "music" });
+    FakeWs.all[0].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[1].open();
+    expect(FakeWs.all[1].sent[0]).toMatchObject({ type: "join", status: "music" });
+    c.sendState({ nick: "n", status: "" });
+    FakeWs.all[1].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[2].open();
+    expect(FakeWs.all[2].sent[0]).not.toHaveProperty("status");
+  });
+
   it("hands duel messages over and sends the duel messages", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);

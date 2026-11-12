@@ -397,17 +397,32 @@ button.row:hover {
 .score .ui-tag {
   margin-left: 6px;
 }
+/* Big hidden cards and skins: small tinted capsules ahead of the score. */
 .big,
 .skins {
+  align-self: center;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  margin-right: 6px;
+  gap: 3px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  box-sizing: border-box;
+  border-radius: 10px;
   font: 800 var(--fs-label)/1 var(--font-latin);
+}
+.big {
+  background: color-mix(in oklab, var(--gold) 16%, var(--surface));
+  color: color-mix(in oklab, var(--gold) 70%, var(--ink));
+}
+.big svg {
   color: var(--gold);
 }
 .skins {
+  background: var(--c-100);
   color: var(--c-700);
+}
+.score > b {
+  margin-left: 6px;
 }
 .off {
   grid-column: 4 / -1;

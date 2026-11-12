@@ -1,16 +1,24 @@
 <script setup lang="ts">
-// A paper name tag under a pet, led by a tick in the member's colour.
+// A paper name tag under a pet, led by the member's room status (a segment tinted in the member's colour, if
+// any) and a tick in the member's colour.
 // `height` and `font` (px) override the default size, for partners drawn small.
-defineProps<{ nick: string; width: number; color?: string; height?: number; font?: number }>();
+import { computed } from "vue";
+import { roomStatus } from "../roomStatus";
+import Icon from "../ui/Icon.vue";
+
+const props = defineProps<{ nick: string; width: number; color?: string; height?: number; font?: number; status?: string | null }>();
+const shown = computed(() => roomStatus(props.status));
 </script>
 
 <template>
   <div
     class="pill"
     :style="{ maxWidth: `${width}px`, height: height ? `${height}px` : undefined, fontSize: font ? `${font}px` : undefined }"
+    :title="shown?.label"
   >
+    <span v-if="shown" class="status" :style="color ? { '--cheer': color } : undefined"><Icon :name="shown.icon" :size="Math.round((font ?? 12) * 1.25)" />{{ shown.label }}</span>
     <i v-if="color" :style="{ background: color }" aria-hidden="true"></i>
-    <span>{{ nick }}</span>
+    <span class="nick">{{ nick }}</span>
   </div>
 </template>
 
@@ -39,7 +47,23 @@ defineProps<{ nick: string; width: number; color?: string; height?: number; font
   height: 11px;
   border-radius: 1px;
 }
-.pill span {
+/* Flush with the tag's left end, as tall as the tag. */
+.pill .status {
+  flex: none;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -10px;
+  padding: 0 7px 0 8px;
+  border-radius: inherit;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  background: color-mix(in oklab, var(--cheer, var(--c-500)) 22%, var(--surface));
+  color: color-mix(in oklab, var(--cheer, var(--c-500)) 62%, var(--ink));
+  white-space: nowrap;
+}
+.pill .nick {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

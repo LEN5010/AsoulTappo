@@ -683,7 +683,7 @@ def test_a_server_without_duels_answers_no_duel_and_keeps_the_old_messages(api, 
         # the 1.1 join, without dnd
         ja = joined(a, "a")
         assert set(ja) == {"type", "room", "you", "members", "info"}
-        assert set(ja["members"][0]) == {"id", "uid", "nick", "character", "taps", "motion", "plate"}
+        assert set(ja["members"][0]) == {"id", "uid", "nick", "character", "taps", "motion", "plate", "status"}
         jb = joined(b, "b")
         a.receive_json()
         a.send_json({"type": "duel_invite", "id": jb["you"], "bet": 150})

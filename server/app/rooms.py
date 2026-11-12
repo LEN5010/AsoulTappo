@@ -17,7 +17,7 @@ MOTION_VERSION = 3
 # Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
 MAX_EDGES_PER_BATCH = 6
 # Room messages beyond the 1.1 set, listed in `joined` for clients that announce a motion version.
-FEATURES = ("poke", "profile", "cheer")
+FEATURES = ("poke", "profile", "cheer", "status")
 # Cheer rounds: members' paid taps fill a bar. A save's taps go on the bar once it has put CHEER_MIN_SHARE into the
 # round, and from then it cheers; the bar holds CHEER_PER_SAVE taps for each cheering save (CHEER_MIN_SAVES at least),
 # so a full bar means they put in that many each on average, and many small shares cannot fill it early. When it is
@@ -67,6 +67,16 @@ class NeedSave(Exception):
     """Public rooms take members with a save only."""
 
 
+# Statuses a member may show in a room, chosen from this list only: slacking off, working, studying, gaming,
+# listening to music, watching a live stream.
+ROOM_STATUSES = ("fish", "work", "study", "game", "music", "live")
+
+
+def room_status(value: str | None) -> str | None:
+    """[value] when it is one of ROOM_STATUSES, else None (no status shown)."""
+    return value if value in ROOM_STATUSES else None
+
+
 def new_room_id() -> str:
     return secrets.token_urlsafe(16)
 
@@ -82,6 +92,8 @@ class Peer:
     token: str | None = None
     # name plate worn (a big hidden card id or a manifest `plates` id), checked against the save
     plate: str | None = None
+    # one of ROOM_STATUSES, None for none
+    status: str | None = None
     # turns rock-paper-scissors invites down; never shown to the room
     dnd: bool = False
     # joined with a valid main-site account token: may make the room public on a server with accounts
