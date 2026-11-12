@@ -5042,7 +5042,7 @@
  ],
  "economy": {
   "income": {
-   "shardScale": 2800,
+   "shardScale": 2400,
    "tapScale": 1000,
    "dailyCap": 10400,
    "tapsPerMinute": 120
