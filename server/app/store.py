@@ -607,6 +607,12 @@ class Store:
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
 
+    def held_items(self) -> list[tuple[str, str, float]]:
+        """(player id, item id, when it first came) of every item a save holds."""
+        with self._lock:
+            rows = self._db.execute("SELECT player_id, item_id, first_ts FROM items WHERE count > 0").fetchall()
+        return [(r[0], r[1], r[2]) for r in rows]
+
     def set_room_nick(self, pid: str, nick: str) -> None:
         """Remember the nick an existing save uses in rooms; nothing happens for a token without a save."""
         with self._lock:

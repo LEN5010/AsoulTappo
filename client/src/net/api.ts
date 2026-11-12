@@ -83,15 +83,24 @@ export interface Collection {
 export interface Loadout {
   character: string | null; favorites: string[]; plate: string | null; showcase?: string[]; nick?: string; board?: boolean;
 }
-/** A row of the collection board; `id` names the save for its profile. */
-export interface BoardRow { id: string; rank: number; nick: string; character: string; plate: string | null; cards: number; big: number }
+/** A row of the collection board; `id` names the save for its profile. `cards`, `big` and `skins` count cards, big
+ * hidden cards and skins; `score` is the collection score. */
+export interface BoardRow {
+  id: string; rank: number; nick: string; character: string; plate: string | null;
+  cards: number; big: number; skins: number; score: number;
+}
 /** Why the asking save is off the collection board: its own choice, or no main-site account on a server with them. */
 export type BoardOff = "hidden" | "account";
-/** The server-wide collection board: its top rows, the card total, and where the asking save stands. */
+/** What one item is worth in the collection score, by kind. */
+export type BoardPointKind = "big" | "skin" | "epic" | "card" | "emoteRare" | "emoteScratch" | "emoteUncommon" | "emote";
+export type BoardPoints = Partial<Record<BoardPointKind, number>>;
+/** The server-wide collection board by score: its top rows, the card total, the points table, and where the asking
+ * save stands. */
 export interface Board {
   total: number;
+  points: BoardPoints;
   cards: BoardRow[];
-  me: { rank: number | null; cards: number; big: number; off: BoardOff | null };
+  me: { rank: number | null; cards: number; big: number; skins: number; score: number; off: BoardOff | null };
 }
 export type LoadoutPatch = Partial<Loadout>;
 
@@ -192,7 +201,7 @@ export class Api {
   collection = () => this.call<Collection>("GET", "/api/collection");
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
-  board = () => this.call<Board>("GET", "/api/board");
+  board = () => this.call<Board>("GET", "/api/board?order=score");
   boardProfile = (id: string) => this.call<MemberProfile>("GET", `/api/board/profile/${encodeURIComponent(id)}`);
   info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
   /** The newest client release, which the server reads from the main site. */

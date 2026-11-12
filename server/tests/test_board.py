@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.game import BOARD_DEFAULT_NICK, BOARD_SECONDS, BOARD_SIZE, Game, GameError, board_id, player_id_for
+from app.game import (BOARD_DEFAULT_NICK, BOARD_POINTS, BOARD_SECONDS, BOARD_SIZE, Game, GameError, board_id,
+                      player_id_for)
 from app.manifest import Manifest
 from app.store import Store
 from fixtures import Clock
@@ -14,6 +15,13 @@ M = Manifest.load()
 CARDS = list(M.cards)
 BIG = [c["id"] for c in M.cards.values() if c.get("tier") == "big"]
 NORMAL = [c for c in CARDS if c not in BIG]
+COMMON = [c["id"] for c in M.cards.values() if c.get("tier") == "normal" and c["rarity"] == "common"]
+EPIC = [c["id"] for c in M.cards.values() if c["rarity"] == "epic"]
+SMALL = [c["id"] for c in M.cards.values() if c.get("tier") == "small"]
+SKINS = [f"char:{name}" for name in M.skins]
+EMOTES = {rarity: [i for i, item in M.items.items() if item["kind"] == "emote" and not item["source"]
+                   and item["rarity"] == rarity and i not in M.starter] for rarity in ("common", "uncommon", "rare")}
+SCRATCH_EMOTES = [i for i, item in M.items.items() if item["kind"] == "emote" and item["source"]]
 # Wednesday 2026-11-11, 12:00 in China
 NOW = calendar.timegm((2026, 11, 11, 4, 0, 0))
 
@@ -67,7 +75,7 @@ def test_where_the_asking_save_stands():
     save(g, 1, NORMAL[:4])
     t, _ = save(g, 2, NORMAL[:2] + BIG[:1], character="乃琳")
     me = g.board(t, False)["me"]
-    assert me == {"rank": 2, "cards": 3, "big": 1, "off": None}
+    assert me == {"rank": 2, "cards": 3, "big": 1, "skins": 0, "score": 2 * 2 + 300, "off": None}
     hidden, _ = save(g, 3, NORMAL[:1], board=False)
     assert g.board(hidden, False)["me"]["off"] == "hidden"
 
@@ -161,3 +169,68 @@ def test_joining_and_renaming_in_a_room_keep_the_room_nick(monkeypatch):
         ws.send_json({"type": "state", "nick": "改名"})
         ws.receive_json()
         assert g.store.room_nicks([pid]) == {pid: "改名"}
+
+
+# ------------------------------------------------------------------ score
+def hold(g, t, items, at):
+    pid = player_id_for(t)
+    for i, item in enumerate(items):
+        g.store.add_item(pid, item, at + i)
+
+
+def test_what_each_item_is_worth():
+    g = game()
+    worth = g.board_points
+    assert {worth[f"card:{c}"] for c in BIG} == {300}
+    assert {worth[s] for s in SKINS} == {150}
+    # Small hidden cards and epic normal cards come from the same tier.
+    assert {worth[f"card:{c}"] for c in EPIC} == {20} and set(SMALL) < set(EPIC) and len(EPIC) > len(SMALL)
+    assert {worth[f"card:{c}"] for c in COMMON} == {2}
+    assert {r: {worth[i] for i in ids} for r, ids in EMOTES.items()} == {"common": {1}, "uncommon": {2}, "rare": {3}}
+    assert {worth[i] for i in SCRATCH_EMOTES} == {3}
+    assert not M.starter & set(worth)
+    assert set(BOARD_POINTS.values()) == {300, 150, 20, 3, 2, 1}
+
+
+def test_the_board_by_score_weighs_what_is_hard_to_find():
+    g = game()
+    t, _ = save(g, 1, COMMON[:10], nick="十张普通卡")
+    big, _ = save(g, 2, BIG[:1], nick="一张大隐藏")
+    skin, _ = save(g, 3, COMMON[:1], nick="一款皮肤")
+    hold(g, skin, SKINS[:1], NOW - 500)
+    emotes, _ = save(g, 4, nick="只有表情")
+    hold(g, emotes, EMOTES["rare"][:2] + EMOTES["uncommon"][:1] + EMOTES["common"][:1], NOW - 500)
+    # Fifteen epic cards make one big hidden card's score: the big hidden card goes first.
+    epic, _ = save(g, 5, EPIC[:15], nick="十五张史诗")
+    board = g.board(t, False, "score")
+    assert [(r["rank"], r["nick"], r["score"]) for r in board["cards"]] == [
+        (1, "一张大隐藏", 300), (2, "十五张史诗", 300), (3, "一款皮肤", 152), (4, "十张普通卡", 20), (5, "只有表情", 9)]
+    assert board["cards"][2]["skins"] == 1 and board["points"] == BOARD_POINTS
+    assert board["me"] == {"rank": 4, "cards": 10, "big": 0, "skins": 0, "score": 20, "off": None}
+    # By cards, as clients before the score see it: a save without cards is not on it.
+    by_cards = g.board(t, False)
+    assert [r["nick"] for r in by_cards["cards"]] == ["十五张史诗", "十张普通卡", "一张大隐藏", "一款皮肤"]
+    assert by_cards["me"]["rank"] == 2
+    # A save on the score board only still opens.
+    assert g.board_profile(board["cards"][4]["id"], False)["showcase"] == []
+
+
+def test_the_same_score_goes_to_the_save_that_reached_it_first():
+    g = game()
+    late, _ = save(g, 1)
+    hold(g, late, [f"card:{c}" for c in COMMON[:2]], NOW - 100)
+    early, _ = save(g, 2)
+    hold(g, early, EMOTES["common"][:4], NOW - 200)
+    assert [r["nick"] for r in g.board(late, False, "score")["cards"]] == [BOARD_DEFAULT_NICK] * 2
+    assert g.board(early, False, "score")["me"]["rank"] == 1 and g.board(late, False, "score")["me"]["rank"] == 2
+
+
+def test_the_board_by_score_over_http(monkeypatch):
+    g = game()
+    t, _ = save(g, 1, BIG[:1])
+    monkeypatch.setattr(main, "game", g)
+    with TestClient(main.app) as c:
+        h = {"X-Player-Token": t}
+        assert c.get("/api/board?order=score", headers=h).json()["cards"][0]["score"] == 300
+        assert c.get("/api/board", headers=h).json()["cards"][0]["cards"] == 1
+        assert c.get("/api/board?order=other", headers=h).status_code == 422

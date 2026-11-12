@@ -249,9 +249,10 @@ class LoadoutBody(BaseModel):
 
 
 @app.get("/api/board")
-def api_board(who: PlayerId = Depends(player)) -> dict:
-    """The collection board; on a server with main-site accounts only saves linked to one are ranked."""
-    out = _guard(game.board, who, accounts is not None)
+def api_board(order: Literal["cards", "score"] = "cards", who: PlayerId = Depends(player)) -> dict:
+    """The collection board by cards (clients before the collection score) or by score; on a server with main-site
+    accounts only saves linked to one are ranked."""
+    out = _guard(game.board, who, accounts is not None, order)
     return {**out, "cards": [{**row, "nick": blocklist.mask(row["nick"])} for row in out["cards"]]}
 
 

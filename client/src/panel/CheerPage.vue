@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // 排行: the own namecard as others see it, editable in place, then the server-wide collection board once it loads:
-// the top three as their pets standing on a podium, the rest as rows with how far each collection has come.
+// the top three as their pets standing on a podium, the rest as rows, ranked by collection score.
 import { computed, onActivated, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { characters } from "../characters";
 import { characterColor, getCard, manifest, memberOf, type ManifestCard } from "../manifest";
 import { collectionProgress } from "../items";
-import type { Board, BoardRow } from "../net/api";
+import type { Board, BoardPointKind, BoardRow } from "../net/api";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { activeAccount, collection, loadBoard } from "../stores/player";
 import { shownNick } from "../stores/room";
@@ -64,7 +64,8 @@ async function refresh(force = false) {
   const n = ++asked;
   const b = await loadBoard();
   if (n !== asked) return;
-  board.value = b;
+  // A server from before the collection score answers without `points` or scores: no board then.
+  board.value = b?.points ? b : null;
   loadedAt = Date.now();
 }
 onActivated(() => void refresh());
@@ -89,8 +90,18 @@ function openRow(r: BoardRow) {
 const podium = computed(() => (board.value?.cards ?? []).slice(0, 3));
 const rest = computed(() => (board.value?.cards ?? []).slice(3));
 const bustOf = (character: string) => (characters[character] ?? characters[memberOf(character)])?.bg ?? "";
-/** How far a collection has come, as the width of its bar. */
-const share = (cards: number) => `${board.value?.total ? (cards / board.value.total) * 100 : 0}%`;
+/** The points table behind the info button, in reading order; kinds the server does not send are left out. */
+const POINT_ROWS: [BoardPointKind, string][] = [
+  ["big", "大隐藏"], ["skin", "皮肤"], ["epic", "史诗卡（含小隐藏）"], ["card", "普通卡"],
+  ["emoteRare", "稀有表情"], ["emoteScratch", "阿草表情"], ["emoteUncommon", "罕见表情"], ["emote", "普通表情"],
+];
+const pointRows = computed(() =>
+  POINT_ROWS.flatMap(([kind, label]) => {
+    const points = board.value?.points?.[kind];
+    return points == null ? [] : [{ kind, label, points }];
+  }));
+const showingPoints = ref(false);
+const scoreText = (score: number) => score.toLocaleString("en-US");
 </script>
 
 <template>
@@ -102,7 +113,12 @@ const share = (cards: number) => `${board.value?.total ? (cards / board.value.to
     />
 
     <section v-if="board" data-rise>
-      <h4 class="ui-label"><span>全服收藏榜</span></h4>
+      <h4 class="ui-label">
+        <span>全服收藏榜</span>
+        <button type="button" class="ui-btn ghost small points-btn" title="收藏分" aria-label="收藏分" @click="showingPoints = true">
+          <Icon name="info" :size="15" />
+        </button>
+      </h4>
       <ol v-if="podium.length" class="podium">
         <li v-for="r in podium" :key="r.id" :class="`at${r.rank}`">
           <component
@@ -125,7 +141,8 @@ const share = (cards: number) => `${board.value?.total ? (cards / board.value.to
               </span>
               <span class="score">
                 <span v-if="r.big" class="big" title="大隐藏"><Icon name="crown" :size="13" />{{ r.big }}</span>
-                <b>{{ r.cards }}</b><small>/ {{ board.total }}</small>
+                <span v-if="r.skins" class="skins" title="皮肤"><Icon name="shirt" :size="13" />{{ r.skins }}</span>
+                <b>{{ scoreText(r.score) }}</b><small>分</small>
                 <em v-if="isMine(r)" class="ui-tag">我</em>
               </span>
             </span>
@@ -142,13 +159,11 @@ const share = (cards: number) => `${board.value?.total ? (cards / board.value.to
           <NamePill v-else :nick="name" :color="color" :width="PLATE.width" />
           <em class="ui-tag">我</em>
         </span>
-        <template v-if="me.rank">
-          <span class="ui-bar share"><i :style="{ width: share(me.cards) }"></i></span>
-          <span class="score">
-            <span v-if="me.big" class="big" title="大隐藏"><Icon name="crown" :size="13" />{{ me.big }}</span>
-            <b>{{ me.cards }}</b><small>/ {{ board.total }}</small>
-          </span>
-        </template>
+        <span v-if="me.rank" class="score">
+          <span v-if="me.big" class="big" title="大隐藏"><Icon name="crown" :size="13" />{{ me.big }}</span>
+          <span v-if="me.skins" class="skins" title="皮肤"><Icon name="shirt" :size="13" />{{ me.skins }}</span>
+          <b>{{ scoreText(me.score) }}</b><small>分</small>
+        </span>
         <span v-else class="off">{{ offText }}</span>
       </div>
 
@@ -168,10 +183,10 @@ const share = (cards: number) => `${board.value?.total ? (cards / board.value.to
               <NamePill v-else :nick="rowNick(r)" :color="characterColor(r.character)" :width="PLATE.width" />
               <em v-if="isMine(r)" class="ui-tag">我</em>
             </span>
-            <span class="ui-bar share"><i :style="{ width: share(r.cards) }"></i></span>
             <span class="score">
               <span v-if="r.big" class="big" title="大隐藏"><Icon name="crown" :size="13" />{{ r.big }}</span>
-              <b>{{ r.cards }}</b><small>/ {{ board.total }}</small>
+              <span v-if="r.skins" class="skins" title="皮肤"><Icon name="shirt" :size="13" />{{ r.skins }}</span>
+              <b>{{ scoreText(r.score) }}</b><small>分</small>
             </span>
           </component>
         </li>
@@ -205,6 +220,11 @@ const share = (cards: number) => `${board.value?.total ? (cards / board.value.to
     </Modal>
     <Modal v-else-if="editing === 'card'" title="选展示卡" heading wide @close="editing = null">
       <div class="card-pick"><CardAlbum :cards="pickable" filter="owned" @inspect="chooseCard" /></div>
+    </Modal>
+    <Modal v-if="showingPoints" title="收藏分" heading @close="showingPoints = false">
+      <table class="points"><tbody>
+        <tr v-for="p in pointRows" :key="p.kind"><td>{{ p.label }}</td><td>{{ p.points }} 分</td></tr>
+      </tbody></table>
     </Modal>
     <ProfileDialog v-if="opened" :key="opened.id" :row="opened" @close="opened = null" />
   </div>
@@ -313,7 +333,7 @@ button.stand:hover .figure {
 .row {
   width: 100%;
   display: grid;
-  grid-template-columns: 30px 32px 226px minmax(40px, 1fr) 112px;
+  grid-template-columns: 30px 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-height: 50px;
@@ -352,10 +372,6 @@ button.row:hover {
 .who > :first-child {
   flex: none;
 }
-.share {
-  height: 6px;
-  background: var(--c-100);
-}
 .score {
   display: flex;
   align-items: baseline;
@@ -369,6 +385,11 @@ button.row:hover {
 .block .score b {
   font-size: 24px;
 }
+/* Room for the widest score, so the counts before it line up from row to row. */
+.row .score b {
+  min-width: 4.6ch;
+  text-align: right;
+}
 .score small {
   font: 700 var(--fs-caption)/1 var(--font-latin);
   color: var(--ink-3);
@@ -376,13 +397,17 @@ button.row:hover {
 .score .ui-tag {
   margin-left: 6px;
 }
-.big {
+.big,
+.skins {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-right: 8px;
+  margin-right: 6px;
   font: 800 var(--fs-label)/1 var(--font-latin);
   color: var(--gold);
+}
+.skins {
+  color: var(--c-700);
 }
 .off {
   grid-column: 4 / -1;
@@ -398,9 +423,24 @@ button.row:hover {
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-paper), inset 0 0 0 2px var(--c-300);
 }
-@container panel (max-width: 640px) {
-  .row { grid-template-columns: 30px 32px minmax(0, 1fr) 112px; }
-  .share { display: none; }
+.points-btn {
+  align-self: center;
+  width: 28px;
+  margin: -6px 0;
+  padding: 0;
+}
+.points {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+.points td {
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--c-100);
+}
+.points td:last-child {
+  text-align: right;
+  font: 800 var(--fs-body) var(--font-latin);
 }
 
 /* The pickers: the backpack's plate tiles, and the album limited to owned cards. */

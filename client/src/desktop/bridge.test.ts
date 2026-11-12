@@ -296,7 +296,7 @@ it("runs profile and board requests in the desk and hands the panel their answer
   const desk = await context(false);
   const panel = await context(true);
   const profile: MemberProfile = { showcase: ["card"], progress: { cards: [1, 85], emotes: [0, 495], skins: [0, 9] } };
-  const board: Board = { total: 85, cards: [], me: { rank: null, cards: 1, big: 0, off: "account" } };
+  const board: Board = { total: 85, points: {}, cards: [], me: { rank: null, cards: 1, big: 0, skins: 0, score: 2, off: "account" } };
   const room = vi.spyOn(desk.room, "loadProfile").mockResolvedValue(profile);
   const boards = vi.spyOn(desk.player, "loadBoard").mockResolvedValue(board);
   const row = vi.spyOn(desk.player, "loadBoardProfile").mockResolvedValue(null);

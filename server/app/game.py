@@ -46,11 +46,41 @@ LOADOUT_KEYS = ("character", "favorites", "plate", "showcase", "nick", "board")
 BOARD_SIZE = 50
 BOARD_SECONDS = 300
 BOARD_DEFAULT_NICK = "匿名小面包"
+# Collection score: points for each item a save holds, about the draws it takes on average to find one (1 point is
+# about 1 draw). Big hidden cards: 0.1% with a 400-draw pity, about 330 draws. Skins: 0.2% with a 200-draw pity,
+# about 165. Epic cards (small hidden cards and epic normal cards share one 4.5% tier): about 22. Common cards: about
+# 2. Emotes count about half their craft price (480, 960 and 1600 shards), so the 475 of them do not outweigh the
+# cards; scratch emotes count as rare ones. Starter emotes count nothing.
+BOARD_POINTS = {"big": 300, "skin": 150, "epic": 20, "card": 2,
+                "emoteRare": 3, "emoteScratch": 3, "emoteUncommon": 2, "emote": 1}
 
 
 def board_id(pid: str) -> str:
     """What the boards call a save: stable, and not its player id."""
     return hashlib.sha256(f"{pid}:board".encode()).hexdigest()[:12]
+
+
+def board_kind(item: dict[str, Any], manifest: Manifest) -> str:
+    """The BOARD_POINTS key of a collectible item (an entry of Manifest.items)."""
+    if item["kind"] == "char":
+        return "skin"
+    if item["kind"] == "card":
+        card = manifest.cards[item["id"][5:]]
+        return "big" if card.get("tier") == "big" else "epic" if card.get("rarity") == "epic" else "card"
+    if item["source"]:
+        return "emoteScratch"
+    return {"uncommon": "emoteUncommon", "rare": "emoteRare"}.get(item["rarity"], "emote")
+
+
+def board_points(manifest: Manifest) -> dict[str, int]:
+    """item id -> collection-score points, for every item that counts."""
+    return {iid: BOARD_POINTS[board_kind(item, manifest)]
+            for iid, item in manifest.items.items() if iid not in manifest.starter}
+
+
+def _board_counts() -> dict[str, Any]:
+    """A save's board counts before any item: [last] is when the last scoring item came, [last_card] the last card."""
+    return {"cards": 0, "big": 0, "skins": 0, "score": 0, "last": 0.0, "last_card": 0.0}
 
 
 def _loadout_json(raw: str) -> dict[str, Any]:
@@ -96,6 +126,7 @@ class Game:
         self.rng = rng or cardlogic.default_rng()
         self.now = now
         self.collectible_ids = frozenset(manifest.items) - manifest.starter
+        self.board_points = board_points(manifest)
         # Counts, room samples and clients for the admin pages.
         self.tracker = Tracker(store, lambda: self.now())
 
@@ -879,51 +910,83 @@ class Game:
         cached = getattr(self, "_board", None)
         if cached and now - cached["at"] < BOARD_SECONDS and cached["require_account"] == require_account:
             return cached
-        cards = [f"card:{cid}" for cid in self.manifest.cards]
-        big = [f"card:{c['id']}" for c in self.manifest.cards.values() if c.get("tier") == "big"]
-        counts = self.store.card_counts(cards, big)
-        pids = sorted({r["player_id"] for r in counts})
+        saves: dict[str, dict[str, Any]] = {}
+        for pid, iid, ts in self.store.held_items():
+            if iid not in self.board_points:
+                continue
+            counts = saves.get(pid)
+            if counts is None:
+                counts = saves[pid] = _board_counts()
+            self._count_item(counts, iid)
+            counts["last"] = max(counts["last"], ts)
+            if iid.startswith("card:"):
+                counts["last_card"] = max(counts["last_card"], ts)
+        pids = sorted(saves)
         loadouts = {pid: _loadout_json(raw) for pid, raw in self.store.loadouts(pids).items()}
         room_nicks = self.store.room_nicks(pids)
         linked = self.store.linked_players() if require_account else None
-        listed = (r for r in counts if self._listed(r["player_id"], loadouts.get(r["player_id"], {}), linked) is None)
-        ranked = sorted(listed, key=lambda r: (-r["cards"], -r["big"], r["last"]))
-        rows, ids = [], {}
-        for rank, r in enumerate(ranked[:BOARD_SIZE], 1):
-            pid, lo = r["player_id"], loadouts.get(r["player_id"], {})
-            plate = lo.get("plate")
-            needs = self.plate_needs(plate) if plate else None
-            if needs is None or not set(needs) <= set(self.store.owned(pid)):
-                plate = None
-            # The nick set for the board (1.2.0 on), else the one last used in a room.
-            nick = (lo.get("nick") if isinstance(lo.get("nick"), str) else "") or room_nicks.get(pid) or BOARD_DEFAULT_NICK
-            bid = board_id(pid)
-            ids[bid] = pid
-            rows.append({"id": bid, "rank": rank, "nick": nick, "character": lo.get("character") or "", "plate": plate,
-                         "cards": r["cards"], "big": r["big"]})
+        listed = [(pid, c) for pid, c in saves.items() if self._listed(pid, loadouts.get(pid, {}), linked) is None]
+        ranked = {
+            # Cards, then big hidden cards, then who had the last of those cards first.
+            "cards": sorted((x for x in listed if x[1]["cards"]),
+                            key=lambda x: (-x[1]["cards"], -x[1]["big"], x[1]["last_card"])),
+            # Score, then big hidden cards, then who reached the score first.
+            "score": sorted(listed, key=lambda x: (-x[1]["score"], -x[1]["big"], x[1]["last"])),
+        }
+        rows: dict[str, list[dict[str, Any]]] = {}
+        shown: dict[str, dict[str, Any]] = {}
+        for order, in_order in ranked.items():
+            rows[order] = []
+            for rank, (pid, counts) in enumerate(in_order[:BOARD_SIZE], 1):
+                if pid not in shown:
+                    shown[pid] = self._board_row(pid, counts, loadouts.get(pid, {}), room_nicks)
+                rows[order].append({**shown[pid], "rank": rank})
         self._board = {
-            "at": now, "require_account": require_account, "rows": rows, "ids": ids,
-            "rank": {r["player_id"]: i for i, r in enumerate(ranked, 1)},
+            "at": now, "require_account": require_account, "rows": rows,
+            "ids": {row["id"]: pid for pid, row in shown.items()},
+            "rank": {order: {pid: i for i, (pid, _) in enumerate(in_order, 1)} for order, in_order in ranked.items()},
         }
         return self._board
 
-    def board(self, token: str, require_account: bool) -> dict[str, Any]:
-        """The collection board's top rows and where the asking save stands. The board is worked out at most every
-        BOARD_SECONDS, so a rank may lag a few minutes."""
+    def _count_item(self, counts: dict[str, Any], iid: str) -> None:
+        """Adds an item a save holds (one with board points) to its board counts."""
+        counts["score"] += self.board_points[iid]
+        if iid.startswith("card:"):
+            counts["cards"] += 1
+            counts["big"] += self.manifest.cards[iid[5:]].get("tier") == "big"
+        elif iid.startswith("char:"):
+            counts["skins"] += 1
+
+    def _board_row(self, pid: str, counts: dict[str, Any], lo: dict[str, Any],
+                   room_nicks: dict[str, str]) -> dict[str, Any]:
+        plate = lo.get("plate")
+        needs = self.plate_needs(plate) if plate else None
+        if needs is None or not set(needs) <= set(self.store.owned(pid)):
+            plate = None
+        # The nick set for the board (1.2.0 on), else the one last used in a room.
+        nick = (lo.get("nick") if isinstance(lo.get("nick"), str) else "") or room_nicks.get(pid) or BOARD_DEFAULT_NICK
+        return {"id": board_id(pid), "nick": nick, "character": lo.get("character") or "", "plate": plate,
+                "cards": counts["cards"], "big": counts["big"], "skins": counts["skins"], "score": counts["score"]}
+
+    def board(self, token: str, require_account: bool, order: str = "cards") -> dict[str, Any]:
+        """The collection board's top rows and where the asking save stands, by [order]: "cards" (what clients from
+        before the collection score show) or "score". The board is worked out at most every BOARD_SECONDS, so a rank
+        may lag a few minutes."""
         data = self._work_out_board(require_account)
         pid = player_id_for(token)
         p = self.store.get_player(pid, self.now())
         loadout = _loadout_json(p["loadout"])
-        owned = self.store.owned(pid)
-        big = {c["id"] for c in self.manifest.cards.values() if c.get("tier") == "big"}
-        mine = [cid for cid in self.manifest.cards if owned.get(f"card:{cid}", 0) > 0]
+        mine = _board_counts()
+        for iid, count in self.store.owned(pid).items():
+            if count > 0 and iid in self.board_points:
+                self._count_item(mine, iid)
         # Only this save's own link matters here: no need to read every account link.
         linked = ({pid} if self.store.account_for_player(pid) else set()) if require_account else None
         return {
-            "total": len(self.manifest.cards), "cards": data["rows"],
+            "total": len(self.manifest.cards), "points": dict(BOARD_POINTS), "cards": data["rows"][order],
             "me": {
-                "rank": data["rank"].get(pid), "cards": len(mine), "big": sum(cid in big for cid in mine),
-                "off": self._listed(pid, loadout, linked),
+                "rank": data["rank"][order].get(pid), "cards": mine["cards"], "big": mine["big"],
+                "skins": mine["skins"], "score": mine["score"], "off": self._listed(pid, loadout, linked),
             },
         }
 
