@@ -218,7 +218,8 @@ def test_economy_defaults_to_fourteen_days(admin_env):
 
 
 # ------------------------------------------------------------------ saves
-SAVE_KEYS = {"player", "userId", "created", "lastActive", "shards", "owned", "taps", "drawn", "tapCooldown"}
+SAVE_KEYS = {"player", "userId", "created", "lastActive", "shards", "owned", "taps", "drawn", "tapCooldown",
+             "clientVersion"}
 
 
 def test_saves_search_by_player_id_prefix_and_by_main_user_id(admin_env):
@@ -253,7 +254,7 @@ def test_save_detail_shows_pity_today_recent_drops_and_a_week_of_ledger(admin_en
     c.post("/api/resonance/draw", json={"count": 2}, headers=headers)
     pid = player_id_for(GUEST)
     body = c.get(f"/admin/saves/{pid}", headers=KEY).json()
-    assert set(body) == SAVE_KEYS | {"pity", "today", "recent", "ledger"}
+    assert set(body) == SAVE_KEYS | {"pity", "today", "recent", "ledger", "log"}
     assert body["userId"] is None and body["drawn"] == 2
     assert set(body["pity"]) == {"legendary", "skin", "scratch"}
     today = day_of(g.now())
@@ -265,7 +266,7 @@ def test_save_detail_shows_pity_today_recent_drops_and_a_week_of_ledger(admin_en
         {"duplicate"} if "duplicate" in ledger(g, pid) else set())
 
     r = c.get("/admin/saves/ffff000000000000", headers=KEY)
-    assert r.status_code == 404 and r.json()["detail"]["code"] == "no_save"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "no_save"
     assert not g.store.has_player("ffff000000000000")
 
 
@@ -283,7 +284,7 @@ def test_guest_saves_take_shard_adjustments_and_record_them(admin_env):
     assert r.status_code == 409 and r.json()["detail"]["code"] == "no_shards"
     assert ledger(g, pid)["admin"] == (30, 2)
     r = c.post("/admin/saves/ffff000000000000/shards", json={"delta": 5}, headers=KEY)
-    assert r.status_code == 404 and r.json()["detail"]["code"] == "no_save"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "no_save"
     assert not g.store.has_player("ffff000000000000")
 
 

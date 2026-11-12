@@ -147,18 +147,22 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 ## 管理接口
 
-主站后台用来查看和管理桌宠账号。服务端配置 `ASOULTAPPO_ADMIN_KEY` 后启用，请求需带 `X-Admin-Key`；未配置或密钥不符时一律返回 404。`/admin` 不经过公网反向代理，只由同机的主站 API 访问。统计按北京时间（UTC+8）切分日期；当天有活动上报（敲击被计入）或在线心跳的存档记为活跃。
+主站后台用来查看和管理桌宠账号。服务端配置 `ASOULTAPPO_ADMIN_KEY` 后启用，请求需带 `X-Admin-Key`；未配置或密钥不符时一律返回 404。改动类请求可带 `X-Admin-Actor`（主站管理员的用户名，按 URL 编码），记进管理操作日志。`/admin` 不经过公网反向代理，只由同机的主站 API 访问。统计按北京时间（UTC+8）切分日期；当天有活动上报（敲击被计入）或在线心跳的存档记为活跃。
 
 | 路由 | 请求与响应 |
 |---|---|
 | GET /admin/stats?days= | days 为 1–180，默认 30。totals：saves（存档数）、linked（已绑定账号）、guests（游客存档）、activeToday、rooms、online；series：每天一行 `{day,active,newSaves,items}`，从旧到新 |
 | GET /admin/accounts?ids=&offset=&limit= | 已绑定账号的存档，按最近活动倒序；ids 为逗号分隔的主站用户 ID（最多 100 个），用于按主站搜索结果筛选。返回 total、accounts（`userId,linkedAt,shards,owned,taps,lastActive`） |
-| POST /admin/accounts/{userId}/shards | `{delta}`，正数补发、负数扣减，扣到负数时返回 409 `no_shards`；返回新的 shards |
-| POST /admin/accounts/{userId}/unlink | 解除绑定。存档保留，原游客令牌恢复可用，账号可以重新绑定 |
+| POST /admin/accounts/{userId}/shards | `{delta,reason?}`，正数补发、负数扣减，扣到负数时返回 409 `no_shards`；返回新的 shards。reason 最多 200 字，记进管理操作日志 |
+| POST /admin/accounts/{userId}/unlink | 可带 `{reason}`。解除绑定。存档保留，原游客令牌恢复可用，账号可以重新绑定 |
 | GET /admin/economy?days=&scope=&newDays= | 碎片流水按天汇总。days 为 1–90，默认 14；scope 为 `all`（默认）或 `new`；newDays 为 1–30，默认 7。返回 `{scope,newDays,cap,series}`，cap 为每日敲击收入上限；series 每天一行，从旧到新，没有数据的日期也有一行。每行 `{day,players,issued,spent,sources,draws,taps,capped}`：players 为当天有流水的存档数；issued、spent 分别为正数流水之和、负数流水之和（取正值）；sources 为 `{来源:{amount,count}}`；draws 为当天共鸣次数；taps 为 `{players,p50,p90,max}`，按每个存档当天计入的敲击数统计，百分位取最近秩（nearest-rank），没人敲击时全为 0；capped 为当天敲击碎片达到 cap - 1 的存档数（整数取整可能差最后 1 个碎片）。scope=new 只统计创建日期距当天少于 newDays 天的存档，newDays=1 即只看创建当天 |
-| GET /admin/saves?q=&limit= | 查找存档，含游客存档。q 按主站用户 ID 精确匹配绑定的存档；q 为 4–16 位十六进制时，同时按存档 ID 前缀匹配（不分大小写），两者合并。q 缺省或为空返回 422，只有空白或匹配不到时返回空列表。limit 为 1–50，默认 20。返回 `{saves:[...]}`，按最近活动倒序，每项 `{player,userId,created,lastActive,shards,owned,taps,drawn,tapCooldown}`；userId 为绑定的主站用户 ID，游客存档为 null；tapCooldown 为敲击冷却剩余秒数 |
-| GET /admin/saves/{player} | 单个存档详情：上一行的字段，加 pity `{legendary,skin,scratch}`、today `{day,taps,tapShards}`（当天计入的敲击数和敲击得到的碎片）、recent（最近获得的物品，同 `/api/collection`）、ledger（最近 7 天流水，`[{day,sources}]`，从旧到新）。存档不存在时返回 404 `no_save` |
-| POST /admin/saves/{player}/shards | `{delta}`，调整任意存档（含游客存档）的碎片，规则同 `/admin/accounts/{userId}/shards`；存档不存在时返回 404 `no_save` |
+| GET /admin/saves?q=&limit= | 查找存档，含游客存档。q 按主站用户 ID 精确匹配绑定的存档；q 为 4–16 位十六进制时，同时按存档 ID 前缀匹配（不分大小写），两者合并。q 缺省或为空返回 422，只有空白或匹配不到时返回空列表。limit 为 1–50，默认 20。返回 `{saves:[...]}`，按最近活动倒序，每项 `{player,userId,created,lastActive,shards,owned,taps,drawn,tapCooldown,clientVersion}`；userId 为绑定的主站用户 ID，游客存档为 null；tapCooldown 为敲击冷却剩余秒数；clientVersion 为这份存档最近一次请求的客户端版本，没有记录时为 null |
+| GET /admin/saves/{player} | 单个存档详情：上一行的字段，加 pity `{legendary,skin,scratch}`、today `{day,taps,tapShards}`（当天计入的敲击数和敲击得到的碎片）、recent（最近获得的物品，同 `/api/collection`）、ledger（最近 7 天流水，`[{day,sources}]`，从旧到新）、log（这份存档最近 20 条管理操作，格式同 `/admin/log`）。存档不存在时返回 409 `no_save` |
+| POST /admin/saves/{player}/shards | `{delta,reason?}`，调整任意存档（含游客存档）的碎片，规则同 `/admin/accounts/{userId}/shards`；存档不存在时返回 409 `no_save` |
+| GET /admin/log?player=&limit=&before= | 管理操作日志，新的在前。player 只看一份存档；limit 为 1–200，默认 50；before 为条目 id，接着往下翻。返回 `{entries:[{id,ts,actor,action,player,detail,reason}]}`：action 为 `shards`（detail `{delta,shards}`）、`unlink`（`{userId}`）、`reward_open`（`{version,shards}`）、`reward_end`（`{id,version}`）、`notice`（`{minVersion,announcements}`，公告只记标题）、`blocked_words`（`{count}`）；player 不涉及存档时为 null。拒绝的改动不记 |
+| GET /admin/insights?days= | 概况。days 为 1–90，默认 30。返回 `{today,retention,activeDays,active,versions,collection,drops,rarities}`。retention 每个创建日一行 `{day,size,d1,d3,d7}`：size 为当天新建的存档数，dN 为其中第 N 天又活跃的个数，那一天还没过完时为 null。activeDays 为 7，active 为近 7 天活跃的存档数；versions 为这些存档的客户端版本分布（`[{name,count}]`，没有记录的为 `unknown`，不是版本号的为 `other`；从新到旧）。collection `{total,saves}`：saves[k] 为近 7 天活跃、持有 k 张卡的存档数。drops 每天一行 `{day,rarities:{稀有度:{count,new}}}`，为共鸣、兑换和刮刮乐得到的物品数及其中新物品数；rarities 为稀有度的显示名，含 `skin` |
+| GET /admin/online?days= | 联机。days 为 1–90，默认 14。返回 `{today,now,series,recent,recentStep}`。now 为此刻的 `{rooms,members,saves,largest,public}`：有成员的房间数、成员数、其中不同存档数、最大房间人数、公开列出的房间数。series 每天一行 `{day,samples,peakMembers,peakRooms,peakSaves,avgMembers,sharedMinutes,counts,duels,cheer}`：服务端每分钟记一次房间采样，samples 为当天采样数（服务端停机时没有采样），sharedMinutes 为有房间至少两人的分钟数；counts 为当天次数 `{room_join,poke,profile,board_profile,emote,duel_invite,cheer_round}`（进房间、戳一戳、房间里看主页、收藏榜看主页、表情、猜拳邀请、应援满条）；duels `{played,bets:{下注:局数}}` 为当天结束的猜拳局数；cheer `{shards,saves}` 为当天应援发出的碎片和领到的存档数。recent 为最近 24 小时，每 recentStep（10）分钟一个点 `{ts,rooms,members,saves}`，取那段时间的最大值 |
+| GET /admin/anomalies?day= | 异常。day 为 `YYYY-MM-DD`，默认今天。返回 `{day,tapCap,taps,heavy,shards}`。taps 为当天有标记的存档，按服务端冷却次数、被丢弃的敲击数倒序，最多 50 个 `{player,userId,credited,dropped,serverCooldowns,clientCooldowns,tapShards}`：dropped 为上报了但没有计入的敲击（超过速率或冷却中），serverCooldowns 为服务端判定连续过快而开始的冷却次数，clientCooldowns 为客户端自己的防连点开始的冷却次数，credited、tapShards 为当天计入的敲击和敲击碎片。heavy 为当天计入敲击最多的 20 个存档，格式同 taps（速度没到冷却线的连点器只会出现在这里）。shards 为当天靠玩法得到碎片最多的 50 个存档 `{player,userId,gained,sources}`，不算初始碎片、更新奖励和后台调整 |
 | GET /admin/blocked-words | 昵称屏蔽词表，返回 `{words,count}`，按上次保存时的顺序 |
 | PUT /admin/blocked-words | `{words:[...]}`，整表替换。每个词去掉首尾空白后为 1–64 个字符，最多 20000 个（按去重前的个数算），不符合时返回 422 且词表不变；去重后保存原词（不保存折叠结果）。返回 `{count}`，为去重后的个数。新词表立即对在线成员生效，见下节 |
 

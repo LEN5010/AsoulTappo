@@ -14,6 +14,7 @@ from .cards import DropConfig, Rng
 from .manifest import Manifest
 from .notice import version_key
 from .store import DAY_OFFSET, Store, day_of
+from .tracking import Tracker
 
 TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
@@ -25,6 +26,8 @@ SESSION_DAYS = 30
 SCRATCH_DAYS = 30
 # Days of shard ledger the admin save view shows.
 ADMIN_LEDGER_DAYS = 7
+# Admin log entries a save's admin page shows.
+ADMIN_SAVE_LOG = 20
 # Hex characters of a player id prefix the admin save search accepts (ids have 16).
 SAVE_PREFIX_MIN, SAVE_PREFIX_MAX = 4, 16
 # emote keys every member may send besides the starter emotes: thumbup, the theme's like burst
@@ -93,6 +96,8 @@ class Game:
         self.rng = rng or cardlogic.default_rng()
         self.now = now
         self.collectible_ids = frozenset(manifest.items) - manifest.starter
+        # Counts, room samples and clients for the admin pages.
+        self.tracker = Tracker(store, lambda: self.now())
 
     # ---------------------------------------------------------------- activity
     def report_activity(self, token: str, taps: int, session: str | None = None,
@@ -103,6 +108,7 @@ class Game:
         with self.store.transaction() as st:
             now = self.now()
             p = st.get_player(pid, now)
+            today = day_of(now)
             if session is not None:
                 last = st.activity_session(pid, session)
                 if sequence <= last["sequence"]:
@@ -114,18 +120,25 @@ class Game:
                 if fast_since and now - fast_since >= cfg.fast_streak_sec:
                     st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
                     p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
+                    st.add_tap_flags(today, pid, server=1)
                 st.save_activity_sequence(pid, session, sequence, now, fast_since)
             # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
             if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
+                # The client names the seconds left on every report of its cooldown; only a new one is counted.
+                started = p["tap_cooldown_until"] <= now
                 p["tap_cooldown_until"] = now + min(cooldown, cfg.tap_cooldown_sec)
                 st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"])
+                if started:
+                    st.add_tap_flags(today, pid, client=1)
             if now < p["tap_cooldown_until"]:
+                st.add_tap_flags(today, pid, dropped=taps)
                 return {**self.status(token), "credited": 0}
             previous = p["last_activity"] or p["created"]
             elapsed = min(max(now - previous, 0.0), MAX_ELAPSED)
             budget = min(st.activity_budget(pid) + cfg.max_taps_per_sec * elapsed,
                          cfg.max_taps_per_sec * MAX_ELAPSED)
             credited = min(taps, math.floor(budget))
+            st.add_tap_flags(today, pid, dropped=taps - credited)
 
             bucket = int(now // 60)
             minute_taps, counted = p["minute_taps"], p["minute_counted"]
@@ -142,7 +155,6 @@ class Game:
                 counted = 1
                 active_minutes += 1
 
-            today = day_of(now)
             day_taps = p["day_taps"] if p["tap_day"] == today else 0
             day_taps_total = p["day_taps_total"] if p["tap_day"] == today else 0
             earned = p["shard_remainder"] + self._tap_shards(day_taps + paid_taps) - self._tap_shards(day_taps)
@@ -575,14 +587,15 @@ class Game:
             {"userId": r["main_user_id"], "linkedAt": r["linked_at"], **self.save_summary(r["player_id"])}
             for r in rows]}
 
-    def admin_adjust_shards(self, main_user_id: str, delta: int) -> dict[str, Any]:
+    def admin_adjust_shards(self, main_user_id: str, delta: int, actor: str = "", reason: str = "") -> dict[str, Any]:
         pid = self.store.linked_player(main_user_id)
         if pid is None:
             raise GameError("account_not_linked", "这个账号没有桌宠存档")
-        return self.admin_adjust_save_shards(pid, delta)
+        return self.admin_adjust_save_shards(pid, delta, actor, reason)
 
-    def admin_adjust_save_shards(self, pid: str, delta: int) -> dict[str, Any]:
-        """Adds [delta] shards to an existing save, guest or linked; never below zero."""
+    def admin_adjust_save_shards(self, pid: str, delta: int, actor: str = "", reason: str = "") -> dict[str, Any]:
+        """Adds [delta] shards to an existing save, guest or linked; never below zero. The admin log keeps who
+        and why."""
         with self.store.transaction() as st:
             if not st.has_player(pid):
                 raise GameError("no_save", "没有这份存档")
@@ -593,14 +606,25 @@ class Game:
             st.update_player(pid, shards=shards)
             if delta:
                 st.add_ledger(pid, day_of(now), "admin", delta)
+                st.add_admin_log(now, actor, "shards", pid, json.dumps({"delta": delta, "shards": shards}), reason)
         return {"shards": shards}
+
+    def admin_note(self, actor: str, action: str, detail: dict[str, Any], pid: str = "", reason: str = "") -> None:
+        """An admin log entry for a change made outside the game's own admin methods."""
+        self.store.add_admin_log(self.now(), actor, action, pid, json.dumps(detail, ensure_ascii=False), reason)
+
+    def admin_log(self, pid: str | None, limit: int, before: int | None = None) -> dict[str, Any]:
+        rows = self.store.admin_log(pid, limit, before)
+        return {"entries": [{"id": r["id"], "ts": r["ts"], "actor": r["actor"], "action": r["action"],
+                             "player": r["player_id"] or None, "detail": _loadout_json(r["detail"]),
+                             "reason": r["reason"]} for r in rows]}
 
     def admin_update_rewards(self) -> dict[str, Any]:
         """Every update reward, newest first, with its claims and the shards paid."""
         rows = self.store.update_rewards()
         return {"rewards": [{**r, "paid": r["shards"] * r["claims"]} for r in rows]}
 
-    def admin_add_update_reward(self, version: str, shards: int) -> dict[str, Any]:
+    def admin_add_update_reward(self, version: str, shards: int, actor: str = "") -> dict[str, Any]:
         """Opens a reward for [version] and newer. One open reward per version, so a second submit pays no one twice."""
         key = version_key(version)
         if key is None:
@@ -608,13 +632,17 @@ class Game:
         with self.store.transaction() as st:
             if any(r["ended"] is None and version_key(r["version"]) == key for r in st.update_rewards()):
                 raise GameError("reward_open", "这个版本已有进行中的更新奖励")
-            st.add_update_reward(version.strip().removeprefix("v"), shards, self.now())
+            version = version.strip().removeprefix("v")
+            st.add_update_reward(version, shards, self.now())
+            st.add_admin_log(self.now(), actor, "reward_open", "", json.dumps({"version": version, "shards": shards}))
         return self.admin_update_rewards()
 
-    def admin_end_update_reward(self, reward_id: int) -> dict[str, Any]:
+    def admin_end_update_reward(self, reward_id: int, actor: str = "") -> dict[str, Any]:
         """Stops a reward: saves that have not claimed it no longer can."""
         if not self.store.end_update_reward(reward_id, self.now()):
             raise GameError("no_reward", "没有进行中的这个奖励")
+        version = next((r["version"] for r in self.store.update_rewards() if r["id"] == reward_id), "")
+        self.admin_note(actor, "reward_end", {"id": reward_id, "version": version})
         return self.admin_update_rewards()
 
     def _admin_save(self, p: dict[str, Any], user_id: str | None) -> dict[str, Any]:
@@ -622,7 +650,8 @@ class Game:
         return {"player": p["id"], "userId": user_id, "created": p["created"],
                 "lastActive": p["last_activity"] or p["created"], "shards": p["shards"],
                 "owned": self.store.count_items(p["id"], self.collectible_ids), "taps": p["taps_total"],
-                "drawn": p["drawn_total"], "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - self.now()))}
+                "drawn": p["drawn_total"], "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - self.now())),
+                "clientVersion": p["client_version"] or None}
 
     def admin_saves(self, q: str, limit: int) -> dict[str, Any]:
         """Saves linked to main-site user id [q], and, when [q] is 4-16 hex characters, saves whose player id
@@ -649,7 +678,8 @@ class Game:
                 "today": {"day": today, "taps": p["day_taps_total"] if p["tap_day"] == today else 0,
                           "tapShards": ledger[today].get("tap", {}).get("amount", 0)},
                 "recent": self.store.recent_drops(pid),
-                "ledger": [{"day": d, "sources": ledger[d]} for d in days]}
+                "ledger": [{"day": d, "sources": ledger[d]} for d in days],
+                "log": self.admin_log(pid, ADMIN_SAVE_LOG)["entries"]}
 
     def admin_economy(self, days: int, scope: Literal["all", "new"] = "all", new_days: int = 7) -> dict[str, Any]:
         """Shard ledger per China Standard Time day, oldest first. scope "new" keeps saves created fewer than
@@ -688,10 +718,12 @@ class Game:
                 "capped": sum(1 for r in taps if r["amount"] >= cap - 1)})
         return {"scope": scope, "newDays": new_days, "cap": cap, "series": series}
 
-    def admin_unlink(self, main_user_id: str) -> None:
+    def admin_unlink(self, main_user_id: str, actor: str = "", reason: str = "") -> None:
         """The save stays; its guest token works again and the account may link another save."""
+        pid = self.store.linked_player(main_user_id)
         if not self.store.unlink_account(main_user_id):
             raise GameError("account_not_linked", "这个账号没有桌宠存档")
+        self.admin_note(actor, "unlink", {"userId": main_user_id}, pid or "", reason)
 
     def collection(self, token: str) -> dict[str, Any]:
         pid = player_id_for(token)

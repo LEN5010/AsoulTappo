@@ -6,7 +6,9 @@ import os
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import unquote
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -16,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
+from . import analytics
 from .accounts import MainAccounts
 from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
@@ -32,7 +35,31 @@ from .releases import ReleaseFeed
 from .rooms import FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager
 from .store import Store
 
-app = FastAPI(title="AsoulTappo server", version="0.4.0")
+SAMPLE_SECONDS = 60
+
+
+async def _sample_rooms() -> None:
+    """Once a minute, at the minute's start: the room sample and the counts so far go to the database."""
+    while True:
+        await asyncio.sleep(SAMPLE_SECONDS - time.time() % SAMPLE_SECONDS)
+        try:
+            numbers = game.tracker.room_numbers(list(manager.rooms.values()))
+            await run_in_threadpool(game.tracker.sample, numbers)
+        except Exception as e:  # a failed sample must not stop the next ones
+            print(f"room sample failed: {e!r}", flush=True)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    sampler = asyncio.create_task(_sample_rooms())
+    try:
+        yield
+    finally:
+        sampler.cancel()
+        game.tracker.flush()
+
+
+app = FastAPI(title="AsoulTappo server", version="0.4.0", lifespan=_lifespan)
 manager = RoomManager()
 EMOTE_INTERVAL = 0.25  # seconds between emotes of one member
 PUBLIC_LIST_LIMIT = 50
@@ -141,9 +168,9 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
           "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,
-          "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_save": 404, "no_member": 404,
+          "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_member": 404,
           # Admin calls answer these with 409: the main site reads a 404 from this server as "unavailable".
-          "no_reward": 409, "reward_open": 409}
+          "no_save": 409, "no_reward": 409, "reward_open": 409}
 
 
 def _guard(fn, *args):
@@ -180,7 +207,9 @@ def player(x_player_token: str = Header(default=""), authorization: str = Header
            x_client_version: str = Header(default="")) -> PlayerId:
     if notice.outdated(x_client_version):
         raise HTTPException(426, {"code": "client_outdated", "message": OUTDATED_MESSAGE})
-    return _guard(_who, x_player_token, authorization)
+    who = _guard(_who, x_player_token, authorization)
+    game.tracker.client(who, x_client_version)
+    return who
 
 
 class ActivityBody(BaseModel):
@@ -229,7 +258,9 @@ def api_board(who: PlayerId = Depends(player)) -> dict:
 @app.get("/api/board/profile/{bid}")
 def api_board_profile(bid: str, who: PlayerId = Depends(player)) -> dict:
     """The showcase and progress of a save on the collection board's top rows."""
-    return _guard(game.board_profile, bid, accounts is not None)
+    out = _guard(game.board_profile, bid, accounts is not None)
+    game.tracker.count("board_profile")
+    return out
 
 
 @app.get("/api/manifest")
@@ -251,6 +282,7 @@ async def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> d
     finished = manager.cheer(who, out.pop("cheerTaps", 0))
     if finished:
         room, number, earned, each = finished
+        game.tracker.count("cheer_round")
         paid = await run_in_threadpool(game.cheer_reward, earned, each)
         await manager.cheer_done(room, number, paid)
         if paid.get(who):
@@ -381,8 +413,22 @@ def admin(x_admin_key: str = Header(default="")) -> None:
         raise HTTPException(status_code=404)
 
 
+MAX_ACTOR = 64
+
+
+def actor(x_admin_actor: str = Header(default="")) -> str:
+    """The main site's admin making the change, percent-encoded by the main site; kept in the admin log."""
+    return unquote(x_admin_actor).strip()[:MAX_ACTOR]
+
+
 class ShardsBody(BaseModel):
     delta: int = Field(ge=-1_000_000, le=1_000_000)
+    # Why; the main site requires one, scripts may leave it out.
+    reason: str = Field(default="", max_length=200)
+
+
+class ReasonBody(BaseModel):
+    reason: str = Field(default="", max_length=200)
 
 
 @app.get("/admin/stats", dependencies=[Depends(admin)])
@@ -402,13 +448,13 @@ def admin_accounts(ids: str | None = None, offset: int = Query(default=0, ge=0),
 
 
 @app.post("/admin/accounts/{user_id}/shards", dependencies=[Depends(admin)])
-def admin_shards(user_id: str, body: ShardsBody) -> dict:
-    return _guard(game.admin_adjust_shards, user_id, body.delta)
+def admin_shards(user_id: str, body: ShardsBody, who: str = Depends(actor)) -> dict:
+    return _guard(game.admin_adjust_shards, user_id, body.delta, who, body.reason.strip())
 
 
 @app.post("/admin/accounts/{user_id}/unlink", dependencies=[Depends(admin)])
-def admin_unlink(user_id: str) -> dict:
-    _guard(game.admin_unlink, user_id)
+def admin_unlink(user_id: str, body: ReasonBody | None = None, who: str = Depends(actor)) -> dict:
+    _guard(game.admin_unlink, user_id, who, body.reason.strip() if body else "")
     return {"ok": True}
 
 
@@ -430,8 +476,33 @@ def admin_save(player: str) -> dict:
 
 
 @app.post("/admin/saves/{player}/shards", dependencies=[Depends(admin)])
-def admin_save_shards(player: str, body: ShardsBody) -> dict:
-    return _guard(game.admin_adjust_save_shards, player, body.delta)
+def admin_save_shards(player: str, body: ShardsBody, who: str = Depends(actor)) -> dict:
+    return _guard(game.admin_adjust_save_shards, player, body.delta, who, body.reason.strip())
+
+
+@app.get("/admin/insights", dependencies=[Depends(admin)])
+def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
+    """New saves and returns, clients and collections of active saves, draws by rarity."""
+    return analytics.insights(game, days)
+
+
+@app.get("/admin/online", dependencies=[Depends(admin)])
+def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
+    """Room occupancy, interaction counts, duels and cheer rounds."""
+    return analytics.online(game, days, game.tracker.room_numbers(list(manager.rooms.values())))
+
+
+@app.get("/admin/anomalies", dependencies=[Depends(admin)])
+def admin_anomalies(day: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")) -> dict:
+    """Saves whose taps look automated and the saves that gained the most shards on [day] (default today)."""
+    return analytics.anomalies(game, day)
+
+
+@app.get("/admin/log", dependencies=[Depends(admin)])
+def admin_log(player: str | None = Query(default=None, max_length=32), limit: int = Query(default=50, ge=1, le=200),
+              before: int | None = Query(default=None, ge=1)) -> dict:
+    """Changes made through /admin, newest first."""
+    return game.admin_log(player, limit, before)
 
 
 class UpdateRewardBody(BaseModel):
@@ -445,14 +516,14 @@ def admin_update_rewards() -> dict:
 
 
 @app.post("/admin/update-rewards", dependencies=[Depends(admin)])
-def admin_add_update_reward(body: UpdateRewardBody) -> dict:
+def admin_add_update_reward(body: UpdateRewardBody, who: str = Depends(actor)) -> dict:
     """Every save on [version] or newer can claim [shards] once, until the reward is ended."""
-    return _guard(game.admin_add_update_reward, body.version, body.shards)
+    return _guard(game.admin_add_update_reward, body.version, body.shards, who)
 
 
 @app.post("/admin/update-rewards/{reward_id}/end", dependencies=[Depends(admin)])
-def admin_end_update_reward(reward_id: int) -> dict:
-    return _guard(game.admin_end_update_reward, reward_id)
+def admin_end_update_reward(reward_id: int, who: str = Depends(actor)) -> dict:
+    return _guard(game.admin_end_update_reward, reward_id, who)
 
 
 MAX_BLOCKED_WORDS = 20000
@@ -507,9 +578,10 @@ def _save_blocklist(words: list[str]) -> None:
 
 
 @app.put("/admin/blocked-words", dependencies=[Depends(admin)])
-async def admin_set_blocked_words(body: BlockedWordsBody) -> dict:
+async def admin_set_blocked_words(body: BlockedWordsBody, who: str = Depends(actor)) -> dict:
     """Replace the whole list; it applies to members online at once."""
     await run_in_threadpool(_save_blocklist, body.words)
+    await run_in_threadpool(game.admin_note, who, "blocked_words", {"count": len(body.words)})
     await _remask()
     return {"count": len(body.words)}
 
@@ -543,12 +615,14 @@ def admin_notice() -> dict:
 
 
 @app.put("/admin/notice", dependencies=[Depends(admin)])
-def admin_set_notice(body: NoticeBody) -> dict:
+def admin_set_notice(body: NoticeBody, who: str = Depends(actor)) -> dict:
     """Replace the minimum version and the announcements; requests after this one see them."""
     global notice
     new = Notice(body.minVersion, [a.model_dump() for a in body.announcements])
     game.store.set_setting(notices.KEY, new.dump())
     notice = new
+    game.admin_note(who, "notice", {"minVersion": body.minVersion,
+                                    "announcements": [a.title for a in body.announcements]})
     return admin_notice()
 
 
@@ -684,6 +758,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await send(_final("need_save", "公开房间需要存档才能加入"))
                     continue
                 room_id = msg.room
+                game.tracker.count("room_join")
                 peer.dnd = msg.dnd
                 await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
@@ -735,6 +810,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, PokeMsg):
                 try:
                     manager.poke(room_id, peer, msg.id, time.monotonic())
+                    game.tracker.count("poke")
                 except PokeRefused as refused:
                     await err(refused.code, "")
             elif isinstance(msg, ProfileMsg):
@@ -749,6 +825,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 peer.profile_at = now
                 shown = await run_in_threadpool(game.member_profile, target.token)
+                game.tracker.count("profile")
                 await send(ProfileReply(id=target.id, **shown).model_dump())
             elif isinstance(msg, EmoteMsg):
                 now = time.monotonic()
@@ -761,6 +838,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                         continue
                     peer.emotes.add(msg.emote)
                 peer.last_emote = now
+                game.tracker.count("emote")
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
             elif isinstance(msg, (SetPublicMsg, KickMsg)):
@@ -801,6 +879,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, DuelInviteMsg):
                 try:
                     await duels.invite(room_id, peer, msg.id, msg.bet)
+                    game.tracker.count("duel_invite")
                 except GameError as e:
                     await err(e.code, e.message if e.message != e.code else "")
             elif isinstance(msg, (DuelAnswerMsg, DuelThrowMsg)):
