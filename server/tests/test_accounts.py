@@ -4,7 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.accounts import CACHE_SECONDS, RETRY_SECONDS, STALE_SECONDS, MainAccounts
+import app.accounts as accounts_module
+from app.accounts import CACHE_SECONDS, RETRY_SECONDS, STALE_SECONDS, MainAccounts, http_me
 from app.cards import DropConfig
 from app.game import Game, GameError, player_id_for
 from app.store import Store
@@ -283,3 +284,47 @@ def test_state_with_an_unowned_skin_is_locked_and_not_broadcast(env):
         expected = {"type": "state", "id": you, "character": "嘉然", "nick": "a3", "plate": None, "status": None}
         assert b.receive_json() == expected  # the locked message never reached b
         assert a.receive_json() == expected
+
+
+def test_answers_are_reused_for_a_spread_of_times():
+    fake = FakeMain()
+    clock = [0.0]
+    spreads = iter([0.0, 100.0, 0.0, 0.0])
+    accounts = MainAccounts("https://main.test/api", fake, lambda: clock[0], lambda: next(spreads))
+    accounts.user_for("tok-alice")
+    accounts.user_for("tok-bob")
+    # Answered together, asked again at different times.
+    clock[0] = CACHE_SECONDS - 100
+    accounts.user_for("tok-alice")
+    accounts.user_for("tok-bob")
+    assert fake.calls == 3
+    clock[0] = CACHE_SECONDS
+    accounts.user_for("tok-alice")
+    assert fake.calls == 4
+
+
+def test_lookups_carry_the_shared_key(monkeypatch):
+    seen = {}
+
+    class Answer:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"user": {"id": "u"}}'
+
+    def urlopen(req, timeout):
+        seen.clear()
+        seen.update(req.header_items())
+        return Answer()
+
+    monkeypatch.setattr(accounts_module.urllib.request, "urlopen", urlopen)
+    assert http_me("https://main.test/api/auth/me", "t", key="k") == (200, {"user": {"id": "u"}})
+    assert seen["X-game-key"] == "k" and seen["Authorization"] == "Bearer t"
+    http_me("https://main.test/api/auth/me", "t")
+    assert "X-game-key" not in seen

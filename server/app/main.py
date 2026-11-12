@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import secrets
+import signal
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -19,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from . import analytics
-from .accounts import MainAccounts
+from .accounts import MainAccounts, http_me
 from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
@@ -50,14 +52,46 @@ async def _sample_rooms() -> None:
             print(f"room sample failed: {e!r}", flush=True)
 
 
+# The rooms as they were when the stop signal came. Stopping closes every connection first, which empties the rooms,
+# so they are noted before that and saved once the server is down (see RoomManager.snapshot).
+_stopping_rooms: list[dict] | None = None
+
+
+def _note_rooms_on_stop() -> None:
+    """Wrap the server's stop-signal handlers so the rooms are noted before it starts closing connections. Handlers
+    can only be set from the main thread; elsewhere (tests) nothing is noted, and a stop saves no rooms."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        previous = signal.getsignal(sig)
+        if not callable(previous):
+            continue
+
+        def handler(signum, frame, previous=previous):
+            global _stopping_rooms
+            if _stopping_rooms is None:
+                _stopping_rooms = manager.snapshot()
+            previous(signum, frame)
+
+        signal.signal(sig, handler)
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    global _stopping_rooms
+    _stopping_rooms = None
+    saved = await run_in_threadpool(game.store.take_rooms)
+    started = game.now()
+    manager.restore(saved, lambda entry: max(0.0, started - entry["saved"]))
+    _note_rooms_on_stop()
     sampler = asyncio.create_task(_sample_rooms())
     try:
         yield
     finally:
         sampler.cancel()
         game.tracker.flush()
+        if _stopping_rooms is not None:
+            game.store.save_rooms(_stopping_rooms, game.now())
 
 
 app = FastAPI(title="AsoulTappo server", version="0.4.0", lifespan=_lifespan)
@@ -117,7 +151,8 @@ manager.on_depart = _departed
 # MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
 # self-hosted servers, which then offer guest saves only.
 MAIN_API_URL = os.environ.get("MAIN_API_URL", "").strip().rstrip("/")
-accounts = MainAccounts(MAIN_API_URL) if MAIN_API_URL else None
+accounts = (MainAccounts(MAIN_API_URL, functools.partial(http_me, key=os.environ.get("ASOULTAPPO_ADMIN_KEY", "")))
+            if MAIN_API_URL else None)
 # The panel's update check reads the official release list even on self-hosted servers.
 OFFICIAL_MAIN_API = "https://len5010.top/dynamics/api"
 releases = ReleaseFeed(f"{MAIN_API_URL or OFFICIAL_MAIN_API}/tappo/release")
@@ -749,9 +784,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if (character not in game.manifest.character_names
                         and not await run_in_threadpool(game.owns_character, who, character)):
                     character = game.base_character(character)
+                prior = manager.rooms.get(msg.room)
+                prior_info = prior.info() if prior is not None else None
                 try:
                     peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
-                                        **profile)
+                                        may_list=not accounts or signed_in, **profile)
                     raw_nicks[peer.id] = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
@@ -783,6 +820,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await send(joined)
                 await manager.broadcast(
                     room_id, MemberJoinedMsg(member=_member(peer)).model_dump(), exclude=peer.id)
+                if prior_info is not None and manager.rooms[room_id].info() != prior_info:
+                    # The host of the last run came back to its room (see RoomManager.restore).
+                    await manager.broadcast(room_id, _room_info(room_id), exclude=peer.id)
                 continue
 
             if peer is None or room_id is None:

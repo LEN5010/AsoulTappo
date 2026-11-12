@@ -1,6 +1,7 @@
 """SQLite persistence for players, their item collection, presets and the drop log (stdlib only)."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
@@ -162,6 +163,15 @@ CREATE TABLE IF NOT EXISTS room_samples (
   saves INTEGER NOT NULL,
   largest INTEGER NOT NULL,
   public INTEGER NOT NULL
+);
+-- Rooms as the server left them when it stopped (see RoomManager.snapshot); read back and emptied at the next start.
+-- host: the host's save; banned: JSON list of the saves the host removed.
+CREATE TABLE IF NOT EXISTS room_restore (
+  room TEXT PRIMARY KEY,
+  public INTEGER NOT NULL,
+  host TEXT,
+  banned TEXT NOT NULL,
+  saved REAL NOT NULL
 );
 -- Server-wide counts per China day (room joins, pokes, profile views, emotes, duel invites, cheer rounds).
 CREATE TABLE IF NOT EXISTS daily_counts (
@@ -839,6 +849,24 @@ class Store:
                 "INSERT OR REPLACE INTO room_samples (ts, rooms, members, saves, largest, public) VALUES (?,?,?,?,?,?)",
                 (ts, n["rooms"], n["members"], n["saves"], n["largest"], n["public"]))
             self._commit()
+
+    def save_rooms(self, rooms: list[dict[str, Any]], ts: float) -> None:
+        """Replace the saved rooms with [rooms] (RoomManager.snapshot entries)."""
+        with self._lock:
+            self._db.execute("DELETE FROM room_restore")
+            self._db.executemany(
+                "INSERT INTO room_restore (room, public, host, banned, saved) VALUES (?,?,?,?,?)",
+                [(r["room"], int(r["public"]), r["host"], json.dumps(r["banned"]), ts) for r in rooms])
+            self._commit()
+
+    def take_rooms(self) -> list[dict[str, Any]]:
+        """The saved rooms, which are removed: each start reads them once."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM room_restore").fetchall()
+            self._db.execute("DELETE FROM room_restore")
+            self._commit()
+        return [{"room": r["room"], "public": bool(r["public"]), "host": r["host"], "banned": json.loads(r["banned"]),
+                 "saved": r["saved"]} for r in rows]
 
     def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0) -> None:
         """Adds to the save's flags of [day]; the caller's transaction, if any, keeps it with the change."""

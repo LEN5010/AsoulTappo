@@ -36,6 +36,10 @@ POKE_INTERVAL = 3.0
 POKE_SAME_INTERVAL = 10.0
 # Profile requests: one per connection this often; each reads the save.
 PROFILE_INTERVAL = 0.3
+# Rooms live in memory, so a restart empties them and clients join their rooms again. What the server saved of each
+# room when it stopped (see RoomManager.snapshot) is brought back for this long after: the saves the host removed, and
+# for the save that was host its host role and the room's public listing.
+RESTORE_SECONDS = 600.0
 
 
 class PokeRefused(Exception):
@@ -209,6 +213,15 @@ class Room:
         return {"host": self.host, "public": self.public}
 
 
+@dataclass
+class Restore:
+    """A room as the last run left it; until is on the manager's clock."""
+    public: bool
+    host: str | None
+    banned: set[str]
+    until: float
+
+
 class RoomManager:
     def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0,
                  motion_interval: float = 0.1, edge_interval: float = 0.05,
@@ -223,14 +236,45 @@ class RoomManager:
         self.rooms: dict[str, Room] = {}
         # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
+        # Rooms of the last run, by room id, until their host is back or they run out (see RESTORE_SECONDS).
+        self.restoring: dict[str, Restore] = {}
+
+    def snapshot(self) -> list[dict]:
+        """What a restart would lose of each room: whether it is listed, the host's save and the removed saves."""
+        out = []
+        for room_id, room in list(self.rooms.items()):
+            host = room.peers.get(room.host) if room.host else None
+            entry = {"room": room_id, "public": room.public, "host": host.token if host else None,
+                     "banned": sorted(room.banned)}
+            if entry["public"] or entry["host"] or entry["banned"]:
+                out.append(entry)
+        return out
+
+    def restore(self, rooms: list[dict], age: Callable[[dict], float]) -> None:
+        """Take back what the last run saved; [age] gives each entry's seconds since it was saved."""
+        now = self.clock()
+        for entry in rooms:
+            left = RESTORE_SECONDS - age(entry)
+            if left > 0:
+                self.restoring[entry["room"]] = Restore(bool(entry["public"]), entry["host"] or None,
+                                                        set(entry["banned"]), now + left)
+
+    def _restoring(self, room_id: str) -> Restore | None:
+        pending = self.restoring.get(room_id)
+        if pending is not None and pending.until <= self.clock():
+            del self.restoring[room_id]
+            return None
+        return pending
 
     def create_room(self) -> str:
         return new_room_id()
 
     def join(self, room_id: str, nick: str, character: str, ws: Sender,
-             token: str | None = None, **profile: str | None) -> Peer:
-        """[token]: the joining save's player id, None without a save."""
+             token: str | None = None, may_list: bool = True, **profile: str | None) -> Peer:
+        """[token]: the joining save's player id, None without a save. [may_list]: whether this joiner may host a
+        listed room, for a room of the last run whose host comes back."""
         room = self.rooms.get(room_id)
+        pending = self._restoring(room_id)
         if room is not None:
             if token and token in room.banned:
                 raise Banned(room_id)
@@ -239,7 +283,11 @@ class RoomManager:
             if len(room.peers) >= self.max_size:
                 raise RoomFull(room_id)
         if room is None:
+            if pending is not None and token and token in pending.banned:
+                raise Banned(room_id)
             room = self.rooms[room_id] = Room(room_id)
+            if pending is not None:
+                room.banned |= pending.banned
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
@@ -250,6 +298,12 @@ class RoomManager:
         room.peers[peer.id] = peer
         if room.host is None:
             room.host = peer.id
+        if pending is not None and token and token == pending.host:
+            # The host of the last run is back: the role returns to it, and the listing with it.
+            room.host = peer.id
+            if pending.public and may_list:
+                room.public = True
+            del self.restoring[room_id]
         return peer
 
     async def _failed(self, room_id: str, peer: Peer) -> None:
