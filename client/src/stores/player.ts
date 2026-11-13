@@ -195,6 +195,25 @@ async function call<T>(fn: (api: Api) => Promise<T>): Promise<T | null> {
   }
 }
 
+/**
+ * Like call(), for callers that show their own errors (the park, stores/park.ts): the error comes back instead of
+ * going to `error`. Network and 5xx failures still count as offline, and an expired account still signs out. null
+ * when the server selection changed meanwhile.
+ */
+export async function attempt<T>(fn: (api: Api) => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown } | null> {
+  const session = current;
+  const gen = generation;
+  try {
+    const value = await serial(session, () => fn(session.api));
+    return session === current && gen === generation ? { ok: true, value } : null;
+  } catch (e) {
+    if (session !== current || gen !== generation) return null;
+    if (!(e instanceof ApiError) || e.status >= 500) online.value = false;
+    if (e instanceof ApiError && e.code === "account_expired") void setAccount(null);
+    return { ok: false, error: e };
+  }
+}
+
 export async function refresh(): Promise<void> {
   const session = current;
   const gen = generation;
