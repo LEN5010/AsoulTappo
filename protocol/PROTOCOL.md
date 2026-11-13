@@ -381,6 +381,66 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 驼币刮刮乐的卡记在 `park_scratch_cards` 表，启动时自动建表；已揭开的卡保留 30 天。
 <!-- park: race -->
+### 团子赛跑
+
+配置在 `economy.park.race`。每 `interval`（600）秒一场，按 unix 时间的整倍数对齐。前 `betting`（480）秒下注，然后开跑，动画播完时结算，下一个整倍数开下一场的下注。
+
+规则（`server/app/race.py`）：五个团子按随机顺序叠在第 0 格；每轮五个按随机顺序各走一次，掷 `dice`（1 到 3）；走的时候头上的团子一起带走，落到有团子的格子时叠在最上面；落在加速格或绊脚格时整组再移动一次（只算一次）；先到 `track`（20）格的那一组结束比赛。名次按格子，同一格越靠上越靠前。技能和赛前状态见 manifest `skills`、`moods`。
+
+| 接口 | 说明 |
+| --- | --- |
+| GET /api/park/race | `{now, nextAt, race, last, winners}`。`race` 是现在展示的一场（下注中、跑着或刚跑完），没有时为 null；`last` 是它之前最近结算的一场；`winners` 是最近 5 场的冠军 `[{id, member}]`，从新到旧；`nextAt` 是下一场开始下注的时间 |
+| POST /api/park/race/bet | `{race, kind, member, coins}`，返回状态、`park` 和 `race` |
+
+一场的字段：
+
+- `id`（等于 `opensAt`，unix 秒）、`phase`、`opensAt`、`startsAt`、`hash`。
+- `setup`：`{moods: {成员 id: 状态 id}, boost, trip}`，两个特殊格的位置。
+- `odds`：`{win|top2|last: {成员 id: 赔率}}`。
+- `pool`：`{成员 id: {coins, bettors}}`，三种押法合计。
+- `mine`：自己押的 `[{kind, member, coins, odds}]`，结算后多一个 `prize`（碎片）。
+- 开跑后另有 `seed`、`endsAt`、`leadMs`、`stepMs`、`start`（起点的叠放，从下到上）、`moves`、`ranking`（第一到最后）。
+- 结算后，押过的人另有 `result: {staked, won, net}`，单位碎片，按这一场所有选项合计。
+
+`phase`：`betting` 下注中；`starting` 已停止下注，服务端几秒内开跑；`running`；`done` 已结算；`void` 停机错过开跑，已退币。
+
+`moves` 的每一步：
+
+- `m`：走的团子。
+- `dice`：掷出的点数。心宜重掷时有两个，乃琳不掷骰为空。
+- `steps`：实际走的格数。
+- `from`、`to`：起点和落点，到终点时 `to` 记为 `track`。
+- `add`：`[[来源, 格数]]`，来源是 `snack`、`dash`、`catchup`、`mood`。状态的格数可能是 0（至少走 1 格）。
+- `snack`：这一步吃到零食，下一次多走的格数。
+- `carry`：被带着走的团子，从下到上。
+- `square`、`end`：落在 `boost` 或 `trip` 上，以及移动后的格子。
+
+播放：第 i 步（从 0 起）在 `startsAt + leadMs + i × stepMs` 开始，到 `endsAt` 全部播完并结算。客户端用 `now` 校正本机时钟。
+
+公平：
+
+- 种子 32 字节，下注时只公布 `hash` = SHA-256(种子)，开跑后公布 `seed`（hex）。
+- 整场由 `setup` 和种子决定。随机数流是 SHA-256(种子 ‖ 8 字节大端计数器)，计数器从 0 起，每块取 8 个 32 位大端整数。`below(n)` 跳过不小于 2^32 − 2^32 mod n 的数后取余；`random()` 用两个数的高 27 位和高 26 位拼成 53 位小数。抽取顺序见 `race.py`。
+- `setup` 在下注开始前单独随机，和种子无关。
+
+赔率：开放下注前用这一场的 `setup` 模拟 `sims`（20000）场，另用一份随机数，得到各选项的概率 p。赔率 = `payout` ÷ p，向下取到一位小数，最低 `minOdds`（1.1），最高 99。押下时的赔率不再变。
+
+下注：
+
+- 只能押 `betting` 状态的场次，否则 409 `race_closed`；场次不存在或还没开始下注为 404 `no_race`。
+- 每场每个存档合计最多 `maxCoins`（10）枚，超出 409 `race_cap`。同一选项再押会累加。
+- `kind` 或 `member` 不对为 400 `bad_bet`。驼币不够为 409 `no_coins`。
+
+结算：
+
+- 每个押中的选项拿 `coins × coin.price × 赔率` 碎片（向下取整），记在碎片流水 `race_prize`。每场只结算一次。
+- 一个存档一场拿到 `roomAt`（10000）碎片以上时，服务端向它所在的每个房间广播 `race_win {id, shards}`。旧客户端不认识这个消息，会直接忽略。
+
+停机：
+
+- 开跑时服务端不在（晚了 5 秒以上），这一场作废，押的驼币以 `race_refund` 退回，印章和印章换出的驼币一起扣回。
+- 已经开跑的场次在重启后照常结算。
+- 服务端启动时离开跑不到 30 秒的场次不开，等下一场。
 <!-- park: lottery -->
 ### 每日夺宝
 

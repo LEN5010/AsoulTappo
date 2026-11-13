@@ -146,7 +146,7 @@ export interface Manifest {
         roomAt: Record<"basic" | "premium", number>;
         serverAt: Record<"basic" | "premium", number>;
       };
-      race?: unknown;
+      race?: import("./panel/park/race").RaceConfig;
       lottery?: { daily: number; closeAt: number; drawAt: number; top: number; topCap: number; second: number; third: number };
     };
   };
