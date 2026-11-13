@@ -243,12 +243,12 @@ export class Api {
   /** The newest client release, which the server reads from the main site. */
   latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});
   account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
-  /** Binds the account to this device's guest save (when given) or to a new save. */
   /** Any request of the park or redeem codes; other paths are refused here, before reaching the server. */
   park = <T>(method: "GET" | "POST", path: string, body?: unknown) => {
     if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是游乐园的接口"));
     return this.call<T>(method, path, body);
   };
+  /** Binds the account to this device's guest save (when given) or to a new save. */
   link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},
     { Authorization: `Bearer ${accountToken}`, ...(guestToken ? { "X-Player-Token": guestToken } : {}) });
 

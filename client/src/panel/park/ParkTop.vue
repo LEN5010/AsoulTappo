@@ -8,7 +8,7 @@ import { online, shards, status } from "../../stores/player";
 import { buyCoins, park, parkError } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
-import { COIN, COIN_SMALL } from "./coin";
+import { BADGE_ART, COIN, COIN_SMALL } from "./coin";
 
 /** [gift]: coins of today's free coin just taken, shown as a +n on the balance whenever [giftKey] changes. */
 const props = defineProps<{ gift: number; giftKey: number }>();
@@ -149,7 +149,7 @@ const smallFailed = ref(false);
             <span class="stamp-count"><b>{{ state?.stamps ?? 0 }}</b> / {{ CFG.stampsPerCoin }}</span>
             <span class="ui-bar stamp-bar"><i :style="{ width: `${stampPercent}%` }"></i></span>
             <span v-if="badge" class="badge" :class="`metal-${badge}`">
-              <img v-if="!smallFailed" :src="COIN_SMALL" alt="" draggable="false" />{{ BADGES[badge - 1] }}
+              <img :src="BADGE_ART[badge - 1]" alt="" draggable="false" />{{ BADGES[badge - 1] }}
             </span>
           </dd>
         </div>
@@ -422,7 +422,7 @@ const smallFailed = ref(false);
   min-width: 60px;
   max-width: 200px;
 }
-/* The badge is the same coin struck in another metal. */
+/* The badge is the coin struck in copper, silver or gold (BADGE_ART). */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -434,12 +434,6 @@ const smallFailed = ref(false);
 .badge img {
   width: 18px;
   height: 18px;
-}
-.metal-1 img {
-  filter: sepia(0.6) hue-rotate(-18deg) saturate(1.3) brightness(0.86);
-}
-.metal-2 img {
-  filter: grayscale(1) brightness(1.18) contrast(1.05);
 }
 
 /* ---- the lock */
