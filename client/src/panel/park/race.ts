@@ -66,7 +66,13 @@ export interface RaceAnswer {
   winners: { id: number; member: string }[];
 }
 
-export const KIND_NAMES: Record<RaceKind, string> = { win: "冠军", top2: "前二", last: "垫底" };
+// The dumplings (scripts/make_tuanzi.py): 384px squares, bottom-aligned, content 90% of the width.
+const ART = import.meta.glob<string>("../../assets/park/tuanzi/*.webp", { eager: true, query: "?url", import: "default" });
+/** The picture of member [m]'s dumpling; "" when there is none. */
+export const tuanziArt = (m: string): string =>
+  Object.entries(ART).find(([path]) => path.endsWith(`/${m}.webp`))?.[1] ?? "";
+
+export const KIND_NAMES:Record<RaceKind, string> = { win: "冠军", top2: "前二", last: "垫底" };
 
 export const MOOD_NAMES: Record<string, string> = {
   hot: "火热", excited: "兴奋", normal: "正常", sleepy: "有点困", slacking: "摸鱼",

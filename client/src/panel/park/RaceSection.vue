@@ -12,7 +12,7 @@ import Icon from "../../ui/Icon.vue";
 import RaceTrack from "./RaceTrack.vue";
 import { COIN_SMALL } from "./coin";
 import {
-  hits, KIND_NAMES, MOOD_NAMES, moodLine, playhead, SKILL_NAMES, skillLine,
+  hits, KIND_NAMES, MOOD_NAMES, moodLine, playhead, SKILL_NAMES, skillLine, tuanziArt,
   type Race, type RaceAnswer, type RaceKind,
 } from "./race";
 
@@ -21,8 +21,7 @@ const CFG = manifest.economy.park!.race!;
 const MEMBERS = Object.keys(CFG.skills);
 const KINDS = CFG.kinds;
 const fmt = (n: number) => Math.abs(n).toLocaleString("en-US");
-const ART = import.meta.glob<string>("../../assets/park/tuanzi/*.webp", { eager: true, query: "?url", import: "default" });
-const art = (m: string) => Object.entries(ART).find(([path]) => path.endsWith(`/${m}.webp`))?.[1] ?? "";
+const art = tuanziArt;
 const character = (m: string) => manifest.characters.find((c) => c.id === m);
 const nameOf = (m: string) => character(m)?.name ?? m;
 const colorOf = (m: string) => character(m)?.color ?? "var(--c-500)";
@@ -543,7 +542,7 @@ const odds = (r: Race, kind: RaceKind, m: string) => r.odds[kind]?.[m];
   height: 18px;
   border-radius: 5px;
   font: 800 var(--fs-label)/1 var(--font-latin);
-  color: #fff;
+  color: var(--ink);
 }
 .net {
   display: inline-flex;

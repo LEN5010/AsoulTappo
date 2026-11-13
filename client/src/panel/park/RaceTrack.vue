@@ -6,13 +6,11 @@
 import { computed, onMounted, ref } from "vue";
 import { manifest } from "../../manifest";
 import { reducedMotion } from "../../stores/theme";
-import { moving, playhead, spots, stacksAt, SQUARE_AT, type Race, type Spot } from "./race";
+import { moving, playhead, spots, stacksAt, SQUARE_AT, tuanziArt, type Race, type Spot } from "./race";
 
 const props = defineProps<{ race: Race | null; t: number; track: number; members: string[] }>();
 
-// The dumplings (scripts/make_tuanzi.py): 384px squares, bottom-aligned, content 90% of the width.
-const ART = import.meta.glob<string>("../../assets/park/tuanzi/*.webp", { eager: true, query: "?url", import: "default" });
-const art = (m: string) => Object.entries(ART).find(([path]) => path.endsWith(`/${m}.webp`))?.[1] ?? "";
+const art = tuanziArt;
 const color = (m: string) => manifest.characters.find((c) => c.id === m)?.color ?? "var(--c-500)";
 const nameOf = (m: string) => manifest.characters.find((c) => c.id === m)?.name ?? m;
 
