@@ -128,12 +128,20 @@ class ParkScratch:
         pid = player_id_for(token)
         p = g.store.get_player(pid, g.now())
         owned = g.store.owned(pid)
-        return {"card": self._view(g.store.pending_park_scratch(pid)), "pity": p["scratch_pity"],
+        pending = g.store.pending_park_scratch(pid)
+        return {"card": self._view(pending), "pity": p["scratch_pity"],
                 "emotesWhole": all(i in owned for i in self._emotes(cfg["cards"]["basic"])),
-                "jackpot": self._pot(g.store)}
+                "jackpot": self._shown_pot(g.store, pending)}
+
+    def _shown_pot(self, st: Store, pending: dict[str, Any] | None) -> int:
+        """The pot as the save sees it: while its unrevealed card holds the pot, the pot as that card took it, so the
+        restart at seed gives nothing away before the reveal."""
+        return pending["shards"] if pending and pending["tier"] == "jackpot" else self._pot(st)
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
-        return {**self.park.game.status(token), "park": self.park.state(token), **self.state(token), **extra}
+        state = self.state(token)
+        park = {**self.park.state(token), "jackpot": state["jackpot"]}
+        return {**self.park.game.status(token), "park": park, **state, **extra}
 
     def buy(self, token: str, kind: str, version: str | None = None) -> dict[str, Any]:
         """Buys a card of [kind]: its prize is decided now and paid by reveal. A card still to reveal is handed back

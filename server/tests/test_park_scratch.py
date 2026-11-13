@@ -304,10 +304,13 @@ def test_the_jackpot_takes_the_whole_pot_and_starts_again():
     g.store.set_park_counter(JACKPOT, 200_000)
     bought = ps.buy(TOKEN, "premium")
     assert scratch.prize_of(bought["card"]["cells"]) == "jackpot"
-    # taken when bought, paid when revealed
-    assert bought["shards"] == 100_000 and bought["jackpot"] == POT["seed"]
-    r = ps.reveal(TOKEN, bought["card"]["id"])
+    # taken when bought, paid when revealed; until then the save sees the pot as its card took it
     won = 200_000 + 5 * POT["perCoin"]
+    assert g.store.park_counter(JACKPOT) == POT["seed"]
+    assert bought["shards"] == 100_000 and bought["jackpot"] == won and bought["park"]["jackpot"] == won
+    assert ps.state(TOKEN)["jackpot"] == won and ps.state(OTHER)["jackpot"] == POT["seed"]
+    r = ps.reveal(TOKEN, bought["card"]["id"])
+    assert r["park"]["jackpot"] == POT["seed"]
     assert r["prize"] == {"tier": "jackpot", "shards": won, "coins": 0, "item": None}
     assert r["shards"] == 100_000 + won and r["announce"] == won
     assert r["park"]["today"]["won"] == won and shard_ledger(g, pid) == {"jackpot": won}
