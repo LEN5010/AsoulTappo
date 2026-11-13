@@ -54,13 +54,18 @@ async function signOut() {
 const REPO = "https://github.com/LEN5010/AsoulTappo";
 const SPACE = "https://space.bilibili.com/107261543";
 const MAIL = "len5010@qq.com";
+const GROUP = "1106311431";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
 /** The legal text open for reading again. */
 const legalOpen = ref<DocName | null>(null);
-const copied = ref(false);
+/** Which contact was just copied. */
+const copied = ref<"" | "mail" | "group">("");
 async function copyMail() {
-  try { await navigator.clipboard.writeText(MAIL); copied.value = true; } catch { openAboutLink(`mailto:${MAIL}`); }
+  try { await navigator.clipboard.writeText(MAIL); copied.value = "mail"; } catch { openAboutLink(`mailto:${MAIL}`); }
+}
+async function copyGroup() {
+  try { await navigator.clipboard.writeText(GROUP); copied.value = "group"; } catch { /* the number stays on screen */ }
 }
 const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
@@ -354,7 +359,7 @@ async function exportLogFile() {
               </div>
               <div class="ui-row">
                 <span>作者</span>
-                <button type="button" class="ui-btn small" @click="copied = false; contactOpen = true">联系作者</button>
+                <button type="button" class="ui-btn small" @click="copied = ''; contactOpen = true">联系作者</button>
               </div>
               <div class="ui-row">
                 <span>神秘按钮</span>
@@ -382,7 +387,12 @@ async function exportLogFile() {
         <button type="button" class="way ui-frame" @click="copyMail">
           <b>QQ 邮箱</b>
           <span>{{ MAIL }}</span>
-          <small>{{ copied ? "已复制" : "点击复制" }}</small>
+          <small>{{ copied === "mail" ? "已复制" : "点击复制" }}</small>
+        </button>
+        <button type="button" class="way wide ui-frame" @click="copyGroup">
+          <b>QQ 群</b>
+          <span>{{ GROUP }}</span>
+          <small>{{ copied === "group" ? "已复制" : "点击复制" }}</small>
         </button>
       </div>
     </Modal>
@@ -494,6 +504,9 @@ async function exportLogFile() {
   color: var(--ink);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
+}
+.way.wide {
+  grid-column: 1 / -1;
 }
 .way:hover {
   transform: translateY(-2px);
