@@ -34,6 +34,7 @@ from .models import (
 )
 from .moderation import Blocklist
 from .park import Park
+from .park_scratch import ParkScratch
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
@@ -134,6 +135,10 @@ _pruned = park.prune_news()
 if _pruned:
     print(f"pruned {_pruned} old park news", flush=True)
 # park: scratch setup
+park_scratch = ParkScratch(park)
+_pruned = park_scratch.prune()
+if _pruned:
+    print(f"pruned {_pruned} old park scratch cards", flush=True)
 # park: race setup
 # park: lottery setup
 # park: redeem setup
@@ -406,6 +411,34 @@ def api_park_gift(who: PlayerId = Depends(player)) -> dict:
 
 
 # park: scratch routes
+class ParkScratchBody(BaseModel):
+    kind: Literal["basic", "premium"]
+
+
+@app.get("/api/park/scratch")
+def api_park_scratch_state(who: PlayerId = Depends(player)) -> dict:
+    """The coin scratch card still to reveal, the emote pity, whether the emote set is whole, and the pot."""
+    return _guard(park_scratch.state, who)
+
+
+@app.post("/api/park/scratch")
+def api_park_scratch_buy(body: ParkScratchBody, who: PlayerId = Depends(player),
+                         x_client_version: str = Header(default="")) -> dict:
+    return _guard(park_scratch.buy, who, body.kind, x_client_version)
+
+
+@app.post("/api/park/scratch/reveal")
+async def api_park_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depends(player)) -> dict:
+    out = await run_in_threadpool(_guard, park_scratch.reveal, who, body.card)
+    shards = out.pop("announce")
+    if shards:
+        # As the old cards do: every room this save sits in sees the win over that member's pet.
+        for room_id, room in list(manager.rooms.items()):
+            for peer in [p for p in room.peers.values() if p.token == who]:
+                await manager.broadcast(room_id, ScratchBroadcast(id=peer.id, shards=shards).model_dump())
+    return out
+
+
 # park: race routes
 # park: lottery routes
 # park: redeem routes

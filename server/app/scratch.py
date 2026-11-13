@@ -1,7 +1,7 @@
 """Pure scratch card rolls: the prize first, then nine cells that show it."""
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Collection, Sequence
 
 from .cards import Rng
 
@@ -35,11 +35,15 @@ def _take(items: Sequence[str], n: int, rng: Rng) -> list[str]:
     return out
 
 
-def layout(win: str | None, amounts: Sequence[int], emotes: Sequence[str], rng: Rng) -> list[str]:
-    """Nine symbols, shard amounts as digits and emotes by key: `win` three times when given, and no other
-    symbol more than twice, so a card shows one prize or none."""
+def layout(win: str | None, amounts: Sequence[int], emotes: Sequence[str], rng: Rng,
+           top: Collection[str] | None = None, extra: Sequence[str] = ()) -> list[str]:
+    """Nine symbols, shard amounts as digits, emotes by key and any `extra` symbols as they are: `win` three times
+    when given, and no other symbol more than twice, so a card shows one prize or none. Of the `top` symbols (by
+    default the largest amount) at most one shows besides the win, once: a losing card never shows two of them."""
     decoys = _take([e for e in emotes if e != win], DECOY_EMOTES, rng)
-    bag = [s for s in [str(a) for a in amounts] + decoys if s != win] * 2
+    top = {str(max(amounts))} if top is None else set(top)
+    symbols = [s for s in [str(a) for a in amounts] + list(extra) + decoys if s != win]
+    bag = [s for s in symbols if s not in top] * 2 + _take([s for s in symbols if s in top], 1, rng)
     cells = [win] * 3 if win else []
     cells += _take(bag, CELLS - len(cells), rng)
     return _take(cells, len(cells), rng)
