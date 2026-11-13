@@ -2,8 +2,11 @@
 // 团子赛跑 (docs/design/amusement-park.md §6, protocol/PROTOCOL.md 团子赛跑). There is no push channel: while the
 // page is open the section asks GET /api/park/race every few seconds, keeps the offset to the server's clock, and
 // plays the race's move list from startsAt, so every client shows the same moment. Bets are taken while the race's
-// phase is betting; a race's result is its net over every selection. The countdown and the host (the latest
-// champion) go up in the park's coral band (band.ts).
+// phase is betting; a race's result is its net over every selection. The countdown, the rules key and the host
+// (the latest champion) go up in the park's coral band (band.ts).
+// The page is the lap (RaceTrack) with an infield that follows the phase: the five runner keys while bets are open
+// (or the race is void), their heads and the commentary while it runs, the podium once it has finished. The bet
+// slip is the bottom bar.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { online } from "../../stores/player";
@@ -11,8 +14,10 @@ import { loadPark, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import Modal from "../../ui/Modal.vue";
 import { useBand } from "./band";
 import RaceTrack from "./RaceTrack.vue";
+import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import {
   hits, KIND_NAMES, MOOD_NAMES, moodLine, playhead, SKILL_NAMES, skillLine, tuanziArt,
@@ -24,11 +29,9 @@ const CFG = manifest.economy.park!.race!;
 const MEMBERS = Object.keys(CFG.skills);
 const KINDS = CFG.kinds;
 const fmt = (n: number) => Math.abs(n).toLocaleString("en-US");
-const art = tuanziArt;
 const character = (m: string) => manifest.characters.find((c) => c.id === m);
 const nameOf = (m: string) => character(m)?.name ?? m;
 const colorOf = (m: string) => character(m)?.color ?? "var(--c-500)";
-const moodOf = (id: string) => CFG.moods.find((m) => m.id === id);
 
 const data = ref<RaceAnswer | null>(null);
 const loadError = ref("");
@@ -118,11 +121,14 @@ const countdown = computed<{ label: string; time: string }>(() => {
 });
 /** Winners come newest first. */
 const champion = computed(() => data.value?.winners[0]?.member ?? "");
+/** The rules table (skills and moods) is open. */
+const rules = ref(false);
 useBand("race", () => ({
   ...(champion.value && tuanziArt(champion.value)
     ? { host: tuanziArt(champion.value), hostKind: "token" as const }
     : { host: ACHAO["观察"] }),
   timer: { label: countdown.value.label, time: countdown.value.time || undefined },
+  info: { label: "规则", open: () => (rules.value = true) },
 }));
 
 // ---------------------------------------------------------------- what is happening on the track
@@ -161,11 +167,16 @@ watch(() => race.value?.id, () => {
 });
 watch(left, (n) => (stake.value = Math.max(1, Math.min(stake.value, n))));
 
-function choose(kind: RaceKind, member: string) {
+/** A runner key: picks that runner (keeping the kind picked last, the win at first), or lets go of it. */
+function chooseRunner(member: string) {
   if (!betting.value) return;
-  const same = pick.value?.kind === kind && pick.value.member === member;
-  pick.value = same ? null : { kind, member };
+  pick.value = pick.value?.member === member ? null : { kind: pick.value?.kind ?? "win", member };
   stake.value = Math.max(1, Math.min(stake.value, left.value));
+  betError.value = "";
+}
+function chooseKind(kind: RaceKind) {
+  if (!betting.value || !pick.value) return;
+  pick.value = { ...pick.value, kind };
   betError.value = "";
 }
 
@@ -185,7 +196,20 @@ async function place() {
   } else betError.value = reply.error.message;
 }
 
-const poolMax = computed(() => Math.max(1, ...Object.values(race.value?.pool ?? {}).map((p) => p.coins)));
+const poolTotal = computed(() => Object.values(race.value?.pool ?? {}).reduce((n, p) => n + p.coins, 0));
+/** This runner's share of the coins bet on the race, 0 to 1. */
+const share = (m: string) => (poolTotal.value ? (race.value?.pool[m]?.coins ?? 0) / poolTotal.value : 0);
+const poolTitle = (m: string) => `${race.value?.pool[m]?.coins ?? 0} 枚 · ${race.value?.pool[m]?.bettors ?? 0} 人`;
+/** My bets on [m] in the race on the track: the coins in all, and each bet for the badge's tooltip. */
+function mineOn(m: string): { coins: number; title: string } {
+  const bets = race.value?.mine.filter((b) => b.member === m) ?? [];
+  return {
+    coins: bets.reduce((n, b) => n + b.coins, 0),
+    title: bets.map((b) => `${KIND_NAMES[b.kind]} ×${b.odds.toFixed(1)} · ${b.coins} 枚`).join("\n"),
+  };
+}
+/** Why the bet key cannot be pressed, for its tooltip. With no runner picked the key is simply off. */
+const betBlock = computed(() => (!online.value ? "未连接" : ""));
 
 // ---------------------------------------------------------------- results
 /** The race whose result is shown: this one once it has played, the one before while bets are open. */
@@ -196,246 +220,465 @@ watch(() => (race.value?.phase === "done" && race.value.mine.length ? race.value
   if (id) void loadPark();
 });
 const odds = (r: Race, kind: RaceKind, m: string) => r.odds[kind]?.[m];
+const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmt(n)}`;
+
+/** What the infield holds: the runner keys, the race under way, or the podium. */
+const infield = computed<"field" | "run" | "podium">(() => {
+  if (finished.value) return "podium";
+  if (betting.value || !race.value || race.value.phase === "void") return "field";
+  return "run";
+});
+const ranking = computed(() => (finished.value ? race.value?.ranking ?? [] : []));
+/** A place lights up when one of my bets on the tuanzi in it won. */
+function lit(place: number): boolean {
+  const r = race.value;
+  const m = ranking.value[place];
+  return !!r && !!m && r.mine.some((b) => b.member === m && hits(b.kind, b.member, ranking.value));
+}
 </script>
 
 <template>
   <section class="race" :class="{ calm: reducedMotion }" aria-label="团子赛跑">
-    <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
+    <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
-    <RaceTrack :race="race" :t="serverNow" :track="CFG.track" :members="MEMBERS" />
-    <p class="ticker" aria-hidden="true">{{ ticker }}</p>
-    <p v-if="race?.phase === 'void'" class="void">本场取消，驼币已退回</p>
-
-    <!-- The field: skill, today's mood, the three odds, and what has been bet. -->
-    <ul class="field">
-      <li v-for="m in MEMBERS" :key="m" class="runner" :class="{ won: finished && race?.ranking?.[0] === m }">
-        <span class="who">
-          <img v-if="art(m)" class="face" :src="art(m)" alt="" draggable="false" />
-          <i class="tag" :style="{ background: colorOf(m) }"></i>
-          <b>{{ nameOf(m) }}</b>
-        </span>
-        <span class="skill">
-          <b>{{ SKILL_NAMES[CFG.skills[m].kind] }}</b>
-          <small>{{ skillLine(CFG.skills[m]) }}</small>
-        </span>
-        <span v-if="race" class="mood" :class="race.setup.moods[m]">
-          <b>{{ MOOD_NAMES[race.setup.moods[m]] }}</b>
-          <small>{{ moodLine(moodOf(race.setup.moods[m])) }}</small>
-        </span>
-        <span v-if="race" class="odds" role="group" :aria-label="`${nameOf(m)}的赔率`">
+    <RaceTrack class="lap" :class="`in-${infield}`" :race="race" :t="serverNow" :track="CFG.track" :members="MEMBERS">
+      <!-- Bets open, a void race, or nothing loaded yet: the five runner keys. -->
+      <template v-if="infield === 'field'">
+        <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
+        <div class="runners" role="group" aria-label="团子">
           <button
-            v-for="k in KINDS" :key="k" type="button" class="ui-btn small pick"
-            :class="{ on: pick?.kind === k && pick.member === m, hit: finished && race.ranking && hits(k, m, race.ranking) }"
-            :disabled="!betting || !online || !left" @click="choose(k, m)"
+            v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner-key"
+            :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
+            :disabled="!betting || !online || !left" :title="race ? poolTitle(m) : undefined" @click="chooseRunner(m)"
           >
-            <small>{{ KIND_NAMES[k] }}</small>×{{ odds(race, k, m)?.toFixed(1) }}
+            <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
+            <span class="name"><i class="bar" :style="{ background: colorOf(m) }"></i>{{ nameOf(m) }}</span>
+            <span class="tags">
+              <b v-if="race" class="mood" :class="race.setup.moods[m]">{{ MOOD_NAMES[race.setup.moods[m]] }}</b>
+              <small class="skill">{{ SKILL_NAMES[CFG.skills[m].kind] }}</small>
+            </span>
+            <span v-if="race" class="pool" aria-hidden="true"><i :style="{ width: `${share(m) * 100}%` }"></i></span>
+            <span v-if="mineOn(m).coins" class="mine" :title="mineOn(m).title">
+              <img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m).coins }}</b>
+            </span>
           </button>
-        </span>
-        <span v-if="race" class="pool">
-          <span class="bar"><i :style="{ width: `${((race.pool[m]?.coins ?? 0) / poolMax) * 100}%`, background: colorOf(m) }"></i></span>
-          <small>{{ race.pool[m]?.coins ?? 0 }} 枚 · {{ race.pool[m]?.bettors ?? 0 }} 人</small>
-        </span>
-      </li>
-    </ul>
-
-    <div v-if="betting" class="stake">
-      <template v-if="pick">
-        <span class="picked">{{ nameOf(pick.member) }} {{ KIND_NAMES[pick.kind] }} ×{{ odds(race!, pick.kind, pick.member)?.toFixed(1) }}</span>
-        <span class="stepper">
-          <button type="button" class="ui-btn small ghost" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
-            <Icon name="minus" :size="14" />
-          </button>
-          <b>{{ stake }}</b>
-          <button type="button" class="ui-btn small ghost" :disabled="stake >= left" aria-label="多押一枚" @click="stake++">
-            <Icon name="plus" :size="14" />
-          </button>
-        </span>
-        <button type="button" class="ui-btn primary" :disabled="busy || !online || !left" :aria-busy="busy" @click="place">
-          <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />押 {{ stake }} 枚
-        </button>
+        </div>
       </template>
-      <span class="left">本场还可押 {{ left }} 枚</span>
+
+      <!-- Under way: the field as small heads, and what just happened. -->
+      <template v-else-if="infield === 'run'">
+        <ul class="heads" aria-label="团子">
+          <li v-for="m in MEMBERS" :key="m" :title="nameOf(m)">
+            <TuanziToken :member="m" :size="32" />
+            <span v-if="mineOn(m).coins" class="mine" :title="mineOn(m).title">
+              <img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m).coins }}</b>
+            </span>
+          </li>
+        </ul>
+        <p class="ticker" aria-hidden="true">{{ ticker }}</p>
+      </template>
+
+      <!-- Finished: the podium, the last two on the floor beside it, and my net. -->
+      <div v-else class="result">
+        <ol class="podium" aria-label="本场名次">
+          <li
+            v-for="(m, i) in ranking" :key="m" class="place" :class="[`p${i + 1}`, { lit: lit(i) }]"
+            :title="nameOf(m)" :style="{ '--i': i }"
+          >
+            <TuanziToken :member="m" :size="i === 0 ? 72 : i < 3 ? 48 : 32" />
+            <span class="step">{{ i + 1 }}</span>
+          </li>
+        </ol>
+        <p v-if="result" class="net" :class="{ up: result.net > 0 }" role="status">
+          <Icon name="shard" :size="24" /><b>{{ signed(result.net) }}</b>
+        </p>
+      </div>
+    </RaceTrack>
+
+    <Modal v-if="rules" title="赛跑规则" heading @close="rules = false">
+      <div class="rules">
+        <table>
+          <thead><tr><th>团子</th><th>技能</th><th>效果</th></tr></thead>
+          <tbody>
+            <tr v-for="m in MEMBERS" :key="m">
+              <td><span class="who"><TuanziToken :member="m" :size="24" />{{ nameOf(m) }}</span></td>
+              <td>{{ SKILL_NAMES[CFG.skills[m].kind] }}</td>
+              <td>{{ skillLine(CFG.skills[m]) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th>状态</th><th>效果</th></tr></thead>
+          <tbody>
+            <tr v-for="md in CFG.moods" :key="md.id">
+              <td><b class="mood" :class="md.id">{{ MOOD_NAMES[md.id] }}</b></td>
+              <td>{{ moodLine(md) || "—" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+
+    <!-- The bet slip. -->
+    <div class="park-actions slip">
+      <template v-if="betting && pick && race">
+        <span class="picked"><i class="bar" :style="{ background: colorOf(pick.member) }"></i>{{ nameOf(pick.member) }}</span>
+        <span class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
+          <button
+            v-for="k in KINDS" :key="k" type="button" class="ui-btn kind-key"
+            :class="{ on: pick.kind === k }" :aria-pressed="pick.kind === k" @click="chooseKind(k)"
+          >
+            <small>{{ KIND_NAMES[k] }}</small><b>×{{ odds(race, k, pick.member)?.toFixed(1) }}</b>
+          </button>
+        </span>
+      </template>
+      <template v-else>
+        <span v-if="data?.winners.length" class="champs" aria-label="最近冠军">
+          <span v-for="w in data.winners" :key="w.id" :title="nameOf(w.member)"><TuanziToken :member="w.member" :size="24" /></span>
+        </span>
+        <span v-if="betting && result" class="last-net" :class="{ up: result.net > 0 }">
+          <Icon name="shard" :size="14" />{{ signed(result.net) }}
+        </span>
+      </template>
+
+      <div v-if="betting" class="park-actions-main">
+        <span v-if="!left" class="full">本场已押满</span>
+        <template v-else>
+          <span v-if="pick" class="stepper">
+            <button type="button" class="ui-btn small ghost" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
+              <Icon name="minus" :size="14" />
+            </button>
+            <b>{{ stake }}</b>
+            <button type="button" class="ui-btn small ghost" :disabled="stake >= left" aria-label="多押一枚" @click="stake++">
+              <Icon name="plus" :size="14" />
+            </button>
+          </span>
+          <span v-else class="dots" :title="`本场还可押 ${left} 枚`">
+            <i v-for="n in CFG.maxCoins" :key="n" :class="{ used: n > left }"></i>
+          </span>
+          <button
+            type="button" class="ui-btn primary bet-key" :class="{ pulse: pick && !betBlock && !busy }"
+            :disabled="busy || !pick || !!betBlock" :aria-busy="busy" :title="betBlock || undefined" @click="place"
+          >
+            <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />押 {{ stake }} 枚
+          </button>
+        </template>
+      </div>
       <p v-if="betError" class="ui-error" role="alert">{{ betError }}</p>
     </div>
-
-    <ul v-if="race?.mine.length" class="mine" aria-label="我的押注">
-      <li v-for="b in race.mine" :key="`${b.kind}-${b.member}`" :class="{ hit: finished && race.ranking && hits(b.kind, b.member, race.ranking) }">
-        <i class="tag" :style="{ background: colorOf(b.member) }"></i>
-        {{ nameOf(b.member) }} {{ KIND_NAMES[b.kind] }} ×{{ b.odds.toFixed(1) }} · {{ b.coins }} 枚
-      </li>
-    </ul>
-
-    <div v-if="shown?.ranking" class="result">
-      <ol class="ranking" :aria-label="shown === race ? '本场名次' : '上一场名次'">
-        <li v-for="(m, i) in shown.ranking" :key="m">
-          <span class="rank" :style="{ background: colorOf(m) }">{{ i + 1 }}</span>{{ nameOf(m) }}
-        </li>
-      </ol>
-      <p v-if="result" class="net" :class="{ up: result.net > 0, down: result.net < 0 }" role="status">
-        <Icon name="shard" :size="16" />
-        <b>{{ result.net > 0 ? "+" : result.net < 0 ? "−" : "" }}{{ fmt(result.net) }}</b>
-      </p>
-    </div>
-
-    <p v-if="data?.winners.length" class="winners">
-      <span>最近冠军</span>
-      <span v-for="w in data.winners" :key="w.id" class="winner" :title="nameOf(w.member)">
-        <img v-if="art(w.member)" :src="art(w.member)" alt="" draggable="false" />
-        <i v-else class="tag" :style="{ background: colorOf(w.member) }"></i>
-      </span>
-    </p>
   </section>
 </template>
 
 <style scoped>
-/* On the park's sheet, under the coral band. */
+/* On the park's sheet, under the coral band: the lap fills the height, the slip is the bottom bar. */
 .race {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 22px 20px;
 }
-.ticker {
-  min-height: 18px;
-  margin: -4px 0 0;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  color: var(--ink-2);
-  text-align: center;
+.load-error {
+  margin: 14px 22px 0;
+}
+.lap {
+  flex: 1 1 auto;
+  min-height: 330px;
+}
+
+/* ---- the runner keys */
+.lap :deep(.infield) {
+  justify-content: center;
+  gap: 12px;
 }
 .void {
   margin: 0;
   text-align: center;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  color: var(--c-700);
+  font: 800 var(--fs-number)/1.4 var(--font);
+  color: var(--ink-2);
+}
+.runners {
+  --tuanzi-size: 72px;
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+.runner-key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 6px 16px;
+}
+.runner-key .face {
+  margin-bottom: 2px;
+}
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 800 var(--fs-strong)/1.2 var(--font);
+  color: var(--ink);
+}
+.bar {
+  flex: none;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+}
+.tags {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+.skill {
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+}
+/* Today's mood: solid coral when hot, lighter steps down to grey for the sleepy and the slacking. */
+.mood {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink);
+  background: var(--c-100);
+}
+.mood.hot {
+  background: var(--c-500);
+}
+.mood.excited {
+  background: var(--c-300);
+}
+.mood.sleepy,
+.mood.slacking {
+  /* Grey: the ink's rose-grey thinned on paper. */
+  background: color-mix(in oklab, var(--ink-3) 18%, var(--surface));
+  color: var(--ink-2);
+}
+.runner-key.on .mood.normal,
+.runner-key:disabled .mood.normal {
+  background: var(--c-200);
+}
+.runner-key:disabled .mood {
+  opacity: 0.7;
+}
+/* This runner's share of the coins bet, along the key's bottom. */
+.pool {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 7px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-100);
+  overflow: hidden;
+}
+.runner-key.on .pool,
+.runner-key:disabled .pool {
+  background: var(--c-200);
+}
+.pool i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-500);
+  transition: width var(--dur-stage) var(--ease-out);
+}
+/* The coins I have on a runner: a coin stuck on the key's corner. */
+.mine {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px 2px 2px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-key);
+}
+.mine img {
+  width: 18px;
+  height: 18px;
+}
+.mine b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink);
 }
 
-/* ---- the field */
-.field {
+/* ---- under way: small heads and the commentary */
+.lap.in-run :deep(.infield) {
+  justify-content: flex-start;
+  gap: 14px;
+  padding-top: 6px;
+}
+.heads {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.heads li {
+  position: relative;
+  line-height: 0;
+}
+.heads .mine {
+  top: -6px;
+  right: -14px;
+  padding-right: 5px;
+}
+.heads .mine img {
+  width: 14px;
+  height: 14px;
+}
+.heads .mine b {
+  font-size: var(--fs-strong);
+}
+.ticker {
+  min-height: 28px;
+  margin: 0;
+  font: 800 var(--fs-heading)/1.4 var(--font);
+  color: var(--ink);
+  text-align: center;
+}
+
+/* ---- finished: the podium, then my net */
+.lap.in-podium :deep(.infield) {
+  justify-content: flex-start;
+  padding-top: 8px;
+  /* Clear of the stack on the finish square, at the infield's bottom left. */
+  padding-left: calc(var(--cell) * 1.1);
+}
+.result {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 36px;
+}
+.podium {
+  display: flex;
+  align-items: flex-end;
   gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.runner {
-  display: grid;
-  grid-template-columns: 88px minmax(96px, 1fr) minmax(84px, 0.8fr) auto minmax(90px, 0.9fr);
-  align-items: center;
-  gap: 10px 14px;
-  padding: 6px 10px;
-  border-radius: var(--radius-m);
-}
-.runner:nth-child(odd) {
-  background: var(--c-50);
-}
-.runner.won {
-  background: var(--c-100);
-}
-.who {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-strong);
-  color: var(--ink);
-}
-.face {
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-  filter: var(--sticker);
-}
-.tag {
-  flex: none;
-  width: 4px;
-  height: 16px;
-  border-radius: 2px;
-}
-.skill,
-.mood {
+.place {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 2px;
-  min-width: 0;
-  font-size: var(--fs-body);
+  width: 84px;
+}
+/* Second on the left, the winner in the middle, third on the right; the last two stand on the floor beside. */
+.place.p1 { order: 2; }
+.place.p2 { order: 1; }
+.place.p3 { order: 3; }
+.place.p4 { order: 4; width: 48px; margin-left: 10px; }
+.place.p5 { order: 5; width: 48px; }
+.step {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 22px;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+  background: var(--c-100);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.p1 .step { height: 52px; }
+.p2 .step { height: 36px; }
+.p3 .step { height: 26px; }
+.p4 .step,
+.p5 .step {
+  height: 18px;
+  font-size: var(--fs-number);
+}
+/* A place one of my winning bets is on. */
+.place.lit .step {
+  background: var(--c-500);
   color: var(--ink);
 }
-.skill small,
-.mood small {
-  font-size: var(--fs-caption);
-  font-weight: 500;
-  color: var(--ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.place .tuanzi-token {
+  animation: land var(--dur-slow) var(--ease-pop) both;
+  animation-delay: calc((4 - var(--i)) * 90ms);
 }
-.mood.hot b,
-.mood.excited b {
-  color: var(--c-700);
+@keyframes land {
+  from { translate: 0 -24px; opacity: 0; }
 }
-.mood.sleepy b,
-.mood.slacking b {
-  color: var(--ink-3);
-}
-.odds {
-  display: flex;
+.net {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-}
-.pick {
-  flex-direction: column;
-  gap: 1px;
-  height: 40px;
-  min-width: 58px;
-  padding: 0 8px;
-  font: 800 var(--fs-number)/1 var(--font-latin);
-}
-.pick small {
-  font: 700 var(--fs-caption)/1 var(--font);
+  margin: 0 0 4px;
   color: var(--ink-2);
 }
-.pick.hit {
-  box-shadow: inset 0 0 0 2px var(--c-500);
+.net b {
+  font: 800 48px/1 var(--font-latin);
 }
-.pool {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.net.up {
+  color: var(--c-700);
 }
-.pool .bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--c-100);
-  overflow: hidden;
+.net.up b {
+  animation: win-pop 600ms var(--ease-pop) both;
 }
-.pool .bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  transition: width var(--dur-stage) var(--ease-out);
-}
-.pool small {
-  font: 700 var(--fs-caption)/1 var(--font);
-  color: var(--ink-3);
-  white-space: nowrap;
+@keyframes win-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: none; opacity: 1; }
 }
 
-/* ---- the stake */
-.stake {
+/* ---- the slip */
+.picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 800 var(--fs-number)/1 var(--font);
+  color: var(--ink);
+}
+.picked .bar {
+  height: 16px;
+}
+.kinds {
+  display: flex;
+  gap: 8px;
+}
+.kind-key {
+  gap: 5px;
+  padding: 0 12px;
+}
+/* Latched on the slip's tonal strip: a step darker than the strip, so it still reads as down. */
+.kind-key.on:not(:disabled) {
+  --key-top: var(--c-300);
+  --key-bottom: var(--c-300);
+  --key-lip: var(--c-600);
+}
+.kind-key small {
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+}
+.kind-key b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+}
+.champs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  padding: 10px 14px;
-  border-radius: var(--radius-m);
-  background: var(--c-100);
+  gap: 4px;
 }
-.picked {
-  font-size: var(--fs-strong);
-  font-weight: 800;
-  color: var(--ink);
+.champs > span {
+  line-height: 0;
+}
+.last-net {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink-2);
+}
+.last-net.up {
+  color: var(--c-700);
 }
 .stepper {
   display: inline-flex;
@@ -448,123 +691,199 @@ const odds = (r: Race, kind: RaceKind, m: string) => r.odds[kind]?.[m];
   font: 800 22px/1 var(--font-latin);
   color: var(--ink);
 }
-.stake .coin {
+/* The coins still to bet on this race. */
+.dots {
+  display: inline-flex;
+  gap: 5px;
+}
+.dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-500);
+}
+.dots i.used {
+  background: var(--c-200);
+}
+.full {
+  font: 700 var(--fs-body)/1 var(--font);
+  color: var(--ink-2);
+}
+.bet-key {
+  min-width: 112px;
+}
+.bet-key .coin {
   width: 18px;
   height: 18px;
 }
-.left {
-  margin-left: auto;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.stake .ui-error {
+.slip .ui-error {
   flex-basis: 100%;
   margin: 0;
 }
 
-.mine {
+/* ---- the rules */
+.rules {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  color: var(--ink-2);
+  flex-direction: column;
+  gap: 18px;
 }
-.mine li {
+.rules table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+.rules th,
+.rules td {
+  text-align: left;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--c-100);
+}
+.rules .who {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 700;
 }
-.mine li.hit {
-  color: var(--c-700);
+.rules .mood {
+  display: inline-block;
 }
 
-/* ---- results */
-.result {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 20px;
+.calm .pool i {
+  transition: none;
 }
-.ranking {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  color: var(--ink);
-}
-.ranking li {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.rank {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  color: var(--ink);
-}
-.net {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 0 0 auto;
-  color: var(--ink-2);
-}
-.net b {
-  font: 800 30px/1 var(--font-latin);
-}
-.net.up {
-  color: var(--c-700);
-}
-.net.up b {
-  animation: win-pop 600ms var(--ease-pop) both;
-}
+.calm .place .tuanzi-token,
 .calm .net.up b {
   animation: none;
 }
-@keyframes win-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  100% { transform: none; opacity: 1; }
-}
-
-.winners {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-3);
-}
-.winner img {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-  filter: var(--sticker);
-}
 
 @container panel (max-width: 760px) {
-  .runner {
-    grid-template-columns: 80px 1fr 1fr;
+  .runners {
+    --tuanzi-size: 56px;
+    gap: 8px;
   }
-  .odds,
+  .runner-key .skill {
+    display: none;
+  }
+  .result {
+    gap: 18px;
+  }
+  .place {
+    width: 60px;
+  }
+  .place.p1 {
+    --tuanzi-size: 56px;
+  }
+  .place.p4,
+  .place.p5 {
+    width: 36px;
+  }
+  .net b {
+    font-size: 36px;
+  }
+}
+/* Short panels: one row of head keys, a smaller podium. */
+@container panel (max-height: 560px) {
+  .lap {
+    min-height: 250px;
+  }
+  .runners {
+    --tuanzi-size: 40px;
+    gap: 6px;
+  }
+  .runner-key {
+    gap: 3px;
+    padding: 6px 4px 12px;
+  }
+  .runner-key .name,
+  .runner-key .skill {
+    display: none;
+  }
+  .runner-key .face {
+    margin: 0;
+  }
   .pool {
-    grid-column: span 3;
+    bottom: 5px;
+    height: 3px;
   }
-  .odds .pick {
-    flex: 1;
+  .ticker {
+    font-size: var(--fs-number);
+  }
+  .net b {
+    font-size: 36px;
+  }
+  .p1 .step { height: 36px; }
+  .p2 .step { height: 26px; }
+  .p3 .step { height: 18px; }
+}
+/* Narrow panels: the kind keys stack their name over the odds, and the slip stays on one line. */
+@container panel (max-width: 840px) {
+  .kind-key {
+    flex-direction: column;
+    gap: 2px;
+    min-width: 50px;
+    padding: 0 8px;
+  }
+  .kind-key small {
+    font-size: var(--fs-caption);
+  }
+  .kind-key b {
+    font-size: var(--fs-strong);
+  }
+}
+@container panel (max-width: 680px) {
+  .picked {
+    display: none;
+  }
+  .kinds {
+    gap: 6px;
+  }
+  .stepper {
+    gap: 2px;
+  }
+  .bet-key {
+    min-width: 0;
+    padding: 0 14px;
+  }
+  .dots {
+    gap: 4px;
+  }
+  .dots i {
+    width: 6px;
+    height: 6px;
+  }
+  .result {
+    gap: 12px;
+  }
+  .podium {
+    gap: 4px;
+  }
+  .place {
+    width: 46px;
+    --tuanzi-size: 36px;
+  }
+  .place.p1 {
+    --tuanzi-size: 48px;
+  }
+  .place.p4,
+  .place.p5 {
+    width: 30px;
+    --tuanzi-size: 24px;
+  }
+  .place.p4 {
+    margin-left: 4px;
+  }
+  .step {
+    font-size: var(--fs-number);
+  }
+  .net {
+    gap: 3px;
+  }
+  .net svg {
+    width: 18px;
+    height: 18px;
+  }
+  .net b {
+    font-size: 28px;
   }
 }
 </style>
