@@ -78,16 +78,37 @@ export function ownedScratchEmotes(owned: Record<string, number>): string[] {
   return SCRATCH_EMOTES.filter((e) => (owned[`emote:${e.key}`] ?? 0) > 0).map((e) => e.key);
 }
 
+/** A box on the card, in 0..1 of its width and height. */
+export interface Box { x0: number; y0: number; x1: number; y1: number }
+
 /**
  * How much of a card's coating has been scratched off, on a coarse grid over the unit square: cheaper than
- * reading the canvas back, and the same on every screen density.
+ * reading the canvas back, and the same on every screen density. With [boxes] (the cells under the coating) it
+ * also tells how far the least scratched one is uncovered.
  */
 export class Coating {
   private cleared: Uint8Array;
   private count = 0;
+  /** The box each grid square's centre lies in, -1 for none. */
+  private owner: Int16Array;
+  private boxTotal: number[];
+  private boxCleared: number[];
 
-  constructor(private n = 24) {
+  constructor(private n = 24, boxes: Box[] = []) {
     this.cleared = new Uint8Array(n * n);
+    this.owner = new Int16Array(n * n).fill(-1);
+    this.boxTotal = boxes.map(() => 0);
+    this.boxCleared = boxes.map(() => 0);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const x = (i + 0.5) / n;
+        const y = (j + 0.5) / n;
+        const b = boxes.findIndex((r) => x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1);
+        if (b < 0) continue;
+        this.owner[j * n + i] = b;
+        this.boxTotal[b]! += 1;
+      }
+    }
   }
 
   /** A round brush of radius `r` dragged from (x0, y0) to (x1, y1); all in 0..1 of the card. Returns the share cleared. */
@@ -103,10 +124,13 @@ export class Coating {
     const hi = (v: number) => Math.min(n - 1, Math.ceil((v + r) * n));
     for (let j = lo(y); j <= hi(y); j++) {
       for (let i = lo(x); i <= hi(x); i++) {
-        if (this.cleared[j * n + i]) continue;
+        const k = j * n + i;
+        if (this.cleared[k]) continue;
         if (Math.hypot((i + 0.5) / n - x, (j + 0.5) / n - y) <= r) {
-          this.cleared[j * n + i] = 1;
+          this.cleared[k] = 1;
           this.count += 1;
+          const b = this.owner[k]!;
+          if (b >= 0) this.boxCleared[b]! += 1;
         }
       }
     }
@@ -114,5 +138,14 @@ export class Coating {
 
   get share(): number {
     return this.count / this.cleared.length;
+  }
+
+  /** The share uncovered of the least scratched box; the whole card's share when there are no boxes. */
+  get least(): number {
+    let least = Infinity;
+    this.boxTotal.forEach((total, b) => {
+      if (total) least = Math.min(least, this.boxCleared[b]! / total);
+    });
+    return least === Infinity ? this.share : least;
   }
 }

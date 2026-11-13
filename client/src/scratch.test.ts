@@ -109,6 +109,20 @@ describe("the coating", () => {
     expect(coating.share).toBe(1);
   });
 
+  it("tells how far the least scratched box is uncovered", () => {
+    const left = { x0: 0, y0: 0, x1: 0.5, y1: 1 };
+    const right = { x0: 0.5, y0: 0, x1: 1, y1: 1 };
+    const coating = new Coating(40, [left, right]);
+    expect(coating.least).toBe(0);
+    for (let y = 0.05; y <= 1; y += 0.1) coating.stroke(0, y, 0.4, y, 0.075);
+    // Half the card is gone, but the right box is still covered.
+    expect(coating.share).toBeGreaterThan(0.4);
+    expect(coating.least).toBe(0);
+    for (let y = 0.05; y <= 1; y += 0.1) coating.stroke(0.55, y, 1, y, 0.075);
+    expect(coating.least).toBe(1);
+    expect(new Coating(20).least).toBe(0);
+  });
+
   it("ignores strokes outside the card", () => {
     const coating = new Coating(20);
     expect(coating.stroke(-0.5, -0.5, -0.3, -0.3, 0.075)).toBe(0);

@@ -24,7 +24,7 @@ import PlateDetail from "../PlateDetail.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import asoulLogo from "../../assets/brand/asoul-logo.svg";
-import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes } from "../../scratch";
+import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes, type Box } from "../../scratch";
 import { parkTab, useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import {
@@ -32,8 +32,10 @@ import {
   outcomeOf, type CardKind, type Level, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
 } from "./scratchCards";
 
-/** The rest of the coating lifts by itself once this much of it is gone. */
-const DONE_SHARE = 0.55;
+/** The rest of the coating lifts by itself once every cell is this much uncovered. */
+const DONE_SHARE = 0.7;
+/** Squares a side in the grid that measures the scratching: a cell is some 12 by 12 of them. */
+const GRID = 40;
 /** Brush radius as a share of the card's width. */
 const BRUSH = 0.075;
 /** Long enough for the card to land. */
@@ -318,13 +320,37 @@ function paintIdle() {
   }
 }
 
+/**
+ * The cells under the coating, in 0..1 of the coating's box. From layout offsets, so a ticket tilted or still
+ * dealing in does not skew them; none when the layout is not as expected, and then the whole card counts.
+ */
+function cellBoxes(el: HTMLCanvasElement): Box[] {
+  const root = el.offsetParent;
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (!root || !w || !h) return [];
+  const boxes: Box[] = [];
+  for (const li of el.parentElement?.querySelectorAll<HTMLElement>(".cells > li") ?? []) {
+    let x = -el.offsetLeft;
+    let y = -el.offsetTop;
+    let n: Element | null = li;
+    for (; n instanceof HTMLElement && n !== root; n = n.offsetParent) {
+      x += n.offsetLeft;
+      y += n.offsetTop;
+    }
+    if (n !== root) return [];
+    boxes.push({ x0: x / w, y0: y / h, x1: (x + li.offsetWidth) / w, y1: (y + li.offsetHeight) / h });
+  }
+  return boxes;
+}
+
 /** Draws a fresh coating for the card on the table. Does nothing while the page has no size (it is turned away). */
 function paint() {
   const el = canvas.value;
   const current = card.value;
   if (!el || !current || open.value || coated.value === current.id) return;
   if (!drawCoat(el, current.kind)) return;
-  coating = new Coating();
+  coating = new Coating(GRID, cellBoxes(el));
   last = null;
   untouched.value = true;
   coated.value = current.id;
@@ -368,7 +394,8 @@ function scratchTo(e: PointerEvent) {
   ctx.fill();
   ctx.globalCompositeOperation = "source-over";
   untouched.value = false;
-  if (coating.stroke(from.x, from.y, to.x, to.y, BRUSH) >= DONE_SHARE) finish();
+  coating.stroke(from.x, from.y, to.x, to.y, BRUSH);
+  if (coating.least >= DONE_SHARE) finish();
 }
 function down(e: PointerEvent) {
   if (e.button !== 0 || open.value) return;
