@@ -35,6 +35,7 @@ from .models import (
 from .moderation import Blocklist
 from .lottery import Lottery
 from .park import Park
+from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
@@ -154,6 +155,8 @@ async def _lottery_loop() -> None:
 
 PARK_LOOPS.append(_lottery_loop)
 # park: redeem setup
+# Redeem codes: made through /admin/codes, entered through POST /api/redeem.
+redeem = Redeem(lambda: game, park)
 
 
 def load_blocklist(store: Store) -> Blocklist:
@@ -443,6 +446,73 @@ def api_park_lottery_buy(body: LotteryBody, who: PlayerId = Depends(player)) -> 
 
 
 # park: redeem routes
+STATUS["code_taken"] = 409
+
+
+class RedeemBody(BaseModel):
+    code: str = Field(max_length=64)
+
+
+def _redeem(who: PlayerId, code: str) -> dict:
+    try:
+        return redeem.redeem(who, code, accounts is not None)
+    except Locked as e:
+        raise HTTPException(429, {"code": e.code, "message": e.message, "seconds": e.seconds},
+                            headers={"Retry-After": str(e.seconds)})
+
+
+@app.post("/api/redeem")
+def api_redeem(body: RedeemBody, who: PlayerId = Depends(player)) -> dict:
+    """Pays a redeem code's reward: status, `park` (on a server with the park) and `redeemed: {shards, coins}`."""
+    return _guard(_redeem, who, body.code)
+
+
+# The admin dependencies are defined further down; these defer to them when called.
+def _code_admin(x_admin_key: str = Header(default="")) -> None:
+    admin(x_admin_key)
+
+
+def _code_actor(x_admin_actor: str = Header(default="")) -> str:
+    return actor(x_admin_actor)
+
+
+class CodeCreateBody(BaseModel):
+    shards: int = Field(default=0, ge=0, le=1_000_000)
+    coins: int = Field(default=0, ge=0, le=1000)
+    count: int = Field(default=1, ge=1, le=500)
+    uses: int = Field(default=1, ge=1, le=1_000_000)
+    # Unix seconds; 0 = never.
+    expires: float = Field(default=0, ge=0)
+    note: str = Field(default="", max_length=200)
+    # A memorable code instead of generated ones (count must be 1).
+    code: str = Field(default="", max_length=64)
+
+
+class CodeDisableBody(BaseModel):
+    reason: str = Field(default="", max_length=200)
+
+
+@app.post("/admin/codes", dependencies=[Depends(_code_admin)])
+def admin_create_codes(body: CodeCreateBody, who: str = Depends(_code_actor)) -> dict:
+    return _guard(redeem.create, body.shards, body.coins, body.count, body.uses, body.expires, body.note.strip(),
+                  body.code.strip(), who)
+
+
+@app.get("/admin/codes", dependencies=[Depends(_code_admin)])
+def admin_codes(q: str = Query(default="", max_length=200), limit: int = Query(default=50, ge=1, le=500),
+                before: int | None = Query(default=None, ge=1)) -> dict:
+    """[q]: part of a code (dashes, spaces and case ignored) or of the note; [before]: continue below that code id."""
+    return redeem.find(q, limit, before)
+
+
+@app.post("/admin/codes/{code_id}/disable", dependencies=[Depends(_code_admin)])
+def admin_disable_code(code_id: int, body: CodeDisableBody | None = None, who: str = Depends(_code_actor)) -> dict:
+    return _guard(redeem.disable, code_id, who, body.reason.strip() if body else "")
+
+
+@app.get("/admin/codes/{code_id}/claims", dependencies=[Depends(_code_admin)])
+def admin_code_claims(code_id: int, limit: int = Query(default=200, ge=1, le=1000)) -> dict:
+    return _guard(redeem.claims, code_id, limit)
 
 
 @app.get("/api/scratch")
