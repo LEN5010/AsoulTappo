@@ -1,29 +1,45 @@
 <script setup lang="ts">
-// 每日夺宝 (docs/design/amusement-park.md §7, §11): the next top prize and the countdown to the draw, my numbers of
-// the day, picking one by hand or buying random ones, and the last draw with my result and its hash check. There is
-// no push: while the page is open the state loads every POLL_MS, and every few seconds once the draw is due. The
-// countdown and 阿草 go up in the park's coral band (band.ts).
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4): the next top prize on a gold
+// plaque, three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
+// check and the buy keys. There is no push: while the page is open the state loads every POLL_MS, and every few
+// seconds once the draw is due. The countdown and 阿草 go up in the park's coral band (band.ts).
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import { EASE_OUT } from "../../ui/motion";
 import { useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import {
-  cleanNumber, countdown, matchedDigits, nextDraw, shortDay, verifyDraw, type LotteryBuy, type LotteryState,
+  cleanNumber, countdown, dayBefore, dropDigit, markDrawSeen, matchedDigits, nextDraw, NO_PICKS, pickedNumber,
+  pickTarget, putDigit, seenDraw, shortDay, stepDigit, verifyDraw, type LotteryBuy, type LotteryState, type Picks,
 } from "./lottery";
+import TicketStub from "./TicketStub.vue";
 
 const POLL_MS = 20000;
 /** After the draw time, until the draw shows up. */
 const DUE_POLL_MS = 4000;
+/** A key pressed by typing stays down this long. */
+const PRESS_MS = 140;
+/** 机选 presses the keys this far apart, and shows the number bought this long before the keys go back. */
+const RANDOM_STEP_MS = 60;
+const RANDOM_HOLD_MS = 700;
+/** How long a draw's first showing runs: balls dropping, digits lighting, stamps. */
+const REVEAL_MS = 2200;
+/** Wheel travel (px) per digit step. */
+const WHEEL_STEP = 40;
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const state = ref<LotteryState | null>(null);
 const loadError = ref("");
 const now = ref(Date.now() / 1000);
 const calm = computed(() => reducedMotion.value);
+/** The page is shown: the clock runs and a new draw may play its reveal. */
+const active = ref(false);
+/** The pop-up open over the bottom bar. */
+const pop = ref<"" | "proof" | "past">("");
 
 let loading = false;
 let loadedAt = 0;
@@ -55,25 +71,38 @@ function tick() {
   if (Date.now() - loadedAt >= (due ? DUE_POLL_MS : POLL_MS)) void load();
 }
 function start() {
+  active.value = true;
   if (timer) return;
   now.value = Date.now() / 1000;
   void load();
   timer = setInterval(tick, 1000);
 }
 function stop() {
+  active.value = false;
   if (timer) clearInterval(timer);
   timer = null;
+  pop.value = "";
+  endReveal();
 }
 // The page is kept alive: mounting (the park may open while the page is shown) and coming back both start the clock.
 onMounted(start);
 onActivated(start);
 onDeactivated(stop);
-onBeforeUnmount(stop);
+onBeforeUnmount(() => {
+  stop();
+  clearTimeout(holdTimer);
+  pressTimers.forEach(clearTimeout);
+});
 // Another save: its numbers.
 watch(() => status.value?.player, (player, was) => {
   if (player === was) return;
   state.value = null;
   fresh.value = [];
+  picks.value = NO_PICKS;
+  at.value = null;
+  shown.value = null;
+  pop.value = "";
+  endReveal();
   if (timer) void load();
 });
 
@@ -87,12 +116,11 @@ useBand("lottery", () => {
   return { host: ACHAO["观察"], timer: s ? { label, time: waiting.value ? undefined : left.value } : undefined };
 });
 
-// ---- my numbers and buying
+// ---- buying
 const coins = computed(() => park.value?.coins ?? status.value?.park?.coins ?? 0);
-const typed = ref("");
 const busy = ref<"pick" | "random" | "">("");
 const buyError = ref("");
-/** Indexes of the tickets just bought, for their entrance. */
+/** Indexes of the tickets just bought, for their drop from the keys. */
 const fresh = ref<number[]>([]);
 
 /** Why [n] tickets cannot be bought now: a short reason, "" when none is worth showing, null when they can. */
@@ -106,8 +134,123 @@ function blocked(n: number): string | null {
   if (coins.value < n) return "驼币不足";
   return null;
 }
+
+// ---- the number keys: a digit or blank each; a key clicked is the one the next digit changes
+const picks = ref<Picks>(NO_PICKS);
+const at = ref<number | null>(null);
+/** The number just bought at random, shown on the keys for a moment over what was picked. */
+const shown = ref<Picks | null>(null);
+const pressed = ref([false, false, false]);
+/** The hidden field under the keys has the keyboard. */
+const typing = ref(false);
+const field = ref<HTMLInputElement>();
+const keysEl = ref<HTMLElement>();
+const stubsEl = ref<HTMLElement>();
+
+const typed = computed(() => pickedNumber(picks.value) ?? "");
+const faces = computed(() => shown.value ?? picks.value);
+/** Keys stay pressable while coins are short: picking is free, only 下注 waits. */
+const keysOff = computed(() => !online.value || !state.value?.open || state.value.left === 0);
+/** Where the caret shows: the key the next typed digit goes to. */
+const target = computed(() => (typing.value && !keysOff.value && !shown.value ? pickTarget(picks.value, at.value) : null));
 const pickReady = computed(() => typed.value.length === 3 && blocked(1) === null);
 const note = computed(() => buyError.value || blocked(1) || "");
+
+const pressTimers: ReturnType<typeof setTimeout>[] = [];
+function press(i: number) {
+  if (calm.value) return;
+  pressed.value = pressed.value.map((p, j) => p || j === i);
+  clearTimeout(pressTimers[i]);
+  pressTimers[i] = setTimeout(() => (pressed.value = pressed.value.map((p, j) => p && j !== i)), PRESS_MS);
+}
+function put(d: string) {
+  const r = putDigit(picks.value, at.value, d);
+  if (r.key === null) return;
+  picks.value = r.picks;
+  at.value = null;
+  press(r.key);
+}
+/** Typed or pasted digits go onto the keys; the field itself stays empty. */
+function onType(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (!keysOff.value && !shown.value) for (const d of cleanNumber(input.value)) put(d);
+  input.value = "";
+}
+function onKey(e: KeyboardEvent) {
+  if (e.isComposing) return;
+  const busyKeys = keysOff.value || !!shown.value;
+  if (e.key === "Enter") {
+    buyPicked();
+  } else if (e.key === "Escape") {
+    // Lets go of a picked key before the panel's own Escape closes the panel.
+    if (at.value !== null) {
+      at.value = null;
+      e.stopPropagation();
+    }
+  } else if (busyKeys) {
+    return;
+  } else if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    picks.value = dropDigit(picks.value, at.value);
+    at.value = null;
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    const from = at.value ?? pickTarget(picks.value, null) ?? 2;
+    at.value = Math.min(2, Math.max(0, from + (e.key === "ArrowLeft" ? -1 : 1)));
+  } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+    step(at.value ?? pickTarget(picks.value, null) ?? 2, e.key === "ArrowUp" ? 1 : -1);
+  }
+}
+function step(i: number, by: 1 | -1) {
+  const next: [string, string, string] = [...picks.value];
+  next[i] = stepDigit(next[i]!, by);
+  picks.value = next;
+}
+function pickKey(i: number) {
+  if (keysOff.value || shown.value) return;
+  at.value = at.value === i ? null : i;
+  field.value?.focus({ preventScroll: true });
+}
+let wheel = { key: -1, sum: 0 };
+function onWheel(i: number, e: WheelEvent) {
+  if (keysOff.value || shown.value) return;
+  if (wheel.key !== i) wheel = { key: i, sum: 0 };
+  wheel.sum += e.deltaY;
+  if (Math.abs(wheel.sum) < WHEEL_STEP && Math.abs(e.deltaY) < WHEEL_STEP) return;
+  step(i, wheel.sum < 0 ? 1 : -1);
+  wheel.sum = 0;
+}
+
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+/** 机选: the keys go down one after another, each taking a digit of the number bought, then go back. */
+function showBought(number: string) {
+  if (calm.value) return;
+  clearTimeout(holdTimer);
+  const base = picks.value;
+  [0, 1, 2].forEach((i) => setTimeout(() => {
+    const next: [string, string, string] = [...(shown.value ?? base)];
+    next[i] = number[i] ?? "";
+    shown.value = next;
+    press(i);
+  }, i * RANDOM_STEP_MS));
+  holdTimer = setTimeout(() => (shown.value = null), 2 * RANDOM_STEP_MS + RANDOM_HOLD_MS);
+}
+/** The stubs just bought fall from the keys into their places. */
+function dropFresh(delay: number) {
+  const keys = keysEl.value?.getBoundingClientRect();
+  if (calm.value || !keys || !stubsEl.value) return;
+  const x = keys.left + keys.width / 2;
+  const y = keys.top + keys.height / 2;
+  stubsEl.value.querySelectorAll<HTMLElement>(".cell.fresh .ticket-stub").forEach((el, k) => {
+    const to = el.getBoundingClientRect();
+    const move = `translate(${x - (to.left + to.width / 2)}px, ${y - (to.top + to.height / 2)}px) scale(1.2)`;
+    el.animate(
+      [{ transform: move, opacity: 0 }, { opacity: 1, offset: 0.2 }, { transform: "none", opacity: 1 }],
+      { duration: 480, delay: delay + k * 70, easing: EASE_OUT, fill: "backwards" },
+    );
+  });
+}
 
 async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" | "random") {
   busy.value = kind;
@@ -122,7 +265,14 @@ async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" |
   state.value = s;
   const from = s.tickets.length - r.data.bought.length;
   fresh.value = r.data.bought.map((_, i) => from + i);
-  if (kind === "pick") typed.value = "";
+  if (kind === "pick") {
+    picks.value = NO_PICKS;
+    at.value = null;
+  } else {
+    showBought(r.data.bought[r.data.bought.length - 1] ?? "");
+  }
+  await nextTick();
+  dropFresh(kind === "random" ? 3 * RANDOM_STEP_MS : 0);
 }
 function buyPicked() {
   if (pickReady.value) void buy({ numbers: [typed.value] }, "pick");
@@ -130,30 +280,42 @@ function buyPicked() {
 function buyRandom(n: number) {
   if (blocked(n) === null) void buy({ random: n }, "random");
 }
-function onType(e: Event) {
-  const input = e.target as HTMLInputElement;
-  typed.value = cleanNumber(input.value);
-  input.value = typed.value;
-}
 // A reason from the server holds until the state it was about changes.
 watch(() => [state.value?.left, state.value?.open, coins.value, online.value], () => { if (!busy.value) buyError.value = ""; });
-
-const slots = computed(() => {
-  const s = state.value;
-  return s ? Math.max(0, s.daily - s.tickets.length) : 0;
-});
+// Picking stops with the sales: no key held, no caret.
+watch(keysOff, (off) => { if (off) at.value = null; });
 
 // ---- the last draw
 const last = computed(() => state.value?.last ?? null);
 const winning = computed(() => (last.value ? last.value.number.split("") : []));
+/** Today is drawn: the stubs on the table are the ones of the last draw, with their results. */
+const drawnHere = computed(() => !!last.value && last.value.day === state.value?.day);
+const lastName = computed(() => {
+  const d = last.value?.day ?? "";
+  const today = state.value?.day ?? "";
+  return d === today ? "今日" : d === dayBefore(today) ? "昨日" : shortDay(d);
+});
+/** My stubs: today's, or once today is drawn the same stubs with what each matched. */
+const table = computed(() => {
+  const s = state.value;
+  if (!s) return [];
+  if (drawnHere.value) return last.value!.mine;
+  return s.tickets.map((number) => ({ number, tier: null, prize: 0 }));
+});
+/** Free places, while there is still a draw to buy for. */
+const slots = computed(() => (state.value && !drawnHere.value ? Math.max(0, state.value.daily - table.value.length) : 0));
+
 /** The earlier days of the history; the last draw has its own block. */
 const older = computed(() => (state.value?.history ?? []).filter((h) => h.day !== last.value?.day));
+/** The last draw's stubs when they are not on the table (a day after it): they go behind 往期. */
+const lastAside = computed(() => (!drawnHere.value && last.value?.mine.length ? last.value : null));
+const hasPast = computed(() => !!lastAside.value || older.value.length > 0);
+
 const verified = ref<boolean | null>(null);
-const showProof = ref(false);
 // Checked again only when the draw itself changes, not on every reload of the same one.
 watch(() => (last.value ? [last.value.day, last.value.number, last.value.salt, last.value.hash].join("|") : ""), async (key) => {
   verified.value = null;
-  showProof.value = false;
+  if (pop.value === "proof") pop.value = "";
   const d = last.value;
   if (!d) return;
   const ok = await verifyDraw(d.number, d.salt, d.hash);
@@ -165,75 +327,136 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
   const hit = matchedDigits(tier);
   return number.split("").map((d, i) => ({ d, hit: i >= 3 - hit }));
 }
+
+// ---- the first showing of a draw: balls drop right to left, my matching digits light up the same way
+const reveal = ref("");
+let revealTimer: ReturnType<typeof setTimeout> | undefined;
+function endReveal() {
+  clearTimeout(revealTimer);
+  reveal.value = "";
+}
+watch(() => [active.value, last.value?.day ?? ""] as const, ([on, day]) => {
+  if (!on || !day || seenDraw() === day) return;
+  markDrawSeen(day);
+  if (calm.value) return;
+  reveal.value = day;
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(() => (reveal.value = ""), REVEAL_MS);
+}, { immediate: true });
+
+// ---- the bar's two pop-ups (pop, above): the proof of the draw, and the earlier days
+const barEl = ref<HTMLElement>();
+function toggle(p: "proof" | "past") {
+  pop.value = pop.value === p ? "" : p;
+}
+function onOutside(e: PointerEvent) {
+  if (!barEl.value?.contains(e.target as Node)) pop.value = "";
+}
+watch(pop, (open) => {
+  if (open) document.addEventListener("pointerdown", onOutside, true);
+  else document.removeEventListener("pointerdown", onOutside, true);
+});
+onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside, true));
+function onBarKey(e: KeyboardEvent) {
+  if (e.key === "Escape" && pop.value) {
+    pop.value = "";
+    e.stopPropagation();
+  }
+}
 </script>
 
 <template>
-  <section class="lottery" :class="{ calm }" aria-label="每日夺宝">
-    <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
+  <section class="lottery" :class="{ calm, reveal: !!reveal }" aria-label="每日夺宝">
+    <div class="stage" :class="{ empty: !state }">
+      <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
-    <template v-if="state">
-      <div class="prizes">
-        <div class="top">
-          <span>{{ state.drawn ? "明日头奖" : "头奖" }}</span>
-          <b><Icon name="shard" :size="22" />{{ fmt(state.prize.top) }}</b>
+      <template v-if="state">
+        <div class="prizes">
+          <p class="plaque">
+            <span>{{ state.drawn ? "明日头奖" : "头奖" }}</span>
+            <b><Icon name="shard" :size="30" />{{ fmt(state.prize.top) }}</b>
+          </p>
+          <dl class="minor">
+            <div><dt>二等</dt><dd><Icon name="shard" :size="13" />{{ fmt(state.prize.second) }}</dd></div>
+            <div><dt>三等</dt><dd><Icon name="shard" :size="13" />{{ fmt(state.prize.third) }}<small>/注</small></dd></div>
+          </dl>
         </div>
-        <dl class="minor">
-          <div><dt>二等</dt><dd><Icon name="shard" :size="12" />{{ fmt(state.prize.second) }}</dd></div>
-          <div><dt>三等</dt><dd><Icon name="shard" :size="12" />{{ fmt(state.prize.third) }}<small>/注</small></dd></div>
-        </dl>
-      </div>
 
-      <div class="mine">
-        <p class="sub">我的号码 <small>{{ state.tickets.length }} / {{ state.daily }}</small></p>
-        <ul class="tickets">
-          <li v-for="(n, i) in state.tickets" :key="`${state.day}-${i}`" class="ticket" :class="{ fresh: fresh.includes(i) }">{{ n }}</li>
-          <li v-for="i in slots" :key="`slot-${i}`" class="ticket slot" aria-hidden="true"></li>
-        </ul>
-      </div>
-
-      <div v-if="!state.drawn" class="pick">
-        <input
-          class="ui-input digits" type="text" inputmode="numeric" maxlength="3" placeholder="000" aria-label="号码"
-          :value="typed" :disabled="!state.open" @input="onType" @keydown.enter="buyPicked"
-        />
-        <button type="button" class="ui-btn primary" :disabled="!pickReady" :aria-busy="busy === 'pick'" @click="buyPicked">
-          <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />下注
-        </button>
-        <button type="button" class="ui-btn" :disabled="blocked(1) !== null" :aria-busy="busy === 'random'" @click="buyRandom(1)">机选</button>
-        <button
-          v-if="state.left > 1" type="button" class="ui-btn"
-          :disabled="blocked(state.left) !== null" @click="buyRandom(state.left)"
-        >机选 {{ state.left }} 注</button>
-        <p class="note" :class="{ warn: !!buyError }" role="status">{{ note }}</p>
-      </div>
-
-      <div v-if="last" class="last">
-        <div class="draw">
-          <span class="day">{{ shortDay(last.day) }}</span>
-          <span class="balls" :aria-label="`开奖号码 ${last.number}`">
-            <i v-for="(d, i) in winning" :key="i">{{ d }}</i>
-          </span>
+        <!-- The keys take clicks and the wheel; the keyboard goes to the hidden field under them. -->
+        <div v-if="!state.drawn" ref="keysEl" class="keys">
           <button
-            v-if="verified !== null" type="button" class="proof-key" :class="{ bad: !verified }"
-            :aria-expanded="showProof" @click="showProof = !showProof"
+            v-for="(d, i) in faces" :key="i" type="button" class="ui-btn numkey" tabindex="-1" aria-hidden="true"
+            :class="{ on: at === i, down: pressed[i], target: target === i }" :disabled="keysOff"
+            @mousedown.prevent @click="pickKey(i)" @wheel.prevent="onWheel(i, $event)"
           >
-            <Icon :name="verified ? 'check' : 'info'" :size="12" />{{ verified ? "已校验" : "校验不符" }}
+            <span v-if="d" :key="d" class="face">{{ d }}</span>
+            <i v-else-if="target !== i" class="blank"></i>
+            <i v-if="target === i" class="caret"></i>
           </button>
-          <span class="result" :class="{ won: last.won > 0 }">
-            <template v-if="last.won > 0"><Icon name="shard" :size="14" />+{{ fmt(last.won) }}</template>
-            <template v-else-if="last.mine.length">未中奖</template>
-          </span>
+          <input
+            ref="field" class="field" type="text" inputmode="numeric" autocomplete="off" aria-label="号码"
+            :disabled="keysOff" @input="onType" @keydown="onKey" @focus="typing = true" @blur="typing = false; at = null"
+          />
         </div>
-        <dl v-if="showProof" class="proof">
-          <div><dt>哈希</dt><dd>{{ last.hash }}</dd></div>
-          <div><dt>随机串</dt><dd>{{ last.salt }}</dd></div>
-        </dl>
-        <ul v-if="last.mine.length" class="tickets past">
-          <li v-for="(t, i) in last.mine" :key="i" class="ticket" :class="{ hit: t.tier }">
-            <span v-for="(c, j) in digits(t.number, t.tier)" :key="j" :class="{ on: c.hit }">{{ c.d }}</span>
-            <small v-if="t.prize">+{{ fmt(t.prize) }}</small>
+
+        <ol ref="stubsEl" class="stubs" :class="{ drawn: drawnHere }" aria-label="我的号码">
+          <li
+            v-for="(t, i) in table" :key="`${state.day}-${i}`" class="cell"
+            :class="{ fresh: fresh.includes(i) }"
+          >
+            <TicketStub>
+              <span
+                v-for="(c, j) in digits(t.number, t.tier)" :key="j" class="digit" :class="{ on: c.hit }"
+                :style="{ '--k': 2 - j }"
+              >{{ c.d }}</span>
+            </TicketStub>
+            <b v-if="t.prize" class="stamp" :class="{ top: t.tier === 'top' }">+{{ fmt(t.prize) }}</b>
           </li>
-        </ul>
+          <li v-for="i in slots" :key="`slot-${i}`" class="cell slot" aria-hidden="true"></li>
+        </ol>
+      </template>
+    </div>
+
+    <div v-if="state" ref="barEl" class="park-actions" @keydown="onBarKey">
+      <div v-if="last" class="last">
+        <span class="when">{{ lastName }}</span>
+        <span class="balls" :aria-label="`开奖号码 ${last.number}`">
+          <i v-for="(d, i) in winning" :key="i" :style="{ '--i': i }">{{ d }}</i>
+        </span>
+        <button
+          v-if="verified !== null" type="button" class="ui-btn ghost small proof-key" :class="{ bad: !verified }"
+          :title="verified ? '已校验' : '校验不符'" :aria-expanded="pop === 'proof'" @click="toggle('proof')"
+        >
+          <Icon :name="verified ? 'check' : 'info'" :size="14" /><span>{{ verified ? "已校验" : "校验不符" }}</span>
+        </button>
+        <span class="result" :class="{ won: last.won > 0 }">
+          <template v-if="last.won > 0"><Icon name="shard" :size="16" />+{{ fmt(last.won) }}</template>
+          <template v-else-if="last.mine.length">未中奖</template>
+        </span>
+      </div>
+      <button
+        v-if="hasPast" type="button" class="ui-btn ghost small" :aria-expanded="pop === 'past'" @click="toggle('past')"
+      >往期</button>
+
+      <dl v-if="pop === 'proof' && last" class="pop proof">
+        <div><dt>哈希</dt><dd>{{ last.hash }}</dd></div>
+        <div><dt>随机串</dt><dd>{{ last.salt }}</dd></div>
+      </dl>
+      <div v-if="pop === 'past'" class="pop past ui-scroll">
+        <div v-if="lastAside" class="past-day">
+          <p class="past-head">
+            <span>{{ shortDay(lastAside.day) }}</span>
+            <b>{{ lastAside.number }}</b>
+            <span class="won" :class="{ on: lastAside.won > 0 }">{{ lastAside.won > 0 ? `+${fmt(lastAside.won)}` : "未中奖" }}</span>
+          </p>
+          <ul class="past-stubs">
+            <li v-for="(t, i) in lastAside.mine" :key="i">
+              <TicketStub size="s">
+                <span v-for="(c, j) in digits(t.number, t.tier)" :key="j" class="digit" :class="{ on: c.hit }">{{ c.d }}</span>
+              </TicketStub>
+            </li>
+          </ul>
+        </div>
         <ul v-if="older.length" class="history">
           <li v-for="h in older" :key="h.day">
             <span>{{ shortDay(h.day) }}</span>
@@ -242,58 +465,89 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
           </li>
         </ul>
       </div>
-    </template>
+
+      <div v-if="!state.drawn" class="park-actions-main">
+        <p class="note" :class="{ warn: !!buyError }" role="status">{{ note }}</p>
+        <button type="button" class="ui-btn" :disabled="blocked(1) !== null" :aria-busy="busy === 'random'" @click="buyRandom(1)">机选</button>
+        <button
+          v-if="state.left > 1" type="button" class="ui-btn"
+          :disabled="blocked(state.left) !== null" @click="buyRandom(state.left)"
+        >机选 {{ state.left }} 注</button>
+        <button
+          type="button" class="ui-btn primary" :class="{ pulse: pickReady }" :disabled="!pickReady"
+          :aria-busy="busy === 'pick'" @click="buyPicked"
+        >
+          <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />下注
+        </button>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-/* On the park's sheet, under the coral band; groups inside it are tonal bands, not boxes. */
+/* Fills the park's white body; the bottom bar (.park-actions) is the last child, so the root has no side padding. */
 .lottery {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px 22px 20px;
 }
-.lottery > .ui-error {
+.stage {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 22px 22px 26px;
+}
+/* Nothing loaded: the error is the sheet's first line. */
+.stage.empty {
+  justify-content: flex-start;
+}
+.stage > .ui-error {
+  align-self: stretch;
   margin: 0;
 }
 
-/* ---- prizes: the top one is the number to see */
+/* ---- prizes: the top one on gold foil, the other two small beside it */
 .prizes {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
-  gap: 10px 28px;
+  gap: 12px 28px;
 }
-.top {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.plaque {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  height: 80px;
+  margin: 0;
+  padding: 0 26px 0 22px;
+  box-sizing: border-box;
+  border-radius: var(--radius-m);
+  background: var(--grad-gold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 0 rgba(var(--c-900-rgb), 0.14);
+  color: var(--ink);
 }
-.top span {
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
+.plaque > span {
+  font: 800 var(--fs-strong)/1 var(--font);
 }
-.top b {
+.plaque b {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: 800 40px/1 var(--font-latin);
-  color: var(--ink);
-}
-.top svg {
-  color: var(--c-600);
+  font: 800 56px/1 var(--font-latin);
 }
 .minor {
   display: flex;
-  gap: 20px;
-  margin: 0 0 4px;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
 }
 .minor > div {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
 }
 .minor dt {
   font-size: var(--fs-label);
@@ -305,125 +559,164 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
   align-items: center;
   gap: 2px;
   margin: 0;
-  font: 700 var(--fs-number)/1 var(--font-latin);
+  font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
 }
 .minor dd svg {
   color: var(--c-600);
 }
 .minor small {
-  margin-left: 2px;
+  margin-left: 3px;
   font: 600 var(--fs-caption) var(--font);
   color: var(--ink-3);
 }
 
-/* ---- my numbers: ticket stubs on a tonal band, empty places dashed */
-.mine {
+/* ---- the number keys: three tall keycaps; typing presses them */
+/* On a tonal tray: white keys need a step of the ramp under them to read as keys. */
+.keys {
+  position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 14px;
+  padding: 14px 16px 18px;
+  border-radius: var(--radius-l);
+  background: var(--c-100);
 }
-.sub {
-  margin: 0;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
+.numkey {
+  --key-lip-h: 4px;
+  width: 88px;
+  height: 112px;
+  padding: 0;
+  border-radius: var(--radius-l);
 }
-.sub small {
-  margin-left: 4px;
-  font: 700 var(--fs-strong)/1 var(--font-latin);
-  color: var(--c-700);
+.numkey.down:not(:disabled) {
+  --key-y: 4px;
+  --key-lip-h: 0px;
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
 }
-.tickets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/* Latched (the key being changed): a step deeper than the tray it sits on. */
+.numkey.on:not(:disabled) {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
+  --key-lip: var(--c-300);
+}
+/* Disabled keys stay a shade off the tray. */
+.numkey:disabled {
+  --key-top: var(--c-50);
+  --key-bottom: var(--c-50);
+}
+.numkey:disabled .face {
+  color: var(--ink-3);
+}
+/* The field to read the keyboard: there, focusable, never seen. */
+.field {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.face {
+  font: 800 72px/1 var(--font-latin);
+  color: var(--ink);
+  animation: face-in 200ms var(--ease-pop) both;
+}
+@keyframes face-in {
+  from { transform: translateY(-10px) scale(0.8); opacity: 0; }
+}
+/* A blank key: a short line where its digit goes. */
+.blank {
+  width: 28px;
+  height: 4px;
+  margin-top: 46px;
+  border-radius: 2px;
+  background: var(--c-200);
+}
+.caret {
+  position: absolute;
+  left: 50%;
+  top: 28px;
+  width: 3px;
+  height: 52px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--c-500);
+  animation: caret 1.1s steps(1) infinite;
+}
+@keyframes caret {
+  50% { opacity: 0; }
+}
+.calm .face,
+.calm .caret {
+  animation: none;
+}
+
+/* ---- my stubs: 2 rows of 5; a place still free is a dashed outline */
+.stubs {
+  display: grid;
+  grid-template-columns: repeat(5, 96px);
+  gap: 14px 16px;
+  justify-content: center;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.ticket {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  min-width: 52px;
-  height: 34px;
-  padding: 0 8px;
-  box-sizing: border-box;
-  border-radius: var(--radius-s);
-  background: var(--c-100);
-  font: 800 20px/1 var(--font-latin);
-  letter-spacing: 0.08em;
-  color: var(--ink);
-}
-.ticket.slot {
-  background: transparent;
-  outline: 1.5px dashed var(--c-300);
-  outline-offset: -1.5px;
-}
-.ticket.fresh {
-  animation: ticket-in 420ms var(--ease-out) both;
-}
-.calm .ticket.fresh {
-  animation: none;
-}
-@keyframes ticket-in {
-  0% { opacity: 0; transform: translateY(6px) scale(0.86); }
-  60% { opacity: 1; transform: translateY(-2px) scale(1.04); }
-  100% { transform: none; }
-}
-
-/* ---- picking */
-.pick {
+.cell {
+  position: relative;
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  height: 56px;
 }
-.digits {
-  width: 84px;
-  background: var(--c-100);
-  box-shadow: none;
-  font: 800 22px/1 var(--font-latin);
-  letter-spacing: 0.2em;
-  text-align: center;
+.cell :deep(.ticket-stub),
+.cell :deep(.paper) {
+  width: 100%;
 }
-.coin {
-  width: 16px;
-  height: 16px;
-  margin-right: 4px;
+.slot {
+  box-sizing: border-box;
+  border: 2px dashed var(--c-200);
+  border-radius: var(--radius-s);
 }
-.note {
-  flex: 1;
-  min-width: 80px;
-  min-height: 16px;
-  margin: 0;
-  font-size: var(--fs-label);
-  font-weight: 700;
+.digit {
+  display: inline-block;
+}
+/* Drawn: what matched is coral, the rest steps back. */
+.drawn .digit {
   color: var(--ink-3);
-  text-align: right;
 }
-.note.warn {
+.drawn .digit.on,
+.past-stubs .digit.on {
   color: var(--c-700);
 }
+.stamp {
+  position: absolute;
+  top: -11px;
+  right: -9px;
+  padding: 3px 6px 2px;
+  border: 2px solid var(--c-600);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  font: 800 17px/1 var(--font-latin);
+  color: var(--c-700);
+  rotate: -9deg;
+  white-space: nowrap;
+}
+.stamp.top {
+  border-color: color-mix(in oklab, var(--gold) 78%, var(--c-700));
+  background: var(--grad-gold);
+  color: var(--ink);
+}
 
-/* ---- the last draw */
+/* ---- the bottom bar: the last draw on the left, the buy keys on the right */
 .last {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: var(--radius-m);
-  background: var(--c-50);
-}
-.draw {
-  display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: 10px;
+  min-width: 0;
 }
-.day {
+.when {
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
@@ -435,53 +728,75 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
 .balls i {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 38px;
+  width: 38px;
+  height: 44px;
   border-radius: var(--radius-s);
   background: linear-gradient(180deg, var(--c-400), var(--c-500));
-  font: 800 28px/1 var(--font-latin);
+  font: 800 34px/1 var(--font-latin);
   font-style: normal;
   color: #fff;
 }
-/* The check stays quiet: a small key without a lip, opening the hash and salt. */
 .proof-key {
-  display: inline-flex;
-  align-items: center;
   gap: 3px;
-  height: 22px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: transparent;
-  font: 700 var(--fs-caption) var(--font);
+  padding: 0 8px;
   color: var(--ink-3);
-  cursor: pointer;
 }
-.proof-key:hover,
-.proof-key[aria-expanded="true"] {
-  background: var(--c-100);
-}
-.proof-key.bad {
+.proof-key.bad,
+.proof-key.bad:hover:not(:disabled),
+.proof-key.bad[aria-expanded="true"]:not(:disabled) {
   color: var(--bad);
 }
 .result {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  margin-left: auto;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-3);
 }
 .result.won {
-  font: 800 var(--fs-heading)/1 var(--font-latin);
+  font: 800 var(--fs-title)/1 var(--font-latin);
   color: var(--c-700);
+}
+.note {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.note:empty {
+  display: none;
+}
+.note.warn {
+  color: var(--c-700);
+}
+.coin {
+  width: 18px;
+  height: 18px;
+}
+
+/* Pop-ups rise from the bar over the page. */
+.pop {
+  position: absolute;
+  left: 16px;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  max-width: min(460px, calc(100% - 32px));
+  max-height: 240px;
+  margin: 0;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper), 0 10px 28px -12px rgba(var(--c-900-rgb), 0.3);
 }
 .proof {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
+  gap: 6px;
 }
 .proof > div {
   display: flex;
@@ -503,56 +818,184 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
   overflow-wrap: anywhere;
   user-select: text;
 }
-.tickets.past .ticket {
-  height: 30px;
-  font-size: 17px;
-  background: var(--surface);
-  color: var(--ink-3);
-}
-.tickets.past .ticket.hit {
-  color: var(--ink-2);
-}
-.tickets.past .on {
-  color: var(--c-700);
-}
-.tickets.past small {
-  margin-left: 6px;
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  letter-spacing: 0;
-  color: var(--c-700);
-}
-.history {
+.past {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 12px;
+  width: 360px;
 }
+.past-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-s);
+  background: var(--c-100);
+}
+.past-head,
 .history li {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  margin: 0;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-3);
 }
+.past-head b,
 .history b {
   font: 800 var(--fs-number)/1 var(--font-latin);
   letter-spacing: 0.08em;
   color: var(--ink-2);
 }
+.past-head .won,
 .history .won {
   margin-left: auto;
 }
+.past-head .won.on,
 .history .won.on {
   font: 800 var(--fs-number)/1 var(--font-latin);
   color: var(--c-700);
 }
+.past-stubs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.past-stubs .digit {
+  color: var(--ink-3);
+}
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0 2px;
+  list-style: none;
+}
+
+/* ---- the first showing of a draw: balls drop in from right to left, then my digits light the same way */
+.reveal .balls i {
+  animation: ball-in 460ms var(--ease-pop) both;
+  animation-delay: calc((2 - var(--i)) * 320ms);
+}
+@keyframes ball-in {
+  from { transform: translate(14px, -46px); opacity: 0; }
+  40% { opacity: 1; }
+}
+.reveal .drawn .digit.on {
+  animation: digit-lit 360ms var(--ease-out) both;
+  animation-delay: calc(var(--k) * 320ms + 300ms);
+}
+@keyframes digit-lit {
+  from { color: var(--ink-3); }
+  45% { transform: translateY(-4px) scale(1.18); }
+  to { color: var(--c-700); }
+}
+.reveal .stamp,
+.reveal .result.won {
+  animation: stamp-in 360ms var(--ease-pop) 1300ms both;
+}
+@keyframes stamp-in {
+  from { transform: scale(1.7); opacity: 0; }
+}
 
 @container panel (max-width: 760px) {
-  .top b {
-    font-size: 34px;
+  .stage {
+    gap: 20px;
+  }
+  .plaque {
+    height: 68px;
+    padding: 0 20px 0 18px;
+  }
+  .plaque b {
+    font-size: 46px;
+  }
+  .numkey {
+    width: 64px;
+    height: 84px;
+    border-radius: var(--radius-m);
+  }
+  .face {
+    font-size: 54px;
+  }
+  .blank {
+    width: 22px;
+    margin-top: 34px;
+  }
+  .caret {
+    top: 20px;
+    height: 40px;
+  }
+  .stubs {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 560px;
+  }
+  .stubs {
+    gap: 12px;
+  }
+  .cell {
+    width: 88px;
+  }
+  .keys {
+    gap: 10px;
+    padding: 10px 12px 14px;
+  }
+  .when {
+    display: none;
+  }
+}
+
+/* Short panel: the top prize and the keys side by side, the stubs under them; the body scrolls, the bar stays. */
+@container panel (max-height: 560px) {
+  .stage {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 16px 24px;
+    padding: 16px 16px 18px;
+  }
+  .prizes {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .minor {
+    gap: 6px;
+  }
+  .plaque {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 6px;
+    height: auto;
+    padding: 10px 18px 12px 14px;
+  }
+  .plaque > span {
+    font-size: var(--fs-label);
+  }
+  .plaque b {
+    font-size: 40px;
+  }
+  .stubs,
+  .stage > .ui-error {
+    flex: 1 0 100%;
+  }
+  .balls i {
+    width: 30px;
+    height: 36px;
+    font-size: 27px;
+  }
+  .proof-key > span {
+    display: none;
+  }
+  .result.won {
+    font-size: var(--fs-heading);
   }
 }
 </style>

@@ -1,5 +1,37 @@
 import { expect, it } from "vitest";
-import { cleanNumber, countdown, matchedDigits, nextDraw, shortDay, verifyDraw } from "./lottery";
+import {
+  cleanNumber, countdown, dayBefore, dropDigit, matchedDigits, nextDraw, NO_PICKS, pickedNumber, pickTarget, putDigit,
+  shortDay, stepDigit, verifyDraw,
+} from "./lottery";
+
+it("fills the number keys left to right, or the key picked", () => {
+  let p = putDigit(NO_PICKS, null, "9");
+  expect(p).toEqual({ picks: ["9", "", ""], key: 0 });
+  p = putDigit(p.picks, 2, "7");
+  expect(p).toEqual({ picks: ["9", "", "7"], key: 2 });
+  p = putDigit(p.picks, null, "3");
+  expect(p.picks).toEqual(["9", "3", "7"]);
+  expect(pickTarget(p.picks, null)).toBe(null);
+  expect(putDigit(p.picks, null, "1")).toEqual({ picks: ["9", "3", "7"], key: null });
+  expect(pickedNumber(p.picks)).toBe("937");
+  expect(pickedNumber(["9", "", "7"])).toBe(null);
+});
+
+it("clears the picked key, or the rightmost one set", () => {
+  expect(dropDigit(["9", "", "7"], null)).toEqual(["9", "", ""]);
+  expect(dropDigit(["9", "3", "7"], 0)).toEqual(["", "3", "7"]);
+  expect(dropDigit(NO_PICKS, null)).toEqual(["", "", ""]);
+});
+
+it("steps a digit round", () => {
+  expect([stepDigit("9", 1), stepDigit("0", -1), stepDigit("4", 1), stepDigit("", 1), stepDigit("", -1)])
+    .toEqual(["0", "9", "5", "0", "9"]);
+});
+
+it("finds the day before", () => {
+  expect(dayBefore("2026-11-01")).toBe("2026-10-31");
+  expect(dayBefore("2026-01-01")).toBe("2025-12-31");
+});
 
 it("marks the trailing digits a tier matched", () => {
   expect([matchedDigits("top"), matchedDigits("second"), matchedDigits("third"), matchedDigits(null)]).toEqual([3, 2, 1, 0]);

@@ -84,3 +84,71 @@ export async function verifyDraw(number: string, salt: string, hash: string): Pr
 export function cleanNumber(typed: string): string {
   return typed.replace(/[^0-9]/g, "").slice(0, 3);
 }
+
+// ---- the three number keys: a digit or "" each, and the key picked to change (null: the next empty one)
+
+export type Picks = readonly [string, string, string];
+export const NO_PICKS: Picks = ["", "", ""];
+
+/** The key the next digit goes to: [at] when one is picked, else the first empty key; null when all are set. */
+export function pickTarget(picks: Picks, at: number | null): number | null {
+  if (at !== null) return at;
+  const i = picks.indexOf("");
+  return i < 0 ? null : i;
+}
+
+/** [picks] with digit [d] put on the target key, and that key; unchanged with null when there is no target. */
+export function putDigit(picks: Picks, at: number | null, d: string): { picks: Picks; key: number | null } {
+  const key = pickTarget(picks, at);
+  if (key === null) return { picks, key };
+  const next: [string, string, string] = [...picks];
+  next[key] = d;
+  return { picks: next, key };
+}
+
+/** [picks] with the picked key cleared, or else the rightmost one set. */
+export function dropDigit(picks: Picks, at: number | null): Picks {
+  let key = at ?? -1;
+  if (at === null) for (let i = 2; i >= 0 && key < 0; i--) if (picks[i]) key = i;
+  if (key < 0) return picks;
+  const next: [string, string, string] = [...picks];
+  next[key] = "";
+  return next;
+}
+
+/** One digit up or down, round from 9 to 0; an empty key starts at 0 going up and at 9 going down. */
+export function stepDigit(d: string, by: 1 | -1): string {
+  if (!d) return by > 0 ? "0" : "9";
+  return String((Number(d) + by + 10) % 10);
+}
+
+/** The number on the keys once all three are set. */
+export function pickedNumber(picks: Picks): string | null {
+  return picks.every((d) => d !== "") ? picks.join("") : null;
+}
+
+/** The day before [day] (YYYY-MM-DD). */
+export function dayBefore(day: string): string {
+  const t = Date.parse(`${day}T00:00:00Z`);
+  return Number.isNaN(t) ? "" : new Date(t - 86400000).toISOString().slice(0, 10);
+}
+
+// ---- the draw revealed once: the day of the last draw whose reveal has played, kept on this machine
+
+const SEEN_KEY = "asoultappo.lotterySeen.v1";
+
+export function seenDraw(): string {
+  try {
+    return localStorage.getItem(SEEN_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function markDrawSeen(day: string): void {
+  try {
+    localStorage.setItem(SEEN_KEY, day);
+  } catch {
+    // Storage blocked: the reveal plays again next time.
+  }
+}
