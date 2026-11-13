@@ -106,7 +106,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/board | 全服收藏榜。`order` 为 `score`（按收藏分，显示收藏分的客户端）或 `cards`（默认，按卡片数，之前的客户端）。`cards`（前 50：`[{id,rank,nick,character,plate,cards,big,skins,score}]`，cards、big、skins 为卡片、大隐藏、皮肤数量，score 为收藏分；order=score 时按收藏分、大隐藏数、最后一件计分物品的获得时间排序，order=cards 时按卡片数、大隐藏数、最后一张卡的获得时间排序，只列有卡片的存档；昵称取 loadout 的 nick，为空时取这个存档最近一次在房间里用的昵称（加入或改名时记录，默认昵称不记），都没有时为默认昵称，经屏蔽词处理；铭牌未集齐时为 null）、`total`（卡片总数）、`points`（收藏分表，见下）、`me`（`{rank,cards,big,skins,score,off}`，rank 为所选排序下的名次，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
 | GET /api/board/profile/{id} | 收藏榜前 50 里某一行（`id`）的主页：`{showcase,progress}`，格式同房间消息 `profile`；不在榜上返回 404 `no_member` |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
-| GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。同时返回 minVersion（服务端要求的最低客户端版本，未设置时为 null）和 announcements（未过期的公告，每项 `{id,title,body,until}`）。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |
+| GET /api/client/release | 最新客户端版本 version 和更新说明 notes，读自主站 `/tappo/release`（未配置 `MAIN_API_URL` 时读官方主站），缓存 10 分钟；查不到时返回 503 `release_unavailable`。同时返回 minVersion（服务端要求的最低客户端版本，未设置时为 null）和 announcements（未过期的公告，每项 `{id,title,body,until,daily}`；daily 为 true 时客户端每个北京时间日第一次打开面板都显示，直到玩家选不再出现，1.2.2 以前的客户端只显示一次）。客户端用它检查更新，安装包仍由 Tauri 更新器从 GitHub 下载，失败时打开主站下载页 |
 | GET /api/account | Bearer；user、save（账号存档摘要，未绑定时为 null） |
 | POST /api/account/link | Bearer，可带 `X-Player-Token`。账号未绑定时把这份游客存档（或新存档）绑定到账号，返回 user、save、linkedGuest；账号已有存档且游客存档玩过时返回 409 `account_has_save`，附 account 和 guest 两份摘要；游客存档已属于其他账号时返回 401 `save_linked` |
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
@@ -195,7 +195,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 接口 | 说明 |
 | --- | --- |
 | GET /admin/notice | minVersion 和 announcements（含已过期的） |
-| PUT /admin/notice | 整体替换。minVersion 为空字符串时取消限制；announcements 最多 20 条，每条 id、title（最多 40 字）、body（最多 2000 字）、until（Unix 秒，0 为不过期） |
+| PUT /admin/notice | 整体替换。minVersion 为空字符串时取消限制；announcements 最多 20 条，每条 id、title（最多 40 字）、body（最多 2000 字）、until（Unix 秒，0 为不过期）、daily（布尔，缺省 false） |
 
 客户端从 1.1.3 起在每个 HTTP 请求里带 `X-Client-Version`，房间连接地址带 `?v=`。设置 minVersion 后，版本更低或没有带版本的请求返回 426 `client_outdated`，加入房间收到 reason 为 `client_outdated` 的最终拒绝；`GET /api/client/release` 不受限制。1.1.3 及以后的客户端读到 minVersion 高于自己时，更新弹窗不能关闭；更早的客户端不带版本，只会看到请求失败。公告在面板打开时每条显示一次，已读记录在本机。`scripts/notice.py` 是这两个接口的命令行包装。
 

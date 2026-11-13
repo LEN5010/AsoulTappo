@@ -1,17 +1,19 @@
 <script setup lang="ts">
-// An announcement from the server, shown once: closing it marks it read on this device.
+// An announcement from the server, shown once: closing it marks it read on this device. A daily one comes back
+// the next day until the player turns it off.
 import Modal from "../ui/Modal.vue";
-import { readNotice, unreadNotice, updateDialogOpen } from "../stores/update";
+import { closeNotice, readNotice, unreadNotice, updateDialogOpen } from "../stores/update";
 </script>
 
 <template>
   <Modal
     v-if="unreadNotice && !updateDialogOpen" :key="unreadNotice.id" :title="unreadNotice.title" heading
-    @close="readNotice(unreadNotice.id)"
+    @close="closeNotice(unreadNotice)"
   >
     <p v-if="unreadNotice.body" class="body">{{ unreadNotice.body }}</p>
     <div class="acts">
-      <button type="button" class="ui-btn primary" @click="readNotice(unreadNotice.id)">知道了</button>
+      <button v-if="unreadNotice.daily" type="button" class="ui-btn" @click="readNotice(unreadNotice.id)">不再出现</button>
+      <button type="button" class="ui-btn primary" @click="closeNotice(unreadNotice)">知道了</button>
     </div>
   </Modal>
 </template>
@@ -28,6 +30,7 @@ import { readNotice, unreadNotice, updateDialogOpen } from "../stores/update";
 .acts {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
   margin-top: 20px;
 }
 .acts .primary {

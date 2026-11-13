@@ -632,6 +632,9 @@ class Announcement(BaseModel):
     body: str = Field(default="", max_length=2000)
     # Unix seconds after which it is no longer shown; 0 = no end.
     until: float = Field(default=0, ge=0)
+    # Shown again on each China day's first panel opening until the player turns it off (clients from 1.2.2; older
+    # ones show it once).
+    daily: bool = False
 
 
 class NoticeBody(BaseModel):

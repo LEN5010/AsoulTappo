@@ -51,6 +51,30 @@ describe("minimum version and announcements", () => {
     await u.lookForUpdate();
     expect(u.unreadNotice.value).toBeNull();
   });
+
+  it("shows a daily announcement again the next China day until it is turned off", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 23:00 on 11-14 in China.
+    vi.setSystemTime(Date.UTC(2026, 10, 14, 15, 0));
+    answer = { version: "0.0.1", notes: "", announcements: [{ id: "d", title: "每天", body: "", daily: true }] };
+    let u = await import("./update");
+    await u.lookForUpdate();
+    expect(u.unreadNotice.value?.id).toBe("d");
+    u.closeNotice(u.unreadNotice.value!);
+    expect(u.unreadNotice.value).toBeNull();
+    // The list comes again after midnight: due again, also after a restart.
+    vi.setSystemTime(Date.UTC(2026, 10, 14, 16, 30));
+    vi.resetModules();
+    u = await import("./update");
+    await u.lookForUpdate();
+    expect(u.unreadNotice.value?.id).toBe("d");
+    u.readNotice("d");
+    expect(u.unreadNotice.value).toBeNull();
+    vi.setSystemTime(Date.UTC(2026, 10, 16, 1, 0));
+    await u.lookForUpdate(false, true);
+    expect(u.unreadNotice.value).toBeNull();
+    vi.useRealTimers();
+  });
 });
 
 describe("before the terms are agreed", () => {

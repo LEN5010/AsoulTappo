@@ -125,7 +125,8 @@ export function authHeaders(credential: Credential): Record<string, string> {
 export interface MainUser { id: string; username: string; email: string | null }
 export interface SaveSummary { shards: number; owned: number; taps: number; lastActive: number }
 export interface ServerInfo { accountLogin: boolean; mainApi: string | null }
-export interface Announcement { id: string; title: string; body: string }
+/** [daily]: shown again on the first panel opening of each China day until the player turns it off. */
+export interface Announcement { id: string; title: string; body: string; daily?: boolean }
 export interface ReleaseInfo {
   version: string;
   notes: string;

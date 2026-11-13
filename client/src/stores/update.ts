@@ -8,6 +8,7 @@ import { agreed } from "../legal/consent";
 import { Api, type Announcement, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { isNewer } from "../semver";
+import { dayKey } from "./counter";
 import { settings } from "./settings";
 import { APP_VERSION } from "../version";
 
@@ -28,9 +29,11 @@ export const checkState = ref<"idle" | "checking" | "latest" | "failed">("idle")
 /** This version is below the server's minimum: the dialog stays until the update is installed. */
 export const updateForced = ref(false);
 
-// ---- announcements, read with the update check and shown once each
+// ---- announcements, read with the update check and shown once each, or once a day for daily ones
 const SEEN_KEY = "asoultappo.notices.seen";
 const SEEN_KEPT = 50;
+/** Daily announcements: the China day each was last closed on. */
+const DAILY_KEY = "asoultappo.notices.daily";
 function loadSeen(): string[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]");
@@ -39,10 +42,38 @@ function loadSeen(): string[] {
     return [];
   }
 }
+function loadDaily(): Record<string, string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(DAILY_KEY) ?? "{}");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.fromEntries(Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === "string"));
+  } catch {
+    return {};
+  }
+}
 const announcements = ref<Announcement[]>([]);
 const seen = ref<string[]>(loadSeen());
-/** The oldest announcement this device has not closed yet. */
-export const unreadNotice = computed(() => announcements.value.find((a) => !seen.value.includes(a.id)) ?? null);
+const dailyClosed = ref<Record<string, string>>(loadDaily());
+/**
+ * The oldest announcement due on this device: one it has not closed yet, or a daily one not closed today and not
+ * turned off. The day is read whenever the list comes again (every half hour), so a new day shows it again.
+ */
+export const unreadNotice = computed(() => {
+  const today = dayKey();
+  return announcements.value.find((a) => !seen.value.includes(a.id) && !(a.daily && dailyClosed.value[a.id] === today)) ?? null;
+});
+/** Closes the announcement [id]: for good, or until tomorrow for a daily one. */
+export function closeNotice(notice: Announcement): void {
+  if (!notice.daily) {
+    readNotice(notice.id);
+    return;
+  }
+  const kept = Object.entries(dailyClosed.value).filter(([id]) => id !== notice.id).slice(-(SEEN_KEPT - 1));
+  dailyClosed.value = Object.fromEntries([...kept, [notice.id, dayKey()]]);
+  try {
+    localStorage.setItem(DAILY_KEY, JSON.stringify(dailyClosed.value));
+  } catch { /* private mode */ }
+}
 /** Whether this device has closed the announcement [id]; the launch spotlight keeps its id in the same list. */
 export const noticeSeen = (id: string) => seen.value.includes(id);
 export function readNotice(id: string): void {
@@ -53,7 +84,8 @@ export function readNotice(id: string): void {
 }
 const isNotice = (a: unknown): a is Announcement => {
   const n = a as Partial<Announcement> | null;
-  return typeof n?.id === "string" && typeof n.title === "string" && typeof (n.body ?? "") === "string";
+  return typeof n?.id === "string" && typeof n.title === "string" && typeof (n.body ?? "") === "string"
+    && (n.daily === undefined || typeof n.daily === "boolean");
 };
 
 type GithubAnswer = { ok: true; update: Update | null } | { ok: false };

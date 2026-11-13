@@ -62,12 +62,13 @@ def test_an_outdated_client_cannot_join_a_room(notice_env):
 def test_announcements_are_stored_and_expire(notice_env, monkeypatch):
     c, g, *_ = notice_env
     body = {"announcements": [
-        {"id": "a1", "title": "维护", "body": "今晚十点"},
+        {"id": "a1", "title": "维护", "body": "今晚十点", "daily": True},
         {"id": "a2", "title": "过期", "until": 1.0},
     ]}
     assert c.put("/admin/notice", json=body, headers=KEY).status_code == 200
     shown = c.get("/api/client/release").json()["announcements"]
-    assert [a["id"] for a in shown] == ["a1"]
+    assert [(a["id"], a["daily"]) for a in shown] == [("a1", True)]
+    assert c.get("/admin/notice", headers=KEY).json()["announcements"][1]["daily"] is False
     assert [a["id"] for a in c.get("/admin/notice", headers=KEY).json()["announcements"]] == ["a1", "a2"]
     # Kept across a restart.
     assert [a["id"] for a in main.load_notice(g.store).announcements] == ["a1", "a2"]
