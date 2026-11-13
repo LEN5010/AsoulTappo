@@ -137,7 +137,7 @@ export interface Manifest {
        */
       coin: { price: number; dailyBuy: number; hold: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
       scratch?: unknown;
-      race?: unknown;
+      race?: import("./panel/park/race").RaceConfig;
       lottery?: unknown;
     };
   };
