@@ -25,6 +25,10 @@ it("says what was won, and skips kinds it does not know", () => {
   expect(newsLine(item(3, "scratch_item", { item: `char:${skin.name}` }))?.text).toBe(`刮出${skin.title ?? skin.name}`);
   expect(newsLine(item(4, "scratch_item", { item: "card:nope" }))?.text).toBe("刮出大隐藏卡");
   expect(newsLine(item(5, "lottery_draw", { number: 7, nick: "" }))).toEqual({ nick: "", text: "每日夺宝开奖 007", shards: null });
+  expect(newsLine(item(5, "lottery_draw", { number: "123", nick: "小草", nicks: ["小草", "阿草"], each: { top: 250000 } })))
+    .toEqual({ nick: "小草、阿草", text: "中了每日夺宝头奖 123", shards: 250000 });
+  expect(newsLine(item(5, "lottery_draw", { number: "123", nick: "", nicks: [], each: { top: 0 } })))
+    .toEqual({ nick: "", text: "每日夺宝开奖 123", shards: null });
   expect(newsLine(item(6, "something_new"))).toBeNull();
   expect(newsLine({ id: 7, ts: 0, kind: "jackpot" } as unknown as ParkNews)).toEqual({ nick: "", text: "刮中全服奖池", shards: null });
 });

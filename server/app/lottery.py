@@ -33,6 +33,8 @@ SPEND = "lottery"
 ROLL_TOP = "lottery_roll_top"
 ROLL_SECOND = "lottery_roll_second"
 TIERS = {1: "top", 2: "second", 3: "third"}
+# Drawn days the state lists in `history`.
+HISTORY_DAYS = 7
 # Top prize nicks a draw's news carries.
 NEWS_NICKS = 5
 NUMBER = re.compile(r"[0-9]{3}")
@@ -164,6 +166,7 @@ class Lottery:
             "left": max(0, cfg["daily"] - len(mine)),
             "tickets": [t["number"] for t in mine],
             "last": self._last(st, pid),
+            "history": st.lottery_history(pid, HISTORY_DAYS),
         }
 
     def _last(self, st: Store, pid: str) -> dict[str, Any] | None:

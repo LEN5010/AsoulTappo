@@ -1,8 +1,11 @@
-// The park's coin pictures, bundled with the client: 256px for the big coin, 64px for small marks, and the
-// stamp badges (the 64px coin in copper, silver and gold).
-import { resolveAsset } from "../../manifest";
+// The park's coin pictures, bundled by Vite from src/assets/park (made by scripts/make_coin.py): 256px for the big
+// coin, 64px for small marks, and the stamp badges (the 64px coin in copper, silver and gold).
+import coin from "../../assets/park/coin.webp";
+import coinSmall from "../../assets/park/coin-64.webp";
+import badge1 from "../../assets/park/badge-1.webp";
+import badge2 from "../../assets/park/badge-2.webp";
+import badge3 from "../../assets/park/badge-3.webp";
 
-const base = import.meta.env.BASE_URL || "/";
-export const COIN = resolveAsset("bundle:park/coin.webp", "", base);
-export const COIN_SMALL = resolveAsset("bundle:park/coin-64.webp", "", base);
-export const BADGE_ART = [1, 2, 3].map((n) => resolveAsset(`bundle:park/badge-${n}.webp`, "", base));
+export const COIN = coin;
+export const COIN_SMALL = coinSmall;
+export const BADGE_ART = [badge1, badge2, badge3];

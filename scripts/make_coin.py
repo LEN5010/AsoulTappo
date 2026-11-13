@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Render the park coin (驼币) and the three stamp badges from the 阿草 emote.
+"""Render the park coin (驼币) and the three stamp badges from the smiling 阿草 of the panel sidebar.
 
 The 阿草 line art becomes an embossed relief on a reeded coin, lit from the upper left,
 and is coloured with the UI's three gold tones (see docs/design/amusement-park.md §2.3).
 Copper and silver badges reuse the same shading with their own three-tone ramps.
 
-Run after changing the source emote or the colour tokens:
+Run after changing the source picture or the colour tokens:
     server/.venv/bin/python scripts/make_coin.py [--preview PATH]
 
-Outputs client/public/assets/park/coin.webp (256px), coin-64.webp and badge-{1,2,3}.webp (64px).
+Outputs client/src/assets/park/coin.webp (256px), coin-64.webp and badge-{1,2,3}.webp (64px).
 With --preview, also writes a contact sheet on light and dark backgrounds.
 Pillow only; the output is deterministic.
 """
@@ -22,8 +22,8 @@ from pathlib import Path
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageMath
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / "client/public/assets/emotes/achao/19.webp"
-OUT = ROOT / "client/public/assets/park"
+SOURCE = ROOT / "client/src/assets/brand/side-alpaca.webp"
+OUT = ROOT / "client/src/assets/park"
 DEFAULT_PREVIEW = Path("/Users/len5010/code/AsoulTappo/docs/design/assets/coin-preview.png")
 
 # Tokens from client/src/ui/tokens.css.
@@ -39,7 +39,12 @@ INK = "#3A222B"  # --ink
 RIM_IN = 0.84  # rim is 8% of the diameter wide
 LINE_R = 0.80  # thin raised line just inside the rim
 REEDS = 120
-RELIEF_H = 0.70 * 2  # relief height as a share of the radius (70% of the diameter)
+# The source is a half-length figure cut flat at the bottom: head, bow tie and folded arms sit on
+# the face, and the body runs on under the rim, fading out just inside it.
+FIG_W = 1.2  # source width in coin radii
+FIG_CX = 225  # source x placed on the vertical centre line (balances the two ears)
+FIG_TOP = -0.60  # top of the source, in radii from the centre (negative is up); both ears stay inside FADE_R
+FADE_R = (0.76, 0.83)  # the relief sinks into the field between these radii
 
 
 # ---------------------------------------------------------------- colour
@@ -197,39 +202,60 @@ def ss(x: float) -> float:
 # ---------------------------------------------------------------- relief
 
 
-def relief_maps(size: int, radius: float, groove_grow: int, line_cut: int) -> tuple[Image.Image, Image.Image, Image.Image]:
-    """Return (body, groove, tone) as F images in 0..1, laid out on the coin canvas.
+def relief_maps(size: int, radius: float, groove_grow: int) -> dict[str, Image.Image]:
+    """Lay the half-length 阿草 out on the coin canvas and split it into F maps in 0..1.
 
-    body: the raised silhouette; groove: dark strokes (to be cut in); tone: mid tones
-    such as the goggle rings and the bow tie, which sit a little lower than the white body.
+    body: the raised silhouette, faded out just inside the rim so the flat crop at the bottom
+    of the source never shows; groove: thin grey line art (eyes, mouth, nose, arms) to cut in;
+    bow: the green bow tie, a low raised plate; form: the source's soft shading, used to round
+    the body a little.
     """
     src = Image.open(SOURCE).convert("RGBA")
-    src = src.crop(src.getchannel("A").getbbox())
-    h = round(RELIEF_H * radius)
-    w = round(src.width * h / src.height)
-    src = src.resize((w, h), Image.Resampling.LANCZOS)
     flat = Image.new("RGBA", src.size, (255, 255, 255, 255))
     flat.alpha_composite(src)
     lum = flat.convert("L")
-    alpha = src.getchannel("A")
+    r, g, b, alpha = src.split()
 
-    canvas = lambda: Image.new("L", (size, size), 0)  # noqa: E731
-    ox, oy = (size - w) // 2, (size - h) // 2
+    # Green bow tie by hue, so its fill is a plate and not a pit.
+    bow = ImageMath.lambda_eval(
+        lambda v: ((v["g"] > v["r"] + 12) & (v["g"] > v["b"] + 5)) * 255, r=r, g=g, b=b
+    ).convert("L")
+    bow = ImageChops.multiply(bow.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(1)), alpha)
 
-    body = canvas()
-    body.paste(alpha, (ox, oy))
-    # Strokes: luminance below ~120 is line art (the dark red outline, eyes, smile).
-    line = ImageChops.multiply(lum.point(lambda v: round(255 * ss((line_cut - v) / 55))), alpha)
-    if groove_grow:
-        line = line.filter(ImageFilter.MaxFilter(groove_grow))
-    groove = canvas()
-    groove.paste(line, (ox, oy))
-    # Mid tones (goggle rings, bow fill) sit between the line and the white body.
-    mid = ImageChops.multiply(lum.point(lambda v: round(255 * ss((238 - v) / 90))), alpha)
-    tone = canvas()
-    tone.paste(mid, (ox, oy))
-    to_f = lambda im: fmath(lambda v: v["x"] / 255.0, x=im.convert("F"))  # noqa: E731
-    return to_f(body), to_f(groove), to_f(tone)
+    # The lines are thin and grey while the body carries broad grey shading, so take strokes as
+    # pixels darker than their surroundings (a high-pass), plus anything plainly dark (the nose).
+    local = lum.filter(ImageFilter.GaussianBlur(5))
+    hp = ImageChops.subtract(local, lum).point(lambda v: round(255 * ss((v - 5) / 28)))
+    dark = lum.point(lambda v: round(255 * ss((120 - v) / 60)))
+    line = ImageChops.multiply(ImageChops.lighter(hp, dark), alpha)
+
+    # Soft shading -> gentle form; the bow is excluded so it does not read as a dent.
+    form_src = ImageChops.lighter(lum, bow)
+    form = form_src.filter(ImageFilter.GaussianBlur(10)).point(lambda v: round(255 * ss((v - 185) / 65)))
+    form = ImageChops.multiply(form, alpha)
+
+    # Placement: source width spans FIG_W radii, source x FIG_CX sits on the centre line, the top of
+    # the source sits FIG_TOP radii above the centre. The bottom runs past the rim and is faded out.
+    k = FIG_W * radius / src.width
+    w, h = round(src.width * k), round(src.height * k)
+    c = (size - 1) / 2
+    ox = round(c - FIG_CX * k)
+    oy = round(c + FIG_TOP * radius)
+
+    def place(im: Image.Image, grow: int = 0) -> Image.Image:
+        im = im.resize((w, h), Image.Resampling.LANCZOS)
+        if grow:
+            im = im.filter(ImageFilter.MaxFilter(grow))
+        out = Image.new("L", (size, size), 0)
+        out.paste(im, (ox, oy))
+        return fmath(lambda v: v["x"] / 255.0, x=out.convert("F"))
+
+    return {
+        "body": place(alpha),
+        "groove": place(line, groove_grow),
+        "bow": place(bow),
+        "form": place(form),
+    }
 
 
 # ---------------------------------------------------------------- render
@@ -239,10 +265,9 @@ def relief_maps(size: int, radius: float, groove_grow: int, line_cut: int) -> tu
 class Style:
     """Per-size tuning. Small coins need wider, darker grooves to keep the face readable at 20px."""
 
-    groove_grow: int = 0  # MaxFilter size applied to the stroke mask (odd, 0 = off)
-    line_cut: int = 125  # luminance below this starts to count as a stroke; ~145 also cuts the bow fill (L ~110)
+    groove_grow: int = 0  # MaxFilter size applied to the stroke mask on the canvas (odd, 0 = off)
     groove_tone: float = 0.30  # extra darkening inside grooves (patina in the recesses)
-    mid_tone: float = 0.06  # extra darkening on mid tones (goggle rings, bow fill)
+    bow_tone: float = 0.10  # extra darkening on the bow tie
     field_tone: float = 0.16  # the recessed field is a little darker than the relief
 
 
@@ -258,24 +283,29 @@ def render_tone(out_size: int, ss_factor: int, style: Style) -> tuple[Image.Imag
         # Field at 0; rim climbs over its inner bevel, stays high, then rounds off at the edge.
         up = ss((r - RIM_IN) / 0.035)
         down = ss((r - 0.975) / 0.045)
-        line = 0.22 * math.exp(-(((r - LINE_R) / 0.0085) ** 2))
-        return 1.0 * up - 0.75 * down + line
+        return 1.0 * up - 0.75 * down
 
     rim = radial(r_img, rim_profile)
+    inner_line = radial(r_img, lambda r: 0.22 * math.exp(-(((r - LINE_R) / 0.0085) ** 2)))
     # Reeds: fine radial grooves on the outer band of the rim.
     band = radial(r_img, lambda r: ss((r - 0.935) / 0.03))
     rim = fmath(lambda v: v["h"] - 0.28 * v["b"] * (1 - v["p"]), h=rim, b=band, p=reed)
 
-    body, groove, tone = relief_maps(full, radius, style.groove_grow, style.line_cut)
+    maps = relief_maps(full, radius, style.groove_grow)
+    fade = radial(r_img, lambda r: 1.0 - ss((r - FADE_R[0]) / (FADE_R[1] - FADE_R[0])))
     blur = lambda im, k: box_blur_f(im, max(1, round(k * radius)))  # noqa: E731
+    body = fmath(lambda v: v["b"] * v["f"], b=maps["body"], f=fade)
     body_soft = blur(body, 0.014)
-    dome = blur(body, 0.10)
-    groove_soft = blur(groove, 0.006)
-    tone_soft = blur(tone, 0.008)
+    dome = blur(body, 0.12)
+    groove_soft = fmath(lambda v: v["g"] * v["f"], g=blur(maps["groove"], 0.004), f=fade)
+    bow_soft = fmath(lambda v: v["g"] * v["f"], g=blur(maps["bow"], 0.008), f=fade)
+    form = fmath(lambda v: v["g"] * v["f"], g=blur(maps["form"], 0.01), f=body_soft)
     relief = fmath(
-        lambda v: 0.75 * v["b"] + 0.85 * v["d"] - 0.50 * v["g"] - 0.14 * v["t"],
-        b=body_soft, d=dome, g=groove_soft, t=tone_soft,
+        lambda v: 0.70 * v["b"] + 0.95 * v["d"] + 0.30 * v["fo"] - 0.50 * v["g"] + 0.16 * v["bw"],
+        b=body_soft, d=dome, fo=form, g=groove_soft, bw=bow_soft,
     )
+    # The thin line inside the rim runs only across the bare field.
+    rim = fmath(lambda v: v["r"] + v["l"] * (1 - v["b"]), r=rim, l=inner_line, b=body_soft)
     height = fmath(lambda v: (v["rim"] + v["rel"]) * v["k"], rim=rim, rel=relief, k=radius * 0.05)
 
     # Normals from central differences; light from the upper left.
@@ -301,13 +331,13 @@ def render_tone(out_size: int, ss_factor: int, style: Style) -> tuple[Image.Imag
             + 0.35 * ((nh ** 24) - flat_s)
             - 0.12 * v["sh"]
             - st.groove_tone * v["g"]
-            - st.mid_tone * v["t"]
+            - st.bow_tone * v["t"]
             - st.field_tone * v["f"]
         )(
             (-v["gx"] * lx - v["gy"] * ly + lz) / ((v["gx"] * v["gx"] + v["gy"] * v["gy"] + 1) ** 0.5),
             ((-v["gx"] * hx - v["gy"] * hy + hz) / ((v["gx"] * v["gx"] + v["gy"] * v["gy"] + 1) ** 0.5)).__abs__(),
         ),
-        gx=gx, gy=gy, sh=diag, g=groove_soft, t=tone_soft, f=field,
+        gx=gx, gy=gy, sh=diag, g=groove_soft, t=bow_soft, f=field,
     )
     shade = fmath(lambda v: v["s"] * 255, s=shade)
     tone_l = shade.convert("L").crop((pad, pad, pad + size, pad + size))  # convert clamps to 0..255
@@ -369,8 +399,8 @@ def main() -> None:
     args = ap.parse_args()
 
     tone256, a256 = render_tone(256, 4, Style())
-    # The 64px master cuts wider, darker grooves so goggles and bow tie survive the UI's 20px downscale.
-    tone64, a64 = render_tone(64, 8, Style(groove_grow=5, line_cut=150, groove_tone=0.6, mid_tone=0.35, field_tone=0.3))
+    # The 64px master cuts wider, darker grooves so the smile and bow tie survive the UI's 20px downscale.
+    tone64, a64 = render_tone(64, 8, Style(groove_grow=7, groove_tone=0.6, bow_tone=0.35, field_tone=0.3))
 
     coin = colourise(tone256, a256, "gold")
     coin64 = colourise(tone64, a64, "gold")

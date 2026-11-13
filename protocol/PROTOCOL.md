@@ -100,6 +100,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/park | 游乐园状态（见游乐园一节）：coins、unlocked、bought、buyLeft、gift、stamps、stampsTotal、badge、today、jackpot |
 | POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见游乐园一节的错误码 |
 | POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天领过时为 0） |
+| POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有游乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见游乐园一节的兑换码 |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
@@ -410,6 +411,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | daily、left | 每天最多几注、我今天还能买几注 |
 | tickets | 我今天的号码，按购买顺序 |
 | last | 最近开过奖的一期，没有时为 null：`{day, number, salt, hash, drawnAt, sales, winners, each, mine, won}`。winners 是各档中奖注数 `{top, second, third}`，each 是各档每注奖金，mine 是我这期的号码 `[{number, tier, prize}]`（tier 为 `top`、`second`、`third` 或 null），won 是我这期一共中的碎片 |
+| history | 我最近 7 期的结果 `[{day, number, won}]`，只算我买过注、已开奖的期，从新到旧 |
 
 `POST /api/park/lottery`：`{numbers?: ["007", ...], random?: n}`，自选号码和机选注数可以同时给，合计至少 1 注。机选的号码互不相同，也不和我今天已有的、这次自选的重复。要么全部买成，要么一注都不买。返回状态、`park`、`lottery`（同上）和 `bought`（这次买到的号码，自选在前）。
 

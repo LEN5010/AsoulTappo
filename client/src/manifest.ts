@@ -147,7 +147,7 @@ export interface Manifest {
         serverAt: Record<"basic" | "premium", number>;
       };
       race?: unknown;
-      lottery?: unknown;
+      lottery?: { daily: number; closeAt: number; drawAt: number; top: number; topCap: number; second: number; third: number };
     };
   };
   plates: ManifestPlate[];

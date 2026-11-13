@@ -294,6 +294,24 @@ def test_a_draw_without_a_top_winner_is_told_without_a_nick_and_an_empty_day_is_
     assert len(g.store.park_news_since(0, 10)) == 1
 
 
+def test_history_lists_the_saves_last_seven_drawn_days_with_tickets():
+    g, _, lot, clock, _ = setup(*[f"{i:03d}" for i in range(10)])
+    for i in range(10):
+        if i != 4:  # no tickets that day
+            lot.buy(TOKENS[0], [f"{i:03d}" if i % 2 else "999"])  # odd days win the top
+        if i == 9:
+            break  # the last day is not drawn yet
+        at(clock, CFG["drawAt"])
+        lot.tick()
+        at(clock, 60, days=1)
+    history = lot.state(TOKENS[0])["history"]
+    days = [h["day"] for h in history]
+    assert len(history) == 7 and days == sorted(days, reverse=True)
+    assert [h["number"] for h in history] == ["008", "007", "006", "005", "003", "002", "001"]
+    assert all((h["won"] > 0) == (int(h["number"]) % 2 == 1) for h in history)
+    assert lot.state(TOKENS[1])["history"] == []
+
+
 def test_the_park_result_counts_lottery_prizes():
     g, park, lot, clock, _ = setup("123")
     lot.buy(TOKENS[0], ["003"])
