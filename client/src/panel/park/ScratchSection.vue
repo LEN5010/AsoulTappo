@@ -4,11 +4,13 @@
 // coating. Dragging over it scratches the coating off, and three cells alike are the prize. The server decides the
 // prize when the card is bought and pays it when the card is revealed (scratchCards.ts), so the balance gives
 // nothing away while the coating is on. Wins are celebrated by size: the coins back plainly, then three steps.
+// A card of the old shard scratch cards (/api/scratch, stores/player.ts) still unrevealed comes onto the table first,
+// without a price, and is revealed the old way; then the sheet goes back to the two cards.
 import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from "vue";
 import * as sfx from "../../audio/sfx";
 import { assetUrl } from "../../asset";
 import { characterColor, emoteCover } from "../../manifest";
-import { collection, online, status } from "../../stores/player";
+import { collection, error as playerError, loadScratch, online, revealScratch, scratchCard, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
 import { sendEmote } from "../../stores/room";
 import { settings } from "../../stores/settings";
@@ -68,6 +70,12 @@ const kind = ref<CardKind | null>(null);
 const table = computed(() => (kind.value ? SCRATCH.cards[kind.value] : null));
 /** The card on the table: under its coating, then open. */
 const card = ref<ParkCard | null>(null);
+/** The card on the table is an old shard card (its cells read the same, its amounts are shards like the basic card's). */
+const old = ref(false);
+/** A coin card still to reveal while an old card holds the table: it comes next. */
+let waiting: ParkCard | null = null;
+/** Old cards revealed here: the panel's copy of the desk's state may still hold one for a moment. */
+const doneOld = new Set<number>();
 const open = ref(false);
 /** The open card's prize, once it has reached the save. */
 const prize = ref<ParkPrize | null>(null);
@@ -118,9 +126,10 @@ const short = computed(() => coins.value < cost.value);
 /** The open card's prize did not get through: the key collects it again before anything else. */
 const unpaid = computed(() => !!card.value && open.value && !prize.value && !paying.value);
 const settled = computed(() => !card.value || (open.value && !!prize.value));
-const canBuy = computed(() => online.value && !!kind.value && !short.value && !buying.value && !paying.value && settled.value);
+const canBuy = computed(() => online.value && !!kind.value && !old.value && !short.value && !buying.value && !paying.value && settled.value);
 const keyLabel = computed(() => {
   if (unpaid.value) return "再试一次";
+  if (old.value) return "返回";
   if (!online.value) return "未连接";
   if (short.value) return "驼币不足";
   return "刮一张";
@@ -259,7 +268,8 @@ function take(state: ParkScratchState) {
 }
 
 /** A card comes onto the table: the one just bought, or one left unrevealed by an earlier visit. */
-function put(next: ParkCard) {
+function put(next: ParkCard, fromOld = false) {
+  old.value = fromOld;
   kind.value = next.kind;
   card.value = next;
   open.value = false;
@@ -283,10 +293,22 @@ function back() {
   if (!settled.value) return;
   kind.value = null;
   card.value = null;
+  old.value = false;
   open.value = false;
   prize.value = null;
   error.value = "";
+  const next = waiting;
+  waiting = null;
+  if (next) put(next);
+  else offerOld();
 }
+
+/** An old card still to reveal takes the table when nothing else is on it. */
+function offerOld() {
+  const pending = scratchCard.value;
+  if (pending && !doneOld.has(pending.id) && !card.value && !kind.value) put({ id: pending.id, kind: "basic", cells: pending.cells }, true);
+}
+watch(scratchCard, offerOld);
 
 let loading = false;
 async function load() {
@@ -297,7 +319,10 @@ async function load() {
   if (!r.ok) return;
   take(r.data);
   const pending = r.data.card;
-  if (pending && pending.id !== card.value?.id) put(pending);
+  if (!pending || (pending.id === card.value?.id && !old.value)) return;
+  // An old card keeps the table until its result has been seen.
+  if (card.value && (old.value || !settled.value)) waiting = pending;
+  else put(pending);
 }
 
 async function buy() {
@@ -329,6 +354,7 @@ async function collect() {
   const current = card.value;
   if (!current || paying.value || prize.value) return;
   error.value = "";
+  if (old.value) return collectOld(current);
   paying.value = true;
   const r = await parkTry<ParkReveal>("POST", "/api/park/scratch/reveal", { card: current.id });
   paying.value = false;
@@ -347,8 +373,34 @@ async function collect() {
   }
 }
 
+async function collectOld(current: ParkCard) {
+  paying.value = true;
+  let p: Awaited<ReturnType<typeof revealScratch>> = null;
+  try {
+    p = await revealScratch(current.id);
+  } catch (e) {
+    // The desk window did not answer in time.
+    playerError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    paying.value = false;
+  }
+  if (!p) {
+    error.value = playerError.value || "无法连接服务器";
+    return;
+  }
+  doneOld.add(current.id);
+  if (card.value?.id !== current.id || !old.value) return;
+  prize.value = { tier: p.item ? "emote" : p.shards ? "shards" : "miss", shards: p.shards, coins: 0, item: p.item };
+  if (p.item?.startsWith("emote:")) {
+    fresh.value = p.item.slice(6);
+    sendEmote(fresh.value);
+  }
+  void load();
+}
+
 function press() {
   if (unpaid.value) void collect();
+  else if (old.value) back();
   else void buy();
 }
 
@@ -363,6 +415,7 @@ function enter() {
   if (active) return;
   active = true;
   void load();
+  void loadScratch();
   void nextTick(() => {
     paint();
     paintIdle();
@@ -380,9 +433,14 @@ watch(() => status.value?.player, (player, was) => {
   if (!was || player === was) return;
   card.value = null;
   kind.value = null;
+  old.value = false;
+  waiting = null;
   prize.value = null;
   whole.value = null;
-  if (active && player) void load();
+  if (active && player) {
+    void load();
+    void loadScratch();
+  }
 });
 </script>
 
@@ -394,7 +452,7 @@ watch(() => status.value?.player, (player, was) => {
       </button>
       <div class="title">
         <span class="eyebrow" aria-hidden="true">SCRATCH</span>
-        <h2 class="name">{{ kind ? `${NAMES[kind]}刮刮乐` : "刮刮乐" }}</h2>
+        <h2 class="name">{{ kind && !old ? `${NAMES[kind]}刮刮乐` : "刮刮乐" }}</h2>
       </div>
       <button type="button" class="ui-btn ghost small rates-btn" title="概率" aria-label="概率" @click="odds = true">
         <Icon name="info" :size="18" />
@@ -426,7 +484,7 @@ watch(() => status.value?.player, (player, was) => {
             <!-- The stub printed across the top: the mark, the price and the card's number. -->
             <p class="stub" aria-hidden="true">
               <i class="stub-mark"></i>
-              <span class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</span>
+              <span v-if="!old" class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</span>
               <span v-if="card" class="serial">No.{{ String(card.id).padStart(6, "0") }}</span>
             </p>
             <i class="notch left" aria-hidden="true"></i>
@@ -466,10 +524,10 @@ watch(() => status.value?.player, (player, was) => {
             <button v-if="card && !open" type="button" class="ui-btn large peel" @click="finish">全部刮开</button>
             <button
               v-else type="button" class="ui-btn primary buy" :class="{ pulse: canBuy && !card }"
-              :disabled="!canBuy && !unpaid" :aria-busy="buying || paying" @click="press"
+              :disabled="!canBuy && !unpaid && !(old && settled)" :aria-busy="buying || paying" @click="press"
             >
               <span class="buy-label">{{ keyLabel }}</span>
-              <small v-if="!unpaid" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
+              <small v-if="!unpaid && !old" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
             </button>
           </div>
         </div>

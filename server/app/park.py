@@ -27,6 +27,9 @@ class Park:
         # The game may be replaced (tests), so it is looked up on every call, as in Duels.
         self._game = game
         self.mask = mask
+        # Set by the scratch cards: the pot a save's unrevealed jackpot card took, None when it holds none. view shows
+        # that save this amount instead of the restarted pot, so the restart gives nothing away before the reveal.
+        self.held_pot: Callable[[Store, str], int | None] = lambda st, pid: None
 
     @property
     def game(self) -> Game:
@@ -62,7 +65,7 @@ class Park:
             "badge": sum(1 for n in c["badges"] if total >= n),
             "today": {"spent": -st.ledger_sum(p["id"], day, (COIN_BUY,)),
                       "won": st.ledger_sum(p["id"], day, PRIZE_SOURCES)},
-            "jackpot": st.park_counter(JACKPOT, seed),
+            "jackpot": held if (held := self.held_pot(st, p["id"])) is not None else st.park_counter(JACKPOT, seed),
         }
 
     def state(self, token: str) -> dict[str, Any]:

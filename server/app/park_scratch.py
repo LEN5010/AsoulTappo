@@ -91,6 +91,7 @@ def mean_return(card: dict[str, Any], jackpot: dict[str, Any], complete: bool) -
 class ParkScratch:
     def __init__(self, park: Park) -> None:
         self.park = park
+        park.held_pot = self._held_pot
 
     @property
     def cfg(self) -> dict[str, Any]:
@@ -135,13 +136,15 @@ class ParkScratch:
 
     def _shown_pot(self, st: Store, pending: dict[str, Any] | None) -> int:
         """The pot as the save sees it: while its unrevealed card holds the pot, the pot as that card took it, so the
-        restart at seed gives nothing away before the reveal."""
+        restart at seed gives nothing away before the reveal (Park.view does the same through held_pot)."""
         return pending["shards"] if pending and pending["tier"] == "jackpot" else self._pot(st)
 
+    def _held_pot(self, st: Store, pid: str) -> int | None:
+        pending = st.pending_park_scratch(pid)
+        return pending["shards"] if pending and pending["tier"] == "jackpot" else None
+
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
-        state = self.state(token)
-        park = {**self.park.state(token), "jackpot": state["jackpot"]}
-        return {**self.park.game.status(token), "park": park, **state, **extra}
+        return {**self.park.game.status(token), "park": self.park.state(token), **self.state(token), **extra}
 
     def buy(self, token: str, kind: str, version: str | None = None) -> dict[str, Any]:
         """Buys a card of [kind]: its prize is decided now and paid by reveal. A card still to reveal is handed back

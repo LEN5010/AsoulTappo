@@ -46,7 +46,8 @@ export function outcomeOf(cells: readonly string[]): Outcome {
 }
 
 /**
- * How a win is celebrated (design §5.4): "plain" for the coins back, 1 for up to 5 times the price and an emote,
+ * How a win is celebrated (design §5.4): "plain" for the coins back (and less than twice the price), 1 for up to
+ * 5 times the price and an emote,
  * 2 from 16 times, 3 from 100 times, the jackpot, and a skin or big hidden card. A skin or big card the save already
  * had pays shards instead, and [prize] (once revealed) sizes it by those. 0 for a miss.
  */
@@ -59,7 +60,8 @@ export function levelOf(outcome: Outcome, kind: CardKind, prize?: ParkPrize | nu
   const shards = outcome.kind === "shards" ? outcome.amount : prize && !prize.item ? prize.shards : null;
   if (shards === null) return 3;
   const times = shards / (SCRATCH.cards[kind].coins * COIN_PRICE);
-  return times >= 100 ? 3 : times >= 16 ? 2 : 1;
+  // Below twice the price only on the old shard cards (200 and 500 for a 500-shard card): as plain as the coins back.
+  return times >= 100 ? 3 : times >= 16 ? 2 : times >= 2 ? 1 : "plain";
 }
 
 /** 阿草 runs the stall and hates paying out: the bigger the win, the worse it takes it. */

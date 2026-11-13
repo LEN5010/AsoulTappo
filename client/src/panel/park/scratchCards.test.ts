@@ -24,6 +24,8 @@ describe("celebration", () => {
   it("grows with the times the price a card pays", () => {
     expect(levelOf({ kind: "miss" }, "basic")).toBe(0);
     expect(levelOf(won("again"), "premium")).toBe("plain");
+    // an old shard card's 200 and 500
+    expect(levelOf(won("500"), "basic")).toBe("plain");
     expect(levelOf(won("1000"), "basic")).toBe(1);
     expect(levelOf(won("2500"), "basic")).toBe(1);
     expect(levelOf(won("achao.01"), "basic")).toBe(1);
