@@ -1,0 +1,33 @@
+/*
+ * Shared by the park's pages (loaded with ParkPage). A page fills the white body under the coral band; its bottom
+ * bar is .park-actions: a --c-100 strip on the same sheet, the small print on the left and the main key on the right.
+ * It sticks to the bottom of the body, so the main key stays in view when the panel is short. Put it last in a page
+ * root that has no side or bottom padding: the root stretches to the body's height, so the bar sits at the bottom.
+ */
+.park-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: auto;
+  min-height: 64px;
+  padding: 12px 22px;
+  box-sizing: border-box;
+  background: var(--c-100);
+}
+.park-actions > .park-actions-main {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@container panel (max-height: 560px) {
+  .park-actions {
+    min-height: 52px;
+    padding: 8px 16px;
+  }
+}

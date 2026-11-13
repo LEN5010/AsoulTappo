@@ -43,6 +43,8 @@ const ParkPage = defineAsyncComponent(PAGES.park);
 const OnlinePage = defineAsyncComponent(PAGES.room);
 const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
+/** The park's coins and jackpot in the top bar, in the park's chunk. */
+const ParkChips = defineAsyncComponent(() => import("./park/ParkChips.vue"));
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
 const loadPage = (page: Page) => PAGES[page]().catch(() => {});
 const WARM_STEP_MS = 400;
@@ -269,6 +271,7 @@ function badgeOf(id: Page): number {
       <div class="main">
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span v-if="!online" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
+          <ParkChips v-if="agreed && shown === 'park' && status && !noPark" />
           <span class="wallet" :title="walletTip">
             <Icon name="shard" :size="16" />
             <b :key="flash" :class="{ gain: flash > 0 }">{{ shownShards.toLocaleString("en-US") }}</b>
@@ -382,7 +385,7 @@ function badgeOf(id: Page): number {
   flex-direction: column;
   background: var(--c-50);
 }
-/* The drag handle: the shard balance and the window keys sit on its right. */
+/* The drag handle: the shard balance (with the park's coins and jackpot on the park page) and the window keys sit on its right. */
 .topbar {
   position: relative;
   z-index: 3;

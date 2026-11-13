@@ -1,12 +1,15 @@
 <script setup lang="ts">
 // 每日夺宝 (docs/design/amusement-park.md §7, §11): the next top prize and the countdown to the draw, my numbers of
 // the day, picking one by hand or buying random ones, and the last draw with my result and its hash check. There is
-// no push: while the page is open the state loads every POLL_MS, and every few seconds once the draw is due.
+// no push: while the page is open the state loads every POLL_MS, and every few seconds once the draw is due. The
+// countdown and 阿草 go up in the park's coral band (band.ts).
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
+import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import { useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import {
   cleanNumber, countdown, matchedDigits, nextDraw, shortDay, verifyDraw, type LotteryBuy, type LotteryState,
@@ -78,6 +81,11 @@ watch(() => status.value?.player, (player, was) => {
 const drawTime = computed(() => (state.value ? nextDraw(state.value) : 0));
 const left = computed(() => countdown(drawTime.value, now.value));
 const waiting = computed(() => !!state.value && !state.value.drawn && now.value >= state.value.drawAt);
+useBand("lottery", () => {
+  const s = state.value;
+  const label = waiting.value ? "开奖中" : s?.drawn ? "明日 22:00 开奖" : "22:00 开奖";
+  return { host: ACHAO["观察"], timer: s ? { label, time: waiting.value ? undefined : left.value } : undefined };
+});
 
 // ---- my numbers and buying
 const coins = computed(() => park.value?.coins ?? status.value?.park?.coins ?? 0);
@@ -161,15 +169,6 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
 
 <template>
   <section class="lottery" :class="{ calm }" aria-label="每日夺宝">
-    <header class="head">
-      <h3 class="ui-label">每日夺宝</h3>
-      <p v-if="state" class="clock" role="timer">
-        <Icon name="clock" :size="14" />
-        <span>{{ waiting ? "开奖中" : state.drawn ? "明日 22:00 开奖" : "22:00 开奖" }}</span>
-        <b v-if="!waiting">{{ left }}</b>
-      </p>
-    </header>
-
     <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
     <template v-if="state">
@@ -248,44 +247,12 @@ function digits(number: string, tier: Parameters<typeof matchedDigits>[0]) {
 </template>
 
 <style scoped>
-/* One sheet of paper, like the top block; groups inside it are tonal bands, not boxes. */
+/* On the park's sheet, under the coral band; groups inside it are tonal bands, not boxes. */
 .lottery {
-  flex: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 18px 22px 20px;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--shadow-paper);
-}
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.head .ui-label {
-  margin: 0;
-}
-.clock {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.clock svg {
-  color: var(--c-600);
-}
-.clock b {
-  min-width: 52px;
-  font: 800 var(--fs-heading)/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-  text-align: right;
 }
 .lottery > .ui-error {
   margin: 0;

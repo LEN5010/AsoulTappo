@@ -5,11 +5,14 @@ import { computed, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { online, shards, status } from "../../stores/player";
 import { buyCoins, park, parkError } from "../../stores/park";
+import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import { useBand } from "./band";
 import { BADGE_ART, COIN } from "./coin";
 import RedeemForm from "./RedeemForm.vue";
 
 const emit = defineEmits<{ bought: [count: number] }>();
+useBand("coin", () => ({ host: ACHAO["招商"] }));
 
 // The bundled manifest always has the park; the server checks every number again.
 const CFG = manifest.economy.park!.coin;
@@ -111,15 +114,12 @@ const coinShown = ref(true);
 </template>
 
 <style scoped>
-/* One sheet of paper, like the check-in calendar's. */
+/* On the park's sheet, under the coral band. */
 .coins {
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 20px 22px 22px;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--shadow-paper);
 }
 
 /* ---- coins held, and buying more */

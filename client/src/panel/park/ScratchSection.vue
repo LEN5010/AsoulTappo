@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// The park's scratch cards (docs/design/amusement-park.md §5): 阿草 keeps a stall under a coral head. The sheet
-// first holds the two cards, basic and premium; picking one opens the table, where a card is nine cells under a
-// coating. Dragging over it scratches the coating off, and three cells alike are the prize. The server decides the
-// prize when the card is bought and pays it when the card is revealed (scratchCards.ts), so the balance gives
-// nothing away while the coating is on. Wins are celebrated by size: the coins back plainly, then three steps.
+// The park's scratch cards (docs/design/amusement-park.md §5): 阿草 keeps the stall from the park's coral band
+// (band.ts: its face, and the odds behind the band's info key). The sheet first holds the two cards, basic and
+// premium; picking one opens the table, where a card is nine cells under a coating. Dragging over it scratches the
+// coating off, and three cells alike are the prize. The server decides the prize when the card is bought and pays
+// it when the card is revealed (scratchCards.ts), so the balance gives nothing away while the coating is on. Wins
+// are celebrated by size: the coins back plainly, then three steps.
 // A card of the old shard scratch cards (/api/scratch, stores/player.ts) still unrevealed comes onto the table first,
 // without a price, and is revealed the old way; then the sheet goes back to the two cards.
 import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from "vue";
@@ -23,6 +24,7 @@ import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import asoulLogo from "../../assets/brand/asoul-logo.svg";
 import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes } from "../../scratch";
+import { useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import {
   KINDS, SCRATCH, cellOf, faceOf, levelOf, oddsRows,
@@ -120,6 +122,7 @@ const hostFace = computed(() => {
   if (card.value) return HOST.watching;
   return kind.value && table.value && coins.value < table.value.coins ? HOST.closed : HOST.open;
 });
+useBand("scratch", () => ({ host: ACHAO[hostFace.value], info: { label: "概率", open: () => (odds.value = true) } }));
 
 const cost = computed(() => table.value?.coins ?? 0);
 const short = computed(() => coins.value < cost.value);
@@ -446,24 +449,11 @@ watch(() => status.value?.player, (player, was) => {
 
 <template>
   <section class="stall" :class="{ calm }" aria-label="刮刮乐">
-    <header class="head" data-rise>
+    <div class="sheet" :class="{ solo: kind !== 'basic' }">
+      <p v-if="error" class="ui-error sheet-error" role="alert">{{ error }}</p>
       <button v-if="kind" type="button" class="ui-btn ghost small back" aria-label="返回" title="返回" :disabled="!settled" @click="back">
         <Icon name="back" :size="18" />
       </button>
-      <div class="title">
-        <span class="eyebrow" aria-hidden="true">SCRATCH</span>
-        <h2 class="name">{{ kind && !old ? `${NAMES[kind]}刮刮乐` : "刮刮乐" }}</h2>
-      </div>
-      <button type="button" class="ui-btn ghost small rates-btn" title="概率" aria-label="概率" @click="odds = true">
-        <Icon name="info" :size="18" />
-      </button>
-      <Transition name="host" mode="out-in" :css="!calm">
-        <img :key="hostFace" class="host" :src="ACHAO[hostFace]" alt="" draggable="false" />
-      </Transition>
-    </header>
-
-    <div class="sheet" :class="{ solo: kind !== 'basic' }">
-      <p v-if="error" class="ui-error sheet-error" role="alert">{{ error }}</p>
 
       <!-- The two cards, side by side: the price on the stub, the best prize across the middle. -->
       <div v-if="!kind" class="picker" data-rise>
@@ -583,118 +573,28 @@ watch(() => status.value?.player, (player, was) => {
 </template>
 
 <style scoped>
-/* The stall: a coral head over one sheet of paper, the same build as the park's top block. */
+/* The stall, on the park's sheet under the coral band. */
 .stall {
-  flex: none;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--shadow-paper);
 }
 
-/* ---- the head: the name, the odds, and 阿草 behind the sheet with its face over the top */
-.head {
-  --host-h: 144px;
-  --host-room: 176px;
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 14px;
-  min-height: 92px;
-  padding: 14px 22px 14px;
-  box-sizing: border-box;
-  border-radius: var(--radius-l) var(--radius-l) 0 0;
-  background: var(--grad-sky);
-}
-/* Printed into the coral, faint and behind the type: halftone dots that grow toward the sheet. */
-.head::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: #fff;
-  pointer-events: none;
-  opacity: 0.32;
-  mask:
-    url("../../assets/patterns/halftone.svg") 0 -28px / 280px 140px repeat-x,
-    linear-gradient(90deg, transparent 34%, #000 72%);
-  mask-composite: intersect;
-}
-.title,
-.back,
-.rates-btn,
-.host {
-  position: relative;
-  z-index: 1;
-}
-.title {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.eyebrow {
-  font: 800 12px/1 var(--font-latin);
-  letter-spacing: 0.26em;
-  color: var(--ink);
-  opacity: 0.72;
-}
-.name {
-  margin: 0;
-  font: 800 38px/1 var(--font);
-  letter-spacing: 0.06em;
-  color: #fff;
-  white-space: nowrap;
-}
-.back,
-.rates-btn {
+/* Back to the two cards, at the top left of the sheet. */
+.back {
+  grid-column: 1 / -1;
+  justify-self: start;
   width: 36px;
+  margin: -12px 0 -12px -8px;
   padding: 0;
   color: var(--ink);
-}
-.back {
-  align-self: center;
-}
-.rates-btn {
-  margin: 0 var(--host-room) 2px auto;
-}
-.host {
-  position: absolute;
-  right: 14px;
-  bottom: -38px;
-  height: var(--host-h);
-  max-width: var(--host-h);
-  object-fit: contain;
-  object-position: 50% 100%;
-  rotate: 6deg;
-  filter: var(--sticker-lg);
-  pointer-events: none;
-  user-select: none;
-}
-/* Swapping faces: it ducks behind the sheet and comes back up with the new one. */
-.host-enter-active {
-  transition: translate 460ms var(--ease-pop), rotate 460ms var(--ease-pop);
-}
-.host-leave-active {
-  transition: translate 170ms var(--ease-in);
-}
-.host-enter-from,
-.host-leave-to {
-  translate: 0 72%;
-}
-.host-enter-from {
-  rotate: -6deg;
 }
 
 .sheet {
   position: relative;
-  z-index: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(200px, 37%);
   gap: 24px;
   padding: 24px 22px 20px;
-  border-radius: 0 0 var(--radius-l) var(--radius-l);
-  background: var(--surface);
 }
 .sheet.solo {
   grid-template-columns: minmax(0, 1fr);
@@ -1295,15 +1195,6 @@ th, td {
 }
 
 @container panel (max-width: 760px) {
-  .head {
-    --host-h: 118px;
-    --host-room: 132px;
-    gap: 10px;
-    padding-inline: 18px;
-  }
-  .name {
-    font-size: 32px;
-  }
   .sheet {
     grid-template-columns: minmax(0, 1fr) minmax(168px, 34%);
     gap: 16px;
@@ -1319,13 +1210,6 @@ th, td {
   }
 }
 @container panel (max-height: 600px) {
-  .head {
-    --host-h: 120px;
-    min-height: 78px;
-  }
-  .name {
-    font-size: 32px;
-  }
   .sheet {
     padding-block: 18px 14px;
   }

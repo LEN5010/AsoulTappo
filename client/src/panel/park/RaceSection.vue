@@ -2,13 +2,16 @@
 // 团子赛跑 (docs/design/amusement-park.md §6, protocol/PROTOCOL.md 团子赛跑). There is no push channel: while the
 // page is open the section asks GET /api/park/race every few seconds, keeps the offset to the server's clock, and
 // plays the race's move list from startsAt, so every client shows the same moment. Bets are taken while the race's
-// phase is betting; a race's result is its net over every selection.
+// phase is betting; a race's result is its net over every selection. The countdown and the host (the latest
+// champion) go up in the park's coral band (band.ts).
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { online } from "../../stores/player";
 import { loadPark, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
+import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import { useBand } from "./band";
 import RaceTrack from "./RaceTrack.vue";
 import { COIN_SMALL } from "./coin";
 import {
@@ -113,6 +116,14 @@ const countdown = computed<{ label: string; time: string }>(() => {
   if (r && (r.phase === "starting" || playing.value)) return { label: "比赛中", time: "" };
   return { label: "下一场", time: clock((data.value?.nextAt ?? t) - t) };
 });
+/** Winners come newest first. */
+const champion = computed(() => data.value?.winners[0]?.member ?? "");
+useBand("race", () => ({
+  ...(champion.value && tuanziArt(champion.value)
+    ? { host: tuanziArt(champion.value), hostKind: "token" as const }
+    : { host: ACHAO["观察"] }),
+  timer: { label: countdown.value.label, time: countdown.value.time || undefined },
+}));
 
 // ---------------------------------------------------------------- what is happening on the track
 const ADD_NAMES: Record<string, string> = { snack: "加餐", dash: "冲刺", catchup: "追赶" };
@@ -189,17 +200,6 @@ const odds = (r: Race, kind: RaceKind, m: string) => r.odds[kind]?.[m];
 
 <template>
   <section class="race" :class="{ calm: reducedMotion }" aria-label="团子赛跑">
-    <header class="head">
-      <div class="title">
-        <span class="ui-eyebrow" aria-hidden="true">RACE</span>
-        <h3>团子赛跑</h3>
-      </div>
-      <p class="count" role="timer">
-        <span>{{ countdown.label }}</span>
-        <b v-if="countdown.time">{{ countdown.time }}</b>
-      </p>
-    </header>
-
     <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
     <RaceTrack :race="race" :t="serverNow" :track="CFG.track" :members="MEMBERS" />
@@ -288,41 +288,12 @@ const odds = (r: Race, kind: RaceKind, m: string) => r.odds[kind]?.[m];
 </template>
 
 <style scoped>
-/* One sheet of paper, like the other park sections. */
+/* On the park's sheet, under the coral band. */
 .race {
-  flex: none;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 18px 22px 20px;
-  border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--shadow-paper);
-}
-.head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-}
-.title h3 {
-  margin: 6px 0 0;
-  font: 800 var(--fs-heading)/1 var(--font);
-  color: var(--ink);
-}
-.count {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.count b {
-  font: 800 28px/1 var(--font-latin);
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
 }
 .ticker {
   min-height: 18px;
