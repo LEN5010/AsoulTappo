@@ -94,23 +94,51 @@ const list = ref<HTMLElement>();
   z-index: 1;
 }
 
-/* ---- the page keys: white keycaps on the coral; the page shown is latched */
+/* ---- the page keys, as the sidebar's on coral: white words at rest, a white keycap rising under the pointer;
+ * the page shown is a white keycap latched, with coral words. */
 .tabs {
   display: flex;
   gap: 8px;
   min-width: 0;
   padding-bottom: 3px;
 }
-.tab {
+.tabs .tab {
+  --key-top: transparent;
+  --key-bottom: transparent;
+  --key-lip-h: 0px;
   min-width: 64px;
   padding: 0 16px;
-  font-size: var(--fs-strong);
+  font-size: var(--fs-number);
+  color: #fff;
+}
+.tabs .tab:hover:not(:disabled):not(.on) {
+  --key-top: #fff;
+  --key-bottom: var(--key-white-shade);
+  --key-lip-h: 3px;
+  --key-y: -1px;
+  color: var(--ink);
+}
+.tabs .tab:active:not(:disabled):not(.on) {
+  --key-y: 3px;
+  --key-lip-h: 0px;
+}
+.tabs .tab.on:not(:disabled) {
+  --key-top: #fff;
+  --key-bottom: #fff;
+  --key-y: 2px;
+  --key-lip-h: 1px;
+  color: var(--c-700);
+  cursor: default;
+}
+/* Locked, or no park on this server. */
+.tabs .tab:disabled {
+  --key-top: transparent;
+  --key-bottom: transparent;
+  color: #fff;
+  opacity: 0.6;
 }
 .tab:focus-visible {
   outline-offset: 3px;
-}
-.tab.on:not(:disabled) {
-  cursor: default;
 }
 
 /* ---- the page's timer: a white number with a small ink label */
@@ -189,9 +217,9 @@ const list = ref<HTMLElement>();
   .tabs {
     gap: 6px;
   }
-  .tab {
+  .tabs .tab {
     min-width: 0;
-    padding: 0 11px;
+    padding: 0 12px;
   }
 }
 /* Short or narrow panels: a low band without the host; the timer comes down to the keys' size. */
@@ -203,10 +231,10 @@ const list = ref<HTMLElement>();
   .host {
     display: none;
   }
-  .tab {
+  .tabs .tab {
     height: 32px;
     padding: 0 10px;
-    font-size: var(--fs-body);
+    font-size: var(--fs-strong);
   }
   .timer {
     gap: 6px;

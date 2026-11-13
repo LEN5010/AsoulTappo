@@ -12,7 +12,7 @@ import { status } from "../stores/player";
 import { claimGift, loadPark, noPark, park, parkError } from "../stores/park";
 import { reducedMotion } from "../stores/theme";
 import { ACHAO } from "../ui/achao";
-import { bandOf, clearFlash, flashedHost, flashHost, type ParkTab } from "./park/band";
+import { bandOf, clearFlash, flashedHost, flashHost, parkTab, type ParkTab } from "./park/band";
 import { popCoins } from "./park/pops";
 import ParkBand from "./park/ParkBand.vue";
 import ParkCoin from "./park/ParkCoin.vue";
@@ -37,7 +37,9 @@ const HOST_IDLE = ACHAO["招商"];
 const HOST_CLOSED = ACHAO["拒绝"];
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-const tab = ref<ParkTab>("coin");
+// Shared through band.ts so a section can switch pages; a fresh park page opens on the coins, as before.
+const tab = parkTab;
+tab.value = "coin";
 const taps = computed(() => status.value?.totals.taps ?? 0);
 /** Known before the park is loaded: the taps in all are in every status. */
 const locked = computed(() => (park.value ? !park.value.unlocked : !!status.value && taps.value < MIN_TAPS));

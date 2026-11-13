@@ -5,6 +5,9 @@ import { computed, onBeforeUnmount, ref, shallowReactive, type ComputedRef } fro
 
 export type ParkTab = "coin" | "scratch" | "race" | "lottery";
 
+/** The park page shown. A section may set it to send the player to another page. */
+export const parkTab = ref<ParkTab>("coin");
+
 export interface BandEntry {
   /** Image URL of the host standing behind the sheet. */
   host?: string;
