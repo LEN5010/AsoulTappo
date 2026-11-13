@@ -33,6 +33,7 @@ from .models import (
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
+from .lottery import Lottery
 from .park import Park
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
@@ -136,6 +137,22 @@ if _pruned:
 # park: scratch setup
 # park: race setup
 # park: lottery setup
+# The daily lottery; its loop makes each day's number at midnight and draws at drawAt, catching up missed draws first.
+lottery = Lottery(lambda: game, park)
+
+
+async def _lottery_loop() -> None:
+    while True:
+        try:
+            drawn = await run_in_threadpool(lottery.tick)
+            if drawn:
+                print(f"lottery drawn: {', '.join(drawn)}", flush=True)
+        except Exception as e:  # a failed check must not stop the next ones
+            print(f"lottery check failed: {e!r}", flush=True)
+        await asyncio.sleep(lottery.sleep_for())
+
+
+PARK_LOOPS.append(_lottery_loop)
 # park: redeem setup
 
 
@@ -408,6 +425,23 @@ def api_park_gift(who: PlayerId = Depends(player)) -> dict:
 # park: scratch routes
 # park: race routes
 # park: lottery routes
+class LotteryBody(BaseModel):
+    # Numbers picked by hand ("000" to "999", a number may repeat) and how many more on random numbers.
+    numbers: list[str] = Field(default_factory=list, max_length=100)
+    random: int = Field(0, ge=0, le=100)
+
+
+@app.get("/api/park/lottery")
+def api_park_lottery(who: PlayerId = Depends(player)) -> dict:
+    """Today's draw (hash, times, prizes, my numbers) and the last drawn day with my results."""
+    return _guard(lottery.state, who)
+
+
+@app.post("/api/park/lottery")
+def api_park_lottery_buy(body: LotteryBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(lottery.buy, who, body.numbers, body.random)
+
+
 # park: redeem routes
 
 
