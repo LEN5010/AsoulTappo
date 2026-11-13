@@ -260,10 +260,11 @@ def test_creating_checks_the_reward_and_the_expiry():
 
 def test_search_finds_codes_by_part_of_code_or_note_and_pages():
     _, r, _ = setup()
-    a = make(r, note="QQ 群")[0]
+    # L and O are left out of generated codes, so "lo" can only match a note.
+    a = make(r, note="LO 群")[0]
     make(r, count=3, note="B 站抽奖")
-    assert [c["id"] for c in r.find("qq", 10)["codes"]] == []
-    assert [c["id"] for c in r.find("QQ 群", 10)["codes"]] == [a["id"]]
+    assert [c["id"] for c in r.find("lo", 10)["codes"]] == []
+    assert [c["id"] for c in r.find("LO 群", 10)["codes"]] == [a["id"]]
     assert [c["id"] for c in r.find(a["code"][5:9].lower(), 10)["codes"]] == [a["id"]]
     page = r.find("", 2)["codes"]
     assert len(page) == 2 and page[0]["id"] > page[1]["id"]
