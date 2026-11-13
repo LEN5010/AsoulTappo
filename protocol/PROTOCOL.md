@@ -89,7 +89,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news}`，见游乐园一节；没有游乐园的服务端不带） |
+| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节 |
@@ -97,10 +97,10 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | POST /api/update-reward | 领取更新奖励：`X-Client-Version` 不低于奖励版本的、进行中且还没领的奖励一次全部发放，返回状态和 `reward:{shards,ids}`。预发布版本低于同号正式版。没有可领的返回 409 `no_reward` |
-| GET /api/park | 游乐园状态（见游乐园一节）：coins、unlocked、bought、buyLeft、gift、stamps、stampsTotal、badge、today、jackpot |
-| POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见游乐园一节的错误码 |
+| GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、bought、buyLeft、gift、stamps、stampsTotal、badge、today、jackpot |
+| POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见乐园一节的错误码 |
 | POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天领过时为 0） |
-| POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有游乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见游乐园一节的兑换码 |
+| POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见乐园一节的兑换码 |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
@@ -191,7 +191,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
 | `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
 | `coin_buy` | 买驼币花费 | 买的枚数 |
-| `park_scratch`、`jackpot`、`race_prize`、`lottery_prize` | 游乐园的碎片奖：驼币刮刮乐、全服奖池、团子赛跑、每日夺宝 | 1 |
+| `park_scratch`、`jackpot`、`race_prize`、`lottery_prize` | 乐园的碎片奖：驼币刮刮乐、全服奖池、团子赛跑、每日夺宝 | 1 |
 | `redeem` | 兑换码发的碎片 | 1 |
 | `admin` | 管理接口的调整 | 1 |
 
@@ -218,11 +218,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 ### 兑换码管理
 
-码的格式和兑换规则见游乐园一节的兑换码。每个码在下列接口里表示为 `{id,code,custom,shards,coins,uses,used,expires,disabled,note,createdBy,created}`：code 为显示形式（生成的码分三段）；custom 为管理员自己写的码；uses 为可用次数，used 为已兑换次数；expires 为过期时间（Unix 秒），不过期为 null；disabled 为停用时间，没停用为 null；createdBy 为生成它的主站管理员。
+码的格式和兑换规则见乐园一节的兑换码。每个码在下列接口里表示为 `{id,code,custom,shards,coins,uses,used,expires,disabled,note,createdBy,created}`：code 为显示形式（生成的码分三段）；custom 为管理员自己写的码；uses 为可用次数，used 为已兑换次数；expires 为过期时间（Unix 秒），不过期为 null；disabled 为停用时间，没停用为 null；createdBy 为生成它的主站管理员。
 
 | 接口 | 说明 |
 | --- | --- |
-| POST /admin/codes | `{shards,coins,count,uses,expires,note,code}`，生成兑换码。shards 0–1000000、coins 0–1000，两者至少一个大于 0，否则返回 400 `bad_reward`；没有游乐园的服务端 coins 必须为 0。count 为 1–500（默认 1），uses 为每个码的可用次数 1–1000000（默认 1），expires 为 Unix 秒（0 或缺省为不过期，已过去的时间返回 400 `bad_expiry`），note 最多 200 字。code 为自定义码，可选：带 code 时 count 只能为 1（否则 400 `bad_count`），格式不对返回 400 `bad_code_text`，已有同样的码返回 409 `code_taken`。返回 `{codes:[...]}`，按生成顺序 |
+| POST /admin/codes | `{shards,coins,count,uses,expires,note,code}`，生成兑换码。shards 0–1000000、coins 0–1000，两者至少一个大于 0，否则返回 400 `bad_reward`；没有乐园的服务端 coins 必须为 0。count 为 1–500（默认 1），uses 为每个码的可用次数 1–1000000（默认 1），expires 为 Unix 秒（0 或缺省为不过期，已过去的时间返回 400 `bad_expiry`），note 最多 200 字。code 为自定义码，可选：带 code 时 count 只能为 1（否则 400 `bad_count`），格式不对返回 400 `bad_code_text`，已有同样的码返回 409 `code_taken`。返回 `{codes:[...]}`，按生成顺序 |
 | GET /admin/codes?q=&limit=&before= | 列表，新的在前。q 匹配码的一部分（不分大小写，忽略 `-` 和空白）或备注的一部分；limit 为 1–500，默认 50；before 为码的 id，接着往下翻。返回 `{codes:[...]}` |
 | POST /admin/codes/{id}/disable | 可带 `{reason}`（最多 200 字，缺省时日志里记这个码的备注）。停用后立刻不能再兑换，已停用的再停用不变。返回这个码。码不存在返回 409 `no_code` |
 | GET /admin/codes/{id}/claims?limit= | 兑换记录，新的在前，limit 为 1–1000，默认 200。返回 `{code,claims:[{player,userId,ts}]}`，userId 为存档绑定的主站用户 ID，游客存档为 null。码不存在返回 409 `no_code` |
@@ -315,20 +315,20 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 揭开的碎片奖品达到 `economy.scratch.announce`（2500）时，服务端向该存档所在的每个房间广播 `scratch {id,shards}`，客户端在这位成员的桌宠上方显示。出表情由客户端在揭开后发送这个表情。
 
-## 游乐园
+## 乐园
 
-1.2.1 之后的客户端。配置在 manifest `economy.park`（`coin`、`scratch`、`race`、`lottery`），没有这一项的服务端不提供游乐园，状态里也没有 `park`，接口返回 404 `no_park`。
+1.2.1 之后的客户端。配置在 manifest `economy.park`（`coin`、`scratch`、`race`、`lottery`），没有这一项的服务端不提供乐园，状态里也没有 `park`，接口返回 404 `no_park`。
 
 ### 驼币
 
 - 用碎片买，每枚 `coin.price`（500）。每个存档每天最多买 `coin.dailyBuy`（40）枚，北京时间零点重置；持有 `coin.hold`（100）枚时不能再买。驼币不能换回碎片，也不能转让。
-- 每天送 `coin.gift`（1）枚：客户端第一次打开游乐园时调 `POST /api/park/gift`，当天再调返回 `gift: 0`。
+- 每天送 `coin.gift`（1）枚：客户端第一次打开乐园时调 `POST /api/park/gift`，当天再调返回 `gift: 0`。
 - 买和领都要累计敲击满 `coin.minTaps`（10000）下，不够时返回 409 `park_locked`。
 - 每花 1 枚驼币得 1 个印章，累计数到 `coin.stampsPerCoin`（30）的整数倍时自动换 1 枚驼币。`stamps` 是当前这一轮的印章数（`stampsTotal` 除以 30 的余数），`badge` 是 `stampsTotal` 达到的 `coin.badges`（100、1000、5000）档数，0 到 3。
 - 奖品、印章、兑换码发的驼币不受持有上限限制。
 - 赛跑停机退币时，印章和它换出的驼币一起退回。
 
-`GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从游乐园奖品拿到的碎片（`park_scratch`、`jackpot`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为刮刮乐全服奖池现在的金额。
+`GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从乐园奖品拿到的碎片（`park_scratch`、`jackpot`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为刮刮乐全服奖池现在的金额。
 
 错误码：`park_locked`、`coin_limit`（今天买够了）、`coin_hold`（持有到上限）、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
 
@@ -481,7 +481,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 <!-- park: redeem -->
 ### 兑换码
 
-`POST /api/redeem`，`{code}`（最多 64 字符）。码不分大小写，忽略 `-` 和空白。成功时返回状态、`park`（有游乐园的服务端才带）和 `redeemed:{shards,coins}`。检查、计次、发奖和兑换记录在同一个事务里完成。碎片记进碎片流水，驼币记进驼币流水，来源都是 `redeem`。兑换码发的驼币不受持有上限限制；没有游乐园的服务端也照样发驼币，只是不能新建带驼币的码。
+`POST /api/redeem`，`{code}`（最多 64 字符）。码不分大小写，忽略 `-` 和空白。成功时返回状态、`park`（有乐园的服务端才带）和 `redeemed:{shards,coins}`。检查、计次、发奖和兑换记录在同一个事务里完成。碎片记进碎片流水，驼币记进驼币流水，来源都是 `redeem`。兑换码发的驼币不受持有上限限制；没有乐园的服务端也照样发驼币，只是不能新建带驼币的码。
 
 - 生成的码为 12 位，取自去掉 `0 O 1 I L` 的 31 个字符，显示成三段，例如 `K7QM-3XRP-WD9H`。管理员也可以自己写一个好记的码（4–32 个字母、数字或汉字）。
 - 每个码有可用次数：一人一码为 1 次，通用码为 N 次。不管哪种，每个存档只能兑换一次。

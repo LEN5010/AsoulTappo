@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// Redeem codes (protocol/PROTOCOL.md 游乐园 / 兑换码): one field and one key; the reward or why not shows under it.
+// Redeem codes (protocol/PROTOCOL.md 兑换码), on the coin page: one field and one key; the reward or why not shows
+// under it.
 // On a server with account login only a save linked to an account redeems, so a guest gets the sign-in instead.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Api, type ServerInfo } from "../../net/api";
@@ -9,12 +10,9 @@ import { activeAccount, saveCode } from "../../stores/player";
 import { parkTry } from "../../stores/park";
 import { settings } from "../../stores/settings";
 import Icon from "../../ui/Icon.vue";
-import Modal from "../../ui/Modal.vue";
 import AccountDialog from "../AccountDialog.vue";
 import { COIN_SMALL } from "./coin";
 import { redeemMessage } from "./redeem";
-
-const emit = defineEmits<{ close: [] }>();
 
 const code = ref("");
 const busy = ref(false);
@@ -85,7 +83,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 
 <template>
   <AccountDialog v-if="signingIn && mainApi" :main-api="mainApi" start="login" @close="signingIn = false" @done="signingIn = false" />
-  <Modal v-else title="兑换码" heading @close="emit('close')">
+  <div class="redeem-box">
     <div v-if="needLogin" class="login">
       <p class="why"><Icon name="lock" :size="16" />登录 Asasfans 账号后兑换</p>
       <button v-if="mainApi" type="button" class="ui-btn primary" @click="signingIn = true">登录</button>
@@ -105,7 +103,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
         <span v-if="reward.coins"><img :src="COIN_SMALL" alt="" draggable="false" />+{{ fmt(reward.coins) }}<small>驼币</small></span>
       </p>
     </form>
-  </Modal>
+  </div>
 </template>
 
 <style scoped>
@@ -113,9 +111,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 .login {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  min-width: min(360px, 70vw);
-  margin-top: 4px;
+  gap: 10px;
 }
 .row {
   display: flex;
@@ -142,7 +138,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 /* The reward lands like the update reward: big coral numbers. */
 .got {
   display: flex;
-  justify-content: center;
   flex-wrap: wrap;
   gap: 8px 24px;
   margin: 6px 0 0;
@@ -151,12 +146,12 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font: 800 34px/1 var(--font-latin);
+  font: 800 26px/1 var(--font-latin);
   color: var(--c-700);
 }
 .got img {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
 }
 .got small {
@@ -170,14 +165,18 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   align-items: center;
   gap: 6px;
   margin: 0;
-  font: 800 var(--fs-strong)/1.4 var(--font);
+  font: 700 var(--fs-body)/1.4 var(--font);
   color: var(--ink);
 }
 .why svg {
   color: var(--c-700);
 }
+.login {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
 .login .primary {
-  align-self: flex-end;
   min-width: 96px;
 }
 </style>

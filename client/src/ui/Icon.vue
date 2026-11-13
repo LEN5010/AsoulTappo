@@ -50,6 +50,8 @@ const PATHS: Record<string, string[]> = {
     "M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
     "M14.5 6v2.5", "M14.5 11v2", "M14.5 15.5V18",
   ],
+  // The park (乐园) in the nav: a ferris wheel on its stand.
+  ferris: ["M12 16a6 6 0 1 0 0-12 6 6 0 0 0 0 12z", "M7.8 5.8l8.4 8.4", "M16.2 5.8l-8.4 8.4", "M9 21l3-11 3 11", "M6.5 21h11"],
   // The park's coin: a rim, and 阿草's ears and face on it.
   coin: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M9.5 9.5V7.5", "M14.5 9.5V7.5", "M8 13.5a4 4 0 0 0 8 0v-1.5a4 4 0 0 0-8 0z"],
   // The strip's menu (GripMenu.vue).

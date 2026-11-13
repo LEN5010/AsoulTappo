@@ -1,4 +1,4 @@
-// Coin scratch cards in the park (protocol/PROTOCOL.md 游乐园 刮刮乐): reading a card's cells, how big a win is,
+// Coin scratch cards in the park (protocol/PROTOCOL.md 乐园 刮刮乐): reading a card's cells, how big a win is,
 // 阿草's face for it, and the odds table. The server decides the prize when a card is bought; the cells only show it.
 import { manifest } from "../../manifest";
 import { HOST } from "../../scratch";

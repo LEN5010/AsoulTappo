@@ -39,7 +39,7 @@ class Park:
     def cfg(self) -> dict[str, Any]:
         cfg = self.game.manifest.park
         if not cfg:
-            raise GameError("no_park", "这个服务器没有游乐园")
+            raise GameError("no_park", "这个服务器没有乐园")
         return cfg
 
     @property

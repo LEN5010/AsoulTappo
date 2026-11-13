@@ -115,7 +115,7 @@ class Redeem:
         if shards < 0 or coins < 0 or shards + coins == 0:
             raise GameError("bad_reward", "奖励至少要有碎片或驼币")
         if coins and not g.manifest.park:
-            raise GameError("bad_reward", "这个服务器没有游乐园，不能发驼币")
+            raise GameError("bad_reward", "这个服务器没有乐园，不能发驼币")
         if expires and expires <= now:
             raise GameError("bad_expiry", "过期时间已经过了")
         code = normalize(custom)

@@ -3,7 +3,6 @@ import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount,
 import { settings } from "../stores/settings";
 import { draws, online, shards, status } from "../stores/player";
 import { noPark } from "../stores/park";
-import { COIN_SMALL } from "./park/coin";
 import { incomeTip } from "../income";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
@@ -65,15 +64,13 @@ const ALL_NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card-spark" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "codex" },
   { id: "checkin", label: "签到", en: "CHECK-IN", icon: "calendar" },
-  { id: "park", label: "游乐园", en: "PARK", icon: "coin" },
+  { id: "park", label: "乐园", en: "PARK", icon: "ferris" },
   { id: "room", label: "联机", en: "ONLINE", icon: "people" },
   { id: "cheer", label: "排行", en: "RANKING", icon: "crown" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
 /** The park leaves the nav on a server without one, once another page is open. */
 const NAV = computed(() => ALL_NAV.filter((n) => n.id !== "park" || !noPark.value || ui.page === "park"));
-/** The coin picture in the park's nav key; the coin glyph stands in when it cannot load. */
-const coinFailed = ref(false);
 /**
  * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
  * `rise` starts the new page once the bands are on their way out.
@@ -315,11 +312,7 @@ function badgeOf(id: Page): number {
             @click="ui.page = n.id"
           >
             <span class="nav-face" aria-hidden="true"></span>
-            <img
-              v-if="n.id === 'park' && !coinFailed" class="nav-icon nav-coin" :src="COIN_SMALL" alt="" draggable="false"
-              @error="coinFailed = true"
-            />
-            <Icon v-else class="nav-icon" :name="n.icon" :size="20" />
+            <Icon class="nav-icon" :name="n.icon" :size="20" />
             <b class="nav-label">{{ n.label }}</b>
             <span v-if="badgeOf(n.id) > 0" class="pip">{{ badgeOf(n.id) }}</span>
           </button>
@@ -628,14 +621,6 @@ nav button:not(.on):active > :not(.nav-face) {
   transform: translateY(2px);
   transition-duration: var(--dur-press);
   transition-timing-function: ease-out;
-}
-/* The coin is a thing, not a glyph: it keeps its metal and sits a little larger than the line icons. */
-.nav-coin {
-  width: 22px;
-  height: 22px;
-  margin: -1px;
-  flex: none;
-  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.3));
 }
 .nav-label {
   flex: 1;

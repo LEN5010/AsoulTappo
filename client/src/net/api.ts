@@ -245,7 +245,7 @@ export class Api {
   account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
   /** Any request of the park or redeem codes; other paths are refused here, before reaching the server. */
   park = <T>(method: "GET" | "POST", path: string, body?: unknown) => {
-    if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是游乐园的接口"));
+    if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是乐园的接口"));
     return this.call<T>(method, path, body);
   };
   /** Binds the account to this device's guest save (when given) or to a new save. */

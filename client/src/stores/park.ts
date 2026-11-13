@@ -1,4 +1,4 @@
-// The park (docs: protocol/PROTOCOL.md 游乐园): its state, the one way every park game reaches the server, and the
+// The park (docs: protocol/PROTOCOL.md 乐园): its state, the one way every park game reaches the server, and the
 // server-wide news of big wins. Requests run in the desk window like every other; the panel relays them there
 // (desktop/bridge.ts) and gets the answer back with the server's error code intact.
 import { computed, ref, watch } from "vue";
