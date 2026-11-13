@@ -39,14 +39,18 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366f277d29fe732b9c1" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Puts the pet window on every Space, full-screen apps included (src/lib.rs); already in the tree through Tauri.
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSResponder", "NSWindow"] }
+# Overlay placement, mouse coordinates and Spaces (src/overlay_macos.rs, src/lib.rs).
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSScreen", "NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry"] }
 # One message to the capture window's web view (src/lib.rs); already in the tree through Tauri.
 objc2 = "0.6"
 # Decodes request paths in the macOS asset handler (src/media.rs); already in the tree through Tauri.
 percent-encoding = "2"
+# Shared HID access lets the pet read a PlayStation controller alongside a game.
+hidapi = { version = "2.6.7", default-features = false, features = ["macos-shared-device"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+hidapi = { version = "2.6.7", default-features = false, features = ["windows-native"] }
 # XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
 # input hook and its watchdog (src/input.rs), the overlay's tool-window subclass
 # (src/tool_window.rs), the diagnostics written to the log (src/diag.rs) and restarting as

@@ -1,13 +1,16 @@
-//! Game controller presses (Windows, XInput).
+//! Game controller presses (Windows XInput and PlayStation HID on Windows/macOS).
 //!
-//! XInput is polled, so it keeps working while a fullscreen game has focus and
-//! the desk overlay never does. Like the keyboard hook, nothing about *which*
+//! Controllers are polled while a fullscreen game has focus and the desk overlay
+//! stays in the background. Like the keyboard hook, nothing about *which*
 //! button was pressed leaves this module: every press becomes a plain key-down
 //! for the pet, every release a key-up.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::input::InputEvent;
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+mod playstation;
 
 /// Presses since the last `take_presses`, for the log's per-minute summary.
 static PRESSES: AtomicU32 = AtomicU32::new(0);
@@ -45,8 +48,28 @@ pub fn diff(before: u32, now: u32, out: &mut Vec<InputEvent>) {
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn record_changes(before: u32, now: u32, out: &mut Vec<InputEvent>) {
+    PRESSES.fetch_add((now & !before).count_ones(), Ordering::Relaxed);
+    diff(before, now, out);
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn spawn_poller<F>(emit: F)
+where
+    F: Fn(InputEvent) + Send + Sync + 'static,
+{
+    let emit = std::sync::Arc::new(emit);
+    #[cfg(target_os = "windows")]
+    {
+        let xinput_emit = emit.clone();
+        spawn_xinput_poller(move |ev| xinput_emit(ev));
+    }
+    playstation::spawn_poller(move |ev| emit(ev));
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_xinput_poller<F>(emit: F)
 where
     F: Fn(InputEvent) + Send + 'static,
 {
@@ -82,11 +105,14 @@ where
                     0
                 };
                 if connected[slot] != ok {
-                    applog!("pad", "controller {slot} {}", if ok { "connected" } else { "disconnected" });
+                    applog!(
+                        "pad",
+                        "controller {slot} {}",
+                        if ok { "connected" } else { "disconnected" }
+                    );
                 }
                 connected[slot] = ok;
-                PRESSES.fetch_add((now & !last[slot]).count_ones(), Ordering::Relaxed);
-                diff(last[slot], now, &mut out);
+                record_changes(last[slot], now, &mut out);
                 last[slot] = now;
             }
             for ev in out.drain(..) {
@@ -98,11 +124,10 @@ where
     });
 }
 
-/// Controllers are only read on Windows for now.
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn spawn_poller<F>(_emit: F)
 where
-    F: Fn(InputEvent) + Send + 'static,
+    F: Fn(InputEvent) + Send + Sync + 'static,
 {
 }
 

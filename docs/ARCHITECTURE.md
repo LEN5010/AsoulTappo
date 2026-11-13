@@ -28,7 +28,9 @@ Mouse pass-through is updated dynamically based on interactive regions:
 ## Client (`client/`)
 **Rust (`src-tauri/`)**
 - `input.rs` — global keyboard/mouse hook (own low-level hooks on Windows, `rdev` on macOS), emitting `key_down`, `key_up`, `mouse_down/up{button}` and `mouse_move{dx,dy}`. It never forwards which key was pressed.
-- `gamepad.rs` — XInput polling on Windows, so controller presses count while a fullscreen game has focus.
+- `gamepad.rs` — background controller input, sharing button transitions and press statistics between Windows XInput and PlayStation HID.
+- `gamepad/playstation.rs` — shared HIDAPI access to Sony DualShock 4, DualSense and DualSense Edge on Windows/macOS. Parses simple and enhanced USB/Bluetooth reports, ignores axes and packet counters, applies the XInput trigger threshold, and releases held buttons on disconnect. Discovery retries every two seconds. On Windows, remapper setups use HidHide to hide the physical device from the pet and grant access to the remapper.
+- `overlay_macos.rs` — AppKit screen enumeration, work-area placement and refitting in points, with window-relative mouse coordinates. Window access is dispatched to the main thread.
 - `hit.rs` — hit-region rectangle matching for cursor pass-through; `tool_window.rs` keeps the overlay out of other apps' occlusion checks on Windows.
 - `hotkey.rs` — the hide key and the click-through key, registered as system shortcuts (no input permission, not through the hook).
 - `access.rs` — macOS input permission check (Input Monitoring or Accessibility), reported to the desk without prompting.

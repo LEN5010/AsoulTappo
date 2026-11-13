@@ -9,6 +9,8 @@ mod hit;
 mod input;
 #[cfg(target_os = "macos")]
 mod media;
+#[cfg(target_os = "macos")]
+mod overlay_macos;
 #[cfg(target_os = "windows")]
 mod tool_window;
 mod update;
@@ -20,6 +22,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use hit::{HitRect, HitState};
+#[cfg(target_os = "macos")]
+use overlay_macos::{fit_to_monitor, hit_cursor, hit_origin, monitor_count, needs_refit, primary_index, window_rect};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -53,7 +57,7 @@ const STYLE_MISMATCH_GRACE: Duration = Duration::from_secs(1);
 #[derive(Default)]
 struct Overlay {
     hit: Mutex<HitState>,
-    /// Index into `available_monitors()` of the monitor the overlay covers.
+    /// Index into the platform's monitor list (NSScreen::screens on macOS).
     monitor: Mutex<usize>,
     /// The overlay currently lets clicks through, so a mouse press lands on another window.
     passing: AtomicBool,
@@ -480,6 +484,7 @@ fn set_dragging(overlay: tauri::State<'_, Arc<Overlay>>, active: bool) {
 /// Cover the work area (the monitor minus the taskbar) of monitor `index`;
 /// an unknown index falls back to the primary monitor. Returns the area and the
 /// monitor's scale factor, for the log.
+#[cfg(not(target_os = "macos"))]
 fn fit_to_monitor(window: &WebviewWindow, index: usize) -> tauri::Result<Option<String>> {
     let monitors = window.available_monitors()?;
     let primary = window.primary_monitor()?;
@@ -497,6 +502,7 @@ fn fit_to_monitor(window: &WebviewWindow, index: usize) -> tauri::Result<Option<
 /// On Windows an auto-hiding taskbar leaves the work area as large as the monitor. A topmost
 /// window covering the whole monitor counts as a full-screen app there, and the hidden taskbar
 /// stops coming up at the screen edge, so the overlay then keeps one pixel clear on every side.
+#[cfg(not(target_os = "macos"))]
 fn overlay_area(m: &tauri::Monitor) -> (i32, i32, u32, u32) {
     let area = m.work_area();
     let (x, y, w, h) = (area.position.x, area.position.y, area.size.width, area.size.height);
@@ -516,10 +522,12 @@ fn fit_and_log(window: &WebviewWindow, index: usize, why: &str) {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn rect_text(x: i32, y: i32, w: u32, h: u32) -> String {
     format!("{w}x{h}+{x}+{y}")
 }
 
+#[cfg(not(target_os = "macos"))]
 fn window_rect(window: &WebviewWindow) -> String {
     match (window.outer_position(), window.outer_size()) {
         (Ok(p), Ok(s)) => rect_text(p.x, p.y, s.width, s.height),
@@ -527,6 +535,7 @@ fn window_rect(window: &WebviewWindow) -> String {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn primary_index(window: &WebviewWindow) -> usize {
     let (Ok(monitors), Ok(Some(primary))) = (window.available_monitors(), window.primary_monitor()) else {
         return 0;
@@ -537,7 +546,13 @@ fn primary_index(window: &WebviewWindow) -> usize {
         .unwrap_or(0)
 }
 
+#[cfg(not(target_os = "macos"))]
+fn monitor_count(window: &WebviewWindow) -> tauri::Result<usize> {
+    window.available_monitors().map(|monitors| monitors.len())
+}
+
 /// Whether the window no longer covers the work area of the monitor it should be on.
+#[cfg(not(target_os = "macos"))]
 fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
     let (Ok(monitors), Ok(primary), Ok(pos), Ok(size)) = (
         window.available_monitors(),
@@ -552,6 +567,16 @@ fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
     };
     let (x, y, w, h) = overlay_area(m);
     x != pos.x || y != pos.y || w != size.width || h != size.height
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hit_origin(window: &WebviewWindow) -> tauri::Result<PhysicalPosition<i32>> {
+    window.inner_position()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hit_cursor(window: &WebviewWindow) -> tauri::Result<PhysicalPosition<f64>> {
+    window.cursor_position()
 }
 
 /// Polls in a row with the mouse button up before a stuck drag is dropped (~300 ms).
@@ -674,13 +699,13 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 geometry = None;
             }
             if geometry.is_none() || geometry_at.elapsed() >= HIT_GEOMETRY_INTERVAL {
-                geometry = match (window.inner_position(), window.scale_factor()) {
+                geometry = match (hit_origin(&window), window.scale_factor()) {
                     (Ok(origin), Ok(scale)) => Some((origin, scale)),
                     _ => None,
                 };
                 geometry_at = Instant::now();
             }
-            let (Ok(cursor), Some((origin, scale))) = (window.cursor_position(), geometry) else {
+            let (Ok(cursor), Some((origin, scale))) = (hit_cursor(&window), geometry) else {
                 // No cursor (lock screen, UAC, remote desktop): let clicks through rather than
                 // keep whatever was last decided, which could leave the whole screen unclickable.
                 if !cursor_lost {
@@ -895,7 +920,7 @@ pub fn run() {
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
                 }
-                let count = w.available_monitors().map(|m| m.len()).unwrap_or(0);
+                let count = monitor_count(&w).unwrap_or(0);
                 fit_and_log(&w, index, &format!("start, {count} monitor(s)"));
                 let _ = w.set_ignore_cursor_events(true);
                 if let Err(e) = w.show() {
@@ -967,7 +992,7 @@ pub fn run() {
                     }
                     "next_monitor" => {
                         if let Some(w) = main_window(app) {
-                            let count = w.available_monitors().map(|m| m.len()).unwrap_or(1).max(1);
+                            let count = monitor_count(&w).unwrap_or(1).max(1);
                             if let Ok(mut m) = tray_overlay.monitor.lock() {
                                 *m = (*m + 1) % count;
                                 fit_and_log(&w, *m, &format!("tray next monitor, {count} monitor(s)"));
@@ -1025,7 +1050,7 @@ pub fn run() {
                     input::note_emit_failure();
                 }
             });
-            // Controller presses feed the pet like key presses (Windows/XInput; works under fullscreen games).
+            // Background controller input: Windows XInput and PS4/PS5 HID on Windows/macOS.
             let pad_handle = app.handle().clone();
             gamepad::spawn_poller(move |ev| {
                 let _ = pad_handle.emit("input", ev);
