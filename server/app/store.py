@@ -229,6 +229,28 @@ CREATE TABLE IF NOT EXISTS park_news (
 -- park: scratch tables
 -- park: race tables
 -- park: lottery tables
+-- The daily lottery (lottery.py): one row per China day, made before the day's first ticket. `hash` is SHA-256 of
+-- number + salt and is public all day; number and salt go public once `drawn` is set. `result` is the draw's JSON.
+CREATE TABLE IF NOT EXISTS lottery_days (
+  day TEXT PRIMARY KEY,
+  number TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  created REAL NOT NULL,
+  drawn REAL,
+  result TEXT NOT NULL DEFAULT '{}'
+);
+-- One row per ticket; `tier` (1 top, 2 second, 3 third, 0 none) and `prize` are set by the draw.
+CREATE TABLE IF NOT EXISTS lottery_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  number TEXT NOT NULL,
+  ts REAL NOT NULL,
+  tier INTEGER NOT NULL DEFAULT 0,
+  prize INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS lottery_tickets_day ON lottery_tickets (day, player_id);
 -- park: redeem tables
 """
 
@@ -1111,6 +1133,64 @@ class Store:
     # --- park: scratch
     # --- park: race
     # --- park: lottery
+    def lottery_day(self, day: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM lottery_days WHERE day = ?", (day,)).fetchone()
+        return dict(row) if row else None
+
+    def add_lottery_day(self, day: str, number: str, salt: str, digest: str, ts: float) -> bool:
+        """Makes [day]'s row unless it exists; True when this call made it."""
+        with self._lock:
+            n = self._db.execute("INSERT OR IGNORE INTO lottery_days (day, number, salt, hash, created) "
+                                 "VALUES (?, ?, ?, ?, ?)", (day, number, salt, digest, ts)).rowcount
+            self._commit()
+        return n > 0
+
+    def lottery_undrawn(self) -> list[str]:
+        """Days not drawn yet, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT day FROM lottery_days WHERE drawn IS NULL ORDER BY day").fetchall()
+        return [r["day"] for r in rows]
+
+    def lottery_last_drawn(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM lottery_days WHERE drawn IS NOT NULL ORDER BY day DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def set_lottery_drawn(self, day: str, ts: float, result: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE lottery_days SET drawn = ?, result = ? WHERE day = ?", (ts, result, day))
+            self._commit()
+
+    def lottery_sales(self, day: str) -> int:
+        with self._lock:
+            row = self._db.execute("SELECT COUNT(*) AS n FROM lottery_tickets WHERE day = ?", (day,)).fetchone()
+        return int(row["n"])
+
+    def lottery_tickets(self, day: str, pid: str | None = None) -> list[dict[str, Any]]:
+        """[day]'s tickets (of [pid] only when given), in buying order."""
+        with self._lock:
+            if pid is None:
+                rows = self._db.execute("SELECT * FROM lottery_tickets WHERE day = ? ORDER BY id", (day,)).fetchall()
+            else:
+                rows = self._db.execute("SELECT * FROM lottery_tickets WHERE day = ? AND player_id = ? ORDER BY id",
+                                        (day, pid)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_lottery_tickets(self, day: str, pid: str, numbers: list[str], ts: float) -> None:
+        with self._lock:
+            self._db.executemany("INSERT INTO lottery_tickets (day, player_id, number, ts) VALUES (?, ?, ?, ?)",
+                                 [(day, pid, n, ts) for n in numbers])
+            self._commit()
+
+    def set_lottery_prizes(self, rows: list[tuple[int, int, int]]) -> None:
+        """(ticket id, tier, prize) of each winning ticket."""
+        with self._lock:
+            self._db.executemany("UPDATE lottery_tickets SET tier = ?, prize = ? WHERE id = ?",
+                                 [(tier, prize, tid) for tid, tier, prize in rows])
+            self._commit()
+
     # --- park: redeem
 
     def close(self) -> None:
