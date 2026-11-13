@@ -128,6 +128,18 @@ export interface Manifest {
       dailyWinCap: number;
       minTaps: number;
     };
+    /** The park (scripts/asset_catalog.py PARK explains every field). Missing on servers without one. */
+    park?: {
+      /**
+       * Coins: `price` shards each, at most `dailyBuy` bought a China day and none while `hold` are held, `gift`
+       * free a day. Buying and the gift need `minTaps` taps in all. Every `stampsPerCoin` stamps make a coin;
+       * `badges` are the stamp totals of the three badges.
+       */
+      coin: { price: number; dailyBuy: number; hold: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
+      scratch?: unknown;
+      race?: unknown;
+      lottery?: unknown;
+    };
   };
   plates: ManifestPlate[];
 }

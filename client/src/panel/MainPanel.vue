@@ -2,6 +2,8 @@
 import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
 import { draws, online, shards, status } from "../stores/player";
+import { noPark } from "../stores/park";
+import { COIN_SMALL } from "./park/coin";
 import { incomeTip } from "../income";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
@@ -29,7 +31,7 @@ const PAGES = {
   resonance: () => import("./ResonancePage.vue"),
   dex: () => import("./CollectionPage.vue"),
   checkin: () => import("./CheckinPage.vue"),
-  scratch: () => import("./ScratchPage.vue"),
+  park: () => import("./ParkPage.vue"),
   room: () => import("./OnlinePage.vue"),
   cheer: () => import("./CheerPage.vue"),
   settings: () => import("./SettingsPage.vue"),
@@ -38,7 +40,7 @@ const EmotesPage = defineAsyncComponent(PAGES.emotes);
 const ResonancePage = defineAsyncComponent(PAGES.resonance);
 const CollectionPage = defineAsyncComponent(PAGES.dex);
 const CheckinPage = defineAsyncComponent(PAGES.checkin);
-const ScratchPage = defineAsyncComponent(PAGES.scratch);
+const ParkPage = defineAsyncComponent(PAGES.park);
 const OnlinePage = defineAsyncComponent(PAGES.room);
 const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
@@ -58,16 +60,20 @@ function warmPages() {
 }
 
 const emit = defineEmits<{ resetPet: [] }>();
-const NAV: { id: Page; label: string; en: string; icon: string }[] = [
+const ALL_NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "emotes", label: "背包", en: "BACKPACK", icon: "backpack" },
   { id: "resonance", label: "共鸣", en: "RESONANCE", icon: "card-spark" },
   { id: "dex", label: "图鉴", en: "CODEX", icon: "codex" },
   { id: "checkin", label: "签到", en: "CHECK-IN", icon: "calendar" },
-  { id: "scratch", label: "刮刮乐", en: "SCRATCH", icon: "ticket" },
+  { id: "park", label: "游乐园", en: "PARK", icon: "coin" },
   { id: "room", label: "联机", en: "ONLINE", icon: "people" },
   { id: "cheer", label: "排行", en: "RANKING", icon: "crown" },
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
+/** The park leaves the nav on a server without one, once another page is open. */
+const NAV = computed(() => ALL_NAV.filter((n) => n.id !== "park" || !noPark.value || ui.page === "park"));
+/** The coin picture in the park's nav key; the coin glyph stands in when it cannot load. */
+const coinFailed = ref(false);
 /**
  * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
  * `rise` starts the new page once the bands are on their way out.
@@ -121,16 +127,16 @@ function onKey(e: KeyboardEvent) {
   }
   if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
   const n = Number(e.key);
-  if (!Number.isInteger(n) || n < 1 || n > NAV.length) return;
+  if (!Number.isInteger(n) || n < 1 || n > NAV.value.length) return;
   if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
-  ui.page = NAV[n - 1]!.id;
+  ui.page = NAV.value[n - 1]!.id;
 }
 
 // ---- page turns
 // ui.page moves at once (the nav highlight follows it); the shown page swaps behind the
 // shutter. Clicks that outrun the animation only ever leave the latest page pending.
 const shown = ref<Page>(ui.page);
-const nextNav = computed(() => NAV.find((n) => n.id === ui.page) ?? NAV[0]!);
+const nextNav = computed(() => ALL_NAV.find((n) => n.id === ui.page) ?? ALL_NAV[0]!);
 const shutter = ref<InstanceType<typeof PageShutter>>();
 const body = ref<HTMLElement>();
 let turning = false;
@@ -283,7 +289,7 @@ function badgeOf(id: Page): number {
             <EmotesPage v-if="shown === 'emotes'" />
             <CollectionPage v-else-if="shown === 'dex'" />
             <CheckinPage v-else-if="shown === 'checkin'" />
-            <ScratchPage v-else-if="shown === 'scratch'" />
+            <ParkPage v-else-if="shown === 'park'" />
             <ResonancePage v-else-if="shown === 'resonance'" />
             <OnlinePage v-else-if="shown === 'room'" class="form-page ui-scroll" />
             <CheerPage v-else-if="shown === 'cheer'" class="form-page ui-scroll" />
@@ -309,7 +315,11 @@ function badgeOf(id: Page): number {
             @click="ui.page = n.id"
           >
             <span class="nav-face" aria-hidden="true"></span>
-            <Icon class="nav-icon" :name="n.icon" :size="20" />
+            <img
+              v-if="n.id === 'park' && !coinFailed" class="nav-icon nav-coin" :src="COIN_SMALL" alt="" draggable="false"
+              @error="coinFailed = true"
+            />
+            <Icon v-else class="nav-icon" :name="n.icon" :size="20" />
             <b class="nav-label">{{ n.label }}</b>
             <span v-if="badgeOf(n.id) > 0" class="pip">{{ badgeOf(n.id) }}</span>
           </button>
@@ -618,6 +628,14 @@ nav button:not(.on):active > :not(.nav-face) {
   transform: translateY(2px);
   transition-duration: var(--dur-press);
   transition-timing-function: ease-out;
+}
+/* The coin is a thing, not a glyph: it keeps its metal and sits a little larger than the line icons. */
+.nav-coin {
+  width: 22px;
+  height: 22px;
+  margin: -1px;
+  flex: none;
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.3));
 }
 .nav-label {
   flex: 1;

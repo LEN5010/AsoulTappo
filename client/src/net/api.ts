@@ -28,7 +28,39 @@ export interface PlayerStatus {
   cheer?: { day: string; got: number; cap: number; minTaps: number };
   /** Update rewards open on the server that this save has not claimed; missing on older servers. */
   updateRewards?: UpdateReward[];
+  /** The park: coins held and the server-wide news of big wins. Missing on servers without a park. */
+  park?: ParkStatus;
   credited?: number;
+}
+/** A big win somewhere on the server, told to every running pet once. Fields besides these depend on `kind`. */
+export interface ParkNews {
+  id: number;
+  /** Server time in seconds. */
+  ts: number;
+  kind: string;
+  nick: string;
+  [detail: string]: unknown;
+}
+/** What every status carries on a server with a park: coins held, and the news of the last 15 minutes, oldest first. */
+export interface ParkStatus { coins: number; news: ParkNews[] }
+/** GET /api/park, and `park` in the answers of the park's own requests. */
+export interface ParkState {
+  coins: number;
+  /** Taps in all reach economy.park.coin.minTaps. */
+  unlocked: boolean;
+  /** Coins bought today, and how many more may be. */
+  bought: number;
+  buyLeft: number;
+  /** Today's free coin is still waiting. */
+  gift: boolean;
+  /** Stamps toward the next coin (0 to stampsPerCoin - 1), stamps in all, and badges earned (0 to 3). */
+  stamps: number;
+  stampsTotal: number;
+  badge: number;
+  /** Shards spent on coins today, and shards won in the park today. */
+  today: { spent: number; won: number };
+  /** The server-wide scratch jackpot. */
+  jackpot: number;
 }
 /** Shards every save on `version` or newer can claim once. */
 export interface UpdateReward {
@@ -113,6 +145,9 @@ export class ApiError extends Error {
 export function newToken(rand: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): string {
   return Array.from(rand(24), (b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/** The paths Api.park may reach: /api/park and /api/redeem, and below them. */
+export const PARK_PATH = /^\/api\/(park|redeem)(\/[\w\-/]*)?(\?[\w=&%.\-]*)?$/;
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -209,6 +244,11 @@ export class Api {
   latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});
   account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
   /** Binds the account to this device's guest save (when given) or to a new save. */
+  /** Any request of the park or redeem codes; other paths are refused here, before reaching the server. */
+  park = <T>(method: "GET" | "POST", path: string, body?: unknown) => {
+    if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是游乐园的接口"));
+    return this.call<T>(method, path, body);
+  };
   link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},
     { Authorization: `Bearer ${accountToken}`, ...(guestToken ? { "X-Player-Token": guestToken } : {}) });
 
