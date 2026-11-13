@@ -1,13 +1,14 @@
 <script setup lang="ts">
-// The park's scratch cards (docs/design/amusement-park.md §5): 阿草 keeps the stall from the park's coral band
-// (band.ts: its face, and the odds behind the band's info key). The sheet first holds the two cards, basic and
-// premium; picking one opens the table, where a card is nine cells under a coating. Dragging over it scratches the
-// coating off, and three cells alike are the prize. The server decides the prize when the card is bought and pays
-// it when the card is revealed (scratchCards.ts), so the balance gives nothing away while the coating is on. Wins
-// are celebrated by size: the coins back plainly, then three steps.
+// The park's scratch cards (docs/design/amusement-park.md §5, docs/design/park-ui-rebuild.md §5.2): 阿草 keeps the
+// stall from the park's coral band (band.ts: its face, and the odds behind the band's info key). Both cards lie on
+// the table: the one picked straight in front, the other tilted behind it with its stub showing; pressing the one
+// behind swaps them. A card is nine cells under a foil coating. Dragging over it scratches the coating off, and three
+// cells alike are the prize. The server decides the prize when the card is bought and pays it when the card is
+// revealed (scratchCards.ts), so the balance gives nothing away while the coating is on. Wins are celebrated by size:
+// the coins back plainly, then three steps.
 // A card of the old shard scratch cards (/api/scratch, stores/player.ts) still unrevealed comes onto the table first,
-// without a price, and is revealed the old way; then the sheet goes back to the two cards.
-import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from "vue";
+// alone and without a price, and is revealed the old way; then the table goes back to the two cards.
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import * as sfx from "../../audio/sfx";
 import { assetUrl } from "../../asset";
 import { characterColor, emoteCover } from "../../manifest";
@@ -24,7 +25,7 @@ import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import asoulLogo from "../../assets/brand/asoul-logo.svg";
 import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes } from "../../scratch";
-import { useBand } from "./band";
+import { parkTab, useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import {
   KINDS, SCRATCH, cellOf, faceOf, levelOf, oddsRows,
@@ -40,7 +41,7 @@ const DEAL_MS = 460;
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 const EMOTE_SET = SCRATCH.cards.basic.emote?.set ?? "";
 const fmt = (n: number) => n.toLocaleString("en-US");
-/** The best shard prize of a card, printed on it in the picker. */
+/** The best shard prize of a card, at the left of the bottom bar. */
 const topPrize = (kind: CardKind) => Math.max(...SCRATCH.cards[kind].prizes.map((p) => p.shards));
 /** Result tags by level: a miss and the coins back are plain, then coral, wine and gold. */
 const TAGS: Record<string, string> = { 0: "light", plain: "light", 1: "", 2: "dark", 3: "gold" };
@@ -67,9 +68,9 @@ const plateOpen = computed(() => !!albumPlate && plateUnlocked(albumPlate.id, co
 const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
 const plateView = ref(false);
 
-/** The card picked in the sheet; null while the sheet shows both. */
-const kind = ref<CardKind | null>(null);
-const table = computed(() => (kind.value ? SCRATCH.cards[kind.value] : null));
+/** The card lying in front. */
+const kind = ref<CardKind>("basic");
+const table = computed(() => SCRATCH.cards[kind.value]);
 /** The card on the table: under its coating, then open. */
 const card = ref<ParkCard | null>(null);
 /** The card on the table is an old shard card (its cells read the same, its amounts are shards like the basic card's). */
@@ -94,6 +95,10 @@ const fresh = ref("");
 const odds = ref(false);
 const error = ref("");
 
+/** The tickets on the table: both, or the old card alone. */
+const deck = computed<readonly CardKind[]>(() => (old.value ? [kind.value] : KINDS));
+const other = computed<CardKind>(() => (kind.value === "basic" ? "premium" : "basic"));
+
 const outcome = computed(() => (card.value ? outcomeOf(card.value.cells) : null));
 const cells = computed(() => card.value?.cells.map(cellOf) ?? Array.from({ length: 9 }, () => null));
 const result = computed(() => (open.value ? outcome.value : null));
@@ -116,39 +121,56 @@ const resultText = computed(() => {
   }
 });
 const resultAmount = computed(() => resultText.value.startsWith("+"));
+
+const cost = computed(() => table.value.coins);
+const short = computed(() => coins.value < cost.value);
 /** 阿草 touts while the stall is open, watches a card being scratched, and takes each result personally. */
 const hostFace = computed(() => {
   if (result.value) return faceOf(result.value, level.value);
   if (card.value) return HOST.watching;
-  return kind.value && table.value && coins.value < table.value.coins ? HOST.closed : HOST.open;
+  return short.value ? HOST.closed : HOST.open;
 });
 useBand("scratch", () => ({ host: ACHAO[hostFace.value], info: { label: "概率", open: () => (odds.value = true) } }));
 
-const cost = computed(() => table.value?.coins ?? 0);
-const short = computed(() => coins.value < cost.value);
 /** The open card's prize did not get through: the key collects it again before anything else. */
 const unpaid = computed(() => !!card.value && open.value && !prize.value && !paying.value);
 const settled = computed(() => !card.value || (open.value && !!prize.value));
-const canBuy = computed(() => online.value && !!kind.value && !old.value && !short.value && !buying.value && !paying.value && settled.value);
+const canBuy = computed(() => online.value && !old.value && !short.value && !buying.value && !paying.value && settled.value);
+/** The card behind can come to the front: nothing is being scratched, bought or paid. */
+const canSwap = computed(() => !old.value && settled.value && !buying.value && !paying.value);
+/** Too few coins for the card in front: the main key's place sends the player to the coin page. */
+const toCoins = computed(() => online.value && short.value && !unpaid.value && !old.value && settled.value);
 const keyLabel = computed(() => {
   if (unpaid.value) return "再试一次";
-  if (old.value) return "返回";
+  if (old.value) return "下一张";
   if (!online.value) return "未连接";
-  if (short.value) return "驼币不足";
-  return "刮一张";
+  return card.value ? "再来一张" : "买一张";
 });
 
 let timers: ReturnType<typeof setTimeout>[] = [];
 const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
 
-// ---- the coating: a canvas over the cells, erased along the pointer
-const canvas = ref<HTMLCanvasElement>();
-/** The coating printed on the empty ticket before a card is bought: drawn the same way, never scratched. */
-const idleCanvas = ref<HTMLCanvasElement>();
+// ---- the coating: foil on a canvas over the cells, erased along the pointer
+/** The live coating of the card on the table. */
+const canvas = ref<HTMLCanvasElement | null>(null);
+/** The coating printed on each empty ticket: drawn the same way, never scratched. */
+const idle: Partial<Record<CardKind, HTMLCanvasElement>> = {};
+const deckEl = ref<HTMLElement>();
 let coating = new Coating();
 let last: { x: number; y: number } | null = null;
 
-/** The A-SOUL mark printed in the middle of the coating; drawn once it has loaded. */
+function setCanvas(el: unknown) {
+  const next = (el as HTMLCanvasElement | null) ?? null;
+  if (canvas.value !== next) canvas.value = next;
+}
+function setIdle(k: CardKind, el: unknown) {
+  const next = (el as HTMLCanvasElement | null) ?? undefined;
+  if (idle[k] === next) return;
+  idle[k] = next;
+  if (next) void nextTick(paintIdle);
+}
+
+/** The A-SOUL mark pressed into the middle of the coating; drawn once it has loaded. */
 const mark = new Image();
 mark.src = asoulLogo;
 mark.onload = () => {
@@ -161,8 +183,41 @@ mark.onload = () => {
 };
 const MARK_RATIO = 2287 / 721;
 
-/** Sizes `el` to its box and fills it with the coating: wine foil, halftone dots and the A-SOUL mark. False while the page has no size. */
-function drawCoat(el: HTMLCanvasElement): boolean {
+const FALLBACK: Record<string, string> = {
+  "--c-400": "#FFAD8A", "--c-500": "#FC966E", "--c-600": "#F17D5C", "--c-700": "#C34637", "--gold": "#E59B35", "--gold-soft": "#FFE3A6",
+};
+const rgbOf = (hex: string) => {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.replace(/./g, "$&$&") : h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+/** `a` mixed into `b` at share `t`: canvas takes no color-mix(). */
+const mix = (a: string, b: string, t: number) => {
+  const pa = rgbOf(a);
+  const pb = rgbOf(b);
+  return `rgb(${pa.map((v, i) => Math.round(v * t + pb[i]! * (1 - t))).join(", ")})`;
+};
+
+/** The mark in one flat colour, on a canvas of its own (the file is black). */
+function markIn(color: string, w: number, h: number): HTMLCanvasElement | null {
+  const tint = document.createElement("canvas");
+  tint.width = w;
+  tint.height = h;
+  const t = tint.getContext("2d");
+  if (!t) return null;
+  t.drawImage(mark, 0, 0, w, h);
+  t.globalCompositeOperation = "source-in";
+  t.fillStyle = color;
+  t.fillRect(0, 0, w, h);
+  return tint;
+}
+
+/**
+ * Sizes `el` to its box and fills it with the coating of a [k] card: coral foil for the basic card, gold for the
+ * premium one; one diagonal band of light across it, and the A-SOUL mark pressed in white in the middle. False while
+ * the page has no size.
+ */
+function drawCoat(el: HTMLCanvasElement, k: CardKind): boolean {
   const w = el.clientWidth;
   const h = el.clientHeight;
   const ctx = w && h ? el.getContext("2d") : null;
@@ -172,36 +227,45 @@ function drawCoat(el: HTMLCanvasElement): boolean {
   el.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const css = getComputedStyle(el);
+  const tok = (name: string) => css.getPropertyValue(name).trim() || FALLBACK[name]!;
+  const gold = k === "premium";
   const fill = ctx.createLinearGradient(0, 0, w, h);
-  fill.addColorStop(0, css.getPropertyValue("--c-700").trim() || "#C34637");
-  fill.addColorStop(1, css.getPropertyValue("--c-800").trim() || "#A12F35");
+  let shade: string;
+  if (gold) {
+    // --grad-gold, laid across the diagonal.
+    shade = mix(tok("--gold"), tok("--c-700"), 0.78);
+    fill.addColorStop(0, tok("--gold-soft"));
+    fill.addColorStop(0.54, tok("--gold"));
+    fill.addColorStop(1, shade);
+  } else {
+    shade = tok("--c-600");
+    fill.addColorStop(0, tok("--c-400"));
+    fill.addColorStop(1, tok("--c-500"));
+  }
   ctx.fillStyle = fill;
   ctx.fillRect(0, 0, w, h);
-  // Halftone dots growing toward the bottom right, as on the page-turn bands.
-  ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-  const step = 12;
-  for (let row = 0, y = step / 2; y < h; y += step, row++) {
-    for (let x = step / 2 + (row % 2) * (step / 2); x < w; x += step) {
-      ctx.beginPath();
-      ctx.arc(x, y, 0.8 + 2.6 * ((x / w + y / h) / 2), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+  const shine = ctx.createLinearGradient(0, 0, w, h);
+  shine.addColorStop(0.3, "rgba(255, 255, 255, 0)");
+  shine.addColorStop(0.41, `rgba(255, 255, 255, ${gold ? 0.5 : 0.36})`);
+  shine.addColorStop(0.47, "rgba(255, 255, 255, 0.12)");
+  shine.addColorStop(0.55, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = shine;
+  ctx.fillRect(0, 0, w, h);
   if (mark.complete && mark.naturalWidth) {
-    // The mark is black in its file: tint it white on a scratch layer first.
     const mw = Math.round(w * 0.5);
     const mh = Math.round(mw / MARK_RATIO);
-    const tint = document.createElement("canvas");
-    tint.width = Math.round(mw * dpr);
-    tint.height = Math.round(mh * dpr);
-    const t = tint.getContext("2d");
-    if (t) {
-      t.drawImage(mark, 0, 0, tint.width, tint.height);
-      t.globalCompositeOperation = "source-in";
-      t.fillStyle = "#fff";
-      t.fillRect(0, 0, tint.width, tint.height);
-      ctx.globalAlpha = 0.92;
-      ctx.drawImage(tint, (w - mw) / 2, (h - mh) / 2, mw, mh);
+    const pw = Math.round(mw * dpr);
+    const ph = Math.round(mh * dpr);
+    const x = (w - mw) / 2;
+    const y = (h - mh) / 2;
+    // Pressed in: the foil's shade along the lower edge, the white face over it.
+    const under = markIn(shade, pw, ph);
+    const face = markIn("#fff", pw, ph);
+    if (under && face) {
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(under, x + 1, y + 1.5, mw, mh);
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(face, x, y, mw, mh);
       ctx.globalAlpha = 1;
     }
   }
@@ -209,22 +273,38 @@ function drawCoat(el: HTMLCanvasElement): boolean {
 }
 
 function paintIdle() {
-  if (idleCanvas.value && !card.value) drawCoat(idleCanvas.value);
+  for (const k of KINDS) {
+    const el = idle[k];
+    if (el && el.isConnected) drawCoat(el, k);
+  }
 }
-watch(idleCanvas, () => void nextTick(paintIdle), { flush: "post" });
 
 /** Draws a fresh coating for the card on the table. Does nothing while the page has no size (it is turned away). */
 function paint() {
   const el = canvas.value;
   const current = card.value;
   if (!el || !current || open.value || coated.value === current.id) return;
-  if (!drawCoat(el)) return;
+  if (!drawCoat(el, current.kind)) return;
   coating = new Coating();
   last = null;
   untouched.value = true;
   coated.value = current.id;
 }
 watch(canvas, () => void nextTick(paint), { flush: "post" });
+
+// The ticket follows the panel's height: coatings are drawn again at the new size (a scratched one is left as it is).
+const resized = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+  paintIdle();
+  if (card.value && !open.value && untouched.value) {
+    coated.value = 0;
+    paint();
+  }
+});
+watch(deckEl, (el, was) => {
+  if (was) resized?.unobserve(was);
+  if (el) resized?.observe(el);
+});
+onBeforeUnmount(() => resized?.disconnect());
 
 function scratchTo(e: PointerEvent) {
   const el = canvas.value;
@@ -264,7 +344,7 @@ function up() {
   last = null;
 }
 
-// ---- the round: pick a card, buy, scratch, collect
+// ---- the round: buy, scratch, collect; swap the cards between rounds
 function take(state: ParkScratchState) {
   pity.value = state.pity;
   whole.value = state.emotesWhole;
@@ -286,30 +366,34 @@ function put(next: ParkCard, fromOld = false) {
   void nextTick(paint);
 }
 
-/** Opens a card's table. A card still to reveal comes first, whichever it is. */
-function pick(next: CardKind) {
-  error.value = "";
-  kind.value = next;
-  void nextTick(paintIdle);
-}
-function back() {
+/** Clears a settled card off the table; a card waiting to be revealed, or an old one, comes next. */
+function clear() {
   if (!settled.value) return;
-  kind.value = null;
   card.value = null;
   old.value = false;
   open.value = false;
   prize.value = null;
+  fresh.value = "";
   error.value = "";
   const next = waiting;
   waiting = null;
   if (next) put(next);
   else offerOld();
+  void nextTick(paintIdle);
+}
+
+/** The card behind comes to the front. */
+function swap(next: CardKind) {
+  if (!canSwap.value || next === kind.value) return;
+  kind.value = next;
+  sfx.flip(true);
+  clear();
 }
 
 /** An old card still to reveal takes the table when nothing else is on it. */
 function offerOld() {
   const pending = scratchCard.value;
-  if (pending && !doneOld.has(pending.id) && !card.value && !kind.value) put({ id: pending.id, kind: "basic", cells: pending.cells }, true);
+  if (pending && !doneOld.has(pending.id) && !card.value) put({ id: pending.id, kind: "basic", cells: pending.cells }, true);
 }
 watch(scratchCard, offerOld);
 
@@ -329,7 +413,7 @@ async function load() {
 }
 
 async function buy() {
-  if (!canBuy.value || !kind.value) return;
+  if (!canBuy.value) return;
   error.value = "";
   buying.value = true;
   const r = await parkTry<ParkScratchState>("POST", "/api/park/scratch", { kind: kind.value });
@@ -403,7 +487,7 @@ async function collectOld(current: ParkCard) {
 
 function press() {
   if (unpaid.value) void collect();
-  else if (old.value) back();
+  else if (old.value) clear();
   else void buy();
 }
 
@@ -435,11 +519,12 @@ onDeactivated(() => {
 watch(() => status.value?.player, (player, was) => {
   if (!was || player === was) return;
   card.value = null;
-  kind.value = null;
+  kind.value = "basic";
   old.value = false;
   waiting = null;
   prize.value = null;
   whole.value = null;
+  void nextTick(paintIdle);
   if (active && player) {
     void load();
     void loadScratch();
@@ -448,91 +533,80 @@ watch(() => status.value?.player, (player, was) => {
 </script>
 
 <template>
-  <section class="stall" :class="{ calm }" aria-label="刮刮乐">
-    <div class="sheet" :class="{ solo: kind !== 'basic' }">
-      <p v-if="error" class="ui-error sheet-error" role="alert">{{ error }}</p>
-      <button v-if="kind" type="button" class="ui-btn ghost small back" aria-label="返回" title="返回" :disabled="!settled" @click="back">
-        <Icon name="back" :size="18" />
-      </button>
+  <section class="stall" :class="[kind, { calm }]" aria-label="刮刮乐">
+    <div class="floor">
+      <div class="table" data-rise>
+        <div ref="deckEl" class="deck" :class="{ solo: deck.length === 1 }">
+          <!-- 16 times and up: a ring of light goes out from the card once; 100 times and the top prizes: gold rays. -->
+          <i v-if="level === 2 || level === 3" :key="`burst-${card?.id}`" class="burst" :class="`burst-${level}`" aria-hidden="true"></i>
 
-      <!-- The two cards, side by side: the price on the stub, the best prize across the middle. -->
-      <div v-if="!kind" class="picker" data-rise>
-        <button v-for="k in KINDS" :key="k" type="button" class="pick" :class="k" @click="pick(k)">
-          <span class="pick-stub" aria-hidden="true"><i class="stub-mark"></i></span>
-          <b class="pick-name">{{ NAMES[k] }}</b>
-          <span class="pick-top"><Icon name="shard" :size="16" />{{ fmt(topPrize(k)) }}</span>
-          <span class="pick-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ SCRATCH.cards[k].coins }}</span>
-        </button>
-      </div>
-
-      <template v-else>
-        <div class="table" data-rise>
           <div
-            class="ticket" :class="[kind, level !== 0 ? `lv-${level}` : '', { on: !!card, deal: dealing, open }]"
+            v-for="k in deck" :key="k" class="ticket"
+            :class="[k, k === kind
+              ? ['front', level !== 0 ? `lv-${level}` : '', { on: !!card, deal: dealing, open }]
+              : ['behind', { locked: !canSwap }]]"
           >
-            <i v-if="level === 2 || level === 3" :key="`burst-${card?.id}`" class="burst" :class="`burst-${level}`" aria-hidden="true"></i>
-            <!-- The stub printed across the top: the mark, the price and the card's number. -->
-            <p class="stub" aria-hidden="true">
-              <i class="stub-mark"></i>
-              <span v-if="!old" class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</span>
-              <span v-if="card" class="serial">No.{{ String(card.id).padStart(6, "0") }}</span>
-            </p>
-            <i class="notch left" aria-hidden="true"></i>
-            <i class="notch right" aria-hidden="true"></i>
-            <div class="field">
-              <ol class="cells" :class="{ veiled: !card || (!open && coated !== card.id) }">
-                <li v-for="(c, i) in cells" :key="i" :class="{ win: winAt.has(i), lose: !!result && !winAt.has(i) }">
-                  <template v-if="c">
-                    <span v-if="c.kind === 'shards'" class="amount" :class="{ long: c.amount >= 10000, longer: c.amount >= 100000 }">
-                      <Icon name="shard" :size="c.amount >= 10000 ? 13 : 16" />{{ c.amount }}
-                    </span>
-                    <img v-else-if="c.kind === 'emote'" :src="emoteSrc(c.key)" alt="" draggable="false" />
-                    <span v-else-if="c.kind === 'again'" class="sym again"><img :src="COIN_SMALL" alt="" draggable="false" /><small>再来</small></span>
-                    <span v-else-if="c.kind === 'jackpot'" class="sym pot"><Icon name="crown" :size="26" /><small>奖池</small></span>
-                    <span v-else-if="c.kind === 'skin'" class="sym item"><Icon name="shirt" :size="26" /><small>皮肤</small></span>
-                    <span v-else-if="c.kind === 'big'" class="sym item"><Icon name="card-spark" :size="26" /><small>大隐藏</small></span>
-                    <i v-else class="sym blank stub-mark"></i>
-                  </template>
-                </li>
-              </ol>
-              <canvas
-                v-show="card" ref="canvas" class="coat" :class="{ gone: open }" aria-hidden="true"
-                @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up"
-              ></canvas>
-              <canvas v-if="!card" ref="idleCanvas" class="coat idle" aria-hidden="true"></canvas>
-              <i v-if="card && !open && untouched && !calm" class="sheen" aria-hidden="true"></i>
+            <div class="paper">
+              <!-- The stub: the A-SOUL mark, the card's name and price, and the number of the card on the table. -->
+              <p class="stub" aria-hidden="true">
+                <i class="stub-mark"></i>
+                <template v-if="!(old && k === kind)">
+                  <b class="name">{{ NAMES[k] }}</b>
+                  <span class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ SCRATCH.cards[k].coins }}</span>
+                </template>
+                <span v-if="k === kind && card" class="serial">No.{{ String(card.id).padStart(6, "0") }}</span>
+              </p>
+              <div class="field">
+                <template v-if="k === kind">
+                  <ol class="cells" :class="{ veiled: !card || (!open && coated !== card.id) }">
+                    <li v-for="(c, i) in cells" :key="i" :class="{ win: winAt.has(i), lose: !!result && !winAt.has(i) }">
+                      <template v-if="c">
+                        <span v-if="c.kind === 'shards'" class="amount" :class="{ long: c.amount >= 10000, longer: c.amount >= 100000 }">
+                          <Icon name="shard" :size="16" />{{ c.amount }}
+                        </span>
+                        <img v-else-if="c.kind === 'emote'" :src="emoteSrc(c.key)" alt="" draggable="false" />
+                        <span v-else-if="c.kind === 'again'" class="sym again"><img :src="COIN_SMALL" alt="" draggable="false" /><small>再来</small></span>
+                        <span v-else-if="c.kind === 'jackpot'" class="sym pot"><Icon name="crown" :size="26" /><small>奖池</small></span>
+                        <span v-else-if="c.kind === 'skin'" class="sym item"><Icon name="shirt" :size="26" /><small>皮肤</small></span>
+                        <span v-else-if="c.kind === 'big'" class="sym item"><Icon name="card-spark" :size="26" /><small>大隐藏</small></span>
+                        <i v-else class="sym blank stub-mark"></i>
+                      </template>
+                    </li>
+                  </ol>
+                  <canvas
+                    v-show="card" :ref="setCanvas" class="coat" :class="{ gone: open }" aria-hidden="true"
+                    @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up"
+                  ></canvas>
+                </template>
+                <canvas v-if="k !== kind || !card" :ref="(el) => setIdle(k, el)" class="coat idle" aria-hidden="true"></canvas>
+                <i v-if="k === kind && card && !open && untouched && !calm" class="sheen" aria-hidden="true"></i>
+              </div>
             </div>
             <b
-              v-if="result" :key="card?.id" class="ui-tag result" :class="[TAGS[String(level)], { word: !resultAmount, still: level === 0 || level === 'plain' }]"
-              role="status"
+              v-if="k === kind && result" :key="card?.id" class="ui-tag result"
+              :class="[TAGS[String(level)], { word: !resultAmount, still: level === 0 || level === 'plain' }]" role="status"
             >
-              <Icon v-if="resultAmount" name="shard" :size="16" />{{ resultText }}
+              <Icon v-if="resultAmount" name="shard" :size="26" />{{ resultText }}
             </b>
-          </div>
-
-          <div class="keys">
-            <button v-if="card && !open" type="button" class="ui-btn large peel" @click="finish">全部刮开</button>
             <button
-              v-else type="button" class="ui-btn primary buy" :class="{ pulse: canBuy && !card }"
-              :disabled="!canBuy && !unpaid && !(old && settled)" :aria-busy="buying || paying" @click="press"
-            >
-              <span class="buy-label">{{ keyLabel }}</span>
-              <small v-if="!unpaid && !old" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
-            </button>
+              v-if="k !== kind" type="button" class="swap" :aria-label="NAMES[k]" :disabled="!canSwap" @click="swap(k)"
+            ></button>
           </div>
         </div>
+      </div>
 
-        <aside v-if="kind === 'basic'" class="album" data-rise>
-          <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
-          <ol class="stickers">
-            <li
-              v-for="(e, i) in SCRATCH_EMOTES" :key="e.key"
-              :class="{ has: ownedKeys.has(e.key), fresh: fresh === e.key }" :title="ownedKeys.has(e.key) ? e.name : undefined"
-              :style="{ '--lean': leanOf(i) }"
-            >
-              <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" loading="lazy" decoding="async" draggable="false" />
-            </li>
-          </ol>
+      <aside v-if="kind === 'basic'" class="album" data-rise>
+        <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
+        <ol class="stickers ui-scroll">
+          <li
+            v-for="(e, i) in SCRATCH_EMOTES" :key="e.key"
+            :class="{ has: ownedKeys.has(e.key), fresh: fresh === e.key }" :title="ownedKeys.has(e.key) ? e.name : undefined"
+            :style="{ '--lean': leanOf(i) }"
+          >
+            <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" loading="lazy" decoding="async" draggable="false" />
+          </li>
+        </ol>
+        <div class="album-foot">
           <b v-if="complete" class="done">已集齐</b>
           <div v-else class="pity">
             <span>保底<b>{{ pity }}</b><i>/ {{ pityMax }}</i></span>
@@ -547,14 +621,30 @@ watch(() => status.value?.player, (player, was) => {
               :width="plateBox.width" :height="plateBox.height" :font="plateFont" still
             />
           </button>
-        </aside>
-      </template>
+        </div>
+      </aside>
+
+      <!-- What only the premium card can win, as three emblems: the jackpot in gold, a skin and a big hidden card. -->
+      <aside v-else class="prizes" data-rise>
+        <figure class="emblem pot">
+          <span class="medal"><Icon name="crown" :size="56" /></span>
+          <figcaption>奖池</figcaption>
+        </figure>
+        <figure class="emblem">
+          <span class="medal"><Icon name="shirt" :size="40" /></span>
+          <figcaption>皮肤</figcaption>
+        </figure>
+        <figure class="emblem">
+          <span class="medal"><Icon name="card-spark" :size="40" /></span>
+          <figcaption>大隐藏</figcaption>
+        </figure>
+      </aside>
     </div>
 
     <PlateDetail v-if="plateView && albumPlate" :plate="albumPlate" @close="plateView = false" />
     <Modal v-if="odds" title="刮刮乐概率" heading @close="odds = false">
       <div class="odds">
-        <table v-for="k in kind ? [kind] : KINDS" :key="k" class="rates">
+        <table v-for="k in [kind, other]" :key="k" class="rates">
           <thead><tr><th>{{ NAMES[k] }}</th><th>概率</th><th v-if="k === 'basic' && !complete">保底</th></tr></thead>
           <tbody>
             <tr v-for="(row, n) in oddsRows(k, complete)" :key="n">
@@ -569,156 +659,141 @@ watch(() => status.value?.player, (player, was) => {
         </table>
       </div>
     </Modal>
+
+    <div class="park-actions">
+      <!-- A refusal stands in the bar beside the key, so the table does not move. -->
+      <p v-if="error" class="ui-error stall-error" role="alert">{{ error }}</p>
+      <span v-else-if="!old" class="top"><small>最高</small><Icon name="shard" :size="18" /><b>{{ fmt(topPrize(kind)) }}</b></span>
+      <div class="park-actions-main">
+        <button v-if="card && !open" type="button" class="ui-btn large peel" @click="finish">全部刮开</button>
+        <template v-else-if="toCoins">
+          <span class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</span>
+          <button type="button" class="ui-btn large go" @click="parkTab = 'coin'">去换驼币</button>
+        </template>
+        <button
+          v-else type="button" class="ui-btn primary large buy" :class="{ pulse: canBuy && !card }"
+          :disabled="!canBuy && !unpaid && !(old && settled)" :aria-busy="buying || paying" @click="press"
+        >
+          <span>{{ keyLabel }}</span>
+          <small v-if="!unpaid && !old && online" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
+        </button>
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-/* The stall, on the park's sheet under the coral band. */
+/* The stall, on the park's sheet under the coral band: the table and the column beside it, then the bottom bar. */
 .stall {
   display: flex;
   flex-direction: column;
 }
-
-/* Back to the two cards, at the top left of the sheet. */
-.back {
-  grid-column: 1 / -1;
-  justify-self: start;
-  width: 36px;
-  margin: -12px 0 -12px -8px;
-  padding: 0;
-  color: var(--ink);
-}
-
-.sheet {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(200px, 37%);
-  gap: 24px;
-  padding: 24px 22px 20px;
-}
-.sheet.solo {
-  grid-template-columns: minmax(0, 1fr);
-}
-.sheet-error {
-  grid-column: 1 / -1;
+.stall-error {
+  min-width: 0;
   margin: 0;
 }
-
-/* ---- the picker: two cards to keep, not keys: they lift off the paper under the pointer */
-.picker {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: center;
-  gap: 24px;
-  padding: 6px 0 4px;
-}
-.pick {
-  position: relative;
-  flex: 0 1 220px;
-  display: flex;
-  flex-direction: column;
+.floor {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(212px, 31%);
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 0 14px 18px;
-  border: 0;
-  border-radius: var(--radius-l);
-  background: var(--grad-sky);
-  box-shadow: var(--shadow-paper);
-  color: #fff;
-  cursor: pointer;
-  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
-}
-.pick::before {
-  content: "";
-  position: absolute;
-  inset: 6px;
-  border-radius: var(--radius-m);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
-  pointer-events: none;
-}
-/* The premium card wears the gold of the coin and the big hidden cards. */
-.pick.premium::before,
-.ticket.premium::before {
-  box-shadow: inset 0 0 0 3px var(--gold-soft), inset 0 0 0 4px rgba(var(--gold-rgb), 0.6);
-}
-.pick:hover {
-  transform: translateY(-3px) rotate(-1deg);
-  box-shadow: var(--shadow-key), var(--shadow-backlight);
-}
-.pick:focus-visible {
-  outline: 2px solid var(--c-700);
-  outline-offset: 3px;
-}
-.pick-stub {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 40px;
-  border-bottom: 3px dotted rgba(255, 255, 255, 0.85);
-}
-.pick-name {
-  margin-top: 6px;
-  font: 800 34px/1 var(--font);
-  letter-spacing: 0.08em;
-}
-.pick-top {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font: 800 26px/1 var(--font-latin);
-  color: var(--ink);
-}
-.pick-top svg {
-  color: #fff;
-}
-.pick-cost,
-.price,
-.buy-cost {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font: 800 var(--fs-number)/1 var(--font-latin);
-  color: var(--ink);
-}
-.pick-cost img,
-.price img,
-.buy-cost img {
-  width: 18px;
-  height: 18px;
-  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
+  gap: 20px;
+  --floor-l: 18px;
+  --floor-t: 4px;
+  padding: var(--floor-t) 26px 4px var(--floor-l);
 }
 
-/* ---- the table: the card, and under it the one key that buys the next */
+/* ---- the table: two tickets, one in front and one tilted behind it */
 .table {
-  position: relative;
+  align-self: stretch;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
   min-width: 0;
+  /* Out to the sheet's left and top edges, so the rays of a big win end where the paper does. */
+  margin: calc(var(--floor-t) * -1) 0 0 calc(var(--floor-l) * -1);
+  padding: var(--floor-t) 0 22px var(--floor-l);
+  /* The rays stay inside the table: the body would scroll. The bottom padding is room for the result tag. */
+  overflow: clip;
 }
 /*
- * A card is a thing to keep, not a key: no lip. Before one is bought the ticket lies flat on the paper under its
- * coating, with nothing to press; the card being scratched lifts off the page in the coral backlight.
+ * Sized by the panel's height. The ticket's width follows from its height: the field under the stub is square.
+ * The deck leaves room above and to the right for the ticket behind.
  */
-.ticket {
-  --pad: 14px;
-  --stub-h: 40px;
-  --burst: rgba(var(--c-500-rgb), 0.7);
+.deck {
+  --h: clamp(260px, calc(100cqh - 322px), 400px);
+  --stub-h: 46px;
+  --pad: 16px;
+  --w: calc(var(--h) - var(--stub-h) + var(--pad));
+  /* Far enough up that the name and price on the stub behind clear the front ticket. */
+  --dx: calc(var(--w) * 0.1);
+  --dy: 34px;
   position: relative;
-  width: min(100%, clamp(240px, calc(50cqh - 20px), 360px));
+  flex: none;
+  width: calc(var(--w) * 1.1 + 26px);
+  height: calc(var(--h) + 56px);
+}
+/* The old card alone: no room kept for a ticket behind. */
+.deck.solo {
+  width: var(--w);
+}
+/* A ticket is a thing to keep, not a key: no lip. The shadow is a filter on the outer box, as the paper is cut. */
+.ticket {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--w);
+  height: var(--h);
+  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.14)) drop-shadow(0 6px 10px rgba(var(--c-900-rgb), 0.12));
+  transition: transform var(--dur-stage) var(--ease-out), filter var(--dur-base) var(--ease-out);
+}
+.ticket.front {
+  z-index: 2;
+}
+/* The card being scratched lifts off the page a little more. */
+.ticket.front.on {
+  filter: drop-shadow(0 2px 2px rgba(var(--c-900-rgb), 0.16)) drop-shadow(0 14px 18px rgba(var(--c-900-rgb), 0.2));
+}
+.ticket.behind {
+  z-index: 1;
+  transform: translate(var(--dx), calc(var(--dy) * -1)) rotate(6deg);
+}
+.ticket.behind:not(.locked):hover {
+  transform: translate(var(--dx), calc(var(--dy) * -1 - 6px)) rotate(4deg);
+}
+.swap {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-l);
+  background: none;
+  cursor: pointer;
+}
+.swap:disabled {
+  cursor: default;
+}
+.swap:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+/* The card itself: coral, with a half-round bite out of each side on the stub's perforations. */
+.paper {
+  --notch: calc(var(--stub-h) - 6px);
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius-l);
   background: var(--grad-sky);
-  box-shadow: var(--shadow-paper);
+  mask:
+    radial-gradient(circle at 0 var(--notch), transparent 11px, #000 11.5px),
+    radial-gradient(circle at 100% var(--notch), transparent 11px, #000 11.5px);
+  mask-composite: intersect;
 }
-.ticket.on {
-  box-shadow: var(--shadow-key), var(--shadow-backlight);
-}
-/* The inner rule of the card backs the resonance deals. */
-.ticket::before {
+/* The inner rule of the card backs; the premium card's is gold. */
+.paper::before {
   content: "";
   position: absolute;
   inset: 6px;
@@ -726,23 +801,29 @@ watch(() => status.value?.player, (player, was) => {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
   pointer-events: none;
 }
-/* Printed on the stub: the A-SOUL mark, the price and the card's number; a row of perforations under it. */
+.premium .paper::before {
+  box-shadow: inset 0 0 0 3px var(--gold-soft), inset 0 0 0 4px rgba(var(--gold-rgb), 0.6);
+}
+/* Printed on the stub: the A-SOUL mark, the name, the price and the card's number; a row of perforations under it. */
 .stub {
   position: relative;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
   height: var(--stub-h);
   margin: 0;
-  padding: 2px calc(var(--pad) + 6px) 0;
+  padding: 2px 22px 0;
   box-sizing: border-box;
   color: var(--ink);
+  white-space: nowrap;
+  container: stub / inline-size;
 }
 .stub::after {
   content: "";
   position: absolute;
-  left: calc(var(--pad) + 4px);
-  right: calc(var(--pad) + 4px);
+  left: 20px;
+  right: 20px;
   bottom: 5px;
   height: 3px;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.85) 1.1px, transparent 1.6px) 0 50% / 8px 3px repeat-x;
@@ -755,34 +836,44 @@ watch(() => status.value?.player, (player, was) => {
   mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
+.name {
+  font: 800 var(--fs-section)/1 var(--font);
+  letter-spacing: 0.06em;
+}
+.price,
+.buy-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink);
+}
+.price img,
+.buy-cost img {
+  width: 18px;
+  height: 18px;
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
+}
 .serial {
   margin-left: auto;
   font: 800 var(--fs-label)/1 var(--font-latin);
   letter-spacing: 0.12em;
   opacity: 0.72;
 }
-/* The two half-round bites of a ticket, level with the perforations: the paper shows through. */
-.notch {
-  position: absolute;
-  top: calc(var(--stub-h) - 17px);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow: inset 0 1px 2px rgba(var(--shadow-rgb), 0.1);
+/* A small ticket keeps its name and price; the number goes. */
+@container stub (max-width: 300px) {
+  .serial {
+    display: none;
+  }
 }
-.notch.left {
-  left: -11px;
-}
-.notch.right {
-  right: -11px;
-}
-/* The nine cells, and over them the coating. */
+/* The nine cells, and over them the coating, in a white window. */
 .field {
   position: relative;
-  aspect-ratio: 1;
+  flex: 1;
   container-type: inline-size;
-  margin: 0 var(--pad) var(--pad);
+  margin: 2px var(--pad) var(--pad);
+  border-radius: var(--radius-m);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92);
 }
 .ticket.deal {
   animation: deal-in 440ms var(--ease-out) both;
@@ -795,7 +886,7 @@ watch(() => status.value?.player, (player, was) => {
   inset: 0;
   display: grid;
   grid-template: repeat(3, minmax(0, 1fr)) / repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 2.8cqw;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -833,21 +924,23 @@ watch(() => status.value?.player, (player, was) => {
   max-width: none;
   max-height: none;
 }
+/* Amounts scale with the card, so a long one stays inside its cell on a small panel. */
 .amount {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  /* Scales with the card, so a long amount stays inside its cell on a small panel. */
-  font: 800 min(27px, 8.6cqw)/1 var(--font-latin);
+  gap: 0.06em;
+  font: 800 11.5cqw/1 var(--font-latin);
   color: var(--ink);
 }
 .amount.long {
-  font-size: min(21px, 6.6cqw);
+  font-size: 9.6cqw;
 }
 .amount.longer {
-  font-size: min(18px, 5.6cqw);
+  font-size: 8.2cqw;
 }
 .amount svg {
+  width: 0.56em;
+  height: 0.56em;
   color: var(--c-600);
 }
 /* The named symbols: a mark and a word under it. */
@@ -855,16 +948,20 @@ watch(() => status.value?.player, (player, was) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 0.8cqw;
   color: var(--c-700);
 }
+.sym svg {
+  width: 11cqw;
+  height: 11cqw;
+}
 .sym small {
-  font: 800 min(var(--fs-label), 4.4cqw)/1 var(--font);
+  font: 800 clamp(11px, 4.2cqw, 15px)/1 var(--font);
   color: var(--ink-2);
 }
 .sym.again img {
-  width: min(34px, 10cqw);
-  height: min(34px, 10cqw);
+  width: 12cqw;
+  height: 12cqw;
   filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
 }
 .sym.pot {
@@ -876,6 +973,7 @@ watch(() => status.value?.player, (player, was) => {
 }
 /* The three alike: framed in the prize's tone, the other six step back. */
 .cells .win {
+  --burst: rgba(var(--c-500-rgb), 0.7);
   z-index: 1;
   box-shadow: 0 0 0 3px var(--c-700), 0 0 14px 1px var(--burst);
   animation: cell-pop 520ms var(--ease-spring) both;
@@ -901,14 +999,13 @@ watch(() => status.value?.player, (player, was) => {
   55% { transform: scale(1.1); }
   100% { transform: none; }
 }
-/* 16 times and up: a ring of light goes out from the card once. 100 times, the jackpot and a skin or big card: gold
- * rays turn behind it for a while. */
+/* Behind both tickets, centred on the front one. */
 .burst {
   position: absolute;
-  z-index: -1;
-  left: 50%;
-  top: 50%;
-  width: 150%;
+  z-index: 0;
+  left: calc(var(--w) / 2);
+  top: calc(100% - var(--h) / 2);
+  width: calc(var(--w) * 1.5);
   aspect-ratio: 1;
   border-radius: 50%;
   pointer-events: none;
@@ -919,11 +1016,11 @@ watch(() => status.value?.player, (player, was) => {
   animation: ring-out 900ms var(--ease-out) both;
 }
 .burst-3 {
-  width: 190%;
+  width: calc(var(--w) * 1.6);
   background:
     radial-gradient(circle, rgba(var(--gold-rgb), 0.5), transparent 58%),
     repeating-conic-gradient(rgba(var(--gold-rgb), 0.55) 0deg 9deg, transparent 9deg 24deg);
-  mask: radial-gradient(circle, #000 30%, transparent 68%);
+  mask: radial-gradient(circle closest-side, #000 46%, transparent 94%);
   animation: rays 3.2s var(--ease-out) both;
 }
 @keyframes ring-out {
@@ -936,14 +1033,14 @@ watch(() => status.value?.player, (player, was) => {
   70% { opacity: 1; }
   100% { opacity: 0; rotate: 70deg; }
 }
-.lv-3.ticket {
+.ticket.lv-3 {
   animation: lift 700ms var(--ease-spring) both;
 }
 @keyframes lift {
   40% { transform: translateY(-8px) scale(1.03); }
 }
 
-/* The coating: wine foil over the cells, scratched off along the pointer. */
+/* The coating: foil over the cells, scratched off along the pointer. */
 .coat {
   position: absolute;
   left: 0;
@@ -954,7 +1051,7 @@ watch(() => status.value?.player, (player, was) => {
   cursor: crosshair;
   touch-action: none;
 }
-/* The empty ticket's coating is only printed: nothing to scratch until a card is bought. */
+/* An empty ticket's coating is only printed: nothing to scratch until a card is bought. */
 .coat.idle {
   cursor: default;
   pointer-events: none;
@@ -978,24 +1075,26 @@ watch(() => status.value?.player, (player, was) => {
   0%, 55% { background-position: 160% 0; }
   100% { background-position: -60% 0; }
 }
-/* What the card paid, stuck on its corner like a price tag. */
+/* What the card paid, stuck across its bottom edge. */
 .result {
   position: absolute;
-  z-index: 2;
-  right: -12px;
-  top: -14px;
+  z-index: 3;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 50%;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 12px;
-  rotate: 5deg;
-  font: 800 22px/34px var(--font-latin);
-  box-shadow: var(--shadow-key);
+  gap: 4px;
+  padding: 0 18px;
+  border-radius: var(--radius-m);
+  box-shadow: 0 3px 8px -3px rgba(var(--c-900-rgb), 0.35);
+  font: 800 36px/50px var(--font-latin);
   animation: tag-in 420ms var(--ease-pop) 120ms both;
 }
 /* Words, not an amount: set in the text face. */
 .result.word {
-  font: 800 var(--fs-number)/32px var(--font);
+  font: 800 22px/50px var(--font);
+  letter-spacing: 0.04em;
 }
 /* A miss and the coins back: the tag is just there. */
 .result.still {
@@ -1005,45 +1104,19 @@ watch(() => status.value?.player, (player, was) => {
   from { opacity: 0; scale: 0.5; }
 }
 
-.keys {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 3px;
-}
-.buy {
-  flex-direction: column;
-  gap: 3px;
-  height: 58px;
-  min-width: 196px;
-  padding: 0 28px;
-  font-size: 18px;
-}
-.peel {
-  height: 58px;
-  min-width: 196px;
-}
-.buy-cost {
-  font-size: var(--fs-label);
-  letter-spacing: 0.04em;
-  color: inherit;
-  opacity: 0.85;
-}
-.buy-cost img {
-  width: 14px;
-  height: 14px;
-}
-
 /* ---- the album: 阿草's twenty stickers, a slot each */
 .album {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
+.album .ui-label {
+  margin-bottom: 8px;
+}
 .stickers {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1095,9 +1168,12 @@ watch(() => status.value?.player, (player, was) => {
 .stickers .fresh img {
   animation: cell-pop 560ms var(--ease-spring) 200ms both;
 }
+.album-foot {
+  display: flex;
+  flex-direction: column;
+}
 .pity {
-  margin-top: auto;
-  padding-top: 14px;
+  padding-top: 12px;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
@@ -1123,8 +1199,7 @@ watch(() => status.value?.player, (player, was) => {
   margin-top: 4px;
 }
 .done {
-  margin-top: auto;
-  padding-top: 14px;
+  padding-top: 12px;
   font-size: var(--fs-strong);
   color: var(--c-700);
 }
@@ -1132,7 +1207,7 @@ watch(() => status.value?.player, (player, was) => {
 .album-plate {
   display: flex;
   justify-content: center;
-  margin-top: 12px;
+  margin-top: 8px;
   padding: 4px 0;
   border: 0;
   border-radius: var(--radius-m);
@@ -1151,6 +1226,81 @@ watch(() => status.value?.player, (player, was) => {
 .album-plate:focus-visible {
   outline: 2px solid var(--c-500);
   outline-offset: 2px;
+}
+
+/* ---- the premium card's top prizes: three emblems, the jackpot's in gold */
+.prizes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-items: center;
+  align-content: center;
+  gap: 20px 12px;
+}
+.emblem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.emblem.pot {
+  grid-column: 1 / -1;
+}
+.medal {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--grad-sky);
+  color: #fff;
+  box-shadow: 0 0 0 4px #fff, 0 7px 14px -6px rgba(var(--c-900-rgb), 0.45);
+  rotate: 4deg;
+}
+.emblem:nth-child(2) .medal {
+  rotate: -5deg;
+}
+.pot .medal {
+  width: 132px;
+  background: var(--grad-gold);
+  color: var(--ink);
+  rotate: -3deg;
+}
+.emblem figcaption {
+  font: 800 var(--fs-strong)/1 var(--font);
+  color: var(--ink-2);
+}
+.pot figcaption {
+  font-size: var(--fs-number);
+  color: var(--ink);
+}
+
+/* ---- the bottom bar: the card's top prize, and the main key */
+.top {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.top small {
+  margin-right: 4px;
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+}
+.top svg {
+  color: var(--c-600);
+}
+.top b {
+  font: 800 26px/1 var(--font-latin);
+  color: var(--ink);
+}
+.buy,
+.peel,
+.go {
+  min-width: 176px;
+}
+.buy-cost {
+  margin-left: 4px;
+  color: inherit;
 }
 
 /* ---- the odds: one table a card */
@@ -1179,8 +1329,8 @@ th, td {
   color: var(--c-600);
 }
 
-.calm .stickers img,
-.calm .pick {
+.calm .ticket,
+.calm .stickers img {
   transition: none;
 }
 .calm .ticket.deal,
@@ -1194,34 +1344,83 @@ th, td {
   display: none;
 }
 
+/* Narrow: the column goes under the table, the stickers in one row that scrolls sideways. */
 @container panel (max-width: 760px) {
-  .sheet {
-    grid-template-columns: minmax(0, 1fr) minmax(168px, 34%);
-    gap: 16px;
-    padding-inline: 16px;
+  .floor {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    --floor-l: 16px;
+    --floor-t: 10px;
+    padding: var(--floor-t) 16px 14px var(--floor-l);
   }
-  .picker {
-    gap: 16px;
-  }
-  .buy,
-  .peel {
-    min-width: 150px;
-    padding: 0 18px;
-  }
-}
-@container panel (max-height: 600px) {
-  .sheet {
-    padding-block: 18px 14px;
-  }
-  .table {
-    gap: 12px;
-  }
-  .buy,
-  .peel {
-    height: 50px;
+  .album .ui-label {
+    margin-bottom: 6px;
   }
   .stickers {
+    display: flex;
     gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+  .stickers li {
+    flex: none;
+    width: 52px;
+  }
+  .album-foot {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+  .pity,
+  .done {
+    flex: 1;
+    padding-top: 4px;
+  }
+  .album-plate {
+    margin-top: 0;
+  }
+  .prizes {
+    grid-template-columns: repeat(3, auto);
+    justify-content: center;
+    align-items: end;
+    gap: 12px 28px;
+    padding-block: 4px 8px;
+  }
+  .emblem.pot {
+    grid-column: auto;
+  }
+  .medal {
+    width: 68px;
+  }
+  .medal svg {
+    width: 32px;
+    height: 32px;
+  }
+  .pot .medal {
+    width: 88px;
+  }
+  .pot .medal svg {
+    width: 44px;
+    height: 44px;
+  }
+  .buy,
+  .peel,
+  .go {
+    min-width: 140px;
+  }
+}
+@container panel (max-height: 560px) {
+  .floor {
+    --floor-t: 6px;
+    padding-bottom: 10px;
+  }
+  .buy,
+  .peel,
+  .go {
+    height: 40px;
+  }
+  .top b {
+    font-size: 22px;
   }
 }
 </style>
