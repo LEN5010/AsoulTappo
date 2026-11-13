@@ -166,10 +166,10 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /admin/saves?q=&limit= | 查找存档，含游客存档。q 按主站用户 ID 精确匹配绑定的存档；q 为 4–16 位十六进制时，同时按存档 ID 前缀匹配（不分大小写），两者合并。q 缺省或为空返回 422，只有空白或匹配不到时返回空列表。limit 为 1–50，默认 20。返回 `{saves:[...]}`，按最近活动倒序，每项 `{player,userId,created,lastActive,shards,owned,taps,drawn,tapCooldown,clientVersion}`；userId 为绑定的主站用户 ID，游客存档为 null；tapCooldown 为敲击冷却剩余秒数；clientVersion 为这份存档最近一次请求的客户端版本，没有记录时为 null |
 | GET /admin/saves/{player} | 单个存档详情：上一行的字段，加 pity `{legendary,skin,scratch}`、today `{day,taps,tapShards}`（当天计入的敲击数和敲击得到的碎片）、recent（最近获得的物品，同 `/api/collection`）、ledger（最近 7 天流水，`[{day,sources}]`，从旧到新）、log（这份存档最近 20 条管理操作，格式同 `/admin/log`）。存档不存在时返回 409 `no_save` |
 | POST /admin/saves/{player}/shards | `{delta,reason?}`，调整任意存档（含游客存档）的碎片，规则同 `/admin/accounts/{userId}/shards`；存档不存在时返回 409 `no_save` |
-| GET /admin/log?player=&limit=&before= | 管理操作日志，新的在前。player 只看一份存档；limit 为 1–200，默认 50；before 为条目 id，接着往下翻。返回 `{entries:[{id,ts,actor,action,player,detail,reason}]}`：action 为 `shards`（detail `{delta,shards}`）、`unlink`（`{userId}`）、`reward_open`（`{version,shards}`）、`reward_end`（`{id,version}`）、`notice`（`{minVersion,announcements}`，公告只记标题）、`blocked_words`（`{count}`）；player 不涉及存档时为 null。拒绝的改动不记 |
+| GET /admin/log?player=&limit=&before= | 管理操作日志，新的在前。player 只看一份存档；limit 为 1–200，默认 50；before 为条目 id，接着往下翻。返回 `{entries:[{id,ts,actor,action,player,detail,reason}]}`：action 为 `shards`（detail `{delta,shards}`）、`unlink`（`{userId}`）、`reward_open`（`{version,shards}`）、`reward_end`（`{id,version}`）、`notice`（`{minVersion,announcements}`，公告只记标题）、`blocked_words`（`{count}`）、`code_create`（`{ids,count,shards,coins,uses,expires,custom}`，ids 为这批第一个和最后一个码的 id，reason 为备注）、`code_disable`（`{id,code}`）；player 不涉及存档时为 null。拒绝的改动不记 |
 | GET /admin/insights?days= | 概况。days 为 1–90，默认 30。返回 `{today,retention,activeDays,active,versions,collection,drops,rarities}`。retention 每个创建日一行 `{day,size,d1,d3,d7}`：size 为当天新建的存档数，dN 为其中第 N 天又活跃的个数，那一天还没过完时为 null。activeDays 为 7，active 为近 7 天活跃的存档数；versions 为这些存档的客户端版本分布（`[{name,count}]`，没有记录的为 `unknown`，不是版本号的为 `other`；从新到旧）。collection `{total,saves}`：saves[k] 为近 7 天活跃、持有 k 张卡的存档数。drops 每天一行 `{day,rarities:{稀有度:{count,new}}}`，为共鸣、兑换和刮刮乐得到的物品数及其中新物品数；rarities 为稀有度的显示名，含 `skin` |
 | GET /admin/online?days= | 联机。days 为 1–90，默认 14。返回 `{today,now,series,recent,recentStep}`。now 为此刻的 `{rooms,members,saves,largest,public}`：有成员的房间数、成员数、其中不同存档数、最大房间人数、公开列出的房间数。series 每天一行 `{day,samples,peakMembers,peakRooms,peakSaves,avgMembers,sharedMinutes,counts,duels,cheer}`：服务端每分钟记一次房间采样，samples 为当天采样数（服务端停机时没有采样），sharedMinutes 为有房间至少两人的分钟数；counts 为当天次数 `{room_join,poke,profile,board_profile,emote,duel_invite,cheer_round}`（进房间、戳一戳、房间里看主页、收藏榜看主页、表情、猜拳邀请、应援满条）；duels `{played,bets:{下注:局数}}` 为当天结束的猜拳局数；cheer `{shards,saves}` 为当天应援发出的碎片和领到的存档数。recent 为最近 24 小时，每 recentStep（10）分钟一个点 `{ts,rooms,members,saves}`，取那段时间的最大值 |
-| GET /admin/anomalies?day= | 异常。day 为 `YYYY-MM-DD`，默认今天。返回 `{day,tapCap,taps,heavy,shards}`。taps 为当天有标记的存档，按匀速冷却次数、服务端冷却次数、被丢弃的敲击数倒序，最多 50 个 `{player,userId,credited,dropped,serverCooldowns,clientCooldowns,steadyCooldowns,tapShards}`：dropped 为上报了但没有计入的敲击（超过速率或冷却中），serverCooldowns 为服务端判定连续过快而开始的冷却次数，clientCooldowns 为客户端自己的防连点开始的冷却次数，steadyCooldowns 为服务端判定匀速而开始的冷却次数，credited、tapShards 为当天计入的敲击和敲击碎片。heavy 为当天计入敲击最多的 20 个存档，格式同 taps（速度有起伏又没到冷却线的连点器只会出现在这里）。shards 为当天靠玩法得到碎片最多的 50 个存档 `{player,userId,gained,sources}`，不算初始碎片、更新奖励和后台调整 |
+| GET /admin/anomalies?day= | 异常。day 为 `YYYY-MM-DD`，默认今天。返回 `{day,tapCap,taps,heavy,shards}`。taps 为当天有标记的存档，按匀速冷却次数、服务端冷却次数、被丢弃的敲击数倒序，最多 50 个 `{player,userId,credited,dropped,serverCooldowns,clientCooldowns,steadyCooldowns,tapShards}`：dropped 为上报了但没有计入的敲击（超过速率或冷却中），serverCooldowns 为服务端判定连续过快而开始的冷却次数，clientCooldowns 为客户端自己的防连点开始的冷却次数，steadyCooldowns 为服务端判定匀速而开始的冷却次数，credited、tapShards 为当天计入的敲击和敲击碎片。heavy 为当天计入敲击最多的 20 个存档，格式同 taps（速度有起伏又没到冷却线的连点器只会出现在这里）。shards 为当天靠玩法得到碎片最多的 50 个存档 `{player,userId,gained,sources}`，不算初始碎片、更新奖励、兑换码和后台调整 |
 | GET /admin/blocked-words | 昵称屏蔽词表，返回 `{words,count}`，按上次保存时的顺序 |
 | PUT /admin/blocked-words | `{words:[...]}`，整表替换。每个词去掉首尾空白后为 1–64 个字符，最多 20000 个（按去重前的个数算），不符合时返回 422 且词表不变；去重后保存原词（不保存折叠结果）。返回 `{count}`，为去重后的个数。新词表立即对在线成员生效，见下节 |
 
@@ -214,6 +214,17 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | POST /admin/update-rewards/{id}/end | 结束奖励，没领的存档不能再领。奖励不存在或已结束返回 409 `no_reward`（不用 404，主站把 404 当作服务不可用）。返回同 GET |
 
 新建档也能领，奖励按存档发，不看存档创建时间。客户端在面板里弹出可领的奖励，只列出自己版本够得着的。
+
+### 兑换码管理
+
+码的格式和兑换规则见游乐园一节的兑换码。每个码在下列接口里表示为 `{id,code,custom,shards,coins,uses,used,expires,disabled,note,createdBy,created}`：code 为显示形式（生成的码分三段）；custom 为管理员自己写的码；uses 为可用次数，used 为已兑换次数；expires 为过期时间（Unix 秒），不过期为 null；disabled 为停用时间，没停用为 null；createdBy 为生成它的主站管理员。
+
+| 接口 | 说明 |
+| --- | --- |
+| POST /admin/codes | `{shards,coins,count,uses,expires,note,code}`，生成兑换码。shards 0–1000000、coins 0–1000，两者至少一个大于 0，否则返回 400 `bad_reward`；没有游乐园的服务端 coins 必须为 0。count 为 1–500（默认 1），uses 为每个码的可用次数 1–1000000（默认 1），expires 为 Unix 秒（0 或缺省为不过期，已过去的时间返回 400 `bad_expiry`），note 最多 200 字。code 为自定义码，可选：带 code 时 count 只能为 1（否则 400 `bad_count`），格式不对返回 400 `bad_code_text`，已有同样的码返回 409 `code_taken`。返回 `{codes:[...]}`，按生成顺序 |
+| GET /admin/codes?q=&limit=&before= | 列表，新的在前。q 匹配码的一部分（不分大小写，忽略 `-` 和空白）或备注的一部分；limit 为 1–500，默认 50；before 为码的 id，接着往下翻。返回 `{codes:[...]}` |
+| POST /admin/codes/{id}/disable | 可带 `{reason}`（最多 200 字，缺省时日志里记这个码的备注）。停用后立刻不能再兑换，已停用的再停用不变。返回这个码。码不存在返回 409 `no_code` |
+| GET /admin/codes/{id}/claims?limit= | 兑换记录，新的在前，limit 为 1–1000，默认 200。返回 `{code,claims:[{player,userId,ts}]}`，userId 为存档绑定的主站用户 ID，游客存档为 null。码不存在返回 409 `no_code` |
 
 ### 昵称屏蔽
 
@@ -330,6 +341,26 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 <!-- park: race -->
 <!-- park: lottery -->
 <!-- park: redeem -->
+### 兑换码
+
+`POST /api/redeem`，`{code}`（最多 64 字符）。码不分大小写，忽略 `-` 和空白。成功时返回状态、`park`（有游乐园的服务端才带）和 `redeemed:{shards,coins}`。检查、计次、发奖和兑换记录在同一个事务里完成。碎片记进碎片流水，驼币记进驼币流水，来源都是 `redeem`。兑换码发的驼币不受持有上限限制；没有游乐园的服务端也照样发驼币，只是不能新建带驼币的码。
+
+- 生成的码为 12 位，取自去掉 `0 O 1 I L` 的 31 个字符，显示成三段，例如 `K7QM-3XRP-WD9H`。管理员也可以自己写一个好记的码（4–32 个字母、数字或汉字）。
+- 每个码有可用次数：一人一码为 1 次，通用码为 N 次。不管哪种，每个存档只能兑换一次。
+- 接入了主站账号的服务端上，只有绑定账号的存档能兑换；没有接入主站账号的服务端不要求登录。
+
+错误码：
+
+| code | HTTP | 含义 |
+| --- | --- | --- |
+| `bad_code` | 409 | 码不存在。停用的码也返回这个，不透露码是否存在过 |
+| `already_redeemed` | 409 | 这个存档已经兑换过这个码（码之后过期或用完也先报这个） |
+| `code_expired` | 409 | 已过期 |
+| `code_used_up` | 409 | 次数已用完 |
+| `login_required` | 401 | 服务端接入了主站账号，这份存档还没绑定账号 |
+| `too_many_tries` | 429 | 输错太多次被锁定。`detail.seconds` 为剩余锁定秒数，响应头 `Retry-After` 相同 |
+
+防猜码：同一存档 10 分钟内有 5 次 `bad_code`，锁 15 分钟，锁定期间输对的码也返回 `too_many_tries`。输对和其他错误码不计数；解锁后从零重新计数。每次锁定记进每天计数 `redeem_lock`，每个存档的锁定次数和最近一次锁定时间记在 `redeem_locks` 表。不按 IP 限制。
 
 ## 猜拳
 

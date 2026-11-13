@@ -22,7 +22,7 @@ ANOMALY_LIMIT = 50
 # Saves listed by credited taps.
 HEAVY_LIMIT = 20
 # Ledger sources a save does not earn by playing; left out of the shard anomaly list.
-UNEARNED = frozenset({"starter", "update", "admin"})
+UNEARNED = frozenset({"starter", "update", "admin", "redeem"})
 
 
 def _days(today: str, days: int) -> list[str]:
