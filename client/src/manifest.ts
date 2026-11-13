@@ -136,7 +136,16 @@ export interface Manifest {
        * `badges` are the stamp totals of the three badges.
        */
       coin: { price: number; dailyBuy: number; hold: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
-      scratch?: unknown;
+      /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. */
+      scratch?: {
+        cards: Record<"basic" | "premium", {
+          coins: number; again: number; prizes: { shards: number; weight: number }[];
+          emote?: { set: string; weight: number; pity: number }; skin?: { weight: number; shards: number }; big?: { weight: number; shards: number };
+        }>;
+        jackpot: { perCoin: number; seed: number; odds: number };
+        roomAt: Record<"basic" | "premium", number>;
+        serverAt: Record<"basic" | "premium", number>;
+      };
       race?: unknown;
       lottery?: unknown;
     };

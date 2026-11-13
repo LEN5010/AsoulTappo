@@ -336,7 +336,8 @@ export async function reloadStatus(): Promise<void> {
   if (s) status.value = s;
 }
 
-async function reloadCollection(): Promise<void> {
+/** Desk window only: loads the collection again after items arrived (the panel gets it with the next sync). */
+export async function reloadCollection(): Promise<void> {
   const c = await call((api) => api.collection());
   if (c) {
     collection.owned = c.owned;
