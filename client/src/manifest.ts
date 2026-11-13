@@ -138,7 +138,7 @@ export interface Manifest {
       coin: { price: number; dailyBuy: number; hold: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
       scratch?: unknown;
       race?: unknown;
-      lottery?: unknown;
+      lottery?: { daily: number; closeAt: number; drawAt: number; top: number; topCap: number; second: number; third: number };
     };
   };
   plates: ManifestPlate[];
