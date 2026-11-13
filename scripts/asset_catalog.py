@@ -319,35 +319,35 @@ SCRATCH = {"price": 500, "daily": 20,
 DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
         "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
 # The park (clients after 1.2.1; design in docs/design/amusement-park.md). Every game there is paid in coins.
-# coin: `price` shards each, as many as the shards pay for; `gift` free a day on the first visit. Buying and the
-# gift need `minTaps` taps in all. Every coin spent is a stamp; every `stampsPerCoin` stamps turn into a coin, and
+# coin: `price` shards each, as many as the shards pay for; `gift` free a day, given with the save's first status
+# that day. Buying and the gift need `minTaps` taps in all. Every coin spent is a stamp; every `stampsPerCoin` stamps turn into a coin, and
 # `badges` are the stamp totals that earn the three badges.
 # scratch: two cards by their price in coins. `again` (a percentage, like the prize weights) hands the price back;
 # the basic card keeps the old card's emote tier and pity, and once the set is whole that weight turns into `again`.
-# A premium `skin` or `big` card is one the save lacks, else its `shards`. Every coin spent adds `jackpot.perCoin`
-# shards to one shared pot, won with odds 1 in `jackpot.odds` per coin; a won pot starts again at `jackpot.seed`.
-# Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet.
+# A premium `skin` or `big` card is one the save lacks, else its `shards`. A save's first card of each kind wins
+# `first` shards. Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet.
 # race: one every `interval` seconds, bets taken for the first `betting`; the dumplings of the five members move
 # 1 to 3 squares (`dice`) on a `track` of squares, carrying those stacked on them. Odds pay `payout` / p, rounded
 # down to a tenth and at least `minOdds`, with p from `sims` runs of that race. A save stakes at most `maxCoins`.
 # lottery: `daily` tickets a save, 000 to 999; sales close at minute `closeAt` of the China day and the draw is at
-# `drawAt`. The top prize is `top` of the day's sales plus the rollover (at most `topCap`), the second `second`,
-# split between winners; the third is `third` shards each.
+# `drawAt`. The top prize is the server-wide pool: it starts at `pool.seed` shards, every coin spent in the park
+# (scratch, race and lottery) adds `pool.perCoin`, and it rolls over until a draw has a top winner. The second is
+# `second` of the day's sales, split between winners; the third is `third` shards each.
 PARK = {
     "coin": {"price": 500, "gift": 1, "minTaps": 10000, "stampsPerCoin": 30,
              "badges": [100, 1000, 5000]},
     "scratch": {
         "cards": {
-            "basic": {"coins": 1, "again": 15,
+            "basic": {"coins": 1, "again": 15, "first": 1000,
                       "prizes": [{"shards": 1000, "weight": 9.5}, {"shards": 2500, "weight": 3.5},
                                  {"shards": 8000, "weight": 0.6}, {"shards": 50000, "weight": 0.05}],
                       "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10}},
-            "premium": {"coins": 5, "again": 12,
-                        "prizes": [{"shards": 5000, "weight": 13}, {"shards": 12500, "weight": 3},
-                                   {"shards": 40000, "weight": 0.5}, {"shards": 250000, "weight": 0.02}],
+            "premium": {"coins": 5, "again": 15, "first": 5000,
+                        "prizes": [{"shards": 3000, "weight": 14}, {"shards": 5000, "weight": 10},
+                                   {"shards": 12500, "weight": 3}, {"shards": 40000, "weight": 0.5},
+                                   {"shards": 250000, "weight": 0.02}],
                         "skin": {"weight": 0.2, "shards": 30000}, "big": {"weight": 0.1, "shards": 60000}},
         },
-        "jackpot": {"perCoin": 20, "seed": 30000, "odds": 12000},
         "roomAt": {"basic": 8000, "premium": 40000},
         "serverAt": {"basic": 50000, "premium": 250000},
     },
@@ -370,8 +370,8 @@ PARK = {
                   {"id": "slacking", "delta": -1, "moves": 5}],
         "roomAt": 10000,
     },
-    "lottery": {"daily": 10, "closeAt": 1315, "drawAt": 1320, "top": 0.40, "topCap": 500000, "second": 0.20,
-                "third": 600},
+    "lottery": {"daily": 10, "closeAt": 1315, "drawAt": 1320, "pool": {"seed": 10000, "perCoin": 50},
+                "second": 0.20, "third": 600},
 }
 
 # --------------------------------------------------------------- name plates

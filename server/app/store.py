@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS coin_ledger (
   count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, player_id, source)
 );
--- Shared park amounts, such as the scratch jackpot and the lottery rollovers, written in the caller's transaction.
+-- Shared park amounts, such as the lottery pool and its second-prize rollover, written in the caller's transaction.
 CREATE TABLE IF NOT EXISTS park_counters (
   key TEXT PRIMARY KEY,
   value INTEGER NOT NULL DEFAULT 0
@@ -228,7 +228,8 @@ CREATE TABLE IF NOT EXISTS park_news (
 );
 -- park: scratch tables
 -- Coin scratch cards (park_scratch.py), decided when bought and paid when revealed (revealed = 0 until then). tier:
--- again, shards, emote, skin, big, jackpot or miss; shards, coins and item are what the reveal pays.
+-- again, shards, emote, skin, big or miss; shards, coins and item are what the reveal pays. A save's first card of
+-- each kind is never pruned: it marks the first-card prize as given.
 CREATE TABLE IF NOT EXISTS park_scratch_cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id TEXT NOT NULL,
@@ -1180,6 +1181,21 @@ class Store:
                 f"AND source IN ({','.join('?' * len(sources))})", (day, pid, *sources)).fetchone()
         return int(row["n"])
 
+    def grant_park_gift(self, pid: str, day: str, coins: int, min_taps: int) -> bool:
+        """Gives the save [coins] and marks [day]'s gift given, when it has [min_taps] taps and no gift that day.
+        One conditional update and its coin_ledger row, committed together (or in the caller's transaction)."""
+        with self._lock:
+            done = self._db.execute(
+                "UPDATE players SET coins = coins + ?, gift_day = ? WHERE id = ? AND gift_day != ? AND taps_total >= ?",
+                (coins, day, pid, day, min_taps)).rowcount
+            if done:
+                self._db.execute(
+                    "INSERT INTO coin_ledger (day, player_id, source, amount, count) VALUES (?, ?, 'gift', ?, 1) "
+                    "ON CONFLICT(day, player_id, source) DO UPDATE SET "
+                    "amount = amount + excluded.amount, count = count + excluded.count", (day, pid, coins))
+                self._commit()
+            return bool(done)
+
     def park_counter(self, key: str, default: int = 0) -> int:
         with self._lock:
             row = self._db.execute("SELECT value FROM park_counters WHERE key = ?", (key,)).fetchone()
@@ -1242,10 +1258,20 @@ class Store:
                              (ts, *paid.values(), card_id))
             self._commit()
 
-    def prune_park_scratch(self, before: float) -> int:
-        """Deletes revealed cards bought before [before]; a card still to be revealed is kept however old."""
+    def has_park_scratch(self, pid: str, kind: str) -> bool:
+        """Whether the save has ever bought a card of [kind] (prune keeps each save's first one)."""
         with self._lock:
-            n = self._db.execute("DELETE FROM park_scratch_cards WHERE revealed > 0 AND ts < ?", (before,)).rowcount
+            row = self._db.execute("SELECT 1 FROM park_scratch_cards WHERE player_id=? AND kind=? LIMIT 1",
+                                   (pid, kind)).fetchone()
+        return row is not None
+
+    def prune_park_scratch(self, before: float) -> int:
+        """Deletes revealed cards bought before [before]. A card still to be revealed is kept however old, and so is
+        each save's first card of each kind."""
+        with self._lock:
+            n = self._db.execute(
+                "DELETE FROM park_scratch_cards WHERE revealed > 0 AND ts < ? AND id NOT IN "
+                "(SELECT MIN(id) FROM park_scratch_cards GROUP BY player_id, kind)", (before,)).rowcount
             self._commit()
             return n
 

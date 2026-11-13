@@ -5180,6 +5180,7 @@
      "basic": {
       "coins": 1,
       "again": 15,
+      "first": 1000,
       "prizes": [
        {
         "shards": 1000,
@@ -5206,11 +5207,16 @@
      },
      "premium": {
       "coins": 5,
-      "again": 12,
+      "again": 15,
+      "first": 5000,
       "prizes": [
        {
+        "shards": 3000,
+        "weight": 14
+       },
+       {
         "shards": 5000,
-        "weight": 13
+        "weight": 10
        },
        {
         "shards": 12500,
@@ -5234,11 +5240,6 @@
        "shards": 60000
       }
      }
-    },
-    "jackpot": {
-     "perCoin": 20,
-     "seed": 30000,
-     "odds": 12000
     },
     "roomAt": {
      "basic": 8000,
@@ -5335,8 +5336,10 @@
     "daily": 10,
     "closeAt": 1315,
     "drawAt": 1320,
-    "top": 0.4,
-    "topCap": 500000,
+    "pool": {
+     "seed": 10000,
+     "perCoin": 50
+    },
     "second": 0.2,
     "third": 600
    }

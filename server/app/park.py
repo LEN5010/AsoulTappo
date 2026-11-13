@@ -1,6 +1,7 @@
-"""The park's coins: buying them with shards, the free one a day, spending them with stamps, and the news of big
-wins every running pet hears of. The games (scratch cards, the race, the lottery) and redeem codes take and give
-coins through Park.spend, Park.grant and Park.refund inside their own transactions."""
+"""The park's coins: buying them with shards, the free one a day, spending them with stamps, the lottery pool every
+spent coin feeds, and the news of big wins every running pet hears of. The games (scratch cards, the race, the
+lottery) and redeem codes take and give coins through Park.spend, Park.grant and Park.refund inside their own
+transactions."""
 from __future__ import annotations
 
 import json
@@ -12,12 +13,13 @@ from .store import Store, day_of
 # Shard ledger sources. COIN_BUY is what coins cost; PRIZE_SOURCES are the park's prizes, which the page sets against
 # it as the day's result. Redeem codes are gifts, not winnings, and stay out of that result.
 COIN_BUY = "coin_buy"
-PRIZE_SOURCES = ("park_scratch", "jackpot", "race_prize", "lottery_prize")
+PRIZE_SOURCES = ("park_scratch", "race_prize", "lottery_prize")
 REDEEM = "redeem"
 # Coin ledger sources besides the spending of each game (named by the game: "scratch", "race", "lottery").
 COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "redeem", "admin")
-# park_counters key of the scratch jackpot (the scratch module keeps it).
-JACKPOT = "jackpot"
+# park_counters key of the lottery's top prize pool: lottery.pool.seed when absent, fed by every coin spent in the park
+# (spend), paid out by the lottery's draw.
+POOL = "lottery_pool"
 # News older than this goes on the next start.
 NEWS_KEEP_DAYS = 7
 
@@ -27,9 +29,6 @@ class Park:
         # The game may be replaced (tests), so it is looked up on every call, as in Duels.
         self._game = game
         self.mask = mask
-        # Set by the scratch cards: the pot a save's unrevealed jackpot card took, None when it holds none. view shows
-        # that save this amount instead of the restarted pot, so the restart gives nothing away before the reveal.
-        self.held_pot: Callable[[Store, str], int | None] = lambda st, pid: None
 
     @property
     def game(self) -> Game:
@@ -48,11 +47,9 @@ class Park:
 
     # ------------------------------------------------------------------ state
     def view(self, st: Store, p: dict[str, Any], day: str) -> dict[str, Any]:
-        """The save's coins, today's free coin, stamps and today's result, and the jackpot."""
+        """The save's coins, today's free coin, stamps and today's result, and the lottery pool (`jackpot`)."""
         c = self.coin
         total = p["stamps_total"]
-        scratch = self.cfg.get("scratch") or {}
-        seed = (scratch.get("jackpot") or {}).get("seed", 0)
         return {
             "coins": p["coins"],
             "unlocked": p["taps_total"] >= c["minTaps"],
@@ -62,7 +59,7 @@ class Park:
             "badge": sum(1 for n in c["badges"] if total >= n),
             "today": {"spent": -st.ledger_sum(p["id"], day, (COIN_BUY,)),
                       "won": st.ledger_sum(p["id"], day, PRIZE_SOURCES)},
-            "jackpot": held if (held := self.held_pot(st, p["id"])) is not None else st.park_counter(JACKPOT, seed),
+            "jackpot": self.pool(st),
         }
 
     def state(self, token: str) -> dict[str, Any]:
@@ -99,27 +96,35 @@ class Park:
         return self._answer(token)
 
     def gift(self, token: str) -> dict[str, Any]:
-        """The free coin of the day, on the first visit; later visits that day get none (`gift` 0)."""
+        """The free coin of the day. Status gives it already (Game.park_gift), so this answers `gift` 0 once the day's
+        coin was given either way."""
         c = self.coin
         g = self.game
         pid = player_id_for(token)
         with g.store.transaction() as st:
             now = g.now()
-            day = day_of(now)
             p = st.get_player(pid, now)
             if p["taps_total"] < c["minTaps"]:
                 raise GameError("park_locked", "累计敲击 1 万下后开放")
-            got = 0
-            if p["gift_day"] != day:
-                got = c["gift"]
-                st.update_player(pid, coins=p["coins"] + got, gift_day=day)
-                st.add_coin_ledger(pid, day, "gift", got)
+            got = g.park_gift(p, day_of(now))
         return self._answer(token, gift=got)
+
+    # ------------------------------------------------------------------ pool
+    def pool(self, st: Store) -> int:
+        """The lottery's top prize pool now; 0 on a park without the lottery."""
+        cfg = (self.cfg.get("lottery") or {}).get("pool")
+        return st.park_counter(POOL, cfg["seed"]) if cfg else 0
+
+    def _feed(self, st: Store, coins: int) -> None:
+        """Adds pool.perCoin shards per coin to the pool (takes them out for negative [coins]), never below 0."""
+        cfg = (self.cfg.get("lottery") or {}).get("pool")
+        if cfg:
+            st.set_park_counter(POOL, max(0, self.pool(st) + coins * cfg["perCoin"]))
 
     # ------------------------------------------- for the games, in their transaction
     def spend(self, st: Store, pid: str, n: int, source: str, now: float) -> int:
-        """Takes [n] coins and stamps each. Every stampsPerCoin stamps turn into a coin at once; returns how many
-        did. Raises no_coins when the save holds fewer."""
+        """Takes [n] coins, stamps each and feeds the lottery pool. Every stampsPerCoin stamps turn into a coin at
+        once; returns how many did. Raises no_coins when the save holds fewer."""
         if n < 1:
             raise ValueError("spend at least one coin")
         p = st.get_player(pid, now)
@@ -133,6 +138,7 @@ class Park:
         st.add_coin_ledger(pid, day, source, -n)
         if back:
             st.add_coin_ledger(pid, day, "stamp", back, back)
+        self._feed(st, n)
         return back
 
     def grant(self, st: Store, pid: str, n: int, source: str, now: float) -> None:
@@ -144,7 +150,8 @@ class Park:
         st.add_coin_ledger(pid, day_of(now), source, n)
 
     def refund(self, st: Store, pid: str, n: int, source: str, now: float) -> None:
-        """Undoes spend(n): the coins come back and their stamps go, with any coin those stamps had turned into."""
+        """Undoes spend(n): the coins come back and their stamps go, with any coin those stamps had turned into, and
+        the pool gives back what they fed it."""
         if n < 1:
             return
         p = st.get_player(pid, now)
@@ -156,6 +163,7 @@ class Park:
         st.add_coin_ledger(pid, day, source, n)
         if lost:
             st.add_coin_ledger(pid, day, "stamp", -lost, 0)
+        self._feed(st, -n)
 
     # ------------------------------------------------------------------- news
     def nick(self, st: Store, pid: str) -> str:

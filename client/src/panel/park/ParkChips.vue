@@ -1,17 +1,24 @@
 <script setup lang="ts">
 // The park's two numbers in the panel's top bar, left of the shard balance, while the park is shown: the coins held
-// (with the +n of coins just come in rising into it) and the server-wide jackpot on gold foil. Plain paper, nothing
-// to press: the top bar is the panel's drag handle.
+// (with the +n of coins just come in rising into it) and the server-wide pool on gold foil, the top prize of the next
+// lottery draw. The coins are plain paper; the pool is a button (the top bar's drag skips buttons) that turns to the
+// lottery page, while the park is open.
 import { computed } from "vue";
 import { status } from "../../stores/player";
 import { park } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
+import { parkTab } from "./band";
 import ParkCoin from "./ParkCoin.vue";
 import { coinPops } from "./pops";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 const coins = computed(() => park.value?.coins ?? status.value?.park?.coins ?? 0);
+const open = computed(() => !!park.value?.unlocked);
+
+function toLottery() {
+  if (open.value) parkTab.value = "lottery";
+}
 </script>
 
 <template>
@@ -23,11 +30,14 @@ const coins = computed(() => park.value?.coins ?? status.value?.park?.coins ?? 0
         <i v-for="p in coinPops" :key="p.id" class="pop">+{{ p.n }}</i>
       </span>
     </span>
-    <span class="chip pot" title="全服奖池" aria-label="全服奖池">
+    <button
+      type="button" class="chip pot" :class="{ live: open }" title="全服奖池" :aria-label="`全服奖池 ${park ? fmt(park.jackpot) : ''}`"
+      :aria-disabled="open ? undefined : 'true'" @click="toLottery"
+    >
       <small>奖池</small>
       <Icon name="shard" :size="14" />
       <b>{{ park ? fmt(park.jackpot) : "—" }}</b>
-    </span>
+    </button>
   </span>
 </template>
 
@@ -59,12 +69,22 @@ const coins = computed(() => park.value?.coins ?? status.value?.park?.coins ?? 0
   background: var(--surface);
   box-shadow: var(--shadow-paper);
 }
-/* The jackpot is the park's top prize: gold foil, ink type. */
+/* The pool is the park's top prize: gold foil, ink type. A button that keeps the chip's look. */
 .pot {
+  margin: 0;
   padding-left: 10px;
+  border: 0;
+  font: inherit;
   background: var(--grad-gold);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--shadow-paper);
   color: var(--ink);
+  transition: filter var(--dur-fast) var(--ease-out);
+}
+.pot.live {
+  cursor: pointer;
+}
+.pot.live:hover {
+  filter: brightness(1.05);
 }
 .pot small {
   margin-right: 2px;

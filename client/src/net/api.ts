@@ -42,7 +42,7 @@ export interface ParkNews {
   [detail: string]: unknown;
 }
 /** What every status carries on a server with a park: coins held, and the news of the last 15 minutes, oldest first. */
-export interface ParkStatus { coins: number; news: ParkNews[] }
+export interface ParkStatus { coins: number; news: ParkNews[]; /** Coins of today's free coin, only in the status that granted it. */ gifted?: number }
 /** GET /api/park, and `park` in the answers of the park's own requests. */
 export interface ParkState {
   coins: number;
@@ -56,7 +56,7 @@ export interface ParkState {
   badge: number;
   /** Shards spent on coins today, and shards won in the park today. */
   today: { spent: number; won: number };
-  /** The server-wide scratch jackpot. */
+  /** The server-wide pool: the top prize of the next lottery draw. */
   jackpot: number;
 }
 /** Shards every save on `version` or newer can claim once. */

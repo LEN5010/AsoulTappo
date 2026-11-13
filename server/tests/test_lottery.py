@@ -6,9 +6,9 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app.game import Game, GameError
-from app.lottery import (PRIZE, ROLL_SECOND, ROLL_TOP, Lottery, commitment, day_start, pools, settle, tier_of)
+from app.lottery import PRIZE, ROLL_SECOND, Lottery, commitment, day_start, second_pool, settle, tier_of
 from app.manifest import Manifest
-from app.park import Park
+from app.park import POOL, Park
 from app.store import Store, day_of
 from fixtures import Clock
 
@@ -16,6 +16,7 @@ TOKENS = [f"lottery-player-token-{i:04d}" for i in range(6)]
 M = Manifest.load()
 CFG = M.park["lottery"]
 PRICE = M.park["coin"]["price"]
+SEED, PER_COIN = CFG["pool"]["seed"], CFG["pool"]["perCoin"]
 
 
 class Picks:
@@ -36,7 +37,8 @@ def setup(*winning: str, players=2, coins=50):
     pids = []
     for token in TOKENS[:players]:
         pid = g.status(token)["player"]
-        g.store.update_player(pid, coins=coins, taps_total=10_000)
+        # today's free coin counts as given, so status leaves the coin counts alone
+        g.store.update_player(pid, coins=coins, taps_total=10_000, gift_day=day_of(clock()))
         pids.append(pid)
     return g, park, lot, clock, pids
 
@@ -151,50 +153,50 @@ def test_tiers_count_only_the_best_one():
     assert tier_of("321", "123") == 0
 
 
-def test_pools_take_shares_of_sales_plus_rollovers():
-    sales = 100
-    top, second, overflow = pools(CFG, PRICE, sales, 1000, 77)
-    assert top == int(CFG["top"] * sales * PRICE) + 1000
-    assert second == int(CFG["second"] * sales * PRICE) + 77 and overflow == 0
+def test_the_second_prize_is_a_share_of_sales_plus_its_rollover():
+    assert second_pool(CFG, PRICE, 100, 77) == int(CFG["second"] * 100 * PRICE) + 77
+    assert second_pool(CFG, PRICE, 0, 77) == 77
 
 
-def test_the_top_above_its_cap_joins_that_days_second():
-    roll = CFG["topCap"] - 1000
-    top, second, overflow = pools(CFG, PRICE, 100, roll, 50)
-    raw = int(CFG["top"] * 100 * PRICE) + roll
-    assert top == CFG["topCap"] and overflow == raw - CFG["topCap"]
-    assert second == int(CFG["second"] * 100 * PRICE) + 50 + overflow
-
-
-def test_splits_round_down_and_the_remainder_rolls_over():
+def test_the_pool_is_split_rounding_down_and_starts_again_at_the_seed_plus_the_remainder():
     tickets = [(1, "123"), (2, "123"), (3, "123"), (4, "023"), (5, "923"), (6, "003"), (7, "555")]
-    s = settle(CFG, PRICE, "123", tickets, roll_top=1, roll_second=2)
-    top, second, _ = pools(CFG, PRICE, 7, 1, 2)
+    pool = 100_001
+    s = settle(CFG, PRICE, "123", tickets, pool=pool, roll_second=2)
+    second = second_pool(CFG, PRICE, 7, 2)
     assert s.winners == {"top": 3, "second": 2, "third": 1}
-    assert s.each == {"top": top // 3, "second": second // 2, "third": CFG["third"]}
-    assert s.roll == {"top": top % 3, "second": second % 2}
-    assert sorted(s.prizes) == [(1, 1, top // 3), (2, 1, top // 3), (3, 1, top // 3), (4, 2, second // 2),
+    assert s.pools == {"top": pool, "second": second}
+    assert s.each == {"top": pool // 3, "second": second // 2, "third": CFG["third"]}
+    assert s.pool == SEED + pool % 3 and s.roll == {"second": second % 2}
+    assert sorted(s.prizes) == [(1, 1, pool // 3), (2, 1, pool // 3), (3, 1, pool // 3), (4, 2, second // 2),
                                 (5, 2, second // 2), (6, 3, CFG["third"])]
 
 
-def test_pools_without_winners_roll_over_whole():
-    s = settle(CFG, PRICE, "123", [(1, "456"), (2, "003")], roll_top=500, roll_second=9)
-    top, second, _ = pools(CFG, PRICE, 2, 500, 9)
-    assert s.roll == {"top": top, "second": second} and s.prizes == [(2, 3, CFG["third"])]
+def test_without_winners_the_pool_and_the_second_carry_over_whole():
+    s = settle(CFG, PRICE, "123", [(1, "456"), (2, "003")], pool=54_321, roll_second=9)
+    second = second_pool(CFG, PRICE, 2, 9)
+    assert s.pool == 54_321 and s.roll == {"second": second} and s.prizes == [(2, 3, CFG["third"])]
+    assert s.each == {"top": 0, "second": 0, "third": CFG["third"]}
 
 
-def test_top_and_second_shares_are_conserved_over_many_days():
+def test_the_pool_and_the_second_are_conserved_over_many_days():
     rng = random.Random(7)
-    roll_top = roll_second = paid = 0
-    sold = 0
-    for _ in range(400):
+    pool, roll_second, top_paid, second_paid, sold, fed, wins = SEED, 0, 0, 0, 0, 0, 0
+    for _ in range(3000):
         n = rng.randint(0, 60)
         sold += n
+        # coins spent on other games feed the pool too
+        spent = n + rng.randint(0, 200)
+        fed += spent * PER_COIN
+        pool += spent * PER_COIN
         tickets = [(i, f"{rng.randrange(1000):03d}") for i in range(n)]
-        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, roll_top, roll_second)
-        paid += sum(p for _, t, p in s.prizes if t in (1, 2))
-        roll_top, roll_second = s.roll["top"], s.roll["second"]
-    assert paid + roll_top + roll_second == int((CFG["top"] + CFG["second"]) * sold * PRICE)
+        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
+        top_paid += sum(p for _, t, p in s.prizes if t == 1)
+        second_paid += sum(p for _, t, p in s.prizes if t == 2)
+        wins += s.winners["top"] > 0
+        pool, roll_second = s.pool, s.roll["second"]
+    assert wins > 10
+    assert top_paid + pool == SEED * (wins + 1) + fed
+    assert second_paid + roll_second == int(CFG["second"] * sold * PRICE)
 
 
 # ---------------------------------------------------------------------------------- draw
@@ -204,7 +206,7 @@ def test_the_draw_pays_winners_through_the_ledger_and_rolls_over():
     lot.buy(TOKENS[1], ["123", "003"])  # top, third
     lot.buy(TOKENS[2], ["777"])
     before = {p: shards(g, p) for p in (a, b, c)}
-    top, second, _ = pools(CFG, PRICE, 6, 0, 0)
+    top, second = SEED + 6 * PER_COIN, second_pool(CFG, PRICE, 6, 0)
     assert lot.state(TOKENS[0])["prize"] == {"top": top, "second": second, "third": CFG["third"]}
     at(clock, CFG["drawAt"])
     lot.tick()
@@ -213,28 +215,51 @@ def test_the_draw_pays_winners_through_the_ledger_and_rolls_over():
     assert gains == {a: top // 2 + second, b: top // 2 + CFG["third"], c: 0}
     for p in (a, b, c):
         assert g.store.ledger_amount(p, day, PRIZE) == gains[p]
-    assert g.store.park_counter(ROLL_TOP) == top % 2 and g.store.park_counter(ROLL_SECOND) == 0
+    assert g.store.park_counter(POOL) == SEED + top % 2 and g.store.park_counter(ROLL_SECOND) == 0
+    assert lot.state(TOKENS[0])["prize"]["top"] == SEED + top % 2
     last = lot.state(TOKENS[0])["last"]
     assert last["mine"] == [{"number": "123", "tier": "top", "prize": top // 2},
                             {"number": "923", "tier": "second", "prize": second},
                             {"number": "456", "tier": None, "prize": 0}]
     assert last["won"] == gains[a] and last["winners"] == {"top": 2, "second": 1, "third": 1}
+    assert last["each"] == {"top": top // 2, "second": second, "third": CFG["third"]}
     assert g.status(TOKENS[0])["park"]["coins"] == 47
 
 
-def test_an_unwon_top_prize_grows_the_next_day():
+def test_an_unwon_pool_carries_over_and_keeps_growing():
     g, _, lot, clock, _ = setup("123", "555")
     lot.buy(TOKENS[0], ["456"] * 5)
     at(clock, CFG["drawAt"])
     lot.tick()
-    top, second, _ = pools(CFG, PRICE, 5, 0, 0)
+    top, second = SEED + 5 * PER_COIN, second_pool(CFG, PRICE, 5, 0)
     state = lot.state(TOKENS[0])
-    # After the draw the page shows what has rolled into tomorrow.
-    assert state["drawn"] and not state["open"] and state["prize"]["top"] == top
+    # After the draw the page shows the pool and what has rolled into tomorrow's second.
+    assert state["drawn"] and not state["open"] and state["prize"]["top"] == top and state["prize"]["second"] == second
+    assert g.store.park_counter(POOL) == top
+    assert lot.draw(day_of(clock())) is None
     at(clock, 60, days=1)
     lot.buy(TOKENS[1], ["000"] * 2)
-    t2, s2, _ = pools(CFG, PRICE, 2, top, second)
-    assert lot.state(TOKENS[1])["prize"]["top"] == t2 and t2 == top + int(CFG["top"] * 2 * PRICE)
+    assert lot.state(TOKENS[1])["prize"] == {"top": top + 2 * PER_COIN, "second": second_pool(CFG, PRICE, 2, second),
+                                             "third": CFG["third"]}
+
+
+def test_the_draw_pays_the_pool_fed_by_every_game_and_records_it():
+    g, park, lot, clock, (a, b) = setup("123")
+    g.store.set_park_counter(POOL, 777_777)
+    with g.store.transaction() as st:  # a scratch card and a race bet of the other save
+        park.spend(st, b, 5, "scratch", clock())
+        park.spend(st, b, 3, "race", clock())
+    lot.buy(TOKENS[0], ["123"])
+    pool = 777_777 + 9 * PER_COIN
+    assert park.state(TOKENS[1])["jackpot"] == lot.state(TOKENS[1])["prize"]["top"] == pool
+    before = shards(g, a)
+    at(clock, CFG["drawAt"])
+    lot.tick()
+    assert shards(g, a) - before == pool and g.store.park_counter(POOL) == SEED
+    result = json.loads(g.store.lottery_last_drawn()["result"])
+    assert result["pools"]["top"] == pool and result["each"]["top"] == pool and result["pool"] == SEED
+    news = g.status(TOKENS[1])["park"]["news"]
+    assert [(n["kind"], n["each"]["top"]) for n in news] == [("lottery_draw", pool)]
 
 
 def test_the_draw_waits_for_draw_time():
@@ -257,9 +282,9 @@ def test_missed_draws_are_caught_up_on_start_once_and_in_order():
     at(clock, 30, days=2)  # the server was down over both draws
     restarted = Lottery(lambda: g, park, pick=Picks("333"))
     assert restarted.tick() == [day1, day2]
-    roll1, roll2, _ = pools(CFG, PRICE, 3, 0, 0)
-    t2, _, _ = pools(CFG, PRICE, 1, roll1, roll2)
-    assert shards(g, b) - before == t2
+    # day 1's pool carried over; day 2's draw pays it all, with its own ticket's share
+    t2 = SEED + 4 * PER_COIN
+    assert shards(g, b) - before == t2 and g.store.park_counter(POOL) == SEED
     assert restarted.tick() == [] and restarted.draw(day1) is None and lot.draw(day2) is None
     assert shards(g, b) - before == t2
     assert g.store.lottery_undrawn() == [day_of(clock())]
@@ -337,7 +362,7 @@ def test_http_lottery(monkeypatch):
     client = TestClient(main.app)
     headers = {"X-Player-Token": TOKENS[0]}
     pid = client.get("/api/me", headers=headers).json()["player"]
-    g.store.update_player(pid, coins=5, taps_total=10_000)
+    g.store.update_player(pid, coins=5, taps_total=10_000, gift_day=day_of(clock()))
     r = client.get("/api/park/lottery", headers=headers)
     assert r.status_code == 200 and r.json()["tickets"] == [] and len(r.json()["hash"]) == 64
     r = client.post("/api/park/lottery", headers=headers, json={"numbers": ["007"], "random": 2})
@@ -352,23 +377,22 @@ def test_http_lottery(monkeypatch):
 
 # ---------------------------------------------------------------------------- simulation
 def simulate(daily: int, days: int, seed: int = 1) -> dict:
-    """Steady [daily] tickets on uniform random numbers for [days] days: the share of sales paid back, the share
-    still in the rollovers at the end, and the mean days between top prizes."""
+    """Steady [daily] tickets on uniform random numbers for [days] days, with nothing else feeding the pool: the
+    share of sales paid back as second and third prizes, and what the second still holds at the end."""
     rng = random.Random(seed)
-    roll_top = roll_second = paid = 0
-    tops = 0
+    pool, roll_second, paid = SEED, 0, 0
     for _ in range(days):
+        pool += daily * PER_COIN
         tickets = [(i, f"{rng.randrange(1000):03d}") for i in range(daily)]
-        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, roll_top, roll_second)
-        paid += sum(p for _, _, p in s.prizes)
-        roll_top, roll_second = s.roll["top"], s.roll["second"]
-        tops += s.winners["top"] > 0
+        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
+        paid += sum(p for _, t, p in s.prizes if t != 1)
+        pool, roll_second = s.pool, s.roll["second"]
     sold = daily * days * PRICE
-    return {"paid": paid / sold, "left": (roll_top + roll_second) / sold, "topEvery": days / max(1, tops)}
+    return {"paid": paid / sold, "left": roll_second / sold}
 
 
-def test_the_average_return_is_about_the_design_value():
-    expected = CFG["top"] + CFG["second"] + 0.09 * CFG["third"] / PRICE  # 70.8% with the default numbers
+def test_second_and_third_return_their_design_share():
+    expected = CFG["second"] + 0.09 * CFG["third"] / PRICE  # 30.8% with the default numbers
     out = simulate(300, 1500)
     assert out["paid"] + out["left"] == pytest.approx(expected, abs=0.005)
     assert out["paid"] == pytest.approx(expected, abs=0.01)

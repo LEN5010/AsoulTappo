@@ -22,14 +22,15 @@ import NamePlate from "../../pet/NamePlate.vue";
 import { allPlates, nameBand, plateSize, plateUnlocked } from "../../pet/plates";
 import PlateDetail from "../PlateDetail.vue";
 import Icon from "../../ui/Icon.vue";
-import Modal from "../../ui/Modal.vue";
 import asoulLogo from "../../assets/brand/asoul-logo.svg";
 import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes, type Box } from "../../scratch";
 import { parkTab, useBand } from "./band";
 import { COIN_SMALL } from "./coin";
+import ScratchOdds from "./ScratchOdds.vue";
+import ScratchTile from "./ScratchTile.vue";
 import {
-  KINDS, SCRATCH, cellOf, faceOf, levelOf, oddsRows,
-  outcomeOf, type CardKind, type Level, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
+  KINDS, SCRATCH, cellOf, faceOf, levelOf, oddsText, outcomeOf, shelfRows, topPrize,
+  type CardKind, type Cell, type Level, type OddsRow, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
 } from "./scratchCards";
 
 /** The rest of the coating lifts by itself once every cell is this much uncovered. */
@@ -43,8 +44,10 @@ const DEAL_MS = 460;
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 const EMOTE_SET = SCRATCH.cards.basic.emote?.set ?? "";
 const fmt = (n: number) => n.toLocaleString("en-US");
-/** The best shard prize of a card, at the left of the bottom bar. */
-const topPrize = (kind: CardKind) => Math.max(...SCRATCH.cards[kind].prizes.map((p) => p.shards));
+/** The premium card's top end, on the shelf beside the table; the best of it is gold. */
+const SHELF = shelfRows("premium");
+const SHELF_TOP = topPrize("premium");
+const shelfCell = (row: OddsRow): Cell => (row.kind === "shards" ? { kind: "shards", amount: row.shards ?? 0 } : { kind: row.kind as "skin" | "big" });
 /** Result tags by level: a miss and the coins back are plain, then coral, wine and gold. */
 const TAGS: Record<string, string> = { 0: "light", plain: "light", 1: "", 2: "dark", 3: "gold" };
 /** Stickers in the album lean a little, each its own way. */
@@ -99,7 +102,6 @@ const error = ref("");
 
 /** The tickets on the table: both, or the old card alone. */
 const deck = computed<readonly CardKind[]>(() => (old.value ? [kind.value] : KINDS));
-const other = computed<CardKind>(() => (kind.value === "basic" ? "premium" : "basic"));
 
 const outcome = computed(() => (card.value ? outcomeOf(card.value.cells) : null));
 const cells = computed(() => card.value?.cells.map(cellOf) ?? Array.from({ length: 9 }, () => null));
@@ -118,7 +120,6 @@ const resultText = computed(() => {
     case "again": return "再来一张";
     case "skin": return "新皮肤";
     case "big": return "大隐藏卡";
-    case "jackpot": return "全服奖池";
     default: return "没中";
   }
 });
@@ -135,28 +136,23 @@ const resultTarget = computed<number | null>(() => {
 });
 const rolled = ref(0);
 let rollFrame = 0;
-let rolledCard: number | undefined;
 watch(resultTarget, (to) => {
   cancelAnimationFrame(rollFrame);
-  const id = card.value?.id;
-  // A new card starts from nothing; the same card (the jackpot's sum arriving) goes on from what it shows.
-  const base = id === rolledCard ? rolled.value : 0;
-  rolledCard = id;
   if (to == null) {
     rolled.value = 0;
     return;
   }
   const lv = level.value;
-  if (calm.value || lv === 0 || lv === "plain" || base === to) {
+  if (calm.value || lv === 0 || lv === "plain") {
     rolled.value = to;
     return;
   }
   const ms = ROLL_MS[lv];
   const start = performance.now();
-  rolled.value = base;
+  rolled.value = 0;
   const step = (now: number) => {
     const t = Math.min(1, (now - start) / ms);
-    rolled.value = Math.round(base + (to - base) * (1 - (1 - t) ** 3));
+    rolled.value = Math.round(to * (1 - (1 - t) ** 3));
     if (t < 1) rollFrame = requestAnimationFrame(step);
   };
   rollFrame = requestAnimationFrame(step);
@@ -626,17 +622,7 @@ watch(() => status.value?.player, (player, was) => {
                 <template v-if="k === kind">
                   <ol class="cells" :class="{ veiled: !card || (!open && coated !== card.id) }">
                     <li v-for="(c, i) in cells" :key="i" :class="{ win: winAt.has(i), lose: !!result && !winAt.has(i) }">
-                      <template v-if="c">
-                        <span v-if="c.kind === 'shards'" class="amount" :class="{ long: c.amount >= 10000, longer: c.amount >= 100000 }">
-                          <Icon name="shard" :size="16" />{{ c.amount }}
-                        </span>
-                        <img v-else-if="c.kind === 'emote'" :src="emoteSrc(c.key)" alt="" draggable="false" />
-                        <span v-else-if="c.kind === 'again'" class="sym again"><img :src="COIN_SMALL" alt="" draggable="false" /><small>再来</small></span>
-                        <span v-else-if="c.kind === 'jackpot'" class="sym pot"><Icon name="crown" :size="26" /><small>奖池</small></span>
-                        <span v-else-if="c.kind === 'skin'" class="sym item"><Icon name="shirt" :size="26" /><small>皮肤</small></span>
-                        <span v-else-if="c.kind === 'big'" class="sym item"><Icon name="card-spark" :size="26" /><small>大隐藏</small></span>
-                        <i v-else class="sym blank stub-mark"></i>
-                      </template>
+                      <ScratchTile v-if="c" :cell="c" />
                     </li>
                   </ol>
                   <canvas
@@ -661,7 +647,12 @@ watch(() => status.value?.player, (player, was) => {
         </div>
       </div>
 
-      <aside v-if="kind === 'basic'" class="album" data-rise>
+      <!--
+        The column beside the table, one frame for both cards: a heading, a grid of tiles, the small print under it.
+        Both stay in place, one over the other, so the heading does not move when the cards swap.
+      -->
+      <div class="column" data-rise>
+      <aside class="shelf album" :class="{ away: kind !== 'basic' }" :inert="kind !== 'basic'">
         <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
         <ol class="stickers ui-scroll">
           <li
@@ -690,41 +681,21 @@ watch(() => status.value?.player, (player, was) => {
         </div>
       </aside>
 
-      <!-- What only the premium card can win, as three emblems: the jackpot in gold, a skin and a big hidden card. -->
-      <aside v-else class="prizes" data-rise>
-        <figure class="emblem pot">
-          <span class="medal"><Icon name="crown" :size="56" /></span>
-          <figcaption>奖池</figcaption>
-        </figure>
-        <figure class="emblem">
-          <span class="medal"><Icon name="shirt" :size="40" /></span>
-          <figcaption>皮肤</figcaption>
-        </figure>
-        <figure class="emblem">
-          <span class="medal"><Icon name="card-spark" :size="40" /></span>
-          <figcaption>大隐藏</figcaption>
-        </figure>
+      <!-- The premium card's top end, each drawn as the cell it is on the card, its odds under it; the best in gold. -->
+      <aside class="shelf prizes" :class="{ away: kind !== 'premium' }" :inert="kind !== 'premium'">
+        <h4 class="ui-label"><span>大奖</span></h4>
+        <ol class="prize-tiles">
+          <li v-for="row in SHELF" :key="row.shards ?? row.kind" :class="{ top: row.shards === SHELF_TOP }">
+            <span class="prize-tile"><ScratchTile :cell="shelfCell(row)" /></span>
+            <b class="prize-odds">{{ oddsText(row.rate) }}</b>
+          </li>
+        </ol>
       </aside>
+      </div>
     </div>
 
     <PlateDetail v-if="plateView && albumPlate" :plate="albumPlate" @close="plateView = false" />
-    <Modal v-if="odds" title="刮刮乐概率" heading @close="odds = false">
-      <div class="odds">
-        <table v-for="k in [kind, other]" :key="k" class="rates">
-          <thead><tr><th>{{ NAMES[k] }}</th><th>概率</th><th v-if="k === 'basic' && !complete">保底</th></tr></thead>
-          <tbody>
-            <tr v-for="(row, n) in oddsRows(k, complete)" :key="n">
-              <td>
-                <span v-if="row.kind === 'shards'" class="prize"><Icon name="shard" :size="14" />{{ fmt(row.shards ?? 0) }}</span>
-                <template v-else>{{ { jackpot: "全服奖池", skin: "皮肤", big: "大隐藏卡", emote: "阿草表情", again: "再来一张", miss: "没中" }[row.kind] }}</template>
-              </td>
-              <td>{{ row.rate }}</td>
-              <td v-if="k === 'basic' && !complete">{{ row.pity ? `${row.pity} 张` : "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Modal>
+    <ScratchOdds v-if="odds" :kind="kind" :complete="complete" @close="odds = false" />
 
     <div class="park-actions">
       <!-- A refusal stands in the bar beside the key, so the table does not move. -->
@@ -973,70 +944,6 @@ watch(() => status.value?.player, (player, was) => {
 .ticket.on .cells li {
   background: var(--surface);
 }
-.cells img {
-  max-width: 84%;
-  max-height: 84%;
-  object-fit: contain;
-  filter: var(--sticker);
-  user-select: none;
-}
-/* An emote is sized by its cell, not by the picture: the cell's row is sized by its content, so a percentage
- * max-height there does not hold and a tall emote spills out. */
-.cells > li > img {
-  position: absolute;
-  inset: 8%;
-  width: 84%;
-  height: 84%;
-  max-width: none;
-  max-height: none;
-}
-/* Amounts scale with the card, so a long one stays inside its cell on a small panel. */
-.amount {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.06em;
-  font: 800 11.5cqw/1 var(--font-latin);
-  color: var(--ink);
-}
-.amount.long {
-  font-size: 9.6cqw;
-}
-.amount.longer {
-  font-size: 8.2cqw;
-}
-.amount svg {
-  width: 0.56em;
-  height: 0.56em;
-  color: var(--c-600);
-}
-/* The named symbols: a mark and a word under it. */
-.sym {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.8cqw;
-  color: var(--c-700);
-}
-.sym svg {
-  width: 11cqw;
-  height: 11cqw;
-}
-.sym small {
-  font: 800 clamp(11px, 4.2cqw, 15px)/1 var(--font);
-  color: var(--ink-2);
-}
-.sym.again img {
-  width: 12cqw;
-  height: 12cqw;
-  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
-}
-.sym.pot {
-  color: var(--gold);
-}
-.sym.blank {
-  width: 52%;
-  background: var(--c-200);
-}
 /* The three alike: framed in the prize's tone, the other six step back. */
 .cells .win {
   --burst: rgba(var(--c-500-rgb), 0.7);
@@ -1172,15 +1079,26 @@ watch(() => status.value?.player, (player, was) => {
   from { opacity: 0; scale: 0.5; }
 }
 
-/* ---- the album: 阿草's twenty stickers, a slot each */
-.album {
+/* ---- the column beside the table: the same frame for both cards, the one not in front hidden in place */
+.column {
+  display: grid;
+  min-width: 0;
+}
+.shelf {
+  grid-area: 1 / 1;
+  align-self: start;
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.album .ui-label {
+.shelf.away {
+  visibility: hidden;
+}
+.shelf .ui-label {
   margin-bottom: 8px;
 }
+
+/* ---- the album: 阿草's twenty stickers, a slot each */
 .stickers {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1296,50 +1214,41 @@ watch(() => status.value?.player, (player, was) => {
   outline-offset: 2px;
 }
 
-/* ---- the premium card's top prizes: three emblems, the jackpot's in gold */
-.prizes {
+/* ---- the premium card's shelf: four tiles as on the card, two a row, the odds under each */
+.prize-tiles {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  justify-items: center;
-  align-content: center;
-  gap: 20px 12px;
+  gap: 12px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.emblem {
+.prize-tiles li {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin: 0;
+  gap: 6px;
+  min-width: 0;
 }
-.emblem.pot {
-  grid-column: 1 / -1;
-}
-.medal {
-  display: grid;
-  place-items: center;
-  width: 92px;
+.prize-tile {
+  position: relative;
+  width: 100%;
+  max-width: var(--tile-max, 116px);
   aspect-ratio: 1;
-  border-radius: 50%;
-  background: var(--grad-sky);
-  color: #fff;
-  box-shadow: 0 0 0 4px #fff, 0 7px 14px -6px rgba(var(--c-900-rgb), 0.45);
-  rotate: 4deg;
+  border-radius: var(--radius-m);
+  background: var(--c-100);
 }
-.emblem:nth-child(2) .medal {
-  rotate: -5deg;
+/* The top prize: framed in gold, as a top win is on the card. */
+.top .prize-tile {
+  background: linear-gradient(180deg, #FFFBF1, var(--gold-soft));
+  box-shadow: 0 0 0 3px var(--gold), 0 0 14px 1px rgba(var(--gold-rgb), 0.45);
 }
-.pot .medal {
-  width: 132px;
-  background: var(--grad-gold);
-  color: var(--ink);
-  rotate: -3deg;
-}
-.emblem figcaption {
-  font: 800 var(--fs-strong)/1 var(--font);
+.prize-odds {
+  font: 800 var(--fs-section)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-2);
 }
-.pot figcaption {
-  font-size: var(--fs-number);
+.top .prize-odds {
   color: var(--ink);
 }
 
@@ -1371,32 +1280,6 @@ watch(() => status.value?.player, (player, was) => {
   color: inherit;
 }
 
-/* ---- the odds: one table a card */
-.odds {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.rates {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-body);
-}
-th, td {
-  text-align: left;
-  padding: 10px 6px;
-  border-bottom: 1px solid var(--c-100);
-}
-.prize {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font: 800 var(--fs-number)/1 var(--font-latin);
-}
-.prize svg {
-  color: var(--c-600);
-}
-
 .calm .ticket,
 .calm .stickers img {
   transition: none;
@@ -1421,7 +1304,7 @@ th, td {
     --floor-t: 10px;
     padding: var(--floor-t) 16px 14px var(--floor-l);
   }
-  .album .ui-label {
+  .shelf .ui-label {
     margin-bottom: 6px;
   }
   .stickers {
@@ -1447,29 +1330,15 @@ th, td {
   .album-plate {
     margin-top: 0;
   }
-  .prizes {
-    grid-template-columns: repeat(3, auto);
-    justify-content: center;
-    align-items: end;
-    gap: 12px 28px;
-    padding-block: 4px 8px;
+  /* The four tiles in one row. */
+  .prize-tiles {
+    --tile-max: 76px;
+    grid-template-columns: repeat(4, minmax(0, var(--tile-max)));
+    justify-content: start;
+    gap: 8px 14px;
   }
-  .emblem.pot {
-    grid-column: auto;
-  }
-  .medal {
-    width: 68px;
-  }
-  .medal svg {
-    width: 32px;
-    height: 32px;
-  }
-  .pot .medal {
-    width: 88px;
-  }
-  .pot .medal svg {
-    width: 44px;
-    height: 44px;
+  .prize-odds {
+    font-size: var(--fs-number);
   }
   .buy,
   .peel,
@@ -1481,6 +1350,15 @@ th, td {
   .floor {
     --floor-t: 6px;
     padding-bottom: 10px;
+  }
+  /* Short: the album in five columns and the prize tiles smaller, so the column fits beside the ticket. */
+  .stickers {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .prize-tiles {
+    --tile-max: 80px;
+    gap: 8px 10px;
   }
   .buy,
   .peel,

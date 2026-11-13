@@ -139,15 +139,14 @@ export interface Manifest {
       /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. */
       scratch?: {
         cards: Record<"basic" | "premium", {
-          coins: number; again: number; prizes: { shards: number; weight: number }[];
+          coins: number; again: number; first: number; prizes: { shards: number; weight: number }[];
           emote?: { set: string; weight: number; pity: number }; skin?: { weight: number; shards: number }; big?: { weight: number; shards: number };
         }>;
-        jackpot: { perCoin: number; seed: number; odds: number };
         roomAt: Record<"basic" | "premium", number>;
         serverAt: Record<"basic" | "premium", number>;
       };
       race?: import("./panel/park/race").RaceConfig;
-      lottery?: { daily: number; closeAt: number; drawAt: number; top: number; topCap: number; second: number; third: number };
+      lottery?: { daily: number; closeAt: number; drawAt: number; pool: { seed: number; perCoin: number }; second: number; third: number };
     };
   };
   plates: ManifestPlate[];

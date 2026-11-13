@@ -1,15 +1,16 @@
 <script setup lang="ts">
 // The coin page of the park (docs/design/amusement-park.md §2, §4, §8.3, §10; docs/design/park-ui-rebuild.md §5.1):
 // the big coin and the coins held, three tall keys that buy more, the stamp card with its badges, and the redeem
-// code in the bottom bar. Bought coins fly from the key into the big coin; a card of stamps paid out as a coin
-// flashes, clears, and sends its coin the same way.
-import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+// code in the bottom bar. A pack key asks first (what is bought, what it costs); bought coins fly from the key into
+// the big coin. The stamp card's last slot is the coin it pays: a full card flashes, clears, and that coin flies in.
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { online, shards, status } from "../../stores/player";
 import { buyCoins, park, parkError } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
+import Modal from "../../ui/Modal.vue";
 import { EASE_OUT } from "../../ui/motion";
 import { useBand } from "./band";
 import { BADGE_ART, COIN_SMALL } from "./coin";
@@ -32,6 +33,7 @@ const state = computed(() => park.value);
 const coins = computed(() => state.value?.coins ?? status.value?.park?.coins ?? 0);
 const badge = computed(() => Math.min(BADGES.length, state.value?.badge ?? 0));
 const stampsTotal = computed(() => state.value?.stampsTotal ?? 0);
+const stamps = computed(() => state.value?.stamps ?? 0);
 
 /** Today's result: shards won in the park less shards spent on coins. */
 const net = computed(() => (state.value ? state.value.today.won - state.value.today.spent : 0));
@@ -60,9 +62,46 @@ const live1 = computed(() => !outOfReach(1));
 /** The one line under the keys: why buying is blocked. Empty while it is not. */
 const note = computed(() => buyError.value || (busy.value ? "" : blocked(1)) || "");
 
-async function buy(n: number, ev: MouseEvent) {
+// ---- the question before a buy: the pack and the key it was asked from (the coins fly from that key)
+const asking = ref<{ n: number; pile: 1 | 3 | 5; key: HTMLElement } | null>(null);
+const okKey = ref<HTMLButtonElement>();
+
+function ask(p: (typeof PACKS)[number], ev: MouseEvent) {
+  if (blocked(p.n) !== null) return;
+  asking.value = { n: p.n, pile: p.pile, key: ev.currentTarget as HTMLElement };
+}
+function confirmBuy() {
+  const a = asking.value;
+  // Closed before the request, so a second Enter cannot buy twice.
+  asking.value = null;
+  if (a) void buy(a.n, a.key);
+}
+/** Enter buys unless a key of the dialog has focus (it presses that key itself); a held Enter presses nothing. */
+function onAskKey(e: KeyboardEvent) {
+  if (e.key !== "Enter" || e.isComposing) return;
+  if (e.repeat) {
+    e.preventDefault();
+    return;
+  }
+  if ((document.activeElement as HTMLElement | null)?.closest?.("[role=dialog] button")) return;
+  e.preventDefault();
+  confirmBuy();
+}
+watch(asking, async (a, was) => {
+  if (a && !was) {
+    window.addEventListener("keydown", onAskKey);
+    // After the dialog has taken focus for itself: the buy key gets it, so Enter and Tab start there.
+    await nextTick();
+    requestAnimationFrame(() => okKey.value?.focus({ preventScroll: true }));
+  } else if (!a) {
+    window.removeEventListener("keydown", onAskKey);
+  }
+});
+// The state it was asked in is gone (offline, too few shards): the question goes too.
+watch(() => asking.value && blocked(asking.value.n), (why) => { if (why) asking.value = null; });
+
+async function buy(n: number, key: HTMLElement) {
   if (blocked(n) !== null) return;
-  const key = ev.currentTarget as HTMLElement;
   busy.value = n;
   buyError.value = "";
   hold++;
@@ -211,9 +250,13 @@ function turn() {
 }
 
 // ---------------------------------------------------------------- the stamp card
-/** All 30 slots inked for a moment when a card of stamps has just turned into a coin, then cleared. */
-const wrapping = ref<"" | "flash" | "clear">("");
-const inked = computed(() => (wrapping.value ? PER : state.value?.stamps ?? 0));
+/**
+ * A card of stamps has just turned into a coin: every slot inked for a moment ("flash"), the stamps clear ("clear"),
+ * then the coin in the last slot flies into the big coin and the slot fills again ("fly").
+ */
+const wrapping = ref<"" | "flash" | "clear" | "fly">("");
+const full = computed(() => wrapping.value === "flash" || wrapping.value === "clear");
+const inked = computed(() => (full.value ? PER : stamps.value));
 /** A full card seen while the page was hidden plays when it is shown again. */
 let pendingWrap = false;
 
@@ -229,8 +272,8 @@ async function playWrap() {
     await wait(FLASH_MS);
     wrapping.value = "clear";
     await wait(CLEAR_MS);
-    wrapping.value = "";
-    if (card.value) await flyOne(card.value.querySelector(".stamps") ?? card.value, 0, -40);
+    wrapping.value = "fly";
+    if (card.value) await flyOne(card.value.querySelector(".reward") ?? card.value, 0, -40);
   } finally {
     wrapping.value = "";
     release(active);
@@ -261,12 +304,16 @@ onDeactivated(() => {
 });
 onBeforeUnmount(() => {
   active = false;
+  window.removeEventListener("keydown", onAskKey);
   cancelAnimationFrame(rollFrame);
   for (const a of ghosts) a.cancel();
 });
 
 /** Each badge's name with the stamps toward it. */
 const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, CFG.badges[i]))} / ${fmt(CFG.badges[i])}`;
+/** The first badge not earned yet: it shows how far the stamps have come toward it. */
+const nextBadge = computed(() => (badge.value < BADGES.length ? badge.value : -1));
+const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!);
 </script>
 
 <template>
@@ -293,7 +340,7 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
               v-for="p in PACKS" :key="p.n" type="button" class="ui-btn pack"
               :class="{ primary: p.n === 1 && live1, pulse: p.n === 1 && live1 }"
               :disabled="outOfReach(p.n)" :aria-busy="busy === p.n" :aria-disabled="busy ? 'true' : undefined"
-              :title="keyTip(p.n)" @click="buy(p.n, $event)"
+              :title="keyTip(p.n)" @click="ask(p, $event)"
             >
               <span class="pile"><CoinStack :count="p.pile" :size="32" :grey="outOfReach(p.n)" /></span>
               <span class="pack-n">{{ p.n }} 枚</span>
@@ -304,22 +351,45 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
         </div>
       </div>
 
-      <div ref="card" class="card" data-rise>
-        <div class="stamps" :class="wrapping" :title="`${state?.stamps ?? 0} / ${PER}`">
-          <Stamp v-for="i in PER" :key="i" :index="i" :empty="i > inked" :size="28" />
+      <!-- The stamp card: 29 slots for stamps, and the coin they pay in the last one. -->
+      <div ref="card" class="card" :class="wrapping" data-rise>
+        <div class="stamps" role="img" :aria-label="`${inked} / ${PER}`">
+          <Stamp v-for="i in PER - 1" :key="i" :index="i" :empty="i > inked" :size="28" />
+          <span class="reward" aria-hidden="true"><ParkCoin :size="28" :tilt="false" /><b>+1</b></span>
         </div>
-        <div class="badges">
-          <img
-            v-for="(art, i) in BADGE_ART" :key="i" :src="art" :class="{ earned: i < badge }"
-            :alt="BADGES[i]" :title="badgeTip(i)" draggable="false"
-          />
+        <div class="count">
+          <p class="count-n" aria-hidden="true"><b>{{ inked }}</b><span>/ {{ PER }}</span></p>
+          <p class="count-note">花驼币盖章</p>
         </div>
+        <ol class="badges">
+          <li v-for="(art, i) in BADGE_ART" :key="i" :class="{ earned: i < badge }" :title="badgeTip(i)">
+            <img :src="art" :alt="BADGES[i]" draggable="false" />
+            <span class="badge-text">
+              <span class="badge-name">{{ BADGES[i] }}</span>
+              <b class="badge-at">{{ fmt(CFG.badges[i]!) }}</b>
+              <i v-if="i === nextBadge" class="badge-bar" aria-hidden="true"><i :style="{ width: `${badgePart(i) * 100}%` }"></i></i>
+            </span>
+          </li>
+        </ol>
       </div>
     </div>
 
     <div class="park-actions">
       <RedeemForm />
     </div>
+
+    <Modal v-if="asking" title="买驼币" heading @close="asking = null">
+      <div class="deal">
+        <span class="deal-coins">
+          <CoinStack :count="asking.pile" :size="40" /><b>{{ asking.n }}</b><span>枚</span>
+        </span>
+        <span class="deal-cost"><Icon name="shard" :size="20" /><b>{{ fmt(asking.n * CFG.price) }}</b></span>
+      </div>
+      <div class="confirm">
+        <button type="button" class="ui-btn" @click="asking = null">取消</button>
+        <button ref="okKey" type="button" class="ui-btn primary" @click="confirmBuy">购买</button>
+      </div>
+    </Modal>
   </section>
 </template>
 
@@ -470,13 +540,12 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   color: var(--c-700);
 }
 
-/* ---- the stamp card: a tonal block, the stamps on the left and the badges they lead to on the right */
+/* ---- the stamp card: a tonal block; the stamps, how many, then the badges they lead to on the right */
 .card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 14px 24px;
+  gap: 14px 22px;
   padding: 16px 22px;
   border-radius: var(--radius-m);
   background: var(--c-100);
@@ -486,14 +555,68 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   grid-template-columns: repeat(10, 28px);
   gap: 10px 12px;
 }
-/* A full card: every stamp flashes at once, then the card clears. */
-.stamps.flash :deep(.stamp) {
+/* The last slot: the coin a full card pays, marked +1. */
+.reward {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.reward b {
+  position: absolute;
+  right: -9px;
+  bottom: -6px;
+  padding: 2px 3px 1px;
+  border-radius: 6px;
+  background: var(--c-600);
+  box-shadow: 0 0 0 1.5px var(--c-100);
+  font: 800 11px/1 var(--font-latin);
+  color: #fff;
+}
+/* How many, and where stamps come from. */
+.count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-right: auto;
+}
+.count p {
+  margin: 0;
+  white-space: nowrap;
+}
+.count-n {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.count-note {
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+}
+.count b {
+  min-width: 2ch;
+  font: 800 34px/1 var(--font-latin);
+  text-align: right;
+  color: var(--ink);
+}
+.count span {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+/* A full card: every slot flashes at once, then the stamps clear and the coin leaves its slot. */
+.card.flash :deep(.stamp),
+.card.flash .reward {
   animation: stamp-flash 420ms var(--ease-out);
 }
-.stamps.clear :deep(.stamp) {
+.card.clear :deep(.stamp) {
   opacity: 0;
   scale: 0.6;
   transition: opacity 180ms var(--ease-in), scale 180ms var(--ease-in);
+}
+.card.fly .reward {
+  opacity: 0;
+  transition: none;
 }
 @keyframes stamp-flash {
   0% { scale: 1; filter: none; }
@@ -502,8 +625,17 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 }
 .badges {
   display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.badges li {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 6px;
+  cursor: default;
 }
 .badges img {
   width: 52px;
@@ -514,8 +646,84 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   user-select: none;
 }
 /* Earned: the badge in its metal, a die-cut sticker. */
-.badges img.earned {
+.badges .earned img {
   filter: var(--sticker);
+}
+.badge-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.badge-name {
+  font: 700 var(--fs-label)/1.1 var(--font);
+  color: var(--ink-3);
+}
+.badge-at {
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.earned .badge-name,
+.earned .badge-at {
+  color: var(--ink);
+}
+/* The next badge: how far the stamps in all have come toward it. */
+.badge-bar {
+  display: block;
+  width: 40px;
+  height: 3px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--c-200);
+}
+.badge-bar i {
+  display: block;
+  height: 100%;
+  background: var(--c-600);
+}
+
+/* ---- the question before a buy: the pack against its price, then the two keys */
+.deal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border-radius: var(--radius-m);
+  background: var(--c-100);
+}
+.deal-coins,
+.deal-cost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.deal-coins b {
+  margin-left: 6px;
+  font: 800 34px/1 var(--font-latin);
+  color: var(--ink);
+}
+.deal-coins span {
+  font: 700 var(--fs-strong)/1 var(--font);
+  color: var(--ink-2);
+}
+.deal-cost svg {
+  color: var(--c-600);
+}
+.deal-cost b {
+  font: 800 26px/1 var(--font-latin);
+  color: var(--ink);
+}
+.confirm {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm .primary {
+  min-width: 96px;
 }
 
 /* ---- reduced motion: nothing moves, the numbers just change */
@@ -548,7 +756,7 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
     flex: 1;
     width: auto;
   }
-  /* The badges stand in a column beside the stamps, as tall as the three rows. */
+  /* No room beside the stamps and the count: the badges take a row of their own, each with its words beside it. */
   .card {
     gap: 12px 16px;
     padding: 14px 18px;
@@ -556,13 +764,32 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   .stamps {
     gap: 8px 6px;
   }
+  .count b {
+    font-size: 28px;
+  }
   .badges {
-    flex-direction: column;
-    gap: 5px;
+    flex-basis: 100%;
+    gap: 8px 18px;
+    flex-wrap: wrap;
+  }
+  .badges li {
+    flex-direction: row;
+    gap: 8px;
   }
   .badges img {
     width: 30px;
     height: 30px;
+  }
+  .badge-text {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 5px;
+    width: 76px;
+  }
+  .badge-bar {
+    flex-basis: 100%;
+    margin-top: 1px;
   }
   .note:empty {
     display: none;
@@ -615,14 +842,32 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
     gap: 6px 4px;
     zoom: 0.8;
   }
-  /* Two long rows leave no room beside them: the badges go in a row, beside or under the stamps. */
+  .count b {
+    font-size: 26px;
+  }
+  /* Two long rows of stamps: the count and the badges go beside them or on the next line, words under each badge. */
   .badges {
-    flex-direction: row;
-    gap: 8px;
+    flex-basis: auto;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+  .badges li {
+    flex-direction: column;
+    gap: 3px;
   }
   .badges img {
+    width: 30px;
+    height: 30px;
+  }
+  .badge-text {
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    width: auto;
+  }
+  .badge-bar {
+    flex-basis: auto;
     width: 32px;
-    height: 32px;
   }
   .note:empty {
     display: none;

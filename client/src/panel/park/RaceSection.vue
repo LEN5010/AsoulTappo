@@ -14,8 +14,8 @@ import { loadPark, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
-import Modal from "../../ui/Modal.vue";
 import { useBand } from "./band";
+import ParkSheet from "./ParkSheet.vue";
 import RaceTrack from "./RaceTrack.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
@@ -298,29 +298,37 @@ function lit(place: number): boolean {
       </div>
     </RaceTrack>
 
-    <Modal v-if="rules" title="赛跑规则" heading @close="rules = false">
-      <div class="rules">
-        <table>
-          <thead><tr><th>团子</th><th>技能</th><th>效果</th></tr></thead>
-          <tbody>
-            <tr v-for="m in MEMBERS" :key="m">
-              <td><span class="who"><TuanziToken :member="m" :size="24" />{{ nameOf(m) }}</span></td>
-              <td>{{ SKILL_NAMES[CFG.skills[m].kind] }}</td>
-              <td>{{ skillLine(CFG.skills[m]) }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <table>
-          <thead><tr><th>状态</th><th>效果</th></tr></thead>
-          <tbody>
-            <tr v-for="md in CFG.moods" :key="md.id">
-              <td><span class="mood-row"><b class="mood" :class="md.id" aria-hidden="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg></b>{{ MOOD_NAMES[md.id] }}</span></td>
-              <td>{{ moodLine(md) || "—" }}</td>
-            </tr>
-          </tbody>
-        </table>
+    <!-- The rules: each tuanzi with its skill, each mood with its chip as on the runner keys. -->
+    <ParkSheet v-if="rules" title="赛跑规则" @close="rules = false">
+      <div class="rules park-sheet-columns">
+        <section>
+          <h4 class="park-sheet-head">技能</h4>
+          <ul class="park-sheet-list single">
+            <li v-for="m in MEMBERS" :key="m" class="park-sheet-row">
+              <span class="park-sheet-lead bare"><TuanziToken :member="m" :size="48" /></span>
+              <span class="park-sheet-main">
+                <b><i class="park-sheet-bar" :style="{ background: colorOf(m) }"></i>{{ nameOf(m) }}<em>{{ SKILL_NAMES[CFG.skills[m].kind] }}</em></b>
+                <small>{{ skillLine(CFG.skills[m]) }}</small>
+              </span>
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h4 class="park-sheet-head">状态</h4>
+          <ul class="park-sheet-list single">
+            <li v-for="md in CFG.moods" :key="md.id" class="park-sheet-row">
+              <span class="park-sheet-lead bare">
+                <b class="mood" :class="md.id" aria-hidden="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg></b>
+              </span>
+              <span class="park-sheet-main">
+                <b>{{ MOOD_NAMES[md.id] }}</b>
+                <small v-if="moodLine(md)">{{ moodLine(md) }}</small>
+              </span>
+            </li>
+          </ul>
+        </section>
       </div>
-    </Modal>
+    </ParkSheet>
 
     <!-- The bet slip. -->
     <div class="park-actions slip">
@@ -750,34 +758,21 @@ function lit(place: number): boolean {
   margin: 0;
 }
 
-/* ---- the rules */
-.rules {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+/* ---- the rules (park-sheet.css): the tuanzi fills its lead, the mood chip a size up from the runner keys' */
+.rules .park-sheet-lead {
+  --tuanzi-size: calc(var(--lead) - 6px);
 }
-.rules table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-body);
+.rules .mood {
+  width: 36px;
+  height: 24px;
 }
-.rules th,
-.rules td {
-  text-align: left;
-  padding: 10px 6px;
-  border-bottom: 1px solid var(--c-100);
+.rules .mood svg {
+  width: 15px;
+  height: 15px;
 }
-.rules .who {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-}
-.rules .mood-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
+/* The rows are --c-100: the level chip goes a step deeper, as on a latched runner key. */
+.rules .mood.normal {
+  background: var(--c-200);
 }
 
 .calm .pool i {

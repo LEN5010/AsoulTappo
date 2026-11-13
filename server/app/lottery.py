@@ -5,12 +5,14 @@ on the first request that day, whichever comes first), and only SHA-256(number +
 draw then publishes both, so anyone can check that the number was fixed in advance.
 
 Prizes (manifest economy.park.lottery):
-- top, all three digits: `top` of the day's sales in shards plus the top rollover, at most `topCap`; the part above the
-  cap joins that day's second prize.
-- second, the last two digits: `second` of the sales plus the second rollover (and the top's overflow).
+- top, all three digits: the server-wide pool (park_counters park.POOL). It starts at `pool.seed`, every coin spent in
+  the park (scratch cards, the race, the lottery) adds `pool.perCoin` through Park.spend, and the race's refunds take
+  theirs back. A draw with top winners splits the pool equally, rounded down to whole shards, and the pool starts
+  again at `pool.seed` plus the remainder; without one it carries over whole.
+- second, the last two digits: `second` of the day's sales plus the second rollover, split equally; the remainder, or
+  the whole amount when no ticket wins it, rolls over into the next draw's second.
 - third, the last digit: `third` shards a ticket.
-A ticket wins only its best tier. Top and second are split equally between their winning tickets, rounded down to
-whole shards; the remainder, or the whole pool when no ticket wins, rolls over into the same tier of the next draw.
+A ticket wins only its best tier.
 """
 from __future__ import annotations
 
@@ -23,14 +25,13 @@ from fractions import Fraction
 from typing import Any, Callable
 
 from .game import Game, GameError, player_id_for
-from .park import Park
+from .park import POOL, Park
 from .store import DAY_OFFSET, Store, day_of
 
 # Shard ledger source of the prizes; coin ledger source of the tickets.
 PRIZE = "lottery_prize"
 SPEND = "lottery"
-# park_counters keys of the rollovers into the next draw.
-ROLL_TOP = "lottery_roll_top"
+# park_counters key of the second prize's rollover into the next draw (the top prize is park.POOL).
 ROLL_SECOND = "lottery_roll_second"
 TIERS = {1: "top", 2: "second", 3: "third"}
 # Drawn days the state lists in `history`.
@@ -58,39 +59,35 @@ def tier_of(number: str, winning: str) -> int:
     return 0
 
 
-def pools(cfg: dict[str, Any], price: int, sales: int, roll_top: int, roll_second: int) -> tuple[int, int, int]:
-    """(top, second, overflow) of a draw with [sales] tickets: the overflow is the part of the top above its cap,
-    already counted in the second."""
-    shards = sales * price
-    raw_top = int(Fraction(str(cfg["top"])) * shards) + roll_top
-    top = min(raw_top, cfg["topCap"])
-    overflow = raw_top - top
-    second = int(Fraction(str(cfg["second"])) * shards) + roll_second + overflow
-    return top, second, overflow
+def second_pool(cfg: dict[str, Any], price: int, sales: int, roll_second: int) -> int:
+    """The second prize of a draw with [sales] tickets: `second` of the sales in shards plus the rollover."""
+    return int(Fraction(str(cfg["second"])) * sales * price) + roll_second
 
 
 @dataclass
 class Settlement:
     pools: dict[str, int]  # top, second: what was shared out (before rounding)
-    overflow: int
     winners: dict[str, int]  # tickets per tier
     each: dict[str, int]  # shards per winning ticket per tier
-    roll: dict[str, int]  # top, second carried into the next draw
+    roll: dict[str, int]  # second: carried into the next draw's second prize
+    pool: int  # the top prize pool after the draw
     prizes: list[tuple[int, int, int]] = field(default_factory=list)  # (ticket id, tier, prize) of winning tickets
 
 
-def settle(cfg: dict[str, Any], price: int, winning: str, tickets: list[tuple[int, str]], roll_top: int,
+def settle(cfg: dict[str, Any], price: int, winning: str, tickets: list[tuple[int, str]], pool: int,
            roll_second: int) -> Settlement:
-    """The draw of [tickets] ((id, number) each) against [winning], with the rollovers coming in."""
-    top, second, overflow = pools(cfg, price, len(tickets), roll_top, roll_second)
+    """The draw of [tickets] ((id, number) each) against [winning], with the top prize [pool] and the second
+    prize's rollover coming in."""
+    second = second_pool(cfg, price, len(tickets), roll_second)
     tiers = [(tid, tier_of(n, winning)) for tid, n in tickets]
     count = {t: sum(1 for _, x in tiers if x == t) for t in TIERS}
-    each = {1: top // count[1] if count[1] else 0, 2: second // count[2] if count[2] else 0, 3: cfg["third"]}
-    roll = {"top": top - each[1] * count[1], "second": second - each[2] * count[2]}
+    each = {1: pool // count[1] if count[1] else 0, 2: second // count[2] if count[2] else 0, 3: cfg["third"]}
+    after = cfg["pool"]["seed"] + pool - each[1] * count[1] if count[1] else pool
     return Settlement(
-        pools={"top": top, "second": second}, overflow=overflow,
+        pools={"top": pool, "second": second},
         winners={TIERS[t]: count[t] for t in TIERS}, each={TIERS[t]: each[t] if count[t] else 0 for t in TIERS},
-        roll=roll, prizes=[(tid, t, each[t]) for tid, t in tiers if t])
+        roll={"second": second - each[2] * count[2]}, pool=after,
+        prizes=[(tid, t, each[t]) for tid, t in tiers if t])
 
 
 def minute_of(ts: float) -> float:
@@ -147,12 +144,8 @@ class Lottery:
         start = day_start(now)
         mine = st.lottery_tickets(day, pid)
         drawn = row["drawn"] is not None
-        if drawn:
-            # Today is over: what has rolled into tomorrow's draw so far.
-            top, second, _ = pools(cfg, self.price, 0, st.park_counter(ROLL_TOP), st.park_counter(ROLL_SECOND))
-        else:
-            top, second, _ = pools(cfg, self.price, st.lottery_sales(day), st.park_counter(ROLL_TOP),
-                                   st.park_counter(ROLL_SECOND))
+        # Once today is drawn, the second is what has rolled into tomorrow's draw so far. The top is the pool now.
+        second = second_pool(cfg, self.price, 0 if drawn else st.lottery_sales(day), st.park_counter(ROLL_SECOND))
         return {
             "day": day,
             "hash": row["hash"],
@@ -161,7 +154,7 @@ class Lottery:
             "open": self.is_open(now) and not drawn,
             "drawn": drawn,
             "sales": st.lottery_sales(day),
-            "prize": {"top": top, "second": second, "third": cfg["third"]},
+            "prize": {"top": self.park.pool(st), "second": second, "third": cfg["third"]},
             "daily": cfg["daily"],
             "left": max(0, cfg["daily"] - len(mine)),
             "tickets": [t["number"] for t in mine],
@@ -231,7 +224,7 @@ class Lottery:
             now = g.now()
             tickets = st.lottery_tickets(day)
             s = settle(cfg, self.price, row["number"], [(t["id"], t["number"]) for t in tickets],
-                       st.park_counter(ROLL_TOP), st.park_counter(ROLL_SECOND))
+                       self.park.pool(st), st.park_counter(ROLL_SECOND))
             st.set_lottery_prizes(s.prizes)
             owner = {t["id"]: t["player_id"] for t in tickets}
             paid: dict[str, int] = {}
@@ -242,10 +235,10 @@ class Lottery:
                 p = st.get_player(pid, now)
                 st.update_player(pid, shards=p["shards"] + shards)
                 st.add_ledger(pid, pay_day, PRIZE, shards)
-            st.set_park_counter(ROLL_TOP, s.roll["top"])
+            st.set_park_counter(POOL, s.pool)
             st.set_park_counter(ROLL_SECOND, s.roll["second"])
-            result = {"sales": len(tickets), "pools": s.pools, "overflow": s.overflow, "winners": s.winners,
-                      "each": s.each, "roll": s.roll, "paid": sum(paid.values())}
+            result = {"sales": len(tickets), "pools": s.pools, "winners": s.winners, "each": s.each, "roll": s.roll,
+                      "pool": s.pool, "paid": sum(paid.values())}
             st.set_lottery_drawn(day, now, json.dumps(result))
             if tickets:
                 self._announce(st, day, row["number"], s, owner, now)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4): the prize board (the top
-// prize on gold foil, then the second and the third), three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
+// prize on gold foil: the server-wide pool, which rolls over until a draw has a top winner; then the second and the third), three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
 // check and the buy keys. There is no push: while the page is open the state loads every POLL_MS, and every few
 // seconds once the draw is due. The countdown and 阿草 go up in the park's coral band (band.ts).
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
@@ -309,12 +309,15 @@ watch(() => [state.value?.left, state.value?.open, coins.value, online.value], (
 // Picking stops with the sales: no key held, no caret.
 watch(keysOff, (off) => { if (off) at.value = null; });
 
-// ---- the prize board: top, second and third, each with the trailing digits it takes
+// ---- the prize board: top, second and third, each with the trailing digits it takes. The top prize is the
+// server-wide pool of the next draw (after today's draw, the pool it rolled over into or started again from). The
+// park's state carries the same pool and loads again on every coin spent anywhere in the park, so the plaque takes it
+// from there when it can and always matches the pool in the top bar.
 const tiers = computed(() => {
   const s = state.value;
   if (!s) return [];
   return [
-    { id: "top", name: s.drawn ? "明日头奖" : "头奖", hit: 3, amount: s.prize.top, each: false },
+    { id: "top", name: "头奖", hit: 3, amount: park.value?.jackpot ?? s.prize.top, each: false },
     { id: "second", name: "二等", hit: 2, amount: s.prize.second, each: false },
     { id: "third", name: "三等", hit: 1, amount: s.prize.third, each: true },
   ] as const;
@@ -422,8 +425,9 @@ function onBarKey(e: KeyboardEvent) {
         <ol class="prizes">
           <li
             v-for="t in tiers" :key="t.id" class="tier" :class="t.id"
-            :aria-label="`${t.name} ${fmt(t.amount)}${t.each ? ' /注' : ''}`"
+            :aria-label="`${t.name}${t.id === 'top' ? ' 全服奖池' : ''} ${fmt(t.amount)}${t.each ? ' /注' : ''}`"
           >
+            <small v-if="t.id === 'top'" class="pool-tag" aria-hidden="true">全服奖池</small>
             <span class="tier-head" aria-hidden="true">
               <span class="tier-name">{{ t.name }}</span>
               <span class="match"><i v-for="d in 3" :key="d" :class="{ on: d > 3 - t.hit }"></i></span>
@@ -583,6 +587,7 @@ function onBarKey(e: KeyboardEvent) {
   color: var(--ink);
 }
 .tier.top {
+  position: relative;
   height: 96px;
   padding: 12px 24px 14px 20px;
   background: var(--grad-gold);
@@ -598,6 +603,19 @@ function onBarKey(e: KeyboardEvent) {
   height: 62px;
   padding: 8px 14px 10px 12px;
   background: var(--c-100);
+}
+/* The top prize is the server-wide pool: a paper tag clipped over the plaque's top edge. */
+.pool-tag {
+  position: absolute;
+  left: 14px;
+  top: -9px;
+  padding: 3px 7px 2px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+  font: 800 var(--fs-caption)/1.2 var(--font);
+  color: var(--ink);
+  white-space: nowrap;
 }
 .tier-head {
   display: flex;

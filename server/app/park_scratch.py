@@ -3,10 +3,8 @@
 Like the old shard cards (game.scratch_*), a card's prize is decided when it is bought and paid when it is revealed,
 so the balance after buying shows only the price, and a save holds one unrevealed card at a time.
 
-The jackpot: every coin spent on a card adds `jackpot.perCoin` shards to the pot (park_counters JACKPOT, `seed` when
-absent). The card's own coins go in first, then the jackpot is drawn on its own (`coins / odds`) before the table. A
-hit replaces the table roll: the card is a jackpot card and nothing else. The pot is taken in the buy transaction (it
-restarts at `seed` then, so a second winner before the reveal never shares it) and paid at the reveal."""
+A save's first card of each kind is not rolled: it wins the card's `first` shards, shown three times like any shard
+prize. The coins spent on cards feed the lottery pool through Park.spend."""
 from __future__ import annotations
 
 import json
@@ -15,23 +13,19 @@ from typing import Any, Sequence
 from . import scratch as scratchlogic
 from .cards import Rng
 from .game import SCRATCH_DAYS, GameError, player_id_for
-from .park import JACKPOT, Park
+from .park import Park
 from .store import Store, day_of
 
 # Symbols besides amounts and emote keys. BLANK fills premium cards, which have too few prizes for nine cells.
-AGAIN, SKIN, BIG, POT, BLANK = "again", "skin", "big", "jackpot", "blank"
-# Shard ledger sources (park.PRIZE_SOURCES).
+AGAIN, SKIN, BIG, BLANK = "again", "skin", "big", "blank"
+# Shard ledger source (park.PRIZE_SOURCES).
 PRIZE = "park_scratch"
-POT_SOURCE = "jackpot"
 
 
-def roll(card: dict[str, Any], pity: int, rng: Rng, complete: bool, odds: int) -> tuple[str, int]:
-    """One card: (tier, shards) with shards set for the `shards` tier only. The jackpot is drawn first, at
-    coins/odds. Then one draw over the table in percent: the emote tier (certain on the pity-th card since the
-    last emote, as in scratch.roll_prize; with the set `complete` it is a second `again`), again, the shard
-    prizes in order, skin, big; the rest misses."""
-    if rng.random() < card["coins"] / odds:
-        return "jackpot", 0
+def roll(card: dict[str, Any], pity: int, rng: Rng, complete: bool) -> tuple[str, int]:
+    """One card: (tier, shards) with shards set for the `shards` tier only. One draw over the table in percent: the
+    emote tier (certain on the pity-th card since the last emote, as in scratch.roll_prize; with the set `complete`
+    it is a second `again`), again, the shard prizes in order, skin, big; the rest misses."""
     x = rng.random() * 100
     edge = 0.0
     emote = card.get("emote")
@@ -57,20 +51,19 @@ def roll(card: dict[str, Any], pity: int, rng: Rng, complete: bool, odds: int) -
 
 
 def top_symbols(card: dict[str, Any], server_at: int) -> set[str]:
-    """Symbols a losing card shows one of at most: amounts told to the whole server, skin, big and the jackpot."""
-    return {str(p["shards"]) for p in card["prizes"] if p["shards"] >= server_at} | {SKIN, BIG, POT}
+    """Symbols a losing card shows one of at most: amounts told to the whole server, skin and big."""
+    return {str(p["shards"]) for p in card["prizes"] if p["shards"] >= server_at} | {SKIN, BIG}
 
 
 def symbols(card: dict[str, Any]) -> list[str]:
     """Symbols besides the amounts and emotes a card of this table can show."""
-    out = [AGAIN] + [t for t in (SKIN, BIG) if t in card] + [POT]
+    out = [AGAIN] + [t for t in (SKIN, BIG) if t in card]
     return out if card.get("emote") else out + [BLANK]
 
 
-def mean_return(card: dict[str, Any], jackpot: dict[str, Any], complete: bool) -> float:
+def mean_return(card: dict[str, Any], complete: bool) -> float:
     """Shards a coin bought for this card returns in the long run, coins from `again` played on until they turn into
-    shards, skin and big at their `shards`. The pot pays perCoin for every coin plus its seed once per win."""
-    q = card["coins"] / jackpot["odds"]
+    shards, skin and big at their `shards`. The first-card prize is left out."""
     emote = card.get("emote")
     # Share of cards the table is rolled on (the pity forces an emote on the rest), as in cards.roll_tier.
     rolled, extra_again = 1.0, 0.0
@@ -84,14 +77,12 @@ def mean_return(card: dict[str, Any], jackpot: dict[str, Any], complete: bool) -
     shards += sum(card[t]["shards"] * card[t]["weight"] for t in ("skin", "big") if t in card)
     shards = shards / 100 * rolled
     again = (card["again"] + extra_again) / 100 * rolled
-    pot = jackpot["perCoin"] + jackpot["seed"] / jackpot["odds"]
-    return ((1 - q) * shards / card["coins"] + pot) / (1 - (1 - q) * again)
+    return shards / card["coins"] / (1 - again)
 
 
 class ParkScratch:
     def __init__(self, park: Park) -> None:
         self.park = park
-        park.held_pot = self._held_pot
 
     @property
     def cfg(self) -> dict[str, Any]:
@@ -118,12 +109,9 @@ class ParkScratch:
     def _view(card: dict[str, Any] | None) -> dict[str, Any] | None:
         return {"id": card["id"], "kind": card["kind"], "cells": json.loads(card["cells"])} if card else None
 
-    def _pot(self, st: Store) -> int:
-        return st.park_counter(JACKPOT, self.cfg["jackpot"]["seed"])
-
     # ------------------------------------------------------------------ calls
     def state(self, token: str) -> dict[str, Any]:
-        """The card still to reveal, the count toward the emote pity, whether the emote set is whole, and the pot."""
+        """The card still to reveal, the count toward the emote pity and whether the emote set is whole."""
         cfg = self.cfg
         g = self.park.game
         pid = player_id_for(token)
@@ -131,17 +119,7 @@ class ParkScratch:
         owned = g.store.owned(pid)
         pending = g.store.pending_park_scratch(pid)
         return {"card": self._view(pending), "pity": p["scratch_pity"],
-                "emotesWhole": all(i in owned for i in self._emotes(cfg["cards"]["basic"])),
-                "jackpot": self._shown_pot(g.store, pending)}
-
-    def _shown_pot(self, st: Store, pending: dict[str, Any] | None) -> int:
-        """The pot as the save sees it: while its unrevealed card holds the pot, the pot as that card took it, so the
-        restart at seed gives nothing away before the reveal (Park.view does the same through held_pot)."""
-        return pending["shards"] if pending and pending["tier"] == "jackpot" else self._pot(st)
-
-    def _held_pot(self, st: Store, pid: str) -> int | None:
-        pending = st.pending_park_scratch(pid)
-        return pending["shards"] if pending and pending["tier"] == "jackpot" else None
+                "emotesWhole": all(i in owned for i in self._emotes(cfg["cards"]["basic"]))}
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
         return {**self.park.game.status(token), "park": self.park.state(token), **self.state(token), **extra}
@@ -162,18 +140,18 @@ class ParkScratch:
         cfg = self.cfg
         g = self.park.game
         coins = card["coins"]
+        first = card.get("first", 0) > 0 and not st.has_park_scratch(pid, kind)
         self.park.spend(st, pid, coins, "scratch", now)
-        jackpot = cfg["jackpot"]
-        pot = self._pot(st) + coins * jackpot["perCoin"]
         p = st.get_player(pid, now)
         owned = st.owned(pid)
         emotes = self._emotes(card)
         missing = [i for i in emotes if i not in owned]
-        tier, shards = roll(card, p["scratch_pity"], g.rng, complete=not missing, odds=jackpot["odds"])
+        if first:
+            tier, shards = "shards", card["first"]
+        else:
+            tier, shards = roll(card, p["scratch_pity"], g.rng, complete=not missing)
         item, back = "", 0
-        if tier == "jackpot":
-            shards, pot = pot, jackpot["seed"]
-        elif tier == "again":
+        if tier == "again":
             back = coins
         elif tier == "emote":
             item = self._pick(missing)
@@ -184,8 +162,7 @@ class ParkScratch:
                 item = self._pick(left)
             else:
                 shards = card[tier]["shards"]
-        st.set_park_counter(JACKPOT, pot)
-        win = {"jackpot": POT, "again": AGAIN, "skin": SKIN, "big": BIG}.get(tier)
+        win = {"again": AGAIN, "skin": SKIN, "big": BIG}.get(tier)
         if tier == "emote":
             win = item[len("emote:"):]
         elif tier == "shards":
@@ -245,16 +222,14 @@ class ParkScratch:
         if row["shards"]:
             p = st.get_player(pid, now)
             st.update_player(pid, shards=p["shards"] + row["shards"])
-            st.add_ledger(pid, day, POT_SOURCE if tier == "jackpot" else PRIZE, row["shards"])
+            st.add_ledger(pid, day, PRIZE, row["shards"])
         if row["coins"]:
             self.park.grant(st, pid, row["coins"], "scratch_again", now)
         if item:
             known = g.manifest.items.get(item)
             st.add_item(pid, item, now)
             st.log_drop(pid, item, known["rarity"] if known else "common", True, now)
-        if tier == "jackpot":
-            self.park.announce(st, "jackpot", pid, now, shards=row["shards"])
-        elif item and tier in ("skin", "big"):
+        if item and tier in ("skin", "big"):
             self.park.announce(st, "scratch_item", pid, now, card=kind, item=item)
         elif row["shards"] >= cfg["serverAt"][kind]:
             self.park.announce(st, "scratch_big", pid, now, card=kind, shards=row["shards"])

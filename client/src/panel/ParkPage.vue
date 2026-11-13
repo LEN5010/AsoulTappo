@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // The park (乐园, docs/design/amusement-park.md §11, docs/design/park-ui-rebuild.md §4): one sheet of paper whose top
 // edge is a coral band with the four pages (coins, scratch cards, the race and the lottery), the page's timer and
-// its host; the page picked fills the white body. The coins held and the server-wide jackpot are in the panel's top
-// bar (ParkChips). The games open at manifest economy.park.coin.minTaps taps in all; until then the body shows how far
-// there is to go. Today's free coin is taken on the first visit of the day (§2.2). While the page is open it loads
-// again with the status every RELOAD_MS at most: race and lottery prizes, the jackpot and a new day change without
-// coins moving.
+// its host; the page picked fills the white body. The coins held and the server-wide pool (the lottery's top prize)
+// are in the panel's top bar (ParkChips). The games open at manifest economy.park.coin.minTaps taps in all; until then
+// the body shows how far there is to go. Today's free coin is granted by the server with a status (`park.gifted`, in
+// that one status only); when the park is shown at that moment, +1 rises into the coins and 阿草 takes it. A server
+// that still waits for the first visit of the day (`gift` in the park's state) is asked for it here. While the page is
+// open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
+// without coins moving.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { manifest } from "../manifest";
 import { status } from "../stores/player";
@@ -32,6 +34,8 @@ const MIN_TAPS = manifest.economy.park!.coin.minTaps;
 const RELOAD_MS = 15000;
 /** 阿草 takes today's free coin for this long. */
 const GIFT_HOST_MS = 1000;
+/** The last free coin shown or passed by (save and day), shared with every window: a grant plays once at most. */
+const GIFT_SEEN_KEY = "asoultappo.parkGift.v1";
 /** The host while no page has put one up: the park still shut, or not on this server. */
 const HOST_IDLE = ACHAO["招商"];
 const HOST_CLOSED = ACHAO["拒绝"];
@@ -57,6 +61,24 @@ const hostKind = computed(() => (!noPark.value && !flashedHost.value && entry.va
 let active = false;
 let entering = false;
 let loadedAt = 0;
+
+function celebrateGift(n: number) {
+  popCoins(n);
+  if (ACHAO["收到"]) flashHost(ACHAO["收到"], GIFT_HOST_MS);
+}
+let lastGift = "";
+/** Marks [key] as the last grant seen; false when it was already. */
+function firstSight(key: string): boolean {
+  try {
+    if (localStorage.getItem(GIFT_SEEN_KEY) === key) return false;
+    localStorage.setItem(GIFT_SEEN_KEY, key);
+  } catch {
+    /* storage unavailable: the in-memory mark below still keeps this window from playing it twice */
+  }
+  if (lastGift === key) return false;
+  lastGift = key;
+  return true;
+}
 async function enter() {
   if (entering || noPark.value) return;
   entering = true;
@@ -68,10 +90,7 @@ async function enter() {
     loadError.value = failed && failed.status > 0 ? failed.message : "";
     if (!state?.unlocked || !state.gift) return;
     const got = await claimGift();
-    if (got) {
-      popCoins(got);
-      if (ACHAO["收到"]) flashHost(ACHAO["收到"], GIFT_HOST_MS);
-    }
+    if (got) celebrateGift(got);
   } finally {
     entering = false;
   }
@@ -92,6 +111,14 @@ watch(() => [status.value?.player, taps.value >= MIN_TAPS] as const, ([player, e
 // Each heartbeat brings a new status; the page follows it, not faster than RELOAD_MS.
 watch(status, () => {
   if (active && Date.now() - loadedAt >= RELOAD_MS) void enter();
+});
+// The status that granted today's free coin. The same status can come again (the desk sends it on along with other
+// changes), so each grant is marked by save and day; one that arrives while the park is not shown is only marked.
+watch(() => status.value?.park?.gifted, (n) => {
+  const s = status.value;
+  if (!s || !n || n <= 0) return;
+  const key = `${s.player}|${s.dailyTaps?.day ?? new Date().toDateString()}`;
+  if (firstSight(key) && active && !locked.value && !noPark.value) celebrateGift(n);
 });
 </script>
 

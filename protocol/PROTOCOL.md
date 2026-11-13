@@ -89,7 +89,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news}`，见乐园一节；没有乐园的服务端不带） |
+| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节 |
@@ -97,9 +97,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | POST /api/update-reward | 领取更新奖励：`X-Client-Version` 不低于奖励版本的、进行中且还没领的奖励一次全部发放，返回状态和 `reward:{shards,ids}`。预发布版本低于同号正式版。没有可领的返回 409 `no_reward` |
-| GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、gift、stamps、stampsTotal、badge、today、jackpot |
+| GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、gift、stamps、stampsTotal、badge、today、jackpot（每日夺宝的全服奖池） |
 | POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见乐园一节的错误码 |
-| POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天领过时为 0） |
+| POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天已送过时为 0；状态接口通常已经送过） |
 | POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见乐园一节的兑换码 |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
@@ -191,7 +191,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
 | `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
 | `coin_buy` | 买驼币花费 | 买的枚数 |
-| `park_scratch`、`jackpot`、`race_prize`、`lottery_prize` | 乐园的碎片奖：驼币刮刮乐、全服奖池、团子赛跑、每日夺宝 | 1 |
+| `park_scratch`、`race_prize`、`lottery_prize` | 乐园的碎片奖：驼币刮刮乐、团子赛跑、每日夺宝 | 1 |
 | `redeem` | 兑换码发的碎片 | 1 |
 | `admin` | 管理接口的调整 | 1 |
 
@@ -322,12 +322,12 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 ### 驼币
 
 - 用碎片买，每枚 `coin.price`（500），每天能买的数量和持有数量都不限，一次请求最多买 100 枚。驼币不能换回碎片，也不能转让。
-- 每天送 `coin.gift`（1）枚：客户端第一次打开乐园时调 `POST /api/park/gift`，当天再调返回 `gift: 0`。
+- 每天送 `coin.gift`（1）枚，不用打开乐园：状态接口（`GET /api/me`、心跳和其他返回状态的接口）发现存档累计敲击满 `coin.minTaps`、今天还没送过时直接到账，驼币流水记 `gift`；到账的那一次返回里 `park.gifted` 为到账的枚数，其余时候没有这个字段；乐园接口和兑换码接口返回的 `park` 是乐园状态，不带这个字段，所以 `gifted` 只在 `park` 来自状态接口时出现（`GET /api/me`、`POST /api/activity`、`POST /api/presence` 等）。`POST /api/park/gift` 仍可用，今天已送过时返回 `gift: 0`。
 - 买和领都要累计敲击满 `coin.minTaps`（10000）下，不够时返回 409 `park_locked`。
 - 每花 1 枚驼币得 1 个印章，累计数到 `coin.stampsPerCoin`（30）的整数倍时自动换 1 枚驼币。`stamps` 是当前这一轮的印章数（`stampsTotal` 除以 30 的余数），`badge` 是 `stampsTotal` 达到的 `coin.badges`（100、1000、5000）档数，0 到 3。
 - 赛跑停机退币时，印章和它换出的驼币一起退回。
 
-`GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从乐园奖品拿到的碎片（`park_scratch`、`jackpot`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为刮刮乐全服奖池现在的金额。
+`GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从乐园奖品拿到的碎片（`park_scratch`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为每日夺宝头奖的全服奖池现在的金额（见每日夺宝），各接口返回的 `park.jackpot` 相同。
 
 错误码：`park_locked`、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
 
@@ -344,7 +344,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 | 路由 | 请求与响应 |
 |---|---|
-| GET /api/park/scratch | card（未揭开的卡 `{id,kind,cells}`，没有时为 null）、pity（阿草表情保底计数，和旧刮刮乐共用）、emotesWhole（阿草表情是否已集齐）、jackpot（奖池金额） |
+| GET /api/park/scratch | card（未揭开的卡 `{id,kind,cells}`，没有时为 null）、pity（阿草表情保底计数，和旧刮刮乐共用）、emotesWhole（阿草表情是否已集齐） |
 | POST /api/park/scratch | `{kind}`，kind 为 `basic` 或 `premium`。返回状态、`park` 和上一行的字段。已有未揭开的卡时原样返回这张卡，不再扣币。驼币不够返回 409 `no_coins` |
 | POST /api/park/scratch/reveal | `{card}`，揭开并发放，返回状态、`park`、上上行的字段和 `prize:{tier,shards,coins,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
 
@@ -352,33 +352,33 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 | tier | 普通卡 | 豪华卡 | 发放 |
 |---|---|---|---|
-| `again` | 15% | 12% | 退回买卡的驼币（`coins`），驼币流水记 `scratch_again` |
-| `shards` | 1000（9.5%）、2500（3.5%）、8000（0.6%）、50000（0.05%） | 5000（13%）、12500（3%）、40000（0.5%）、250000（0.02%） | 碎片，流水记 `park_scratch` |
+| `again` | 15% | 15% | 退回买卡的驼币（`coins`），驼币流水记 `scratch_again` |
+| `shards` | 1000（9.5%）、2500（3.5%）、8000（0.6%）、50000（0.05%） | 3000（14%）、5000（10%）、12500（3%）、40000（0.5%）、250000（0.02%） | 碎片，流水记 `park_scratch` |
 | `emote` | 5%，保底 10 张 | 没有 | 一个还没有的阿草表情（`item`） |
 | `skin` | 没有 | 0.2% | 一款还没有的皮肤；全都有时给 `skin.shards`（30000）碎片 |
 | `big` | 没有 | 0.1% | 一张还没有的大隐藏卡；全都有时给 `big.shards`（60000）碎片 |
-| `jackpot` | 1/12000 | 5/12000 | 整个奖池，碎片流水记 `jackpot` |
 | `miss` | 其余 | 其余 | 没有 |
 
 - 阿草表情的保底计数就是旧刮刮乐的 `pity`，两种卡一起累计，规则相同。豪华卡不计数。集齐后表情那 5% 改成 `again`，计数不再变化。
 - 皮肤池和共鸣一样按 `X-Client-Version` 过滤。刮出皮肤和大隐藏卡不影响共鸣保底。
 - 买卡到揭开之间从别处得到了同一件东西：皮肤和大隐藏卡改发对应的碎片，表情改成退回驼币（`tier` 变成 `again`）。
 
-**奖池**：两种卡每花 1 枚驼币，`jackpot.perCoin`（20）碎片进奖池，奖池从 `jackpot.seed`（30000）起步。每张卡先把自己的驼币计入奖池，再单独抽奖池，概率为驼币数除以 `jackpot.odds`（12000）；抽中时这张卡就是奖池卡，不再按奖表抽。奖池在买卡时整个归这张卡，并从 30000 重新起步，揭开时发放。揭开之前，这个存档看到的奖池金额（`GET /api/park` 和各接口返回的 `park.jackpot`，以及刮刮乐接口的 `jackpot`）仍是这张卡拿走的数目，免得提前看出中奖；其他存档看到的是重新起步后的金额。
+**首张卡**：每个存档每种卡的第一张不按奖表抽，固定中 `first` 碎片（普通卡 1000，豪华卡 5000），`tier` 为 `shards`，卡面和发放同其他碎片奖。每个存档每种卡只有一次，以 `park_scratch_cards` 里有没有这种卡为准。首张普通卡照常计入阿草表情保底。
 
-每枚驼币平均换回的碎片（再来一张退回的驼币接着玩，算到变成碎片为止；奖池按长期平均，每枚 20 加上 30000/12000）：普通卡集齐表情前 299，集齐后 347；豪华卡 342（皮肤、大隐藏卡按 30000、60000 算）。
+刮刮乐没有奖池；买卡花的驼币和其他玩法一样计入每日夺宝的全服奖池。
 
-**卡面**：`cells` 的写法同旧刮刮乐，另有 `again`、`skin`、`big`、`jackpot` 四个图案；豪华卡另有填空用的 `blank`，不对应任何奖。中奖图案恰好三次，其余最多两次；最高档图案（达到 `serverAt` 的数额、`skin`、`big`、`jackpot`）除中奖图案外最多出现一个，只出现一次。
+按奖表（不算首张卡）：每张卡的返还按面值算（碎片奖和皮肤、大隐藏卡按碎片算，`again` 按卡价算，阿草表情不算），豪华卡 81.6%，普通卡 66.1%；豪华卡什么都不中的概率 57.18%。每枚驼币平均换回的碎片（再来一张退回的驼币接着玩，算到变成碎片为止）：普通卡集齐表情前 273，集齐后 319；豪华卡 392。
 
-**广播**：揭开的碎片（含奖池）达到 `roomAt[kind]`（8000、40000）时，向该存档所在的房间广播 `scratch {id,shards}`，同旧刮刮乐。全服消息（`park.news` 的 kind）：
+**卡面**：`cells` 的写法同旧刮刮乐，另有 `again`、`skin`、`big` 三个图案；豪华卡另有填空用的 `blank`，不对应任何奖。中奖图案恰好三次，其余最多两次；最高档图案（达到 `serverAt` 的数额、`skin`、`big`）除中奖图案外最多出现一个，只出现一次。
+
+**广播**：揭开的碎片达到 `roomAt[kind]`（8000、40000）时，向该存档所在的房间广播 `scratch {id,shards}`，同旧刮刮乐。全服消息（`park.news` 的 kind）：
 
 | kind | 时机 | 其他字段 |
 |---|---|---|
-| `jackpot` | 刮中奖池 | shards |
 | `scratch_big` | 奖表的碎片达到 `serverAt[kind]`（50000、250000） | card（`basic` 或 `premium`）、shards |
 | `scratch_item` | 刮出皮肤或大隐藏卡 | card、item |
 
-驼币刮刮乐的卡记在 `park_scratch_cards` 表，启动时自动建表；已揭开的卡保留 30 天。
+驼币刮刮乐的卡记在 `park_scratch_cards` 表，启动时自动建表；已揭开的卡保留 30 天，每个存档每种卡的第一张一直保留。
 <!-- park: race -->
 ### 团子赛跑
 
@@ -449,10 +449,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - 当天第 `closeAt` 分钟（1315，即 21:55）停售，第 `drawAt` 分钟（1320，即 22:00）开奖。
 - 开奖号码和一个 256 位随机串在当天第一注卖出之前生成（零点由服务端生成，或当天第一次请求时生成），当天只公布 `hash = SHA-256(号码 + 随机串)`：号码的三位数字后面直接接随机串的十六进制文本，按 UTF-8 计算，结果为小写十六进制。开奖后公布号码和随机串，任何人都可以自己算一遍核对。
 - 奖级，同一注只算最高一档：
-  - 头奖，三位全对：当天销量（注数 × 驼币价格，单位碎片）的 `top`（40%）加上头奖滚存，最多 `topCap`（500000），超出的部分并进当天的二等。
-  - 二等，后两位对：销量的 `second`（20%）加上二等滚存。
+  - 头奖，三位全对：全服奖池（`GET /api/park` 的 `jackpot`）。奖池从 `pool.seed`（10000）碎片起步，乐园里每花 1 枚驼币（刮刮乐、赛跑、夺宝都算）加 `pool.perCoin`（50）碎片；赛跑停机退币时退回的驼币把对应的碎片扣回，最低到 0。
+  - 二等，后两位对：当天销量（注数 × 驼币价格，单位碎片）的 `second`（20%）加上二等滚存。
   - 三等，末位对：每注固定 `third`（600）碎片。
-- 头奖和二等由中奖的注平分，向下取整到整数碎片。除不尽的余数滚存到下一期的同一档；没人中时整档滚存。
+- 头奖和二等由中奖的注平分，向下取整到整数碎片。头奖有人中时，奖池变成 `pool.seed` 加上除不尽的余数；没人中时整个奖池留到下一期，继续累计。二等除不尽的余数滚存到下一期的二等，没人中时整档滚存。
+- 开奖用开奖那一刻的奖池，停售到开奖之间花的驼币也算在内。
 - 奖金按开奖当天记入碎片流水 `lottery_prize`；买注花的驼币记入驼币流水 `lottery`，同样得印章。
 - 服务端停机错过的开奖在启动时按日期顺序补开，每期只开一次。
 
@@ -466,7 +467,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | open | 现在能不能买 |
 | drawn | 今天是否已开奖。已开奖时下一期在明天，时间加一天 |
 | sales | 今天卖出的注数 |
-| prize | `{top, second, third}`，下一次开奖的奖金。今天没开奖时是今天的；开奖后是已经滚存到明天的部分 |
+| prize | `{top, second, third}`，下一次开奖的奖金。top 是现在的全服奖池，和 `park.jackpot` 相同。second 在今天没开奖时是今天的；开奖后是已经滚存到明天的部分 |
 | daily、left | 每天最多几注、我今天还能买几注 |
 | tickets | 我今天的号码，按购买顺序 |
 | last | 最近开过奖的一期，没有时为 null：`{day, number, salt, hash, drawnAt, sales, winners, each, mine, won}`。winners 是各档中奖注数 `{top, second, third}`，each 是各档每注奖金，mine 是我这期的号码 `[{number, tier, prize}]`（tier 为 `top`、`second`、`third` 或 null），won 是我这期一共中的碎片 |
@@ -476,7 +477,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 错误码：`lottery_closed`（已停售）、`lottery_cap`（超过每天的注数）、`no_coins`，都是 409；`bad_number`（号码不是三位数字）、`bad_count`（一注都没有）为 400。
 
-开奖后发一条全服消息，`kind` 为 `lottery_draw`，带 `day`、`number`、`winners`、`each`，以及 `nicks`：头奖得主的昵称，每个存档一个，按最早买的那注排序，最多 5 个。消息只能带一个存档，`nick` 是第一位头奖得主，没人中头奖时为空字符串。当天一注都没卖出时不发消息。
+开奖后发一条全服消息，`kind` 为 `lottery_draw`，带 `day`、`number`、`winners`、`each`（`each.top` 为头奖每注分到的碎片，没人中时为 0），以及 `nicks`：头奖得主的昵称，每个存档一个，按最早买的那注排序，最多 5 个。消息只能带一个存档，`nick` 是第一位头奖得主，没人中头奖时为空字符串。当天一注都没卖出时不发消息。
 <!-- park: redeem -->
 ### 兑换码
 

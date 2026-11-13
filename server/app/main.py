@@ -439,7 +439,7 @@ class CoinBuyBody(BaseModel):
 
 @app.get("/api/park")
 def api_park(who: PlayerId = Depends(player)) -> dict:
-    """The save's coins, today's buying, free coin, stamps and result, and the scratch jackpot."""
+    """The save's coins, today's buying, free coin, stamps and result, and the lottery pool (`jackpot`)."""
     return _guard(park.state, who)
 
 

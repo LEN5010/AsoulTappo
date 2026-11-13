@@ -10,7 +10,7 @@ import app.main as main
 from app import park_race, race
 from app.game import Game, GameError
 from app.manifest import Manifest
-from app.park import Park
+from app.park import POOL, Park
 from app.park_race import Races
 from app.store import Store, day_of
 from fixtures import Clock
@@ -196,11 +196,14 @@ def test_a_race_missed_while_down_is_called_off_and_refunded():
     races.bet(TOKEN, T0, "last", "sinuo", 2)
     # Five stamps passed 30, which turned into a coin: 10 - 5 + 1.
     assert g.store.get_player(pid, clock())["coins"] == 6
+    pool = M.park["lottery"]["pool"]
+    assert g.store.park_counter(POOL) == pool["seed"] + 5 * pool["perCoin"]
     shards = g.store.get_player(pid, clock())["shards"]
     clock.t = T0 + CFG["betting"] + park_race.START_GRACE + 1
     assert races.tick() == []
     p = g.store.get_player(pid, clock())
     assert (p["coins"], p["stamps_total"], p["shards"]) == (10, 28, shards)
+    assert g.store.park_counter(POOL) == pool["seed"]
     r = races.view(TOKEN)["race"]
     assert r["phase"] == "void" and "seed" not in r and "moves" not in r
     assert races.view(TOKEN)["winners"] == []

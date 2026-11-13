@@ -640,6 +640,9 @@ class Game:
         now = self.now()
         day = day_of(now)
         p = self.store.get_player(pid, now)
+        gifted = self.park_gift(p, day)
+        if gifted:
+            p = {**p, "coins": p["coins"] + gifted, "gift_day": day}
         owned_count = self.store.count_items(pid, self.collectible_ids)
         out = {
             "player": pid,
@@ -660,11 +663,22 @@ class Game:
             out["duel"] = {"net": self.store.duel_net(pid, day)}
         if self.manifest.park:
             out["park"] = {"coins": p["coins"], "news": self.park_news(now)}
+            if gifted:
+                out["park"]["gifted"] = gifted
         out["cheer"] = {"day": day, "got": self.store.ledger_amount(pid, day, "cheer"), "cap": CHEER_DAILY_CAP,
                         "minTaps": CHEER_MIN_TAPS}
         # Every open reward this save has not claimed; the client offers those its own version reaches.
         out["updateRewards"] = self.store.open_update_rewards(pid)
         return out
+
+    def park_gift(self, p: dict[str, Any], day: str) -> int:
+        """Gives the save [p] the park's free coins of [day] (coin.gift) once it has coin.minTaps taps; returns the
+        coins given, 0 when none. Status calls it on every request, so it reads [p] first and writes only to give.
+        Safe inside or outside a transaction."""
+        coin = (self.manifest.park or {}).get("coin")
+        if not coin or p["taps_total"] < coin["minTaps"] or p["gift_day"] == day:
+            return 0
+        return coin["gift"] if self.store.grant_park_gift(p["id"], day, coin["gift"], coin["minTaps"]) else 0
 
     def park_news(self, now: float) -> list[dict[str, Any]]:
         """Recent park wins every running pet is told of: {id, ts, kind, nick, ...detail}."""
