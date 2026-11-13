@@ -41,7 +41,7 @@ const worn = computed(() => settings.plate === props.plate.id);
 const nick = computed(() => settings.nick.trim() || "匿名小面包");
 const pool = computed(() =>
   card.value ? poolName(manifest.series.find((s) => s.id === card.value!.series)?.name ?? card.value.series) : "");
-function go(page: "resonance" | "scratch") { ui.page = page; emit("close"); }
+function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
 </script>
 
 <template>
@@ -81,7 +81,7 @@ function go(page: "resonance" | "scratch") { ui.page = page; emit("close"); }
         </div>
         <button v-if="unlocked" type="button" class="ui-btn primary equip" :disabled="worn" @click="settings.plate = plate.id"><Icon name="check" :size="15" />{{ worn ? '使用中' : '使用铭牌' }}</button>
         <button v-else-if="card" type="button" class="ui-btn primary equip" @click="go('resonance')"><Icon name="spark" :size="15" />去共鸣获取</button>
-        <button v-else-if="ui.page !== 'scratch'" type="button" class="ui-btn primary equip" @click="go('scratch')"><Icon name="ticket" :size="15" />去刮刮乐</button>
+        <button v-else-if="ui.page !== 'park'" type="button" class="ui-btn primary equip" @click="go('park')"><Icon name="ticket" :size="15" />去刮刮乐</button>
       </div>
     </div>
   </Modal>

@@ -10,6 +10,7 @@ import QuickEmote from "./pet/QuickEmote.vue";
 import StatusDock from "./pet/StatusDock.vue";
 import GripMenu from "./pet/GripMenu.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
+import ParkNewsBubble from "./pet/ParkNewsBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
 import DuelBubble from "./pet/DuelBubble.vue";
 import PokeBubble from "./pet/PokeBubble.vue";
@@ -375,6 +376,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, draws
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />
+      <ParkNewsBubble :paused="!!duel || !!adminHint || accessHint" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
       <PokeBubble v-if="!duel" v-bind="pokedPlace" />

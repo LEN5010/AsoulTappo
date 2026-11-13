@@ -245,7 +245,66 @@ CREATE TABLE IF NOT EXISTS park_scratch_cards (
 CREATE INDEX IF NOT EXISTS park_scratch_cards_player ON park_scratch_cards (player_id, revealed);
 -- park: race tables
 -- park: lottery tables
+-- The daily lottery (lottery.py): one row per China day, made before the day's first ticket. `hash` is SHA-256 of
+-- number + salt and is public all day; number and salt go public once `drawn` is set. `result` is the draw's JSON.
+CREATE TABLE IF NOT EXISTS lottery_days (
+  day TEXT PRIMARY KEY,
+  number TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  created REAL NOT NULL,
+  drawn REAL,
+  result TEXT NOT NULL DEFAULT '{}'
+);
+-- One row per ticket; `tier` (1 top, 2 second, 3 third, 0 none) and `prize` are set by the draw.
+CREATE TABLE IF NOT EXISTS lottery_tickets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  number TEXT NOT NULL,
+  ts REAL NOT NULL,
+  tier INTEGER NOT NULL DEFAULT 0,
+  prize INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS lottery_tickets_day ON lottery_tickets (day, player_id);
 -- park: redeem tables
+-- Redeem codes made through /admin/codes (see redeem.py). code: normalized (upper case, no dashes or spaces); custom: an
+-- admin wrote it rather than the generator; uses: claims allowed, used: claims so far; expires: Unix seconds, 0 never.
+CREATE TABLE IF NOT EXISTS redeem_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  custom INTEGER NOT NULL DEFAULT 0,
+  shards INTEGER NOT NULL DEFAULT 0,
+  coins INTEGER NOT NULL DEFAULT 0,
+  uses INTEGER NOT NULL DEFAULT 1,
+  used INTEGER NOT NULL DEFAULT 0,
+  expires REAL NOT NULL DEFAULT 0,
+  disabled REAL,
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created REAL NOT NULL
+);
+-- One row per code a save redeemed; a save redeems each code once.
+CREATE TABLE IF NOT EXISTS redeem_claims (
+  code_id INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  ts REAL NOT NULL,
+  PRIMARY KEY (code_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS redeem_claims_player ON redeem_claims (player_id);
+-- Wrong codes a save entered lately (older rows go when it enters the next), and the save's lockout: locked until
+-- [until], [locks] lockouts so far, the last at [last].
+CREATE TABLE IF NOT EXISTS redeem_tries (
+  player_id TEXT NOT NULL,
+  ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS redeem_tries_player ON redeem_tries (player_id, ts);
+CREATE TABLE IF NOT EXISTS redeem_locks (
+  player_id TEXT PRIMARY KEY,
+  until REAL NOT NULL,
+  locks INTEGER NOT NULL DEFAULT 0,
+  last REAL NOT NULL
+);
 """
 
 STARTER_SHARDS = 1600
@@ -1164,7 +1223,167 @@ class Store:
 
     # --- park: race
     # --- park: lottery
+    def lottery_day(self, day: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM lottery_days WHERE day = ?", (day,)).fetchone()
+        return dict(row) if row else None
+
+    def add_lottery_day(self, day: str, number: str, salt: str, digest: str, ts: float) -> bool:
+        """Makes [day]'s row unless it exists; True when this call made it."""
+        with self._lock:
+            n = self._db.execute("INSERT OR IGNORE INTO lottery_days (day, number, salt, hash, created) "
+                                 "VALUES (?, ?, ?, ?, ?)", (day, number, salt, digest, ts)).rowcount
+            self._commit()
+        return n > 0
+
+    def lottery_undrawn(self) -> list[str]:
+        """Days not drawn yet, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT day FROM lottery_days WHERE drawn IS NULL ORDER BY day").fetchall()
+        return [r["day"] for r in rows]
+
+    def lottery_last_drawn(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM lottery_days WHERE drawn IS NOT NULL ORDER BY day DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def set_lottery_drawn(self, day: str, ts: float, result: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE lottery_days SET drawn = ?, result = ? WHERE day = ?", (ts, result, day))
+            self._commit()
+
+    def lottery_sales(self, day: str) -> int:
+        with self._lock:
+            row = self._db.execute("SELECT COUNT(*) AS n FROM lottery_tickets WHERE day = ?", (day,)).fetchone()
+        return int(row["n"])
+
+    def lottery_tickets(self, day: str, pid: str | None = None) -> list[dict[str, Any]]:
+        """[day]'s tickets (of [pid] only when given), in buying order."""
+        with self._lock:
+            if pid is None:
+                rows = self._db.execute("SELECT * FROM lottery_tickets WHERE day = ? ORDER BY id", (day,)).fetchall()
+            else:
+                rows = self._db.execute("SELECT * FROM lottery_tickets WHERE day = ? AND player_id = ? ORDER BY id",
+                                        (day, pid)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_lottery_tickets(self, day: str, pid: str, numbers: list[str], ts: float) -> None:
+        with self._lock:
+            self._db.executemany("INSERT INTO lottery_tickets (day, player_id, number, ts) VALUES (?, ?, ?, ?)",
+                                 [(day, pid, n, ts) for n in numbers])
+            self._commit()
+
+    def set_lottery_prizes(self, rows: list[tuple[int, int, int]]) -> None:
+        """(ticket id, tier, prize) of each winning ticket."""
+        with self._lock:
+            self._db.executemany("UPDATE lottery_tickets SET tier = ?, prize = ? WHERE id = ?",
+                                 [(tier, prize, tid) for tid, tier, prize in rows])
+            self._commit()
+
     # --- park: redeem
+    _CODE_COLUMNS = "id, code, custom, shards, coins, uses, used, expires, disabled, note, created_by, created"
+
+    def add_redeem_code(self, code: str, custom: bool, shards: int, coins: int, uses: int, expires: float, note: str,
+                        actor: str, ts: float) -> int | None:
+        """The new code's id, or None when the code is taken; in the caller's transaction if any."""
+        with self._lock:
+            try:
+                cur = self._db.execute(
+                    "INSERT INTO redeem_codes (code, custom, shards, coins, uses, expires, note, created_by, created) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)", (code, int(custom), shards, coins, uses, expires, note, actor, ts))
+            except sqlite3.IntegrityError:
+                return None
+            self._commit()
+            return int(cur.lastrowid)
+
+    def redeem_code(self, code: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(f"SELECT {self._CODE_COLUMNS} FROM redeem_codes WHERE code = ?", (code,)).fetchone()
+        return dict(row) if row else None
+
+    def redeem_code_by_id(self, code_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute(f"SELECT {self._CODE_COLUMNS} FROM redeem_codes WHERE id = ?", (code_id,)).fetchone()
+        return dict(row) if row else None
+
+    def redeem_codes(self, q: str, limit: int, before: int | None = None) -> list[dict[str, Any]]:
+        """Newest first. [q] matches part of the code or the note (empty: all); [before] continues below that id."""
+        clauses, args = [], []
+        if q:
+            clauses.append("(instr(code, ?) > 0 OR instr(note, ?) > 0)")
+            args += [q.upper().replace("-", "").replace(" ", ""), q]
+        if before is not None:
+            clauses.append("id < ?")
+            args.append(before)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock:
+            rows = self._db.execute(f"SELECT {self._CODE_COLUMNS} FROM redeem_codes {where} ORDER BY id DESC LIMIT ?",
+                                    (*args, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def disable_redeem_code(self, code_id: int, ts: float) -> None:
+        with self._lock:
+            self._db.execute("UPDATE redeem_codes SET disabled = ? WHERE id = ? AND disabled IS NULL", (ts, code_id))
+            self._commit()
+
+    def claim_redeem_code(self, code_id: int, pid: str, ts: float) -> bool:
+        """Counts one use and notes the save's claim; False when no use is left. Run in the caller's transaction, which
+        also pays the reward."""
+        with self._lock:
+            cur = self._db.execute("UPDATE redeem_codes SET used = used + 1 WHERE id = ? AND used < uses", (code_id,))
+            if cur.rowcount == 0:
+                return False
+            self._db.execute("INSERT INTO redeem_claims (code_id, player_id, ts) VALUES (?, ?, ?)", (code_id, pid, ts))
+            self._commit()
+            return True
+
+    def redeemed(self, code_id: int, pid: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM redeem_claims WHERE code_id = ? AND player_id = ?",
+                                    (code_id, pid)).fetchone() is not None
+
+    def redeem_claims(self, code_id: int, limit: int) -> list[dict[str, Any]]:
+        """The code's claims, newest first, with the main-site account of each save (None for a guest save)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT c.player_id, a.main_user_id, c.ts FROM redeem_claims c "
+                "LEFT JOIN account_links a ON a.player_id = c.player_id WHERE c.code_id = ? "
+                "ORDER BY c.ts DESC, c.player_id LIMIT ?", (code_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def redeem_lock(self, pid: str) -> float:
+        """Until when the save may not enter codes (0 when it never was locked)."""
+        with self._lock:
+            row = self._db.execute("SELECT until FROM redeem_locks WHERE player_id = ?", (pid,)).fetchone()
+        return float(row["until"]) if row else 0.0
+
+    def add_redeem_try(self, pid: str, ts: float, window: float) -> int:
+        """Notes a wrong code and forgets the save's tries older than [window] seconds; returns the tries left."""
+        with self._lock:
+            self._db.execute("DELETE FROM redeem_tries WHERE player_id = ? AND ts <= ?", (pid, ts - window))
+            self._db.execute("INSERT INTO redeem_tries (player_id, ts) VALUES (?, ?)", (pid, ts))
+            n = self._db.execute("SELECT COUNT(*) FROM redeem_tries WHERE player_id = ?", (pid,)).fetchone()[0]
+            self._commit()
+            return int(n)
+
+    def lock_redeem(self, pid: str, ts: float, until: float) -> None:
+        """Locks the save until [until], forgets its tries and counts the lockout."""
+        with self._lock:
+            self._db.execute("DELETE FROM redeem_tries WHERE player_id = ?", (pid,))
+            self._db.execute("INSERT INTO redeem_locks (player_id, until, locks, last) VALUES (?, ?, 1, ?) "
+                             "ON CONFLICT(player_id) DO UPDATE SET until = excluded.until, locks = locks + 1, "
+                             "last = excluded.last", (pid, until, ts))
+            self._commit()
+
+    def redeem_locks_since(self, since: float, limit: int) -> list[dict[str, Any]]:
+        """Saves locked out at or after [since], the most recent first: for the admin anomalies page."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT l.player_id, a.main_user_id, l.locks, l.last FROM redeem_locks l "
+                "LEFT JOIN account_links a ON a.player_id = l.player_id WHERE l.last >= ? ORDER BY l.last DESC LIMIT ?",
+                (since, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     def close(self) -> None:
         with self._lock:

@@ -50,6 +50,8 @@ const PATHS: Record<string, string[]> = {
     "M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z",
     "M14.5 6v2.5", "M14.5 11v2", "M14.5 15.5V18",
   ],
+  // The park's coin: a rim, and 阿草's ears and face on it.
+  coin: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M9.5 9.5V7.5", "M14.5 9.5V7.5", "M8 13.5a4 4 0 0 0 8 0v-1.5a4 4 0 0 0-8 0z"],
   // The strip's menu (GripMenu.vue).
   fold: ["M4 19h16", "M12 5v10", "M7.5 10.5L12 15l4.5-4.5"],
   swap: ["M7 4L3.5 7.5 7 11", "M3.5 7.5h15", "M17 13l3.5 3.5L17 20", "M20.5 16.5h-15"],
