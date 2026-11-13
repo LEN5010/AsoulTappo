@@ -923,6 +923,16 @@ watch(() => status.value?.player, (player, was) => {
   filter: var(--sticker);
   user-select: none;
 }
+/* An emote is sized by its cell, not by the picture: the cell's row is sized by its content, so a percentage
+ * max-height there does not hold and a tall emote spills out. */
+.cells > li > img {
+  position: absolute;
+  inset: 8%;
+  width: 84%;
+  height: 84%;
+  max-width: none;
+  max-height: none;
+}
 .amount {
   display: inline-flex;
   align-items: center;
