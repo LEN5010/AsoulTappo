@@ -34,6 +34,7 @@ from .models import (
 )
 from .moderation import Blocklist
 from .park import Park
+from .park_race import Races, room_message as race_room_message
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
@@ -135,6 +136,29 @@ if _pruned:
     print(f"pruned {_pruned} old park news", flush=True)
 # park: scratch setup
 # park: race setup
+# The dumpling race: Races.tick about once a second off the event loop starts, settles or calls off what is due and
+# prepares the next race (its odds sims take about 0.6 s). Throw-away databases (":memory:", the tests) run no
+# schedule; tests call tick themselves.
+races = Races(lambda: game, park)
+
+
+async def _race_loop() -> None:
+    while True:
+        await asyncio.sleep(1 - time.time() % 1)
+        if game.store.path == ":memory:" or not races.enabled:
+            continue
+        try:
+            wins = await run_in_threadpool(races.tick)
+            # A win of roomAt shards or more shows over the winner's pet in every room the save sits in.
+            for win in wins:
+                for room_id, room in list(manager.rooms.items()):
+                    for peer in [p for p in room.peers.values() if p.token == win["pid"]]:
+                        await manager.broadcast(room_id, race_room_message(peer.id, win["shards"]))
+        except Exception as e:  # a failed tick must not stop the next ones
+            print(f"race tick failed: {e!r}", flush=True)
+
+
+PARK_LOOPS.append(_race_loop)
 # park: lottery setup
 # park: redeem setup
 
@@ -407,6 +431,22 @@ def api_park_gift(who: PlayerId = Depends(player)) -> dict:
 
 # park: scratch routes
 # park: race routes
+class RaceBetBody(BaseModel):
+    race: int = Field(ge=0)
+    kind: str = Field(min_length=1, max_length=16)
+    member: str = Field(min_length=1, max_length=32)
+    coins: int = Field(ge=1, le=100)
+
+
+@app.get("/api/park/race")
+def api_park_race(who: PlayerId = Depends(player)) -> dict:
+    """The race shown now, the finished one before it, the latest winners and when the next bets open."""
+    return _guard(races.view, who)
+
+
+@app.post("/api/park/race/bet")
+def api_park_race_bet(body: RaceBetBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(races.bet, who, body.race, body.kind, body.member, body.coins)
 # park: lottery routes
 # park: redeem routes
 

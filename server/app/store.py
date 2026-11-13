@@ -228,6 +228,35 @@ CREATE TABLE IF NOT EXISTS park_news (
 );
 -- park: scratch tables
 -- park: race tables
+-- Dumpling races (park_race.py), id = when its bets open (unix seconds). seed (hex), ranking and result stay
+-- server-side until status 'running'; result ({start, moves}) is cleared after RESULT_KEEP_DAYS (the seed and
+-- setup reproduce it). status: open (prepared or taking bets), running, settled, void (called off, bets refunded).
+CREATE TABLE IF NOT EXISTS park_races (
+  id INTEGER PRIMARY KEY,
+  starts_at REAL NOT NULL,
+  ends_at REAL NOT NULL,
+  step_ms INTEGER NOT NULL,
+  seed TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  setup TEXT NOT NULL,
+  odds TEXT NOT NULL,
+  ranking TEXT NOT NULL,
+  result TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open'
+);
+CREATE INDEX IF NOT EXISTS park_races_status ON park_races (status, id);
+-- Bets on a race, one row per save and selection; odds in tenths; prize in shards once settled.
+CREATE TABLE IF NOT EXISTS park_race_bets (
+  race_id INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  member TEXT NOT NULL,
+  coins INTEGER NOT NULL,
+  odds INTEGER NOT NULL,
+  prize INTEGER NOT NULL DEFAULT 0,
+  ts REAL NOT NULL,
+  PRIMARY KEY (race_id, player_id, kind, member)
+);
 -- park: lottery tables
 -- park: redeem tables
 """
@@ -1110,6 +1139,89 @@ class Store:
 
     # --- park: scratch
     # --- park: race
+    def race_get(self, race_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_races WHERE id = ?", (race_id,)).fetchone()
+        return dict(row) if row else None
+
+    def race_insert(self, row: dict[str, Any]) -> bool:
+        """Adds a prepared race unless one with its id exists; True when added."""
+        cols = ("id", "starts_at", "ends_at", "step_ms", "seed", "hash", "setup", "odds", "ranking", "result")
+        with self._lock:
+            cur = self._db.execute(
+                f"INSERT OR IGNORE INTO park_races ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                tuple(row[c] for c in cols))
+            self._commit()
+            return cur.rowcount > 0
+
+    def race_set_status(self, race_id: int, status: str) -> None:
+        with self._lock:
+            self._db.execute("UPDATE park_races SET status = ? WHERE id = ?", (status, race_id))
+            self._commit()
+
+    def races_unsettled(self) -> list[dict[str, Any]]:
+        """Races still open or running, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM park_races WHERE status IN ('open', 'running') ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def race_shown(self, now: float) -> dict[str, Any] | None:
+        """The newest race whose bets have opened by [now]."""
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_races WHERE id <= ? ORDER BY id DESC LIMIT 1",
+                                   (now,)).fetchone()
+        return dict(row) if row else None
+
+    def races_settled(self, before: int, limit: int) -> list[dict[str, Any]]:
+        """The newest settled races with an id below [before], newest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM park_races WHERE status = 'settled' AND id < ? "
+                                    "ORDER BY id DESC LIMIT ?", (before, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def race_prune_results(self, before: int) -> int:
+        with self._lock:
+            n = self._db.execute("UPDATE park_races SET result = '' WHERE id < ? AND result != '' "
+                                 "AND status IN ('settled', 'void')", (before,)).rowcount
+            self._commit()
+            return n
+
+    def race_bets(self, race_id: int, pid: str | None = None) -> list[dict[str, Any]]:
+        """The race's bets (of [pid] only, when given), in the order they were first placed."""
+        sql = "SELECT * FROM park_race_bets WHERE race_id = ?"
+        args: tuple = (race_id,)
+        if pid is not None:
+            sql += " AND player_id = ?"
+            args += (pid,)
+        with self._lock:
+            rows = self._db.execute(sql + " ORDER BY rowid", args).fetchall()
+        return [dict(r) for r in rows]
+
+    def race_add_bet(self, race_id: int, pid: str, kind: str, member: str, coins: int, odds: int,
+                     ts: float) -> None:
+        """Adds [coins] to the save's bet on (kind, member), placing it if new; in the caller's transaction."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO park_race_bets (race_id, player_id, kind, member, coins, odds, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(race_id, player_id, kind, member) DO UPDATE SET "
+                "coins = coins + excluded.coins, ts = excluded.ts", (race_id, pid, kind, member, coins, odds, ts))
+            self._commit()
+
+    def race_set_prize(self, race_id: int, pid: str, kind: str, member: str, prize: int) -> None:
+        with self._lock:
+            self._db.execute("UPDATE park_race_bets SET prize = ? WHERE race_id = ? AND player_id = ? AND kind = ? "
+                             "AND member = ?", (prize, race_id, pid, kind, member))
+            self._commit()
+
+    def race_pool(self, race_id: int) -> dict[str, dict[str, int]]:
+        """Per member bet on: coins over every kind, and how many saves bet on it."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT member, SUM(coins) AS coins, COUNT(DISTINCT player_id) AS bettors FROM park_race_bets "
+                "WHERE race_id = ? GROUP BY member", (race_id,)).fetchall()
+        return {r["member"]: {"coins": int(r["coins"]), "bettors": int(r["bettors"])} for r in rows}
+
     # --- park: lottery
     # --- park: redeem
 
