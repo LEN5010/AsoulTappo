@@ -6,7 +6,7 @@ const response = (data: unknown, status = 200) =>
   ({ ok: status < 400, status, json: async () => data }) as Response;
 
 const state = (over: Partial<ParkState> = {}): ParkState => ({
-  coins: 3, unlocked: true, bought: 2, buyLeft: 38, gift: false, stamps: 4, stampsTotal: 34, badge: 0,
+  coins: 3, unlocked: true, gift: false, stamps: 4, stampsTotal: 34, badge: 0,
   today: { spent: 1000, won: 0 }, jackpot: 30000, ...over,
 });
 const playerStatus = (over: Partial<PlayerStatus> = {}): PlayerStatus => ({
@@ -70,7 +70,7 @@ it("runs park requests in the desk, applies the answers and hands back the serve
     if (path === "/api/park" ) return response(state({ coins }));
     if (path === "/api/park/coins") {
       const { count } = JSON.parse(init!.body as string);
-      if (count > 5) return response({ detail: { code: "coin_limit", message: "今天还能买 5 枚" } }, 409);
+      if (count > 5) return response({ detail: { code: "no_shards", message: "碎片不足" } }, 409);
       coins += count;
       return response({ ...playerStatus({ shards: 5000 - 500 * count }), park: state({ coins }) });
     }
@@ -90,7 +90,7 @@ it("runs park requests in the desk, applies the answers and hands back the serve
   expect(park.parkError.value).toBeNull();
 
   expect(await park.buyCoins(10)).toBe(false);
-  expect(park.parkError.value).toMatchObject({ status: 409, code: "coin_limit", message: "今天还能买 5 枚" });
+  expect(park.parkError.value).toMatchObject({ status: 409, code: "no_shards", message: "碎片不足" });
   // A refusal is the park's to show, not the panel-wide error.
   expect(player.error.value).toBe("");
   expect(player.online.value).toBe(true);

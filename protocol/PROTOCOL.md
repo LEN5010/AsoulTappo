@@ -97,7 +97,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | POST /api/update-reward | 领取更新奖励：`X-Client-Version` 不低于奖励版本的、进行中且还没领的奖励一次全部发放，返回状态和 `reward:{shards,ids}`。预发布版本低于同号正式版。没有可领的返回 409 `no_reward` |
-| GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、bought、buyLeft、gift、stamps、stampsTotal、badge、today、jackpot |
+| GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、gift、stamps、stampsTotal、badge、today、jackpot |
 | POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见乐园一节的错误码 |
 | POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天领过时为 0） |
 | POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见乐园一节的兑换码 |
@@ -321,16 +321,15 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 ### 驼币
 
-- 用碎片买，每枚 `coin.price`（500）。每个存档每天最多买 `coin.dailyBuy`（40）枚，北京时间零点重置；持有 `coin.hold`（100）枚时不能再买。驼币不能换回碎片，也不能转让。
+- 用碎片买，每枚 `coin.price`（500），每天能买的数量和持有数量都不限，一次请求最多买 100 枚。驼币不能换回碎片，也不能转让。
 - 每天送 `coin.gift`（1）枚：客户端第一次打开乐园时调 `POST /api/park/gift`，当天再调返回 `gift: 0`。
 - 买和领都要累计敲击满 `coin.minTaps`（10000）下，不够时返回 409 `park_locked`。
 - 每花 1 枚驼币得 1 个印章，累计数到 `coin.stampsPerCoin`（30）的整数倍时自动换 1 枚驼币。`stamps` 是当前这一轮的印章数（`stampsTotal` 除以 30 的余数），`badge` 是 `stampsTotal` 达到的 `coin.badges`（100、1000、5000）档数，0 到 3。
-- 奖品、印章、兑换码发的驼币不受持有上限限制。
 - 赛跑停机退币时，印章和它换出的驼币一起退回。
 
 `GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从乐园奖品拿到的碎片（`park_scratch`、`jackpot`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为刮刮乐全服奖池现在的金额。
 
-错误码：`park_locked`、`coin_limit`（今天买够了）、`coin_hold`（持有到上限）、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
+错误码：`park_locked`、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
 
 驼币流水记在 `coin_ledger`，结构同碎片流水：花费按玩法记（`scratch`、`race`、`lottery`），获得记 `buy`、`gift`、`stamp`、`scratch_again`、`race_refund`、`redeem`、`admin`。
 

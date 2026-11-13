@@ -27,38 +27,24 @@ def next_midnight(t: float) -> float:
     return ((t + DAY_OFFSET) // 86400 + 1) * 86400 - DAY_OFFSET
 
 
-def test_buying_costs_shards_and_counts_toward_the_day():
+def test_buying_costs_shards():
     g, park, _, pid = setup()
     out = park.buy(TOKEN, 3)
     assert out["park"]["coins"] == 3
     assert out["shards"] == 100_000 - 3 * COIN["price"]
-    assert out["park"]["bought"] == 3 and out["park"]["buyLeft"] == COIN["dailyBuy"] - 3
     assert out["park"]["today"] == {"spent": 3 * COIN["price"], "won": 0}
     assert out["park"]["coins"] == g.status(TOKEN)["park"]["coins"]
     assert g.store.ledger_sum(pid, day_of(g.now()), (COIN_BUY,)) == -3 * COIN["price"]
 
 
-def test_buying_stops_at_the_daily_limit_and_starts_again_tomorrow():
-    g, park, clock, pid = setup(shards=10_000_000)
-    park.buy(TOKEN, COIN["dailyBuy"] - 1)
-    with pytest.raises(GameError) as e:
-        park.buy(TOKEN, 2)
-    assert e.value.code == "coin_limit"
-    park.buy(TOKEN, 1)
-    # Spend them so the holding cap is not what stops the next day.
-    with g.store.transaction() as st:
-        park.spend(st, pid, COIN["dailyBuy"], "scratch", clock())
-    clock.t = next_midnight(clock.t) + 60
-    assert park.buy(TOKEN, 1)["park"]["bought"] == 1
-
-
-def test_buying_stops_at_the_holding_cap():
+def test_buying_has_no_daily_or_holding_limit():
     g, park, _, pid = setup(shards=10_000_000)
-    g.store.update_player(pid, coins=COIN["hold"] - 2)
-    with pytest.raises(GameError) as e:
-        park.buy(TOKEN, 3)
-    assert e.value.code == "coin_hold"
-    assert park.buy(TOKEN, 2)["park"]["coins"] == COIN["hold"]
+    g.store.update_player(pid, coins=5000)
+    for _ in range(5):
+        park.buy(TOKEN, 100)
+    out = park.buy(TOKEN, 1)
+    assert out["park"]["coins"] == 5501
+    assert out["shards"] == 10_000_000 - 501 * COIN["price"]
 
 
 def test_buying_needs_the_taps_and_the_shards():
@@ -130,12 +116,12 @@ def test_badges_follow_the_stamp_total():
         assert park.state(TOKEN)["badge"] == badge
 
 
-def test_grants_ignore_the_holding_cap():
+def test_grants_add_coins():
     g, park, clock, pid = setup()
-    g.store.update_player(pid, coins=COIN["hold"])
+    g.store.update_player(pid, coins=7)
     with g.store.transaction() as st:
         park.grant(st, pid, 5, "redeem", clock())
-    assert park.state(TOKEN)["coins"] == COIN["hold"] + 5
+    assert park.state(TOKEN)["coins"] == 12
 
 
 def test_news_reaches_every_status_for_a_while():
@@ -176,4 +162,4 @@ def test_http_buy_and_gift(monkeypatch):
     r = client.post("/api/park/coins", headers=headers, json={"count": 2})
     assert r.status_code == 200 and r.json()["park"]["coins"] == 3 and r.json()["park"]["coins"] == 3
     r = client.post("/api/park/coins", headers=headers, json={"count": 100})
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "coin_limit"
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "no_shards"

@@ -48,17 +48,14 @@ class Park:
 
     # ------------------------------------------------------------------ state
     def view(self, st: Store, p: dict[str, Any], day: str) -> dict[str, Any]:
-        """The save's coins, today's buying and free coin, stamps and today's result, and the jackpot."""
+        """The save's coins, today's free coin, stamps and today's result, and the jackpot."""
         c = self.coin
-        bought = p["coin_bought"] if p["coin_day"] == day else 0
         total = p["stamps_total"]
         scratch = self.cfg.get("scratch") or {}
         seed = (scratch.get("jackpot") or {}).get("seed", 0)
         return {
             "coins": p["coins"],
             "unlocked": p["taps_total"] >= c["minTaps"],
-            "bought": bought,
-            "buyLeft": max(0, c["dailyBuy"] - bought),
             "gift": p["gift_day"] != day,
             "stamps": total % c["stampsPerCoin"],
             "stampsTotal": total,
@@ -81,7 +78,7 @@ class Park:
 
     # ----------------------------------------------------------------- buying
     def buy(self, token: str, count: int) -> dict[str, Any]:
-        """Buys [count] coins with shards, within the day's limit and the most a save may hold."""
+        """Buys [count] coins with shards: as many as the shards pay for, with no daily or holding limit."""
         c = self.coin
         g = self.game
         pid = player_id_for(token)
@@ -93,16 +90,10 @@ class Park:
             p = st.get_player(pid, now)
             if p["taps_total"] < c["minTaps"]:
                 raise GameError("park_locked", "累计敲击 1 万下后开放")
-            bought = p["coin_bought"] if p["coin_day"] == day else 0
-            if bought + count > c["dailyBuy"]:
-                raise GameError("coin_limit", f"今天还能买 {max(0, c['dailyBuy'] - bought)} 枚")
-            if p["coins"] + count > c["hold"]:
-                raise GameError("coin_hold", f"最多持有 {c['hold']} 枚驼币")
             cost = count * c["price"]
             if p["shards"] < cost:
                 raise GameError("no_shards", "碎片不足")
-            st.update_player(pid, shards=p["shards"] - cost, coins=p["coins"] + count, coin_day=day,
-                             coin_bought=bought + count)
+            st.update_player(pid, shards=p["shards"] - cost, coins=p["coins"] + count)
             st.add_ledger(pid, day, COIN_BUY, -cost, count)
             st.add_coin_ledger(pid, day, "buy", count, count)
         return self._answer(token)

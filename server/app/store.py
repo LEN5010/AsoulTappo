@@ -346,7 +346,7 @@ PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
-    "steady_day steady_hits steady_rate coins coin_day coin_bought gift_day stamps_total"
+    "steady_day steady_hits steady_rate coins gift_day stamps_total"
 ).split()
 
 
@@ -437,9 +437,8 @@ class Store:
             for field, kind in (("steady_hits", "INTEGER"), ("steady_rate", "REAL")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
-            # Park coins: held, bought on `coin_day`, the day of the last free one, and stamps ever earned.
-            for field, kind in (("coins", "INTEGER NOT NULL DEFAULT 0"), ("coin_day", "TEXT NOT NULL DEFAULT ''"),
-                                ("coin_bought", "INTEGER NOT NULL DEFAULT 0"), ("gift_day", "TEXT NOT NULL DEFAULT ''"),
+            # Park coins: held, the day of the last free one, and stamps ever earned.
+            for field, kind in (("coins", "INTEGER NOT NULL DEFAULT 0"), ("gift_day", "TEXT NOT NULL DEFAULT ''"),
                                 ("stamps_total", "INTEGER NOT NULL DEFAULT 0")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind}")

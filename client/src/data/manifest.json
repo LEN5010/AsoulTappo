@@ -5166,8 +5166,6 @@
   "park": {
    "coin": {
     "price": 500,
-    "dailyBuy": 40,
-    "hold": 100,
     "gift": 1,
     "minTaps": 10000,
     "stampsPerCoin": 30,

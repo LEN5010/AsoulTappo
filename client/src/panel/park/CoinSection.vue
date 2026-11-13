@@ -40,11 +40,6 @@ const netTip = computed(() =>
   state.value ? `今日花费 ${fmt(state.value.today.spent)}，今日赢得 ${fmt(state.value.today.won)}` : undefined,
 );
 
-/** Today's buying as one slim bar: the part still buyable in coral, the part bought pale. */
-const dayTotal = computed(() => (state.value ? state.value.bought + state.value.buyLeft : 0));
-const leftPercent = computed(() => (state.value && dayTotal.value ? (state.value.buyLeft / dayTotal.value) * 100 : 0));
-const leftTip = computed(() => (state.value ? `今日还可买 ${state.value.buyLeft} 枚` : undefined));
-
 const busy = ref(0);
 const buyError = ref("");
 
@@ -53,21 +48,13 @@ function blocked(n: number): string | null {
   if (!online.value) return "未连接";
   const s = state.value;
   if (!s || busy.value) return "";
-  if (s.buyLeft === 0) return "今日已买满";
-  if (n > s.buyLeft) return "";
-  if (s.coins + n > CFG.hold) return `最多持有 ${CFG.hold} 枚`;
   if (shards.value < n * CFG.price) return "碎片不足";
   return null;
 }
 /** A key is out of reach (not just waiting on a request): disabled and grey. */
 const outOfReach = (n: number) => !busy.value && blocked(n) !== null;
-/** The disabled key's tooltip: its reason, or how many are left when it asks for more than that. */
-function keyTip(n: number): string | undefined {
-  if (!outOfReach(n)) return undefined;
-  const why = blocked(n);
-  if (why) return why;
-  return state.value && n > state.value.buyLeft ? `今日还可买 ${state.value.buyLeft} 枚` : undefined;
-}
+/** The disabled key's tooltip: its reason. */
+const keyTip = (n: number) => (outOfReach(n) ? blocked(n) || undefined : undefined);
 /** The 1-coin key is the coral primary while it can be pressed, and stays so while its own request runs. */
 const live1 = computed(() => !outOfReach(1));
 /** The one line under the keys: why buying is blocked. Empty while it is not. */
@@ -99,7 +86,7 @@ async function buy(n: number, ev: MouseEvent) {
   }
 }
 // A reason from the server holds until the state it was about changes.
-watch(() => [state.value?.buyLeft, state.value?.coins, shards.value, online.value], () => { if (!busy.value) buyError.value = ""; });
+watch(() => [state.value?.coins, shards.value, online.value], () => { if (!busy.value) buyError.value = ""; });
 
 // ---------------------------------------------------------------- the balance shown, and the motion into it
 const sky = ref<HTMLElement>();
@@ -301,12 +288,6 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
         </div>
 
         <div class="buy">
-          <span class="left" role="img" :aria-label="leftTip" :title="leftTip">
-            <template v-if="state">
-              <span class="ui-bar left-bar"><i :style="{ width: `${leftPercent}%` }"></i></span>
-              <b>{{ state.buyLeft }}</b>
-            </template>
-          </span>
           <div class="packs" role="group" aria-label="买驼币">
             <button
               v-for="p in PACKS" :key="p.n" type="button" class="ui-btn pack"
@@ -436,7 +417,7 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   color: var(--c-700);
 }
 
-/* ---- buying: what is left today, three tall keys, and why not */
+/* ---- buying: three tall keys, and why not */
 .buy {
   flex: none;
   display: flex;
@@ -446,23 +427,6 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 }
 .net.wait {
   visibility: hidden;
-}
-/* As wide as the three keys; the room stays while the park loads. */
-.left {
-  align-self: stretch;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 16px;
-}
-.left-bar {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-}
-.left b {
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  color: var(--ink-2);
 }
 .packs {
   display: flex;
@@ -555,8 +519,7 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 }
 
 /* ---- reduced motion: nothing moves, the numbers just change */
-.calm .hero-coin,
-.calm .left-bar > i {
+.calm .hero-coin {
   transition: none;
 }
 .calm .hero-coin:hover {

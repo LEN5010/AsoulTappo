@@ -127,10 +127,10 @@ it("relays park requests from the panel to the desk, with the park state and the
   const deskPark = await import("../stores/park");
   const panel = await context(true);
   const panelPark = await import("../stores/park");
-  const state = { coins: 4, unlocked: true, bought: 1, buyLeft: 39, gift: false, stamps: 0, stampsTotal: 0, badge: 0,
+  const state = { coins: 4, unlocked: true, gift: false, stamps: 0, stampsTotal: 0, badge: 0,
     today: { spent: 500, won: 0 }, jackpot: 30000 };
   const request = vi.spyOn(deskPark, "parkRequest").mockImplementation(async (_method, path) => {
-    if (path === "/api/park/coins") return { ok: false, error: { status: 409, code: "coin_hold", message: "最多持有 100 枚驼币", detail: {} } };
+    if (path === "/api/park/coins") return { ok: false, error: { status: 409, code: "no_shards", message: "碎片不足", detail: {} } };
     deskPark.park.value = state;
     return { ok: true, data: state };
   });
@@ -139,7 +139,7 @@ it("relays park requests from the panel to the desk, with the park state and the
   expect(panelPark.park.value).toEqual(state);
   expect(await panelPark.buyCoins(1)).toBe(false);
   expect(request).toHaveBeenLastCalledWith("POST", "/api/park/coins", { count: 1 });
-  expect(panelPark.parkError.value).toMatchObject({ status: 409, code: "coin_hold" });
+  expect(panelPark.parkError.value).toMatchObject({ status: 409, code: "no_shards" });
   expect(desk.player.status.value).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
   void panel;

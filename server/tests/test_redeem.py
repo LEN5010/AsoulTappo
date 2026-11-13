@@ -59,15 +59,14 @@ def test_a_code_pays_shards_and_coins_once_whatever_the_case_and_dashes():
     g, r, clock = setup()
     pid = player_id_for(TOKEN)
     g.status(TOKEN)
-    g.store.update_player(pid, coins=Manifest.load().park["coin"]["hold"])
+    g.store.update_player(pid, coins=7)
     before = g.status(TOKEN)["shards"]
     code = code_of(r, shards=300, coins=2)
     assert code.count("-") == 2
     out = r.redeem(TOKEN, code.lower().replace("-", " "), False)
     assert out["redeemed"] == {"shards": 300, "coins": 2}
     assert out["shards"] == before + 300
-    # Coins from codes ignore the holding cap.
-    assert out["park"]["coins"] == Manifest.load().park["coin"]["hold"] + 2
+    assert out["park"]["coins"] == 9
     day = day_of(clock())
     assert g.store.ledger_amount(pid, day, "redeem") == 300
     assert [row for row in g.store.coin_ledger_by_day(day) if row["source"] == "redeem"][0]["amount"] == 2

@@ -48,9 +48,6 @@ export interface ParkState {
   coins: number;
   /** Taps in all reach economy.park.coin.minTaps. */
   unlocked: boolean;
-  /** Coins bought today, and how many more may be. */
-  bought: number;
-  buyLeft: number;
   /** Today's free coin is still waiting. */
   gift: boolean;
   /** Stamps toward the next coin (0 to stampsPerCoin - 1), stamps in all, and badges earned (0 to 3). */

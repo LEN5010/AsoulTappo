@@ -131,11 +131,11 @@ export interface Manifest {
     /** The park (scripts/asset_catalog.py PARK explains every field). Missing on servers without one. */
     park?: {
       /**
-       * Coins: `price` shards each, at most `dailyBuy` bought a China day and none while `hold` are held, `gift`
-       * free a day. Buying and the gift need `minTaps` taps in all. Every `stampsPerCoin` stamps make a coin;
-       * `badges` are the stamp totals of the three badges.
+       * Coins: `price` shards each, as many as the shards pay for, `gift` free a day. Buying and the gift need
+       * `minTaps` taps in all. Every `stampsPerCoin` stamps make a coin; `badges` are the stamp totals of the three
+       * badges.
        */
-      coin: { price: number; dailyBuy: number; hold: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
+      coin: { price: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
       /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. */
       scratch?: {
         cards: Record<"basic" | "premium", {

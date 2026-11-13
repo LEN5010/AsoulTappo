@@ -319,9 +319,9 @@ SCRATCH = {"price": 500, "daily": 20,
 DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
         "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
 # The park (clients after 1.2.1; design in docs/design/amusement-park.md). Every game there is paid in coins.
-# coin: `price` shards each, at most `dailyBuy` bought a China day and none while `hold` are held; `gift` free a day
-# on the first visit. Buying and the gift need `minTaps` taps in all. Every coin spent is a stamp; every
-# `stampsPerCoin` stamps turn into a coin, and `badges` are the stamp totals that earn the three badges.
+# coin: `price` shards each, as many as the shards pay for; `gift` free a day on the first visit. Buying and the
+# gift need `minTaps` taps in all. Every coin spent is a stamp; every `stampsPerCoin` stamps turn into a coin, and
+# `badges` are the stamp totals that earn the three badges.
 # scratch: two cards by their price in coins. `again` (a percentage, like the prize weights) hands the price back;
 # the basic card keeps the old card's emote tier and pity, and once the set is whole that weight turns into `again`.
 # A premium `skin` or `big` card is one the save lacks, else its `shards`. Every coin spent adds `jackpot.perCoin`
@@ -334,7 +334,7 @@ DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"b
 # `drawAt`. The top prize is `top` of the day's sales plus the rollover (at most `topCap`), the second `second`,
 # split between winners; the third is `third` shards each.
 PARK = {
-    "coin": {"price": 500, "dailyBuy": 40, "hold": 100, "gift": 1, "minTaps": 10000, "stampsPerCoin": 30,
+    "coin": {"price": 500, "gift": 1, "minTaps": 10000, "stampsPerCoin": 30,
              "badges": [100, 1000, 5000]},
     "scratch": {
         "cards": {
