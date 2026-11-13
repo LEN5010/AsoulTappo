@@ -319,20 +319,32 @@ const lastName = computed(() => {
   const today = state.value?.day ?? "";
   return d === today ? "今日" : d === dayBefore(today) ? "昨日" : shortDay(d);
 });
-/** My stubs: today's, or once today is drawn the same stubs with what each matched. */
+/**
+ * The last draw's stubs, with their results, are on the table: today once it is drawn, and the day after it until the
+ * first number of that day is bought, so a draw seen the next morning lights up the stubs it was played with.
+ */
+const lastOnTable = computed(() => {
+  const s = state.value;
+  const d = last.value;
+  if (!s || !d) return false;
+  return drawnHere.value || (!!d.mine.length && !s.tickets.length && d.day === dayBefore(s.day));
+});
+/** My stubs: today's, or the last draw's with what each matched. */
 const table = computed(() => {
   const s = state.value;
   if (!s) return [];
-  if (drawnHere.value) return last.value!.mine;
+  if (lastOnTable.value) return last.value!.mine;
   return s.tickets.map((number) => ({ number, tier: null, prize: 0 }));
 });
-/** Free places, while there is still a draw to buy for. */
-const slots = computed(() => (state.value && !drawnHere.value ? Math.max(0, state.value.daily - table.value.length) : 0));
+/** The day of the stubs on the table, so a stub of one day is never reused for another. */
+const tableDay = computed(() => (lastOnTable.value ? last.value!.day : state.value?.day ?? ""));
+/** Free places, while there is still a draw to buy for and today's stubs are on the table. */
+const slots = computed(() => (state.value && !lastOnTable.value ? Math.max(0, state.value.daily - table.value.length) : 0));
 
 /** The earlier days of the history; the last draw has its own block. */
 const older = computed(() => (state.value?.history ?? []).filter((h) => h.day !== last.value?.day));
-/** The last draw's stubs when they are not on the table (a day after it): they go behind 往期. */
-const lastAside = computed(() => (!drawnHere.value && last.value?.mine.length ? last.value : null));
+/** The last draw's stubs when they are not on the table (today's stubs are): they go behind 往期. */
+const lastAside = computed(() => (!lastOnTable.value && last.value?.mine.length ? last.value : null));
 const hasPast = computed(() => !!lastAside.value || older.value.length > 0);
 
 const verified = ref<boolean | null>(null);
@@ -423,9 +435,9 @@ function onBarKey(e: KeyboardEvent) {
           />
         </div>
 
-        <ol ref="stubsEl" class="stubs" :class="{ drawn: drawnHere }" aria-label="我的号码">
+        <ol ref="stubsEl" class="stubs" :class="{ drawn: lastOnTable }" aria-label="我的号码">
           <li
-            v-for="(t, i) in table" :key="`${state.day}-${i}`" class="cell"
+            v-for="(t, i) in table" :key="`${tableDay}-${i}`" class="cell"
             :class="{ fresh: fresh.includes(i) }"
           >
             <TicketStub>
