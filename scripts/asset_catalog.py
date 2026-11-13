@@ -318,6 +318,61 @@ SCRATCH = {"price": 500, "daily": 20,
 # capped. Both saves need `minTaps` taps in all, so fresh guest saves cannot feed shards to another one.
 DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
         "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
+# The park (clients after 1.2.1; design in docs/design/amusement-park.md). Every game there is paid in coins.
+# coin: `price` shards each, at most `dailyBuy` bought a China day and none while `hold` are held; `gift` free a day
+# on the first visit. Buying and the gift need `minTaps` taps in all. Every coin spent is a stamp; every
+# `stampsPerCoin` stamps turn into a coin, and `badges` are the stamp totals that earn the three badges.
+# scratch: two cards by their price in coins. `again` (a percentage, like the prize weights) hands the price back;
+# the basic card keeps the old card's emote tier and pity, and once the set is whole that weight turns into `again`.
+# A premium `skin` or `big` card is one the save lacks, else its `shards`. Every coin spent adds `jackpot.perCoin`
+# shards to one shared pot, won with odds 1 in `jackpot.odds` per coin; a won pot starts again at `jackpot.seed`.
+# Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet.
+# race: one every `interval` seconds, bets taken for the first `betting`; the dumplings of the five members move
+# 1 to 3 squares (`dice`) on a `track` of squares, carrying those stacked on them. Odds pay `payout` / p, rounded
+# down to a tenth and at least `minOdds`, with p from `sims` runs of that race. A save stakes at most `maxCoins`.
+# lottery: `daily` tickets a save, 000 to 999; sales close at minute `closeAt` of the China day and the draw is at
+# `drawAt`. The top prize is `top` of the day's sales plus the rollover (at most `topCap`), the second `second`,
+# split between winners; the third is `third` shards each.
+PARK = {
+    "coin": {"price": 500, "dailyBuy": 40, "hold": 100, "gift": 1, "minTaps": 10000, "stampsPerCoin": 30,
+             "badges": [100, 1000, 5000]},
+    "scratch": {
+        "cards": {
+            "basic": {"coins": 1, "again": 15,
+                      "prizes": [{"shards": 1000, "weight": 9.5}, {"shards": 2500, "weight": 3.5},
+                                 {"shards": 8000, "weight": 0.6}, {"shards": 50000, "weight": 0.05}],
+                      "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10}},
+            "premium": {"coins": 5, "again": 12,
+                        "prizes": [{"shards": 5000, "weight": 13}, {"shards": 12500, "weight": 3},
+                                   {"shards": 40000, "weight": 0.5}, {"shards": 250000, "weight": 0.02}],
+                        "skin": {"weight": 0.2, "shards": 30000}, "big": {"weight": 0.1, "shards": 60000}},
+        },
+        "jackpot": {"perCoin": 20, "seed": 30000, "odds": 12000},
+        "roomAt": {"basic": 8000, "premium": 40000},
+        "serverAt": {"basic": 50000, "premium": 250000},
+    },
+    "race": {
+        "interval": 600, "betting": 480, "track": 20, "dice": [1, 2, 3], "payout": 0.85, "minOdds": 1.1,
+        "sims": 20000, "maxCoins": 10, "kinds": ["win", "top2", "last"],
+        # One boost and one trip square a race, somewhere in `range` (inclusive), moving a landing dumpling by `steps`.
+        "squares": {"range": [5, 17], "boost": 2, "trip": -1},
+        # Fixed per member. snack: rolling `on` gives a `chance` of `bonus` squares on its next move. steady: always
+        # `steps`. dash: rolling `on` gives a `chance` of `bonus` squares more at once. reroll: rolling `on` gives a
+        # `chance` of rolling again. catchup: last in the race at its turn, `bonus` squares more on that move.
+        "skills": {"jiaran": {"kind": "snack", "on": 1, "chance": 0.5, "bonus": 1},
+                   "nailin": {"kind": "steady", "steps": 2},
+                   "beila": {"kind": "dash", "on": 3, "chance": 0.3, "bonus": 1},
+                   "xinyi": {"kind": "reroll", "on": 1, "chance": 0.5},
+                   "sinuo": {"kind": "catchup", "bonus": 1}},
+        # Dealt one each per race: `delta` squares on each of the first `moves` moves (at least 1 square a move).
+        "moods": [{"id": "hot", "delta": 1, "moves": 4}, {"id": "excited", "delta": 1, "moves": 2},
+                  {"id": "normal", "delta": 0, "moves": 0}, {"id": "sleepy", "delta": -1, "moves": 3},
+                  {"id": "slacking", "delta": -1, "moves": 5}],
+        "roomAt": 10000,
+    },
+    "lottery": {"daily": 10, "closeAt": 1315, "drawAt": 1320, "top": 0.40, "topCap": 500000, "second": 0.20,
+                "third": 600},
+}
 
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote

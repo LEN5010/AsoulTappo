@@ -571,7 +571,7 @@ def main() -> None:
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
         "economy": {"income": cat.INCOME, "resonance": cat.RESONANCE, "craftCost": cat.CRAFT_COST,
-                    "checkin": cat.CHECKIN, "scratch": cat.SCRATCH, "duel": cat.DUEL},
+                    "checkin": cat.CHECKIN, "scratch": cat.SCRATCH, "duel": cat.DUEL, "park": cat.PARK},
         "plates": cat.PLATES,
     }
     from build_previews import build_emote_covers, build_pet_previews

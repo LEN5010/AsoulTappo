@@ -5162,6 +5162,186 @@
    "throwSec": 10,
    "dailyWinCap": 10000,
    "minTaps": 10000
+  },
+  "park": {
+   "coin": {
+    "price": 500,
+    "dailyBuy": 40,
+    "hold": 100,
+    "gift": 1,
+    "minTaps": 10000,
+    "stampsPerCoin": 30,
+    "badges": [
+     100,
+     1000,
+     5000
+    ]
+   },
+   "scratch": {
+    "cards": {
+     "basic": {
+      "coins": 1,
+      "again": 15,
+      "prizes": [
+       {
+        "shards": 1000,
+        "weight": 9.5
+       },
+       {
+        "shards": 2500,
+        "weight": 3.5
+       },
+       {
+        "shards": 8000,
+        "weight": 0.6
+       },
+       {
+        "shards": 50000,
+        "weight": 0.05
+       }
+      ],
+      "emote": {
+       "set": "achao",
+       "weight": 5,
+       "pity": 10
+      }
+     },
+     "premium": {
+      "coins": 5,
+      "again": 12,
+      "prizes": [
+       {
+        "shards": 5000,
+        "weight": 13
+       },
+       {
+        "shards": 12500,
+        "weight": 3
+       },
+       {
+        "shards": 40000,
+        "weight": 0.5
+       },
+       {
+        "shards": 250000,
+        "weight": 0.02
+       }
+      ],
+      "skin": {
+       "weight": 0.2,
+       "shards": 30000
+      },
+      "big": {
+       "weight": 0.1,
+       "shards": 60000
+      }
+     }
+    },
+    "jackpot": {
+     "perCoin": 20,
+     "seed": 30000,
+     "odds": 12000
+    },
+    "roomAt": {
+     "basic": 8000,
+     "premium": 40000
+    },
+    "serverAt": {
+     "basic": 50000,
+     "premium": 250000
+    }
+   },
+   "race": {
+    "interval": 600,
+    "betting": 480,
+    "track": 20,
+    "dice": [
+     1,
+     2,
+     3
+    ],
+    "payout": 0.85,
+    "minOdds": 1.1,
+    "sims": 20000,
+    "maxCoins": 10,
+    "kinds": [
+     "win",
+     "top2",
+     "last"
+    ],
+    "squares": {
+     "range": [
+      5,
+      17
+     ],
+     "boost": 2,
+     "trip": -1
+    },
+    "skills": {
+     "jiaran": {
+      "kind": "snack",
+      "on": 1,
+      "chance": 0.5,
+      "bonus": 1
+     },
+     "nailin": {
+      "kind": "steady",
+      "steps": 2
+     },
+     "beila": {
+      "kind": "dash",
+      "on": 3,
+      "chance": 0.3,
+      "bonus": 1
+     },
+     "xinyi": {
+      "kind": "reroll",
+      "on": 1,
+      "chance": 0.5
+     },
+     "sinuo": {
+      "kind": "catchup",
+      "bonus": 1
+     }
+    },
+    "moods": [
+     {
+      "id": "hot",
+      "delta": 1,
+      "moves": 4
+     },
+     {
+      "id": "excited",
+      "delta": 1,
+      "moves": 2
+     },
+     {
+      "id": "normal",
+      "delta": 0,
+      "moves": 0
+     },
+     {
+      "id": "sleepy",
+      "delta": -1,
+      "moves": 3
+     },
+     {
+      "id": "slacking",
+      "delta": -1,
+      "moves": 5
+     }
+    ],
+    "roomAt": 10000
+   },
+   "lottery": {
+    "daily": 10,
+    "closeAt": 1315,
+    "drawAt": 1320,
+    "top": 0.4,
+    "topCap": 500000,
+    "second": 0.2,
+    "third": 600
+   }
   }
  },
  "plates": [

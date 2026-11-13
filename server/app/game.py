@@ -49,6 +49,9 @@ LOADOUT_KEYS = ("character", "favorites", "plate", "showcase", "nick", "board")
 BOARD_SIZE = 50
 BOARD_SECONDS = 300
 BOARD_DEFAULT_NICK = "匿名小面包"
+# Park news (park.py) that status carries to every running pet: the newest PARK_NEWS_LIMIT of the last PARK_NEWS_SECONDS.
+PARK_NEWS_SECONDS = 900
+PARK_NEWS_LIMIT = 5
 # Collection score: points for each item a save holds, about the draws it takes on average to find one (1 point is
 # about 1 draw). Big hidden cards: 0.1% with a 400-draw pity, about 330 draws. Skins: 0.2% with a 200-draw pity,
 # about 165. Epic cards (small hidden cards and epic normal cards share one 4.5% tier): about 22. Common cards: about
@@ -655,10 +658,20 @@ class Game:
             out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:
             out["duel"] = {"net": self.store.duel_net(pid, day)}
+        if self.manifest.park:
+            out["park"] = {"coins": p["coins"], "news": self.park_news(now)}
         out["cheer"] = {"day": day, "got": self.store.ledger_amount(pid, day, "cheer"), "cap": CHEER_DAILY_CAP,
                         "minTaps": CHEER_MIN_TAPS}
         # Every open reward this save has not claimed; the client offers those its own version reaches.
         out["updateRewards"] = self.store.open_update_rewards(pid)
+        return out
+
+    def park_news(self, now: float) -> list[dict[str, Any]]:
+        """Recent park wins every running pet is told of: {id, ts, kind, nick, ...detail}."""
+        out = []
+        for row in self.store.park_news_since(now - PARK_NEWS_SECONDS, PARK_NEWS_LIMIT):
+            detail = _loadout_json(row["detail"])
+            out.append({**detail, "id": row["id"], "ts": row["ts"], "kind": row["kind"], "nick": row["nick"]})
         return out
 
     def save_summary(self, pid: str) -> dict[str, Any]:

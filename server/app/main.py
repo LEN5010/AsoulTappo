@@ -33,6 +33,7 @@ from .models import (
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
+from .park import Park
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
@@ -121,6 +122,15 @@ if _refunded:
     print(f"refunded {_refunded} unfinished duels", flush=True)
 # Rock-paper-scissors in rooms; a member leaving in any way loses the duel it plays.
 duels = Duels(lambda: game, lambda: manager)
+# The park's coins; its games take and give them through it. Nicks in its news are masked like room nicks.
+park = Park(lambda: game, lambda nick: blocklist.mask(nick))
+_pruned = park.prune_news()
+if _pruned:
+    print(f"pruned {_pruned} old park news", flush=True)
+# park: scratch setup
+# park: race setup
+# park: lottery setup
+# park: redeem setup
 
 
 def load_blocklist(store: Store) -> Blocklist:
@@ -210,7 +220,12 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,
           "sold_out": 409, "no_card": 404, "no_scratch": 404, "no_member": 404,
           # Admin calls answer these with 409: the main site reads a 404 from this server as "unavailable".
-          "no_save": 409, "no_reward": 409, "reward_open": 409}
+          "no_save": 409, "no_reward": 409, "reward_open": 409,
+          # The park (park.py and its games).
+          "no_park": 404, "park_locked": 409, "no_coins": 409, "coin_limit": 409, "coin_hold": 409, "bad_count": 400,
+          "race_closed": 409, "race_cap": 409, "no_race": 404, "lottery_closed": 409, "lottery_cap": 409,
+          "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
+          "login_required": 401, "too_many_tries": 429, "no_code": 409}
 
 
 def _guard(fn, *args):
@@ -361,6 +376,33 @@ def api_checkin(who: PlayerId = Depends(player)) -> dict:
 def api_update_reward(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
     """Claims every update reward the client's version reaches (status `updateRewards`)."""
     return _guard(game.claim_update_rewards, who, x_client_version)
+
+
+class CoinBuyBody(BaseModel):
+    count: int = Field(ge=1, le=100)
+
+
+@app.get("/api/park")
+def api_park(who: PlayerId = Depends(player)) -> dict:
+    """The save's coins, today's buying, free coin, stamps and result, and the scratch jackpot."""
+    return _guard(park.state, who)
+
+
+@app.post("/api/park/coins")
+def api_park_coins(body: CoinBuyBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(park.buy, who, body.count)
+
+
+@app.post("/api/park/gift")
+def api_park_gift(who: PlayerId = Depends(player)) -> dict:
+    """The free coin of the day: `gift` is how many came (0 after the first visit of the day)."""
+    return _guard(park.gift, who)
+
+
+# park: scratch routes
+# park: race routes
+# park: lottery routes
+# park: redeem routes
 
 
 @app.get("/api/scratch")

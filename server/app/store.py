@@ -203,6 +203,33 @@ CREATE TABLE IF NOT EXISTS admin_log (
   reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS admin_log_player ON admin_log (player_id, id);
+-- Park coins each save gained (amount > 0) or spent (amount < 0) per China day and source, like shard_ledger.
+CREATE TABLE IF NOT EXISTS coin_ledger (
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, player_id, source)
+);
+-- Shared park amounts, such as the scratch jackpot and the lottery rollovers, written in the caller's transaction.
+CREATE TABLE IF NOT EXISTS park_counters (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
+-- Park wins every running pet hears of (status `park.news`); kept PARK_NEWS_DAYS.
+CREATE TABLE IF NOT EXISTS park_news (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts REAL NOT NULL,
+  kind TEXT NOT NULL,
+  player_id TEXT NOT NULL DEFAULT '',
+  nick TEXT NOT NULL DEFAULT '',
+  detail TEXT NOT NULL DEFAULT '{}'
+);
+-- park: scratch tables
+-- park: race tables
+-- park: lottery tables
+-- park: redeem tables
 """
 
 STARTER_SHARDS = 1600
@@ -215,7 +242,7 @@ PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
-    "steady_day steady_hits steady_rate"
+    "steady_day steady_hits steady_rate coins coin_day coin_bought gift_day stamps_total"
 ).split()
 
 
@@ -306,6 +333,12 @@ class Store:
             for field, kind in (("steady_hits", "INTEGER"), ("steady_rate", "REAL")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+            # Park coins: held, bought on `coin_day`, the day of the last free one, and stamps ever earned.
+            for field, kind in (("coins", "INTEGER NOT NULL DEFAULT 0"), ("coin_day", "TEXT NOT NULL DEFAULT ''"),
+                                ("coin_bought", "INTEGER NOT NULL DEFAULT 0"), ("gift_day", "TEXT NOT NULL DEFAULT ''"),
+                                ("stamps_total", "INTEGER NOT NULL DEFAULT 0")):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind}")
             if "steady" not in self._columns("tap_flags"):
                 self._db.execute("ALTER TABLE tap_flags ADD COLUMN steady INTEGER NOT NULL DEFAULT 0")
             sessions = self._columns("activity_sessions")
@@ -1014,6 +1047,71 @@ class Store:
                 "SELECT g.player_id, g.source, g.amount, g.count, l.main_user_id FROM shard_ledger g "
                 "LEFT JOIN account_links l ON l.player_id = g.player_id WHERE g.day = ?", (day,)).fetchall()
         return [dict(r) for r in rows]
+
+    # --- park (coins, shared amounts and news; see park.py)
+    def add_coin_ledger(self, pid: str, day: str, source: str, amount: int, count: int = 1) -> None:
+        """Adds to the save's [source] row of [day] in coin_ledger, in the caller's transaction if any."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO coin_ledger (day, player_id, source, amount, count) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(day, player_id, source) DO UPDATE SET "
+                "amount = amount + excluded.amount, count = count + excluded.count",
+                (day, pid, source, amount, count))
+            self._commit()
+
+    def coin_ledger_by_day(self, since: str) -> list[dict[str, Any]]:
+        """Coins per China day and source since [since], over every save."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT day, source, SUM(amount) AS amount, SUM(count) AS count, COUNT(*) AS saves FROM coin_ledger "
+                "WHERE day >= ? GROUP BY day, source ORDER BY day, source", (since,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def ledger_sum(self, pid: str, day: str, sources: tuple[str, ...]) -> int:
+        """The save's shards of [day] summed over [sources] (gains positive, spending negative)."""
+        if not sources:
+            return 0
+        with self._lock:
+            row = self._db.execute(
+                f"SELECT COALESCE(SUM(amount), 0) AS n FROM shard_ledger WHERE day = ? AND player_id = ? "
+                f"AND source IN ({','.join('?' * len(sources))})", (day, pid, *sources)).fetchone()
+        return int(row["n"])
+
+    def park_counter(self, key: str, default: int = 0) -> int:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM park_counters WHERE key = ?", (key,)).fetchone()
+        return int(row["value"]) if row else default
+
+    def set_park_counter(self, key: str, value: int) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO park_counters (key, value) VALUES (?, ?) "
+                             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+            self._commit()
+
+    def add_park_news(self, ts: float, kind: str, pid: str, nick: str, detail: str) -> int:
+        with self._lock:
+            cur = self._db.execute("INSERT INTO park_news (ts, kind, player_id, nick, detail) VALUES (?, ?, ?, ?, ?)",
+                                   (ts, kind, pid, nick, detail))
+            self._commit()
+            return int(cur.lastrowid)
+
+    def park_news_since(self, since: float, limit: int) -> list[dict[str, Any]]:
+        """The newest [limit] news items from [since] on, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT id, ts, kind, nick, detail FROM park_news WHERE ts >= ? "
+                                    "ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
+    def prune_park_news(self, before: float) -> int:
+        with self._lock:
+            n = self._db.execute("DELETE FROM park_news WHERE ts < ?", (before,)).rowcount
+            self._commit()
+            return n
+
+    # --- park: scratch
+    # --- park: race
+    # --- park: lottery
+    # --- park: redeem
 
     def close(self) -> None:
         with self._lock:

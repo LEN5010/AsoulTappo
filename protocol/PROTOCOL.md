@@ -89,7 +89,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单，与 `assets-packs/manifest.json` 一致，包含 skins 和 economy |
-| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后） |
+| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news}`，见游乐园一节；没有游乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节 |
@@ -97,6 +97,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 manifest `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，0.1 即 ±10%，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
 | POST /api/update-reward | 领取更新奖励：`X-Client-Version` 不低于奖励版本的、进行中且还没领的奖励一次全部发放，返回状态和 `reward:{shards,ids}`。预发布版本低于同号正式版。没有可领的返回 409 `no_reward` |
+| GET /api/park | 游乐园状态（见游乐园一节）：coins、unlocked、bought、buyLeft、gift、stamps、stampsTotal、badge、today、jackpot |
+| POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见游乐园一节的错误码 |
+| POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天领过时为 0） |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
@@ -186,6 +189,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | `update` | 更新奖励 | 一次领取的奖励个数 |
 | `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
 | `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
+| `coin_buy` | 买驼币花费 | 买的枚数 |
+| `park_scratch`、`jackpot`、`race_prize`、`lottery_prize` | 游乐园的碎片奖：驼币刮刮乐、全服奖池、团子赛跑、每日夺宝 | 1 |
+| `redeem` | 兑换码发的碎片 | 1 |
 | `admin` | 管理接口的调整 | 1 |
 
 同一存档同一天的多次 `admin` 调整合并为一行，正负相抵，所以 `admin` 在 issued、spent 里是净值。
@@ -296,6 +302,34 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 `cells` 是九个格子的图案，碎片数额写成数字串，表情写成表情 key。中奖图案恰好出现三次，其余图案最多出现两次；没中的卡没有出现三次的图案。
 
 揭开的碎片奖品达到 `economy.scratch.announce`（2500）时，服务端向该存档所在的每个房间广播 `scratch {id,shards}`，客户端在这位成员的桌宠上方显示。出表情由客户端在揭开后发送这个表情。
+
+## 游乐园
+
+1.2.1 之后的客户端。配置在 manifest `economy.park`（`coin`、`scratch`、`race`、`lottery`），没有这一项的服务端不提供游乐园，状态里也没有 `park`，接口返回 404 `no_park`。
+
+### 驼币
+
+- 用碎片买，每枚 `coin.price`（500）。每个存档每天最多买 `coin.dailyBuy`（40）枚，北京时间零点重置；持有 `coin.hold`（100）枚时不能再买。驼币不能换回碎片，也不能转让。
+- 每天送 `coin.gift`（1）枚：客户端第一次打开游乐园时调 `POST /api/park/gift`，当天再调返回 `gift: 0`。
+- 买和领都要累计敲击满 `coin.minTaps`（10000）下，不够时返回 409 `park_locked`。
+- 每花 1 枚驼币得 1 个印章，累计数到 `coin.stampsPerCoin`（30）的整数倍时自动换 1 枚驼币。`stamps` 是当前这一轮的印章数（`stampsTotal` 除以 30 的余数），`badge` 是 `stampsTotal` 达到的 `coin.badges`（100、1000、5000）档数，0 到 3。
+- 奖品、印章、兑换码发的驼币不受持有上限限制。
+- 赛跑停机退币时，印章和它换出的驼币一起退回。
+
+`GET /api/park` 的 `today` 为 `{spent, won}`：今天买驼币花的碎片，和今天从游乐园奖品拿到的碎片（`park_scratch`、`jackpot`、`race_prize`、`lottery_prize`，不含兑换码）。`jackpot` 为刮刮乐全服奖池现在的金额。
+
+错误码：`park_locked`、`coin_limit`（今天买够了）、`coin_hold`（持有到上限）、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
+
+驼币流水记在 `coin_ledger`，结构同碎片流水：花费按玩法记（`scratch`、`race`、`lottery`），获得记 `buy`、`gift`、`stamp`、`scratch_again`、`race_refund`、`redeem`、`admin`。
+
+### 全服消息
+
+大奖要让所有在线的桌宠知道，但服务端没有房间以外的推送。状态里的 `park.news` 带最近 15 分钟的最多 5 条：`{id, ts, kind, nick, ...}`，按 id 从旧到新，其余字段因 kind 而异。客户端每 20 秒的心跳会拿到状态，记住看过的 id，没看过的在桌宠上显示一次。昵称按房间昵称同样的规则做屏蔽词处理。消息保留 7 天。
+
+<!-- park: scratch -->
+<!-- park: race -->
+<!-- park: lottery -->
+<!-- park: redeem -->
 
 ## 猜拳
 

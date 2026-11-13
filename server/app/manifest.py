@@ -129,6 +129,12 @@ class Manifest:
         return self.data.get("economy", {}).get("duel")
 
     @cached_property
+    def park(self) -> dict | None:
+        """The park, paid in coins: {coin, scratch, race, lottery} (see PARK in scripts/asset_catalog.py). None on a
+        manifest without it, which turns the park off."""
+        return self.data.get("economy", {}).get("park")
+
+    @cached_property
     def scratch_emotes(self) -> tuple[str, ...]:
         """Emote keys of the set scratch cards give out, in set order."""
         cfg = self.scratch
