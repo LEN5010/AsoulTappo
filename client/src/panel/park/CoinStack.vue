@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // A little pile of coins: 1, 3 or 5 of the same picture, each a bit higher and to one side of the one under it.
+// `grey` is a pile out of reach: opaque grayscale, as ParkCoin.
 import { computed } from "vue";
 import ParkCoin from "./ParkCoin.vue";
 
-const props = withDefaults(defineProps<{ count?: 1 | 3 | 5; size?: number }>(), { count: 1, size: 40 });
+const props = withDefaults(defineProps<{ count?: 1 | 3 | 5; size?: number; grey?: boolean }>(), { count: 1, size: 40 });
 
 /** Offsets of each coin from the bottom one, as fractions of the coin's size; bottom first. */
 const OFFSETS: [number, number][] = [[0, 0], [0.22, -0.14], [-0.16, -0.28], [0.12, -0.44], [-0.06, -0.58]];
@@ -22,7 +23,7 @@ const box = computed(() => {
 <template>
   <span class="coin-stack" aria-hidden="true" :style="{ width: `${box.width}px`, height: `${box.height}px` }">
     <ParkCoin
-      v-for="([x, y], i) in coins" :key="i" :size="size"
+      v-for="([x, y], i) in coins" :key="i" :size="size" :grey="grey"
       :style="{ left: `${box.left + x * size}px`, top: `${box.rise + y * size}px` }"
     />
   </span>

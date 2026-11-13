@@ -1,24 +1,25 @@
 <script setup lang="ts">
 // The coin as a thing: it leans and casts a coral-tinted shadow. Small sizes use the 64px picture. `grey` is the
-// coin not yet earned: opaque grayscale, never see-through. `sheen` runs a slow light across its face.
+// coin not yet earned: opaque grayscale, never see-through. `sheen` runs a slow light across its face. `fill` takes
+// the size from --size set on a parent instead of `size`, so CSS can resize it; it always uses the 256px picture.
 import { computed, ref } from "vue";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
 import { COIN, COIN_SMALL } from "./coin";
 
-const props = withDefaults(defineProps<{ size?: number; grey?: boolean; sheen?: boolean; tilt?: boolean }>(), {
-  size: 72,
-  tilt: true,
-});
+const props = withDefaults(
+  defineProps<{ size?: number; grey?: boolean; sheen?: boolean; tilt?: boolean; fill?: boolean }>(),
+  { size: 72, tilt: true },
+);
 
-const src = computed(() => (props.size <= 64 ? COIN_SMALL : COIN));
+const src = computed(() => (props.size <= 64 && !props.fill ? COIN_SMALL : COIN));
 const failed = ref(false);
 </script>
 
 <template>
   <span
-    class="park-coin" :class="{ grey, tilt }" aria-hidden="true"
-    :style="{ '--size': `${size}px`, '--src': `url(${src})` }"
+    class="park-coin" :class="{ grey, tilt, fill }" aria-hidden="true"
+    :style="fill ? { '--src': `url(${src})` } : { '--size': `${size}px`, '--src': `url(${src})` }"
   >
     <Icon v-if="failed" class="glyph" name="coin" :size="size" />
     <template v-else>
@@ -56,6 +57,10 @@ const failed = ref(false);
 }
 .grey .glyph {
   color: var(--ink-3);
+}
+.fill .glyph {
+  width: 100%;
+  height: 100%;
 }
 /* A band of light crossing the face now and then, cut to the coin's own outline. */
 .sheen {

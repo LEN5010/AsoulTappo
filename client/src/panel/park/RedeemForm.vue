@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Redeem codes (protocol/PROTOCOL.md 兑换码), on the coin page: one field and one key; the reward or why not shows
-// under it.
+// Redeem codes (protocol/PROTOCOL.md 兑换码), in the coin page's bottom bar: the field and one key on one line; why
+// not, or the reward in big numbers, shows between them. Coins redeemed also rise from the top bar's coin chip.
 // On a server with account login only a save linked to an account redeems, so a guest gets the sign-in instead.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { Api, type ServerInfo } from "../../net/api";
@@ -12,11 +12,14 @@ import { settings } from "../../stores/settings";
 import Icon from "../../ui/Icon.vue";
 import AccountDialog from "../AccountDialog.vue";
 import { COIN_SMALL } from "./coin";
+import { popCoins } from "./pops";
 import { redeemMessage } from "./redeem";
 
 const code = ref("");
 const busy = ref(false);
 const reward = ref<{ shards: number; coins: number } | null>(null);
+/** Counts rewards, so the same amount twice still pops anew. */
+const rewardId = ref(0);
 const error = ref("");
 /** The server answered login_required, or says up front that it signs in with accounts and this device has none. */
 const needLogin = ref(false);
@@ -66,7 +69,9 @@ async function redeem() {
   busy.value = false;
   if (r.ok) {
     reward.value = r.data.redeemed;
+    rewardId.value++;
     code.value = "";
+    if (r.data.redeemed.coins > 0) popCoins(r.data.redeemed.coins);
     return;
   }
   const e = r.error;
@@ -77,48 +82,56 @@ async function redeem() {
   if (e.code === "too_many_tries") lock(Number(e.detail.seconds) || 900);
   error.value = redeemMessage(e.code, e.message);
 }
+/** Typing a new code clears what the last one said. */
+function typed() {
+  error.value = "";
+  reward.value = null;
+}
 const shownError = computed(() => (locked.value ? `输错太多次，${lockMinutes.value} 分钟后再试` : error.value));
 const fmt = (n: number) => n.toLocaleString("en-US");
 </script>
 
 <template>
   <AccountDialog v-if="signingIn && mainApi" :main-api="mainApi" start="login" @close="signingIn = false" @done="signingIn = false" />
-  <div class="redeem-box">
-    <div v-if="needLogin" class="login">
-      <p class="why"><Icon name="lock" :size="16" />登录 Asasfans 账号后兑换</p>
-      <button v-if="mainApi" type="button" class="ui-btn primary" @click="signingIn = true">登录</button>
-    </div>
-    <form v-else class="redeem" @submit.prevent="redeem">
-      <div class="row">
-        <input
-          v-model="code" class="ui-input code" maxlength="64" placeholder="XXXX-XXXX-XXXX"
-          autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="兑换码"
-          @input="error = ''"
-        />
-        <button type="submit" class="ui-btn primary" :disabled="!code.trim() || busy || locked" :aria-busy="busy">兑换</button>
-      </div>
-      <p v-if="shownError" class="err" role="alert">{{ shownError }}</p>
-      <p v-else-if="reward" class="got" role="status">
-        <span v-if="reward.shards"><Icon name="shard" :size="24" />+{{ fmt(reward.shards) }}<small>碎片</small></span>
-        <span v-if="reward.coins"><img :src="COIN_SMALL" alt="" draggable="false" />+{{ fmt(reward.coins) }}<small>驼币</small></span>
-      </p>
-    </form>
+  <div v-if="needLogin" class="redeem-bar login">
+    <p class="why"><Icon name="lock" :size="16" />登录 Asasfans 账号后兑换</p>
+    <button v-if="mainApi" type="button" class="ui-btn primary" @click="signingIn = true">登录</button>
   </div>
+  <form v-else class="redeem-bar" @submit.prevent="redeem">
+    <label class="name" for="redeem-code">兑换码</label>
+    <input
+      id="redeem-code" v-model="code" class="ui-input code" maxlength="64" placeholder="XXXX-XXXX-XXXX"
+      autocomplete="off" autocapitalize="characters" spellcheck="false"
+      @input="typed"
+    />
+    <p v-if="shownError" class="err" role="alert">{{ shownError }}</p>
+    <p v-else-if="reward" :key="rewardId" class="got" role="status">
+      <span v-if="reward.shards" :title="`碎片 +${fmt(reward.shards)}`"><Icon name="shard" :size="22" />+{{ fmt(reward.shards) }}</span>
+      <span v-if="reward.coins" :title="`驼币 +${fmt(reward.coins)}`"><img :src="COIN_SMALL" alt="" draggable="false" />+{{ fmt(reward.coins) }}</span>
+    </p>
+    <button type="submit" class="ui-btn primary go" :disabled="!code.trim() || busy || locked" :aria-busy="busy">兑换</button>
+  </form>
 </template>
 
 <style scoped>
-.redeem,
-.login {
+/* One line in the page's bottom bar (.park-actions): the field takes what the rest leaves. */
+.redeem-bar {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
 }
-.row {
-  display: flex;
-  gap: 10px;
+.name {
+  flex: none;
+  font: 800 var(--fs-strong)/1 var(--font);
+  color: var(--ink-2);
 }
 .code {
-  flex: 1;
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 360px;
   font: 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -126,39 +139,56 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 .code::placeholder {
   letter-spacing: 0.12em;
 }
-.row .primary {
+.go {
+  flex: none;
   min-width: 84px;
+  margin-left: auto;
+}
+/* The bar is already --c-100: a disabled key there takes the next step so it does not vanish. */
+.go:disabled {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
 }
 .err {
+  min-width: 0;
   margin: 0;
   font-size: var(--fs-label);
   font-weight: 700;
+  line-height: 1.3;
   color: var(--c-700);
 }
-/* The reward lands like the update reward: big coral numbers. */
+/* The reward lands like the update reward: big coral numbers, popping in. */
 .got {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin: 6px 0 0;
+  align-items: center;
+  gap: 4px 18px;
+  margin: 0;
 }
 .got span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font: 800 26px/1 var(--font-latin);
+  gap: 5px;
+  font: 800 30px/1 var(--font-latin);
   color: var(--c-700);
+  animation: got-pop 520ms var(--ease-pop) both;
+}
+.got span + span {
+  animation-delay: 90ms;
+}
+.got svg {
+  color: var(--c-600);
 }
 .got img {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
 }
-.got small {
-  align-self: flex-end;
-  margin-bottom: 4px;
-  font: 700 var(--fs-label)/1 var(--font);
-  color: var(--ink-2);
+@keyframes got-pop {
+  0% { opacity: 0; scale: 0.4; translate: 0 10px; }
+  100% { opacity: 1; scale: 1; translate: 0 0; }
+}
+.calm .got span {
+  animation: none;
 }
 .why {
   display: flex;
@@ -172,11 +202,30 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   color: var(--c-700);
 }
 .login {
-  flex-direction: row;
-  align-items: center;
   justify-content: space-between;
 }
 .login .primary {
   min-width: 96px;
+}
+
+@container panel (max-width: 760px) {
+  .redeem-bar {
+    gap: 10px;
+  }
+  .code {
+    max-width: none;
+  }
+  .got span {
+    font-size: 24px;
+  }
+}
+@container panel (max-height: 560px) {
+  .go {
+    height: 32px;
+    min-width: 72px;
+  }
+  .code {
+    height: 32px;
+  }
 }
 </style>
