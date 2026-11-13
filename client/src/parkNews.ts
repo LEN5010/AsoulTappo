@@ -43,7 +43,14 @@ export function newsLine(n: ParkNews): NewsLine | null {
     case "scratch_item":
       return { nick, text: `刮出${itemName(n.item)}`, shards: null };
     case "lottery_draw": {
+      // One item a draw: `nicks` holds every top winner (the item's nick is only the first), `each.top` the prize of
+      // a winning ticket. Without a top winner it only tells the number.
       const number = typeof n.number === "string" || typeof n.number === "number" ? String(n.number).padStart(3, "0") : "";
+      const nicks = Array.isArray(n.nicks) ? n.nicks.filter((x): x is string => typeof x === "string" && !!x) : [];
+      if (nicks.length) {
+        const each = n.each && typeof n.each === "object" ? num((n.each as Record<string, unknown>).top) : null;
+        return { nick: nicks.join("、"), text: number ? `中了每日夺宝头奖 ${number}` : "中了每日夺宝头奖", shards: each };
+      }
       return { nick, text: number ? `每日夺宝开奖 ${number}` : "每日夺宝开奖", shards };
     }
     default:
