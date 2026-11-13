@@ -46,6 +46,9 @@ it("splits an answer into the player status and the park state", async () => {
   expect(split.park).toEqual(state({ coins: 4 }));
   expect(split.status?.shards).toBe(4500);
   expect(split.status?.park).toEqual({ coins: 4, news: prev.park!.news });
+  // The answer's own fields stay out of the status.
+  expect(split.status).not.toHaveProperty("gift");
+  expect(park.splitParkResult(answer, null).status).toHaveProperty("gift");
   // GET /api/park: the bare state.
   expect(park.splitParkResult(state(), prev)).toEqual({ status: null, park: state() });
   // A status of its own keeps its park; one without any keeps the previous.

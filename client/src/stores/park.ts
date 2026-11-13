@@ -32,7 +32,8 @@ const isParkStatus = (v: unknown): v is ParkStatus =>
 /**
  * What an answer of the park holds: a player status when it has `player` and `shards`, and the park's state when
  * it is one (GET /api/park) or carries one as `park`. A status keeps its own `park` ({coins, news}): the state's
- * coins with the news it had before.
+ * coins with the news it had before. The answer's own fields (a prize, a card) stay out of the status: with a
+ * previous status, only the keys it has are kept (the server's status keys depend only on its manifest).
  */
 export function splitParkResult(r: unknown, prev: PlayerStatus | null): { status: PlayerStatus | null; park: ParkState | null } {
   if (!r || typeof r !== "object") return { status: null, park: null };
@@ -42,7 +43,7 @@ export function splitParkResult(r: unknown, prev: PlayerStatus | null): { status
   const { park: p, ...rest } = o;
   const state = isParkState(p) ? p : null;
   const own = state ? { coins: state.coins, news: prev?.park?.news ?? [] } : isParkStatus(p) ? p : prev?.park;
-  const next = rest as unknown as PlayerStatus;
+  const next = (prev ? Object.fromEntries(Object.entries(rest).filter(([k]) => k in prev)) : rest) as unknown as PlayerStatus;
   if (own) next.park = own;
   return { status: next, park: state };
 }

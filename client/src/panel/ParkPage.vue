@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The park (docs/design/amusement-park.md §11): the top block with the coins, then a section for each game. The
 // games open at manifest economy.park.coin.minTaps taps in all; until then the top block shows how far there is to
-// go. Today's free coin is taken on the first visit of the day (§2.2).
+// go. Today's free coin is taken on the first visit of the day (§2.2). While the page is open it loads again with
+// the status every RELOAD_MS at most: race and lottery prizes, the jackpot and a new day change without coins moving.
 import { computed, onActivated, onDeactivated, ref, watch } from "vue";
 import { manifest } from "../manifest";
 import { status } from "../stores/player";
@@ -13,6 +14,7 @@ import LotterySection from "./park/LotterySection.vue";
 import RedeemDialog from "./park/RedeemDialog.vue";
 
 const MIN_TAPS = manifest.economy.park!.coin.minTaps;
+const RELOAD_MS = 15000;
 
 const open = computed(() => !!park.value?.unlocked);
 /** The park could not be loaded: why, while there is nothing to show. */
@@ -23,9 +25,11 @@ const redeem = ref(false);
 
 let active = false;
 let entering = false;
+let loadedAt = 0;
 async function enter() {
   if (entering || noPark.value) return;
   entering = true;
+  loadedAt = Date.now();
   try {
     const state = await loadPark();
     // Being offline already shows in the top bar; a refusal from the server shows here.
@@ -53,6 +57,10 @@ onDeactivated(() => {
 // Another save, a server that has just been reached, or the taps that open the park: load it again.
 watch(() => [status.value?.player, (status.value?.totals.taps ?? 0) >= MIN_TAPS] as const, ([player, enough], [was, before]) => {
   if (active && player && (player !== was || (enough && !before))) void enter();
+});
+// Each heartbeat brings a new status; the page follows it, not faster than RELOAD_MS.
+watch(status, () => {
+  if (active && Date.now() - loadedAt >= RELOAD_MS) void enter();
 });
 </script>
 
