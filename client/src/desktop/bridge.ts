@@ -4,6 +4,7 @@ import { isPanelWindow, isTauri } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
 import * as player from "../stores/player";
 import * as room from "../stores/room";
+import * as parkStore from "../stores/park";
 import { restingMotion, type PetMotion } from "../net/protocol";
 import { remoteMotion } from "../net/MotionFrames";
 import { windowVisible } from "../stores/activity";
@@ -17,6 +18,7 @@ const groupSources = {
   collection: () => player.collection,
   checkins: () => player.checkins.value,
   scratchCard: () => player.scratchCard.value,
+  park: () => parkStore.park.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
     info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value,
@@ -27,7 +29,7 @@ const groupSources = {
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
-    scratchCard: groupSources.scratchCard(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
+    scratchCard: groupSources.scratchCard(), park: groupSources.park(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
     publicRooms: groupSources.publicRooms(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
@@ -51,6 +53,7 @@ function applyGroups(s: Partial<Groups>) {
   if (s.collection) Object.assign(player.collection, s.collection);
   if (s.checkins !== undefined) player.checkins.value = s.checkins;
   if (s.scratchCard !== undefined) player.scratchCard.value = s.scratchCard;
+  if (s.park !== undefined) parkStore.park.value = s.park;
   if (s.freshItems) {
     player.freshItems.clear();
     s.freshItems.forEach((id) => player.freshItems.add(id));
@@ -254,6 +257,7 @@ export async function initDesktop(): Promise<() => void> {
         case "loadProfile": result = await room.loadProfile(args[0] as string); break;
         case "loadBoard": result = await player.loadBoard(); break;
         case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
+        case "park": result = await parkStore.parkRequest(args[0] as parkStore.ParkMethod, args[1] as string, args[2]); break;
         case "tidyRemotes": tidyRemotes(); break;
       }
       await publish();
