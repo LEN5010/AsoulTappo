@@ -164,11 +164,8 @@ class ParkScratch:
         pot = self._pot(st) + coins * jackpot["perCoin"]
         p = st.get_player(pid, now)
         owned = st.owned(pid)
-        # An emote waiting on an unrevealed old card counts as owned: it is on its way.
-        old = st.pending_scratch(pid)
-        held = set(owned) | ({old["item"]} if old and old["item"] else set())
         emotes = self._emotes(card)
-        missing = [i for i in emotes if i not in held]
+        missing = [i for i in emotes if i not in owned]
         tier, shards = roll(card, p["scratch_pity"], g.rng, complete=not missing, odds=jackpot["odds"])
         item, back = "", 0
         if tier == "jackpot":

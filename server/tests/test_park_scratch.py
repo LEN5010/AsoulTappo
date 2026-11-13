@@ -209,23 +209,14 @@ def test_a_whole_set_turns_the_emote_tier_into_again():
     assert ps.state(TOKEN)["pity"] == 9
 
 
-def test_the_emote_on_an_unrevealed_old_card_counts_as_owned():
-    g, ps, _, pid = setup(NO_POT, 0)
-    for item in EMOTES[:-1]:
-        g.store.add_item(pid, item, 0)
-    g.rng = SeqRng(0)
-    old = g.scratch_buy(TOKEN)["card"]
-    assert g.store.scratch_card(pid, old["id"])["item"] == EMOTES[-1]
-    g.rng = SeqRng(NO_POT, 0)
-    # the last emote is on its way, so the set counts as whole and the tier pays the coin back
-    assert play(ps)[1]["prize"]["tier"] == "again"
-
-
 def test_an_emote_found_before_the_reveal_gives_the_coin_back():
     g, ps, _, pid = setup(NO_POT, 0)
     card = ps.buy(TOKEN, "basic")["card"]
     item = g.store.pending_park_scratch(pid)["item"]
-    g.store.add_item(pid, item, 0)
+    # an old card bought and revealed in between (from an old client) gives the same emote
+    g.rng = SeqRng(0)
+    old = g.scratch_buy(TOKEN)["card"]
+    assert g.scratch_reveal(TOKEN, old["id"])["prize"]["item"] == item
     r = ps.reveal(TOKEN, card["id"])
     assert r["prize"] == {"tier": "again", "shards": 0, "coins": 1, "item": None}
     assert r["park"]["coins"] == 50 and g.collection(TOKEN)["owned"] == {item: 1}

@@ -352,16 +352,22 @@ function press() {
   else void buy();
 }
 
-onMounted(sfx.prime);
 let active = false;
-onActivated(() => {
+// The page is kept alive: mounting (the park may open while the page is shown) and coming back both load the table.
+onMounted(() => {
+  sfx.prime();
+  enter();
+});
+onActivated(enter);
+function enter() {
+  if (active) return;
   active = true;
   void load();
   void nextTick(() => {
     paint();
     paintIdle();
   });
-});
+}
 onDeactivated(() => {
   active = false;
   timers.forEach(clearTimeout);
