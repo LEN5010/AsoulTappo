@@ -18,6 +18,12 @@
   box-sizing: border-box;
   background: var(--c-100);
 }
+/* The strip is --c-100, the face of a key that can't be pressed too: on the strip that face goes one step darker. */
+.park-actions .ui-btn:disabled,
+.park-actions .ui-btn.primary:disabled {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
+}
 .park-actions > .park-actions-main {
   margin-left: auto;
   display: flex;

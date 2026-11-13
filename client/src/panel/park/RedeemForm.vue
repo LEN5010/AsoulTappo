@@ -144,11 +144,6 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   min-width: 84px;
   margin-left: auto;
 }
-/* The bar is already --c-100: a disabled key there takes the next step so it does not vanish. */
-.go:disabled {
-  --key-top: var(--c-200);
-  --key-bottom: var(--c-200);
-}
 .err {
   min-width: 0;
   margin: 0;
