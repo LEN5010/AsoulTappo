@@ -369,6 +369,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | daily、left | 每天最多几注、我今天还能买几注 |
 | tickets | 我今天的号码，按购买顺序 |
 | last | 最近开过奖的一期，没有时为 null：`{day, number, salt, hash, drawnAt, sales, winners, each, mine, won}`。winners 是各档中奖注数 `{top, second, third}`，each 是各档每注奖金，mine 是我这期的号码 `[{number, tier, prize}]`（tier 为 `top`、`second`、`third` 或 null），won 是我这期一共中的碎片 |
+| history | 我最近 7 期的结果 `[{day, number, won}]`，只算我买过注、已开奖的期，从新到旧 |
 
 `POST /api/park/lottery`：`{numbers?: ["007", ...], random?: n}`，自选号码和机选注数可以同时给，合计至少 1 注。机选的号码互不相同，也不和我今天已有的、这次自选的重复。要么全部买成，要么一注都不买。返回状态、`park`、`lottery`（同上）和 `bought`（这次买到的号码，自选在前）。
 

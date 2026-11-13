@@ -1205,6 +1205,15 @@ class Store:
             row = self._db.execute("SELECT COUNT(*) AS n FROM lottery_tickets WHERE day = ?", (day,)).fetchone()
         return int(row["n"])
 
+    def lottery_history(self, pid: str, limit: int) -> list[dict[str, Any]]:
+        """The save's [limit] latest drawn days it had tickets in, newest first: {day, number, won}."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT d.day, d.number, SUM(t.prize) AS won FROM lottery_tickets t "
+                "JOIN lottery_days d ON d.day = t.day WHERE t.player_id = ? AND d.drawn IS NOT NULL "
+                "GROUP BY d.day ORDER BY d.day DESC LIMIT ?", (pid, limit)).fetchall()
+        return [{"day": r["day"], "number": r["number"], "won": int(r["won"])} for r in rows]
+
     def lottery_tickets(self, day: str, pid: str | None = None) -> list[dict[str, Any]]:
         """[day]'s tickets (of [pid] only when given), in buying order."""
         with self._lock:
