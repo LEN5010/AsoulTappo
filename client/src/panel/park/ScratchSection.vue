@@ -122,6 +122,45 @@ const resultText = computed(() => {
 });
 const resultAmount = computed(() => resultText.value.startsWith("+"));
 
+// ---- a win's amount counts up on the tag, longer the bigger the win; a plain refund or no motion shows it at once
+const ROLL_MS: Record<1 | 2 | 3, number> = { 1: 600, 2: 900, 3: 1300 };
+const resultTarget = computed<number | null>(() => {
+  const r = result.value;
+  if (!r) return null;
+  const p = prize.value;
+  if (p && p.shards && !p.item) return p.shards;
+  return r.kind === "shards" ? r.amount : null;
+});
+const rolled = ref(0);
+let rollFrame = 0;
+let rolledCard: number | undefined;
+watch(resultTarget, (to) => {
+  cancelAnimationFrame(rollFrame);
+  const id = card.value?.id;
+  // A new card starts from nothing; the same card (the jackpot's sum arriving) goes on from what it shows.
+  const base = id === rolledCard ? rolled.value : 0;
+  rolledCard = id;
+  if (to == null) {
+    rolled.value = 0;
+    return;
+  }
+  const lv = level.value;
+  if (calm.value || lv === 0 || lv === "plain" || base === to) {
+    rolled.value = to;
+    return;
+  }
+  const ms = ROLL_MS[lv];
+  const start = performance.now();
+  rolled.value = base;
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / ms);
+    rolled.value = Math.round(base + (to - base) * (1 - (1 - t) ** 3));
+    if (t < 1) rollFrame = requestAnimationFrame(step);
+  };
+  rollFrame = requestAnimationFrame(step);
+}, { immediate: true });
+onBeforeUnmount(() => cancelAnimationFrame(rollFrame));
+
 const cost = computed(() => table.value.coins);
 const short = computed(() => coins.value < cost.value);
 /** 阿草 touts while the stall is open, watches a card being scratched, and takes each result personally. */
@@ -586,7 +625,7 @@ watch(() => status.value?.player, (player, was) => {
               v-if="k === kind && result" :key="card?.id" class="ui-tag result"
               :class="[TAGS[String(level)], { word: !resultAmount, still: level === 0 || level === 'plain' }]" role="status"
             >
-              <Icon v-if="resultAmount" name="shard" :size="26" />{{ resultText }}
+              <Icon v-if="resultAmount" name="shard" :size="26" />{{ resultAmount ? `+${fmt(rolled)}` : resultText }}
             </b>
             <button
               v-if="k !== kind" type="button" class="swap" :aria-label="NAMES[k]" :disabled="!canSwap" @click="swap(k)"
@@ -1089,6 +1128,8 @@ watch(() => status.value?.player, (player, was) => {
   border-radius: var(--radius-m);
   box-shadow: 0 3px 8px -3px rgba(var(--c-900-rgb), 0.35);
   font: 800 36px/50px var(--font-latin);
+  /* Even digits, so the tag holds its width while the amount counts up. */
+  font-variant-numeric: tabular-nums;
   animation: tag-in 420ms var(--ease-pop) 120ms both;
 }
 /* Words, not an amount: set in the text face. */

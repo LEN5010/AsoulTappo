@@ -254,7 +254,10 @@ function lit(place: number): boolean {
             <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
             <span class="name"><i class="bar" :style="{ background: colorOf(m) }"></i>{{ nameOf(m) }}</span>
             <span class="tags">
-              <b v-if="race" class="mood" :class="race.setup.moods[m]">{{ MOOD_NAMES[race.setup.moods[m]] }}</b>
+              <b
+                v-if="race" class="mood" :class="race.setup.moods[m]" role="img"
+                :title="MOOD_NAMES[race.setup.moods[m]]" :aria-label="MOOD_NAMES[race.setup.moods[m]]"
+              ><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg></b>
               <small class="skill">{{ SKILL_NAMES[CFG.skills[m].kind] }}</small>
             </span>
             <span v-if="race" class="pool" aria-hidden="true"><i :style="{ width: `${share(m) * 100}%` }"></i></span>
@@ -311,7 +314,7 @@ function lit(place: number): boolean {
           <thead><tr><th>状态</th><th>效果</th></tr></thead>
           <tbody>
             <tr v-for="md in CFG.moods" :key="md.id">
-              <td><b class="mood" :class="md.id">{{ MOOD_NAMES[md.id] }}</b></td>
+              <td><span class="mood-row"><b class="mood" :class="md.id" aria-hidden="true"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg></b>{{ MOOD_NAMES[md.id] }}</span></td>
               <td>{{ moodLine(md) || "—" }}</td>
             </tr>
           </tbody>
@@ -435,13 +438,39 @@ function lit(place: number): boolean {
   font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
 }
-/* Today's mood: solid coral when hot, lighter steps down to grey for the sleepy and the slacking. */
+/*
+ * Today's mood as an arrow, from straight up (hot) through level (normal) to straight down (slacking); the tag goes
+ * from solid coral down to grey. The name is in the tooltip and the rules table.
+ */
 .mood {
-  padding: 3px 7px;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 18px;
   border-radius: 999px;
-  font: 700 var(--fs-caption)/1 var(--font);
   color: var(--ink);
   background: var(--c-100);
+}
+.mood svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mood.excited svg {
+  rotate: 45deg;
+}
+.mood.normal svg {
+  rotate: 90deg;
+}
+.mood.sleepy svg {
+  rotate: 135deg;
+}
+.mood.slacking svg {
+  rotate: 180deg;
 }
 .mood.hot {
   background: var(--c-500);
@@ -744,8 +773,11 @@ function lit(place: number): boolean {
   gap: 6px;
   font-weight: 700;
 }
-.rules .mood {
-  display: inline-block;
+.rules .mood-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
 }
 
 .calm .pool i {

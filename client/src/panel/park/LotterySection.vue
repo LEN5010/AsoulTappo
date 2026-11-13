@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4): the next top prize on a gold
-// plaque, three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
+// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4): the prize board (the top
+// prize on gold foil, then the second and the third), three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
 // check and the buy keys. There is no push: while the page is open the state loads every POLL_MS, and every few
 // seconds once the draw is due. The countdown and 阿草 go up in the park's coral band (band.ts).
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
@@ -309,6 +309,17 @@ watch(() => [state.value?.left, state.value?.open, coins.value, online.value], (
 // Picking stops with the sales: no key held, no caret.
 watch(keysOff, (off) => { if (off) at.value = null; });
 
+// ---- the prize board: top, second and third, each with the trailing digits it takes
+const tiers = computed(() => {
+  const s = state.value;
+  if (!s) return [];
+  return [
+    { id: "top", name: s.drawn ? "明日头奖" : "头奖", hit: 3, amount: s.prize.top, each: false },
+    { id: "second", name: "二等", hit: 2, amount: s.prize.second, each: false },
+    { id: "third", name: "三等", hit: 1, amount: s.prize.third, each: true },
+  ] as const;
+});
+
 // ---- the last draw
 const last = computed(() => state.value?.last ?? null);
 const winning = computed(() => (last.value ? last.value.number.split("") : []));
@@ -407,16 +418,21 @@ function onBarKey(e: KeyboardEvent) {
       <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
       <template v-if="state">
-        <div class="prizes">
-          <p class="plaque">
-            <span>{{ state.drawn ? "明日头奖" : "头奖" }}</span>
-            <b><Icon name="shard" :size="30" />{{ fmt(state.prize.top) }}</b>
-          </p>
-          <dl class="minor">
-            <div><dt>二等</dt><dd><Icon name="shard" :size="13" />{{ fmt(state.prize.second) }}</dd></div>
-            <div><dt>三等</dt><dd><Icon name="shard" :size="13" />{{ fmt(state.prize.third) }}<small>/注</small></dd></div>
-          </dl>
-        </div>
+        <!-- The prize board: three steps down from the top prize; the dots are the trailing digits a number must match. -->
+        <ol class="prizes">
+          <li
+            v-for="t in tiers" :key="t.id" class="tier" :class="t.id"
+            :aria-label="`${t.name} ${fmt(t.amount)}${t.each ? ' /注' : ''}`"
+          >
+            <span class="tier-head" aria-hidden="true">
+              <span class="tier-name">{{ t.name }}</span>
+              <span class="match"><i v-for="d in 3" :key="d" :class="{ on: d > 3 - t.hit }"></i></span>
+            </span>
+            <b class="amount" aria-hidden="true">
+              <Icon name="shard" :size="t.id === 'top' ? 26 : 16" />{{ fmt(t.amount) }}<small v-if="t.each">/注</small>
+            </b>
+          </li>
+        </ol>
 
         <!-- The keys take clicks and the wheel; the keyboard goes to the hidden field under them. -->
         <div v-if="!state.drawn" ref="keysEl" class="keys">
@@ -544,67 +560,94 @@ function onBarKey(e: KeyboardEvent) {
   margin: 0;
 }
 
-/* ---- prizes: the top one on gold foil, the other two small beside it */
+/*
+ * ---- the prize board: three plaques stepping down, gold foil for the top prize, then coral, then the paper tint.
+ * Plaques are read, not pressed: no edge under them. The dots are the trailing digits a number must match.
+ */
 .prizes {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 12px 28px;
-}
-.plaque {
-  display: inline-flex;
-  align-items: center;
-  gap: 16px;
-  height: 80px;
+  gap: 10px;
   margin: 0;
-  padding: 0 26px 0 22px;
-  box-sizing: border-box;
-  border-radius: var(--radius-m);
-  background: var(--grad-gold);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 0 rgba(var(--c-900-rgb), 0.14);
-  color: var(--ink);
+  padding: 0;
+  list-style: none;
 }
-.plaque > span {
-  font: 800 var(--fs-strong)/1 var(--font);
-}
-.plaque b {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font: 800 56px/1 var(--font-latin);
-}
-.minor {
+.tier {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0;
+  justify-content: flex-end;
+  gap: 6px;
+  box-sizing: border-box;
+  border-radius: var(--radius-m);
+  color: var(--ink);
 }
-.minor > div {
+.tier.top {
+  height: 96px;
+  padding: 12px 24px 14px 20px;
+  background: var(--grad-gold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 0 rgba(var(--c-900-rgb), 0.14);
+}
+.tier.second {
+  height: 76px;
+  padding: 10px 16px 12px 14px;
+  background: var(--c-300);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.tier.third {
+  height: 62px;
+  padding: 8px 14px 10px 12px;
+  background: var(--c-100);
+}
+.tier-head {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
-.minor dt {
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
+.tier-name {
+  font: 800 var(--fs-label)/1 var(--font);
+  white-space: nowrap;
 }
-.minor dd {
+.tier.top .tier-name {
+  font-size: var(--fs-body);
+}
+.match {
+  display: inline-flex;
+  gap: 3px;
+}
+.match i {
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--c-900-rgb), 0.35);
+}
+.match i.on {
+  border: 0;
+  background: var(--ink);
+}
+.amount {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin: 0;
-  font: 800 var(--fs-heading)/1 var(--font-latin);
-  color: var(--ink);
+  font: 800 22px/1 var(--font-latin);
+  white-space: nowrap;
 }
-.minor dd svg {
-  color: var(--c-600);
+.tier.top .amount {
+  gap: 4px;
+  font-size: 48px;
 }
-.minor small {
+.tier.second .amount {
+  font-size: 28px;
+}
+.tier:not(.top) .amount svg {
+  color: var(--c-700);
+}
+.amount small {
   margin-left: 3px;
   font: 600 var(--fs-caption) var(--font);
-  color: var(--ink-3);
+  color: var(--ink-2);
 }
 
 /* ---- the number keys: three tall keycaps; typing presses them */
@@ -945,12 +988,18 @@ function onBarKey(e: KeyboardEvent) {
   .stage {
     gap: 20px;
   }
-  .plaque {
-    height: 68px;
-    padding: 0 20px 0 18px;
+  .tier.top {
+    height: 84px;
+    padding: 10px 18px 12px 16px;
   }
-  .plaque b {
-    font-size: 46px;
+  .tier.top .amount {
+    font-size: 40px;
+  }
+  .tier.second {
+    height: 68px;
+  }
+  .tier.second .amount {
+    font-size: 24px;
   }
   .numkey {
     width: 64px;
@@ -998,27 +1047,30 @@ function onBarKey(e: KeyboardEvent) {
     gap: 16px 24px;
     padding: 16px 16px 18px;
   }
+  /* The board turns into three rows: name and dots on the left, the amount on the right. */
   .prizes {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .minor {
+    align-items: stretch;
     gap: 6px;
   }
-  .plaque {
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    gap: 6px;
+  .tier.top,
+  .tier.second,
+  .tier.third {
     height: auto;
-    padding: 10px 18px 12px 14px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 6px 12px;
   }
-  .plaque > span {
-    font-size: var(--fs-label);
+  .tier.top .amount {
+    font-size: 30px;
   }
-  .plaque b {
-    font-size: 40px;
+  .tier.second .amount {
+    font-size: 22px;
+  }
+  .tier.third .amount {
+    font-size: 18px;
   }
   .stubs,
   .stage > .ui-error {

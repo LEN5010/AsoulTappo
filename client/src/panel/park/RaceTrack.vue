@@ -55,6 +55,24 @@ const hops = computed(() => {
   }
   return out;
 });
+/**
+ * The number over the mover's head in the step under way: the squares it walks, then the boost or trip square's
+ * own push once it lands there. Keyed like the hops, so each one pops once.
+ */
+const roll = computed<{ m: string; key: string; text: string; down: boolean } | null>(() => {
+  const r = props.race;
+  const h = head.value;
+  if (!r?.moves || !h || h.current < 0) return null;
+  const s = r.moves[h.current];
+  if (!s) return null;
+  if (s.end !== undefined && h.part >= SQUARE_AT) {
+    const down = s.square === "trip";
+    return { m: s.m, key: `${h.current}b`, text: down ? `−${TRIP}` : `+${BOOST}`, down };
+  }
+  return { m: s.m, key: `${h.current}a`, text: `+${s.steps}`, down: false };
+});
+const rollMs = computed(() => Math.max(560, Math.round((props.race?.stepMs ?? 1300) * 0.7)));
+
 // Hops start only after the first paint, so opening the page mid-race does not make everyone jump at once.
 const ready = ref(false);
 onMounted(() => requestAnimationFrame(() => (ready.value = true)));
@@ -81,7 +99,7 @@ function tileStyle(s: number) {
 
 <template>
   <div class="track" :class="{ calm: reducedMotion }">
-    <div class="board" :style="{ '--cols': COLS, '--hop': `${hopMs}ms` }">
+    <div class="board" :style="{ '--cols': COLS, '--hop': `${hopMs}ms`, '--roll': `${rollMs}ms` }">
       <i class="turn left" aria-hidden="true"></i>
       <i class="turn right" aria-hidden="true"></i>
       <div
@@ -106,6 +124,9 @@ function tileStyle(s: number) {
         <div :key="ready ? hops[m] ?? 'rest' : 'rest'" class="body" :class="{ hop: ready && hops[m] && movers.includes(m) }">
           <TuanziToken :member="m" />
         </div>
+        <b
+          v-if="ready && roll?.m === m" :key="roll.key" class="roll" :class="{ down: roll.down }" aria-hidden="true"
+        >{{ roll.text }}</b>
       </div>
     </div>
   </div>
@@ -258,8 +279,37 @@ function tileStyle(s: number) {
   82% { transform: translateY(0) scale(1.14, 0.84); }
   100% { transform: translateY(0) scale(1, 1); }
 }
+/* The squares walked, popped over the head: the coral digits with the white outline of the desk's combo count. */
+.roll {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  font: 800 calc(var(--d) * 0.5) / 1 var(--font-latin);
+  color: var(--c-600);
+  -webkit-text-stroke: 4px var(--surface);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 6px rgba(var(--c-900-rgb), 0.25);
+  white-space: nowrap;
+  pointer-events: none;
+  translate: -50% 0;
+  animation: roll var(--roll) var(--ease-out) both;
+}
+.roll.down {
+  color: var(--ink-2);
+}
+@keyframes roll {
+  0% { opacity: 0; transform: translateY(10px) scale(0.6); }
+  22% { opacity: 1; transform: translateY(0) scale(1.15); }
+  40% { transform: translateY(-2px) scale(1); }
+  78% { opacity: 1; transform: translateY(-10px); }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
 .calm .tz {
   transition: none;
+}
+/* Without motion the number stands over the head for the step, still. */
+.calm .roll {
+  animation: none;
 }
 .calm .hop {
   animation: none;
