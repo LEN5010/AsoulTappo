@@ -227,6 +227,22 @@ CREATE TABLE IF NOT EXISTS park_news (
   detail TEXT NOT NULL DEFAULT '{}'
 );
 -- park: scratch tables
+-- Coin scratch cards (park_scratch.py), decided when bought and paid when revealed (revealed = 0 until then). tier:
+-- again, shards, emote, skin, big, jackpot or miss; shards, coins and item are what the reveal pays.
+CREATE TABLE IF NOT EXISTS park_scratch_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  cells TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  shards INTEGER NOT NULL DEFAULT 0,
+  coins INTEGER NOT NULL DEFAULT 0,
+  item TEXT NOT NULL DEFAULT '',
+  ts REAL NOT NULL,
+  revealed REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS park_scratch_cards_player ON park_scratch_cards (player_id, revealed);
 -- park: race tables
 -- park: lottery tables
 -- The daily lottery (lottery.py): one row per China day, made before the day's first ticket. `hash` is SHA-256 of
@@ -1168,6 +1184,43 @@ class Store:
             return n
 
     # --- park: scratch
+    def add_park_scratch(self, pid: str, day: str, kind: str, cells: str, tier: str, shards: int, coins: int,
+                         item: str, ts: float) -> int:
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO park_scratch_cards (player_id, day, kind, cells, tier, shards, coins, item, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (pid, day, kind, cells, tier, shards, coins, item, ts))
+            self._commit()
+            return int(cur.lastrowid)
+
+    def pending_park_scratch(self, pid: str) -> dict[str, Any] | None:
+        """The coin scratch card bought and not revealed yet; a save holds one at most."""
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_scratch_cards WHERE player_id=? AND revealed=0 "
+                                   "ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+        return dict(row) if row else None
+
+    def park_scratch_card(self, pid: str, card_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_scratch_cards WHERE id=? AND player_id=?",
+                                   (card_id, pid)).fetchone()
+        return dict(row) if row else None
+
+    def reveal_park_scratch(self, card_id: int, ts: float, **paid: Any) -> None:
+        """Marks the card revealed, with what it paid when that differs from the roll (an item owned by then)."""
+        cols = "".join(f", {k}=?" for k in paid)
+        with self._lock:
+            self._db.execute(f"UPDATE park_scratch_cards SET revealed=?{cols} WHERE id=?",
+                             (ts, *paid.values(), card_id))
+            self._commit()
+
+    def prune_park_scratch(self, before: float) -> int:
+        """Deletes revealed cards bought before [before]; a card still to be revealed is kept however old."""
+        with self._lock:
+            n = self._db.execute("DELETE FROM park_scratch_cards WHERE revealed > 0 AND ts < ?", (before,)).rowcount
+            self._commit()
+            return n
+
     # --- park: race
     # --- park: lottery
     def lottery_day(self, day: str) -> dict[str, Any] | None:

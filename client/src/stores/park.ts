@@ -7,7 +7,7 @@ import { toHttpBase } from "../net/protocol";
 import { isPanelWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { rememberNews, unseenNews } from "../parkNews";
-import { account, attempt, saveCode, status } from "./player";
+import { account, attempt, freshItems, reloadCollection, saveCode, status } from "./player";
 import { settings } from "./settings";
 
 export type ParkMethod = "GET" | "POST";
@@ -68,6 +68,12 @@ export async function parkRequest<T>(method: ParkMethod, path: string, body?: un
   if (!r) return { ok: false, error: { status: 0, code: "stale", message: "", detail: {} } };
   if (!r.ok) return { ok: false, error: toParkError(r.error) };
   apply(r.value);
+  // A prize that is an item (a scratch card's emote, skin or big hidden card) reaches the collection.
+  const item = (r.value as { prize?: { item?: unknown } } | null)?.prize?.item;
+  if (typeof item === "string" && item) {
+    freshItems.add(item);
+    await reloadCollection();
+  }
   return { ok: true, data: r.value };
 }
 
