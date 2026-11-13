@@ -183,12 +183,28 @@ export function openAboutLink(url: string): void {
   else window.open(url, "_blank", "noopener");
 }
 
+const describe = (reason: unknown) => (reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason));
+
+/**
+ * Puts text on the system clipboard. The desktop app writes it natively: WebKit refuses
+ * `navigator.clipboard` on the click that first focuses the panel's web view. A failure is logged and rethrown.
+ */
+export async function copyText(text: string): Promise<void> {
+  try {
+    if (!isTauri) return await navigator.clipboard.writeText(text);
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(text);
+  } catch (e) {
+    writeLog("panel", `copy failed: ${describe(e)}`);
+    throw e;
+  }
+}
+
 /**
  * What every window does first: uncaught errors go to the exportable log tagged [kind], and the webview's
  * own context menu (reload, inspect) is left out of the app; text fields keep theirs for paste.
  */
 export function prepareWindow(kind: string): void {
-  const describe = (reason: unknown) => (reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason));
   window.addEventListener("error", (e) => writeLog(kind, `error: ${e.message} at ${e.filename}:${e.lineno}:${e.colno}`));
   window.addEventListener("unhandledrejection", (e) => writeLog(kind, `unhandled rejection: ${describe(e.reason)}`));
   if (import.meta.env.DEV) return;

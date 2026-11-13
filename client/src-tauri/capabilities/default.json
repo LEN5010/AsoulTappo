@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Desk overlay and independent panel: events and panel window controls.",
+  "description": "Desk overlay and independent panel: events, panel window controls and copying text.",
   "windows": [
     "main",
     "panel"
@@ -13,6 +13,7 @@
     "core:window:allow-minimize",
     "updater:default",
     "process:allow-restart",
-    "process:allow-exit"
+    "process:allow-exit",
+    "clipboard-manager:allow-write-text"
   ]
 }

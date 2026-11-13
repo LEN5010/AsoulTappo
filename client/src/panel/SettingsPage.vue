@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { adminStatus, exportLog, isTauri, openAboutLink, setHotkey, setRunAsAdmin, type AdminStatus, type HotkeySlot } from "../composables/tauri";
+import { adminStatus, copyText, exportLog, isTauri, openAboutLink, setHotkey, setRunAsAdmin, type AdminStatus, type HotkeySlot } from "../composables/tauri";
 import { shortcutLabel, shortcutOf } from "../desktop/bossKey";
 import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
@@ -62,10 +62,10 @@ const legalOpen = ref<DocName | null>(null);
 /** Which contact was just copied. */
 const copied = ref<"" | "mail" | "group">("");
 async function copyMail() {
-  try { await navigator.clipboard.writeText(MAIL); copied.value = "mail"; } catch { openAboutLink(`mailto:${MAIL}`); }
+  try { await copyText(MAIL); copied.value = "mail"; } catch { openAboutLink(`mailto:${MAIL}`); }
 }
 async function copyGroup() {
-  try { await navigator.clipboard.writeText(GROUP); copied.value = "group"; } catch { /* the number stays on screen */ }
+  try { await copyText(GROUP); copied.value = "group"; } catch { /* the number stays on screen */ }
 }
 const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));

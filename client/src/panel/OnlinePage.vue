@@ -10,6 +10,7 @@ import {
   lastError, leaveRoom, loadPublicRooms, members, publicRooms, roomId, roomInfo, setRoomPublic, shownNick, youId,
 } from "../stores/room";
 import { tidyRemotes } from "../stores/desk";
+import { copyText } from "../composables/tauri";
 import { characterColor, skinTitle } from "../manifest";
 import { reducedMotion, skin } from "../stores/theme";
 import CharacterAvatar from "../ui/CharacterAvatar.vue";
@@ -203,7 +204,7 @@ watch(() => kicking.value && !members.has(kicking.value.id), (gone) => { if (gon
 
 async function copy() {
   try {
-    await navigator.clipboard.writeText(roomId.value);
+    await copyText(roomId.value);
     copied.value = true;
     setTimeout(() => (copied.value = false), 1200);
   } catch {
