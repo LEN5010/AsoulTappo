@@ -8,9 +8,9 @@ const income = (taps: number, today: number, perTap: number) =>
 
 describe("tap income", () => {
   it("follows the log curve and stops at the daily cap", () => {
-    expect(Math.round(tapShards(1000))).toBe(1664);
-    expect(Math.round(tapShards(10000))).toBe(5755);
-    expect(tapShards(80000)).toBe(10400);
+    expect(Math.round(tapShards(1000))).toBe(1490);
+    expect([10000, 20000, 30000].map((n) => Math.round(tapShards(n)))).toEqual([9000, 13000, 16000]);
+    expect(tapShards(1e7)).toBeLessThanOrEqual(18000);
   });
   it("reads today's progress and the next tap's value, and nothing from older servers", () => {
     expect(incomeTip(income(2820, 4556, 0.89))).toBe("今日已获得 4,556 · 敲一下 +0.89");
@@ -37,11 +37,11 @@ describe("shard pop", () => {
     const { popShards, shardCombo } = await fresh(0);
     const minute = Date.UTC(2026, 10, 10, 4, 0, 0);
     for (let i = 0; i < 10; i++) popShards(minute + i);
-    // 2400 × ln(1.01) = 23.9
-    expect(shardCombo.value?.count).toBe(23);
+    // 18000 × (1 − e^−x) at 10 taps = 16.0
+    expect(shardCombo.value?.count).toBe(16);
     for (let i = 10; i < 200; i++) popShards(minute + i);
-    // 2400 × ln(1.12) = 272.0
-    expect(shardCombo.value?.count).toBe(271);
+    // At 120 taps: 190.6
+    expect(shardCombo.value?.count).toBe(190);
   });
 
   it("starts from the server's count of today's taps", async () => {
@@ -56,8 +56,8 @@ describe("shard pop", () => {
     player.status.value = income(20, 66, 3.24);
     await nextTick();
     popShards(Date.now());
-    // 2400 × (ln 1.021 − ln 1.020) = 2.4
-    expect(shardCombo.value?.count).toBe(2);
+    // The 21st tap of the day pays about 1.6.
+    expect(shardCombo.value?.count).toBe(1);
   });
 
   it("skips a count the server sent for the day before", async () => {
@@ -69,7 +69,7 @@ describe("shard pop", () => {
     player.status.value = { income: { day: "2026-11-10", today: 1653, cap: 10400, taps: 800, perTap: 1.556, multiplier: 1, perMinute: 93.3 } } as PlayerStatus;
     await nextTick();
     for (let i = 0; i < 10; i++) popShards(Date.now() + i);
-    expect(shardCombo.value?.count).toBe(23);
+    expect(shardCombo.value?.count).toBe(16);
   });
 
   it("shows nothing for a server without tap income", async () => {

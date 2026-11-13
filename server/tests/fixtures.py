@@ -38,7 +38,7 @@ def tiny_manifest() -> Manifest:
              "rarity": "epic", "img": "bundle:x"},
         ],
         "starter": {"emotes": ["e.01"], "theme": "x"},
-        "economy": {"income": {"shardScale": 2800, "tapScale": 1000, "dailyCap": 10400, "tapsPerMinute": 120},
+        "economy": {"income": {"dailyCap": 18000, "curve": [0.0890449, -0.00269613, 0.0000723108], "tapsPerMinute": 120},
                     "resonance": {"cost": 160, "rates": {"legendary": .5, "skin": .5, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 85.5},
                                   "pity": {"legendary": 400, "skin": 200},
                                   "commonKindWeights": {"card": 45, "emote": 40.5},

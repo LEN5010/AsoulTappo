@@ -285,7 +285,7 @@ def test_anomalies_list_flagged_taps_and_earned_shards(admin_env):
     g.store.add_ledger("guest00000000001", day, "admin", 50000)
     g.store.add_ledger("guest00000000002", day, "tap", 900, 400000)
     body = c.get("/admin/anomalies", headers=KEY).json()
-    assert body["day"] == day and body["tapCap"] == 10400
+    assert body["day"] == day and body["tapCap"] == 18000
     assert [(r["player"], r["userId"], r["serverCooldowns"], r["dropped"]) for r in body["taps"]] == [
         (pid, "u-alice", 2, 40), ("guest00000000001", None, 0, 0)]
     assert body["taps"][0]["credited"] == 30 and body["taps"][0]["tapShards"] > 0

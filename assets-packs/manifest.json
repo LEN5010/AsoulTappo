@@ -5042,9 +5042,12 @@
  ],
  "economy": {
   "income": {
-   "shardScale": 2400,
-   "tapScale": 1000,
-   "dailyCap": 10400,
+   "dailyCap": 18000,
+   "curve": [
+    0.0890449,
+    -0.00269613,
+    7.23108e-05
+   ],
    "tapsPerMinute": 120
   },
   "resonance": {

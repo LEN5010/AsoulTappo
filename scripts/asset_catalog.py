@@ -287,9 +287,10 @@ SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for me
     skin("嘉然", "2025生日"),
     skin("乃琳", "2025生日"),
 ] + [skin(member, "冬日奇迹", "1.2.0") for member in ("嘉然", "乃琳", "贝拉")]
-# Shards come from taps only: shardScale × ln(1 + taps / tapScale) over one China day, at most dailyCap;
+# Shards come from taps only: dailyCap × (1 − e^−x) over one China day, x = a·m + b·m² + c·m³ for m thousand taps
+# (curve = [a, b, c]: 10 000 taps pay 9000, 20 000 pay 13 000, 30 000 pay 16 000, nearing 18 000);
 # a minute pays for its first tapsPerMinute taps.
-INCOME = {"shardScale": 2400, "tapScale": 1000, "dailyCap": 10400, "tapsPerMinute": 120}
+INCOME = {"dailyCap": 18000, "curve": [0.0890449, -0.00269613, 0.0000723108], "tapsPerMinute": 120}
 RESONANCE = {"cost": 160, "rates": {"legendary": 0.1, "skin": 0.2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2},
              "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 41.2},
              # Shards a duplicate turns into at once: emotes, and cards by tier (big hidden cards never repeat).

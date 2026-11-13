@@ -6,6 +6,7 @@ import json
 import math
 import time
 from datetime import date
+from functools import cached_property
 from typing import Any, Callable, Literal
 
 from . import cards as cardlogic
@@ -19,6 +20,8 @@ from .tracking import Tracker
 TOKEN_MIN, TOKEN_MAX = 16, 128
 MAX_REPORT_TAPS = 5000
 MAX_ELAPSED = 120.0
+# Below this many shards a tap, the day's tap income counts as full: clients show it as such.
+TAP_RATE_FULL = 0.01
 MAX_FAVORITES = 8
 # A tap session silent this long is pruned at startup; if it reports again it starts a new row.
 SESSION_DAYS = 30
@@ -278,16 +281,37 @@ class Game:
             st.mark_active(pid, day_of(now))
         return self.status(token)
 
+    def _tap_exponent(self, taps: float) -> tuple[float, float]:
+        """The curve's exponent at [taps] and its slope per tap: a·m + b·m² + c·m³ with m in thousands of taps."""
+        a, b, c = self.manifest.income["curve"]
+        m = taps / 1000
+        return a * m + b * m * m + c * m ** 3, (a + 2 * b * m + 3 * c * m * m) / 1000
+
     def _tap_shards(self, taps: float) -> float:
-        """Shards one China day's paid taps earn in all: a log curve that stops at the daily cap."""
-        inc = self.manifest.income
-        return min(inc["shardScale"] * math.log1p(taps / inc["tapScale"]), inc["dailyCap"])
+        """Shards one China day's paid taps earn in all: dailyCap × (1 − e^−x), which nears the cap and never
+        passes it."""
+        return -self.manifest.income["dailyCap"] * math.expm1(-self._tap_exponent(taps)[0])
+
+    def _tap_rate(self, taps: float) -> float:
+        """What the next paid tap earns after [taps]; 0 below TAP_RATE_FULL, where the day counts as full."""
+        x, slope = self._tap_exponent(taps)
+        rate = self.manifest.income["dailyCap"] * math.exp(-x) * slope
+        return rate if rate >= TAP_RATE_FULL else 0.0
+
+    @cached_property
+    def tap_full_shards(self) -> int:
+        """Tap shards of a day whose next tap pays under TAP_RATE_FULL (the admin pages' "at the cap")."""
+        lo, hi = 0.0, 1_000_000.0
+        while hi - lo > 1:
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if self._tap_rate(mid) > 0 else (lo, mid)
+        return int(self._tap_shards(hi))
 
     def _income(self, p, day: str) -> dict[str, Any]:
         inc = self.manifest.income
         taps = p["day_taps"] if p["tap_day"] == day else 0
         today = self._tap_shards(taps)
-        per_tap = inc["shardScale"] / (inc["tapScale"] + taps) if today < inc["dailyCap"] else 0.0
+        per_tap = self._tap_rate(taps)
         return {"day": day, "today": int(today + 1e-9), "cap": inc["dailyCap"], "taps": taps, "perTap": round(per_tap, 3),
                 # Shown by 1.0 clients, which predate the tap curve: no multiplier, and what a minute of
                 # typing at 60 taps pays from here.
@@ -760,6 +784,7 @@ class Game:
         now = self.now()
         labels = [day_of(now - i * 86400) for i in range(days - 1, -1, -1)]
         cap = self.manifest.income["dailyCap"]
+        full = self.tap_full_shards
         by_day: dict[str, list[dict[str, Any]]] = {d: [] for d in labels}
         for r in self.store.ledger_since(labels[0]):
             if r["day"] not in by_day:
@@ -788,7 +813,7 @@ class Game:
                 "sources": sources, "draws": sources.get("draw", {}).get("count", 0),
                 "taps": {"players": len(counts), "p50": _nearest_rank(counts, 50),
                          "p90": _nearest_rank(counts, 90), "max": counts[-1] if counts else 0},
-                "capped": sum(1 for r in taps if r["amount"] >= cap - 1)})
+                "capped": sum(1 for r in taps if r["amount"] >= full - 1)})
         return {"scope": scope, "newDays": new_days, "cap": cap, "series": series}
 
     def admin_unlink(self, main_user_id: str, actor: str = "", reason: str = "") -> None:

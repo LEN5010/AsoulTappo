@@ -24,7 +24,7 @@ def test_new_player_and_online_time_pays_nothing():
         r = g.presence(TOKEN, SESSION)
         clock.t += 20
     assert r["shards"] == 1600
-    assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 10400, "taps": 0, "perTap": 2.4, "multiplier": 1, "perMinute": 144.0}
+    assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 18000, "taps": 0, "perTap": 1.603, "multiplier": 1, "perMinute": 96.2}
     # 552 from resonance and the 20 scratch emotes
     assert r["totals"]["items"] == 572
 
@@ -33,35 +33,44 @@ def test_taps_pay_along_the_log_curve():
     g, clock = game()
     clock.t += 20
     r = g.report_activity(TOKEN, 100)
-    # 2400 * ln(1 + 100 / 1000) = 228.7
-    assert r["shards"] == 1828
-    assert r["income"] == {"day": day_of(clock.t), "today": 228, "cap": 10400, "taps": 100, "perTap": 2.182, "multiplier": 1, "perMinute": 130.9}
+    # 18000 * (1 - e^-x) at 100 taps = 159.1
+    assert r["shards"] == 1759
+    assert r["income"] == {"day": day_of(clock.t), "today": 159, "cap": 18000, "taps": 100, "perTap": 1.579, "multiplier": 1, "perMinute": 94.7}
+
+
+def test_the_curve_meets_its_marks_and_nears_the_cap():
+    g, _ = game()
+    assert [round(g._tap_shards(n)) for n in (10000, 20000, 30000)] == [9000, 13000, 16000]
+    rates = [g._tap_rate(n) for n in range(0, 60000, 100)]
+    assert all(a >= b for a, b in zip(rates, rates[1:])) and rates[0] < 1.61
+    assert g._tap_shards(10**7) <= 18000 and g.tap_full_shards == 17971
 
 
 def test_a_minute_pays_for_its_first_taps_only():
     g, clock = game()
     clock.t += 20
     r = g.report_activity(TOKEN, 200)
-    # Only 120 of the 200 pay: 2400 * ln(1.12) = 272.0.
-    assert r["totals"]["taps"] == 200 and r["income"]["taps"] == 120 and r["shards"] == 1871
+    # Only 120 of the 200 pay: 190.6.
+    assert r["totals"]["taps"] == 200 and r["income"]["taps"] == 120 and r["shards"] == 1790
     r = g.report_activity(TOKEN, 0)
     clock.t += 60
     r = g.report_activity(TOKEN, 100)
-    # A new minute: 220 paid taps, 2400 * ln(1.22) = 477.2, the fraction carried between reports.
-    assert r["income"]["taps"] == 220 and r["shards"] == 2077
+    # A new minute: 220 paid taps, 346.9, the fraction carried between reports.
+    assert r["income"]["taps"] == 220 and r["shards"] == 1946
 
 
 def test_the_day_stops_at_the_cap_and_starts_over_the_next_day():
     g, clock = game()
     pid = player_id_for(TOKEN)
-    g.store.update_player(pid, tap_day=day_of(clock.t), day_taps=80000)
+    g.store.update_player(pid, tap_day=day_of(clock.t), day_taps=60000)
     clock.t += 20
     r = g.report_activity(TOKEN, 100)
     assert r["shards"] == 1600
-    assert r["income"]["today"] == 10400 and r["income"]["perTap"] == 0 and r["income"]["perMinute"] == 0
+    # Past about 49 200 taps a tap pays under 0.01: the day counts as full, shards stay just under the cap.
+    assert r["income"]["today"] == 17999 and r["income"]["perTap"] == 0 and r["income"]["perMinute"] == 0
     clock.t += 86400
     r = g.report_activity(TOKEN, 100)
-    assert r["shards"] == 1828 and r["income"]["taps"] == 100
+    assert r["shards"] == 1759 and r["income"]["taps"] == 100
 
 
 def test_fractional_shards_do_not_depend_on_batch_size():
@@ -72,7 +81,7 @@ def test_fractional_shards_do_not_depend_on_batch_size():
     for _ in range(100):
         split_clock.t += 0.5
         r = split.report_activity(TOKEN, 1)
-    assert r["shards"] == expected == 1828
+    assert r["shards"] == expected == 1759
 
 
 def test_simultaneous_pities_then_independent_resets():

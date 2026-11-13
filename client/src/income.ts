@@ -1,12 +1,13 @@
-// Tap income (protocol/PROTOCOL.md): shards follow a log curve over the taps a China day counts,
-// and stop at a daily cap. The server pays; the client only shows it.
+// Tap income (protocol/PROTOCOL.md): shards follow a curve over the taps a China day counts that nears
+// the daily cap and never passes it. The server pays; the client only shows it.
 import { manifest } from "./manifest";
 import type { PlayerStatus } from "./net/api";
 
 /** Shards `taps` counted taps earn over one day. */
 export function tapShards(taps: number): number {
-  const { shardScale, tapScale, dailyCap } = manifest.economy.income;
-  return Math.min(shardScale * Math.log1p(taps / tapScale), dailyCap);
+  const { dailyCap, curve: [a, b, c] } = manifest.economy.income;
+  const m = taps / 1000;
+  return -dailyCap * Math.expm1(-(a * m + b * m * m + c * m * m * m));
 }
 
 export interface TodayIncome { today: number; cap: number; perTap: number }

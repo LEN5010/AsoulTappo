@@ -90,8 +90,9 @@ export interface Manifest {
   /** `name` is the id (folder, save item, room field); `title` replaces it on screen; `since` is the release that ships it. */
   skins: { name: string; member: string; title?: string; since?: string }[];
   economy: {
-    /** Shards per day: shardScale × ln(1 + taps / tapScale), at most dailyCap; a minute counts tapsPerMinute taps at most. */
-    income: { shardScale: number; tapScale: number; dailyCap: number; tapsPerMinute: number };
+    /** Shards per day: dailyCap × (1 − e^−x), x = a·m + b·m² + c·m³ for m thousand taps and curve = [a, b, c];
+     * a minute counts tapsPerMinute taps at most. */
+    income: { dailyCap: number; curve: [number, number, number]; tapsPerMinute: number };
     resonance: {
       cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number };
       /** Shards a repeat turns into: every emote, and cards by tier. */

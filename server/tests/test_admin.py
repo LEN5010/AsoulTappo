@@ -186,19 +186,19 @@ def test_economy_series_sums_sources_taps_and_capped_saves(admin_env):
     g.store.get_player(old, t - 10 * 86400)
     g.store.get_player(new, t - 86400)
     g.store.get_player(fresh, t)
-    for pid, source, amount, count in ((old, "tap", 10400, 50000), (new, "tap", 10399, 30000),
+    for pid, source, amount, count in ((old, "tap", 17990, 50000), (new, "tap", 17970, 30000),
                                        (fresh, "tap", 100, 10), (old, "draw", -1600, 10), (new, "admin", -5, 1)):
         g.store.add_ledger(pid, today, source, amount, count)
 
     body = c.get("/admin/economy?days=3", headers=KEY).json()
-    assert (body["scope"], body["newDays"], body["cap"]) == ("all", 7, 10400)
+    assert (body["scope"], body["newDays"], body["cap"]) == ("all", 7, 18000)
     assert [d["day"] for d in body["series"]] == [before, yesterday, today]
     assert body["series"][0] == {"day": before, "players": 0, "issued": 0, "spent": 0, "sources": {}, "draws": 0,
                                  "taps": {"players": 0, "p50": 0, "p90": 0, "max": 0}, "capped": 0}
     assert body["series"][1]["players"] == 1 and body["series"][1]["sources"] == {"starter": {"amount": 1600, "count": 1}}
     row = body["series"][2]
-    assert row["players"] == 3 and row["issued"] == 10400 + 10399 + 100 + 1600 and row["spent"] == 1605
-    assert row["draws"] == 10 and row["sources"]["tap"] == {"amount": 20899, "count": 80010}
+    assert row["players"] == 3 and row["issued"] == 17990 + 17970 + 100 + 1600 and row["spent"] == 1605
+    assert row["draws"] == 10 and row["sources"]["tap"] == {"amount": 36060, "count": 80010}
     # nearest rank over [10, 30000, 50000]; 10399 is one shard short of the cap and still counts
     assert row["taps"] == {"players": 3, "p50": 30000, "p90": 50000, "max": 50000} and row["capped"] == 2
 
