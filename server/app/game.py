@@ -152,7 +152,8 @@ class Game:
                     st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
                     p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
                     st.add_tap_flags(today, pid, server=1)
-                st.save_activity_sequence(pid, session, sequence, now, fast_since)
+                rate, steady, odd, near = self._steady_run(st, p, pid, today, now, last, taps)
+                st.save_activity_sequence(pid, session, sequence, now, fast_since, rate, steady, odd, near)
             # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
             if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
                 # The client names the seconds left on every report of its cooldown; only a new one is counted.
@@ -207,6 +208,47 @@ class Game:
         # Taps for the room's cheer round (popped by the server before answering): those that paid shards.
         out["cheerTaps"] = paid_taps if p["taps_total"] + credited >= CHEER_MIN_TAPS else 0
         return out
+
+    def _steady_run(self, st: Store, p: dict[str, Any], pid: str, today: str, now: float,
+                    last: dict[str, float], taps: int) -> tuple[float, int, int, int]:
+        """Takes one batch into its session's steady run (see DropConfig) and starts the save's steady-rate cooldown
+        when the run is long enough. Measured on what the session sent, so a run continues through a cooldown when a
+        client keeps sending. Returns the session's run after this batch: mean rate, batches, whether the last batch
+        was an odd one left out, batches in a row at the rate caught today."""
+        cfg = self.cfg
+        rate, steady, odd, near = last["rate"], last["steady"], last["odd"], last["near"]
+        elapsed = now - last["last_at"] if last["last_at"] > 0 else 0.0
+        if elapsed < cfg.steady_min_elapsed:
+            return rate, steady, odd, near
+
+        def keeps(ref: float) -> bool:
+            return ref > 0 and abs(taps - ref * elapsed) <= cfg.steady_tolerance * ref * elapsed + cfg.steady_slack_taps
+
+        measured = taps / elapsed
+        if measured < cfg.steady_min_rate:
+            return 0.0, 0, 0, 0
+        if keeps(rate):
+            steady, odd = steady + 1, 0
+            rate += (measured - rate) / steady
+        elif steady >= 2 and not odd:
+            # One odd batch (a pause, a click of the user's own) is left out; a second in a row ends the run.
+            odd = 1
+        else:
+            rate, steady, odd = measured, 1, 0
+        caught = p["steady_rate"] if p["steady_day"] == today else 0.0
+        near = near + 1 if keeps(caught) else 0
+        if steady < cfg.steady_reports and near < cfg.steady_repeat_reports:
+            return rate, steady, odd, near
+        hits = (p["steady_hits"] if p["steady_day"] == today else 0) + 1
+        until = now + min(cfg.steady_cooldown_sec * 2 ** (hits - 1), cfg.steady_cooldown_max_sec)
+        p["tap_cooldown_until"] = max(p["tap_cooldown_until"], until)
+        p["steady_day"], p["steady_hits"] = today, hits
+        if steady >= cfg.steady_reports:
+            p["steady_rate"] = rate
+        st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"], steady_day=today, steady_hits=hits,
+                         steady_rate=p["steady_rate"])
+        st.add_tap_flags(today, pid, steady=1)
+        return 0.0, 0, 0, 0
 
     def cheer_reward(self, pids: list[str], each: int) -> dict[str, int]:
         """Pays a finished cheer round: [each] shards to each save, less what would pass CHEER_DAILY_CAP today.

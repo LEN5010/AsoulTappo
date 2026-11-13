@@ -140,13 +140,14 @@ def online(game: Game, days: int, now_numbers: dict[str, int]) -> dict[str, Any]
 
 def anomalies(game: Game, day: str | None) -> dict[str, Any]:
     """Saves of [day] (default today) whose taps look automated: those that set off a cooldown or had taps dropped,
-    and those with the most credited taps (a steady auto-clicker below the cooldown rate shows only there). Also
-    the saves that gained the most shards by playing that day."""
+    and those with the most credited taps (an auto-clicker that varies its rate and stays below the cooldown rate
+    shows only there). Also the saves that gained the most shards by playing that day."""
     day = day or day_of(game.now())
 
     def tap_row(r: dict[str, Any]) -> dict[str, Any]:
         return {"player": r["player_id"], "userId": r["main_user_id"], "credited": r["credited"], "dropped": r["dropped"],
-                "serverCooldowns": r["server_cooldowns"], "clientCooldowns": r["client_cooldowns"], "tapShards": r["shards"]}
+                "serverCooldowns": r["server_cooldowns"], "clientCooldowns": r["client_cooldowns"],
+                "steadyCooldowns": r["steady"], "tapShards": r["shards"]}
 
     taps = [tap_row(r) for r in game.store.tap_flags_of(day, ANOMALY_LIMIT)]
     heavy = [tap_row(r) for r in game.store.top_tappers(day, HEAVY_LIMIT)]

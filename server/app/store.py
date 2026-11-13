@@ -181,13 +181,15 @@ CREATE TABLE IF NOT EXISTS daily_counts (
   PRIMARY KEY (day, key)
 );
 -- Per save and China day: reported taps that were not credited, cooldowns the server started for input too fast
--- for a hand, and cooldowns the client's own guard started.
+-- for a hand, cooldowns the client's own guard started, and cooldowns the server started for input at one steady
+-- rate for too long.
 CREATE TABLE IF NOT EXISTS tap_flags (
   day TEXT NOT NULL,
   player_id TEXT NOT NULL,
   dropped INTEGER NOT NULL DEFAULT 0,
   server_cooldowns INTEGER NOT NULL DEFAULT 0,
   client_cooldowns INTEGER NOT NULL DEFAULT 0,
+  steady INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, player_id)
 );
 -- What the operator changed through /admin: who (the main site's admin), on which save, what (JSON) and why.
@@ -212,7 +214,8 @@ COUNT_CACHE_LIMIT = 20000
 PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
-    "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity"
+    "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
+    "steady_day steady_hits steady_rate"
 ).split()
 
 
@@ -297,10 +300,21 @@ class Store:
             # The client version the save last ran ("other" when not a version).
             if "client_version" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN client_version TEXT NOT NULL DEFAULT ''")
+            # The China day of the save's last steady-rate cooldown, how many it had that day, and the rate caught.
+            if "steady_day" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN steady_day TEXT NOT NULL DEFAULT ''")
+            for field, kind in (("steady_hits", "INTEGER"), ("steady_rate", "REAL")):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+            if "steady" not in self._columns("tap_flags"):
+                self._db.execute("ALTER TABLE tap_flags ADD COLUMN steady INTEGER NOT NULL DEFAULT 0")
             sessions = self._columns("activity_sessions")
-            for field in ("last_at", "fast_since"):
+            # The session's steady run: its mean rate, its batches, whether its last batch was an odd one left out,
+            # and batches in a row at the rate caught today.
+            for field, kind in (("last_at", "REAL"), ("fast_since", "REAL"), ("rate", "REAL"), ("steady", "INTEGER"),
+                                ("odd", "INTEGER"), ("near", "INTEGER")):
                 if field not in sessions:
-                    self._db.execute(f"ALTER TABLE activity_sessions ADD COLUMN {field} REAL NOT NULL DEFAULT 0")
+                    self._db.execute(f"ALTER TABLE activity_sessions ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(
@@ -358,21 +372,26 @@ class Store:
             self._commit()
 
     def activity_session(self, pid: str, session: str) -> dict[str, float]:
-        """The session's last batch: its sequence, when it came, and since when it has been too fast."""
+        """The session's last batch: its sequence, when it came, since when it has been too fast, and its steady
+        run (mean rate, batches, whether the last batch was left out, batches in a row at the rate caught today)."""
         with self._lock:
             row = self._db.execute(
-                "SELECT sequence, last_at, fast_since FROM activity_sessions WHERE player_id=? AND session=?",
-                (pid, session)).fetchone()
-            return dict(row) if row else {"sequence": 0, "last_at": 0.0, "fast_since": 0.0}
+                "SELECT sequence, last_at, fast_since, rate, steady, odd, near FROM activity_sessions "
+                "WHERE player_id=? AND session=?", (pid, session)).fetchone()
+            return dict(row) if row else {"sequence": 0, "last_at": 0.0, "fast_since": 0.0, "rate": 0.0,
+                                          "steady": 0, "odd": 0, "near": 0}
 
-    def save_activity_sequence(self, pid: str, session: str, sequence: int,
-                               last_at: float = 0.0, fast_since: float = 0.0) -> None:
+    def save_activity_sequence(self, pid: str, session: str, sequence: int, last_at: float = 0.0,
+                               fast_since: float = 0.0, rate: float = 0.0, steady: int = 0, odd: int = 0,
+                               near: int = 0) -> None:
         with self._lock:
             self._db.execute(
-                "INSERT INTO activity_sessions (player_id, session, sequence, last_at, fast_since) "
-                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(player_id, session) DO UPDATE SET "
-                "sequence=excluded.sequence, last_at=excluded.last_at, fast_since=excluded.fast_since",
-                (pid, session, sequence, last_at, fast_since))
+                "INSERT INTO activity_sessions "
+                "(player_id, session, sequence, last_at, fast_since, rate, steady, odd, near) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(player_id, session) DO UPDATE SET "
+                "sequence=excluded.sequence, last_at=excluded.last_at, fast_since=excluded.fast_since, "
+                "rate=excluded.rate, steady=excluded.steady, odd=excluded.odd, near=excluded.near",
+                (pid, session, sequence, last_at, fast_since, rate, steady, odd, near))
             self._commit()
 
     def prune_activity_sessions(self, before: float) -> int:
@@ -868,17 +887,19 @@ class Store:
         return [{"room": r["room"], "public": bool(r["public"]), "host": r["host"], "banned": json.loads(r["banned"]),
                  "saved": r["saved"]} for r in rows]
 
-    def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0) -> None:
+    def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0,
+                      steady: int = 0) -> None:
         """Adds to the save's flags of [day]; the caller's transaction, if any, keeps it with the change."""
-        if not (dropped or server or client):
+        if not (dropped or server or client or steady):
             return
         with self._lock:
             self._db.execute(
-                "INSERT INTO tap_flags (day, player_id, dropped, server_cooldowns, client_cooldowns) VALUES (?,?,?,?,?) "
+                "INSERT INTO tap_flags (day, player_id, dropped, server_cooldowns, client_cooldowns, steady) "
+                "VALUES (?,?,?,?,?,?) "
                 "ON CONFLICT(day, player_id) DO UPDATE SET dropped = dropped + excluded.dropped, "
                 "server_cooldowns = server_cooldowns + excluded.server_cooldowns, "
-                "client_cooldowns = client_cooldowns + excluded.client_cooldowns",
-                (day, pid, dropped, server, client))
+                "client_cooldowns = client_cooldowns + excluded.client_cooldowns, steady = steady + excluded.steady",
+                (day, pid, dropped, server, client, steady))
             self._commit()
 
     def add_admin_log(self, ts: float, actor: str, action: str, pid: str = "", detail: str = "",
@@ -963,14 +984,15 @@ class Store:
         return [dict(r) for r in rows]
 
     def tap_flags_of(self, day: str, limit: int) -> list[dict[str, Any]]:
-        """The day's flagged saves, most server cooldowns first, with their credited taps and tap shards."""
+        """The day's flagged saves, most steady-rate then fast-input cooldowns first, with their credited taps and
+        tap shards."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT f.player_id, f.dropped, f.server_cooldowns, f.client_cooldowns, "
+                "SELECT f.player_id, f.dropped, f.server_cooldowns, f.client_cooldowns, f.steady, "
                 "COALESCE(g.count, 0) AS credited, COALESCE(g.amount, 0) AS shards, l.main_user_id "
                 "FROM tap_flags f LEFT JOIN shard_ledger g ON g.day = f.day AND g.player_id = f.player_id "
                 "AND g.source = 'tap' LEFT JOIN account_links l ON l.player_id = f.player_id WHERE f.day = ? "
-                "ORDER BY f.server_cooldowns DESC, f.dropped DESC LIMIT ?", (day, limit)).fetchall()
+                "ORDER BY f.steady DESC, f.server_cooldowns DESC, f.dropped DESC LIMIT ?", (day, limit)).fetchall()
         return [dict(r) for r in rows]
 
     def top_tappers(self, day: str, limit: int) -> list[dict[str, Any]]:
@@ -979,7 +1001,7 @@ class Store:
             rows = self._db.execute(
                 "SELECT g.player_id, g.count AS credited, g.amount AS shards, l.main_user_id, "
                 "COALESCE(f.dropped, 0) AS dropped, COALESCE(f.server_cooldowns, 0) AS server_cooldowns, "
-                "COALESCE(f.client_cooldowns, 0) AS client_cooldowns FROM shard_ledger g "
+                "COALESCE(f.client_cooldowns, 0) AS client_cooldowns, COALESCE(f.steady, 0) AS steady FROM shard_ledger g "
                 "LEFT JOIN tap_flags f ON f.day = g.day AND f.player_id = g.player_id "
                 "LEFT JOIN account_links l ON l.player_id = g.player_id "
                 "WHERE g.day = ? AND g.source = 'tap' ORDER BY g.count DESC LIMIT ?", (day, limit)).fetchall()

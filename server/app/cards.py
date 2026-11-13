@@ -18,6 +18,21 @@ class DropConfig:
     fast_taps_per_sec: int = 10
     fast_streak_sec: float = 30.0
     tap_cooldown_sec: float = 60.0
+    # A session whose batches keep one rate (a hand never does for long) sits out a longer cooldown. A batch keeps
+    # the run's rate when its taps are within steady_tolerance of the run's mean rate times its interval, plus
+    # steady_slack_taps for whole-tap rounding. Slower runs and batches closer together are not judged.
+    steady_min_rate: float = 0.2
+    steady_tolerance: float = 0.08
+    steady_slack_taps: float = 1.0
+    steady_min_elapsed: float = 5.0
+    # Batches in a run that start the cooldown: about 10 minutes at the client's 20-second batches.
+    steady_reports: int = 30
+    # After a cooldown the client sends nothing, so a run at the rate already caught that China day starts
+    # the next one sooner (about 2 minutes).
+    steady_repeat_reports: int = 6
+    # The first such cooldown of a China day; each further one that day doubles, up to the cap.
+    steady_cooldown_sec: float = 600.0
+    steady_cooldown_max_sec: float = 14400.0
 
 
 def roll_tier(rates, available, pity, hard_pity, rng: Rng) -> str:

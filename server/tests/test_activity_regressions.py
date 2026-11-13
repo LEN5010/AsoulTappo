@@ -188,3 +188,99 @@ def test_sessions_silent_for_thirty_days_are_pruned():
     # A pruned session that reports again starts over.
     assert game.report_activity(TOKEN, 0, "old", 1)["credited"] == 0
     assert game.store.activity_session(pid, "old")["sequence"] == 1
+
+
+# ------------------------------------------------------------------ steady rate
+def clicker(game, clock, taps, batches, session="clicker", start=1, every=20.0):
+    """Sends [batches] batches every [every] seconds; [taps] is a count or a function of the batch index."""
+    result = None
+    for i in range(batches):
+        clock.t += every
+        n = taps(i) if callable(taps) else taps
+        result = game.report_activity(TOKEN, n, session, start + i)
+    return result
+
+
+def test_a_steady_rate_for_ten_minutes_sits_out_a_cooldown():
+    game, clock = make()
+    pid = game.status(TOKEN)["player"]
+    # 8 taps a second, under the fast-input line, as one auto-clicker on the live server ran. A new session's first
+    # batch only marks the time; the 30 after it are the run, and the last of them is dropped.
+    result = clicker(game, clock, 160, 30)
+    assert result["tapCooldown"] == 0
+    result = clicker(game, clock, 160, 1, start=31)
+    assert result["credited"] == 0 and result["tapCooldown"] == 600
+    assert result["totals"]["taps"] == 160 * 30
+    flags = game.store.tap_flags_of(day_of_clock(clock), 10)
+    assert [(r["player_id"], r["steady"], r["server_cooldowns"]) for r in flags] == [(pid, 1, 0)]
+    # Inside the cooldown nothing counts; after it, a hand counts again.
+    clock.t += 300
+    assert game.report_activity(TOKEN, 50, "clicker", 32)["credited"] == 0
+    clock.t += 301
+    assert game.report_activity(TOKEN, 50, "clicker", 33)["credited"] == 50
+
+
+def test_whole_tap_rounding_of_a_slow_clicker_still_reads_as_steady():
+    game, clock = make()
+    # 28 a minute: 9 or 10 taps per 20-second batch.
+    result = clicker(game, clock, lambda i: 10 if i % 3 == 0 else 9, 31)
+    assert result["tapCooldown"] == 600
+
+
+def test_a_hand_and_slow_input_never_read_as_steady():
+    import random
+    game, clock = make()
+    rng = random.Random(7)
+    # Busy typing whose batches vary by about a fifth either way, for two hours.
+    result = clicker(game, clock, lambda i: round(120 * rng.uniform(0.8, 1.2)), 360, "hand")
+    assert result["tapCooldown"] == 0
+    # Below 0.2 a second a run is not judged, however steady.
+    result = clicker(game, clock, 3, 60, "idle")
+    assert result["tapCooldown"] == 0 and result["credited"] == 3
+
+
+def test_one_odd_batch_is_left_out_and_two_start_the_run_over():
+    game, clock = make()
+    # As one clicker on the live server: 118, 119, then a 97 once.
+    clicker(game, clock, 160, 20)
+    clicker(game, clock, 120, 1, start=21)
+    result = clicker(game, clock, 160, 10, start=22)
+    assert result["tapCooldown"] == 0
+    result = clicker(game, clock, 160, 1, start=32)
+    assert result["tapCooldown"] == 600
+
+    game, clock = make()
+    clicker(game, clock, 160, 20)
+    clicker(game, clock, 120, 2, start=21)
+    result = clicker(game, clock, 160, 29, start=23)
+    assert result["tapCooldown"] == 0
+
+
+def test_the_same_rate_again_that_day_is_caught_sooner_and_sits_out_longer():
+    game, clock = make()
+    pid = game.status(TOKEN)["player"]
+    assert clicker(game, clock, 160, 31)["tapCooldown"] == 600
+    clock.t += 600
+    # A new session (the app restarted) at the rate caught: the first batch only marks the time.
+    result = clicker(game, clock, 160, 6, "again")
+    assert result["tapCooldown"] == 0
+    result = clicker(game, clock, 160, 1, "again", start=7)
+    assert result["tapCooldown"] == 1200
+    assert game.store.tap_flags_of(day_of_clock(clock), 10)[0]["steady"] == 2
+    # Doubling stops at four hours.
+    for n in range(3, 7):
+        clock.t += game.status(TOKEN)["tapCooldown"]
+        result = clicker(game, clock, 160, 7, f"again-{n}")
+    assert result["tapCooldown"] == 14400
+    # A new China day starts at ten minutes and needs the whole run again.
+    clock.t += 86400
+    result = clicker(game, clock, 160, 30, "next-day")
+    assert result["tapCooldown"] == 0
+    result = clicker(game, clock, 160, 1, "next-day", start=31)
+    assert result["tapCooldown"] == 600
+    assert game.store.get_player(pid, clock.t)["steady_hits"] == 1
+
+
+def day_of_clock(clock):
+    from app.store import day_of
+    return day_of(clock.t)
