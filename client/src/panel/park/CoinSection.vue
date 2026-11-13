@@ -40,8 +40,9 @@ const netTip = computed(() =>
   state.value ? `今日花费 ${fmt(state.value.today.spent)}，今日赢得 ${fmt(state.value.today.won)}` : undefined,
 );
 
-/** One dot per coin that may be bought today; the ones bought are out. */
+/** Today's buying as one slim bar: the part still buyable in coral, the part bought pale. */
 const dayTotal = computed(() => (state.value ? state.value.bought + state.value.buyLeft : 0));
+const leftPercent = computed(() => (state.value && dayTotal.value ? (state.value.buyLeft / dayTotal.value) * 100 : 0));
 const leftTip = computed(() => (state.value ? `今日还可买 ${state.value.buyLeft} 枚` : undefined));
 
 const busy = ref(0);
@@ -301,7 +302,10 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 
         <div class="buy">
           <span class="left" role="img" :aria-label="leftTip" :title="leftTip">
-            <template v-if="state"><i v-for="i in dayTotal" :key="i" :class="{ out: i > state.buyLeft }"></i></template>
+            <template v-if="state">
+              <span class="ui-bar left-bar"><i :style="{ width: `${leftPercent}%` }"></i></span>
+              <b>{{ state.buyLeft }}</b>
+            </template>
           </span>
           <div class="packs" role="group" aria-label="买驼币">
             <button
@@ -443,22 +447,22 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 .net.wait {
   visibility: hidden;
 }
+/* As wide as the three keys; the room stays while the park loads. */
 .left {
-  display: grid;
-  grid-template-columns: repeat(20, 6px);
-  gap: 5px;
-  min-height: 17px;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 16px;
 }
-.left i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--c-500);
-  transition: background var(--dur-slow), scale var(--dur-slow) var(--ease-spring);
+.left-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
 }
-.left i.out {
-  background: var(--c-200);
-  scale: 0.8;
+.left b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--ink-2);
 }
 .packs {
   display: flex;
@@ -552,7 +556,7 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
 
 /* ---- reduced motion: nothing moves, the numbers just change */
 .calm .hero-coin,
-.calm .left i {
+.calm .left-bar > i {
   transition: none;
 }
 .calm .hero-coin:hover {
@@ -576,9 +580,6 @@ const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, 
   }
   .buy {
     align-items: stretch;
-  }
-  .left {
-    align-self: flex-end;
   }
   .pack {
     flex: 1;
