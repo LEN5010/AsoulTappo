@@ -72,6 +72,7 @@ function tick() {
 }
 function start() {
   active.value = true;
+  window.addEventListener("keydown", onPageKey, true);
   if (timer) return;
   now.value = Date.now() / 1000;
   void load();
@@ -79,6 +80,7 @@ function start() {
 }
 function stop() {
   active.value = false;
+  window.removeEventListener("keydown", onPageKey, true);
   if (timer) clearInterval(timer);
   timer = null;
   pop.value = "";
@@ -201,6 +203,28 @@ function onKey(e: KeyboardEvent) {
     e.preventDefault();
     step(at.value ?? pickTarget(picks.value, null) ?? 2, e.key === "ArrowUp" ? 1 : -1);
   }
+}
+/**
+ * Keys typed anywhere on the shown page while picking is open go to the number keys, ahead of the panel's digit page
+ * shortcuts (a window listener in the bubble phase). Editable fields keep their keys (the hidden field has its own
+ * handler), a focused tab keeps its arrows and a focused key its Enter; with picking closed everything passes through.
+ */
+function onPageKey(e: KeyboardEvent) {
+  const s = state.value;
+  if (!s || s.drawn || keysOff.value || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (document.querySelector("[data-overlay]")) return;
+  const el = document.activeElement;
+  const focused = (sel: string) => !!el?.closest?.(sel);
+  if (focused("input, textarea, select, [contenteditable]")) return;
+  const digit = /^[0-9]$/.test(e.key);
+  const arrow = e.key.startsWith("Arrow");
+  if (!digit && !arrow && e.key !== "Backspace" && e.key !== "Enter") return;
+  if (arrow && focused("[role=tab]")) return;
+  if (e.key === "Enter" && focused("button, a, [role=button]")) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  if (!digit) onKey(e);
+  else if (!shown.value) put(e.key);
 }
 function step(i: number, by: 1 | -1) {
   const next: [string, string, string] = [...picks.value];
@@ -725,14 +749,16 @@ function onBarKey(e: KeyboardEvent) {
   display: inline-flex;
   gap: 5px;
 }
+/* Lottery balls: coral spheres with a soft light at the upper left. */
 .balls i {
   display: inline-grid;
   place-items: center;
-  width: 38px;
-  height: 44px;
-  border-radius: var(--radius-s);
-  background: linear-gradient(180deg, var(--c-400), var(--c-500));
-  font: 800 34px/1 var(--font-latin);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, var(--c-300), var(--c-500) 52%, var(--c-600));
+  box-shadow: inset 0 -2px 3px rgba(var(--c-900-rgb), 0.18);
+  font: 800 26px/1 var(--font-latin);
   font-style: normal;
   color: #fff;
 }
@@ -987,9 +1013,9 @@ function onBarKey(e: KeyboardEvent) {
     flex: 1 0 100%;
   }
   .balls i {
-    width: 30px;
-    height: 36px;
-    font-size: 27px;
+    width: 32px;
+    height: 32px;
+    font-size: 21px;
   }
   .proof-key > span {
     display: none;
