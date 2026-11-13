@@ -40,6 +40,9 @@ from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave
 from .store import Store
 
 SAMPLE_SECONDS = 60
+# Background loops of the park's games (the race's schedule, the lottery's draw), each an async function that runs
+# until cancelled; a game appends its own where it is set up below.
+PARK_LOOPS: list = []
 
 
 async def _sample_rooms() -> None:
@@ -86,10 +89,13 @@ async def _lifespan(_app: FastAPI):
     manager.restore(saved, lambda entry: max(0.0, started - entry["saved"]))
     _note_rooms_on_stop()
     sampler = asyncio.create_task(_sample_rooms())
+    loops = [asyncio.create_task(loop()) for loop in PARK_LOOPS]
     try:
         yield
     finally:
         sampler.cancel()
+        for task in loops:
+            task.cancel()
         game.tracker.flush()
         if _stopping_rooms is not None:
             game.store.save_rooms(_stopping_rooms, game.now())
