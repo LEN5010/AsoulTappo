@@ -73,14 +73,6 @@ def test_tables_are_the_approved_ones():
     assert BASIC["emote"]["set"] == M.scratch["emote"]["set"]
 
 
-def test_mean_returns_against_the_design():
-    # Design §3: 299 before the emote set is whole, 348 after, 340 for premium. The design's premium figure leaves
-    # the pot's seed out (4% of the stake only); counted like the basic card's it is 342.5.
-    assert mean_return(BASIC, POT, complete=False) == pytest.approx(299.28, abs=.01)
-    assert mean_return(BASIC, POT, complete=True) == pytest.approx(347.47, abs=.01)
-    assert mean_return(PREMIUM, POT, complete=False) == pytest.approx(342.46, abs=.01)
-
-
 @pytest.mark.parametrize("card,pity,complete,rolls,want", [
     (BASIC, 0, False, (0, MISS), ("jackpot", 0)),
     (BASIC, 9, False, (0, MISS), ("jackpot", 0)),  # the pot comes before the pity
@@ -376,35 +368,68 @@ def test_old_cards_show_the_largest_amount_once_at_most():
 
 # ----------------------------------------------------------------------- the tables in the long run
 def simulate(card, complete, n, seed):
-    """Plays n cards on one save with the pot as it grows; returns (shards per coin bought, tier counts)."""
+    """Plays n cards on one save with the pot as it grows. Returns the shards per coin bought, its standard error,
+    and the count of each tier (shard prizes as "shards:<amount>").
+
+    A card pays s shards and costs c coins net (its coins, less those `again` gives back); the estimate is
+    sum(s) / sum(c), and its standard error is that of a ratio, sqrt(sum((s - R c)^2)) / sum(c), with the cards taken
+    as independent (the pity ties neighbours together a little). The pot is counted where its shards come from: each
+    card's own perCoin, and the seed on the card that wins it. Paying the whole pot to the winner instead moves the
+    same shards (checked below) but would put the variance of 270,000 at 1 in 12,000 into s, which the cards do not
+    carry independently: a long wait makes a big pot."""
     rng = random.Random(seed)
-    pity, pot, shards, spent, back = 0, POT["seed"], 0, 0, 0
+    pity, pot, paid = 0, POT["seed"], 0
     coins, tiers = card["coins"], {}
+    ss = cc = s2 = c2 = sc = 0
     for _ in range(n):
-        spent += coins
         pot += coins * POT["perCoin"]
         tier, s = roll(card, pity, rng, complete, POT["odds"])
-        tiers[tier] = tiers.get(tier, 0) + 1
+        c = coins
         if tier == "jackpot":
-            s, pot = pot, POT["seed"]
+            paid += pot
+            pot = POT["seed"]
+            s = POT["seed"]
         elif tier == "again":
-            back += coins
+            c = 0
         elif tier in ("skin", "big"):
             s = card[tier]["shards"]
+        key = f"shards:{s}" if tier == "shards" else tier
+        tiers[key] = tiers.get(key, 0) + 1
         if card.get("emote") and not complete:
             pity = 0 if tier == "emote" else pity + 1
-        shards += s
-    return shards / (spent - back), tiers
+        s += coins * POT["perCoin"]
+        ss += s
+        cc += c
+        s2 += s * s
+        c2 += c * c
+        sc += s * c
+    # The pot paid out, plus what is in it now, is every card's perCoin, a seed for each win and the first seed.
+    assert paid + pot == n * coins * POT["perCoin"] + (tiers.get("jackpot", 0) + 1) * POT["seed"]
+    r = ss / cc
+    return r, (s2 - 2 * r * sc + r * r * c2) ** .5 / cc, tiers
 
 
-# One million cards leave a standard error of about 0.6% on the basic card (the 100x tier and the pot) and 0.4% on the
-# premium one, about the ±0.5% asked for; ten and five million bring both to about 0.18%.
-@pytest.mark.parametrize("kind,complete,n,seed", [("basic", False, 10_000_000, 1), ("basic", True, 10_000_000, 2),
-                                                  ("premium", False, 5_000_000, 3)])
-def test_a_table_returns_what_it_should(kind, complete, n, seed):
+def test_the_returns_are_the_designed_ones():
+    # Design §3 asks ±0.5% of 299 before the emote set is whole, 348 after and 340 for premium.
+    assert mean_return(BASIC, POT, complete=False) == pytest.approx(299, rel=.005)
+    assert mean_return(BASIC, POT, complete=True) == pytest.approx(348, rel=.005)
+    assert (round(mean_return(BASIC, POT, False), 2), round(mean_return(BASIC, POT, True), 2)) == (299.28, 347.47)
+    # The design's premium figure counts the pot at 4% of the stake and leaves its seed out; so counted it is 339.6.
+    # With the seed, as the basic card is counted, it is 342.5.
+    assert mean_return(PREMIUM, {**POT, "seed": 0}, complete=False) == pytest.approx(340, rel=.005)
+    assert mean_return(PREMIUM, POT, complete=False) == pytest.approx(342.46, abs=.01)
+
+
+# A million cards a table, each within 4 standard errors of what the table should return (the error is about 0.6% of
+# it on the basic card, from the 100x tier and the pot, and 0.4% on the premium one); every tier within 4 standard
+# deviations of its count.
+@pytest.mark.parametrize("kind,complete,seed", [("basic", False, 1), ("basic", True, 2), ("premium", False, 3)])
+def test_a_table_returns_what_it_should(kind, complete, seed):
     card = CFG["cards"][kind]
-    per_coin, tiers = simulate(card, complete, n, seed)
-    assert per_coin == pytest.approx(mean_return(card, POT, complete), rel=.005)
+    n = 1_000_000
+    per_coin, se, tiers = simulate(card, complete, n, seed)
+    assert se < .01 * per_coin
+    assert abs(per_coin - mean_return(card, POT, complete)) <= 4 * se
 
     def near(count, p):
         sd = (n * p * (1 - p)) ** .5
@@ -423,23 +448,11 @@ def test_a_table_returns_what_it_should(kind, complete, n, seed):
         assert near(tiers["emote"], 1 / cycle)
         rolled *= 1 - (1 - p) ** (card["emote"]["pity"] - 1) / cycle
     assert near(tiers["again"], again / 100 * rolled)
+    for prize in card["prizes"]:
+        assert near(tiers.get(f"shards:{prize['shards']}", 0), prize["weight"] / 100 * rolled)
     for tier in ("skin", "big"):
         if tier in card:
             assert near(tiers[tier], card[tier]["weight"] / 100 * rolled)
-
-
-def test_shard_tiers_come_at_their_rates():
-    rng = random.Random(9)
-    n = 1_000_000
-    for card in (BASIC, PREMIUM):
-        seen = {}
-        for _ in range(n):
-            tier, s = roll(card, 0, rng, True, POT["odds"])
-            if tier == "shards":
-                seen[s] = seen.get(s, 0) + 1
-        for prize in card["prizes"]:
-            p = prize["weight"] / 100 * (1 - card["coins"] / POT["odds"])
-            assert abs(seen.get(prize["shards"], 0) - n * p) <= 4 * (n * p * (1 - p)) ** .5 + 1
 
 
 # ----------------------------------------------------------------------- housekeeping
@@ -519,3 +532,18 @@ def test_the_room_sees_a_big_win_once(api):
         for ws in (a, b):
             ws.send_json({"type": "ping"})
             assert ws.receive_json() == {"type": "pong"}
+
+
+def test_the_park_hides_a_won_pot_from_its_winner_until_the_reveal(api):
+    c, g, pid = api
+    g.rng = SeqRng(0, MISS)
+    g.store.set_park_counter(JACKPOT, 200_000)
+    other = {"X-Player-Token": OTHER, "X-Client-Version": "1.2.1"}
+    card = c.post("/api/park/scratch", json={"kind": "basic"}, headers=H).json()["card"]
+    won = 200_000 + POT["perCoin"]
+    assert g.store.park_counter(JACKPOT) == POT["seed"]
+    assert c.get("/api/park", headers=H).json()["jackpot"] == won
+    assert c.get("/api/park", headers=other).json()["jackpot"] == POT["seed"]
+    r = c.post("/api/park/scratch/reveal", json={"card": card["id"]}, headers=H).json()
+    assert r["prize"]["shards"] == won
+    assert c.get("/api/park", headers=H).json()["jackpot"] == POT["seed"]
