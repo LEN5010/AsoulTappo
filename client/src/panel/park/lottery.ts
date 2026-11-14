@@ -37,6 +37,16 @@ export interface LotteryState {
   last: LotteryDraw | null;
   /** The save's latest drawn days with tickets, newest first. */
   history: { day: string; number: string; won: number }[];
+  /** The server's latest drawn days, newest first, with who won the top prize and what each top ticket was paid. */
+  draws: LotteryDrawLine[];
+}
+
+/** A drawn day in the list of top prize winners: `top` has a save once (collection board id and nick). */
+export interface LotteryDrawLine {
+  day: string;
+  number: string;
+  top: { id: string; nick: string }[];
+  each: number;
 }
 
 export interface LotteryBuy { lottery: LotteryState; bought: string[] }
@@ -44,6 +54,33 @@ export interface LotteryBuy { lottery: LotteryState; bought: string[] }
 /** How many trailing digits of a ticket of [tier] match the drawn number. */
 export function matchedDigits(tier: LotteryTier | null): number {
   return tier === "top" ? 3 : tier === "second" ? 2 : tier === "third" ? 1 : 0;
+}
+
+/**
+ * After [stopped] trailing digits of a draw have come to rest (0 to 3): which digits of a ticket of [tier] are lit,
+ * and whether the ticket is out, i.e. cannot win anything any more.
+ */
+export function revealDigits(tier: LotteryTier | null, stopped: number): { lit: boolean[]; out: boolean } {
+  const matched = matchedDigits(tier);
+  const k = Math.min(stopped, matched);
+  return { lit: [0, 1, 2].map((j) => j >= 3 - k), out: stopped > 0 && matched === 0 };
+}
+
+/** Whether tickets can be bought at [now] (Unix seconds): the server says so and the local clock is before the close. */
+export function salesOpen(s: Pick<LotteryState, "open" | "closeAt">, now: number): boolean {
+  return s.open && now < s.closeAt;
+}
+
+/** The digit on cell [k] (k >= 1) of key [key]'s spinning reel: every digit once in ten cells, never twice in a row. */
+export function reelDigit(k: number, key: number): string {
+  return String((((k * 7 + key * 3) % 10) + 10) % 10);
+}
+
+/** A draw's top prize winners in a line: up to [most] nicks, then how many in all; 无人 without one. */
+export function winnersLine(top: readonly { nick: string }[], most = 3): string {
+  if (!top.length) return "无人";
+  const names = top.slice(0, most).map((t) => t.nick).join("、");
+  return top.length > most ? `${names} 等 ${top.length} 人` : names;
 }
 
 /** The next draw time in Unix seconds. */
@@ -120,6 +157,11 @@ export function dropDigit(picks: Picks, at: number | null): Picks {
 export function stepDigit(d: string, by: 1 | -1): string {
   if (!d) return by > 0 ? "0" : "9";
   return String((Number(d) + by + 10) % 10);
+}
+
+/** The number on the pick key: the digits picked, "_" for each key still blank. */
+export function pickLabel(picks: Picks): string[] {
+  return picks.map((d) => d || "_");
 }
 
 /** The number on the keys once all three are set. */

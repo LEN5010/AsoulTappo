@@ -136,10 +136,10 @@ export interface Manifest {
        * badges.
        */
       coin: { price: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
-      /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. */
+      /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. A `hidden` card is off sale. */
       scratch?: {
         cards: Record<"basic" | "premium", {
-          coins: number; again: number; first: number; prizes: { shards: number; weight: number }[];
+          hidden?: boolean; coins: number; again: number; first: number; prizes: { shards: number; weight: number }[];
           emote?: { set: string; weight: number; pity: number }; skin?: { weight: number; shards: number }; big?: { weight: number; shards: number };
         }>;
         roomAt: Record<"basic" | "premium", number>;

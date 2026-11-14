@@ -19,7 +19,7 @@ describe("race track", () => {
     for (const m of MEMBERS) expect(tuanziArt(m)).toMatch(/\.webp/);
   });
 
-  it("draws every square, the gate and every dumpling before, during and after a race", async () => {
+  it("draws every square and every dumpling before, during and after a race", async () => {
     const betting: Race = {
       id: 3600, phase: "betting", opensAt: 3600, startsAt: 6900, hash: "", setup: { boost: 6, trip: 11 },
       odds: { win: {}, top2: {}, last: {} }, pool: {}, bettors: 0, mine: [],
@@ -31,9 +31,8 @@ describe("race track", () => {
     for (const [race, t] of [[null, 0], [betting, 6000_000], [running, 6905_000], [running, 6909_000], [running, 6930_000]] as const) {
       const html = await render(race, t);
       expect(count(html, "tile")).toBe(CFG.track);
-      expect(count(html, "stall")).toBe(5);
+      expect(count(html, "start")).toBe(1);
       expect(count(html, "tz")).toBe(MEMBERS.length);
-      expect(html).toContain("终点");
     }
   });
 });

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import {
-  cleanNumber, countdown, dayBefore, dropDigit, matchedDigits, nextDraw, NO_PICKS, pickedNumber, pickTarget, putDigit,
-  shortDay, stepDigit, verifyDraw,
+  cleanNumber, countdown, dayBefore, dropDigit, matchedDigits, nextDraw, NO_PICKS, pickedNumber, pickLabel, pickTarget,
+  putDigit, reelDigit, revealDigits, salesOpen, shortDay, stepDigit, verifyDraw, winnersLine,
 } from "./lottery";
 
 it("fills the number keys left to right, or the key picked", () => {
@@ -26,6 +26,44 @@ it("clears the picked key, or the rightmost one set", () => {
 it("steps a digit round", () => {
   expect([stepDigit("9", 1), stepDigit("0", -1), stepDigit("4", 1), stepDigit("", 1), stepDigit("", -1)])
     .toEqual(["0", "9", "5", "0", "9"]);
+});
+
+it("shows the blank keys on the pick key", () => {
+  expect(pickLabel(["3", "", ""])).toEqual(["3", "_", "_"]);
+  expect(pickLabel(["", "7", ""])).toEqual(["_", "7", "_"]);
+  expect(pickLabel(["3", "7", "2"])).toEqual(["3", "7", "2"]);
+});
+
+it("stops selling at the local close even while the server still says open", () => {
+  expect(salesOpen({ open: true, closeAt: 1000 }, 999)).toBe(true);
+  expect(salesOpen({ open: true, closeAt: 1000 }, 1000)).toBe(false);
+  expect(salesOpen({ open: false, closeAt: 1000 }, 500)).toBe(false);
+});
+
+it("lights a ticket's digits as the draw's digits stop, right to left", () => {
+  expect(revealDigits("top", 0)).toEqual({ lit: [false, false, false], out: false });
+  expect(revealDigits("top", 1)).toEqual({ lit: [false, false, true], out: false });
+  expect(revealDigits("top", 3)).toEqual({ lit: [true, true, true], out: false });
+  expect(revealDigits("third", 3)).toEqual({ lit: [false, false, true], out: false });
+  expect(revealDigits("second", 1)).toEqual({ lit: [false, false, true], out: false });
+  expect(revealDigits(null, 0)).toEqual({ lit: [false, false, false], out: false });
+  expect(revealDigits(null, 1)).toEqual({ lit: [false, false, false], out: true });
+});
+
+it("spins every digit through the reel, never the same twice in a row", () => {
+  for (const key of [0, 1, 2]) {
+    const cells = Array.from({ length: 10 }, (_, k) => reelDigit(k + 1, key));
+    expect(new Set(cells).size).toBe(10);
+    cells.slice(1).forEach((d, k) => expect(d).not.toBe(cells[k]));
+  }
+});
+
+it("names a draw's top prize winners, three at most", () => {
+  const top = (...nicks: string[]) => nicks.map((nick) => ({ nick }));
+  expect(winnersLine([])).toBe("无人");
+  expect(winnersLine(top("阿草"))).toBe("阿草");
+  expect(winnersLine(top("阿草", "小草", "大草"))).toBe("阿草、小草、大草");
+  expect(winnersLine(top("阿草", "小草", "大草", "草草", "青草"))).toBe("阿草、小草、大草 等 5 人");
 });
 
 it("finds the day before", () => {

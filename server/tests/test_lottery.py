@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.game import Game, GameError
+from app.game import BOARD_DEFAULT_NICK, Game, GameError, board_id
 from app.lottery import PRIZE, ROLL_SECOND, Lottery, commitment, day_start, second_pool, settle, tier_of
 from app.manifest import Manifest
 from app.park import POOL, Park
@@ -335,6 +335,43 @@ def test_history_lists_the_saves_last_seven_drawn_days_with_tickets():
     assert [h["number"] for h in history] == ["008", "007", "006", "005", "003", "002", "001"]
     assert all((h["won"] > 0) == (int(h["number"]) % 2 == 1) for h in history)
     assert lot.state(TOKENS[1])["history"] == []
+
+
+def test_draws_list_each_days_top_winners_once_newest_first():
+    g, park, lot, clock, (a, b) = setup("123", "123", "123", "123")
+    park.mask = lambda s: s.replace("坏", "*")
+    g.store.update_player(a, loadout='{"nick": "坏阿草"}')
+    plays = [
+        [(0, ["000"])],  # nobody wins the top
+        [(0, ["123"])],  # one save, one ticket
+        [(0, ["123", "023", "123"])],  # one save, two top tickets
+        [(1, ["123"]), (0, ["123"])],  # two saves split it, the earlier ticket first
+    ]
+    days = []
+    for i, buys in enumerate(plays):
+        for who, numbers in buys:
+            lot.buy(TOKENS[who], numbers)
+        days.append(day_of(clock()))
+        at(clock, CFG["drawAt"])
+        lot.tick()
+        at(clock, 60, days=1)
+    pools = {d: json.loads(g.store.lottery_day(d)["result"])["pools"]["top"] for d in days}
+    draws = lot.state(TOKENS[1])["draws"]
+    assert [d["day"] for d in draws] == days[::-1] and all(d["number"] == "123" for d in draws)
+    ra, rb = {"id": board_id(a), "nick": "*阿草"}, {"id": board_id(b), "nick": BOARD_DEFAULT_NICK}
+    assert [d["top"] for d in draws] == [[rb, ra], [ra], [ra], []]
+    assert [d["each"] for d in draws] == [pools[days[3]] // 2, pools[days[2]] // 2, pools[days[1]], 0]
+    assert len(board_id(a)) == 12 and a not in json.dumps(draws)
+
+
+def test_draws_keep_the_latest_seven_days():
+    g, _, lot, clock, _ = setup()
+    for _ in range(9):
+        at(clock, CFG["drawAt"])
+        lot.tick()
+        at(clock, 60, days=1)
+    draws = lot.state(TOKENS[0])["draws"]
+    assert len(draws) == 7 and draws[0]["day"] == g.store.lottery_last_drawn()["day"]
 
 
 def test_the_park_result_counts_lottery_prizes():

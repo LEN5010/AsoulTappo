@@ -1426,6 +1426,23 @@ class Store:
                 "GROUP BY d.day ORDER BY d.day DESC LIMIT ?", (pid, limit)).fetchall()
         return [{"day": r["day"], "number": r["number"], "won": int(r["won"])} for r in rows]
 
+    def lottery_draws(self, limit: int) -> list[dict[str, Any]]:
+        """The [limit] latest drawn days, newest first: {day, number, result, top}, `top` being the saves holding a
+        top prize ticket of the day, each once, by their earliest such ticket. Two queries whatever the limit."""
+        with self._lock:
+            rows = self._db.execute("SELECT day, number, result FROM lottery_days WHERE drawn IS NOT NULL "
+                                    "ORDER BY day DESC LIMIT ?", (limit,)).fetchall()
+            days = [r["day"] for r in rows]
+            won = self._db.execute(
+                f"SELECT day, player_id, MIN(id) AS first FROM lottery_tickets WHERE tier = 1 AND day IN "
+                f"({','.join('?' * len(days))}) GROUP BY day, player_id ORDER BY day, first", days).fetchall() \
+                if days else []
+        top: dict[str, list[str]] = {}
+        for r in won:
+            top.setdefault(r["day"], []).append(r["player_id"])
+        return [{"day": r["day"], "number": r["number"], "result": r["result"], "top": top.get(r["day"], [])}
+                for r in rows]
+
     def lottery_tickets(self, day: str, pid: str | None = None) -> list[dict[str, Any]]:
         """[day]'s tickets (of [pid] only when given), in buying order."""
         with self._lock:

@@ -31,6 +31,9 @@ export interface RaceStep {
   end?: number;
 }
 
+/** One die of the opening, rolled for the order of play. */
+export interface OrderRoll { m: string; face: number }
+
 export interface RaceBet { kind: RaceKind; member: string; coins: number; odds: number; prize?: number }
 
 export interface Race {
@@ -56,6 +59,10 @@ export interface Race {
   slowMs?: number;
   /** The lanes on the start line, top lane first. */
   start?: string[];
+  /** Who moves first to last, every round; missing on races from before the opening dice. */
+  order?: string[];
+  /** The opening's rounds of dice: everyone, then each round rolled again by those still tied. */
+  rolls?: OrderRoll[][];
   moves?: RaceStep[];
   ranking?: string[];
   result?: { staked: number; won: number; net: number };
@@ -118,15 +125,166 @@ export function playhead(race: Race, t: number): Playhead {
 }
 
 /*
- * A step, as shares of its length: the die tumbles over the mover until HOP_AT; then the group hops to the square
- * the die gives (HOP_LEN of the step); a group that landed on the boost or trip square hops on to its end at
- * SQUARE_AT.
+ * A step, as shares of its length: the mover lights up alone until ROLL_AT; the die tumbles and lands by HOP_AT; then
+ * the group hops to the square the die gives (HOP_LEN of the step); a group that landed on the boost or trip square
+ * hops on to its end from SQUARE_AT, in what is left of the step. At 3000 ms: 1000 lit, 800 rolling, 800 hopping.
  */
-export const HOP_AT = 0.3;
-export const HOP_LEN = 0.24;
-export const SQUARE_AT = 0.68;
+export const ROLL_AT = 1 / 3;
+export const HOP_AT = 0.6;
+export const HOP_LEN = 0.8 / 3;
+export const SQUARE_AT = HOP_AT + HOP_LEN;
+
+/** Where a step is: the mover lit, the die rolling, the group walking (and pushed on by a square). */
+export type StepStage = "lit" | "roll" | "walk";
+export const stageOf = (part: number): StepStage => (part < ROLL_AT ? "lit" : part < HOP_AT ? "roll" : "walk");
+
+/** A step of [len] ms in ms from its start: when the die starts and stops, the hop, and the push of a square. */
+export interface StepPhases { rollAt: number; rollLen: number; hopAt: number; hopLen: number; squareAt: number; pushLen: number }
+
+export function stepPhases(len: number): StepPhases {
+  return {
+    rollAt: len * ROLL_AT, rollLen: len * (HOP_AT - ROLL_AT), hopAt: len * HOP_AT, hopLen: len * HOP_LEN,
+    squareAt: len * SQUARE_AT, pushLen: len * (1 - SQUARE_AT),
+  };
+}
+
+/**
+ * The step whose words are up at [head]: the one under way, or the one before while the next mover is still lit, so
+ * a word that pops late in a step stays until the next die rolls. [part] is how far into that step.
+ */
+export function saidAt(head: Playhead): { i: number; part: number } | null {
+  if (head.current < 0) return null;
+  return head.current > 0 && head.part < ROLL_AT ? { i: head.current - 1, part: 1 } : { i: head.current, part: head.part };
+}
+
+// ---------------------------------------------------------------- a die toss
+
+/*
+ * A die toss (RaceDie), as shares of its length: thrown up to TOSS_TOP, down on the ground at TOSS_LAND, where it
+ * shows its face; then a squash and two smaller bounces. In the air it flashes other faces, AIR_FACES of them.
+ */
+export const TOSS_TOP = 0.38;
+export const TOSS_LAND = 0.7;
+export const AIR_FACES = 4;
+/** How far apart the opening's dice leave the hand, ms. */
+export const TOSS_STAGGER_MS = 35;
+
+/** The faces a die flashes in the air before landing on [face]: from [pool], never [face], turned by [seed]. */
+export function airFaces(face: number, pool: readonly number[], seed: number): number[] {
+  const others = [...new Set(pool)].filter((f) => f !== face);
+  if (!others.length) return [];
+  return Array.from({ length: AIR_FACES }, (_, j) => others[(seed + j) % others.length]);
+}
+
+/** The [k]th of [n] dice tossed together within [len] ms: when it leaves and how long it flies, the last landing at [len]. */
+export function staggered(len: number, k: number, n: number): { delay: number; ms: number } {
+  const gap = Math.min(TOSS_STAGGER_MS, len / 4 / Math.max(1, n - 1));
+  return { delay: k * gap, ms: len - (n - 1) * gap };
+}
+
+// ---------------------------------------------------------------- the opening
+
+/*
+ * Before the first step, inside leadMs (park_race.py lead_ms): round k of the order's dice starts OPEN_AT + k ×
+ * REROLL_MS after startsAt and tumbles for OPEN_ROLL_MS; REROLL_MS after the last round starts, the field lines up in
+ * its order and stands so until the first step. OPEN_AT leaves time for the poll that brings the dice: the server
+ * starts a race on its next tick, about a second after startsAt.
+ */
+export const OPEN_AT = 1500;
+export const OPEN_ROLL_MS = 800;
+export const REROLL_MS = 1500;
+
+export interface Opening {
+  /** The round of dice on show (0 is everyone), -1 before the first. */
+  round: number;
+  /** The members rolling in that round; their dice tumble until it lands. */
+  rolling: string[];
+  tumbling: boolean;
+  /** How long ago that round's dice left the hand, ms. */
+  since: number;
+  /**
+   * The face each member's die shows: while the dice are out, its latest roll that has landed; once the field lines
+   * up, its first-round roll, so the faces read high to low along the order (the rerolls have already played).
+   */
+  faces: Record<string, number>;
+  /** The order is settled and the field lines up in it. */
+  lined: boolean;
+}
+
+/** The opening at server time [t] (ms), or null when the race has none (an older race) or it is over. */
+export function openingAt(race: Race, t: number): Opening | null {
+  const rolls = race.rolls;
+  if (!rolls?.length || !race.order) return null;
+  const at = t - race.startsAt * 1000;
+  if (at >= (race.leadMs ?? 0)) return null;
+  let round = -1;
+  while (round + 1 < rolls.length && at >= OPEN_AT + (round + 1) * REROLL_MS) round++;
+  const tumbling = round >= 0 && at < OPEN_AT + round * REROLL_MS + OPEN_ROLL_MS;
+  const lined = at >= OPEN_AT + rolls.length * REROLL_MS;
+  const faces: Record<string, number> = {};
+  const upto = lined ? 0 : round - (tumbling ? 1 : 0);
+  for (let k = 0; k <= upto; k++) for (const r of rolls[k]) faces[r.m] = r.face;
+  const since = round >= 0 ? at - (OPEN_AT + round * REROLL_MS) : 0;
+  return { round, rolling: round >= 0 ? rolls[round].map((r) => r.m) : [], tumbling, since, faces, lined };
+}
 
 // ---------------------------------------------------------------- the board
+
+/*
+ * The board is a ring of `track` squares round a rectangle BOARD_ROWS high (24 squares: 9 × 5). Square 0, the start,
+ * is the top left corner and also square `track`, the finish; the squares go clockwise: along the top to the right,
+ * down the right side, back along the bottom, up the left side.
+ */
+export const BOARD_ROWS = 5;
+
+/** The board's size in squares for a [track] (even, 14 or more). */
+export function boardOf(track: number): { cols: number; rows: number } {
+  return { cols: track / 2 + 2 - BOARD_ROWS, rows: BOARD_ROWS };
+}
+
+/** Where [square] sits on the board, column and row from the top left; square `track` is square 0. */
+export function cellOf(square: number, track: number): { col: number; row: number } {
+  const { cols, rows } = boardOf(track);
+  let p = ((square % track) + track) % track;
+  if (p < cols) return { col: p, row: 0 };
+  p -= cols - 1;
+  if (p < rows) return { col: cols - 1, row: p };
+  p -= rows - 1;
+  if (p < cols) return { col: cols - 1 - p, row: rows - 1 };
+  p -= cols - 1;
+  return { col: 0, row: rows - 1 - p };
+}
+
+/** Where a move of [steps] from [from] ends: past the finish it walks back from it (race.py bounce). */
+export const bounce = (square: number, track: number): number =>
+  square > track ? 2 * track - square : Math.max(0, square);
+
+/**
+ * The squares a group passes, one at a time, moving [steps] (back when negative) from [from]: up to the finish and
+ * back down from it when the move carries past it. The last is where it lands.
+ */
+export function walkPath(from: number, steps: number, track: number): number[] {
+  const out: number[] = [];
+  let at = from;
+  let dir = Math.sign(steps);
+  for (let k = 0; k < Math.abs(steps); k++) {
+    if (dir > 0 && at >= track) dir = -1;
+    if (dir < 0 && at <= 0) break;
+    at += dir;
+    out.push(at);
+  }
+  return out;
+}
+
+/**
+ * The squares of step [s], one at a time: the hop the die gives, then the push of a boost (+[boost]) or trip (−[trip])
+ * square, each ending where the server says (to, end).
+ */
+export function stepPath(s: RaceStep, track: number, boost: number, trip: number): { hop: number[]; push: number[] } {
+  const hop = walkPath(s.from, s.steps, track);
+  const push = s.end === undefined ? [] : walkPath(s.to, s.square === "trip" ? -trip : boost, track);
+  return { hop, push };
+}
 
 /** A dumpling's place: its square and its height in the stack there (0 at the bottom); on square 0, its lane. */
 export interface Spot { square: number; level: number; lane?: number }

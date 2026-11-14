@@ -5193,20 +5193,28 @@
       "first": 1000,
       "prizes": [
        {
+        "shards": 200,
+        "weight": 20
+       },
+       {
+        "shards": 500,
+        "weight": 14
+       },
+       {
         "shards": 1000,
-        "weight": 9.5
+        "weight": 6
        },
        {
         "shards": 2500,
-        "weight": 3.5
+        "weight": 2.5
        },
        {
         "shards": 8000,
-        "weight": 0.6
+        "weight": 0.4
        },
        {
         "shards": 50000,
-        "weight": 0.05
+        "weight": 0.04
        }
       ],
       "emote": {
@@ -5216,6 +5224,7 @@
       }
      },
      "premium": {
+      "hidden": true,
       "coins": 5,
       "again": 15,
       "first": 5000,
@@ -5263,7 +5272,7 @@
    "race": {
     "interval": 3600,
     "betting": 3300,
-    "track": 20,
+    "track": 24,
     "dice": [
      1,
      2,
@@ -5281,7 +5290,7 @@
     "squares": {
      "range": [
       5,
-      17
+      20
      ],
      "boost": 2,
      "trip": -1

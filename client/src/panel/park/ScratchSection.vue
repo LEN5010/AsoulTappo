@@ -1,13 +1,15 @@
 <script setup lang="ts">
 // The park's scratch cards (docs/design/amusement-park.md §5, docs/design/park-ui-rebuild.md §5.2): 阿草 keeps the
-// stall from the park's coral band (band.ts: its face, and the odds behind the band's info key). Both cards lie on
-// the table: the one picked straight in front, the other tilted behind it with its stub showing; pressing the one
-// behind swaps them. A card is nine cells under a foil coating. Dragging over it scratches the coating off, and three
-// cells alike are the prize. The server decides the prize when the card is bought and pays it when the card is
-// revealed (scratchCards.ts), so the balance gives nothing away while the coating is on. Wins are celebrated by size:
-// the coins back plainly, then three steps.
+// stall from the park's coral band (band.ts: its face, and the odds behind the band's info key). The cards on sale
+// lie on the table: the one picked straight in front, another tilted behind it with its stub showing; pressing the
+// one behind swaps them. With one card on sale it lies alone. A card is nine cells under a foil coating. Dragging
+// over it scratches the coating off, and three cells alike are the prize. The server decides the prize when the card
+// is bought and pays it when the card is revealed (scratchCards.ts), so the balance gives nothing away while the
+// coating is on. Wins are celebrated by size: the coins back plainly, then three steps.
 // A card of the old shard scratch cards (/api/scratch, stores/player.ts) still unrevealed comes onto the table first,
-// alone and without a price, and is revealed the old way; then the table goes back to the two cards.
+// alone and without a price, and is revealed the old way; then the table goes back to the cards on sale. A card
+// bought before it was hidden (scratchCards.ts ON_SALE) also comes onto the table alone, and is scratched and paid
+// like any other; after it the key clears the table instead of buying another.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import * as sfx from "../../audio/sfx";
 import { assetUrl } from "../../asset";
@@ -30,7 +32,7 @@ import ScratchOdds from "./ScratchOdds.vue";
 import ScratchShowcase from "./ScratchShowcase.vue";
 import ScratchTile from "./ScratchTile.vue";
 import {
-  KINDS, SCRATCH, cellOf, faceOf, levelOf, outcomeOf, topPrize,
+  KINDS, ON_SALE, SCRATCH, cellOf, faceOf, levelOf, outcomeOf, topPrize,
   type CardKind, type Level, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
 } from "./scratchCards";
 
@@ -70,8 +72,10 @@ const plateOpen = computed(() => !!albumPlate && plateUnlocked(albumPlate.id, co
 const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
 const plateView = ref(false);
 
+/** The card in front when the table is cleared. */
+const FIRST: CardKind = ON_SALE[0] ?? "basic";
 /** The card lying in front. */
-const kind = ref<CardKind>("basic");
+const kind = ref<CardKind>(FIRST);
 const table = computed(() => SCRATCH.cards[kind.value]);
 /** The card on the table: under its coating, then open. */
 const card = ref<ParkCard | null>(null);
@@ -97,8 +101,14 @@ const fresh = ref("");
 const odds = ref(false);
 const error = ref("");
 
-/** The tickets on the table: both, or the old card alone. */
-const deck = computed<readonly CardKind[]>(() => (old.value ? [kind.value] : KINDS));
+/** The card in front is off sale: one bought before it was hidden. */
+const offSale = computed(() => !ON_SALE.includes(kind.value));
+/** The card on the table lies alone and is not sold again: an old card or one off sale. */
+const lone = computed(() => old.value || offSale.value);
+/** The tickets on the table: the cards on sale, or the lone card. */
+const deck = computed<readonly CardKind[]>(() => (lone.value ? [kind.value] : ON_SALE));
+/** The column shows the shelf of the card in front, the first card's for one off sale. */
+const shelf = computed<CardKind>(() => (offSale.value ? FIRST : kind.value));
 
 const outcome = computed(() => (card.value ? outcomeOf(card.value.cells) : null));
 const cells = computed(() => card.value?.cells.map(cellOf) ?? Array.from({ length: 9 }, () => null));
@@ -169,14 +179,14 @@ useBand("scratch", () => ({ host: ACHAO[hostFace.value], info: { label: "概率"
 /** The open card's prize did not get through: the key collects it again before anything else. */
 const unpaid = computed(() => !!card.value && open.value && !prize.value && !paying.value);
 const settled = computed(() => !card.value || (open.value && !!prize.value));
-const canBuy = computed(() => online.value && !old.value && !short.value && !buying.value && !paying.value && settled.value);
+const canBuy = computed(() => online.value && !lone.value && !short.value && !buying.value && !paying.value && settled.value);
 /** The card behind can come to the front: nothing is being scratched, bought or paid. */
-const canSwap = computed(() => !old.value && settled.value && !buying.value && !paying.value);
+const canSwap = computed(() => !lone.value && settled.value && !buying.value && !paying.value);
 /** Too few coins for the card in front: the main key's place sends the player to the coin page. */
-const toCoins = computed(() => online.value && short.value && !unpaid.value && !old.value && settled.value);
+const toCoins = computed(() => online.value && short.value && !unpaid.value && !lone.value && settled.value);
 const keyLabel = computed(() => {
   if (unpaid.value) return "再试一次";
-  if (old.value) return "下一张";
+  if (lone.value) return "下一张";
   if (!online.value) return "未连接";
   return card.value ? "再来一张" : "买一张";
 });
@@ -434,6 +444,7 @@ function clear() {
   prize.value = null;
   fresh.value = "";
   error.value = "";
+  if (offSale.value) kind.value = FIRST;
   const next = waiting;
   waiting = null;
   if (next) put(next);
@@ -546,7 +557,7 @@ async function collectOld(current: ParkCard) {
 
 function press() {
   if (unpaid.value) void collect();
-  else if (old.value) clear();
+  else if (lone.value) clear();
   else void buy();
 }
 
@@ -578,7 +589,7 @@ onDeactivated(() => {
 watch(() => status.value?.player, (player, was) => {
   if (!was || player === was) return;
   card.value = null;
-  kind.value = "basic";
+  kind.value = FIRST;
   old.value = false;
   waiting = null;
   prize.value = null;
@@ -645,12 +656,12 @@ watch(() => status.value?.player, (player, was) => {
       </div>
 
       <!--
-        The column beside the table, one frame for both cards: a heading, then the basic card's emote album or the
-        premium card's prize showcase. Both stay in place, one over the other, so the heading does not move when the
-        cards swap.
+        The column beside the table, one frame for the cards on sale: a heading, then the basic card's emote album or
+        the premium card's prize showcase. Both stay in place, one over the other, so the heading does not move when
+        the cards swap. The showcase is left out while the premium card is off sale.
       -->
       <div class="column" data-rise>
-      <aside class="shelf album" :class="{ away: kind !== 'basic' }" :inert="kind !== 'basic'">
+      <aside class="shelf album" :class="{ away: shelf !== 'basic' }" :inert="shelf !== 'basic'">
         <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
         <ol class="stickers ui-scroll">
           <li
@@ -680,9 +691,11 @@ watch(() => status.value?.player, (player, was) => {
       </aside>
 
       <!-- The premium card's prizes worth showing: the top amount, a skin and a big hidden card (ScratchShowcase.vue). -->
-      <aside class="shelf prizes" :class="{ away: kind !== 'premium' }" :inert="kind !== 'premium'">
+      <aside
+        v-if="ON_SALE.includes('premium')" class="shelf prizes" :class="{ away: shelf !== 'premium' }" :inert="shelf !== 'premium'"
+      >
         <h4 class="ui-label"><span>大奖</span></h4>
-        <ScratchShowcase :shown="kind === 'premium'" />
+        <ScratchShowcase :shown="shelf === 'premium'" />
       </aside>
       </div>
     </div>
@@ -693,7 +706,7 @@ watch(() => status.value?.player, (player, was) => {
     <div class="park-actions">
       <!-- A refusal stands in the bar beside the key, so the table does not move. -->
       <p v-if="error" class="ui-error stall-error" role="alert">{{ error }}</p>
-      <span v-else-if="!old" class="top"><small>最高</small><Icon name="shard" :size="18" /><b>{{ fmt(topPrize(kind)) }}</b></span>
+      <span v-else-if="!lone" class="top"><small>最高</small><Icon name="shard" :size="18" /><b>{{ fmt(topPrize(kind)) }}</b></span>
       <div class="park-actions-main">
         <button v-if="card && !open" type="button" class="ui-btn large peel" @click="finish">全部刮开</button>
         <template v-else-if="toCoins">
@@ -702,10 +715,10 @@ watch(() => status.value?.player, (player, was) => {
         </template>
         <button
           v-else type="button" class="ui-btn primary large buy" :class="{ pulse: canBuy && !card }"
-          :disabled="!canBuy && !unpaid && !(old && settled)" :aria-busy="buying || paying" @click="press"
+          :disabled="!canBuy && !unpaid && !(lone && settled)" :aria-busy="buying || paying" @click="press"
         >
           <span>{{ keyLabel }}</span>
-          <small v-if="!unpaid && !old && online" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
+          <small v-if="!unpaid && !lone && online" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
         </button>
       </div>
     </div>
@@ -763,9 +776,10 @@ watch(() => status.value?.player, (player, was) => {
   width: calc(var(--w) * 1.1 + 26px);
   height: calc(var(--h) + 56px);
 }
-/* The old card alone: no room kept for a ticket behind. */
+/* One ticket alone (one card on sale, or a lone card): no room kept for a ticket behind. */
 .deck.solo {
   width: var(--w);
+  height: var(--h);
 }
 /* A ticket is a thing to keep, not a key: no lip. The shadow is a filter on the outer box, as the paper is cut. */
 .ticket {

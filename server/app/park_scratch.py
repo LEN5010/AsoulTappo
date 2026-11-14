@@ -126,13 +126,16 @@ class ParkScratch:
 
     def buy(self, token: str, kind: str, version: str | None = None) -> dict[str, Any]:
         """Buys a card of [kind]: its prize is decided now and paid by reveal. A card still to reveal is handed back
-        as it is, at no charge, so a save never holds two. Skins the client of [version] cannot show stay out."""
+        as it is, at no charge, so a save never holds two. A `hidden` card is off sale; one bought before it was
+        hidden is still revealed. Skins the client of [version] cannot show stay out."""
         card = self._card(kind)
         g = self.park.game
         pid = player_id_for(token)
         with g.store.transaction() as st:
             now = g.now()
             if st.pending_park_scratch(pid) is None:
+                if card.get("hidden"):
+                    raise GameError("card_hidden", "这种刮刮乐暂停发售")
                 self._buy(st, pid, kind, card, version, now)
         return self._answer(token)
 

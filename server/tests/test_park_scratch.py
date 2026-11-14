@@ -35,10 +35,14 @@ def use_first_cards(g, pid):
         g.store.reveal_park_scratch(g.store.add_park_scratch(pid, "2000-01-01", kind, "[]", "miss", 0, 0, "", 0), 1)
 
 
-def setup(*rolls, coins=50, first=False):
-    """A save with [coins] and 100,000 shards; unless [first], its first card of each kind is behind it."""
+def setup(*rolls, coins=50, first=False, shipped=False):
+    """A save with [coins] and 100,000 shards; unless [first], its first card of each kind is behind it. Unless
+    [shipped], hidden cards are on sale too, so their tables stay tested for when they come back."""
     clock = Clock()
     g = Game(Store(":memory:"), Manifest.load(), rng=SeqRng(*(rolls or (MISS,))), now=clock)
+    if not shipped:
+        for card in g.manifest.park["scratch"]["cards"].values():
+            card.pop("hidden", None)
     park = Park(lambda: g)
     ps = ParkScratch(park)
     pid = g.status(TOKEN)["player"]
@@ -73,8 +77,11 @@ def news(g):
 # ----------------------------------------------------------------------- tables
 def test_tables_are_the_approved_ones():
     assert (BASIC["coins"], BASIC["again"], BASIC["emote"]) == (1, 15, {"set": "achao", "weight": 5, "pity": 10})
-    assert [(p["shards"], p["weight"]) for p in BASIC["prizes"]] == [(1000, 9.5), (2500, 3.5), (8000, .6), (50000, .05)]
+    assert [(p["shards"], p["weight"]) for p in BASIC["prizes"]] == [(200, 20), (500, 14), (1000, 6), (2500, 2.5),
+                                                                     (8000, .4), (50000, .04)]
     assert (PREMIUM["coins"], PREMIUM["again"]) == (5, 15)
+    # the premium card is off sale for now; its table stays for when it comes back
+    assert PREMIUM["hidden"] is True and "hidden" not in BASIC
     assert [(p["shards"], p["weight"]) for p in PREMIUM["prizes"]] == [(3000, 14), (5000, 10), (12500, 3),
                                                                        (40000, .5), (250000, .02)]
     assert PREMIUM["skin"] == {"weight": .5, "shards": 30000} and PREMIUM["big"] == {"weight": .5, "shards": 60000}
@@ -91,11 +98,14 @@ def test_tables_are_the_approved_ones():
     (BASIC, 9, True, MISS, ("miss", 0)),
     (BASIC, 0, False, .05, ("again", 0)),
     (BASIC, 0, False, .1999, ("again", 0)),
-    (BASIC, 0, False, .2, ("shards", 1000)),
-    (BASIC, 0, False, .3, ("shards", 2500)),
-    (BASIC, 0, False, .333, ("shards", 8000)),
-    (BASIC, 0, False, .3362, ("shards", 50000)),
-    (BASIC, 0, False, .3366, ("miss", 0)),
+    (BASIC, 0, False, .2, ("shards", 200)),
+    (BASIC, 0, False, .3999, ("shards", 200)),
+    (BASIC, 0, False, .4, ("shards", 500)),
+    (BASIC, 0, False, .55, ("shards", 1000)),
+    (BASIC, 0, False, .61, ("shards", 2500)),
+    (BASIC, 0, False, .627, ("shards", 8000)),
+    (BASIC, 0, False, .6292, ("shards", 50000)),
+    (BASIC, 0, False, .6295, ("miss", 0)),
     (PREMIUM, 0, False, 0, ("again", 0)),
     (PREMIUM, 0, False, .1499, ("again", 0)),
     (PREMIUM, 0, False, .15, ("shards", 3000)),
@@ -116,7 +126,7 @@ def test_one_roll(card, pity, complete, x, want):
 
 # ----------------------------------------------------------------------- money
 def test_buying_takes_coins_and_the_prize_waits_for_the_reveal():
-    g, ps, _, pid = setup(.3)
+    g, ps, _, pid = setup(.61)
     bought = ps.buy(TOKEN, "basic")
     assert bought["park"]["coins"] == 49 and bought["shards"] == 100_000
     assert bought["park"]["stampsTotal"] == 1 and bought["park"]["today"] == {"spent": 0, "won": 0}
@@ -157,6 +167,35 @@ def test_a_card_belongs_to_its_buyer():
         with pytest.raises(GameError) as e:
             ps.reveal(token, card_id)
         assert e.value.code == "no_card"
+
+
+# ----------------------------------------------------------------------- hidden cards
+def test_a_hidden_card_is_off_sale():
+    g, ps, _, pid = setup(shipped=True)
+    with pytest.raises(GameError) as e:
+        ps.buy(TOKEN, "premium")
+    assert e.value.code == "card_hidden"
+    assert ps.state(TOKEN)["card"] is None and coin_ledger(g, pid) == {}
+    assert g.store.park_counter(POOL) == 0
+    # a card on the table comes back as it is, whichever card is asked for
+    bought = ps.buy(TOKEN, "basic")
+    assert ps.buy(TOKEN, "premium")["card"] == bought["card"] and coin_ledger(g, pid) == {"scratch": -1}
+
+
+def test_a_hidden_card_bought_before_is_still_revealed():
+    g, ps, _, pid = setup(.39)
+    bought = ps.buy(TOKEN, "premium")
+    g.manifest.park["scratch"]["cards"]["premium"]["hidden"] = True
+    assert ps.state(TOKEN)["card"] == bought["card"] and bought["card"]["kind"] == "premium"
+    # the card on the table is handed back, not refused
+    assert ps.buy(TOKEN, "premium")["card"] == bought["card"]
+    r = ps.reveal(TOKEN, bought["card"]["id"])
+    assert r["prize"] == {"tier": "shards", "shards": 12500, "coins": 0, "item": None}
+    assert r["shards"] == 112_500 and r["card"] is None and r["announce"] == 0
+    with pytest.raises(GameError) as e:
+        ps.buy(TOKEN, "premium")
+    assert e.value.code == "card_hidden"
+    assert coin_ledger(g, pid) == {"scratch": -5}
 
 
 def test_again_gives_the_coins_back():
@@ -338,6 +377,7 @@ def test_a_big_first_prize_is_told_like_any_shard_win():
 def test_first_cards_show_their_amount_three_times_and_nothing_else_as_often():
     clock = Clock()
     g = Game(Store(":memory:"), Manifest.load(), rng=random.Random(11), now=clock)
+    g.manifest.park["scratch"]["cards"]["premium"].pop("hidden", None)
     ps = ParkScratch(Park(lambda: g))
     for i in range(300):
         token = f"park-first-token-{i:07d}"
@@ -354,11 +394,11 @@ def test_first_cards_show_their_amount_three_times_and_nothing_else_as_often():
 
 # ----------------------------------------------------------------------- news
 def test_big_wins_are_told_and_small_ones_are_not():
-    g, ps, _, _ = setup(.3)
+    g, ps, _, _ = setup(.61)
     assert play(ps)[1]["announce"] == 0
-    g.rng = SeqRng(.333)
+    g.rng = SeqRng(.627)
     assert play(ps)[1]["announce"] == 8000 and news(g) == []
-    g.rng = SeqRng(.3362)
+    g.rng = SeqRng(.6292)
     assert play(ps)[1]["announce"] == 50000
     assert news(g) == [{"kind": "scratch_big", "nick": "匿名小面包", "card": "basic", "shards": 50000}]
     g.rng = SeqRng(.422)
@@ -392,7 +432,7 @@ def test_a_card_shows_one_prize_and_one_top_symbol_at_most():
         assert set(cells) <= allowed
         seen[kind] |= set(cells)
     assert BLANK in seen["premium"] and BLANK not in seen["basic"]
-    assert "50000" in seen["basic"] and {"3000", "250000", "skin", "big"} <= seen["premium"]
+    assert {"200", "500", "50000"} <= seen["basic"] and {"3000", "250000", "skin", "big"} <= seen["premium"]
     assert "jackpot" not in seen["basic"] | seen["premium"]
 
 
@@ -455,13 +495,23 @@ def miss_rate(card):
 
 
 def test_the_returns_are_the_designed_ones():
-    # Per card at face value: premium 1995 shards of 2500 plus 15% again, basic 255.5 of 500 plus 15% again.
+    # Per card at face value: premium 1995 shards of 2500 plus 15% again, basic 284.5 of 500 plus 15% again.
     assert face_return(PREMIUM) == pytest.approx(.948, abs=1e-9)
-    assert face_return(BASIC) == pytest.approx(.661, abs=1e-9)
+    assert face_return(BASIC) == pytest.approx(.719, abs=1e-9)
     assert miss_rate(PREMIUM) == pytest.approx(.5648, abs=1e-9)
-    # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing).
-    assert (round(mean_return(BASIC, False), 2), round(mean_return(BASIC, True), 2)) == (273.2, 319.38)
+    # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing):
+    # the basic card returns 60.8% of a coin's 500 shards before the emote set is whole and 71.1% after.
+    assert mean_return(BASIC, False) == pytest.approx(304.20, abs=.01)
+    assert mean_return(BASIC, True) == pytest.approx(355.625, abs=1e-9)
+    assert (round(mean_return(BASIC, False) / PRICE, 3), round(mean_return(BASIC, True) / PRICE, 3)) == (.608, .711)
     assert round(mean_return(PREMIUM, False), 2) == 469.41
+    # A basic card wins nothing 37.06% of the time with the set whole (the emote weight is `again` then); before, the
+    # pity takes the table's place on some cards and 34.1% of them win nothing.
+    assert miss_rate(BASIC) == pytest.approx(.3706, abs=1e-9)
+    p = BASIC["emote"]["weight"] / 100
+    cycle = sum((1 - p) ** k for k in range(BASIC["emote"]["pity"]))
+    rolled = 1 - (1 - p) ** (BASIC["emote"]["pity"] - 1) / cycle
+    assert miss_rate(BASIC) * rolled == pytest.approx(.3415, abs=1e-4)
 
 
 @pytest.mark.parametrize("kind,seed", [("basic", 4), ("premium", 5)])
@@ -476,7 +526,7 @@ def test_a_seeded_run_returns_the_face_value_and_misses_as_often_as_designed(kin
         assert ret == pytest.approx(.948, abs=.01)
         assert tiers["miss"] / n == pytest.approx(.565, abs=.002)
     else:
-        assert ret == pytest.approx(.66, abs=.01)
+        assert ret == pytest.approx(.72, abs=.01)
 
 
 # A million cards a table, each within 4 standard errors of what the table should return (the error is about 0.6% of
@@ -533,7 +583,7 @@ def test_a_manifest_without_the_park():
 
 
 def test_cards_are_stored_as_the_client_gets_them():
-    g, ps, clock, pid = setup(.3)
+    g, ps, clock, pid = setup(.61)
     card = ps.buy(TOKEN, "basic")["card"]
     row = g.store.park_scratch_card(pid, card["id"])
     assert json.loads(row["cells"]) == card["cells"] and row["kind"] == "basic" and row["day"] == day_of(clock())
@@ -546,7 +596,7 @@ H = {"X-Player-Token": TOKEN, "X-Client-Version": "1.2.1"}
 
 @pytest.fixture()
 def api(monkeypatch):
-    g, ps, clock, pid = setup(.333)
+    g, ps, clock, pid = setup(.627)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
     with TestClient(main.app) as c:
@@ -572,6 +622,16 @@ def test_http_flow(api):
     assert r.status_code == 409 and r.json()["detail"]["code"] == "no_coins"
     # the old cards are a separate game
     assert c.get("/api/scratch", headers=H).json()["card"] is None
+
+
+def test_http_refuses_a_hidden_card(monkeypatch):
+    g = setup(shipped=True)[0]
+    monkeypatch.setattr(main, "game", g)
+    main.manager.rooms.clear()
+    with TestClient(main.app) as c:
+        r = c.post("/api/park/scratch", json={"kind": "premium"}, headers=H)
+        assert r.status_code == 409 and r.json()["detail"]["code"] == "card_hidden"
+        assert c.get("/api/park/scratch", headers=H).json()["card"] is None
 
 
 def test_the_room_sees_a_big_win_once(api):

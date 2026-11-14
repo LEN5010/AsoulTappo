@@ -2,8 +2,9 @@
 
 Races run on wall-clock multiples of `interval`: bets for the first `betting` seconds, then the race plays and
 is settled once its animation is over; the next race's bets open at the next boundary. A race is prepared ahead
-(setup, seed, outcome) and stored; while bets are open only SHA-256(seed) is public, and at the start the seed and the
-lanes and moves it decides are. The odds follow the coins staked so far; each bet keeps the odds it was placed at.
+(setup, seed, outcome) and stored; while bets are open only SHA-256(seed) is public, and at the start the seed and
+the lanes, order, dice and moves it decides are. The odds follow the coins staked so far; each bet keeps the odds it
+was placed at.
 Everything is driven by tick(), which main.py calls about once a second off the event loop; tick() is idempotent.
 
 A restart resumes whatever is stored: a race still taking bets goes on, a race that started is settled when due.
@@ -27,12 +28,14 @@ from .store import Store, day_of
 SPEND = "race"
 REFUND = "race_refund"
 PRIZE = "race_prize"
-# Playback (PROTOCOL.md 团子赛跑): step i starts at startsAt + LEAD_MS + i × stepMs, and from slowFrom (the first move
-# of the last round) on each step lasts slowMs; endsAt follows the last step by TAIL_MS. stepMs and slowMs are STEP_MS
-# and SLOW_MS unless that would run past the next race's bets less RUN_MARGIN; then both are scaled down together.
+# Playback (PROTOCOL.md 团子赛跑): the opening (the dice for the order) takes lead_ms(rounds of dice); step i starts at
+# startsAt + leadMs + i × stepMs, and from slowFrom (the first move of the last round) on each step lasts slowMs; endsAt
+# follows the last step by TAIL_MS. stepMs and slowMs are STEP_MS and SLOW_MS unless that would run past the next
+# race's bets less RUN_MARGIN; then both are scaled down together. The lead is never scaled.
 LEAD_MS = 4000
-STEP_MS = 2400
-SLOW_MS = 3600
+REROLL_MS = 1500
+STEP_MS = 3000
+SLOW_MS = 4000
 TAIL_MS = 4000
 RUN_MARGIN = 10
 # A race the server starts this late is still run; later than that it is called off.
@@ -58,10 +61,20 @@ def slow_from(steps: int) -> int:
     return 5 * ((steps - 1) // 5) if steps else 0
 
 
-def playback_ms(steps: int, step_ms: int, slow_ms: int) -> int:
+def lead_ms(rounds: int) -> int:
+    """From startsAt to the first step: the first round of the order's dice, each round rolled again, then a pause."""
+    return LEAD_MS + max(0, rounds - 1) * REROLL_MS
+
+
+def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int) -> int:
     """From startsAt to endsAt: the lead, the steps before the last round, the slow last round and the tail."""
     first = slow_from(steps)
-    return LEAD_MS + first * step_ms + (steps - first) * slow_ms + TAIL_MS
+    return lead + first * step_ms + (steps - first) * slow_ms + TAIL_MS
+
+
+def _result(outcome: dict[str, Any]) -> dict[str, Any]:
+    """What a race row keeps of its outcome (the ranking has its own column)."""
+    return {k: outcome[k] for k in ("start", "order", "rolls", "moves")}
 
 
 def room_message(peer_id: str, shards: int) -> dict[str, Any]:
@@ -121,18 +134,18 @@ class Races:
         outcome = race.run_seed(rules, setup, seed)
         starts = race_id + int(cfg["betting"])
         steps = len(outcome["moves"])
+        lead = lead_ms(len(outcome["rolls"]))
         window_ms = (int(cfg["interval"]) - int(cfg["betting"]) - RUN_MARGIN) * 1000
         step_ms, slow_ms = STEP_MS, SLOW_MS
-        moving = playback_ms(steps, step_ms, slow_ms) - LEAD_MS - TAIL_MS
-        room = window_ms - LEAD_MS - TAIL_MS
+        moving = playback_ms(0, steps, step_ms, slow_ms) - TAIL_MS
+        room = window_ms - lead - TAIL_MS
         if moving > room:
             step_ms = max(1, math.floor(STEP_MS * room / moving))
             slow_ms = max(1, math.floor(SLOW_MS * room / moving))
         return {"id": race_id, "starts_at": float(starts),
-                "ends_at": starts + playback_ms(steps, step_ms, slow_ms) / 1000, "step_ms": step_ms,
+                "ends_at": starts + playback_ms(lead, steps, step_ms, slow_ms) / 1000, "step_ms": step_ms,
                 "slow_ms": slow_ms, "seed": seed.hex(), "hash": race.seed_hash(seed), "setup": json.dumps(setup),
-                "ranking": json.dumps(outcome["ranking"]),
-                "result": json.dumps({"start": outcome["start"], "moves": outcome["moves"]})}
+                "ranking": json.dumps(outcome["ranking"]), "result": json.dumps(_result(outcome))}
 
     def tick(self) -> list[dict[str, Any]]:
         """Starts, settles or calls off the races that are due, then prepares the current and the next race when
@@ -299,11 +312,14 @@ class Races:
             if row["result"]:
                 result = json.loads(row["result"])
             else:
-                outcome = race.run_seed(self.rules, json.loads(row["setup"]), bytes.fromhex(row["seed"]))
-                result = {"start": outcome["start"], "moves": outcome["moves"]}
-            out.update(seed=row["seed"], endsAt=row["ends_at"], leadMs=LEAD_MS, stepMs=row["step_ms"],
-                       slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"], start=result["start"],
-                       moves=result["moves"], ranking=json.loads(row["ranking"]))
+                result = _result(race.run_seed(self.rules, json.loads(row["setup"]), bytes.fromhex(row["seed"])))
+            # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS.
+            rolls = result.get("rolls")
+            out.update(seed=row["seed"], endsAt=row["ends_at"], leadMs=lead_ms(len(rolls or [None])),
+                       stepMs=row["step_ms"], slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"],
+                       start=result["start"], moves=result["moves"], ranking=json.loads(row["ranking"]))
+            if rolls:
+                out.update(order=result["order"], rolls=rolls)
         if status == "settled" and mine:
             staked = sum(b["coins"] for b in mine) * self.park.coin["price"]
             won = sum(b["prize"] for b in mine)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACHAO } from "../../ui/achao";
-import { SCRATCH, cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, rateOf, topPrize, type Outcome } from "./scratchCards";
+import { ON_SALE, SCRATCH, cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, rateOf, topPrize, type Outcome } from "./scratchCards";
 
 const won = (cell: string): Outcome => ({ ...cellOf(cell), at: [0, 1, 2] });
 
@@ -24,7 +24,8 @@ describe("celebration", () => {
   it("grows with the times the price a card pays", () => {
     expect(levelOf({ kind: "miss" }, "basic")).toBe(0);
     expect(levelOf(won("again"), "premium")).toBe("plain");
-    // an old shard card's 200 and 500
+    // 200 and 500, below twice the basic card's 500 shards
+    expect(levelOf(won("200"), "basic")).toBe("plain");
     expect(levelOf(won("500"), "basic")).toBe("plain");
     expect(levelOf(won("1000"), "basic")).toBe(1);
     expect(levelOf(won("2500"), "basic")).toBe(1);
@@ -56,12 +57,14 @@ describe("odds", () => {
 
   it("lists the basic card best prize first and moves the emote tier to again once the set is whole", () => {
     expect(oddsRows("basic", false).map((r) => [r.kind, r.shards ?? null, r.rate])).toEqual([
-      ["shards", 50000, 0.05], ["shards", 8000, 0.6], ["shards", 2500, 3.5], ["shards", 1000, 9.5],
-      ["emote", null, 5], ["again", null, 15], ["miss", null, 66.35],
+      ["shards", 50000, 0.04], ["shards", 8000, 0.4], ["shards", 2500, 2.5], ["shards", 1000, 6],
+      ["shards", 500, 14], ["shards", 200, 20], ["emote", null, 5], ["again", null, 15], ["miss", null, 37.06],
     ]);
+    expect(oddsRows("basic", false).map((r) => oddsText(r.rate)))
+      .toEqual(["0.04%", "0.4%", "2.5%", "6%", "14%", "20%", "5%", "15%", "37.1%"]);
     expect(oddsRows("basic", false).find((r) => r.kind === "emote")?.pity).toBe(10);
     expect(oddsRows("basic", true).map((r) => [r.kind, r.rate]).slice(-3))
-      .toEqual([["shards", 9.5], ["again", 20], ["miss", 66.35]]);
+      .toEqual([["shards", 20], ["again", 20], ["miss", 37.06]]);
   });
 
   it("lists the premium card with its big hidden card and skin under the top prize", () => {
@@ -82,5 +85,13 @@ describe("odds", () => {
   it("matches the bundled manifest", () => {
     expect(SCRATCH.cards.basic.coins).toBe(1);
     expect(SCRATCH.cards.premium.coins).toBe(5);
+  });
+});
+
+describe("cards on sale", () => {
+  it("leaves the hidden premium card out and keeps its table", () => {
+    expect(ON_SALE).toEqual(["basic"]);
+    expect(SCRATCH.cards.premium.hidden).toBe(true);
+    expect(SCRATCH.cards.premium.prizes.length).toBeGreaterThan(0);
   });
 });

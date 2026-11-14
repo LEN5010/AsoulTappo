@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The race rules (behind the band's info key), drawn more than written: how the field moves on the left, how bets
-// pay on the right. Every row is a picture of the thing (a die, the gate, a stack, the track's own special tiles)
+// pay on the right. Every row is a picture of the thing (a die, the start corner, a stack, the track's own special tiles)
 // with a few words beside it.
 import { manifest } from "../../manifest";
 import ParkSheet from "./ParkSheet.vue";
@@ -29,10 +29,15 @@ const PLACES: Record<RaceKind, number[]> = { win: [0], top2: [0, 1], last: [MEMB
           <span class="park-sheet-main"><b>每轮各掷一次</b><small>走 {{ LOW }}–{{ HIGH }} 格</small></span>
         </li>
         <li class="park-sheet-row">
-          <span class="park-sheet-lead gate" aria-hidden="true">
-            <i v-for="m in MEMBERS" :key="m"><TuanziToken :member="m" :size="24" /></i>
+          <span class="park-sheet-lead bare goal" aria-hidden="true">
+            <i class="corner"><TuanziToken :member="MEMBERS[0]" :size="24" /></i>
+            <svg viewBox="0 0 16 12"><path d="M14 3H4.5a3 3 0 0 0 0 6H9M6.5 6.5 9 9l-2.5 2.5" /></svg>
           </span>
-          <span class="park-sheet-main"><b>起点各占一道</b></span>
+          <span class="park-sheet-main"><b>绕一圈正好回到起点</b><small>多出的步数往回退</small></span>
+        </li>
+        <li class="park-sheet-row">
+          <span class="park-sheet-lead dice order" aria-hidden="true"><RaceDie :face="6" class="hi" /><RaceDie :face="3" /></span>
+          <span class="park-sheet-main"><b>开局掷骰，点大的先走</b><small>同点重掷</small></span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead bare tower" aria-hidden="true">
@@ -102,32 +107,43 @@ const PLACES: Record<RaceKind, number[]> = { win: [0], top2: [0, 1], last: [MEMB
 .dice .race-die {
   --s: 20px;
 }
-/* The start line: five lanes side by side, one tuanzi each, behind a coral checker. */
-.gate {
+/* The order's dice: the higher face stands a step up. */
+.order .hi {
+  translate: 0 -5px;
+}
+/* The start and finish: the board's corner square (gold edge, coral checker) and a step walked back from it. */
+.goal {
+  position: relative;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  align-items: center;
   gap: 2px;
-  padding-bottom: 14px;
+  color: var(--c-600);
+}
+.goal .corner {
+  position: relative;
+  display: grid;
+  place-items: end center;
+  width: 34px;
+  height: 34px;
   box-sizing: border-box;
-  --tuanzi-size: 12px;
+  padding-bottom: 2px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: linear-gradient(var(--c-50), var(--c-50)) padding-box, var(--grad-gold) border-box;
+  overflow: hidden;
 }
-.gate i {
-  display: flex;
-  justify-content: center;
-  padding: 3px 0 2px;
-  width: 12px;
-  border-radius: 3px;
-  background: var(--c-100);
-}
-.gate::after {
+.goal .corner::before {
   content: "";
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 7px;
-  height: 5px;
-  background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / 5px 5px;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / 6px 6px;
+}
+.goal svg {
+  width: 18px;
+  height: 14px;
 }
 /* A stack: three tuanzi, an arrow for where they go together; or two, the one on top ahead. */
 .tower {

@@ -11,6 +11,8 @@ const PARK = manifest.economy.park;
 export const SCRATCH = PARK!.scratch!;
 export const COIN_PRICE = PARK!.coin.price;
 export type CardTable = (typeof SCRATCH)["cards"][CardKind];
+/** The cards on sale: a `hidden` one is neither sold nor shown, though one bought before is still scratched. */
+export const ON_SALE: readonly CardKind[] = KINDS.filter((k) => !SCRATCH.cards[k].hidden);
 
 /** A card on the table: nine cells under the coating. */
 export interface ParkCard { id: number; kind: CardKind; cells: string[] }
@@ -59,7 +61,7 @@ export function levelOf(outcome: Outcome, kind: CardKind, prize?: ParkPrize | nu
   const shards = outcome.kind === "shards" ? outcome.amount : prize && !prize.item ? prize.shards : null;
   if (shards === null) return 3;
   const times = shards / (SCRATCH.cards[kind].coins * COIN_PRICE);
-  // Below twice the price only on the old shard cards (200 and 500 for a 500-shard card): as plain as the coins back.
+  // Below twice the price (200 and 500 on the basic card and the old shard cards): as plain as the coins back.
   return times >= 100 ? 3 : times >= 16 ? 2 : times >= 2 ? 1 : "plain";
 }
 

@@ -276,7 +276,7 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           # Admin calls answer these with 409: the main site reads a 404 from this server as "unavailable".
           "no_save": 409, "no_reward": 409, "reward_open": 409,
           # The park (park.py and its games).
-          "no_park": 404, "park_locked": 409, "no_coins": 409, "bad_count": 400,
+          "no_park": 404, "park_locked": 409, "no_coins": 409, "bad_count": 400, "card_hidden": 409,
           "race_closed": 409, "race_cap": 409, "odds_changed": 409, "no_race": 404, "lottery_closed": 409, "lottery_cap": 409,
           "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
           "login_required": 401, "too_many_tries": 429, "no_code": 409}

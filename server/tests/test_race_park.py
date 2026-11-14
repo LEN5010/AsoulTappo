@@ -55,7 +55,8 @@ def test_bets_open_at_the_boundary_with_only_the_hash_public():
     assert v["nextAt"] == T0 + CFG["interval"]
     seed = bytes.fromhex(row(g, T0)["seed"])
     assert len(seed) * 8 >= 128 and r["hash"] == hashlib.sha256(seed).hexdigest()
-    for secret in ("seed", "moves", "ranking", "start", "endsAt", "leadMs", "stepMs", "slowFrom", "slowMs"):
+    for secret in ("seed", "moves", "ranking", "start", "order", "rolls", "endsAt", "leadMs", "stepMs", "slowFrom",
+                   "slowMs"):
         assert secret not in r
     assert set(r["setup"]) == {"boost", "trip"}
     lo, hi = CFG["squares"]["range"]
@@ -160,11 +161,14 @@ def test_the_start_publishes_the_seed_and_the_moves_it_decides():
     seed = bytes.fromhex(r["seed"])
     assert hashlib.sha256(seed).hexdigest() == committed
     outcome = race.run_seed(race.Rules.of(CFG, MEMBERS), r["setup"], seed)
-    assert (r["start"], r["moves"], r["ranking"]) == (outcome["start"], outcome["moves"], outcome["ranking"])
-    assert sorted(r["start"]) == sorted(MEMBERS)
+    for k in ("start", "order", "rolls", "moves", "ranking"):
+        assert r[k] == outcome[k], k
+    assert sorted(r["start"]) == sorted(MEMBERS) and sorted(r["order"]) == sorted(MEMBERS)
+    assert r["rolls"][0] == [{"m": m, "face": r["rolls"][0][i]["face"]} for i, m in enumerate(MEMBERS)]
     steps = len(r["moves"])
     slow = 5 * ((steps - 1) // 5)
-    assert (r["leadMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (4000, 2400, 3600, slow)
+    lead = 4000 + 1500 * (len(r["rolls"]) - 1)
+    assert (r["leadMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (lead, 3000, 4000, slow)
     # The last round plays slowly: its first step starts after slowFrom normal steps.
     last_start = r["startsAt"] * 1000 + r["leadMs"] + slow * r["stepMs"] + (steps - 1 - slow) * r["slowMs"]
     assert r["endsAt"] * 1000 == last_start + r["slowMs"] + park_race.TAIL_MS
@@ -173,8 +177,30 @@ def test_the_start_publishes_the_seed_and_the_moves_it_decides():
 
 def test_playback_timing():
     assert park_race.slow_from(30) == 25 and park_race.slow_from(31) == 30 and park_race.slow_from(5) == 0
-    # 22 steps: 20 at 2400, the last round's two at 3600.
-    assert park_race.playback_ms(22, 2400, 3600) == 4000 + 20 * 2400 + 2 * 3600 + 4000
+    # One round of order dice, then each round rolled again adds REROLL_MS.
+    assert park_race.lead_ms(1) == 4000 and park_race.lead_ms(3) == 4000 + 2 * 1500
+    # 22 steps: 20 at 3000, the last round's two at 4000.
+    assert park_race.playback_ms(4000, 22, 3000, 4000) == 4000 + 20 * 3000 + 2 * 4000 + 4000
+
+
+def test_the_longest_races_play_unhurried():
+    window = (CFG["interval"] - CFG["betting"] - park_race.RUN_MARGIN) * 1000
+    # Past the longest of 20000 races (77 steps with the finish bounce) after six rounds of order dice.
+    assert park_race.playback_ms(park_race.lead_ms(7), 80, park_race.STEP_MS, park_race.SLOW_MS) <= window
+    rules = race.Rules.of(CFG, MEMBERS)
+    deal = random.Random(7)
+    longest = 0
+    for k in range(3000):
+        out = race.run_seed(rules, race.deal(rules, deal), k.to_bytes(32, "big"))
+        n = len(out["moves"])
+        longest = max(longest, n)
+        assert park_race.playback_ms(park_race.lead_ms(len(out["rolls"])), n, park_race.STEP_MS,
+                                     park_race.SLOW_MS) <= window
+    assert longest <= 80
+    g, races, clock, _ = make()
+    for rid in range(T0, T0 + 200 * CFG["interval"], CFG["interval"]):
+        r = races.prepare(rid)
+        assert (r["step_ms"], r["slow_ms"]) == (park_race.STEP_MS, park_race.SLOW_MS)
 
 
 def test_a_short_run_window_slows_nothing_past_the_next_race():
@@ -188,11 +214,11 @@ def test_a_short_run_window_slows_nothing_past_the_next_race():
     r = races.view(TOKEN)["race"]
     assert r["phase"] == "running"
     # 40 s less RUN_MARGIN for lead, steps and tail: both step lengths shrink together.
-    assert r["stepMs"] < 2400 and r["slowMs"] < 3600
-    assert abs(r["slowMs"] / r["stepMs"] - 1.5) < 0.01
+    assert r["stepMs"] < 3000 and r["slowMs"] < 4000
+    assert abs(r["slowMs"] / r["stepMs"] - 4 / 3) < 0.01
     assert r["endsAt"] <= T0 + cfg["interval"] - park_race.RUN_MARGIN
     n = len(r["moves"])
-    assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(n, r["stepMs"], r["slowMs"]) / 1000
+    assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(r["leadMs"], n, r["stepMs"], r["slowMs"]) / 1000
 
 
 def settle_with_bets(roomAt=None):
@@ -330,6 +356,17 @@ def test_old_results_are_dropped_but_still_shown():
     # Nothing ran since (the clock jumped), so it is still the last race, rebuilt from its seed.
     last = races.view(TOKEN)["last"]
     assert last["id"] == T0 and last["moves"] == moves
+
+
+def test_a_row_from_before_the_order_dice_plays_without_them():
+    g, races, clock, pid, other, ranking, before, wins = settle_with_bets()
+    old = json.loads(row(g, T0)["result"])
+    del old["order"], old["rolls"]
+    with g.store.transaction() as st:
+        st._db.execute("UPDATE park_races SET result = ? WHERE id = ?", (json.dumps(old), T0))
+    r = races.view(TOKEN)["race"]
+    assert "order" not in r and "rolls" not in r
+    assert r["leadMs"] == park_race.LEAD_MS and r["moves"] == old["moves"]
 
 
 def test_http_race_and_bet(monkeypatch):

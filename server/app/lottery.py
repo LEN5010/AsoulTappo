@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any, Callable
 
-from .game import Game, GameError, player_id_for
+from .game import BOARD_DEFAULT_NICK, Game, GameError, _loadout_json, board_id, player_id_for
 from .park import POOL, Park
 from .store import DAY_OFFSET, Store, day_of
 
@@ -34,7 +34,7 @@ SPEND = "lottery"
 # park_counters key of the second prize's rollover into the next draw (the top prize is park.POOL).
 ROLL_SECOND = "lottery_roll_second"
 TIERS = {1: "top", 2: "second", 3: "third"}
-# Drawn days the state lists in `history`.
+# Drawn days the state lists in `history` and in `draws`.
 HISTORY_DAYS = 7
 # Top prize nicks a draw's news carries.
 NEWS_NICKS = 5
@@ -160,7 +160,32 @@ class Lottery:
             "tickets": [t["number"] for t in mine],
             "last": self._last(st, pid),
             "history": st.lottery_history(pid, HISTORY_DAYS),
+            "draws": self._draws(st),
         }
+
+    def _draws(self, st: Store) -> list[dict[str, Any]]:
+        """The latest drawn days, newest first, with their top prize winners (board ids and nicks, one per save) and
+        what each top ticket was paid (0 without a winner)."""
+        draws = st.lottery_draws(HISTORY_DAYS)
+        nicks = self._nicks(st, list(dict.fromkeys(pid for d in draws for pid in d["top"])))
+        out = []
+        for d in draws:
+            each = json.loads(d["result"]).get("each", {}).get("top", 0)
+            out.append({"day": d["day"], "number": d["number"],
+                        "top": [{"id": board_id(pid), "nick": nicks[pid]} for pid in d["top"]],
+                        "each": int(each) if d["top"] else 0})
+        return out
+
+    def _nicks(self, st: Store, pids: list[str]) -> dict[str, str]:
+        """Park.nick of each of [pids], in two queries."""
+        loadouts = st.loadouts(pids)
+        rooms = st.room_nicks(pids)
+        out = {}
+        for pid in pids:
+            lo = _loadout_json(loadouts.get(pid, ""))
+            nick = lo.get("nick") if isinstance(lo.get("nick"), str) else ""
+            out[pid] = self.park.mask(nick or rooms.get(pid) or BOARD_DEFAULT_NICK)
+        return out
 
     def _last(self, st: Store, pid: str) -> dict[str, Any] | None:
         row = st.lottery_last_drawn()

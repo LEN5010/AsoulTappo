@@ -13,6 +13,8 @@ RULES = race.Rules.of(CFG, MEMBERS)
 J, N, B, X, S = "jiaran", "nailin", "beila", "xinyi", "sinuo"
 # A shuffle that keeps the order: below(i + 1) answers i for i = 4, 3, 2, 1.
 KEEP = [4, 3, 2, 1]
+# Order dice in manifest order, all different: 6 5 4 3 2, so the order is the manifest's.
+FIRST = [5, 4, 3, 2, 1]
 
 
 class Script:
@@ -83,6 +85,9 @@ def test_a_seed_decides_the_whole_race():
     lanes = {tuple(race.run_seed(RULES, s, bytes([k]) * 32)["start"]) for k in range(2, 40)}
     assert len(lanes) > 10
     assert sorted(a["ranking"]) == sorted(MEMBERS) and sorted(a["start"]) == sorted(MEMBERS)
+    assert sorted(a["order"]) == sorted(MEMBERS)
+    orders = {tuple(race.run_seed(RULES, s, bytes([k]) * 32)["order"]) for k in range(2, 40)}
+    assert len(orders) > 10
     for step in a["moves"]:
         assert set(step) <= {"m", "dice", "steps", "from", "to", "carry", "square", "end"}
         assert step["dice"] == [step["steps"]] and step["steps"] in RULES.dice
@@ -99,9 +104,48 @@ def test_the_lanes_come_first_from_the_seed():
     assert race.run_seed(RULES, setup(), seed)["start"] == [MEMBERS[i] for i in lanes]
 
 
+def test_the_order_is_rolled_and_ties_roll_again():
+    # Round one J6 N6 B3 X3 S1; J N B X roll again together, 5 2 4 4; B and X once more, 2 5.
+    rng = Script(KEEP + [5, 5, 2, 2, 0] + [4, 1, 3, 3] + [1, 4] + [die(1)] * 40)
+    out = race.run(RULES, setup(), rng)
+    assert out["rolls"] == [
+        [{"m": J, "face": 6}, {"m": N, "face": 6}, {"m": B, "face": 3}, {"m": X, "face": 3}, {"m": S, "face": 1}],
+        [{"m": J, "face": 5}, {"m": N, "face": 2}, {"m": B, "face": 4}, {"m": X, "face": 4}],
+        [{"m": B, "face": 2}, {"m": X, "face": 5}],
+    ]
+    # A 5 on the reroll does not pass the 6s: each tie is settled among its own.
+    assert out["order"] == [J, N, X, B, S]
+    # Every round moves in that order.
+    assert [m["m"] for m in out["moves"][:10]] == [J, N, X, B, S] * 2
+
+
+def test_the_order_comes_after_the_lanes_and_before_the_moves():
+    # Recomputed from the stream as PROTOCOL.md tells: lanes, the order's dice round by round, then the moves.
+    for k in range(200):
+        seed = k.to_bytes(32, "big")
+        out = race.run_seed(RULES, setup(), seed)
+        r = race.StreamRng(seed)
+        for i in range(4, 0, -1):
+            r.below(i + 1)
+        keys = {m: [] for m in MEMBERS}
+        rolls = []
+        rolling = list(MEMBERS)
+        while rolling:
+            got = [{"m": m, "face": r.below(6) + 1} for m in rolling]
+            for g in got:
+                keys[g["m"]].append(g["face"])
+            rolls.append(got)
+            rolling = [m for m in MEMBERS if [keys[o] for o in MEMBERS].count(keys[m]) > 1]
+        assert out["rolls"] == rolls
+        assert out["order"] == sorted(MEMBERS, key=lambda m: keys[m], reverse=True)
+        assert len({tuple(v) for v in keys.values()}) == len(MEMBERS)
+        assert [step["steps"] for step in out["moves"]] == [RULES.dice[r.below(len(RULES.dice))] for _ in out["moves"]]
+        assert [step["m"] for step in out["moves"]] == [out["order"][i % 5] for i in range(len(out["moves"]))]
+
+
 def test_everyone_starts_side_by_side_and_stacks_form_on_landing():
-    # Lanes and round order both jiaran, nailin, beila, xinyi, sinuo.
-    rng = Script(KEEP + KEEP + [die(3), die(3), die(1), die(2), die(1)] + KEEP + [die(2), die(1), die(1)])
+    # Lanes and order both jiaran, nailin, beila, xinyi, sinuo.
+    rng = Script(KEEP + FIRST + [die(3), die(3), die(1), die(2), die(1)] + [die(2), die(1), die(1)])
     out = race.run(RULES, setup(), rng)
     assert out["start"] == [J, N, B, X, S]
     m = out["moves"]
@@ -121,22 +165,40 @@ def test_everyone_starts_side_by_side_and_stacks_form_on_landing():
 
 
 def test_boost_and_trip_squares_move_the_whole_group():
-    rng = Script(KEEP + KEEP + [die(3), die(3), die(1), die(1), die(1)] + KEEP + [die(2), die(1)])
+    rng = Script(KEEP + FIRST + [die(3), die(3), die(1), die(1), die(1)] + [die(2), die(1)])
     m = race.run(RULES, setup(boost=5, trip=7), rng)["moves"]
     # jiaran with nailin on top: 3 + 2 lands on the boost square and goes on to 7, past the trip square.
     assert m[5] == {"m": J, "dice": [2], "steps": 2, "from": 3, "to": 5, "square": "boost", "end": 7, "carry": [N]}
     # nailin alone: 7 + 1 = 8.
     assert m[6] == {"m": N, "dice": [1], "steps": 1, "from": 7, "to": 8}
-    rng = Script(KEEP + KEEP + [die(3), die(1), die(1), die(1), die(1)] + KEEP + [die(3)])
+    rng = Script(KEEP + FIRST + [die(3), die(1), die(1), die(1), die(1)] + [die(3)])
     m = race.run(RULES, setup(boost=5, trip=6), rng)["moves"]
     assert m[5] == {"m": J, "dice": [3], "steps": 3, "from": 3, "to": 6, "square": "trip", "end": 5}
+
+
+def test_the_finish_must_be_reached_exactly():
+    # A short track: 3 from square 0 lands on the finish; 3 from square 2 goes to 4 and walks back to 2.
+    rules = race.Rules(members=MEMBERS, track=4, dice=(1, 2, 3), square_range=(10, 11), boost=2, trip=-1)
+    assert race.bounce(5, 4) == 3 and race.bounce(6, 4) == 2 and race.bounce(4, 4) == 4 and race.bounce(-1, 4) == 0
+    # Order J N B X S; J 2, N 2 (on top of J), B 1, X 1, S 1; then J rolls 3 carrying N: 2 + 3 = 5, back to 3.
+    rng = Script(KEEP + FIRST + [1, 1, 0, 0, 0] + [2] + [0, 0, 0, 0] + [0, 0, 0, 0, 0])
+    m = race.run(rules, setup(10, 11), rng)["moves"]
+    assert m[5] == {"m": J, "dice": [3], "steps": 3, "from": 2, "to": 3, "carry": [N]}
+    # Bounced onto the trip square: it acts as on any landing. Everyone rolls 1 onto square 1, J carries the stack to
+    # 4, then N (with those above) rolls 3: 7 walks back to 5, the trip square, and falls to 4.
+    rules = race.Rules(members=MEMBERS, track=6, dice=(1, 2, 3), square_range=(5, 5), boost=2, trip=-1)
+    rng = Script(KEEP + FIRST + [0, 0, 0, 0, 0] + [2, 2])
+    m = race.run(rules, {"boost": 2, "trip": 5}, rng)["moves"]
+    assert m[5] == {"m": J, "dice": [3], "steps": 3, "from": 1, "to": 4, "carry": [N, B, X, S]}
+    assert m[6] == {"m": N, "dice": [3], "steps": 3, "from": 4, "to": 5, "carry": [B, X, S], "square": "trip",
+                    "end": 4}
 
 
 def test_dumplings_still_on_the_start_rank_by_lane():
     # A one-move race: the first to move finishes, the rest never left square 0.
     rules = race.Rules(members=MEMBERS, track=3, dice=(3,), square_range=(10, 11), boost=2, trip=-1)
-    # Lanes sinuo, nailin, beila, xinyi, jiaran (swap 4 with 0); beila moves first.
-    out = race.run(rules, setup(10, 11), Script([0, 3, 2, 1, 4, 3, 0, 1, 0]))
+    # Lanes sinuo, nailin, beila, xinyi, jiaran (swap 4 with 0); beila rolls the 6 and moves first.
+    out = race.run(rules, setup(10, 11), Script([0, 3, 2, 1, 0, 1, 5, 2, 3, 0]))
     assert out["start"] == [S, N, B, X, J]
     assert out["moves"] == [{"m": B, "dice": [3], "steps": 3, "from": 0, "to": 3}]
     assert out["ranking"] == [B, S, N, X, J]
@@ -151,7 +213,9 @@ def test_ranking_follows_squares_then_height():
         assert len(out["moves"]) > 5
         assert all("carry" not in step for step in out["moves"] if step["from"] == 0)
         last = out["moves"][-1]
-        assert last.get("end", last["to"]) >= RULES.track
+        assert last.get("end", last["to"]) == RULES.track
+        for step in out["moves"]:
+            assert 0 <= step.get("end", step["to"]) <= RULES.track
         assert out["ranking"][0] in [last["m"], *last.get("carry", [])]
         winner_rode += out["ranking"][0] != last["m"]
     # The winner is the top of the group that gets there, often not the one that moved.

@@ -1,11 +1,15 @@
 """The dumpling race's rules (design §6), with no storage or clock: a race is fully determined by its setup and the
 random stream it draws from, and its odds by the coins staked on it.
 
-The five dumplings start side by side on square 0, one per lane, the lanes drawn at random. Each round all five move
-once in a random order. A move rolls a die and carries every dumpling stacked on the mover along; on square 0 nobody
-is stacked, so a move from there carries nobody. Landing on an occupied square past the start puts the movers on top;
-landing on the boost or trip square moves the whole group once more. The first group to reach the end finishes the
-race; every dumpling is ranked by square, within a square the higher one ahead, and on square 0 by lane.
+The track is a lap of `track` squares: square 0 is the start and square `track` the finish, the same corner of the
+board. The five dumplings start together on square 0, in lanes drawn at random. Then each rolls a six-sided die for
+the order: the higher face moves first, and those on the same face roll again among themselves until they part (see
+opening()). The order holds for the whole race: each round all five move once in it. A move rolls a die and carries
+every dumpling stacked on the mover along; on square 0 nobody is stacked, so a move from there carries nobody. The
+finish must be reached exactly: a roll that would carry the group past it takes it to the finish and back by the
+squares left over (bounce()). Landing on an occupied square past the start puts the movers on top; landing on the
+boost or trip square moves the whole group once more. The race goes on, with no limit on rounds, until a group lands
+on the finish; every dumpling is ranked by square, within a square the higher one ahead, and on square 0 by lane.
 
 All five dumplings are alike, so every member has the same chance of each place. The odds start from it and move with
 the coins staked: see odds_tenths().
@@ -25,6 +29,8 @@ from typing import Any
 MAX_ODDS_TENTHS = 990
 # How many places each kind of bet covers: its chance for each of n alike members is places / n.
 PLACES = {"win": 1, "top2": 2, "last": 1}
+# The faces of the die rolled for the order (apart from the dice a move rolls).
+ORDER_FACES = 6
 
 
 # ---------------------------------------------------------------- randomness
@@ -96,12 +102,38 @@ def _shuffle(items: list[int], below: Any) -> None:
         items[i], items[j] = items[j], items[i]
 
 
-def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
-    """Runs one race. Returns {ranking, start, moves}: ranking first to last; start the lanes on the start line, top
-    lane first; each move as described in PROTOCOL.md (团子赛跑).
+def opening(n: int, below: Any) -> tuple[list[int], list[list[tuple[int, int]]]]:
+    """The order of play of [n] members (indices into the members): each rolls below(ORDER_FACES) + 1, the higher
+    face first. Members sharing a face with another roll again, all of them in the same round even when they tie on
+    different faces, but each is only compared within its own tie. Every round draws in member order, so round one
+    is everyone, from the first member to the last. A member's rolls so far are its key, and the order is the keys
+    from the highest down, compared face by face. Returns (order, rounds), each round its rolls [(member, face)] in
+    the order drawn.
 
-    Draw order: the lanes (one shuffle), then for each round the order (one shuffle) and each move's die
-    (below(len(dice)))."""
+    Faces 6 6 3 3 1: the first four roll again; on 5 2 4 4 the last two roll once more."""
+    keys: list[list[int]] = [[] for _ in range(n)]
+    rounds: list[list[tuple[int, int]]] = []
+    rolling = list(range(n))
+    while rolling:
+        got = [(d, below(ORDER_FACES) + 1) for d in rolling]
+        for d, face in got:
+            keys[d].append(face)
+        rounds.append(got)
+        rolling = [d for d in range(n) if any(e != d and keys[e] == keys[d] for e in range(n))]
+    return sorted(range(n), key=lambda d: keys[d], reverse=True), rounds
+
+
+def bounce(square: int, track: int) -> int:
+    """Where a move that would end on [square] lands: past the finish it walks back from it by what is left over."""
+    return 2 * track - square if square > track else max(0, square)
+
+
+def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
+    """Runs one race. Returns {ranking, start, order, rolls, moves}: ranking first to last; start the lanes on the
+    start line, top lane first; order who moves first to last, every round; rolls the order's rounds of dice, each
+    [{m, face}] in the order drawn; each move as described in PROTOCOL.md (团子赛跑).
+
+    Draw order: the lanes (one shuffle), the order (opening()), then each move's die (below(len(dice)))."""
     members = rules.members
     below = rng.below
     dice = rules.dice
@@ -123,10 +155,10 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
         # Higher is further ahead: up a stack, or on square 0 towards the top lane.
         return stack[pos[d]].index(d) if pos[d] else -lane[d]
 
+    order, rounds = opening(n, below)
+    rolls = [[{"m": members[d], "face": face} for d, face in got] for got in rounds]
     moves: list[dict[str, Any]] = []
     while True:
-        order = idx[:]
-        _shuffle(order, below)
         for d in order:
             roll = dice[below(nd)]
             p = pos[d]
@@ -140,25 +172,25 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
                     del stack[p]
             else:
                 group = [d]
-            land = p + roll
+            land = bounce(p + roll, track)
             q = land
             if q in squares:
-                q = max(0, q + squares[q])
+                q = bounce(q + squares[q], track)
             if q:
                 stack.setdefault(q, []).extend(group)
             for g in group:
                 pos[g] = q
-            step: dict[str, Any] = {"m": members[d], "dice": [roll], "steps": roll, "from": p, "to": min(land, track)}
+            step: dict[str, Any] = {"m": members[d], "dice": [roll], "steps": roll, "from": p, "to": land}
             if len(group) > 1:
                 step["carry"] = [members[g] for g in group[1:]]
             if land in square_kind:
                 step["square"] = square_kind[land]
                 step["end"] = q
             moves.append(step)
-            if q >= track:
+            if q == track:
                 ranked = sorted(idx, key=lambda x: (pos[x], height(x)), reverse=True)
                 return {"ranking": [members[x] for x in ranked], "start": [members[x] for x in start],
-                        "moves": moves}
+                        "order": [members[x] for x in order], "rolls": rolls, "moves": moves}
 
 
 def run_seed(rules: Rules, setup: dict[str, Any], seed: bytes) -> dict[str, Any]:

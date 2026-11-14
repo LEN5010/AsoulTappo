@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// The scratch odds (behind the band's info key): a paytable a card, opening on the card in front. One row a prize on
+// The scratch odds (behind the band's info key): a paytable a card on sale, opening on the card in front; with one
+// card on sale there is no switch. One row a prize on
 // one sheet, best prize first: a small icon, the prize, then its chance as a percent with a bar as long as the chance.
 // The top prize has the only gold; a miss is grey.
 import { computed, ref } from "vue";
@@ -10,30 +11,31 @@ import { arrowSelect } from "../../ui/focus";
 import Icon from "../../ui/Icon.vue";
 import { COIN_SMALL } from "./coin";
 import ParkSheet from "./ParkSheet.vue";
-import { KINDS, oddsRows, oddsText, topPrize, type CardKind, type OddsRow } from "./scratchCards";
+import { ON_SALE, oddsRows, oddsText, topPrize, type CardKind, type OddsRow } from "./scratchCards";
 
 const props = defineProps<{ kind: CardKind; complete: boolean }>();
 defineEmits<{ close: [] }>();
 
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 const WORDS: Partial<Record<OddsRow["kind"], string>> = { skin: "皮肤", big: "大隐藏卡", emote: "阿草表情", again: "再来一张", miss: "没中" };
-const shown = ref<CardKind>(props.kind);
+/** A hidden card on the table opens on the first card on sale. */
+const shown = ref<CardKind>(ON_SALE.includes(props.kind) ? props.kind : ON_SALE[0] ?? props.kind);
 const tabs = ref<HTMLElement>();
 /** The emote row shows one of the set: the face 阿草 makes when a card pays one. */
 const SAMPLE = faceKey(HOST.emote) ?? SCRATCH_EMOTES[0]?.key ?? "";
 const sampleSrc = SAMPLE ? assetUrl(emoteCover(SAMPLE)) : "";
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-const lists = computed(() => KINDS.map((k) => ({ kind: k, rows: oddsRows(k, props.complete), top: topPrize(k) })));
+const lists = computed(() => ON_SALE.map((k) => ({ kind: k, rows: oddsRows(k, props.complete), top: topPrize(k) })));
 /** The bar's length in percent of its track: the chance itself, so both tabs share one scale. */
 const barOf = (row: OddsRow) => `${Math.min(100, row.rate)}%`;
 </script>
 
 <template>
   <ParkSheet title="刮刮乐概率" @close="$emit('close')">
-    <div ref="tabs" class="seg" role="tablist" @keydown="arrowSelect($event, tabs)">
+    <div v-if="ON_SALE.length > 1" ref="tabs" class="seg" role="tablist" @keydown="arrowSelect($event, tabs)">
       <button
-        v-for="k in KINDS" :key="k" type="button" role="tab" class="seg-key" :class="{ on: shown === k }"
+        v-for="k in ON_SALE" :key="k" type="button" role="tab" class="seg-key" :class="{ on: shown === k }"
         :aria-selected="shown === k" :tabindex="shown === k ? 0 : -1" @click="shown = k"
       >{{ NAMES[k] }}</button>
     </div>
