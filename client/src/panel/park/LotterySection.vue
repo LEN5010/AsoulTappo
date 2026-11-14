@@ -3,10 +3,10 @@
 // draw broadcast: on the left the draw machine (a globe with a ring of the ten numbered balls over a coral cabinet with
 // the three number keys in its windows) and the tray of my stubs of the day under it; on the right the pool (the top prize, server-wide,
 // which rolls over until a draw has a top winner, with the second and the third under it) and the board of the latest
-// draws (day, number, top prize winners, what I won). The bottom bar has my result of the draw on the table and the
-// buy keys; 往期 there opens the full list on a narrow panel, and the last draw's stubs once today has its own. There
-// is no push: while the page is open the state loads every POLL_MS, and every few seconds once the close or the draw
-// is due. The countdown and 阿草 go up in the park's coral band (band.ts).
+// draws (day, number, top prize winners, the top prize). The bottom bar has my result of the draw on the table and the
+// buy keys; 往期 there opens the full list with what I won each day, and the last draw's stubs once today has its
+// own. There is no push: while the page is open the state loads every POLL_MS, and every few seconds once the close
+// or the draw is due. The countdown and 阿草 go up in the park's coral band (band.ts).
 // The number keys double as reels: 机选 spins them onto the number bought, and a draw's first showing spins them onto
 // the drawn number, one digit at a time from the right, while the ring of balls turns and each digit's ball drops onto
 // its key.
@@ -22,7 +22,7 @@ import { Drum } from "./lotteryDrum";
 import { COIN_SMALL } from "./coin";
 import {
   cleanNumber, countdown, dayBefore, drawLabel, dropDigit, markDrawSeen, nextDraw, NO_PICKS, pickedNumber, pickLabel,
-  pickTarget, putDigit, reelDigit, revealDigits, salesOpen, seenDraw, shortDay, stepDigit, verifyDraw, winnersLine,
+  pickTarget, putDigit, reelDigit, revealDigits, salesOpen, seenDraw, shortDay, stepDigit, winnersLine,
   type LotteryBuy, type LotteryState, type LotteryTier, type Picks,
 } from "./lottery";
 import TicketStub from "./TicketStub.vue";
@@ -75,7 +75,7 @@ const calm = computed(() => reducedMotion.value);
 /** The page is shown: the clock runs and a new draw may play its reveal. */
 const active = ref(false);
 /** The pop-up open over the bottom bar. */
-const pop = ref<"" | "proof" | "past">("");
+const pop = ref<"" | "past">("");
 const rootEl = ref<HTMLElement>();
 
 let loading = false;
@@ -1010,17 +1010,6 @@ const hasPast = computed(() => !!lastAside.value || past.value.length > 0);
 /** A draw on the board stays blank while its first showing is still playing on the keys. */
 const unseen = (day: string) => !!reveal.value && reveal.value === day && stopped.value < 3;
 
-const verified = ref<boolean | null>(null);
-// Checked again only when the draw itself changes, not on every reload of the same one.
-watch(() => (last.value ? [last.value.day, last.value.number, last.value.salt, last.value.hash].join("|") : ""), async (key) => {
-  verified.value = null;
-  if (pop.value === "proof") pop.value = "";
-  const d = last.value;
-  if (!d) return;
-  const ok = await verifyDraw(d.number, d.salt, d.hash);
-  if (last.value?.day === d.day && key) verified.value = ok;
-}, { immediate: true });
-
 /** A ticket's digits, each marked when it is one of the trailing digits matched among the [stopped] at rest. */
 function digits(number: string, tier: LotteryTier | null, stopped = 3) {
   const { lit } = revealDigits(tier, stopped);
@@ -1085,15 +1074,13 @@ watch(restOut, () => {
 // The drawn number gives the keys back to a new day softly.
 watch(showDraw, (on) => { if (!on && !reeling.value) faceIn.value = "fade"; });
 
-// ---- the two pop-ups (pop, above): the proof of the draw from the board, and the earlier days from the bar
+// ---- the pop-up (pop, above): the earlier days, from the bar
 const barEl = ref<HTMLElement>();
-const sideEl = ref<HTMLElement>();
-function toggle(p: "proof" | "past") {
+function toggle(p: "past") {
   pop.value = pop.value === p ? "" : p;
 }
 function onOutside(e: PointerEvent) {
-  const t = e.target as Node;
-  if (!barEl.value?.contains(t) && !sideEl.value?.contains(t)) pop.value = "";
+  if (!barEl.value?.contains(e.target as Node)) pop.value = "";
 }
 watch(pop, (open) => {
   if (open) document.addEventListener("pointerdown", onOutside, true);
@@ -1212,7 +1199,7 @@ function onPopKey(e: KeyboardEvent) {
         </div>
 
         <!-- The pool and the board of the latest draws. -->
-        <aside ref="sideEl" class="side" :class="{ only: !past.length }" @keydown="onPopKey">
+        <aside class="side" :class="{ only: !past.length }">
           <div class="pool-card" :aria-label="`头奖 累积奖池 ${fmt(pool ?? 0)}`">
             <div class="pool-head" aria-hidden="true">
               <span class="tier-name">头奖</span>
@@ -1238,31 +1225,24 @@ function onPopKey(e: KeyboardEvent) {
             </ul>
           </div>
 
-          <!-- One draw a row, newest first: its day, its number, who won the top prize, and what I won. -->
+          <!-- One draw a row, newest first: its day, its number, who won the top prize and what each won. -->
           <div v-if="past.length" class="board">
-            <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span></div>
+            <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span><span>奖金</span></div>
             <ol class="rows ui-scroll">
               <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day) }">
                 <span class="day">{{ shortDay(h.day) }}</span>
                 <span
-                  class="balls" :class="{ in: !!reveal && reveal === h.day && stopped === 3 }"
+                  class="num" :class="{ in: !!reveal && reveal === h.day && stopped === 3 }"
                   :aria-label="`开奖号码 ${h.number}`"
-                ><i v-for="(d, i) in h.number.split('')" :key="i" class="lball" :class="{ odd: odd(d) }" :style="{ '--i': i }"><b>{{ d }}</b></i></span>
-                <button
-                  v-if="last && h.day === last.day && verified !== null" type="button" class="ui-btn ghost small proof-key"
-                  :class="{ bad: !verified }" :title="verified ? '已校验' : '校验不符'" :aria-label="verified ? '已校验' : '校验不符'"
-                  :aria-expanded="pop === 'proof'" @click="toggle('proof')"
-                ><Icon :name="verified ? 'check' : 'info'" :size="14" /></button>
-                <span v-else class="proof-gap"></span>
+                ><i v-for="(d, i) in h.number.split('')" :key="i" :style="{ '--i': i }">{{ d }}</i></span>
                 <span class="winners" :class="{ none: !h.top.length }" :title="h.top.length > 1 ? h.winners : undefined">{{ h.first }}</span>
-                <span v-if="h.won" class="won">+{{ fmt(h.won) }}</span>
+                <span class="prize" :class="{ none: !h.top.length }">
+                  <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
+                  <template v-else>—</template>
+                </span>
               </li>
             </ol>
           </div>
-          <dl v-if="pop === 'proof' && last" class="pop proof">
-            <div><dt>哈希</dt><dd>{{ last.hash }}</dd></div>
-            <div><dt>随机串</dt><dd>{{ last.salt }}</dd></div>
-          </dl>
         </aside>
       </template>
     </div>
@@ -1300,6 +1280,10 @@ function onPopKey(e: KeyboardEvent) {
             <span>{{ shortDay(h.day) }}</span>
             <b>{{ h.number }}</b>
             <span class="winners" :class="{ none: !h.top.length }">{{ h.winners }}</span>
+            <span class="prize" :class="{ none: !h.top.length }">
+              <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
+              <template v-else>—</template>
+            </span>
             <span v-if="h.won !== null" class="won" :class="{ on: h.won > 0 }">{{ h.won > 0 ? `+${fmt(h.won)}` : "未中奖" }}</span>
             <span v-else></span>
           </li>
@@ -1959,9 +1943,9 @@ function onPopKey(e: KeyboardEvent) {
 .board-head,
 .rows li {
   display: grid;
-  grid-template-columns: 4.6em 98px 22px minmax(0, 1fr) auto;
+  grid-template-columns: 56px 48px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 6px;
+  column-gap: 8px;
   padding: 0 12px;
 }
 .board-head {
@@ -1971,11 +1955,9 @@ function onPopKey(e: KeyboardEvent) {
   font: 700 var(--fs-caption)/1 var(--font);
   color: var(--ink-2);
 }
-.board-head span:nth-child(2) {
-  grid-column: 2 / span 2;
-}
-.board-head span:nth-child(3) {
-  grid-column: 4 / span 2;
+/* The prize column is as wide as each row's amount, so it lines up on the right. */
+.board-head span:nth-child(4) {
+  text-align: right;
 }
 /* The rows fade out at the bottom edge, where they scroll under it. */
 .rows {
@@ -1997,19 +1979,21 @@ function onPopKey(e: KeyboardEvent) {
   background: var(--surface);
   color: var(--ink);
 }
-.balls {
-  display: inline-flex;
-  gap: 3px;
+/* The drawn number in plain digits; the newest one larger, in the ramp's deep coral. */
+.num {
+  font: 800 17px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: var(--ink);
 }
-/* The draw's balls: the machine's balls, small. */
-.balls .lball {
-  --s: 25px;
+.num i {
+  display: inline-block;
+  font-style: normal;
 }
-.rows li:first-child .balls {
-  gap: 4px;
-}
-.rows li:first-child .balls .lball {
-  --s: 30px;
+.rows li:first-child .num {
+  font-size: 22px;
+  color: var(--c-700);
 }
 .day {
   white-space: nowrap;
@@ -2024,29 +2008,32 @@ function onPopKey(e: KeyboardEvent) {
 .winners.none {
   color: var(--ink-3);
 }
-.rows .won {
+/* What each top ticket was paid; a dash when nobody won and the pool rolled over. */
+.prize {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
   font: 800 15px/1 var(--font-latin);
-  color: var(--c-700);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--ink);
 }
-/* Held back while the draw plays on the keys. */
-.rows li.unseen .balls,
-.rows li.unseen .proof-key,
-.rows li.unseen .winners,
-.rows li.unseen .won,
-.result.hide {
-  visibility: hidden;
+.prize svg {
+  color: var(--c-700);
 }
-.proof-key {
-  width: 22px;
-  height: 22px;
-  padding: 0;
+.prize.none {
   color: var(--ink-3);
 }
-.proof-key.bad,
-.proof-key.bad:hover:not(:disabled),
-.proof-key.bad[aria-expanded="true"]:not(:disabled) {
-  color: var(--bad);
+.rows li:first-child .prize {
+  font-size: 17px;
+}
+/* Held back while the draw plays on the keys. */
+.rows li.unseen .num,
+.rows li.unseen .winners,
+.rows li.unseen .prize,
+.result.hide {
+  visibility: hidden;
 }
 
 /* ---- the bottom bar: 往期 on a narrow panel or with the last draw's stubs aside, my result, the buy keys */
@@ -2133,7 +2120,7 @@ function onPopKey(e: KeyboardEvent) {
   opacity: 0.55;
 }
 
-/* Pop-ups: the full list rises from the bar, the proof from the bottom of the side. */
+/* The pop-up: the full list rises from the bar. */
 .pop {
   position: absolute;
   z-index: 3;
@@ -2144,34 +2131,6 @@ function onPopKey(e: KeyboardEvent) {
   border-radius: var(--radius-m);
   background: var(--surface);
   box-shadow: var(--shadow-paper), 0 10px 28px -12px rgba(var(--c-900-rgb), 0.3);
-}
-.proof {
-  right: 0;
-  bottom: 0;
-  width: max(100%, 280px);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.proof > div {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-.proof dt {
-  flex: none;
-  width: 40px;
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  color: var(--ink-3);
-}
-.proof dd {
-  min-width: 0;
-  margin: 0;
-  font: 500 var(--fs-caption)/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: var(--ink-2);
-  overflow-wrap: anywhere;
-  user-select: text;
 }
 .past {
   left: 16px;
@@ -2197,7 +2156,7 @@ function onPopKey(e: KeyboardEvent) {
 .past-stubs .digit {
   color: var(--ink-3);
 }
-/* One draw a row: the day, the number, the top prize winners, my result. */
+/* One draw a row: the day, the number, the top prize winners, the top prize, my result. */
 .history {
   display: flex;
   flex-direction: column;
@@ -2208,7 +2167,7 @@ function onPopKey(e: KeyboardEvent) {
 }
 .history li {
   display: grid;
-  grid-template-columns: 4.6em 3em minmax(0, 1fr) auto;
+  grid-template-columns: 4.6em 3em minmax(0, 1fr) 76px 64px;
   align-items: baseline;
   gap: 12px;
   font-size: var(--fs-label);
@@ -2220,13 +2179,16 @@ function onPopKey(e: KeyboardEvent) {
   letter-spacing: 0.08em;
   color: var(--ink-2);
 }
+.history .won {
+  text-align: right;
+}
 .history .won.on {
   font: 800 var(--fs-number)/1 var(--font-latin);
   color: var(--c-700);
 }
 
 /* ---- the first showing of a draw: each digit of my stubs lights as the key above it comes to rest; once all three
- * rest, the balls drop onto the board right to left and the stamps go down. */
+ * rest, the digits drop onto the board right to left and the stamps go down. */
 .reveal .drawn .digit.on {
   animation: digit-lit 360ms var(--ease-out) both;
 }
@@ -2235,7 +2197,7 @@ function onPopKey(e: KeyboardEvent) {
   45% { transform: translateY(-4px) scale(1.18); }
   to { color: var(--c-700); }
 }
-.reveal .balls.in i {
+.reveal .num.in i {
   animation: ball-in 420ms var(--ease-pop) both;
   animation-delay: calc((2 - var(--i)) * 90ms);
 }
@@ -2365,23 +2327,20 @@ function onPopKey(e: KeyboardEvent) {
     overflow: visible;
     padding: 0;
   }
-  /* The latest draw on one line: its day, the balls and the proof; who won is in 往期. */
+  /* The latest draw on one line: its day, the number and the top prize; who won is in 往期. */
   .rows {
     mask: none;
   }
   .rows li:first-child {
-    grid-template-columns: minmax(0, 1fr) auto 22px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     min-height: 0;
     padding: 8px 8px 8px 10px;
   }
-  .rows li:first-child .winners,
-  .rows li:first-child .won {
+  .rows li:first-child .winners {
     display: none;
   }
-  .rows li:first-child .balls i {
-    width: 26px;
-    height: 26px;
-    font-size: 18px;
+  .rows li:first-child .num {
+    font-size: 20px;
   }
   .tray {
     padding: 10px 10px 10px 12px;
@@ -2535,10 +2494,8 @@ function onPopKey(e: KeyboardEvent) {
   .rows li:first-child {
     min-height: 40px;
   }
-  .rows li:first-child .balls i {
-    width: 26px;
-    height: 26px;
-    font-size: 18px;
+  .rows li:first-child .num {
+    font-size: 20px;
   }
   .result.won {
     font-size: var(--fs-heading);
