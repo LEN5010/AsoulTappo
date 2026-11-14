@@ -329,19 +329,23 @@ DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"b
 # `first` shards. Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet. A `hidden` card
 # is off sale: the server refuses to sell it and the client does not show it, but one already bought is still revealed
 # and paid.
-# race: one every `interval` seconds, bets taken for the first `betting`; the dumplings of the five members start
+# race: one every `interval` seconds, bets taken for the first `betting`; with `startAt` (minute of the China day) the
+# races are placed so that each starts then: one a day at 19:00, its bets open from ten minutes after the day before's
+# start (the rest of the interval is the run and the podium). The dumplings of the five members start
 # together on square 0 of a lap of `track` squares (the start is also the finish), roll a six-sided die for the order
 # of play and move 1 to 3 squares (`dice`), carrying those stacked on them. A group must land on the finish exactly:
 # what a roll carries past it walks back from it. All five are alike, so each wins with p = 1/5 (top two 2/5, last
 # 1/5). Odds move with the coins staked on each kind: a member's
 # share is (its coins + `depth` × its p / Σp) / (all coins on that kind + `depth`), the odds `payout` / (share × Σp),
 # rounded down to a tenth, at least `minOdds`; a bet keeps the odds it was placed at. A save stakes at most `maxCoins`.
-# lottery: `daily` tickets a save, 000 to 999; sales close at minute `closeAt` of the China day and the draw is at
-# `drawAt`. The top prize is the server-wide pool: it starts at `pool.seed` shards, every coin spent in the park
+# A winning bet pays coins × odds in coins, each save's bets on a race summed and then rounded half up.
+# lottery: `daily` tickets a save, 000 to 999, for each draw; the draw is at minute `drawAt` of the China day and
+# sales close at `closeAt` before it. A lottery day runs from one draw to the next, so the next draw's tickets go on
+# sale as soon as a draw is made. The top prize is the server-wide pool: it starts at `pool.seed` shards, every coin spent in the park
 # (scratch, race and lottery) adds `pool.perCoin`, and it rolls over until a draw has a top winner. The second is
 # `second` of the day's sales, split between winners; the third is `third` shards each.
 PARK = {
-    "coin": {"price": 500, "gift": 1, "minTaps": 10000, "stampsPerCoin": 30,
+    "coin": {"price": 500, "gift": 3, "minTaps": 10000, "stampsPerCoin": 30,
              "badges": [100, 1000, 5000]},
     "scratch": {
         "cards": {
@@ -360,13 +364,15 @@ PARK = {
         "serverAt": {"basic": 50000, "premium": 250000},
     },
     "race": {
-        "interval": 3600, "betting": 3300, "track": 24, "dice": [1, 2, 3], "payout": 0.85, "minOdds": 1.1,
-        "depth": 100, "maxCoins": 10, "kinds": ["win", "top2", "last"],
-        # One boost and one trip square a race, somewhere in `range` (inclusive), moving a landing dumpling by `steps`.
-        "squares": {"range": [5, 20], "boost": 2, "trip": -1},
-        "roomAt": 10000,
+        "interval": 86400, "betting": 85800, "startAt": 1140, "track": 24, "dice": [1, 2, 3], "payout": 0.85,
+        "minOdds": 1.1, "depth": 100, "maxCoins": 10, "kinds": ["win", "top2", "last"],
+        # Five squares a race, all different, somewhere in `range` (inclusive): the boost and trip squares move a
+        # landing group by `boost` and `trip`; the portal's two ends, `portalGap` squares apart (inclusive), take it to
+        # the other end; the flip square turns its stack upside down. `roomAt` is in coins.
+        "squares": {"range": [5, 20], "boost": 2, "trip": -1, "portalGap": [4, 6]},
+        "roomAt": 20,
     },
-    "lottery": {"daily": 10, "closeAt": 1315, "drawAt": 1320, "pool": {"seed": 10000, "perCoin": 50},
+    "lottery": {"daily": 10, "closeAt": 1135, "drawAt": 1140, "pool": {"seed": 10000, "perCoin": 50},
                 "second": 0.20, "third": 600},
 }
 

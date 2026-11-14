@@ -1,11 +1,16 @@
 <script setup lang="ts">
-// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4): the prize board (the top
-// prize on gold foil: the server-wide pool, which rolls over until a draw has a top winner; then the second and the third), three number keys to pick a number, my stubs of the day, and in the bottom bar the last draw with its hash
-// check and the buy keys. There is no push: while the page is open the state loads every POLL_MS, and every few
-// seconds once the close or the draw is due. The countdown and 阿草 go up in the park's coral band (band.ts).
+// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4), laid out like a lottery's
+// draw broadcast: on the left the draw machine (a globe with a ring of the ten numbered balls over a coral cabinet with
+// the three number keys in its windows) and the tray of my stubs of the day under it; on the right the pool (the top prize, server-wide,
+// which rolls over until a draw has a top winner, with the second and the third under it) and the board of the latest
+// draws (day, number, top prize winners, what I won). The bottom bar has my result of the draw on the table and the
+// buy keys; 往期 there opens the full list on a narrow panel, and the last draw's stubs once today has its own. There
+// is no push: while the page is open the state loads every POLL_MS, and every few seconds once the close or the draw
+// is due. The countdown and 阿草 go up in the park's coral band (band.ts).
 // The number keys double as reels: 机选 spins them onto the number bought, and a draw's first showing spins them onto
-// the drawn number, one digit at a time from the right.
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch, type Ref } from "vue";
+// the drawn number, one digit at a time from the right, while the ring of balls turns and each digit's ball drops onto
+// its key.
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch, type Ref } from "vue";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
@@ -13,11 +18,12 @@ import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
 import { EASE_IN_OUT, EASE_OUT } from "../../ui/motion";
 import { useBand } from "./band";
+import { Drum } from "./lotteryDrum";
 import { COIN_SMALL } from "./coin";
 import {
-  cleanNumber, countdown, dayBefore, dropDigit, markDrawSeen, nextDraw, NO_PICKS, pickedNumber, pickLabel, pickTarget,
-  putDigit, reelDigit, revealDigits, salesOpen, seenDraw, shortDay, stepDigit, verifyDraw, winnersLine, type LotteryBuy,
-  type LotteryState, type LotteryTier, type Picks,
+  cleanNumber, countdown, dayBefore, drawLabel, dropDigit, markDrawSeen, nextDraw, NO_PICKS, pickedNumber, pickLabel,
+  pickTarget, putDigit, reelDigit, revealDigits, salesOpen, seenDraw, shortDay, stepDigit, verifyDraw, winnersLine,
+  type LotteryBuy, type LotteryState, type LotteryTier, type Picks,
 } from "./lottery";
 import TicketStub from "./TicketStub.vue";
 
@@ -37,14 +43,23 @@ const SETTLE_MS = 420;
 const BUY_SPIN_MS = 260;
 const BUY_STOP_GAP_MS = 110;
 const BUY_HOLD_MS = 240;
+/** A drawn ball runs down the tube and along the track in ROLL_S plus ROLL_S_PER_PX a px, speeding up then slowing;
+ * drops into its window in BALL_DROP_S and squashes and springs back there in BALL_SQUASH_S. With no globe shown it
+ * just appears after BALL_DROP_MS. */
+const ROLL_S = 0.16;
+const ROLL_S_PER_PX = 1 / 620;
+const BALL_DROP_S = 0.22;
+const BALL_SQUASH_S = 0.26;
+const BALL_DROP_MS = 300;
 /** The number's flight from the keys into its stub; the other stubs bought with it follow this far apart. */
 const FLY_MS = 560;
 const DROP_MS = 480;
 const DROP_STAGGER_MS = 70;
-/** A draw's first showing: the last digit starts slowing DRAW_FIRST_MS in, each digit to its left DRAW_GAP_MS later.
- * The stamps go down DRAW_STAMP_MS after the first digit rests; the keys go back no sooner than DRAW_HOLD_MS after that. */
-const DRAW_FIRST_MS = 520;
-const DRAW_GAP_MS = 700;
+/** A draw's first showing: the balls blow DRAW_FIRST_MS before the last digit's ball goes, each digit to its left
+ * DRAW_GAP_MS later. The stamps go down DRAW_STAMP_MS after the first digit's ball is in; the keys go back no sooner
+ * than DRAW_HOLD_MS after that. */
+const DRAW_FIRST_MS = 1000;
+const DRAW_GAP_MS = 950;
 const DRAW_STAMP_MS = 180;
 const DRAW_HOLD_MS = 650;
 /** How long the win in the bar counts up, by the best tier won. */
@@ -137,7 +152,7 @@ const left = computed(() => countdown(drawTime.value, now.value));
 const waiting = computed(() => !!state.value && !state.value.drawn && now.value >= state.value.drawAt);
 useBand("lottery", () => {
   const s = state.value;
-  const label = waiting.value ? "开奖中" : s?.drawn ? "明日 22:00 开奖" : "22:00 开奖";
+  const label = waiting.value ? "开奖中" : drawLabel(drawTime.value, now.value);
   return { host: ACHAO["观察"], timer: s ? { label, time: waiting.value ? undefined : left.value } : undefined };
 });
 
@@ -178,15 +193,17 @@ const faceIn = ref<"" | "fade" | "still">("");
 
 const typed = computed(() => pickedNumber(picks.value) ?? "");
 const pickFaces = computed(() => pickLabel(picks.value));
-/** Today is drawn: the keys show the drawn number and cannot be pressed. */
+/** Today is drawn: the windows show the drawn number's balls and the keys are gone. */
 const showDraw = computed(() => !!state.value?.drawn && drawnHere.value);
 const faces = computed<readonly string[]>(() => (showDraw.value ? winning.value : picks.value));
 /** Keys stay pressable while coins are short: picking is free, only the pick key waits. */
 const keysOff = computed(() => !online.value || closed.value || state.value?.left === 0);
 /** Something is playing on the keys or a number is being bought: the keys take no input. */
 const locked = computed(() => !!busy.value || !!reeling.value || !!reveal.value);
-/** The keys as the draw's window: sunk into the tray, the digits coral once at rest. */
-const drum = computed(() => reeling.value === "draw" || (showDraw.value && !reeling.value));
+/** The windows hold the draw's balls instead of the keys: while a draw plays, and once today is drawn. */
+const drum = computed(() => !!reveal.value || showDraw.value);
+/** Whether window [i] has its ball in: all three at rest, from the right one by one while a draw plays. */
+const inSlot = (i: number) => !reveal.value || i >= 3 - stopped.value;
 /** Where the caret shows: the key the next typed digit goes to. */
 const target = computed(() => (typing.value && !keysOff.value && !locked.value ? pickTarget(picks.value, at.value) : null));
 const pickReady = computed(() => typed.value.length === 3 && blocked(1) === null);
@@ -309,6 +326,7 @@ function settle() {
   timers.forEach(clearTimeout);
   timers.clear();
   if (reeling.value) endReels("still");
+  haltGlobe();
   ghosts.value = [];
   held.value = false;
   stopWon();
@@ -336,7 +354,7 @@ interface Reel {
   /** The cell each of the two cell elements shows. */
   shown: [number, number];
 }
-const reeling = ref<"" | "buy" | "draw">("");
+const reeling = ref<"" | "buy">("");
 let reels: Reel[] = [];
 let reelCells: HTMLElement[][] = [];
 let reelFrame = 0;
@@ -409,30 +427,27 @@ function spin(t: number) {
     onRest();
   }
 }
-/** Starts the three keys spinning from [from]; [plan] gives each its stop (ms after the start) and digit. */
-function startReels(from: readonly string[], mode: "buy" | "draw", plan?: { at: number[]; land: readonly string[] }) {
+/** 机选: starts the three keys spinning from [from] while the balls blow in the globe. */
+function startReels(from: readonly string[]) {
   const g = gen;
-  reeling.value = mode;
+  reeling.value = "buy";
   reels = [0, 1, 2].map((i) => ({
     pos: 0, from: from[i] ?? "", stopAt: null, land: "", end: 0, p0: 0, t0: 0, ms: 0, done: false, shown: [-1, -1],
   }));
   onLand = () => {};
   onRest = () => {};
   reelStart = performance.now();
+  airOn();
   // The reel windows are in the DOM after this render.
   void nextTick(() => {
     if (g !== gen) return;
     reelCells = Array.from(keysEl.value?.querySelectorAll(".reel") ?? [], (el) => Array.from(el.children) as HTMLElement[]);
     reelStart = lastFrame = performance.now();
-    if (plan) reels.forEach((r, i) => {
-      r.stopAt = reelStart + plan.at[i]!;
-      r.land = plan.land[i] ?? "";
-    });
     reels.forEach((_, i) => paint(i));
     reelFrame = requestAnimationFrame(spin);
   });
 }
-/** 机选: the spinning keys stop on [digits] left to right, no sooner than BUY_SPIN_MS after they started. */
+/** The spinning keys stop on [digits] left to right, no sooner than BUY_SPIN_MS after they started. */
 function stopReels(digits: readonly string[], rest: () => void) {
   const t = Math.max(performance.now(), reelStart + BUY_SPIN_MS);
   reels.forEach((r, i) => {
@@ -440,7 +455,10 @@ function stopReels(digits: readonly string[], rest: () => void) {
     r.land = digits[i] ?? "";
   });
   onLand = press;
-  onRest = rest;
+  onRest = () => {
+    airOff();
+    rest();
+  };
 }
 /** The keys show their faces again: [face] says how they come in. */
 function endReels(face: "fade" | "still") {
@@ -452,9 +470,339 @@ function endReels(face: "fade" | "still") {
   reeling.value = "";
 }
 
+// ---- the draw machine. The globe's balls are a live simulation (lotteryDrum.ts): at rest they lie where they fell;
+// while the keys spin or a draw plays the air blows them about, and they collide and spin. One animation frame loop
+// runs the simulation and the balls on their way out, writes every transform in one go and reads no layout; it stops
+// once everything is still, and when the page is left. A drawn ball is pulled to the outlet on the globe's rim, runs
+// down the tube and along the track (the tube's own SVG path), turning by the way it has come, drops into its window,
+// squashes and springs back, and stays there; it is gone from the globe until the air next comes on. A digit drawn
+// twice comes out again: the machine holds more than one ball of each number, as the real ones do. Everything is laid
+// out from the rendered boxes when their size changes; with no globe shown (the smallest panel) the balls just appear
+// in their windows.
+
+const DIGITS = "0123456789".split("");
+const odd = (d: string | undefined) => Number(d) % 2 === 1;
+
+const machineEl = ref<HTMLElement>();
+const tubeMask = `tube-${useId()}`;
+const globeEl = ref<HTMLElement>();
+const cabinetEl = ref<HTMLElement>();
+const tubePathEl = ref<SVGPathElement>();
+
+/** The tube and the track, from the rendered machine: the path to draw and the points a ball runs through. */
+interface Pt { x: number; y: number }
+interface Tube {
+  w: number; h: number; d: string; width: number; ball: number; exit: Pt; entry: Pt; end: number; y: number;
+  /** The globe's centre and inner radius, and the outlet's angle on its rim. */
+  cx: number; cy: number; R: number; angle: number;
+}
+const tube = ref<Tube | null>(null);
+function layoutTube() {
+  const m = machineEl.value;
+  const g = globeEl.value;
+  const cab = cabinetEl.value;
+  const cols = keysEl.value?.querySelectorAll<HTMLElement>(".key-col");
+  if (!m || !g || !cab || !cols || cols.length < 3 || !g.offsetWidth) {
+    tube.value = null;
+    // The globe is gone (a short panel): a ball on its way out leaves now, so its draw goes on without it.
+    const sim = globeSim;
+    globeSim = null;
+    globeKey = "";
+    if (sim?.pulling) {
+      sim.release();
+      wake();
+    }
+    return;
+  }
+  const mb = m.getBoundingClientRect();
+  const gb = g.getBoundingClientRect();
+  const cb = cab.getBoundingClientRect();
+  const first = cols[0]!.getBoundingClientRect();
+  const lastCol = cols[2]!.getBoundingClientRect();
+  const ball = parseFloat(getComputedStyle(g).getPropertyValue("--ball")) || 26;
+  const r = gb.width / 2;
+  const cx = gb.left + r - mb.left;
+  const cy = gb.top + r - mb.top;
+  const y = cb.top - mb.top + parseFloat(getComputedStyle(cab).paddingTop) / 2;
+  const left = first.left - mb.left + ball / 2;
+  const right = lastCol.right - mb.left - ball / 2;
+  // Over the cabinet the tube leaves the globe low on its right and comes down onto the track's right end; beside it,
+  // it leaves high on the right and runs across onto the track's left end.
+  const above = gb.bottom <= cb.top + 8;
+  const angle = ((above ? 38 : -42) * Math.PI) / 180;
+  const exit = { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  const entry = above ? { x: right, y } : { x: left, y };
+  const c1 = above ? { x: exit.x + 44, y: exit.y + 4 } : { x: exit.x + (left - exit.x) * 0.55, y: exit.y };
+  const c2 = above ? { x: right, y: y - 38 } : { x: left - 26, y };
+  const end = above ? left : right;
+  const f = (p: Pt) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+  tube.value = {
+    w: mb.width, h: mb.height, d: `M ${f(exit)} C ${f(c1)} ${f(c2)} ${f(entry)} H ${end.toFixed(1)}`,
+    width: ball + 4, ball, exit, entry, end, y, cx, cy, R: r - 2, angle,
+  };
+  fillGlobe(r - 2, ball / 2, angle);
+}
+const machineObserver = new ResizeObserver(() => layoutTube());
+watch(machineEl, (el) => {
+  machineObserver.disconnect();
+  if (el) machineObserver.observe(el);
+});
+onBeforeUnmount(() => machineObserver.disconnect());
+
+// The simulation and its frame loop.
+let globeSim: Drum | null = null;
+let globeKey = "";
+let loopFrame = 0;
+let loopAt = 0;
+/** The digits in the globe now (the rest are out, in a window or on the way), and whether it has been filled. */
+const present = ref<Record<string, boolean>>({});
+const globeReady = ref(false);
+/** The digits that sit out of the globe at rest: today's drawn ones, in their windows (not while their draw plays). */
+const restOut = computed(() => (!reveal.value && showDraw.value ? [...new Set(winning.value)].sort().join("") : ""));
+
+function syncPresent() {
+  present.value = Object.fromEntries((globeSim?.balls ?? []).map((b) => [b.d, true]));
+}
+/** A new simulation for a globe of inner radius [R] and balls of radius [r], filled and fallen still. */
+function fillGlobe(R: number, r: number, angle: number) {
+  const key = [R, r, angle].map((n) => n.toFixed(2)).join("|");
+  if (globeSim && key === globeKey) return;
+  globeKey = key;
+  const old = globeSim;
+  globeSim = new Drum(R, r, angle);
+  if (old && (old.pulling || old.airTarget > 0 || old.air > 0)) {
+    // Resized while the air is on or a ball is on its way out: the new globe takes over the same balls, the air and
+    // the pulls, so the draw goes on.
+    old.handOver(globeSim);
+    syncPresent();
+    globeReady.value = true;
+    wake();
+    return;
+  }
+  for (const d of DIGITS) if (!restOut.value.includes(d)) globeSim.add(d);
+  globeSim.settle();
+  syncPresent();
+  globeReady.value = true;
+  void nextTick(paintFrame);
+}
+/** Puts back the balls that belong in the globe at rest and takes out the ones that do not; they fall in live. */
+function restockGlobe() {
+  const sim = globeSim;
+  if (!sim) return;
+  for (const d of DIGITS) {
+    const want = !restOut.value.includes(d);
+    if (want && !sim.has(d)) sim.add(d);
+    if (!want && sim.has(d)) sim.remove(d);
+  }
+  syncPresent();
+  if (calm.value || !active.value) {
+    sim.settle();
+    void nextTick(paintFrame);
+  } else {
+    wake();
+  }
+}
+
+/** The air on: the balls out of the globe come back in first. */
+function airOn() {
+  const sim = globeSim;
+  if (!sim || calm.value) return;
+  for (const d of DIGITS) if (!sim.has(d)) sim.add(d);
+  syncPresent();
+  sim.airTarget = 1;
+  wake();
+}
+function airOff() {
+  if (!globeSim) return;
+  globeSim.airTarget = 0;
+  wake();
+}
+/** Everything stops where it should end up: the air off, the pile fallen still, no ball on its way. */
+function haltGlobe() {
+  cancelAnimationFrame(loopFrame);
+  loopFrame = 0;
+  runs = [];
+  drops.value = [];
+  const sim = globeSim;
+  if (!sim) return;
+  for (const d of DIGITS) {
+    const want = !restOut.value.includes(d);
+    if (want && !sim.has(d)) sim.add(d);
+    if (!want && sim.has(d)) sim.remove(d);
+  }
+  sim.settle();
+  syncPresent();
+  void nextTick(paintFrame);
+}
+function wake() {
+  if (loopFrame || calm.value || !active.value) return;
+  loopAt = performance.now();
+  loopFrame = requestAnimationFrame(loop);
+}
+function loop(now: number) {
+  loopFrame = 0;
+  const dt = Math.min(0.05, Math.max(0, (now - loopAt) / 1000));
+  loopAt = now;
+  globeSim?.update(dt);
+  advanceRuns(now);
+  paintFrame();
+  if ((globeSim && !globeSim.settled) || runs.length) loopFrame = requestAnimationFrame(loop);
+}
+onBeforeUnmount(() => cancelAnimationFrame(loopFrame));
+
+/** Writes every ball's transform: the globe's, then the ones on their way. */
+function paintFrame() {
+  const g = globeEl.value;
+  if (g && globeSim) {
+    for (const el of g.querySelectorAll<HTMLElement>(".gball")) {
+      const b = globeSim.balls.find((x) => x.d === el.dataset.d);
+      if (b) el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px) rotate(${b.a.toFixed(3)}rad)`;
+    }
+  }
+  for (const run of runs) if (run.el) run.el.style.transform = run.transform;
+}
+
+// The balls on their way out: pulled to the outlet by the simulation, then along the tube and into a window.
+interface Drop { id: number; d: string; size: number }
+const drops = ref<Drop[]>([]);
+let dropId = 0;
+interface Run {
+  id: number;
+  el: HTMLElement | null;
+  /** When it left the globe (ms), where from (machine px), and its turn so far. */
+  t0: number;
+  from: Pt;
+  a: number;
+  /** The lead from the outlet into the tube, the way along the tube and the track to above the window, the window. */
+  lead: number;
+  way: number;
+  slot: Pt;
+  dur: number;
+  /** The scale of the ball in the tube against its size in the window. */
+  small: number;
+  size: number;
+  /** The way come so far, the x it was last at, and which way it turns. */
+  s: number;
+  px: number;
+  dir: number;
+  transform: string;
+  done: () => void;
+}
+let runs: Run[] = [];
+
+/** Draws the ball of [d] out of the globe into window [i]; [done] once it is in. */
+function sendBall(i: number, d: string, done: () => void) {
+  const t = tube.value;
+  const sim = globeSim;
+  const col = keysEl.value?.querySelectorAll<HTMLElement>(".key-col")[i];
+  const path = tubePathEl.value;
+  const m = machineEl.value;
+  if (!t || !sim || !col || !path || !m || calm.value) {
+    later(BALL_DROP_MS, done);
+    return;
+  }
+  // Read now, while nothing moves: the window's centre and the size of its ball.
+  const mb = m.getBoundingClientRect();
+  const cb = col.getBoundingClientRect();
+  const slot = { x: cb.left + cb.width / 2 - mb.left, y: cb.top + cb.height / 2 - mb.top };
+  const size = parseFloat(getComputedStyle(col).getPropertyValue("--slot-ball")) || 64;
+  const track = Math.abs(t.entry.x - t.end);
+  const curve = path.getTotalLength() - track;
+  if (!sim.has(d)) sim.add(d);
+  const g = gen;
+  sim.pull(d, (b) => {
+    if (g !== gen) return;
+    syncPresent();
+    // The globe may have been resized since the pull began: the ball leaves from where it is now.
+    const now = tube.value ?? t;
+    const from = { x: now.cx + b.x, y: now.cy + b.y };
+    const lead = Math.hypot(now.exit.x - from.x, now.exit.y - from.y);
+    const way = curve + Math.abs(t.entry.x - slot.x);
+    const id = ++dropId;
+    drops.value = [...drops.value, { id, d, size }];
+    runs.push({
+      id, el: null, t0: loopAt, from, a: b.a, lead, way, slot, dur: ROLL_S + (lead + way) * ROLL_S_PER_PX,
+      small: t.ball / size, size, s: 0, px: from.x, dir: 1, transform: "", done,
+    });
+  });
+  wake();
+}
+
+/** Moves each ball on its way to where it is at [now]; hands it to its window once it has settled there. */
+function advanceRuns(now: number) {
+  const t = tube.value;
+  const path = tubePathEl.value;
+  if (!runs.length) return;
+  if (!t || !path) {
+    runs.forEach((r) => r.done());
+    runs = [];
+    drops.value = [];
+    return;
+  }
+  const finished: Run[] = [];
+  for (const run of runs) {
+    run.el ??= machineEl.value?.querySelector<HTMLElement>(`.drop[data-id="${run.id}"]`) ?? null;
+    const sec = (now - run.t0) / 1000;
+    const r = t.ball / 2;
+    let x: number;
+    let y: number;
+    let scale = run.small;
+    let sx = 1;
+    let sy = 1;
+    if (sec < run.dur) {
+      // Speeding up down the tube, slowing to a stop over the window.
+      const u = sec / run.dur;
+      const k = u < 0.5 ? 2 * u * u : 1 - 2 * (1 - u) * (1 - u);
+      const s = (run.lead + run.way) * k;
+      let p: Pt;
+      if (s < run.lead) {
+        const v = run.lead ? s / run.lead : 1;
+        p = { x: run.from.x + (t.exit.x - run.from.x) * v, y: run.from.y + (t.exit.y - run.from.y) * v };
+      } else {
+        const q = path.getPointAtLength(Math.min(s - run.lead, path.getTotalLength()));
+        p = { x: q.x, y: q.y };
+      }
+      // It rolls: turned by the way come, clockwise when going right.
+      const dx = p.x - run.px;
+      if (Math.abs(dx) > 0.05) run.dir = dx > 0 ? 1 : -1;
+      run.px = p.x;
+      run.a += (run.dir * (s - run.s)) / r;
+      run.s = s;
+      x = p.x;
+      y = p.y;
+    } else if (sec < run.dur + BALL_DROP_S) {
+      // Falling into the window, growing to its full size and coming upright.
+      const v = (sec - run.dur) / BALL_DROP_S;
+      x = run.slot.x;
+      y = t.y + (run.slot.y - t.y) * v * v;
+      scale = run.small + (1 - run.small) * v;
+      const upright = Math.round(run.a / (2 * Math.PI)) * 2 * Math.PI;
+      run.a += (upright - run.a) * Math.min(1, v * 1.6);
+    } else {
+      // Landed: squashed, then a spring back.
+      const w = Math.min(1, (sec - run.dur - BALL_DROP_S) / BALL_SQUASH_S);
+      const k = 0.14 * Math.cos(Math.PI * 1.5 * w) * (1 - w);
+      run.a = Math.round(run.a / (2 * Math.PI)) * 2 * Math.PI;
+      x = run.slot.x;
+      y = run.slot.y + (run.size * k) / 2;
+      scale = 1;
+      sx = 1 + k;
+      sy = 1 - k;
+      if (w >= 1) finished.push(run);
+    }
+    run.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) rotate(${run.a.toFixed(3)}rad) scale(${(scale * sx).toFixed(4)}, ${(scale * sy).toFixed(4)})`;
+  }
+  if (finished.length) {
+    runs = runs.filter((r) => !finished.includes(r));
+    const ids = new Set(finished.map((r) => r.id));
+    drops.value = drops.value.filter((x) => !ids.has(x.id));
+    finished.forEach((r) => r.done());
+  }
+}
+
 // ---- a number bought leaves the keys: its digits fly into the new stub, which grows out of the keys around them.
 // A spot is the centre of a digit and its font size; the spots on the keys are kept from the keys' top left corner,
-// since the keys can move between the purchase and the flight (the table under them may change its rows).
+// since the keys can move between the purchase and the flight.
 interface Spot { d: string; x: number; y: number; size: number }
 interface Ghost { id: number; d: string; x: number; y: number; size: number }
 const ghosts = ref<Ghost[]>([]);
@@ -490,9 +838,15 @@ function drop(el: HTMLElement, x: number, y: number, delay: number) {
 async function fly(spots: Spot[]) {
   const g = gen;
   const root = rootEl.value;
-  const keys = keysEl.value?.getBoundingClientRect();
   const stubs = Array.from(stubsEl.value?.querySelectorAll<HTMLElement>(".cell.fresh .ticket-stub") ?? []);
   const main = stubs[stubs.length - 1];
+  // On a short panel the second rope can be under the bar: the body scrolls just far enough to show where it lands.
+  const cell = main?.closest<HTMLElement>(".cell");
+  if (cell) {
+    cell.style.scrollMarginBottom = `${(barEl.value?.offsetHeight ?? 0) + 8}px`;
+    cell.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  }
+  const keys = keysEl.value?.getBoundingClientRect();
   if (!root || !keys || !main || spots.length !== 3) {
     held.value = false;
     return;
@@ -506,7 +860,7 @@ async function fly(spots: Spot[]) {
   const ky = keys.top + keys.height / 2;
   const opts = { duration: FLY_MS, easing: EASE_IN_OUT, fill: "backwards" as const };
   const digits = Array.from(main.querySelectorAll<HTMLElement>(".digit"));
-  root.querySelectorAll<HTMLElement>(".ghost").forEach((el, j) => {
+  root.querySelectorAll<HTMLElement>(".flyer").forEach((el, j) => {
     const p = from[j]!;
     const to = spotOf(digits[j], "");
     if (!to) return;
@@ -533,7 +887,7 @@ async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" |
   const spinning = kind === "random" && !calm.value;
   // A picked number leaves from the faces it is on: where they are, before the keys clear.
   const from = kind === "pick" && !calm.value ? faceSpots() : [];
-  if (spinning) startReels(base, "buy");
+  if (spinning) startReels(base);
   busy.value = kind;
   buyError.value = "";
   const r = await parkTry<LotteryBuy>("POST", "/api/park/lottery", body);
@@ -594,9 +948,9 @@ function countTo(out: Ref<number>, to: number, ms: number): () => void {
   return () => cancelAnimationFrame(frame);
 }
 
-// ---- the prize board: top, second and third, each with the trailing digits it takes. The top prize is the
+// ---- the pool card: top, second and third, each with the trailing digits it takes. The top prize is the
 // server-wide pool of the next draw (after today's draw, the pool it rolled over into or started again from). The
-// park's state carries the same pool and loads again on every coin spent anywhere in the park, so the board takes it
+// park's state carries the same pool and loads again on every coin spent anywhere in the park, so the card takes it
 // from there when it can and always matches the pool in the top bar. A new amount counts up from the one shown.
 const pool = computed(() => (state.value ? park.value?.jackpot ?? state.value.prize.top : null));
 const poolShown = ref(0);
@@ -639,19 +993,22 @@ const table = computed(() => {
 });
 /** The day of the stubs on the table, so a stub of one day is never reused for another. */
 const tableDay = computed(() => (lastOnTable.value ? last.value!.day : state.value?.day ?? ""));
-/** Free places, while there is still a draw to buy for and today's stubs are on the table. */
-const slots = computed(() => (state.value && !lastOnTable.value ? Math.max(0, state.value.daily - table.value.length) : 0));
+/** Today's tickets show with an empty place for each one still to buy, so a stub never moves when another is bought. */
+const showCount = computed(() => !lastOnTable.value || drawnHere.value);
+const slots = computed(() => (showCount.value ? Math.max(0, (state.value?.daily ?? 0) - table.value.length) : 0));
 
 /** The server's drawn days with their top prize winners, each with what I won that day (null: I had no tickets). */
 const past = computed(() => {
   const s = state.value;
   if (!s) return [];
   const mine = new Map(s.history.map((h) => [h.day, h.won]));
-  return s.draws.map((d) => ({ ...d, winners: winnersLine(d.top), won: mine.get(d.day) ?? null }));
+  return s.draws.map((d) => ({ ...d, winners: winnersLine(d.top), first: winnersLine(d.top, 1), won: mine.get(d.day) ?? null }));
 });
 /** The last draw's stubs when they are not on the table (today's stubs are): they go on top of 往期. */
 const lastAside = computed(() => (!lastOnTable.value && last.value?.mine.length ? last.value : null));
 const hasPast = computed(() => !!lastAside.value || past.value.length > 0);
+/** A draw on the board stays blank while its first showing is still playing on the keys. */
+const unseen = (day: string) => !!reveal.value && reveal.value === day && stopped.value < 3;
 
 const verified = ref<boolean | null>(null);
 // Checked again only when the draw itself changes, not on every reload of the same one.
@@ -688,45 +1045,62 @@ function startReveal(day: string) {
   stopped.value = 0;
   stamped.value = false;
   wonShown.value = 0;
-  startReels(picks.value, "draw", {
-    at: [0, 1, 2].map((i) => DRAW_FIRST_MS + (2 - i) * DRAW_GAP_MS),
-    land: d.number.split(""),
+  void nextTick(() => {
+    layoutTube();
+    airOn();
   });
-  onLand = () => stopped.value++;
-  onRest = () => later(DRAW_STAMP_MS, () => {
-    stamped.value = true;
-    const best = d.mine.some((t) => t.tier === "top") ? 3 : d.mine.some((t) => t.tier === "second") ? 2 : 1;
-    const ms = d.won > 0 ? ROLL_MS[best] : 0;
-    if (ms) stopWon = countTo(wonShown, d.won, ms);
-    later(Math.max(ms, DRAW_HOLD_MS), () => {
-      endReels(showDraw.value ? "still" : "fade");
-      reveal.value = "";
-      stopped.value = 3;
+  const number = d.number.split("");
+  const land = () => {
+    stopped.value++;
+    if (stopped.value < 3) return;
+    later(DRAW_STAMP_MS, () => {
+      stamped.value = true;
+      const best = d.mine.some((t) => t.tier === "top") ? 3 : d.mine.some((t) => t.tier === "second") ? 2 : 1;
+      const ms = d.won > 0 ? ROLL_MS[best] : 0;
+      if (ms) stopWon = countTo(wonShown, d.won, ms);
+      later(Math.max(ms, DRAW_HOLD_MS), () => {
+        faceIn.value = showDraw.value ? "still" : "fade";
+        reveal.value = "";
+        stopped.value = 3;
+      });
     });
-  });
+  };
+  // From the right: the last digit's ball first; the air dies away once the third ball is on its way.
+  [2, 1, 0].forEach((i, n) => later(DRAW_FIRST_MS + n * DRAW_GAP_MS, () => {
+    sendBall(i, number[i]!, land);
+    if (n === 2) later(350, airOff);
+  }));
 }
 watch(() => [active.value, last.value?.day ?? ""] as const, ([on, day]) => {
   if (!on || !day || seenDraw() === day) return;
   markDrawSeen(day);
   if (!calm.value) startReveal(day);
 }, { immediate: true });
+// The windows change between keys and balls: the track follows the keys' windows.
+watch(drum, () => void nextTick(layoutTube));
+// A new day puts its balls back in the globe; a drawn day keeps its drawn balls out.
+watch(restOut, () => {
+  if (!runs.length && !reveal.value) restockGlobe();
+});
 // The drawn number gives the keys back to a new day softly.
 watch(showDraw, (on) => { if (!on && !reeling.value) faceIn.value = "fade"; });
 
-// ---- the bar's two pop-ups (pop, above): the proof of the draw, and the earlier days
+// ---- the two pop-ups (pop, above): the proof of the draw from the board, and the earlier days from the bar
 const barEl = ref<HTMLElement>();
+const sideEl = ref<HTMLElement>();
 function toggle(p: "proof" | "past") {
   pop.value = pop.value === p ? "" : p;
 }
 function onOutside(e: PointerEvent) {
-  if (!barEl.value?.contains(e.target as Node)) pop.value = "";
+  const t = e.target as Node;
+  if (!barEl.value?.contains(t) && !sideEl.value?.contains(t)) pop.value = "";
 }
 watch(pop, (open) => {
   if (open) document.addEventListener("pointerdown", onOutside, true);
   else document.removeEventListener("pointerdown", onOutside, true);
 });
 onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside, true));
-function onBarKey(e: KeyboardEvent) {
+function onPopKey(e: KeyboardEvent) {
   if (e.key === "Escape" && pop.value) {
     pop.value = "";
     e.stopPropagation();
@@ -734,121 +1108,185 @@ function onBarKey(e: KeyboardEvent) {
 }
 </script>
 
+
 <template>
   <section ref="rootEl" class="lottery" :class="{ calm, reveal: !!reveal }" aria-label="每日夺宝">
     <div class="stage" :class="{ empty: !state }">
       <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
       <template v-if="state">
-        <!-- The prize board: the top prize on gold foil, the second and the third beside it. The balls are the
-             number's three digits: a coral ball where the digit must match, an empty slot where it need not. -->
-        <ol class="prizes">
-          <li class="tier top" :aria-label="`头奖 全服奖池 ${fmt(pool ?? 0)}`">
-            <span class="tier-head" aria-hidden="true">
-              <span class="tier-name">头奖</span>
-              <small class="pool">全服奖池</small>
-            </span>
-            <b class="amount" aria-hidden="true"><Icon name="shard" :size="26" />{{ fmt(poolShown) }}</b>
-            <span class="match" aria-hidden="true"><i v-for="(on, j) in needs(3)" :key="j" :class="{ on }"></i></span>
-          </li>
-          <li class="tier second" :aria-label="`二等 ${fmt(state.prize.second)}`">
-            <span class="tier-name" aria-hidden="true">二等</span>
-            <span class="match" aria-hidden="true"><i v-for="(on, j) in needs(2)" :key="j" :class="{ on }"></i></span>
-            <b class="amount" aria-hidden="true"><Icon name="shard" :size="16" />{{ fmt(state.prize.second) }}</b>
-          </li>
-          <li class="tier third" :aria-label="`三等 ${fmt(state.prize.third)} /注`">
-            <span class="tier-name" aria-hidden="true">三等</span>
-            <span class="match" aria-hidden="true"><i v-for="(on, j) in needs(1)" :key="j" :class="{ on }"></i></span>
-            <b class="amount" aria-hidden="true"><Icon name="shard" :size="16" />{{ fmt(state.prize.third) }}<small>/注</small></b>
-          </li>
-        </ol>
-
-        <!-- The keys take clicks, the wheel and their ▲/▼ keys; the keyboard goes to the hidden field under them. -->
-        <div ref="keysEl" class="keys" :class="[faceIn, { drum }]">
-          <div v-for="(d, i) in faces" :key="i" class="key-col">
-            <button
-              type="button" class="ui-btn numkey" tabindex="-1" aria-hidden="true"
-              :class="{ on: at === i, down: pressed[i], target: target === i, drum }"
-              :disabled="keysOff || drum" :style="{ '--from': stepped[i]! > 0 ? '12px' : '-10px' }"
-              @mousedown.prevent @click="pickKey(i)" @wheel.prevent="onWheel(i, $event)"
-            >
-              <span v-if="reeling" class="reel"><span class="rc"></span><span class="rc"></span></span>
-              <template v-else>
-                <span v-if="d" :key="d" class="face">{{ d }}</span>
-                <i v-else-if="target !== i" class="blank"></i>
-                <i v-if="target === i" class="caret"></i>
-              </template>
-            </button>
-            <button
-              type="button" class="ui-btn step up" tabindex="-1" aria-hidden="true" :disabled="keysOff"
-              @mousedown.prevent @click.stop="stepKey(i, 1)"
-            ><Icon name="down" :size="14" /></button>
-            <button
-              type="button" class="ui-btn step down" tabindex="-1" aria-hidden="true" :disabled="keysOff"
-              @mousedown.prevent @click.stop="stepKey(i, -1)"
-            ><Icon name="down" :size="14" /></button>
+        <!-- The draw machine: the glass globe of numbered balls on its base, the tube from its rim to the track along
+             the cabinet's top, and the three windows: the number keys, or the draw's balls. -->
+        <div ref="machineEl" class="machine" :class="{ drum }">
+          <!-- The tube is clear glass: a tint over whatever is behind it, its two walls (a mask cuts the inside out of a
+               wider stroke) and a line of light along its top. -->
+          <svg v-if="tube" class="tube" :width="tube.w" :height="tube.h" aria-hidden="true">
+            <defs>
+              <mask :id="tubeMask" maskUnits="userSpaceOnUse" x="0" y="0" :width="tube.w" :height="tube.h">
+                <path :d="tube.d" stroke="#fff" :stroke-width="tube.width + 3" />
+                <path :d="tube.d" stroke="#000" :stroke-width="tube.width" />
+              </mask>
+            </defs>
+            <path class="tube-tint" :d="tube.d" :stroke-width="tube.width" />
+            <path ref="tubePathEl" class="tube-glass" :d="tube.d" :stroke-width="tube.width" />
+            <path class="tube-edge" :d="tube.d" :stroke-width="tube.width + 3" :mask="`url(#${tubeMask})`" />
+            <path class="tube-shine" :d="tube.d" :transform="`translate(0 ${-tube.width / 2 + 4})`" />
+          </svg>
+          <!-- The drawn balls on their way from the globe to their windows (placed by script). -->
+          <i
+            v-for="b in drops" :key="b.id" class="drop lball" :class="{ odd: odd(b.d) }" :data-id="b.id" aria-hidden="true"
+            :style="{ '--s': `${b.size}px` }"
+          ><b>{{ b.d }}</b></i>
+          <div class="stand" aria-hidden="true">
+            <div ref="globeEl" class="globe" :class="{ ready: globeReady }">
+              <i
+                v-for="d in DIGITS" :key="d" class="gball lball" :class="{ odd: odd(d), out: !present[d] }" :data-d="d"
+              ><b>{{ d }}</b></i>
+              <svg class="glass" viewBox="0 0 100 100">
+                <path d="M15 46 A36 36 0 0 1 46 15" />
+                <path class="far" d="M83 62 A36 36 0 0 1 68 82" />
+              </svg>
+            </div>
+            <i class="base"></i>
           </div>
-          <input
-            ref="field" class="field" type="text" inputmode="numeric" autocomplete="off" aria-label="号码"
-            :disabled="keysOff" @input="onType" @keydown="onKey" @focus="typing = true" @blur="typing = false; at = null"
-          />
+          <div ref="cabinetEl" class="cabinet">
+            <!-- The keys take clicks, the wheel and their ▲/▼ keys; the keyboard goes to the hidden field under them. -->
+            <div ref="keysEl" class="keys" :class="[faceIn, { drum }]">
+              <div v-for="(d, i) in faces" :key="i" class="key-col">
+                <span v-if="drum" class="socket">
+                  <i v-if="inSlot(i)" class="lball slot-ball" :class="{ odd: odd(winning[i]), pop: !tube }"><b>{{ winning[i] }}</b></i>
+                </span>
+                <template v-else>
+                  <button
+                    type="button" class="ui-btn numkey" tabindex="-1" aria-hidden="true"
+                    :class="{ on: at === i, down: pressed[i], target: target === i }"
+                    :disabled="keysOff" :style="{ '--from': stepped[i]! > 0 ? '12px' : '-10px' }"
+                    @mousedown.prevent @click="pickKey(i)" @wheel.prevent="onWheel(i, $event)"
+                  >
+                    <span v-if="reeling" class="reel"><span class="rc"></span><span class="rc"></span></span>
+                    <template v-else>
+                      <span v-if="d" :key="d" class="face">{{ d }}</span>
+                      <i v-else-if="target !== i" class="blank"></i>
+                      <i v-if="target === i" class="caret"></i>
+                    </template>
+                  </button>
+                  <button
+                    type="button" class="ui-btn step up" tabindex="-1" aria-hidden="true" :disabled="keysOff"
+                    @mousedown.prevent @click.stop="stepKey(i, 1)"
+                  ><Icon name="down" :size="14" /></button>
+                  <button
+                    type="button" class="ui-btn step down" tabindex="-1" aria-hidden="true" :disabled="keysOff"
+                    @mousedown.prevent @click.stop="stepKey(i, -1)"
+                  ><Icon name="down" :size="14" /></button>
+                </template>
+              </div>
+              <input
+                ref="field" class="field" type="text" inputmode="numeric" autocomplete="off" aria-label="号码"
+                :disabled="keysOff" @input="onType" @keydown="onKey" @focus="typing = true" @blur="typing = false; at = null"
+              />
+            </div>
+          </div>
         </div>
 
-        <ol ref="stubsEl" class="stubs" :class="{ drawn: lastOnTable }" aria-label="我的号码">
-          <li
-            v-for="(t, i) in table" :key="`${tableDay}-${i}`" class="cell"
-            :class="{
-              fresh: fresh.includes(i), held: held && fresh.includes(i),
-              out: lastOnTable && revealDigits(t.tier, stopped).out,
-            }"
-          >
-            <TicketStub>
-              <span
-                v-for="(c, j) in digits(t.number, t.tier, lastOnTable ? stopped : 3)" :key="j" class="digit"
-                :class="{ on: c.hit }"
-              >{{ c.d }}</span>
-            </TicketStub>
-            <b v-if="t.prize && stamped" class="stamp" :class="{ top: t.tier === 'top' }">+{{ fmt(t.prize) }}</b>
-          </li>
-          <li v-for="i in slots" :key="`slot-${i}`" class="cell slot" aria-hidden="true"></li>
-        </ol>
+        <!-- The tray under the machine: my stubs in a fixed grid, an empty place for each still to buy, and the count. -->
+        <div class="tray" :class="{ drawn: lastOnTable }">
+          <ol ref="stubsEl" class="stubs" aria-label="我的号码">
+            <li
+              v-for="(t, i) in table" :key="`${tableDay}-${i}`" class="cell"
+              :class="{
+                fresh: fresh.includes(i), held: held && fresh.includes(i),
+                out: lastOnTable && revealDigits(t.tier, stopped).out,
+              }"
+            >
+              <TicketStub size="s">
+                <span
+                  v-for="(c, j) in digits(t.number, t.tier, lastOnTable ? stopped : 3)" :key="j" class="digit"
+                  :class="{ on: c.hit }"
+                >{{ c.d }}</span>
+              </TicketStub>
+              <b v-if="t.prize && stamped" class="stamp" :class="{ top: t.tier === 'top' }">+{{ fmt(t.prize) }}</b>
+            </li>
+            <li v-for="n in slots" :key="`slot-${n}`" class="slot" aria-hidden="true"></li>
+          </ol>
+          <span class="count"><template v-if="showCount"><b>{{ state.tickets.length }}</b>/{{ state.daily }}</template></span>
+        </div>
+
+        <!-- The pool and the board of the latest draws. -->
+        <aside ref="sideEl" class="side" :class="{ only: !past.length }" @keydown="onPopKey">
+          <div class="pool-card" :aria-label="`头奖 累积奖池 ${fmt(pool ?? 0)}`">
+            <div class="pool-head" aria-hidden="true">
+              <span class="tier-name">头奖</span>
+              <small>累积奖池</small>
+              <span class="match"><i v-for="(on, j) in needs(3)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
+            </div>
+            <b class="pool-amount" aria-hidden="true"><Icon name="shard" :size="28" />{{ fmt(poolShown) }}</b>
+            <ul class="tiers">
+              <li :aria-label="`二等 ${fmt(state.prize.second)}`">
+                <span class="tier-head" aria-hidden="true">
+                  <span class="tier-name">二等</span>
+                  <span class="match"><i v-for="(on, j) in needs(2)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
+                </span>
+                <b class="amount" aria-hidden="true"><Icon name="shard" :size="14" />{{ fmt(state.prize.second) }}</b>
+              </li>
+              <li :aria-label="`三等 ${fmt(state.prize.third)} /注`">
+                <span class="tier-head" aria-hidden="true">
+                  <span class="tier-name">三等</span>
+                  <span class="match"><i v-for="(on, j) in needs(1)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
+                </span>
+                <b class="amount" aria-hidden="true"><Icon name="shard" :size="14" />{{ fmt(state.prize.third) }}<small>/注</small></b>
+              </li>
+            </ul>
+          </div>
+
+          <!-- One draw a row, newest first: its day, its number, who won the top prize, and what I won. -->
+          <div v-if="past.length" class="board">
+            <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span></div>
+            <ol class="rows ui-scroll">
+              <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day) }">
+                <span class="day">{{ shortDay(h.day) }}</span>
+                <span
+                  class="balls" :class="{ in: !!reveal && reveal === h.day && stopped === 3 }"
+                  :aria-label="`开奖号码 ${h.number}`"
+                ><i v-for="(d, i) in h.number.split('')" :key="i" class="lball" :class="{ odd: odd(d) }" :style="{ '--i': i }"><b>{{ d }}</b></i></span>
+                <button
+                  v-if="last && h.day === last.day && verified !== null" type="button" class="ui-btn ghost small proof-key"
+                  :class="{ bad: !verified }" :title="verified ? '已校验' : '校验不符'" :aria-label="verified ? '已校验' : '校验不符'"
+                  :aria-expanded="pop === 'proof'" @click="toggle('proof')"
+                ><Icon :name="verified ? 'check' : 'info'" :size="14" /></button>
+                <span v-else class="proof-gap"></span>
+                <span class="winners" :class="{ none: !h.top.length }" :title="h.top.length > 1 ? h.winners : undefined">{{ h.first }}</span>
+                <span v-if="h.won" class="won">+{{ fmt(h.won) }}</span>
+              </li>
+            </ol>
+          </div>
+          <dl v-if="pop === 'proof' && last" class="pop proof">
+            <div><dt>哈希</dt><dd>{{ last.hash }}</dd></div>
+            <div><dt>随机串</dt><dd>{{ last.salt }}</dd></div>
+          </dl>
+        </aside>
       </template>
     </div>
 
     <!-- The digits of a number bought, on their way from the keys into its stub. -->
     <span
-      v-for="g in ghosts" :key="g.id" class="ghost" aria-hidden="true"
+      v-for="g in ghosts" :key="g.id" class="flyer" aria-hidden="true"
       :style="{ left: `${g.x}px`, top: `${g.y}px`, fontSize: `${g.size}px` }"
     >{{ g.d }}</span>
 
-    <div v-if="state" ref="barEl" class="park-actions" @keydown="onBarKey">
-      <div v-if="last" class="last">
+    <div v-if="state" ref="barEl" class="park-actions" @keydown="onPopKey">
+      <button
+        v-if="hasPast" type="button" class="ui-btn small past-key" :class="{ aside: !!lastAside }" title="往期"
+        aria-label="往期" :aria-expanded="pop === 'past'" @click="toggle('past')"
+      ><Icon name="clock" :size="15" /><span>往期</span></button>
+      <!-- My result of the draw whose stubs are in the tray. -->
+      <div v-if="last && lastOnTable && last.mine.length" class="last">
         <span class="when">{{ lastName }}</span>
-        <span
-          class="balls" :class="{ hide: !!reveal && stopped < 3, in: !!reveal && stopped === 3 }"
-          :aria-label="`开奖号码 ${last.number}`"
-        >
-          <i v-for="(d, i) in winning" :key="i" :style="{ '--i': i }">{{ d }}</i>
-        </span>
-        <button
-          v-if="verified !== null" type="button" class="ui-btn ghost small proof-key" :class="{ bad: !verified }"
-          :title="verified ? '已校验' : '校验不符'" :aria-expanded="pop === 'proof'" @click="toggle('proof')"
-        >
-          <Icon :name="verified ? 'check' : 'info'" :size="14" /><span>{{ verified ? "已校验" : "校验不符" }}</span>
-        </button>
         <span class="result" :class="{ won: last.won > 0, hide: !stamped, in: !!reveal && stamped }">
           <template v-if="last.won > 0"><Icon name="shard" :size="16" />+{{ fmt(reveal ? wonShown : last.won) }}</template>
-          <template v-else-if="last.mine.length">未中奖</template>
+          <template v-else>未中奖</template>
         </span>
       </div>
-      <button
-        v-if="hasPast" type="button" class="ui-btn ghost small" :aria-expanded="pop === 'past'" @click="toggle('past')"
-      >往期</button>
 
-      <dl v-if="pop === 'proof' && last" class="pop proof">
-        <div><dt>哈希</dt><dd>{{ last.hash }}</dd></div>
-        <div><dt>随机串</dt><dd>{{ last.salt }}</dd></div>
-      </dl>
       <div v-if="pop === 'past'" class="pop past ui-scroll">
         <ul v-if="lastAside" class="past-stubs">
           <li v-for="(t, i) in lastAside.mine" :key="i">
@@ -857,7 +1295,6 @@ function onBarKey(e: KeyboardEvent) {
             </TicketStub>
           </li>
         </ul>
-        <!-- Each draw: its day, its number, who won the top prize, and what I won. -->
         <ul v-if="past.length" class="history">
           <li v-for="h in past" :key="h.day">
             <span>{{ shortDay(h.day) }}</span>
@@ -906,17 +1343,28 @@ function onBarKey(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
 }
+/*
+ * Two columns: the machine with the tray of stubs under it, and the pool with the board beside them. The tray's row
+ * is always as tall as two rows of stubs, so the side keeps its height when the tray has fewer.
+ */
 .stage {
+  --tray-h: 116px;
   flex: 1 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 360px);
+  grid-template-rows: auto minmax(var(--tray-h), auto);
+  grid-template-areas:
+    "machine side"
+    "tray side";
   justify-content: center;
-  gap: 24px;
-  padding: 22px 22px 26px;
+  align-content: center;
+  gap: 14px 20px;
+  padding: 16px 18px 16px;
 }
 /* Nothing loaded: the error is the sheet's first line. */
 .stage.empty {
+  display: flex;
+  flex-direction: column;
   justify-content: flex-start;
 }
 .stage > .ui-error {
@@ -925,134 +1373,224 @@ function onBarKey(e: KeyboardEvent) {
 }
 
 /*
- * ---- the prize board: one plaque. The top prize on gold foil fills the left, the second and the third take a row
- * each on the right, one step of the ramp apart. Plaques are read, not pressed: no edge under them.
+ * ---- a lottery ball: a coral sphere (two steps of the ramp, by odd and even) with a white round label and the digit
+ * in ink; one small sharp highlight and a soft dark edge along the bottom. --s is its size. Used in the globe, in the
+ * windows, on the board and, without a label, as the pool card's match marks.
  */
-.prizes {
+.lball {
+  --s: 24px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow:
+    inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.09) rgba(var(--c-900-rgb), 0.32),
+    inset 0 calc(var(--s) * 0.03) 0 rgba(255, 255, 255, 0.3);
+  font-style: normal;
+}
+.lball.odd {
+  background: var(--c-600);
+}
+.lball::after {
+  content: "";
+  position: absolute;
+  left: 16%;
+  top: 9%;
+  width: 20%;
+  height: 12%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+}
+.lball > b {
   display: grid;
-  grid-template-columns: auto auto;
-  grid-template-rows: 1fr 1fr;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-radius: var(--radius-m);
-  overflow: hidden;
+  place-items: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 calc(var(--s) * -0.025) 0 rgba(var(--c-900-rgb), 0.12);
+  font: 800 calc(var(--s) * 0.44) / 1 var(--font-latin);
   color: var(--ink);
 }
-.tier {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-sizing: border-box;
-}
-.tier.top {
-  grid-row: span 2;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 24px 14px 20px;
-  background: var(--grad-gold);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), inset 0 -2px 0 rgba(var(--c-900-rgb), 0.14);
-}
-.tier.second,
-.tier.third {
-  padding: 0 18px 0 16px;
-}
-.tier.second {
-  background: var(--c-300);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-.tier.third {
-  background: var(--c-100);
-}
-.tier-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.tier-name {
-  font: 800 var(--fs-label)/1 var(--font);
-  white-space: nowrap;
-}
-.tier.top .tier-name {
-  font-size: var(--fs-body);
-}
-.pool {
-  font: 700 var(--fs-caption)/1 var(--font);
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-/* The number's three digits: a coral ball where the digit must match, an empty slot where it need not. */
-.match {
-  display: inline-flex;
-  gap: 3px;
-}
-.match i {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: rgba(var(--c-900-rgb), 0.1);
-  box-shadow: inset 0 1px 2px rgba(var(--c-900-rgb), 0.2);
-}
-.match i.on {
-  background: radial-gradient(circle at 34% 28%, var(--c-300), var(--c-500) 52%, var(--c-600));
-  box-shadow: inset 0 -1px 2px rgba(var(--c-900-rgb), 0.18);
-}
-.amount {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  font: 800 20px/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tier.top .amount {
-  gap: 4px;
-  margin-left: 0;
-  font-size: 46px;
-}
-.tier.second .amount {
-  font-size: 26px;
-}
-.tier:not(.top) .amount svg {
-  color: var(--c-700);
-}
-.amount small {
-  margin-left: 3px;
-  font: 600 var(--fs-caption) var(--font);
-  color: var(--ink-2);
-}
-.tier:not(.top) .tier-name {
-  width: 2.2em;
-}
-.tier:not(.top) .amount {
-  min-width: 64px;
-  justify-content: flex-end;
-  padding-left: 12px;
-}
 
-/* ---- the number keys: three tall keycaps; typing presses them */
-/* On a tonal tray: white keys need a step of the ramp under them to read as keys. */
-.keys {
+/* ---- the draw machine: the globe on its base over the cabinet; the tube and track drawn behind the globe */
+.machine {
+  grid-area: machine;
+  justify-self: center;
   position: relative;
   display: flex;
-  gap: 14px;
-  padding: 14px 16px 18px;
-  border-radius: var(--radius-l);
-  background: var(--c-100);
+  flex-direction: column;
+  align-items: center;
+}
+.tube {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+}
+.tube path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tube-edge {
+  stroke: var(--c-400);
+}
+/* A touch of coral over the white page, then a white veil, so the glass shows on the page and on the cabinet alike. */
+.tube-tint {
+  stroke: rgba(var(--c-500-rgb), 0.12);
+}
+.tube-glass {
+  stroke: rgba(255, 255, 255, 0.5);
+}
+.tube-shine {
+  stroke: #fff;
+  stroke-width: 2;
+  opacity: 0.9;
+}
+.stand {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* The glass: nearly clear, a crisp outline with a white rim inside it, a reflection arc over the balls. */
+.globe {
+  --globe: 140px;
+  --ball: 27px;
+  position: relative;
+  z-index: 1;
+  width: var(--globe);
+  height: var(--globe);
+  border-radius: 50%;
+  background: rgba(255, 250, 247, 0.94);
+  box-shadow:
+    0 0 0 2px var(--c-300),
+    inset 0 0 0 2px #fff,
+    inset 0 -12px 16px -12px rgba(var(--c-500-rgb), 0.35);
+}
+.glass {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+.glass path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+.glass .far {
+  stroke-width: 2;
+  opacity: 0.7;
+}
+/* A ball in the globe sits at its centre; the simulation moves and turns it. */
+.gball {
+  --s: var(--ball);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin: calc(var(--ball) / -2) 0 0 calc(var(--ball) / -2);
+  will-change: transform;
+}
+/* Out of the globe (in its window, or on the way there), or not placed yet. */
+.gball.out,
+.globe:not(.ready) .gball {
+  opacity: 0;
+}
+/* The base the globe sits in: a coral block with its thickness showing below. */
+.base {
+  position: relative;
+  width: 64%;
+  height: 18px;
+  margin-top: -9px;
+  border-radius: 9px 9px 5px 5px;
+  background: linear-gradient(180deg, var(--c-400), var(--c-500));
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 5px 0 var(--c-600);
+}
+/* The cabinet: the track runs in its top band, the windows under it. */
+.cabinet {
+  margin-top: 5px;
+  padding: 37px 14px 12px;
+  border-radius: 20px;
+  background: var(--grad-sky);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 12px 24px -16px rgba(var(--shadow-rgb), 0.45);
+}
+/* A drawn ball between the globe and its window, placed by script from the machine's top left corner. */
+.drop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
+  transform: scale(0);
+  pointer-events: none;
+  will-change: transform;
+}
+/* With no globe shown, a drawn ball pops into its window. */
+.reveal .slot-ball.pop {
+  animation: stamp-in 320ms var(--ease-pop) both;
+}
+
+/* ---- the number keys: three tall keycaps, each sunk in its own pale window in the cabinet; typing presses them */
+.keys {
+  --key-w: 84px;
+  --key-h: 84px;
+  --slot-ball: 70px;
+  position: relative;
+  display: flex;
+  gap: 10px;
 }
 .key-col {
   position: relative;
   display: flex;
+  padding: 10px 10px;
+  border-radius: 14px;
+  background: var(--c-100);
+  box-shadow: inset 0 3px 6px rgba(var(--c-900-rgb), 0.2), 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: background var(--dur-slow), box-shadow var(--dur-slow);
+}
+/* The draw lights the windows up: white, ringed, each with a cup for its ball. */
+.keys.drum .key-col {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 3px var(--c-300), 0 0 16px 3px rgba(255, 255, 255, 0.7);
+}
+.socket {
+  display: grid;
+  place-items: center;
+  width: var(--key-w);
+  height: var(--key-h);
+}
+.socket::before {
+  content: "";
+  grid-area: 1 / 1;
+  width: var(--slot-ball);
+  height: var(--slot-ball);
+  border-radius: 50%;
+  background: var(--c-100);
+  box-shadow: inset 0 2px 4px rgba(var(--c-900-rgb), 0.12);
+}
+.slot-ball {
+  --s: var(--slot-ball);
+  grid-area: 1 / 1;
 }
 .numkey {
   --key-lip-h: 4px;
-  width: 88px;
-  height: 112px;
+  width: var(--key-w);
+  height: var(--key-h);
   padding: 0;
-  border-radius: var(--radius-l);
+  border-radius: 12px;
 }
 .numkey.down:not(:disabled) {
   --key-y: 4px;
@@ -1060,27 +1598,19 @@ function onBarKey(e: KeyboardEvent) {
   transition-duration: var(--dur-press);
   transition-timing-function: ease-out;
 }
-/* Latched (the key being changed): a step deeper than the tray it sits on. */
+/* Latched (the key being changed): a step of the ramp under the white. */
 .numkey.on:not(:disabled) {
   --key-top: var(--c-200);
   --key-bottom: var(--c-200);
   --key-lip: var(--c-300);
 }
-/* Disabled keys stay a shade off the tray. */
+/* Sales over: the keys sit flat in their windows. */
 .numkey:disabled {
   --key-top: var(--c-50);
   --key-bottom: var(--c-50);
 }
 .numkey:disabled .face {
   color: var(--ink-3);
-}
-/* The draw's window: the keys sink into the tray, white, and the digits at rest are coral. */
-.numkey.drum:disabled {
-  --key-top: var(--surface);
-  --key-bottom: var(--surface);
-}
-.numkey.drum:disabled .face {
-  color: var(--c-700);
 }
 /* The small keys on a number key's top and bottom edge: one digit up, one down. */
 .step {
@@ -1104,20 +1634,16 @@ function onBarKey(e: KeyboardEvent) {
   color: var(--ink);
 }
 .step.up {
-  top: -10px;
+  top: 2px;
 }
 .step.up svg {
   rotate: 180deg;
 }
 .step.down {
-  bottom: -12px;
+  bottom: 0;
 }
-/* Off with the sales they would sit flat on the tray; the draw's window has none. */
+/* Off with the sales. */
 .step:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
-.keys.drum .step {
   opacity: 0;
   pointer-events: none;
 }
@@ -1134,7 +1660,7 @@ function onBarKey(e: KeyboardEvent) {
   pointer-events: none;
 }
 .face {
-  font: 800 72px/1 var(--font-latin);
+  font: 800 68px/1 var(--font-latin);
   color: var(--ink);
   animation: face-in 200ms var(--ease-pop) both;
 }
@@ -1142,21 +1668,24 @@ function onBarKey(e: KeyboardEvent) {
 @keyframes face-in {
   from { transform: translateY(var(--from, -10px)) scale(0.8); opacity: 0; }
 }
-/* A blank key: a short line where its digit goes. */
+/* A key with no digit yet: the empty place of a ball. */
 .blank,
 .rc.void::after {
-  width: 28px;
-  height: 4px;
-  margin-top: 46px;
-  border-radius: 2px;
-  background: var(--c-200);
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  border: 3px dashed var(--c-300);
+  border-radius: 50%;
+}
+.numkey:disabled .blank {
+  border-color: var(--c-200);
 }
 .caret {
   position: absolute;
   left: 50%;
-  top: 28px;
+  top: 26px;
   width: 3px;
-  height: 52px;
+  height: 50px;
   margin-left: -1.5px;
   border-radius: 2px;
   background: var(--c-500);
@@ -1193,7 +1722,7 @@ function onBarKey(e: KeyboardEvent) {
   inset: 0;
   display: grid;
   place-items: center;
-  font: 800 72px/1 var(--font-latin);
+  font: 800 68px/1 var(--font-latin);
   color: var(--ink);
   transition: color var(--dur-base);
   will-change: transform;
@@ -1207,11 +1736,8 @@ function onBarKey(e: KeyboardEvent) {
 @keyframes rc-land {
   40% { translate: 0 5%; }
 }
-.drum .rc.landed {
-  color: var(--c-700);
-}
-/* A digit of a number bought, between the keys and its stub. */
-.ghost {
+/* A digit of a number bought, between the keys and its stub (not `.ghost`: that is the quiet key of ui-btn). */
+.flyer {
   position: absolute;
   z-index: 3;
   font-family: var(--font-latin);
@@ -1222,12 +1748,23 @@ function onBarKey(e: KeyboardEvent) {
   pointer-events: none;
 }
 
-/* ---- my stubs: 2 rows of 5; a place still free is a dashed outline */
+/* ---- the tray: my stubs in a grid of five, the empty places pale, the count bought at the end of the first row */
+.tray {
+  grid-area: tray;
+  justify-self: center;
+  align-self: start;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border-radius: var(--radius-l);
+  background: var(--c-50);
+}
 .stubs {
   display: grid;
-  grid-template-columns: repeat(5, 96px);
-  gap: 14px 16px;
-  justify-content: center;
+  grid-template-columns: repeat(5, 62px);
+  grid-auto-rows: 40px;
+  gap: 12px 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1235,12 +1772,12 @@ function onBarKey(e: KeyboardEvent) {
 .cell {
   position: relative;
   display: flex;
-  height: 56px;
   transition: opacity var(--dur-slow) var(--ease-out);
 }
-.cell :deep(.ticket-stub),
 .cell :deep(.paper) {
-  width: 100%;
+  width: 62px;
+  min-width: 0;
+  padding: 0 7px 0 calc(var(--tab) + 6px);
 }
 /* Bought, waiting for the number to leave the keys. */
 .cell.held :deep(.ticket-stub) {
@@ -1251,9 +1788,8 @@ function onBarKey(e: KeyboardEvent) {
   opacity: 0.45;
 }
 .slot {
-  box-sizing: border-box;
-  border: 2px dashed var(--c-200);
   border-radius: var(--radius-s);
+  background: var(--c-100);
 }
 .digit {
   display: inline-block;
@@ -1266,68 +1802,274 @@ function onBarKey(e: KeyboardEvent) {
 .past-stubs .digit.on {
   color: var(--c-700);
 }
+/* What a stub won, on its corner. */
 .stamp {
   position: absolute;
-  top: -11px;
-  right: -9px;
-  padding: 3px 6px 2px;
-  border: 2px solid var(--c-600);
-  border-radius: var(--radius-s);
+  top: -9px;
+  right: -7px;
+  z-index: 2;
+  padding: 2px 5px 1px;
+  border-radius: 999px;
   background: var(--surface);
-  font: 800 17px/1 var(--font-latin);
+  box-shadow: inset 0 0 0 2px var(--c-400), 0 2px 4px -1px rgba(var(--shadow-rgb), 0.2);
+  font: 800 14px/1 var(--font-latin);
   color: var(--c-700);
-  rotate: -9deg;
   white-space: nowrap;
 }
 .stamp.top {
-  border-color: color-mix(in oklab, var(--gold) 78%, var(--c-700));
-  background: var(--grad-gold);
+  background: var(--c-400);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 12px 2px rgba(var(--c-500-rgb), 0.7);
+  color: var(--ink);
+}
+.count {
+  flex: none;
+  min-width: 36px;
+  font: 800 var(--fs-number)/40px var(--font-latin);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.count b {
+  font-size: 24px;
   color: var(--ink);
 }
 
-/* ---- the bottom bar: the last draw on the left, the buy keys on the right */
-.last {
+/*
+ * ---- the side: the pool on coral, then the board of the latest draws. It takes the height the machine and the tray
+ * give the row (size containment keeps it from adding its own), and the board's rows scroll inside it when short.
+ */
+.side {
+  grid-area: side;
+  position: relative;
+  contain: size;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.side.only {
+  justify-content: center;
+}
+.pool-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 14px 16px;
+  border-radius: var(--radius-l);
+  background: var(--grad-sky);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  color: var(--ink);
+}
+.pool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.tier-name {
+  font: 800 var(--fs-label)/1 var(--font);
+  white-space: nowrap;
+}
+.pool-head .tier-name {
+  font-size: var(--fs-section);
+}
+.pool-head small {
+  font: 700 var(--fs-label)/1 var(--font);
+  white-space: nowrap;
+}
+.pool-head .match {
+  align-self: center;
+  margin-left: auto;
+}
+.pool-amount {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
+  gap: 4px;
+  font: 800 50px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.when {
+.tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tiers li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px 9px;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.tier-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* The number's three digits: a ball where the digit must match, an empty slot where it need not. */
+.match {
+  display: inline-flex;
+  gap: 3px;
+}
+.match .lball {
+  --s: 12px;
+}
+.match .hole {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(var(--c-900-rgb), 0.1);
+}
+/* On the coral card the balls are white. */
+.pool-head .match .lball {
+  --s: 15px;
+  background: var(--surface);
+}
+.amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: 800 22px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.amount svg {
+  color: var(--c-700);
+}
+.amount small {
+  margin-left: 2px;
+  font: 600 var(--fs-caption) var(--font);
+  color: var(--ink-2);
+}
+
+/* The board: a header strip, then one draw a row, the newest on white. */
+.board {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  background: var(--c-50);
+}
+.board-head,
+.rows li {
+  display: grid;
+  grid-template-columns: 4.6em 98px 22px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 6px;
+  padding: 0 12px;
+}
+.board-head {
+  flex: none;
+  height: 30px;
+  background: var(--c-100);
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-2);
+}
+.board-head span:nth-child(2) {
+  grid-column: 2 / span 2;
+}
+.board-head span:nth-child(3) {
+  grid-column: 4 / span 2;
+}
+/* The rows fade out at the bottom edge, where they scroll under it. */
+.rows {
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 12px;
+  overflow-y: auto;
+  list-style: none;
+  mask: linear-gradient(180deg, #000 calc(100% - 12px), transparent);
+}
+.rows li {
+  min-height: 32px;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
 }
+.rows li:first-child {
+  min-height: 46px;
+  background: var(--surface);
+  color: var(--ink);
+}
 .balls {
   display: inline-flex;
-  gap: 5px;
+  gap: 3px;
 }
-/* Lottery balls: coral spheres with a soft light at the upper left. */
-.balls i {
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, var(--c-300), var(--c-500) 52%, var(--c-600));
-  box-shadow: inset 0 -2px 3px rgba(var(--c-900-rgb), 0.18);
-  font: 800 26px/1 var(--font-latin);
-  font-style: normal;
-  color: #fff;
+/* The draw's balls: the machine's balls, small. */
+.balls .lball {
+  --s: 25px;
+}
+.rows li:first-child .balls {
+  gap: 4px;
+}
+.rows li:first-child .balls .lball {
+  --s: 30px;
+}
+.day {
+  white-space: nowrap;
+}
+.winners {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.winners.none {
+  color: var(--ink-3);
+}
+.rows .won {
+  font: 800 15px/1 var(--font-latin);
+  color: var(--c-700);
+  white-space: nowrap;
 }
 /* Held back while the draw plays on the keys. */
-.balls.hide,
+.rows li.unseen .balls,
+.rows li.unseen .proof-key,
+.rows li.unseen .winners,
+.rows li.unseen .won,
 .result.hide {
   visibility: hidden;
 }
 .proof-key {
-  gap: 3px;
-  padding: 0 8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   color: var(--ink-3);
 }
 .proof-key.bad,
 .proof-key.bad:hover:not(:disabled),
 .proof-key.bad[aria-expanded="true"]:not(:disabled) {
   color: var(--bad);
+}
+
+/* ---- the bottom bar: 往期 on a narrow panel or with the last draw's stubs aside, my result, the buy keys */
+.past-key {
+  gap: 4px;
+  padding: 0 11px 0 9px;
+}
+.past-key:not(.aside) {
+  display: none;
+}
+.past-key svg {
+  color: var(--c-700);
+}
+.last {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.when {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-2);
 }
 .result {
   display: inline-flex;
@@ -1338,7 +2080,7 @@ function onBarKey(e: KeyboardEvent) {
   color: var(--ink-3);
 }
 .result.won {
-  font: 800 var(--fs-title)/1 var(--font-latin);
+  font: 800 22px/1 var(--font-latin);
   font-variant-numeric: tabular-nums;
   color: var(--c-700);
 }
@@ -1391,14 +2133,10 @@ function onBarKey(e: KeyboardEvent) {
   opacity: 0.55;
 }
 
-/* Pop-ups rise from the bar over the page. */
+/* Pop-ups: the full list rises from the bar, the proof from the bottom of the side. */
 .pop {
   position: absolute;
-  left: 16px;
-  bottom: calc(100% + 8px);
   z-index: 3;
-  max-width: min(460px, calc(100% - 32px));
-  max-height: 240px;
   margin: 0;
   padding: 14px 16px;
   box-sizing: border-box;
@@ -1408,6 +2146,9 @@ function onBarKey(e: KeyboardEvent) {
   box-shadow: var(--shadow-paper), 0 10px 28px -12px rgba(var(--c-900-rgb), 0.3);
 }
 .proof {
+  right: 0;
+  bottom: 0;
+  width: max(100%, 280px);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1433,10 +2174,14 @@ function onBarKey(e: KeyboardEvent) {
   user-select: text;
 }
 .past {
+  left: 16px;
+  bottom: calc(100% + 8px);
   display: flex;
   flex-direction: column;
   gap: 12px;
   width: 420px;
+  max-width: calc(100% - 32px);
+  max-height: 240px;
 }
 /* My stubs of the last draw, on a tinted strip above the list. */
 .past-stubs {
@@ -1475,22 +2220,13 @@ function onBarKey(e: KeyboardEvent) {
   letter-spacing: 0.08em;
   color: var(--ink-2);
 }
-.winners {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink);
-}
-.winners.none {
-  color: var(--ink-3);
-}
 .history .won.on {
   font: 800 var(--fs-number)/1 var(--font-latin);
   color: var(--c-700);
 }
 
 /* ---- the first showing of a draw: each digit of my stubs lights as the key above it comes to rest; once all three
- * rest, the balls drop into the bar right to left and the stamps go down. */
+ * rest, the balls drop onto the board right to left and the stamps go down. */
 .reveal .drawn .digit.on {
   animation: digit-lit 360ms var(--ease-out) both;
 }
@@ -1504,7 +2240,7 @@ function onBarKey(e: KeyboardEvent) {
   animation-delay: calc((2 - var(--i)) * 90ms);
 }
 @keyframes ball-in {
-  from { transform: translate(14px, -46px); opacity: 0; }
+  from { transform: translateY(-24px); opacity: 0; }
   40% { opacity: 1; }
 }
 .reveal .stamp,
@@ -1515,133 +2251,332 @@ function onBarKey(e: KeyboardEvent) {
   from { transform: scale(1.7); opacity: 0; }
 }
 .calm .cell,
-.calm .step {
+.calm .step,
+.calm .key-col {
   transition: none;
 }
 
-/* The buy keys carry their price: near the narrowest panel the proof key keeps only its mark, so the bar stays one row. */
-@container panel (max-width: 1100px) {
-  .proof-key > span {
-    display: none;
-  }
-}
-
+/* Narrow panel: smaller keys and globe; the side keeps the pool and the latest draw (the rest is in 往期); the tray
+ * runs under both columns. */
 @container panel (max-width: 760px) {
   .stage {
-    gap: 20px;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "machine side"
+      "tray tray";
+    align-content: start;
+    gap: 12px 14px;
+    padding: 14px 16px;
   }
-  .tier.top {
-    padding: 10px 18px 12px 16px;
+  .past-key:not(.aside) {
+    display: inline-flex;
   }
-  .tier.top .amount {
-    font-size: 38px;
+  .globe {
+    --globe: 104px;
+    --ball: 21px;
   }
-  .tier.second,
-  .tier.third {
-    padding: 0 14px 0 12px;
+  .base {
+    height: 14px;
+    margin-top: -7px;
   }
-  .tier.second .amount {
-    font-size: 22px;
+  .cabinet {
+    padding: 32px 8px 8px;
+    border-radius: 16px;
+  }
+  .keys {
+    --key-w: 54px;
+    --key-h: 72px;
+    --slot-ball: 48px;
+    gap: 6px;
+  }
+  .key-col {
+    padding: 8px 5px;
+    border-radius: 11px;
   }
   .numkey {
-    width: 64px;
-    height: 84px;
     border-radius: var(--radius-m);
   }
   .face,
   .rc {
-    font-size: 54px;
+    font-size: 46px;
   }
   .blank,
   .rc.void::after {
-    width: 22px;
-    margin-top: 34px;
+    width: 26px;
+    height: 26px;
+    border-width: 2.5px;
   }
   .caret {
-    top: 20px;
-    height: 40px;
+    top: 18px;
+    height: 36px;
   }
   .step {
-    width: 34px;
-    height: 18px;
-    margin-left: -17px;
+    width: 30px;
+    height: 16px;
+    margin-left: -15px;
   }
   .step.up {
-    top: -9px;
+    top: 1px;
   }
-  .step.down {
-    bottom: -11px;
+  .side {
+    contain: none;
+    gap: 8px;
   }
-  .stubs {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 560px;
+  .pool-card {
+    gap: 6px;
+    padding: 10px 12px;
   }
-  .stubs {
-    gap: 12px;
+  .pool-head .tier-name {
+    font-size: var(--fs-strong);
   }
-  .cell {
-    width: 88px;
+  .pool-head .match i {
+    width: 11px;
+    height: 11px;
   }
-  .keys {
-    gap: 10px;
-    padding: 12px 12px 16px;
+  .pool-amount {
+    font-size: 32px;
   }
+  .pool-amount svg {
+    width: 20px;
+    height: 20px;
+  }
+  .tiers {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .tiers li {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+  }
+  .tiers .match {
+    display: none;
+  }
+  .tiers .amount {
+    font-size: 17px;
+  }
+  .board-head,
+  .rows li:not(:first-child) {
+    display: none;
+  }
+  .rows {
+    overflow: visible;
+    padding: 0;
+  }
+  /* The latest draw on one line: its day, the balls and the proof; who won is in 往期. */
+  .rows {
+    mask: none;
+  }
+  .rows li:first-child {
+    grid-template-columns: minmax(0, 1fr) auto 22px;
+    min-height: 0;
+    padding: 8px 8px 8px 10px;
+  }
+  .rows li:first-child .winners,
+  .rows li:first-child .won {
+    display: none;
+  }
+  .rows li:first-child .balls i {
+    width: 26px;
+    height: 26px;
+    font-size: 18px;
+  }
+  .tray {
+    padding: 10px 10px 10px 12px;
+  }
+  /* The bar stays one row: 往期 keeps its mark, the keys their price, the win its number. */
+  .park-actions {
+    gap: 8px;
+  }
+  .park-actions > .park-actions-main {
+    gap: 8px;
+  }
+  .past-key {
+    width: 32px;
+    padding: 0;
+  }
+  .past-key > span,
   .when {
+    display: none;
+  }
+  .park-actions {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .buy-key {
+    gap: 3px;
+    padding: 0 9px;
+  }
+  .result.won {
+    font-size: var(--fs-section);
+  }
+  .result.won svg {
     display: none;
   }
 }
 
-/* Short panel: the board and the keys side by side, the stubs under them; the body scrolls, the bar stays. */
+/* Short panel: the globe beside smaller keys, the pool's amount beside its tiers; the body scrolls, the bar stays. */
 @container panel (max-height: 560px) {
   .stage {
+    --tray-h: 106px;
+    align-content: start;
+    gap: 10px 20px;
+    padding: 10px 16px 12px;
+  }
+  /* The globe stands beside the cabinet; the tube runs across onto the track. */
+  .machine {
     flex-direction: row;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: 16px 24px;
-    padding: 16px 16px 18px;
+    align-items: flex-end;
+    gap: 34px;
   }
-  .tier.top {
+  .globe {
+    --globe: 120px;
+    --ball: 24px;
+  }
+  .base {
+    height: 14px;
+    margin-top: -7px;
+  }
+  .stubs {
+    row-gap: 10px;
+  }
+  .cabinet {
+    margin-top: 0;
+    padding: 33px 8px 8px;
+    border-radius: 16px;
+  }
+  .keys {
+    --key-w: 56px;
+    --key-h: 66px;
+    --slot-ball: 50px;
+    gap: 6px;
+  }
+  .key-col {
+    padding: 8px 5px;
+    border-radius: 11px;
+  }
+  .numkey {
+    border-radius: var(--radius-m);
+  }
+  .face,
+  .rc {
+    font-size: 48px;
+  }
+  .blank,
+  .rc.void::after {
+    width: 26px;
+    height: 26px;
+    border-width: 2.5px;
+  }
+  .caret {
+    top: 18px;
+    height: 38px;
+  }
+  .step {
+    width: 30px;
+    height: 16px;
+    margin-left: -15px;
+  }
+  .step.up {
+    top: 1px;
+  }
+  .tray {
+    padding: 8px 8px 8px 10px;
+  }
+  .side {
+    gap: 8px;
+  }
+  .pool-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "amount tiers";
+    align-items: center;
+    gap: 6px 12px;
+    padding: 10px 12px;
+  }
+  .pool-head {
+    grid-area: head;
+  }
+  .pool-head .tier-name {
+    font-size: var(--fs-strong);
+  }
+  .pool-amount {
+    grid-area: amount;
+    font-size: 38px;
+  }
+  .pool-amount svg {
+    width: 22px;
+    height: 22px;
+  }
+  .tiers {
+    grid-area: tiers;
+    grid-template-columns: 1fr;
     gap: 4px;
-    padding: 10px 18px 12px 14px;
   }
-  .tier.top .amount {
-    font-size: 32px;
+  .tiers li {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
   }
-  .tier.top .amount svg {
-    width: 20px;
-    height: 20px;
+  .tiers .match {
+    display: none;
   }
-  .tier.second,
-  .tier.third {
-    min-height: 40px;
-    padding: 0 12px;
-  }
-  .tier.second .amount {
-    font-size: 20px;
-  }
-  .tier.third .amount {
+  .tiers .amount {
     font-size: 17px;
   }
-  .match i {
-    width: 11px;
-    height: 11px;
+  .rows li {
+    min-height: 30px;
   }
-  .stubs,
-  .stage > .ui-error {
-    flex: 1 0 100%;
+  .rows li:first-child {
+    min-height: 40px;
   }
-  .balls i {
-    width: 32px;
-    height: 32px;
-    font-size: 21px;
-  }
-  .proof-key > span {
-    display: none;
+  .rows li:first-child .balls i {
+    width: 26px;
+    height: 26px;
+    font-size: 18px;
   }
   .result.won {
     font-size: var(--fs-heading);
+  }
+}
+
+/* Narrow and short: no globe; the pool stacks as on a narrow panel; the tray keeps a second row of places only once it has a stub
+ * there. */
+@container panel (max-width: 760px) and (max-height: 560px) {
+  /* No room for a globe whose balls can be read: the cabinet alone, its windows still taking the drawn balls. */
+  .stand {
+    display: none;
+  }
+  .cabinet {
+    margin-top: 0;
+    padding: 8px;
+  }
+  .stubs:not(:has(.cell:nth-child(6))) .slot:nth-child(n + 6) {
+    display: none;
+  }
+  .pool-card {
+    display: flex;
+    align-items: stretch;
+  }
+  .stage {
+    gap: 10px 14px;
+    padding: 10px 16px 12px;
+  }
+  .pool-amount {
+    font-size: 28px;
+  }
+  .pool-amount svg {
+    width: 18px;
+    height: 18px;
+  }
+  .rows li:first-child {
+    row-gap: 4px;
+    padding: 6px 10px 7px;
   }
 }
 </style>

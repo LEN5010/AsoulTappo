@@ -155,11 +155,11 @@ async def _race_loop() -> None:
             continue
         try:
             wins = await run_in_threadpool(races.tick)
-            # A win of roomAt shards or more shows over the winner's pet in every room the save sits in.
+            # A win of roomAt coins or more shows over the winner's pet in every room the save sits in.
             for win in wins:
                 for room_id, room in list(manager.rooms.items()):
                     for peer in [p for p in room.peers.values() if p.token == win["pid"]]:
-                        await manager.broadcast(room_id, race_room_message(peer.id, win["shards"]))
+                        await manager.broadcast(room_id, race_room_message(peer.id, win["coins"]))
         except Exception as e:  # a failed tick must not stop the next ones
             print(f"race tick failed: {e!r}", flush=True)
 

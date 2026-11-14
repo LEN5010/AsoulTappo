@@ -1,6 +1,7 @@
 """The dumpling race's schedule, bets and settlement (design §6); the rules and the odds are in race.py.
 
-Races run on wall-clock multiples of `interval`: bets for the first `betting` seconds, then the race plays and
+Races run on wall-clock boundaries `interval` apart (multiples of it, or placed by `startAt` so that every race starts
+at that minute of the China day: one a day at 19:00): bets for the first `betting` seconds, then the race plays and
 is settled once its animation is over; the next race's bets open at the next boundary. A race is prepared ahead
 (setup, seed, outcome) and stored; while bets are open only SHA-256(seed) is public, and at the start the seed and
 the lanes, order, dice and moves it decides are. The odds follow the coins staked so far; each bet keeps the odds it
@@ -17,26 +18,30 @@ import json
 import math
 import random
 import secrets
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from . import race
 from .game import Game, GameError, player_id_for
 from .park import Park
-from .store import Store, day_of
+from .store import DAY_OFFSET
 
-# Ledger sources.
+# Coin ledger sources.
 SPEND = "race"
 REFUND = "race_refund"
 PRIZE = "race_prize"
-# Playback (PROTOCOL.md 团子赛跑): the opening (the dice for the order) takes lead_ms(rounds of dice); step i starts at
-# startsAt + leadMs + i × stepMs, and from slowFrom (the first move of the last round) on each step lasts slowMs; endsAt
-# follows the last step by TAIL_MS. stepMs and slowMs are STEP_MS and SLOW_MS unless that would run past the next
-# race's bets less RUN_MARGIN; then both are scaled down together. The lead is never scaled.
+# Playback (PROTOCOL.md 团子赛跑): the opening (the dice for the order) takes lead_ms(rounds of dice); then each round
+# of five moves starts with rollMs, everyone's die thrown together, and its steps follow, stepMs each, and slowMs each
+# from slowFrom (the first move of the last round) on; endsAt follows the last step by TAIL_MS. stepMs and slowMs are
+# STEP_MS and SLOW_MS unless that would run past the next race's bets less RUN_MARGIN; then both are scaled down
+# together, and rollMs with them (roll_ms()). The lead is never scaled.
 LEAD_MS = 4000
 REROLL_MS = 1500
-STEP_MS = 3000
-SLOW_MS = 4000
+ROLL_MS = 2400
+STEP_MS = 2500
+SLOW_MS = 3300
 TAIL_MS = 4000
+# Moves a round: one for each member, in the order.
+ROUND = 5
 RUN_MARGIN = 10
 # A race the server starts this late is still run; later than that it is called off.
 START_GRACE = 5.0
@@ -56,9 +61,23 @@ class OddsChanged(GameError):
         self.odds = odds
 
 
+def opened_at(cfg: dict[str, Any], now: float) -> int:
+    """The boundary at or before [now]: when the race taking bets from then on opened them. Boundaries are `interval`
+    apart, shifted by `startAt` (a minute of the China day, optional) so that a race starts at that minute."""
+    interval = int(cfg["interval"])
+    at = cfg.get("startAt")
+    offset = 0 if at is None else (int(at) * 60 - DAY_OFFSET - int(cfg["betting"])) % interval
+    return int((now - offset) // interval) * interval + offset
+
+
 def slow_from(steps: int) -> int:
     """The first move of the last round (five moves a round)."""
-    return 5 * ((steps - 1) // 5) if steps else 0
+    return ROUND * ((steps - 1) // ROUND) if steps else 0
+
+
+def roll_ms(step_ms: int) -> int:
+    """How long a round's dice take, for steps of [step_ms]: ROLL_MS, scaled as the steps are."""
+    return step_ms * ROLL_MS // STEP_MS
 
 
 def lead_ms(rounds: int) -> int:
@@ -66,20 +85,30 @@ def lead_ms(rounds: int) -> int:
     return LEAD_MS + max(0, rounds - 1) * REROLL_MS
 
 
-def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int) -> int:
-    """From startsAt to endsAt: the lead, the steps before the last round, the slow last round and the tail."""
+def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int, roll: int | None = None) -> int:
+    """From startsAt to endsAt: the lead, each round's dice ([roll], roll_ms(step_ms) when None), the steps before the
+    last round, the slow last round and the tail."""
     first = slow_from(steps)
-    return lead + first * step_ms + (steps - first) * slow_ms + TAIL_MS
+    rounds = -(-steps // ROUND)
+    roll = roll_ms(step_ms) if roll is None else roll
+    return lead + rounds * roll + first * step_ms + (steps - first) * slow_ms + TAIL_MS
 
 
 def _result(outcome: dict[str, Any]) -> dict[str, Any]:
     """What a race row keeps of its outcome (the ranking has its own column)."""
-    return {k: outcome[k] for k in ("start", "order", "rolls", "moves")}
+    return {k: outcome[k] for k in ("start", "order", "rolls", "moves", "rest")}
 
 
-def room_message(peer_id: str, shards: int) -> dict[str, Any]:
+def room_message(peer_id: str, coins: int) -> dict[str, Any]:
     """What a room hears of a member's race win (`race_win`; older clients ignore unknown messages)."""
-    return {"type": "race_win", "id": peer_id, "shards": shards}
+    return {"type": "race_win", "id": peer_id, "coins": coins}
+
+
+def payout(tenths: Iterable[int]) -> int:
+    """The coins a save gets for its bets on one race: each winning bet's prize is coins × odds in tenths of a coin
+    (0 for a losing bet); their sum is rounded half up to whole coins, in integers. Settlement pays this and the view
+    shows it, so the two always agree."""
+    return (sum(tenths) + 5) // 10
 
 
 def _hit(kind: str, member: str, ranking: list[str]) -> bool:
@@ -140,6 +169,7 @@ class Races:
         moving = playback_ms(0, steps, step_ms, slow_ms) - TAIL_MS
         room = window_ms - lead - TAIL_MS
         if moving > room:
+            # Every share shrinks by the same factor; rounding down only ever shortens.
             step_ms = max(1, math.floor(STEP_MS * room / moving))
             slow_ms = max(1, math.floor(SLOW_MS * room / moving))
         return {"id": race_id, "starts_at": float(starts),
@@ -149,7 +179,7 @@ class Races:
 
     def tick(self) -> list[dict[str, Any]]:
         """Starts, settles or calls off the races that are due, then prepares the current and the next race when
-        missing. Returns the wins to tell rooms of: [{pid, shards}]."""
+        missing. Returns the wins to tell rooms of: [{pid, coins}]."""
         if not self.enabled:
             return []
         g = self.game
@@ -167,7 +197,7 @@ class Races:
                 wins += self.settle(row["id"])
         cfg = self.cfg
         interval = int(cfg["interval"])
-        current = int(now // interval) * interval
+        current = opened_at(cfg, now)
         targets = [current + interval]
         if now < current + int(cfg["betting"]) - MIN_BETTING:
             targets.insert(0, current)
@@ -200,33 +230,30 @@ class Races:
         return len(staked)
 
     def settle(self, race_id: int) -> list[dict[str, Any]]:
-        """Pays a running race's winning bets once: coins × coin price × the bet's own odds shards each. Returns the
-        saves whose prizes reach roomAt, with their prizes."""
+        """Pays a running race's winning bets once, in coins: each bet's prize is coins × its own odds in tenths of a
+        coin, and each save gets payout() of its prizes on the race (coin ledger PRIZE). Returns the saves whose
+        prizes reach roomAt, with their coins."""
         g = self.game
         cfg = self.cfg
-        price = self.park.coin["price"]
         wins: list[dict[str, Any]] = []
         with g.store.transaction() as st:
             row = st.race_get(race_id)
             if not row or row["status"] != "running":
                 return []
             now = g.now()
-            day = day_of(now)
             ranking = json.loads(row["ranking"])
             prizes: dict[str, list[int]] = {}
             for bet in st.race_bets(race_id):
                 if not _hit(bet["kind"], bet["member"], ranking):
                     continue
-                prize = bet["coins"] * price * bet["odds"] // 10
+                prize = bet["coins"] * bet["odds"]
                 st.race_set_prize(bet["id"], prize)
                 prizes.setdefault(bet["player_id"], []).append(prize)
             for pid, got in prizes.items():
-                total = sum(got)
-                p = st.get_player(pid, now)
-                st.update_player(pid, shards=p["shards"] + total)
-                st.add_ledger(pid, day, PRIZE, total, len(got))
+                total = payout(got)
+                self.park.grant(st, pid, total, PRIZE, now)
                 if total >= cfg["roomAt"]:
-                    wins.append({"pid": pid, "shards": total})
+                    wins.append({"pid": pid, "coins": total})
             st.race_set_status(race_id, "settled")
         return wins
 
@@ -282,7 +309,7 @@ class Races:
         last = next((r for r in settled if not shown or r["id"] != shown["id"]), None)
         return {
             "now": now,
-            "nextAt": (int(now // interval) + 1) * interval,
+            "nextAt": opened_at(cfg, now) + interval,
             "race": self._race(shown, pid, now) if shown else None,
             "last": self._race(last, pid, now) if last else None,
             "winners": [{"id": r["id"], "member": json.loads(r["ranking"])[0]} for r in settled],
@@ -297,9 +324,11 @@ class Races:
         members = self.members
         stakes = st.race_stakes(row["id"])
         odds = race.odds(cfg, members, stakes)
+        bets = st.race_bets(row["id"], pid)
+        # A settled bet's prize in coins, to a tenth (coins × odds); the save's total is payout() of them.
         mine = [{"kind": b["kind"], "member": b["member"], "coins": b["coins"], "odds": b["odds"] / 10,
-                 **({"prize": b["prize"]} if status == "settled" else {})}
-                for b in st.race_bets(row["id"], pid)]
+                 **({"prize": b["prize"] / 10} if status == "settled" else {})}
+                for b in bets]
         out: dict[str, Any] = {
             "id": row["id"], "phase": phase, "opensAt": row["id"], "startsAt": row["starts_at"],
             "hash": row["hash"], "setup": json.loads(row["setup"]),
@@ -313,15 +342,18 @@ class Races:
                 result = json.loads(row["result"])
             else:
                 result = _result(race.run_seed(self.rules, json.loads(row["setup"]), bytes.fromhex(row["seed"])))
-            # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS.
+            # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS; rows
+            # from before the rounds' dice have no rest, and played without them (rollMs 0).
             rolls = result.get("rolls")
+            rest = result.get("rest")
             out.update(seed=row["seed"], endsAt=row["ends_at"], leadMs=lead_ms(len(rolls or [None])),
-                       stepMs=row["step_ms"], slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"],
-                       start=result["start"], moves=result["moves"], ranking=json.loads(row["ranking"]))
+                       rollMs=roll_ms(row["step_ms"]) if rest is not None else 0, stepMs=row["step_ms"],
+                       slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"], start=result["start"],
+                       moves=result["moves"], rest=rest or [], ranking=json.loads(row["ranking"]))
             if rolls:
                 out.update(order=result["order"], rolls=rolls)
-        if status == "settled" and mine:
-            staked = sum(b["coins"] for b in mine) * self.park.coin["price"]
-            won = sum(b["prize"] for b in mine)
+        if status == "settled" and bets:
+            staked = sum(b["coins"] for b in bets)
+            won = payout(b["prize"] for b in bets)
             out["result"] = {"staked": staked, "won": won, "net": won - staked}
         return out

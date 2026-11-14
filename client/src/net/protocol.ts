@@ -142,7 +142,7 @@ export type ServerMessage =
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }
   /** A member won at least economy.park.race.roomAt shards in one dumpling race. */
-  | { type: "race_win"; id: string; shards: number }
+  | { type: "race_win"; id: string; coins: number }
   /** To the member who asked: member [id]'s profile. */
   | ({ type: "profile"; id: string } & MemberProfile)
   /** The room's cheer bar: at most every 2 s while it fills, after a round, and on joining while one is under way. */

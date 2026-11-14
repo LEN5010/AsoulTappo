@@ -233,8 +233,9 @@ def test_an_unwon_pool_carries_over_and_keeps_growing():
     lot.tick()
     top, second = SEED + 5 * PER_COIN, second_pool(CFG, PRICE, 5, 0)
     state = lot.state(TOKENS[0])
-    # After the draw the page shows the pool and what has rolled into tomorrow's second.
-    assert state["drawn"] and not state["open"] and state["prize"]["top"] == top and state["prize"]["second"] == second
+    # The draw starts tomorrow's day at once: on sale, with the pool and what has rolled into its second.
+    assert state["day"] == day_of(clock() + 86400) and not state["drawn"] and state["open"]
+    assert state["prize"]["top"] == top and state["prize"]["second"] == second
     assert g.store.park_counter(POOL) == top
     assert lot.draw(day_of(clock())) is None
     at(clock, 60, days=1)
@@ -382,14 +383,36 @@ def test_the_park_result_counts_lottery_prizes():
     assert park.state(TOKENS[0])["today"]["won"] == CFG["third"]
 
 
-def test_sleep_wakes_for_draw_time_and_midnight():
+def test_sleep_wakes_for_draw_time():
     _, _, lot, clock, _ = setup()
     at(clock, CFG["drawAt"] - 0.5)
     assert lot.sleep_for() == pytest.approx(30.5)
-    at(clock, 24 * 60 - 1 / 60)
+    at(clock, CFG["drawAt"] - 1 / 60)
     assert lot.sleep_for() == pytest.approx(1.5)
-    at(clock, 600)
+    # Midnight is nothing to the lottery: its days turn over at the draw.
+    at(clock, 24 * 60 - 1 / 60)
     assert lot.sleep_for() == 60
+    at(clock, CFG["drawAt"])
+    assert lot.sleep_for() == 60
+
+
+def test_a_day_runs_from_one_draw_to_the_next():
+    g, _, lot, clock, _ = setup("123", "456")
+    at(clock, CFG["closeAt"] - 1 / 60)
+    today = day_of(clock())
+    assert lot.state(TOKENS[0])["day"] == today and lot.state(TOKENS[0])["open"]
+    at(clock, CFG["closeAt"])
+    state = lot.state(TOKENS[0])
+    assert state["day"] == today and not state["open"]
+    with pytest.raises(GameError):
+        lot.buy(TOKENS[0], ["111"])
+    at(clock, CFG["drawAt"])
+    state = lot.state(TOKENS[0])
+    # The draw of today is made, and tomorrow's tickets are on sale until tomorrow's close.
+    assert g.store.lottery_day(today)["drawn"] is not None
+    assert state["day"] == day_of(clock() + 86400) and state["open"]
+    assert state["drawAt"] == clock() + 86400 and state["closeAt"] == state["drawAt"] - (CFG["drawAt"] - CFG["closeAt"]) * 60
+    assert lot.buy(TOKENS[0], ["111"])["lottery"]["tickets"] == ["111"]
 
 
 def test_http_lottery(monkeypatch):

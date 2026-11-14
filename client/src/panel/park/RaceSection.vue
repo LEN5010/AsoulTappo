@@ -5,12 +5,14 @@
 // the same moment. The odds move with the coins staked until the start; a bet sends the odds the player saw and
 // locks them, and when they have dropped meanwhile the slip shows the new ones to confirm. The countdown, the rules
 // key and the host (the latest champion) go up in the park's coral band (band.ts).
-// The page is the board (RaceTrack) with an infield that holds one thing at a time: the odds board (five runner keys,
-// each with its odds and stakes for every kind) while bets are open or the race is void; the order's dice at the
-// start; while it runs, the tuanzi whose turn it is beside the big die, over a small row of the order of play; the
-// podium once it has finished. The odds board folds away as the race comes out, the tuanzi fly from their squares
-// onto the podium at the finish, and the odds board rises again for the next race. The bet slip is the bottom bar,
-// with my tickets when nothing is picked.
+// The page is the board (RaceTrack) with a sheet of paper in the middle that holds one thing at a time: the five
+// runners as keys, each with its odds to win (and my coins on it), while bets are open or the race is void; the
+// order's dice at the start; while it runs, the field in its order of play, each under its own die in its colour, the
+// five dice thrown together at the start of each round and the one whose turn it is raised; the podium once it has
+// finished. The runners fold away as the race comes out, the tuanzi fly from
+// their squares onto the podium at the finish, and the runners rise again for the next race. The bet slip is the
+// bottom bar: a runner picked, its three kinds, the stake and the bet key; nothing picked, my tickets, or the last
+// champion and what I won on that race.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { online } from "../../stores/player";
@@ -23,11 +25,12 @@ import { useBand } from "./band";
 import RaceDie, { type Toss } from "./RaceDie.vue";
 import RaceRules from "./RaceRules.vue";
 import RaceTrack from "./RaceTrack.vue";
+import ParkCoin from "./ParkCoin.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import {
-  hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, staggered, stageOf, stepLength, stepPhases, stepStart,
-  tuanziArt, type Race, type RaceAnswer, type RaceKind,
+  DICE_TOSS, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, ROUND, roundAt, roundDice, roundsOf, staggered,
+  stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
 } from "./race";
 
 // The bundled manifest always has the race; the server checks every number again.
@@ -48,7 +51,6 @@ const COUNT_MS = 1200;
 const fmt = (n: number) => Math.abs(n).toLocaleString("en-US");
 const character = (m: string) => manifest.characters.find((c) => c.id === m);
 const nameOf = (m: string) => character(m)?.name ?? m;
-const colorOf = (m: string) => character(m)?.color ?? "var(--c-500)";
 const x = (n: number | undefined) => (n === undefined ? "" : `×${n.toFixed(1)}`);
 
 const data = ref<RaceAnswer | null>(null);
@@ -134,9 +136,12 @@ onDeactivated(stop);
 onBeforeUnmount(stop);
 
 // ---------------------------------------------------------------- the countdown
+/** h:mm:ss, or m:ss under an hour: a day's race is most of a day away. */
 function clock(sec: number): string {
   const s = Math.max(0, Math.ceil(sec));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const h = Math.floor(s / 3600);
+  return h ? `${h}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`;
 }
 const countdown = computed<{ label: string; time: string }>(() => {
   const r = race.value;
@@ -170,11 +175,16 @@ const seats = computed<string[]>(() => {
   if (r?.order && (!opening.value || opening.value.lined)) return r.order;
   return r?.order || !r?.moves ? MEMBERS : [];
 });
+/** A member's colour, for its dice. */
+const colorOf = (m: string) => character(m)?.color;
+
+/** A seat's die: its face, keyed so each throw remounts it once; the throw while it is in the air. */
+interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
 /**
- * A member's die in the opening: the face it shows, keyed by the round it was last thrown in, so each throw remounts
- * it once; the throw while its round is in the air (staggered among those throwing), dimmed once its place is settled.
+ * A member's die in the opening: the face it shows, keyed by the round it was last thrown in; the throw while its
+ * round is in the air (staggered among those throwing), dimmed once its place is settled.
  */
-function seatDie(m: string): { key: string; face: number; toss: Toss | null; out: boolean } | null {
+function openingDie(m: string): SeatDie | null {
   const o = opening.value;
   const rolls = race.value?.rolls;
   if (!o || !rolls || o.round < 0) return null;
@@ -185,20 +195,35 @@ function seatDie(m: string): { key: string; face: number; toss: Toss | null; out
     const face = rolls[o.round][k].face;
     const { delay, ms } = staggered(OPEN_ROLL_MS, k, o.rolling.length);
     const toss = reducedMotion.value ? null : { ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 };
-    return { key: `${m}${thrown}`, face, toss, out: false };
+    return { key: `${m}o${thrown}`, face, toss, out: false };
   }
-  return { key: `${m}${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
+  return { key: `${m}o${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
 }
-const seatDice = computed(() => Object.fromEntries(seats.value.map((m) => [m, seatDie(m)])));
-/** Who stands in the middle: whose turn it is, the last to move between steps, the first to move before them. */
-const hero = computed(() => {
+/** The round whose dice are out, once the opening is over. */
+const round = computed(() => (race.value?.moves && !opening.value ? roundAt(race.value, serverNow.value) : null));
+/**
+ * A member's die in a round: the five thrown together at the round's start (staggered, landing by DICE_TOSS of
+ * rollMs), lying in the row after; dimmed once its move is done.
+ */
+function roundDie(m: string): SeatDie | null {
   const r = race.value;
-  const h = head.value;
-  const moves = r?.moves ?? [];
-  if (h && h.current >= 0) return moves[h.current].m;
-  if (h && h.done > 0) return moves[h.done - 1].m;
-  return r?.order?.[0] ?? "";
-});
+  const ra = round.value;
+  if (!r || !ra) return null;
+  const dice = roundDice(r, ra.round);
+  const k = dice.findIndex((d) => d.m === m);
+  if (k < 0) return null;
+  const len = (r.rollMs ?? 0) * DICE_TOSS;
+  const { delay, ms } = staggered(len, k, dice.length);
+  const toss = reducedMotion.value || ra.since >= len
+    ? null
+    : { ms, delay, at: ra.since, pool: CFG.dice, seed: ra.round * ROUND + k, height: 110 };
+  const i = ra.round * ROUND + k;
+  const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
+  return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
+}
+const seatDice = computed(() =>
+  Object.fromEntries(seats.value.map((m) => [m, opening.value ? openingDie(m) : roundDie(m)])),
+);
 /** Whose turn it is in the step under way, and where the step is. */
 const turn = computed(() => {
   const r = race.value;
@@ -206,35 +231,12 @@ const turn = computed(() => {
   if (!r?.moves || !h || h.current < 0) return null;
   return { m: r.moves[h.current].m, stage: stageOf(h.part) };
 });
-/**
- * The big die: blank until the first roll; while a mover is lit, the last face resting; then thrown once for the
- * step's roll (a new key remounts it), landing on the face. Hidden while the opening's own dice are out.
- */
-const bigDie = computed<{ key: string; face: number; toss: Toss | null; rest: boolean } | null>(() => {
-  const r = race.value;
-  const h = head.value;
-  if (opening.value || !r) return null;
-  const moves = r.moves ?? [];
-  const i = h ? (h.current >= 0 ? h.current : h.done - 1) : -1;
-  const s = moves[i];
-  const faceOf = (k: number) => moves[k]?.dice.at(-1) ?? moves[k]?.steps ?? 0;
-  if (!h || !s) return { key: "blank", face: 0, toss: null, rest: true };
-  const stage = h.current >= 0 ? stageOf(h.part) : "walk";
-  if (stage === "lit") return { key: `${i}rest`, face: faceOf(i - 1), toss: null, rest: true };
-  const len = stepLength(r, i);
-  const p = stepPhases(len);
-  const at = h.current >= 0 ? h.part * len - p.rollAt : p.rollLen;
-  const toss = reducedMotion.value || at >= p.rollLen
-    ? null
-    : { ms: Math.round(p.rollLen), at, pool: CFG.dice, seed: i, height: 70 };
-  return { key: `${i}roll`, face: faceOf(i), toss, rest: false };
-});
-/** The last round has just begun. */
+/** The last round's dice have just been thrown. */
 const lastRound = computed(() => {
   const r = race.value;
-  if (!r?.moves || r.slowFrom === undefined || r.slowFrom >= r.moves.length || !playing.value) return false;
-  const at = serverNow.value - r.startsAt * 1000 - stepStart(r, r.slowFrom);
-  return at >= 0 && at < CUE_MS;
+  const ra = round.value;
+  if (!r || !ra || !playing.value || roundsOf(r) < 2 || ra.round !== roundsOf(r) - 1) return false;
+  return ra.since < CUE_MS;
 });
 
 // ---------------------------------------------------------------- the odds board
@@ -365,7 +367,7 @@ const oddsList = (odds: number[]) =>
 const ticketTitle = (t: { kind: RaceKind; member: string }) =>
   (race.value?.mine ?? []).filter((b) => b.kind === t.kind && b.member === t.member)
     .map((b) => `${nameOf(b.member)} ${KIND_NAMES[b.kind]} ${x(b.odds)} · ${b.coins} 枚`).join("\n");
-/** Why the bet key cannot be pressed, for its tooltip. With no runner picked the key is simply off. */
+/** Why the bet key cannot be pressed, for its tooltip. */
 const betBlock = computed(() => (!online.value ? "未连接" : ""));
 
 // ---------------------------------------------------------------- results
@@ -376,8 +378,10 @@ const result = computed(() => shown.value?.result ?? null);
 watch(() => (race.value?.phase === "done" && race.value.mine.length ? race.value.id : null), (id) => {
   if (id) void loadPark();
 });
-/** The shards my bets won, counting up from 0 once the result is in; nothing shows for a race that won nothing. */
+/** The coins my bets won, counting up from 0 once the result is in; nothing shows for a race that won nothing. */
 const won = computed(() => result.value?.won ?? 0);
+/** The champion of the race shown on the slip while bets are open: the last race's. */
+const lastChampion = computed(() => last.value?.ranking?.[0] ?? data.value?.winners[0]?.member ?? "");
 const counted = ref(0);
 let countFrame = 0;
 watch(() => [shown.value?.id, won.value] as const, ([, to]) => {
@@ -470,33 +474,25 @@ function flyToPodium() {
     <RaceTrack class="lap" :race="race" :t="serverNow" :track="CFG.track" :members="MEMBERS" :cleared="infield === 'podium'">
       <div ref="infieldEl" class="panes">
         <Transition name="swap" :css="!cut">
-          <!-- Bets open, a void race, or nothing loaded yet: the odds board. -->
-          <div v-if="infield === 'field'" key="field" class="pane field-pane">
+          <!-- Bets open, a void race, or nothing loaded yet: the five runners, each with its odds to win. -->
+          <div v-if="infield === 'field'" key="field" class="pane field-pane" :class="{ off: race?.phase === 'void' }">
             <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
-            <div class="odds-board" role="group" aria-label="团子">
-              <div class="legend who" :title="race ? `${race.bettors ?? 0} 人` : undefined">
-                <Icon name="people" :size="16" /><b>{{ race?.bettors ?? 0 }}</b>
-              </div>
-              <span v-for="(k, r) in KINDS" :key="k" class="legend kind" :style="{ gridRow: r + 3 }">{{ KIND_NAMES[k] }}</span>
+            <div class="runners" role="group" aria-label="团子">
               <button
-                v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner-key"
+                v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner" :data-runner="m"
                 :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
-                :disabled="!betting || !online || !left" @click="chooseRunner(m)"
+                :disabled="!betting || !online || !left" :title="nameOf(m)" @click="chooseRunner(m)"
               >
-                <TuanziToken class="face" :member="m" :size="48" :grey="race?.phase === 'void'" :style="{ gridRow: 1 }" />
-                <span class="name" :style="{ gridRow: 2 }"><i class="bar" :style="{ background: colorOf(m) }"></i>{{ nameOf(m) }}</span>
-                <span
-                  v-for="(k, r) in KINDS" :key="`${k}${tickOf(k, m)?.n ?? 0}`" class="cell" :style="{ gridRow: r + 3 }"
-                  :class="[tickOf(k, m)?.dir, { chosen: pick?.member === m && pick.kind === k }]"
-                  :title="race ? `${coinsOn(k, m)} 枚` : undefined"
-                >
-                  <i class="fill" :style="{ width: `${share(k, m) * 100}%` }"></i>
-                  <b>{{ x(oddsOf(k, m)) }}</b>
-                  <small v-if="coinsOn(k, m)" class="coins"><img :src="COIN_SMALL" alt="" draggable="false" />{{ coinsOn(k, m) }}</small>
-                  <svg v-if="tickOf(k, m)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
-                    <path v-if="tickOf(k, m)!.dir === 'up'" d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" />
-                    <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
-                  </svg>
+                <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
+                <span class="tag">
+                  <span class="name">{{ nameOf(m) }}</span>
+                  <span :key="`win${tickOf('win', m)?.n ?? 0}`" class="odds" :class="tickOf('win', m)?.dir">
+                    <b>{{ x(oddsOf("win", m)) }}</b>
+                    <svg v-if="tickOf('win', m)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
+                      <path v-if="tickOf('win', m)!.dir === 'up'" d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" />
+                      <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
+                    </svg>
+                  </span>
                 </span>
                 <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
               </button>
@@ -504,38 +500,25 @@ function flyToPodium() {
           </div>
 
           <!--
-            Under way: the tuanzi whose turn it is beside the big die, over the order of play; in the opening the order
-            alone, each with its own die. The last round's cue in the corner.
+            Under way: the field in its order of play, each tuanzi under its own die in its colour; in the opening the
+            dice for the order, then each round's five thrown together. The one whose turn it is stands up, its die
+            raised; a die whose move is done fades. The last round's cue in the corner.
           -->
           <div v-else-if="infield === 'run'" key="run" class="pane run-pane">
-            <div class="stage" :class="{ opening: !!opening }">
-              <div class="hero" aria-hidden="true">
-                <Transition name="hero" :css="!reducedMotion">
-                  <span
-                    v-if="hero && !opening" :key="hero" class="hero-tz"
-                    :class="{ waiting: turn?.m === hero && turn.stage !== 'walk' }"
-                  ><TuanziToken :member="hero" :size="72" /></span>
-                </Transition>
-                <div class="well">
+            <TransitionGroup v-if="seats.length" tag="ol" name="seat" class="lineup" :class="{ opening: !!opening }" aria-label="出场顺序">
+              <li
+                v-for="m in seats" :key="m" class="seat"
+                :class="{ turn: turn?.m === m, waiting: turn?.m === m && turn.stage !== 'walk' }" :title="nameOf(m)"
+              >
+                <span class="slot">
                   <RaceDie
-                    v-if="bigDie" :key="bigDie.key" class="big-die" :class="{ rest: bigDie.rest }" :face="bigDie.face"
-                    :toss="bigDie.toss"
+                    v-if="seatDice[m]" :key="seatDice[m]!.key" class="seat-die" :class="{ out: seatDice[m]!.out }"
+                    :face="seatDice[m]!.face" :toss="seatDice[m]!.toss" :color="colorOf(m)"
                   />
-                </div>
-              </div>
-              <TransitionGroup v-if="seats.length" tag="ol" name="seat" class="order" aria-label="出场顺序">
-                <li
-                  v-for="m in seats" :key="m" class="seat"
-                  :class="{ turn: turn?.m === m, waiting: turn?.m === m && turn.stage !== 'walk' }" :title="nameOf(m)"
-                >
-                  <span class="head"><TuanziToken :member="m" :size="48" /></span>
-                  <RaceDie
-                    v-if="seatDice[m]" :key="seatDice[m]!.key" class="mini-die" :class="{ out: seatDice[m]!.out }"
-                    :face="seatDice[m]!.face" :toss="seatDice[m]!.toss"
-                  />
-                </li>
-              </TransitionGroup>
-            </div>
+                </span>
+                <span class="head"><TuanziToken :member="m" :size="48" /></span>
+              </li>
+            </TransitionGroup>
             <p v-if="lastRound" class="cue" role="status">最后一轮</p>
           </div>
 
@@ -551,8 +534,8 @@ function flyToPodium() {
                   <span class="step">{{ i + 1 }}</span>
                 </li>
               </ol>
-              <p v-if="won > 0" class="net" role="status" :aria-label="`+${fmt(won)}`">
-                <Icon name="shard" :size="24" /><b>+{{ fmt(counted) }}</b>
+              <p v-if="won > 0" class="net" role="status" :aria-label="`+${fmt(won)} 驼币`">
+                <ParkCoin class="net-coin" fill :tilt="false" /><b>+{{ fmt(counted) }}</b>
               </p>
             </div>
           </div>
@@ -562,10 +545,14 @@ function flyToPodium() {
 
     <RaceRules v-if="rules" @close="rules = false" />
 
-    <!-- The bet slip. -->
+    <!--
+      The bet slip. A runner picked: its three kinds (odds, and a thin bar of the coins on each), the stake and the bet
+      key. Nothing picked: my tickets on this race; with none while bets are open, the last champion and what my bets
+      on that race won.
+    -->
     <div class="park-actions slip">
       <template v-if="betting && pick && race">
-        <span class="picked"><i class="bar" :style="{ background: colorOf(pick.member) }"></i>{{ nameOf(pick.member) }}</span>
+        <span class="picked"><TuanziToken :member="pick.member" :size="32" />{{ nameOf(pick.member) }}</span>
         <span class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
           <button
             v-for="k in KINDS" :key="k" type="button" class="ui-btn kind-key"
@@ -574,33 +561,38 @@ function flyToPodium() {
           >
             <small>{{ KIND_NAMES[k] }}</small>
             <s v-if="confirming && pick.kind === k">{{ x(repriced!.was) }}</s>
-            <b>{{ x(oddsOf(k, pick.member)) }}</b>
+            <span :key="`${k}${tickOf(k, pick.member)?.n ?? 0}`" class="odds" :class="tickOf(k, pick.member)?.dir">
+              <b>{{ x(oddsOf(k, pick.member)) }}</b>
+              <svg v-if="tickOf(k, pick.member)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
+                <path v-if="tickOf(k, pick.member)!.dir === 'up'" d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" />
+                <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
+              </svg>
+            </span>
+            <i class="pool" :title="`${coinsOn(k, pick.member)} 枚`"><i :style="{ width: `${share(k, pick.member) * 100}%` }"></i></i>
           </button>
         </span>
       </template>
-      <template v-else>
-        <span v-if="tickets.length" class="tickets" aria-label="我的押注">
-          <span
-            v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
-            :title="ticketTitle(t)"
-          >
-            <TuanziToken :member="t.member" :size="24" />
-            <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
-            <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
-          </span>
+      <span v-else-if="tickets.length" class="tickets" aria-label="我的押注">
+        <span
+          v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
+          :title="ticketTitle(t)"
+        >
+          <TuanziToken :member="t.member" :size="24" />
+          <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
+          <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
         </span>
-        <span v-else-if="data?.winners.length" class="champs" aria-label="最近冠军">
-          <span v-for="w in data.winners" :key="w.id" :title="nameOf(w.member)"><TuanziToken :member="w.member" :size="24" /></span>
+      </span>
+      <span v-else-if="betting && lastChampion" class="last">
+        <span class="champ" :title="nameOf(lastChampion)">
+          <TuanziToken :member="lastChampion" :size="32" /><Icon class="champ-crown" name="crown" :size="14" />
         </span>
-        <span v-if="betting && won > 0" class="last-net">
-          <Icon name="shard" :size="14" />+{{ fmt(won) }}
-        </span>
-      </template>
+        <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(won) }}</span>
+      </span>
 
-      <div v-if="betting" class="park-actions-main">
+      <div v-if="betting && (pick || !left)" class="park-actions-main">
         <span v-if="!left" class="full">本场已押满</span>
         <template v-else>
-          <span v-if="pick" class="stepper">
+          <span class="stepper">
             <button type="button" class="ui-btn small ghost" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
               <Icon name="minus" :size="14" />
             </button>
@@ -609,12 +601,9 @@ function flyToPodium() {
               <Icon name="plus" :size="14" />
             </button>
           </span>
-          <span v-else class="dots" :title="`本场还可押 ${left} 枚`">
-            <i v-for="n in CFG.maxCoins" :key="n" :class="{ used: n > left }"></i>
-          </span>
           <button
-            type="button" class="ui-btn primary bet-key" :class="{ pulse: pick && !betBlock && !busy }"
-            :disabled="busy || !pick || !!betBlock" :aria-busy="busy" :title="betBlock || undefined" @click="place"
+            type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy }"
+            :disabled="busy || !!betBlock" :aria-busy="busy" :title="betBlock || undefined" @click="place"
           >
             <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />
             <template v-if="confirming && pick">确认 {{ x(oddsOf(pick.kind, pick.member)) }}</template>
@@ -676,138 +665,77 @@ function flyToPodium() {
   transform: translateY(28px);
 }
 
-/* ---- the odds board: a legend column, then five runner keys whose rows line up with it */
+/*
+ * ---- bets open: five runner keys standing in a row on the paper, each a tuanzi over its name and its odds to win.
+ * The pane is a size container: the keys follow the paper's width and height.
+ */
 .field-pane {
+  container: infield / size;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 4px;
 }
 .void {
   margin: 0;
   text-align: center;
-  font: 800 var(--fs-number)/1.4 var(--font);
+  font: 800 var(--fs-strong)/1.3 var(--font);
   color: var(--ink-2);
 }
-.odds-board {
-  --face: 52px;
-  --cell-h: 28px;
+.runners {
+  /* The tuanzi on a key: as large as the paper's height and a fifth of its width allow. */
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 56px), 88px);
   display: grid;
-  grid-template-columns: auto repeat(5, minmax(0, 1fr));
-  grid-template-rows: auto auto repeat(3, var(--cell-h));
-  column-gap: 8px;
-  row-gap: 4px;
-  width: 100%;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(5px, 2cqw, 14px);
+  width: min(100%, calc(5 * (var(--face) + 24px)));
 }
-.legend {
-  grid-column: 1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  font: 700 var(--fs-label)/1 var(--font);
-  color: var(--ink-2);
-  white-space: nowrap;
+/* A void race: its line over the runners, which give it the room. */
+.field-pane.off .runners {
+  --face: clamp(24px, min(20cqw - 16px, 100cqh - 80px), 88px);
 }
-.legend.kind {
-  align-self: start;
-  height: var(--cell-h);
-}
-/* How many have bet: over the kind names, level with the faces. */
-.legend.who {
-  grid-row: 1 / span 2;
+.runner {
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  color: var(--ink-3);
-}
-.legend.who b {
-  font: 800 var(--fs-number)/1 var(--font-latin);
-  color: var(--ink);
-}
-.runner-key {
-  grid-row: 1 / span 5;
-  display: grid;
-  grid-template-rows: subgrid;
-  grid-template-columns: minmax(0, 1fr);
-  justify-content: stretch;
-  justify-items: stretch;
-  align-items: center;
+  gap: 0;
   min-width: 0;
   height: auto;
-  padding: 8px 6px 8px;
-  row-gap: 4px;
+  padding: clamp(4px, 3cqh, 10px) 4px clamp(4px, 3cqh, 8px);
 }
-.runner-key .face {
-  justify-self: center;
+.runner .face {
   --tuanzi-size: var(--face);
+  margin-bottom: 2px;
 }
-.name {
-  display: inline-flex;
+/* Under the tuanzi its name and odds to win: one line on a wide sheet, the name over the odds on a narrow one. */
+.tag {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 0;
-  font: 800 var(--fs-strong)/1.2 var(--font);
-  color: var(--ink);
+}
+@container infield (min-width: 400px) {
+  .tag {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
+  }
+}
+.runner .name {
+  font: 700 var(--fs-label)/1.25 var(--font);
+  color: var(--ink-2);
   white-space: nowrap;
 }
-.bar {
-  flex: none;
-  width: 4px;
-  height: 14px;
-  border-radius: 2px;
-}
-/* One kind's odds on the runner: the number over a coral fill as wide as its share of that kind's coins. */
-.cell {
+.odds {
   position: relative;
-  align-self: start;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: var(--cell-h);
-  border-radius: var(--radius-s);
-  background: var(--c-100);
-  overflow: hidden;
+  gap: 2px;
 }
-.runner-key.on .cell,
-.runner-key:disabled .cell {
-  background: var(--c-200);
-}
-.cell .fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: var(--c-300);
-  transition: width var(--dur-stage) var(--ease-out);
-}
-.cell b {
-  position: relative;
-  font: 800 var(--fs-number)/1 var(--font-latin);
+.odds b {
+  font: 800 var(--fs-section)/1.05 var(--font-latin);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
-/* The coins on it, small at the cell's right end; only where the board has room. */
-.cell .coins {
-  position: absolute;
-  right: 5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  font: 700 var(--fs-caption)/1 var(--font-latin);
-  color: var(--ink-3);
-}
-.cell .coins img {
-  width: 10px;
-  height: 10px;
-  opacity: 0.8;
-}
-.cell.chosen {
-  box-shadow: inset 0 0 0 2px var(--c-500);
-}
-/* An odds number that just moved: a short flare, coral and up, or grey and down. */
-.cell .arrow {
-  position: relative;
+/* Odds that just moved: an arrow beside them a moment, coral and up or grey and down, the number sliding in. */
+.odds .arrow {
   width: 11px;
   height: 11px;
   fill: none;
@@ -815,35 +743,42 @@ function flyToPodium() {
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+  animation: tick-arrow 1.6s var(--ease-out) both;
 }
-.cell.up {
-  color: var(--c-700);
-  animation: tick 1.6s var(--ease-out) both;
-}
-.cell.down {
-  color: var(--ink-3);
-  animation: tick 1.6s var(--ease-out) both;
-}
-.cell.up b {
+.odds.up {
   color: var(--c-700);
 }
-@keyframes tick {
-  0% { box-shadow: inset 0 0 0 2px currentColor; }
-  70% { box-shadow: inset 0 0 0 2px currentColor; }
-  100% { box-shadow: inset 0 0 0 0 transparent; }
-}
-.cell.up b,
-.cell.down b {
+.odds.up b {
+  color: var(--c-700);
   animation: tick-num 500ms var(--ease-pop) both;
 }
-.cell.down b {
-  animation-name: tick-num-down;
+.odds.down {
+  color: var(--ink-3);
+}
+.odds.down b {
+  animation: tick-num-down 500ms var(--ease-pop) both;
+}
+@keyframes tick-arrow {
+  0%, 75% { opacity: 1; }
+  100% { opacity: 0; }
 }
 @keyframes tick-num {
   from { transform: translateY(6px); opacity: 0.2; }
 }
 @keyframes tick-num-down {
   from { transform: translateY(-6px); opacity: 0.2; }
+}
+/* The runner picked: latched in coral. */
+.runner.on:not(:disabled) {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
+  --key-lip: var(--c-500);
+}
+.runner.on .name {
+  color: var(--ink);
+}
+.runner:disabled .face {
+  opacity: 0.85;
 }
 /* The coins I have on a runner: a coin stuck on the key's corner. */
 .mine {
@@ -867,10 +802,35 @@ function flyToPodium() {
   font: 800 var(--fs-number)/1 var(--font-latin);
   color: var(--ink);
 }
+@container infield (max-height: 84px) {
+  .runner .name {
+    display: none;
+  }
+}
+@container infield (max-width: 360px) {
+  .odds b {
+    font-size: var(--fs-strong);
+  }
+  .runner .name {
+    font-size: var(--fs-caption);
+  }
+  .mine {
+    top: -6px;
+    right: -4px;
+    padding-right: 5px;
+  }
+  .mine img {
+    width: 14px;
+    height: 14px;
+  }
+  .mine b {
+    font-size: var(--fs-strong);
+  }
+}
 
 /*
- * ---- under way: the stage, the hero row (the tuanzi whose turn it is and the big die) over the order of play. The
- * pane is a size container: the seats follow its width, the hero row takes the height left.
+ * ---- under way: the lineup, a row of seats in the order of play, first to move on the left: each a die in the
+ * member's colour over its tuanzi. The pane is a size container: the seats follow its width and height.
  */
 .run-pane {
   container: infield / size;
@@ -878,94 +838,57 @@ function flyToPodium() {
   align-items: center;
   justify-content: center;
 }
-.stage {
-  --seat: clamp(26px, min(7cqw, 24cqh), 48px);
-  --face: calc(var(--seat) * 0.8);
-  --mini: calc(var(--seat) * 0.72);
-  --gap: clamp(6px, 4cqh, 14px);
-  --hero: clamp(40px, 100cqh - var(--seat) - var(--gap) - 12px, 150px);
-  --well: calc(var(--hero) * 0.78);
-  /* How much larger the order stands in the opening (not in a very short infield). */
-  --open-scale: 1.5;
-  position: relative;
-  display: grid;
-  grid-template-rows: var(--hero) auto;
-  justify-items: center;
-  row-gap: var(--gap);
-}
-.hero {
+.lineup {
+  /* A seat's width; its die and its tuanzi, as large as the pane's height leaves room for both. */
+  --seat: clamp(30px, min(17cqw, 52cqh), 96px);
+  --die-size: calc(var(--seat) * 0.62);
+  --face: calc(var(--seat) * 0.66);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(12px, 6cqw, 40px);
-  transition: opacity 360ms var(--ease-out);
-}
-.stage.opening .hero {
-  opacity: 0;
-}
-.hero-tz {
-  display: block;
-  width: var(--hero);
-  height: var(--hero);
-  line-height: 0;
-  --tuanzi-size: var(--hero);
-}
-.hero-tz.waiting {
-  filter: drop-shadow(0 0 3px var(--c-500)) drop-shadow(0 0 10px var(--c-500));
-  animation: hero-glow 1s var(--ease-in-out) infinite alternate;
-}
-@keyframes hero-glow {
-  from { filter: drop-shadow(0 0 1px var(--c-500)) drop-shadow(0 0 4px rgba(var(--c-500-rgb), 0.6)); }
-}
-.hero-enter-active {
-  transition: opacity 260ms var(--ease-out), transform 360ms var(--ease-pop);
-}
-.hero-leave-active {
-  position: absolute;
-  transition: opacity 160ms var(--ease-out);
-}
-.hero-enter-from {
-  opacity: 0;
-  transform: translateY(12px) scale(0.8);
-}
-.hero-leave-to {
-  opacity: 0;
-}
-/* The order of play: a small row of seats, first to move on the left; the one whose turn it is stands up, lit. */
-.order {
-  display: flex;
-  gap: 6px;
+  align-items: flex-end;
+  gap: clamp(4px, 2.4cqw, 18px);
   margin: 0;
   padding: 0;
   list-style: none;
-  transition: translate 600ms var(--ease-out), scale 600ms var(--ease-out);
-}
-/* In the opening the seats carry their own dice (hung under them), come up to the middle and stand larger. */
-.stage.opening .order {
-  translate: 0 calc((var(--hero) + var(--gap) + 6px + var(--mini)) / -2);
-  scale: var(--open-scale);
 }
 .seat {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--seat) * 0.12);
   width: var(--seat);
 }
-@container infield (max-height: 110px) {
-  .stage {
-    --open-scale: 1;
-  }
+/* The die rests on the seat's top; it rises when its tuanzi's turn comes, and fades once that move is done. */
+.slot {
+  display: grid;
+  place-items: end center;
+  width: var(--die-size);
+  height: var(--die-size);
+}
+.seat-die {
+  --s: var(--die-size);
+  transition: opacity 280ms var(--ease-out), translate 280ms var(--ease-pop), scale 280ms var(--ease-pop);
+}
+.seat-die.out {
+  opacity: 0.35;
+}
+.seat.turn .seat-die {
+  translate: 0 calc(var(--seat) * -0.16);
+  scale: 1.08;
+  filter: drop-shadow(0 0 calc(var(--seat) * 0.08) rgba(var(--c-500-rgb), 0.9));
 }
 .seat .head {
   display: grid;
   place-items: center;
   width: var(--seat);
-  height: var(--seat);
-  border-radius: 50%;
+  height: calc(var(--seat) * 0.82);
+  border-radius: 999px;
   background: var(--c-100);
   --tuanzi-size: var(--face);
   transition: translate 280ms var(--ease-pop), background 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
 }
 .seat.turn .head {
-  translate: 0 -5px;
+  translate: 0 -4px;
   background: var(--c-500);
   box-shadow: var(--shadow-backlight);
 }
@@ -978,32 +901,6 @@ function flyToPodium() {
 }
 .seat-move {
   transition: transform 640ms var(--ease-in-out);
-}
-/* A seat's die in the opening: thrown with the others (RaceDie), then dimmed once its place is settled. */
-.mini-die {
-  --s: var(--mini);
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  margin-left: calc(var(--mini) / -2);
-  transition: opacity 240ms var(--ease-out);
-}
-.mini-die.out {
-  opacity: 0.4;
-}
-/* The big die: the one the steps roll, resting faded while the next mover is lit. */
-.well {
-  display: grid;
-  place-items: center;
-  width: var(--well);
-  height: var(--well);
-}
-.big-die {
-  --s: var(--well);
-  transition: opacity 240ms var(--ease-out);
-}
-.big-die.rest {
-  opacity: 0.75;
 }
 /* The last round: a small coral tag stamped in the infield's corner. */
 .cue {
@@ -1022,11 +919,11 @@ function flyToPodium() {
   animation: cue 2.6s var(--ease-out) both;
 }
 @keyframes cue {
-  0% { opacity: 0; transform: scale(1.6) rotate(-6deg); }
-  14% { opacity: 1; transform: scale(0.94) rotate(-2deg); }
-  22% { transform: scale(1) rotate(-2deg); }
-  85% { opacity: 1; transform: scale(1) rotate(-2deg); }
-  100% { opacity: 0; transform: scale(1) rotate(-2deg); }
+  0% { opacity: 0; transform: scale(1.6); }
+  14% { opacity: 1; transform: scale(0.94); }
+  22% { transform: scale(1); }
+  85% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
 }
 
 /* ---- finished: the podium, then what my bets won; sized by the infield (a size container) */
@@ -1037,7 +934,7 @@ function flyToPodium() {
 }
 .result {
   /* One unit of the podium: the infield's width or height, whichever is tighter. */
-  --u: min(1cqw, 1.6cqh);
+  --u: min(1.1cqw, 4cqh);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1056,17 +953,17 @@ function flyToPodium() {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  width: clamp(40px, calc(var(--u) * 13), 84px);
-  --tuanzi-size: clamp(30px, calc(var(--u) * 8), 48px);
+  width: clamp(34px, calc(var(--u) * 13), 84px);
+  --tuanzi-size: clamp(24px, calc(var(--u) * 8), 48px);
 }
 /* Second on the left, the winner in the middle, third on the right; the last two stand on the floor beside. */
-.place.p1 { order: 2; --tuanzi-size: clamp(40px, calc(var(--u) * 12), 72px); }
+.place.p1 { order: 2; --tuanzi-size: clamp(34px, calc(var(--u) * 12), 72px); }
 .place.p2 { order: 1; }
 .place.p3 { order: 3; }
 .place.p4,
 .place.p5 {
-  width: clamp(26px, calc(var(--u) * 7.5), 48px);
-  --tuanzi-size: clamp(22px, calc(var(--u) * 5.5), 32px);
+  width: clamp(22px, calc(var(--u) * 7.5), 48px);
+  --tuanzi-size: clamp(20px, calc(var(--u) * 5.5), 32px);
 }
 .place.p4 { order: 4; margin-left: clamp(4px, var(--u), 10px); }
 .place.p5 { order: 5; }
@@ -1104,10 +1001,29 @@ function flyToPodium() {
   margin: 0 0 4px;
   color: var(--c-700);
 }
+/* The coin as tall as the number. */
+.net-coin {
+  --size: clamp(22px, calc(var(--u) * 6.4), 44px);
+}
 .net b {
-  font: 800 clamp(24px, calc(var(--u) * 7), 48px)/1 var(--font-latin);
+  font: 800 clamp(20px, calc(var(--u) * 7), 48px)/1 var(--font-latin);
   font-variant-numeric: tabular-nums;
   animation: win-pop 600ms var(--ease-pop) both;
+}
+/* A narrow sheet: the podium and the win close up. */
+@container infield (max-width: 320px) {
+  .result {
+    gap: 8px;
+  }
+  .podium {
+    gap: 4px;
+  }
+  .net {
+    gap: 3px;
+  }
+  .net-coin {
+    --size: 20px;
+  }
 }
 @keyframes win-pop {
   0% { transform: scale(0.6); opacity: 0; }
@@ -1122,9 +1038,6 @@ function flyToPodium() {
   font: 800 var(--fs-number)/1 var(--font);
   color: var(--ink);
 }
-.picked .bar {
-  height: 16px;
-}
 .kinds {
   display: flex;
   gap: 8px;
@@ -1132,6 +1045,7 @@ function flyToPodium() {
 .kind-key {
   gap: 5px;
   padding: 0 12px;
+  overflow: hidden;
 }
 /* Latched on the slip's tonal strip: a step darker than the strip, so it still reads as down. */
 .kind-key.on:not(:disabled) {
@@ -1143,17 +1057,53 @@ function flyToPodium() {
   font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
 }
-.kind-key b {
-  font: 800 var(--fs-number)/1 var(--font-latin);
+.kind-key .odds b {
+  font-size: var(--fs-number);
 }
 /* The odds dropped on the way: the old ones struck out, the new ones flare once. */
 .kind-key s {
   font: 700 var(--fs-label)/1 var(--font-latin);
   color: var(--ink-3);
 }
-.kind-key.repriced b {
-  color: var(--c-800);
+.kind-key.repriced .odds b {
+  color: var(--c-700);
   animation: tick-num-down 500ms var(--ease-pop) both;
+}
+/* The coins on the kind: a thin bar along the key's foot, as long as their weight in the odds. */
+.pool {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(var(--c-900-rgb), 0.08);
+  overflow: hidden;
+}
+.pool > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-600);
+  transition: width var(--dur-stage) var(--ease-out);
+}
+/* The last race while bets are open: its champion crowned, and what my bets on it won. */
+.last {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.champ {
+  position: relative;
+  line-height: 0;
+}
+.champ-crown {
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  translate: -50% 0;
+  color: var(--c-600);
+  filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 -1px 0 #fff) drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff);
 }
 /* My bets: small paper tickets, the winners coral once the race is run. */
 .tickets {
@@ -1171,7 +1121,7 @@ function flyToPodium() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 32px;
+  height: 30px;
   padding: 0 9px 0 5px;
   box-sizing: border-box;
   border-radius: var(--radius-s);
@@ -1207,14 +1157,6 @@ function flyToPodium() {
 .ticket.won .coin {
   color: var(--ink);
 }
-.champs {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.champs > span {
-  line-height: 0;
-}
 .last-net {
   display: inline-flex;
   align-items: center;
@@ -1233,20 +1175,6 @@ function flyToPodium() {
   font: 800 22px/1 var(--font-latin);
   color: var(--ink);
 }
-/* The coins still to bet on this race. */
-.dots {
-  display: inline-flex;
-  gap: 5px;
-}
-.dots i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--c-500);
-}
-.dots i.used {
-  background: var(--c-200);
-}
 .full {
   font: 700 var(--fs-body)/1 var(--font);
   color: var(--ink-2);
@@ -1258,9 +1186,15 @@ function flyToPodium() {
   width: 18px;
   height: 18px;
 }
+/* A refused bet floats over the board's lower edge above the bet key, so the bar keeps its height and the board its
+   size. */
 .slip .ui-error {
-  flex-basis: 100%;
+  position: absolute;
+  right: 22px;
+  bottom: calc(100% + 8px);
+  max-width: calc(100% - 44px);
   margin: 0;
+  box-shadow: var(--shadow-paper);
 }
 /* The tickets scroll sideways rather than push the bet key onto a second line. */
 .slip > .tickets {
@@ -1268,125 +1202,51 @@ function flyToPodium() {
   min-width: 0;
 }
 
-.calm .cell .fill {
+.calm .pool > i {
   transition: none;
 }
-.calm .cell,
-.calm .cell b,
-.calm .kind-key.repriced b,
+.calm .odds .arrow,
+.calm .odds b,
+.calm .kind-key.repriced .odds b,
 .calm .net b,
-.calm .seat.waiting .head,
-.calm .hero-tz.waiting {
+.calm .seat.waiting .head {
   animation: none;
 }
 .calm .seat-move,
-.calm .order,
 .calm .seat .head,
-.calm .hero,
-.calm .mini-die,
-.calm .big-die {
+.calm .seat-die {
   transition: none;
 }
 /* Without motion the cue stands still for its time. */
 .calm .cue {
   animation: none;
-  transform: rotate(-2deg);
 }
 
-/* Tall panels: the board grows into the infield the race will need later. */
-@container panel (min-height: 680px) and (min-width: 761px) {
-  .odds-board {
-    --face: 64px;
-    --cell-h: 32px;
-    row-gap: 6px;
-  }
-  .cell b {
-    font-size: var(--fs-section);
-  }
-  .cell .coins {
-    font-size: var(--fs-label);
-  }
-  .cell .coins img {
-    width: 12px;
-    height: 12px;
-  }
-}
-@container panel (max-width: 760px) {
-  .odds-board {
-    --face: 40px;
-    --cell-h: 22px;
-    column-gap: 5px;
-  }
-  .runner-key {
-    padding: 6px 3px;
-  }
-  .cell b {
-    font-size: var(--fs-strong);
-  }
-  .cell .coins {
-    display: none;
-  }
-  .legend {
-    font-size: var(--fs-caption);
-  }
-}
-/* Short panels: smaller faces, no names, a smaller podium (the race follows its infield: .run-pane). */
 @container panel (max-height: 560px) {
   .lap {
     min-height: 250px;
-  }
-  .odds-board {
-    --face: 28px;
-    --cell-h: 18px;
-    row-gap: 3px;
-  }
-  .runner-key {
-    padding: 4px 3px;
-    row-gap: 3px;
-  }
-  .runner-key .name {
-    display: none;
-  }
-  .legend.who {
-    grid-row: 1;
-    flex-direction: row;
-    gap: 3px;
-  }
-  .cell b {
-    font-size: var(--fs-body);
-  }
-  .cell .coins {
-    display: none;
-  }
-  .mine {
-    top: -6px;
-    right: -4px;
-    padding-right: 5px;
-  }
-  .mine img {
-    width: 14px;
-    height: 14px;
-  }
-  .mine b {
-    font-size: var(--fs-strong);
   }
 }
 /* Narrow panels: the kind keys stack their name over the odds, and the slip stays on one line. */
 @container panel (max-width: 840px) {
   .kind-key {
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     min-width: 50px;
-    padding: 0 8px;
+    padding: 0 8px 3px;
   }
   .kind-key small {
     font-size: var(--fs-caption);
   }
-  .kind-key b {
+  .kind-key .odds b {
     font-size: var(--fs-strong);
   }
   .kind-key s {
     display: none;
+  }
+  .pool {
+    bottom: 3px;
+    height: 2px;
   }
 }
 @container panel (max-width: 680px) {
@@ -1402,13 +1262,6 @@ function flyToPodium() {
   .bet-key {
     min-width: 0;
     padding: 0 14px;
-  }
-  .dots {
-    gap: 4px;
-  }
-  .dots i {
-    width: 6px;
-    height: 6px;
   }
   .ticket small {
     display: none;

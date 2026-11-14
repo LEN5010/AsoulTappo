@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The park's two numbers in the panel's top bar, left of the shard balance, while the park is shown: the coins held
-// (with the +n of coins just come in rising into it) and the server-wide pool on gold foil, the top prize of the next
+// (with the +n of coins just come in rising into it) and the server-wide pool on a coral key, the top prize of the next
 // lottery draw. The coins are plain paper; the pool is a button (the top bar's drag skips buttons) that turns to the
 // lottery page, while the park is open.
 import { computed } from "vue";
@@ -69,16 +69,20 @@ function toLottery() {
   background: var(--surface);
   box-shadow: var(--shadow-paper);
 }
-/* The pool is the park's top prize: gold foil, ink type. A button that keeps the chip's look. */
+/* The pool is the park's top prize: a coral key with white type, like the lottery's pool card. A button that keeps
+   the chip's look. */
 .pot {
   margin: 0;
   padding-left: 10px;
   border: 0;
   font: inherit;
-  background: var(--grad-gold);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), var(--shadow-paper);
-  color: var(--ink);
+  background: var(--c-400);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), var(--shadow-paper);
+  color: #fff;
   transition: filter var(--dur-fast) var(--ease-out);
+}
+.pot b {
+  color: #fff;
 }
 .pot.live {
   cursor: pointer;

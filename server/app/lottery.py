@@ -1,8 +1,10 @@
-"""The daily lottery of the park: tickets 000 to 999 for a coin each, one draw a China day.
+"""The daily lottery of the park: tickets 000 to 999 for a coin each, one draw a day at `drawAt` (China clock).
 
-Each day's winning number and a random salt are made before the day's first ticket (at China midnight by the loop, or
-on the first request that day, whichever comes first), and only SHA-256(number + salt) is public until the draw; the
-draw then publishes both, so anyone can check that the number was fixed in advance.
+A lottery day runs from one draw to the next and is named by the China date it is drawn on (draw_day()): a ticket
+bought after today's draw goes into tomorrow's. Sales close at `closeAt`, a few minutes before the draw. Each day's
+winning number and a random salt are made before its first ticket (at the previous draw by the loop, or on the first
+request after it, whichever comes first), and only SHA-256(number + salt) is public until the draw; the draw then
+publishes both, so anyone can check that the number was fixed in advance.
 
 Prizes (manifest economy.park.lottery):
 - top, all three digits: the server-wide pool (park_counters park.POOL). It starts at `pool.seed`, every coin spent in
@@ -90,14 +92,26 @@ def settle(cfg: dict[str, Any], price: int, winning: str, tickets: list[tuple[in
         prizes=[(tid, t, each[t]) for tid, t in tiers if t])
 
 
-def minute_of(ts: float) -> float:
-    """Minutes since China midnight."""
-    return ((ts + DAY_OFFSET) % 86400) / 60
-
-
 def day_start(ts: float) -> float:
     """The unix time of the China midnight that starts [ts]'s day."""
     return (ts + DAY_OFFSET) // 86400 * 86400 - DAY_OFFSET
+
+
+def draw_time(cfg: dict[str, Any], ts: float) -> float:
+    """The unix time of the draw that [ts]'s tickets go into: today's drawAt (China clock), or tomorrow's once
+    today's has come."""
+    t = day_start(ts) + cfg["drawAt"] * 60
+    return t if ts < t else t + 86400
+
+
+def draw_day(cfg: dict[str, Any], ts: float) -> str:
+    """The lottery day of [ts]: the China date of its draw."""
+    return day_of(draw_time(cfg, ts))
+
+
+def close_time(cfg: dict[str, Any], ts: float) -> float:
+    """The unix time sales close for the draw of [ts]: closeAt, the same day as the draw."""
+    return draw_time(cfg, ts) - (cfg["drawAt"] - cfg["closeAt"]) * 60
 
 
 class Lottery:
@@ -135,13 +149,12 @@ class Lottery:
         return row
 
     def is_open(self, now: float) -> bool:
-        return minute_of(now) < self.cfg["closeAt"]
+        return now < close_time(self.cfg, now)
 
     def state_of(self, st: Store, pid: str, now: float) -> dict[str, Any]:
         cfg = self.cfg
-        day = day_of(now)
+        day = draw_day(cfg, now)
         row = self.ensure_day(st, day, now)
-        start = day_start(now)
         mine = st.lottery_tickets(day, pid)
         drawn = row["drawn"] is not None
         # Once today is drawn, the second is what has rolled into tomorrow's draw so far. The top is the pool now.
@@ -149,8 +162,8 @@ class Lottery:
         return {
             "day": day,
             "hash": row["hash"],
-            "closeAt": start + cfg["closeAt"] * 60,
-            "drawAt": start + cfg["drawAt"] * 60,
+            "closeAt": close_time(cfg, now),
+            "drawAt": draw_time(cfg, now),
             "open": self.is_open(now) and not drawn,
             "drawn": drawn,
             "sales": st.lottery_sales(day),
@@ -202,6 +215,9 @@ class Lottery:
         self.cfg
         g = self.game
         pid = player_id_for(token)
+        # Right after a draw time a request may come before the loop: the day just ended is drawn first, so the new
+        # day never shows the one before it as the last draw.
+        self.tick()
         with g.store.transaction() as st:
             return self.state_of(st, pid, g.now())
 
@@ -218,13 +234,13 @@ class Lottery:
             raise GameError("bad_count", "数量不对")
         with g.store.transaction() as st:
             now = g.now()
-            day = day_of(now)
+            day = draw_day(cfg, now)
             row = self.ensure_day(st, day, now)
             if row["drawn"] is not None or not self.is_open(now):
-                raise GameError("lottery_closed", "今天已停售")
+                raise GameError("lottery_closed", "本期已停售")
             held = [t["number"] for t in st.lottery_tickets(day, pid)]
             if len(held) + n > cfg["daily"]:
-                raise GameError("lottery_cap", f"今天还能买 {max(0, cfg['daily'] - len(held))} 注")
+                raise GameError("lottery_cap", f"本期还能买 {max(0, cfg['daily'] - len(held))} 注")
             bought = list(numbers) + self._random(count, set(held) | set(numbers))
             self.park.spend(st, pid, n, SPEND, now)
             st.add_lottery_tickets(day, pid, bought, now)
@@ -281,27 +297,24 @@ class Lottery:
             st.add_park_news(now, "lottery_draw", "", "", json.dumps(detail, ensure_ascii=False))
 
     def tick(self) -> list[str]:
-        """Makes today's row and draws every day whose draw time has passed (past days the server missed included).
-        Safe to call any time: a drawn day is never drawn again."""
+        """Makes the current day's row and draws every earlier day not drawn yet: a day ends at its draw time, so the
+        days before the current one are the ones due (past days the server missed included). Safe to call any time: a
+        drawn day is never drawn again."""
         cfg = (self.game.manifest.park or {}).get("lottery")
         if not cfg:
             return []
         g = self.game
         now = g.now()
-        today = day_of(now)
+        today = draw_day(cfg, now)
         with g.store.transaction() as st:
             self.ensure_day(st, today, now)
-            due = [d for d in st.lottery_undrawn()
-                   if d < today or (d == today and minute_of(now) >= cfg["drawAt"])]
+            due = [d for d in st.lottery_undrawn() if d < today]
         return [d for d in due if self.draw(d) is not None]
 
     def sleep_for(self) -> float:
-        """Seconds until the next midnight or draw time, at most LOOP_MAX_SLEEP."""
+        """Seconds until the next draw time, at most LOOP_MAX_SLEEP."""
         cfg = (self.game.manifest.park or {}).get("lottery")
         if not cfg:
             return LOOP_MAX_SLEEP
         now = self.game.now()
-        start = day_start(now)
-        events = [start + cfg["drawAt"] * 60, start + 86400]
-        wait = min(t - now for t in events if t > now)
-        return max(0.5, min(LOOP_MAX_SLEEP, wait + 0.5))
+        return max(0.5, min(LOOP_MAX_SLEEP, draw_time(cfg, now) - now + 0.5))

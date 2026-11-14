@@ -7,9 +7,12 @@ the order: the higher face moves first, and those on the same face roll again am
 opening()). The order holds for the whole race: each round all five move once in it. A move rolls a die and carries
 every dumpling stacked on the mover along; on square 0 nobody is stacked, so a move from there carries nobody. The
 finish must be reached exactly: a roll that would carry the group past it takes it to the finish and back by the
-squares left over (bounce()). Landing on an occupied square past the start puts the movers on top; landing on the
-boost or trip square moves the whole group once more. The race goes on, with no limit on rounds, until a group lands
-on the finish; every dumpling is ranked by square, within a square the higher one ahead, and on square 0 by lane.
+squares left over (bounce()). Landing on an occupied square past the start puts the movers on top. Four kinds of
+square act on the group that lands on them, once (wherever it ends up then, nothing acts again): the boost and trip
+squares move it on or back; either end of the portal takes it to the other end, on top of whoever is there; the flip
+square turns the whole stack there upside down once the group is on it. The race goes on, with no limit on rounds,
+until a group lands on the finish; every dumpling is ranked by square, within a square the higher one ahead, and on
+square 0 by lane.
 
 All five dumplings are alike, so every member has the same chance of each place. The odds start from it and move with
 the coins staked: see odds_tenths().
@@ -79,20 +82,27 @@ class Rules:
     square_range: tuple[int, int]
     boost: int
     trip: int
+    # How far apart the portal's two ends are, in squares (inclusive).
+    portal_gap: tuple[int, int] = (1, 1 << 30)
 
     @classmethod
     def of(cls, cfg: dict[str, Any], members: list[str] | tuple[str, ...]) -> "Rules":
         sq = cfg["squares"]
+        gap = sq.get("portalGap") or (1, 1 << 30)
         return cls(members=tuple(members), track=int(cfg["track"]), dice=tuple(cfg["dice"]),
                    square_range=(int(sq["range"][0]), int(sq["range"][1])), boost=int(sq["boost"]),
-                   trip=int(sq["trip"]))
+                   trip=int(sq["trip"]), portal_gap=(int(gap[0]), int(gap[1])))
 
 
 def deal(rules: Rules, rng: Any) -> dict[str, Any]:
-    """A race's setup: the boost and trip squares (two different ones)."""
+    """A race's setup, five different squares in the range: the portal's two ends [a, b] (a < b, b − a within
+    portal_gap), one of the pairs at random, then the boost, trip and flip squares from the rest."""
     lo, hi = rules.square_range
-    boost, trip = rng.sample(range(lo, hi + 1), 2)
-    return {"boost": boost, "trip": trip}
+    g0, g1 = rules.portal_gap
+    pairs = [(a, b) for a in range(lo, hi + 1) for b in range(a + 1, hi + 1) if g0 <= b - a <= g1]
+    a, b = rng.choice(pairs)
+    boost, trip, flip = rng.sample([q for q in range(lo, hi + 1) if q not in (a, b)], 3)
+    return {"boost": boost, "trip": trip, "portal": [a, b], "flip": flip}
 
 
 def _shuffle(items: list[int], below: Any) -> None:
@@ -129,18 +139,29 @@ def bounce(square: int, track: int) -> int:
 
 
 def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
-    """Runs one race. Returns {ranking, start, order, rolls, moves}: ranking first to last; start the lanes on the
-    start line, top lane first; order who moves first to last, every round; rolls the order's rounds of dice, each
-    [{m, face}] in the order drawn; each move as described in PROTOCOL.md (团子赛跑).
+    """Runs one race. Returns {ranking, start, order, rolls, moves, rest}: ranking first to last; start the lanes on
+    the start line, top lane first; order who moves first to last, every round; rolls the order's rounds of dice, each
+    [{m, face}] in the order drawn; each move as described in PROTOCOL.md (团子赛跑); rest the dice of those after the
+    winning move in the last round, [{m, face}] in the order, which never move.
 
-    Draw order: the lanes (one shuffle), the order (opening()), then each move's die (below(len(dice)))."""
+    Draw order: the lanes (one shuffle), the order (opening()), each move's die (below(len(dice))), then rest's dice
+    the same way."""
     members = rules.members
     below = rng.below
     dice = rules.dice
     nd = len(dice)
     track = rules.track
-    squares = {setup["boost"]: rules.boost, setup["trip"]: rules.trip}
+    push = {setup["boost"]: rules.boost, setup["trip"]: rules.trip}
     square_kind = {setup["boost"]: "boost", setup["trip"]: "trip"}
+    # Setups from before the portal and the flip square have neither.
+    portal = setup.get("portal")
+    other_end: dict[int, int] = {}
+    if portal:
+        a, b = portal
+        other_end = {a: b, b: a}
+        square_kind.update({a: "portal", b: "portal"})
+    if setup.get("flip") is not None:
+        square_kind[setup["flip"]] = "flip"
     n = len(members)
     idx = list(range(n))
 
@@ -159,7 +180,7 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     rolls = [[{"m": members[d], "face": face} for d, face in got] for got in rounds]
     moves: list[dict[str, Any]] = []
     while True:
-        for d in order:
+        for at, d in enumerate(order):
             roll = dice[below(nd)]
             p = pos[d]
             if p:
@@ -173,24 +194,34 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
             else:
                 group = [d]
             land = bounce(p + roll, track)
+            # Only the square the die gives acts, once: where the group ends up then does nothing more.
+            kind = square_kind.get(land)
             q = land
-            if q in squares:
-                q = bounce(q + squares[q], track)
+            if kind in ("boost", "trip"):
+                q = bounce(land + push[land], track)
+            elif kind == "portal":
+                q = other_end[land]
             if q:
                 stack.setdefault(q, []).extend(group)
+            if kind == "flip":
+                # The whole stack on the square, the group just landed on top included, turns upside down.
+                stack[q].reverse()
             for g in group:
                 pos[g] = q
             step: dict[str, Any] = {"m": members[d], "dice": [roll], "steps": roll, "from": p, "to": land}
             if len(group) > 1:
                 step["carry"] = [members[g] for g in group[1:]]
-            if land in square_kind:
-                step["square"] = square_kind[land]
+            if kind:
+                step["square"] = kind
                 step["end"] = q
             moves.append(step)
             if q == track:
                 ranked = sorted(idx, key=lambda x: (pos[x], height(x)), reverse=True)
+                # The rest of the last round still roll, after every draw the race used, only to be shown: the round's
+                # dice are thrown together, so its last die gives nothing away.
+                rest = [{"m": members[e], "face": dice[below(nd)]} for e in order[at + 1:]]
                 return {"ranking": [members[x] for x in ranked], "start": [members[x] for x in start],
-                        "order": [members[x] for x in order], "rolls": rolls, "moves": moves}
+                        "order": [members[x] for x in order], "rolls": rolls, "moves": moves, "rest": rest}
 
 
 def run_seed(rules: Rules, setup: dict[str, Any], seed: bytes) -> dict[str, Any]:

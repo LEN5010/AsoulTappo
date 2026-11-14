@@ -21,7 +21,7 @@ M = Manifest.load()
 CFG = M.park["race"]
 MEMBERS = tuple(c["id"] for c in M.data["characters"])
 PRICE = M.park["coin"]["price"]
-T0 = 1_800_000_000  # a multiple of the interval
+T0 = park_race.opened_at(CFG, 1_800_000_000)  # a boundary: a race opens its bets then
 
 
 def seeds():
@@ -55,13 +55,16 @@ def test_bets_open_at_the_boundary_with_only_the_hash_public():
     assert v["nextAt"] == T0 + CFG["interval"]
     seed = bytes.fromhex(row(g, T0)["seed"])
     assert len(seed) * 8 >= 128 and r["hash"] == hashlib.sha256(seed).hexdigest()
-    for secret in ("seed", "moves", "ranking", "start", "order", "rolls", "endsAt", "leadMs", "stepMs", "slowFrom",
-                   "slowMs"):
+    for secret in ("seed", "moves", "ranking", "start", "order", "rolls", "rest", "endsAt", "leadMs", "rollMs",
+                   "stepMs", "slowFrom", "slowMs"):
         assert secret not in r
-    assert set(r["setup"]) == {"boost", "trip"}
+    su = r["setup"]
+    assert set(su) == {"boost", "trip", "portal", "flip"}
     lo, hi = CFG["squares"]["range"]
-    assert lo <= r["setup"]["boost"] <= hi and lo <= r["setup"]["trip"] <= hi
-    assert r["setup"]["boost"] != r["setup"]["trip"]
+    squares = [su["boost"], su["trip"], *su["portal"], su["flip"]]
+    assert all(lo <= q <= hi for q in squares) and len(set(squares)) == 5
+    g0, g1 = CFG["squares"]["portalGap"]
+    assert g0 <= su["portal"][1] - su["portal"][0] <= g1
     assert r["odds"] == {"win": dict.fromkeys(MEMBERS, 4.2), "top2": dict.fromkeys(MEMBERS, 2.1),
                          "last": dict.fromkeys(MEMBERS, 4.2)}
     assert r["pool"] == {kind: dict.fromkeys(MEMBERS, 0) for kind in CFG["kinds"]}
@@ -161,16 +164,21 @@ def test_the_start_publishes_the_seed_and_the_moves_it_decides():
     seed = bytes.fromhex(r["seed"])
     assert hashlib.sha256(seed).hexdigest() == committed
     outcome = race.run_seed(race.Rules.of(CFG, MEMBERS), r["setup"], seed)
-    for k in ("start", "order", "rolls", "moves", "ranking"):
+    for k in ("start", "order", "rolls", "moves", "rest", "ranking"):
         assert r[k] == outcome[k], k
     assert sorted(r["start"]) == sorted(MEMBERS) and sorted(r["order"]) == sorted(MEMBERS)
     assert r["rolls"][0] == [{"m": m, "face": r["rolls"][0][i]["face"]} for i, m in enumerate(MEMBERS)]
     steps = len(r["moves"])
     slow = 5 * ((steps - 1) // 5)
     lead = 4000 + 1500 * (len(r["rolls"]) - 1)
-    assert (r["leadMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (lead, 3000, 4000, slow)
-    # The last round plays slowly: its first step starts after slowFrom normal steps.
-    last_start = r["startsAt"] * 1000 + r["leadMs"] + slow * r["stepMs"] + (steps - 1 - slow) * r["slowMs"]
+    assert (r["leadMs"], r["rollMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (lead, 2400, 2500, 3300, slow)
+    # The last round fills up with dice for those who never got to move.
+    assert [d["m"] for d in r["rest"]] == r["order"][(steps - 1) % 5 + 1:]
+    # Each round opens with its dice; the last round plays slowly: its last step starts after slowFrom normal steps,
+    # every round's dice and the slow steps before it.
+    rounds = slow // 5 + 1
+    last_start = (r["startsAt"] * 1000 + r["leadMs"] + rounds * r["rollMs"] + slow * r["stepMs"]
+                  + (steps - 1 - slow) * r["slowMs"])
     assert r["endsAt"] * 1000 == last_start + r["slowMs"] + park_race.TAIL_MS
     assert r["endsAt"] <= T0 + CFG["interval"] - park_race.RUN_MARGIN
 
@@ -179,14 +187,18 @@ def test_playback_timing():
     assert park_race.slow_from(30) == 25 and park_race.slow_from(31) == 30 and park_race.slow_from(5) == 0
     # One round of order dice, then each round rolled again adds REROLL_MS.
     assert park_race.lead_ms(1) == 4000 and park_race.lead_ms(3) == 4000 + 2 * 1500
-    # 22 steps: 20 at 3000, the last round's two at 4000.
-    assert park_race.playback_ms(4000, 22, 3000, 4000) == 4000 + 20 * 3000 + 2 * 4000 + 4000
+    # 22 steps: five rounds of dice, 20 steps at 2500, the last round's two at 3300.
+    assert park_race.playback_ms(4000, 22, 2500, 3300) == 4000 + 5 * 2400 + 20 * 2500 + 2 * 3300 + 4000
+    assert park_race.playback_ms(4000, 20, 2500, 3300) == 4000 + 4 * 2400 + 15 * 2500 + 5 * 3300 + 4000
+    # The dice scale with the steps; without them (rows from before them) a round costs nothing.
+    assert park_race.roll_ms(1250) == 1200 and park_race.playback_ms(0, 5, 1000, 1000, 0) == 5000 + 4000
 
 
 def test_the_longest_races_play_unhurried():
     window = (CFG["interval"] - CFG["betting"] - park_race.RUN_MARGIN) * 1000
-    # Past the longest of 20000 races (77 steps with the finish bounce) after six rounds of order dice.
-    assert park_race.playback_ms(park_race.lead_ms(7), 80, park_race.STEP_MS, park_race.SLOW_MS) <= window
+    # Past the longest of most 20000 races (portal and flip squares included: about 85 steps) after six rounds of
+    # order dice; about 3 in 100000 run longer and play a little faster (see the next test).
+    assert park_race.playback_ms(park_race.lead_ms(7), 86, park_race.STEP_MS, park_race.SLOW_MS) <= window
     rules = race.Rules.of(CFG, MEMBERS)
     deal = random.Random(7)
     longest = 0
@@ -196,7 +208,7 @@ def test_the_longest_races_play_unhurried():
         longest = max(longest, n)
         assert park_race.playback_ms(park_race.lead_ms(len(out["rolls"])), n, park_race.STEP_MS,
                                      park_race.SLOW_MS) <= window
-    assert longest <= 80
+    assert longest <= 86
     g, races, clock, _ = make()
     for rid in range(T0, T0 + 200 * CFG["interval"], CFG["interval"]):
         r = races.prepare(rid)
@@ -207,16 +219,18 @@ def test_a_short_run_window_slows_nothing_past_the_next_race():
     g, races, clock, _ = make()
     cfg = g.manifest.park["race"]
     cfg["betting"] = cfg["interval"] - 50
-    clock.t = T0 + 1
+    # The boundaries move with the bets' length (startAt places the start); t0 is the one before T0.
+    t0 = park_race.opened_at(cfg, T0)
+    clock.t = t0 + 1
     races.tick()
-    clock.t = T0 + cfg["betting"]
+    clock.t = t0 + cfg["betting"]
     races.tick()
     r = races.view(TOKEN)["race"]
     assert r["phase"] == "running"
     # 40 s less RUN_MARGIN for lead, steps and tail: both step lengths shrink together.
-    assert r["stepMs"] < 3000 and r["slowMs"] < 4000
-    assert abs(r["slowMs"] / r["stepMs"] - 4 / 3) < 0.01
-    assert r["endsAt"] <= T0 + cfg["interval"] - park_race.RUN_MARGIN
+    assert r["stepMs"] < 2500 and r["slowMs"] < 3300 and r["rollMs"] < 2400
+    assert abs(r["slowMs"] / r["stepMs"] - 3300 / 2500) < 0.01 and r["rollMs"] == r["stepMs"] * 2400 // 2500
+    assert r["endsAt"] <= t0 + cfg["interval"] - park_race.RUN_MARGIN
     n = len(r["moves"])
     assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(r["leadMs"], n, r["stepMs"], r["slowMs"]) / 1000
 
@@ -234,7 +248,7 @@ def settle_with_bets(roomAt=None):
     races.bet(OTHER, T0, "win", ranking[-1], 1)
     # Same selection again, at lower odds now.
     races.bet(TOKEN, T0, "win", ranking[0], 1)
-    before = g.store.get_player(pid, clock())["shards"]
+    before = g.store.get_player(pid, clock())["coins"]
     clock.t = T0 + CFG["betting"]
     races.tick()
     clock.t = row(g, T0)["ends_at"]
@@ -249,29 +263,57 @@ def test_settlement_pays_each_winning_bet_at_its_own_odds():
     # 0.85 × 5 × 107 / 130 = 3.4 with 6 on it.
     assert [b["odds"] for b in g.store.race_bets(T0, pid)] == [42, 21, 42, 34]
     assert [b["odds"] for b in g.store.race_bets(T0, other)] == [39, 45]
-    prizes = [2 * PRICE * 42 // 10, PRICE * 21 // 10, 0, PRICE * 34 // 10]
+    # Prizes in tenths of a coin: 2 × 4.2, 1 × 2.1, a loss, 1 × 3.4; 13.9 in all, paid as 14 coins.
+    prizes = [84, 21, 0, 34]
+    assert [b["prize"] for b in g.store.race_bets(T0, pid)] == prizes
     p = g.store.get_player(pid, clock())
-    assert p["shards"] == before + sum(prizes)
-    assert g.store.ledger_sum(pid, day_of(clock()), ("race_prize",)) == sum(prizes)
+    assert p["coins"] == before + 14
+    shards = p["shards"]
+    assert coin_ledger(g, pid, "race_prize") == (14, 1)
+    # The race pays coins, not shards: the park's shard result for the day leaves it out.
+    assert g.store.ledger_sum(pid, day_of(clock()), ("race_prize",)) == 0
+    assert races.park.state(TOKEN)["today"]["won"] == 0
     v = races.view(TOKEN)
     r = v["race"]
-    assert r["phase"] == "done" and [b["prize"] for b in r["mine"]] == prizes
+    assert r["phase"] == "done" and [b["prize"] for b in r["mine"]] == [8.4, 2.1, 0, 3.4]
     assert [(b["kind"], b["member"], b["odds"]) for b in r["mine"]] == [
         ("win", w0, 4.2), ("top2", ranking[1], 2.1), ("last", w0, 4.2), ("win", w0, 3.4)]
-    assert r["result"] == {"staked": 7 * PRICE, "won": sum(prizes), "net": sum(prizes) - 7 * PRICE}
+    assert r["result"] == {"staked": 7, "won": 14, "net": 7}
     assert v["winners"] == [{"id": T0, "member": w0}]
-    won = 4 * PRICE * 39 // 10
-    assert races.view(OTHER)["race"]["result"] == {"staked": 5 * PRICE, "won": won, "net": won - 5 * PRICE}
-    assert g.store.ledger_sum(other, day_of(clock()), ("race_prize",)) == won
+    # 4 × 3.9 = 15.6, paid as 16; the bet on the last one lost.
+    assert races.view(OTHER)["race"]["result"] == {"staked": 5, "won": 16, "net": 11}
+    assert coin_ledger(g, other, "race_prize") == (16, 1)
     # Settling again pays nothing more.
     assert races.settle(T0) == [] and races.tick() == []
-    assert g.store.get_player(pid, clock())["shards"] == p["shards"]
+    assert g.store.get_player(pid, clock())["coins"] == p["coins"]
+    assert g.store.get_player(pid, clock())["shards"] == shards
+
+
+def coin_ledger(g, pid, source):
+    """The save's coin ledger [source] rows, summed: (coins, rows)."""
+    got = g.store._db.execute("SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM coin_ledger WHERE player_id = ? AND "
+                              "source = ?", (pid, source)).fetchone()
+    return tuple(got)
+
+
+def test_a_save_s_prizes_on_a_race_are_summed_then_rounded_half_up():
+    assert park_race.payout([]) == 0 and park_race.payout([0, 0]) == 0
+    assert park_race.payout([4]) == 0 and park_race.payout([5]) == 1
+    # Exactly halves go up, unlike round() (2 and 2).
+    assert park_race.payout([15]) == 2 and park_race.payout([25]) == 3
+    # Summed first, rounded once: 4.4 + 4.4 = 8.8 is 9 coins, not 4 + 4.
+    assert park_race.payout([44, 44]) == 9
+    assert park_race.payout(b for b in (11, 11, 11)) == 3
 
 
 def test_big_wins_are_told_to_rooms():
     g, races, clock, pid, other, ranking, before, wins = settle_with_bets(roomAt=1)
-    won = g.store.get_player(pid, clock())["shards"] - before
-    assert wins == [{"pid": pid, "shards": won}, {"pid": other, "shards": 4 * PRICE * 39 // 10}]
+    won = g.store.get_player(pid, clock())["coins"] - before
+    assert won == 14
+    assert wins == [{"pid": pid, "coins": 14}, {"pid": other, "coins": 16}]
+    assert park_race.room_message("peer", 14) == {"type": "race_win", "id": "peer", "coins": 14}
+    _, _, _, _, _, _, _, wins = settle_with_bets(roomAt=16)
+    assert wins == [{"pid": other, "coins": 16}]
     _, _, _, _, _, _, _, wins = settle_with_bets(roomAt=10**9)
     assert wins == []
 
@@ -307,8 +349,9 @@ def test_a_race_missed_while_down_is_called_off_and_refunded():
     assert r["phase"] == "void" and "seed" not in r and "moves" not in r
     assert races.view(TOKEN)["winners"] == []
     with g.store.transaction() as st:
-        ledger = st._db.execute("SELECT source, amount FROM coin_ledger WHERE player_id = ? ORDER BY source",
-                                (pid,)).fetchall()
+        # The bets and the refund may fall on different days (a day of bets): summed over the days.
+        ledger = st._db.execute("SELECT source, SUM(amount) AS amount FROM coin_ledger WHERE player_id = ? "
+                                "GROUP BY source", (pid,)).fetchall()
     assert {r["source"]: r["amount"] for r in ledger} == {"race": -5, "race_refund": 5, "stamp": 0}
 
 
@@ -369,6 +412,16 @@ def test_a_row_from_before_the_order_dice_plays_without_them():
     assert r["leadMs"] == park_race.LEAD_MS and r["moves"] == old["moves"]
 
 
+def test_a_row_from_before_the_rounds_dice_plays_without_them():
+    g, races, clock, pid, other, ranking, before, wins = settle_with_bets()
+    old = json.loads(row(g, T0)["result"])
+    del old["rest"]
+    with g.store.transaction() as st:
+        st._db.execute("UPDATE park_races SET result = ? WHERE id = ?", (json.dumps(old), T0))
+    r = races.view(TOKEN)["race"]
+    assert r["rollMs"] == 0 and r["rest"] == [] and r["moves"] == old["moves"]
+
+
 def test_http_race_and_bet(monkeypatch):
     clock = Clock(T0 + 1)
     g = Game(Store(":memory:"), Manifest.load(), now=clock)
@@ -427,7 +480,7 @@ def test_a_database_from_the_test_builds_still_opens(tmp_path):
     # The old race tables are made anew; the first race comes back with the new rules.
     races.tick()
     r = races.view(TOKEN)["race"]
-    assert r["id"] == T0 and set(r["setup"]) == {"boost", "trip"} and r["mine"] == []
+    assert r["id"] == T0 and set(r["setup"]) == {"boost", "trip", "portal", "flip"} and r["mine"] == []
     races.bet(TOKEN, T0, "win", "jiaran", 1)
     races.bet(TOKEN, T0, "win", "jiaran", 1)
     assert len(races.view(TOKEN)["race"]["mine"]) == 2
@@ -435,3 +488,16 @@ def test_a_database_from_the_test_builds_still_opens(tmp_path):
     g, races, clock, _ = make(path)
     assert len(races.view(TOKEN)["race"]["mine"]) == 2
     g.store.close()
+
+
+def test_one_race_a_day_starts_at_seven_in_the_evening_china_time():
+    # The manifest's schedule: bets open ten minutes after a start and run until the next day's 19:00.
+    china = lambda t: (t + 8 * 3600) % 86400
+    for now in (1_800_000_000, 1_800_030_000, 1_800_060_000):
+        opened = park_race.opened_at(CFG, now)
+        assert opened <= now < opened + CFG["interval"]
+        assert china(opened + CFG["betting"]) == 19 * 3600
+        assert china(opened) == 19 * 3600 + 600
+    # Without startAt the boundaries are plain multiples of the interval.
+    plain = {k: v for k, v in CFG.items() if k != "startAt"}
+    assert park_race.opened_at(plain, 1_800_000_000) % CFG["interval"] == 0

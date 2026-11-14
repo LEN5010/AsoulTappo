@@ -88,6 +88,18 @@ export function nextDraw(s: Pick<LotteryState, "drawAt" | "drawn">): number {
   return s.drawn ? s.drawAt + 86400 : s.drawAt;
 }
 
+/** China time (UTC+8) of the draws, whatever this machine's zone. */
+const CHINA = 8 * 3600;
+
+/** When the draw at [drawAt] is, for the band: its China clock time, with 明日 when it is not on [now]'s China day. */
+export function drawLabel(drawAt: number, now: number): string {
+  const at = drawAt + CHINA;
+  const day = (t: number) => Math.floor(t / 86400);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const clock = `${pad(Math.floor((at % 86400) / 3600))}:${pad(Math.floor((at % 3600) / 60))}`;
+  return `${day(at) === day(now + CHINA) ? "" : "明日 "}${clock} 开奖`;
+}
+
 /** h:mm:ss (or m:ss under an hour) until [target] seconds from [now] seconds; 0:00 once past. */
 export function countdown(target: number, now: number): string {
   const left = Math.max(0, Math.floor(target - now));

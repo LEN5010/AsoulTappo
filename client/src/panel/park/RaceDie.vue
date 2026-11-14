@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// A die of the race: a small white key with coral pips, 1 to 6 as on a die. The size is --s (22px by default); the
-// key's own shadow is --die-shadow.
+// A die of the race: a small white key with coral pips, 1 to 6 as on a die; with [color] (a member's colour) the key
+// is that colour with white pips. The size is --s (22px by default); the key's own shadow is --die-shadow.
 // With [toss] it is thrown when it mounts (remount it with :key for each throw): up with a turn and a drift, down
 // onto a shadow that grows as it falls, a squash and two smaller bounces. In the air it flashes other faces
 // (race.ts airFaces, from [toss.pool]) and lands on [face]. The motion is one Web Animations run on transform and
@@ -13,7 +13,7 @@ import { airFaces, TOSS_LAND, TOSS_TOP } from "./race";
 /** A throw: [ms] long after [delay]; [height] how high, in % of the die (120 by default). */
 export interface Toss { ms: number; delay?: number; at?: number; pool: readonly number[]; seed?: number; height?: number }
 
-const props = defineProps<{ face: number; toss?: Toss | null }>();
+const props = defineProps<{ face: number; toss?: Toss | null; color?: string }>();
 
 const air = props.toss && !reducedMotion.value ? airFaces(props.face, props.toss.pool, props.toss.seed ?? 0) : [];
 const cube = ref<HTMLElement | null>(null);
@@ -84,7 +84,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <span class="race-die" aria-hidden="true">
+  <span class="race-die" :class="{ tinted: !!color }" :style="color ? { '--die': color } : undefined" aria-hidden="true">
     <i v-if="toss !== undefined" ref="shade" class="shade"></i>
     <span ref="cube" class="cube">
       <span ref="final" class="pips" :class="`f${face}`"><i v-for="k in face" :key="k"></i></span>
@@ -125,6 +125,19 @@ onMounted(() => {
     inset 0 0 0 max(1px, calc(var(--s) * 0.035)) var(--c-300),
     var(--die-shadow, 0 max(2px, calc(var(--s) * 0.06)) 0 var(--c-400),
       0 calc(var(--s) * 0.1) calc(var(--s) * 0.16) calc(var(--s) * -0.05) rgba(var(--c-900-rgb), 0.4));
+}
+/* A member's die: its colour, lighter at the top, a darker rim and lip; white pips. */
+.tinted .cube {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--die) 70%, #fff), var(--die) 70%);
+  box-shadow:
+    inset 0 0 0 max(1px, calc(var(--s) * 0.035)) color-mix(in oklab, var(--die) 80%, var(--c-900)),
+    inset 0 max(1px, calc(var(--s) * 0.05)) 0 rgba(255, 255, 255, 0.35),
+    var(--die-shadow, 0 max(2px, calc(var(--s) * 0.06)) 0 color-mix(in oklab, var(--die) 72%, var(--c-900)),
+      0 calc(var(--s) * 0.1) calc(var(--s) * 0.16) calc(var(--s) * -0.05) rgba(var(--c-900-rgb), 0.4));
+}
+.tinted .pips i {
+  background: #fff;
+  box-shadow: 0 max(0.5px, calc(var(--s) * 0.015)) 0 rgba(var(--c-900-rgb), 0.3);
 }
 .pips {
   position: absolute;

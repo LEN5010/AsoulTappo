@@ -263,7 +263,8 @@ CREATE TABLE IF NOT EXISTS park_races (
   status TEXT NOT NULL DEFAULT 'open'
 );
 CREATE INDEX IF NOT EXISTS park_races_status ON park_races (status, id);
--- Bets on a race, one row per bet with the odds it was placed at (tenths); prize in shards once settled.
+-- Bets on a race, one row per bet with the odds it was placed at (tenths); prize once settled, in tenths of a coin
+-- (coins × odds; 0 for a losing bet).
 CREATE TABLE IF NOT EXISTS park_race_bets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL,
@@ -299,6 +300,8 @@ CREATE TABLE IF NOT EXISTS lottery_tickets (
   prize INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS lottery_tickets_day ON lottery_tickets (day, player_id);
+-- A save's own days (lottery_history), without scanning every ticket of the server.
+CREATE INDEX IF NOT EXISTS lottery_tickets_player ON lottery_tickets (player_id, day);
 -- park: redeem tables
 -- Redeem codes made through /admin/codes (see redeem.py). code: normalized (upper case, no dashes or spaces); custom: an
 -- admin wrote it rather than the generator; uses: claims allowed, used: claims so far; expires: Unix seconds, 0 never.

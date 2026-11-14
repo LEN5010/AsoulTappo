@@ -25,7 +25,7 @@ export interface RoomEvents {
   onCheer(state: CheerState): void;
   onCheerDone(round: number, rewards: Record<string, number>): void;
   onScratch(id: string, shards: number): void;
-  onRaceWin?(id: string, shards: number): void;
+  onRaceWin?(id: string, coins: number): void;
   onState(update: StateUpdate): void;
   /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
   onDuel(msg: DuelMessage): void;
@@ -333,7 +333,7 @@ export class RoomClient {
         this.events.onScratch(msg.id, msg.shards);
         break;
       case "race_win":
-        this.events.onRaceWin?.(msg.id, msg.shards);
+        this.events.onRaceWin?.(msg.id, msg.coins);
         break;
       case "state":
         this.events.onState(msg);

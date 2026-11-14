@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import {
-  cleanNumber, countdown, dayBefore, dropDigit, matchedDigits, nextDraw, NO_PICKS, pickedNumber, pickLabel, pickTarget,
-  putDigit, reelDigit, revealDigits, salesOpen, shortDay, stepDigit, verifyDraw, winnersLine,
+  cleanNumber, countdown, dayBefore, drawLabel, dropDigit, matchedDigits, nextDraw, NO_PICKS, pickedNumber, pickLabel,
+  pickTarget, putDigit, reelDigit, revealDigits, salesOpen, shortDay, stepDigit, verifyDraw, winnersLine,
 } from "./lottery";
 
 it("fills the number keys left to right, or the key picked", () => {
@@ -64,6 +64,9 @@ it("names a draw's top prize winners, three at most", () => {
   expect(winnersLine(top("阿草"))).toBe("阿草");
   expect(winnersLine(top("阿草", "小草", "大草"))).toBe("阿草、小草、大草");
   expect(winnersLine(top("阿草", "小草", "大草", "草草", "青草"))).toBe("阿草、小草、大草 等 5 人");
+  // The board's narrow column takes one nick and the count.
+  expect(winnersLine(top("阿草", "小草"), 1)).toBe("阿草 等 2 人");
+  expect(winnersLine(top("阿草"), 1)).toBe("阿草");
 });
 
 it("finds the day before", () => {
@@ -100,4 +103,14 @@ it("checks a drawn number against the published hash", async () => {
   expect(await verifyDraw("042", salt, hash)).toBe(true);
   expect(await verifyDraw("043", salt, hash)).toBe(false);
   expect(await verifyDraw("042", salt, hash.toUpperCase())).toBe(true);
+});
+
+it("names the draw time on the China clock, with 明日 when it is on the next China day", () => {
+  // 2026-11-15 19:00 China is 11:00 UTC.
+  const draw = Date.UTC(2026, 10, 15, 11, 0) / 1000;
+  expect(drawLabel(draw, draw - 3600)).toBe("19:00 开奖");
+  // 18:59 the day before (China) and 23:59 the day before still say 明日; China midnight starts the draw's own day.
+  expect(drawLabel(draw, draw - 86400 + 60)).toBe("明日 19:00 开奖");
+  expect(drawLabel(draw, draw - 19 * 3600 - 60)).toBe("明日 19:00 开奖");
+  expect(drawLabel(draw, draw - 19 * 3600)).toBe("19:00 开奖");
 });

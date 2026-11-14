@@ -180,11 +180,11 @@ const events: RoomEvents = {
     p?.win.add(shards);
     if (face) p?.emote.play(face);
   },
-  onRaceWin(id, shards) {
-    // The shards go up over the winner's pet; no stall keeper here.
+  onRaceWin(id, coins) {
+    // The coins go up over the winner's pet; no stall keeper here.
     noteActivity();
-    if (id === youId.value) localWin.add(shards);
-    else players.get(id)?.win.add(shards);
+    if (id === youId.value) localWin.add(coins, "coin");
+    else players.get(id)?.win.add(coins, "coin");
   },
   onMotion(id, pose) {
     const member = members.get(id);

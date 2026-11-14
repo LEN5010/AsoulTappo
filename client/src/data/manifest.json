@@ -5176,7 +5176,7 @@
   "park": {
    "coin": {
     "price": 500,
-    "gift": 1,
+    "gift": 3,
     "minTaps": 10000,
     "stampsPerCoin": 30,
     "badges": [
@@ -5270,8 +5270,9 @@
     }
    },
    "race": {
-    "interval": 3600,
-    "betting": 3300,
+    "interval": 86400,
+    "betting": 85800,
+    "startAt": 1140,
     "track": 24,
     "dice": [
      1,
@@ -5293,14 +5294,18 @@
       20
      ],
      "boost": 2,
-     "trip": -1
+     "trip": -1,
+     "portalGap": [
+      4,
+      6
+     ]
     },
-    "roomAt": 10000
+    "roomAt": 20
    },
    "lottery": {
     "daily": 10,
-    "closeAt": 1315,
-    "drawAt": 1320,
+    "closeAt": 1135,
+    "drawAt": 1140,
     "pool": {
      "seed": 10000,
      "perCoin": 50

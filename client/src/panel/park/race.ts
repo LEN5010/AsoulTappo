@@ -9,6 +9,9 @@ export type RacePhase = "betting" | "starting" | "running" | "done" | "void";
 export interface RaceConfig {
   interval: number;
   betting: number;
+  /** The minute of the China day each race starts at (1140: one a day at 19:00); without it races start on multiples
+   * of the interval. The server places the races; the client reads the times off them. */
+  startAt?: number;
   track: number;
   dice: number[];
   payout: number;
@@ -16,7 +19,9 @@ export interface RaceConfig {
   depth: number;
   maxCoins: number;
   kinds: RaceKind[];
-  squares: { range: [number, number]; boost: number; trip: number };
+  /** portalGap: how far apart the portal's ends are, in squares (inclusive). */
+  squares: { range: [number, number]; boost: number; trip: number; portalGap: [number, number] };
+  /** The coins a race's win reaches to be told to the room. */
   roomAt: number;
 }
 
@@ -27,13 +32,22 @@ export interface RaceStep {
   from: number;
   to: number;
   carry?: string[];
-  square?: "boost" | "trip";
+  /** The special square landed on, and where the group is once it has acted (the same square for a flip). */
+  square?: SquareKind;
   end?: number;
 }
+
+/** The special squares: boost and trip push the group on or back, a portal end takes it to the other, a flip turns
+ * the stack there upside down. */
+export type SquareKind = "boost" | "trip" | "portal" | "flip";
+
+/** A race's special squares; races dealt before the portal and the flip square have neither. */
+export interface RaceSetup { boost: number; trip: number; portal?: [number, number]; flip?: number }
 
 /** One die of the opening, rolled for the order of play. */
 export interface OrderRoll { m: string; face: number }
 
+/** A bet; once the race is settled, [prize] is what it won in coins, to a tenth (coins × odds). */
 export interface RaceBet { kind: RaceKind; member: string; coins: number; odds: number; prize?: number }
 
 export interface Race {
@@ -42,7 +56,7 @@ export interface Race {
   opensAt: number;
   startsAt: number;
   hash: string;
-  setup: { boost: number; trip: number };
+  setup: RaceSetup;
   /** The current odds; they move with the coins staked until the start. */
   odds: Record<RaceKind, Record<string, number>>;
   /** The coins staked on each selection. */
@@ -53,6 +67,8 @@ export interface Race {
   seed?: string;
   endsAt?: number;
   leadMs?: number;
+  /** How long each round's dice take, before its first step; 0 on races from before them. */
+  rollMs?: number;
   stepMs?: number;
   /** The first move of the last round, which plays at slowMs a step. */
   slowFrom?: number;
@@ -64,7 +80,10 @@ export interface Race {
   /** The opening's rounds of dice: everyone, then each round rolled again by those still tied. */
   rolls?: OrderRoll[][];
   moves?: RaceStep[];
+  /** The dice of those after the winning move in the last round, in the order, drawn only to be shown. */
+  rest?: OrderRoll[];
   ranking?: string[];
+  /** My bets on the settled race, in coins: [won] is the bets' prizes summed and rounded half up. */
   result?: { staked: number; won: number; net: number };
 }
 
@@ -93,12 +112,21 @@ export function hits(kind: RaceKind, member: string, ranking: readonly string[])
 
 // ---------------------------------------------------------------- timing
 
-/** When step [i] starts, ms after startsAt: the lead, then stepMs a step, and slowMs a step from slowFrom on. */
+/** Moves a round: each member once, in the order (race.py run). */
+export const ROUND = 5;
+
+/** The round step [i] is in. */
+export const roundOf = (i: number): number => Math.floor(i / ROUND);
+
+/**
+ * When step [i] starts, ms after startsAt: the lead, every round's dice up to its own (rollMs each), then stepMs a
+ * step, and slowMs a step from slowFrom on (park_race.py playback_ms).
+ */
 export function stepStart(race: Race, i: number): number {
   const step = race.stepMs ?? 1;
   const slowFrom = race.slowFrom ?? race.moves?.length ?? 0;
   const slow = race.slowMs ?? step;
-  const lead = race.leadMs ?? 0;
+  const lead = (race.leadMs ?? 0) + (roundOf(i) + 1) * (race.rollMs ?? 0);
   return i < slowFrom ? lead + i * step : lead + slowFrom * step + (i - slowFrom) * slow;
 }
 
@@ -108,53 +136,80 @@ export function stepLength(race: Race, i: number): number {
   return i < slowFrom ? race.stepMs ?? 1 : race.slowMs ?? race.stepMs ?? 1;
 }
 
+/** When round [r]'s dice are thrown, ms after startsAt: rollMs before its first step. */
+export const rollStart = (race: Race, r: number): number => stepStart(race, r * ROUND) - (race.rollMs ?? 0);
+
+/** The rounds of a race: one more for every ROUND moves begun. */
+export const roundsOf = (race: Race): number => Math.ceil((race.moves?.length ?? 0) / ROUND);
+
+/**
+ * Round [r]'s dice, in the order: the face each member's move rolls, and in the last round, for those after the
+ * winning move, the faces drawn only to be shown (race.rest).
+ */
+export function roundDice(race: Race, r: number): OrderRoll[] {
+  const out = (race.moves ?? []).slice(r * ROUND, (r + 1) * ROUND).map((s) => ({ m: s.m, face: s.steps }));
+  return r === roundsOf(race) - 1 ? [...out, ...(race.rest ?? [])] : out;
+}
+
 /** Where playback is at server time [t] (ms): steps fully done, the step under way (or -1), and how far into it. */
 export interface Playhead { done: number; current: number; part: number }
 
 export function playhead(race: Race, t: number): Playhead {
   const moves = race.moves ?? [];
   const at = t - race.startsAt * 1000;
-  if (at < stepStart(race, 0)) return { done: 0, current: -1, part: 0 };
-  // Few steps: a scan is plain and exact at the switch to the slow round.
+  // Few steps: a scan is plain and exact at the switch to the slow round. Between steps (a round's dice) nothing is
+  // under way.
   for (let i = 0; i < moves.length; i++) {
     const from = stepStart(race, i);
+    if (at < from) return { done: i, current: -1, part: 0 };
     const len = stepLength(race, i);
     if (at < from + len) return { done: i, current: i, part: (at - from) / len };
   }
   return { done: moves.length, current: -1, part: 0 };
 }
 
+/** The round whose dice are on show at server time [t] (ms), and how long ago they were thrown; null before the first. */
+export function roundAt(race: Race, t: number): { round: number; since: number } | null {
+  const at = t - race.startsAt * 1000;
+  let round = -1;
+  while (round + 1 < roundsOf(race) && at >= rollStart(race, round + 1)) round++;
+  return round < 0 ? null : { round, since: at - rollStart(race, round) };
+}
+
 /*
- * A step, as shares of its length: the mover lights up alone until ROLL_AT; the die tumbles and lands by HOP_AT; then
- * the group hops to the square the die gives (HOP_LEN of the step); a group that landed on the boost or trip square
- * hops on to its end from SQUARE_AT, in what is left of the step. At 3000 ms: 1000 lit, 800 rolling, 800 hopping.
+ * A round's dice: thrown together at its start, each landing by DICE_TOSS of rollMs (staggered a little), then lying
+ * still in a row until its steps begin.
  */
-export const ROLL_AT = 1 / 3;
-export const HOP_AT = 0.6;
-export const HOP_LEN = 0.8 / 3;
+export const DICE_TOSS = 0.5;
+
+/*
+ * A step, as shares of its length: the mover lights up alone until HOP_AT; then the group hops to the square its die
+ * gave (HOP_LEN of the step); from SQUARE_AT the special square it landed on acts (PUSH_LEN of the step), and the rest
+ * of the step is still. At 2500 ms: 700 lit, 800 hopping, 700 for a special square, 300 still.
+ */
+export const HOP_AT = 0.28;
+export const HOP_LEN = 0.32;
 export const SQUARE_AT = HOP_AT + HOP_LEN;
+export const PUSH_LEN = 0.28;
 
-/** Where a step is: the mover lit, the die rolling, the group walking (and pushed on by a square). */
-export type StepStage = "lit" | "roll" | "walk";
-export const stageOf = (part: number): StepStage => (part < ROLL_AT ? "lit" : part < HOP_AT ? "roll" : "walk");
+/** Where a step is: the mover lit, the group walking (and pushed on by a square). */
+export type StepStage = "lit" | "walk";
+export const stageOf = (part: number): StepStage => (part < HOP_AT ? "lit" : "walk");
 
-/** A step of [len] ms in ms from its start: when the die starts and stops, the hop, and the push of a square. */
-export interface StepPhases { rollAt: number; rollLen: number; hopAt: number; hopLen: number; squareAt: number; pushLen: number }
+/** A step of [len] ms in ms from its start: the hop, and what a special square does. */
+export interface StepPhases { hopAt: number; hopLen: number; squareAt: number; pushLen: number }
 
 export function stepPhases(len: number): StepPhases {
-  return {
-    rollAt: len * ROLL_AT, rollLen: len * (HOP_AT - ROLL_AT), hopAt: len * HOP_AT, hopLen: len * HOP_LEN,
-    squareAt: len * SQUARE_AT, pushLen: len * (1 - SQUARE_AT),
-  };
+  return { hopAt: len * HOP_AT, hopLen: len * HOP_LEN, squareAt: len * SQUARE_AT, pushLen: len * PUSH_LEN };
 }
 
 /**
  * The step whose words are up at [head]: the one under way, or the one before while the next mover is still lit, so
- * a word that pops late in a step stays until the next die rolls. [part] is how far into that step.
+ * a word that pops late in a step stays until the next group sets off. [part] is how far into that step.
  */
 export function saidAt(head: Playhead): { i: number; part: number } | null {
   if (head.current < 0) return null;
-  return head.current > 0 && head.part < ROLL_AT ? { i: head.current - 1, part: 1 } : { i: head.current, part: head.part };
+  return head.current > 0 && head.part < HOP_AT ? { i: head.current - 1, part: 1 } : { i: head.current, part: head.part };
 }
 
 // ---------------------------------------------------------------- a die toss
@@ -231,28 +286,48 @@ export function openingAt(race: Race, t: number): Opening | null {
 // ---------------------------------------------------------------- the board
 
 /*
- * The board is a ring of `track` squares round a rectangle BOARD_ROWS high (24 squares: 9 × 5). Square 0, the start,
- * is the top left corner and also square `track`, the finish; the squares go clockwise: along the top to the right,
- * down the right side, back along the bottom, up the left side.
+ * The board is a ring of `track` squares, all the same size, round a rectangle BOARD_ROWS squares high (24 squares:
+ * 9 × 5; of the rings 24 squares make, 8 × 6 gives smaller squares in every panel the race is shown in). Square 0,
+ * the start, is the top left corner and also square `track`, the finish; the squares go clockwise: along the top to
+ * the right, down the right side, back along the bottom, up the left side. A unit is a square's side.
  */
 export const BOARD_ROWS = 5;
 
-/** The board's size in squares for a [track] (even, 14 or more). */
-export function boardOf(track: number): { cols: number; rows: number } {
+/** The board's size in squares (and units): across and down. */
+export interface Board { cols: number; rows: number }
+
+/** The board for a [track] (even, 14 or more). */
+export function boardOf(track: number): Board {
   return { cols: track / 2 + 2 - BOARD_ROWS, rows: BOARD_ROWS };
 }
 
-/** Where [square] sits on the board, column and row from the top left; square `track` is square 0. */
-export function cellOf(square: number, track: number): { col: number; row: number } {
+/** The squares in the corners, clockwise from the start. */
+export function cornersOf(track: number): number[] {
+  const { cols, rows } = boardOf(track);
+  return [0, cols - 1, cols + rows - 2, 2 * cols + rows - 3];
+}
+
+/** A square on the board: its column and row from the top left, which are also its top left corner in units. */
+export interface Cell { col: number; row: number }
+
+/** Where [square] sits on the board; square `track` is square 0. */
+export function cellOf(square: number, track: number): Cell {
   const { cols, rows } = boardOf(track);
   let p = ((square % track) + track) % track;
   if (p < cols) return { col: p, row: 0 };
-  p -= cols - 1;
-  if (p < rows) return { col: cols - 1, row: p };
-  p -= rows - 1;
-  if (p < cols) return { col: cols - 1 - p, row: rows - 1 };
-  p -= cols - 1;
-  return { col: 0, row: rows - 1 - p };
+  if ((p -= cols - 1) < rows) return { col: cols - 1, row: p };
+  if ((p -= rows - 1) < cols) return { col: cols - 1 - p, row: rows - 1 };
+  return { col: 0, row: rows - 1 - (p - cols + 1) };
+}
+
+/** The special square on [square] of [setup], if any. */
+export function squareKind(setup: RaceSetup | undefined, square: number): SquareKind | null {
+  if (!setup) return null;
+  if (square === setup.boost) return "boost";
+  if (square === setup.trip) return "trip";
+  if (setup.portal?.includes(square)) return "portal";
+  if (square === setup.flip) return "flip";
+  return null;
 }
 
 /** Where a move of [steps] from [from] ends: past the finish it walks back from it (race.py bounce). */
@@ -278,11 +353,12 @@ export function walkPath(from: number, steps: number, track: number): number[] {
 
 /**
  * The squares of step [s], one at a time: the hop the die gives, then the push of a boost (+[boost]) or trip (−[trip])
- * square, each ending where the server says (to, end).
+ * square, each ending where the server says (to, end). A portal or flip square walks no squares: push is empty.
  */
 export function stepPath(s: RaceStep, track: number, boost: number, trip: number): { hop: number[]; push: number[] } {
   const hop = walkPath(s.from, s.steps, track);
-  const push = s.end === undefined ? [] : walkPath(s.to, s.square === "trip" ? -trip : boost, track);
+  const walks = s.square === "boost" || s.square === "trip";
+  const push = s.end === undefined || !walks ? [] : walkPath(s.to, s.square === "trip" ? -trip : boost, track);
   return { hop, push };
 }
 
@@ -309,19 +385,28 @@ function put(stacks: Map<number, string[]>, square: number, group: string[]): vo
 }
 
 /**
+ * Plays step [s] on [stacks]: the group lifted off its square and put on top at its landing square; with [acted], the
+ * special square there acts too: the group goes on to `end` (a boost, trip or portal square), or the whole stack on
+ * the flip square turns upside down, the group just put on top included (race.py run).
+ */
+export function playStep(stacks: Map<number, string[]>, s: RaceStep, acted = true): void {
+  const group = lift(stacks, s.from, s.m);
+  put(stacks, s.end === undefined || !acted ? s.to : s.end, group);
+  if (acted && s.square === "flip") stacks.get(s.to)?.reverse();
+}
+
+/**
  * The squares after [head]: every step done, and the step under way once its hop has begun (at its landing square,
- * then past the boost or trip square from SQUARE_AT). Square 0 is the start line in lane order; the others stacks,
+ * then, from SQUARE_AT, past the special square there). Square 0 is the start line in lane order; the others stacks,
  * bottom to top.
  */
 export function stacksAt(start: readonly string[], moves: readonly RaceStep[], head: Playhead): Map<number, string[]> {
   const stacks = new Map<number, string[]>([[0, [...start]]]);
   const upto = head.current >= 0 ? head.current + 1 : head.done;
   for (let i = 0; i < upto && i < moves.length; i++) {
-    const s = moves[i];
     const under = i === head.current;
     if (under && head.part < HOP_AT) break;
-    const group = lift(stacks, s.from, s.m);
-    put(stacks, s.end === undefined || (under && head.part < SQUARE_AT) ? s.to : s.end, group);
+    playStep(stacks, moves[i], !(under && head.part < SQUARE_AT));
   }
   return stacks;
 }

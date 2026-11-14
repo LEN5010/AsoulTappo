@@ -261,8 +261,8 @@ def test_http_buy_and_gift(monkeypatch):
     g.store.update_player(pid, taps_total=COIN["minTaps"], shards=10_000)
     assert client.get("/api/park", headers=headers).json()["coins"] == 0
     r = client.post("/api/park/gift", headers=headers)
-    assert r.status_code == 200 and r.json()["gift"] == 1
+    assert r.status_code == 200 and r.json()["gift"] == COIN["gift"]
     r = client.post("/api/park/coins", headers=headers, json={"count": 2})
-    assert r.status_code == 200 and r.json()["park"]["coins"] == 3 and r.json()["park"]["coins"] == 3
+    assert r.status_code == 200 and r.json()["park"]["coins"] == COIN["gift"] + 2
     r = client.post("/api/park/coins", headers=headers, json={"count": 100})
     assert r.status_code == 409 and r.json()["detail"]["code"] == "no_shards"

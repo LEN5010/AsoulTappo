@@ -10,13 +10,14 @@ from typing import Any, Callable
 from .game import BOARD_DEFAULT_NICK, Game, GameError, _loadout_json, player_id_for
 from .store import Store, day_of
 
-# Shard ledger sources. COIN_BUY is what coins cost; PRIZE_SOURCES are the park's prizes, which the page sets against
-# it as the day's result. Redeem codes are gifts, not winnings, and stay out of that result.
+# Shard ledger sources. COIN_BUY is what coins cost; PRIZE_SOURCES are the park's shard prizes, which the page sets
+# against it as the day's result. Redeem codes are gifts, not winnings, and stay out of that result; the race pays in
+# coins (coin ledger race_prize), so it is not in it either.
 COIN_BUY = "coin_buy"
-PRIZE_SOURCES = ("park_scratch", "race_prize", "lottery_prize")
+PRIZE_SOURCES = ("park_scratch", "lottery_prize")
 REDEEM = "redeem"
 # Coin ledger sources besides the spending of each game (named by the game: "scratch", "race", "lottery").
-COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "redeem", "admin")
+COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "race_prize", "redeem", "admin")
 # park_counters key of the lottery's top prize pool: lottery.pool.seed when absent, fed by every coin spent in the park
 # (spend), paid out by the lottery's draw.
 POOL = "lottery_pool"

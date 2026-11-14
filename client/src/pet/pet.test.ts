@@ -49,4 +49,15 @@ describe("TapCombo", () => {
     expect(c.current).toMatchObject({ count: 2, seq: 2 });
     expect(frames.filter((f) => f === null)).toHaveLength(1);
   });
+
+  it("starts a new counter when what it counts changes", () => {
+    const c = new TapCombo(() => {}, 1200);
+    c.add(300);
+    c.add(14, "coin");
+    expect(c.current).toEqual({ count: 14, seq: 2, beat: 2, icon: "coin" });
+    c.add(2, "coin");
+    expect(c.current).toMatchObject({ count: 16, seq: 2, icon: "coin" });
+    c.add(500);
+    expect(c.current).toEqual({ count: 500, seq: 3, beat: 4 });
+  });
 });

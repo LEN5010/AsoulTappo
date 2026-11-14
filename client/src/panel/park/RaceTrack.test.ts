@@ -21,7 +21,7 @@ describe("race track", () => {
 
   it("draws every square and every dumpling before, during and after a race", async () => {
     const betting: Race = {
-      id: 3600, phase: "betting", opensAt: 3600, startsAt: 6900, hash: "", setup: { boost: 6, trip: 11 },
+      id: 3600, phase: "betting", opensAt: 3600, startsAt: 6900, hash: "", setup: { boost: 6, trip: 11, portal: [13, 18], flip: 8 },
       odds: { win: {}, top2: {}, last: {} }, pool: {}, bettors: 0, mine: [],
     };
     const running: Race = {
@@ -33,6 +33,12 @@ describe("race track", () => {
       expect(count(html, "tile")).toBe(CFG.track);
       expect(count(html, "start")).toBe(1);
       expect(count(html, "tz")).toBe(MEMBERS.length);
+      // Both portal ends carry the same marker; the flip square its own.
+      if (race) {
+        expect(count(html, "gate")).toBe(2);
+        expect(count(html, "turn")).toBe(1);
+        expect(count(html, "cap") + count(html, "pit")).toBe(2);
+      }
     }
   });
 });

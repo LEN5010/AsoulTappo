@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  HOP_AT, hits, leaders, momentOf, moving, OPEN_AT, OPEN_ROLL_MS, openingAt, playhead, rankOf, REROLL_MS, ROLL_AT,
-  airFaces, boardOf, bounce, cellOf, saidAt, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
-  type Race, type RaceStep,
+  HOP_AT, hits, leaders, momentOf, moving, OPEN_AT, OPEN_ROLL_MS, openingAt, playhead, rankOf, REROLL_MS, PUSH_LEN,
+  DICE_TOSS, rollStart, roundAt, roundDice, roundsOf,
+  airFaces, boardOf, bounce, cellOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
+  type Race, type RaceSetup, type RaceStep,
 } from "./race";
+import fixture from "./race.fixture.json";
 
 // A race of the server's rules (server/app/race.py, boost 12, trip 5): side by side on the start line, a five-high
 // stack on square 8, and xinyi finishing alone from the top lane's neighbour.
@@ -70,20 +72,42 @@ describe("race playback", () => {
     expect(stepStart(race({ slowFrom: undefined, slowMs: undefined }), 27)).toBe(4000 + 27 * 3000);
   });
 
-  it("lights the mover for a second, rolls the die, then walks, slower in the last round", () => {
-    const p = stepPhases(3000);
-    expect(p.rollAt).toBeCloseTo(1000);
-    expect(p.rollLen).toBeCloseTo(800);
-    expect(p.hopAt).toBeCloseTo(1800);
+  it("opens every round with its dice, thrown together, and moves after them in the order", () => {
+    // 30 moves, six rounds; dice 2400 ms a round, steps 2500, the last round's 3300 (park_race.py playback_ms).
+    const r = race({ rollMs: 2400, stepMs: 2500, slowMs: 3300, rest: [] });
+    expect(roundsOf(r)).toBe(6);
+    expect(rollStart(r, 0)).toBe(4000);
+    expect(stepStart(r, 0)).toBe(4000 + 2400);
+    expect(stepStart(r, 4)).toBe(4000 + 2400 + 4 * 2500);
+    expect(stepStart(r, 5)).toBe(4000 + 2 * 2400 + 5 * 2500);
+    expect(rollStart(r, 1)).toBe(4000 + 2400 + 5 * 2500);
+    expect(stepStart(r, 27)).toBe(4000 + 6 * 2400 + 25 * 2500 + 2 * 3300);
+    // The end, as the server's endsAt: the last step done, then the tail.
+    expect(stepStart(r, 29) + stepLength(r, 29) + 4000).toBe(4000 + 6 * 2400 + 25 * 2500 + 5 * 3300 + 4000);
+    // While a round's dice are out nothing is under way; the dice of the round on show.
+    const t = (ms: number) => T0 + ms;
+    expect(playhead(r, t(4000 + 100))).toEqual({ done: 0, current: -1, part: 0 });
+    expect(playhead(r, t(rollStart(r, 1) + 10))).toEqual({ done: 5, current: -1, part: 0 });
+    expect(roundAt(r, t(3999))).toBeNull();
+    expect(roundAt(r, t(4000 + 2400 * DICE_TOSS))).toEqual({ round: 0, since: 2400 * DICE_TOSS });
+    expect(roundAt(r, t(rollStart(r, 1) + 5))).toEqual({ round: 1, since: 5 });
+    expect(roundDice(r, 1)).toEqual(MOVES.slice(5, 10).map((s) => ({ m: s.m, face: s.steps })));
+    // The last round: the winning move's die and, after it, those drawn only to be shown.
+    const short = race({ rollMs: 2400, moves: MOVES.slice(0, 27), rest: [{ m: "x", face: 2 }, { m: "y", face: 1 }, { m: "z", face: 3 }] });
+    expect(roundDice(short, 5).map((d) => d.face)).toEqual([...MOVES.slice(25, 27).map((s) => s.steps), 2, 1, 3]);
+  });
+
+  it("lights the mover, then walks, and gives a special square its share, slower in the last round", () => {
+    const p = stepPhases(2500);
+    expect(p.hopAt).toBeCloseTo(700);
     expect(p.hopLen).toBeCloseTo(800);
-    expect(p.squareAt).toBeCloseTo(2600);
-    expect(p.squareAt + p.pushLen).toBeCloseTo(3000);
-    const slow = stepPhases(4000);
-    expect(slow.rollAt).toBeCloseTo(4000 / 3);
+    expect(p.squareAt).toBeCloseTo(1500);
+    expect(p.pushLen).toBeCloseTo(700);
+    expect(p.squareAt + p.pushLen).toBeLessThan(2500);
+    const slow = stepPhases(3300);
     expect(slow.hopAt + slow.hopLen).toBeCloseTo(slow.squareAt);
-    expect([0, ROLL_AT - 0.01, ROLL_AT, HOP_AT - 0.01, HOP_AT, 0.99].map(stageOf)).toEqual(
-      ["lit", "lit", "roll", "roll", "walk", "walk"],
-    );
+    expect(SQUARE_AT + PUSH_LEN).toBeLessThan(1);
+    expect([0, HOP_AT - 0.01, HOP_AT, 0.99].map(stageOf)).toEqual(["lit", "lit", "walk", "walk"]);
     // Nobody leaves the square until the die has landed.
     const at = (part: number) => spots(stacksAt(START, MOVES, { done: 0, current: 0, part })).sinuo;
     expect(at(HOP_AT - 0.01)).toEqual({ square: 0, level: 0, lane: 1 });
@@ -128,8 +152,8 @@ describe("race playback", () => {
 
   it("keeps a step's words up while the next mover is lit", () => {
     expect(saidAt({ done: 5, current: 5, part: 0.9 })).toEqual({ i: 5, part: 0.9 });
-    expect(saidAt({ done: 6, current: 6, part: ROLL_AT - 0.01 })).toEqual({ i: 5, part: 1 });
-    expect(saidAt({ done: 6, current: 6, part: ROLL_AT })).toEqual({ i: 6, part: ROLL_AT });
+    expect(saidAt({ done: 6, current: 6, part: HOP_AT - 0.01 })).toEqual({ i: 5, part: 1 });
+    expect(saidAt({ done: 6, current: 6, part: HOP_AT })).toEqual({ i: 6, part: HOP_AT });
     expect(saidAt({ done: 0, current: 0, part: 0.1 })).toEqual({ i: 0, part: 0.1 });
     expect(saidAt({ done: 0, current: -1, part: 0 })).toBeNull();
   });
@@ -189,8 +213,9 @@ describe("race playback", () => {
     expect(short.ms).toBeGreaterThanOrEqual(150);
   });
 
-  it("lays the 24 squares round a 9 × 5 board, clockwise from the top left corner", () => {
+  it("lays the 24 squares round a 9 × 5 board, clockwise from the top left corner, all the same size", () => {
     expect(boardOf(24)).toEqual({ cols: 9, rows: 5 });
+    expect(cornersOf(24)).toEqual([0, 8, 12, 20]);
     const cells = Array.from({ length: 24 }, (_, sq) => cellOf(sq, 24));
     expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(24);
     expect(cells[0]).toEqual({ col: 0, row: 0 });
@@ -198,7 +223,7 @@ describe("race playback", () => {
     expect(cells[12]).toEqual({ col: 8, row: 4 });
     expect(cells[20]).toEqual({ col: 0, row: 4 });
     expect(cells[23]).toEqual({ col: 0, row: 1 });
-    // The finish is the start's corner; every square is next to the one before it.
+    // The finish is the start's corner; every square shares a side with the one before it.
     expect(cellOf(24, 24)).toEqual(cells[0]);
     for (let sq = 1; sq <= 24; sq++) {
       const a = cellOf(sq - 1, 24);
@@ -207,6 +232,12 @@ describe("race playback", () => {
     }
     // Every square is on the edge: the 7 × 3 inside is left free.
     expect(cells.every((c) => c.row === 0 || c.row === 4 || c.col === 0 || c.col === 8)).toBe(true);
+  });
+
+  it("names the special squares of a setup", () => {
+    const setup: RaceSetup = { boost: 6, trip: 9, portal: [11, 16], flip: 19 };
+    expect([6, 9, 11, 16, 19, 7].map((sq) => squareKind(setup, sq))).toEqual(["boost", "trip", "portal", "portal", "flip", null]);
+    expect(squareKind({ boost: 6, trip: 9 }, 11)).toBeNull();
   });
 
   it("walks square by square, turning back at the finish", () => {
@@ -224,6 +255,11 @@ describe("race playback", () => {
     expect(stepPath(bounced, 24, 2, 1)).toEqual({ hop: [23, 24, 23], push: [22] });
     const boosted = { m: "xinyi", dice: [2], steps: 2, from: 4, to: 6, square: "boost" as const, end: 8 };
     expect(stepPath(boosted, 24, 2, 1)).toEqual({ hop: [5, 6], push: [7, 8] });
+    // A portal or flip square walks nobody anywhere.
+    const portal = { m: "xinyi", dice: [2], steps: 2, from: 4, to: 6, square: "portal" as const, end: 11 };
+    expect(stepPath(portal, 24, 2, 1)).toEqual({ hop: [5, 6], push: [] });
+    const flip = { m: "xinyi", dice: [2], steps: 2, from: 4, to: 6, square: "flip" as const, end: 6 };
+    expect(stepPath(flip, 24, 2, 1)).toEqual({ hop: [5, 6], push: [] });
   });
 
   it("knows which bets won", () => {
@@ -231,5 +267,68 @@ describe("race playback", () => {
     expect(hits("top2", "jiaran", RANKING)).toBe(true);
     expect(hits("top2", "sinuo", RANKING)).toBe(false);
     expect(hits("last", "beila", RANKING)).toBe(true);
+  });
+});
+
+// Races the server ran (server/tests/test_race.py writes the fixture and checks it still matches the rules).
+describe("race replay against the server", () => {
+  type Fixture = { track: number; boost: number; trip: number; races: { seed: string; setup: RaceSetup; start: string[]; order: string[]; moves: RaceStep[]; rest: { m: string; face: number }[]; ranking: string[] }[] };
+  const F = fixture as unknown as Fixture;
+  const kinds = new Set(F.races.flatMap((r) => r.moves.map((s) => s.square ?? "")));
+
+  it("covers portals, flips, carrying and the walk back from the finish", () => {
+    expect(kinds).toEqual(new Set(["", "boost", "trip", "portal", "flip"]));
+    const moves = F.races.flatMap((r) => r.moves);
+    expect(moves.some((s) => s.square === "portal" && s.end! > s.to)).toBe(true);
+    expect(moves.some((s) => s.square === "portal" && s.end! < s.to)).toBe(true);
+    expect(moves.some((s) => s.carry?.length)).toBe(true);
+    expect(moves.some((s) => s.from + s.steps > F.track)).toBe(true);
+    expect(F.races.some((r) => !r.setup.portal && r.setup.flip === undefined)).toBe(true);
+    // A flip with others under the group, and a portal onto an occupied end.
+    const onto = (kind: string, where: (s: RaceStep) => number) => F.races.some((r) => r.moves.some((s, i) =>
+      s.square === kind && (stacksAt(r.start, r.moves, { done: i, current: -1, part: 0 }).get(where(s))?.length ?? 0) > 0));
+    expect(onto("flip", (s) => s.to)).toBe(true);
+    expect(onto("portal", (s) => s.end!)).toBe(true);
+  });
+
+  it("fills the last round's dice up to five, in the order", () => {
+    for (const r of F.races) {
+      const live = { ...r, id: 0, phase: "running", opensAt: 0, startsAt: 0, hash: "", odds: {}, pool: {}, mine: [], rollMs: 2400 } as unknown as Race;
+      const last = roundDice(live, roundsOf(live) - 1);
+      expect(last.map((d) => d.m)).toEqual(r.order);
+      for (let k = 0; k < roundsOf(live); k++) expect(roundDice(live, k).map((d) => d.m)).toEqual(r.order);
+    }
+  });
+
+  it("replays every race to the server's ranking", () => {
+    for (const r of F.races) {
+      const end = stacksAt(r.start, r.moves, { done: r.moves.length, current: -1, part: 0 });
+      expect(rankOf(end)).toEqual(r.ranking);
+      // Each step's group is the mover and what it carries, read off the stacks before it.
+      for (let i = 0; i < r.moves.length; i++) {
+        const s = r.moves[i];
+        const before = stacksAt(r.start, r.moves, { done: i, current: -1, part: 0 }).get(s.from) ?? [];
+        if (s.from) expect(before.slice(before.indexOf(s.m))).toEqual([s.m, ...(s.carry ?? [])]);
+        expect(squareKind(r.setup, s.to) ?? undefined).toBe(s.square);
+      }
+    }
+  });
+
+  it("turns the stack on a flip square and takes a group through a portal at SQUARE_AT", () => {
+    for (const r of F.races) {
+      r.moves.forEach((s, i) => {
+        if (s.square !== "flip" && s.square !== "portal") return;
+        const at = (part: number) => stacksAt(r.start, r.moves, { done: i, current: i, part });
+        const landed = at(SQUARE_AT - 0.01);
+        const group = [s.m, ...(s.carry ?? [])];
+        expect(landed.get(s.to)!.slice(-group.length)).toEqual(group);
+        const acted = at(SQUARE_AT);
+        if (s.square === "flip") expect(acted.get(s.to)).toEqual([...landed.get(s.to)!].reverse());
+        else {
+          expect(acted.get(s.end!)!.slice(-group.length)).toEqual(group);
+          expect(acted.get(s.to) ?? []).toEqual(landed.get(s.to)!.slice(0, -group.length));
+        }
+      });
+    }
   });
 });

@@ -137,7 +137,7 @@ const bubbleAnchor = computed(() => ({
 
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
     <ComboBubble
-      :frame="win" icon="shard" :x="(head.x + (flipBubble ? 34 : -34)) * s" :y="(head.y + 8) * s" :size="Math.max(20, 26 * s)"
+      :frame="win" :icon="win?.icon ?? 'shard'" :x="(head.x + (flipBubble ? 34 : -34)) * s" :y="(head.y + 8) * s" :size="Math.max(20, 26 * s)"
     />
     <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
   </div>
