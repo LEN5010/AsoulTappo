@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
-import { adminStatus, copyText, exportLog, isTauri, openAboutLink, setHotkey, setRunAsAdmin, type AdminStatus, type HotkeySlot } from "../composables/tauri";
+import { adminStatus, autostartStatus, copyText, exportLog, isTauri, openAboutLink, setHotkey, setAutostart, setRunAsAdmin, type AdminStatus, type AutostartStatus, type HotkeySlot } from "../composables/tauri";
 import { shortcutLabel, shortcutOf } from "../desktop/bossKey";
 import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
@@ -112,12 +112,32 @@ type Group = "pet" | "window" | "online" | "sound" | "about";
 const COLUMNS: Group[][] = isTauri ? [["pet", "window"], ["online", "sound", "about"]] : [["pet", "sound"], ["online", "about"]];
 const rows = computed<Record<Group, number>>(() => ({
   pet: 8,
-  window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0),
+  window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0) + (autostart.value?.supported ? 1 : 0),
   online: 4,
   sound: 3,
   about: isTauri ? 6 : 5,
 }));
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
+
+// Start at login. The system holds the state; a failed change shows what the system says now.
+const autostart = ref<AutostartStatus | null>(null);
+const autostartBusy = ref(false);
+const refreshAutostart = async () => { autostart.value = await autostartStatus(); };
+// Also read back when the panel comes to the front, after a change in System Settings or Task Manager.
+onMounted(() => { void refreshAutostart(); window.addEventListener("focus", refreshAutostart); });
+onBeforeUnmount(() => window.removeEventListener("focus", refreshAutostart));
+async function toggleAutostart(e: Event) {
+  const input = e.target as HTMLInputElement;
+  autostartBusy.value = true;
+  try {
+    autostart.value = await setAutostart(input.checked);
+  } catch {
+    await refreshAutostart();
+    input.checked = autostart.value?.enabled ?? false;
+  } finally {
+    autostartBusy.value = false;
+  }
+}
 
 // Windows: start as administrator, so games run as administrator still reach the pet.
 const admin = ref<AdminStatus | null>(null);
@@ -270,6 +290,16 @@ async function exportLogFile() {
               <label v-if="settings.captureOpen" class="ui-row">
                 <span>采集背景色</span>
                 <input v-model="settings.captureBg" class="swatch" type="color" />
+              </label>
+              <label v-if="autostart?.supported" class="ui-row">
+                <span>开机自启动</span>
+                <span class="version-side">
+                  <small v-if="autostart.needsMove" class="check-note">先移到应用程序文件夹</small>
+                  <input
+                    class="ui-switch" type="checkbox" :checked="autostart.enabled"
+                    :disabled="autostartBusy || (autostart.needsMove && !autostart.enabled)" @change="toggleAutostart"
+                  />
+                </span>
               </label>
               <label v-if="admin?.supported" class="ui-row">
                 <span>以管理员身份启动</span>

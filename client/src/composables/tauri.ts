@@ -79,6 +79,19 @@ export async function adminStatus(): Promise<AdminStatus | null> {
  */
 export const setRunAsAdmin = (enabled: boolean) => invoke<"on" | "off" | "restarting">("set_run_as_admin", { enabled });
 
+/** Start at login, read back from the system; `needsMove`: macOS runs this copy from a disk image or a download. */
+export interface AutostartStatus { supported: boolean; enabled: boolean; needsMove: boolean }
+export async function autostartStatus(): Promise<AutostartStatus | null> {
+  if (!isTauri) return null;
+  try {
+    return await invoke<AutostartStatus>("autostart_status");
+  } catch {
+    return null;
+  }
+}
+/** Rejects with "move" (copy runs from a disk image) or "approval" (turned off in System Settings, now opened). */
+export const setAutostart = (enabled: boolean) => invoke<AutostartStatus>("set_autostart", { enabled });
+
 /** An elevated program stayed in front, so its keys and clicks cannot reach the pet; `by` is null once they can again. */
 export interface InputBlocked { by: string | null; canElevate: boolean }
 export async function listenInputBlocked(cb: (b: InputBlocked) => void): Promise<UnlistenFn> {

@@ -9,6 +9,7 @@ mod hit;
 mod input;
 #[cfg(target_os = "macos")]
 mod media;
+mod autostart;
 mod monitor_pref;
 #[cfg(target_os = "macos")]
 mod overlay_macos;
@@ -825,6 +826,8 @@ pub fn run() {
             debug_log,
             admin_status,
             set_run_as_admin,
+            autostart::autostart_status,
+            autostart::set_autostart,
             write_log,
             access::input_access_missing,
             access::open_input_settings,
@@ -906,6 +909,7 @@ pub fn run() {
                 }
                 elevation::Instance::Unchecked(e) => applog!("app", "single-instance check failed ({e}); running without it"),
             }
+            autostart::refresh();
             match tauri::webview_version() {
                 Ok(v) => applog!("app", "webview {v}"),
                 Err(e) => applog!("app", "webview version unavailable: {e}"),

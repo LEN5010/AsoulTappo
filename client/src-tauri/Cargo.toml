@@ -44,7 +44,7 @@ rdev = { git = "https://github.com/Narsil/rdev", rev = "b7e201bf80be7b9632207366
 [target.'cfg(target_os = "macos")'.dependencies]
 # Overlay placement, mouse coordinates and Spaces (src/overlay_macos.rs, src/lib.rs).
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSScreen", "NSResponder", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSError", "NSGeometry"] }
 # One message to the capture window's web view (src/lib.rs); already in the tree through Tauri.
 objc2 = "0.6"
 # Decodes request paths in the macOS asset handler (src/media.rs); already in the tree through Tauri.
