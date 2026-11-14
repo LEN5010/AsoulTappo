@@ -14,8 +14,9 @@ square turns the whole stack there upside down once the group is on it. The race
 until a group lands on the finish; every dumpling is ranked by square, within a square the higher one ahead, and on
 square 0 by lane.
 
-All five dumplings are alike, so every member has the same chance of each place. The odds start from it and move with
-the coins staked: see odds_tenths().
+All five dumplings are alike, so every member has the same chance of each place. The odds start from it, lean by each
+member's popularity for the race (drawn with the setup, so the opening odds differ a little from race to race) and move
+with the coins staked: see odds_tenths().
 
 The real race draws from StreamRng (SHA-256 of the seed), which anyone can recompute from the published seed.
 """
@@ -230,28 +231,55 @@ def run_seed(rules: Rules, setup: dict[str, Any], seed: bytes) -> dict[str, Any]
 
 
 # ---------------------------------------------------------------- odds
-def odds_tenths(cfg: dict[str, Any], kind: str, members: tuple[str, ...] | list[str],
-                stakes: dict[str, int]) -> dict[str, int]:
-    """The odds of each member for [kind], in tenths, given the coins [stakes] on each member for that kind.
+def draw_popularity(cfg: dict[str, Any], members: tuple[str, ...] | list[str], rng: Any) -> dict[str, int] | None:
+    """Each member's popularity for one race, a whole number drawn evenly from cfg["popularity"] = [lo, hi]
+    (inclusive), member by member in manifest order; None when the manifest has no range."""
+    span = cfg.get("popularity")
+    if not span:
+        return None
+    lo, hi = int(span[0]), int(span[1])
+    return {m: rng.randint(lo, hi) for m in members}
 
-    With p = places / n for every member: share = (stake + depth × p / Σp) / (all stakes + depth), and the odds
-    payout / (share × Σp), rounded down to a tenth, at least minOdds and at most MAX_ODDS_TENTHS. Exact arithmetic,
-    so the rounding never slips on a float."""
+
+def _weights(kind: str, members: tuple[str, ...] | list[str],
+             popularity: dict[str, int] | None) -> dict[str, int]:
+    """Each member's weight in the opening odds for [kind]: its popularity for win and top2; for last the
+    popularity mirrored about the mean (2 × Σw − n × w, scaled by n to stay whole), so the favourite is the least
+    backed to come last. 1 each without popularity (races dealt before it) or when a member has none."""
+    if not popularity or any(m not in popularity for m in members):
+        return dict.fromkeys(members, 1)
+    if kind != "last":
+        return {m: int(popularity[m]) for m in members}
     n = len(members)
+    whole = sum(int(popularity[m]) for m in members)
+    return {m: 2 * whole - n * int(popularity[m]) for m in members}
+
+
+def odds_tenths(cfg: dict[str, Any], kind: str, members: tuple[str, ...] | list[str],
+                stakes: dict[str, int], popularity: dict[str, int] | None = None) -> dict[str, int]:
+    """The odds of each member for [kind], in tenths, given the coins [stakes] on each member for that kind and the
+    race's [popularity].
+
+    With w each member's weight (_weights): share = (stake + depth × w / Σw) / (all stakes + depth), and the odds
+    payout / (share × places), rounded down to a tenth, at least minOdds and at most MAX_ODDS_TENTHS. Equal weights
+    give every member p / Σp = 1 / n of the depth. Exact arithmetic, so the rounding never slips on a float."""
     places = PLACES[kind]
     depth = int(cfg["depth"])
     payout = Fraction(str(cfg["payout"]))
     total = sum(stakes.get(m, 0) for m in members)
+    weight = _weights(kind, members, popularity)
+    whole = sum(weight.values())
     low = round(Fraction(str(cfg["minOdds"])) * 10)
     out: dict[str, int] = {}
     for m in members:
-        # share × Σp = (n × stake + depth) × places / (n × (total + depth))
-        t = math.floor(10 * payout * n * (total + depth) / ((n * stakes.get(m, 0) + depth) * places))
+        # share × places = (stake × Σw + depth × w) × places / (Σw × (total + depth))
+        t = math.floor(10 * payout * whole * (total + depth)
+                       / ((stakes.get(m, 0) * whole + depth * weight[m]) * places))
         out[m] = max(low, min(MAX_ODDS_TENTHS, t))
     return out
 
 
-def odds(cfg: dict[str, Any], members: tuple[str, ...] | list[str],
-         stakes: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+def odds(cfg: dict[str, Any], members: tuple[str, ...] | list[str], stakes: dict[str, dict[str, int]],
+         popularity: dict[str, int] | None = None) -> dict[str, dict[str, int]]:
     """The odds of every (kind, member), in tenths, from the coins staked: stakes[kind][member]."""
-    return {kind: odds_tenths(cfg, kind, members, stakes.get(kind, {})) for kind in cfg["kinds"]}
+    return {kind: odds_tenths(cfg, kind, members, stakes.get(kind, {}), popularity) for kind in cfg["kinds"]}

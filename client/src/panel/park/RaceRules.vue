@@ -88,7 +88,7 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
             <svg viewBox="0 0 12 12"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>
             <svg class="down" viewBox="0 0 12 12"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>
           </span>
-          <span class="park-sheet-main"><b>赔率随押注变动</b><small>按下注时的赔率结算</small></span>
+          <span class="park-sheet-main"><b>赔率随押注变动</b><small>开盘赔率每场不同，按下注时的赔率结算</small></span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead odds" aria-hidden="true"><ParkCoin :size="24" :tilt="false" /><b>×4.2</b></span>

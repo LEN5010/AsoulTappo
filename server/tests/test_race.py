@@ -366,6 +366,46 @@ def test_odds_return_payout_on_a_balanced_book():
         assert all(abs(t / 10 - CFG["payout"] / p) < 0.1 for t in o.values()), kind
 
 
+def test_popularity_is_drawn_from_the_range_for_every_member():
+    lo, hi = CFG["popularity"]
+    rng = random.Random(1)
+    seen = set()
+    for _ in range(500):
+        pop = race.draw_popularity(CFG, MEMBERS, rng)
+        assert list(pop) == list(MEMBERS) and all(lo <= w <= hi for w in pop.values())
+        seen.update(pop.values())
+    assert seen == set(range(lo, hi + 1))
+    assert race.draw_popularity({k: v for k, v in CFG.items() if k != "popularity"}, MEMBERS, rng) is None
+
+
+def test_odds_lean_on_popularity():
+    pop = {J: 108, N: 92, B: 100, X: 100, S: 100}
+    o = race.odds(CFG, MEMBERS, {}, pop)
+    # win: 0.85 × 500 / 108 = 3.94, / 92 = 4.62, / 100 = 4.25; top two half that.
+    assert o["win"] == {J: 39, N: 46, B: 42, X: 42, S: 42}
+    assert o["top2"] == {J: 19, N: 23, B: 21, X: 21, S: 21}
+    # last mirrors the weights about the mean (1000 − 5w: 460, 540, 500), so the favourite pays more to come last.
+    assert o["last"] == {J: 46, N: 39, B: 42, X: 42, S: 42}
+    # Stakes move them as before: 50 on jiaran, 0.85 × 500 × 150 / (50 × 500 + 100 × 108) = 1.78.
+    assert race.odds_tenths(CFG, "win", MEMBERS, {J: 50}, pop) == {J: 17, N: 69, B: 63, X: 63, S: 63}
+    # Even popularity, none, or a member without one: the flat odds.
+    flat = race.odds(CFG, MEMBERS, {})
+    assert race.odds(CFG, MEMBERS, {}, dict.fromkeys(MEMBERS, 97)) == flat
+    assert race.odds(CFG, MEMBERS, {}, None) == flat
+    assert race.odds(CFG, MEMBERS, {}, {J: 108}) == flat
+
+
+def test_the_best_opening_odds_stay_below_even_money():
+    # Every kind at the far ends of the range, one member against the other four: p × odds < 1 for every selection.
+    lo, hi = CFG["popularity"]
+    for one, rest in ((lo, hi), (hi, lo)):
+        for m in MEMBERS:
+            pop = {x: one if x == m else rest for x in MEMBERS}
+            for kind, places in race.PLACES.items():
+                best = max(race.odds_tenths(CFG, kind, MEMBERS, {}, pop).values())
+                assert best / 10 * places / len(MEMBERS) < 1, (kind, pop)
+
+
 # ---------------------------------------------------------------- the client's replay
 # Races the client replays in race.test.ts (boardOf, stacksAt, rankOf) to the server's ranking. Dealt by
 # race.deal(RULES, random.Random(k)) with seed k as 32 bytes; between them they cover portals both ways and onto an

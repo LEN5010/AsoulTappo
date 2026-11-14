@@ -335,9 +335,12 @@ DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"b
 # together on square 0 of a lap of `track` squares (the start is also the finish), roll a six-sided die for the order
 # of play and move 1 to 3 squares (`dice`), carrying those stacked on them. A group must land on the finish exactly:
 # what a roll carries past it walks back from it. All five are alike, so each wins with p = 1/5 (top two 2/5, last
-# 1/5). Odds move with the coins staked on each kind: a member's
-# share is (its coins + `depth` × its p / Σp) / (all coins on that kind + `depth`), the odds `payout` / (share × Σp),
-# rounded down to a tenth, at least `minOdds`; a bet keeps the odds it was placed at. A save stakes at most `maxCoins`.
+# 1/5). Each race draws every member a popularity, a whole number in `popularity` (inclusive), its weight w in the
+# opening odds (for last mirrored about the mean, so the favourite is the least backed to come last). Odds move with
+# the coins staked on each kind: a member's share is (its coins + `depth` × w / Σw) / (all coins on that kind +
+# `depth`), the odds `payout` / (share × places), rounded down to a tenth, at least `minOdds`; a bet keeps the odds it
+# was placed at. With nothing staked win pays about 3.8 to 4.6 and top two 1.9 to 2.3; the highest stays below even
+# money for the chance (p × odds at most 0.98). A save stakes at most `maxCoins`.
 # A winning bet pays coins × odds in coins, each save's bets on a race summed and then rounded half up.
 # lottery: `daily` tickets a save, 000 to 999, for each draw; the draw is at minute `drawAt` of the China day and
 # sales close at `closeAt` before it. A lottery day runs from one draw to the next, so the next draw's tickets go on
@@ -365,7 +368,7 @@ PARK = {
     },
     "race": {
         "interval": 86400, "betting": 85800, "startAt": 1140, "track": 24, "dice": [1, 2, 3], "payout": 0.85,
-        "minOdds": 1.1, "depth": 100, "maxCoins": 10, "kinds": ["win", "top2", "last"],
+        "minOdds": 1.1, "depth": 100, "popularity": [92, 108], "maxCoins": 10, "kinds": ["win", "top2", "last"],
         # Five squares a race, all different, somewhere in `range` (inclusive): the boost and trip squares move a
         # landing group by `boost` and `trip`; the portal's two ends, `portalGap` squares apart (inclusive), take it to
         # the other end; the flip square turns its stack upside down. `roomAt` is in coins.

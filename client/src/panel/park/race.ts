@@ -17,6 +17,8 @@ export interface RaceConfig {
   payout: number;
   minOdds: number;
   depth: number;
+  /** The range each member's popularity for a race is drawn from (inclusive); the server prices with it. */
+  popularity?: [number, number];
   maxCoins: number;
   kinds: RaceKind[];
   /** portalGap: how far apart the portal's ends are, in squares (inclusive). */
@@ -41,8 +43,17 @@ export interface RaceStep {
  * the stack there upside down. */
 export type SquareKind = "boost" | "trip" | "portal" | "flip";
 
-/** A race's special squares; races dealt before the portal and the flip square have neither. */
-export interface RaceSetup { boost: number; trip: number; portal?: [number, number]; flip?: number }
+/**
+ * A race's special squares, and each member's popularity, which the opening odds lean on; races dealt before the
+ * portal and the flip square have neither, races dealt before popularity have none.
+ */
+export interface RaceSetup {
+  boost: number;
+  trip: number;
+  portal?: [number, number];
+  flip?: number;
+  popularity?: Record<string, number>;
+}
 
 /** One die of the opening, rolled for the order of play. */
 export interface OrderRoll { m: string; face: number }

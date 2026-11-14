@@ -29,9 +29,18 @@ def seeds():
     return lambda: next(n).to_bytes(32, "big")
 
 
-def make(path=":memory:", clock=None, coins=50):
+def manifest(popular=False):
+    """The manifest; [popular]: draw each race's popularity as it says. Off, every race opens at the flat odds (4.2,
+    2.1, 4.2), which the worked numbers in these tests start from."""
+    m = Manifest.load()
+    if not popular:
+        m.park["race"].pop("popularity", None)
+    return m
+
+
+def make(path=":memory:", clock=None, coins=50, popular=False):
     clock = clock or Clock(T0 + 1)
-    g = Game(Store(path), Manifest.load(), now=clock)
+    g = Game(Store(path), manifest(popular), now=clock)
     park = Park(lambda: g)
     races = Races(lambda: g, park, dealer=random.Random(3), seeds=seeds())
     pids = []
@@ -116,6 +125,34 @@ def test_bets_spend_coins_and_stay_within_the_cap():
     with pytest.raises(GameError) as e:
         races.bet(OTHER, T0, "win", "beila", 1)
     assert e.value.code == "no_coins"
+
+
+def test_each_race_opens_at_odds_leaning_on_its_popularity():
+    g, races, clock, _ = make(popular=True)
+    races.tick()
+    r = races.view(TOKEN)["race"]
+    pop = r["setup"]["popularity"]
+    lo, hi = CFG["popularity"]
+    assert set(pop) == set(MEMBERS) and all(lo <= w <= hi for w in pop.values()) and len(set(pop.values())) > 1
+    # The squares are dealt before the popularity, from the same dealer: the same as a dealer drawing no popularity.
+    assert {k: v for k, v in r["setup"].items() if k != "popularity"} == race.deal(race.Rules.of(CFG, MEMBERS),
+                                                                                    random.Random(3))
+    opening = race.odds(CFG, MEMBERS, {}, pop)
+    assert r["odds"] == {k: {m: t / 10 for m, t in per.items()} for k, per in opening.items()}
+    assert len(set(r["odds"]["win"].values())) > 1
+    # A bet locks the odds shown, and the stakes move them from there.
+    fav = min(MEMBERS, key=lambda m: r["odds"]["win"][m])
+    races.bet(TOKEN, T0, "win", fav, 2, r["odds"]["win"][fav])
+    r = races.view(TOKEN)["race"]
+    assert r["mine"] == [{"kind": "win", "member": fav, "coins": 2, "odds": opening["win"][fav] / 10}]
+    assert r["odds"]["win"] == {m: t / 10 for m, t in race.odds_tenths(CFG, "win", MEMBERS, {fav: 2}, pop).items()}
+    # A race prepared before popularity (its setup has none) keeps the flat odds.
+    setup = json.loads(row(g, T0)["setup"])
+    del setup["popularity"]
+    with g.store.transaction() as st:
+        st._db.execute("UPDATE park_races SET setup = ? WHERE id = ?", (json.dumps(setup), T0))
+    races.bet(TOKEN, T0, "last", fav, 1, 4.2)
+    assert races.view(TOKEN)["race"]["odds"]["top2"] == dict.fromkeys(MEMBERS, 2.1)
 
 
 def test_a_bet_is_refused_when_its_odds_dropped():
@@ -424,7 +461,7 @@ def test_a_row_from_before_the_rounds_dice_plays_without_them():
 
 def test_http_race_and_bet(monkeypatch):
     clock = Clock(T0 + 1)
-    g = Game(Store(":memory:"), Manifest.load(), now=clock)
+    g = Game(Store(":memory:"), manifest(), now=clock)
     monkeypatch.setattr(main, "game", g)
     client = TestClient(main.app)
     headers = {"X-Player-Token": TOKEN}

@@ -4,8 +4,8 @@ Races run on wall-clock boundaries `interval` apart (multiples of it, or placed 
 at that minute of the China day: one a day at 19:00): bets for the first `betting` seconds, then the race plays and
 is settled once its animation is over; the next race's bets open at the next boundary. A race is prepared ahead
 (setup, seed, outcome) and stored; while bets are open only SHA-256(seed) is public, and at the start the seed and
-the lanes, order, dice and moves it decides are. The odds follow the coins staked so far; each bet keeps the odds it
-was placed at.
+the lanes, order, dice and moves it decides are. The odds start from the members' popularity, drawn with the setup,
+and follow the coins staked so far; each bet keeps the odds it was placed at.
 Everything is driven by tick(), which main.py calls about once a second off the event loop; tick() is idempotent.
 
 A restart resumes whatever is stored: a race still taking bets goes on, a race that started is settled when due.
@@ -159,6 +159,10 @@ class Races:
         cfg = self.cfg
         rules = self.rules
         setup = race.deal(rules, self.dealer)
+        # Drawn after the squares from the same dealer, so the squares come out as before; public with the setup.
+        popularity = race.draw_popularity(cfg, self.members, self.dealer)
+        if popularity:
+            setup["popularity"] = popularity
         seed = self.seeds()
         outcome = race.run_seed(rules, setup, seed)
         starts = race_id + int(cfg["betting"])
@@ -282,7 +286,8 @@ class Races:
             if staked + coins > cfg["maxCoins"]:
                 raise GameError("race_cap", f"每场最多押 {cfg['maxCoins']} 枚，这场还能押 "
                                             f"{max(0, cfg['maxCoins'] - staked)} 枚")
-            odds = race.odds_tenths(cfg, kind, members, st.race_stakes(race_id).get(kind, {}))[member]
+            popularity = json.loads(row["setup"]).get("popularity")
+            odds = race.odds_tenths(cfg, kind, members, st.race_stakes(race_id).get(kind, {}), popularity)[member]
             # In tenths; the margin absorbs float noise in the shown number (1.1 × 10 is 11.000000000000002).
             if shown is not None and odds < shown * 10 - 1e-6:
                 raise OddsChanged(odds / 10)
@@ -323,7 +328,8 @@ class Races:
         cfg = self.cfg
         members = self.members
         stakes = st.race_stakes(row["id"])
-        odds = race.odds(cfg, members, stakes)
+        setup = json.loads(row["setup"])
+        odds = race.odds(cfg, members, stakes, setup.get("popularity"))
         bets = st.race_bets(row["id"], pid)
         # A settled bet's prize in coins, to a tenth (coins × odds); the save's total is payout() of them.
         mine = [{"kind": b["kind"], "member": b["member"], "coins": b["coins"], "odds": b["odds"] / 10,
@@ -331,7 +337,7 @@ class Races:
                 for b in bets]
         out: dict[str, Any] = {
             "id": row["id"], "phase": phase, "opensAt": row["id"], "startsAt": row["starts_at"],
-            "hash": row["hash"], "setup": json.loads(row["setup"]),
+            "hash": row["hash"], "setup": setup,
             "odds": {kind: {m: t / 10 for m, t in per.items()} for kind, per in odds.items()},
             "pool": {kind: {m: stakes.get(kind, {}).get(m, 0) for m in members} for kind in cfg["kinds"]},
             "bettors": st.race_bettors(row["id"]), "mine": mine,

@@ -5282,6 +5282,10 @@
     "payout": 0.85,
     "minOdds": 1.1,
     "depth": 100,
+    "popularity": [
+     92,
+     108
+    ],
     "maxCoins": 10,
     "kinds": [
      "win",
