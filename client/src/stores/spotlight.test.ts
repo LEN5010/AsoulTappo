@@ -3,7 +3,7 @@ import { spotlight, spotlightOf } from "./spotlight";
 
 describe("launch spotlight", () => {
   it("is the skins sharing the newest release, titled with their series", () => {
-    expect(spotlight).toEqual({ id: "skins:1.2.0", title: "冬日奇迹", skins: ["嘉然冬日奇迹", "乃琳冬日奇迹", "贝拉冬日奇迹"] });
+    expect(spotlight).toEqual({ id: "skins:1.2.2", title: "2025生日", skins: ["心宜2025生日", "思诺2025生日"] });
   });
 
   it("follows the newest since and ignores skins without one", () => {

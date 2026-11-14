@@ -25,8 +25,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 18000, "taps": 0, "perTap": 1.603, "multiplier": 1, "perMinute": 96.2}
-    # 552 from resonance and the 20 scratch emotes
-    assert r["totals"]["items"] == 572
+    # 554 from resonance and the 20 scratch emotes
+    assert r["totals"]["items"] == 574
 
 
 def test_taps_pay_along_the_log_curve():
@@ -122,11 +122,15 @@ def test_full_pity_is_preserved_when_tier_is_complete_until_new_content():
 def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
     M = Manifest.load()
     later = set(M.skin_since)
-    assert later == {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
+    winter = {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
+    birthday = {"char:心宜2025生日", "char:思诺2025生日"}
+    assert later == winter | birthday
     skins = lambda version: {i["id"] for i in M.resonance_pool_for(version)["skin"]}
     every = {i["id"] for i in M.resonance_pool["skin"]}
-    for version in (None, "1.2.0", "v1.2.0", "1.2.0-rc.3", "1.3.0"):
+    for version in (None, "1.2.2", "v1.2.2", "1.2.2-rc.1", "1.3.0"):
         assert skins(version) == every
+    for version in ("1.2.0", "v1.2.1", "1.2.0-rc.3"):
+        assert skins(version) == every - birthday
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
     # Only skins are held back.
