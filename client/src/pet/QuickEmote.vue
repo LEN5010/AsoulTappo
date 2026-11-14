@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useLift } from "./lift";
 import { getEmote } from "../manifest";
 import { assetUrl } from "../asset";
 import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
 
-/** `status` is the own room status ("" for none) and adds a key that opens the statuses; null leaves it out. */
-const props = defineProps<{ keys: string[]; status?: string | null }>();
+/**
+ * `status` is the own room status ("" for none) and adds a key that opens the statuses; null leaves it out.
+ * `ceiling`: where the screen ends below the strip the dock opens above this viewport y (over the pet's head).
+ */
+const props = defineProps<{ keys: string[]; status?: string | null; ceiling?: number }>();
 defineEmits<{ pick: [key: string]; status: [] }>();
+
+const root = ref<HTMLElement>();
+const { up, style: lift } = useLift(root, () => props.ceiling);
 
 const list = computed(() => props.keys.map((k) => ({ key: k, e: getEmote(k) })).filter((x) => x.e));
 
@@ -49,8 +56,10 @@ function onWheel(e: WheelEvent) {
 
 <template>
   <div
+    ref="root"
     class="dock"
-    :class="{ compact: list.length === 5 }"
+    :class="{ compact: list.length === 5, up }"
+    :style="lift"
     data-hit
     data-no-drag
     role="menu"
@@ -121,6 +130,11 @@ function onWheel(e: WheelEvent) {
   animation: drop-in var(--dur-base) var(--ease-out);
   cursor: default;
 }
+.dock.up {
+  top: auto;
+  bottom: calc(100% + 10px);
+  animation-name: rise-in;
+}
 .row {
   display: flex;
   align-items: center;
@@ -180,6 +194,12 @@ function onWheel(e: WheelEvent) {
   from {
     opacity: 0;
     transform: translate(calc(-50% - 10px), -8px);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
   }
 }
 </style>

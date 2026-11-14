@@ -24,7 +24,7 @@ import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
-import { PET_BASE } from "./characters";
+import { PET_BASE, headAnchor } from "./characters";
 import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
@@ -236,6 +236,15 @@ const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.v
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
+/**
+ * Viewport y a plate opened upwards from the own strip stays above: the pet's top, or the top of the emote bubble
+ * over its head (PetView's anchor, its 56px floor and the point under it) where that reaches higher.
+ */
+const plateCeiling = computed(() => {
+  const s = settings.scale;
+  const bubbleTop = (headAnchor(settings.character).y + 16) * s - Math.max(56, 72 * s) - 12;
+  return ownPos.value.y + Math.min(0, bubbleTop);
+});
 const nearRight = (x: number, scale: number, minEmote: number) =>
   x + 172 * scale + Math.max(minEmote, 72 * scale) + 24 > viewport.value.w;
 
@@ -405,7 +414,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, draws
           v-if="gripOpen" plate :shard-pop="settings.shardPop"
           @fold="foldBar" @swap="swapPlate" @shard-pop="settings.shardPop = !settings.shardPop"
         />
-        <StatusDock v-if="statusOpen && inRoom" :model-value="settings.status" @update:model-value="pickStatus" />
+        <StatusDock v-if="statusOpen && inRoom" :model-value="settings.status" :ceiling="plateCeiling" @update:model-value="pickStatus" />
       </div>
       <CounterBar
         v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="barWidth"
@@ -418,8 +427,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, draws
           v-if="gripOpen" :plate="false" :shard-pop="settings.shardPop"
           @fold="foldBar" @swap="swapPlate" @shard-pop="settings.shardPop = !settings.shardPop"
         />
-        <StatusDock v-if="ui.quickOpen && statusOpen" :model-value="settings.status" @update:model-value="pickStatus" />
-        <QuickEmote v-else-if="ui.quickOpen" :keys="quickKeys" :status="ownStatus" @pick="pickQuick" @status="statusOpen = true" />
+        <StatusDock v-if="ui.quickOpen && statusOpen" :model-value="settings.status" :ceiling="plateCeiling" @update:model-value="pickStatus" />
+        <QuickEmote
+          v-else-if="ui.quickOpen" :keys="quickKeys" :status="ownStatus" :ceiling="plateCeiling"
+          @pick="pickQuick" @status="statusOpen = true"
+        />
       </CounterBar>
       </Transition>
 

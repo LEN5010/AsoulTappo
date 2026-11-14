@@ -1,23 +1,19 @@
 <script setup lang="ts">
 // A paper plate of status keys hung under the strip or the own name tag, like the quick emotes. Where the screen ends
-// below it, it opens upwards instead, over the pet.
-import { onMounted, ref } from "vue";
+// below it, it opens upwards instead, above `ceiling` (over the pet's head) as the quick emotes do.
+import { ref } from "vue";
 import StatusKeys from "../ui/StatusKeys.vue";
+import { useLift } from "./lift";
 
-defineProps<{ modelValue: string }>();
+const props = defineProps<{ modelValue: string; ceiling?: number }>();
 defineEmits<{ "update:modelValue": [id: string] }>();
 
 const root = ref<HTMLElement>();
-const up = ref(false);
-// Measured before the first paint, so the plate never shows cut off first.
-onMounted(() => {
-  const r = root.value?.getBoundingClientRect();
-  if (r && r.bottom > window.innerHeight - 4) up.value = true;
-});
+const { up, style: lift } = useLift(root, () => props.ceiling);
 </script>
 
 <template>
-  <div ref="root" class="status-dock" :class="{ up }" data-hit data-no-drag>
+  <div ref="root" class="status-dock" :class="{ up }" :style="lift" data-hit data-no-drag>
     <StatusKeys :model-value="modelValue" @update:model-value="(id) => $emit('update:modelValue', id)" />
   </div>
 </template>
