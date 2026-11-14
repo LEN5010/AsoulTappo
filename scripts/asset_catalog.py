@@ -326,9 +326,11 @@ DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"b
 # the basic card keeps the old card's emote tier and pity, and once the set is whole that weight turns into `again`.
 # A premium `skin` or `big` card is one the save lacks, else its `shards`. A save's first card of each kind wins
 # `first` shards. Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet.
-# race: one every `interval` seconds, bets taken for the first `betting`; the dumplings of the five members move
-# 1 to 3 squares (`dice`) on a `track` of squares, carrying those stacked on them. Odds pay `payout` / p, rounded
-# down to a tenth and at least `minOdds`, with p from `sims` runs of that race. A save stakes at most `maxCoins`.
+# race: one every `interval` seconds, bets taken for the first `betting`; the dumplings of the five members start
+# side by side and move 1 to 3 squares (`dice`) on a `track` of squares, carrying those stacked on them. All five are
+# alike, so each wins with p = 1/5 (top two 2/5, last 1/5). Odds move with the coins staked on each kind: a member's
+# share is (its coins + `depth` × its p / Σp) / (all coins on that kind + `depth`), the odds `payout` / (share × Σp),
+# rounded down to a tenth, at least `minOdds`; a bet keeps the odds it was placed at. A save stakes at most `maxCoins`.
 # lottery: `daily` tickets a save, 000 to 999; sales close at minute `closeAt` of the China day and the draw is at
 # `drawAt`. The top prize is the server-wide pool: it starts at `pool.seed` shards, every coin spent in the park
 # (scratch, race and lottery) adds `pool.perCoin`, and it rolls over until a draw has a top winner. The second is
@@ -346,28 +348,16 @@ PARK = {
                         "prizes": [{"shards": 3000, "weight": 14}, {"shards": 5000, "weight": 10},
                                    {"shards": 12500, "weight": 3}, {"shards": 40000, "weight": 0.5},
                                    {"shards": 250000, "weight": 0.02}],
-                        "skin": {"weight": 0.2, "shards": 30000}, "big": {"weight": 0.1, "shards": 60000}},
+                        "skin": {"weight": 0.5, "shards": 30000}, "big": {"weight": 0.5, "shards": 60000}},
         },
         "roomAt": {"basic": 8000, "premium": 40000},
         "serverAt": {"basic": 50000, "premium": 250000},
     },
     "race": {
-        "interval": 600, "betting": 480, "track": 20, "dice": [1, 2, 3], "payout": 0.85, "minOdds": 1.1,
-        "sims": 20000, "maxCoins": 10, "kinds": ["win", "top2", "last"],
+        "interval": 3600, "betting": 3300, "track": 20, "dice": [1, 2, 3], "payout": 0.85, "minOdds": 1.1,
+        "depth": 100, "maxCoins": 10, "kinds": ["win", "top2", "last"],
         # One boost and one trip square a race, somewhere in `range` (inclusive), moving a landing dumpling by `steps`.
         "squares": {"range": [5, 17], "boost": 2, "trip": -1},
-        # Fixed per member. snack: rolling `on` gives a `chance` of `bonus` squares on its next move. steady: always
-        # `steps`. dash: rolling `on` gives a `chance` of `bonus` squares more at once. reroll: rolling `on` gives a
-        # `chance` of rolling again. catchup: last in the race at its turn, `bonus` squares more on that move.
-        "skills": {"jiaran": {"kind": "snack", "on": 1, "chance": 0.5, "bonus": 1},
-                   "nailin": {"kind": "steady", "steps": 2},
-                   "beila": {"kind": "dash", "on": 3, "chance": 0.3, "bonus": 1},
-                   "xinyi": {"kind": "reroll", "on": 1, "chance": 0.5},
-                   "sinuo": {"kind": "catchup", "bonus": 1}},
-        # Dealt one each per race: `delta` squares on each of the first `moves` moves (at least 1 square a move).
-        "moods": [{"id": "hot", "delta": 1, "moves": 4}, {"id": "excited", "delta": 1, "moves": 2},
-                  {"id": "normal", "delta": 0, "moves": 0}, {"id": "sleepy", "delta": -1, "moves": 3},
-                  {"id": "slacking", "delta": -1, "moves": 5}],
         "roomAt": 10000,
     },
     "lottery": {"daily": 10, "closeAt": 1315, "drawAt": 1320, "pool": {"seed": 10000, "perCoin": 50},

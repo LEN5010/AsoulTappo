@@ -5232,11 +5232,11 @@
        }
       ],
       "skin": {
-       "weight": 0.2,
+       "weight": 0.5,
        "shards": 30000
       },
       "big": {
-       "weight": 0.1,
+       "weight": 0.5,
        "shards": 60000
       }
      }
@@ -5251,8 +5251,8 @@
     }
    },
    "race": {
-    "interval": 600,
-    "betting": 480,
+    "interval": 3600,
+    "betting": 3300,
     "track": 20,
     "dice": [
      1,
@@ -5261,7 +5261,7 @@
     ],
     "payout": 0.85,
     "minOdds": 1.1,
-    "sims": 20000,
+    "depth": 100,
     "maxCoins": 10,
     "kinds": [
      "win",
@@ -5276,60 +5276,6 @@
      "boost": 2,
      "trip": -1
     },
-    "skills": {
-     "jiaran": {
-      "kind": "snack",
-      "on": 1,
-      "chance": 0.5,
-      "bonus": 1
-     },
-     "nailin": {
-      "kind": "steady",
-      "steps": 2
-     },
-     "beila": {
-      "kind": "dash",
-      "on": 3,
-      "chance": 0.3,
-      "bonus": 1
-     },
-     "xinyi": {
-      "kind": "reroll",
-      "on": 1,
-      "chance": 0.5
-     },
-     "sinuo": {
-      "kind": "catchup",
-      "bonus": 1
-     }
-    },
-    "moods": [
-     {
-      "id": "hot",
-      "delta": 1,
-      "moves": 4
-     },
-     {
-      "id": "excited",
-      "delta": 1,
-      "moves": 2
-     },
-     {
-      "id": "normal",
-      "delta": 0,
-      "moves": 0
-     },
-     {
-      "id": "sleepy",
-      "delta": -1,
-      "moves": 3
-     },
-     {
-      "id": "slacking",
-      "delta": -1,
-      "moves": 5
-     }
-    ],
     "roomAt": 10000
    },
    "lottery": {

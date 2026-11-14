@@ -27,10 +27,11 @@ import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes, type Box } from "../
 import { parkTab, useBand } from "./band";
 import { COIN_SMALL } from "./coin";
 import ScratchOdds from "./ScratchOdds.vue";
+import ScratchShowcase from "./ScratchShowcase.vue";
 import ScratchTile from "./ScratchTile.vue";
 import {
-  KINDS, SCRATCH, cellOf, faceOf, levelOf, oddsText, outcomeOf, shelfRows, topPrize,
-  type CardKind, type Cell, type Level, type OddsRow, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
+  KINDS, SCRATCH, cellOf, faceOf, levelOf, outcomeOf, topPrize,
+  type CardKind, type Level, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
 } from "./scratchCards";
 
 /** The rest of the coating lifts by itself once every cell is this much uncovered. */
@@ -44,10 +45,6 @@ const DEAL_MS = 460;
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 const EMOTE_SET = SCRATCH.cards.basic.emote?.set ?? "";
 const fmt = (n: number) => n.toLocaleString("en-US");
-/** The premium card's top end, on the shelf beside the table; the best of it is gold. */
-const SHELF = shelfRows("premium");
-const SHELF_TOP = topPrize("premium");
-const shelfCell = (row: OddsRow): Cell => (row.kind === "shards" ? { kind: "shards", amount: row.shards ?? 0 } : { kind: row.kind as "skin" | "big" });
 /** Result tags by level: a miss and the coins back are plain, then coral, wine and gold. */
 const TAGS: Record<string, string> = { 0: "light", plain: "light", 1: "", 2: "dark", 3: "gold" };
 /** Stickers in the album lean a little, each its own way. */
@@ -648,8 +645,9 @@ watch(() => status.value?.player, (player, was) => {
       </div>
 
       <!--
-        The column beside the table, one frame for both cards: a heading, a grid of tiles, the small print under it.
-        Both stay in place, one over the other, so the heading does not move when the cards swap.
+        The column beside the table, one frame for both cards: a heading, then the basic card's emote album or the
+        premium card's prize showcase. Both stay in place, one over the other, so the heading does not move when the
+        cards swap.
       -->
       <div class="column" data-rise>
       <aside class="shelf album" :class="{ away: kind !== 'basic' }" :inert="kind !== 'basic'">
@@ -681,15 +679,10 @@ watch(() => status.value?.player, (player, was) => {
         </div>
       </aside>
 
-      <!-- The premium card's top end, each drawn as the cell it is on the card, its odds under it; the best in gold. -->
+      <!-- The premium card's prizes worth showing: the top amount, a skin and a big hidden card (ScratchShowcase.vue). -->
       <aside class="shelf prizes" :class="{ away: kind !== 'premium' }" :inert="kind !== 'premium'">
         <h4 class="ui-label"><span>大奖</span></h4>
-        <ol class="prize-tiles">
-          <li v-for="row in SHELF" :key="row.shards ?? row.kind" :class="{ top: row.shards === SHELF_TOP }">
-            <span class="prize-tile"><ScratchTile :cell="shelfCell(row)" /></span>
-            <b class="prize-odds">{{ oddsText(row.rate) }}</b>
-          </li>
-        </ol>
+        <ScratchShowcase :shown="kind === 'premium'" />
       </aside>
       </div>
     </div>
@@ -1214,44 +1207,6 @@ watch(() => status.value?.player, (player, was) => {
   outline-offset: 2px;
 }
 
-/* ---- the premium card's shelf: four tiles as on the card, two a row, the odds under each */
-.prize-tiles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.prize-tiles li {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.prize-tile {
-  position: relative;
-  width: 100%;
-  max-width: var(--tile-max, 116px);
-  aspect-ratio: 1;
-  border-radius: var(--radius-m);
-  background: var(--c-100);
-}
-/* The top prize: framed in gold, as a top win is on the card. */
-.top .prize-tile {
-  background: linear-gradient(180deg, #FFFBF1, var(--gold-soft));
-  box-shadow: 0 0 0 3px var(--gold), 0 0 14px 1px rgba(var(--gold-rgb), 0.45);
-}
-.prize-odds {
-  font: 800 var(--fs-section)/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
-}
-.top .prize-odds {
-  color: var(--ink);
-}
-
 /* ---- the bottom bar: the card's top prize, and the main key */
 .top {
   display: inline-flex;
@@ -1330,16 +1285,6 @@ watch(() => status.value?.player, (player, was) => {
   .album-plate {
     margin-top: 0;
   }
-  /* The four tiles in one row. */
-  .prize-tiles {
-    --tile-max: 76px;
-    grid-template-columns: repeat(4, minmax(0, var(--tile-max)));
-    justify-content: start;
-    gap: 8px 14px;
-  }
-  .prize-odds {
-    font-size: var(--fs-number);
-  }
   .buy,
   .peel,
   .go {
@@ -1351,14 +1296,10 @@ watch(() => status.value?.player, (player, was) => {
     --floor-t: 6px;
     padding-bottom: 10px;
   }
-  /* Short: the album in five columns and the prize tiles smaller, so the column fits beside the ticket. */
+  /* Short: the album in five columns, so the column fits beside the ticket. */
   .stickers {
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 5px;
-  }
-  .prize-tiles {
-    --tile-max: 80px;
-    gap: 8px 10px;
   }
   .buy,
   .peel,

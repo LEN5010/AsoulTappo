@@ -79,31 +79,34 @@ export interface OddsRow {
   pity?: number;
 }
 
-/**
- * Odds as a player reads them: 1% and up as a percent (whole from 10%, else to one decimal), below that as about one
- * in N, N kept to two significant digits.
- */
-export function oddsText(rate: number): string {
-  if (rate >= 1) return `${rate >= 10 ? Math.round(rate) : Math.round(rate * 10) / 10}%`;
-  const n = 100 / rate;
-  const step = 10 ** Math.max(0, Math.floor(Math.log10(n)) - 1);
-  return `1/${Math.round(n / step) * step}`;
-}
-
 /** Weights are percentages with at most three decimals: summed in thousandths, so the miss row has no float drift. */
 const milli = (n: number) => Math.round(n * 1000);
 
-/** The table of one card as the server rolls it, rarest first. With the emote set whole its weight goes to again. */
+/**
+ * Odds as a player reads them, one format for every row: a percent to three significant digits with at most two
+ * decimals, trailing zeros dropped (0.02%, 0.5%, 3.5%, 14%, 56.5%). Rounded from thousandths, so a half rounds up.
+ */
+export function oddsText(rate: number): string {
+  const m = milli(rate);
+  if (m <= 0) return "0%";
+  const decimals = Math.min(2, Math.max(0, 2 - Math.floor(Math.log10(m / 1000))));
+  const step = 10 ** (3 - decimals);
+  return `${Math.round(m / step) / 10 ** decimals}%`;
+}
+
+/**
+ * The table of one card as the server rolls it, best prize first: the top shard prize, then the big hidden card and
+ * the skin, the other shard prizes from the largest, the emote, again and the miss. With the emote set whole the emote's weight goes to again.
+ */
 export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
   const t: CardTable = SCRATCH.cards[kind];
-  const rows: OddsRow[] = t.prizes.map((p) => ({ kind: "shards", shards: p.shards, rate: p.weight }));
-  if (t.skin) rows.push({ kind: "skin", rate: t.skin.weight });
-  if (t.big) rows.push({ kind: "big", rate: t.big.weight });
+  const shards: OddsRow[] = t.prizes.map((p): OddsRow => ({ kind: "shards", shards: p.shards, rate: p.weight }))
+    .sort((a, b) => (b.shards ?? 0) - (a.shards ?? 0));
+  const items = (["big", "skin"] as const).flatMap((k): OddsRow[] => (t[k] ? [{ kind: k, rate: t[k]!.weight }] : []));
+  const rows = [...shards.slice(0, 1), ...items, ...shards.slice(1)];
   const emote = t.emote?.weight ?? 0;
   if (t.emote && !emotesWhole) rows.push({ kind: "emote", rate: emote, pity: t.emote.pity });
   rows.push({ kind: "again", rate: (milli(t.again) + (emotesWhole ? milli(emote) : 0)) / 1000 });
-  // Rarest first; between equal odds the bigger prize leads.
-  rows.sort((a, b) => a.rate - b.rate || (b.shards ?? 0) - (a.shards ?? 0));
   const won = rows.reduce((n, r) => n + milli(r.rate), 0);
   rows.push({ kind: "miss", rate: (100000 - won) / 1000 });
   return rows;
@@ -112,13 +115,9 @@ export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
 /** The card's best shard prize: the one drawn in gold. */
 export const topPrize = (kind: CardKind) => Math.max(...SCRATCH.cards[kind].prizes.map((p) => p.shards));
 
-/**
- * What the card can win at the top end, for the shelf beside the table: the shard prizes big enough to be told to the
- * room (best first), then the skin and the big hidden card.
- */
-export function shelfRows(kind: CardKind): OddsRow[] {
-  const rows = oddsRows(kind, false);
-  const shards = rows.filter((r) => r.kind === "shards" && (r.shards ?? 0) >= SCRATCH.roomAt[kind])
-    .sort((a, b) => (b.shards ?? 0) - (a.shards ?? 0));
-  return [...shards, ...(["skin", "big"] as const).flatMap((k) => rows.filter((r) => r.kind === k))];
+/** The chance of a card's tier, in percent: a shard prize by its amount, or the skin or big hidden card. */
+export function rateOf(kind: CardKind, tier: "skin" | "big" | number): number {
+  const t: CardTable = SCRATCH.cards[kind];
+  if (typeof tier === "number") return t.prizes.find((p) => p.shards === tier)?.weight ?? 0;
+  return t[tier]?.weight ?? 0;
 }

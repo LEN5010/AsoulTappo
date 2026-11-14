@@ -77,7 +77,7 @@ def test_tables_are_the_approved_ones():
     assert (PREMIUM["coins"], PREMIUM["again"]) == (5, 15)
     assert [(p["shards"], p["weight"]) for p in PREMIUM["prizes"]] == [(3000, 14), (5000, 10), (12500, 3),
                                                                        (40000, .5), (250000, .02)]
-    assert PREMIUM["skin"] == {"weight": .2, "shards": 30000} and PREMIUM["big"] == {"weight": .1, "shards": 60000}
+    assert PREMIUM["skin"] == {"weight": .5, "shards": 30000} and PREMIUM["big"] == {"weight": .5, "shards": 60000}
     assert (BASIC["first"], PREMIUM["first"]) == (1000, 5000)
     assert "jackpot" not in CFG
     assert BASIC["emote"]["set"] == M.scratch["emote"]["set"]
@@ -105,8 +105,10 @@ def test_tables_are_the_approved_ones():
     (PREMIUM, 0, False, .422, ("shards", 40000)),
     (PREMIUM, 0, False, .4251, ("shards", 250000)),
     (PREMIUM, 0, False, .4253, ("skin", 0)),
-    (PREMIUM, 0, False, .4273, ("big", 0)),
-    (PREMIUM, 0, False, .4283, ("miss", 0)),
+    (PREMIUM, 0, False, .4301, ("skin", 0)),
+    (PREMIUM, 0, False, .4303, ("big", 0)),
+    (PREMIUM, 0, False, .4351, ("big", 0)),
+    (PREMIUM, 0, False, .4353, ("miss", 0)),
 ])
 def test_one_roll(card, pity, complete, x, want):
     assert roll(card, pity, SeqRng(x), complete) == want
@@ -234,13 +236,13 @@ def test_a_premium_card_gives_a_missing_skin_and_tells_the_server():
 
 
 def test_a_premium_card_gives_a_missing_big_card():
-    g, ps, _, pid = setup(.4275)
+    g, ps, _, pid = setup(.431)
     r = play(ps, "premium")[1]
     assert r["prize"]["tier"] == "big" and r["prize"]["item"] in BIGS
     assert news(g)[0]["item"] == r["prize"]["item"]
 
 
-@pytest.mark.parametrize("roll_at,tier,items,shards", [(.426, "skin", SKINS, 30000), (.4275, "big", BIGS, 60000)])
+@pytest.mark.parametrize("roll_at,tier,items,shards", [(.426, "skin", SKINS, 30000), (.431, "big", BIGS, 60000)])
 def test_a_save_with_every_one_gets_shards(roll_at, tier, items, shards):
     g, ps, _, pid = setup(roll_at)
     for item in items:
@@ -252,7 +254,7 @@ def test_a_save_with_every_one_gets_shards(roll_at, tier, items, shards):
     assert news(g) == []
 
 
-@pytest.mark.parametrize("roll_at,tier,shards", [(.426, "skin", 30000), (.4275, "big", 60000)])
+@pytest.mark.parametrize("roll_at,tier,shards", [(.426, "skin", 30000), (.431, "big", 60000)])
 def test_an_item_found_before_the_reveal_pays_its_shards(roll_at, tier, shards):
     g, ps, _, pid = setup(roll_at)
     card = ps.buy(TOKEN, "premium")["card"]
@@ -453,13 +455,13 @@ def miss_rate(card):
 
 
 def test_the_returns_are_the_designed_ones():
-    # Per card at face value: premium 1665 shards of 2500 plus 15% again, basic 255.5 of 500 plus 15% again.
-    assert face_return(PREMIUM) == pytest.approx(.816, abs=1e-9)
+    # Per card at face value: premium 1995 shards of 2500 plus 15% again, basic 255.5 of 500 plus 15% again.
+    assert face_return(PREMIUM) == pytest.approx(.948, abs=1e-9)
     assert face_return(BASIC) == pytest.approx(.661, abs=1e-9)
-    assert miss_rate(PREMIUM) == pytest.approx(.5718, abs=1e-9)
+    assert miss_rate(PREMIUM) == pytest.approx(.5648, abs=1e-9)
     # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing).
     assert (round(mean_return(BASIC, False), 2), round(mean_return(BASIC, True), 2)) == (273.2, 319.38)
-    assert round(mean_return(PREMIUM, False), 2) == 391.76
+    assert round(mean_return(PREMIUM, False), 2) == 469.41
 
 
 @pytest.mark.parametrize("kind,seed", [("basic", 4), ("premium", 5)])
@@ -471,14 +473,14 @@ def test_a_seeded_run_returns_the_face_value_and_misses_as_often_as_designed(kin
     ret = (shards + tiers["again"] * card["coins"] * PRICE) / (n * card["coins"] * PRICE)
     assert ret == pytest.approx(face_return(card), abs=.01)
     if kind == "premium":
-        assert ret == pytest.approx(.816, abs=.01)
-        assert tiers["miss"] / n == pytest.approx(.572, abs=.002)
+        assert ret == pytest.approx(.948, abs=.01)
+        assert tiers["miss"] / n == pytest.approx(.565, abs=.002)
     else:
         assert ret == pytest.approx(.66, abs=.01)
 
 
 # A million cards a table, each within 4 standard errors of what the table should return (the error is about 0.6% of
-# it on the basic card, from the 100x tier, and 0.4% on the premium one); every tier within 4 standard deviations of
+# it on the basic card, from the 100x tier, and 0.3% on the premium one); every tier within 4 standard deviations of
 # its count.
 @pytest.mark.parametrize("kind,complete,seed", [("basic", False, 1), ("basic", True, 2), ("premium", False, 3)])
 def test_a_table_returns_what_it_should(kind, complete, seed):

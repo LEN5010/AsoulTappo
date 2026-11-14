@@ -247,23 +247,25 @@ CREATE INDEX IF NOT EXISTS park_scratch_cards_player ON park_scratch_cards (play
 -- park: race tables
 -- Dumpling races (park_race.py), id = when its bets open (unix seconds). seed (hex), ranking and result stay
 -- server-side until status 'running'; result ({start, moves}) is cleared after RESULT_KEEP_DAYS (the seed and
--- setup reproduce it). status: open (prepared or taking bets), running, settled, void (called off, bets refunded).
+-- setup reproduce it). step_ms and slow_ms: playback step lengths before and in the last round.
+-- status: open (prepared or taking bets), running, settled, void (called off, bets refunded).
 CREATE TABLE IF NOT EXISTS park_races (
   id INTEGER PRIMARY KEY,
   starts_at REAL NOT NULL,
   ends_at REAL NOT NULL,
   step_ms INTEGER NOT NULL,
+  slow_ms INTEGER NOT NULL,
   seed TEXT NOT NULL,
   hash TEXT NOT NULL,
   setup TEXT NOT NULL,
-  odds TEXT NOT NULL,
   ranking TEXT NOT NULL,
   result TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'open'
 );
 CREATE INDEX IF NOT EXISTS park_races_status ON park_races (status, id);
--- Bets on a race, one row per save and selection; odds in tenths; prize in shards once settled.
+-- Bets on a race, one row per bet with the odds it was placed at (tenths); prize in shards once settled.
 CREATE TABLE IF NOT EXISTS park_race_bets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   race_id INTEGER NOT NULL,
   player_id TEXT NOT NULL,
   kind TEXT NOT NULL,
@@ -271,9 +273,9 @@ CREATE TABLE IF NOT EXISTS park_race_bets (
   coins INTEGER NOT NULL,
   odds INTEGER NOT NULL,
   prize INTEGER NOT NULL DEFAULT 0,
-  ts REAL NOT NULL,
-  PRIMARY KEY (race_id, player_id, kind, member)
+  ts REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS park_race_bets_race ON park_race_bets (race_id, player_id);
 -- park: lottery tables
 -- The daily lottery (lottery.py): one row per China day, made before the day's first ticket. `hash` is SHA-256 of
 -- number + salt and is public all day; number and salt go public once `drawn` is set. `result` is the draw's JSON.
@@ -380,11 +382,22 @@ class Store:
                 # the database stays consistent. The mode is stored in the file; older builds keep using it.
                 self._db.execute("PRAGMA journal_mode=WAL")
                 self._db.execute("PRAGMA synchronous=NORMAL")
+            self._drop_old_races()
             self._db.executescript(SCHEMA)
             self._migrate()
 
     def _columns(self, table: str) -> set[str]:
         return {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
+
+    def _drop_old_races(self) -> None:
+        """Drops the race tables of the park's test builds (odds from sims, one bet row per selection); the park was
+        never deployed with them. SCHEMA then makes them anew."""
+        races = self._columns("park_races")
+        bets = self._columns("park_race_bets")
+        if (races and "slow_ms" not in races) or (bets and "id" not in bets):
+            self._db.execute("DROP TABLE IF EXISTS park_race_bets")
+            self._db.execute("DROP TABLE IF EXISTS park_races")
+            self._db.commit()
 
     def _migrate(self) -> None:
         """Bring databases created by older versions up to the current schema."""
@@ -1283,7 +1296,7 @@ class Store:
 
     def race_insert(self, row: dict[str, Any]) -> bool:
         """Adds a prepared race unless one with its id exists; True when added."""
-        cols = ("id", "starts_at", "ends_at", "step_ms", "seed", "hash", "setup", "odds", "ranking", "result")
+        cols = ("id", "starts_at", "ends_at", "step_ms", "slow_ms", "seed", "hash", "setup", "ranking", "result")
         with self._lock:
             cur = self._db.execute(
                 f"INSERT OR IGNORE INTO park_races ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
@@ -1325,39 +1338,48 @@ class Store:
             return n
 
     def race_bets(self, race_id: int, pid: str | None = None) -> list[dict[str, Any]]:
-        """The race's bets (of [pid] only, when given), in the order they were first placed."""
+        """The race's bets (of [pid] only, when given), in the order they were placed."""
         sql = "SELECT * FROM park_race_bets WHERE race_id = ?"
         args: tuple = (race_id,)
         if pid is not None:
             sql += " AND player_id = ?"
             args += (pid,)
         with self._lock:
-            rows = self._db.execute(sql + " ORDER BY rowid", args).fetchall()
+            rows = self._db.execute(sql + " ORDER BY id", args).fetchall()
         return [dict(r) for r in rows]
 
     def race_add_bet(self, race_id: int, pid: str, kind: str, member: str, coins: int, odds: int,
-                     ts: float) -> None:
-        """Adds [coins] to the save's bet on (kind, member), placing it if new; in the caller's transaction."""
+                     ts: float) -> int:
+        """Places one bet at [odds] (tenths); in the caller's transaction. Returns its id."""
         with self._lock:
-            self._db.execute(
+            cur = self._db.execute(
                 "INSERT INTO park_race_bets (race_id, player_id, kind, member, coins, odds, ts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(race_id, player_id, kind, member) DO UPDATE SET "
-                "coins = coins + excluded.coins, ts = excluded.ts", (race_id, pid, kind, member, coins, odds, ts))
+                "VALUES (?, ?, ?, ?, ?, ?, ?)", (race_id, pid, kind, member, coins, odds, ts))
             self._commit()
+            return int(cur.lastrowid)
 
-    def race_set_prize(self, race_id: int, pid: str, kind: str, member: str, prize: int) -> None:
+    def race_set_prize(self, bet_id: int, prize: int) -> None:
         with self._lock:
-            self._db.execute("UPDATE park_race_bets SET prize = ? WHERE race_id = ? AND player_id = ? AND kind = ? "
-                             "AND member = ?", (prize, race_id, pid, kind, member))
+            self._db.execute("UPDATE park_race_bets SET prize = ? WHERE id = ?", (prize, bet_id))
             self._commit()
 
-    def race_pool(self, race_id: int) -> dict[str, dict[str, int]]:
-        """Per member bet on: coins over every kind, and how many saves bet on it."""
+    def race_stakes(self, race_id: int) -> dict[str, dict[str, int]]:
+        """Coins staked on the race: {kind: {member: coins}}, only what was bet on."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT member, SUM(coins) AS coins, COUNT(DISTINCT player_id) AS bettors FROM park_race_bets "
-                "WHERE race_id = ? GROUP BY member", (race_id,)).fetchall()
-        return {r["member"]: {"coins": int(r["coins"]), "bettors": int(r["bettors"])} for r in rows}
+                "SELECT kind, member, SUM(coins) AS coins FROM park_race_bets WHERE race_id = ? "
+                "GROUP BY kind, member", (race_id,)).fetchall()
+        out: dict[str, dict[str, int]] = {}
+        for r in rows:
+            out.setdefault(r["kind"], {})[r["member"]] = int(r["coins"])
+        return out
+
+    def race_bettors(self, race_id: int) -> int:
+        """How many saves bet on the race."""
+        with self._lock:
+            row = self._db.execute("SELECT COUNT(DISTINCT player_id) FROM park_race_bets WHERE race_id = ?",
+                                   (race_id,)).fetchone()
+        return int(row[0])
 
     # --- park: lottery
     def lottery_day(self, day: str) -> dict[str, Any] | None:

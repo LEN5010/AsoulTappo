@@ -11,7 +11,7 @@ from app import park_race, race
 from app.game import Game, GameError
 from app.manifest import Manifest
 from app.park import POOL, Park
-from app.park_race import Races
+from app.park_race import OddsChanged, Races
 from app.store import Store, day_of
 from fixtures import Clock
 
@@ -19,6 +19,7 @@ TOKEN = "race-player-token-000001"
 OTHER = "race-player-token-000002"
 M = Manifest.load()
 CFG = M.park["race"]
+MEMBERS = tuple(c["id"] for c in M.data["characters"])
 PRICE = M.park["coin"]["price"]
 T0 = 1_800_000_000  # a multiple of the interval
 
@@ -32,7 +33,7 @@ def make(path=":memory:", clock=None, coins=50):
     clock = clock or Clock(T0 + 1)
     g = Game(Store(path), Manifest.load(), now=clock)
     park = Park(lambda: g)
-    races = Races(lambda: g, park, sims=300, dealer=random.Random(3), seeds=seeds())
+    races = Races(lambda: g, park, dealer=random.Random(3), seeds=seeds())
     pids = []
     for token in (TOKEN, OTHER):
         pid = g.status(token)["player"]
@@ -54,15 +55,16 @@ def test_bets_open_at_the_boundary_with_only_the_hash_public():
     assert v["nextAt"] == T0 + CFG["interval"]
     seed = bytes.fromhex(row(g, T0)["seed"])
     assert len(seed) * 8 >= 128 and r["hash"] == hashlib.sha256(seed).hexdigest()
-    for secret in ("seed", "moves", "ranking", "start", "endsAt", "stepMs"):
+    for secret in ("seed", "moves", "ranking", "start", "endsAt", "leadMs", "stepMs", "slowFrom", "slowMs"):
         assert secret not in r
-    assert set(r["setup"]["moods"]) == set(CFG["skills"])
-    assert sorted(r["setup"]["moods"].values()) == sorted(m["id"] for m in CFG["moods"])
+    assert set(r["setup"]) == {"boost", "trip"}
     lo, hi = CFG["squares"]["range"]
     assert lo <= r["setup"]["boost"] <= hi and lo <= r["setup"]["trip"] <= hi
     assert r["setup"]["boost"] != r["setup"]["trip"]
-    for kind in CFG["kinds"]:
-        assert all(CFG["minOdds"] <= o <= race.MAX_ODDS_TENTHS / 10 for o in r["odds"][kind].values())
+    assert r["odds"] == {"win": dict.fromkeys(MEMBERS, 4.2), "top2": dict.fromkeys(MEMBERS, 2.1),
+                         "last": dict.fromkeys(MEMBERS, 4.2)}
+    assert r["pool"] == {kind: dict.fromkeys(MEMBERS, 0) for kind in CFG["kinds"]}
+    assert r["bettors"] == 0 and r["mine"] == []
     # The next race is ready but hidden until its bets open.
     assert row(g, T0 + CFG["interval"]) is not None
     assert v["last"] is None and v["winners"] == []
@@ -84,10 +86,17 @@ def test_bets_spend_coins_and_stay_within_the_cap():
     races.bet(TOKEN, T0, "win", "jiaran", 1)
     races.bet(OTHER, T0, "top2", "jiaran", 2)
     r = races.view(TOKEN)["race"]
-    odds = r["odds"]
-    assert r["mine"] == [{"kind": "win", "member": "jiaran", "coins": 4, "odds": odds["win"]["jiaran"]},
-                         {"kind": "last", "member": "nailin", "coins": 2, "odds": odds["last"]["nailin"]}]
-    assert r["pool"] == {"jiaran": {"coins": 6, "bettors": 2}, "nailin": {"coins": 2, "bettors": 1}}
+    # Each bet is its own row at the odds before it: 4.2, then 0.85 × 5 × 103 / 115 = 3.8 with 3 on jiaran.
+    assert r["mine"] == [{"kind": "win", "member": "jiaran", "coins": 3, "odds": 4.2},
+                         {"kind": "last", "member": "nailin", "coins": 2, "odds": 4.2},
+                         {"kind": "win", "member": "jiaran", "coins": 1, "odds": 3.8}]
+    assert r["pool"]["win"] == {**dict.fromkeys(MEMBERS, 0), "jiaran": 4}
+    assert r["pool"]["top2"] == {**dict.fromkeys(MEMBERS, 0), "jiaran": 2}
+    assert r["pool"]["last"] == {**dict.fromkeys(MEMBERS, 0), "nailin": 2}
+    assert r["bettors"] == 2
+    assert r["odds"]["win"] == {m: race.odds_tenths(CFG, "win", MEMBERS, {"jiaran": 4})[m] / 10 for m in MEMBERS}
+    assert r["odds"]["win"]["jiaran"] == 3.6 and r["odds"]["win"]["beila"] == 4.4
+    assert races.view(OTHER)["race"]["mine"] == [{"kind": "top2", "member": "jiaran", "coins": 2, "odds": 2.1}]
     with pytest.raises(GameError) as e:
         races.bet(TOKEN, T0, "top2", "xinyi", CFG["maxCoins"] - 6 + 1)
     assert e.value.code == "race_cap"
@@ -103,6 +112,31 @@ def test_bets_spend_coins_and_stay_within_the_cap():
     with pytest.raises(GameError) as e:
         races.bet(OTHER, T0, "win", "beila", 1)
     assert e.value.code == "no_coins"
+
+
+def test_a_bet_is_refused_when_its_odds_dropped():
+    g, races, clock, (pid, other) = make()
+    races.tick()
+    shown = races.view(OTHER)["race"]["odds"]["win"]["jiaran"]
+    races.bet(TOKEN, T0, "win", "jiaran", 5)
+    before = (g.store.get_player(other, clock()), g.store.park_counter(POOL), g.store.race_bets(T0))
+    view = races.view(OTHER)["race"]
+    with pytest.raises(OddsChanged) as e:
+        races.bet(OTHER, T0, "win", "jiaran", 2, shown)
+    assert e.value.code == "odds_changed" and e.value.odds == view["odds"]["win"]["jiaran"] < shown
+    p = g.store.get_player(other, clock())
+    assert (p["coins"], p["stamps_total"]) == (before[0]["coins"], before[0]["stamps_total"])
+    assert (g.store.park_counter(POOL), g.store.race_bets(T0)) == before[1:]
+    after = races.view(OTHER)["race"]
+    assert (after["pool"], after["bettors"], after["mine"]) == (view["pool"], view["bettors"], [])
+    # The odds shown now, or lower ones, are taken; the bet gets the current odds.
+    races.bet(OTHER, T0, "win", "jiaran", 1, e.value.odds)
+    up = races.view(OTHER)["race"]["odds"]["win"]["beila"]
+    races.bet(OTHER, T0, "win", "beila", 1, 1.1)
+    assert [b["odds"] for b in races.view(OTHER)["race"]["mine"]] == [e.value.odds, up]
+    # Float noise in the shown number does not refuse the bet.
+    g.store.update_player(other, coins=50)
+    races.bet(OTHER, T0, "last", "sinuo", 1, 4.2)
 
 
 def test_bets_close_at_the_start():
@@ -125,11 +159,40 @@ def test_the_start_publishes_the_seed_and_the_moves_it_decides():
     assert r["phase"] == "running"
     seed = bytes.fromhex(r["seed"])
     assert hashlib.sha256(seed).hexdigest() == committed
-    outcome = race.run_seed(race.Rules.of(CFG), r["setup"], seed)
+    outcome = race.run_seed(race.Rules.of(CFG, MEMBERS), r["setup"], seed)
     assert (r["start"], r["moves"], r["ranking"]) == (outcome["start"], outcome["moves"], outcome["ranking"])
+    assert sorted(r["start"]) == sorted(MEMBERS)
     steps = len(r["moves"])
-    assert r["endsAt"] == r["startsAt"] + (r["leadMs"] + steps * r["stepMs"] + park_race.TAIL_MS) / 1000
+    slow = 5 * ((steps - 1) // 5)
+    assert (r["leadMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (4000, 2400, 3600, slow)
+    # The last round plays slowly: its first step starts after slowFrom normal steps.
+    last_start = r["startsAt"] * 1000 + r["leadMs"] + slow * r["stepMs"] + (steps - 1 - slow) * r["slowMs"]
+    assert r["endsAt"] * 1000 == last_start + r["slowMs"] + park_race.TAIL_MS
     assert r["endsAt"] <= T0 + CFG["interval"] - park_race.RUN_MARGIN
+
+
+def test_playback_timing():
+    assert park_race.slow_from(30) == 25 and park_race.slow_from(31) == 30 and park_race.slow_from(5) == 0
+    # 22 steps: 20 at 2400, the last round's two at 3600.
+    assert park_race.playback_ms(22, 2400, 3600) == 4000 + 20 * 2400 + 2 * 3600 + 4000
+
+
+def test_a_short_run_window_slows_nothing_past_the_next_race():
+    g, races, clock, _ = make()
+    cfg = g.manifest.park["race"]
+    cfg["betting"] = cfg["interval"] - 50
+    clock.t = T0 + 1
+    races.tick()
+    clock.t = T0 + cfg["betting"]
+    races.tick()
+    r = races.view(TOKEN)["race"]
+    assert r["phase"] == "running"
+    # 40 s less RUN_MARGIN for lead, steps and tail: both step lengths shrink together.
+    assert r["stepMs"] < 2400 and r["slowMs"] < 3600
+    assert abs(r["slowMs"] / r["stepMs"] - 1.5) < 0.01
+    assert r["endsAt"] <= T0 + cfg["interval"] - park_race.RUN_MARGIN
+    n = len(r["moves"])
+    assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(n, r["stepMs"], r["slowMs"]) / 1000
 
 
 def settle_with_bets(roomAt=None):
@@ -141,7 +204,10 @@ def settle_with_bets(roomAt=None):
     races.bet(TOKEN, T0, "win", ranking[0], 2)
     races.bet(TOKEN, T0, "top2", ranking[1], 1)
     races.bet(TOKEN, T0, "last", ranking[0], 3)
+    races.bet(OTHER, T0, "win", ranking[0], 4)
     races.bet(OTHER, T0, "win", ranking[-1], 1)
+    # Same selection again, at lower odds now.
+    races.bet(TOKEN, T0, "win", ranking[0], 1)
     before = g.store.get_player(pid, clock())["shards"]
     clock.t = T0 + CFG["betting"]
     races.tick()
@@ -150,20 +216,27 @@ def settle_with_bets(roomAt=None):
     return g, races, clock, pid, other, ranking, before, wins
 
 
-def test_settlement_pays_each_winning_selection_and_reports_the_net():
+def test_settlement_pays_each_winning_bet_at_its_own_odds():
     g, races, clock, pid, other, ranking, before, wins = settle_with_bets()
-    odds = json.loads(row(g, T0)["odds"])
-    prizes = [2 * PRICE * odds["win"][ranking[0]] // 10, PRICE * odds["top2"][ranking[1]] // 10]
+    w0 = ranking[0]
+    # Locked odds: 4.2 with nothing on it; 2.1 for top two; then 0.85 × 5 × 102 / 110 = 3.9 with 2 on the winner;
+    # 0.85 × 5 × 107 / 130 = 3.4 with 6 on it.
+    assert [b["odds"] for b in g.store.race_bets(T0, pid)] == [42, 21, 42, 34]
+    assert [b["odds"] for b in g.store.race_bets(T0, other)] == [39, 45]
+    prizes = [2 * PRICE * 42 // 10, PRICE * 21 // 10, 0, PRICE * 34 // 10]
     p = g.store.get_player(pid, clock())
     assert p["shards"] == before + sum(prizes)
     assert g.store.ledger_sum(pid, day_of(clock()), ("race_prize",)) == sum(prizes)
     v = races.view(TOKEN)
     r = v["race"]
-    assert r["phase"] == "done" and [b["prize"] for b in r["mine"]] == [*prizes, 0]
-    assert r["result"] == {"staked": 6 * PRICE, "won": sum(prizes), "net": sum(prizes) - 6 * PRICE}
-    assert v["winners"] == [{"id": T0, "member": ranking[0]}]
-    assert races.view(OTHER)["race"]["result"] == {"staked": PRICE, "won": 0, "net": -PRICE}
-    assert g.store.ledger_sum(other, day_of(clock()), ("race_prize",)) == 0
+    assert r["phase"] == "done" and [b["prize"] for b in r["mine"]] == prizes
+    assert [(b["kind"], b["member"], b["odds"]) for b in r["mine"]] == [
+        ("win", w0, 4.2), ("top2", ranking[1], 2.1), ("last", w0, 4.2), ("win", w0, 3.4)]
+    assert r["result"] == {"staked": 7 * PRICE, "won": sum(prizes), "net": sum(prizes) - 7 * PRICE}
+    assert v["winners"] == [{"id": T0, "member": w0}]
+    won = 4 * PRICE * 39 // 10
+    assert races.view(OTHER)["race"]["result"] == {"staked": 5 * PRICE, "won": won, "net": won - 5 * PRICE}
+    assert g.store.ledger_sum(other, day_of(clock()), ("race_prize",)) == won
     # Settling again pays nothing more.
     assert races.settle(T0) == [] and races.tick() == []
     assert g.store.get_player(pid, clock())["shards"] == p["shards"]
@@ -172,7 +245,7 @@ def test_settlement_pays_each_winning_selection_and_reports_the_net():
 def test_big_wins_are_told_to_rooms():
     g, races, clock, pid, other, ranking, before, wins = settle_with_bets(roomAt=1)
     won = g.store.get_player(pid, clock())["shards"] - before
-    assert wins == [{"pid": pid, "shards": won}]
+    assert wins == [{"pid": pid, "shards": won}, {"pid": other, "shards": 4 * PRICE * 39 // 10}]
     _, _, _, _, _, _, _, wins = settle_with_bets(roomAt=10**9)
     assert wins == []
 
@@ -263,7 +336,6 @@ def test_http_race_and_bet(monkeypatch):
     clock = Clock(T0 + 1)
     g = Game(Store(":memory:"), Manifest.load(), now=clock)
     monkeypatch.setattr(main, "game", g)
-    monkeypatch.setattr(main.races, "sims", 200)
     client = TestClient(main.app)
     headers = {"X-Player-Token": TOKEN}
     pid = client.get("/api/me", headers=headers).json()["player"]
@@ -276,6 +348,15 @@ def test_http_race_and_bet(monkeypatch):
                       json={"race": T0, "kind": "win", "member": "beila", "coins": 2})
     assert out.status_code == 200 and out.json()["park"]["coins"] == 3
     assert out.json()["race"]["mine"][0]["coins"] == 2
+    assert out.json()["race"]["mine"][0]["odds"] == 4.2 and out.json()["race"]["odds"]["win"]["beila"] == 3.9
+    out = client.post("/api/park/race/bet", headers=headers,
+                      json={"race": T0, "kind": "win", "member": "beila", "coins": 1, "odds": 4.2})
+    assert out.status_code == 409 and out.json()["detail"] == {"code": "odds_changed", "message": "赔率变成了 3.9",
+                                                                "odds": 3.9}
+    assert g.store.get_player(pid, clock())["coins"] == 3
+    out = client.post("/api/park/race/bet", headers=headers,
+                      json={"race": T0, "kind": "win", "member": "beila", "coins": 1, "odds": 3.9})
+    assert out.status_code == 200 and [b["odds"] for b in out.json()["race"]["mine"]] == [4.2, 3.9]
     out = client.post("/api/park/race/bet", headers=headers,
                       json={"race": T0, "kind": "win", "member": "beila", "coins": 9})
     assert out.status_code == 409 and out.json()["detail"]["code"] == "race_cap"
@@ -283,3 +364,37 @@ def test_http_race_and_bet(monkeypatch):
     out = client.post("/api/park/race/bet", headers=headers,
                       json={"race": T0, "kind": "win", "member": "beila", "coins": 1})
     assert out.status_code == 409 and out.json()["detail"]["code"] == "race_closed"
+
+
+OLD_RACE_TABLES = """
+CREATE TABLE park_races (id INTEGER PRIMARY KEY, starts_at REAL NOT NULL, ends_at REAL NOT NULL,
+  step_ms INTEGER NOT NULL, seed TEXT NOT NULL, hash TEXT NOT NULL, setup TEXT NOT NULL, odds TEXT NOT NULL,
+  ranking TEXT NOT NULL, result TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open');
+CREATE INDEX park_races_status ON park_races (status, id);
+CREATE TABLE park_race_bets (race_id INTEGER NOT NULL, player_id TEXT NOT NULL, kind TEXT NOT NULL,
+  member TEXT NOT NULL, coins INTEGER NOT NULL, odds INTEGER NOT NULL, prize INTEGER NOT NULL DEFAULT 0,
+  ts REAL NOT NULL, PRIMARY KEY (race_id, player_id, kind, member));
+INSERT INTO park_races VALUES (1800000000, 1800003300, 1800003400, 1300, '00', 'h',
+  '{"moods": {}, "boost": 6, "trip": 9}', '{}', '[]', '', 'open');
+INSERT INTO park_race_bets VALUES (1800000000, 'p', 'win', 'jiaran', 2, 42, 0, 1800000001);
+"""
+
+
+def test_a_database_from_the_test_builds_still_opens(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    db = sqlite3.connect(path)
+    db.executescript(OLD_RACE_TABLES)
+    db.close()
+    g, races, clock, _ = make(path)
+    # The old race tables are made anew; the first race comes back with the new rules.
+    races.tick()
+    r = races.view(TOKEN)["race"]
+    assert r["id"] == T0 and set(r["setup"]) == {"boost", "trip"} and r["mine"] == []
+    races.bet(TOKEN, T0, "win", "jiaran", 1)
+    races.bet(TOKEN, T0, "win", "jiaran", 1)
+    assert len(races.view(TOKEN)["race"]["mine"]) == 2
+    g.store.close()
+    g, races, clock, _ = make(path)
+    assert len(races.view(TOKEN)["race"]["mine"]) == 2
+    g.store.close()

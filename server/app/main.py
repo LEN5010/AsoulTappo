@@ -35,7 +35,7 @@ from .models import (
 from .moderation import Blocklist
 from .lottery import Lottery
 from .park import Park
-from .park_race import Races, room_message as race_room_message
+from .park_race import OddsChanged, Races, room_message as race_room_message
 from .park_scratch import ParkScratch
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
@@ -144,8 +144,7 @@ if _pruned:
     print(f"pruned {_pruned} old park scratch cards", flush=True)
 # park: race setup
 # The dumpling race: Races.tick about once a second off the event loop starts, settles or calls off what is due and
-# prepares the next race (its odds sims take about 0.6 s). Throw-away databases (":memory:", the tests) run no
-# schedule; tests call tick themselves.
+# prepares the next race. Throw-away databases (":memory:", the tests) run no schedule; tests call tick themselves.
 races = Races(lambda: game, park)
 
 
@@ -278,7 +277,7 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "no_save": 409, "no_reward": 409, "reward_open": 409,
           # The park (park.py and its games).
           "no_park": 404, "park_locked": 409, "no_coins": 409, "bad_count": 400,
-          "race_closed": 409, "race_cap": 409, "no_race": 404, "lottery_closed": 409, "lottery_cap": 409,
+          "race_closed": 409, "race_cap": 409, "odds_changed": 409, "no_race": 404, "lottery_closed": 409, "lottery_cap": 409,
           "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
           "login_required": 401, "too_many_tries": 429, "no_code": 409}
 
@@ -489,6 +488,8 @@ class RaceBetBody(BaseModel):
     kind: str = Field(min_length=1, max_length=16)
     member: str = Field(min_length=1, max_length=32)
     coins: int = Field(ge=1, le=100)
+    # The odds the client showed for the selection; the bet is refused (odds_changed) when the current ones are lower.
+    odds: float | None = Field(default=None, gt=0, le=1000)
 
 
 @app.get("/api/park/race")
@@ -499,7 +500,13 @@ def api_park_race(who: PlayerId = Depends(player)) -> dict:
 
 @app.post("/api/park/race/bet")
 def api_park_race_bet(body: RaceBetBody, who: PlayerId = Depends(player)) -> dict:
-    return _guard(races.bet, who, body.race, body.kind, body.member, body.coins)
+    try:
+        return races.bet(who, body.race, body.kind, body.member, body.coins, body.odds)
+    except OddsChanged as e:
+        # _guard's detail plus the current odds, which the client shows again.
+        raise HTTPException(status_code=STATUS[e.code], detail={"code": e.code, "message": e.message, "odds": e.odds})
+    except GameError as e:
+        raise HTTPException(status_code=STATUS.get(e.code, 400), detail={"code": e.code, "message": e.message})
 # park: lottery routes
 class LotteryBody(BaseModel):
     # Numbers picked by hand ("000" to "999", a number may repeat) and how many more on random numbers.

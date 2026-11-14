@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACHAO } from "../../ui/achao";
-import { SCRATCH, cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, shelfRows, topPrize, type Outcome } from "./scratchCards";
+import { SCRATCH, cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, rateOf, topPrize, type Outcome } from "./scratchCards";
 
 const won = (cell: string): Outcome => ({ ...cellOf(cell), at: [0, 1, 2] });
 
@@ -48,31 +48,35 @@ describe("celebration", () => {
 });
 
 describe("odds", () => {
-  it("reads 1% and up as a percent, less as about one in N", () => {
-    expect([66.35, 57.18, 15, 14, 10, 9.5, 3.5, 3, 1].map(oddsText)).toEqual(["66%", "57%", "15%", "14%", "10%", "9.5%", "3.5%", "3%", "1%"]);
-    expect([0.6, 0.5, 0.2, 0.1, 0.05, 0.02].map(oddsText)).toEqual(["1/170", "1/200", "1/500", "1/1000", "1/2000", "1/5000"]);
+  it("reads every chance as a percent: three significant digits, two decimals at most, no trailing zeros", () => {
+    expect([66.35, 56.48, 20, 15, 14, 10, 9.5, 3.5, 3, 1].map(oddsText))
+      .toEqual(["66.4%", "56.5%", "20%", "15%", "14%", "10%", "9.5%", "3.5%", "3%", "1%"]);
+    expect([0.6, 0.5, 0.2, 0.1, 0.05, 0.02].map(oddsText)).toEqual(["0.6%", "0.5%", "0.2%", "0.1%", "0.05%", "0.02%"]);
   });
 
-  it("lists the basic card rarest first and moves the emote tier to again once the set is whole", () => {
+  it("lists the basic card best prize first and moves the emote tier to again once the set is whole", () => {
     expect(oddsRows("basic", false).map((r) => [r.kind, r.shards ?? null, r.rate])).toEqual([
-      ["shards", 50000, 0.05], ["shards", 8000, 0.6], ["shards", 2500, 3.5], ["emote", null, 5],
-      ["shards", 1000, 9.5], ["again", null, 15], ["miss", null, 66.35],
+      ["shards", 50000, 0.05], ["shards", 8000, 0.6], ["shards", 2500, 3.5], ["shards", 1000, 9.5],
+      ["emote", null, 5], ["again", null, 15], ["miss", null, 66.35],
     ]);
     expect(oddsRows("basic", false).find((r) => r.kind === "emote")?.pity).toBe(10);
-    expect(oddsRows("basic", true).map((r) => [r.kind, r.rate]).slice(-2)).toEqual([["again", 20], ["miss", 66.35]]);
+    expect(oddsRows("basic", true).map((r) => [r.kind, r.rate]).slice(-3))
+      .toEqual([["shards", 9.5], ["again", 20], ["miss", 66.35]]);
   });
 
-  it("lists the premium card with its skin and big hidden card", () => {
+  it("lists the premium card with its big hidden card and skin under the top prize", () => {
     expect(oddsRows("premium", false).map((r) => [r.kind, r.shards ?? null, r.rate])).toEqual([
-      ["shards", 250000, 0.02], ["big", null, 0.1], ["skin", null, 0.2], ["shards", 40000, 0.5],
-      ["shards", 12500, 3], ["shards", 5000, 10], ["shards", 3000, 14], ["again", null, 15], ["miss", null, 57.18],
+      ["shards", 250000, 0.02], ["big", null, 0.5], ["skin", null, 0.5], ["shards", 40000, 0.5],
+      ["shards", 12500, 3], ["shards", 5000, 10], ["shards", 3000, 14], ["again", null, 15], ["miss", null, 56.48],
     ]);
+    expect(oddsRows("premium", false).map((r) => oddsText(r.rate)))
+      .toEqual(["0.02%", "0.5%", "0.5%", "0.5%", "3%", "10%", "14%", "15%", "56.5%"]);
   });
 
-  it("puts the top end of each card on the shelf", () => {
-    expect(shelfRows("premium").map((r) => r.shards ?? r.kind)).toEqual([250000, 40000, "skin", "big"]);
-    expect(shelfRows("basic").map((r) => r.shards ?? r.kind)).toEqual([50000, 8000]);
+  it("knows each card's top prize and the premium card's item odds", () => {
     expect([topPrize("basic"), topPrize("premium")]).toEqual([50000, 250000]);
+    expect([rateOf("premium", 250000), rateOf("premium", "skin"), rateOf("premium", "big"), rateOf("basic", "skin")])
+      .toEqual([0.02, 0.5, 0.5, 0]);
   });
 
   it("matches the bundled manifest", () => {
