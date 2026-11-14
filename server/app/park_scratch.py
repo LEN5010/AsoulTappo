@@ -25,7 +25,7 @@ PRIZE = "park_scratch"
 def roll(card: dict[str, Any], pity: int, rng: Rng, complete: bool) -> tuple[str, int]:
     """One card: (tier, shards) with shards set for the `shards` tier only. One draw over the table in percent: the
     emote tier (certain on the pity-th card since the last emote, as in scratch.roll_prize; with the set `complete`
-    it is a second `again`), again, the shard prizes in order, skin, big; the rest misses."""
+    it misses), again, the shard prizes in order, skin, big; the rest misses."""
     x = rng.random() * 100
     edge = 0.0
     emote = card.get("emote")
@@ -34,7 +34,7 @@ def roll(card: dict[str, Any], pity: int, rng: Rng, complete: bool) -> tuple[str
             return "emote", 0
         edge = emote["weight"]
         if x < edge:
-            return ("again" if complete else "emote"), 0
+            return ("miss" if complete else "emote"), 0
     edge += card["again"]
     if x < edge:
         return "again", 0
@@ -66,17 +66,15 @@ def mean_return(card: dict[str, Any], complete: bool) -> float:
     shards, skin and big at their `shards`. The first-card prize is left out."""
     emote = card.get("emote")
     # Share of cards the table is rolled on (the pity forces an emote on the rest), as in cards.roll_tier.
-    rolled, extra_again = 1.0, 0.0
+    rolled = 1.0
     if emote and not complete:
         p = emote["weight"] / 100
         cycle = sum((1 - p) ** k for k in range(emote["pity"]))
         rolled = 1 - (1 - p) ** (emote["pity"] - 1) / cycle
-    elif emote:
-        extra_again = emote["weight"]
     shards = sum(p["shards"] * p["weight"] for p in card["prizes"])
     shards += sum(card[t]["shards"] * card[t]["weight"] for t in ("skin", "big") if t in card)
     shards = shards / 100 * rolled
-    again = (card["again"] + extra_again) / 100 * rolled
+    again = card["again"] / 100 * rolled
     return shards / card["coins"] / (1 - again)
 
 

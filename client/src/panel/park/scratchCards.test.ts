@@ -55,7 +55,7 @@ describe("odds", () => {
     expect([0.6, 0.5, 0.2, 0.1, 0.05, 0.02].map(oddsText)).toEqual(["0.6%", "0.5%", "0.2%", "0.1%", "0.05%", "0.02%"]);
   });
 
-  it("lists the basic card best prize first and moves the emote tier to again once the set is whole", () => {
+  it("lists the basic card best prize first and moves the emote tier to the miss once the set is whole", () => {
     expect(oddsRows("basic", false).map((r) => [r.kind, r.shards ?? null, r.rate])).toEqual([
       ["shards", 50000, 0.1], ["shards", 8000, 0.5], ["shards", 2500, 3], ["shards", 1000, 9],
       ["shards", 500, 18], ["shards", 200, 20], ["emote", null, 5], ["again", null, 15], ["miss", null, 29.4],
@@ -64,7 +64,7 @@ describe("odds", () => {
       .toEqual(["0.1%", "0.5%", "3%", "9%", "18%", "20%", "5%", "15%", "29.4%"]);
     expect(oddsRows("basic", false).find((r) => r.kind === "emote")?.pity).toBe(10);
     expect(oddsRows("basic", true).map((r) => [r.kind, r.rate]).slice(-3))
-      .toEqual([["shards", 20], ["again", 20], ["miss", 29.4]]);
+      .toEqual([["shards", 20], ["again", 15], ["miss", 34.4]]);
   });
 
   it("lists the premium card with its big hidden card and skin under the top prize", () => {

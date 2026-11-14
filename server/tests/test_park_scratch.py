@@ -94,7 +94,10 @@ def test_tables_are_the_approved_ones():
     (BASIC, 0, False, 0, ("emote", 0)),
     (BASIC, 0, False, .0499, ("emote", 0)),
     (BASIC, 9, False, MISS, ("emote", 0)),
-    (BASIC, 0, True, 0, ("again", 0)),
+    # with the set whole the emote tier misses
+    (BASIC, 0, True, 0, ("miss", 0)),
+    (BASIC, 0, True, .0499, ("miss", 0)),
+    (BASIC, 0, True, .05, ("again", 0)),
     (BASIC, 9, True, MISS, ("miss", 0)),
     (BASIC, 0, False, .05, ("again", 0)),
     (BASIC, 0, False, .1999, ("again", 0)),
@@ -236,15 +239,15 @@ def test_emote_pity_carries_over_from_the_old_cards():
     assert ps.state(TOKEN)["pity"] == 0
 
 
-def test_a_whole_set_turns_the_emote_tier_into_again():
+def test_a_whole_set_turns_the_emote_tier_into_a_miss():
     g, ps, _, pid = setup(0)
     for item in EMOTES:
         g.store.add_item(pid, item, 0)
     g.store.update_player(pid, scratch_pity=9)
     assert ps.state(TOKEN)["emotesWhole"] is True
     bought, r = play(ps)
-    assert r["prize"] == {"tier": "again", "shards": 0, "coins": 1, "item": None}
-    assert scratch.prize_of(bought["card"]["cells"]) == "again"
+    assert r["prize"] == {"tier": "miss", "shards": 0, "coins": 0, "item": None}
+    assert scratch.prize_of(bought["card"]["cells"]) is None
     assert ps.state(TOKEN)["pity"] == 9
 
 
@@ -490,10 +493,11 @@ def face_return(card):
     return shards / 100 / (card["coins"] * PRICE) + card["again"] / 100
 
 
-def miss_rate(card):
+def miss_rate(card, whole=False):
+    """Share of rolled cards that win nothing; with the emote set `whole` the emote tier is one of them."""
     weights = [card["again"], *(p["weight"] for p in card["prizes"])]
     weights += [card[t]["weight"] for t in ("skin", "big") if t in card]
-    weights += [card["emote"]["weight"]] if card.get("emote") else []
+    weights += [card["emote"]["weight"]] if card.get("emote") and not whole else []
     return 1 - sum(weights) / 100
 
 
@@ -502,15 +506,17 @@ def test_the_returns_are_the_designed_ones():
     assert face_return(PREMIUM) == pytest.approx(.948, abs=1e-9)
     assert face_return(BASIC) == pytest.approx(.92, abs=1e-9)
     assert miss_rate(PREMIUM) == pytest.approx(.5648, abs=1e-9)
-    # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing):
-    # the basic card returns 82.3% of a coin's 500 shards before the emote set is whole and 96.3% after.
+    # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing).
+    # With the set whole the emote tier misses, so every card is rolled and only `again` hands coins back.
     assert mean_return(BASIC, False) == pytest.approx(411.67, abs=.01)
-    assert mean_return(BASIC, True) == pytest.approx(481.25, abs=1e-9)
-    assert (round(mean_return(BASIC, False) / PRICE, 3), round(mean_return(BASIC, True) / PRICE, 3)) == (.823, .963)
+    face = sum(p["shards"] * p["weight"] for p in BASIC["prizes"]) / 100
+    assert mean_return(BASIC, True) == pytest.approx(face / (1 - BASIC["again"] / 100), abs=1e-9)
+    assert mean_return(BASIC, True) == pytest.approx(452.94, abs=.01)
     assert round(mean_return(PREMIUM, False), 2) == 469.41
-    # A basic card wins nothing 29.4% of the time with the set whole (the emote weight is `again` then); before, the
-    # pity takes the table's place on some cards and 27.1% of them win nothing.
+    # A basic card wins nothing 29.4% of the time before the set is whole, though the pity takes the table's place
+    # on some cards and 27.1% of them win nothing; with the set whole the emote weight misses as well.
     assert miss_rate(BASIC) == pytest.approx(.294, abs=1e-9)
+    assert miss_rate(BASIC, whole=True) == pytest.approx(.344, abs=1e-9)
     p = BASIC["emote"]["weight"] / 100
     cycle = sum((1 - p) ** k for k in range(BASIC["emote"]["pity"]))
     rolled = 1 - (1 - p) ** (BASIC["emote"]["pity"] - 1) / cycle
@@ -550,7 +556,7 @@ def test_a_table_returns_what_it_should(kind, complete, seed):
     rolled = 1.0
     again = card["again"]
     if card.get("emote") and complete:
-        again += card["emote"]["weight"]
+        assert near(tiers["miss"], miss_rate(card, whole=True))
     elif card.get("emote"):
         # the 10-card pity: one emote every 8.03 cards, and the forced ones take the table's place
         p = card["emote"]["weight"] / 100

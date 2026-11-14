@@ -102,7 +102,7 @@ export function oddsText(rate: number): string {
 
 /**
  * The table of one card as the server rolls it, best prize first: the top shard prize, then the big hidden card and
- * the skin, the other shard prizes from the largest, the emote, again and the miss. With the emote set whole the emote's weight goes to again.
+ * the skin, the other shard prizes from the largest, the emote, again and the miss. With the emote set whole the emote's weight goes to the miss.
  */
 export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
   const t: CardTable = parkScratch().cards[kind];
@@ -112,7 +112,7 @@ export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
   const rows = [...shards.slice(0, 1), ...items, ...shards.slice(1)];
   const emote = t.emote?.weight ?? 0;
   if (t.emote && !emotesWhole) rows.push({ kind: "emote", rate: emote, pity: t.emote.pity });
-  rows.push({ kind: "again", rate: (milli(t.again) + (emotesWhole ? milli(emote) : 0)) / 1000 });
+  rows.push({ kind: "again", rate: t.again });
   const won = rows.reduce((n, r) => n + milli(r.rate), 0);
   rows.push({ kind: "miss", rate: (100000 - won) / 1000 });
   return rows;
