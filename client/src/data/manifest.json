@@ -5307,7 +5307,7 @@
     "closeAt": 1130,
     "drawAt": 1135,
     "pool": {
-     "seed": 10000,
+     "seed": 30000,
      "perCoin": 50
     },
     "second": 0.2,

@@ -359,7 +359,7 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
         </div>
         <div class="count">
           <p class="count-n" aria-hidden="true"><b>{{ inked }}</b><span>/ {{ PER }}</span></p>
-          <p class="count-note">花驼币盖章</p>
+          <p class="count-note">集章进度</p>
         </div>
         <ol class="badges">
           <li v-for="(art, i) in BADGE_ART" :key="i" :class="{ earned: i < badge }" :title="badgeTip(i)">
