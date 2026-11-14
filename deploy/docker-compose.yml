@@ -10,6 +10,9 @@ services:
       - "8000"
     ports:
       - "8000:8000"
+    environment:
+      # Prices, odds and anti-cheat thresholds (server/app/economy.py); replace with your own file to tune them.
+      ASOULTAPPO_ECONOMY: /srv/economy.example.json
     volumes:
       - server_data:/srv/data # SQLite: players, boxes, collection
 

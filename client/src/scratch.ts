@@ -1,9 +1,12 @@
 // Scratch card logic: reading a card's cells, the odds table, 阿草's faces and how much of the coating is gone.
 // The server decides the prize when a card is bought (see protocol/PROTOCOL.md); the cells only show it.
 import { manifest } from "./manifest";
+import { economy } from "./stores/economy";
 
-const CFG = manifest.economy.scratch;
-export const SCRATCH_EMOTES = manifest.emoteSets.find((s) => s.id === CFG.emote.set)?.emotes ?? [];
+/** The shard prizes of the old scratch card, once the server's economy is known. */
+const prizes = () => economy.value?.scratch.prizes ?? [];
+/** The emotes only scratch cards give out (阿草). */
+export const SCRATCH_EMOTES = manifest.emoteSets.find((s) => s.source === "scratch")?.emotes ?? [];
 
 export type Cell = { kind: "shards"; amount: number } | { kind: "emote"; key: string };
 
@@ -27,7 +30,8 @@ export function outcomeOf(cells: string[]): Outcome {
 export function toneOf(outcome: Outcome): "" | "tone-rare" | "tone-epic" | "tone-legendary" {
   if (outcome.kind === "miss") return "";
   if (outcome.kind === "emote") return "tone-epic";
-  const amounts = CFG.prizes.map((p) => p.shards).sort((a, b) => a - b);
+  const amounts = prizes().map((p) => p.shards).sort((a, b) => a - b);
+  if (!amounts.length) return "tone-rare";
   if (outcome.amount >= amounts[amounts.length - 1]!) return "tone-legendary";
   if (amounts.length > 1 && outcome.amount >= amounts[amounts.length - 2]!) return "tone-epic";
   return "tone-rare";
@@ -45,7 +49,7 @@ const SHARD_FACES = ["肯定", "收到", "流汗", "惊恐", "生无可恋"];
 export function faceOf(outcome: Outcome): string {
   if (outcome.kind === "miss") return HOST.miss;
   if (outcome.kind === "emote") return HOST.emote;
-  const amounts = CFG.prizes.map((p) => p.shards).sort((a, b) => a - b);
+  const amounts = prizes().map((p) => p.shards).sort((a, b) => a - b);
   const index = Math.max(0, amounts.filter((a) => a <= outcome.amount).length - 1);
   const at = amounts.length > 1 ? Math.round((index / (amounts.length - 1)) * (SHARD_FACES.length - 1)) : 0;
   return SHARD_FACES[at]!;
@@ -64,8 +68,13 @@ export interface OddsRow {
   pity?: number;
 }
 
-/** The odds as the server rolls them, best first. With the whole set owned there is no emote tier: its weight misses. */
+/**
+ * The odds as the server rolls them, best first. With the whole set owned there is no emote tier: its weight misses.
+ * Empty until the server's economy is known.
+ */
 export function oddsRows(complete: boolean): OddsRow[] {
+  const CFG = economy.value?.scratch;
+  if (!CFG) return [];
   const emote: OddsRow[] = complete ? [] : [{ kind: "emote", shards: null, rate: CFG.emote.weight, pity: CFG.emote.pity }];
   const prizes = [...CFG.prizes].sort((a, b) => b.shards - a.shards)
     .map((p): OddsRow => ({ kind: "shards", shards: p.shards, rate: p.weight }));

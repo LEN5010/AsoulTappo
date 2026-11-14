@@ -3,10 +3,10 @@
 // (status.income.taps) corrects the prediction whenever a status arrives.
 import { ref, watch } from "vue";
 import { tapShards } from "../income";
-import { manifest } from "../manifest";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { status } from "./player";
 import { settings } from "./settings";
+import { economy } from "./economy";
 
 /** China Standard Time, where the server's day starts. */
 const DAY_OFFSET_MS = 8 * 3600_000;
@@ -60,7 +60,8 @@ export function popShards(now = Date.now()): void {
     minute = m;
     minuteTaps = 0;
   }
-  if (minuteTaps >= manifest.economy.income.tapsPerMinute) return;
+  const perMinute = economy.value?.income.tapsPerMinute;
+  if (!perMinute || minuteTaps >= perMinute) return;
   minuteTaps += 1;
   carry += tapShards(taps + 1) - tapShards(taps);
   taps += 1;

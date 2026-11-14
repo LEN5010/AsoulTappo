@@ -1,0 +1,285 @@
+{
+  "_note": "示例数值，格式说明见 server/app/economy.py；线上配置不在本仓库。",
+  "income": {
+    "dailyCap": 18000,
+    "curve": [
+      0.0890449,
+      -0.00269613,
+      7.23108e-05
+    ],
+    "tapsPerMinute": 120
+  },
+  "resonance": {
+    "cost": 160,
+    "rates": {
+      "legendary": 0.1,
+      "skin": 0.2,
+      "epic": 4.5,
+      "rare": 3,
+      "uncommon": 6,
+      "common": 86.2
+    },
+    "pity": {
+      "legendary": 400,
+      "skin": 200
+    },
+    "commonKindWeights": {
+      "card": 45,
+      "emote": 41.2
+    },
+    "duplicateRefund": {
+      "emote": 5,
+      "normal": 20,
+      "small": 360
+    },
+    "repeatTiers": [
+      "epic"
+    ]
+  },
+  "craftCost": {
+    "common": 480,
+    "uncommon": 960,
+    "rare": 1600
+  },
+  "checkin": {
+    "prizes": [
+      {
+        "shards": 80,
+        "weight": 30
+      },
+      {
+        "shards": 160,
+        "weight": 30
+      },
+      {
+        "shards": 320,
+        "weight": 20
+      },
+      {
+        "shards": 480,
+        "weight": 12
+      },
+      {
+        "shards": 800,
+        "weight": 6
+      },
+      {
+        "shards": 1600,
+        "weight": 2
+      }
+    ],
+    "spread": 0.1
+  },
+  "scratch": {
+    "price": 500,
+    "daily": 20,
+    "prizes": [
+      {
+        "shards": 200,
+        "weight": 25
+      },
+      {
+        "shards": 500,
+        "weight": 20
+      },
+      {
+        "shards": 1000,
+        "weight": 8
+      },
+      {
+        "shards": 2500,
+        "weight": 3
+      },
+      {
+        "shards": 30000,
+        "weight": 0.1
+      }
+    ],
+    "emote": {
+      "set": "achao",
+      "weight": 5,
+      "pity": 10
+    },
+    "announce": 2500
+  },
+  "duel": {
+    "stakes": [
+      {
+        "bet": 150,
+        "prize": 250
+      },
+      {
+        "bet": 1500,
+        "prize": 2500
+      },
+      {
+        "bet": 15000,
+        "prize": 25000
+      }
+    ],
+    "inviteSec": 15,
+    "throwSec": 10,
+    "dailyWinCap": 10000,
+    "minTaps": 10000
+  },
+  "park": {
+    "coin": {
+      "price": 500,
+      "gift": 3,
+      "minTaps": 10000,
+      "stampsPerCoin": 30,
+      "badges": [
+        100,
+        1000,
+        5000
+      ]
+    },
+    "scratch": {
+      "cards": {
+        "basic": {
+          "coins": 1,
+          "again": 15,
+          "first": 1000,
+          "prizes": [
+            {
+              "shards": 200,
+              "weight": 20
+            },
+            {
+              "shards": 500,
+              "weight": 18
+            },
+            {
+              "shards": 1000,
+              "weight": 9
+            },
+            {
+              "shards": 2500,
+              "weight": 3
+            },
+            {
+              "shards": 8000,
+              "weight": 0.5
+            },
+            {
+              "shards": 50000,
+              "weight": 0.1
+            }
+          ],
+          "emote": {
+            "set": "achao",
+            "weight": 5,
+            "pity": 10
+          }
+        },
+        "premium": {
+          "hidden": true,
+          "coins": 5,
+          "again": 15,
+          "first": 5000,
+          "prizes": [
+            {
+              "shards": 3000,
+              "weight": 14
+            },
+            {
+              "shards": 5000,
+              "weight": 10
+            },
+            {
+              "shards": 12500,
+              "weight": 3
+            },
+            {
+              "shards": 40000,
+              "weight": 0.5
+            },
+            {
+              "shards": 250000,
+              "weight": 0.02
+            }
+          ],
+          "skin": {
+            "weight": 0.5,
+            "shards": 30000
+          },
+          "big": {
+            "weight": 0.5,
+            "shards": 60000
+          }
+        }
+      },
+      "roomAt": {
+        "basic": 8000,
+        "premium": 40000
+      },
+      "serverAt": {
+        "basic": 50000,
+        "premium": 250000
+      }
+    },
+    "race": {
+      "interval": 86400,
+      "betting": 85800,
+      "startAt": 1140,
+      "track": 24,
+      "dice": [
+        1,
+        2,
+        3
+      ],
+      "payout": 0.85,
+      "minOdds": 1.1,
+      "depth": 100,
+      "popularity": [
+        92,
+        108
+      ],
+      "maxCoins": 10,
+      "kinds": [
+        "win",
+        "top2",
+        "last"
+      ],
+      "squares": {
+        "range": [
+          5,
+          20
+        ],
+        "boost": 2,
+        "trip": -1,
+        "portalGap": [
+          4,
+          6
+        ]
+      },
+      "roomAt": 20
+    },
+    "lottery": {
+      "daily": 10,
+      "closeAt": 1130,
+      "drawAt": 1135,
+      "pool": {
+        "seed": 30000,
+        "perCoin": 50
+      },
+      "second": 0.2,
+      "third": 600
+    }
+  },
+  "antiCheat": {
+    "min_taps_active_minute": 10,
+    "max_taps_per_sec": 15,
+    "fast_taps_per_sec": 10,
+    "fast_streak_sec": 30.0,
+    "tap_cooldown_sec": 60.0,
+    "steady_min_rate": 0.2,
+    "steady_tolerance": 0.08,
+    "steady_slack_taps": 1.0,
+    "steady_min_elapsed": 5.0,
+    "steady_reports": 30,
+    "steady_repeat_reports": 6,
+    "steady_cooldown_sec": 600.0,
+    "steady_cooldown_max_sec": 14400.0
+  }
+}

@@ -138,3 +138,6 @@ global_config.json
 # server runtime data (sqlite)
 /server/data/
 *.db
+
+# Live economy (prices, odds, anti-cheat thresholds): private, see server/app/economy.py
+server/config/

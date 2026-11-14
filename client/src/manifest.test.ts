@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildSkin } from "./skin";
 import { characterColor, getCard, getDecor, getEmote, getTheme, manifest, resolveAsset, skinTitle } from "./manifest";
+import { economy } from "./stores/economy";
 
 describe("resolveAsset", () => {
   it("maps bundle: under the app base and pack: to the server", () => {
@@ -48,7 +49,7 @@ describe("manifest", () => {
     expect(Object.values(d.parts).flat().every((r) => (r as string).startsWith("bundle:"))).toBe(true);
   });
   it("lists 阿草's plate, unlocked by the scratch set, under an id no card has", () => {
-    expect(manifest.plates).toEqual([{ id: "achao", name: "阿草", emoteSet: manifest.economy.scratch.emote.set }]);
+    expect(manifest.plates).toEqual([{ id: "achao", name: "阿草", emoteSet: "achao" }]);
     for (const p of manifest.plates) {
       expect(getCard(p.id)).toBeUndefined();
       expect(manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes).toHaveLength(20);
@@ -88,7 +89,7 @@ it("ships manifest v4 skins for exactly the non-member character directories", (
 
 describe("duel numbers", () => {
   it("are the approved ones, read from the manifest the server uses", () => {
-    const duel = manifest.economy.duel!;
+    const duel = economy.value!.duel!;
     expect(duel.stakes).toEqual([{ bet: 150, prize: 250 }, { bet: 1500, prize: 2500 }, { bet: 15000, prize: 25000 }]);
     expect([duel.inviteSec, duel.throwSec, duel.dailyWinCap, duel.minTaps]).toEqual([15, 10, 10000, 10000]);
   });

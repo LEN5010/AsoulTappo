@@ -8,8 +8,9 @@ import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "..
 import { trustedOrigin } from "../net/trust";
 import { ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
-import { manifest, memberOf } from "../manifest";
+import { memberOf } from "../manifest";
 import { settings } from "./settings";
+import { economy, economyDue, setEconomy } from "./economy";
 import { isPanelWindow } from "../composables/tauri";
 import { agreed } from "../legal/consent";
 import { requestDesktop } from "../desktop/transport";
@@ -104,7 +105,10 @@ export const status = ref<PlayerStatus | null>(null);
 export const collection = reactive<Collection>({ owned: {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
-export const draws = computed(() => Math.floor((status.value?.shards ?? 0) / manifest.economy.resonance.cost));
+export const draws = computed(() => {
+  const cost = economy.value?.resonance.cost;
+  return cost ? Math.floor((status.value?.shards ?? 0) / cost) : 0;
+});
 const presenceSession = newToken();
 let heartbeatBusy = false;
 
@@ -123,6 +127,7 @@ export async function heartbeat(): Promise<void> {
         loadoutPending = false;
         void refresh();
       }
+      if (economyDue()) void loadEconomy();
     }
   } catch (e) {
     if (session === current && gen === generation) {
@@ -214,6 +219,13 @@ export async function attempt<T>(fn: (api: Api) => Promise<T>): Promise<{ ok: tr
   }
 }
 
+/** Asks the current server for its economy (src/stores/economy.ts); failures keep what is cached and retry later. */
+async function loadEconomy(): Promise<void> {
+  const base = toHttpBase(settings.serverUrl);
+  const got = await attempt((api) => api.economy());
+  if (got?.ok) setEconomy(got.value, base);
+}
+
 export async function refresh(): Promise<void> {
   const session = current;
   const gen = generation;
@@ -231,6 +243,7 @@ export async function refresh(): Promise<void> {
     if (session === current && gen === generation) fail(e);
     return;
   }
+  void loadEconomy();
   const save = saveKey(toHttpBase(settings.serverUrl), player);
   if (loadoutOwner !== null && loadoutOwner !== save) {
     // Another save: its stored loadout replaces the local one, which the previous save already holds.

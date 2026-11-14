@@ -2,14 +2,14 @@
 // The park (乐园, docs/design/amusement-park.md §11, docs/design/park-ui-rebuild.md §4): one sheet of paper whose top
 // edge is a coral band with the four pages (coins, scratch cards, the race and the lottery), the page's timer and
 // its host; the page picked fills the white body. The coins held and the server-wide pool (the lottery's top prize)
-// are in the panel's top bar (ParkChips). The games open at manifest economy.park.coin.minTaps taps in all; until then
+// are in the panel's top bar (ParkChips). The games open at economy.park.coin.minTaps taps in all; until then
 // the body shows how far there is to go. Today's free coin is granted by the server with a status (`park.gifted`, in
 // that one status only); when the park is shown at that moment, +1 rises into the coins and 阿草 takes it. A server
 // that still waits for the first visit of the day (`gift` in the park's state) is asked for it here. While the page is
 // open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
 // without coins moving.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { manifest } from "../manifest";
+import { economy } from "../stores/economy";
 import { status } from "../stores/player";
 import { claimGift, loadPark, noPark, park, parkError } from "../stores/park";
 import { reducedMotion } from "../stores/theme";
@@ -30,7 +30,9 @@ const TABS: { id: ParkTab; label: string }[] = [
   { id: "race", label: "赛跑" },
   { id: "lottery", label: "夺宝" },
 ];
-const MIN_TAPS = manifest.economy.park!.coin.minTaps;
+/** The sections read the park's numbers from the server's economy: they open once it is known. */
+const ready = computed(() => !!economy.value?.park);
+const minTaps = computed(() => economy.value?.park?.coin.minTaps ?? 0);
 const RELOAD_MS = 15000;
 /** 阿草 takes today's free coin for this long. */
 const GIFT_HOST_MS = 1000;
@@ -46,8 +48,8 @@ const tab = parkTab;
 tab.value = "coin";
 const taps = computed(() => status.value?.totals.taps ?? 0);
 /** Known before the park is loaded: the taps in all are in every status. */
-const locked = computed(() => (park.value ? !park.value.unlocked : !!status.value && taps.value < MIN_TAPS));
-const lockPercent = computed(() => Math.min(100, (taps.value / MIN_TAPS) * 100));
+const locked = computed(() => (park.value ? !park.value.unlocked : !!status.value && taps.value < minTaps.value));
+const lockPercent = computed(() => (minTaps.value ? Math.min(100, (taps.value / minTaps.value) * 100) : 0));
 /** The park could not be loaded: why, while there is nothing to show. */
 const loadError = ref("");
 
@@ -105,7 +107,7 @@ onDeactivated(() => {
 });
 onBeforeUnmount(clearFlash);
 // Another save, a server that has just been reached, or the taps that open the park: load it again.
-watch(() => [status.value?.player, taps.value >= MIN_TAPS] as const, ([player, enough], [was, before]) => {
+watch(() => [status.value?.player, taps.value >= minTaps.value] as const, ([player, enough], [was, before]) => {
   if (active && player && (player !== was || (enough && !before))) void enter();
 });
 // Each heartbeat brings a new status; the page follows it, not faster than RELOAD_MS.
@@ -126,7 +128,7 @@ watch(() => status.value?.park?.gifted, (n) => {
   <div class="park-page" :class="{ calm: reducedMotion }">
     <div class="sheet">
       <ParkBand
-        v-model="tab" :tabs="TABS" :disabled="locked || noPark" :host="host" :host-kind="hostKind"
+        v-model="tab" :tabs="TABS" :disabled="locked || noPark || !ready" :host="host" :host-kind="hostKind"
         :timer="entry.timer" :info="entry.info"
       />
 
@@ -134,12 +136,13 @@ watch(() => status.value?.park?.gifted, (n) => {
         <p v-if="noPark" class="closed" role="status">当前服务器未开放乐园</p>
         <template v-else>
           <p v-if="loadError" class="ui-error park-error" role="alert">{{ loadError }}</p>
-          <div v-if="locked" class="lock" data-rise>
+          <p v-if="!ready" class="closed" role="status">连接服务器后开放</p>
+          <div v-else-if="locked" class="lock" data-rise>
             <ParkCoin :size="120" grey />
-            <p class="lock-text">累计敲击 <b>1</b> 万下后开放</p>
+            <p class="lock-text">累计敲击 <b>{{ fmt(minTaps) }}</b> 下后开放</p>
             <div class="lock-bar">
               <div class="ui-bar"><i :style="{ width: `${lockPercent}%` }"></i></div>
-              <span><b>{{ fmt(taps) }}</b> / {{ fmt(MIN_TAPS) }}</span>
+              <span><b>{{ fmt(taps) }}</b> / {{ fmt(minTaps) }}</span>
             </div>
           </div>
           <KeepAlive v-else>

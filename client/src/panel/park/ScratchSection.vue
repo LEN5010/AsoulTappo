@@ -32,7 +32,7 @@ import ScratchOdds from "./ScratchOdds.vue";
 import ScratchShowcase from "./ScratchShowcase.vue";
 import ScratchTile from "./ScratchTile.vue";
 import {
-  KINDS, ON_SALE, SCRATCH, cellOf, faceOf, levelOf, outcomeOf, topPrize,
+  KINDS, cellOf, faceOf, levelOf, onSale, outcomeOf, parkScratch, topPrize,
   type CardKind, type Level, type ParkCard, type ParkPrize, type ParkReveal, type ParkScratchState,
 } from "./scratchCards";
 
@@ -45,6 +45,9 @@ const BRUSH = 0.075;
 /** Long enough for the card to land. */
 const DEAL_MS = 460;
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
+// The park opens only once the server's economy is known (ParkPage).
+const SCRATCH = parkScratch();
+const ON_SALE = onSale();
 const EMOTE_SET = SCRATCH.cards.basic.emote?.set ?? "";
 const fmt = (n: number) => n.toLocaleString("en-US");
 /** Result tags by level: a miss and the coins back are plain, then coral, wine and gold. */

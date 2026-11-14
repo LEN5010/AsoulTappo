@@ -89,66 +89,6 @@ export interface Manifest {
   starter: { emotes: string[]; theme: string };
   /** `name` is the id (folder, save item, room field); `title` replaces it on screen; `since` is the release that ships it. */
   skins: { name: string; member: string; title?: string; since?: string }[];
-  economy: {
-    /** Shards per day: dailyCap × (1 − e^−x), x = a·m + b·m² + c·m³ for m thousand taps and curve = [a, b, c];
-     * a minute counts tapsPerMinute taps at most. */
-    income: { dailyCap: number; curve: [number, number, number]; tapsPerMinute: number };
-    resonance: {
-      cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number };
-      /** Shards a repeat turns into: every emote, and cards by tier. */
-      duplicateRefund: Partial<Record<"emote" | "big" | "small" | "normal", number>>;
-      /** Tiers that keep their odds once complete, rolling repeats. */
-      repeatTiers?: Rarity[];
-    };
-    craftCost: Partial<Record<Rarity, number>>;
-    /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */
-    checkin: { prizes: { shards: number; weight: number }[]; spread: number };
-    /**
-     * Scratch cards: `price` shards each, `daily` a China day. Weights are percentages; the rest of 100 wins nothing.
-     * The emote tier gives a missing emote of `set`, for certain on the `pity`-th card since the last one. Once the
-     * set is whole the tier and its pity are gone and its weight wins nothing. The room is told about `announce`
-     * shards or more.
-     */
-    scratch: {
-      price: number;
-      daily: number;
-      prizes: { shards: number; weight: number }[];
-      emote: { set: string; weight: number; pity: number };
-      announce: number;
-    };
-    /**
-     * Rock-paper-scissors in rooms: both pay `bet`, the winner gets `prize`. An invite waits `inviteSec`, a round
-     * `throwSec`. A save's net win of a China day stays at or below `dailyWinCap`; both saves need `minTaps` taps in
-     * all.
-     */
-    duel?: {
-      stakes: { bet: number; prize: number }[];
-      inviteSec: number;
-      throwSec: number;
-      dailyWinCap: number;
-      minTaps: number;
-    };
-    /** The park (scripts/asset_catalog.py PARK explains every field). Missing on servers without one. */
-    park?: {
-      /**
-       * Coins: `price` shards each, as many as the shards pay for, `gift` free a day. Buying and the gift need
-       * `minTaps` taps in all. Every `stampsPerCoin` stamps make a coin; `badges` are the stamp totals of the three
-       * badges.
-       */
-      coin: { price: number; gift: number; minTaps: number; stampsPerCoin: number; badges: number[] };
-      /** Coin scratch cards (park_scratch.py): weights are percentages, the rest of 100 misses. A `hidden` card is off sale. */
-      scratch?: {
-        cards: Record<"basic" | "premium", {
-          hidden?: boolean; coins: number; again: number; first: number; prizes: { shards: number; weight: number }[];
-          emote?: { set: string; weight: number; pity: number }; skin?: { weight: number; shards: number }; big?: { weight: number; shards: number };
-        }>;
-        roomAt: Record<"basic" | "premium", number>;
-        serverAt: Record<"basic" | "premium", number>;
-      };
-      race?: import("./panel/park/race").RaceConfig;
-      lottery?: { daily: number; closeAt: number; drawAt: number; pool: { seed: number; perCoin: number }; second: number; third: number };
-    };
-  };
   plates: ManifestPlate[];
 }
 

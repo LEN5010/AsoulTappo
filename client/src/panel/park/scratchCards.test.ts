@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACHAO } from "../../ui/achao";
-import { ON_SALE, SCRATCH, cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, rateOf, topPrize, type Outcome } from "./scratchCards";
+import { cellOf, faceOf, levelOf, oddsRows, oddsText, outcomeOf, rateOf, topPrize, onSale, parkScratch, type Outcome } from "./scratchCards";
 
 const won = (cell: string): Outcome => ({ ...cellOf(cell), at: [0, 1, 2] });
 
@@ -83,15 +83,15 @@ describe("odds", () => {
   });
 
   it("matches the bundled manifest", () => {
-    expect(SCRATCH.cards.basic.coins).toBe(1);
-    expect(SCRATCH.cards.premium.coins).toBe(5);
+    expect(parkScratch().cards.basic.coins).toBe(1);
+    expect(parkScratch().cards.premium.coins).toBe(5);
   });
 });
 
 describe("cards on sale", () => {
   it("leaves the hidden premium card out and keeps its table", () => {
-    expect(ON_SALE).toEqual(["basic"]);
-    expect(SCRATCH.cards.premium.hidden).toBe(true);
-    expect(SCRATCH.cards.premium.prizes.length).toBeGreaterThan(0);
+    expect(onSale()).toEqual(["basic"]);
+    expect(parkScratch().cards.premium.hidden).toBe(true);
+    expect(parkScratch().cards.premium.prizes.length).toBeGreaterThan(0);
   });
 });

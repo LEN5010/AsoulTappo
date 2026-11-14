@@ -1,18 +1,21 @@
 // Coin scratch cards in the park (protocol/PROTOCOL.md 乐园 刮刮乐): reading a card's cells, how big a win is,
 // 阿草's face for it, and the odds table. The server decides the prize when a card is bought; the cells only show it.
-import { manifest } from "../../manifest";
 import { HOST } from "../../scratch";
+import { economy, type Economy } from "../../stores/economy";
 
 export const KINDS = ["basic", "premium"] as const;
 export type CardKind = (typeof KINDS)[number];
 
-const PARK = manifest.economy.park;
-/** The bundled manifest always has the park; the server checks every number again. */
-export const SCRATCH = PARK!.scratch!;
-export const COIN_PRICE = PARK!.coin.price;
-export type CardTable = (typeof SCRATCH)["cards"][CardKind];
+export type ParkScratch = NonNullable<NonNullable<Economy["park"]>["scratch"]>;
+export type CardTable = ParkScratch["cards"][CardKind];
+/**
+ * The cards and their tables from the server's economy. The park opens only once that is known (ParkPage), so the
+ * sections may count on it; the server checks every number again.
+ */
+export const parkScratch = (): ParkScratch => economy.value!.park!.scratch!;
+const coinPrice = () => economy.value?.park?.coin.price ?? 0;
 /** The cards on sale: a `hidden` one is neither sold nor shown, though one bought before is still scratched. */
-export const ON_SALE: readonly CardKind[] = KINDS.filter((k) => !SCRATCH.cards[k].hidden);
+export const onSale = (): readonly CardKind[] => KINDS.filter((k) => !parkScratch().cards[k].hidden);
 
 /** A card on the table: nine cells under the coating. */
 export interface ParkCard { id: number; kind: CardKind; cells: string[] }
@@ -60,7 +63,8 @@ export function levelOf(outcome: Outcome, kind: CardKind, prize?: ParkPrize | nu
   if (outcome.kind === "emote") return 1;
   const shards = outcome.kind === "shards" ? outcome.amount : prize && !prize.item ? prize.shards : null;
   if (shards === null) return 3;
-  const times = shards / (SCRATCH.cards[kind].coins * COIN_PRICE);
+  const price = parkScratch().cards[kind].coins * coinPrice();
+  const times = price ? shards / price : 0;
   // Below twice the price (200 and 500 on the basic card and the old shard cards): as plain as the coins back.
   return times >= 100 ? 3 : times >= 16 ? 2 : times >= 2 ? 1 : "plain";
 }
@@ -101,7 +105,7 @@ export function oddsText(rate: number): string {
  * the skin, the other shard prizes from the largest, the emote, again and the miss. With the emote set whole the emote's weight goes to again.
  */
 export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
-  const t: CardTable = SCRATCH.cards[kind];
+  const t: CardTable = parkScratch().cards[kind];
   const shards: OddsRow[] = t.prizes.map((p): OddsRow => ({ kind: "shards", shards: p.shards, rate: p.weight }))
     .sort((a, b) => (b.shards ?? 0) - (a.shards ?? 0));
   const items = (["big", "skin"] as const).flatMap((k): OddsRow[] => (t[k] ? [{ kind: k, rate: t[k]!.weight }] : []));
@@ -115,11 +119,11 @@ export function oddsRows(kind: CardKind, emotesWhole: boolean): OddsRow[] {
 }
 
 /** The card's best shard prize: the one drawn in gold. */
-export const topPrize = (kind: CardKind) => Math.max(...SCRATCH.cards[kind].prizes.map((p) => p.shards));
+export const topPrize = (kind: CardKind) => Math.max(...parkScratch().cards[kind].prizes.map((p) => p.shards));
 
 /** The chance of a card's tier, in percent: a shard prize by its amount, or the skin or big hidden card. */
 export function rateOf(kind: CardKind, tier: "skin" | "big" | number): number {
-  const t: CardTable = SCRATCH.cards[kind];
+  const t: CardTable = parkScratch().cards[kind];
   if (typeof tier === "number") return t.prizes.find((p) => p.shards === tier)?.weight ?? 0;
   return t[tier]?.weight ?? 0;
 }

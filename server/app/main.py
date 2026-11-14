@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from . import analytics
+from . import economy as economy_file
 from .accounts import MainAccounts, http_me
 from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
@@ -113,9 +114,11 @@ TAP_RATE = 15.0  # room taps per second one member may broadcast (matches activi
 TAP_BURST = 75.0  # taps that may pile up while idle, a few seconds' worth
 
 PACKS_DIR = find_packs_dir()
+# ASOULTAPPO_ECONOMY: the economy file (app/economy.py); the server does not start without it.
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
 # ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
-game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest)
+game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest,
+            economy_file.drop_config(manifest.anti_cheat))
 # 1.1: repeats turn into shards when drawn; cards kept as repeats before that are paid out once.
 _paid_players, _paid_shards = game.refund_duplicate_cards()
 if _paid_players:
@@ -376,6 +379,12 @@ def api_board_profile(bid: str, who: PlayerId = Depends(player)) -> dict:
 @app.get("/api/manifest")
 def api_manifest() -> dict:
     return manifest.data
+
+
+@app.get("/api/economy")
+def api_economy() -> dict:
+    """Prices, odds and caps for the client to show (the economy file without its server-only part)."""
+    return economy_file.client_view(manifest.economy, game.cfg)
 
 
 @app.get("/api/me")

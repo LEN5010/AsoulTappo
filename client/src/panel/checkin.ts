@@ -1,7 +1,7 @@
 // Calendar math for the check-in page. Dates are China days as the server writes them (YYYY-MM-DD), so the
 // grid follows the server's day whatever time zone this machine is in.
-import { manifest } from "../manifest";
 import type { CheckinMonth } from "../net/api";
+import { economy } from "../stores/economy";
 
 export interface DayCell {
   day: number;
@@ -73,10 +73,11 @@ export function padRuns(cells: readonly (DayCell | null)[], month: number): PadR
   });
 }
 
-const PRIZES = manifest.economy.checkin.prizes;
+/** Prizes on the server, smallest first; none until its economy is known. */
+const prizeCount = () => economy.value?.checkin.prizes.length ?? 0;
 
 /** Draw tone of prize `index`: gold for the top one, wine for the next, coral below. */
-export function prizeTone(index: number, count = PRIZES.length): string {
+export function prizeTone(index: number, count = prizeCount()): string {
   if (index === count - 1) return "tone-legendary";
   if (index === count - 2) return "tone-epic";
   return "tone-rare";
@@ -87,7 +88,7 @@ export function prizeTone(index: number, count = PRIZES.length): string {
 const REACTIONS = ["比心", "肯定", "观察", "流汗", "生无可恋", "对不起"];
 
 /** 阿草's sticker for prize `index`, spread over the reactions however many prizes there are. */
-export function reactionOf(index: number, count = PRIZES.length): string {
+export function reactionOf(index: number, count = prizeCount()): string {
   const at = count > 1 ? Math.round((index / (count - 1)) * (REACTIONS.length - 1)) : 0;
   return REACTIONS[Math.min(REACTIONS.length - 1, Math.max(0, at))]!;
 }

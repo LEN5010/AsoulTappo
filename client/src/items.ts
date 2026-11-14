@@ -3,6 +3,7 @@
 // Original characters are always owned; skins use char:<name> and drop from resonance.
 import { manifest, memberOf, RARITY_ORDER, skinTitle, type Rarity } from "./manifest";
 import type { CollectionProgress } from "./net/protocol";
+import { economy } from "./stores/economy";
 
 export type ItemKind = "character" | "accessory" | "emote" | "card" | "theme" | "frame" | "badge";
 
@@ -88,7 +89,7 @@ export function collectionProgress(owned: Record<string, number>): CollectionPro
 
 export function craftCost(item: Item): number | null {
   return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter && !item.source
-    ? manifest.economy.craftCost[item.rarity] ?? null : null;
+    ? economy.value?.craftCost[item.rarity] ?? null : null;
 }
 
 /** Starter emotes of one character (the default quick emotes). */

@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
 import { commonKindRates, effectiveRates, poolOf } from "./resonance";
+import { economy } from "./stores/economy";
 
 it("builds one all-member pool with 554 distinct items", () => {
   const p = poolOf();
@@ -30,14 +31,14 @@ it("moves exactly the completed tier weights into common and keeps the total at 
     const owned = Object.fromEntries(p[tier].map((i) => [i.id, 1]));
     const rates = effectiveRates(p, owned);
     expect(rates[tier]).toBe(0);
-    expect(rates.common).toBeCloseTo(86.2 + manifest.economy.resonance.rates[tier]);
+    expect(rates.common).toBeCloseTo(86.2 + economy.value!.resonance.rates[tier]);
     expect(Object.values(rates).reduce((a, b) => a + b)).toBeCloseTo(100);
   }
 });
 it("keeps the hidden tier's odds once it is complete, for repeats", () => {
   const p = poolOf();
   const rates = effectiveRates(p, Object.fromEntries(p.epic.map((i) => [i.id, 1])));
-  expect(rates.epic).toBe(manifest.economy.resonance.rates.epic);
+  expect(rates.epic).toBe(economy.value!.resonance.rates.epic);
   expect(rates.common).toBeCloseTo(86.2);
 });
 it("includes shared member cards exactly once", () => {

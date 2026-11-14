@@ -4,7 +4,7 @@
 // code in the bottom bar. A pack key asks first (what is bought, what it costs); bought coins fly from the key into
 // the big coin. The stamp card's last slot is the coin it pays: a full card flashes, clears, and that coin flies in.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
-import { manifest } from "../../manifest";
+import { economy } from "../../stores/economy";
 import { online, shards, status } from "../../stores/player";
 import { buyCoins, park, parkError } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
@@ -22,8 +22,8 @@ import Stamp from "./Stamp.vue";
 const emit = defineEmits<{ bought: [count: number] }>();
 useBand("coin", () => ({ host: ACHAO["招商"] }));
 
-// The bundled manifest always has the park; the server checks every number again.
-const CFG = manifest.economy.park!.coin;
+// ParkPage opens the sections only once the server's economy is known.
+const CFG = economy.value!.park!.coin;
 const PACKS: { n: number; pile: 1 | 3 | 5 }[] = [{ n: 1, pile: 1 }, { n: 5, pile: 3 }, { n: 10, pile: 5 }];
 const BADGES = ["铜驼", "银驼", "金驼"];
 const PER = CFG.stampsPerCoin;

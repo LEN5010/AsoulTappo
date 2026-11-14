@@ -1,7 +1,7 @@
 """Asset manifest loader (assets-packs/manifest.json, produced by scripts/build_assets.py).
 
-The server only needs the *metadata* (items, rarities, economy); the image
-and video files are served statically from the packs directory.
+The server only needs the *metadata* (items, rarities); the image and video files are served statically from the
+packs directory. The economy comes from its own private file (app/economy.py) and is merged in as ``economy``.
 
 Collectible items have namespaced ids:
   card:<card id>   emote:<emote key>   char:<skin name>
@@ -16,6 +16,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from . import economy as economy_file
 from .notice import version_key
 
 APP_DIR = Path(__file__).resolve().parent
@@ -33,13 +34,22 @@ def find_packs_dir() -> Path:
 
 
 class Manifest:
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(self, data: dict[str, Any], anti_cheat: dict[str, Any] | None = None) -> None:
         self.data = data
+        #: Server-only settings from the economy file's antiCheat (economy.drop_config).
+        self.anti_cheat = anti_cheat or {}
 
     @classmethod
-    def load(cls, path: Path | str | None = None) -> "Manifest":
+    def load(cls, path: Path | str | None = None, economy: Path | str | None = None) -> "Manifest":
+        """The asset manifest with the economy file merged in (ASOULTAPPO_ECONOMY unless [economy] is given)."""
         p = Path(path) if path else find_packs_dir() / "manifest.json"
-        return cls(json.loads(p.read_text(encoding="utf-8")))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        data["economy"], anti = economy_file.load(economy)
+        return cls(data, anti)
+
+    @cached_property
+    def economy(self) -> dict:
+        return self.data["economy"]
 
     @cached_property
     def cards(self) -> dict[str, dict]:

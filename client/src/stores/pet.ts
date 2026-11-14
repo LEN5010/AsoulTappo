@@ -3,7 +3,8 @@
 import { ref, watch } from "vue";
 import type { InputEvent } from "../composables/tauri";
 import { PetPose } from "../pet/PetPose";
-import { TapGuard } from "../pet/TapGuard";
+import { DEFAULT_RULES, TapGuard } from "../pet/TapGuard";
+import { economy } from "./economy";
 import { bumpCounter } from "./counter";
 import { countInput, reportCooldown, status } from "./player";
 import { inRoom, registerTap, syncMotion, youId } from "./room";
@@ -17,7 +18,7 @@ export const pet = pose.pet;
 watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, youId.value],
   () => syncMotion({ ...pet }), { flush: "sync" });
 
-const guard = new TapGuard();
+const guard = new TapGuard(() => economy.value?.tapGuard ?? DEFAULT_RULES);
 /** Presses this page received and what became of them, for the debug build's log (src/debugLog.ts). */
 export const tapStats = { keys: 0, mouse: 0, counted: 0, blocked: 0 };
 /** When inputs count again after going faster than a hand; in the past while they count. */

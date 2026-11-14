@@ -11,7 +11,7 @@ import { arrowSelect } from "../../ui/focus";
 import Icon from "../../ui/Icon.vue";
 import { COIN_SMALL } from "./coin";
 import ParkSheet from "./ParkSheet.vue";
-import { ON_SALE, oddsRows, oddsText, topPrize, type CardKind, type OddsRow } from "./scratchCards";
+import { oddsRows, oddsText, onSale, topPrize, type CardKind, type OddsRow } from "./scratchCards";
 
 const props = defineProps<{ kind: CardKind; complete: boolean }>();
 defineEmits<{ close: [] }>();
@@ -19,6 +19,7 @@ defineEmits<{ close: [] }>();
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 const WORDS: Partial<Record<OddsRow["kind"], string>> = { skin: "皮肤", big: "大隐藏卡", emote: "阿草表情", again: "再来一张", miss: "没中" };
 /** A hidden card on the table opens on the first card on sale. */
+const ON_SALE = onSale();
 const shown = ref<CardKind>(ON_SALE.includes(props.kind) ? props.kind : ON_SALE[0] ?? props.kind);
 const tabs = ref<HTMLElement>();
 /** The emote row shows one of the set: the face 阿草 makes when a card pays one. */

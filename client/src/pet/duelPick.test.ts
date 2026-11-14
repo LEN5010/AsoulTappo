@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WsLike } from "../net/RoomClient";
 import { DRAG_PX, dragged, isTap } from "./drag";
+import { withEconomy } from "../test/economy";
 
 describe("click or drag on a pet", () => {
   it("is a drag once the pointer travels the threshold, and a click only when released without that", () => {
@@ -39,7 +40,7 @@ describe("the bets over a partner's pet", () => {
   let leave: (() => void) | undefined;
   beforeEach(() => {
     vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
-    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+    vi.stubGlobal("localStorage", { getItem: withEconomy(() => null), setItem: () => {} });
     vi.stubGlobal("WebSocket", Socket);
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })));
   });
@@ -161,7 +162,7 @@ describe("poking and the profile key over a partner's pet", () => {
   let leave: (() => void) | undefined;
   beforeEach(() => {
     vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
-    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+    vi.stubGlobal("localStorage", { getItem: withEconomy(() => null), setItem: () => {} });
     vi.stubGlobal("WebSocket", Socket);
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 500, json: async () => ({}) })));
   });

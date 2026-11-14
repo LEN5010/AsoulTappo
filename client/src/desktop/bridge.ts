@@ -5,6 +5,7 @@ import { settings, type Settings } from "../stores/settings";
 import * as player from "../stores/player";
 import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
+import { economy, setEconomy } from "../stores/economy";
 import { restingMotion, type PetMotion } from "../net/protocol";
 import { remoteMotion } from "../net/MotionFrames";
 import { windowVisible } from "../stores/activity";
@@ -19,6 +20,7 @@ const groupSources = {
   checkins: () => player.checkins.value,
   scratchCard: () => player.scratchCard.value,
   park: () => parkStore.park.value,
+  economy: () => economy.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
     info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value,
@@ -29,7 +31,7 @@ const groupSources = {
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
-    scratchCard: groupSources.scratchCard(), park: groupSources.park(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
+    scratchCard: groupSources.scratchCard(), park: groupSources.park(), economy: groupSources.economy(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
     publicRooms: groupSources.publicRooms(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
@@ -54,6 +56,7 @@ function applyGroups(s: Partial<Groups>) {
   if (s.checkins !== undefined) player.checkins.value = s.checkins;
   if (s.scratchCard !== undefined) player.scratchCard.value = s.scratchCard;
   if (s.park !== undefined) parkStore.park.value = s.park;
+  if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
     player.freshItems.clear();
     s.freshItems.forEach((id) => player.freshItems.add(id));

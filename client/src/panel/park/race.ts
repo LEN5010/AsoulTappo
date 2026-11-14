@@ -5,7 +5,7 @@
 export type RaceKind = "win" | "top2" | "last";
 export type RacePhase = "betting" | "starting" | "running" | "done" | "void";
 
-/** manifest economy.park.race (scripts/asset_catalog.py PARK). */
+/** economy.park.race (server/app/economy.py). */
 export interface RaceConfig {
   interval: number;
   betting: number;

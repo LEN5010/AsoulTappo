@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ACHAO } from "./ui/achao";
 import { craftCost, getItem } from "./items";
-import { manifest } from "./manifest";
 import { poolOf } from "./resonance";
 import { Coating, HOST, SCRATCH_EMOTES, cellOf, faceKey, faceOf, oddsRows, outcomeOf, ownedScratchEmotes, toneOf } from "./scratch";
+import { economy } from "./stores/economy";
 
 const shards = (amount: number) => ({ kind: "shards" as const, amount, at: [0, 1, 2] });
 
@@ -27,7 +27,7 @@ describe("cards", () => {
 
 describe("阿草", () => {
   it("takes bigger prizes worse, with cutout stickers only", () => {
-    const faces = [faceOf({ kind: "miss" }), ...manifest.economy.scratch.prizes.map((p) => faceOf(shards(p.shards)))];
+    const faces = [faceOf({ kind: "miss" }), ...economy.value!.scratch.prizes.map((p) => faceOf(shards(p.shards)))];
     expect(faces).toEqual(["比心", "肯定", "收到", "流汗", "惊恐", "生无可恋"]);
     expect(faceOf({ kind: "emote", key: "achao.01", at: [0, 1, 2] })).toBe("对不起");
     // an amount between two prizes takes the face of the one below it

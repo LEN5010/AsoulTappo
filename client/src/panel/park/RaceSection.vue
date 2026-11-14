@@ -15,6 +15,7 @@
 // champion and what I won on that race.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
+import { economy } from "../../stores/economy";
 import { online } from "../../stores/player";
 import { loadPark, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
@@ -33,8 +34,8 @@ import {
   stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
 } from "./race";
 
-// The bundled manifest always has the race; the server checks every number again.
-const CFG = manifest.economy.park!.race!;
+// ParkPage opens the sections only once the server's economy is known.
+const CFG = economy.value!.park!.race!;
 /** The members in manifest order: the lanes before a race's own are drawn. */
 const MEMBERS = manifest.characters.map((c) => c.id);
 const KINDS = CFG.kinds;

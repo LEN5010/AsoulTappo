@@ -253,7 +253,8 @@ def card_subseries(series: str, name: str) -> str | None:
     return None
 
 
-# ------------------------------------------------------------------ economy
+# ------------------------------------------------------------------ rarity and skins
+# Prices and odds are not here: they live in the private economy file (server/app/economy.py).
 # Animated collection emotes are rare; Bloom and Brainwave sets are uncommon.
 RARE_EMOTE_SETS = {sid for sid, _, _, _, folder in COLLECTION_EMOTE_SETS if folder == "动态表情包"}
 UNCOMMON_EMOTE_SETS = {"jiaran-naodong", "nailin-naodong", "beila-naodong",
@@ -262,7 +263,6 @@ THEME_RARITY = "rare"
 # Every player owns the five characters, the default theme and the first
 # STARTER_EMOTES emotes of each character's first emote set.
 STARTER_EMOTES = 4
-# Resonance mixes every member; duplicates refund shards and crafting targets common/rare items.
 # Pet skins. `name` is the id: the asset folder, the save's char:<name> item and the room's character field, so it
 # never changes; it is the member followed by the series. `title` is what the screen shows instead, when set: the
 # member followed by the skin's own name from SKIN_TITLES.
@@ -288,97 +288,6 @@ SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for me
     skin("乃琳", "2025生日"),
 ] + [skin(member, "冬日奇迹", "1.2.0") for member in ("嘉然", "乃琳", "贝拉")] + [
     skin(member, "2025生日", "1.2.2") for member in ("心宜", "思诺")]
-# Shards come from taps only: dailyCap × (1 − e^−x) over one China day, x = a·m + b·m² + c·m³ for m thousand taps
-# (curve = [a, b, c]: 10 000 taps pay 9000, 20 000 pay 13 000, 30 000 pay 16 000, nearing 18 000);
-# a minute pays for its first tapsPerMinute taps.
-INCOME = {"dailyCap": 18000, "curve": [0.0890449, -0.00269613, 0.0000723108], "tapsPerMinute": 120}
-RESONANCE = {"cost": 160, "rates": {"legendary": 0.1, "skin": 0.2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2},
-             "pity": {"legendary": 400, "skin": 200}, "commonKindWeights": {"card": 45, "emote": 41.2},
-             # Shards a duplicate turns into at once: emotes, and cards by tier (big hidden cards never repeat).
-             "duplicateRefund": {"emote": 5, "normal": 20, "small": 360},
-             # Tiers that keep their odds once everything in them is owned; their repeats turn into shards.
-             "repeatTiers": ["epic"]}
-CRAFT_COST = {"common": 480, "uncommon": 960, "rare": 1600}
-# Daily check-in prizes by amount; weights are percentages (1.7 draws on average, the top prize 10).
-# A prize pays its shards give or take `spread` (uniform), so the amounts are seldom round; the mean is unchanged.
-CHECKIN = {"prizes": [{"shards": 80, "weight": 30}, {"shards": 160, "weight": 30}, {"shards": 320, "weight": 20},
-                      {"shards": 480, "weight": 12}, {"shards": 800, "weight": 6}, {"shards": 1600, "weight": 2}],
-           "spread": 0.1}
-# Scratch cards: `price` shards each, `daily` of them a China day. Weights are percentages and what is left
-# of 100 wins nothing; the shard prizes return two thirds of the price on average. The emote tier gives one emote of
-# `set` the save lacks, for certain on the `pity`-th card since the last one. Once the set is whole the tier and
-# its pity are gone: its weight wins nothing. The server tells the room about `announce` shards or more.
-SCRATCH = {"price": 500, "daily": 20,
-           "prizes": [{"shards": 200, "weight": 25}, {"shards": 500, "weight": 20}, {"shards": 1000, "weight": 8},
-                      {"shards": 2500, "weight": 3}, {"shards": 30000, "weight": 0.1}],
-           "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10},
-           "announce": 2500}
-# Rock-paper-scissors between two room members. Both pay `bet` when the invite is accepted and the winner gets
-# `prize`: a sixth of the two bets is burnt. An invite waits `inviteSec`, each round `throwSec`. A save's net
-# win (prizes minus bets of the duels settled that China day) stays at or below `dailyWinCap`; losses are not
-# capped. Both saves need `minTaps` taps in all, so fresh guest saves cannot feed shards to another one.
-DUEL = {"stakes": [{"bet": 150, "prize": 250}, {"bet": 1500, "prize": 2500}, {"bet": 15000, "prize": 25000}],
-        "inviteSec": 15, "throwSec": 10, "dailyWinCap": 10000, "minTaps": 10000}
-# The park (clients after 1.2.1; design in docs/design/amusement-park.md). Every game there is paid in coins.
-# coin: `price` shards each, as many as the shards pay for; `gift` free a day, given with the save's first status
-# that day. Buying and the gift need `minTaps` taps in all. Every coin spent is a stamp; every `stampsPerCoin` stamps turn into a coin, and
-# `badges` are the stamp totals that earn the three badges.
-# scratch: two cards by their price in coins. `again` (a percentage, like the prize weights) hands the price back;
-# the basic card keeps the old card's emote tier and pity, and once the set is whole that weight turns into `again`.
-# A premium `skin` or `big` card is one the save lacks, else its `shards`. A save's first card of each kind wins
-# `first` shards. Wins of `roomAt` shards are told to the room, of `serverAt` to every running pet. A `hidden` card
-# is off sale: the server refuses to sell it and the client does not show it, but one already bought is still revealed
-# and paid.
-# race: one every `interval` seconds, bets taken for the first `betting`; with `startAt` (minute of the China day) the
-# races are placed so that each starts then: one a day at 19:00, its bets open from ten minutes after the day before's
-# start (the rest of the interval is the run and the podium). The dumplings of the five members start
-# together on square 0 of a lap of `track` squares (the start is also the finish), roll a six-sided die for the order
-# of play and move 1 to 3 squares (`dice`), carrying those stacked on them. A group must land on the finish exactly:
-# what a roll carries past it walks back from it. All five are alike, so each wins with p = 1/5 (top two 2/5, last
-# 1/5). Each race draws every member a popularity, a whole number in `popularity` (inclusive), its weight w in the
-# opening odds (for last mirrored about the mean, so the favourite is the least backed to come last). Odds move with
-# the coins staked on each kind: a member's share is (its coins + `depth` × w / Σw) / (all coins on that kind +
-# `depth`), the odds `payout` / (share × places), rounded down to a tenth, at least `minOdds`; a bet keeps the odds it
-# was placed at. With nothing staked win pays about 3.8 to 4.6 and top two 1.9 to 2.3; the highest stays below even
-# money for the chance (p × odds at most 0.98). A save stakes at most `maxCoins`.
-# A winning bet pays coins × odds in coins, each save's bets on a race summed and then rounded half up.
-# lottery: `daily` tickets a save, 000 to 999, for each draw; the draw is at minute `drawAt` of the China day and
-# sales close at `closeAt` before it. A lottery day runs from one draw to the next, so the next draw's tickets go on
-# sale as soon as a draw is made. The top prize is the server-wide pool: it starts at `pool.seed` shards, every coin spent in the park
-# (scratch, race and lottery) adds `pool.perCoin`, and it rolls over until a draw has a top winner. The second is
-# `second` of the day's sales, split between winners; the third is `third` shards each.
-PARK = {
-    "coin": {"price": 500, "gift": 3, "minTaps": 10000, "stampsPerCoin": 30,
-             "badges": [100, 1000, 5000]},
-    "scratch": {
-        "cards": {
-            "basic": {"coins": 1, "again": 15, "first": 1000,
-                      "prizes": [{"shards": 200, "weight": 20}, {"shards": 500, "weight": 18},
-                                 {"shards": 1000, "weight": 9}, {"shards": 2500, "weight": 3},
-                                 {"shards": 8000, "weight": 0.5}, {"shards": 50000, "weight": 0.1}],
-                      "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10}},
-            "premium": {"hidden": True, "coins": 5, "again": 15, "first": 5000,
-                        "prizes": [{"shards": 3000, "weight": 14}, {"shards": 5000, "weight": 10},
-                                   {"shards": 12500, "weight": 3}, {"shards": 40000, "weight": 0.5},
-                                   {"shards": 250000, "weight": 0.02}],
-                        "skin": {"weight": 0.5, "shards": 30000}, "big": {"weight": 0.5, "shards": 60000}},
-        },
-        "roomAt": {"basic": 8000, "premium": 40000},
-        "serverAt": {"basic": 50000, "premium": 250000},
-    },
-    "race": {
-        "interval": 86400, "betting": 85800, "startAt": 1140, "track": 24, "dice": [1, 2, 3], "payout": 0.85,
-        "minOdds": 1.1, "depth": 100, "popularity": [92, 108], "maxCoins": 10, "kinds": ["win", "top2", "last"],
-        # Five squares a race, all different, somewhere in `range` (inclusive): the boost and trip squares move a
-        # landing group by `boost` and `trip`; the portal's two ends, `portalGap` squares apart (inclusive), take it to
-        # the other end; the flip square turns its stack upside down. `roomAt` is in coins.
-        "squares": {"range": [5, 20], "boost": 2, "trip": -1, "portalGap": [4, 6]},
-        "roomAt": 20,
-    },
-    "lottery": {"daily": 10, "closeAt": 1130, "drawAt": 1135, "pool": {"seed": 30000, "perCoin": 50},
-                "second": 0.20, "third": 600},
-}
-
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote
 # of `emoteSet` is owned; the client keeps the picture and its crop (client/src/pet/plates.ts). Ids must never

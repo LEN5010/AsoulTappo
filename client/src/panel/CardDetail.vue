@@ -6,6 +6,7 @@ import { assetUrl } from "../asset";
 import { playCardVideo } from "../audio/cardSound";
 import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
+import { economy } from "../stores/economy";
 import { getItem } from "../items";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { collection } from "../stores/player";
@@ -91,7 +92,7 @@ function togglePlay() {
         >
           <Icon :name="shown ? 'check' : 'plus'" :size="15" />{{ shown ? "取消展示" : showcaseFull ? "展示位已满" : "展示到主页" }}
         </button>
-        <button v-if="!count && !manifest.economy.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
+        <button v-if="!count && !economy?.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
       </div>
     </div>
   </Modal>

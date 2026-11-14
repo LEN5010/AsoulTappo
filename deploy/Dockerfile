@@ -8,6 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server/app ./app
+# Example economy for self-hosting; the official server mounts its own file and points ASOULTAPPO_ECONOMY at it.
+COPY server/economy.example.json ./economy.example.json
 COPY assets-packs ./assets-packs
 RUN useradd -m app && mkdir -p /srv/data && chown -R app /srv/data
 USER app

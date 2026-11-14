@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WsLike } from "../net/RoomClient";
 import { TERMS_VERSION } from "../legal";
+import { withEconomy } from "../test/economy";
 
 class Socket implements WsLike {
   static all: Socket[] = [];
@@ -21,7 +22,7 @@ beforeEach(() => {
   vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
   // Rooms are only reached after the terms are agreed.
   const agreed = JSON.stringify({ termsAgreed: TERMS_VERSION });
-  vi.stubGlobal("localStorage", { getItem: (k: string) => (k === "asoultappo.settings.v1" ? agreed : null), setItem: () => {} });
+  vi.stubGlobal("localStorage", { getItem: withEconomy((k: string) => (k === "asoultappo.settings.v1" ? agreed : null)), setItem: () => {} });
   vi.stubGlobal("WebSocket", Socket);
 });
 afterEach(() => { room?.leaveRoom(); room = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); });

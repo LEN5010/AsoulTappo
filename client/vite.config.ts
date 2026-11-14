@@ -16,5 +16,5 @@ export default defineConfig(({ mode }) => ({
   server: { port: 1420, strictPort: true },
   // Two pages: the desk and panel share index.html, the capture window has its own (src/capture.ts).
   build: { target: "es2022", chunkSizeWarningLimit: 1500, rollupOptions: { input: ["index.html", "capture.html"] } },
-  test: { environment: "node", include: ["src/**/*.test.ts"] },
+  test: { environment: "node", include: ["src/**/*.test.ts"], setupFiles: ["src/test/economy.setup.ts"] },
 }));

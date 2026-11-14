@@ -52,7 +52,7 @@ def database(root: Path, iterations: int) -> dict:
     from app.manifest import Manifest
     from app.store import Store
 
-    manifest = Manifest.load(root / "assets-packs" / "manifest.json")
+    manifest = Manifest.load(root / "assets-packs" / "manifest.json", economy=root / "server" / "economy.example.json")
     rows = []
     with tempfile.TemporaryDirectory(prefix="tappo-bench-") as directory:
         store = Store(str(Path(directory) / "bench.db"))

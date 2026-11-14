@@ -211,7 +211,12 @@ def test_pack_index_matches_files_and_manifest():
 
 def test_client_manifest_copy_is_identical():
     client_copy = json.loads((REPO / "client" / "src" / "data" / "manifest.json").read_text(encoding="utf-8"))
-    assert client_copy == M.data
+    assert client_copy == json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+
+
+def test_the_committed_manifests_carry_no_economy():
+    # prices and odds live in the private economy file (app/economy.py)
+    assert "economy" not in json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
 
 
 def test_no_stray_files_outside_manifest():

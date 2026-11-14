@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { prime } from "../audio/sfx";
-import { manifest, getCard, type ManifestCard, type Rarity } from "../manifest";
+import { getCard, type ManifestCard, type Rarity } from "../manifest";
+import { economy } from "../stores/economy";
 import { type Item, RARITY_LABEL } from "../items";
 import { poolOf, effectiveRates } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
@@ -29,7 +30,9 @@ const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
 const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
 const pityTiers = ["legendary", "skin"] as const;
-const cost = manifest.economy.resonance.cost;
+/** Prices and odds from the server; the keys and the table wait for them. */
+const res = computed(() => economy.value?.resonance ?? null);
+const cost = computed(() => res.value?.cost ?? 0);
 const income = computed(() => todayIncome(status.value));
 const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
@@ -39,7 +42,7 @@ function inspect(item: Item) {
 /** Past this share of the hard pity the legendary gauge glows. */
 const PITY_NEAR = 90;
 const pityPercent = (r: "legendary" | "skin") =>
-  Math.min(100, (status.value?.resonance.pity[r] ?? 0) / manifest.economy.resonance.pity[r] * 100);
+  res.value ? Math.min(100, (status.value?.resonance.pity[r] ?? 0) / res.value.pity[r] * 100) : 0;
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
   pending.value = count;
@@ -66,7 +69,7 @@ async function nextBatch() {
           <div v-if="missingTier(r)" class="pity" :class="[r, { near: r === 'legendary' && pityPercent(r) >= PITY_NEAR }]">
             <span>
               <Icon :name="r === 'legendary' ? 'crown' : 'shirt'" :size="14" />
-              {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b><i>/ {{ manifest.economy.resonance.pity[r] }}</i>
+              {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b><i>/ {{ res?.pity[r] ?? '—' }}</i>
             </span>
             <div class="ui-bar"><i :style="{ width: `${pityPercent(r)}%` }"></i></div>
           </div>
@@ -80,11 +83,11 @@ async function nextBatch() {
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">
-        <button type="button" class="ui-btn large act once" :disabled="revealing || !online || draws < 1 || complete" @click="draw(1)">
+        <button type="button" class="ui-btn large act once" :disabled="revealing || !online || !res || draws < 1 || complete" @click="draw(1)">
           <span class="act-label">共鸣一次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
-        <button type="button" class="ui-btn act ten primary pulse" :disabled="revealing || !online || draws < 10 || complete" @click="draw(10)">
+        <button type="button" class="ui-btn act ten primary pulse" :disabled="revealing || !online || !res || draws < 10 || complete" @click="draw(10)">
           <span class="act-label">共鸣十次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
@@ -94,9 +97,10 @@ async function nextBatch() {
       </div>
     </footer>
     <Modal v-if="probabilities" title="共鸣概率" heading @close="probabilities = false">
-      <table class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
-        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ manifest.economy.resonance.rates[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' ? '400 次' : r === 'skin' ? '200 次' : '—' }}</td></tr>
+      <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
+        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ res.rates[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
       </tbody></table>
+      <p v-else class="rates-wait" role="status">连接服务器后显示</p>
     </Modal>
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />

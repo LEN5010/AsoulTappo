@@ -9,7 +9,7 @@ import {
   type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
-import { getEmote, manifest, memberOf } from "../manifest";
+import { getEmote, memberOf } from "../manifest";
 import { faceKey, faceOf } from "../scratch";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
@@ -18,6 +18,7 @@ import { activeAccount, account, collection, token, saveCode, reloadStatus, setA
 import { Api, authHeaders } from "../net/api";
 import { isPanelWindow, writeLog } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
+import { economy } from "./economy";
 
 export interface RemoteMember extends Member {
   /** increments on every tap batch -> short keyboard bounce */
@@ -58,8 +59,8 @@ export interface DuelState {
 const WIN_MS = 3600;
 /** How long the outcome of a duel stays beside the own pet. */
 export const DUEL_END_MS = 4000;
-/** Rock-paper-scissors numbers, the same manifest the server reads. */
-export const duelConfig = manifest.economy.duel ?? null;
+/** Rock-paper-scissors numbers from the server's economy; null without them. */
+export const duelConfig = computed(() => economy.value?.duel ?? null);
 
 export const conn = ref<ConnState>("idle");
 export const roomId = ref("");
@@ -467,7 +468,7 @@ export const duel = ref<DuelState | null>(null);
 let duelTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** The server has duels (its status says so) and this client may take part. */
-export const duelOn = computed(() => inRoom.value && !!duelConfig && !!status.value?.duel);
+export const duelOn = computed(() => inRoom.value && !!duelConfig.value && !!status.value?.duel);
 /** An invite or a duel is under way. */
 export const duelBusy = computed(() => duel.value?.phase === "invite" || duel.value?.phase === "throw");
 /** Invites are turned down: by the setting, and while the pet lets clicks through, as it could not answer them. */
@@ -477,16 +478,18 @@ const duelDnd = () => settings.duelDnd || settings.clickThrough;
 export function canDuel(m: Member): boolean {
   const mine = me.value;
   const s = status.value;
-  return duelOn.value && !!duelConfig && !!s && !!mine && !duelBusy.value && !settings.clickThrough &&
-    m.id !== mine.id && !!m.uid && m.uid !== mine.uid && s.totals.taps >= duelConfig.minTaps &&
-    duelConfig.stakes.some((x) => stakeOpen(x.bet));
+  const cfg = duelConfig.value;
+  return duelOn.value && !!cfg && !!s && !!mine && !duelBusy.value && !settings.clickThrough &&
+    m.id !== mine.id && !!m.uid && m.uid !== mine.uid && s.totals.taps >= cfg.minTaps &&
+    cfg.stakes.some((x) => stakeOpen(x.bet));
 }
 
 /** A bet this save can pay, whose win keeps today's net win within the cap. */
 export function stakeOpen(bet: number): boolean {
-  const stake = duelConfig?.stakes.find((x) => x.bet === bet);
+  const cfg = duelConfig.value;
+  const stake = cfg?.stakes.find((x) => x.bet === bet);
   const s = status.value;
-  return !!stake && !!s?.duel && s.shards >= bet && s.duel.net + stake.prize - stake.bet <= duelConfig!.dailyWinCap;
+  return !!cfg && !!stake && !!s?.duel && s.shards >= bet && s.duel.net + stake.prize - stake.bet <= cfg.dailyWinCap;
 }
 
 function endDuel(): void {

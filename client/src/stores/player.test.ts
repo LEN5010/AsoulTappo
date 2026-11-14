@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { plateCard, plateSet } from "../pet/plates";
 import { TERMS_VERSION } from "../legal";
+import { withEconomy } from "../test/economy";
 
 let player: typeof import("./player") | undefined;
 const response = (data: unknown) => ({ ok: true, json: async () => data }) as Response;
@@ -10,7 +11,7 @@ const collectionFor = (server: string) => ({ owned: { [server]: 1 }, recent: [] 
 beforeEach(() => {
   vi.resetModules();
   vi.useFakeTimers();
-  vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+  vi.stubGlobal("localStorage", { getItem: withEconomy(() => null, "http://a"), setItem: () => {} });
 });
 afterEach(async () => {
   player?.stopReporting();

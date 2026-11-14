@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import { manifest } from "../../manifest";
 import RaceTrack from "./RaceTrack.vue";
 import { tuanziArt, type Race } from "./race";
+import { economy } from "../../stores/economy";
 
-const CFG = manifest.economy.park!.race!;
+const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);
 
 const render = (race: Race | null, t: number) =>

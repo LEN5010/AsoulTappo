@@ -3,6 +3,7 @@
 import { APP_VERSION } from "../version";
 import type { Rarity } from "../manifest";
 import type { MemberProfile } from "./protocol";
+import type { Economy } from "../stores/economy";
 
 export interface PlayerStatus {
   player: string;
@@ -221,6 +222,15 @@ export class Api {
   presence = (session: string) => this.call<PlayerStatus>("POST", "/api/presence", { session });
   resonate = (count = 1) => this.call<ResonanceResult>("POST", "/api/resonance/draw", { count });
   me = () => this.call<PlayerStatus>("GET", "/api/me");
+  /** Prices, odds and caps (src/stores/economy.ts); servers from before /api/economy carry them in the manifest. */
+  economy = async (): Promise<Economy> => {
+    try {
+      return await this.call<Economy>("GET", "/api/economy");
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      return (await this.call<{ economy: Economy }>("GET", "/api/manifest")).economy;
+    }
+  };
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
   checkinMonth = () => this.call<CheckinMonth>("GET", "/api/checkin");

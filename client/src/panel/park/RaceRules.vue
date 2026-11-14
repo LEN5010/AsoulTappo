@@ -3,6 +3,7 @@
 // pay on the right. Every row is a picture of the thing (a die, the start square, a stack, the board's own special
 // squares drawn as on the board) with a few words beside it.
 import { manifest } from "../../manifest";
+import { economy } from "../../stores/economy";
 import ParkCoin from "./ParkCoin.vue";
 import ParkSheet from "./ParkSheet.vue";
 import RaceDie from "./RaceDie.vue";
@@ -11,7 +12,8 @@ import { KIND_NAMES, type RaceKind } from "./race";
 
 defineEmits<{ close: [] }>();
 
-const CFG = manifest.economy.park!.race!;
+// Shown inside the park, which opens only once the server's economy is known.
+const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);
 const BOOST = CFG.squares.boost;
 const TRIP = Math.abs(CFG.squares.trip);

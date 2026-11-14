@@ -18,6 +18,7 @@
 // of the step (stepPhases) and the spring back; under reduced motion everything jumps and stands still.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
+import { economy } from "../../stores/economy";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
 import alpaca from "../../assets/brand/side-alpaca.webp";
@@ -33,8 +34,8 @@ const props = defineProps<{ race: Race | null; t: number; track: number; members
 
 const nameOf = (m: string) => manifest.characters.find((c) => c.id === m)?.name ?? m;
 
-const BOOST = manifest.economy.park?.race?.squares.boost ?? 2;
-const TRIP = Math.abs(manifest.economy.park?.race?.squares.trip ?? -1);
+const BOOST = economy.value?.park?.race?.squares.boost ?? 2;
+const TRIP = Math.abs(economy.value?.park?.race?.squares.trip ?? -1);
 const WORDS: Record<MomentKind, string> = { lead: "领先", boost: "冲呀", trip: "哎呀", carry: "抓紧了" };
 
 /*
