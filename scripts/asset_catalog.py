@@ -353,9 +353,9 @@ PARK = {
     "scratch": {
         "cards": {
             "basic": {"coins": 1, "again": 15, "first": 1000,
-                      "prizes": [{"shards": 200, "weight": 20}, {"shards": 500, "weight": 14},
-                                 {"shards": 1000, "weight": 6}, {"shards": 2500, "weight": 2.5},
-                                 {"shards": 8000, "weight": 0.4}, {"shards": 50000, "weight": 0.04}],
+                      "prizes": [{"shards": 200, "weight": 20}, {"shards": 500, "weight": 18},
+                                 {"shards": 1000, "weight": 9}, {"shards": 2500, "weight": 3},
+                                 {"shards": 8000, "weight": 0.5}, {"shards": 50000, "weight": 0.1}],
                       "emote": {"set": SCRATCH_EMOTE_SET[0], "weight": 5, "pity": 10}},
             "premium": {"hidden": True, "coins": 5, "again": 15, "first": 5000,
                         "prizes": [{"shards": 3000, "weight": 14}, {"shards": 5000, "weight": 10},

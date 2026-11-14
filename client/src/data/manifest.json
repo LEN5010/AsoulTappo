@@ -5198,23 +5198,23 @@
        },
        {
         "shards": 500,
-        "weight": 14
+        "weight": 18
        },
        {
         "shards": 1000,
-        "weight": 6
+        "weight": 9
        },
        {
         "shards": 2500,
-        "weight": 2.5
+        "weight": 3
        },
        {
         "shards": 8000,
-        "weight": 0.4
+        "weight": 0.5
        },
        {
         "shards": 50000,
-        "weight": 0.04
+        "weight": 0.1
        }
       ],
       "emote": {

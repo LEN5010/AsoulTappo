@@ -77,8 +77,8 @@ def news(g):
 # ----------------------------------------------------------------------- tables
 def test_tables_are_the_approved_ones():
     assert (BASIC["coins"], BASIC["again"], BASIC["emote"]) == (1, 15, {"set": "achao", "weight": 5, "pity": 10})
-    assert [(p["shards"], p["weight"]) for p in BASIC["prizes"]] == [(200, 20), (500, 14), (1000, 6), (2500, 2.5),
-                                                                     (8000, .4), (50000, .04)]
+    assert [(p["shards"], p["weight"]) for p in BASIC["prizes"]] == [(200, 20), (500, 18), (1000, 9), (2500, 3),
+                                                                     (8000, .5), (50000, .1)]
     assert (PREMIUM["coins"], PREMIUM["again"]) == (5, 15)
     # the premium card is off sale for now; its table stays for when it comes back
     assert PREMIUM["hidden"] is True and "hidden" not in BASIC
@@ -101,11 +101,14 @@ def test_tables_are_the_approved_ones():
     (BASIC, 0, False, .2, ("shards", 200)),
     (BASIC, 0, False, .3999, ("shards", 200)),
     (BASIC, 0, False, .4, ("shards", 500)),
-    (BASIC, 0, False, .55, ("shards", 1000)),
-    (BASIC, 0, False, .61, ("shards", 2500)),
-    (BASIC, 0, False, .627, ("shards", 8000)),
-    (BASIC, 0, False, .6292, ("shards", 50000)),
-    (BASIC, 0, False, .6295, ("miss", 0)),
+    (BASIC, 0, False, .5799, ("shards", 500)),
+    (BASIC, 0, False, .5801, ("shards", 1000)),
+    (BASIC, 0, False, .6699, ("shards", 1000)),
+    (BASIC, 0, False, .6701, ("shards", 2500)),
+    (BASIC, 0, False, .7001, ("shards", 8000)),
+    (BASIC, 0, False, .7051, ("shards", 50000)),
+    (BASIC, 0, False, .7059, ("shards", 50000)),
+    (BASIC, 0, False, .7061, ("miss", 0)),
     (PREMIUM, 0, False, 0, ("again", 0)),
     (PREMIUM, 0, False, .1499, ("again", 0)),
     (PREMIUM, 0, False, .15, ("shards", 3000)),
@@ -126,7 +129,7 @@ def test_one_roll(card, pity, complete, x, want):
 
 # ----------------------------------------------------------------------- money
 def test_buying_takes_coins_and_the_prize_waits_for_the_reveal():
-    g, ps, _, pid = setup(.61)
+    g, ps, _, pid = setup(.68)
     bought = ps.buy(TOKEN, "basic")
     assert bought["park"]["coins"] == 49 and bought["shards"] == 100_000
     assert bought["park"]["stampsTotal"] == 1 and bought["park"]["today"] == {"spent": 0, "won": 0}
@@ -394,11 +397,11 @@ def test_first_cards_show_their_amount_three_times_and_nothing_else_as_often():
 
 # ----------------------------------------------------------------------- news
 def test_big_wins_are_told_and_small_ones_are_not():
-    g, ps, _, _ = setup(.61)
+    g, ps, _, _ = setup(.68)
     assert play(ps)[1]["announce"] == 0
-    g.rng = SeqRng(.627)
+    g.rng = SeqRng(.701)
     assert play(ps)[1]["announce"] == 8000 and news(g) == []
-    g.rng = SeqRng(.6292)
+    g.rng = SeqRng(.7055)
     assert play(ps)[1]["announce"] == 50000
     assert news(g) == [{"kind": "scratch_big", "nick": "匿名小面包", "card": "basic", "shards": 50000}]
     g.rng = SeqRng(.422)
@@ -495,23 +498,23 @@ def miss_rate(card):
 
 
 def test_the_returns_are_the_designed_ones():
-    # Per card at face value: premium 1995 shards of 2500 plus 15% again, basic 284.5 of 500 plus 15% again.
+    # Per card at face value: premium 1995 shards of 2500 plus 15% again, basic 385 of 500 plus 15% again.
     assert face_return(PREMIUM) == pytest.approx(.948, abs=1e-9)
-    assert face_return(BASIC) == pytest.approx(.719, abs=1e-9)
+    assert face_return(BASIC) == pytest.approx(.92, abs=1e-9)
     assert miss_rate(PREMIUM) == pytest.approx(.5648, abs=1e-9)
     # Per coin with the coins from `again` played on until they turn into shards (the emote tier is worth nothing):
-    # the basic card returns 60.8% of a coin's 500 shards before the emote set is whole and 71.1% after.
-    assert mean_return(BASIC, False) == pytest.approx(304.20, abs=.01)
-    assert mean_return(BASIC, True) == pytest.approx(355.625, abs=1e-9)
-    assert (round(mean_return(BASIC, False) / PRICE, 3), round(mean_return(BASIC, True) / PRICE, 3)) == (.608, .711)
+    # the basic card returns 82.3% of a coin's 500 shards before the emote set is whole and 96.3% after.
+    assert mean_return(BASIC, False) == pytest.approx(411.67, abs=.01)
+    assert mean_return(BASIC, True) == pytest.approx(481.25, abs=1e-9)
+    assert (round(mean_return(BASIC, False) / PRICE, 3), round(mean_return(BASIC, True) / PRICE, 3)) == (.823, .963)
     assert round(mean_return(PREMIUM, False), 2) == 469.41
-    # A basic card wins nothing 37.06% of the time with the set whole (the emote weight is `again` then); before, the
-    # pity takes the table's place on some cards and 34.1% of them win nothing.
-    assert miss_rate(BASIC) == pytest.approx(.3706, abs=1e-9)
+    # A basic card wins nothing 29.4% of the time with the set whole (the emote weight is `again` then); before, the
+    # pity takes the table's place on some cards and 27.1% of them win nothing.
+    assert miss_rate(BASIC) == pytest.approx(.294, abs=1e-9)
     p = BASIC["emote"]["weight"] / 100
     cycle = sum((1 - p) ** k for k in range(BASIC["emote"]["pity"]))
     rolled = 1 - (1 - p) ** (BASIC["emote"]["pity"] - 1) / cycle
-    assert miss_rate(BASIC) * rolled == pytest.approx(.3415, abs=1e-4)
+    assert miss_rate(BASIC) * rolled == pytest.approx(.2709, abs=1e-4)
 
 
 @pytest.mark.parametrize("kind,seed", [("basic", 4), ("premium", 5)])
@@ -526,7 +529,7 @@ def test_a_seeded_run_returns_the_face_value_and_misses_as_often_as_designed(kin
         assert ret == pytest.approx(.948, abs=.01)
         assert tiers["miss"] / n == pytest.approx(.565, abs=.002)
     else:
-        assert ret == pytest.approx(.72, abs=.01)
+        assert ret == pytest.approx(.92, abs=.01)
 
 
 # A million cards a table, each within 4 standard errors of what the table should return (the error is about 0.6% of
@@ -583,7 +586,7 @@ def test_a_manifest_without_the_park():
 
 
 def test_cards_are_stored_as_the_client_gets_them():
-    g, ps, clock, pid = setup(.61)
+    g, ps, clock, pid = setup(.68)
     card = ps.buy(TOKEN, "basic")["card"]
     row = g.store.park_scratch_card(pid, card["id"])
     assert json.loads(row["cells"]) == card["cells"] and row["kind"] == "basic" and row["day"] == day_of(clock())
@@ -596,7 +599,7 @@ H = {"X-Player-Token": TOKEN, "X-Client-Version": "1.2.1"}
 
 @pytest.fixture()
 def api(monkeypatch):
-    g, ps, clock, pid = setup(.627)
+    g, ps, clock, pid = setup(.701)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
     with TestClient(main.app) as c:
