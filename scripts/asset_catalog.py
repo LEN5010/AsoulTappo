@@ -372,7 +372,7 @@ PARK = {
         "squares": {"range": [5, 20], "boost": 2, "trip": -1, "portalGap": [4, 6]},
         "roomAt": 20,
     },
-    "lottery": {"daily": 10, "closeAt": 1135, "drawAt": 1140, "pool": {"seed": 10000, "perCoin": 50},
+    "lottery": {"daily": 10, "closeAt": 1130, "drawAt": 1135, "pool": {"seed": 10000, "perCoin": 50},
                 "second": 0.20, "third": 600},
 }
 

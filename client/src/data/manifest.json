@@ -5304,8 +5304,8 @@
    },
    "lottery": {
     "daily": 10,
-    "closeAt": 1135,
-    "drawAt": 1140,
+    "closeAt": 1130,
+    "drawAt": 1135,
     "pool": {
      "seed": 10000,
      "perCoin": 50
