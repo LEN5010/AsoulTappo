@@ -14,6 +14,8 @@ import ParkNewsBubble from "./pet/ParkNewsBubble.vue";
 import AdminBubble from "./pet/AdminBubble.vue";
 import DuelBubble from "./pet/DuelBubble.vue";
 import PokeBubble from "./pet/PokeBubble.vue";
+import NudgeBubble from "./pet/NudgeBubble.vue";
+import { NUDGE_HEIGHT, NUDGE_WIDTH, noteNudgeInput, nudge, startNudges } from "./stores/nudge";
 import DuelPick from "./pet/DuelPick.vue";
 import {
   DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
@@ -30,9 +32,10 @@ import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter, followServer, watchDay } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
+import { windowVisible } from "./stores/activity";
 import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
-import { duel, inRoom, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { duel, inRoom, poked, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import { startCapture } from "./desktop/capture";
 import {
@@ -235,6 +238,7 @@ const nameOnDesk = (m: RemoteMember) =>
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
+const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 /**
  * Viewport y a plate opened upwards from the own strip stays above: the pet's top, or the top of the emote bubble
@@ -258,6 +262,7 @@ let unBlocked: (() => void) | undefined;
 let stopDay: (() => void) | undefined;
 let stopRelease: (() => void) | undefined;
 let stopCapture: (() => void) | undefined;
+let stopNudges: (() => void) | undefined;
 // The desk window watches the server's minimum version itself; the panel, which holds the dialog, may never be opened.
 watch(updateForced, (must) => { if (must) openPanel(); });
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
@@ -283,7 +288,10 @@ onMounted(async () => {
   if (!agreed.value) openPanel();
   stopDay = watchDay();
   if (isTauri) stopRelease = watchRelease();
-  unInput = await listenInput(onInput);
+  // Reminders wait while the pet is hidden or another bubble holds the spot over it.
+  stopNudges = startNudges(() =>
+    !windowVisible.value || !!duel.value || !!poked.value || !!adminHint.value || accessHint.value || tapCooldown.value > Date.now());
+  unInput = await listenInput((e) => { onInput(e); noteNudgeInput(); });
   unOutside = await listenOutsideClick(closeQuickAway);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
@@ -331,6 +339,7 @@ onBeforeUnmount(() => {
   stopDay?.();
   stopRelease?.();
   stopCapture?.();
+  stopNudges?.();
   unAccess?.();
   stopPet();
 });
@@ -385,10 +394,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, draws
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <CooldownBubble :until="tapCooldown" />
-      <ParkNewsBubble :paused="!!duel || !!adminHint || accessHint" />
+      <ParkNewsBubble :paused="!!duel || !!adminHint || accessHint || !!nudge" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
       <PokeBubble v-if="!duel" v-bind="pokedPlace" />
+      <NudgeBubble v-if="!duel && !poked" v-bind="nudgePlace" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">

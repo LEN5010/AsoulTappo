@@ -51,6 +51,8 @@ export interface Settings {
   volume: number;
   /** "+N" shards over the own pet while typing. */
   shardPop: boolean;
+  /** The own pet reminds the player to drink water and get up, and asks about lunch (src/nudge.ts). */
+  healthTips: boolean;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
@@ -108,6 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfx: true,
   volume: 1,
   shardPop: true,
+  healthTips: true,
   showPartners: true,
   barFolded: false,
   barPlate: false,

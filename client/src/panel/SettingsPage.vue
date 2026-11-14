@@ -111,7 +111,7 @@ watch(recording, (slot) => {
 type Group = "pet" | "window" | "online" | "sound" | "about";
 const COLUMNS: Group[][] = isTauri ? [["pet", "window"], ["online", "sound", "about"]] : [["pet", "sound"], ["online", "about"]];
 const rows = computed<Record<Group, number>>(() => ({
-  pet: 8,
+  pet: 9,
   window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0) + (autostart.value?.supported ? 1 : 0),
   online: 4,
   sound: 3,
@@ -255,6 +255,10 @@ async function exportLogFile() {
               <label class="ui-row">
                 <span>显示敲击碎片</span>
                 <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>健康提醒</span>
+                <input v-model="settings.healthTips" class="ui-switch" type="checkbox" />
               </label>
             </div>
           </section>
