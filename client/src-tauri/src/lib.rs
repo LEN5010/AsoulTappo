@@ -418,13 +418,14 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
 }
 
 /// Links the About section may open in the system browser or mail app.
-const ABOUT_LINKS: [&str; 6] = [
+const ABOUT_LINKS: [&str; 7] = [
     "https://github.com/LEN5010/AsoulTappo",
     "https://space.bilibili.com/107261543",
     "mailto:len5010@qq.com",
     "https://len5010.top/dynamics/download?app=tappo",
     "https://len5010.top",
     "https://len5010.top/download",
+    "https://len5010.me/sponsor/",
 ];
 
 #[tauri::command]

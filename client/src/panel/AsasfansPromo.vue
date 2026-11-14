@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // The two Asasfans apps, shown in a dialog opened from About in the settings: the website and the Asasfans Next
-// app. Both links open through openAboutLink, so they must stay in ABOUT_LINKS in src-tauri/src/lib.rs, byte for byte.
+// app, then the sponsor page. Every link opens through openAboutLink, so it must stay in ABOUT_LINKS in
+// src-tauri/src/lib.rs, byte for byte.
 import { openAboutLink } from "../composables/tauri";
+import Icon from "../ui/Icon.vue";
 import icon from "../assets/brand/asasfans-icon.webp";
 
 const WEB = "https://len5010.top";
@@ -10,6 +12,7 @@ const APPS = [
   { name: "Asasfans Web", note: "动态、二创、小说、小游戏", key: "打开", url: WEB },
   { name: "Asasfans Next", note: "Android · iOS · macOS · Windows", key: "下载", url: NEXT },
 ];
+const SPONSOR = "https://len5010.me/sponsor/";
 </script>
 
 <template>
@@ -21,6 +24,14 @@ const APPS = [
         <small>{{ app.note }}</small>
       </span>
       <button type="button" class="ui-btn primary" @click="openAboutLink(app.url)">{{ app.key }}</button>
+    </li>
+    <li class="app">
+      <span class="icon sponsor" aria-hidden="true"><Icon name="heart" :size="22" /></span>
+      <span class="text">
+        <b>赞助</b>
+        <small>分担服务器、网络与存储费用</small>
+      </span>
+      <button type="button" class="ui-btn" @click="openAboutLink(SPONSOR)">支持</button>
     </li>
   </ul>
 </template>
@@ -54,6 +65,11 @@ const APPS = [
   border-radius: var(--radius-m);
   background: #fff;
   box-shadow: 0 0 0 1px var(--c-100), 0 2px 6px -2px rgba(var(--shadow-rgb), 0.18);
+}
+.icon.sponsor {
+  display: grid;
+  place-items: center;
+  color: var(--c-500);
 }
 .text {
   flex: 1;
