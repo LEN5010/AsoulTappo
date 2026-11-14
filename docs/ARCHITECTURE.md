@@ -35,6 +35,7 @@ Mouse pass-through is updated dynamically based on interactive regions:
 - `hotkey.rs` — the hide key and the click-through key, registered as system shortcuts (no input permission, not through the hook).
 - `access.rs` — macOS input permission check (Input Monitoring or Accessibility), reported to the desk without prompting.
 - `elevation.rs` — running as administrator and the single instance on Windows: a hook never hears input meant for an elevated window.
+- `monitor_pref.rs` — the monitor last picked from the tray, remembered by display name and origin.
 - `update.rs` — installs one exact version from its own GitHub release.
 - `applog.rs`, `diag.rs` — the plain-text log players export from settings, with system descriptions that never include window titles or keys.
 - `media.rs` — bundled pages and assets for the macOS web view, with byte ranges.

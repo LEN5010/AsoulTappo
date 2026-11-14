@@ -9,6 +9,7 @@ mod hit;
 mod input;
 #[cfg(target_os = "macos")]
 mod media;
+mod monitor_pref;
 #[cfg(target_os = "macos")]
 mod overlay_macos;
 #[cfg(target_os = "windows")]
@@ -23,7 +24,9 @@ use std::time::{Duration, Instant};
 
 use hit::{HitRect, HitState};
 #[cfg(target_os = "macos")]
-use overlay_macos::{fit_to_monitor, hit_cursor, hit_origin, monitor_count, needs_refit, primary_index, window_rect};
+use overlay_macos::{
+    fit_to_monitor, hit_cursor, hit_origin, monitor_count, monitor_keys, needs_refit, primary_index, window_rect,
+};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -551,6 +554,19 @@ fn monitor_count(window: &WebviewWindow) -> tauri::Result<usize> {
     window.available_monitors().map(|monitors| monitors.len())
 }
 
+/// Each monitor's key (monitor_pref::key) in `available_monitors` order, the order `fit_to_monitor` indexes.
+#[cfg(not(target_os = "macos"))]
+fn monitor_keys(window: &WebviewWindow) -> tauri::Result<Vec<String>> {
+    Ok(window
+        .available_monitors()?
+        .iter()
+        .map(|m| {
+            let p = m.position();
+            monitor_pref::key(m.name().map(String::as_str).unwrap_or(""), p.x as f64, p.y as f64)
+        })
+        .collect())
+}
+
 /// Whether the window no longer covers the work area of the monitor it should be on.
 #[cfg(not(target_os = "macos"))]
 fn needs_refit(window: &WebviewWindow, index: usize) -> bool {
@@ -917,7 +933,13 @@ pub fn run() {
                 }
                 #[cfg(target_os = "macos")]
                 join_all_spaces(&w);
-                let index = primary_index(&w);
+                // The monitor last picked from the tray, while it is plugged in; else the primary one.
+                let saved = monitor_pref::load(app.handle())
+                    .and_then(|key| monitor_keys(&w).ok().and_then(|keys| monitor_pref::pick(&keys, &key)));
+                let index = saved.unwrap_or_else(|| primary_index(&w));
+                if saved.is_some() {
+                    applog!("overlay", "start on the monitor picked last time");
+                }
                 if let Ok(mut m) = overlay.monitor.lock() {
                     *m = index;
                 }
@@ -998,6 +1020,10 @@ pub fn run() {
                                 *m = (*m + 1) % count;
                                 fit_and_log(&w, *m, &format!("tray next monitor, {count} monitor(s)"));
                                 tray_overlay.moved.store(true, Ordering::Relaxed);
+                                let key = monitor_keys(&w).ok().and_then(|keys| keys.get(*m).cloned());
+                                if let Some(Err(e)) = key.map(|k| monitor_pref::save(app, &k)) {
+                                    applog!("tray", "remember monitor failed: {e}");
+                                }
                             }
                         }
                     }

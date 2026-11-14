@@ -39,6 +39,19 @@ pub fn monitor_count(window: &WebviewWindow) -> tauri::Result<usize> {
     with_window(window, |_, mtm| NSScreen::screens(mtm).len())
 }
 
+/// Each screen's key (monitor_pref::key) in NSScreen::screens order, the order `fit_to_monitor` indexes.
+pub fn monitor_keys(window: &WebviewWindow) -> tauri::Result<Vec<String>> {
+    with_window(window, |_, mtm| {
+        NSScreen::screens(mtm)
+            .iter()
+            .map(|screen| {
+                let origin = screen.frame().origin;
+                crate::monitor_pref::key(&screen.localizedName().to_string(), origin.x, origin.y)
+            })
+            .collect()
+    })
+}
+
 fn rect_text(rect: NSRect) -> String {
     format!(
         "{}x{}+{}+{} pt",
