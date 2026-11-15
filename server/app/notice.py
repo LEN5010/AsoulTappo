@@ -48,6 +48,13 @@ class Notice:
         now = time.time() if now is None else now
         return [a for a in self.announcements if not a.get("until") or a["until"] > now]
 
+    def stamped(self, before: "Notice", now: float | None = None) -> "Notice":
+        """Each announcement with `since` (unix seconds, shown to players as its date): the one [before] had for
+        the same id, otherwise [now]. The server owns it, so editing an announcement keeps its date."""
+        now = int(time.time()) if now is None else now
+        had = {a.get("id"): a.get("since") for a in before.announcements}
+        return Notice(self.min_version, [{**a, "since": had.get(a.get("id")) or now} for a in self.announcements])
+
     def dump(self) -> str:
         return json.dumps({"minVersion": self.min_version, "announcements": self.announcements}, ensure_ascii=False)
 

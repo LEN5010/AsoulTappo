@@ -86,3 +86,26 @@ def test_the_minimum_stands_in_when_the_release_list_is_down(notice_env, monkeyp
     assert c.get("/api/client/release").status_code == 503
     c.put("/admin/notice", json={"minVersion": "1.1.3"}, headers=KEY)
     assert c.get("/api/client/release").json()["version"] == "1.1.3"
+
+
+def test_each_announcement_keeps_the_date_it_first_came(notice_env, monkeypatch):
+    c, g, *_ = notice_env
+    monkeypatch.setattr(main.notices.time, "time", lambda: 1000.0)
+    c.put("/admin/notice", json={"announcements": [{"id": "a1", "title": "维护"}]}, headers=KEY)
+    monkeypatch.setattr(main.notices.time, "time", lambda: 2000.0)
+    # Editing a1 keeps its date; a since sent by the admin page is not taken.
+    body = {"announcements": [{"id": "a1", "title": "维护延后", "since": 5}, {"id": "a2", "title": "活动"}]}
+    saved = c.put("/admin/notice", json=body, headers=KEY).json()["announcements"]
+    assert [(a["id"], a["since"]) for a in saved] == [("a1", 1000), ("a2", 2000)]
+    shown = c.get("/api/client/release").json()["announcements"]
+    assert [(a["title"], a["since"]) for a in shown] == [("维护延后", 1000), ("活动", 2000)]
+    assert [a["since"] for a in main.load_notice(g.store).announcements] == [1000, 2000]
+
+
+def test_announcements_saved_without_dates_get_the_start_time_once(notice_env, monkeypatch):
+    _, g, *_ = notice_env
+    g.store.set_setting(main.notices.KEY, Notice("", [{"id": "old", "title": "旧公告"}]).dump())
+    monkeypatch.setattr(main.notices.time, "time", lambda: 3000.0)
+    assert main.load_notice(g.store).announcements[0]["since"] == 3000
+    monkeypatch.setattr(main.notices.time, "time", lambda: 4000.0)
+    assert main.load_notice(g.store).announcements[0]["since"] == 3000

@@ -8,7 +8,7 @@ import { computed } from "vue";
 import { skinSeries } from "../characters";
 import { manifest } from "../manifest";
 import { compareVersions } from "../semver";
-import { noticeSeen, readNotice, updateDialogOpen, unreadNotice } from "./update";
+import { noticeBoardShown, noticeSeen, readNotice, updateDialogOpen } from "./update";
 
 export interface Spotlight { id: string; title: string; skins: string[] }
 
@@ -23,6 +23,6 @@ export function spotlightOf(skins: readonly { name: string; since?: string }[]):
 export const spotlight = spotlightOf(manifest.skins);
 /** Not closed on this device yet: the update reward waits for it. */
 export const spotlightUnread = computed(() => !!spotlight && !noticeSeen(spotlight.id));
-/** Its turn: after the update dialog and the server announcements. */
-export const spotlightShown = computed(() => spotlightUnread.value && !updateDialogOpen.value && !unreadNotice.value);
+/** Its turn: after the update dialog and the notice board. */
+export const spotlightShown = computed(() => spotlightUnread.value && !updateDialogOpen.value && !noticeBoardShown.value);
 export const readSpotlight = () => { if (spotlight) readNotice(spotlight.id); };

@@ -201,7 +201,12 @@ raw_nicks: dict[str, str] = {}
 
 
 def load_notice(store: Store) -> Notice:
-    return Notice.load(store.setting(notices.KEY))
+    """The saved notice; announcements saved before dates were kept get this start's time, written back once."""
+    saved = Notice.load(store.setting(notices.KEY))
+    dated = saved.stamped(saved)
+    if dated != saved:
+        store.set_setting(notices.KEY, dated.dump())
+    return dated
 
 
 # Minimum client version and announcements, set through PUT /admin/notice.
@@ -917,7 +922,7 @@ def admin_notice() -> dict:
 def admin_set_notice(body: NoticeBody, who: str = Depends(actor)) -> dict:
     """Replace the minimum version and the announcements; requests after this one see them."""
     global notice
-    new = Notice(body.minVersion, [a.model_dump() for a in body.announcements])
+    new = Notice(body.minVersion, [a.model_dump() for a in body.announcements]).stamped(notice)
     game.store.set_setting(notices.KEY, new.dump())
     notice = new
     game.admin_note(who, "notice", {"minVersion": body.minVersion,

@@ -16,12 +16,12 @@ import { useSlider } from "../ui/useSlider";
 import PageShutter from "./PageShutter.vue";
 import UpdateDialog from "./UpdateDialog.vue";
 import AlpacaEasterEgg from "./AlpacaEasterEgg.vue";
-import NoticeDialog from "./NoticeDialog.vue";
+import NoticeBoard from "./NoticeBoard.vue";
 import UpdateRewardDialog from "./UpdateRewardDialog.vue";
 import SkinSpotlight from "./SkinSpotlight.vue";
 import TermsDialog from "./TermsDialog.vue";
 import { agreed } from "../legal/consent";
-import { lookForUpdate, watchRelease } from "../stores/update";
+import { dueNotices, lookForUpdate, noticeBoardShown, notices, openNoticeBoard, watchRelease } from "../stores/update";
 
 // Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
 // behind the shutter, and the rest are fetched one by one once the first page is up (see warmPages).
@@ -272,6 +272,10 @@ function badgeOf(id: Page): number {
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span v-if="!online" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
           <ParkChips v-if="agreed && shown === 'park' && status && !noPark" />
+          <button v-if="agreed && notices.length" type="button" class="win notice-key ui-btn ghost" title="公告" aria-label="公告" @click="openNoticeBoard">
+            <Icon name="megaphone" :size="17" />
+            <i v-if="dueNotices.length" class="notice-dot" aria-hidden="true"></i>
+          </button>
           <span class="wallet" :title="walletTip">
             <Icon name="shard" :size="16" />
             <b :key="flash" :class="{ gain: flash > 0 }">{{ shownShards.toLocaleString("en-US") }}</b>
@@ -325,7 +329,7 @@ function badgeOf(id: Page): number {
       </aside>
 
       <UpdateDialog />
-      <NoticeDialog />
+      <NoticeBoard v-if="noticeBoardShown" />
       <SkinSpotlight v-if="agreed" />
       <UpdateRewardDialog v-if="agreed" />
       <TermsDialog v-if="!agreed" />
@@ -450,6 +454,20 @@ function badgeOf(id: Page): number {
   width: 32px;
   height: 32px;
   padding: 0;
+}
+.notice-key {
+  position: relative;
+  margin-right: 4px;
+}
+.notice-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-700);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .body {

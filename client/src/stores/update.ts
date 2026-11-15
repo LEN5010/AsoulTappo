@@ -29,11 +29,13 @@ export const checkState = ref<"idle" | "checking" | "latest" | "failed">("idle")
 /** This version is below the server's minimum: the dialog stays until the update is installed. */
 export const updateForced = ref(false);
 
-// ---- announcements, read with the update check and shown once each, or once a day for daily ones
+// ---- announcements, read with the update check and kept on the notice board, one page each. The board opens by
+// itself while one is due: not closed yet, or for a daily one, not closed today.
 const SEEN_KEY = "asoultappo.notices.seen";
 const SEEN_KEPT = 50;
 /** Daily announcements: the China day each was last closed on. */
 const DAILY_KEY = "asoultappo.notices.daily";
+const DAY_ZONE = "Asia/Shanghai";
 function loadSeen(): string[] {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]");
@@ -54,16 +56,33 @@ function loadDaily(): Record<string, string> {
 const announcements = ref<Announcement[]>([]);
 const seen = ref<string[]>(loadSeen());
 const dailyClosed = ref<Record<string, string>>(loadDaily());
+/** The board's pages: every announcement the server lists now, newest first (by date, then by list order). */
+export const notices = computed<readonly Announcement[]>(() =>
+  announcements.value.map((a, i) => ({ a, i }))
+    .sort((x, y) => (y.a.since ?? 0) - (x.a.since ?? 0) || y.i - x.i)
+    .map(({ a }) => a));
 /**
- * The oldest announcement due on this device: one it has not closed yet, or a daily one not closed today and not
- * turned off. The day is read whenever the list comes again (every half hour), so a new day shows it again.
+ * The announcements due on this device, newest first. The day is read whenever the list comes again (every half
+ * hour), so a new day brings a daily one back.
  */
-export const unreadNotice = computed(() => {
+export const dueNotices = computed<readonly Announcement[]>(() => {
   const today = dayKey();
-  return announcements.value.find((a) => !seen.value.includes(a.id) && !(a.daily && dailyClosed.value[a.id] === today)) ?? null;
+  return notices.value.filter((a) => !seen.value.includes(a.id) && !(a.daily && dailyClosed.value[a.id] === today));
 });
-/** Closes the announcement [id]: for good, or until tomorrow for a daily one. */
-export function closeNotice(notice: Announcement): void {
+/** Opened from the top bar. */
+const boardAsked = ref(false);
+/** The notice board: opened from the top bar, or by itself while an announcement is due; the update dialog first. */
+export const noticeBoardShown = computed(() =>
+  !updateDialogOpen.value && notices.value.length > 0 && (boardAsked.value || dueNotices.value.length > 0));
+export function openNoticeBoard(): void {
+  boardAsked.value = true;
+}
+/** Closing the board closes every announcement due on it: for good, or until tomorrow for a daily one. */
+export function closeNoticeBoard(): void {
+  boardAsked.value = false;
+  for (const notice of [...dueNotices.value]) closeNotice(notice);
+}
+function closeNotice(notice: Announcement): void {
   if (!notice.daily) {
     readNotice(notice.id);
     return;
@@ -74,18 +93,28 @@ export function closeNotice(notice: Announcement): void {
     localStorage.setItem(DAILY_KEY, JSON.stringify(dailyClosed.value));
   } catch { /* private mode */ }
 }
-/** Whether this device has closed the announcement [id]; the launch spotlight keeps its id in the same list. */
+/** Whether this device has closed the announcement [id] for good; the launch spotlight keeps its id in the same list. */
 export const noticeSeen = (id: string) => seen.value.includes(id);
+/** Closes the announcement [id] for good: a daily one stops coming back. */
 export function readNotice(id: string): void {
   seen.value = [...seen.value.filter((s) => s !== id), id].slice(-SEEN_KEPT);
   try {
     localStorage.setItem(SEEN_KEY, JSON.stringify(seen.value));
   } catch { /* private mode */ }
 }
+/** An announcement's date on the board: 11月15日, with the year when it is not this China year. */
+export function noticeDate(since: number, now = Date.now()): string {
+  const parts = (t: number) => Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: DAY_ZONE, year: "numeric", month: "numeric", day: "numeric" })
+      .formatToParts(new Date(t)).map((p) => [p.type, p.value]));
+  const day = parts(since * 1000);
+  const year = day.year === parts(now).year ? "" : `${day.year}年`;
+  return `${year}${day.month}月${day.day}日`;
+}
 const isNotice = (a: unknown): a is Announcement => {
   const n = a as Partial<Announcement> | null;
   return typeof n?.id === "string" && typeof n.title === "string" && typeof (n.body ?? "") === "string"
-    && (n.daily === undefined || typeof n.daily === "boolean");
+    && (n.daily === undefined || typeof n.daily === "boolean") && (n.since === undefined || typeof n.since === "number");
 };
 
 type GithubAnswer = { ok: true; update: Update | null } | { ok: false };

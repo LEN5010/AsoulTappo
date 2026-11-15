@@ -159,7 +159,8 @@ export interface MainUser { id: string; username: string; email: string | null }
 export interface SaveSummary { shards: number; owned: number; taps: number; lastActive: number }
 export interface ServerInfo { accountLogin: boolean; mainApi: string | null }
 /** [daily]: shown again on the first panel opening of each China day until the player turns it off. */
-export interface Announcement { id: string; title: string; body: string; daily?: boolean }
+/** since: when the server first saved it (unix seconds), shown as its date; absent from servers before 1.2.4. */
+export interface Announcement { id: string; title: string; body: string; daily?: boolean; since?: number }
 export interface ReleaseInfo {
   version: string;
   notes: string;

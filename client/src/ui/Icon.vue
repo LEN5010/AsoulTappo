@@ -65,6 +65,8 @@ const PATHS: Record<string, string[]> = {
   // Room statuses (roomStatus.ts); `off` is showing none, `status` the key that opens them.
   off: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M5.6 5.6l12.8 12.8"],
   bell: ["M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z", "M10 20.5a2.2 2.2 0 0 0 4 0"],
+  // The notice board key in the panel's top bar.
+  megaphone: ["M4 9.5h3.5L17 5v14l-9.5-4.5H4z", "M7.5 14.5l1.3 5h2.7l-1.2-4.3", "M20.5 10v4"],
   status: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M8.5 14a4 4 0 0 0 7 0", "M9 9.5h.01", "M15 9.5h.01"],
   fish: ["M16.5 12c-2.5 4-5.8 6.5-9.3 6.5S2 15.5 2 12s1.7-6.5 5.2-6.5 6.8 2.5 9.3 6.5z", "M16.5 12l5-4v8z", "M7 10.5h.01"],
   briefcase: ["M4 8h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z", "M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2", "M3 13h18"],

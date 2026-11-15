@@ -5,14 +5,14 @@ import { computed, ref } from "vue";
 import Modal from "../ui/Modal.vue";
 import Icon from "../ui/Icon.vue";
 import { claimUpdateRewards, updateRewards } from "../stores/player";
-import { unreadNotice, updateDialogOpen } from "../stores/update";
+import { noticeBoardShown, updateDialogOpen } from "../stores/update";
 import { spotlightUnread } from "../stores/spotlight";
 
 const total = computed(() => updateRewards.value.reduce((n, r) => n + r.shards, 0));
 const key = computed(() => updateRewards.value.map((r) => r.id).join(","));
 const putAway = ref("");
 const busy = ref(false);
-const shown = computed(() => total.value > 0 && !updateDialogOpen.value && !unreadNotice.value && !spotlightUnread.value && putAway.value !== key.value);
+const shown = computed(() => total.value > 0 && !updateDialogOpen.value && !noticeBoardShown.value && !spotlightUnread.value && putAway.value !== key.value);
 
 async function claim() {
   busy.value = true;
