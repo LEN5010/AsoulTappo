@@ -1,10 +1,12 @@
 import { PET_BASE } from "../characters";
 // Where pets stand on the desktop overlay. Own pet and panel positions live in settings;
 // other members' pets are remembered per room (by member key) in localStorage, so a
-// friend you dragged next to your pet stays there next time.
+// friend you dragged next to your pet stays there next time. In formation mode partners stand in rows instead,
+// placed by one anchor kept in settings.
 import { reactive, ref } from "vue";
 import { isPanelWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
+import { settings } from "./settings";
 
 const KEY = "asoultappo.desk.v1";
 const MAX_ROOMS = 10;
@@ -119,6 +121,79 @@ export function nextDockSlot(own: Pos, ownSize: Size, size: Size, taken: Spot[],
   return null;
 }
 
+// ---- formation: partners in rows of `cols`, filled left to right, top to bottom, moved as one.
+
+/** Space between formation cells, as between the slots next to the own pet. */
+export const FORMATION_GAP = 16;
+/** A formation's top-left and whether its last row stands on the bottom edge. */
+export interface FormationPlace { anchor: Pos; docked: boolean }
+
+const formationGrid = (n: number, cols: number) => {
+  const c = Math.max(1, Math.min(Math.round(cols), n));
+  return { cols: c, rows: n > 0 ? Math.ceil(n / c) : 0 };
+};
+
+/** Size of a formation of [n] pets of [size]; empty for none. */
+export function formationSize(n: number, cols: number, size: Size, gap = FORMATION_GAP): Size {
+  const g = formationGrid(n, cols);
+  if (!g.rows) return { w: 0, h: 0 };
+  return { w: g.cols * size.w + (g.cols - 1) * gap, h: g.rows * size.h + (g.rows - 1) * gap };
+}
+
+/** Where the [i]th pet stands relative to the formation's top-left. */
+export function formationOffset(i: number, cols: number, size: Size, gap = FORMATION_GAP): Pos {
+  const c = Math.max(1, Math.round(cols));
+  return { x: (i % c) * (size.w + gap), y: Math.floor(i / c) * (size.h + gap) };
+}
+
+/** Whether the [i]th of [n] pets is in the last row. */
+export function inLastRow(i: number, n: number, cols: number): boolean {
+  const g = formationGrid(n, cols);
+  return g.rows > 0 && Math.floor(i / g.cols) === g.rows - 1;
+}
+
+/** Top-left of each of [n] pets placed at [anchor]. */
+export function formationCells(anchor: Pos, n: number, cols: number, size: Size, gap = FORMATION_GAP): Pos[] {
+  const c = formationGrid(n, cols).cols;
+  return Array.from({ length: n }, (_, i) => {
+    const o = formationOffset(i, c, size, gap);
+    return { x: anchor.x + o.x, y: anchor.y + o.y };
+  });
+}
+
+/**
+ * Where a formation goes: a docked one keeps its last row on the bottom edge (pets of [scale], as dockY) and only its
+ * x is kept on screen; any other is kept fully on screen. [docked] unset decides it as placePet does for one pet:
+ * docked once the last row comes within DOCK_SNAP of its docked place.
+ */
+export function placeFormation(
+  p: Pos, n: number, cols: number, size: Size, scale: number, vp: Size = viewport.value, docked?: boolean,
+): FormationPlace {
+  const full = formationSize(n, cols, size);
+  if (!full.h) return { anchor: clamp(p, size, vp), docked: !!docked };
+  const lastRow = full.h - size.h;
+  const bottom = dockY(scale, vp);
+  const dock = docked ?? p.y + lastRow >= bottom - DOCK_SNAP;
+  if (dock) return { anchor: { x: clamp(p, full, vp).x, y: bottom - lastRow }, docked: true };
+  return { anchor: clamp(p, full, vp), docked: false };
+}
+
+/**
+ * The formation's place before it is dragged: bottom-aligned with the own pet and to its left, on the right when the
+ * left has no room, clamped when neither has. Next to a docked own pet the formation docks too.
+ */
+export function defaultFormation(
+  own: Pos, ownSize: Size, ownDocked: boolean, n: number, cols: number, size: Size, scale: number,
+  vp: Size = viewport.value,
+): FormationPlace {
+  const full = formationSize(n, cols, size);
+  const margin = 8;
+  let x = own.x - FORMATION_GAP - full.w;
+  const right = own.x + ownSize.w + FORMATION_GAP;
+  if (x < margin && right + full.w <= vp.w - margin) x = right;
+  return placeFormation({ x, y: own.y + ownSize.h - full.h }, n, cols, size, scale, vp, ownDocked);
+}
+
 export function enterRoom(room: string): void {
   currentRoom = room;
   remotePos.clear();
@@ -133,8 +208,16 @@ export function placeRemote(key: string, p: Spot): void {
   persist();
 }
 
-/** Forget remembered positions in this room so everyone lines up next to the own pet again. */
+/**
+ * Forget remembered positions in this room so everyone lines up next to the own pet again. In formation mode the
+ * formation goes back next to the own pet instead; free positions are kept for switching back.
+ */
 export function tidyRemotes(): void {
+  if (settings.partnerLayout === "formation") {
+    settings.formationX = settings.formationY = -1;
+    settings.formationDocked = false;
+    return;
+  }
   if (isPanelWindow) { void requestDesktop("tidyRemotes"); return; }
   remotePos.clear();
   if (currentRoom) {

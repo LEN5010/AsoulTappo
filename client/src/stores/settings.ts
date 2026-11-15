@@ -66,6 +66,15 @@ export interface Settings {
   pomodoroNotify: boolean;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
+  /** How partners stand: each where it was dragged ("free"), or together in rows that move as one ("formation"). */
+  partnerLayout: "free" | "formation";
+  /** Pets per row of the formation (1–10). */
+  formationCols: number;
+  /** Top-left of the formation (CSS px, -1 = next to the own pet). */
+  formationX: number;
+  formationY: number;
+  /** The formation's last row stands on the bottom edge of the screen. */
+  formationDocked: boolean;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
   barFolded: boolean;
   /** The own name plate stands where the strip would (swapped from the strip's menu). */
@@ -131,6 +140,11 @@ export const DEFAULT_SETTINGS: Settings = {
   pomodoroSound: true,
   pomodoroNotify: false,
   showPartners: true,
+  partnerLayout: "free",
+  formationCols: 5,
+  formationX: -1,
+  formationY: -1,
+  formationDocked: false,
   barFolded: false,
   barPlate: false,
   petDocked: false,
@@ -177,6 +191,10 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, 3)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
+  if (out.partnerLayout !== "free" && out.partnerLayout !== "formation") out.partnerLayout = "free";
+  out.formationCols = Math.min(10, Math.max(1, Math.round(out.formationCols)));
+  out.formationX = Math.max(-1, Math.round(out.formationX));
+  out.formationY = Math.max(-1, Math.round(out.formationY));
   if (!roomStatus(out.status)) out.status = "";
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));

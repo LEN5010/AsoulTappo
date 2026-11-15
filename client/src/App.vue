@@ -42,8 +42,8 @@ import { duel, inRoom, poked, localPet, memberKey, others, roomId, sendEmote, sh
 import { startDebugLog } from "./debugLog";
 import { startCapture } from "./desktop/capture";
 import {
-  DESK_GAP, clamp, defaultPetPos, dockY, enterRoom, nextDockSlot, nextSlot, placePet, placeRemote, remotePos, viewport,
-  type Pos, type Size,
+  DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
+  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, viewport, type FormationPlace, type Pos, type Size,
 } from "./stores/desk";
 import { openPanel, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
@@ -257,15 +257,63 @@ watch(
   },
   { immediate: true },
 );
-const remoteDocked = (m: RemoteMember) => !!remotePos.get(memberKey(m))?.docked;
+// Formation mode: partners stand in rows in the order of `others` (join order), and a drag on any of them moves all.
+const inFormation = computed(() => settings.partnerLayout === "formation");
+/** The formation while one of its pets ([by], a member id) is dragged; saved to the settings on release. */
+const liveFormation = ref<(FormationPlace & { by: string }) | null>(null);
+const formationIndex = computed(() => new Map(shownOthers.value.map((m, i) => [m.id, i])));
+const formation = computed(() => {
+  const n = shownOthers.value.length;
+  const cols = settings.formationCols;
+  const size = remoteSize.value;
+  // The room kept under the own pet for its strip, as ownPos keeps it, so the default place does not jump with it.
+  const own = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  const place = liveFormation.value ?? (settings.formationX < 0
+    ? defaultFormation(ownPos.value, own, settings.petDocked, n, cols, size, settings.remoteScale)
+    : placeFormation(
+      { x: settings.formationX, y: settings.formationY }, n, cols, size, settings.remoteScale, viewport.value,
+      settings.formationDocked,
+    ));
+  return { ...place, n, cells: formationCells(place.anchor, n, cols, size) };
+});
+// A pet that leaves during its drag never reports the release; the formation then stays where it was saved.
+watch([formationIndex, inFormation], ([index, on]) => {
+  if (liveFormation.value && (!on || !index.has(liveFormation.value.by))) liveFormation.value = null;
+});
+function dragFormation(m: RemoteMember, p: Pos): Pos {
+  const i = formationIndex.value.get(m.id) ?? 0;
+  const off = formationOffset(i, settings.formationCols, remoteSize.value);
+  const placed = placeFormation(
+    { x: p.x - off.x, y: p.y - off.y }, shownOthers.value.length, settings.formationCols, remoteSize.value,
+    settings.remoteScale,
+  );
+  liveFormation.value = { ...placed, by: m.id };
+  return { x: placed.anchor.x + off.x, y: placed.anchor.y + off.y };
+}
+function saveFormation() {
+  const placed = liveFormation.value;
+  if (!placed) return;
+  settings.formationX = placed.anchor.x;
+  settings.formationY = placed.anchor.y;
+  settings.formationDocked = placed.docked;
+  liveFormation.value = null;
+}
+const remoteDocked = (m: RemoteMember) => {
+  if (!inFormation.value) return !!remotePos.get(memberKey(m))?.docked;
+  const f = formation.value;
+  return f.docked && inLastRow(formationIndex.value.get(m.id) ?? 0, f.n, settings.formationCols);
+};
 const remoteAt = (m: RemoteMember): Pos => {
+  if (inFormation.value) return formation.value.cells[formationIndex.value.get(m.id) ?? 0] ?? ownPos.value;
   const p = remotePos.get(memberKey(m)) ?? ownPos.value;
   const at = clamp(p, remoteSize.value);
   return remoteDocked(m) ? { x: at.x, y: dockY(settings.remoteScale) } : at;
 };
-/** A partner docks on the bottom edge like the own pet. */
-const placeRemoteDrag = (p: Pos) => placePet(p, remoteSize.value, settings.remoteScale).pos;
+/** A partner docks on the bottom edge like the own pet; in formation mode the last row does. */
+const placeRemoteDrag = (m: RemoteMember, p: Pos) =>
+  inFormation.value ? dragFormation(m, p) : placePet(p, remoteSize.value, settings.remoteScale).pos;
 function onRemoteMoved(m: RemoteMember, p: Pos) {
+  if (inFormation.value) return saveFormation();
   const placed = placePet(p, remoteSize.value, settings.remoteScale);
   placeRemote(memberKey(m), placed.docked ? { ...placed.pos, docked: true } : placed.pos);
 }
@@ -406,7 +454,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
   <div class="desk" :style="skinVars" @dragstart.prevent>
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
-      :place="placeRemoteDrag" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
+      :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"

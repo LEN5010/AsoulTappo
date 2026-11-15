@@ -26,6 +26,8 @@ import RoomStage from "./RoomStage.vue";
 import ProfileDialog from "./ProfileDialog.vue";
 import { ui } from "../stores/ui";
 import AccountDialog from "./AccountDialog.vue";
+import PublicRoomList from "./PublicRoomList.vue";
+import SegTabs from "../ui/SegTabs.vue";
 
 const input = ref(settings.lastRoom);
 /** The own status keys: none, then the list. */
@@ -83,8 +85,44 @@ async function refreshList() {
   }
 }
 watch(() => conn.value === "idle", (idle) => { if (idle) void refreshList(); }, { immediate: true });
-watch(() => settings.serverUrl, () => { if (conn.value === "idle") void refreshList(); });
-watch(() => activeAccount()?.token, () => { if (conn.value === "idle") void refreshList(); });
+watch(() => settings.serverUrl, () => { if (conn.value === "idle" || roomsOpen.value) void refreshList(); });
+watch(() => activeAccount()?.token, () => { if (conn.value === "idle" || roomsOpen.value) void refreshList(); });
+
+// In a room the public list opens in a dialog from the ticket; joining another room there asks first, then switches
+// rooms directly. One dialog at a time: the question takes the list's place, and signing in closes it.
+const roomsOpen = ref(false);
+const switchTo = ref<PublicRoom | null>(null);
+/** The sign-in dialog was opened from the room list, which comes back once signed in. */
+let listAfterSignin = false;
+function openRooms() {
+  switchTo.value = null;
+  roomsOpen.value = true;
+  void refreshList();
+}
+function closeRooms() {
+  roomsOpen.value = false;
+  switchTo.value = null;
+}
+function signinFromRooms() {
+  closeRooms();
+  listAfterSignin = true;
+  signingIn.value = true;
+}
+function cancelSignin() {
+  signingIn.value = false;
+  listAfterSignin = false;
+}
+function signedIn() {
+  signingIn.value = false;
+  if (listAfterSignin && conn.value !== "idle") openRooms();
+  listAfterSignin = false;
+}
+function switchRoom() {
+  const target = switchTo.value;
+  closeRooms();
+  if (target) joinListed(target.room);
+}
+watch(() => conn.value === "idle", (idle) => { if (idle) closeRooms(); });
 
 // A server with account login lists rooms only for signed-in accounts, and only their rooms go on the list.
 const info = ref<ServerInfo | null>(null);
@@ -106,6 +144,7 @@ const mainApi = computed(() => {
 // A host without an account who took over a listed room still sees the switch, to take the room off the list.
 const canPublish = computed(() => isHost.value && (!info.value?.accountLogin || !!activeAccount() || !!roomInfo.value?.public));
 const signingIn = ref(false);
+const LAYOUTS = [{ id: "free" as const, label: "自由" }, { id: "formation" as const, label: "方阵" }];
 const listed = computed(() => (Array.isArray(publicRooms.value) ? publicRooms.value : null));
 
 function joinListed(id: string) {
@@ -206,7 +245,6 @@ watch(() => kicking.value && !members.has(kicking.value.id), (gone) => { if (gon
 // The room's name: big on the ticket with the room id under it. Hidden nicknames hide room names too: both are what
 // players typed.
 const roomName = computed(() => (settings.hideNicks ? "" : roomInfo.value?.name ?? ""));
-const listedName = (r: PublicRoom) => (settings.hideNicks ? "" : r.name ?? "");
 const canName = computed(() => isHost.value && nameOn.value);
 const naming = ref(false);
 const nameDraft = ref("");
@@ -277,6 +315,9 @@ async function copy() {
             <span>公开</span>
             <input class="ui-switch" type="checkbox" :checked="roomInfo?.public" @change="onPublic" />
           </label>
+          <button type="button" class="ui-btn small ghost rooms-key" aria-label="公开房间" title="公开房间" @click="openRooms">
+            <Icon name="search" :size="15" />
+          </button>
           <button type="button" class="ui-btn" @click="copy">
             <Icon name="copy" :size="14" />{{ copied ? "已复制" : "复制" }}
           </button>
@@ -293,7 +334,6 @@ async function copy() {
       <button type="button" class="ui-btn primary signin" @click="signingIn = true">
         <Icon name="lock" :size="14" />登录
       </button>
-      <AccountDialog v-if="signingIn" :main-api="mainApi" start="login" @close="signingIn = false" @done="signingIn = false" />
     </section>
     <section v-else-if="conn === 'idle' && listed" data-rise>
       <header class="cap">
@@ -302,19 +342,7 @@ async function copy() {
           <Icon name="refresh" :size="13" />刷新
         </button>
       </header>
-      <ul v-if="listed.length" class="members">
-        <li v-for="r in listed" :key="r.room" class="member">
-          <CharacterAvatar :character="r.host.character" :size="32" />
-          <span class="who">
-            <b>{{ listedName(r) || shownNick(r.host) }}</b>
-            <small>
-              <template v-if="listedName(r)">{{ shownNick(r.host) }} · </template>{{ r.members }} / {{ r.max }}
-            </small>
-          </span>
-          <button type="button" class="ui-btn small" :disabled="r.members >= r.max" @click="joinListed(r.room)">加入</button>
-        </li>
-      </ul>
-      <p v-else class="ui-empty">暂无</p>
+      <PublicRoomList :rooms="listed" @join="(r) => joinListed(r.room)" />
     </section>
 
     <section data-rise>
@@ -340,6 +368,17 @@ async function copy() {
           <span class="ui-ctl">
             <RangeInput v-model="settings.remoteScale" :min="0.4" :max="1.5" :step="0.1" />
             <b class="ui-val">×{{ settings.remoteScale.toFixed(1) }}</b>
+          </span>
+        </label>
+        <div class="ui-row">
+          <span>排列</span>
+          <SegTabs v-model="settings.partnerLayout" :tabs="LAYOUTS" label="排列" />
+        </div>
+        <label v-if="settings.partnerLayout === 'formation'" class="ui-row">
+          <span>列数</span>
+          <span class="ui-ctl">
+            <RangeInput v-model="settings.formationCols" :min="1" :max="10" :step="1" />
+            <b class="ui-val">{{ settings.formationCols }}</b>
           </span>
         </label>
         <label class="ui-row">
@@ -418,6 +457,29 @@ async function copy() {
     </section>
 
     <ProfileDialog v-if="profileOf" :id="profileOf" :key="profileOf" @close="profileOf = null" />
+    <AccountDialog v-if="signingIn && mainApi" :main-api="mainApi" start="login" @close="cancelSignin" @done="signedIn" />
+    <Modal v-if="roomsOpen && switchTo" title="离开当前房间并加入？" heading @close="closeRooms">
+      <div class="confirm">
+        <button type="button" class="ui-btn" @click="switchTo = null">取消</button>
+        <button type="button" class="ui-btn primary" @click="switchRoom">加入</button>
+      </div>
+    </Modal>
+    <Modal v-else-if="roomsOpen" title="公开房间" heading wide @close="closeRooms">
+      <template v-if="publicRooms === 'signin'">
+        <button v-if="mainApi" type="button" class="ui-btn primary signin" @click="signinFromRooms">
+          <Icon name="lock" :size="14" />登录
+        </button>
+        <p v-else class="ui-empty">暂无</p>
+      </template>
+      <template v-else>
+        <div class="list-keys">
+          <button type="button" class="ui-btn small" :disabled="listing" @click="refreshList">
+            <Icon name="refresh" :size="13" />刷新
+          </button>
+        </div>
+        <PublicRoomList :rooms="listed ?? []" :current="roomId" @join="(r) => (switchTo = r)" />
+      </template>
+    </Modal>
     <Modal v-if="kicking" :title="`把${shownNick(kicking)}移出房间？`" heading @close="kicking = null">
       <div class="confirm">
         <button type="button" class="ui-btn" @click="kicking = null">取消</button>
@@ -531,7 +593,8 @@ async function copy() {
   letter-spacing: 0.02em;
   color: var(--ink-3);
 }
-.rename {
+.rename,
+.rooms-key {
   flex: none;
   padding: 0 6px;
 }
@@ -551,6 +614,12 @@ async function copy() {
 
 /* The heading on the left with its count, the tidy key on the right. */
 .signin { min-width: 120px; }
+/* The refresh key over the list in the room list dialog. */
+.list-keys {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
 /* The kick question's keys, as the update dialog's. */
 .confirm {
   display: flex;

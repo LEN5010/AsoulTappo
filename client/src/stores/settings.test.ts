@@ -37,6 +37,17 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ status: "fish" }))).status).toBe("fish");
     expect(loadSettings(store(JSON.stringify({ status: "chat" }))).status).toBe("");
   });
+  it("keeps the partner layout only as a known mode and the formation columns within 1 to 10", () => {
+    expect(loadSettings(store(JSON.stringify({ partnerLayout: "formation", formationCols: 3.6 })))).toMatchObject({
+      partnerLayout: "formation", formationCols: 4,
+    });
+    expect(loadSettings(store(JSON.stringify({ partnerLayout: "grid", formationCols: 40 })))).toMatchObject({
+      partnerLayout: "free", formationCols: 10,
+    });
+    expect(loadSettings(store(JSON.stringify({ formationCols: 0, formationX: -30, formationY: 12.4 })))).toMatchObject({
+      formationCols: 1, formationX: -1, formationY: 12,
+    });
+  });
   it("keeps a capture background only as a six-digit hex colour and the capture size within limits", () => {
     expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
     expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");
