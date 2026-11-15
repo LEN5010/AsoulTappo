@@ -4,8 +4,10 @@ Races run on wall-clock boundaries `interval` apart (multiples of it, or placed 
 at that minute of the China day: one a day at 19:00): bets for the first `betting` seconds, then the race plays and
 is settled once its animation is over; the next race's bets open at the next boundary. A race is prepared ahead
 (setup, seed, outcome) and stored; while bets are open only SHA-256(seed) is public, and at the start the seed and
-the lanes, order, dice and moves it decides are. The odds start from the members' popularity, drawn with the setup,
-and follow the coins staked so far; each bet keeps the odds it was placed at.
+the lanes, order, dice and moves it decides are. The setup deals each member a form (its die for the race) and
+carries each member's chance of each place under it, counted over `sims` simulated races; the odds open at those
+chances and follow the coins staked so far, never past fairCap of the fair odds; each bet keeps the odds it was
+placed at. Races dealt before forms open from the members' popularity instead.
 Everything is driven by tick(), which main.py calls about once a second off the event loop; tick() is idempotent.
 
 A restart resumes whatever is stored: a race still taking bets goes on, a race that started is settled when due.
@@ -51,6 +53,8 @@ MIN_BETTING = 30
 RESULT_KEEP_DAYS = 2
 WINNERS = 5
 SEED_BYTES = 32
+# Simulated races behind a race's chances when the manifest names no `sims`.
+SIMS = 20000
 
 
 class OddsChanged(GameError):
@@ -160,11 +164,19 @@ class Races:
         rules = self.rules
         setup = race.deal(rules, self.dealer)
         # Drawn after the squares from the same dealer, so the squares come out as before; public with the setup.
-        popularity = race.draw_popularity(cfg, self.members, self.dealer)
-        if popularity:
-            setup["popularity"] = popularity
+        forms = race.deal_forms(rules, self.dealer)
+        if forms:
+            setup.update(forms)
+        else:
+            popularity = race.draw_popularity(cfg, self.members, self.dealer)
+            if popularity:
+                setup["popularity"] = popularity
         seed = self.seeds()
         outcome = race.run_seed(rules, setup, seed)
+        if forms:
+            # Simulated on a stream of its own, seeded from the dealer: nothing to do with the race's seed.
+            sim = race.SimRng(self.dealer.getrandbits(64))
+            setup["chance"] = race.chances(rules, setup, int(cfg.get("sims", SIMS)), sim)
         starts = race_id + int(cfg["betting"])
         steps = len(outcome["moves"])
         lead = lead_ms(len(outcome["rolls"]))
@@ -265,7 +277,7 @@ class Races:
     def bet(self, token: str, race_id: int, kind: str, member: str, coins: int,
             shown: float | None = None) -> dict[str, Any]:
         """Stakes [coins] on (kind, member) of the race taking bets at the odds the stakes so far give; a save stakes
-        at most maxCoins a race. [shown]: the odds the client showed; lower current odds refuse the bet (OddsChanged)
+        at most maxCoins a race (no cap when it is 0 or missing). [shown]: the odds the client showed; lower current odds refuse the bet (OddsChanged)
         and change nothing, higher ones are taken."""
         cfg = self.cfg
         g = self.game
@@ -282,12 +294,13 @@ class Races:
                 raise GameError("no_race", "没有这一场")
             if row["status"] != "open" or now >= row["starts_at"]:
                 raise GameError("race_closed", "这一场已停止下注")
+            most = cfg.get("maxCoins") or 0
             staked = sum(b["coins"] for b in st.race_bets(race_id, pid))
-            if staked + coins > cfg["maxCoins"]:
-                raise GameError("race_cap", f"每场最多押 {cfg['maxCoins']} 枚，这场还能押 "
-                                            f"{max(0, cfg['maxCoins'] - staked)} 枚")
-            popularity = json.loads(row["setup"]).get("popularity")
-            odds = race.odds_tenths(cfg, kind, members, st.race_stakes(race_id).get(kind, {}), popularity)[member]
+            if most and staked + coins > most:
+                raise GameError("race_cap", f"每场最多押 {most} 枚，这场还能押 {max(0, most - staked)} 枚")
+            setup = json.loads(row["setup"])
+            odds = race.odds_tenths(cfg, kind, members, st.race_stakes(race_id).get(kind, {}), setup.get("popularity"),
+                                    setup.get("chance"))[member]
             # In tenths; the margin absorbs float noise in the shown number (1.1 × 10 is 11.000000000000002).
             if shown is not None and odds < shown * 10 - 1e-6:
                 raise OddsChanged(odds / 10)
@@ -329,7 +342,7 @@ class Races:
         members = self.members
         stakes = st.race_stakes(row["id"])
         setup = json.loads(row["setup"])
-        odds = race.odds(cfg, members, stakes, setup.get("popularity"))
+        odds = race.odds(cfg, members, stakes, setup.get("popularity"), setup.get("chance"))
         bets = st.race_bets(row["id"], pid)
         # A settled bet's prize in coins, to a tenth (coins × odds); the save's total is payout() of them.
         mine = [{"kind": b["kind"], "member": b["member"], "coins": b["coins"], "odds": b["odds"] / 10,

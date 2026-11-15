@@ -29,18 +29,30 @@ def seeds():
     return lambda: next(n).to_bytes(32, "big")
 
 
-def manifest(popular=False):
-    """The manifest; [popular]: draw each race's popularity as it says. Off, every race opens at the flat odds (4.2,
-    2.1, 4.2), which the worked numbers in these tests start from."""
+# The popularity range of the races dealt before forms.
+POPULARITY = [92, 108]
+# Simulated races behind a race's chances in these tests (the manifest's sims takes about a second).
+SIMS = 400
+
+
+def manifest(popular=False, forms=False):
+    """The manifest; [forms]: deal each race's forms as it says; [popular]: no forms, a popularity for each member as
+    races did before forms. Neither, every race opens at the flat odds (4.2, 2.1, 4.2), which the worked numbers in
+    these tests start from."""
     m = Manifest.load()
-    if not popular:
-        m.park["race"].pop("popularity", None)
+    cfg = m.park["race"]
+    if forms:
+        cfg["sims"] = SIMS
+    else:
+        cfg.pop("forms", None)
+    if popular:
+        cfg["popularity"] = POPULARITY
     return m
 
 
-def make(path=":memory:", clock=None, coins=50, popular=False):
+def make(path=":memory:", clock=None, coins=50, popular=False, forms=False):
     clock = clock or Clock(T0 + 1)
-    g = Game(Store(path), manifest(popular), now=clock)
+    g = Game(Store(path), manifest(popular, forms), now=clock)
     park = Park(lambda: g)
     races = Races(lambda: g, park, dealer=random.Random(3), seeds=seeds())
     pids = []
@@ -132,7 +144,7 @@ def test_each_race_opens_at_odds_leaning_on_its_popularity():
     races.tick()
     r = races.view(TOKEN)["race"]
     pop = r["setup"]["popularity"]
-    lo, hi = CFG["popularity"]
+    lo, hi = POPULARITY
     assert set(pop) == set(MEMBERS) and all(lo <= w <= hi for w in pop.values()) and len(set(pop.values())) > 1
     # The squares are dealt before the popularity, from the same dealer: the same as a dealer drawing no popularity.
     assert {k: v for k, v in r["setup"].items() if k != "popularity"} == race.deal(race.Rules.of(CFG, MEMBERS),
@@ -153,6 +165,57 @@ def test_each_race_opens_at_odds_leaning_on_its_popularity():
         st._db.execute("UPDATE park_races SET setup = ? WHERE id = ?", (json.dumps(setup), T0))
     races.bet(TOKEN, T0, "last", fav, 1, 4.2)
     assert races.view(TOKEN)["race"]["odds"]["top2"] == dict.fromkeys(MEMBERS, 2.1)
+
+
+def test_each_race_deals_forms_and_opens_at_their_chances():
+    g, races, clock, _ = make(forms=True)
+    races.tick()
+    r = races.view(TOKEN)["race"]
+    su = r["setup"]
+    assert set(su) == {"boost", "trip", "portal", "flip", "forms", "dice", "chance"}
+    forms = {f["id"]: f["dice"] for f in CFG["forms"]}
+    assert set(su["forms"]) == set(MEMBERS) and sorted(su["forms"].values()) == sorted(forms)
+    assert all(su["dice"][m] == forms[f] for m, f in su["forms"].items())
+    chance = su["chance"]
+    assert chance["sims"] == SIMS and sum(chance["win"].values()) == SIMS and sum(chance["top2"].values()) == 2 * SIMS
+    # The squares come out of the dealer first, as before forms.
+    rules = race.Rules.of(CFG, MEMBERS)
+    squares = {k: su[k] for k in ("boost", "trip", "portal", "flip")}
+    assert squares == race.deal(rules, random.Random(3))
+    opening = race.odds(CFG, MEMBERS, {}, None, chance)
+    assert r["odds"] == {k: {m: t / 10 for m, t in per.items()} for k, per in opening.items()}
+    assert len(set(r["odds"]["win"].values())) > 2
+    # A bet locks the odds shown; the stakes move them from there.
+    fav = min(MEMBERS, key=lambda m: r["odds"]["win"][m])
+    races.bet(TOKEN, T0, "win", fav, 2, r["odds"]["win"][fav])
+    r = races.view(TOKEN)["race"]
+    assert r["mine"] == [{"kind": "win", "member": fav, "coins": 2, "odds": opening["win"][fav] / 10}]
+    assert r["odds"]["win"] == {m: t / 10 for m, t in race.odds_tenths(CFG, "win", MEMBERS, {fav: 2}, None,
+                                                                         chance).items()}
+    # The race runs on the dealt dice: every move rolls a face of its member's die.
+    clock.t = r["startsAt"]
+    races.tick()
+    r = races.view(TOKEN)["race"]
+    assert all(mv["dice"][0] in su["dice"][mv["m"]] for mv in r["moves"])
+    stored = json.loads(row(g, T0)["setup"])
+    assert r["ranking"] == race.run_seed(rules, stored, bytes.fromhex(r["seed"]))["ranking"]
+
+
+def test_without_a_cap_a_save_stakes_any_coins_it_holds():
+    g, races, clock, (pid, other) = make(coins=500)
+    g.manifest.park["race"]["maxCoins"] = 0
+    races.tick()
+    races.bet(TOKEN, T0, "win", "jiaran", 300)
+    races.bet(TOKEN, T0, "top2", "nailin", 150)
+    assert sum(b["coins"] for b in races.view(TOKEN)["race"]["mine"]) == 450
+    # Only the coins held bound it (the stamps gave some back).
+    held = g.store.get_player(pid, clock())["coins"]
+    with pytest.raises(GameError) as e:
+        races.bet(TOKEN, T0, "last", "beila", held + 1)
+    assert e.value.code == "no_coins"
+    del g.manifest.park["race"]["maxCoins"]
+    races.bet(TOKEN, T0, "last", "beila", held)
+    assert sum(b["coins"] for b in races.view(TOKEN)["race"]["mine"]) == 450 + held
 
 
 def test_a_bet_is_refused_when_its_odds_dropped():

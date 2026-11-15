@@ -13,13 +13,21 @@ export interface RaceConfig {
    * of the interval. The server places the races; the client reads the times off them. */
   startAt?: number;
   track: number;
+  /** The die of races dealt before forms. */
   dice: number[];
+  /** The forms a race deals its members, each with the faces of the die it rolls for that race. */
+  forms?: RaceForm[];
+  /** Simulated races behind a race's chances. */
+  sims?: number;
   payout: number;
   minOdds: number;
+  /** The most a bet pays of its fair odds: odds × chance stays at or under it. */
+  fairCap?: number;
   depth: number;
-  /** The range each member's popularity for a race is drawn from (inclusive); the server prices with it. */
+  /** The popularity range of races dealt before forms (inclusive). */
   popularity?: [number, number];
-  maxCoins: number;
+  /** The most a save stakes on a race; 0 or missing, any number. */
+  maxCoins?: number;
   kinds: RaceKind[];
   /** portalGap: how far apart the portal's ends are, in squares (inclusive). */
   squares: { range: [number, number]; boost: number; trip: number; portalGap: [number, number] };
@@ -43,15 +51,26 @@ export interface RaceStep {
  * the stack there upside down. */
 export type SquareKind = "boost" | "trip" | "portal" | "flip";
 
+/** A form a race deals: its id and the faces of the die its member rolls. */
+export interface RaceForm { id: string; dice: number[] }
+
+/** The forms' names, best first. */
+export const FORM_NAMES: Record<string, string> = { great: "极佳", good: "良好", normal: "普通", tired: "疲惫", poor: "很差" };
+
 /**
- * A race's special squares, and each member's popularity, which the opening odds lean on; races dealt before the
- * portal and the flip square have neither, races dealt before popularity have none.
+ * A race's special squares; each member's form, the die it rolls for the race and how often it took each kind's
+ * places over `chance.sims` simulated races, which the odds open at. Races dealt before the portal and the flip square
+ * have neither; races dealt before forms have no forms, dice or chance (everyone rolls the config's dice) and may
+ * have each member's popularity, which their opening odds leaned on.
  */
 export interface RaceSetup {
   boost: number;
   trip: number;
   portal?: [number, number];
   flip?: number;
+  forms?: Record<string, string>;
+  dice?: Record<string, number[]>;
+  chance?: { sims: number } & Record<RaceKind, Record<string, number>>;
   popularity?: Record<string, number>;
 }
 

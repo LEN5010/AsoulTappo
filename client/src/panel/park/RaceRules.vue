@@ -17,8 +17,10 @@ const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);
 const BOOST = CFG.squares.boost;
 const TRIP = Math.abs(CFG.squares.trip);
-const LOW = Math.min(...CFG.dice);
-const HIGH = Math.max(...CFG.dice);
+/** Every die a race deals, best first; the config's own on a server without forms. */
+const DICE = CFG.forms?.length ? CFG.forms.map((f) => f.dice) : [CFG.dice];
+const LOW = Math.min(...DICE.flat());
+const HIGH = Math.max(...DICE.flat());
 /** The places each kind of bet covers, first to last, for its mini podium. */
 const PLACES: Record<RaceKind, number[]> = { win: [0], top2: [0, 1], last: [MEMBERS.length - 1] };
 /** Which places each kind pays on, in words. */
@@ -30,8 +32,16 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
     <div class="race-rules park-sheet-columns">
       <ul class="park-sheet-list single" aria-label="跑法">
         <li class="park-sheet-row">
-          <span class="park-sheet-lead dice"><RaceDie v-for="f in CFG.dice" :key="f" :face="f" /></span>
+          <span class="park-sheet-lead dice"><RaceDie v-for="(f, k) in CFG.dice" :key="k" :face="f" /></span>
           <span class="park-sheet-main"><b>每轮按顺序各掷一次骰子</b><small>前进 {{ LOW }}–{{ HIGH }} 格</small></span>
+        </li>
+        <li v-if="CFG.forms?.length" class="park-sheet-row">
+          <span class="park-sheet-lead forms" aria-hidden="true">
+            <span v-for="(d, j) in [DICE[0], DICE[DICE.length - 1]]" :key="j" class="form-dice">
+              <RaceDie v-for="(f, k) in d" :key="k" :face="f" />
+            </span>
+          </span>
+          <span class="park-sheet-main"><b>每场状态不同，骰子不同</b><small>状态好的赔率低</small></span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead dice order" aria-hidden="true"><RaceDie :face="6" class="hi" /><RaceDie :face="3" /></span>
@@ -90,7 +100,7 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
             <svg viewBox="0 0 12 12"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>
             <svg class="down" viewBox="0 0 12 12"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>
           </span>
-          <span class="park-sheet-main"><b>赔率随押注变动</b><small>开盘赔率每场不同，按下注时的赔率结算</small></span>
+          <span class="park-sheet-main"><b>赔率随押注变动</b><small>按下注时的赔率结算</small></span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead odds" aria-hidden="true"><ParkCoin :size="24" :tilt="false" /><b>×4.2</b></span>
@@ -123,6 +133,20 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
 }
 .dice .race-die {
   --s: 20px;
+}
+/* The best and the worst form's dice, one over the other. */
+.forms {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.form-dice {
+  display: flex;
+  gap: 2px;
+}
+.form-dice .race-die {
+  --s: 14px;
 }
 /* The order's dice: the higher face stands a step up. */
 .order .hi {

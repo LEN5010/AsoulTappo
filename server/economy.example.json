@@ -228,13 +228,55 @@
         2,
         3
       ],
+      "forms": [
+        {
+          "id": "great",
+          "dice": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "id": "good",
+          "dice": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "id": "normal",
+          "dice": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "id": "tired",
+          "dice": [
+            1,
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "id": "poor",
+          "dice": [
+            1,
+            1,
+            2
+          ]
+        }
+      ],
+      "sims": 20000,
       "payout": 0.85,
       "minOdds": 1.1,
+      "fairCap": 0.95,
       "depth": 100,
-      "popularity": [
-        92,
-        108
-      ],
       "maxCoins": 10,
       "kinds": [
         "win",

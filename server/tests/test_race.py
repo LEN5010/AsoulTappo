@@ -342,18 +342,26 @@ def test_odds_with_nothing_staked():
                  "last": dict.fromkeys(MEMBERS, 42)}
 
 
+# The odds without the fair cap, to follow the stakes freely.
+FREE = {k: v for k, v in CFG.items() if k != "fairCap"}
+
+
 def test_odds_follow_the_stakes():
     # win, 50 on jiaran: its share (50 + 20) / 150, 0.85 / 0.4667 = 1.82; the others' 20 / 150, 6.375.
-    o = race.odds_tenths(CFG, "win", MEMBERS, {J: 50})
+    o = race.odds_tenths(FREE, "win", MEMBERS, {J: 50})
     assert o == {J: 18, N: 63, B: 63, X: 63, S: 63}
     # top2, 30 on nailin and 10 on beila: Σp = 2; nailin (30 + 20) / 140 × 2 → 0.85 / 0.714 = 1.19.
-    o = race.odds_tenths(CFG, "top2", MEMBERS, {N: 30, B: 10})
+    o = race.odds_tenths(FREE, "top2", MEMBERS, {N: 30, B: 10})
     assert o == {J: 29, N: 11, B: 19, X: 29, S: 29}
     # Exactly a tenth: 100 on nailin gives the others 0.85 × 5 × 200 / 100 = 8.5, not 8.4 from float noise.
-    assert race.odds_tenths(CFG, "win", MEMBERS, {N: 100})[J] == 85
+    assert race.odds_tenths(FREE, "win", MEMBERS, {N: 100})[J] == 85
     # Clamped to minOdds and the most.
-    o = race.odds_tenths(CFG, "last", MEMBERS, {J: 10000})
+    o = race.odds_tenths(FREE, "last", MEMBERS, {J: 10000})
     assert o[J] == round(CFG["minOdds"] * 10) and o[N] == race.MAX_ODDS_TENTHS
+    # With fairCap, alike members never pay over fairCap / p: 0.95 × 5 = 4.75 to win, 0.95 × 2.5 = 2.375 for top two.
+    assert race.odds_tenths(CFG, "win", MEMBERS, {J: 50}) == {J: 18, N: 47, B: 47, X: 47, S: 47}
+    assert race.odds_tenths(CFG, "top2", MEMBERS, {N: 30, B: 10}) == {J: 23, N: 11, B: 19, X: 23, S: 23}
+    assert race.odds_tenths(CFG, "last", MEMBERS, {J: 10000})[N] == 47
     # Stakes on other kinds do not move this one.
     assert race.odds(CFG, MEMBERS, {"win": {J: 50}})["last"] == dict.fromkeys(MEMBERS, 42)
 
@@ -366,12 +374,16 @@ def test_odds_return_payout_on_a_balanced_book():
         assert all(abs(t / 10 - CFG["payout"] / p) < 0.1 for t in o.values()), kind
 
 
+# The popularity range of the races dealt before forms.
+POPULARITY = [92, 108]
+
+
 def test_popularity_is_drawn_from_the_range_for_every_member():
-    lo, hi = CFG["popularity"]
+    lo, hi = POPULARITY
     rng = random.Random(1)
     seen = set()
     for _ in range(500):
-        pop = race.draw_popularity(CFG, MEMBERS, rng)
+        pop = race.draw_popularity({**CFG, "popularity": POPULARITY}, MEMBERS, rng)
         assert list(pop) == list(MEMBERS) and all(lo <= w <= hi for w in pop.values())
         seen.update(pop.values())
     assert seen == set(range(lo, hi + 1))
@@ -387,7 +399,9 @@ def test_odds_lean_on_popularity():
     # last mirrors the weights about the mean (1000 − 5w: 460, 540, 500), so the favourite pays more to come last.
     assert o["last"] == {J: 46, N: 39, B: 42, X: 42, S: 42}
     # Stakes move them as before: 50 on jiaran, 0.85 × 500 × 150 / (50 × 500 + 100 × 108) = 1.78.
-    assert race.odds_tenths(CFG, "win", MEMBERS, {J: 50}, pop) == {J: 17, N: 69, B: 63, X: 63, S: 63}
+    assert race.odds_tenths(FREE, "win", MEMBERS, {J: 50}, pop) == {J: 17, N: 69, B: 63, X: 63, S: 63}
+    # The fair cap takes the members as alike, whatever their popularity: 4.75 to win.
+    assert race.odds_tenths(CFG, "win", MEMBERS, {J: 50}, pop) == {J: 17, N: 47, B: 47, X: 47, S: 47}
     # Even popularity, none, or a member without one: the flat odds.
     flat = race.odds(CFG, MEMBERS, {})
     assert race.odds(CFG, MEMBERS, {}, dict.fromkeys(MEMBERS, 97)) == flat
@@ -397,13 +411,77 @@ def test_odds_lean_on_popularity():
 
 def test_the_best_opening_odds_stay_below_even_money():
     # Every kind at the far ends of the range, one member against the other four: p × odds < 1 for every selection.
-    lo, hi = CFG["popularity"]
+    lo, hi = POPULARITY
     for one, rest in ((lo, hi), (hi, lo)):
         for m in MEMBERS:
             pop = {x: one if x == m else rest for x in MEMBERS}
             for kind, places in race.PLACES.items():
                 best = max(race.odds_tenths(CFG, kind, MEMBERS, {}, pop).values())
                 assert best / 10 * places / len(MEMBERS) < 1, (kind, pop)
+
+
+# ---------------------------------------------------------------- forms
+def test_forms_deal_each_member_a_different_die():
+    forms = {f["id"]: f["dice"] for f in CFG["forms"]}
+    rng = random.Random(5)
+    seen = set()
+    for _ in range(200):
+        dealt = race.deal_forms(RULES, rng)
+        assert list(dealt["forms"]) == list(MEMBERS) and sorted(dealt["forms"].values()) == sorted(forms)
+        assert all(dealt["dice"][m] == forms[f] for m, f in dealt["forms"].items())
+        seen.add(tuple(dealt["forms"].values()))
+    assert len(seen) > 50
+    # Fewer forms than members: each draws one. None at all: nothing dealt, everyone rolls `dice`.
+    two = race.Rules.of({**CFG, "forms": CFG["forms"][:2]}, MEMBERS)
+    dealt = race.deal_forms(two, rng)
+    assert set(dealt["forms"]) == set(MEMBERS) and set(dealt["forms"].values()) <= {"great", "good"}
+    assert race.deal_forms(race.Rules.of({k: v for k, v in CFG.items() if k != "forms"}, MEMBERS), rng) is None
+
+
+def test_each_member_rolls_its_own_die():
+    setup = race.deal(RULES, random.Random(7))
+    dice = {J: [4], N: [1], B: [1, 2, 3], X: [2, 3, 4], S: [1, 1, 2]}
+    out = race.run(RULES, {**setup, "dice": dice}, race.StreamRng(b"own dice"))
+    for mv in out["moves"]:
+        assert mv["dice"][0] in dice[mv["m"]] and mv["steps"] == mv["dice"][0]
+    assert {mv["dice"][0] for mv in out["moves"] if mv["m"] == J} == {4}
+    assert all(r["face"] in dice[r["m"]] for r in out["rest"])
+    # Everyone on rules.dice is the race without dice: the same draws, the same race.
+    plain = race.run(RULES, setup, race.StreamRng(b"own dice"))
+    same = race.run(RULES, {**setup, "dice": dict.fromkeys(MEMBERS, list(CFG["dice"]))}, race.StreamRng(b"own dice"))
+    assert plain == same
+
+
+def test_chances_count_places_over_the_simulated_races():
+    setup = {**race.deal(RULES, random.Random(2)), **race.deal_forms(RULES, random.Random(2))}
+    c = race.chances(RULES, setup, 3000, race.SimRng(1))
+    assert c["sims"] == 3000
+    assert sum(c["win"].values()) == 3000 and sum(c["top2"].values()) == 6000 and sum(c["last"].values()) == 3000
+    best = next(m for m, f in setup["forms"].items() if f == "great")
+    worst = next(m for m, f in setup["forms"].items() if f == "poor")
+    assert c["win"][best] > 600 > c["win"][worst]
+    assert c["last"][worst] > 600 > c["last"][best]
+    # The same stream, the same counts.
+    assert race.chances(RULES, setup, 3000, race.SimRng(1)) == c
+
+
+def test_odds_open_at_the_chances_and_never_pass_the_fair_odds():
+    chance = {"sims": 1000, "win": {J: 310, N: 260, B: 190, X: 150, S: 90},
+              "top2": {J: 590, N: 510, B: 390, X: 320, S: 190}, "last": {J: 60, N: 110, B: 170, X: 240, S: 420}}
+    o = race.odds(CFG, MEMBERS, {}, None, chance)
+    # payout / p, rounded down: 0.85 / 0.31 = 2.74, / 0.09 = 9.44; top2 0.85 / 0.59 = 1.44.
+    assert o["win"] == {J: 27, N: 32, B: 44, X: 56, S: 94}
+    assert o["top2"] == {J: 14, N: 16, B: 21, X: 26, S: 44}
+    assert o["last"] == {J: 141, N: 77, B: 50, X: 35, S: 20}
+    # A crowd on the favourite pushes the others up, but only to fairCap / p: 0.95 / 0.09 = 10.5, / 0.15 = 6.33.
+    o = race.odds_tenths(CFG, "win", MEMBERS, {J: 1000}, None, chance)
+    assert o[S] == 105 and o[X] == 63 and o[J] == round(CFG["minOdds"] * 10)
+    for kind, places in race.PLACES.items():
+        for m, t in race.odds_tenths(CFG, kind, MEMBERS, {J: 1000, N: 300}, None, chance).items():
+            p = chance[kind][m] / chance["sims"]
+            assert t / 10 * p <= CFG["fairCap"] or t == round(CFG["minOdds"] * 10), (kind, m)
+    # The chances outrank a popularity left on the setup; races without either keep the flat odds.
+    assert race.odds(CFG, MEMBERS, {}, {J: 108}, chance) == race.odds(CFG, MEMBERS, {}, None, chance)
 
 
 # ---------------------------------------------------------------- the client's replay

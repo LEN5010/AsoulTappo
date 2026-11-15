@@ -35,11 +35,15 @@ Weights are percentages unless said otherwise.
     refuses to sell it and the client does not show it, but one already bought is still revealed and paid.
   - ``race``: one every ``interval`` seconds, bets taken for the first ``betting``; with ``startAt`` (minute of the
     China day) each race starts then. The five dumplings start on square 0 of a lap of ``track`` squares, roll for
-    the order of play and move by a face of ``dice``, carrying those stacked on them; a group must land on the finish
-    exactly. Each race draws every member a popularity in ``popularity`` (inclusive), its weight w in the opening
-    odds (mirrored for last). A member's share is (its coins + ``depth`` × w / Σw) / (all coins on that kind +
-    ``depth``), the odds ``payout`` / (share × places), rounded down to a tenth, at least ``minOdds``; a bet keeps the
-    odds it was placed at. A save stakes at most ``maxCoins``. ``squares``: five special squares in ``range``; boost
+    the order of play and move by a face of their die, carrying those stacked on them; a group must land on the
+    finish exactly. Each race deals the members the ``forms`` ({id, dice}: the faces of the die that member rolls for
+    the race), one each in random order, and counts over ``sims`` simulated races each member's chance p of each
+    place; w = p is its weight in the opening odds. A member's share is (its coins + ``depth`` × w / Σw) / (all coins
+    on that kind + ``depth``), the odds ``payout`` / (share × places), rounded down to a tenth, at least ``minOdds``
+    and at most ``fairCap`` / p; a bet keeps the odds it was placed at. ``dice`` is the die of races dealt before
+    forms, which drew a popularity in ``popularity`` (inclusive) as w instead; their p is places / 5 under
+    ``fairCap``. A save stakes at most ``maxCoins`` a race, any number when it is 0 or missing (clients before 1.2.4
+    need a number there). ``squares``: five special squares in ``range``; boost
     and trip move a landing group by ``boost`` and ``trip``, the portal's ends are ``portalGap`` apart, the flip
     square turns its stack upside down. ``roomAt`` is in coins.
   - ``lottery``: ``daily`` tickets a save for each draw; the draw is at minute ``drawAt`` of the China day and sales

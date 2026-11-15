@@ -17,7 +17,7 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
 import { online } from "../../stores/player";
-import { loadPark, parkTry } from "../../stores/park";
+import { loadPark, park, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
@@ -30,7 +30,7 @@ import ParkCoin from "./ParkCoin.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import {
-  DICE_TOSS, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, ROUND, roundAt, roundDice, roundsOf, staggered,
+  DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, ROUND, roundAt, roundDice, roundsOf, staggered,
   stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
 } from "./race";
 
@@ -178,6 +178,13 @@ const seats = computed<string[]>(() => {
 });
 /** A member's colour, for its dice. */
 const colorOf = (m: string) => character(m)?.color;
+/** The faces of the die a member rolls in this race: its form's, or the config's on races dealt before forms. */
+const diceOf = (m: string) => race.value?.setup.dice?.[m] ?? CFG.dice;
+/** A runner's key title: its name, and its form on races that deal them. */
+function runnerTitle(m: string): string {
+  const form = race.value?.setup.forms?.[m];
+  return form ? `${nameOf(m)} · 状态${FORM_NAMES[form] ?? form}` : nameOf(m);
+}
 
 /** A seat's die: its face, keyed so each throw remounts it once; the throw while it is in the air. */
 interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
@@ -217,7 +224,7 @@ function roundDie(m: string): SeatDie | null {
   const { delay, ms } = staggered(len, k, dice.length);
   const toss = reducedMotion.value || ra.since >= len
     ? null
-    : { ms, delay, at: ra.since, pool: CFG.dice, seed: ra.round * ROUND + k, height: 110 };
+    : { ms, delay, at: ra.since, pool: diceOf(m), seed: ra.round * ROUND + k, height: 110 };
   const i = ra.round * ROUND + k;
   const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
   return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
@@ -243,7 +250,10 @@ const lastRound = computed(() => {
 // ---------------------------------------------------------------- the odds board
 const betting = computed(() => phase.value === "betting" && serverNow.value < (race.value?.startsAt ?? 0) * 1000);
 const staked = computed(() => race.value?.mine.reduce((n, b) => n + b.coins, 0) ?? 0);
-const left = computed(() => Math.max(0, CFG.maxCoins - staked.value));
+/** What the save may still stake on this race: the cap less its bets, unbounded without a cap. */
+const left = computed(() => (CFG.maxCoins ? Math.max(0, CFG.maxCoins - staked.value) : Infinity));
+/** The most the stake can be: what is left, and the coins held. */
+const most = computed(() => Math.max(1, Math.min(left.value, park.value?.coins ?? left.value)));
 const oddsOf = (kind: RaceKind, m: string) => race.value?.odds[kind]?.[m];
 const coinsOn = (kind: RaceKind, m: string) => race.value?.pool[kind]?.[m] ?? 0;
 /**
@@ -297,13 +307,13 @@ watch(() => race.value?.id, () => {
   betError.value = "";
 });
 watch(() => [pick.value?.member, pick.value?.kind], () => (repriced.value = null));
-watch(left, (n) => (stake.value = Math.max(1, Math.min(stake.value, n))));
+watch(most, (n) => (stake.value = Math.max(1, Math.min(stake.value, n))));
 
 /** A runner key: picks that runner (keeping the kind picked last, the win at first), or lets go of it. */
 function chooseRunner(member: string) {
   if (!betting.value) return;
   pick.value = pick.value?.member === member ? null : { kind: pick.value?.kind ?? "win", member };
-  stake.value = Math.max(1, Math.min(stake.value, left.value));
+  stake.value = Math.max(1, Math.min(stake.value, most.value));
   betError.value = "";
 }
 function chooseKind(kind: RaceKind) {
@@ -478,11 +488,11 @@ function flyToPodium() {
           <!-- Bets open, a void race, or nothing loaded yet: the five runners, each with its odds to win. -->
           <div v-if="infield === 'field'" key="field" class="pane field-pane" :class="{ off: race?.phase === 'void' }">
             <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
-            <div class="runners" role="group" aria-label="团子">
+            <div class="runners" :class="{ dice: !!race?.setup.dice }" role="group" aria-label="团子">
               <button
                 v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner" :data-runner="m"
                 :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
-                :disabled="!betting || !online || !left" :title="nameOf(m)" @click="chooseRunner(m)"
+                :disabled="!betting || !online || !left" :title="runnerTitle(m)" @click="chooseRunner(m)"
               >
                 <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
                 <span class="tag">
@@ -494,6 +504,9 @@ function flyToPodium() {
                       <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
                     </svg>
                   </span>
+                </span>
+                <span v-if="race?.setup.dice" class="form" :aria-label="`骰子 ${diceOf(m).join(' ')}`">
+                  <RaceDie v-for="(f, k) in diceOf(m)" :key="k" :face="f" :color="colorOf(m)" />
                 </span>
                 <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
               </button>
@@ -598,7 +611,7 @@ function flyToPodium() {
               <Icon name="minus" :size="14" />
             </button>
             <b>{{ stake }}</b>
-            <button type="button" class="ui-btn small ghost" :disabled="stake >= left" aria-label="多押一枚" @click="stake++">
+            <button type="button" class="ui-btn small ghost" :disabled="stake >= most" aria-label="多押一枚" @click="stake++">
               <Icon name="plus" :size="14" />
             </button>
           </span>
@@ -684,12 +697,17 @@ function flyToPodium() {
   color: var(--ink-2);
 }
 .runners {
-  /* The tuanzi on a key: as large as the paper's height and a fifth of its width allow. */
+  /* The tuanzi on a key: as large as the paper's height and a fifth of its width allow, under it the name and the
+   * odds. */
   --face: clamp(26px, min(20cqw - 16px, 100cqh - 56px), 88px);
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: clamp(5px, 2cqw, 14px);
   width: min(100%, calc(5 * (var(--face) + 24px)));
+}
+/* With the race's die under the odds too. */
+.runners.dice {
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 74px), 88px);
 }
 /* A void race: its line over the runners, which give it the room. */
 .field-pane.off .runners {
@@ -781,6 +799,16 @@ function flyToPodium() {
 .runner:disabled .face {
   opacity: 0.85;
 }
+/* The faces of the runner's die this race, small, in its colour. */
+.form {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+.form .race-die {
+  --s: 13px;
+  --die-shadow: none;
+}
 /* The coins I have on a runner: a coin stuck on the key's corner. */
 .mine {
   position: absolute;
@@ -808,6 +836,11 @@ function flyToPodium() {
     display: none;
   }
 }
+@container infield (max-height: 104px) {
+  .form {
+    display: none;
+  }
+}
 @container infield (max-width: 360px) {
   .odds b {
     font-size: var(--fs-strong);
@@ -826,6 +859,12 @@ function flyToPodium() {
   }
   .mine b {
     font-size: var(--fs-strong);
+  }
+  .form {
+    gap: 1px;
+  }
+  .form .race-die {
+    --s: 10px;
   }
 }
 
