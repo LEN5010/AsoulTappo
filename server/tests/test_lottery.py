@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app.game import BOARD_DEFAULT_NICK, Game, GameError, board_id
-from app.lottery import PRIZE, ROLL_SECOND, Lottery, commitment, day_start, second_pool, settle, tier_of
+from app.lottery import PRIZE, ROLL_SECOND, Lottery, commitment, day_start, second_each, second_pool, settle, tier_of
 from app.manifest import Manifest
 from app.park import POOL, Park
 from app.store import Store, day_of
@@ -17,6 +17,10 @@ M = Manifest.load()
 CFG = M.park["lottery"]
 PRICE = M.park["coin"]["price"]
 SEED, PER_COIN = CFG["pool"]["seed"], CFG["pool"]["perCoin"]
+# Shards each second prize ticket wins.
+SECOND = CFG["secondEach"]
+# The rule before secondEach: the second is a share of the day's sales, split between its tickets, rolling over.
+SHARE = {**{k: v for k, v in CFG.items() if k != "secondEach"}, "second": 0.2}
 
 
 class Picks:
@@ -154,15 +158,15 @@ def test_tiers_count_only_the_best_one():
 
 
 def test_the_second_prize_is_a_share_of_sales_plus_its_rollover():
-    assert second_pool(CFG, PRICE, 100, 77) == int(CFG["second"] * 100 * PRICE) + 77
-    assert second_pool(CFG, PRICE, 0, 77) == 77
+    assert second_pool(SHARE, PRICE, 100, 77) == int(SHARE["second"] * 100 * PRICE) + 77
+    assert second_pool(SHARE, PRICE, 0, 77) == 77
 
 
 def test_the_pool_is_split_rounding_down_and_starts_again_at_the_seed_plus_the_remainder():
     tickets = [(1, "123"), (2, "123"), (3, "123"), (4, "023"), (5, "923"), (6, "003"), (7, "555")]
     pool = 100_001
-    s = settle(CFG, PRICE, "123", tickets, pool=pool, roll_second=2)
-    second = second_pool(CFG, PRICE, 7, 2)
+    s = settle(SHARE, PRICE, "123", tickets, pool=pool, roll_second=2)
+    second = second_pool(SHARE, PRICE, 7, 2)
     assert s.winners == {"top": 3, "second": 2, "third": 1}
     assert s.pools == {"top": pool, "second": second}
     assert s.each == {"top": pool // 3, "second": second // 2, "third": CFG["third"]}
@@ -172,8 +176,8 @@ def test_the_pool_is_split_rounding_down_and_starts_again_at_the_seed_plus_the_r
 
 
 def test_without_winners_the_pool_and_the_second_carry_over_whole():
-    s = settle(CFG, PRICE, "123", [(1, "456"), (2, "003")], pool=54_321, roll_second=9)
-    second = second_pool(CFG, PRICE, 2, 9)
+    s = settle(SHARE, PRICE, "123", [(1, "456"), (2, "003")], pool=54_321, roll_second=9)
+    second = second_pool(SHARE, PRICE, 2, 9)
     assert s.pool == 54_321 and s.roll == {"second": second} and s.prizes == [(2, 3, CFG["third"])]
     assert s.each == {"top": 0, "second": 0, "third": CFG["third"]}
 
@@ -189,14 +193,14 @@ def test_the_pool_and_the_second_are_conserved_over_many_days():
         fed += spent * PER_COIN
         pool += spent * PER_COIN
         tickets = [(i, f"{rng.randrange(1000):03d}") for i in range(n)]
-        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
+        s = settle(SHARE, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
         top_paid += sum(p for _, t, p in s.prizes if t == 1)
         second_paid += sum(p for _, t, p in s.prizes if t == 2)
         wins += s.winners["top"] > 0
         pool, roll_second = s.pool, s.roll["second"]
     assert wins > 10
     assert top_paid + pool == SEED * (wins + 1) + fed
-    assert second_paid + roll_second == int(CFG["second"] * sold * PRICE)
+    assert second_paid + roll_second == int(SHARE["second"] * sold * PRICE)
 
 
 # ---------------------------------------------------------------------------------- draw
@@ -206,7 +210,7 @@ def test_the_draw_pays_winners_through_the_ledger_and_rolls_over():
     lot.buy(TOKENS[1], ["123", "003"])  # top, third
     lot.buy(TOKENS[2], ["777"])
     before = {p: shards(g, p) for p in (a, b, c)}
-    top, second = SEED + 6 * PER_COIN, second_pool(CFG, PRICE, 6, 0)
+    top, second = SEED + 6 * PER_COIN, SECOND
     assert lot.state(TOKENS[0])["prize"] == {"top": top, "second": second, "third": CFG["third"]}
     at(clock, CFG["drawAt"])
     lot.tick()
@@ -231,17 +235,17 @@ def test_an_unwon_pool_carries_over_and_keeps_growing():
     lot.buy(TOKENS[0], ["456"] * 5)
     at(clock, CFG["drawAt"])
     lot.tick()
-    top, second = SEED + 5 * PER_COIN, second_pool(CFG, PRICE, 5, 0)
+    top, second = SEED + 5 * PER_COIN, SECOND
     state = lot.state(TOKENS[0])
-    # The draw starts tomorrow's day at once: on sale, with the pool and what has rolled into its second.
+    # The draw starts tomorrow's day at once: on sale, with the pool; the second stays what a ticket wins.
     assert state["day"] == day_of(clock() + 86400) and not state["drawn"] and state["open"]
     assert state["prize"]["top"] == top and state["prize"]["second"] == second
     assert g.store.park_counter(POOL) == top
     assert lot.draw(day_of(clock())) is None
     at(clock, 60, days=1)
     lot.buy(TOKENS[1], ["000"] * 2)
-    assert lot.state(TOKENS[1])["prize"] == {"top": top + 2 * PER_COIN, "second": second_pool(CFG, PRICE, 2, second),
-                                             "third": CFG["third"]}
+    assert lot.state(TOKENS[1])["prize"] == {"top": top + 2 * PER_COIN, "second": SECOND, "third": CFG["third"]}
+    assert g.store.park_counter(ROLL_SECOND) == 0
 
 
 def test_the_draw_pays_the_pool_fed_by_every_game_and_records_it():
@@ -435,8 +439,32 @@ def test_http_lottery(monkeypatch):
     assert r.status_code == 409 and r.json()["detail"]["code"] == "no_coins"
 
 
+def test_a_fixed_second_pays_each_ticket_and_ends_the_rollover():
+    tickets = [(1, "923"), (2, "023"), (3, "123"), (4, "003"), (5, "777")]
+    s = settle(CFG, PRICE, "123", tickets, pool=50_000, roll_second=33_100)
+    assert second_each(CFG) == SECOND and second_each(SHARE) == 0
+    assert s.winners == {"top": 1, "second": 2, "third": 1}
+    assert s.each == {"top": 50_000, "second": SECOND, "third": CFG["third"]}
+    assert s.pools == {"top": 50_000, "second": 2 * SECOND} and s.roll == {"second": 0}
+    assert sorted(s.prizes) == [(1, 2, SECOND), (2, 2, SECOND), (3, 1, 50_000), (4, 3, CFG["third"])]
+    # Nobody on the last two: nothing paid, nothing carried.
+    s = settle(CFG, PRICE, "123", [(1, "456")], pool=50_000, roll_second=9)
+    assert s.each["second"] == 0 and s.pools["second"] == 0 and s.roll == {"second": 0}
+
+
+def test_a_draw_after_the_switch_drops_the_old_rollover():
+    g, _, lot, clock, (a, b) = setup("123")
+    g.store.set_park_counter(ROLL_SECOND, 33_100)
+    assert lot.state(TOKENS[0])["prize"]["second"] == SECOND
+    lot.buy(TOKENS[0], ["923"])
+    before = shards(g, a)
+    at(clock, CFG["drawAt"])
+    lot.tick()
+    assert shards(g, a) - before == SECOND and g.store.park_counter(ROLL_SECOND) == 0
+
+
 # ---------------------------------------------------------------------------- simulation
-def simulate(daily: int, days: int, seed: int = 1) -> dict:
+def simulate(daily: int, days: int, seed: int = 1, cfg: dict = CFG) -> dict:
     """Steady [daily] tickets on uniform random numbers for [days] days, with nothing else feeding the pool: the
     share of sales paid back as second and third prizes, and what the second still holds at the end."""
     rng = random.Random(seed)
@@ -444,15 +472,23 @@ def simulate(daily: int, days: int, seed: int = 1) -> dict:
     for _ in range(days):
         pool += daily * PER_COIN
         tickets = [(i, f"{rng.randrange(1000):03d}") for i in range(daily)]
-        s = settle(CFG, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
+        s = settle(cfg, PRICE, f"{rng.randrange(1000):03d}", tickets, pool, roll_second)
         paid += sum(p for _, t, p in s.prizes if t != 1)
         pool, roll_second = s.pool, s.roll["second"]
     sold = daily * days * PRICE
     return {"paid": paid / sold, "left": roll_second / sold}
 
 
-def test_second_and_third_return_their_design_share():
-    expected = CFG["second"] + 0.09 * CFG["third"] / PRICE  # 30.8% with the default numbers
+def test_a_fixed_second_returns_its_chance_times_the_prize():
+    # 0.9% of tickets match the last two digits only: 0.009 × 5000 / 500 = 9%, plus the third's 10.8%.
+    expected = 0.009 * SECOND / PRICE + 0.09 * CFG["third"] / PRICE
     out = simulate(300, 1500)
+    assert out["left"] == 0 and out["paid"] == pytest.approx(expected, abs=0.01)
+
+
+def test_second_and_third_return_their_design_share():
+    # Under the rule before secondEach: the share of sales, plus the third.
+    expected = SHARE["second"] + 0.09 * CFG["third"] / PRICE  # 30.8% with those numbers
+    out = simulate(300, 1500, cfg=SHARE)
     assert out["paid"] + out["left"] == pytest.approx(expected, abs=0.005)
     assert out["paid"] == pytest.approx(expected, abs=0.01)

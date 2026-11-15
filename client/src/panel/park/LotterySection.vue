@@ -11,6 +11,7 @@
 // the drawn number, one digit at a time from the right, while the ring of balls turns and each digit's ball drops onto
 // its key.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch, type Ref } from "vue";
+import { economy } from "../../stores/economy";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
 import { reducedMotion } from "../../stores/theme";
@@ -953,6 +954,8 @@ function countTo(out: Ref<number>, to: number, ms: number): () => void {
 // park's state carries the same pool and loads again on every coin spent anywhere in the park, so the card takes it
 // from there when it can and always matches the pool in the top bar. A new amount counts up from the one shown.
 const pool = computed(() => (state.value ? park.value?.jackpot ?? state.value.prize.top : null));
+/** The second prize is what each ticket wins, as the third is; on servers before it, a share of the sales. */
+const secondEach = computed(() => !!economy.value?.park?.lottery?.secondEach);
 const poolShown = ref(0);
 let stopPool = () => {};
 watch(pool, (to, was) => {
@@ -1208,12 +1211,14 @@ function onPopKey(e: KeyboardEvent) {
             </div>
             <b class="pool-amount" aria-hidden="true"><Icon name="shard" :size="28" />{{ fmt(poolShown) }}</b>
             <ul class="tiers">
-              <li :aria-label="`二等 ${fmt(state.prize.second)}`">
+              <li :aria-label="`二等 ${fmt(state.prize.second)}${secondEach ? ' /注' : ''}`">
                 <span class="tier-head" aria-hidden="true">
                   <span class="tier-name">二等</span>
                   <span class="match"><i v-for="(on, j) in needs(2)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
                 </span>
-                <b class="amount" aria-hidden="true"><Icon name="shard" :size="14" />{{ fmt(state.prize.second) }}</b>
+                <b class="amount" aria-hidden="true">
+                  <Icon name="shard" :size="14" />{{ fmt(state.prize.second) }}<small v-if="secondEach">/注</small>
+                </b>
               </li>
               <li :aria-label="`三等 ${fmt(state.prize.third)} /注`">
                 <span class="tier-head" aria-hidden="true">

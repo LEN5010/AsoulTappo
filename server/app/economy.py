@@ -48,8 +48,9 @@ Weights are percentages unless said otherwise.
     square turns its stack upside down. ``roomAt`` is in coins.
   - ``lottery``: ``daily`` tickets a save for each draw; the draw is at minute ``drawAt`` of the China day and sales
     close at ``closeAt``. The top prize is the server-wide pool: it starts at ``pool.seed``, every coin spent in the
-    park adds ``pool.perCoin``, and it rolls over until a draw has a top winner. The second prize is ``second`` of the
-    day's sales split between winners, the third ``third`` shards each.
+    park adds ``pool.perCoin``, and it rolls over until a draw has a top winner. The second prize is ``secondEach``
+    shards each (without it, the rule before: ``second`` of the day's sales split between winners, rolling over when
+    nobody wins it), the third ``third`` shards each.
 
 - ``antiCheat``: fields of ``cards.DropConfig`` by name; missing ones keep their defaults. Never sent to clients.
 """

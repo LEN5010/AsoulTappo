@@ -67,7 +67,11 @@ export type Economy = {
       serverAt: Record<"basic" | "premium", number>;
     };
     race?: import("../panel/park/race").RaceConfig;
-    lottery?: { daily: number; closeAt: number; drawAt: number; pool: { seed: number; perCoin: number }; second: number; third: number };
+    /** secondEach: shards each second prize ticket wins; servers before it share `second` of the sales instead. */
+    lottery?: {
+      daily: number; closeAt: number; drawAt: number; pool: { seed: number; perCoin: number };
+      secondEach?: number; second?: number; third: number;
+    };
   };
 } & {
   /** Missing from servers before the economy left the manifest. */

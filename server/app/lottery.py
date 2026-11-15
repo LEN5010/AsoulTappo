@@ -11,8 +11,9 @@ Prizes (manifest economy.park.lottery):
   the park (scratch cards, the race, the lottery) adds `pool.perCoin` through Park.spend, and the race's refunds take
   theirs back. A draw with top winners splits the pool equally, rounded down to whole shards, and the pool starts
   again at `pool.seed` plus the remainder; without one it carries over whole.
-- second, the last two digits: `second` of the day's sales plus the second rollover, split equally; the remainder, or
-  the whole amount when no ticket wins it, rolls over into the next draw's second.
+- second, the last two digits: `secondEach` shards a ticket. Without `secondEach` (the rule before it): `second` of
+  the day's sales plus the second rollover, split equally; the remainder, or the whole amount when no ticket wins it,
+  rolls over into the next draw's second. A draw with `secondEach` leaves nothing to roll over.
 - third, the last digit: `third` shards a ticket.
 A ticket wins only its best tier.
 """
@@ -61,8 +62,14 @@ def tier_of(number: str, winning: str) -> int:
     return 0
 
 
+def second_each(cfg: dict[str, Any]) -> int:
+    """The shards each second prize ticket wins, 0 under the rule before `secondEach` (a share of sales)."""
+    return int(cfg.get("secondEach") or 0)
+
+
 def second_pool(cfg: dict[str, Any], price: int, sales: int, roll_second: int) -> int:
-    """The second prize of a draw with [sales] tickets: `second` of the sales in shards plus the rollover."""
+    """The second prize of a draw with [sales] tickets under the rule before `secondEach`: `second` of the sales in
+    shards plus the rollover."""
     return int(Fraction(str(cfg["second"])) * sales * price) + roll_second
 
 
@@ -80,9 +87,11 @@ def settle(cfg: dict[str, Any], price: int, winning: str, tickets: list[tuple[in
            roll_second: int) -> Settlement:
     """The draw of [tickets] ((id, number) each) against [winning], with the top prize [pool] and the second
     prize's rollover coming in."""
-    second = second_pool(cfg, price, len(tickets), roll_second)
     tiers = [(tid, tier_of(n, winning)) for tid, n in tickets]
     count = {t: sum(1 for _, x in tiers if x == t) for t in TIERS}
+    fixed = second_each(cfg)
+    # A fixed second pays what its tickets won, and nothing rolls over (the rollover from before it ends here).
+    second = fixed * count[2] if fixed else second_pool(cfg, price, len(tickets), roll_second)
     each = {1: pool // count[1] if count[1] else 0, 2: second // count[2] if count[2] else 0, 3: cfg["third"]}
     after = cfg["pool"]["seed"] + pool - each[1] * count[1] if count[1] else pool
     return Settlement(
@@ -157,8 +166,10 @@ class Lottery:
         row = self.ensure_day(st, day, now)
         mine = st.lottery_tickets(day, pid)
         drawn = row["drawn"] is not None
-        # Once today is drawn, the second is what has rolled into tomorrow's draw so far. The top is the pool now.
-        second = second_pool(cfg, self.price, 0 if drawn else st.lottery_sales(day), st.park_counter(ROLL_SECOND))
+        # The second: what a ticket wins; under the rule before secondEach, the share of today's sales with the
+        # rollover, and once today is drawn what has rolled into tomorrow's draw so far. The top is the pool now.
+        second = second_each(cfg) or second_pool(cfg, self.price, 0 if drawn else st.lottery_sales(day),
+                                                 st.park_counter(ROLL_SECOND))
         return {
             "day": day,
             "hash": row["hash"],
