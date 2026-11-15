@@ -44,7 +44,7 @@ const list = ref<HTMLElement>();
       v-if="info" type="button" class="ui-btn ghost small info" :class="{ alone: !timer }"
       :title="info.label" :aria-label="info.label" @click="info.open"
     >
-      <Icon name="info" :size="18" />
+      <Icon :name="info.icon ?? 'info'" :size="18" />
     </button>
 
     <!-- Reduced motion swaps the host in place: an out-in Transition with css off breaks on a quick swap. -->

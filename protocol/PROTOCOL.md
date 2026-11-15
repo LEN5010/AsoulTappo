@@ -104,6 +104,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/park | 乐园状态（见乐园一节）：coins、unlocked、gift、stamps、stampsTotal、badge、today、jackpot（每日夺宝的全服奖池） |
 | POST /api/park/coins | `{count}`，用碎片买驼币，返回状态和 `park`。见乐园一节的错误码 |
 | POST /api/park/gift | 领今天送的驼币，返回状态、`park` 和 `gift`（这次到账的枚数，今天已送过时为 0；状态接口通常已经送过） |
+| GET /api/park/ledger | 我自己的驼币明细和兑换记录：`days`、`redeems`，见乐园一节的驼币 |
 | POST /api/redeem | `{code}`，兑换码：返回状态、`park`（有乐园的服务端才带）和 `redeemed:{shards,coins}`。错误码和防猜码见乐园一节的兑换码 |
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
@@ -330,6 +331,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 错误码：`park_locked`、`no_shards`、`no_coins`（玩法要花的驼币不够），都是 409；`bad_count` 为 400。
 
 驼币流水记在 `coin_ledger`，结构同碎片流水：花费按玩法记（`scratch`、`race`、`lottery`），获得记 `buy`、`gift`、`stamp`、`scratch_again`、`race_refund`、`race_prize`、`redeem`、`admin`。
+
+`GET /api/park/ledger` 只返回请求者这份存档的数据，没有乐园的服务端返回 404 `no_park`：
+
+- `days`：驼币流水里最近有记录的 14 天（北京时间日期），从新到旧，每天 `{day, items: [{source, amount, count}]}`。`amount` 带符号，获得为正、花费为负；`count` 同流水表（买的是枚数，玩法是次数）。`amount` 为 0 的行不返回（例如同一天集章换出又被退币扣回），只有这类行的日子也不返回。`items` 按 source 排序。
+- `redeems`：这份存档兑换过的码，按兑换时间从新到旧，最多 50 条，每条 `{code, ts, shards, coins}`。`code` 按兑换码一节的显示格式（生成的码分三段，自定义的码原样）；之后停用的码照样列出。
 
 ### 全服消息
 

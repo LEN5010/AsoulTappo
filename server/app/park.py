@@ -23,6 +23,8 @@ COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "race_pr
 POOL = "lottery_pool"
 # News older than this goes on the next start.
 NEWS_KEEP_DAYS = 7
+# China days with coin rows the save's own ledger shows (GET /api/park/ledger).
+LEDGER_DAYS = 14
 
 
 class Park:
@@ -70,6 +72,16 @@ class Park:
         now = g.now()
         p = g.store.get_player(pid, now)
         return self.view(g.store, p, day_of(now))
+
+    def ledger(self, token: str) -> dict[str, Any]:
+        """The save's coins in and out per source on its latest LEDGER_DAYS days with any, newest first."""
+        self.cfg
+        days: list[dict[str, Any]] = []
+        for r in self.game.store.coin_ledger_of(player_id_for(token), LEDGER_DAYS):
+            if not days or days[-1]["day"] != r["day"]:
+                days.append({"day": r["day"], "items": []})
+            days[-1]["items"].append({"source": r["source"], "amount": r["amount"], "count": r["count"]})
+        return {"days": days}
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
         return {**self.game.status(token), "park": self.state(token), **extra}

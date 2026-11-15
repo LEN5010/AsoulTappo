@@ -558,6 +558,17 @@ def api_redeem(body: RedeemBody, who: PlayerId = Depends(player)) -> dict:
     return _guard(_redeem, who, body.code)
 
 
+def _ledger(who: PlayerId) -> dict:
+    # park.ledger answers no_park first, so a server without the park lists no codes either.
+    return {**park.ledger(who), **redeem.history(who)}
+
+
+@app.get("/api/park/ledger")
+def api_park_ledger(who: PlayerId = Depends(player)) -> dict:
+    """The save's own coin ledger of its latest days (`days`) and the codes it redeemed (`redeems`)."""
+    return _guard(_ledger, who)
+
+
 # The admin dependencies are defined further down; these defer to them when called.
 def _code_admin(x_admin_key: str = Header(default="")) -> None:
     admin(x_admin_key)

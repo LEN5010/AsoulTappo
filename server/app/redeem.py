@@ -23,6 +23,8 @@ CUSTOM_MIN, CUSTOM_MAX = 4, 32
 TRIES = 5
 TRY_WINDOW = 600
 LOCK_SECONDS = 900
+# Claims the save's own history shows (GET /api/park/ledger).
+HISTORY = 50
 # daily_counts key counting lockouts per China day (the admin anomalies page can read it; per save see redeem_locks).
 LOCK_COUNT = "redeem_lock"
 
@@ -98,6 +100,12 @@ class Redeem:
         if g.manifest.park:
             out["park"] = self.park.state(token)
         return out
+
+    def history(self, token: str) -> dict[str, Any]:
+        """The codes this save redeemed, newest first (at most HISTORY), as shown to it when it entered them."""
+        rows = self.game.store.redeem_history(player_id_for(token), HISTORY)
+        return {"redeems": [{"code": shown(r["code"], bool(r["custom"])), "ts": r["ts"], "shards": r["shards"],
+                             "coins": r["coins"]} for r in rows]}
 
     def _pay(self, st: Store, pid: str, shards: int, coins: int, now: float) -> None:
         if shards:

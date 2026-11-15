@@ -212,6 +212,8 @@ CREATE TABLE IF NOT EXISTS coin_ledger (
   count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, player_id, source)
 );
+-- A save's own coin history (GET /api/park/ledger).
+CREATE INDEX IF NOT EXISTS coin_ledger_player ON coin_ledger (player_id, day);
 -- Shared park amounts, such as the lottery pool and its second-prize rollover, written in the caller's transaction.
 CREATE TABLE IF NOT EXISTS park_counters (
   key TEXT PRIMARY KEY,
@@ -1187,6 +1189,19 @@ class Store:
                 "WHERE day >= ? GROUP BY day, source ORDER BY day, source", (since,)).fetchall()
         return [dict(r) for r in rows]
 
+    def coin_ledger_of(self, pid: str, days: int) -> list[dict[str, Any]]:
+        """The save's nonzero coin rows on its latest [days] China days with any, newest day first, then by source."""
+        with self._lock:
+            picked = self._db.execute(
+                "SELECT DISTINCT day FROM coin_ledger WHERE player_id = ? AND amount != 0 ORDER BY day DESC LIMIT ?",
+                (pid, days)).fetchall()
+            if not picked:
+                return []
+            rows = self._db.execute(
+                "SELECT day, source, amount, count FROM coin_ledger WHERE player_id = ? AND day >= ? AND amount != 0 "
+                "ORDER BY day DESC, source", (pid, picked[-1]["day"])).fetchall()
+        return [dict(r) for r in rows]
+
     def ledger_sum(self, pid: str, day: str, sources: tuple[str, ...]) -> int:
         """The save's shards of [day] summed over [sources] (gains positive, spending negative)."""
         if not sources:
@@ -1538,6 +1553,15 @@ class Store:
                 "SELECT c.player_id, a.main_user_id, c.ts FROM redeem_claims c "
                 "LEFT JOIN account_links a ON a.player_id = c.player_id WHERE c.code_id = ? "
                 "ORDER BY c.ts DESC, c.player_id LIMIT ?", (code_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def redeem_history(self, pid: str, limit: int) -> list[dict[str, Any]]:
+        """The codes the save redeemed, newest first, with what each gave."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT r.code, r.custom, r.shards, r.coins, c.ts FROM redeem_claims c "
+                "JOIN redeem_codes r ON r.id = c.code_id WHERE c.player_id = ? "
+                "ORDER BY c.ts DESC, c.code_id DESC LIMIT ?", (pid, limit)).fetchall()
         return [dict(r) for r in rows]
 
     def redeem_lock(self, pid: str) -> float:

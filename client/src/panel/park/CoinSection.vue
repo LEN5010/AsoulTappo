@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // The coin page of the park (docs/design/amusement-park.md §2, §4, §8.3, §10; docs/design/park-ui-rebuild.md §5.1):
-// the big coin and the coins held, three tall keys that buy more, the stamp card with its badges, and the redeem
-// code in the bottom bar. A pack key asks first (what is bought, what it costs); bought coins fly from the key into
-// the big coin. The stamp card's last slot is the coin it pays: a full card flashes, clears, and that coin flies in.
+// the big coin and the coins held, three tall keys that buy more, the stamp card with its badges, the redeem code in
+// the bottom bar, and the save's coin and redeem history behind the band's key (CoinLedger). A pack key asks first
+// (what is bought, what it costs); bought coins fly from the key into the big coin. The stamp card's last slot is the
+// coin it pays: a full card flashes, clears, and that coin flies in.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
 import { economy } from "../../stores/economy";
 import { online, shards, status } from "../../stores/player";
@@ -14,13 +15,16 @@ import Modal from "../../ui/Modal.vue";
 import { EASE_OUT } from "../../ui/motion";
 import { useBand } from "./band";
 import { BADGE_ART, COIN_SMALL } from "./coin";
+import CoinLedger from "./CoinLedger.vue";
 import CoinStack from "./CoinStack.vue";
 import ParkCoin from "./ParkCoin.vue";
 import RedeemForm from "./RedeemForm.vue";
 import Stamp from "./Stamp.vue";
 
 const emit = defineEmits<{ bought: [count: number] }>();
-useBand("coin", () => ({ host: ACHAO["招商"] }));
+/** The coin history sheet is open. */
+const ledger = ref(false);
+useBand("coin", () => ({ host: ACHAO["招商"], info: { label: "明细", icon: "clock", open: () => (ledger.value = true) } }));
 
 // ParkPage opens the sections only once the server's economy is known.
 const CFG = economy.value!.park!.coin;
@@ -377,6 +381,8 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
     <div class="park-actions">
       <RedeemForm />
     </div>
+
+    <CoinLedger v-if="ledger" @close="ledger = false" />
 
     <Modal v-if="asking" title="买驼币" heading @close="asking = null">
       <div class="deal">
