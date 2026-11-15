@@ -12,7 +12,12 @@ use hidapi::{HidApi, HidDevice};
 use super::{pressed_bits, record_changes, InputEvent};
 
 const POLL: Duration = Duration::from_millis(10);
-const RESCAN: Duration = Duration::from_secs(2);
+/// How often the device list is read again for controllers plugged in later.
+const RESCAN: Duration = Duration::from_secs(5);
+/// Sony's USB vendor id. The scan asks for Sony devices only: listing every HID device makes hidapi read the
+/// manufacturer, product and serial strings of each one, a request that reaches the device itself, and doing that to
+/// mice every few seconds can make the system cursor stutter.
+const SONY: u16 = 0x054c;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Model {
@@ -23,8 +28,8 @@ enum Model {
 impl Model {
     fn from_id(vendor: u16, product: u16) -> Option<Self> {
         match (vendor, product) {
-            (0x054c, 0x05c4 | 0x09cc) => Some(Self::DualShock4),
-            (0x054c, 0x0ce6 | 0x0df2) => Some(Self::DualSense),
+            (SONY, 0x05c4 | 0x09cc) => Some(Self::DualShock4),
+            (SONY, 0x0ce6 | 0x0df2) => Some(Self::DualSense),
             _ => None,
         }
     }
@@ -104,7 +109,7 @@ where
         loop {
             if scanned.is_none_or(|at| at.elapsed() >= RESCAN) {
                 scanned = Some(Instant::now());
-                match api.refresh_devices() {
+                match api.reset_devices().and_then(|()| api.add_devices(SONY, 0)) {
                     Ok(()) => {
                         let devices: Vec<_> = api
                             .device_list()
