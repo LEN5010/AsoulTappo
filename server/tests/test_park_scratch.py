@@ -659,3 +659,60 @@ def test_the_room_sees_a_big_win_once(api):
         for ws in (a, b):
             ws.send_json({"type": "ping"})
             assert ws.receive_json() == {"type": "pong"}
+
+
+# ----------------------------------------------------------------------- history
+def test_the_history_sums_each_day_and_kind_with_the_items_won():
+    # One day: basic cards paying shards, again and nothing, a premium card paying a skin. The next: a card still to
+    # reveal, which counts as bought and pays nothing yet.
+    g, ps, clock, pid = setup()
+    day = day_of(clock())
+    for kind, tier, shards, coins, item in (("basic", "shards", 300, 0, ""), ("basic", "again", 0, 1, ""),
+                                            ("basic", "miss", 0, 0, ""), ("premium", "skin", 0, 0, SKINS[0])):
+        g.store.reveal_park_scratch(g.store.add_park_scratch(pid, day, kind, "[]", tier, shards, coins, item, clock()),
+                                    clock())
+    g.store.add_coin_ledger(pid, day, "scratch", -8)
+    clock.t += 86400
+    ps.buy(TOKEN, "basic")
+    assert ps.history(TOKEN) == {"days": [
+        {"day": day_of(clock()), "spent": BASIC["coins"],
+         "kinds": [{"kind": "basic", "cards": 1, "shards": 0, "coins": 0, "items": []}]},
+        {"day": day, "spent": 8,
+         "kinds": [{"kind": "basic", "cards": 3, "shards": 300, "coins": 1, "items": []},
+                   {"kind": "premium", "cards": 1, "shards": 0, "coins": 0, "items": [SKINS[0]]}]},
+    ]}
+    # The first cards of each kind (kept from long ago) and other saves stay out.
+    assert ps.history(OTHER) == {"days": []}
+
+
+def test_the_history_shows_the_latest_days_within_the_kept_ones():
+    from app.game import SCRATCH_DAYS
+    from app.park import LEDGER_DAYS
+    g, ps, clock, pid = setup()
+    for back in range(SCRATCH_DAYS + 3):
+        day = day_of(clock() - back * 86400)
+        g.store.reveal_park_scratch(g.store.add_park_scratch(pid, day, "basic", "[]", "miss", 0, 0, "", clock()), 1)
+    days = [d["day"] for d in ps.history(TOKEN)["days"]]
+    assert days == [day_of(clock() - b * 86400) for b in range(LEDGER_DAYS)]
+    # A save that only played long ago: nothing, as those days are pruned in part.
+    g.store._db.execute("DELETE FROM park_scratch_cards WHERE day > ?", (day_of(clock() - SCRATCH_DAYS * 86400),))
+    assert ps.history(TOKEN) == {"days": []}
+
+
+def test_http_history(api):
+    c, g, pid = api
+    assert c.get("/api/park/scratch/history").status_code == 401
+    assert c.get("/api/park/scratch/history", headers=H).json() == {"days": []}
+    bought = c.post("/api/park/scratch", json={"kind": "basic"}, headers=H).json()
+    c.post("/api/park/scratch/reveal", json={"card": bought["card"]["id"]}, headers=H)
+    r = c.get("/api/park/scratch/history", headers=H)
+    assert r.status_code == 200, r.text
+    assert r.json()["days"][0]["kinds"] == [{"kind": "basic", "cards": 1, "shards": 8000, "coins": 0, "items": []}]
+    assert r.json()["days"][0]["spent"] == BASIC["coins"]
+
+
+def test_http_history_without_the_park(monkeypatch):
+    g = Game(Store(":memory:"), tiny_manifest(), now=Clock())
+    monkeypatch.setattr(main, "game", g)
+    r = TestClient(main.app).get("/api/park/scratch/history", headers={"X-Player-Token": TOKEN})
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "no_park"

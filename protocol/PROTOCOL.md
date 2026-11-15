@@ -353,6 +353,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/park/scratch | card（未揭开的卡 `{id,kind,cells}`，没有时为 null）、pity（阿草表情保底计数，和旧刮刮乐共用）、emotesWhole（阿草表情是否已集齐） |
 | POST /api/park/scratch | `{kind}`，kind 为 `basic` 或 `premium`。返回状态、`park` 和上一行的字段。已有未揭开的卡时原样返回这张卡，不再扣币。驼币不够返回 409 `no_coins`；没有未揭开的卡时买 `hidden` 的卡返回 409 `card_hidden` |
 | POST /api/park/scratch/reveal | `{card}`，揭开并发放，返回状态、`park`、上上行的字段和 `prize:{tier,shards,coins,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
+| GET /api/park/scratch/history | 我自己的驼币刮刮乐记录 `{days:[{day, spent, kinds:[{kind, cards, shards, coins, items}]}]}`：30 天内有卡的最近 14 天（北京时间，按买卡日期），从新到旧。spent 为当天买卡花的驼币（驼币流水的 `scratch`）；kinds 按 kind 排序，cards 为买的张数（含还没揭开的），shards、coins 为已揭开的卡发放的碎片和驼币（`again` 退回的驼币），items 为发放的物品 ID，按买卡顺序。只返回请求者这份存档的数据；没有乐园的服务端返回 404 `no_park` |
 
 `tier` 是奖项：
 

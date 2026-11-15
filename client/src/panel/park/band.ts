@@ -14,8 +14,7 @@ export interface BandEntry {
   /** "token" for a round picture (a tuanzi): smaller, standing on the sheet's edge. A sticker of 阿草 by default. */
   hostKind?: "sticker" | "token";
   timer?: { label: string; time?: string };
-  /** The quiet key on the band's right; [icon] is an Icon name, "info" by default. */
-  info?: { label: string; open: () => void; icon?: string };
+  info?: { label: string; open: () => void };
 }
 
 const entries = shallowReactive(new Map<ParkTab, ComputedRef<BandEntry>>());

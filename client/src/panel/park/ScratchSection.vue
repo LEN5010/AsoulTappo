@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The park's scratch cards (docs/design/amusement-park.md §5, docs/design/park-ui-rebuild.md §5.2): 阿草 keeps the
-// stall from the park's coral band (band.ts: its face, and the odds behind the band's info key). The cards on sale
+// stall from the park's coral band (band.ts: its face, and the odds behind the band's info key); the save's own cards
+// of the latest days are behind the 明细 key in the bottom bar (ScratchLedger). The cards on sale
 // lie on the table: the one picked straight in front, another tilted behind it with its stub showing; pressing the
 // one behind swaps them. With one card on sale it lies alone. A card is nine cells under a foil coating. Dragging
 // over it scratches the coating off, and three cells alike are the prize. The server decides the prize when the card
@@ -28,6 +29,7 @@ import asoulLogo from "../../assets/brand/asoul-logo.svg";
 import { Coating, HOST, SCRATCH_EMOTES, ownedScratchEmotes, type Box } from "../../scratch";
 import { parkTab, useBand } from "./band";
 import { COIN_SMALL } from "./coin";
+import ScratchLedger from "./ScratchLedger.vue";
 import ScratchOdds from "./ScratchOdds.vue";
 import ScratchShowcase from "./ScratchShowcase.vue";
 import ScratchTile from "./ScratchTile.vue";
@@ -102,6 +104,8 @@ const untouched = ref(true);
 /** The emote the open card just added to the album. */
 const fresh = ref("");
 const odds = ref(false);
+/** The save's card history sheet is open. */
+const history = ref(false);
 const error = ref("");
 
 /** The card in front is off sale: one bought before it was hidden. */
@@ -705,8 +709,10 @@ watch(() => status.value?.player, (player, was) => {
 
     <PlateDetail v-if="plateView && albumPlate" :plate="albumPlate" @close="plateView = false" />
     <ScratchOdds v-if="odds" :kind="kind" :complete="complete" @close="odds = false" />
+    <ScratchLedger v-if="history" @close="history = false" />
 
     <div class="park-actions">
+      <button type="button" class="ui-btn park-ledger-key" @click="history = true"><Icon name="clock" :size="16" /><span>明细</span></button>
       <!-- A refusal stands in the bar beside the key, so the table does not move. -->
       <p v-if="error" class="ui-error stall-error" role="alert">{{ error }}</p>
       <span v-else-if="!lone" class="top"><small>最高</small><Icon name="shard" :size="18" /><b>{{ fmt(topPrize(kind)) }}</b></span>

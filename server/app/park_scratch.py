@@ -13,7 +13,7 @@ from typing import Any, Sequence
 from . import scratch as scratchlogic
 from .cards import Rng
 from .game import SCRATCH_DAYS, GameError, player_id_for
-from .park import Park
+from .park import LEDGER_DAYS, Park
 from .store import Store, day_of
 
 # Symbols besides amounts and emote keys. BLANK fills premium cards, which have too few prizes for nine cells.
@@ -235,6 +235,26 @@ class ParkScratch:
         elif row["shards"] >= cfg["serverAt"][kind]:
             self.park.announce(st, "scratch_big", pid, now, card=kind, shards=row["shards"])
         return row
+
+    def history(self, token: str) -> dict[str, Any]:
+        """The save's cards on its latest LEDGER_DAYS days with any (within SCRATCH_DAYS, so no day is half pruned),
+        newest first: per day the coins spent on cards, and per kind the cards bought, the shards and coins the
+        revealed ones paid and the items they gave."""
+        self.cfg
+        g = self.park.game
+        found = g.store.park_scratch_history(player_id_for(token), LEDGER_DAYS, day_of(g.now() - SCRATCH_DAYS * 86400))
+        spent = {r["day"]: r["coins"] for r in found["spent"]}
+        days: list[dict[str, Any]] = []
+        kinds: dict[tuple[str, str], dict[str, Any]] = {}
+        for r in found["sums"]:
+            if not days or days[-1]["day"] != r["day"]:
+                days.append({"day": r["day"], "spent": spent.get(r["day"], 0), "kinds": []})
+            k = {"kind": r["kind"], "cards": r["cards"], "shards": r["shards"], "coins": r["coins"], "items": []}
+            days[-1]["kinds"].append(k)
+            kinds[(r["day"], r["kind"])] = k
+        for r in found["items"]:
+            kinds[(r["day"], r["kind"])]["items"].append(r["item"])
+        return {"days": days}
 
     def prune(self) -> int:
         """Forgets revealed cards older than SCRATCH_DAYS. Returns rows removed."""

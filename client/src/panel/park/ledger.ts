@@ -1,5 +1,6 @@
-// The save's own coin ledger and redeem history (protocol/PROTOCOL.md 驼币, GET /api/park/ledger): the answer's
-// shape, the words for each ledger source, and the sums and dates the sheet shows.
+// The save's own coin ledger and redeem history (protocol/PROTOCOL.md 驼币, GET /api/park/ledger) and its coin scratch
+// cards (刮刮乐, GET /api/park/scratch/history): the answers' shapes, the words for each ledger source, and the sums
+// and dates the sheets show.
 import { parkTry } from "../../stores/park";
 
 export interface LedgerItem { source: string; amount: number; count: number }
@@ -54,5 +55,24 @@ export function chinaDay(ts: number): string {
 export async function loadLedger(): Promise<{ ok: true; data: Ledger } | { ok: false; message: string }> {
   const r = await parkTry<Ledger>("GET", "/api/park/ledger");
   if (r.ok) return { ok: true, data: { days: r.data.days ?? [], redeems: r.data.redeems ?? [] } };
+  return { ok: false, message: (r.error.status && r.error.message) || "无法连接服务器" };
+}
+
+export interface ScratchKindDay { kind: string; cards: number; shards: number; coins: number; items: string[] }
+export interface ScratchDay { day: string; spent: number; kinds: ScratchKindDay[] }
+
+const KIND_NAMES: Record<string, string> = { basic: "普通刮刮乐", premium: "豪华刮刮乐" };
+/** A card kind's name; a kind newer than this client gets a generic one. */
+export const scratchKindName = (kind: string) => KIND_NAMES[kind] ?? "刮刮乐";
+
+/** Shards the day's cards paid. */
+export function dayShards(day: ScratchDay): number {
+  return day.kinds.reduce((sum, k) => sum + k.shards, 0);
+}
+
+/** The answer, or the line saying why it did not come. */
+export async function loadScratchHistory(): Promise<{ ok: true; days: ScratchDay[] } | { ok: false; message: string }> {
+  const r = await parkTry<{ days?: ScratchDay[] }>("GET", "/api/park/scratch/history");
+  if (r.ok) return { ok: true, days: r.data.days ?? [] };
   return { ok: false, message: (r.error.status && r.error.message) || "无法连接服务器" };
 }

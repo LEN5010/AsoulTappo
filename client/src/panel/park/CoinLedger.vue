@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The save's own coin history (behind the coin page's band key): coins in and out per day with the day's net, and
+// The save's own coin history (behind the 明细 key in the coin page's bottom bar): coins in and out per day with the day's net, and
 // the redeem codes it used with what each gave. Loaded each time the sheet opens.
 import { computed, onMounted, ref } from "vue";
 import { arrowSelect } from "../../ui/focus";

@@ -1296,6 +1296,31 @@ class Store:
                                    (pid, kind)).fetchone()
         return row is not None
 
+    def park_scratch_history(self, pid: str, days: int, after: str) -> dict[str, list[dict[str, Any]]]:
+        """The save's coin cards on its latest [days] China days with any after [after], newest day first. `sums`: per
+        day and kind the cards bought, and the shards and coins the revealed ones paid. `items`: the items revealed
+        cards paid, in the order bought. `spent`: per day the coins spent on cards (coin_ledger)."""
+        with self._lock:
+            picked = self._db.execute(
+                "SELECT DISTINCT day FROM park_scratch_cards WHERE player_id = ? AND day > ? ORDER BY day DESC LIMIT ?",
+                (pid, after, days)).fetchall()
+            if not picked:
+                return {"sums": [], "items": [], "spent": []}
+            first = picked[-1]["day"]
+            sums = self._db.execute(
+                "SELECT day, kind, COUNT(*) AS cards, "
+                "COALESCE(SUM(CASE WHEN revealed > 0 THEN shards END), 0) AS shards, "
+                "COALESCE(SUM(CASE WHEN revealed > 0 THEN coins END), 0) AS coins "
+                "FROM park_scratch_cards WHERE player_id = ? AND day >= ? GROUP BY day, kind ORDER BY day DESC, kind",
+                (pid, first)).fetchall()
+            items = self._db.execute(
+                "SELECT day, kind, item FROM park_scratch_cards WHERE player_id = ? AND day >= ? AND revealed > 0 "
+                "AND item != '' ORDER BY id", (pid, first)).fetchall()
+            spent = self._db.execute(
+                "SELECT day, -SUM(amount) AS coins FROM coin_ledger WHERE player_id = ? AND day >= ? "
+                "AND source = 'scratch' GROUP BY day", (pid, first)).fetchall()
+        return {"sums": [dict(r) for r in sums], "items": [dict(r) for r in items], "spent": [dict(r) for r in spent]}
+
     def prune_park_scratch(self, before: float) -> int:
         """Deletes revealed cards bought before [before]. A card still to be revealed is kept however old, and so is
         each save's first card of each kind."""

@@ -57,3 +57,30 @@ describe("loadLedger", () => {
     expect(await loadLedger()).toEqual({ ok: false, message: "无法连接服务器" });
   });
 });
+
+describe("scratch history", () => {
+  it("sums the day's shards and names the kinds", async () => {
+    const { dayShards, scratchKindName } = await import("./ledger");
+    const day = { day: "2026-11-15", spent: 9, kinds: [
+      { kind: "basic", cards: 4, shards: 300, coins: 1, items: [] },
+      { kind: "premium", cards: 1, shards: 2000, coins: 0, items: ["char:嘉然帝江"] },
+    ] };
+    expect(dayShards(day)).toBe(2300);
+    expect(scratchKindName("basic")).toBe("普通刮刮乐");
+    expect(scratchKindName("gold")).toBe("刮刮乐");
+  });
+});
+
+describe("loadScratchHistory", () => {
+  beforeEach(() => parkTry.mockReset());
+
+  it("asks the history path and passes the days on, or the reason", async () => {
+    const { loadScratchHistory } = await import("./ledger");
+    const days = [{ day: "2026-11-01", spent: 3, kinds: [{ kind: "basic", cards: 3, shards: 0, coins: 1, items: [] }] }];
+    parkTry.mockResolvedValue({ ok: true, data: { days } });
+    expect(await loadScratchHistory()).toEqual({ ok: true, days });
+    expect(parkTry).toHaveBeenCalledWith("GET", "/api/park/scratch/history");
+    parkTry.mockResolvedValue({ ok: false, error: { status: 0, code: "desktop", message: "Error: boom", detail: {} } });
+    expect(await loadScratchHistory()).toEqual({ ok: false, message: "无法连接服务器" });
+  });
+});

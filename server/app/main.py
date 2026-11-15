@@ -486,6 +486,12 @@ def api_park_scratch_buy(body: ParkScratchBody, who: PlayerId = Depends(player),
     return _guard(park_scratch.buy, who, body.kind, x_client_version)
 
 
+@app.get("/api/park/scratch/history")
+def api_park_scratch_history(who: PlayerId = Depends(player)) -> dict:
+    """The save's own coin scratch cards of its latest days: per day and kind, what they cost and paid."""
+    return _guard(park_scratch.history, who)
+
+
 @app.post("/api/park/scratch/reveal")
 async def api_park_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depends(player)) -> dict:
     out = await run_in_threadpool(_guard, park_scratch.reveal, who, body.card)

@@ -25,6 +25,15 @@
   --key-top: var(--c-200);
   --key-bottom: var(--c-200);
 }
+/* The page's history key (明细), first in the bar on the coin and scratch pages. */
+.park-actions > .park-ledger-key {
+  flex: none;
+  gap: 6px;
+  padding: 0 14px 0 12px;
+}
+.park-actions > .park-ledger-key svg {
+  color: var(--c-700);
+}
 .park-actions > .park-actions-main {
   margin-left: auto;
   display: flex;
