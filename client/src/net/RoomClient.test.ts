@@ -40,6 +40,7 @@ function setup() {
     onMotion: vi.fn(),
     onEmote: vi.fn(),
     onPoke: vi.fn(),
+    onDrink: vi.fn(),
     onProfile: vi.fn(),
     onCheer: vi.fn(),
     onCheerDone: vi.fn(),
@@ -122,6 +123,8 @@ describe("RoomClient", () => {
     expect(ev.onPoke).toHaveBeenLastCalledWith("x", "me", false);
     ws.recv({ type: "poke", from: "x", to: "me", quiet: true });
     expect(ev.onPoke).toHaveBeenLastCalledWith("x", "me", true);
+    ws.recv({ type: "drink", id: "x" });
+    expect(ev.onDrink).toHaveBeenCalledWith("x");
     ws.recv({ type: "tap", id: "x", count: 3, total: 9 });
     expect(ev.onTap).toHaveBeenCalledWith("x", 3, 9);
     ws.recv({ type: "motion_batch", motions: [

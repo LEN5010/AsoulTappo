@@ -1,5 +1,7 @@
-// Interface sounds. The draw uses Kenney's CC0 card recordings, and a skin's spotlight a phrase cut
-// from the Quiet backing track (see assets/sfx/LICENSE.md); the alpaca's noises are synthesized. settings.sfx turns them all off.
+// Interface sounds. The draw uses Kenney's CC0 card recordings, a skin's spotlight a phrase cut from the Quiet backing
+// track, the tomato timer two CC0 tones from akx/Notifications (see assets/sfx/LICENSE.md); the alpaca's noises are
+// synthesized.
+// settings.sfx turns them all off except the timer's, which has its own switch.
 import { watch } from "vue";
 import { settings } from "../stores/settings";
 
@@ -166,6 +168,35 @@ export function stopTheme(fade = 0.5): void {
   level.gain.setValueAtTime(level.gain.value, t);
   level.gain.linearRampToValueAtTime(0.0001, t + fade);
   src.stop(t + fade + 0.05);
+}
+
+/**
+ * The tomato timer's tunes: a rising bell when a rest begins, three plucks when it ends. The timer has its own switch
+ * for them, so they play with settings.sfx off too, at settings.volume. Without a press in this window yet the output
+ * may still be asleep; a tune then stays silent rather than coming out at the next click.
+ */
+const TUNES = { rest: { name: "pomodoro-rest", gain: 1 }, focus: { name: "pomodoro-focus", gain: 1 } };
+export function pomodoroTune(kind: "rest" | "focus"): void {
+  const ac = context();
+  if (!ac || !master) return;
+  const out = master;
+  const tune = TUNES[kind];
+  // Some webviews let the output wake without a press; a refused or slow wake leaves the tune unplayed.
+  const awake = ac.state === "running" ? Promise.resolve() : Promise.race([ac.resume(), new Promise((r) => setTimeout(r, 500))]);
+  void Promise.all([decoded(ac, tune.name), awake.catch(() => {})]).then(([buffer]) => {
+    if (!buffer || ac.state !== "running") return;
+    const src = ac.createBufferSource();
+    src.buffer = buffer;
+    const level = ac.createGain();
+    level.gain.value = tune.gain;
+    src.connect(level).connect(out);
+    src.start();
+  });
+}
+
+/** Wakes the sound output on a press (the timer's start key), so the tunes can play later without one. */
+export function wakeAudio(): void {
+  context();
 }
 
 /** A card slides off its tile into the spotlight. */

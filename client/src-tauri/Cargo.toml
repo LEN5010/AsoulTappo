@@ -27,6 +27,8 @@ tauri-plugin-global-shortcut = "2"
 # Copying from the panel (copyText in src/composables/tauri.ts): WebKit refuses the web clipboard on the click
 # that first focuses the panel.
 tauri-plugin-clipboard-manager = "2"
+# The tomato timer's notices from the system (notify in src/lib.rs).
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"

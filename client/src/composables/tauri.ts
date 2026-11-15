@@ -56,7 +56,8 @@ export async function listenInput(cb: (e: InputEvent) => void): Promise<() => vo
   };
 }
 
-export type TrayAction = "toggle-panel" | "open-panel" | "toggle-click-through" | "reset-position" | "toggle-capture";
+export type TrayAction = "toggle-panel" | "open-panel" | "toggle-click-through" | "reset-position" | "toggle-capture" |
+  "toggle-pomodoro";
 
 export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
@@ -188,6 +189,25 @@ export async function debugLogEnabled(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * A notice from the system; whether it went out. The app sends it through tauri-plugin-notification (src/lib.rs); the
+ * browser preview uses the page's notifications and asks for permission first.
+ */
+export async function notify(title: string, body: string): Promise<boolean> {
+  if (isTauri) {
+    try {
+      await invoke("notify", { title, body });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (typeof Notification === "undefined") return false;
+  const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
+  if (allowed) new Notification(title, { body });
+  return allowed;
 }
 
 /** Opens one of the About links (repository, author's space, mail) outside the app. */

@@ -30,8 +30,8 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
-    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, PongMsg, ProfileMsg,
-    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
+    KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
+    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
 from .lottery import Lottery
@@ -214,6 +214,8 @@ async def _departed(room_id: str, peer: Peer) -> None:
 
 
 manager.on_depart = _departed
+# Room names are masked like nicks, with whichever list is current.
+manager.mask = lambda text: blocklist.mask(text)
 
 # MAIN_API_URL: the main site's API (official server: https://len5010.top/dynamics/api). Unset on
 # self-hosted servers, which then offer guest saves only.
@@ -262,7 +264,7 @@ async def create_room() -> dict:
 
 @app.get("/rooms")
 async def public_rooms(authorization: str = Header(default="")) -> dict:
-    """Rooms their host made public: host nick and character, member count and room size. A server with main-site
+    """Rooms their host made public: their name, host nick and character, member count and room size. A server with main-site
     accounts shows them to signed-in accounts only (a linked save is not needed), so guest saves made in bulk cannot
     crowd them; joining by room id needs no account."""
     if accounts:
@@ -839,6 +841,8 @@ async def _remask() -> None:
         del raw_nicks[gone]
     for room_id, peer in changed:
         await manager.broadcast(room_id, _state(peer))
+    for room in manager.remask_names():
+        await manager.broadcast(room.id, _room_info(room.id))
 
 
 @app.get("/admin/blocked-words", dependencies=[Depends(admin)])
@@ -1103,6 +1107,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     game.tracker.count("poke")
                 except PokeRefused as refused:
                     await err(refused.code, "")
+            elif isinstance(msg, DrinkMsg):
+                # One inside DRINK_INTERVAL is dropped without a word: the cup already showed.
+                if manager.drink(room_id, peer, time.monotonic()):
+                    game.tracker.count("drink")
             elif isinstance(msg, ProfileMsg):
                 now = time.monotonic()
                 if now - peer.profile_at < PROFILE_INTERVAL:
@@ -1131,10 +1139,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 game.tracker.count("emote")
                 await manager.broadcast(room_id, EmoteBroadcast(
                     id=peer.id, emote=msg.emote).model_dump())
-            elif isinstance(msg, (SetPublicMsg, KickMsg)):
+            elif isinstance(msg, (SetPublicMsg, SetNameMsg, KickMsg)):
                 room = manager.rooms.get(room_id)
                 if room is None or room.host != peer.id:
                     await err("not_host", "only the host can do this")
+                elif isinstance(msg, SetNameMsg):
+                    if manager.rename(room, msg.name):
+                        await manager.broadcast(room_id, _room_info(room_id))
+                    else:
+                        # Nothing the room sees changed: only the sender hears the current state.
+                        await send(_room_info(room_id))
                 elif isinstance(msg, SetPublicMsg):
                     if msg.public and accounts and not peer.account:
                         # With main-site accounts, only a host signed in to one lists a room.

@@ -35,7 +35,7 @@ def test_a_snapshot_keeps_the_listing_the_host_save_and_the_removed_saves():
     m.rooms["x"].banned.add("pz")
     # A room whose host has no save and that nobody listed or guarded has nothing to keep.
     m.join("y", "c", "c", Dummy())
-    assert m.snapshot() == [{"room": "x", "public": True, "host": "pa", "banned": ["pz"]}]
+    assert m.snapshot() == [{"room": "x", "public": True, "host": "pa", "banned": ["pz"], "name": ""}]
 
 
 def test_the_host_of_the_last_run_takes_its_room_back():
@@ -113,7 +113,7 @@ def test_the_stop_signal_notes_the_rooms_before_the_server_closes_them(monkeypat
     finally:
         signal.signal(signal.SIGTERM, previous)
     assert seen == [signal.SIGTERM, signal.SIGTERM]
-    assert main._stopping_rooms == [{"room": "x", "public": False, "host": "pa", "banned": []}]
+    assert main._stopping_rooms == [{"room": "x", "public": False, "host": "pa", "banned": [], "name": ""}]
 
 
 def test_a_restarted_room_is_handed_back_to_its_host(monkeypatch):
@@ -127,11 +127,11 @@ def test_a_restarted_room_is_handed_back_to_its_host(monkeypatch):
             assert refused["code"] == "room_full" and refused["reason"] == "banned"
         with c.websocket_connect("/ws") as b, c.websocket_connect("/ws") as a:
             jb = join(b, nick="b", tok=token("b"))
-            assert jb["info"] == {"host": jb["you"], "public": False}
+            assert jb["info"] == {"host": jb["you"], "public": False, "name": ""}
             ja = join(a, nick="a", tok=token("a"))
-            assert ja["info"] == {"host": ja["you"], "public": True}
+            assert ja["info"] == {"host": ja["you"], "public": True, "name": ""}
             assert b.receive_json()["type"] == "member_joined"
-            assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True}
+            assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True, "name": ""}
             assert c.get("/rooms").json()["rooms"][0]["room"] == "r1"
     # Without a stop signal (as in tests) nothing is saved for the next start.
     assert main.game.store.take_rooms() == []

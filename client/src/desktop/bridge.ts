@@ -5,6 +5,7 @@ import { settings, type Settings } from "../stores/settings";
 import * as player from "../stores/player";
 import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
+import * as pomodoroStore from "../stores/pomodoro";
 import { economy, setEconomy } from "../stores/economy";
 import { restingMotion, type PetMotion } from "../net/protocol";
 import { remoteMotion } from "../net/MotionFrames";
@@ -23,16 +24,17 @@ const groupSources = {
   economy: () => economy.value,
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
-    info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value,
+    info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value, nameOn: room.nameOn.value,
     cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value }),
   publicRooms: () => room.publicRooms.value,
+  pomodoro: () => pomodoroStore.pomodoro.value,
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
     ({ id, uid, nick, character, plate })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
     scratchCard: groupSources.scratchCard(), park: groupSources.park(), economy: groupSources.economy(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
-    publicRooms: groupSources.publicRooms(), members: groupSources.members() };
+    publicRooms: groupSources.publicRooms(), pomodoro: groupSources.pomodoro(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
@@ -56,6 +58,7 @@ function applyGroups(s: Partial<Groups>) {
   if (s.checkins !== undefined) player.checkins.value = s.checkins;
   if (s.scratchCard !== undefined) player.scratchCard.value = s.scratchCard;
   if (s.park !== undefined) parkStore.park.value = s.park;
+  if (s.pomodoro !== undefined) pomodoroStore.pomodoro.value = s.pomodoro;
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
     player.freshItems.clear();
@@ -70,6 +73,7 @@ function applyGroups(s: Partial<Groups>) {
     room.roomInfo.value = s.room.info;
     room.duel.value = s.room.duel;
     room.profileOn.value = s.room.profileOn;
+    room.nameOn.value = s.room.nameOn;
     room.cheerOn.value = s.room.cheerOn;
     room.cheer.value = s.room.cheer;
     room.cheerDone.value = s.room.cheerDone;
@@ -85,7 +89,7 @@ function applyGroups(s: Partial<Groups>) {
     for (const m of s.members) {
       const existing = room.members.get(m.id);
       if (existing) Object.assign(existing, m);
-      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, win: null, motion: markRaw(restingMotion()) });
+      else room.members.set(m.id, { ...m, taps: 0, pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: markRaw(restingMotion()) });
       // What its pet was doing may have arrived ahead of the member itself.
       const early = pendingRuntime.get(m.id);
       if (early) { pendingRuntime.delete(m.id); applyMember(early); }
@@ -254,6 +258,7 @@ export async function initDesktop(): Promise<() => void> {
         case "joinRoom": room.joinRoom(args[0] as string); break;
         case "leaveRoom": room.leaveRoom(); break;
         case "setRoomPublic": room.setRoomPublic(args[0] as boolean); break;
+        case "setRoomName": room.setRoomName(args[0] as string); break;
         case "kickMember": room.kickMember(args[0] as string); break;
         case "loadPublicRooms": await room.loadPublicRooms(); break;
         case "inviteDuel": room.inviteDuel(args[0] as string, args[1] as number); break;
@@ -262,6 +267,8 @@ export async function initDesktop(): Promise<() => void> {
         case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
         case "park": result = await parkStore.parkRequest(args[0] as parkStore.ParkMethod, args[1] as string, args[2]); break;
         case "tidyRemotes": tidyRemotes(); break;
+        case "beginPomodoro": pomodoroStore.beginPomodoro(); break;
+        case "endPomodoro": pomodoroStore.endPomodoro(); break;
       }
       await publish();
       await emitTo("panel", `desktop:reply:${id}`, { result });

@@ -9,7 +9,7 @@ from .notice import version_key
 from .store import Store, day_of
 
 # Keys of the per-day counts.
-COUNT_KEYS = ("room_join", "poke", "profile", "board_profile", "emote", "duel_invite", "cheer_round")
+COUNT_KEYS = ("room_join", "poke", "drink", "profile", "board_profile", "emote", "duel_invite", "cheer_round")
 # Saves whose client is remembered; the cache starts over when full.
 CLIENT_CACHE_LIMIT = 50000
 MAX_VERSION = 32

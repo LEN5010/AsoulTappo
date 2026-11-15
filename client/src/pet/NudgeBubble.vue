@@ -1,9 +1,14 @@
 <script setup lang="ts">
-// Over the own pet: a reminder to drink water or get up, or the lunch question (src/stores/nudge.ts).
-import { NUDGE_WIDTH, answerLunch, closeNudge, nudge } from "../stores/nudge";
+// Over the own pet: a reminder (water, getting up, lunch, hello, bedtime) or a bubble of the tomato timer
+// (src/stores/nudge.ts, src/stores/pomodoro.ts).
+import { NUDGE_WIDTH, answerLunch, closeNudge, drankWater, nudge } from "../stores/nudge";
+import { nextPomodoro } from "../stores/pomodoro";
 import PetBubble from "./PetBubble.vue";
 
 defineProps<{ shift: number; below: boolean }>();
+
+/** The single key of the kinds that have one. */
+const OK: Partial<Record<string, string>> = { move: "好", greet: "嗨", night: "晚安", rest: "好", back: "好" };
 </script>
 
 <template>
@@ -15,7 +20,12 @@ defineProps<{ shift: number; below: boolean }>();
           <button type="button" class="ui-btn small" @click="answerLunch(false)">还没</button>
           <button type="button" class="ui-btn small primary" @click="answerLunch(true)">吃了</button>
         </template>
-        <button v-else type="button" class="ui-btn small primary" @click="closeNudge">好</button>
+        <button v-else-if="nudge.kind === 'water'" type="button" class="ui-btn small primary" @click="drankWater">喝了</button>
+        <template v-else-if="nudge.kind === 'again'">
+          <button type="button" class="ui-btn small" @click="closeNudge">不了</button>
+          <button type="button" class="ui-btn small primary" @click="nextPomodoro">再来一轮</button>
+        </template>
+        <button v-else type="button" class="ui-btn small primary" @click="closeNudge">{{ OK[nudge.kind] ?? "好" }}</button>
       </div>
     </div>
   </PetBubble>

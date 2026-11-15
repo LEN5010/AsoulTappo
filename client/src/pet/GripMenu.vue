@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // The strip's menu, opened from the handle at the left end of the strip or of the own name plate: fold the strip,
-// swap it for the name plate and back, and the shard pops. It opens above the handle, or below where the screen
-// ends above it.
+// swap it for the name plate and back, the shard pops, and the tomato timer's page. It opens above the handle, or below
+// where the screen ends above it.
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";
 
 /** `plate`: the own name plate stands in the strip's place. */
 defineProps<{ plate: boolean; shardPop: boolean }>();
-defineEmits<{ fold: []; swap: []; shardPop: [] }>();
+defineEmits<{ fold: []; swap: []; shardPop: []; pomodoro: [] }>();
 
 const root = ref<HTMLElement>();
 const down = ref(false);
@@ -29,6 +29,9 @@ onMounted(() => {
     <button type="button" role="menuitemcheckbox" :aria-checked="shardPop" @click="$emit('shardPop')">
       <Icon name="shard" :size="16" /><span>显示敲击碎片</span>
       <Icon class="tick" :class="{ on: shardPop }" name="check" :size="14" />
+    </button>
+    <button type="button" role="menuitem" @click="$emit('pomodoro')">
+      <Icon name="tomato" :size="16" /><span>番茄钟</span>
     </button>
   </div>
 </template>

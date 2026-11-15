@@ -155,7 +155,7 @@ it("mirrors remote pet animation poses into the panel without another room socke
   const pose = { dx: 8, dy: -4, keyDown: true, left: true, right: false };
   for (const id of ["friend", "unseen"]) {
     desk.room.members.set(id, { id, nick: '朋友', character: '乃琳', taps: 5, plate: 'c1',
-      pulse: 0, emote: null, combo: null, win: null, motion: { ...pose } });
+      pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { ...pose } });
   }
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.members.get('friend')!.plate).toBe('c1');
@@ -205,7 +205,7 @@ it.each(["keyDown", "left", "right"] as const)("shows a short remote %s press in
   panel.ui.ui.page = "room";
   const resting = { dx: 0, dy: 0, keyDown: false, left: false, right: false };
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, motion: { ...resting } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { ...resting } });
   await vi.advanceTimersByTimeAsync(50);
   const drawn: boolean[] = [];
   stops.push(panel.motion.subscribe("friend", (pose) => drawn.push(pose[button])));
@@ -240,7 +240,7 @@ it("sends changed member runtime without replacing the collection, and resyncs a
   const panel = await context(true);
   panel.ui.ui.page = "room";
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 1,
-    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   const owned = panel.player.collection.owned;
   const { emitTo } = await import("@tauri-apps/api/event");
@@ -276,7 +276,7 @@ it("mirrors scratch card wins over partner pets and the own pet into the panel r
   panel.ui.ui.page = "room";
   await vi.advanceTimersByTimeAsync(50);
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   desk.room.members.get("friend")!.win = { count: 2500, seq: 1, beat: 1 };
   desk.room.localPet.win = { count: 30000, seq: 1, beat: 1 };
@@ -342,7 +342,7 @@ it("mirrors the duel into the panel and runs invites in the desk", async () => {
   await vi.advanceTimersByTimeAsync(50);
   expect(invite).toHaveBeenCalledWith("friend", 1500);
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0, pulse: 0, emote: null,
-    combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    combo: null, win: null, sip: 0, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   desk.room.duel.value = { id: "d1", other: { id: "friend", nick: "朋友", character: "乃琳" }, sent: true, bet: 1500,
     prize: 2500, phase: "invite", answered: false, round: 0, sec: 15, until: Date.now() + 15000, hand: null, shown: null,
     won: false, reason: "" };
@@ -367,7 +367,7 @@ it("keeps a pet's pose that reaches the panel before the member and applies it o
   await emitTo("panel", "desktop:motion", { members: [{ id: "late", motion: pose }], local: { emote: null, win: null } });
   expect(panel.room.members.has("late")).toBe(false);
   desk.room.members.set("late", { id: "late", nick: "迟到", character: "贝拉", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   // The pose waits for the member; its taps come from the desk, which holds the current count.
   const late = panel.room.members.get("late")!;
@@ -384,7 +384,7 @@ it("forgets a member's pose in the panel once the member leaves", async () => {
   panel.ui.ui.page = "room";
   const pose = { dx: 6, dy: 0, keyDown: true, left: false, right: false };
   desk.room.members.set("gone", { id: "gone", nick: "走了", character: "嘉然", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, motion: { ...pose } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { ...pose } });
   await vi.advanceTimersByTimeAsync(50);
   const stop = panel.motion.subscribe("gone", () => {});
   await vi.advanceTimersByTimeAsync(50);
@@ -404,7 +404,7 @@ it("asks the room for no poses while the panel window is off screen, and again o
   const activity = await import("../stores/activity");
   panel.ui.ui.page = "room";
   desk.room.members.set("friend", { id: "friend", nick: "朋友", character: "乃琳", taps: 0,
-    pulse: 0, emote: null, combo: null, win: null, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
+    pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { dx: 0, dy: 0, keyDown: false, left: false, right: false } });
   await vi.advanceTimersByTimeAsync(50);
   const subscribed = vi.spyOn(desk.room, "setPanelMotionInterest");
   panel.motion.subscribe("friend", () => {});

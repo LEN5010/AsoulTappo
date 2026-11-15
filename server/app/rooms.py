@@ -5,6 +5,7 @@ import asyncio
 import math
 import secrets
 import time
+import unicodedata
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
@@ -17,7 +18,8 @@ MOTION_VERSION = 3
 # Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
 MAX_EDGES_PER_BATCH = 6
 # Room messages beyond the 1.1 set, listed in `joined` for clients that announce a motion version.
-FEATURES = ("poke", "profile", "cheer", "status")
+# "drink": members tell the room they drank water; "name": the host names the room.
+FEATURES = ("poke", "profile", "cheer", "status", "drink", "name")
 # Cheer rounds: members' paid taps fill a bar. A save's taps go on the bar once it has put CHEER_MIN_SHARE into the
 # round, and from then it cheers; the bar holds CHEER_PER_SAVE taps for each cheering save (CHEER_MIN_SAVES at least),
 # so a full bar means they put in that many each on average, and many small shares cannot fill it early. When it is
@@ -34,6 +36,10 @@ CHEER_SEND_INTERVAL = 2.0
 # Pokes: one per connection this often, and the same member again only after the longer wait.
 POKE_INTERVAL = 3.0
 POKE_SAME_INTERVAL = 10.0
+# A member who drank water after a reminder shows the room a cup; one per connection this often.
+DRINK_INTERVAL = 30.0
+# Room names, set by the host: at most this many characters once trimmed.
+ROOM_NAME_MAX = 16
 # Profile requests: one per connection this often; each reads the save.
 PROFILE_INTERVAL = 0.3
 # Rooms live in memory, so a restart empties them and clients join their rooms again. What the server saved of each
@@ -81,6 +87,12 @@ def room_status(value: str | None) -> str | None:
     return value if value in ROOM_STATUSES else None
 
 
+def clean_room_name(value: str) -> str:
+    """[value] without control and format characters, runs of whitespace as one space, trimmed."""
+    kept = "".join(c for c in value if c.isspace() or not unicodedata.category(c).startswith("C"))
+    return " ".join(kept.split())
+
+
 def new_room_id() -> str:
     return secrets.token_urlsafe(16)
 
@@ -111,6 +123,8 @@ class Peer:
     # Monotonic time of the last poke sent, and of the last one sent to each member.
     poke_at: float = float("-inf")
     poked: dict[str, float] = field(default_factory=dict)
+    # Monotonic time of the last drink shown to the room.
+    drink_at: float = float("-inf")
     # Monotonic time of the last profile request.
     profile_at: float = float("-inf")
     # Order of joining across all rooms: a save in two rooms cheers in the one it joined last.
@@ -199,6 +213,9 @@ class Room:
     edge_timer: asyncio.TimerHandle | None = None
     host: str | None = None
     public: bool = False
+    # The name the host gave the room as typed (kept for masking again when the blocked words change), and as shown.
+    raw_name: str = ""
+    name: str = ""
     # saves the host removed; gone with the room
     banned: set[str] = field(default_factory=set)
     # This cheer round's paid taps by player id (a save that left keeps its taps on the bar), when each save with taps
@@ -210,7 +227,7 @@ class Room:
 
     def info(self) -> dict:
         """Room-wide state sent in `joined` and `room_info`."""
-        return {"host": self.host, "public": self.public}
+        return {"host": self.host, "public": self.public, "name": self.name}
 
 
 @dataclass
@@ -220,6 +237,7 @@ class Restore:
     host: str | None
     banned: set[str]
     until: float
+    name: str = ""
 
 
 class RoomManager:
@@ -238,15 +256,18 @@ class RoomManager:
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
         # Rooms of the last run, by room id, until their host is back or they run out (see RESTORE_SECONDS).
         self.restoring: dict[str, Restore] = {}
+        # Masks blocked words in room names; main sets the blocklist's.
+        self.mask: Callable[[str], str] = lambda text: text
 
     def snapshot(self) -> list[dict]:
-        """What a restart would lose of each room: whether it is listed, the host's save and the removed saves."""
+        """What a restart would lose of each room: whether it is listed, the host's save, the removed saves and the
+        room's name."""
         out = []
         for room_id, room in list(self.rooms.items()):
             host = room.peers.get(room.host) if room.host else None
             entry = {"room": room_id, "public": room.public, "host": host.token if host else None,
-                     "banned": sorted(room.banned)}
-            if entry["public"] or entry["host"] or entry["banned"]:
+                     "banned": sorted(room.banned), "name": room.raw_name}
+            if entry["public"] or entry["host"] or entry["banned"] or entry["name"]:
                 out.append(entry)
         return out
 
@@ -257,7 +278,7 @@ class RoomManager:
             left = RESTORE_SECONDS - age(entry)
             if left > 0:
                 self.restoring[entry["room"]] = Restore(bool(entry["public"]), entry["host"] or None,
-                                                        set(entry["banned"]), now + left)
+                                                        set(entry["banned"]), now + left, str(entry.get("name") or ""))
 
     def _restoring(self, room_id: str) -> Restore | None:
         pending = self.restoring.get(room_id)
@@ -288,6 +309,7 @@ class RoomManager:
             room = self.rooms[room_id] = Room(room_id)
             if pending is not None:
                 room.banned |= pending.banned
+                self.rename(room, pending.name)
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
@@ -364,7 +386,7 @@ class RoomManager:
         out = []
         for room in listed[:limit]:
             host = room.peers[room.host]
-            out.append({"room": room.id, "host": {"nick": host.nick, "character": host.character},
+            out.append({"room": room.id, "name": room.name, "host": {"nick": host.nick, "character": host.character},
                         "members": len(room.peers), "max": self.max_size})
         return out
 
@@ -530,6 +552,36 @@ class RoomManager:
         rewards = {p.id: paid[p.token] for p in room.peers.values() if p.token in paid}
         await self.broadcast(room.id, {"type": "cheer_done", "round": number, "rewards": rewards})
         await self.broadcast(room.id, self.cheer_state(room))
+
+    def rename(self, room: Room, raw: str) -> bool:
+        """Names [room] (cleaned, blocked words masked; "" for none); whether what the room shows changed."""
+        raw = clean_room_name(raw)[:ROOM_NAME_MAX]
+        shown = self.mask(raw) if raw else ""
+        changed = shown != room.name
+        room.raw_name, room.name = raw, shown
+        return changed
+
+    def remask_names(self) -> list[Room]:
+        """Masks every room's name again (after the blocked words changed); the rooms whose name changed."""
+        changed = []
+        for room in list(self.rooms.values()):
+            shown = self.mask(room.raw_name) if room.raw_name else ""
+            if shown != room.name:
+                room.name = shown
+                changed.append(room)
+        return changed
+
+    def drink(self, room_id: str, peer: Peer, now: float) -> bool:
+        """Tells the rest of the room that [peer] drank water; False, and nothing sent, inside DRINK_INTERVAL."""
+        room = self.rooms.get(room_id)
+        if room is None or now - peer.drink_at < DRINK_INTERVAL:
+            return False
+        peer.drink_at = now
+        message = {"type": "drink", "id": peer.id}
+        for receiver in list(room.peers.values()):
+            if receiver is not peer:
+                receiver.enqueue(message)
+        return True
 
     def poke(self, room_id: str, peer: Peer, target_id: str, now: float) -> None:
         """Tells the room that [peer] poked [target_id]; raises PokeRefused (no_member, poke_cooldown)."""

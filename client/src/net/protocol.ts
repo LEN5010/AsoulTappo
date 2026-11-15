@@ -64,11 +64,15 @@ export interface RoomInfo {
   /** Member id of the host, who can list the room and remove members. */
   host: string | null;
   public: boolean;
+  /** The name the host gave the room, blocked words masked; "" or missing for none (servers before names). */
+  name?: string;
 }
 
 /** One entry of `GET /rooms`. */
 export interface PublicRoom {
   room: string;
+  /** "" or missing for none. */
+  name?: string;
   host: { nick: string; character: string };
   members: number;
   max: number;
@@ -106,12 +110,16 @@ export type ClientMessage =
   | { type: "motion_subscribe"; ids: string[] }
   /** Only to servers that list "poke" in `joined.features`. */
   | { type: "poke"; id: string }
+  /** Drank water after a reminder; only to servers that list "drink". */
+  | { type: "drink" }
   /** Only to servers that list "profile" in `joined.features`. */
   | { type: "profile"; id: string }
   | { type: "emote"; emote: string }
   | ({ type: "state" } & ProfilePatch)
   | { type: "ping" }
   | { type: "set_public"; public: boolean }
+  /** Host only; only to servers that list "name". */
+  | { type: "set_name"; name: string }
   | { type: "kick"; id: string }
   | { type: "dnd"; dnd: boolean }
   | { type: "duel_invite"; id: string; bet: number }
@@ -139,6 +147,8 @@ export type ServerMessage =
   | { type: "emote"; id: string; emote: string }
   /** [from] poked [to]; `quiet` on the copy for a member poked while turning invites down. */
   | { type: "poke"; from: string; to: string; quiet?: boolean }
+  /** Member [id] drank water after a reminder; not sent back to that member. */
+  | { type: "drink"; id: string }
   /** A member's scratch card paid enough shards to tell the room. */
   | { type: "scratch"; id: string; shards: number }
   /** A member won at least economy.park.race.roomAt shards in one dumpling race. */
@@ -171,6 +181,8 @@ export interface CollectionProgress { cards: [number, number]; emotes: [number, 
 export interface MemberProfile { showcase: string[]; progress: CollectionProgress | null }
 
 export const MAX_ROOM_SIZE = 20;
+/** Characters of a room name, as the server cuts it (rooms.ROOM_NAME_MAX). */
+export const ROOM_NAME_MAX = 16;
 /** Cards a save may pin to its profile. */
 export const MAX_SHOWCASE = 3;
 /** Longest nick the boards keep; the same as game.py MAX_BOARD_NICK. */

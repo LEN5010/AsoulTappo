@@ -41,7 +41,7 @@ def test_only_a_host_signed_in_lists_the_room_and_guests_join_by_id(env):
         assert guest.receive_json()["code"] == "host_needs_account"
         # taking the room off the list is always allowed
         guest.send_json({"type": "set_public", "public": False})
-        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": False}
+        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": False, "name": ""}
         guest.send_json({"type": "leave"})
         alice.receive_json()  # member_left
         assert alice.receive_json()["host"] != jg["you"]  # alice hosts now
@@ -77,7 +77,7 @@ def test_the_room_stays_public_when_the_host_passes_to_a_guest(env):
             alice.receive_json()
             guest.receive_json()
         assert guest.receive_json()["type"] == "member_left"
-        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": True}
+        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": True, "name": ""}
         assert [r["room"] for r in c.get("/rooms", headers=bearer("tok-bob")).json()["rooms"]] == ["r1"]
         # the guest host may take it off the list, but not put it back
         guest.send_json({"type": "set_public", "public": False})
@@ -94,7 +94,7 @@ def test_a_server_without_accounts_keeps_the_open_list_and_the_save_rule(env, mo
     with c.websocket_connect("/ws") as guest:
         jg = join(guest, "游客", token=GUEST)
         guest.send_json({"type": "set_public", "public": True})
-        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": True}
+        assert guest.receive_json() == {"type": "room_info", "host": jg["you"], "public": True, "name": ""}
     with c.websocket_connect("/ws") as nobody:
         join(nobody, "无存档")
         nobody.send_json({"type": "set_public", "public": True})

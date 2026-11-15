@@ -42,18 +42,18 @@ def test_first_member_hosts_and_the_earliest_remaining_member_takes_over():
     c = TestClient(app).__enter__()
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b, c.websocket_connect("/ws") as d:
         ja = join(a, nick="a")
-        assert ja["info"] == {"host": ja["you"], "public": False}
+        assert ja["info"] == {"host": ja["you"], "public": False, "name": ""}
         jb = join(b, nick="b")
-        assert jb["info"] == {"host": ja["you"], "public": False}
+        assert jb["info"] == {"host": ja["you"], "public": False, "name": ""}
         a.receive_json()  # member_joined b
         jd = join(d, nick="d")
         a.receive_json()
         b.receive_json()  # member_joined d
         a.send_json({"type": "leave"})
         assert b.receive_json() == {"type": "member_left", "id": ja["you"]}
-        assert b.receive_json() == {"type": "room_info", "host": jb["you"], "public": False}
+        assert b.receive_json() == {"type": "room_info", "host": jb["you"], "public": False, "name": ""}
         assert d.receive_json()["type"] == "member_left"
-        assert d.receive_json() == {"type": "room_info", "host": jb["you"], "public": False}
+        assert d.receive_json() == {"type": "room_info", "host": jb["you"], "public": False, "name": ""}
         # a member who is not the host leaving keeps the host
         d.send_json({"type": "leave"})
         assert b.receive_json() == {"type": "member_left", "id": jd["you"]}
@@ -72,9 +72,9 @@ def test_host_passes_on_when_the_host_connection_fails():
         await m._failed("x", pa)
         await asyncio.sleep(0)
         assert m.rooms["x"].host == pb.id
-        assert {"type": "room_info", "host": pb.id, "public": False} in d.got
+        assert {"type": "room_info", "host": pb.id, "public": False, "name": ""} in d.got
         assert d.got.index({"type": "member_left", "id": pa.id}) < d.got.index(
-            {"type": "room_info", "host": pb.id, "public": False})
+            {"type": "room_info", "host": pb.id, "public": False, "name": ""})
 
     asyncio.run(run())
 
@@ -102,10 +102,10 @@ def test_public_rooms_are_listed_until_the_host_closes_them():
         a.receive_json()
         assert c.get("/rooms").json() == {"rooms": []}  # private by default
         a.send_json({"type": "set_public", "public": True})
-        assert a.receive_json() == {"type": "room_info", "host": ja["you"], "public": True}
-        assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True}
+        assert a.receive_json() == {"type": "room_info", "host": ja["you"], "public": True, "name": ""}
+        assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True, "name": ""}
         assert c.get("/rooms").json() == {"rooms": [
-            {"room": "r1", "host": {"nick": "房主", "character": "贝拉"}, "members": 2, "max": 20},
+            {"room": "r1", "name": "", "host": {"nick": "房主", "character": "贝拉"}, "members": 2, "max": 20},
         ]}
         a.send_json({"type": "set_public", "public": False})
         assert b.receive_json()["public"] is False
@@ -124,7 +124,7 @@ def test_public_list_is_capped_and_keeps_full_rooms_after_the_others():
     assert len(listed) == 50
     assert listed[0]["room"] == "r0" and "r7" not in [r["room"] for r in listed]
     full = m.public_rooms(100)
-    assert len(full) == 55 and full[-1] == {"room": "r7", "host": {"nick": "h7", "character": "嘉然"},
+    assert len(full) == 55 and full[-1] == {"room": "r7", "name": "", "host": {"nick": "h7", "character": "嘉然"},
                                             "members": 2, "max": 2}
     assert "private" not in [r["room"] for r in full]
     # a full room still shows, after the rooms with space
@@ -255,13 +255,13 @@ def test_setting_the_same_public_flag_again_answers_only_the_host():
         a.receive_json()
         for _ in range(3):
             a.send_json({"type": "set_public", "public": False})
-            assert a.receive_json() == {"type": "room_info", "host": ja["you"], "public": False}
+            assert a.receive_json() == {"type": "room_info", "host": ja["you"], "public": False, "name": ""}
         a.send_json({"type": "set_public", "public": True})
         assert a.receive_json()["public"] is True
         a.send_json({"type": "set_public", "public": True})
         assert a.receive_json()["public"] is True
         # b heard the one change only
-        assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True}
+        assert b.receive_json() == {"type": "room_info", "host": ja["you"], "public": True, "name": ""}
         b.send_json({"type": "ping"})
         assert b.receive_json() == {"type": "pong"}
 

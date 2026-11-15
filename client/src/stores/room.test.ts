@@ -245,6 +245,17 @@ it("keeps only well-formed public rooms from the list", async () => {
   expect(r.publicRooms.value).toEqual([good]);
 });
 
+it("keeps the names of listed rooms and drops a name that is not text", async () => {
+  const { r } = await setup();
+  const room = { room: "pub", host: { nick: "房主", character: "贝拉" }, members: 3, max: 20 };
+  const rooms = [{ ...room, name: "自习室" }, { ...room, room: "odd", name: 7 }];
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ rooms }) })));
+  await r.loadPublicRooms();
+  const list = r.publicRooms.value as unknown[];
+  expect(list).toEqual([{ ...room, name: "自习室" }, { ...room, room: "odd" }]);
+  expect("name" in (list[1] as object)).toBe(false);
+});
+
 // ---------------------------------------------------------------- rock-paper-scissors
 const ME = { id: "me", uid: "u-me", nick: "old", character: "嘉然", taps: 0 };
 const FRIEND = { id: "friend", uid: "u-friend", nick: "朋友", character: "乃琳", taps: 0 };

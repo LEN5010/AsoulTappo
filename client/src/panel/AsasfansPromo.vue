@@ -29,7 +29,7 @@ const SPONSOR = "https://len5010.me/sponsor/";
       <span class="icon sponsor" aria-hidden="true"><Icon name="heart" :size="22" /></span>
       <span class="text">
         <b>赞助</b>
-        <small>分担服务器、网络与存储费用</small>
+        <small>用于服务器、网络与存储开销</small>
       </span>
       <button type="button" class="ui-btn" @click="openAboutLink(SPONSOR)">支持</button>
     </li>
@@ -66,10 +66,11 @@ const SPONSOR = "https://len5010.me/sponsor/";
   background: #fff;
   box-shadow: 0 0 0 1px var(--c-100), 0 2px 6px -2px rgba(var(--shadow-rgb), 0.18);
 }
+/* The heart is pink, the one colour on this page outside the coral ramp. */
 .icon.sponsor {
   display: grid;
   place-items: center;
-  color: var(--c-500);
+  color: #ec7aa0;
 }
 .text {
   flex: 1;

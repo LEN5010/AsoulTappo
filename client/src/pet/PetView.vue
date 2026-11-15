@@ -8,6 +8,7 @@ import { getCharacter, headAnchor, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import EmoteBubble from "./EmoteBubble.vue";
 import ComboBubble from "./ComboBubble.vue";
+import Icon from "../ui/Icon.vue";
 import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
 
@@ -31,6 +32,8 @@ const props = withDefaults(
     comboIcon?: string;
     /** Shards a scratch card or a duel just paid, shown large beside the head. */
     win?: ComboFrame | null;
+    /** Increments when the player drank water after a reminder: a cup beside the head for a moment. */
+    sip?: number;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
     /** largest emote picture height in px, for frames too short for a scaled-up bubble */
@@ -41,7 +44,7 @@ const props = withDefaults(
     flipBubble?: boolean;
   }>(),
   {
-    scale: 1, keyDown: false, pulse: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
+    scale: 1, keyDown: false, pulse: 0, sip: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
     emote: null, combo: null, win: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
   },
 );
@@ -99,6 +102,17 @@ watch(
 );
 const pressed = computed(() => props.keyDown || pulseDown.value);
 
+// ---- the cup after a drink of water
+const SIP_MS = 3200;
+const sipShown = ref(0);
+let sipTimer: ReturnType<typeof setTimeout> | undefined;
+onBeforeUnmount(() => clearTimeout(sipTimer));
+watch(() => props.sip, (n) => {
+  sipShown.value = n;
+  clearTimeout(sipTimer);
+  sipTimer = setTimeout(() => (sipShown.value = 0), SIP_MS);
+});
+
 const box = computed(() => ({ width: u(PET_BASE.width), height: u(PET_BASE.height) }));
 const kbStyle = computed(() => {
   const k = PET_BASE.keyboard;
@@ -140,6 +154,12 @@ const bubbleAnchor = computed(() => ({
       :frame="win" :icon="win?.icon ?? 'shard'" :x="(head.x + (flipBubble ? 34 : -34)) * s" :y="(head.y + 8) * s" :size="Math.max(20, 26 * s)"
     />
     <EmoteBubble :frame="emote" :anchor="bubbleAnchor" :size="emoteSize" :flip="flipBubble" />
+    <span
+      v-if="sipShown" :key="sipShown" class="sip"
+      :style="{ left: `${(head.x + (flipBubble ? 30 : -30)) * s}px`, top: `${(head.y - 14) * s}px`, '--sip': `${Math.max(26, 34 * s)}px` }"
+    >
+      <Icon name="cup" :size="Math.round(Math.max(26, 34 * s) * 0.58)" />
+    </span>
   </div>
 </template>
 
@@ -160,4 +180,26 @@ const bubbleAnchor = computed(() => ({
 .remote-motion .click-left, .remote-motion .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
+/* A paper disc with the cup, popping up beside the head and drifting off. */
+.sip {
+  position: absolute;
+  width: var(--sip);
+  height: var(--sip);
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--c-600);
+  box-shadow: 0 2px 6px rgba(var(--shadow-rgb), 0.35);
+  pointer-events: none;
+  animation: sip-pop 3.2s var(--ease-out) both;
+}
+@keyframes sip-pop {
+  0% { opacity: 0; scale: 0.4; }
+  10% { opacity: 1; scale: 1.12; }
+  18% { scale: 1; }
+  80% { opacity: 1; translate: -50% -50%; }
+  100% { opacity: 0; translate: -50% -110%; }
+}
 </style>

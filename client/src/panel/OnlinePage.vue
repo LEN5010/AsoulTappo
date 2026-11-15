@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { MAX_ROOM_SIZE, toHttpBase, type Member } from "../net/protocol";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { MAX_ROOM_SIZE, ROOM_NAME_MAX, toHttpBase, type Member, type PublicRoom } from "../net/protocol";
 import { Api, type ServerInfo } from "../net/api";
 import { accountLoginTrusted } from "../net/trust";
 import { settings } from "../stores/settings";
 import { activeAccount, saveCode, status } from "../stores/player";
 import {
   canDuel, cheer, cheerDone, cheerOn, conn, createRoom, duelConfig, duelOn, inRoom, inviteDuel, isHost, joinRoom, kickMember,
-  lastError, leaveRoom, loadPublicRooms, members, publicRooms, roomId, roomInfo, setRoomPublic, shownNick, youId,
+  lastError, leaveRoom, loadPublicRooms, members, nameOn, publicRooms, roomId, roomInfo, setRoomName, setRoomPublic, shownNick,
+  youId,
 } from "../stores/room";
 import { tidyRemotes } from "../stores/desk";
 import { copyText } from "../composables/tauri";
@@ -202,6 +203,29 @@ function kick() {
 watch(inRoom, (v) => { if (!v) { picking.value = null; kicking.value = null; } });
 watch(() => kicking.value && !members.has(kicking.value.id), (gone) => { if (gone) kicking.value = null; });
 
+// The room's name: big on the ticket with the room id under it. Hidden nicknames hide room names too: both are what
+// players typed.
+const roomName = computed(() => (settings.hideNicks ? "" : roomInfo.value?.name ?? ""));
+const listedName = (r: PublicRoom) => (settings.hideNicks ? "" : r.name ?? "");
+const canName = computed(() => isHost.value && nameOn.value);
+const naming = ref(false);
+const nameDraft = ref("");
+const nameBox = ref<HTMLInputElement>();
+async function startNaming() {
+  nameDraft.value = roomInfo.value?.name ?? "";
+  naming.value = true;
+  await nextTick();
+  nameBox.value?.select();
+}
+/** Enter or leaving the box sends the name; Escape drops it. */
+function saveName() {
+  if (!naming.value) return;
+  naming.value = false;
+  const name = nameDraft.value.trim();
+  if (name !== (roomInfo.value?.name ?? "")) setRoomName(name);
+}
+watch(canName, (can) => { if (!can) naming.value = false; });
+
 async function copy() {
   try {
     await copyText(roomId.value);
@@ -238,7 +262,17 @@ async function copy() {
           </button>
         </div>
         <div v-else class="ticket-body">
-          <b class="code" :title="roomId">{{ roomId }}</b>
+          <input
+            v-if="naming" ref="nameBox" v-model="nameDraft" class="ui-input" :maxlength="ROOM_NAME_MAX" placeholder="房间名"
+            aria-label="房间名" spellcheck="false" @keydown.enter="saveName" @keydown.esc="naming = false" @blur="saveName"
+          />
+          <div v-else class="room-id">
+            <b v-if="roomName" class="name" :title="roomName">{{ roomName }}</b>
+            <b class="code" :class="{ under: !!roomName }" :title="roomId">{{ roomId }}</b>
+          </div>
+          <button v-if="canName && !naming" type="button" class="ui-btn small ghost rename" aria-label="房间名" title="房间名" @click="startNaming">
+            <Icon name="pencil" :size="15" />
+          </button>
           <label v-if="canPublish" class="public">
             <span>公开</span>
             <input class="ui-switch" type="checkbox" :checked="roomInfo?.public" @change="onPublic" />
@@ -272,8 +306,10 @@ async function copy() {
         <li v-for="r in listed" :key="r.room" class="member">
           <CharacterAvatar :character="r.host.character" :size="32" />
           <span class="who">
-            <b>{{ shownNick(r.host) }}</b>
-            <small>{{ r.members }} / {{ r.max }}</small>
+            <b>{{ listedName(r) || shownNick(r.host) }}</b>
+            <small>
+              <template v-if="listedName(r)">{{ shownNick(r.host) }} · </template>{{ r.members }} / {{ r.max }}
+            </small>
           </span>
           <button type="button" class="ui-btn small" :disabled="r.members >= r.max" @click="joinListed(r.room)">加入</button>
         </li>
@@ -467,15 +503,37 @@ async function copy() {
 .ticket-body .ui-input:focus {
   box-shadow: 0 0 0 2px var(--ink);
 }
-.code {
+.room-id {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 800 28px/1.1 var(--font-latin);
   letter-spacing: 0.04em;
   user-select: text;
+}
+/* With a name the id steps back under it. */
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 22px/1.2 var(--font);
+}
+.code.under {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-3);
+}
+.rename {
+  flex: none;
+  padding: 0 6px;
 }
 .err {
   margin: 0;

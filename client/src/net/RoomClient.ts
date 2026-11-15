@@ -19,6 +19,8 @@ export interface RoomEvents {
   onEmote(id: string, emote: string): void;
   /** [from] poked [to]; [quiet] when the member poked turns invites down (no bubble then). */
   onPoke(from: string, to: string, quiet: boolean): void;
+  /** Member [id] drank water after a reminder. */
+  onDrink?(id: string): void;
   /** The answer to `sendProfile`: member [id]'s profile. */
   onProfile(id: string, profile: MemberProfile): void;
   /** The room's cheer bar, and a round finished with each paid member's shards. */
@@ -161,6 +163,12 @@ export class RoomClient {
   }
   sendPoke(id: string): void {
     this.send({ type: "poke", id });
+  }
+  sendDrink(): void {
+    this.send({ type: "drink" });
+  }
+  sendRoomName(name: string): void {
+    this.send({ type: "set_name", name });
   }
   sendProfile(id: string): void {
     this.send({ type: "profile", id });
@@ -316,6 +324,9 @@ export class RoomClient {
         break;
       case "poke":
         this.events.onPoke(msg.from, msg.to, !!msg.quiet);
+        break;
+      case "drink":
+        this.events.onDrink?.(msg.id);
         break;
       case "profile":
         this.events.onProfile(msg.id, { showcase: msg.showcase ?? [], progress: msg.progress ?? null });

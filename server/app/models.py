@@ -82,6 +82,12 @@ class PokeMsg(_Msg):
     id: str = Field(min_length=1, max_length=32)
 
 
+class DrinkMsg(_Msg):
+    """The member drank water after a reminder: the others see a cup beside that pet."""
+
+    type: Literal["drink"] = "drink"
+
+
 class ProfileMsg(_Msg):
     """Ask for a room member's profile: the showcase cards and collection progress of its save."""
 
@@ -115,6 +121,13 @@ class SetPublicMsg(_Msg):
 
     type: Literal["set_public"] = "set_public"
     public: bool
+
+
+class SetNameMsg(_Msg):
+    """Host only: name the room ("" for none). Trimmed, at most rooms.ROOM_NAME_MAX characters, blocked words masked."""
+
+    type: Literal["set_name"] = "set_name"
+    name: str = Field(max_length=64)
 
 
 class KickMsg(_Msg):
@@ -155,8 +168,8 @@ class DuelThrowMsg(_Msg):
 
 
 ClientMessage = Annotated[
-    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg, SetPublicMsg, KickMsg,
-          DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
+    Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
+          SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -182,6 +195,8 @@ class RoomInfo(BaseModel):
 
     host: Optional[str] = None  # member id
     public: bool = False
+    # the name the host gave the room, blocked words masked; "" for none
+    name: str = ""
 
 
 class JoinedMsg(BaseModel):

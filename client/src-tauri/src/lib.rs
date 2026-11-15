@@ -274,6 +274,17 @@ fn write_log(tag: String, msg: String) {
     applog::write(&format!("web:{tag}"), &msg);
 }
 
+/// A notice from the system for the tomato timer (src/stores/pomodoro.ts): it shows also while the pet is hidden or a
+/// game fills the screen. In development builds it comes from the terminal or PowerShell instead of the app.
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification().builder().title(title).body(body).show().map_err(|e| {
+        applog!("notify", "failed: {e}");
+        e.to_string()
+    })
+}
+
 #[tauri::command]
 fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("panel") {
@@ -810,6 +821,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(overlay.clone())
         .invoke_handler(tauri::generate_handler![
             set_click_through,
@@ -829,6 +841,7 @@ pub fn run() {
             autostart::autostart_status,
             autostart::set_autostart,
             write_log,
+            notify,
             access::input_access_missing,
             access::open_input_settings,
             hotkey::set_hotkey,
@@ -966,6 +979,7 @@ pub fn run() {
             let toggle_visible =
                 MenuItem::with_id(app, "toggle_visible", "显示 / 隐藏桌宠", true, None::<&str>)?;
             let panel = MenuItem::with_id(app, "toggle_panel", "打开 / 关闭面板", true, None::<&str>)?;
+            let pomodoro = MenuItem::with_id(app, "toggle_pomodoro", "开始 / 结束番茄钟", true, None::<&str>)?;
             let capture = MenuItem::with_id(app, "toggle_capture", "打开 / 关闭采集窗口", true, None::<&str>)?;
             let click_through =
                 MenuItem::with_id(app, "toggle_click_through", "切换点击穿透", true, None::<&str>)?;
@@ -976,7 +990,7 @@ pub fn run() {
             let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
-                &[&toggle_visible, &panel, &capture, &click_through, &reset, &next_monitor, &export, &quit],
+                &[&toggle_visible, &panel, &pomodoro, &capture, &click_through, &reset, &next_monitor, &export, &quit],
             )?;
 
             let tray_overlay = overlay.clone();
@@ -997,6 +1011,10 @@ pub fn run() {
                     }
                     "toggle_panel" => {
                         let _ = app.emit_to("main", "tray", "toggle-panel");
+                    }
+                    // The entry for a pet docked on the screen's edge, which has no strip and so no strip menu.
+                    "toggle_pomodoro" => {
+                        let _ = app.emit_to("main", "tray", "toggle-pomodoro");
                     }
                     "toggle_capture" => {
                         let _ = app.emit_to("main", "tray", "toggle-capture");

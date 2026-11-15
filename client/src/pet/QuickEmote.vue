@@ -7,11 +7,12 @@ import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
 
 /**
- * `status` is the own room status ("" for none) and adds a key that opens the statuses; null leaves it out.
+ * The plate leads with small keys for the other pages: the tomato timer (`pomodoro`: it runs), and in a room the own
+ * status (`status`, "" for none; null leaves its key out).
  * `ceiling`: where the screen ends below the strip the dock opens above this viewport y (over the pet's head).
  */
-const props = defineProps<{ keys: string[]; status?: string | null; ceiling?: number }>();
-defineEmits<{ pick: [key: string]; status: [] }>();
+const props = defineProps<{ keys: string[]; status?: string | null; pomodoro?: boolean; ceiling?: number }>();
+defineEmits<{ pick: [key: string]; status: []; pomodoro: [] }>();
 
 const root = ref<HTMLElement>();
 const { up, style: lift } = useLift(root, () => props.ceiling);
@@ -66,12 +67,21 @@ function onWheel(e: WheelEvent) {
     aria-label="快捷表情"
     @wheel.prevent="onWheel"
   >
-    <template v-if="status != null">
-      <button type="button" class="emo ui-btn" role="menuitem" title="我的状态" aria-label="我的状态" @click="$emit('status')">
-        <Icon :name="roomStatus(status)?.icon ?? 'status'" :size="20" />
+    <div class="lead" :class="{ pair: status != null }">
+      <button
+        type="button" class="ui-btn" :class="{ running: pomodoro }" role="menuitem" title="番茄钟" aria-label="番茄钟"
+        @click="$emit('pomodoro')"
+      >
+        <Icon name="tomato" :size="14" />
       </button>
-      <i class="sep" aria-hidden="true"></i>
-    </template>
+      <button
+        v-if="status != null" type="button" class="ui-btn" role="menuitem" title="我的状态" aria-label="我的状态"
+        @click="$emit('status')"
+      >
+        <Icon :name="roomStatus(status)?.icon ?? 'status'" :size="14" />
+      </button>
+    </div>
+    <i class="sep" aria-hidden="true"></i>
     <button
       v-if="needsPager"
       type="button"
@@ -171,6 +181,28 @@ function onWheel(e: WheelEvent) {
   max-height: 30px;
 }
 
+/* Keys to the other pages: one small key, or in a room two stacked as tall as an emote key. */
+.lead {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lead .ui-btn {
+  --key-lip-h: 2px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--ink-2);
+}
+.lead.pair .ui-btn {
+  height: 20px;
+  border-radius: 7px;
+}
+.lead .ui-btn.running {
+  color: var(--c-600);
+}
 .sep {
   flex: none;
   width: 1px;

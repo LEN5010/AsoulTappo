@@ -13,7 +13,10 @@ import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
 import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
+import { beginPomodoro, endPomodoro, pomodoro, pomodoroPlan } from "../stores/pomodoro";
+import { LONG_EVERY, longRestMin } from "../pomodoro";
 import RangeInput from "../ui/RangeInput.vue";
+import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 import AsasfansPromo from "./AsasfansPromo.vue";
 import LegalDoc from "./LegalDoc.vue";
@@ -57,6 +60,10 @@ const MAIL = "len5010@qq.com";
 const GROUP = "1106311431";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
+function openPromo() {
+  promoOpen.value = true;
+  settings.promoSeen = true;
+}
 /** The legal text open for reading again. */
 const legalOpen = ref<DocName | null>(null);
 /** Which contact was just copied. */
@@ -106,18 +113,25 @@ watch(recording, (slot) => {
 });
 
 // Both columns end on one line: groups are split so the rows come out about even (the desk-only window group goes
-// with the pet group), and each group then grows in step with its row count, so the shorter column's rows stretch
-// a few pixels each instead of leaving blank paper.
-type Group = "pet" | "window" | "online" | "sound" | "about";
-const COLUMNS: Group[][] = isTauri ? [["pet", "window"], ["online", "sound", "about"]] : [["pet", "sound"], ["online", "about"]];
+// with the pet group; the browser preview has no window group and a shorter About), and each group then grows in step
+// with its row count, so the shorter column's rows stretch a few pixels each instead of leaving blank paper. Rows now:
+// desk 18 and 17 on macOS (19 and 17 on Windows), preview 14 and 14.
+type Group = "pet" | "window" | "online" | "pomodoro" | "sound" | "about";
+const COLUMNS: Group[][] = isTauri
+  ? [["pet", "window", "sound"], ["online", "pomodoro", "about"]]
+  : [["pet", "about"], ["online", "pomodoro", "sound"]];
 const rows = computed<Record<Group, number>>(() => ({
   pet: 9,
   window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0) + (autostart.value?.supported ? 1 : 0),
   online: 4,
+  pomodoro: 7,
   sound: 3,
   about: isTauri ? 6 : 5,
 }));
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
+
+const longMin = computed(() => longRestMin(pomodoroPlan()));
+const pomodoroState = computed(() => (!pomodoro.value ? "未开始" : pomodoro.value.phase === "focus" ? "专注中" : "休息中"));
 
 // Start at login. The system holds the state; a failed change shows what the system says now.
 const autostart = ref<AutostartStatus | null>(null);
@@ -337,6 +351,46 @@ async function exportLogFile() {
             </div>
           </section>
 
+          <section v-else-if="group === 'pomodoro'" data-rise :style="{ '--rows': rows.pomodoro }">
+            <h4 class="ui-label"><span>番茄钟</span></h4>
+            <div class="ui-group ui-frame">
+              <label class="ui-row">
+                <span>专注时长</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.pomodoroFocus" :min="5" :max="120" :step="5" />
+                  <b class="ui-val minutes">{{ settings.pomodoroFocus }} 分钟</b>
+                </span>
+              </label>
+              <label class="ui-row">
+                <span>休息时长</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.pomodoroRest" :min="1" :max="60" :step="1" />
+                  <b class="ui-val minutes">{{ settings.pomodoroRest }} 分钟</b>
+                </span>
+              </label>
+              <label class="ui-row">
+                <span>每 {{ LONG_EVERY }} 轮长休息 {{ longMin }} 分钟</span>
+                <input v-model="settings.pomodoroLong" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>自动开始下一轮</span>
+                <input v-model="settings.pomodoroAuto" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>提示音</span>
+                <input v-model="settings.pomodoroSound" class="ui-switch" type="checkbox" />
+              </label>
+              <label class="ui-row">
+                <span>系统通知</span>
+                <input v-model="settings.pomodoroNotify" class="ui-switch" type="checkbox" />
+              </label>
+              <div class="ui-row">
+                <span>{{ pomodoroState }}</span>
+                <button v-if="pomodoro" type="button" class="ui-btn small" @click="endPomodoro">结束</button>
+                <button v-else type="button" class="ui-btn small primary" @click="beginPomodoro">开始</button>
+              </div>
+            </div>
+          </section>
           <section v-else-if="group === 'sound'" data-rise :style="{ '--rows': rows.sound }">
             <h4 class="ui-label"><span>声音</span></h4>
             <div class="ui-group ui-frame">
@@ -395,9 +449,14 @@ async function exportLogFile() {
                 <span>作者</span>
                 <button type="button" class="ui-btn small" @click="copied = ''; contactOpen = true">联系作者</button>
               </div>
-              <div class="ui-row">
+              <div class="ui-row promo-row">
                 <span>神秘按钮</span>
-                <button type="button" class="ui-btn small" @click="promoOpen = true">点我试试</button>
+                <button
+                  type="button" class="ui-btn small primary promo-key" :class="{ wiggle: !settings.promoSeen }"
+                  @click="openPromo"
+                >
+                  <Icon name="spark" :size="15" /><span>点我试试</span>
+                </button>
               </div>
             </div>
           </section>
@@ -468,6 +527,23 @@ async function exportLogFile() {
 }
 .who {
   flex: 1;
+}
+/* The mystery key's row: a faint coral wash sets it apart from the white rows. */
+.ui-row.promo-row {
+  background: var(--c-50);
+}
+/* Until it has been opened once, the sparkle twinkles every 8 seconds: it swells with a quarter turn and settles. */
+.promo-key.wiggle .icon {
+  animation: twinkle 8s ease-in-out 2s infinite;
+}
+@keyframes twinkle {
+  0%, 10%, 100% { scale: 1; rotate: 0deg; }
+  3% { scale: 1.35; rotate: 45deg; }
+  6% { scale: 0.85; rotate: 80deg; }
+  8% { scale: 1.05; rotate: 90deg; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .promo-key.wiggle .icon { animation: none; }
 }
 .version-side {
   flex: none;
@@ -678,6 +754,10 @@ async function exportLogFile() {
 }
 .columns .ui-ctl {
   width: 172px;
+}
+/* Room for "120 分钟". */
+.columns .ui-val.minutes {
+  width: 64px;
 }
 
 @container panel (max-width: 860px) {

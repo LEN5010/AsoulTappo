@@ -271,6 +271,40 @@ describe("poking and the profile key over a partner's pet", () => {
     expect(pick.picking.value).toBeNull();
   });
 
+  it("shows a cup beside the pet of a partner who drank, and tells the room once in a while", async () => {
+    const { room, socket } = await setup(["poke", "drink"]);
+    socket.recv({ type: "drink", id: "friend" });
+    socket.recv({ type: "drink", id: "nobody" });
+    expect(room.members.get("friend")!.sip).toBe(1);
+    room.drank();
+    room.drank();
+    expect(room.localPet.sip).toBe(2);
+    expect(socket.sent.filter((m) => m.type === "drink")).toHaveLength(1);
+    vi.advanceTimersByTime(room.DRINK_MS);
+    room.drank();
+    expect(socket.sent.filter((m) => m.type === "drink")).toHaveLength(2);
+  });
+
+  it("keeps a drink to the own pet on servers that do not pass it on", async () => {
+    const { room, socket } = await setup(["poke"]);
+    room.drank();
+    expect(room.localPet.sip).toBe(1);
+    expect(socket.sent.filter((m) => m.type === "drink")).toHaveLength(0);
+  });
+
+  it("lets the host name the room on servers that take names", async () => {
+    const { room, socket } = await setup(["name"]);
+    room.setRoomName("自习室");
+    expect(socket.sent.filter((m) => m.type === "set_name")).toHaveLength(0); // not the host yet
+    socket.recv({ type: "room_info", host: "me", public: false, name: "" });
+    room.setRoomName("  摸鱼自习室，欢迎大家一起来摸  ");
+    expect(socket.sent.at(-1)).toEqual({ type: "set_name", name: "摸鱼自习室，欢迎大家一起来摸".slice(0, 16) });
+    socket.recv({ type: "room_info", host: "me", public: false, name: "摸鱼" });
+    expect(room.roomInfo.value?.name).toBe("摸鱼");
+    socket.close();
+    expect(room.nameOn.value).toBe(false);
+  });
+
   it("asks the server for profiles one at a time, and gives up on no answer or a dropped connection", async () => {
     const { room, socket } = await setup(["profile"]);
     const progress = { cards: [1, 85], emotes: [20, 495], skins: [0, 9] };

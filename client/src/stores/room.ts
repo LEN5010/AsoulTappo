@@ -5,8 +5,8 @@ import { remoteMotion } from "../net/MotionFrames";
 import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
-  restingMotion, toHttpBase, type CheerState, type DuelMessage, type Hand, type Member, type MemberProfile, type PetMotion, type ProfilePatch,
-  type PublicRoom, type RoomInfo,
+  restingMotion, toHttpBase, ROOM_NAME_MAX, type CheerState, type DuelMessage, type Hand, type Member, type MemberProfile, type PetMotion,
+  type ProfilePatch, type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote, memberOf } from "../manifest";
@@ -27,6 +27,8 @@ export interface RemoteMember extends Member {
   combo: ComboFrame | null;
   /** Shards a scratch card or a duel just paid this member, shown over the pet for a moment. */
   win: ComboFrame | null;
+  /** Increments when the member drank water after a reminder: a cup beside the pet for a moment. */
+  sip: number;
   motion: PetMotion;
 }
 
@@ -91,7 +93,7 @@ export const memberKey = (m: Member) => m.uid ?? `nick:${m.nick}`;
 
 function add(m: Member): void {
   members.set(m.id, {
-    ...m, pulse: 0, emote: null, combo: null, win: null, motion: markRaw(m.motion ? { ...m.motion } : restingMotion()),
+    ...m, pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: markRaw(m.motion ? { ...m.motion } : restingMotion()),
   });
   const rm = members.get(m.id)!;
   remoteMotion.update(m.id, rm.motion);
@@ -140,6 +142,8 @@ const events: RoomEvents = {
     roomId.value = room;
     youId.value = you;
     pokeOn.value = features.includes("poke");
+    drinkOn.value = features.includes("drink");
+    nameOn.value = features.includes("name");
     profileOn.value = features.includes("profile");
     endCheer();
     cheerOn.value = features.includes("cheer");
@@ -206,6 +210,12 @@ const events: RoomEvents = {
     localPet.pulse += 1;
     const m = members.get(from);
     if (!quiet && m && from !== youId.value) showPoked(from, shownNick(m));
+  },
+  onDrink(id) {
+    const m = members.get(id);
+    if (!m || id === youId.value) return;
+    noteActivity();
+    m.sip += 1;
   },
   onProfile(id, profile) {
     settleProfile(id, profile);
@@ -328,8 +338,8 @@ const motionSender = new MotionSender((pose) => client.sendMotion(pose));
 let batcher = new TapBatcher((n) => client.sendTap(n), settings.batchMs);
 
 /** Emote bubble of the local pet (shown immediately, also when offline) and its scratch card or duel win. */
-export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null; pulse: number }>({
-  emote: null, win: null, pulse: 0,
+export const localPet = reactive<{ emote: EmoteFrame | null; win: ComboFrame | null; pulse: number; sip: number }>({
+  emote: null, win: null, pulse: 0, sip: 0,
 });
 const localPlayer = new EmotePlayer((f) => (localPet.emote = f), () => settings.emoteHoldMs);
 const localWin = new TapCombo((f) => (localPet.win = f), WIN_MS);
@@ -338,6 +348,8 @@ let lastSent = 0;
 // ---------------------------------------------------------------- poke
 /** The server takes pokes (it lists "poke" in `joined.features`); older servers do not know the message. */
 export const pokeOn = ref(false);
+/** The server tells the room who drank water (it lists "drink"). */
+export const drinkOn = ref(false);
 /** Who just poked the own pet, for the bubble over it; null once it has closed. */
 export const poked = ref<{ id: string; nick: string } | null>(null);
 export const POKED_MS = 6000;
@@ -364,6 +376,8 @@ export function closePoked(): void {
 }
 function endPokes(): void {
   pokeOn.value = false;
+  drinkOn.value = false;
+  nameOn.value = false;
   clearTimeout(pokeLater);
   pokeLater = undefined;
   pokeAt = -Infinity;
@@ -397,6 +411,29 @@ export function pokeSoon(id: string, now = Date.now()): void {
   const wait = pokeWait(id, now);
   if (wait <= 0) poke(id, now);
   else pokeLater = setTimeout(() => { pokeLater = undefined; poke(id); }, wait);
+}
+
+// ---------------------------------------------------------------- drinking water
+/** One drink every this often reaches the room (server/app/rooms.py DRINK_INTERVAL, 30 s, and a margin). */
+export const DRINK_MS = 30_500;
+let drankAt = -Infinity;
+
+/** The player drank water after a reminder: a cup beside the own pet, and beside it on partners' desks. */
+export function drank(now = Date.now()): void {
+  localPet.sip += 1;
+  if (isPanelWindow || !drinkOn.value || !inRoom.value || now - drankAt < DRINK_MS) return;
+  drankAt = now;
+  client.sendDrink();
+}
+
+// ---------------------------------------------------------------- room name
+/** The host may name the room (the server lists "name" in `joined.features`). */
+export const nameOn = ref(false);
+
+/** Host only: names the room, "" for none; the server trims and cuts it, and masks blocked words. */
+export function setRoomName(name: string): void {
+  if (isPanelWindow) { void requestDesktop("setRoomName", name); return; }
+  if (isHost.value && nameOn.value) client.sendRoomName(name.trim().slice(0, ROOM_NAME_MAX));
 }
 
 // ---------------------------------------------------------------- profiles
@@ -691,7 +728,10 @@ export async function loadPublicRooms(): Promise<void> {
         }
       } else if (res.ok) {
         const data = (await res.json()) as { rooms?: unknown };
-        if (Array.isArray(data.rooms)) list = data.rooms.filter(isPublicRoom);
+        if (Array.isArray(data.rooms)) {
+          // A name that is not text is dropped; servers before names send none.
+          list = data.rooms.filter(isPublicRoom).map(({ name, ...r }) => (typeof name === "string" ? { ...r, name } : r));
+        }
       }
     }
   } catch {

@@ -4,8 +4,9 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
+import app.main as app_main
 from app.main import app, manager
-from app.rooms import POKE_INTERVAL, POKE_SAME_INTERVAL, PokeRefused, RoomManager
+from app.rooms import DRINK_INTERVAL, POKE_INTERVAL, POKE_SAME_INTERVAL, PokeRefused, RoomManager
 
 
 class Sock:
@@ -85,7 +86,7 @@ def test_the_server_offers_pokes_when_joining_and_answers_over_the_socket():
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
             a.send_json({'type': 'join', 'room': 'pokes', 'nick': 'a', 'motionVersion': 3})
             ja = a.receive_json()
-            assert ja['features'] == ['poke', 'profile', 'cheer', 'status']
+            assert ja['features'] == ['poke', 'profile', 'cheer', 'status', 'drink', 'name']
             # A client that announces no motion version is an older one: its `joined` keeps the 1.1 shape.
             b.send_json({'type': 'join', 'room': 'pokes', 'nick': 'b', 'dnd': True})
             jb = b.receive_json()
@@ -100,3 +101,41 @@ def test_the_server_offers_pokes_when_joining_and_answers_over_the_socket():
             assert a.receive_json()['code'] == 'no_member'
             a.send_json({'type': 'poke', 'id': ''})
             assert a.receive_json()['code'] == 'bad_message'
+
+
+# ------------------------------------------------------------------ drinking water
+def test_the_rest_of_the_room_sees_a_member_drink_once_in_a_while():
+    async def go():
+        m, (a, b, c) = room("a", "b", "c")
+        assert m.drink("p", a, 100.0)
+        await asyncio.sleep(0)
+        assert a.ws.got == [] and b.ws.got == c.ws.got == [{"type": "drink", "id": a.id}]
+        assert not m.drink("p", a, 100.0 + DRINK_INTERVAL - .1)
+        assert m.drink("p", b, 100.0)  # each member has a wait of its own
+        assert m.drink("p", a, 100.0 + DRINK_INTERVAL)
+        await asyncio.sleep(0)
+        assert c.ws.got == [{"type": "drink", "id": a.id}, {"type": "drink", "id": b.id}, {"type": "drink", "id": a.id}]
+    asyncio.run(go())
+
+
+def test_drinking_goes_over_the_socket_and_is_counted(monkeypatch):
+    manager.rooms.clear()
+    counted = []
+    monkeypatch.setattr(app_main.game.tracker, "count", lambda key, n=1: counted.append(key))
+    with TestClient(app) as client:
+        with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
+            a.send_json({'type': 'join', 'room': 'care', 'nick': 'a', 'motionVersion': 3})
+            ja = a.receive_json()
+            assert {'drink', 'name'} <= set(ja['features'])
+            b.send_json({'type': 'join', 'room': 'care', 'nick': 'b', 'motionVersion': 3})
+            jb = b.receive_json()
+            a.receive_json()  # b joined
+            b.send_json({'type': 'drink'})
+            assert a.receive_json() == {'type': 'drink', 'id': jb['you']}
+            # The second inside the wait is dropped without an answer.
+            b.send_json({'type': 'drink'})
+            b.send_json({'type': 'ping'})
+            assert b.receive_json() == {'type': 'pong'}
+            a.send_json({'type': 'ping'})
+            assert a.receive_json() == {'type': 'pong'}
+    assert [k for k in counted if k in ('drink', 'poke')] == ['drink']

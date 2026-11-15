@@ -53,6 +53,17 @@ export interface Settings {
   shardPop: boolean;
   /** The own pet reminds the player to drink water and get up, and asks about lunch (src/nudge.ts). */
   healthTips: boolean;
+  /** Tomato timer lengths in minutes: the focus (5–120) and the rest (1–60). */
+  pomodoroFocus: number;
+  pomodoroRest: number;
+  /** A longer rest every few rounds (src/pomodoro.ts). */
+  pomodoroLong: boolean;
+  /** The next focus starts by itself after the rest; off, the pet asks first. */
+  pomodoroAuto: boolean;
+  /** A short tune when a focus or a rest ends. */
+  pomodoroSound: boolean;
+  /** A notice from the system too when a focus or a rest ends, seen while the pet is hidden or a game fills the screen. */
+  pomodoroNotify: boolean;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
@@ -74,6 +85,8 @@ export interface Settings {
   captureH: number;
   /** Version of the user agreement and privacy policy last agreed to ("" = never); see src/legal. */
   termsAgreed: string;
+  /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
+  promoSeen: boolean;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -111,6 +124,12 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   shardPop: true,
   healthTips: true,
+  pomodoroFocus: 25,
+  pomodoroRest: 5,
+  pomodoroLong: true,
+  pomodoroAuto: false,
+  pomodoroSound: true,
+  pomodoroNotify: false,
   showPartners: true,
   barFolded: false,
   barPlate: false,
@@ -122,6 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureW: 560,
   captureH: 412,
   termsAgreed: "",
+  promoSeen: false,
 };
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
@@ -148,6 +168,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
   out.volume = Math.min(1, Math.max(0, out.volume));
+  out.pomodoroFocus = Math.min(120, Math.max(5, Math.round(out.pomodoroFocus)));
+  out.pomodoroRest = Math.min(60, Math.max(1, Math.round(out.pomodoroRest)));
   out.favorites = Array.isArray(out.favorites)
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
     : [];
