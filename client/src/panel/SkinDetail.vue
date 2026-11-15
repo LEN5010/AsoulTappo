@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from "vue";
+// Skin detail. With the album's skins it steps through the owned ones, and the artwork opens in a full-panel viewer.
+import { computed, ref, watch } from "vue";
 import { characterColor, memberOf, skinTitle } from "../manifest";
-import { skinSeries } from "../characters";
+import { getCharacter, skinSeries } from "../characters";
 import { ownsCharacter } from "../items";
 import { collection } from "../stores/player";
 import { settings } from "../stores/settings";
@@ -11,17 +12,39 @@ import Modal from "../ui/Modal.vue";
 import Icon from "../ui/Icon.vue";
 import PetView from "../pet/PetView.vue";
 import SkinArt from "./SkinArt.vue";
-const props = defineProps<{ name: string }>();
-const emit = defineEmits<{ close: [] }>();
+import { stepIndex } from "./album";
+import ArtViewer from "./ArtViewer.vue";
+import StepKeys from "./StepKeys.vue";
+/** `names` is the album as the grid shows it; without it there is nothing to step to. */
+const props = defineProps<{ name: string; names?: readonly string[] }>();
+const emit = defineEmits<{ close: []; step: [name: string] }>();
 const owned = computed(() => ownsCharacter(props.name, collection.owned));
 const equipped = computed(() => settings.character === props.name);
 function resonate() { ui.page = 'resonance'; emit('close'); }
+
+// Stepping passes over unowned skins, as the card album does with unowned cards.
+const neighbour = (delta: -1 | 1) => {
+  const list = props.names;
+  return list?.[stepIndex(list, props.name, (n) => n, delta, (n) => ownsCharacter(n, collection.owned))];
+};
+const prevName = computed(() => neighbour(-1));
+const nextName = computed(() => neighbour(1));
+function step(delta: -1 | 1) {
+  const name = delta < 0 ? prevName.value : nextName.value;
+  if (name) emit('step', name);
+}
+const viewing = ref(false);
+watch(owned, (o) => !o && (viewing.value = false));
 </script>
 
 <template>
-  <Modal :title="skinTitle(name)" wide @close="emit('close')">
+  <Modal :title="skinTitle(name)" wide :covered="viewing" @close="emit('close')">
     <div class="skin-detail">
-      <SkinArt class="portrait" :name="name" :owned="owned" detail />
+      <div class="portrait">
+        <SkinArt :name="name" :owned="owned" detail />
+        <button v-if="owned" type="button" class="zoom" aria-label="放大" @click="viewing = true"></button>
+        <StepKeys v-if="names" :prev="!!prevName" :next="!!nextName" :keyboard="!viewing" @step="step" />
+      </div>
       <div class="info">
         <span class="ui-tag gold">皮肤藏品</span>
         <h3>{{ skinTitle(name) }}</h3>
@@ -32,12 +55,27 @@ function resonate() { ui.page = 'resonance'; emit('close'); }
         <button v-else type="button" class="ui-btn primary equip" @click="resonate"><Icon name="spark" :size="15" />去共鸣获取</button>
       </div>
     </div>
+
+    <template #front>
+      <ArtViewer
+        v-if="viewing" :id="name" :ratio="16 / 9" :label="skinTitle(name)"
+        :steps="!!names" :prev="!!prevName" :next="!!nextName"
+        @step="step" @close="viewing = false"
+      >
+        <img :key="name" class="full" :src="getCharacter(name)!.bg" :alt="skinTitle(name)" draggable="false" />
+      </ArtViewer>
+    </template>
   </Modal>
 </template>
 
 <style scoped>
 .skin-detail { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); align-items: stretch; gap: 24px; }
-.portrait { width: 100%; align-self: center; }
+.portrait { position: relative; width: 100%; align-self: center; border-radius: var(--radius-l); }
+/* The whole artwork is the key into the viewer; the step keys sit above it. */
+.zoom { position: absolute; inset: 0; z-index: 3; padding: 0; border: 0; border-radius: inherit; background: none; cursor: zoom-in; }
+.zoom:focus-visible { outline: 2px solid var(--focus, var(--ink)); outline-offset: -2px; }
+/* The skin picture has no ground of its own; it sits on the same paper as in the album. */
+.full { background-color: var(--c-100); }
 .info { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 9px; padding-top: 4px; }
 h3 { margin: 6px 0 2px; font: 800 clamp(22px, 3cqw, 28px)/1.25 var(--font); text-wrap: balance; }
 .member { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ink); font-size: var(--fs-body); font-weight: 700; }

@@ -12,7 +12,8 @@ import Icon from "../ui/Icon.vue";
 export type AlbumFilter = "all" | "hidden" | "owned" | "missing";
 
 const props = defineProps<{ cards: ManifestCard[]; filter: AlbumFilter }>();
-defineEmits<{ inspect: [card: ManifestCard, from?: DOMRect] }>();
+/** `inspect` hands over the cards as shown, for stepping in the detail; none under 未拥有, where nothing can be viewed. */
+defineEmits<{ inspect: [card: ManifestCard, from: DOMRect | undefined, cards: ManifestCard[] | undefined] }>();
 
 const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
 const active = usePageActive();
@@ -71,7 +72,7 @@ const visible = computed(() =>
         class="slot ui-tile" :class="[card.tier, { locked: !owned(card) }]"
         :title="card.name" data-rise
         @pointerenter="playsCardVideo(card, owned(card), reducedMotion) && warmVideo(assetUrl(card.video))"
-        @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined)"
+        @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined, filter === 'missing' ? undefined : visible)"
       >
         <span class="art ui-frame ui-well" :class="[cardFrame(card), { framed: !!cardFrame(card) }]">
           <video

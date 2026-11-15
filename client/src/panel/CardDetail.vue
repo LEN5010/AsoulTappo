@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Card detail: the artwork beside its facts. Videos start with sound when the card audio setting is on.
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+// With the album's cards it steps through the owned ones, and the artwork opens in a full-panel viewer.
+import { computed, nextTick, onMounted, ref, watch, type ObjectDirective } from "vue";
 import { usePageActive } from "../composables/usePageActive";
-import { assetUrl } from "../asset";
-import { playCardVideo } from "../audio/cardSound";
+import { assetUrl, warmVideo } from "../asset";
 import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { economy } from "../stores/economy";
@@ -17,12 +17,17 @@ import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import { flyFrom } from "../ui/motion";
+import { stepIndex } from "./album";
+import ArtViewer from "./ArtViewer.vue";
+import StepKeys from "./StepKeys.vue";
 
-const props = defineProps<{ card: ManifestCard; from?: DOMRect; preview?: boolean }>();
-const emit = defineEmits<{ close: [] }>();
+/** `cards` is the album as the grid shows it; without it there is nothing to step to. */
+const props = defineProps<{ card: ManifestCard; cards?: readonly ManifestCard[]; from?: DOMRect; preview?: boolean }>();
+const emit = defineEmits<{ close: []; step: [card: ManifestCard] }>();
 
 const pageActive = usePageActive();
-const count = computed(() => collection.owned[`card:${props.card.id}`] ?? 0);
+const ownedOf = (card: ManifestCard) => collection.owned[`card:${card.id}`] ?? 0;
+const count = computed(() => ownedOf(props.card));
 const animated = computed(() => playsCardVideo(props.card, count.value, reducedMotion.value, props.preview));
 const item = computed(() => getItem(`card:${props.card.id}`)!);
 const label = computed(() => cardLabel(props.card));
@@ -35,37 +40,101 @@ function toggleShowcase() {
   else if (!showcaseFull.value) settings.showcase = [...settings.showcase, props.card.id];
 }
 
-// Modal teleports with `defer`, so the artwork exists only after the next tick.
+// Unowned cards only have a locked thumbnail, so stepping passes over them.
+const neighbour = (delta: -1 | 1) => {
+  const list = props.cards;
+  if (!list) return undefined;
+  return list[stepIndex(list, props.card.id, (c) => c.id, delta, (c) => ownedOf(c) > 0)];
+};
+const prevCard = computed(() => neighbour(-1));
+const nextCard = computed(() => neighbour(1));
+function step(delta: -1 | 1) {
+  const card = delta < 0 ? prevCard.value : nextCard.value;
+  if (!card) return;
+  resume = { at: 0, paused: false };
+  emit("step", card);
+}
+// The full artwork comes from the server: fetch the neighbours ahead of a step.
+const warmed = new Set<string>();
+watch([prevCard, nextCard], (cards) => {
+  for (const card of cards) {
+    if (!card) continue;
+    if (playsCardVideo(card, ownedOf(card), reducedMotion.value)) warmVideo(assetUrl(card.video));
+    else if (!warmed.has(card.id)) {
+      warmed.add(card.id);
+      new Image().src = assetUrl(card.full);
+    }
+  }
+}, { immediate: true });
+
+// Modal teleports with `defer`, so the artwork exists only after the next tick. The detail stays mounted
+// while stepping, so the flight from the album runs on the first open only.
 const artEl = ref<HTMLElement>();
 onMounted(async () => {
   await nextTick();
   if (props.from && artEl.value) flyFrom(props.from, artEl.value, assetUrl(props.card.thumb));
 });
 
+const viewable = computed(() => props.preview || count.value > 0);
+const viewing = ref(false);
+watch(viewable, (v) => !v && (viewing.value = false));
+
+// One video at a time: the detail's or the viewer's. Moving between them keeps its place and pause.
 const video = ref<HTMLVideoElement>();
 const paused = ref(false);
 const muted = ref(!settings.cardAudio);
-watch(video, (v) => v && playCardVideo(v, () => (muted.value = true)));
+let resume = { at: 0, paused: false };
+function setViewing(on: boolean) {
+  const v = video.value;
+  resume = v ? { at: v.currentTime, paused: v.paused } : { at: 0, paused: false };
+  viewing.value = on;
+}
+/** Plays with the current sound toggle; a webview that refuses audible playback mutes it, as playCardVideo does. */
+function start(v: HTMLVideoElement) {
+  v.muted = muted.value;
+  v.volume = settings.volume;
+  const at = resume.at;
+  if (at && v.readyState >= HTMLMediaElement.HAVE_METADATA) v.currentTime = at;
+  else if (at) v.addEventListener("loadedmetadata", () => (v.currentTime = at), { once: true });
+  paused.value = resume.paused;
+  if (resume.paused) return;
+  v.play().catch(() => {
+    if (v.muted) return;
+    v.muted = muted.value = true;
+    void v.play().catch(() => {});
+  });
+}
+watch(video, (v) => v && start(v));
 function togglePlay() {
   const v = video.value;
   if (!v) return;
   if (v.paused) void v.play();
   else v.pause();
 }
+/** Lets go of a video's decoder when its card or view changes; WebKit holds on to it otherwise. */
+const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
+  beforeUnmount(v) {
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
+  },
+};
 </script>
 
 <template>
-  <Modal :title="card.name" wide :still="!!from" @close="emit('close')">
+  <Modal :title="card.name" wide :still="!!from" :covered="viewing" @close="emit('close')">
     <div class="detail" :class="card.tier">
       <div ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count }]">
           <video
-            v-if="animated && pageActive" ref="video" :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            v-if="animated && pageActive && !viewing" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
             :muted="muted" loop playsinline
             @play="paused = false" @pause="paused = true"
           ></video>
-          <img v-else :src="assetUrl(count || preview ? card.full : card.thumb)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
+          <img v-else :key="card.id" :src="assetUrl(viewable && !(animated && viewing) ? card.full : card.thumb)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" />
 
+        <button v-if="viewable" type="button" class="zoom" aria-label="放大" @click="setViewing(true)"></button>
+        <StepKeys v-if="cards" :prev="!!prevCard" :next="!!nextCard" :keyboard="!viewing" @step="step" />
         <div v-if="animated" class="controls">
           <button type="button" class="ui-btn small ghost" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
@@ -95,6 +164,30 @@ function togglePlay() {
         <button v-if="!count && !economy?.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
       </div>
     </div>
+
+    <template #front>
+      <ArtViewer
+        v-if="viewing" :id="card.id" :ratio="2 / 3" :label="card.name"
+        :steps="!!cards" :prev="!!prevCard" :next="!!nextCard"
+        @step="step" @close="setViewing(false)"
+      >
+        <video
+          v-if="animated && pageActive" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+          :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
+          :muted="muted" loop playsinline
+          @play="paused = false" @pause="paused = true"
+        ></video>
+        <img v-else :key="card.id" :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" draggable="false" />
+        <template v-if="animated" #controls>
+          <button type="button" class="ui-btn small ghost" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
+            <Icon :name="paused ? 'play' : 'pause'" :size="14" />
+          </button>
+          <button type="button" class="ui-btn small ghost" :aria-label="muted ? '打开声音' : '关闭声音'" :aria-pressed="!muted" @click="muted = !muted">
+            <Icon :name="muted ? 'mute' : 'sound'" :size="14" />
+          </button>
+        </template>
+      </ArtViewer>
+    </template>
   </Modal>
 </template>
 
@@ -133,6 +226,21 @@ function togglePlay() {
 .art.locked img {
   filter: brightness(0.74);
   transition: filter var(--dur-base);
+}
+/* The whole artwork is the key into the viewer; the step and video keys sit above it. */
+.zoom {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.zoom:focus-visible {
+  outline: 2px solid var(--focus, var(--ink));
+  outline-offset: -2px;
+  border-radius: inherit;
 }
 .controls {
   position: absolute;

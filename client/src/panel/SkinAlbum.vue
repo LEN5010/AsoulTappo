@@ -25,7 +25,7 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
         <span class="meta"><b>{{ skinTitle(skin.name) }}</b><small><i :style="{ background: characterColor(skin.member) }"></i>{{ skin.member }}<span>查看详情 <Icon name="back" :size="11" /></span></small></span>
       </button>
     </div><p v-if="!skins.length" class="ui-empty">当前筛选下没有皮肤</p></div>
-    <SkinDetail v-if="selected" :name="selected" @close="selected = ''" />
+    <SkinDetail v-if="selected" :name="selected" :names="filter === 'missing' ? undefined : skins.map((s) => s.name)" @step="selected = $event" @close="selected = ''" />
   </div>
 </template>
 

@@ -128,6 +128,7 @@ function openTarget(id: string) {
     detail.value = getCard(target.slice(5)) ?? null;
     detailPreview.value = view;
     detailFrom.value = undefined;
+    detailCards.value = undefined;
   } else selectedItem.value = getItem(target) ?? null;
   actionNote.value = "";
 }
@@ -169,7 +170,14 @@ const poolTabs = computed(() => [
 const detail = ref<ManifestCard | null>(null);
 const detailFrom = ref<DOMRect>();
 const detailPreview = ref(false);
-function inspectCard(card: ManifestCard, from?: DOMRect) { detail.value = card; detailFrom.value = from; detailPreview.value = false; }
+/** The album as shown when the card was opened, for stepping; empty for cards opened from elsewhere. */
+const detailCards = ref<ManifestCard[]>();
+function inspectCard(card: ManifestCard, from?: DOMRect, list?: ManifestCard[]) {
+  detail.value = card;
+  detailFrom.value = from;
+  detailPreview.value = false;
+  detailCards.value = list;
+}
 if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   const target = ui.craftTarget;
   ui.craftTarget = '';
@@ -267,7 +275,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
 
     </template>
-    <CardDetail v-if="detail" :card="detail" :from="detailFrom" :preview="detailPreview" @close="detail = null" />
+    <CardDetail v-if="detail" :card="detail" :cards="detailCards" :from="detailFrom" :preview="detailPreview" @step="detail = $event" @close="detail = null" />
 
     <Modal v-if="selectedItem" :title="selectedItem.name" @close="selectedItem = null">
       <div class="emote-detail">
