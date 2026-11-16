@@ -1,0 +1,44 @@
+/*
+ * ---- a lottery ball: a coral sphere (two steps of the ramp, by odd and even) with a white round label and the digit
+ * in ink; one small sharp highlight and a soft dark edge along the bottom. --s is its size. Used in the globe, in the
+ * windows and, without a label, as the pool card's match marks (LotteryPrizes.vue).
+ */
+.lball {
+  --s: 24px;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow:
+    inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.09) rgba(var(--c-900-rgb), 0.32),
+    inset 0 calc(var(--s) * 0.03) 0 rgba(255, 255, 255, 0.3);
+  font-style: normal;
+}
+.lball.odd {
+  background: var(--c-600);
+}
+.lball::after {
+  content: "";
+  position: absolute;
+  left: 16%;
+  top: 9%;
+  width: 20%;
+  height: 12%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+}
+.lball > b {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  height: 62%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 calc(var(--s) * -0.025) 0 rgba(var(--c-900-rgb), 0.12);
+  font: 800 calc(var(--s) * 0.44) / 1 var(--font-latin);
+  color: var(--ink);
+}

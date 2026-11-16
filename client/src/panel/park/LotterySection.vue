@@ -10,7 +10,7 @@
 // The number keys double as reels: 机选 spins them onto the number bought, and a draw's first showing spins them onto
 // the drawn number, one digit at a time from the right, while the ring of balls turns and each digit's ball drops onto
 // its key.
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch, type Ref } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from "vue";
 import { economy } from "../../stores/economy";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
@@ -22,27 +22,23 @@ import { useBand } from "./band";
 import { Drum } from "./lotteryDrum";
 import { COIN_SMALL } from "./coin";
 import {
-  cleanNumber, countdown, dayBefore, drawLabel, dropDigit, markDrawSeen, nextDraw, NO_PICKS, pickedNumber, pickLabel,
-  pickTarget, putDigit, reelDigit, revealDigits, salesOpen, seenDraw, shortDay, stepDigit, winnersLine,
-  type LotteryBuy, type LotteryState, type LotteryTier, type Picks,
+  cleanNumber, drawLabel, dropDigit, markDrawSeen, NO_PICKS, pickedNumber, pickLabel, pickTarget, putDigit,
+  revealDigits, seenDraw, shortDay, stepDigit, type LotteryBuy, type LotteryTier, type Picks,
 } from "./lottery";
+import LotteryBoard from "./LotteryBoard.vue";
+import { createPlays } from "./lotteryPlays";
+import LotteryPrizes from "./LotteryPrizes.vue";
+import { useReels } from "./lotteryReels";
+import { useDrawReveal } from "./lotteryReveal";
+import { onKeys, spotOf, type Spot } from "./lotterySpots";
+import { useLotteryState } from "./lotteryState";
 import TicketStub from "./TicketStub.vue";
 
-const POLL_MS = 20000;
-/** After the close or the draw time, until the state shows it. */
-const DUE_POLL_MS = 4000;
 /** A key pressed by typing stays down this long. */
 const PRESS_MS = 140;
 /** Wheel travel (px) per digit step. */
 const WHEEL_STEP = 40;
-/** A reel at full spin, in cells per ms, and the time it takes to get there from rest. */
-const SPIN_SPEED = 0.02;
-const SPIN_UP_MS = 160;
-/** A reel slowing to a stop eases out from full spin over at least this long (up to 3 / SPIN_SPEED ms more). */
-const SETTLE_MS = 420;
-/** 机选: the keys spin at least this long, then stop left to right this far apart; the number rests this long on them. */
-const BUY_SPIN_MS = 260;
-const BUY_STOP_GAP_MS = 110;
+/** 机选: once the keys have stopped (lotteryReels.ts), the number rests this long on them. */
 const BUY_HOLD_MS = 240;
 /** A drawn ball runs down the tube and along the track in ROLL_S plus ROLL_S_PER_PX a px, speeding up then slowing;
  * drops into its window in BALL_DROP_S and squashes and springs back there in BALL_SQUASH_S. With no globe shown it
@@ -56,22 +52,13 @@ const BALL_DROP_MS = 300;
 const FLY_MS = 560;
 const DROP_MS = 480;
 const DROP_STAGGER_MS = 70;
-/** A draw's first showing: the balls blow DRAW_FIRST_MS before the last digit's ball goes, each digit to its left
- * DRAW_GAP_MS later. The stamps go down DRAW_STAMP_MS after the first digit's ball is in; the keys go back no sooner
- * than DRAW_HOLD_MS after that. */
-const DRAW_FIRST_MS = 1000;
-const DRAW_GAP_MS = 950;
-const DRAW_STAMP_MS = 180;
-const DRAW_HOLD_MS = 650;
-/** How long the win in the bar counts up, by the best tier won. */
-const ROLL_MS: Record<1 | 2 | 3, number> = { 1: 400, 2: 650, 3: 900 };
-/** The top prize counts to a new amount over this long. */
-const POOL_ROLL_MS = 700;
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-const state = ref<LotteryState | null>(null);
-const loadError = ref("");
-const now = ref(Date.now() / 1000);
+const {
+  state, loadError, now, load, startClock, stopClock, clockRunning, drawTime, left, waiting, closed,
+  last, winning, drawnHere, lastName, lastOnTable, table, tableDay, showCount, slots, past, lastAside, hasPast,
+} = useLotteryState();
+const plays = createPlays();
 const calm = computed(() => reducedMotion.value);
 /** The page is shown: the clock runs and a new draw may play its reveal. */
 const active = ref(false);
@@ -79,50 +66,16 @@ const active = ref(false);
 const pop = ref<"" | "past">("");
 const rootEl = ref<HTMLElement>();
 
-let loading = false;
-let loadedAt = 0;
-async function load() {
-  if (loading) return;
-  loading = true;
-  loadedAt = Date.now();
-  const player = status.value?.player;
-  try {
-    const r = await parkTry<LotteryState>("GET", "/api/park/lottery");
-    if (player !== status.value?.player) return;
-    if (r.ok) {
-      state.value = r.data;
-      loadError.value = "";
-    } else if (!state.value && r.error.status > 0) {
-      loadError.value = r.error.message;
-    }
-  } finally {
-    loading = false;
-  }
-}
-
-// ---- the clock: the countdown, the close on this machine's clock, and loading again on time
-let timer: ReturnType<typeof setInterval> | null = null;
-function tick() {
-  now.value = Date.now() / 1000;
-  const s = state.value;
-  // Past the close the keys are off at once; the state loads right away, then often until the server agrees.
-  const closing = !!s && s.open && now.value >= s.closeAt;
-  const due = closing || (!!s && !s.drawn && now.value >= s.drawAt);
-  if ((closing && loadedAt < s!.closeAt * 1000) || Date.now() - loadedAt >= (due ? DUE_POLL_MS : POLL_MS)) void load();
-}
+// ---- the clock (lotteryState.ts) and the page's own keys run while the page is shown
 function start() {
   active.value = true;
   window.addEventListener("keydown", onPageKey, true);
-  if (timer) return;
-  now.value = Date.now() / 1000;
-  void load();
-  timer = setInterval(tick, 1000);
+  startClock();
 }
 function stop() {
   active.value = false;
   window.removeEventListener("keydown", onPageKey, true);
-  if (timer) clearInterval(timer);
-  timer = null;
+  stopClock();
   pop.value = "";
   settle();
 }
@@ -132,7 +85,6 @@ onActivated(start);
 onDeactivated(stop);
 onBeforeUnmount(() => {
   stop();
-  stopPool();
   pressTimers.forEach(clearTimeout);
 });
 // Another save: its numbers.
@@ -144,13 +96,10 @@ watch(() => status.value?.player, (player, was) => {
   picks.value = NO_PICKS;
   at.value = null;
   pop.value = "";
-  if (timer) void load();
+  if (clockRunning()) void load();
 });
 
 // ---- the next draw
-const drawTime = computed(() => (state.value ? nextDraw(state.value) : 0));
-const left = computed(() => countdown(drawTime.value, now.value));
-const waiting = computed(() => !!state.value && !state.value.drawn && now.value >= state.value.drawAt);
 useBand("lottery", () => {
   const s = state.value;
   const label = waiting.value ? "开奖中" : drawLabel(drawTime.value, now.value);
@@ -165,8 +114,6 @@ const buyError = ref("");
 const fresh = ref<number[]>([]);
 /** The stubs just bought stay unseen until their flight takes them. */
 const held = ref(false);
-/** Sales are over for today, by the server or by this machine's clock. */
-const closed = computed(() => !!state.value && !salesOpen(state.value, now.value));
 
 /** Why [n] tickets cannot be bought now: a short reason, "" when none is worth showing, null when they can. */
 function blocked(n: number): string | null {
@@ -310,166 +257,19 @@ function onWheel(i: number, e: WheelEvent) {
   wheel.sum = 0;
 }
 
-// ---- what plays on the keys. Everything below runs under one generation: settle() ends it all at once, on the state
-// it was heading for, and any timer or callback of an older generation does nothing.
-let gen = 0;
-const timers = new Set<ReturnType<typeof setTimeout>>();
-function later(ms: number, fn: () => void) {
-  const g = gen;
-  const t = setTimeout(() => {
-    timers.delete(t);
-    if (g === gen) fn();
-  }, ms);
-  timers.add(t);
-}
+// ---- what plays on the keys runs under one generation (plays, lotteryPlays.ts): settle() ends it all at once, on the
+// state it was heading for.
 function settle() {
-  gen++;
-  timers.forEach(clearTimeout);
-  timers.clear();
+  plays.bump();
   if (reeling.value) endReels("still");
   haltGlobe();
   ghosts.value = [];
   held.value = false;
-  stopWon();
-  reveal.value = "";
-  stopped.value = 3;
-  stamped.value = true;
+  resetReveal();
 }
 
-// ---- the reels: while spinning, each number key shows a window onto an endless column of digits. Cell 0 is what
-// the key showed, later cells run through every digit, and the cell a reel stops on is given the digit it lands on.
-// Two cells are in the window at a time; they are written straight to the DOM each frame (transform only).
-interface Reel {
-  /** Cells travelled; cell k sits (pos - k) cells down from the window. */
-  pos: number;
-  from: string;
-  /** When to start slowing (performance time), and the digit to land on. */
-  stopAt: number | null;
-  land: string;
-  /** Slowing down: from p0 at t0 to the cell `end` over `ms`, easing out from full spin. */
-  end: number;
-  p0: number;
-  t0: number;
-  ms: number;
-  done: boolean;
-  /** The cell each of the two cell elements shows. */
-  shown: [number, number];
-}
-const reeling = ref<"" | "buy">("");
-let reels: Reel[] = [];
-let reelCells: HTMLElement[][] = [];
-let reelFrame = 0;
-let reelStart = 0;
-let lastFrame = 0;
-let onLand: (i: number) => void = () => {};
-let onRest: () => void = () => {};
-
-function cellDigit(r: Reel, i: number, k: number): string {
-  if (k === 0) return r.from;
-  if (!r.ms) return reelDigit(k, i);
-  if (k === r.end) return r.land;
-  const d = reelDigit(k, i);
-  // The cell before the stop never shows the digit it stops on.
-  return k === r.end - 1 && d === r.land ? reelDigit(k + 5, i) : d;
-}
-function paint(i: number) {
-  const r = reels[i];
-  const els = reelCells[i];
-  if (!r || !els || els.length < 2) return;
-  const k0 = Math.floor(r.pos);
-  for (const k of [k0, k0 + 1]) {
-    const el = els[k % 2]!;
-    if (r.shown[k % 2] !== k) {
-      r.shown[k % 2] = k;
-      const d = cellDigit(r, i, k);
-      el.textContent = d;
-      el.classList.toggle("void", !d);
-      el.classList.remove("landed");
-    }
-    el.style.transform = `translateY(${(r.pos - k) * 100}%)`;
-  }
-}
-function spin(t: number) {
-  // A frame's time can be a little behind performance.now() taken at the start.
-  const dt = Math.min(64, Math.max(0, t - lastFrame));
-  lastFrame = Math.max(lastFrame, t);
-  const v = SPIN_SPEED * Math.min(1, Math.max(0, t - reelStart) / SPIN_UP_MS);
-  let running = false;
-  reels.forEach((r, i) => {
-    if (r.done) return;
-    if (r.stopAt !== null && !r.ms && t >= r.stopAt) {
-      r.p0 = r.pos;
-      r.t0 = t;
-      r.end = Math.ceil(r.pos + (SPIN_SPEED * SETTLE_MS) / 3);
-      // An ease-out cubic starts at three times its average speed: start it at full spin.
-      r.ms = (3 * (r.end - r.pos)) / SPIN_SPEED;
-    }
-    if (r.ms) {
-      const u = Math.min(1, (t - r.t0) / r.ms);
-      r.pos = r.p0 + (r.end - r.p0) * (1 - (1 - u) ** 3);
-      if (u >= 1) {
-        r.pos = r.end;
-        r.done = true;
-      }
-    } else {
-      r.pos += v * dt;
-    }
-    paint(i);
-    if (r.done) {
-      reelCells[i]?.[r.end % 2]?.classList.add("landed");
-      onLand(i);
-    } else {
-      running = true;
-    }
-  });
-  if (running) reelFrame = requestAnimationFrame(spin);
-  else {
-    reelFrame = 0;
-    onRest();
-  }
-}
-/** 机选: starts the three keys spinning from [from] while the balls blow in the globe. */
-function startReels(from: readonly string[]) {
-  const g = gen;
-  reeling.value = "buy";
-  reels = [0, 1, 2].map((i) => ({
-    pos: 0, from: from[i] ?? "", stopAt: null, land: "", end: 0, p0: 0, t0: 0, ms: 0, done: false, shown: [-1, -1],
-  }));
-  onLand = () => {};
-  onRest = () => {};
-  reelStart = performance.now();
-  airOn();
-  // The reel windows are in the DOM after this render.
-  void nextTick(() => {
-    if (g !== gen) return;
-    reelCells = Array.from(keysEl.value?.querySelectorAll(".reel") ?? [], (el) => Array.from(el.children) as HTMLElement[]);
-    reelStart = lastFrame = performance.now();
-    reels.forEach((_, i) => paint(i));
-    reelFrame = requestAnimationFrame(spin);
-  });
-}
-/** The spinning keys stop on [digits] left to right, no sooner than BUY_SPIN_MS after they started. */
-function stopReels(digits: readonly string[], rest: () => void) {
-  const t = Math.max(performance.now(), reelStart + BUY_SPIN_MS);
-  reels.forEach((r, i) => {
-    r.stopAt = t + i * BUY_STOP_GAP_MS;
-    r.land = digits[i] ?? "";
-  });
-  onLand = press;
-  onRest = () => {
-    airOff();
-    rest();
-  };
-}
-/** The keys show their faces again: [face] says how they come in. */
-function endReels(face: "fade" | "still") {
-  cancelAnimationFrame(reelFrame);
-  reelFrame = 0;
-  reels = [];
-  reelCells = [];
-  faceIn.value = face;
-  reeling.value = "";
-}
+// ---- the reels on the number keys (lotteryReels.ts)
+const { reeling, startReels, stopReels, endReels, reelSpots } = useReels({ plays, keysEl, faceIn, press, airOn, airOff });
 
 // ---- the draw machine. The globe's balls are a live simulation (lotteryDrum.ts): at rest they lie where they fell;
 // while the keys spin or a draw plays the air blows them about, and they collide and spin. One animation frame loop
@@ -699,7 +499,7 @@ function sendBall(i: number, d: string, done: () => void) {
   const path = tubePathEl.value;
   const m = machineEl.value;
   if (!t || !sim || !col || !path || !m || calm.value) {
-    later(BALL_DROP_MS, done);
+    plays.later(BALL_DROP_MS, done);
     return;
   }
   // Read now, while nothing moves: the window's centre and the size of its ball.
@@ -710,9 +510,9 @@ function sendBall(i: number, d: string, done: () => void) {
   const track = Math.abs(t.entry.x - t.end);
   const curve = path.getTotalLength() - track;
   if (!sim.has(d)) sim.add(d);
-  const g = gen;
+  const g = plays.gen;
   sim.pull(d, (b) => {
-    if (g !== gen) return;
+    if (g !== plays.gen) return;
     syncPresent();
     // The globe may have been resized since the pull began: the ball leaves from where it is now.
     const now = tube.value ?? t;
@@ -801,31 +601,15 @@ function advanceRuns(now: number) {
   }
 }
 
-// ---- a number bought leaves the keys: its digits fly into the new stub, which grows out of the keys around them.
-// A spot is the centre of a digit and its font size; the spots on the keys are kept from the keys' top left corner,
-// since the keys can move between the purchase and the flight.
-interface Spot { d: string; x: number; y: number; size: number }
+// ---- a number bought leaves the keys: its digits fly into the new stub, which grows out of the keys around them
+// (spots: lotterySpots.ts).
 interface Ghost { id: number; d: string; x: number; y: number; size: number }
 const ghosts = ref<Ghost[]>([]);
 let ghostId = 0;
-function spotOf(el: Element | null | undefined, d: string): Spot | null {
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  return { d, x: r.left + r.width / 2, y: r.top + r.height / 2, size: parseFloat(getComputedStyle(el).fontSize) || 72 };
-}
-function onKeys(spots: (Spot | null)[]): Spot[] {
-  const box = keysEl.value?.getBoundingClientRect();
-  if (!box) return [];
-  return spots.flatMap((p) => (p ? { ...p, x: p.x - box.left, y: p.y - box.top } : []));
-}
 /** Where the digits picked are on the keys. */
 function faceSpots(): Spot[] {
   const keys = keysEl.value ? Array.from(keysEl.value.querySelectorAll(".numkey")) : [];
-  return onKeys(keys.map((k, i) => spotOf(k.querySelector(".face"), picks.value[i] ?? "")));
-}
-/** Where the digits the reels stopped on are on the keys. */
-function reelSpots(): Spot[] {
-  return onKeys(reels.map((r, i) => spotOf(reelCells[i]?.[r.end % 2], r.land)));
+  return onKeys(keysEl.value, keys.map((k, i) => spotOf(k.querySelector(".face"), picks.value[i] ?? "")));
 }
 function drop(el: HTMLElement, x: number, y: number, delay: number) {
   const to = el.getBoundingClientRect();
@@ -837,7 +621,7 @@ function drop(el: HTMLElement, x: number, y: number, delay: number) {
 }
 /** The digits at [spots] fly into the last stub just bought; the other new stubs drop from the keys after it. */
 async function fly(spots: Spot[]) {
-  const g = gen;
+  const g = plays.gen;
   const root = rootEl.value;
   const stubs = Array.from(stubsEl.value?.querySelectorAll<HTMLElement>(".cell.fresh .ticket-stub") ?? []);
   const main = stubs[stubs.length - 1];
@@ -856,7 +640,7 @@ async function fly(spots: Spot[]) {
   const base = root.getBoundingClientRect();
   ghosts.value = from.map((p) => ({ id: ++ghostId, d: p.d, x: p.x - base.left, y: p.y - base.top, size: p.size }));
   await nextTick();
-  if (g !== gen) return;
+  if (g !== plays.gen) return;
   const kx = keys.left + keys.width / 2;
   const ky = keys.top + keys.height / 2;
   const opts = { duration: FLY_MS, easing: EASE_IN_OUT, fill: "backwards" as const };
@@ -878,12 +662,12 @@ async function fly(spots: Spot[]) {
   digits.forEach((el) => el.animate([{ opacity: 0 }, { opacity: 0, offset: 0.82 }, { opacity: 1 }], opts));
   stubs.slice(0, -1).forEach((el, n) => drop(el, kx, ky, (n + 1) * DROP_STAGGER_MS));
   held.value = false;
-  later(FLY_MS, () => (ghosts.value = []));
+  plays.later(FLY_MS, () => (ghosts.value = []));
 }
 
 async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" | "random") {
   settle();
-  const g = gen;
+  const g = plays.gen;
   const base = picks.value;
   const spinning = kind === "random" && !calm.value;
   // A picked number leaves from the faces it is on: where they are, before the keys clear.
@@ -896,7 +680,7 @@ async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" |
   if (!r.ok) {
     buyError.value = r.error.message;
     // The reels come back to what the keys showed.
-    if (spinning && g === gen) stopReels(base, () => endReels("still"));
+    if (spinning && g === plays.gen) stopReels(base, () => endReels("still"));
     return;
   }
   const s = r.data.lottery;
@@ -909,16 +693,16 @@ async function buy(body: { numbers?: string[]; random?: number }, kind: "pick" |
     picks.value = NO_PICKS;
     at.value = null;
   }
-  if (calm.value || g !== gen) return;
+  if (calm.value || g !== plays.gen) return;
   held.value = true;
   await nextTick();
-  if (g !== gen) return;
+  if (g !== plays.gen) return;
   if (kind === "pick") {
     void fly(from);
     return;
   }
   // The keys show the last number bought.
-  stopReels((bought[bought.length - 1] ?? "").split(""), () => later(BUY_HOLD_MS, () => {
+  stopReels((bought[bought.length - 1] ?? "").split(""), () => plays.later(BUY_HOLD_MS, () => {
     const spots = reelSpots();
     endReels("fade");
     void fly(spots);
@@ -935,83 +719,13 @@ watch(() => [state.value?.left, closed.value, coins.value, online.value], () => 
 // Picking stops with the sales: no key held, no caret.
 watch(keysOff, (off) => { if (off) at.value = null; });
 
-/** Counts [out] to [to] over [ms], easing out; returns what cancels it. */
-function countTo(out: Ref<number>, to: number, ms: number): () => void {
-  const from = out.value;
-  const begin = performance.now();
-  let frame = 0;
-  const stepFrame = (t: number) => {
-    const u = Math.min(1, (t - begin) / ms);
-    out.value = Math.round(from + (to - from) * (1 - (1 - u) ** 3));
-    if (u < 1) frame = requestAnimationFrame(stepFrame);
-  };
-  frame = requestAnimationFrame(stepFrame);
-  return () => cancelAnimationFrame(frame);
-}
-
-// ---- the pool card: top, second and third, each with the trailing digits it takes. The top prize is the
-// server-wide pool of the next draw (after today's draw, the pool it rolled over into or started again from). The
-// park's state carries the same pool and loads again on every coin spent anywhere in the park, so the card takes it
-// from there when it can and always matches the pool in the top bar. A new amount counts up from the one shown.
+// ---- the pool card (LotteryPrizes.vue). The top prize is the server-wide pool of the next draw (after today's draw,
+// the pool it rolled over into or started again from). The park's state carries the same pool and loads again on
+// every coin spent anywhere in the park, so the card takes it from there when it can and always matches the pool in
+// the top bar.
 const pool = computed(() => (state.value ? park.value?.jackpot ?? state.value.prize.top : null));
 /** The second prize is what each ticket wins, as the third is; on servers before it, a share of the sales. */
 const secondEach = computed(() => !!economy.value?.park?.lottery?.secondEach);
-const poolShown = ref(0);
-let stopPool = () => {};
-watch(pool, (to, was) => {
-  stopPool();
-  if (to == null) return;
-  if (was == null || calm.value) poolShown.value = to;
-  else stopPool = countTo(poolShown, to, POOL_ROLL_MS);
-}, { immediate: true });
-/** The trailing digits a prize takes, left to right: true where the digit must match. */
-const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
-
-// ---- the last draw
-const last = computed(() => state.value?.last ?? null);
-const winning = computed(() => (last.value ? last.value.number.split("") : []));
-/** Today is drawn: the stubs on the table are the ones of the last draw, with their results. */
-const drawnHere = computed(() => !!last.value && last.value.day === state.value?.day);
-const lastName = computed(() => {
-  const d = last.value?.day ?? "";
-  const today = state.value?.day ?? "";
-  return d === today ? "今日" : d === dayBefore(today) ? "昨日" : shortDay(d);
-});
-/**
- * The last draw's stubs, with their results, are on the table: today once it is drawn, and the day after it until the
- * first number of that day is bought, so a draw seen the next morning lights up the stubs it was played with.
- */
-const lastOnTable = computed(() => {
-  const s = state.value;
-  const d = last.value;
-  if (!s || !d) return false;
-  return drawnHere.value || (!!d.mine.length && !s.tickets.length && d.day === dayBefore(s.day));
-});
-/** My stubs: today's, or the last draw's with what each matched. */
-const table = computed(() => {
-  const s = state.value;
-  if (!s) return [];
-  if (lastOnTable.value) return last.value!.mine;
-  return s.tickets.map((number) => ({ number, tier: null, prize: 0 }));
-});
-/** The day of the stubs on the table, so a stub of one day is never reused for another. */
-const tableDay = computed(() => (lastOnTable.value ? last.value!.day : state.value?.day ?? ""));
-/** Today's tickets show with an empty place for each one still to buy, so a stub never moves when another is bought. */
-const showCount = computed(() => !lastOnTable.value || drawnHere.value);
-const slots = computed(() => (showCount.value ? Math.max(0, (state.value?.daily ?? 0) - table.value.length) : 0));
-
-/** The server's drawn days with their top prize winners, each with what I won that day (null: I had no tickets). */
-const past = computed(() => {
-  const s = state.value;
-  if (!s) return [];
-  const mine = new Map(s.history.map((h) => [h.day, h.won]));
-  return s.draws.map((d) => ({ ...d, winners: winnersLine(d.top), first: winnersLine(d.top, 1), won: mine.get(d.day) ?? null }));
-});
-/** The last draw's stubs when they are not on the table (today's stubs are): they go on top of 往期. */
-const lastAside = computed(() => (!lastOnTable.value && last.value?.mine.length ? last.value : null));
-const hasPast = computed(() => !!lastAside.value || past.value.length > 0);
-/** A draw on the board stays blank while its first showing is still playing on the keys. */
-const unseen = (day: string) => !!reveal.value && reveal.value === day && stopped.value < 3;
 
 /** A ticket's digits, each marked when it is one of the trailing digits matched among the [stopped] at rest. */
 function digits(number: string, tier: LotteryTier | null, stopped = 3) {
@@ -1019,50 +733,10 @@ function digits(number: string, tier: LotteryTier | null, stopped = 3) {
   return number.split("").map((d, i) => ({ d, hit: lit[i]! }));
 }
 
-// ---- the first showing of a draw, on the keys: all three spin, then stop one by one from the right, each lighting the
-// digits of my stubs it matches and fading the stubs it rules out; then the stamps go down and the win counts up.
-const reveal = ref("");
-/** Trailing digits of the draw at rest; 3 when nothing is playing. */
-const stopped = ref(3);
-/** The stamps and the result in the bar are out. */
-const stamped = ref(true);
-const wonShown = ref(0);
-let stopWon = () => {};
-
-function startReveal(day: string) {
-  const d = last.value;
-  if (!d) return;
-  settle();
-  reveal.value = day;
-  stopped.value = 0;
-  stamped.value = false;
-  wonShown.value = 0;
-  void nextTick(() => {
-    layoutTube();
-    airOn();
-  });
-  const number = d.number.split("");
-  const land = () => {
-    stopped.value++;
-    if (stopped.value < 3) return;
-    later(DRAW_STAMP_MS, () => {
-      stamped.value = true;
-      const best = d.mine.some((t) => t.tier === "top") ? 3 : d.mine.some((t) => t.tier === "second") ? 2 : 1;
-      const ms = d.won > 0 ? ROLL_MS[best] : 0;
-      if (ms) stopWon = countTo(wonShown, d.won, ms);
-      later(Math.max(ms, DRAW_HOLD_MS), () => {
-        faceIn.value = showDraw.value ? "still" : "fade";
-        reveal.value = "";
-        stopped.value = 3;
-      });
-    });
-  };
-  // From the right: the last digit's ball first; the air dies away once the third ball is on its way.
-  [2, 1, 0].forEach((i, n) => later(DRAW_FIRST_MS + n * DRAW_GAP_MS, () => {
-    sendBall(i, number[i]!, land);
-    if (n === 2) later(350, airOff);
-  }));
-}
+// ---- the first showing of a draw (lotteryReveal.ts); the watch that starts it is below, after everything it ends.
+const { reveal, stopped, stamped, wonShown, startReveal, resetReveal } = useDrawReveal({
+  plays, last, showDraw, faceIn, settle, layoutTube, airOn, airOff, sendBall,
+});
 watch(() => [active.value, last.value?.day ?? ""] as const, ([on, day]) => {
   if (!on || !day || seenDraw() === day) return;
   markDrawSeen(day);
@@ -1203,51 +877,10 @@ function onPopKey(e: KeyboardEvent) {
 
         <!-- The pool and the board of the latest draws. -->
         <aside class="side" :class="{ only: !past.length }">
-          <div class="pool-card" :aria-label="`头奖 累积奖池 ${fmt(pool ?? 0)}`">
-            <div class="pool-head" aria-hidden="true">
-              <span class="tier-name">头奖</span>
-              <small>累积奖池</small>
-              <span class="match"><i v-for="(on, j) in needs(3)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
-            </div>
-            <b class="pool-amount" aria-hidden="true"><Icon name="shard" :size="28" />{{ fmt(poolShown) }}</b>
-            <ul class="tiers">
-              <li :aria-label="`二等 ${fmt(state.prize.second)}${secondEach ? ' /注' : ''}`">
-                <span class="tier-head" aria-hidden="true">
-                  <span class="tier-name">二等</span>
-                  <span class="match"><i v-for="(on, j) in needs(2)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
-                </span>
-                <b class="amount" aria-hidden="true">
-                  <Icon name="shard" :size="14" />{{ fmt(state.prize.second) }}<small v-if="secondEach">/注</small>
-                </b>
-              </li>
-              <li :aria-label="`三等 ${fmt(state.prize.third)} /注`">
-                <span class="tier-head" aria-hidden="true">
-                  <span class="tier-name">三等</span>
-                  <span class="match"><i v-for="(on, j) in needs(1)" :key="j" :class="on ? 'lball' : 'hole'"></i></span>
-                </span>
-                <b class="amount" aria-hidden="true"><Icon name="shard" :size="14" />{{ fmt(state.prize.third) }}<small>/注</small></b>
-              </li>
-            </ul>
-          </div>
-
-          <!-- One draw a row, newest first: its day, its number, who won the top prize and what each won. -->
-          <div v-if="past.length" class="board">
-            <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span><span>奖金</span></div>
-            <ol class="rows ui-scroll">
-              <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day) }">
-                <span class="day">{{ shortDay(h.day) }}</span>
-                <span
-                  class="num" :class="{ in: !!reveal && reveal === h.day && stopped === 3 }"
-                  :aria-label="`开奖号码 ${h.number}`"
-                ><i v-for="(d, i) in h.number.split('')" :key="i" :style="{ '--i': i }">{{ d }}</i></span>
-                <span class="winners" :class="{ none: !h.top.length }" :title="h.top.length > 1 ? h.winners : undefined">{{ h.first }}</span>
-                <span class="prize" :class="{ none: !h.top.length }">
-                  <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
-                  <template v-else>—</template>
-                </span>
-              </li>
-            </ol>
-          </div>
+          <LotteryPrizes
+            :pool="pool" :second="state.prize.second" :third="state.prize.third" :second-each="secondEach" :calm="calm"
+          />
+          <LotteryBoard :past="past" :reveal="reveal" :stopped="stopped" />
         </aside>
       </template>
     </div>
@@ -1325,6 +958,7 @@ function onPopKey(e: KeyboardEvent) {
   </section>
 </template>
 
+<style scoped src="./lottery-ball.css"></style>
 <style scoped>
 /* Fills the park's white body; the bottom bar (.park-actions) is the last child, so the root has no side padding. */
 .lottery {
@@ -1359,51 +993,6 @@ function onPopKey(e: KeyboardEvent) {
 .stage > .ui-error {
   align-self: stretch;
   margin: 0;
-}
-
-/*
- * ---- a lottery ball: a coral sphere (two steps of the ramp, by odd and even) with a white round label and the digit
- * in ink; one small sharp highlight and a soft dark edge along the bottom. --s is its size. Used in the globe, in the
- * windows, on the board and, without a label, as the pool card's match marks.
- */
-.lball {
-  --s: 24px;
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: var(--s);
-  height: var(--s);
-  border-radius: 50%;
-  background: var(--c-500);
-  box-shadow:
-    inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.09) rgba(var(--c-900-rgb), 0.32),
-    inset 0 calc(var(--s) * 0.03) 0 rgba(255, 255, 255, 0.3);
-  font-style: normal;
-}
-.lball.odd {
-  background: var(--c-600);
-}
-.lball::after {
-  content: "";
-  position: absolute;
-  left: 16%;
-  top: 9%;
-  width: 20%;
-  height: 12%;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-}
-.lball > b {
-  display: grid;
-  place-items: center;
-  width: 62%;
-  height: 62%;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: inset 0 calc(var(--s) * -0.025) 0 rgba(var(--c-900-rgb), 0.12);
-  font: 800 calc(var(--s) * 0.44) / 1 var(--font-latin);
-  color: var(--ink);
 }
 
 /* ---- the draw machine: the globe on its base over the cabinet; the tube and track drawn behind the globe */
@@ -1838,171 +1427,7 @@ function onPopKey(e: KeyboardEvent) {
 .side.only {
   justify-content: center;
 }
-.pool-card {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px 14px 14px 16px;
-  border-radius: var(--radius-l);
-  background: var(--grad-sky);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
-  color: var(--ink);
-}
-.pool-head {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.tier-name {
-  font: 800 var(--fs-label)/1 var(--font);
-  white-space: nowrap;
-}
-.pool-head .tier-name {
-  font-size: var(--fs-section);
-}
-.pool-head small {
-  font: 700 var(--fs-label)/1 var(--font);
-  white-space: nowrap;
-}
-.pool-head .match {
-  align-self: center;
-  margin-left: auto;
-}
-.pool-amount {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font: 800 50px/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.tiers {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.tiers li {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 8px 10px 9px;
-  border-radius: var(--radius-m);
-  background: var(--surface);
-}
-.tier-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-/* The number's three digits: a ball where the digit must match, an empty slot where it need not. */
-.match {
-  display: inline-flex;
-  gap: 3px;
-}
-.match .lball {
-  --s: 12px;
-}
-.match .hole {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: rgba(var(--c-900-rgb), 0.1);
-}
-/* On the coral card the balls are white. */
-.pool-head .match .lball {
-  --s: 15px;
-  background: var(--surface);
-}
-.amount {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font: 800 22px/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.amount svg {
-  color: var(--c-700);
-}
-.amount small {
-  margin-left: 2px;
-  font: 600 var(--fs-caption) var(--font);
-  color: var(--ink-2);
-}
-
-/* The board: a header strip, then one draw a row, the newest on white. */
-.board {
-  flex: 0 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-  border-radius: var(--radius-l);
-  background: var(--c-50);
-}
-.board-head,
-.rows li {
-  display: grid;
-  grid-template-columns: 56px 48px minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 8px;
-  padding: 0 12px;
-}
-.board-head {
-  flex: none;
-  height: 30px;
-  background: var(--c-100);
-  font: 700 var(--fs-caption)/1 var(--font);
-  color: var(--ink-2);
-}
-/* The prize column is as wide as each row's amount, so it lines up on the right. */
-.board-head span:nth-child(4) {
-  text-align: right;
-}
-/* The rows fade out at the bottom edge, where they scroll under it. */
-.rows {
-  min-height: 0;
-  margin: 0;
-  padding: 0 0 12px;
-  overflow-y: auto;
-  list-style: none;
-  mask: linear-gradient(180deg, #000 calc(100% - 12px), transparent);
-}
-.rows li {
-  min-height: 32px;
-  font-size: var(--fs-label);
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.rows li:first-child {
-  min-height: 46px;
-  background: var(--surface);
-  color: var(--ink);
-}
-/* The drawn number in plain digits; the newest one larger, in the ramp's deep coral. */
-.num {
-  font: 800 17px/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  color: var(--ink);
-}
-.num i {
-  display: inline-block;
-  font-style: normal;
-}
-.rows li:first-child .num {
-  font-size: 22px;
-  color: var(--c-700);
-}
-.day {
-  white-space: nowrap;
-}
+/* The 往期 list's winners and prize columns (the board has its own, LotteryBoard.vue). */
 .winners {
   min-width: 0;
   overflow: hidden;
@@ -2013,7 +1438,6 @@ function onPopKey(e: KeyboardEvent) {
 .winners.none {
   color: var(--ink-3);
 }
-/* What each top ticket was paid; a dash when nobody won and the pool rolled over. */
 .prize {
   display: inline-flex;
   align-items: center;
@@ -2030,13 +1454,7 @@ function onPopKey(e: KeyboardEvent) {
 .prize.none {
   color: var(--ink-3);
 }
-.rows li:first-child .prize {
-  font-size: 17px;
-}
 /* Held back while the draw plays on the keys. */
-.rows li.unseen .num,
-.rows li.unseen .winners,
-.rows li.unseen .prize,
 .result.hide {
   visibility: hidden;
 }
@@ -2202,14 +1620,6 @@ function onPopKey(e: KeyboardEvent) {
   45% { transform: translateY(-4px) scale(1.18); }
   to { color: var(--c-700); }
 }
-.reveal .num.in i {
-  animation: ball-in 420ms var(--ease-pop) both;
-  animation-delay: calc((2 - var(--i)) * 90ms);
-}
-@keyframes ball-in {
-  from { transform: translateY(-24px); opacity: 0; }
-  40% { opacity: 1; }
-}
 .reveal .stamp,
 .reveal .result.in {
   animation: stamp-in 360ms var(--ease-pop) both;
@@ -2289,63 +1699,6 @@ function onPopKey(e: KeyboardEvent) {
   .side {
     contain: none;
     gap: 8px;
-  }
-  .pool-card {
-    gap: 6px;
-    padding: 10px 12px;
-  }
-  .pool-head .tier-name {
-    font-size: var(--fs-strong);
-  }
-  .pool-head .match i {
-    width: 11px;
-    height: 11px;
-  }
-  .pool-amount {
-    font-size: 32px;
-  }
-  .pool-amount svg {
-    width: 20px;
-    height: 20px;
-  }
-  .tiers {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-  .tiers li {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 8px;
-  }
-  .tiers .match {
-    display: none;
-  }
-  .tiers .amount {
-    font-size: 17px;
-  }
-  .board-head,
-  .rows li:not(:first-child) {
-    display: none;
-  }
-  .rows {
-    overflow: visible;
-    padding: 0;
-  }
-  /* The latest draw on one line: its day, the number and the top prize; who won is in 往期. */
-  .rows {
-    mask: none;
-  }
-  .rows li:first-child {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    min-height: 0;
-    padding: 8px 8px 8px 10px;
-  }
-  .rows li:first-child .winners {
-    display: none;
-  }
-  .rows li:first-child .num {
-    font-size: 20px;
   }
   .tray {
     padding: 10px 10px 10px 12px;
@@ -2452,56 +1805,6 @@ function onPopKey(e: KeyboardEvent) {
   .side {
     gap: 8px;
   }
-  .pool-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "head head"
-      "amount tiers";
-    align-items: center;
-    gap: 6px 12px;
-    padding: 10px 12px;
-  }
-  .pool-head {
-    grid-area: head;
-  }
-  .pool-head .tier-name {
-    font-size: var(--fs-strong);
-  }
-  .pool-amount {
-    grid-area: amount;
-    font-size: 38px;
-  }
-  .pool-amount svg {
-    width: 22px;
-    height: 22px;
-  }
-  .tiers {
-    grid-area: tiers;
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
-  .tiers li {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding: 5px 8px;
-  }
-  .tiers .match {
-    display: none;
-  }
-  .tiers .amount {
-    font-size: 17px;
-  }
-  .rows li {
-    min-height: 30px;
-  }
-  .rows li:first-child {
-    min-height: 40px;
-  }
-  .rows li:first-child .num {
-    font-size: 20px;
-  }
   .result.won {
     font-size: var(--fs-heading);
   }
@@ -2521,24 +1824,9 @@ function onPopKey(e: KeyboardEvent) {
   .stubs:not(:has(.cell:nth-child(6))) .slot:nth-child(n + 6) {
     display: none;
   }
-  .pool-card {
-    display: flex;
-    align-items: stretch;
-  }
   .stage {
     gap: 10px 14px;
     padding: 10px 16px 12px;
-  }
-  .pool-amount {
-    font-size: 28px;
-  }
-  .pool-amount svg {
-    width: 18px;
-    height: 18px;
-  }
-  .rows li:first-child {
-    row-gap: 4px;
-    padding: 6px 10px 7px;
   }
 }
 </style>
