@@ -1,5 +1,5 @@
 import type {
-  CheerState, ClientMessage, DuelMessage, Hand, Member, MemberProfile, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage,
+  CheerState, ClientMessage, DdzClientMessage, DdzMessage, DuelMessage, Hand, Member, MemberProfile, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage,
   StateUpdate,
 } from "./protocol";
 import { MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
@@ -31,6 +31,8 @@ export interface RoomEvents {
   onState(update: StateUpdate): void;
   /** Rock-paper-scissors: invites, rounds and endings of the own duels, and every result in the room. */
   onDuel(msg: DuelMessage): void;
+  /** Dou dizhu: everything of the own table, and the games starting and ending in the room. */
+  onDdz?(msg: DdzMessage): void;
   /** A final room_full carries its reason as the code: kicked, banned or need_save. */
   onError(code: string, message: string): void;
 }
@@ -49,6 +51,8 @@ export interface JoinInfo {
   dnd?: boolean;
   /** A `ROOM_STATUSES` id shown to the room. */
   status?: string;
+  /** This client plays dou dizhu. */
+  ddz?: boolean;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -196,6 +200,9 @@ export class RoomClient {
   }
   sendDuelThrow(duel: string, hand: Hand): void {
     this.send({ type: "duel_throw", duel, hand });
+  }
+  sendDdz(msg: DdzClientMessage): void {
+    this.send(msg);
   }
   sendState(patch: ProfilePatch): void {
     if (this.joinInfo) {
@@ -355,6 +362,21 @@ export class RoomClient {
       case "duel_result":
       case "duel_over":
         this.events.onDuel(msg);
+        break;
+      case "ddz_invite":
+      case "ddz_answer":
+      case "ddz_over":
+      case "ddz_deal":
+      case "ddz_bid":
+      case "ddz_landlord":
+      case "ddz_play":
+      case "ddz_seat":
+      case "ddz_result":
+      case "ddz_again":
+      case "ddz_closed":
+      case "ddz_state":
+      case "ddz_live":
+        this.events.onDdz?.(msg);
         break;
       case "error":
         if (msg.code === "bad_message" && this.joinPending && this.joinVersion > 2 && this.joinInfo) {

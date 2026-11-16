@@ -51,6 +51,7 @@ async function context(panel: boolean) {
     settings: (await import("../stores/settings")).settings,
     player: await import("../stores/player"),
     room: await import("../stores/room"),
+    ddz: await import("../stores/ddz"),
     counter: (await import("../stores/counter")).counter,
     pet: await import("../stores/pet"),
     ui: await import("../stores/ui"),
@@ -352,6 +353,31 @@ it("mirrors the duel into the panel and runs invites in the desk", async () => {
   desk.room.duel.value = null;
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.room.duel.value).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("mirrors the dou dizhu table and the room's games into the panel and runs the panel's moves in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.ddz.onDdzMessage({ type: "ddz_invite", table: "t1", from: "host", ids: ["host", "me", "third"], base: 100, deposit: 4800, sec: 15 });
+  desk.ddz.onDdzMessage({ type: "ddz_live", table: "t2", ids: ["x", "y", "z"], on: true });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddz.value).toMatchObject({ id: "t1", phase: "invite", you: 1, sent: false, base: 100, deposit: 4800 });
+  expect(panel.ddz.ddzBusy.value).toBe(true);
+  expect([...panel.ddz.ddzPlaying.value]).toEqual(["x", "y", "z"]);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.answerDdz(true);
+  panel.ddz.playDdz([0, 1]);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["answer", true], ["play", [0, 1]]]);
+  desk.ddz.ddz.value = null;
+  desk.ddz.onDdzMessage({ type: "ddz_live", table: "t2", ids: ["x", "y", "z"], on: false });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddz.value).toBeNull();
+  expect(panel.ddz.ddzPlaying.value.size).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
 });
 

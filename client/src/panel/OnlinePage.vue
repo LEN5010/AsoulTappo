@@ -28,6 +28,8 @@ import { ui } from "../stores/ui";
 import AccountDialog from "./AccountDialog.vue";
 import PublicRoomList from "./PublicRoomList.vue";
 import SegTabs from "../ui/SegTabs.vue";
+import { ddzOn, ddzPlaying } from "../stores/ddz";
+import DdzBanner from "./ddz/DdzBanner.vue";
 
 const input = ref(settings.lastRoom);
 /** The own status keys: none, then the list. */
@@ -327,6 +329,7 @@ async function copy() {
         </div>
       </section>
       <p v-if="lastError || notice" class="ui-error err" role="alert">{{ lastError || notice }}</p>
+      <DdzBanner v-if="ddzOn" />
     </div>
 
     <section v-if="conn === 'idle' && publicRooms === 'signin' && mainApi" data-rise>
@@ -433,6 +436,7 @@ async function copy() {
             <b>
               {{ m.id === youId ? settings.nick.trim() || m.nick : shownNick(m) }}<em v-if="m.id === youId" class="ui-tag">我</em>
               <span v-if="roomInfo?.host === m.id" class="host" title="房主" aria-label="房主"><Icon name="crown" :size="14" /></span>
+              <em v-if="ddzPlaying.has(m.id)" class="ui-tag at-table">牌局中</em>
             </b>
             <small>
               <i :style="{ background: characterColor(m.character) }" aria-hidden="true"></i>{{ skinTitle(m.character) }}
@@ -678,6 +682,10 @@ async function copy() {
 }
 .who em {
   margin-left: 8px;
+}
+.who .at-table {
+  --tag-bg: var(--c-100);
+  --tag-fg: var(--c-700);
 }
 .who .host {
   display: inline-flex;

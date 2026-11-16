@@ -8,7 +8,10 @@ import Icon from "./Icon.vue";
 // `title` names the dialog; `heading` also draws it in the header row, for callers without a heading of their own.
 // `locked` leaves no way to close it: no close key, and the backdrop and Escape do nothing.
 // `covered` hides the sheet while the `front` slot fills the face (a full-panel art viewer).
-const props = defineProps<{ title?: string; wide?: boolean; still?: boolean; heading?: boolean; locked?: boolean; covered?: boolean }>();
+// `flush` lets the content start at the sheet's top edge, under the close key, with no padding of the sheet's own.
+const props = defineProps<{
+  title?: string; wide?: boolean; still?: boolean; heading?: boolean; locked?: boolean; covered?: boolean; flush?: boolean;
+}>();
 const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
@@ -58,7 +61,7 @@ onDeactivated(() => emit("close"));
   <Teleport defer to=".panel-overlay">
     <div class="backdrop" :class="{ closing }" data-overlay @click.self="close">
       <slot name="behind" />
-      <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still, covered }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
+      <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still, covered, flush }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
         <div class="sheet-head">
           <h3 v-if="heading && title" class="sheet-title">{{ title }}</h3>
           <button v-if="!locked" type="button" class="x ui-btn ghost" aria-label="关闭" @click="close"><Icon name="close" :size="16" /></button>
@@ -147,6 +150,16 @@ onDeactivated(() => emit("close"));
 }
 .sheet-body {
   padding: 0 24px 24px;
+}
+.flush .sheet-head {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 1;
+  padding: 0 10px;
+}
+.flush .sheet-body {
+  padding: 0;
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { opacity: 0; transform: translate(-22px, 16px); } }

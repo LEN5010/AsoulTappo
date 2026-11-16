@@ -25,6 +25,8 @@ export interface PlayerStatus {
   scratch?: { left: number; pity: number };
   /** Rock-paper-scissors: today's net win (prizes minus bets). Missing on servers without duels. */
   duel?: { net: number };
+  /** Dou dizhu: today's net win. Missing on servers without the game. */
+  ddz?: { net: number };
   /** Room cheer rounds: shards from them today, the daily cap, and the taps in all to take part. */
   cheer?: { day: string; got: number; cap: number; minTaps: number };
   /** Update rewards open on the server that this save has not claimed; missing on older servers. */

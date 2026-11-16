@@ -204,6 +204,11 @@ export function lift(): void {
   sample(anyOf("slide", 3), 0.84);
 }
 
+/** A card dealt or laid on the dou dizhu table: the same slide, quiet, never quite the same twice. */
+export function cardSlide(): void {
+  sample(anyOf("slide", 3), 0.46, jitter(1, 0.06));
+}
+
 /** Poking the alpaca: one of a few silly noises, never the same twice in a row. */
 const SILLY = [
   // a nasal, wobbling bleat

@@ -7,6 +7,8 @@ export const ui = reactive({
   panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
   /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
   dexFilter: "" as "" | "holo",
+  /** Desk window only: the panel is up on the room page, as it last reported (desktop/bridge.ts). */
+  roomSeen: false,
 });
 // The scratch page became part of the park: a page named the old way (from the other window, say) opens the park.
 watch(() => ui.page as string, (page) => { if (page === "scratch") ui.page = "park"; }, { flush: "sync", immediate: true });

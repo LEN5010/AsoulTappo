@@ -8,6 +8,7 @@ import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
 import * as pomodoroStore from "../stores/pomodoro";
 import * as todoStore from "../stores/todo";
+import * as ddzStore from "../stores/ddz";
 import { economy, setEconomy } from "../stores/economy";
 import { restingMotion, type PetMotion } from "../net/protocol";
 import { remoteMotion } from "../net/MotionFrames";
@@ -31,13 +32,15 @@ const groupSources = {
   publicRooms: () => room.publicRooms.value,
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
-  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
-    ({ id, uid, nick, character, plate })),
+  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value }),
+  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz }) =>
+    ({ id, uid, nick, character, plate, ddz })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
     scratchCard: groupSources.scratchCard(), park: groupSources.park(), economy: groupSources.economy(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
-    publicRooms: groupSources.publicRooms(), pomodoro: groupSources.pomodoro(), todos: groupSources.todos(), members: groupSources.members() };
+    publicRooms: groupSources.publicRooms(), pomodoro: groupSources.pomodoro(), todos: groupSources.todos(), ddz: groupSources.ddz(),
+    members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
@@ -63,6 +66,10 @@ function applyGroups(s: Partial<Groups>) {
   if (s.park !== undefined) parkStore.park.value = s.park;
   if (s.pomodoro !== undefined) pomodoroStore.pomodoro.value = s.pomodoro;
   if (s.todos !== undefined) todoStore.todos.value = s.todos;
+  if (s.ddz) {
+    ddzStore.ddz.value = s.ddz.table;
+    ddzStore.ddzLive.value = s.ddz.live;
+  }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
     player.freshItems.clear();
@@ -204,6 +211,7 @@ export async function initDesktop(): Promise<() => void> {
     const opening = payload.visible && !visible;
     visible = payload.visible;
     live = visible && payload.live;
+    ui.roomSeen = live;
     const before = interested;
     interested = new Set(live ? payload.motionIds ?? room.members.keys() : []);
     // The room socket subscribes for the panel's pets as well as the desk's own.
@@ -257,6 +265,7 @@ export async function initDesktop(): Promise<() => void> {
         case "endPomodoro": pomodoroStore.endPomodoro(); break;
         case "todo": todoStore.todoRequest(args[0] as todoStore.TodoMethod, args[1]); break;
         case "todoSync": result = { settings, todos: todoStore.todos.value }; break;
+        case "ddz": ddzStore.ddzRequest(args[0] as ddzStore.DdzOp, ...args.slice(1)); break;
       }
       await publish();
       await emitTo(from, `desktop:reply:${id}`, { result });

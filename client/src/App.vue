@@ -25,8 +25,10 @@ import { startTodoClock, todosWaiting } from "./stores/todoClock";
 import { isOverdue } from "./todo";
 import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
+import DdzBubble from "./pet/DdzBubble.vue";
+import { ddzBubble } from "./stores/ddz";
 import {
-  DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
+  DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
 } from "./pet/duelPick";
 import AccessBubble from "./pet/AccessBubble.vue";
 import NamePill from "./pet/NamePill.vue";
@@ -343,6 +345,7 @@ const nameOnDesk = (m: RemoteMember) =>
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
+const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
 const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
@@ -400,7 +403,7 @@ onMounted(async () => {
   // Reminders wait while the pet is hidden or another bubble holds the spot over it, during a tomato timer's focus
   // and while a todo waits to go up.
   stopNudges = startNudges(() =>
-    !windowVisible.value || !!duel.value || !!poked.value || !!adminHint.value || accessHint.value || tapCooldown.value > Date.now(),
+    !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value || accessHint.value || tapCooldown.value > Date.now(),
   () => focusing.value || todosWaiting());
   stopPomodoro = startPomodoroClock();
   stopTodos = startTodoClock();
@@ -514,11 +517,12 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <CooldownBubble :until="tapCooldown" />
-      <ParkNewsBubble :paused="!!duel || !!adminHint || accessHint || !!nudge" />
+      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || !!nudge" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <DuelBubble v-bind="duelPlace" />
-      <PokeBubble v-if="!duel" v-bind="pokedPlace" />
-      <NudgeBubble v-if="!duel && !poked" v-bind="nudgePlace" @todos="openTodo" />
+      <DdzBubble v-if="!duel" v-bind="ddzPlace" />
+      <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
+      <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">

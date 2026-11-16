@@ -18,6 +18,9 @@ export const PICK_HEIGHT = 84;
 /** Width of the duel bubble over the own pet, the same for every step, and its height at most. */
 export const DUEL_WIDTH = 212;
 export const DUEL_HEIGHT = 142;
+/** Size of the dou dizhu bubble over the own pet, at most (DdzBubble.vue). */
+export const DDZ_WIDTH = 228;
+export const DDZ_HEIGHT = 150;
 /** Size of the bubble over the own pet after a poke (PokeBubble.vue). */
 export const POKED_WIDTH = 168;
 export const POKED_HEIGHT = 74;

@@ -5,8 +5,8 @@ import { remoteMotion } from "../net/MotionFrames";
 import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
-  restingMotion, toHttpBase, ROOM_NAME_MAX, type CheerState, type DuelMessage, type Hand, type Member, type MemberProfile, type PetMotion,
-  type ProfilePatch, type PublicRoom, type RoomInfo,
+  restingMotion, toHttpBase, ROOM_NAME_MAX, type CheerState, type DdzClientMessage, type DdzMessage, type DuelMessage, type Hand,
+  type Member, type MemberProfile, type PetMotion, type ProfilePatch, type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote, memberOf } from "../manifest";
@@ -239,6 +239,10 @@ const events: RoomEvents = {
     noteActivity();
     onDuelMessage(msg);
   },
+  onDdz(msg) {
+    noteActivity();
+    ddzHooks.message(msg);
+  },
   onState(u) {
     const m = members.get(u.id);
     if (!m) return;
@@ -251,6 +255,12 @@ const events: RoomEvents = {
     // A late answer or hand for a duel that already ended, or a poke that arrived inside the server's cooldown
     // after all: nothing to tell.
     if (code === "duel_gone" || code === "poke_cooldown") return;
+    // The same for a move at a dou dizhu table that the game had already passed; a play the server refuses gives
+    // the keys back.
+    if (code === "ddz_gone" || code === "ddz_turn" || code === "ddz_bad") {
+      ddzHooks.refused(code);
+      return;
+    }
     if (code === "rate_limited") {
       rateLimited += 1;
       return;
@@ -312,6 +322,28 @@ function errorText(code: string, message: string): string {
       return "不能和自己猜拳";
     case "no_shards":
       return "碎片不足";
+    case "no_ddz":
+      return "这个服务器没有斗地主";
+    case "ddz_locked":
+      return "你还不能斗地主";
+    case "ddz_target_locked":
+      return "有人还不能斗地主";
+    case "ddz_busy":
+      return "你已经在牌桌上";
+    case "ddz_target_busy":
+      return "有人已经在牌桌上";
+    case "ddz_target_old":
+      return "有人的版本还没有斗地主";
+    case "ddz_cooldown":
+      return "稍后再邀请";
+    case "ddz_self":
+      return "需要三位不同存档的伙伴";
+    case "ddz_target_poor":
+      return "有人的碎片不够押金";
+    case "ddz_cap":
+      return "今天赢到上限了";
+    case "ddz_target_cap":
+      return "有人今天赢到上限了";
     default:
       return message || code;
   }
@@ -613,6 +645,25 @@ export function throwHand(hand: Hand): void {
   client.sendDuelThrow(d.id, hand);
 }
 
+// ---------------------------------------------------------------- dou dizhu
+/**
+ * Dou dizhu lives in stores/ddz.ts, which hears its messages and refusals through these and sends through sendDdz;
+ * the room only carries them.
+ */
+export const ddzHooks: { message(msg: DdzMessage): void; refused(code: string): void } = { message() {}, refused() {} };
+
+/** Desk only. */
+export function sendDdz(msg: DdzClientMessage): void {
+  lastError.value = "";
+  client.sendDdz(msg);
+}
+
+/** Shards a game just paid member [id], shown over its pet for a moment (the own pet's on every desk). */
+export function showWin(id: string, shards: number): void {
+  if (id === youId.value) localWin.add(shards);
+  else players.get(id)?.win.add(shards);
+}
+
 /** Count a tap (key press or click). Only the number is ever sent. */
 export function registerTap(): void {
   if (inRoom.value) batcher.add(1);
@@ -668,6 +719,7 @@ export function joinRoom(room: string): void {
     ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
     ...(duelDnd() ? { dnd: true } : {}),
     ...(settings.status ? { status: settings.status } : {}),
+    ddz: true,
   });
 }
 

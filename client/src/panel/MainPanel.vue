@@ -5,6 +5,7 @@ import { draws, online, shards, status } from "../stores/player";
 import { noPark } from "../stores/park";
 import { incomeTip } from "../income";
 import { inRoom, members } from "../stores/room";
+import { ddzAtTable } from "../stores/ddz";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
 import { closePanel, ui, type Page } from "../stores/ui";
@@ -43,6 +44,8 @@ const ParkPage = defineAsyncComponent(PAGES.park);
 const OnlinePage = defineAsyncComponent(PAGES.room);
 const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
+/** The dou dizhu table, over the room page while a game is on; loaded with the first game. */
+const DdzTable = defineAsyncComponent(() => import("./ddz/DdzTable.vue"));
 /** The park's coins and jackpot in the top bar, in the park's chunk. */
 const ParkChips = defineAsyncComponent(() => import("./park/ParkChips.vue"));
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
@@ -300,6 +303,9 @@ function badgeOf(id: Page): number {
             <SettingsPage v-else class="form-page ui-scroll" @reset-pet="emit('resetPet')" />
           </KeepAlive>
         </main>
+        <Transition name="table">
+          <DdzTable v-if="agreed && shown === 'room' && ddzAtTable" />
+        </Transition>
       </div>
 
       <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
@@ -475,6 +481,20 @@ function badgeOf(id: Page): number {
   min-height: 0;
   overflow: hidden;
   margin-left: var(--side-w);
+}
+/* The dou dizhu table comes up over the room page. */
+.table-enter-active {
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-slow) var(--ease-out);
+}
+.table-leave-active {
+  transition: opacity var(--dur-fast) var(--ease-in);
+}
+.table-enter-from {
+  opacity: 0;
+  transform: translateY(18px);
+}
+.table-leave-to {
+  opacity: 0;
 }
 .form-page {
   height: 100%;

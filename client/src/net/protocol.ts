@@ -39,6 +39,8 @@ export interface Member {
   plate?: string | null;
   /** A `ROOM_STATUSES` id (roomStatus.ts), null for none; servers before it send none. */
   status?: string | null;
+  /** The member's client plays dou dizhu and the server has it; servers before it send none. */
+  ddz?: boolean;
 }
 
 /** Profile fields a member can change with `state` ("" takes off the plate). */
@@ -94,6 +96,61 @@ export type DuelMessage =
   /** To both sides: ended without a winner (declined, timeout, gone, no_shards, duel_cap; idle and draws refund). */
   | { type: "duel_over"; duel: string; reason: string };
 
+/** A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for. */
+export interface DdzSeatInfo { id: string; nick: string; character: string; auto: boolean; away: boolean }
+
+/**
+ * Dou dizhu messages from the server (server/app/ddz.py); all but `ddz_live` go to the three seats only. Seats are
+ * numbered 0 to 2 in turn order; cards are 0..53 (src/ddz/rules.ts).
+ */
+export type DdzMessage =
+  /** Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. */
+  | { type: "ddz_invite"; table: string; from: string; ids: string[]; base: number; deposit: number; sec: number }
+  | { type: "ddz_answer"; table: string; id: string }
+  /** Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, error); deposits went back. */
+  | { type: "ddz_over"; table: string; reason: string; by?: string }
+  /** A deal: the own hand, and the seat that bids first. */
+  | {
+    type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; you: number; hand: number[]; base: number; cap: number; deal: number;
+    turn: number; sec: number;
+  }
+  /** A bid (0 passes); `turn` bids next while the bidding goes on. */
+  | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number }
+  | { type: "ddz_landlord"; table: string; seat: number; bid: number; bottom: number[]; mult: number; turn: number; sec: number }
+  /** A play ([] passes); `turn` plays next, and leads when `lead`. */
+  | {
+    type: "ddz_play"; table: string; seat: number; cards: number[]; left: number; mult: number; bombs: number;
+    turn?: number; sec?: number; lead?: boolean;
+  }
+  /** A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. */
+  | { type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number }
+  | {
+    type: "ddz_result"; table: string; winner: "landlord" | "farmers"; landlord: number; bid: number; bombs: number;
+    /** 0 none, 1 spring, 2 counter-spring. */
+    spring: number; mult: number; base: number; deltas: number[]; hands: number[][]; sec: number;
+  }
+  | { type: "ddz_again"; table: string; seat: number }
+  | { type: "ddz_closed"; table: string }
+  /** The whole game, for a seat whose member came back. */
+  | {
+    type: "ddz_state"; table: string; phase: "bid" | "play"; you: number; hand: number[];
+    seats: (DdzSeatInfo & { left: number; bid: number | null })[]; base: number; cap: number; deal: number; bid: number;
+    landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number; lead: boolean;
+    trick: (number[] | null)[]; sec: number; of: number;
+  }
+  /** To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. */
+  | { type: "ddz_live"; table: string; ids: string[]; on: boolean; gains?: Record<string, number> };
+
+/** Dou dizhu messages to the server; only to servers whose economy has `doudizhu`. */
+export type DdzClientMessage =
+  | { type: "ddz_invite"; ids: string[]; base: number }
+  | { type: "ddz_answer"; table: string; accept: boolean }
+  | { type: "ddz_bid"; table: string; bid: number }
+  | { type: "ddz_play"; table: string; cards: number[] }
+  | { type: "ddz_auto"; table: string; on: boolean }
+  | { type: "ddz_again"; table: string }
+  | { type: "ddz_leave"; table: string };
+
 export type ClientMessage =
   | {
     type: "join"; room: string; nick: string; character: string; token?: string; accountToken?: string; plate?: string;
@@ -101,6 +158,8 @@ export type ClientMessage =
     dnd?: boolean;
     /** A `ROOM_STATUSES` id to show the room; servers before it ignore it. */
     status?: string;
+    /** This client plays dou dizhu; servers without it ignore it. */
+    ddz?: boolean;
     motionVersion?: number;
   }
   | { type: "leave" }
@@ -124,7 +183,8 @@ export type ClientMessage =
   | { type: "dnd"; dnd: boolean }
   | { type: "duel_invite"; id: string; bet: number }
   | { type: "duel_answer"; duel: string; accept: boolean }
-  | { type: "duel_throw"; duel: string; hand: Hand };
+  | { type: "duel_throw"; duel: string; hand: Hand }
+  | DdzClientMessage;
 
 export type ServerMessage =
   | {
@@ -161,6 +221,7 @@ export type ServerMessage =
   | { type: "cheer_done"; round: number; rewards: Record<string, number> }
   | StateUpdate
   | DuelMessage
+  | DdzMessage
   /** A member wears emote [key] for `sec` more seconds: a duel's loser. */
   /** reason: why a room_full ends the session (kicked | banned | need_save). */
   | { type: "error"; code: string; message: string; reason?: string }
