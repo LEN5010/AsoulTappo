@@ -23,12 +23,14 @@ from starlette.concurrency import run_in_threadpool
 from . import analytics
 from . import economy as economy_file
 from .accounts import MainAccounts, http_me
+from .ddz import Bank as DdzBank, Tables
 from .duel import Duels
 from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
 from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
+    DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzInviteMsg, DdzLeaveMsg, DdzPlayMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -135,6 +137,11 @@ if _refunded:
     print(f"refunded {_refunded} unfinished duels", flush=True)
 # Rock-paper-scissors in rooms; a member leaving in any way loses the duel it plays.
 duels = Duels(lambda: game, lambda: manager)
+# Dou dizhu in rooms: the deposits of games the last run left open go back as well.
+_refunded = DdzBank(game).refund_open()
+if _refunded:
+    print(f"refunded {_refunded} unfinished dou dizhu games", flush=True)
+tables = Tables(lambda: game, lambda: manager)
 # The park's coins; its games take and give them through it. Nicks in its news are masked like room nicks.
 park = Park(lambda: game, lambda nick: blocklist.mask(nick))
 _pruned = park.prune_news()
@@ -216,6 +223,7 @@ notice = load_notice(game.store)
 async def _departed(room_id: str, peer: Peer) -> None:
     raw_nicks.pop(peer.id, None)
     await duels.departed(room_id, peer)
+    await tables.departed(room_id, peer)
 
 
 manager.on_depart = _departed
@@ -275,7 +283,7 @@ app.add_middleware(PackHeaders)
 
 def _member(p: Peer) -> Member:
     return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion,
-                  plate=p.plate, status=p.status)
+                  plate=p.plate, status=p.status, ddz=p.ddz)
 
 
 def _state(p: Peer) -> dict:
@@ -1114,6 +1122,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 room_id = msg.room
                 game.tracker.count("room_join")
                 peer.dnd = msg.dnd
+                peer.ddz = msg.ddz and bool(game.manifest.ddz)
                 peer.status = room_status(msg.status)
                 await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
@@ -1135,6 +1144,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if prior_info is not None and manager.rooms[room_id].info() != prior_info:
                     # The host of the last run came back to its room (see RoomManager.restore).
                     await manager.broadcast(room_id, _room_info(room_id), exclude=peer.id)
+                # The games under way in the room, and the newcomer's own seat if its save left one.
+                tables.joined(room_id, peer)
                 continue
 
             if peer is None or room_id is None:
@@ -1239,7 +1250,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     targets = [target] + [p for p in room.peers.values()
                                           if ban and p.token == target.token and p.id != target.id]
                     # Removing a member mid-duel would lose it the duel, which a host could play for.
-                    if any(duels.in_duel(t) for t in targets):
+                    if any(duels.in_duel(t) or tables.in_game(t) for t in targets):
                         await err("in_duel", "member is in a duel")
                         continue
                     for t in targets:
@@ -1260,6 +1271,26 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await err(e.code, e.message if e.message != e.code else "")
             elif isinstance(msg, DndMsg):
                 duels.set_dnd(peer, msg.dnd)
+                tables.set_dnd(peer, msg.dnd)
+            elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
+                                  DdzLeaveMsg)):
+                try:
+                    if isinstance(msg, DdzInviteMsg):
+                        await tables.invite(room_id, peer, msg.ids, msg.base)
+                    elif isinstance(msg, DdzAnswerMsg):
+                        await tables.answer(peer, msg.table, msg.accept)
+                    elif isinstance(msg, DdzBidMsg):
+                        await tables.bid(peer, msg.table, msg.bid)
+                    elif isinstance(msg, DdzPlayMsg):
+                        await tables.play(peer, msg.table, msg.cards)
+                    elif isinstance(msg, DdzAutoMsg):
+                        tables.auto(peer, msg.table, msg.on)
+                    elif isinstance(msg, DdzAgainMsg):
+                        await tables.again(peer, msg.table)
+                    else:
+                        await tables.leave(peer, msg.table)
+                except GameError as e:
+                    await err(e.code, e.message if e.message != e.code else "")
             elif isinstance(msg, StateMsg):
                 # Checked before anything is applied: a locked part drops the whole message.
                 if (msg.character is not None and msg.character not in game.manifest.character_names

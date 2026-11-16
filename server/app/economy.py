@@ -27,6 +27,14 @@ Weights are percentages unless said otherwise.
 - ``duel``: rock-paper-scissors between two room members. Both pay ``bet`` when the invite is accepted and the winner
   gets ``prize``. An invite waits ``inviteSec``, each round ``throwSec``. A save's net win in a China day stays at or
   below ``dailyWinCap``; losses are not capped. Both saves need ``minTaps`` taps in all.
+- ``doudizhu``: 斗地主 between three room members; without it the game is off. ``stakes`` are the base stakes to
+  choose from. When the three have accepted, each pays a deposit of base × ``capMult`` × 2, the most a landlord can
+  lose, and gets back what the game leaves of it. The multiplier is the winning bid (1 to 3), doubled by every bomb and
+  rocket and by a spring, at most ``capMult``; a farmer wins or loses base × multiplier and the landlord both farmers'
+  amounts. ``rake`` percent of what the winners win is burnt. An invite waits ``inviteSec``, a bid ``bidSec``, a play
+  ``playSec``, and the three have ``againSec`` after a game to ask for another. A save whose games of the China day
+  have won it ``dailyWinCap`` or more starts no further game that day; losses are not capped. The three saves need
+  ``minTaps`` taps in all.
 - ``park``, paid in coins:
 
   - ``coin``: ``price`` shards each; ``gift`` free a day with the save's first status that day; buying and the gift

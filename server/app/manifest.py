@@ -172,6 +172,12 @@ class Manifest:
         return self.data.get("economy", {}).get("duel")
 
     @cached_property
+    def ddz(self) -> dict | None:
+        """Dou dizhu (斗地主) between three room members: {stakes, capMult, rake, inviteSec, bidSec, playSec, againSec,
+        dailyWinCap, minTaps} (see economy.py). None on a manifest without it, which turns the game off."""
+        return self.data.get("economy", {}).get("doudizhu")
+
+    @cached_property
     def park(self) -> dict | None:
         """The park, paid in coins: {coin, scratch, race, lottery} (see PARK in scripts/asset_catalog.py). None on a
         manifest without it, which turns the park off."""

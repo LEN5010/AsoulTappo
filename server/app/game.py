@@ -684,6 +684,8 @@ class Game:
             out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:
             out["duel"] = {"net": self.store.duel_net(pid, day)}
+        if self.manifest.ddz:
+            out["ddz"] = {"net": self.store.ddz_net(pid, day)}
         if self.manifest.park:
             out["park"] = {"coins": p["coins"], "news": self.park_news(now)}
             if gifted:

@@ -124,6 +124,21 @@
     "dailyWinCap": 10000,
     "minTaps": 10000
   },
+  "doudizhu": {
+    "stakes": [
+      10,
+      100,
+      1000
+    ],
+    "capMult": 24,
+    "rake": 10,
+    "inviteSec": 15,
+    "bidSec": 15,
+    "playSec": 30,
+    "againSec": 30,
+    "dailyWinCap": 50000,
+    "minTaps": 10000
+  },
   "park": {
     "coin": {
       "price": 500,

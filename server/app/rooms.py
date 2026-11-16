@@ -114,6 +114,8 @@ class Peer:
     dnd: bool = False
     # joined with a valid main-site account token: may make the room public on a server with accounts
     account: bool = False
+    # the client can play dou dizhu (it said so when joining)
+    ddz: bool = False
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     tap_budget: float = 0.0

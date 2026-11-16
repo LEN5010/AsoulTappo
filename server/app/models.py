@@ -34,6 +34,8 @@ class JoinMsg(_Msg):
     status: Optional[str] = Field(default=None, max_length=16)
     # The newest motion format the client reads; a higher number than this server knows gets its newest (rooms.MOTION_VERSION).
     motionVersion: int = Field(default=1, ge=1)
+    # The client can play dou dizhu: only such members can be invited to a table.
+    ddz: bool = False
 
 
 class LeaveMsg(_Msg):
@@ -167,9 +169,62 @@ class DuelThrowMsg(_Msg):
     hand: Hand
 
 
+class DdzInviteMsg(_Msg):
+    """Invite two other members of the room to dou dizhu at one of the economy's base stakes."""
+
+    type: Literal["ddz_invite"] = "ddz_invite"
+    ids: list[Annotated[str, Field(min_length=1, max_length=32)]] = Field(min_length=2, max_length=2)
+    base: int = Field(ge=1, le=10**9)
+
+
+class DdzAnswerMsg(_Msg):
+    type: Literal["ddz_answer"] = "ddz_answer"
+    table: str = Field(min_length=1, max_length=32)
+    accept: bool
+
+
+class DdzBidMsg(_Msg):
+    """Bid 1 to 3 for the landlord's seat, above the bids so far; 0 passes."""
+
+    type: Literal["ddz_bid"] = "ddz_bid"
+    table: str = Field(min_length=1, max_length=32)
+    bid: int = Field(ge=0, le=3)
+
+
+class DdzPlayMsg(_Msg):
+    """Play cards (0..53, see ddz_rules) from the hand; none passes."""
+
+    type: Literal["ddz_play"] = "ddz_play"
+    table: str = Field(min_length=1, max_length=32)
+    cards: list[Annotated[int, Field(ge=0, le=53)]] = Field(max_length=20)
+
+
+class DdzAutoMsg(_Msg):
+    """Have the server play the seat (true) or take it back."""
+
+    type: Literal["ddz_auto"] = "ddz_auto"
+    table: str = Field(min_length=1, max_length=32)
+    on: bool
+
+
+class DdzAgainMsg(_Msg):
+    """After a game: ask for another with the same two and the same stake."""
+
+    type: Literal["ddz_again"] = "ddz_again"
+    table: str = Field(min_length=1, max_length=32)
+
+
+class DdzLeaveMsg(_Msg):
+    """Walk away from the table: takes an invite back or turns it down, and in a game leaves the seat to the server."""
+
+    type: Literal["ddz_leave"] = "ddz_leave"
+    table: str = Field(min_length=1, max_length=32)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
-          SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg],
+          SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
+          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -188,6 +243,8 @@ class Member(BaseModel):
     plate: Optional[str] = None
     # one of rooms.ROOM_STATUSES, null for none; clients before it never read it
     status: Optional[str] = None
+    # the member's client can play dou dizhu; clients before it never read it
+    ddz: bool = False
 
 
 class RoomInfo(BaseModel):

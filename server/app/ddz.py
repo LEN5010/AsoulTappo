@@ -1,0 +1,724 @@
+"""Dou dizhu (斗地主) between three members of a room, played for shards.
+
+One member invites two others at a base stake. When both accept, each pays a deposit (the most a landlord can lose),
+the cards are dealt and the three bid for the landlord's seat, play, and are paid. The table, the hands and the timers
+live in memory; the deposits and the outcome live in the database (ddz_games), which pays every game at most once
+and hands the deposits of games a restart cut short back at startup.
+
+A seat belongs to a save, not to a connection: a member who leaves the room mid-game is played for (pass when it
+can, else its lowest card) and takes the seat again by joining the room with the same save. Two turns in a row left
+to run out put a seat on the same autopilot until its member turns it off.
+
+Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter:
+
+- ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`.
+- ``ddz_answer`` {id}: member `id` accepted.
+- ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
+  member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | error. Deposits taken went back.
+- ``ddz_deal`` {seats: [{id, nick, character, auto, away}], you, hand, base, cap, deal, turn, sec}: a deal; `turn`
+  bids first.
+- ``ddz_bid`` {seat, bid, turn?, sec?}: a bid (0 passes); `turn` bids next when the bidding goes on.
+- ``ddz_landlord`` {seat, bid, bottom, mult, turn, sec}: `seat` is the landlord, takes `bottom` and leads.
+- ``ddz_play`` {seat, cards, left, mult, bombs, turn?, sec?, lead?}: a play ([] passes); `turn` plays next and leads
+  when `lead`.
+- ``ddz_seat`` {seat, id, away, auto, turn?, sec?}: a seat's member left or came back (with a new member id), or its
+  autopilot changed; with `turn` the seat's turn starts over with `sec` seconds.
+- ``ddz_result`` {winner: landlord | farmers, landlord, bid, bombs, spring: 0 | 1 spring | 2 counter-spring, mult,
+  base, deltas, hands, sec}: paid; `hands` are the cards left in each seat, `sec` the time to ask for another game.
+- ``ddz_again`` {seat}: `seat` asks for another game; when the three have, the next ``ddz_deal`` follows.
+- ``ddz_closed`` {}: the table is gone (the time ran out, or someone left it).
+- ``ddz_state`` {...}: the whole game for a seat that came back (see Tables._state).
+
+To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
+shards the winners won, by member id.
+"""
+from __future__ import annotations
+
+import random
+import secrets
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from starlette.concurrency import run_in_threadpool
+
+from . import ddz_rules as rules
+from .duel import Timers
+from .game import Game, GameError, day_of
+from .rooms import Peer, RoomManager
+
+# After a refusal or an unanswered invite, the inviter waits this long before inviting the same save again.
+RETRY_SEC = 30.0
+# A seat on autopilot, or whose member is away, moves after this long.
+AUTO_SEC = 1.2
+# Turns in a row left to run out that put a seat on autopilot.
+AUTO_AFTER = 2
+# Deals nobody bids on before the table is given up and the deposits go back.
+MAX_DEALS = 3
+
+INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
+
+
+# ------------------------------------------------------------------ the bank
+class Bank:
+    """The shards of a game: who may sit down, the deposits and the payment. Every method is one transaction."""
+
+    def __init__(self, game: Game) -> None:
+        self.game = game
+
+    def cfg(self) -> dict[str, Any]:
+        cfg = self.game.manifest.ddz
+        if not cfg:
+            raise GameError("no_ddz", "这个服务器没有斗地主")
+        return cfg
+
+    def deposit(self, base: int) -> int:
+        cfg = self.cfg()
+        if base not in cfg["stakes"]:
+            raise GameError("bad_message", "unknown stake")
+        return base * cfg["capMult"] * 2
+
+    def _ready(self, st: Any, pids: list[str | None], deposit: int, day: str, now: float) -> None:
+        """Every seat needs a save with the taps, the deposit, and room under the day's cap; the first seat is the
+        one asking, so its own shortfalls are told apart from the others'."""
+        cfg = self.cfg()
+        for i, pid in enumerate(pids):
+            other = "_target" if i else ""
+            taps = st.player_taps(pid) if pid else None
+            if taps is None or taps < cfg["minTaps"]:
+                raise GameError(f"ddz{other}_locked", "")
+            if st.get_player(pid, now)["shards"] < deposit:
+                raise GameError(f"ddz{other}_poor" if other else "no_shards", "")
+            if st.ddz_net(pid, day) >= cfg["dailyWinCap"]:
+                raise GameError(f"ddz{other}_cap" if other else "ddz_cap", "")
+
+    def check(self, pids: list[str | None], base: int) -> int:
+        """Whether the saves [pids] (the first invites) may play at [base]; returns the deposit. Takes nothing."""
+        deposit = self.deposit(base)
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            self._ready(st, pids, deposit, day_of(now), now)
+        return deposit
+
+    def start(self, pids: list[str], base: int) -> int:
+        """Takes the three deposits in one transaction and records the game; returns its id. When a seat falls
+        short nothing is taken."""
+        deposit = self.deposit(base)
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            day = day_of(now)
+            self._ready(st, list(pids), deposit, day, now)
+            for pid in pids:
+                st.update_player(pid, shards=st.get_player(pid, now)["shards"] - deposit)
+                st.add_ledger(pid, day, "ddz_deposit", -deposit)
+            return st.add_ddz_game(list(pids), base, deposit, day, now)
+
+    def deltas(self, base: int, mult: int, landlord: int, landlord_won: bool) -> tuple[list[int], int]:
+        """What each seat wins (after the cut) or loses, and the shards burnt."""
+        per = base * mult
+        raw = [(2 * per if i == landlord else -per) * (1 if landlord_won else -1) for i in range(3)]
+        rake = self.cfg()["rake"]
+        cut = [d * rake // 100 if d > 0 else 0 for d in raw]
+        return [d - c for d, c in zip(raw, cut)], sum(cut)
+
+    def settle(self, game_id: int, landlord: int, landlord_won: bool, mult: int) -> list[int] | None:
+        """Pays an open game: every seat gets its deposit back plus or minus its result. Only the first call for a
+        game pays; later ones return None."""
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            g = st.ddz_game(game_id)
+            if g is None:
+                return None
+            deltas, burnt = self.deltas(g["base"], mult, landlord, landlord_won)
+            if not st.close_ddz_game(game_id, "settled", landlord, mult, burnt, now):
+                return None
+            st.set_ddz_deltas(game_id, deltas)
+            day = day_of(now)
+            for pid, delta in zip(g["players"], deltas):
+                back = g["deposit"] + delta
+                st.update_player(pid, shards=st.get_player(pid, now)["shards"] + back)
+                st.add_ledger(pid, day, "ddz_return", back)
+        return deltas
+
+    def refund(self, game_id: int) -> bool:
+        """Hands the three deposits of an open game back; False when it was closed already."""
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            g = st.ddz_game(game_id)
+            if g is None or not st.close_ddz_game(game_id, "refunded", -1, 0, 0, now):
+                return False
+            for pid in g["players"]:
+                st.update_player(pid, shards=st.get_player(pid, now)["shards"] + g["deposit"])
+                st.add_ledger(pid, day_of(now), "ddz_refund", g["deposit"])
+        return True
+
+    def refund_open(self) -> int:
+        """At startup: games the last run left open cannot go on (tables live in memory), so the deposits go back.
+        Returns the games refunded."""
+        return sum(self.refund(i) for i in self.game.store.open_ddz_games())
+
+    def net(self, pid: str) -> int:
+        return self.game.store.ddz_net(pid, day_of(self.game.now()))
+
+
+# ------------------------------------------------------------------ the table
+@dataclass(eq=False)
+class Seat:
+    token: str
+    # The member's connection; None while it is away from the room.
+    peer: Peer | None
+    # The member id the seat is known by: the connection's, kept while it is away.
+    id: str
+    nick: str
+    character: str
+    accepted: bool = False
+    hand: list[int] = field(default_factory=list)
+    bid: int | None = None
+    # Hands played this game, passes not counted (a spring is told by them).
+    plays: int = 0
+    auto: bool = False
+    timeouts: int = 0
+    again: bool = False
+    # Left the table for good while the game went on: played for to the end, and hears nothing more of it.
+    quit: bool = False
+
+
+@dataclass(eq=False)
+class Table:
+    id: str
+    room: str
+    seats: list[Seat]
+    base: int
+    deposit: int
+    phase: str = INVITE
+    row: int | None = None
+    deal: int = 0
+    bottom: list[int] = field(default_factory=list)
+    turn: int = 0
+    # The highest bid so far and who made it.
+    bid: int = 0
+    bidder: int | None = None
+    bids_made: int = 0
+    landlord: int | None = None
+    # The last cards played and by which seat; None when the seat to move leads.
+    last: tuple[int, list[int]] | None = None
+    # What each seat did since the last lead: its cards, [] for a pass, None for nothing yet.
+    trick: list[list[int] | None] = field(default_factory=lambda: [None, None, None])
+    bombs: int = 0
+    timer: Any = None
+    # Counts every turn given out, so a timer that fires late knows its turn is over.
+    step: int = 0
+    deadline: float = 0.0
+    turn_sec: float = 0.0
+
+    def seat_of(self, peer: Peer) -> int | None:
+        return next((i for i, s in enumerate(self.seats) if s.peer is peer), None)
+
+    def tell(self, data: dict, but: int | None = None, quit: bool = False) -> None:
+        """Queued for every seat with a member at the table; one that is away hears nothing, one that quit only
+        what is told with [quit]."""
+        for i, s in enumerate(self.seats):
+            if i != but and s.peer is not None and (quit or not s.quit):
+                s.peer.enqueue(data)
+
+    def mult(self, cap: int, spring: bool = False) -> int:
+        return min(max(self.bid, 1) * 2 ** self.bombs * (2 if spring else 1), cap)
+
+
+class Tables:
+    """Every table on the server: one at a time per save (invites included), across all rooms."""
+
+    def __init__(self, game: Callable[[], Game], manager: Callable[[], RoomManager], timers: Any = None,
+                 clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None) -> None:
+        # Read on every use: tests replace the module's game and room manager.
+        self._game = game
+        self._manager = manager
+        self.timers = timers or Timers()
+        self.clock = clock
+        self.rng = rng or random.SystemRandom()
+        self.by_save: dict[str, Table] = {}
+        self.by_id: dict[str, Table] = {}
+        # (inviter save, invited save) -> monotonic time from which a new invite is allowed
+        self.refused: dict[tuple[str, str], float] = {}
+
+    @property
+    def bank(self) -> Bank:
+        return Bank(self._game())
+
+    @property
+    def manager(self) -> RoomManager:
+        return self._manager()
+
+    def clear(self) -> None:
+        for table in list(self.by_id.values()):
+            self._drop(table)
+        self.refused.clear()
+
+    def in_game(self, peer: Peer) -> bool:
+        """Whether the connection sits at a table whose deposits are taken (or being taken)."""
+        table = self.by_save.get(peer.token) if peer.token else None
+        return (table is not None and table.seat_of(peer) is not None
+                and table.phase in (STARTING, BID, PLAY, SETTLING))
+
+    def _table(self, peer: Peer, table_id: str, *phases: str) -> tuple[Table, int]:
+        table = self.by_id.get(table_id)
+        seat = table.seat_of(peer) if table else None
+        if table is None or seat is None or table.phase not in phases or table.seats[seat].quit:
+            raise GameError("ddz_gone", "")
+        return table, seat
+
+    # ------------------------------------------------------------------ invites
+    def _check_free(self, peers: list[Peer]) -> None:
+        me = peers[0]
+        if not me.token:
+            raise GameError("ddz_locked", "")
+        if me.token in self.by_save:
+            raise GameError("ddz_busy", "")
+        now = self.clock()
+        for p in peers[1:]:
+            if not p.token:
+                raise GameError("ddz_target_locked", "")
+            if p.token in self.by_save:
+                raise GameError("ddz_target_busy", "")
+            if not p.ddz:
+                raise GameError("ddz_target_old", "")
+            if now < self.refused.get((me.token, p.token), 0.0):
+                raise GameError("ddz_cooldown", "")
+
+    def _peers(self, room_id: str, peer: Peer, ids: list[str]) -> list[Peer]:
+        room = self.manager.rooms.get(room_id)
+        others = [room.peers.get(i) if room else None for i in ids]
+        if room is None or not peer.active or room.peers.get(peer.id) is not peer or any(
+                p is None or not p.active for p in others):
+            raise GameError("no_member", "no such member")
+        peers = [peer, *others]
+        if len({p.id for p in peers}) != 3 or len({p.token for p in peers if p.token}) != sum(
+                1 for p in peers if p.token):
+            raise GameError("ddz_self", "")
+        return peers
+
+    async def invite(self, room_id: str, peer: Peer, ids: list[str], base: int) -> None:
+        bank = self.bank
+        cfg = bank.cfg()
+        peers = self._peers(room_id, peer, ids)
+        self._check_free(peers)
+        deposit = await run_in_threadpool(bank.check, [p.token for p in peers], base)
+        # Any of the three may have left, or sat down elsewhere, while the database was read.
+        peers = self._peers(room_id, peer, ids)
+        self._check_free(peers)
+        table = Table(id=secrets.token_hex(4), room=room_id, base=base, deposit=deposit, seats=[
+            Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, accepted=p is peer)
+            for p in peers])
+        self.by_id[table.id] = table
+        for p in peers:
+            self.by_save[p.token] = table
+        invited = {"type": "ddz_invite", "table": table.id, "from": peer.id, "ids": [p.id for p in peers],
+                   "base": base, "deposit": deposit, "sec": cfg["inviteSec"]}
+        quiet = [p for p in peers[1:] if p.dnd]
+        if quiet:
+            # Turned down for the member, who never sees it; the inviter hears a plain refusal.
+            peer.enqueue(invited)
+            self._end(table, "declined", by=quiet[0], refused=quiet, tell=(peer,))
+            return
+        table.tell(invited)
+        table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
+
+    async def _invite_expired(self, table: Table) -> None:
+        if table.phase == INVITE:
+            self._end(table, "timeout", refused=[s.peer for s in table.seats[1:] if not s.accepted and s.peer])
+
+    def set_dnd(self, peer: Peer, on: bool) -> None:
+        """Called with the duels' own: an invite waiting for this member is turned down."""
+        table = self.by_save.get(peer.token) if peer.token else None
+        seat = table.seat_of(peer) if table else None
+        if on and table is not None and seat and table.phase == INVITE and not table.seats[seat].accepted:
+            self._end(table, "declined", by=peer, refused=[peer])
+
+    async def answer(self, peer: Peer, table_id: str, accept: bool) -> None:
+        table, seat = self._table(peer, table_id, INVITE)
+        if seat == 0 or table.seats[seat].accepted:
+            raise GameError("ddz_gone", "")
+        if not accept:
+            self._end(table, "declined", by=peer, refused=[peer])
+            return
+        table.seats[seat].accepted = True
+        table.tell({"type": "ddz_answer", "table": table.id, "id": peer.id})
+        if all(s.accepted for s in table.seats):
+            await self._start(table)
+
+    # ------------------------------------------------------------------- a game
+    async def _start(self, table: Table) -> None:
+        """Takes the deposits and deals. The members may leave while the database works: they are played for."""
+        table.phase = STARTING
+        self._cancel_timer(table)
+        try:
+            table.row = await run_in_threadpool(self.bank.start, [s.token for s in table.seats], table.base)
+        except GameError as e:
+            code = {"ddz_target_poor": "no_shards", "ddz_target_cap": "ddz_cap",
+                    "ddz_target_locked": "ddz_locked"}.get(e.code, e.code)
+            self._end(table, code)
+            return
+        except BaseException:
+            # The transaction rolled back, so nothing was taken: free the three saves, then let the error be
+            # reported as usual.
+            self._end(table, "error")
+            raise
+        if all(s.peer is None for s in table.seats):
+            await self._abort(table, "gone")
+            return
+        table.deal = 0
+        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
+                                                  "ids": [s.id for s in table.seats], "on": True})
+        self._deal(table)
+
+    def _deal(self, table: Table) -> None:
+        deck = list(rules.DECK)
+        self.rng.shuffle(deck)
+        table.deal += 1
+        table.phase = BID
+        table.bottom = sorted(deck[51:])
+        table.bid, table.bidder, table.bids_made, table.landlord = 0, None, 0, None
+        table.last, table.trick, table.bombs = None, [None, None, None], 0
+        for i, s in enumerate(table.seats):
+            s.hand = sorted(deck[i * 17:(i + 1) * 17])
+            s.bid, s.plays, s.again = None, 0, False
+        first = self.rng.randrange(3)
+        sec = self._give_turn(table, first, self.bank.cfg()["bidSec"])
+        seats = [{"id": s.id, "nick": s.nick, "character": s.character, "auto": s.auto,
+                  "away": s.peer is None or s.quit} for s in table.seats]
+        cfg = self.bank.cfg()
+        for i, s in enumerate(table.seats):
+            if s.peer is not None and not s.quit:
+                s.peer.enqueue({"type": "ddz_deal", "table": table.id, "seats": seats, "you": i, "hand": s.hand,
+                                "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "turn": first,
+                                "sec": sec})
+
+    def _give_turn(self, table: Table, seat: int, sec: float) -> float:
+        """Hands the move to [seat] for [sec] seconds (a seat played for moves at once); returns the seconds."""
+        self._cancel_timer(table)
+        s = table.seats[seat]
+        if s.auto or s.peer is None:
+            sec = AUTO_SEC
+        table.turn = seat
+        table.step += 1
+        table.turn_sec = sec
+        table.deadline = self.clock() + sec
+        step = table.step
+        table.timer = self.timers.later(sec, lambda: self._expired(table, step))
+        return sec
+
+    async def _expired(self, table: Table, step: int) -> None:
+        if table.step != step or table.phase not in (BID, PLAY):
+            return
+        s = table.seats[table.turn]
+        if not s.auto and s.peer is not None:
+            s.timeouts += 1
+            if s.timeouts >= AUTO_AFTER:
+                self._set_auto(table, table.turn, True)
+        if table.phase == BID:
+            await self._bid(table, table.turn, 0)
+        else:
+            # Played for: pass when it may, else the lowest card.
+            await self._play(table, table.turn, [] if table.last is not None else [s.hand[0]])
+
+    def _set_auto(self, table: Table, seat: int, on: bool) -> None:
+        s = table.seats[seat]
+        if s.auto == on:
+            return
+        s.auto = on
+        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": s.peer is None,
+                    "auto": s.auto})
+
+    async def bid(self, peer: Peer, table_id: str, bid: int) -> None:
+        table, seat = self._table(peer, table_id, BID)
+        if seat != table.turn:
+            raise GameError("ddz_turn", "")
+        if bid and bid <= table.bid:
+            raise GameError("ddz_bad", "")
+        table.seats[seat].timeouts = 0
+        await self._bid(table, seat, bid)
+
+    async def _bid(self, table: Table, seat: int, bid: int) -> None:
+        cfg = self.bank.cfg()
+        s = table.seats[seat]
+        s.bid = bid
+        table.bids_made += 1
+        if bid > table.bid:
+            table.bid, table.bidder = bid, seat
+        said = {"type": "ddz_bid", "table": table.id, "seat": seat, "bid": bid}
+        if bid < 3 and table.bids_made < 3:
+            nxt = (seat + 1) % 3
+            said["turn"] = nxt
+            said["sec"] = self._give_turn(table, nxt, cfg["bidSec"])
+            table.tell(said)
+            return
+        table.tell(said)
+        if table.bidder is None:
+            if table.deal >= MAX_DEALS:
+                await self._abort(table, "nobid")
+            else:
+                self._deal(table)
+            return
+        lord = table.bidder
+        table.landlord = lord
+        table.phase = PLAY
+        table.seats[lord].hand = sorted(table.seats[lord].hand + table.bottom)
+        sec = self._give_turn(table, lord, cfg["playSec"])
+        table.tell({"type": "ddz_landlord", "table": table.id, "seat": lord, "bid": table.bid, "bottom": table.bottom,
+                    "mult": table.mult(cfg["capMult"]), "turn": lord, "sec": sec})
+
+    async def play(self, peer: Peer, table_id: str, cards: list[int]) -> None:
+        table, seat = self._table(peer, table_id, PLAY)
+        if seat != table.turn:
+            raise GameError("ddz_turn", "")
+        s = table.seats[seat]
+        if not cards:
+            if table.last is None:
+                raise GameError("ddz_bad", "")
+        elif (len(set(cards)) != len(cards) or not set(cards) <= set(s.hand) or not rules.classify(cards)
+              or (table.last is not None and not rules.beats(cards, table.last[1]))):
+            raise GameError("ddz_bad", "")
+        s.timeouts = 0
+        await self._play(table, seat, sorted(cards))
+
+    async def _play(self, table: Table, seat: int, cards: list[int]) -> None:
+        cfg = self.bank.cfg()
+        s = table.seats[seat]
+        if cards:
+            gone = set(cards)
+            s.hand = [c for c in s.hand if c not in gone]
+            s.plays += 1
+            table.bombs += rules.bombs(cards)
+            table.last = (seat, cards)
+        table.trick[seat] = cards
+        said = {"type": "ddz_play", "table": table.id, "seat": seat, "cards": cards, "left": len(s.hand),
+                "mult": table.mult(cfg["capMult"]), "bombs": table.bombs}
+        if not s.hand:
+            table.tell(said)
+            await self._finish(table, seat)
+            return
+        nxt = (seat + 1) % 3
+        lead = table.last is not None and table.last[0] == nxt
+        if lead:
+            # Both others passed: the seat that played last leads again.
+            table.last = None
+            table.trick = [None, None, None]
+        said["turn"] = nxt
+        said["lead"] = lead
+        said["sec"] = self._give_turn(table, nxt, cfg["playSec"])
+        table.tell(said)
+
+    async def _finish(self, table: Table, winner: int) -> None:
+        """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table."""
+        table.phase = SETTLING
+        self._cancel_timer(table)
+        bank = self.bank
+        cfg = bank.cfg()
+        lord = table.landlord
+        landlord_won = winner == lord
+        farmers = [s for i, s in enumerate(table.seats) if i != lord]
+        spring = 1 if landlord_won and all(f.plays == 0 for f in farmers) else (
+            2 if not landlord_won and table.seats[lord].plays == 1 else 0)
+        mult = table.mult(cfg["capMult"], spring=bool(spring))
+        deltas = await run_in_threadpool(bank.settle, table.row, lord, landlord_won, mult)
+        if deltas is None:
+            self._close(table, tell=False)
+            return
+        table.phase = OVER
+        for s in table.seats:
+            s.again = False
+        table.tell({"type": "ddz_result", "table": table.id, "winner": "landlord" if landlord_won else "farmers",
+                    "landlord": lord, "bid": table.bid, "bombs": table.bombs, "spring": spring, "mult": mult,
+                    "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
+                    "sec": cfg["againSec"]}, quit=True)
+        await self.manager.broadcast(table.room, {
+            "type": "ddz_live", "table": table.id, "ids": [s.id for s in table.seats], "on": False,
+            "gains": {s.id: d for s, d in zip(table.seats, deltas) if d > 0}})
+        if any(s.peer is None or s.quit for s in table.seats):
+            self._close(table)
+            return
+        table.timer = self.timers.later(cfg["againSec"], lambda: self._again_expired(table))
+
+    async def _again_expired(self, table: Table) -> None:
+        if table.phase == OVER:
+            self._close(table)
+
+    async def _abort(self, table: Table, reason: str) -> None:
+        """Ends a game whose deposits are taken with nothing won: they go back."""
+        table.phase = SETTLING
+        self._cancel_timer(table)
+        await run_in_threadpool(self.bank.refund, table.row)
+        table.phase = DONE
+        self._drop(table)
+        table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
+        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
+                                                  "ids": [s.id for s in table.seats], "on": False})
+
+    # ------------------------------------------------------------ around a game
+    def auto(self, peer: Peer, table_id: str, on: bool) -> None:
+        """A member turns its seat's autopilot on or off; off on its own turn gives the turn its full time again."""
+        table, seat = self._table(peer, table_id, BID, PLAY)
+        s = table.seats[seat]
+        s.timeouts = 0
+        if s.auto == on:
+            return
+        s.auto = on
+        said = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": on}
+        if table.turn == seat:
+            cfg = self.bank.cfg()
+            said["turn"] = seat
+            said["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
+        table.tell(said)
+
+    async def again(self, peer: Peer, table_id: str) -> None:
+        table, seat = self._table(peer, table_id, OVER)
+        s = table.seats[seat]
+        if s.again:
+            return
+        s.again = True
+        table.tell({"type": "ddz_again", "table": table.id, "seat": seat})
+        if not all(x.again for x in table.seats):
+            return
+        table.phase = STARTING
+        self._cancel_timer(table)
+        try:
+            table.row = await run_in_threadpool(self.bank.start, [x.token for x in table.seats], table.base)
+        except GameError as e:
+            code = {"ddz_target_poor": "no_shards", "ddz_target_cap": "ddz_cap",
+                    "ddz_target_locked": "ddz_locked"}.get(e.code, e.code)
+            self._end(table, code)
+            return
+        except BaseException:
+            self._end(table, "error")
+            raise
+        for x in table.seats:
+            x.auto, x.timeouts = x.peer is None, 0
+        table.deal = 0
+        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
+                                                  "ids": [x.id for x in table.seats], "on": True})
+        self._deal(table)
+
+    async def leave(self, peer: Peer, table_id: str) -> None:
+        """A member walks away from the table but stays in the room."""
+        table, seat = self._table(peer, table_id, INVITE, BID, PLAY, OVER)
+        if table.phase == INVITE:
+            self._end(table, "gone" if seat == 0 else "declined", by=peer, refused=[peer] if seat else [])
+        elif table.phase == OVER:
+            self._close(table)
+        else:
+            self._quit(table, seat)
+
+    def _quit(self, table: Table, seat: int) -> None:
+        s = table.seats[seat]
+        s.quit, s.auto = True, True
+        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": True})
+        if table.turn == seat and table.phase in (BID, PLAY):
+            self._give_turn(table, seat, AUTO_SEC)
+
+    async def departed(self, room_id: str, peer: Peer) -> None:
+        """A member left the room (leave, kick, lost connection): an invite is dropped, a seat in a game is played
+        for until its save comes back."""
+        table = self.by_save.get(peer.token) if peer.token else None
+        seat = table.seat_of(peer) if table else None
+        if table is None or seat is None:
+            return
+        s = table.seats[seat]
+        if table.phase == INVITE:
+            # An inviter leaving waits as after a refusal, so leaving and coming back cannot repeat the invite.
+            self._end(table, "gone", by=peer, refused=[x.peer for x in table.seats[1:] if x.peer] if seat == 0 else [])
+        elif table.phase == OVER:
+            self._close(table)
+        elif table.phase in (STARTING, SETTLING):
+            s.peer = None
+        elif table.phase in (BID, PLAY):
+            s.peer = None
+            if all(x.peer is None for x in table.seats):
+                # Nobody is left to watch it played out.
+                await self._abort(table, "gone")
+                return
+            table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": s.auto})
+            if table.turn == seat:
+                self._give_turn(table, seat, AUTO_SEC)
+
+    def joined(self, room_id: str, peer: Peer) -> None:
+        """A member joined the room: it hears of the games under way there, and takes its seat again if its save
+        has one at a table of this room."""
+        table = self.by_save.get(peer.token) if peer.token else None
+        seat = None
+        if table is not None and table.room == room_id and table.phase in (BID, PLAY) and peer.ddz:
+            seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is None), None)
+        if seat is not None:
+            s = table.seats[seat]
+            s.peer, s.id, s.nick, s.character = peer, peer.id, peer.nick, peer.character
+            s.auto, s.timeouts, s.quit = False, 0, False
+        for live in self.by_id.values():
+            if live.room == room_id and live.phase in (BID, PLAY, SETTLING):
+                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
+        if seat is None:
+            return
+        if table.turn == seat:
+            cfg = self.bank.cfg()
+            self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
+        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False},
+                   but=seat)
+        peer.enqueue(self._state(table, seat))
+
+    def _state(self, table: Table, seat: int) -> dict:
+        """The whole game as [seat] may see it."""
+        cfg = self.bank.cfg()
+        return {
+            "type": "ddz_state", "table": table.id, "phase": table.phase, "you": seat, "hand": table.seats[seat].hand,
+            "seats": [{"id": s.id, "nick": s.nick, "character": s.character, "left": len(s.hand), "bid": s.bid,
+                       "auto": s.auto, "away": s.peer is None or s.quit} for s in table.seats],
+            "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "bid": table.bid,
+            "landlord": table.landlord, "bottom": table.bottom if table.landlord is not None else [],
+            "mult": table.mult(cfg["capMult"]), "bombs": table.bombs, "turn": table.turn,
+            "lead": table.phase == PLAY and table.last is None, "trick": table.trick,
+            "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
+        }
+
+    # ------------------------------------------------------------------- ending
+    def _cancel_timer(self, table: Table) -> None:
+        if table.timer is not None:
+            table.timer.cancel()
+            table.timer = None
+
+    def _drop(self, table: Table) -> None:
+        self._cancel_timer(table)
+        self.by_id.pop(table.id, None)
+        for s in table.seats:
+            if self.by_save.get(s.token) is table:
+                del self.by_save[s.token]
+
+    def _refuse(self, table: Table, peers: list[Peer]) -> None:
+        now = self.clock()
+        self.refused = {k: t for k, t in self.refused.items() if t > now}
+        for p in peers:
+            if p.token and p.token != table.seats[0].token:
+                self.refused[(table.seats[0].token, p.token)] = now + RETRY_SEC
+
+    def _end(self, table: Table, reason: str, by: Peer | None = None, refused: list[Peer] | None = None,
+             tell: tuple[Peer, ...] | None = None) -> None:
+        """Ends an invite, or a table whose deposits were never taken; [tell] narrows who hears it."""
+        if table.phase == DONE:
+            return
+        table.phase = DONE
+        self._drop(table)
+        self._refuse(table, refused or [])
+        over = {"type": "ddz_over", "table": table.id, "reason": reason}
+        if by is not None:
+            over["by"] = by.id
+        if tell is not None:
+            for p in tell:
+                p.enqueue(over)
+        else:
+            table.tell(over)
+
+    def _close(self, table: Table, tell: bool = True) -> None:
+        """Clears a table whose game is paid."""
+        if table.phase == DONE:
+            return
+        table.phase = DONE
+        self._drop(table)
+        if tell:
+            table.tell({"type": "ddz_closed", "table": table.id})

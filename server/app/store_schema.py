@@ -109,6 +109,31 @@ CREATE TABLE IF NOT EXISTS duels (
 CREATE INDEX IF NOT EXISTS duels_a ON duels (a, day);
 CREATE INDEX IF NOT EXISTS duels_b ON duels (b, day);
 CREATE INDEX IF NOT EXISTS duels_state ON duels (state);
+-- Dou dizhu (斗地主) between three saves. A row is written when the three deposits are taken; state goes from 'open'
+-- to 'settled' (ddz_seats.delta holds what each seat won or lost, `burnt` the cut kept from the winners) or 'refunded'
+-- exactly once. day: China date of the deposits.
+CREATE TABLE IF NOT EXISTS ddz_games (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  base INTEGER NOT NULL,
+  deposit INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  ts REAL NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open',
+  landlord INTEGER NOT NULL DEFAULT -1,
+  mult INTEGER NOT NULL DEFAULT 0,
+  burnt INTEGER NOT NULL DEFAULT 0,
+  settled REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ddz_games_state ON ddz_games (state);
+CREATE TABLE IF NOT EXISTS ddz_seats (
+  game_id INTEGER NOT NULL,
+  seat INTEGER NOT NULL,
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  delta INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (game_id, seat)
+);
+CREATE INDEX IF NOT EXISTS ddz_seats_player ON ddz_seats (player_id, day);
 -- Shards each save gained (amount > 0) or spent (amount < 0) per China day and source, and how many times.
 -- Written in the same transaction as the change; there is no history from before the table existed.
 CREATE TABLE IF NOT EXISTS shard_ledger (
