@@ -696,6 +696,21 @@ def test_http_race_and_bet(monkeypatch):
     assert out.status_code == 409 and out.json()["detail"]["code"] == "race_closed"
 
 
+def test_http_bet_without_a_cap_takes_more_than_a_hundred(monkeypatch):
+    clock = Clock(T0 + 1)
+    g = Game(Store(":memory:"), manifest(), now=clock)
+    g.manifest.park["race"]["maxCoins"] = 0
+    monkeypatch.setattr(main, "game", g)
+    client = TestClient(main.app)
+    headers = {"X-Player-Token": TOKEN}
+    pid = client.get("/api/me", headers=headers).json()["player"]
+    g.store.update_player(pid, coins=500)
+    main.races.tick()
+    out = client.post("/api/park/race/bet", headers=headers,
+                      json={"race": T0, "kind": "win", "member": "beila", "coins": 300})
+    assert out.status_code == 200 and out.json()["race"]["mine"][0]["coins"] == 300
+
+
 def test_http_race_history_and_replay(monkeypatch):
     clock = Clock(T0 + 1)
     g = Game(Store(":memory:"), manifest(), now=clock)

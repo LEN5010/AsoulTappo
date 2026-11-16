@@ -511,7 +511,9 @@ class RaceBetBody(BaseModel):
     race: int = Field(ge=0)
     kind: str = Field(min_length=1, max_length=16)
     member: str = Field(min_length=1, max_length=32)
-    coins: int = Field(ge=1, le=100)
+    # The cap is the economy's maxCoins (none when 0) and the coins held, checked by Races.bet; this only keeps the
+    # number sane.
+    coins: int = Field(ge=1, le=1_000_000_000)
     # The odds the client showed for the selection; the bet is refused (odds_changed) when the current ones are lower.
     odds: float | None = Field(default=None, gt=0, le=1000)
 
