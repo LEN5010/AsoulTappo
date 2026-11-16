@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { APP_VERSION } from "../version";
-import { Api, ActivityReporter, ApiError, newToken } from "./api";
+import { Api, ActivityReporter, ApiError, newToken, PARK_PATH } from "./api";
 
 const resp = (status: number, body: unknown) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(body) } as Response);
@@ -117,5 +117,12 @@ describe("misc", () => {
     const a = newToken();
     expect(a).toMatch(/^[0-9a-f]{48}$/);
     expect(newToken()).not.toBe(a);
+  });
+});
+
+describe("PARK_PATH", () => {
+  it("lets the race's history and replays through, as the panel window asks for them through the desk window", () => {
+    for (const p of ["/api/park/race", "/api/park/race/history", "/api/park/race/replay/1794568200"]) expect(PARK_PATH.test(p)).toBe(true);
+    expect(PARK_PATH.test("/api/me")).toBe(false);
   });
 });

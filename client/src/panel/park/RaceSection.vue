@@ -13,6 +13,10 @@
 // their squares onto the podium at the finish, and the runners rise again for the next race. The bet slip is the
 // bottom bar: a runner picked, its three kinds, the stake and the bet key; nothing picked, my tickets, or the last
 // champion and what I won on that race.
+// 往期 on the slip lists the latest finished races (GET /api/park/race/history); one picked, or the replay key by a
+// finished race's result, plays that race again on the board on a clock of its own (race.ts replayTime), at 1× or
+// 2×, with a key to its result. Only the board and the infield follow the replay; the polling, the odds, the bets,
+// the countdown and the balance stay with the live race, and when the live race starts the exit key turns into 直播.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
@@ -29,9 +33,11 @@ import RaceTrack from "./RaceTrack.vue";
 import ParkCoin from "./ParkCoin.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
+import { shortDay } from "./lottery";
 import {
-  DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, ROUND, roundAt, roundDice, roundsOf, staggered,
-  stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
+  chinaDay, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, playLength, replayAt, replayTime,
+  ROUND, roundAt, roundDice, roundsOf, staggered, stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
+  type RacePast, type ReplayClock,
 } from "./race";
 
 // ParkPage opens the sections only once the server's economy is known.
@@ -61,18 +67,30 @@ const offset = ref(0);
 const now = ref(Date.now());
 const serverNow = computed(() => now.value + offset.value);
 
+/** The live race: the one bets, polling, the countdown and the balance follow. */
 const race = computed(() => data.value?.race ?? null);
 const last = computed(() => data.value?.last ?? null);
 const phase = computed(() => race.value?.phase ?? null);
-/** The race is still playing on screen (its moves are out, its end not reached). */
-const playing = computed(() => {
-  const r = race.value;
-  return !!r?.moves && !!r.endsAt && serverNow.value < r.endsAt * 1000;
+
+/** A finished race played again: the race, its clock, and a count of jumps that starts the board afresh. */
+const replay = ref<{ race: Race; day: string; clock: ReplayClock; n: number } | null>(null);
+/** The race on the board and its time: the replay's while one plays, else the live race at the server's time. */
+const stage = computed(() => replay.value?.race ?? race.value);
+const stageNow = computed(() => {
+  const p = replay.value;
+  return p ? replayTime(p.race, p.clock, now.value) : serverNow.value;
 });
-const finished = computed(() => {
-  const r = race.value;
-  return !!r?.ranking && !!r.endsAt && serverNow.value >= r.endsAt * 1000;
-});
+/** How fast the board's time runs. */
+const speed = computed(() => replay.value?.clock.speed ?? 1);
+
+const isPlaying = (r: Race | null, t: number) => !!r?.moves && !!r.endsAt && t < r.endsAt * 1000;
+const isFinished = (r: Race | null, t: number) => !!r?.ranking && !!r.endsAt && t >= r.endsAt * 1000;
+/** The race on the board is still playing (its moves are out, its end not reached), or has finished. */
+const playing = computed(() => isPlaying(stage.value, stageNow.value));
+const finished = computed(() => isFinished(stage.value, stageNow.value));
+/** The same for the live race. */
+const livePlaying = computed(() => isPlaying(race.value, serverNow.value));
+const liveFinished = computed(() => isFinished(race.value, serverNow.value));
 
 // ---------------------------------------------------------------- polling and the clock
 let active = false;
@@ -148,7 +166,7 @@ const countdown = computed<{ label: string; time: string }>(() => {
   const r = race.value;
   const t = serverNow.value / 1000;
   if (r?.phase === "betting") return { label: "开跑", time: clock(r.startsAt - t) };
-  if (r && (r.phase === "starting" || playing.value)) return { label: "比赛中", time: "" };
+  if (r && (r.phase === "starting" || livePlaying.value)) return { label: "比赛中", time: "" };
   return { label: "下一场", time: clock((data.value?.nextAt ?? t) - t) };
 });
 /** Winners come newest first. */
@@ -165,21 +183,26 @@ useBand("race", () => ({
 
 // ---------------------------------------------------------------- the race under way
 const head = computed(() => {
-  const r = race.value;
-  return r?.start && r.moves?.length ? playhead(r, serverNow.value) : null;
+  const r = stage.value;
+  return r?.start && r.moves?.length ? playhead(r, stageNow.value) : null;
 });
 /** The opening (the dice for the order) while it plays. */
-const opening = computed(() => (race.value && playing.value ? openingAt(race.value, serverNow.value) : null));
+const opening = computed(() => (stage.value && playing.value ? openingAt(stage.value, stageNow.value) : null));
 /** The order of play: the manifest's until the opening has settled it; none for a race from before the opening. */
 const seats = computed<string[]>(() => {
-  const r = race.value;
+  const r = stage.value;
   if (r?.order && (!opening.value || opening.value.lined)) return r.order;
   return r?.order || !r?.moves ? MEMBERS : [];
 });
 /** A member's colour, for its dice. */
 const colorOf = (m: string) => character(m)?.color;
-/** The faces of the die a member rolls in this race: its form's, or the config's on races dealt before forms. */
-const diceOf = (m: string) => race.value?.setup.dice?.[m] ?? CFG.dice;
+/** The faces of the die a member rolls in [r]: its form's, or the config's on races dealt before forms. */
+const diceOf = (m: string, r: Race | null = race.value) => r?.setup.dice?.[m] ?? CFG.dice;
+/** A throw on the race's time as the wall clock plays it (a replay at 2× throws twice as fast). */
+const atSpeed = (toss: Toss): Toss => {
+  const k = speed.value;
+  return k === 1 ? toss : { ...toss, ms: toss.ms / k, delay: (toss.delay ?? 0) / k, at: (toss.at ?? 0) / k };
+};
 /** A runner's key title: its name, and its form on races that deal them. */
 function runnerTitle(m: string): string {
   const form = race.value?.setup.forms?.[m];
@@ -194,7 +217,7 @@ interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
  */
 function openingDie(m: string): SeatDie | null {
   const o = opening.value;
-  const rolls = race.value?.rolls;
+  const rolls = stage.value?.rolls;
   if (!o || !rolls || o.round < 0) return null;
   const k = o.rolling.indexOf(m);
   let thrown = o.round;
@@ -202,19 +225,19 @@ function openingDie(m: string): SeatDie | null {
   if (k >= 0 && o.tumbling) {
     const face = rolls[o.round][k].face;
     const { delay, ms } = staggered(OPEN_ROLL_MS, k, o.rolling.length);
-    const toss = reducedMotion.value ? null : { ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 };
+    const toss = reducedMotion.value ? null : atSpeed({ ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 });
     return { key: `${m}o${thrown}`, face, toss, out: false };
   }
   return { key: `${m}o${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
 }
 /** The round whose dice are out, once the opening is over. */
-const round = computed(() => (race.value?.moves && !opening.value ? roundAt(race.value, serverNow.value) : null));
+const round = computed(() => (stage.value?.moves && !opening.value ? roundAt(stage.value, stageNow.value) : null));
 /**
  * A member's die in a round: the five thrown together at the round's start (staggered, landing by DICE_TOSS of
  * rollMs), lying in the row after; dimmed once its move is done.
  */
 function roundDie(m: string): SeatDie | null {
-  const r = race.value;
+  const r = stage.value;
   const ra = round.value;
   if (!r || !ra) return null;
   const dice = roundDice(r, ra.round);
@@ -224,7 +247,7 @@ function roundDie(m: string): SeatDie | null {
   const { delay, ms } = staggered(len, k, dice.length);
   const toss = reducedMotion.value || ra.since >= len
     ? null
-    : { ms, delay, at: ra.since, pool: diceOf(m), seed: ra.round * ROUND + k, height: 110 };
+    : atSpeed({ ms, delay, at: ra.since, pool: diceOf(m, r), seed: ra.round * ROUND + k, height: 110 });
   const i = ra.round * ROUND + k;
   const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
   return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
@@ -234,14 +257,14 @@ const seatDice = computed(() =>
 );
 /** Whose turn it is in the step under way, and where the step is. */
 const turn = computed(() => {
-  const r = race.value;
+  const r = stage.value;
   const h = head.value;
   if (!r?.moves || !h || h.current < 0) return null;
   return { m: r.moves[h.current].m, stage: stageOf(h.part) };
 });
 /** The last round's dice have just been thrown. */
 const lastRound = computed(() => {
-  const r = race.value;
+  const r = stage.value;
   const ra = round.value;
   if (!r || !ra || !playing.value || roundsOf(r) < 2 || ra.round !== roundsOf(r) - 1) return false;
   return ra.since < CUE_MS;
@@ -368,7 +391,7 @@ const tickets = computed(() => {
   }
   for (const t of out) {
     t.odds.sort((a, b) => b - a);
-    if (finished.value && r?.ranking) t.won = hits(t.kind, t.member, r.ranking);
+    if (liveFinished.value && r?.ranking) t.won = hits(t.kind, t.member, r.ranking);
   }
   return out;
 });
@@ -382,8 +405,8 @@ const ticketTitle = (t: { kind: RaceKind; member: string }) =>
 const betBlock = computed(() => (!online.value ? "未连接" : ""));
 
 // ---------------------------------------------------------------- results
-/** The race whose result is shown: this one once it has played, the one before while bets are open. */
-const shown = computed<Race | null>(() => (finished.value ? race.value : betting.value ? last.value : null));
+/** The live race whose result is shown: this one once it has played, the one before while bets are open. */
+const shown = computed<Race | null>(() => (liveFinished.value ? race.value : betting.value ? last.value : null));
 const result = computed(() => shown.value?.result ?? null);
 // The park's balance and today's result follow a race the save had bets in.
 watch(() => (race.value?.phase === "done" && race.value.mine.length ? race.value.id : null), (id) => {
@@ -415,21 +438,108 @@ onBeforeUnmount(() => cancelAnimationFrame(countFrame));
 /** What the infield holds: the odds board, the race under way, or the podium. */
 const infield = computed<"field" | "run" | "podium">(() => {
   if (finished.value) return "podium";
+  if (replay.value) return "run";
   if (betting.value || !race.value || race.value.phase === "void") return "field";
   return "run";
 });
-const ranking = computed(() => (finished.value ? race.value?.ranking ?? [] : []));
+const ranking = computed(() => (finished.value ? stage.value?.ranking ?? [] : []));
 /** A place lights up when one of my bets on the tuanzi in it won. */
 function lit(place: number): boolean {
-  const r = race.value;
+  const r = stage.value;
   const m = ranking.value[place];
   return !!r && !!m && r.mine.some((b) => b.member === m && hits(b.kind, b.member, ranking.value));
 }
 /** A place I had bets on, none of which won: it greys out. */
 function missed(place: number): boolean {
   const m = ranking.value[place];
-  return !!m && !!race.value?.mine.some((b) => b.member === m) && !lit(place);
+  return !!m && !!stage.value?.mine.some((b) => b.member === m) && !lit(place);
 }
+/** What my bets won on the podium's race: counting up on the live one, standing on a replay. */
+const podiumWon = computed(() => (replay.value ? replay.value.race.result?.won ?? 0 : won.value));
+const podiumCount = computed(() => (replay.value ? podiumWon.value : counted.value));
+
+// ---------------------------------------------------------------- 往期 and replays
+/** The 往期 list is open, and the races in it (loaded each time it opens). */
+const pastOpen = ref(false);
+const past = ref<RacePast[] | null>(null);
+const replayError = ref("");
+const slipEl = ref<HTMLElement | null>(null);
+
+async function togglePast() {
+  pastOpen.value = !pastOpen.value;
+  replayError.value = "";
+  if (!pastOpen.value) return;
+  const reply = await parkTry<{ races: RacePast[] }>("GET", "/api/park/race/history");
+  if (reply.ok) past.value = reply.data.races;
+  else if (!past.value) past.value = [];
+}
+function onOutside(e: PointerEvent) {
+  if (!slipEl.value?.contains(e.target as Node)) pastOpen.value = false;
+}
+watch(pastOpen, (open) => {
+  if (open) document.addEventListener("pointerdown", onOutside, true);
+  else document.removeEventListener("pointerdown", onOutside, true);
+});
+onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside, true));
+function onSlipKey(e: KeyboardEvent) {
+  if (e.key === "Escape" && pastOpen.value) {
+    pastOpen.value = false;
+    e.stopPropagation();
+  }
+}
+/** Some day in the list has more than one race: the rows give the time as well. */
+const pastTimed = computed(() => new Set((past.value ?? []).map((h) => h.day)).size < (past.value?.length ?? 0));
+/** A row's day; with the China time of its start when the list has days of more than one race. */
+function pastDay(h: RacePast): string {
+  if (!pastTimed.value) return shortDay(h.day);
+  const t = new Date((h.startsAt + 8 * 3600) * 1000);
+  return `${shortDay(h.day)} ${t.getUTCHours()}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+}
+const pastNet = (net: number) => (net > 0 ? `+${fmt(net)}` : net < 0 ? `−${fmt(net)}` : "0");
+
+/** Plays race [id] again from its start: the race in hand when it has its moves, else asked for. */
+async function openReplay(id: number, day?: string) {
+  pastOpen.value = false;
+  replayError.value = "";
+  const have = [race.value, last.value].find((r) => r?.id === id && r.phase === "done" && r.moves?.length);
+  let r = have ?? null;
+  if (!r) {
+    const reply = await parkTry<{ race: Race }>("GET", `/api/park/race/replay/${id}`);
+    if (!reply.ok) {
+      replayError.value = reply.error.message;
+      return;
+    }
+    r = reply.data.race;
+  }
+  pick.value = null;
+  replay.value = { race: r, day: day ?? chinaDay(r.startsAt), clock: replayAt(r, 0, Date.now(), 1), n: (replay.value?.n ?? 0) + 1 };
+}
+/** Moves the replay to [from] ms into the race (0: from the start, the end: its result). */
+function seek(from: number) {
+  const p = replay.value;
+  if (p) replay.value = { ...p, clock: replayAt(p.race, from, Date.now(), p.clock.speed), n: p.n + 1 };
+}
+/** Plays the replay at [k]×, on from where it is. */
+function setSpeed(k: number) {
+  const p = replay.value;
+  if (!p) return;
+  const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
+  replay.value = { ...p, clock: replayAt(p.race, at, Date.now(), k) };
+}
+const toEnd = () => replay.value && seek(playLength(replay.value.race));
+function closeReplay() {
+  replay.value = null;
+  replayError.value = "";
+}
+/** The live race has started while a replay plays: the exit key goes to it. */
+const liveOn = computed(() => !!replay.value && (phase.value === "starting" || livePlaying.value));
+/** The finished race on the slip that can be played again: this one on its podium, the last one while bets are open. */
+const replayable = computed<Race | null>(() => {
+  const r = shown.value;
+  return r && (r.replay ?? !!r.moves?.length) ? r : null;
+});
+/** The board starts afresh on every replay jump, and back on the live race. */
+const trackKey = computed(() => (replay.value ? `r${replay.value.race.id}-${replay.value.n}` : "live"));
 
 // ---------------------------------------------------------------- between the phases
 /*
@@ -482,7 +592,10 @@ function flyToPodium() {
   <section class="race" :class="{ calm: reducedMotion }" aria-label="团子赛跑">
     <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
-    <RaceTrack class="lap" :race="race" :t="serverNow" :track="CFG.track" :members="MEMBERS" :cleared="infield === 'podium'">
+    <RaceTrack
+      :key="trackKey" class="lap" :race="stage" :t="stageNow" :rate="speed" :track="CFG.track" :members="MEMBERS"
+      :cleared="infield === 'podium'"
+    >
       <div ref="infieldEl" class="panes">
         <Transition name="swap" :css="!cut">
           <!-- Bets open, a void race, or nothing loaded yet: the five runners, each with its odds to win. -->
@@ -548,8 +661,8 @@ function flyToPodium() {
                   <span class="step">{{ i + 1 }}</span>
                 </li>
               </ol>
-              <p v-if="won > 0" class="net" role="status" :aria-label="`+${fmt(won)} 驼币`">
-                <ParkCoin class="net-coin" fill :tilt="false" /><b>+{{ fmt(counted) }}</b>
+              <p v-if="podiumWon > 0" class="net" role="status" :aria-label="`+${fmt(podiumWon)} 驼币`">
+                <ParkCoin class="net-coin" fill :tilt="false" /><b>+{{ fmt(podiumCount) }}</b>
               </p>
             </div>
           </div>
@@ -561,11 +674,37 @@ function flyToPodium() {
 
     <!--
       The bet slip. A runner picked: its three kinds (odds, and a thin bar of the coins on each), the stake and the bet
-      key. Nothing picked: my tickets on this race; with none while bets are open, the last champion and what my bets
-      on that race won.
+      key. Nothing picked: 往期, my tickets on this race; with none while bets are open, the last champion and what my
+      bets on that race won; by a finished race's result, the key to play it again. A replay: its day and how far it
+      is, 2×, its result (or once there, again from the start) and back to the live race.
     -->
-    <div class="park-actions slip">
-      <template v-if="betting && pick && race">
+    <div ref="slipEl" class="park-actions slip" @keydown="onSlipKey">
+      <template v-if="replay">
+        <span class="replay-day"><Icon name="play" :size="13" />{{ shortDay(replay.day) }}</span>
+        <i class="replay-bar" aria-hidden="true">
+          <i :style="{ width: `${Math.min(1, (stageNow - replay.race.startsAt * 1000) / Math.max(1, playLength(replay.race))) * 100}%` }"></i>
+        </i>
+        <div class="park-actions-main">
+          <button
+            type="button" class="ui-btn small ghost speed-key" :class="{ on: speed === 2 }" :aria-pressed="speed === 2"
+            @click="setSpeed(speed === 2 ? 1 : 2)"
+          >2×</button>
+          <button v-if="!finished" type="button" class="ui-btn small ghost" aria-label="跳到结果" @click="toEnd">
+            <Icon name="skip" :size="16" />
+          </button>
+          <button v-else type="button" class="ui-btn small ghost" aria-label="再看一遍" @click="seek(0)">
+            <Icon name="refresh" :size="16" />
+          </button>
+          <button
+            type="button" class="ui-btn small exit-key" :class="{ primary: liveOn }" :aria-label="liveOn ? '直播' : '退出回放'"
+            @click="closeReplay"
+          >
+            <template v-if="liveOn"><i class="live-dot" aria-hidden="true"></i>直播</template>
+            <Icon v-else name="close" :size="16" />
+          </button>
+        </div>
+      </template>
+      <template v-else-if="betting && pick && race">
         <span class="picked"><TuanziToken :member="pick.member" :size="32" />{{ nameOf(pick.member) }}</span>
         <span class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
           <button
@@ -586,7 +725,12 @@ function flyToPodium() {
           </button>
         </span>
       </template>
-      <span v-else-if="tickets.length" class="tickets" aria-label="我的押注">
+      <template v-else>
+      <button
+        v-if="data?.winners.length" type="button" class="ui-btn small park-ledger-key" :aria-expanded="pastOpen"
+        @click="togglePast"
+      ><Icon name="clock" :size="15" /><span>往期</span></button>
+      <span v-if="tickets.length" class="tickets" aria-label="我的押注">
         <span
           v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
           :title="ticketTitle(t)"
@@ -602,8 +746,37 @@ function flyToPodium() {
         </span>
         <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(won) }}</span>
       </span>
+      <button
+        v-if="replayable && (liveFinished || !tickets.length)" type="button" class="ui-btn small ghost again-key"
+        aria-label="回放"
+        @click="openReplay(replayable.id)"
+      ><Icon name="play" :size="15" /></button>
+      </template>
 
-      <div v-if="betting && (pick || !left)" class="park-actions-main">
+      <div v-if="pastOpen && !replay" class="pop past ui-scroll">
+        <ul v-if="past" class="history" :class="{ timed: pastTimed }">
+          <li v-for="h in past" :key="h.id">
+            <button type="button" class="past-row" :disabled="!h.replay" @click="openReplay(h.id, h.day)">
+              <span class="day">{{ pastDay(h) }}</span>
+              <span v-if="h.ranking" class="order">
+                <span v-for="(m, i) in h.ranking" :key="m" class="champ" :title="nameOf(m)">
+                  <TuanziToken :member="m" :size="24" /><Icon v-if="i === 0" class="champ-crown" name="crown" :size="11" />
+                </span>
+              </span>
+              <span v-else class="order none">取消</span>
+              <span class="stake">
+                <template v-if="h.mine"><img :src="COIN_SMALL" alt="" draggable="false" />{{ h.mine.staked }}</template>
+              </span>
+              <span class="past-net" :class="{ on: (h.mine?.net ?? 0) > 0 }">
+                <template v-if="h.mine">{{ h.phase === "void" ? "退回" : pastNet(h.mine.net) }}</template>
+              </span>
+              <Icon v-if="h.replay" class="past-play" name="play" :size="13" />
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="!replay && betting && (pick || !left)" class="park-actions-main">
         <span v-if="!left" class="full">本场已押满</span>
         <template v-else>
           <span class="stepper">
@@ -625,7 +798,7 @@ function flyToPodium() {
           </button>
         </template>
       </div>
-      <p v-if="betError" class="ui-error" role="alert">{{ betError }}</p>
+      <p v-if="betError || replayError" class="ui-error" role="alert">{{ betError || replayError }}</p>
     </div>
   </section>
 </template>
@@ -1241,6 +1414,154 @@ function flyToPodium() {
   flex: 1 1 0;
   min-width: 0;
 }
+/* The key that plays the finished race on the slip again: a round quiet key after its result. */
+.again-key {
+  width: 32px;
+  padding: 0;
+}
+.again-key svg,
+.past-play {
+  color: var(--c-700);
+}
+
+/* ---- a replay on the slip: its day, a thin bar of how far it is, then its keys */
+.replay-day {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 800 var(--fs-strong)/1 var(--font);
+  color: var(--ink-2);
+}
+.replay-day svg {
+  color: var(--c-700);
+}
+.replay-bar {
+  flex: 1 1 0;
+  min-width: 40px;
+  max-width: 260px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--c-200);
+  overflow: hidden;
+}
+.replay-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-600);
+}
+.speed-key {
+  min-width: 40px;
+  font: 800 var(--fs-number)/1 var(--font-latin);
+}
+/* 2× latched: a step darker than the strip, as the kind keys. */
+.slip .speed-key.on:not(:disabled) {
+  --key-top: var(--c-200);
+  --key-bottom: var(--c-200);
+  color: var(--c-700);
+}
+.exit-key {
+  gap: 6px;
+  min-width: 40px;
+}
+/* The live race has started: the exit key goes to it, a dot beating on it. */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-beat 1.2s var(--ease-out) infinite;
+}
+@keyframes live-beat {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* ---- 往期: the latest races rise from the slip, one a row; a row with a replay is a key */
+.pop {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  padding: 10px 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper), 0 10px 28px -12px rgba(var(--c-900-rgb), 0.3);
+}
+.past {
+  left: 16px;
+  bottom: calc(100% + 8px);
+  width: 440px;
+  max-width: calc(100% - 32px);
+  max-height: 260px;
+}
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.past-row {
+  display: grid;
+  grid-template-columns: 4.6em minmax(0, 1fr) 48px 44px 14px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.timed .past-row {
+  grid-template-columns: 8.4em minmax(0, 1fr) 48px 44px 14px;
+}
+.past-row:not(:disabled):hover,
+.past-row:focus-visible {
+  background: var(--c-100);
+}
+.past-row:disabled {
+  cursor: default;
+}
+.past-row .order {
+  display: flex;
+  gap: 4px;
+}
+.past-row .order.none {
+  color: var(--ink-3);
+}
+.past-row .champ-crown {
+  top: -4px;
+}
+.past-row .stake {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--ink-2);
+}
+.past-row .stake img {
+  width: 13px;
+  height: 13px;
+}
+.past-net {
+  text-align: right;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.past-net.on {
+  color: var(--c-700);
+}
 
 .calm .pool > i {
   transition: none;
@@ -1256,6 +1577,9 @@ function flyToPodium() {
 .calm .seat .head,
 .calm .seat-die {
   transition: none;
+}
+.calm .live-dot {
+  animation: none;
 }
 /* Without motion the cue stands still for its time. */
 .calm .cue {

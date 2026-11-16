@@ -248,8 +248,9 @@ CREATE TABLE IF NOT EXISTS park_scratch_cards (
 CREATE INDEX IF NOT EXISTS park_scratch_cards_player ON park_scratch_cards (player_id, revealed);
 -- park: race tables
 -- Dumpling races (park_race.py), id = when its bets open (unix seconds). seed (hex), ranking and result stay
--- server-side until status 'running'; result ({start, moves}) is cleared after RESULT_KEEP_DAYS (the seed and
--- setup reproduce it). step_ms and slow_ms: playback step lengths before and in the last round.
+-- server-side until status 'running'; result ({start, order, rolls, moves, rest}) is kept for good, for replays
+-- (servers before 1.2.4 cleared it after two days, leaving ''). step_ms and slow_ms: playback step lengths before and
+-- in the last round.
 -- status: open (prepared or taking bets), running, settled, void (called off, bets refunded).
 CREATE TABLE IF NOT EXISTS park_races (
   id INTEGER PRIMARY KEY,
@@ -1373,12 +1374,22 @@ class Store:
                                     "ORDER BY id DESC LIMIT ?", (before, limit)).fetchall()
         return [dict(r) for r in rows]
 
-    def race_prune_results(self, before: int) -> int:
+    def races_past(self, limit: int) -> list[dict[str, Any]]:
+        """The newest finished races (settled or called off), newest first."""
         with self._lock:
-            n = self._db.execute("UPDATE park_races SET result = '' WHERE id < ? AND result != '' "
-                                 "AND status IN ('settled', 'void')", (before,)).rowcount
-            self._commit()
-            return n
+            rows = self._db.execute("SELECT * FROM park_races WHERE status IN ('settled', 'void') "
+                                    "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def race_bets_in(self, race_ids: list[int], pid: str) -> list[dict[str, Any]]:
+        """[pid]'s bets on any of [race_ids], in the order they were placed."""
+        if not race_ids:
+            return []
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT * FROM park_race_bets WHERE player_id = ? AND race_id IN ({', '.join('?' * len(race_ids))}) "
+                "ORDER BY id", (pid, *race_ids)).fetchall()
+        return [dict(r) for r in rows]
 
     def race_bets(self, race_id: int, pid: str | None = None) -> list[dict[str, Any]]:
         """The race's bets (of [pid] only, when given), in the order they were placed."""

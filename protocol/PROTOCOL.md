@@ -420,6 +420,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | --- | --- |
 | GET /api/park/race | `{now, nextAt, race, last, winners}`。`race` 是现在展示的一场（下注中、跑着或刚跑完），没有时为 null；`last` 是它之前最近结算的一场；`winners` 是最近 5 场的冠军 `[{id, member}]`，从新到旧；`nextAt` 是下一场开始下注的时间 |
 | POST /api/park/race/bet | `{race, kind, member, coins, odds?}`，返回状态、`park` 和 `race`。`odds` 是客户端显示的这个选项的赔率，可省略 |
+| GET /api/park/race/history | `{races}`：最近 30 场已结束的场次（已结算或作废），从新到旧，见往期 |
+| GET /api/park/race/replay/{id} | `{race}`：一场已结算场次，字段和 GET /api/park/race 的一场相同，用来重播。没有这一场或还没结算为 404 `no_race`；没有回放数据（见往期）为 404 `no_replay` |
 
 一场的字段：
 
@@ -429,7 +431,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - `pool`：`{win|top2|last: {成员 id: 驼币数}}`，这一场所有存档押的合计，五个成员都有，没人押为 0。
 - `bettors`：押过这一场的存档数。
 - `mine`：自己押的每一注 `[{kind, member, coins, odds}]`，按下注顺序，同一选项押几次就有几条，`odds` 是那一注锁定的赔率。结算后每条多一个 `prize`：这一注赢到的驼币，`coins × odds`，一位小数，没押中为 0。
-- 开跑后另有 `seed`、`endsAt`、`leadMs`、`rollMs`、`stepMs`、`slowFrom`、`slowMs`、`start`（第 0 格里的排位，五个成员 id）、`order`（行动顺序，五个成员 id，先走的在前）、`rolls`（定顺序的每一轮骰子，见下）、`moves`、`rest`（见下）、`ranking`（第一到最后）。
+- 开跑后另有 `seed`、`endsAt`、`ranking`（第一到最后）、`replay`，以及播放用的 `leadMs`、`rollMs`、`stepMs`、`slowFrom`、`slowMs`、`start`（第 0 格里的排位，五个成员 id）、`order`（行动顺序，五个成员 id，先走的在前）、`rolls`（定顺序的每一轮骰子，见下）、`moves`、`rest`（见下）。`replay` 为 false 的旧场次（见往期）没有播放用的这些字段，只有结果。
 - 结算后，押过的人另有 `result: {staked, won, net}`，单位驼币，按这一场所有注合计：`staked` 押的驼币，`won` 实际发的驼币（见结算），`net` = `won − staked`。
 
 `phase`：`betting` 下注中；`starting` 已停止下注，服务端几秒内开跑；`running`；`done` 已结算；`void` 停机错过开跑，已退币。
@@ -482,6 +484,12 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - 奖金是驼币。每一注押中时的奖金是 `coins × 这一注的赔率` 枚，以十分之一枚为单位记下（`coins × 赔率 × 10`，整数）。一个存档一场的各注奖金先相加，再四舍五入到整枚（`(十分之一枚的合计 + 5) ÷ 10` 向下取整，0.5 进位），记在驼币流水 `race_prize`。例：2 × 4.2 和 1 × 2.1 押中，合计 10.5，发 11 枚。每场只结算一次。
 - 赛跑的奖金不是碎片，不计入乐园的 `today.won`。
 - 一个存档一场拿到 `roomAt` 枚以上时，服务端向它所在的每个房间广播 `race_win {id, coins}`。旧客户端不认识这个消息，会直接忽略。
+
+往期：
+
+- 每场的步骤一直保存在服务端。1.2.4 之前的服务端在两天后删掉步骤，需要时按种子重算；这样的场次现在按当前规则重算，算出的 `ranking` 和结算时存下的一样、按算出的步数和定顺序轮数推出的 `endsAt` 也一样时才给回放，否则 `replay` 为 false，只给结果。规则改过之后，重算的结果可能和当时的比赛不同。
+- `history` 的每一项：`id`、`day`（开跑那天的北京时间日期，`YYYY-MM-DD`）、`startsAt`、`phase`（`done` 或 `void`）；`done` 的另有 `ranking` 和 `replay`。自己押过的另有 `mine`：`done` 为 `{staked, won, net}`，和这一场的 `result` 相同；`void` 为 `{staked, net: 0}`，押的驼币已全部退回。
+- 正在下注和正在跑的场次不在 `history` 里，也不能用 `replay` 取。
 
 停机：
 

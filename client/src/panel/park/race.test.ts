@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   HOP_AT, hits, leaders, momentOf, moving, OPEN_AT, OPEN_ROLL_MS, openingAt, playhead, rankOf, REROLL_MS, PUSH_LEN,
-  DICE_TOSS, rollStart, roundAt, roundDice, roundsOf,
+  DICE_TOSS, rollStart, roundAt, roundDice, roundsOf, chinaDay, playLength, replayAt, replayTime,
   airFaces, boardOf, bounce, cellOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
   type Race, type RaceSetup, type RaceStep,
 } from "./race";
@@ -330,5 +330,32 @@ describe("race replay against the server", () => {
         }
       });
     }
+  });
+});
+
+describe("a replay's clock", () => {
+  const r = { id: 0, phase: "done", opensAt: 0, startsAt: 1000, endsAt: 1100, hash: "", setup: {}, odds: {}, pool: {}, mine: [] } as unknown as Race;
+
+  it("plays from its start at the wall clock's pace, or twice as fast, and stops at the end", () => {
+    expect(playLength(r)).toBe(100_000);
+    const c = replayAt(r, 0, 50_000, 1);
+    expect(replayTime(r, c, 50_000)).toBe(1_000_000);
+    expect(replayTime(r, c, 60_000)).toBe(1_010_000);
+    const fast = replayAt(r, 10_000, 60_000, 2);
+    expect(replayTime(r, fast, 70_000)).toBe(1_030_000);
+    expect(replayTime(r, fast, 999_000)).toBe(1_100_000);
+    // A local clock that steps back never plays it backwards.
+    expect(replayTime(r, fast, 59_000)).toBe(1_010_000);
+  });
+
+  it("jumps within the race only", () => {
+    expect(replayAt(r, -5, 0, 1).from).toBe(0);
+    expect(replayAt(r, 1e9, 0, 1).from).toBe(100_000);
+  });
+
+  it("names a race's day as the server does: the China day of its start", () => {
+    // 2026-11-15 19:00 in China is 11:00 UTC.
+    expect(chinaDay(Date.UTC(2026, 10, 15, 11) / 1000)).toBe("2026-11-15");
+    expect(chinaDay(Date.UTC(2026, 10, 15, 16, 30) / 1000)).toBe("2026-11-16");
   });
 });

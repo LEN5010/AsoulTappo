@@ -14,6 +14,7 @@ from app.park import POOL, Park
 from app.park_race import OddsChanged, Races
 from app.store import Store, day_of
 from fixtures import Clock
+from test_race import replay
 
 TOKEN = "race-player-token-000001"
 OTHER = "race-player-token-000002"
@@ -489,16 +490,155 @@ def test_a_restart_resumes_the_race(tmp_path):
     g.store.close()
 
 
-def test_old_results_are_dropped_but_still_shown():
-    g, races, clock, pid, other, ranking, before, wins = settle_with_bets()
-    moves = races.view(TOKEN)["race"]["moves"]
-    clock.t = T0 + park_race.RESULT_KEEP_DAYS * 86400 + CFG["interval"] + 1
+def run_races(g, races, clock, n, bet=True):
+    """Runs [n] races from T0 on, one an interval, each with a bet of TOKEN's on its winner and one on its last but
+    one; returns their ids."""
+    ids = []
+    for k in range(n):
+        rid = T0 + k * CFG["interval"]
+        clock.t = rid + 1
+        races.tick()
+        if bet:
+            ranking = json.loads(row(g, rid)["ranking"])
+            races.bet(TOKEN, rid, "win", ranking[0], 2)
+            races.bet(TOKEN, rid, "last", ranking[-2], 1)
+        clock.t = rid + CFG["betting"]
+        races.tick()
+        clock.t = row(g, rid)["ends_at"]
+        races.tick()
+        assert row(g, rid)["status"] == "settled"
+        ids.append(rid)
+    return ids
+
+
+def test_results_are_kept_for_replays():
+    g, races, clock, _ = make(coins=200)
+    ids = run_races(g, races, clock, 4)
+    moves = {rid: json.loads(row(g, rid)["result"])["moves"] for rid in ids}
+    # Days on, every race still has the move list it played.
+    clock.t = T0 + 10 * CFG["interval"] - 1
     races.tick()
-    assert row(g, T0)["result"] == ""
-    assert races.settle(T0) == []
-    # Nothing ran since (the clock jumped), so it is still the last race, rebuilt from its seed.
+    for rid in ids:
+        assert row(g, rid)["result"] and races.replay(TOKEN, rid)["race"]["moves"] == moves[rid]
+
+
+def test_every_stored_race_replays_to_its_ranking():
+    # Rows keep what they played; the seed run again and the move list replayed both give the settled ranking.
+    for forms in (False, True):
+        g, races, clock, _ = make(coins=200, forms=forms)
+        for rid in run_races(g, races, clock, 3):
+            r = row(g, rid)
+            stored = json.loads(r["result"])
+            ranking = json.loads(r["ranking"])
+            again = race.run_seed(races.rules, json.loads(r["setup"]), bytes.fromhex(r["seed"]))
+            assert again["ranking"] == ranking and park_race._result(again) == stored
+            assert replay(stored) == ranking
+            out = races.replay(TOKEN, rid)["race"]
+            assert out["replay"] is True and out["ranking"] == ranking
+            assert (out["start"], out["moves"], out["rest"]) == (stored["start"], stored["moves"], stored["rest"])
+
+
+# A race dealt with forms, run by the current rules: its outcome as a digest. A rule change that alters it also
+# changes how rows without a move list (dropped by servers before 1.2.4) are judged (Races.played), so it has to be
+# a decision: refresh the digest only knowing that.
+GOLDEN_SETUP = {"boost": 9, "trip": 15, "portal": [6, 11], "flip": 18,
+                "forms": {"jiaran": "great", "nailin": "poor", "beila": "normal", "xinyi": "tired", "sinuo": "good"},
+                "dice": {"jiaran": [2, 3, 4], "nailin": [1, 1, 2], "beila": [1, 2, 3], "xinyi": [1, 1, 2, 3],
+                         "sinuo": [1, 2, 3, 4]}}
+GOLDEN = {1: "8f5a602c5580679a2321d91d5e7c8998173c3a5c0aad6925526b9ca00ad46727",
+          2: "972f7d08c400f480fdf24e4faa55eacafb43870e4d5e534aa28662eee0f21448",
+          3: "f0967471c9577fe65a7cd7b883ab06e502f22e5dc56258a4fb61549f4b262418"}
+
+
+def test_the_rules_still_play_the_golden_races():
+    rules = race.Rules.of(CFG, MEMBERS)
+    for k, digest in GOLDEN.items():
+        out = race.run_seed(rules, GOLDEN_SETUP, k.to_bytes(32, "big"))
+        assert hashlib.sha256(json.dumps(out, sort_keys=True).encode()).hexdigest() == digest, k
+
+
+def drop_result(g, rid, **change):
+    """Clears a row's move list as servers before 1.2.4 did after two days, and sets [change] on it."""
+    sets = ", ".join(["result = ''", *(f"{k} = ?" for k in change)])
+    with g.store.transaction() as st:
+        st._db.execute(f"UPDATE park_races SET {sets} WHERE id = ?", (*change.values(), rid))
+
+
+def test_a_dropped_move_list_replays_only_when_the_seed_still_gives_the_race():
+    g, races, clock, _ = make(coins=200)
+    a, b, c, d = run_races(g, races, clock, 4)
+    kept = races.replay(TOKEN, a)["race"]
+    # The seed run by the current rules gives the ranking and the end it settled with: played again as before.
+    drop_result(g, a)
+    again = races.replay(TOKEN, a)["race"]
+    assert again["moves"] == kept["moves"] and again["rolls"] == kept["rolls"]
+    # A ranking the seed no longer gives (the rules changed since): the result only, no moves anywhere.
+    ranking = json.loads(row(g, b)["ranking"])
+    drop_result(g, b, ranking=json.dumps(ranking[1:] + ranking[:1]))
+    # The same ranking but another end: the race had more or fewer steps (or opening rounds) than the seed gives now.
+    drop_result(g, c, ends_at=row(g, c)["ends_at"] + 2.5)
+    # A setup the current rules cannot read.
+    drop_result(g, d, setup=json.dumps({"moods": {}}))
+    listed = {r["id"]: r for r in races.history(TOKEN)["races"]}
+    assert [listed[rid]["replay"] for rid in (a, b, c, d)] == [True, False, False, False]
+    assert listed[b]["ranking"] == ranking[1:] + ranking[:1]
+    for rid in (b, c, d):
+        with pytest.raises(GameError) as e:
+            races.replay(TOKEN, rid)
+        assert e.value.code == "no_replay"
+    # The view shows such a race's result without moves.
+    clock.t = d + CFG["interval"] + 1
+    races.tick()
     last = races.view(TOKEN)["last"]
-    assert last["id"] == T0 and last["moves"] == moves
+    assert last["id"] == d and last["replay"] is False and last["ranking"]
+    for k in ("start", "moves", "rolls", "order", "rest", "leadMs"):
+        assert k not in last
+    assert last["result"]["staked"] == 3
+
+
+def test_the_history_lists_finished_races_with_my_bets():
+    g, races, clock, (pid, other) = make(coins=200)
+    a, b = run_races(g, races, clock, 2)
+    # A race missed while down: called off, its bets refunded.
+    c = b + CFG["interval"]
+    clock.t = c + 1
+    races.tick()
+    races.bet(TOKEN, c, "win", "jiaran", 4)
+    clock.t = c + CFG["betting"] + park_race.START_GRACE + 1
+    races.tick()
+    assert row(g, c)["status"] == "void"
+    # The next race takes bets: not listed, and not to be played (its seed and moves are still secret).
+    nxt = c + CFG["interval"]
+    clock.t = nxt + 1
+    races.tick()
+    out = races.history(TOKEN)["races"]
+    assert [r["id"] for r in out] == [c, b, a]
+    assert out[0] == {"id": c, "day": day_of(row(g, c)["starts_at"]), "startsAt": row(g, c)["starts_at"],
+                      "phase": "void", "mine": {"staked": 4, "net": 0}}
+    for r, rid in zip(out[1:], (b, a)):
+        assert r["phase"] == "done" and r["replay"] is True and r["ranking"] == json.loads(row(g, rid)["ranking"])
+        assert r["mine"] == races.replay(TOKEN, rid)["race"]["result"]
+        assert r["mine"]["staked"] == 3 and r["mine"]["won"] > 0
+    # The day is the China day of the start (bets open the evening before).
+    assert out[1]["day"] == day_of(b + CFG["betting"]) != day_of(b)
+    # Another save sees the same races without bets of its own.
+    assert all("mine" not in r for r in races.history(OTHER)["races"])
+    for rid in (c, nxt, nxt + CFG["interval"], 12345):
+        with pytest.raises(GameError) as e:
+            races.replay(TOKEN, rid)
+        assert e.value.code == "no_race"
+    # Running: not yet listed nor played again.
+    clock.t = nxt + CFG["betting"]
+    races.tick()
+    assert row(g, nxt)["status"] == "running" and races.history(TOKEN)["races"][0]["id"] == c
+    with pytest.raises(GameError):
+        races.replay(TOKEN, nxt)
+
+
+def test_the_history_keeps_its_latest_races():
+    g, races, clock, _ = make(coins=200)
+    ids = run_races(g, races, clock, park_race.HISTORY + 2, bet=False)
+    assert [r["id"] for r in races.history(TOKEN)["races"]] == ids[::-1][:park_race.HISTORY]
 
 
 def test_a_row_from_before_the_order_dice_plays_without_them():
@@ -554,6 +694,29 @@ def test_http_race_and_bet(monkeypatch):
     out = client.post("/api/park/race/bet", headers=headers,
                       json={"race": T0, "kind": "win", "member": "beila", "coins": 1})
     assert out.status_code == 409 and out.json()["detail"]["code"] == "race_closed"
+
+
+def test_http_race_history_and_replay(monkeypatch):
+    clock = Clock(T0 + 1)
+    g = Game(Store(":memory:"), manifest(), now=clock)
+    monkeypatch.setattr(main, "game", g)
+    client = TestClient(main.app)
+    headers = {"X-Player-Token": TOKEN}
+    client.get("/api/me", headers=headers)
+    assert client.get("/api/park/race/history", headers=headers).json() == {"races": []}
+    main.races.tick()
+    assert client.get(f"/api/park/race/replay/{T0}", headers=headers).status_code == 404
+    clock.t = T0 + CFG["betting"]
+    main.races.tick()
+    clock.t = row(g, T0)["ends_at"]
+    main.races.tick()
+    listed = client.get("/api/park/race/history", headers=headers).json()["races"]
+    assert [(r["id"], r["phase"], r["replay"]) for r in listed] == [(T0, "done", True)]
+    got = client.get(f"/api/park/race/replay/{T0}", headers=headers).json()["race"]
+    assert got["phase"] == "done" and got["moves"] == json.loads(row(g, T0)["result"])["moves"]
+    drop_result(g, T0, ranking=json.dumps(list(MEMBERS)[::-1] if got["ranking"] != list(MEMBERS)[::-1] else list(MEMBERS)))
+    out = client.get(f"/api/park/race/replay/{T0}", headers=headers)
+    assert out.status_code == 404 and out.json()["detail"]["code"] == "no_replay"
 
 
 OLD_RACE_TABLES = """

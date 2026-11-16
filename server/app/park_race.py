@@ -13,6 +13,10 @@ Everything is driven by tick(), which main.py calls about once a second off the 
 A restart resumes whatever is stored: a race still taking bets goes on, a race that started is settled when due.
 A race whose start the server missed by more than START_GRACE is called off and its bets refunded; it never runs
 late.
+
+Every race keeps its move list for good, so a finished race can be played again as it ran (history(), replay()).
+Servers before 1.2.4 dropped the lists after two days; such a race is played again only when its seed, run by the
+current rules, still gives the ranking and the end it was settled with (played()), and otherwise shows its result only.
 """
 from __future__ import annotations
 
@@ -25,7 +29,7 @@ from typing import Any, Callable, Iterable
 from . import race
 from .game import Game, GameError, player_id_for
 from .park import Park
-from .store import DAY_OFFSET
+from .store import DAY_OFFSET, day_of
 
 # Coin ledger sources.
 SPEND = "race"
@@ -49,9 +53,9 @@ RUN_MARGIN = 10
 START_GRACE = 5.0
 # A race is not opened with fewer seconds of bets than this left (a server starting late in the window).
 MIN_BETTING = 30
-# Finished races keep their move list this long; the seed and setup reproduce it afterwards.
-RESULT_KEEP_DAYS = 2
 WINNERS = 5
+# Finished races the history lists, newest first.
+HISTORY = 30
 SEED_BYTES = 32
 # Simulated races behind a race's chances when the manifest names no `sims`.
 SIMS = 20000
@@ -220,7 +224,6 @@ class Races:
         for rid in targets:
             if g.store.race_get(rid) is None:
                 g.store.race_insert(self.prepare(rid))
-        g.store.race_prune_results(int(now) - RESULT_KEEP_DAYS * 86400)
         return wins
 
     def _start(self, race_id: int) -> None:
@@ -333,6 +336,64 @@ class Races:
             "winners": [{"id": r["id"], "member": json.loads(r["ranking"])[0]} for r in settled],
         }
 
+    def played(self, row: dict[str, Any]) -> dict[str, Any] | None:
+        """What a started race played ({start, order, rolls, moves, rest}): its stored move list, or, on a row whose
+        list a server before 1.2.4 dropped, its seed run again by the current rules, only when that gives the ranking
+        and the end the race was settled with. None otherwise: the rules changed since, and only the result stands."""
+        if row["result"]:
+            return json.loads(row["result"])
+        try:
+            again = race.run_seed(self.rules, json.loads(row["setup"]), bytes.fromhex(row["seed"]))
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None
+        if again["ranking"] != json.loads(row["ranking"]):
+            return None
+        # The end pins the number of steps and of the opening's rounds as the race played them.
+        ends = row["starts_at"] + playback_ms(lead_ms(len(again["rolls"])), len(again["moves"]), row["step_ms"],
+                                              row["slow_ms"]) / 1000
+        if abs(ends - row["ends_at"]) > 1e-3:
+            return None
+        return _result(again)
+
+    def history(self, token: str) -> dict[str, Any]:
+        """The latest HISTORY finished races, newest first: each one's China day (of its start), the ranking of a
+        settled race and whether it can be played again, and the save's bets on it in coins."""
+        g = self.game
+        pid = player_id_for(token)
+        rows = g.store.races_past(HISTORY)
+        bets: dict[int, list[dict[str, Any]]] = {}
+        for b in g.store.race_bets_in([r["id"] for r in rows], pid):
+            bets.setdefault(b["race_id"], []).append(b)
+        out = []
+        for r in rows:
+            item: dict[str, Any] = {"id": r["id"], "day": day_of(r["starts_at"]), "startsAt": r["starts_at"]}
+            mine = bets.get(r["id"], [])
+            staked = sum(b["coins"] for b in mine)
+            if r["status"] == "void":
+                item["phase"] = "void"
+                if mine:
+                    # Refunded in full.
+                    item["mine"] = {"staked": staked, "net": 0}
+            else:
+                item.update(phase="done", ranking=json.loads(r["ranking"]), replay=self.played(r) is not None)
+                if mine:
+                    won = payout(b["prize"] for b in mine)
+                    item["mine"] = {"staked": staked, "won": won, "net": won - staked}
+            out.append(item)
+        return {"races": out}
+
+    def replay(self, token: str, race_id: int) -> dict[str, Any]:
+        """A settled race as the view gives it, to play again: 404 no_race unless it is settled, no_replay when its
+        move list is gone (played())."""
+        g = self.game
+        row = g.store.race_get(race_id)
+        if not row or row["status"] != "settled":
+            raise GameError("no_race", "没有这一场")
+        out = self._race(row, player_id_for(token), g.now())
+        if not out["replay"]:
+            raise GameError("no_replay", "这一场没有回放")
+        return {"race": out}
+
     def _race(self, row: dict[str, Any], pid: str, now: float) -> dict[str, Any]:
         status = row["status"]
         phase = {"open": "betting" if now < row["starts_at"] else "starting", "running": "running",
@@ -357,20 +418,20 @@ class Races:
         }
         if status in ("running", "settled"):
             # Public from the start on: the seed and everything it decides.
-            if row["result"]:
-                result = json.loads(row["result"])
-            else:
-                result = _result(race.run_seed(self.rules, json.loads(row["setup"]), bytes.fromhex(row["seed"])))
-            # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS; rows
-            # from before the rounds' dice have no rest, and played without them (rollMs 0).
-            rolls = result.get("rolls")
-            rest = result.get("rest")
-            out.update(seed=row["seed"], endsAt=row["ends_at"], leadMs=lead_ms(len(rolls or [None])),
-                       rollMs=roll_ms(row["step_ms"]) if rest is not None else 0, stepMs=row["step_ms"],
-                       slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"], start=result["start"],
-                       moves=result["moves"], rest=rest or [], ranking=json.loads(row["ranking"]))
-            if rolls:
-                out.update(order=result["order"], rolls=rolls)
+            out.update(seed=row["seed"], endsAt=row["ends_at"], ranking=json.loads(row["ranking"]))
+            result = self.played(row)
+            if result is not None:
+                # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS;
+                # rows from before the rounds' dice have no rest, and played without them (rollMs 0).
+                rolls = result.get("rolls")
+                rest = result.get("rest")
+                out.update(leadMs=lead_ms(len(rolls or [None])),
+                           rollMs=roll_ms(row["step_ms"]) if rest is not None else 0, stepMs=row["step_ms"],
+                           slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"], start=result["start"],
+                           moves=result["moves"], rest=rest or [])
+                if rolls:
+                    out.update(order=result["order"], rolls=rolls)
+            out["replay"] = result is not None
         if status == "settled" and bets:
             staked = sum(b["coins"] for b in bets)
             won = payout(b["prize"] for b in bets)

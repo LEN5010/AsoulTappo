@@ -29,8 +29,11 @@ import {
 } from "./race";
 import TuanziToken from "./TuanziToken.vue";
 
-/** [cleared]: the race is over and its result stands in the infield; the field leaves the board. */
-const props = defineProps<{ race: Race | null; t: number; track: number; members: string[]; cleared?: boolean }>();
+/**
+ * [cleared]: the race is over and its result stands in the infield; the field leaves the board. [rate]: how fast [t]
+ * runs against the wall clock (a replay at 2×); the moves play at that rate.
+ */
+const props = defineProps<{ race: Race | null; t: number; track: number; members: string[]; cleared?: boolean; rate?: number }>();
 
 const nameOf = (m: string) => manifest.characters.find((c) => c.id === m)?.name ?? m;
 
@@ -208,6 +211,12 @@ let frame = 0;
 onMounted(() => (frame = requestAnimationFrame(() => (ready.value = true))));
 onBeforeUnmount(() => cancelAnimationFrame(frame));
 
+const rate = computed(() => props.rate ?? 1);
+// A change of rate carries the moves under way along.
+watch(rate, (k) => {
+  for (const node of Object.values(tzEls)) for (const a of node.getAnimations?.() ?? []) a.playbackRate = k;
+});
+
 /** Where the tuanzi was before the latest change, to move from. */
 let was: Record<string, At> = {};
 watch(() => props.race?.id, () => (was = {}));
@@ -336,7 +345,9 @@ watch(hops, (now, before) => {
       // where it is. The spring back after landing (SETTLE_MS) runs on into the rest of the step.
       const late = h.current === i ? Math.max(0, (h.part - (b ? SQUARE_AT : HOP_AT)) * stepLength(r, i)) : 0;
       const full = b ? p.pushLen : p.hopLen;
-      const ms = late < CATCH_UP_MS ? Math.max(1, full - late) : full;
+      // A tick of the clock is rate × as long on the race's time.
+      const catchUp = CATCH_UP_MS * rate.value;
+      const ms = late < catchUp ? Math.max(1, full - late) : full;
       let frames: Keyframe[];
       if (b && s.square === "portal") frames = portalFrames(from, to, unit, ms);
       else if (b && s.square === "flip") frames = flipFrames(from, to, unit, ms);
@@ -348,7 +359,8 @@ watch(hops, (now, before) => {
         frames = walkFrames([from, ...path.map((sq, j) => (j === path.length - 1 ? to : footOf(sq, Math.max(0, lvl), n)))], unit, ms);
       }
       const run = node.animate(frames, { duration: ms + SETTLE_MS });
-      if (late >= CATCH_UP_MS) run.currentTime = late;
+      run.playbackRate = rate.value;
+      if (late >= catchUp) run.currentTime = late;
     }
   }
   was = { ...ats.value };

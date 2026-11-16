@@ -287,7 +287,7 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "no_save": 409, "no_reward": 409, "reward_open": 409,
           # The park (park.py and its games).
           "no_park": 404, "park_locked": 409, "no_coins": 409, "bad_count": 400, "card_hidden": 409,
-          "race_closed": 409, "race_cap": 409, "odds_changed": 409, "no_race": 404, "lottery_closed": 409, "lottery_cap": 409,
+          "race_closed": 409, "race_cap": 409, "odds_changed": 409, "no_race": 404, "no_replay": 404, "lottery_closed": 409, "lottery_cap": 409,
           "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
           "login_required": 401, "too_many_tries": 429, "no_code": 409}
 
@@ -520,6 +520,18 @@ class RaceBetBody(BaseModel):
 def api_park_race(who: PlayerId = Depends(player)) -> dict:
     """The race shown now, the finished one before it, the latest winners and when the next bets open."""
     return _guard(races.view, who)
+
+
+@app.get("/api/park/race/history")
+def api_park_race_history(who: PlayerId = Depends(player)) -> dict:
+    """The latest finished races: day, ranking, whether each can be played again, and my bets on it."""
+    return _guard(races.history, who)
+
+
+@app.get("/api/park/race/replay/{race_id}")
+def api_park_race_replay(race_id: int, who: PlayerId = Depends(player)) -> dict:
+    """A settled race with its move list, as GET /api/park/race gives a race, to play again."""
+    return _guard(races.replay, who, race_id)
 
 
 @app.post("/api/park/race/bet")

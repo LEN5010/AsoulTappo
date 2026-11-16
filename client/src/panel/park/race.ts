@@ -115,6 +115,20 @@ export interface Race {
   ranking?: string[];
   /** My bets on the settled race, in coins: [won] is the bets' prizes summed and rounded half up. */
   result?: { staked: number; won: number; net: number };
+  /** Started races: whether the move list is there to play (false on old races whose list is gone: result only). */
+  replay?: boolean;
+}
+
+/** A finished race in GET /api/park/race/history: [day] is the China day of its start. */
+export interface RacePast {
+  id: number;
+  day: string;
+  startsAt: number;
+  phase: "done" | "void";
+  ranking?: string[];
+  replay?: boolean;
+  /** My bets on it in coins; a void race's came back in full (net 0, no won). */
+  mine?: { staked: number; won?: number; net: number };
 }
 
 export interface RaceAnswer {
@@ -487,4 +501,28 @@ export function momentOf(s: RaceStep, before: string | undefined, after: string 
   }
   if (s.carry?.length) return { kind: "carry", m: s.m, from: HOP_AT + HOP_LEN };
   return null;
+}
+
+// ---------------------------------------------------------------- playing a finished race again
+
+/** The China day (YYYY-MM-DD) of [ts] (unix seconds), as the server names a race's day. */
+export const chinaDay = (ts: number): string => new Date((ts + 8 * 3600) * 1000).toISOString().slice(0, 10);
+
+/**
+ * A replay's own clock: [from] ms into the race at local time [anchor] (ms), running [speed] times as fast as the
+ * wall clock from there.
+ */
+export interface ReplayClock { from: number; anchor: number; speed: number }
+
+/** How long a race plays, ms from startsAt to endsAt. */
+export const playLength = (race: Race): number => Math.max(0, ((race.endsAt ?? race.startsAt) - race.startsAt) * 1000);
+
+/** The race's server time (ms) a replay shows at local time [now]; it stops at the end. */
+export function replayTime(race: Race, c: ReplayClock, now: number): number {
+  return race.startsAt * 1000 + Math.min(playLength(race), c.from + Math.max(0, now - c.anchor) * c.speed);
+}
+
+/** The clock moved to [from] ms into the race (the end at most) at [now], at [speed]. */
+export function replayAt(race: Race, from: number, now: number, speed: number): ReplayClock {
+  return { from: Math.max(0, Math.min(playLength(race), from)), anchor: now, speed };
 }
