@@ -3,7 +3,13 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { HitRect } from "../hit";
 
 export const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-export const isPanelWindow = isTauri && new URLSearchParams(window.location.search).get("window") === "panel";
+const windowParam = typeof window !== "undefined" ? new URLSearchParams(window.location?.search ?? "").get("window") : null;
+export const isPanelWindow = isTauri && windowParam === "panel";
+/** The todos' own window (`?window=todo`): a window of the app, or a popup of the browser preview. */
+export const isTodoWindow = windowParam === "todo";
+/** This window's label in the app: the desk overlay is "main". */
+export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "todo" : "main";
+export type WindowLabel = typeof windowLabel;
 
 export type MouseButton = "left" | "right" | "middle" | "other";
 /** Privacy-filtered input events from the Rust hook (src-tauri/src/input.rs). No key identity. */
@@ -117,6 +123,12 @@ export async function listenInputAccess(cb: (missing: boolean) => void): Promise
 /** Opens the Input Monitoring page of System Settings. */
 export const openInputSettings = () => call("open_input_settings", {});
 
+/** The todos' window was moved to [x], [y] (its top left corner, screen pixels). */
+export async function listenTodoMoved(cb: (x: number, y: number) => void): Promise<UnlistenFn> {
+  if (!isTauri) return () => {};
+  return listen<[number, number]>("todo:moved", ({ payload: [x, y] }) => cb(x, y), { target: "main" });
+}
+
 /** A mouse press that fell through the overlay onto another window. */
 export async function listenOutsideClick(cb: () => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
@@ -134,8 +146,6 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
-/** While a text box on the desk is being typed into, the overlay takes keyboard focus (on Windows it never does otherwise). */
-export const setOverlayTyping = (on: boolean) => call("set_overlay_typing", { on });
 /** Registers the hide key ("" removes it). Rejects when the system refuses the shortcut. */
 /** What a global shortcut does: hide the pet and the panel, or flip click-through. */
 export type HotkeySlot = "hide" | "click-through";

@@ -9,7 +9,6 @@ import CounterBar from "./pet/CounterBar.vue";
 import QuickEmote from "./pet/QuickEmote.vue";
 import StatusDock from "./pet/StatusDock.vue";
 import PomodoroDock from "./pet/PomodoroDock.vue";
-import TodoDock from "./pet/TodoDock.vue";
 import GripMenu from "./pet/GripMenu.vue";
 import CooldownBubble from "./pet/CooldownBubble.vue";
 import ParkNewsBubble from "./pet/ParkNewsBubble.vue";
@@ -20,8 +19,10 @@ import NudgeBubble from "./pet/NudgeBubble.vue";
 import PomodoroChip from "./pet/PomodoroChip.vue";
 import { NUDGE_HEIGHT, NUDGE_WIDTH, noteNudgeInput, nudge, startNudges } from "./stores/nudge";
 import { beginPomodoro, endPomodoro, focusing, notePomodoroPress, pomodoro, startPomodoroClock } from "./stores/pomodoro";
-import { startTodoClock, todoNow, todos, todosWaiting } from "./stores/todo";
+import { todoNow, todos } from "./stores/todo";
+import { startTodoClock, todosWaiting } from "./stores/todoClock";
 import { isOverdue } from "./todo";
+import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
 import {
   DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
@@ -48,14 +49,14 @@ import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
   nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, viewport, type FormationPlace, type Pos, type Size,
 } from "./stores/desk";
-import { openPanel, togglePanel, ui } from "./stores/ui";
+import { openPanel, openTodoWindow, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTray, setAlwaysOnTop, setClickThrough, setHotkey,
-  setHitRegions, type InputBlocked,
+  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTodoMoved, listenTray, setAlwaysOnTop,
+  setClickThrough, setHotkey, setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
 // ---- viewport
@@ -94,14 +95,12 @@ const statusOpen = ref(false);
 const gripOpen = ref(false);
 /** The tomato timer's page: under the own name plate, or in place of the quick emotes under the strip. */
 const pomodoroOpen = ref(false);
-/** The todos' page, placed like the tomato timer's. */
-const todoOpen = ref(false);
 const PEEK_MS = 6000;
 let peekTimer: ReturnType<typeof setTimeout> | undefined;
 /** Restarts the countdown; the quick emotes hold the strip open while they are. */
 function keepPeek() {
   clearTimeout(peekTimer);
-  if (peek.value && !ui.quickOpen && !statusOpen.value && !pomodoroOpen.value && !todoOpen.value) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
+  if (peek.value && !ui.quickOpen && !statusOpen.value && !pomodoroOpen.value) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
 }
 function onOwnTap() {
   if (barPinned.value || settings.clickThrough) return;
@@ -165,7 +164,7 @@ function swapPlate() {
  * comes out for it (a docked pet rises off the edge).
  */
 function openPomodoro() {
-  gripOpen.value = statusOpen.value = todoOpen.value = false;
+  gripOpen.value = statusOpen.value = false;
   pomodoroOpen.value = true;
   if (!barPinned.value) peek.value = true;
   if (!plateShown.value) ui.quickOpen = true;
@@ -173,15 +172,18 @@ function openPomodoro() {
 function closePomodoro() {
   pomodoroOpen.value = ui.quickOpen = false;
 }
-/** The todos' page, from its key on the quick emotes, the strip's menu or the bubble for several todos. */
+/** The todos' own window, from its key on the quick emotes, the strip's menu or the bubble for several todos. */
 function openTodo() {
   gripOpen.value = statusOpen.value = pomodoroOpen.value = false;
-  todoOpen.value = true;
-  if (!barPinned.value) peek.value = true;
-  if (!plateShown.value) ui.quickOpen = true;
+  // The tune of a todo rings here: a press in this window lets it play later.
+  if (settings.todoSound) wakeAudio();
+  openTodoWindow();
 }
-function closeTodo() {
-  todoOpen.value = ui.quickOpen = false;
+/** Where the todos' window was moved to, kept once it rests, so it opens there next time. */
+let todoMoved: ReturnType<typeof setTimeout> | undefined;
+function keepTodoSpot(x: number, y: number) {
+  clearTimeout(todoMoved);
+  todoMoved = setTimeout(() => { settings.todoX = x; settings.todoY = y; }, 300);
 }
 /** A todo is past its time: its key on the quick emotes is tinted. */
 const todoLate = computed(() => todos.value.some((t) => isOverdue(t, todoNow.value)));
@@ -211,9 +213,9 @@ const ownName = computed(() => nameBand(settings.scale));
 const ownNick = computed(() => settings.nick.trim() || settings.character);
 // The room sees the status only while this desk is in one, so the own tag shows it only then too.
 const ownStatus = computed(() => (inRoom.value ? settings.status : null));
-watch(barShown, (shown) => { if (!shown) ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = todoOpen.value = false; });
+watch(barShown, (shown) => { if (!shown) ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = false; });
 watch(inRoom, (inside) => { if (!inside) statusOpen.value = false; });
-watch([peek, () => ui.quickOpen, statusOpen, pomodoroOpen, todoOpen], keepPeek);
+watch([peek, () => ui.quickOpen, statusOpen, pomodoroOpen], keepPeek);
 // Daily tap statistics and the local counter use the same China calendar day.
 watch(() => [status.value?.totals.taps, status.value?.dailyTaps] as const, ([total, daily]) => {
   if (typeof total !== "number") return;
@@ -232,19 +234,18 @@ function pickStatus(id: string) {
 }
 function toggleQuick() {
   ui.quickOpen = !ui.quickOpen;
-  statusOpen.value = gripOpen.value = pomodoroOpen.value = todoOpen.value = false;
+  statusOpen.value = gripOpen.value = pomodoroOpen.value = false;
 }
 function toggleStatus() {
   statusOpen.value = !statusOpen.value;
-  gripOpen.value = pomodoroOpen.value = todoOpen.value = false;
+  gripOpen.value = pomodoroOpen.value = false;
 }
 function closeQuick(e: Event) {
   notePomodoroPress();
   const t = e.target as HTMLElement | null;
-  if (!t?.closest?.(".dock, .spark, .status-dock, .pomo-dock, .pomo, .todo-dock")) ui.quickOpen = false;
+  if (!t?.closest?.(".dock, .spark, .status-dock, .pomo-dock, .pomo")) ui.quickOpen = false;
   if (!t?.closest?.(".status-dock, .own-tag, .dock, .spark")) statusOpen.value = false;
   if (!t?.closest?.(".pomo-dock, .pomo, .dock, .spark, .grip-menu")) pomodoroOpen.value = false;
-  if (!t?.closest?.(".todo-dock, .dock, .spark, .grip-menu")) todoOpen.value = false;
   if (!t?.closest?.(".grip-menu, .grip, .plate-grip")) gripOpen.value = false;
   if (!t?.closest?.("[data-own-pet]")) peek.value = false;
   // The duel key over a partner's pet closes on a press anywhere else; a click on a pet shows it again.
@@ -369,6 +370,7 @@ let stopCapture: (() => void) | undefined;
 let stopNudges: (() => void) | undefined;
 let stopPomodoro: (() => void) | undefined;
 let stopTodos: (() => void) | undefined;
+let unTodoMoved: (() => void) | undefined;
 // The desk window watches the server's minimum version itself; the panel, which holds the dialog, may never be opened.
 watch(updateForced, (must) => { if (must) openPanel(); });
 // Shown from the first time an elevated program kept the pet from hearing input, until closed.
@@ -379,7 +381,7 @@ const accessHint = ref(false);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
-  ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = todoOpen.value = false;
+  ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = false;
   peek.value = false;
   closePick();
 };
@@ -403,6 +405,7 @@ onMounted(async () => {
   stopTodos = startTodoClock();
   unInput = await listenInput((e) => { onInput(e); noteNudgeInput(); });
   unOutside = await listenOutsideClick(closeQuickAway);
+  unTodoMoved = await listenTodoMoved(keepTodoSpot);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "open-panel") openPanel();
@@ -453,6 +456,8 @@ onBeforeUnmount(() => {
   stopNudges?.();
   stopPomodoro?.();
   stopTodos?.();
+  unTodoMoved?.();
+  clearTimeout(todoMoved);
   unAccess?.();
   stopPet();
 });
@@ -465,10 +470,10 @@ watch(() => settings.clickThroughKey, (v) => void setHotkey("click-through", v).
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {
-    ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = todoOpen.value = false;
+    ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = false;
   }
 });
-watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomodoroOpen.value, todoOpen.value, draws.value, !!pomodoro.value], kick, { flush: "post" });
+watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomodoroOpen.value, draws.value, !!pomodoro.value], kick, { flush: "post" });
 </script>
 
 <template>
@@ -540,7 +545,6 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
           @todo="openTodo"
         />
         <PomodoroDock v-if="pomodoroOpen" :ceiling="plateCeiling" @done="closePomodoro" />
-        <TodoDock v-else-if="todoOpen" :ceiling="plateCeiling" @done="closeTodo" />
         <StatusDock v-else-if="statusOpen && inRoom" :model-value="settings.status" :ceiling="plateCeiling" @update:model-value="pickStatus" />
       </div>
       <CounterBar
@@ -556,11 +560,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
           @todo="openTodo"
         />
         <PomodoroDock v-if="ui.quickOpen && pomodoroOpen" :ceiling="plateCeiling" @done="closePomodoro" />
-        <TodoDock v-else-if="ui.quickOpen && todoOpen" :ceiling="plateCeiling" @done="closeTodo" />
         <StatusDock v-else-if="ui.quickOpen && statusOpen" :model-value="settings.status" :ceiling="plateCeiling" @update:model-value="pickStatus" />
         <QuickEmote
           v-else-if="ui.quickOpen" :keys="quickKeys" :status="ownStatus" :pomodoro="!!pomodoro" :todo="todoLate"
-          :ceiling="plateCeiling" @pick="pickQuick" @status="statusOpen = true" @pomodoro="pomodoroOpen = true" @todo="todoOpen = true"
+          :ceiling="plateCeiling" @pick="pickQuick" @status="statusOpen = true" @pomodoro="pomodoroOpen = true" @todo="openTodo"
         />
       </CounterBar>
       </Transition>

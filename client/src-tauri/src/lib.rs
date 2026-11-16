@@ -76,17 +76,17 @@ fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
 /// macOS gives a full-screen app a Space of its own. Without these flags the pet stays on the Space it
 /// started on and is gone while another desktop or a full-screen app is shown.
 #[cfg(target_os = "macos")]
-fn join_all_spaces(w: &WebviewWindow) {
+fn join_all_spaces(w: &WebviewWindow, tag: &str) {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
     match w.ns_window() {
         Ok(ptr) if !ptr.is_null() => {
             // SAFETY: Tauri hands out the window's live NSWindow; setup runs on the main thread.
             let ns = unsafe { &*(ptr as *const NSWindow) };
             ns.setCollectionBehavior(ns.collectionBehavior() | B::CanJoinAllSpaces | B::FullScreenAuxiliary);
-            applog!("overlay", "joins all Spaces and full-screen apps");
+            applog!(tag, "joins all Spaces and full-screen apps");
         }
-        Ok(_) => applog!("overlay", "no NSWindow to join all Spaces"),
-        Err(e) => applog!("overlay", "join all Spaces failed: {e}"),
+        Ok(_) => applog!(tag, "no NSWindow to join all Spaces"),
+        Err(e) => applog!(tag, "join all Spaces failed: {e}"),
     }
 }
 
@@ -110,26 +110,6 @@ fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String>
         }
         applog!("overlay", "always on top {}", on_off(enabled));
     }
-    Ok(())
-}
-
-/// The desk's todo box is being typed into (or no longer is). The Windows overlay is kept from taking focus
-/// (WS_EX_NOACTIVATE, see setup), so it cannot get keys; for the typing it is made focusable and focused, and
-/// afterwards it goes back. Elsewhere the overlay takes focus on a click already.
-#[tauri::command]
-fn set_overlay_typing(app: tauri::AppHandle, on: bool) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    if let Some(window) = main_window(&app) {
-        window.set_focusable(on).map_err(|e| {
-            applog!("overlay", "focusable {} failed: {e}", on_off(on));
-            e.to_string()
-        })?;
-        if on {
-            window.set_focus().map_err(|e| e.to_string())?;
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    let _ = (app, on);
     Ok(())
 }
 
@@ -375,6 +355,112 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     open_panel(app, None, None).await
+}
+
+/// The todos' window, in logical pixels: a card with its own title bar on a transparent window.
+const TODO_SIZE: (f64, f64) = (320.0, 460.0);
+/// Its distance from the corner of the work area the first time it opens, in logical pixels.
+const TODO_MARGIN: f64 = 24.0;
+
+fn show_window(window: &WebviewWindow) -> Result<(), String> {
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+/// The todos' window: small, frameless, over other windows unless unpinned, not in the taskbar, and a regular
+/// window that takes the keyboard (the overlay never does on Windows). Closing hides it, so it opens again at once.
+/// `x`, `y`: where it was left, in screen pixels, used while that spot is on a monitor; otherwise it goes to the
+/// bottom right of the pet's monitor. The page shows it once it has drawn (`show_todo`). Moves are reported to the
+/// desk (`todo:moved`), which keeps the spot.
+#[tauri::command]
+async fn open_todo(app: tauri::AppHandle, x: Option<i32>, y: Option<i32>, on_top: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("todo") {
+        return show_window(&window);
+    }
+    let window = WebviewWindowBuilder::new(&app, "todo", WebviewUrl::App("index.html?window=todo".into()))
+        .title("待办")
+        .inner_size(TODO_SIZE.0, TODO_SIZE.1)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .transparent(true)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(on_top)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|e| {
+            applog!("todo", "create failed: {e}");
+            e.to_string()
+        })?;
+    applog!("todo", "created");
+    #[cfg(target_os = "macos")]
+    join_all_spaces(&window, "todo");
+    match x.zip(y).filter(|&(x, y)| on_a_monitor(&window, x, y)) {
+        Some((x, y)) => window.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?,
+        None => place_todo(&app, &window)?,
+    }
+    Ok(())
+}
+
+/// A spot just inside the top of a window placed at `x`, `y` lies in some monitor's work area: its title bar can
+/// be reached to move it.
+fn on_a_monitor(window: &WebviewWindow, x: i32, y: i32) -> bool {
+    let (px, py) = (x + (TODO_SIZE.0 / 2.0) as i32, y + 16);
+    window.available_monitors().is_ok_and(|monitors| {
+        monitors.iter().any(|m| {
+            let area = m.work_area();
+            px >= area.position.x
+                && py >= area.position.y
+                && px < area.position.x + area.size.width as i32
+                && py < area.position.y + area.size.height as i32
+        })
+    })
+}
+
+/// The first spot of the todos' window: the bottom right of the work area of the pet's monitor.
+fn place_todo(app: &tauri::AppHandle, window: &WebviewWindow) -> Result<(), String> {
+    let monitor = main_window(app)
+        .and_then(|w| w.current_monitor().ok().flatten())
+        .or_else(|| window.current_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return Ok(()) };
+    let area = monitor.work_area();
+    let scale = monitor.scale_factor();
+    let (w, h, margin) = ((TODO_SIZE.0 * scale) as i32, (TODO_SIZE.1 * scale) as i32, (TODO_MARGIN * scale) as i32);
+    window
+        .set_position(PhysicalPosition::new(
+            area.position.x + area.size.width as i32 - w - margin,
+            area.position.y + area.size.height as i32 - h - margin,
+        ))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn show_todo(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("todo") {
+        Some(window) => show_window(&window),
+        None => Ok(()),
+    }
+}
+
+#[tauri::command]
+fn hide_todo(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("todo") {
+        Some(window) => window.hide().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
+}
+
+/// The pin of the todos' window: over other windows or not.
+#[tauri::command]
+fn set_todo_on_top(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    match app.get_webview_window("todo") {
+        Some(window) => window.set_always_on_top(on).map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
 }
 
 /// WebKit stops painting a web view once its window is fully covered. The capture window is usually behind
@@ -846,13 +932,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_click_through,
             set_always_on_top,
-            set_overlay_typing,
             set_hit_regions,
             set_dragging,
             open_panel,
             toggle_panel,
             show_panel,
             hide_panel,
+            open_todo,
+            show_todo,
+            hide_todo,
+            set_todo_on_top,
             set_capture_window,
             open_about_link,
             export_log,
@@ -874,6 +963,18 @@ pub fn run() {
                     api.prevent_close();
                     let _ = window.hide();
                     let _ = window.emit("panel:visible", false);
+                }
+            }
+            if window.label() == "todo" {
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    tauri::WindowEvent::Moved(pos) => {
+                        let _ = window.emit_to("main", "todo:moved", (pos.x, pos.y));
+                    }
+                    _ => {}
                 }
             }
             if window.label() == "capture" {
@@ -971,7 +1072,7 @@ pub fn run() {
                     Err(e) => applog!("overlay", "tool window subclass failed: {e}"),
                 }
                 #[cfg(target_os = "macos")]
-                join_all_spaces(&w);
+                join_all_spaces(&w, "overlay");
                 // The monitor last picked from the tray, while it is plugged in; else the primary one.
                 let saved = monitor_pref::load(app.handle())
                     .and_then(|key| monitor_keys(&w).ok().and_then(|keys| monitor_pref::pick(&keys, &key)));

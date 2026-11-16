@@ -27,6 +27,9 @@ const PATHS: Record<string, string[]> = {
   check: ["M5 13l4.5 4.5L19 7"],
   search: ["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "M16 16l5 5"],
   back: ["M14.5 5.5L8 12l6.5 6.5"],
+  forward: ["M9.5 5.5L16 12l-6.5 6.5"],
+  send: ["M12 19V5", "M6 11l6-6 6 6"],
+  pin: ["M9 3.5h6", "M10 3.5v5.5l-3.5 4h11L14 9V3.5", "M12 13v7.5"],
   pause: ["M8.5 5v14", "M15.5 5v14"],
   sound: ["M4 9.5h3.5L13 5v14l-5.5-4.5H4z", "M16.5 9a4 4 0 0 1 0 6", "M19 6.5a8 8 0 0 1 0 11"],
   mute: ["M4 9.5h3.5L13 5v14l-5.5-4.5H4z", "M16.5 9.5l5 5", "M21.5 9.5l-5 5"],
@@ -63,7 +66,7 @@ const PATHS: Record<string, string[]> = {
   // The strip's menu (GripMenu.vue).
   fold: ["M4 19h16", "M12 5v10", "M7.5 10.5L12 15l4.5-4.5"],
   swap: ["M7 4L3.5 7.5 7 11", "M3.5 7.5h15", "M17 13l3.5 3.5L17 20", "M20.5 16.5h-15"],
-  // Todos (TodoDock.vue): two ticked rows.
+  // Todos (TodoApp.vue): two ticked rows.
   todo: ["M3.5 7.5l2 2L9 6", "M12.5 8h8", "M3.5 15.5l2 2L9 14", "M12.5 16h8"],
   // Room statuses (roomStatus.ts); `off` is showing none, `status` the key that opens them.
   off: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M5.6 5.6l12.8 12.8"],

@@ -2,6 +2,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { markRaw, ref, watch } from "vue";
 import { isPanelWindow, isTauri } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
+import { syncSettings } from "./settingsSync";
 import * as player from "../stores/player";
 import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
@@ -117,28 +118,6 @@ function applyRuntime(updates: Runtime[], local: LocalPet) {
   room.localPet.win = local.win;
 }
 
-/** Settings travel as patches so activity updates preserve edits in the panel. */
-async function syncSettings() {
-  let receiving = false;
-  const apply = (patch: Partial<Settings>) => {
-    receiving = true;
-    Object.assign(settings, patch);
-    receiving = false;
-  };
-  const unlisten = await listen<Partial<Settings>>("desktop:settings", ({ payload }) => apply(payload),
-    { target: isPanelWindow ? "panel" : "main" });
-  const stop = watch(() => ({
-    ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase], skinNotes: { ...settings.skinNotes },
-  }), (value, old) => {
-    if (receiving) return;
-    const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>
-      JSON.stringify(v) !== JSON.stringify(old[key as keyof Settings]),
-    ));
-    void emitTo(isPanelWindow ? "main" : "panel", "desktop:settings", patch);
-  }, { deep: true, flush: "sync" });
-  return { apply, stop: () => { unlisten(); stop(); } };
-}
-
 /** The desk owns network state; the visible panel subscribes to independent slices. */
 export async function initDesktop(): Promise<() => void> {
   if (!isTauri) return () => {};
@@ -244,7 +223,9 @@ export async function initDesktop(): Promise<() => void> {
       await publish();
     }
   }, { target: "main" });
-  const unlisten = await listen<DesktopRequest>("desktop:request", async ({ payload: { id, action, args } }) => {
+  // The todos' window (desktop/todoBridge.ts) gets the list on every change, also while it is hidden: it is small.
+  const stopTodos = watch(() => todoStore.todos.value, (list) => { void emitTo("todo", "desktop:todos", list); }, { flush: "sync" });
+  const unlisten = await listen<DesktopRequest>("desktop:request", async ({ payload: { id, action, args, from = "panel" } }) => {
     try {
       let result: unknown;
       switch (action) {
@@ -275,16 +256,17 @@ export async function initDesktop(): Promise<() => void> {
         case "beginPomodoro": pomodoroStore.beginPomodoro(); break;
         case "endPomodoro": pomodoroStore.endPomodoro(); break;
         case "todo": todoStore.todoRequest(args[0] as todoStore.TodoMethod, args[1]); break;
+        case "todoSync": result = { settings, todos: todoStore.todos.value }; break;
       }
       await publish();
-      await emitTo("panel", `desktop:reply:${id}`, { result });
+      await emitTo(from, `desktop:reply:${id}`, { result });
     } catch (e) {
-      await emitTo("panel", `desktop:reply:${id}`, { error: e instanceof Error ? e.message : String(e) });
+      await emitTo(from, `desktop:reply:${id}`, { error: e instanceof Error ? e.message : String(e) });
     }
   }, { target: "main" });
   const syncedSettings = await syncSettings();
   return () => {
-    unlisten(); unInterest(); stops.forEach((stop) => stop()); stopMembers(); stopEmote(); stopMotion();
+    unlisten(); unInterest(); stops.forEach((stop) => stop()); stopMembers(); stopEmote(); stopMotion(); stopTodos();
     room.setPanelMotionInterest([]);
     memberStops.forEach((stop) => stop()); clearTimeout(motionTimer); clearTimeout(stateTimer); syncedSettings.stop();
   };

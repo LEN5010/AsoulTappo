@@ -1,6 +1,7 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
 import { roomStatus } from "../roomStatus";
+import { isTauri } from "../composables/tauri";
 
 export interface Settings {
   serverUrl: string;
@@ -68,6 +69,11 @@ export interface Settings {
   todoSound: boolean;
   /** A notice from the system too when a todo comes due. */
   todoNotify: boolean;
+  /** The todos' window stays over other windows. */
+  todoPinned: boolean;
+  /** Where the todos' window was left: its top left corner in screen pixels; both -1 before it was first moved. */
+  todoX: number;
+  todoY: number;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
   /** How partners stand: each where it was dragged ("free"), or together in rows that move as one ("formation"). */
@@ -149,6 +155,9 @@ export const DEFAULT_SETTINGS: Settings = {
   pomodoroNotify: false,
   todoSound: true,
   todoNotify: false,
+  todoPinned: true,
+  todoX: -1,
+  todoY: -1,
   showPartners: true,
   partnerLayout: "free",
   formationCols: 5,
@@ -219,6 +228,9 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.formationCols = Math.min(10, Math.max(1, Math.round(out.formationCols)));
   out.formationX = Math.max(-1, Math.round(out.formationX));
   out.formationY = Math.max(-1, Math.round(out.formationY));
+  // Screen pixels may be negative left of or above the main monitor.
+  out.todoX = Math.round(out.todoX);
+  out.todoY = Math.round(out.todoY);
   if (!roomStatus(out.status)) out.status = "";
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
@@ -240,3 +252,11 @@ watch(
   },
   { deep: true },
 );
+
+// The browser preview opens the todos' window as a popup of the same origin: each page follows the settings the
+// other one writes. The app's windows pass theirs through the desk instead (desktop/settingsSync.ts).
+if (!isTauri && typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === KEY && e.newValue) Object.assign(settings, loadSettings());
+  });
+}

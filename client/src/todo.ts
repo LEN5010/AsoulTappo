@@ -6,6 +6,8 @@
 //   counted as late.
 // - A repeating todo keeps its time until it is ticked off; ticking it off moves it to the next time after now.
 // - Ticked-off todos stay for KEEP_DONE_MS, then go.
+// - An all-day todo has a day and no time of day: `at` is that day at MORNING_HOUR, when it rings. Set for today after
+//   that hour it starts as rung; it is overdue only once its day is over.
 
 export type TodoRepeat = "none" | "daily" | "weekdays" | "weekly";
 export const REPEATS: readonly TodoRepeat[] = ["none", "daily", "weekdays", "weekly"];
@@ -16,6 +18,8 @@ export interface Todo {
   title: string;
   /** Reminder time in ms since the epoch; null for none. */
   at: number | null;
+  /** A day without a time of day: `at` is that day at MORNING_HOUR. Absent in lists stored before 1.2.4 (timed). */
+  allDay: boolean;
   /** Always "none" without a time. */
   repeat: TodoRepeat;
   /** Reminded again at this time (the bubble's later key); kept after it rings. */
@@ -35,10 +39,10 @@ export const SNOOZE_MS = 10 * MIN;
 /** A reminder found later than this after its time passed while the app was not watching: it is late. */
 export const LATE_MS = 2 * MIN;
 export const KEEP_DONE_MS = 7 * DAY;
-/** The quick times: tonight's and tomorrow morning's hour; before EARLY_HOUR, tomorrow morning is this morning. */
-export const TONIGHT_HOUR = 20;
+/** An all-day todo rings at this hour of its day. */
 export const MORNING_HOUR = 9;
-export const EARLY_HOUR = 5;
+/** The quick hours of the time picker. */
+export const QUICK_HOURS = [9, 12, 18, 20] as const;
 
 export const DONE_LINES = ["做完啦", "好耶，又完成一件", "干得漂亮"];
 
@@ -96,14 +100,38 @@ export function nextTime(at: number, repeat: TodoRepeat, after: number): number 
   return d.getTime();
 }
 
-export function newTodo(id: string, title: string, at: number | null, repeat: TodoRepeat, now: number): Todo {
-  const time = at == null ? null : Math.floor(at / MIN) * MIN;
-  const rep = time == null ? "none" : repeat;
-  return {
-    id, title: cleanTitle(title), at: time == null ? null : firstTime(time, rep), repeat: rep,
-    snooze: null, rang: null, doneAt: null, created: now,
-  };
+/** When a todo reminds: a time, or a day (`allDay`, any time of that day), and how it repeats. */
+export interface TodoWhen { at: number | null; allDay: boolean; repeat: TodoRepeat }
+export const NO_WHEN: TodoWhen = { at: null, allDay: false, repeat: "none" };
+
+/** [when] as kept: seconds dropped, an all-day time moved to MORNING_HOUR, the first time of a working-days series. */
+function placeWhen(when: TodoWhen, now: number): Pick<Todo, "at" | "allDay" | "repeat" | "rang" | "snooze"> {
+  if (when.at == null) return { at: null, allDay: false, repeat: "none", rang: null, snooze: null };
+  let time = Math.floor(when.at / MIN) * MIN;
+  if (when.allDay) {
+    const d = new Date(time);
+    d.setHours(MORNING_HOUR, 0, 0, 0);
+    time = d.getTime();
+  }
+  const at = firstTime(time, when.repeat);
+  // A day set after its morning hour has passed does not ring that day.
+  return { at, allDay: when.allDay, repeat: when.repeat, rang: when.allDay && at <= now ? at : null, snooze: null };
 }
+
+export function newTodo(id: string, title: string, when: TodoWhen, now: number): Todo {
+  return { id, title: cleanTitle(title), ...placeWhen(when, now), doneAt: null, created: now };
+}
+
+/** A new title: kept unless it is empty once cleaned. */
+export function renameTodo(t: Todo, title: string): Todo {
+  const name = cleanTitle(title);
+  return name && name !== t.title ? { ...t, title: name } : t;
+}
+
+/** A new time, day or repeat (or none): it rings afresh by the new one. */
+export const retimeTodo = (t: Todo, when: TodoWhen, now: number): Todo => ({ ...t, ...placeWhen(when, now) });
+
+export const whenOf = (t: Todo): TodoWhen => ({ at: t.at, allDay: t.at != null && t.allDay, repeat: t.repeat });
 
 /** Ticked off: a repeating todo moves to its next time after now (or after its own time, ticked off early). */
 export function completeTodo(t: Todo, now: number): Todo {
@@ -150,65 +178,81 @@ export function stepTodos(list: Todo[], now: number): TodoStep {
   return { list: changed ? out : list, onTime, late };
 }
 
-/** Open and past its time. */
-export const isOverdue = (t: Todo, now: number) => t.doneAt == null && t.at != null && t.at <= now;
+/** Open and past its time; an all-day one once its day is over. */
+export const isOverdue = (t: Todo, now: number) =>
+  t.doneAt == null && t.at != null && (t.allDay ? dayEnd(t.at) <= now : t.at <= now);
 
-/** Open ones by time (untimed last, then by when they were added), ticked-off ones after them, latest first. */
-export function sortTodos(list: readonly Todo[]): Todo[] {
+/**
+ * The list as shown at [now]: overdue first, then by time (an all-day one at the start of its day, before the timed
+ * ones of that day), untimed after them by when they were added; ticked-off ones last, latest first.
+ */
+export function sortTodos(list: readonly Todo[], now: number): Todo[] {
+  const key = (t: Todo) => (t.at == null ? Infinity : t.allDay ? dayStart(t.at) : t.at);
   return [...list].sort((a, b) => {
     if ((a.doneAt == null) !== (b.doneAt == null)) return a.doneAt == null ? -1 : 1;
     if (a.doneAt != null && b.doneAt != null) return b.doneAt - a.doneAt;
-    if ((a.at == null) !== (b.at == null)) return a.at == null ? 1 : -1;
-    return (a.at ?? 0) - (b.at ?? 0) || a.created - b.created;
+    const late = Number(isOverdue(b, now)) - Number(isOverdue(a, now));
+    if (late) return late;
+    return key(a) - key(b) || (a.allDay === b.allDay ? 0 : a.allDay ? -1 : 1) || a.created - b.created;
   });
 }
 
-/** Today's view: timed todos due by the end of today, open or ticked off today. */
-export function todayTodos(list: readonly Todo[], now: number): Todo[] {
-  const start = dayStart(now);
-  const end = dayEnd(now);
-  return sortTodos(list.filter((t) => t.at != null && t.at < end && (t.doneAt == null || t.doneAt >= start)));
+/** The quick hours of the time picker on the day of [day]: each one's time, and whether it has passed at [now]. */
+export function quickHours(day: number, now: number): { hour: number; at: number; past: boolean }[] {
+  return QUICK_HOURS.map((hour) => {
+    const at = timeAt(day, 0, hour, 0);
+    return { hour, at, past: at <= now };
+  });
 }
 
-/** The quick times offered at [now]; tonight's is left out once it has passed. */
-export function quickTimes(now: number): { key: "hour" | "tonight" | "morning"; label: string; at: number }[] {
-  const hour = Math.floor((now + 60 * MIN) / MIN) * MIN;
-  const d = new Date(now);
-  const tonight = new Date(now);
-  tonight.setHours(TONIGHT_HOUR, 0, 0, 0);
-  const morning = new Date(now);
-  if (d.getHours() >= EARLY_HOUR) morning.setDate(morning.getDate() + 1);
-  morning.setHours(MORNING_HOUR, 0, 0, 0);
-  const out: { key: "hour" | "tonight" | "morning"; label: string; at: number }[] = [{ key: "hour", label: "一小时后", at: hour }];
-  if (tonight.getTime() > now) out.push({ key: "tonight", label: `今晚 ${TONIGHT_HOUR - 12} 点`, at: tonight.getTime() });
-  out.push({ key: "morning", label: `明早 ${MORNING_HOUR} 点`, at: morning.getTime() });
-  return out;
-}
+/** An hour from [now], to the minute. */
+export const hourOn = (now: number) => Math.floor((now + 60 * MIN) / MIN) * MIN;
 
 /** Whole days from the day of [now] to the day of [t] (negative before it). */
 export function dayOffset(t: number, now: number): number {
   return Math.round((dayStart(t) - dayStart(now)) / DAY);
 }
 
-/** The day of [t] as seen at [now]: 今天, 明天, 昨天 or the date. */
+export const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+/** Days of the strip, today included; the days after them are named by their date. */
+export const STRIP_DAYS = 7;
+
+/** The day of [t] as seen at [now]: 今天, 明天, 昨天, the weekday within the strip's week, else the date. */
 export function dayText(t: number, now: number): string {
   const off = dayOffset(t, now);
   if (off === 0) return "今天";
   if (off === 1) return "明天";
   if (off === -1) return "昨天";
   const d = new Date(t);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  if (off > 1 && off < STRIP_DAYS) return WEEKDAYS[d.getDay()];
+  const date = `${d.getMonth() + 1}月${d.getDate()}日`;
+  return d.getFullYear() === new Date(now).getFullYear() ? date : `${d.getFullYear()}年${date}`;
 }
 
-const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-
-/** The custom time's date strip: today and the next [days] - 1 days, named 今天, 明天, 后天, then by weekday. */
-export function dayStrip(now: number, days = 7): { off: number; label: string; date: number }[] {
+/** The time picker's date strip: today and the next [days] - 1 days, named 今天, 明天, then by weekday. */
+export function dayStrip(now: number, days = STRIP_DAYS): { off: number; label: string; date: number; at: number }[] {
   return Array.from({ length: days }, (_, off) => {
     const d = new Date(now);
     d.setDate(d.getDate() + off);
-    return { off, label: off < 3 ? ["今天", "明天", "后天"][off] : WEEKDAYS[d.getDay()], date: d.getDate() };
+    d.setHours(0, 0, 0, 0);
+    return { off, label: off < 2 ? ["今天", "明天"][off] : WEEKDAYS[d.getDay()], date: d.getDate(), at: d.getTime() };
   });
+}
+
+/**
+ * The month of [month] (any time in it) as calendar weeks from Monday: each cell the local midnight of its day,
+ * null before the first and after the last.
+ */
+export function monthWeeks(month: number): (number | null)[][] {
+  const first = new Date(month);
+  first.setDate(1);
+  first.setHours(0, 0, 0, 0);
+  const lead = (first.getDay() + 6) % 7;
+  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const cells: (number | null)[] = Array.from({ length: lead }, () => null);
+  for (let day = 1; day <= days; day++) cells.push(new Date(first.getFullYear(), first.getMonth(), day).getTime());
+  while (cells.length % 7) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
 }
 
 /** Ticked-off todos, latest first. */
@@ -216,11 +260,11 @@ export const doneTodos = (list: readonly Todo[]) =>
   list.filter((t) => t.doneAt != null).sort((a, b) => b.doneAt! - a.doneAt!);
 
 const pad = (n: number) => String(n).padStart(2, "0");
-export const clockOf = (t: number) => { const d = new Date(t); return `${d.getHours()}:${pad(d.getMinutes())}`; };
+export const clockOf = (t: number) => { const d = new Date(t); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
-/** A todo's time in the list: the clock alone for today, with the day otherwise. */
-export function whenText(t: number, now: number): string {
-  return dayOffset(t, now) === 0 ? clockOf(t) : `${dayText(t, now)} ${clockOf(t)}`;
+/** A todo's time as written in the list and on the time key: 今天, 明天 20:00, 周五 09:00. */
+export function whenText(t: number, allDay: boolean, now: number): string {
+  return allDay ? dayText(t, now) : `${dayText(t, now)} ${clockOf(t)}`;
 }
 
 /** The time [days] after today at [hour]:[minute], local. */
@@ -247,8 +291,8 @@ export function readTodos(raw: unknown): Todo[] {
     const repeat = at != null && REPEATS.includes(t.repeat as TodoRepeat) ? (t.repeat as TodoRepeat) : "none";
     ids.add(t.id);
     out.push({
-      id: t.id, title, at, repeat, snooze: num(t.snooze), rang: num(t.rang), doneAt: num(t.doneAt),
-      created: num(t.created) ?? 0,
+      id: t.id, title, at, allDay: at != null && t.allDay === true, repeat, snooze: num(t.snooze), rang: num(t.rang),
+      doneAt: num(t.doneAt), created: num(t.created) ?? 0,
     });
     if (out.length >= MAX_TODOS) break;
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The strip's menu, opened from the handle at the left end of the strip or of the own name plate: fold the strip,
-// swap it for the name plate and back, the shard pops, the tomato timer's page and the todos' page. It opens above the handle, or below
+// swap it for the name plate and back, the shard pops, the tomato timer's page and the todos' window. It opens above the handle, or below
 // where the screen ends above it.
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";

@@ -1,4 +1,4 @@
-//! Global shortcuts: the hide key, which hides the pet, the panel and the capture window and shows them again, and
+//! Global shortcuts: the hide key, which hides the pet, the panel, the todos' window and the capture window and shows them again, and
 //! the click-through key, which flips click-through. Registered with the system, so they need no input permission
 //! and do not go through the hook.
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +11,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 static PANEL_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 /// The same for the capture window.
 static CAPTURE_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
+/// The same for the todos' window.
+static TODO_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// What a shortcut does.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -48,6 +50,7 @@ fn toggle(app: &AppHandle) {
     let Some(main) = app.get_webview_window("main") else { return };
     let panel = app.get_webview_window("panel");
     let capture = app.get_webview_window("capture");
+    let todo = app.get_webview_window("todo");
     if main.is_visible().unwrap_or(true) {
         applog!("hotkey", "hide");
         let shown = panel.as_ref().is_some_and(|p| p.is_visible().unwrap_or(false));
@@ -61,6 +64,11 @@ fn toggle(app: &AppHandle) {
         if let Some(c) = capture.filter(|_| shown) {
             let _ = c.hide();
         }
+        let shown = todo.as_ref().is_some_and(|t| t.is_visible().unwrap_or(false));
+        TODO_WAS_SHOWN.store(shown, Ordering::Relaxed);
+        if let Some(t) = todo.filter(|_| shown) {
+            let _ = t.hide();
+        }
         let _ = main.hide();
     } else {
         applog!("hotkey", "show");
@@ -71,6 +79,9 @@ fn toggle(app: &AppHandle) {
         }
         if let Some(c) = capture.filter(|_| CAPTURE_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
             let _ = c.show();
+        }
+        if let Some(t) = todo.filter(|_| TODO_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
+            let _ = t.show();
         }
     }
 }

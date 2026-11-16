@@ -7,7 +7,7 @@ import { finishTodo, laterTodo } from "../stores/todo";
 import PetBubble from "./PetBubble.vue";
 
 defineProps<{ shift: number; below: boolean }>();
-/** `todos`: the key of a bubble for several todos opens their list. */
+/** `todos`: the key of a bubble for several todos opens the todos' window. */
 const emit = defineEmits<{ todos: [] }>();
 function openTodos() {
   closeNudge();

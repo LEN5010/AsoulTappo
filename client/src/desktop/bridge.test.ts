@@ -428,11 +428,11 @@ it("drops the panel's pose subscription when the desk bridge stops", async () =>
 it("shows the desk's todos in the panel and changes them in the desk", async () => {
   await context(false);
   const deskTodos = await import("../stores/todo");
-  deskTodos.addTodo({ title: "交周报", at: null, repeat: "none" });
+  deskTodos.addTodo({ title: "交周报", at: null, allDay: false, repeat: "none" });
   await context(true);
   const panelTodos = await import("../stores/todo");
   expect(panelTodos.todos.value.map((t) => t.title)).toEqual(["交周报"]);
-  panelTodos.addTodo({ title: "开会", at: null, repeat: "none" });
+  panelTodos.addTodo({ title: "开会", at: null, allDay: false, repeat: "none" });
   await vi.advanceTimersByTimeAsync(50);
   expect(deskTodos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
   expect(panelTodos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
@@ -440,4 +440,63 @@ it("shows the desk's todos in the panel and changes them in the desk", async () 
   await vi.advanceTimersByTimeAsync(50);
   expect(deskTodos.todos.value[0].doneAt).not.toBeNull();
   expect(panelTodos.todos.value[0].doneAt).not.toBeNull();
+});
+
+/** The todos' own window of the app, on its light bridge (desktop/todoBridge.ts). */
+async function todoWindow() {
+  vi.resetModules();
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: "?window=todo" } });
+  const bridge = await import("./todoBridge");
+  stops.push(await bridge.initTodoWindow());
+  return { settings: (await import("../stores/settings")).settings, todos: await import("../stores/todo") };
+}
+
+it("shows the desk's todos in the todos' window without any interest message, and changes them in the desk", async () => {
+  await context(false);
+  const deskTodos = await import("../stores/todo");
+  deskTodos.addTodo({ title: "交周报", at: null, allDay: false, repeat: "none" });
+  const win = await todoWindow();
+  expect(win.todos.todos.value.map((t) => t.title)).toEqual(["交周报"]);
+  win.todos.addTodo({ title: "开会", at: null, allDay: false, repeat: "none" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskTodos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
+  expect(win.todos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
+  const [first, second] = deskTodos.todos.value;
+  win.todos.finishTodo(first.id);
+  win.todos.editTitle(second.id, "开周会");
+  win.todos.editWhen(second.id, { at: new Date(2026, 10, 17, 15).getTime(), allDay: true, repeat: "weekly" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskTodos.todos.value[0].doneAt).not.toBeNull();
+  expect(deskTodos.todos.value[1]).toMatchObject({ title: "开周会", allDay: true, repeat: "weekly" });
+  expect(win.todos.todos.value).toEqual(deskTodos.todos.value);
+  win.todos.removeTodo(first.id);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(win.todos.todos.value.map((t) => t.title)).toEqual(["开周会"]);
+});
+
+it("answers the window that asked: the todos' window and the panel side by side", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const win = await todoWindow();
+  const board = { players: [] } as unknown as Board;
+  vi.spyOn(desk.player, "loadBoard").mockResolvedValue(board);
+  const { requestDesktop } = await import("./transport");
+  const asked = requestDesktop("todo", "add", { title: "取快递", at: null, allDay: false, repeat: "none" });
+  expect(await panel.player.loadBoard()).toEqual(board);
+  await expect(asked).resolves.toBeUndefined();
+  expect(win.todos.todos.value.map((t) => t.title)).toEqual(["取快递"]);
+});
+
+it("passes setting edits between the desk, the panel and the todos' window", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const win = await todoWindow();
+  win.settings.todoPinned = false;
+  expect(desk.settings.todoPinned).toBe(false);
+  expect(panel.settings.todoPinned).toBe(false);
+  panel.settings.nick = "阿草";
+  expect(win.settings.nick).toBe("阿草");
+  desk.settings.todoSound = false;
+  expect(win.settings.todoSound).toBe(false);
+  expect(panel.settings.todoSound).toBe(false);
 });
