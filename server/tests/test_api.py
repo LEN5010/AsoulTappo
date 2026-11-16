@@ -149,3 +149,17 @@ def test_manifest_and_packs_routes():
     first = idx["packs"][0]["files"][0]
     r = c.get("/packs/" + first["path"])
     assert r.status_code == 200 and len(r.content) == first["size"]
+
+
+def test_pack_files_share_one_cache_entry_for_plain_and_cors_requests():
+    c = TestClient(main.app)
+    path = "/packs/" + c.get("/packs/index.json").json()["packs"][0]["files"][0]["path"]
+    plain = c.get(path)
+    cors = c.get(path, headers={"Origin": "http://tauri.localhost"})
+    again = c.get(path, headers={"If-None-Match": plain.headers["etag"]})
+    assert again.status_code == 304
+    for r in (plain, cors, again):
+        assert r.headers["access-control-allow-origin"] == "*"
+        assert r.headers["vary"] == "Accept-Encoding"
+    api = c.get("/api/manifest", headers={"Origin": "http://tauri.localhost"})
+    assert "Origin" in api.headers["vary"]

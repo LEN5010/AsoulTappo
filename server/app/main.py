@@ -247,6 +247,32 @@ app.add_middleware(
 )
 
 
+class PackHeaders:
+    """Pack files answer every request with `Access-Control-Allow-Origin: *` and `Vary: Accept-Encoding`, so the
+    copy a plain <img> cached also serves the CORS request the holo shading makes (WebGL needs CORS), and a 304
+    rewrites the `Vary: Origin` of copies cached before. Added after CORSMiddleware, so it runs outside it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/packs/"):
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message.get("headers", [])
+                           if k.lower() not in (b"access-control-allow-origin", b"vary")]
+                headers += [(b"access-control-allow-origin", b"*"), (b"vary", b"Accept-Encoding")]
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(PackHeaders)
+
+
 def _member(p: Peer) -> Member:
     return Member(id=p.id, uid=p.uid, nick=p.nick, character=p.character, taps=p.taps, motion=p.motion,
                   plate=p.plate, status=p.status)
