@@ -51,6 +51,8 @@ scripts/deploy-server.sh <主机> economy <私有仓库>/server/config/economy.j
 
 如果改动会影响已经产生的状态（例如奖池的抽成比例），要在停机时另外换算，这一步脚本不做。
 
+猜拳、斗地主、乐园这类玩法由数值文件里有没有对应的一节决定开关（`duel`、`doudizhu`、`park`）：没有这一节，服务端不提供这个玩法，客户端也不显示入口。新玩法上线要先部署带这个玩法的服务端，再往数值文件里加这一节；格式见 `server/economy.example.json` 和 `server/app/economy.py`。重启时进行中的猜拳和斗地主对局作废，下注和押金在启动时退回。
+
 ## 最低版本和公告
 
 在服务器上运行 `scripts/notice.py`，需要环境变量 `ASOULTAPPO_ADMIN_KEY`，值在 `server.env` 里。设置最低版本时，1.1.3 之前的客户端也会一起被挡在外面。

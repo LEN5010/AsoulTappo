@@ -86,9 +86,10 @@ The hide key hides every window together and restores the ones that were open.
 | `pet/` | The pet and everything over it on the desk (see below) |
 | `panel/` | The panel's pages and dialogs (see below) |
 | `panel/park/` | 乐园: coins, scratch cards, race, lottery. Rules in `protocol/PROTOCOL.md` |
+| `panel/ddz/`, `ddz/` | 斗地主 in rooms (see below). `ddz/rules.ts` is the server's `ddz_rules.py` over again; both are checked against `ddz/rules.fixture.json` |
 | `holo/` | WebGL shader for holo cards (镭射款) |
 | `net/` | Room socket and HTTP API (see [Network](#network)) |
-| `stores/` | Reactive state: `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, `theme`, `todo`, `nudge`, `pomodoro`, `activity` |
+| `stores/` | Reactive state: `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, `theme`, `todo`, `nudge`, `pomodoro`, `activity`, `ddz` |
 | `ui/` | Design tokens (`tokens.css`), shared components (`Icon`, `SegTabs`, `FilterChips`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`) and helpers |
 | `resonance.ts`, `reveal.ts`, `cards.ts`, `items.ts`, `scratch.ts`, `todo.ts`, … | Pure rules with their own tests |
 | `test/` | Test helpers: example economy, pool sizes counted from the manifest |
@@ -102,7 +103,7 @@ Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member col
 - `PetView.vue` draws the layered pet; `PetActor.vue` drags it; `CounterBar.vue` is the strip with the tap count. The own actor keeps one width whatever the strip shows.
 - `QuickEmote.vue` is the single-row emote dock. It starts with small keys for the tomato timer (`PomodoroDock.vue`), the todo window and, in a room, the own status (`StatusDock.vue`, `ui/StatusKeys.vue`).
 - The strip folds to a grip; the pet can dock to the bottom edge. A click on the grip opens `GripMenu.vue`.
-- Bubbles over the own pet: `EmoteBubble`, `ComboBubble`, `DuelBubble` (with `StakeKeys`), `PokeBubble`, `NudgeBubble` (reminders, tomato timer, todos), `CooldownBubble` (input faster than a hand), `AccessBubble` (macOS permission), `AdminBubble` (an elevated game the hook cannot hear). `duelPick.ts` opens poke, duel and profile keys over a partner's pet.
+- Bubbles over the own pet: `EmoteBubble`, `ComboBubble`, `DuelBubble` (with `StakeKeys`), `DdzBubble` (a 斗地主 invite, and the way back to the table on the own turn), `PokeBubble`, `NudgeBubble` (reminders, tomato timer, todos), `CooldownBubble` (input faster than a hand), `AccessBubble` (macOS permission), `AdminBubble` (an elevated game the hook cannot hear). `duelPick.ts` opens poke, duel and profile keys over a partner's pet.
 - Tomato timer: `pomodoro.ts`, `stores/pomodoro.ts`, `PomodoroChip.vue`. The system notice goes through `notify` in `lib.rs` (tauri-plugin-notification).
 
 ### Panel (`panel/`)
@@ -121,6 +122,13 @@ Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member col
 | `SettingsPage.vue` (设置) | Account, profile strip, then pet, window, online, sound and about groups in two columns |
 
 Dialogs over the panel, one at a time in this order: `TermsDialog` (the desk stays offline until the current terms are agreed), `UpdateDialog` (cannot be closed below the server's minimum version), `NoticeBoard` (server announcements), `SkinSpotlight` (see [Adding skins](#adding-skins)), `UpdateRewardDialog`.
+
+### 斗地主 (`panel/ddz/`)
+
+- `stores/ddz.ts` holds the table (invite, bidding, play, result) from the room socket's `ddz_*` messages, in the desk window; the panel mirrors it and sends its moves through `requestDesktop("ddz", …)`. Its `log` of numbered events (deal, bid, landlord, play, result) is what the table animates from, so the panel animates from mirrored state too.
+- `DdzBanner.vue` on the room page starts a game and shows an invite; `DdzInvite.vue` picks the stake and the two members.
+- `DdzTable.vue` covers the room page while a game is on. It is drawn on a stage of at least 748×600 and scaled as one piece to the panel. Cards are picked by click, drag or rank key (`ddz/table.ts`); the keys on screen show their keyboard key. `DdzReceipt.vue` is the result.
+- The server decides every move; `ddz/rules.ts` only lights the play key and feeds the hint key.
 
 ### Draw reveal
 
@@ -148,12 +156,13 @@ Dialogs over the panel, one at a time in this order: `TermsDialog` (the desk sta
 | --- | --- |
 | `main.py` | FastAPI app: `/ws` rooms, `/api/*` player endpoints, `/admin/*` for the main site's backend, `/packs` asset packs |
 | `rooms.py` | Rooms in memory (up to 20 members): motion subscriptions and batches (100ms motion, 50ms button edges), per-connection writers, pokes, cheer progress. On stop it stores each room's listing, host and removed saves; for ten minutes after the next start it hands them back as members rejoin |
-| `game.py` | Progression: income from taps, draws, check-in, scratch cards, duels, cheer rewards, update rewards, crafting, loadouts, the collection board. Every shard change goes to `shard_ledger` |
+| `game.py` | Progression: income from taps, draws, check-in, scratch cards, duels, 斗地主 status, cheer rewards, update rewards, crafting, loadouts, the collection board. Every shard change goes to `shard_ledger` |
 | `store.py` | SQLite access for everything above |
 | `manifest.py` | Loads the catalog and builds the resonance pools, including the pool for an older client (`resonance_pool_for`) |
 | `economy.py` | Loads the economy file named by `ASOULTAPPO_ECONOMY` |
 | `cards.py`, `scratch.py` | Pure resonance and scratch rolls with an injectable RNG |
 | `duel.py` | Rock-paper-scissors invites and timers in memory, bets in the store |
+| `ddz.py`, `ddz_rules.py`, `store_ddz.py` | 斗地主 between three room members: tables, hands and timers in memory, deposits and results in the store. A seat belongs to a save: the server plays for a member who is away until the save rejoins the room |
 | `park.py`, `park_scratch.py`, `park_race.py`, `race.py`, `lottery.py`, `redeem.py` | 乐园: coins, scratch cards, race, lottery, redeem codes |
 | `notice.py`, `releases.py` | Minimum client version and announcements; the newest release for the update check |
 | `accounts.py`, `moderation.py` | Main-site account lookup; nickname blocklist pushed by the main site |

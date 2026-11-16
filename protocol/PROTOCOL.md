@@ -16,7 +16,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 | 客户端 type | 字段 |
 |---|---|
-| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`；存档未拥有的皮肤或未知名称改为显示名称开头的成员，都不匹配时显示第一位成员）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌 ID，存档未解锁或不认识时忽略）、dnd（可选，布尔，猜拳免打扰，见猜拳一节）、status（可选，联机状态 ID，见下）、motionVersion（可选，整数 ≥1，客户端能读的最新动作格式，见动作格式一节；不带为 1） |
+| join | room（1–64）、nick（1–24）、character（≤32，成员名或以成员名开头的皮肤名，如 `贝拉山海经`；存档未拥有的皮肤或未知名称改为显示名称开头的成员，都不匹配时显示第一位成员）、token（可选）、accountToken（可选，主站令牌，优先于 token）、plate（可选，铭牌 ID，存档未解锁或不认识时忽略）、dnd（可选，布尔，猜拳免打扰，见猜拳一节）、ddz（可选，布尔，客户端会打斗地主，见斗地主一节）、status（可选，联机状态 ID，见下）、motionVersion（可选，整数 ≥1，客户端能读的最新动作格式，见动作格式一节；不带为 1） |
 | leave | 无 |
 | tap | count（1–500），客户端每 100–200ms 合并；服务端按连接限速（每秒 15、最多攒 75），超出部分不广播。这只限制房间显示，每条连接各算各的，重连会重新计，不是每人总上限；收益只看 `POST /api/activity`，按存档共用一份额度（存在数据库里，并发、多连接、重连都不叠加） |
 | motion | dx、dy（桌宠图层偏移，−20 至 20）、keyDown、left、right（按下状态）；移动每 100ms 合并，按键状态即时发送。格式 1 的客户端用它 |
@@ -30,13 +30,20 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | ping | 无 |
 | set_public | public（布尔），仅房主；值有变化时向全房间广播 `room_info`，没有变化时只把当前的 `room_info` 回给房主 |
 | set_name | name（最多 64 个字符，超过返回 `bad_message`），仅房主，不是房主返回 `not_host`：给房间起名，空字符串取消。服务端去掉控制字符和格式字符，连续空白合成一个空格并去掉首尾空白，再截到 16 个字符（`rooms.ROOM_NAME_MAX`），按屏蔽词表打码。房间显示的名字有变化时向全房间广播 `room_info`，没有变化时只回给房主。只发给 `joined.features` 里有 `name` 的服务端 |
-| kick | id（成员 id），仅房主；不是房主返回 `not_host`，id 不在房间里或是房主自己返回 `no_member`，要移出的连接正在猜拳返回 `in_duel` |
-| dnd | dnd（布尔），猜拳免打扰开关；只发给有猜拳的服务端 |
+| kick | id（成员 id），仅房主；不是房主返回 `not_host`，id 不在房间里或是房主自己返回 `no_member`，要移出的连接正在猜拳或斗地主对局中返回 `in_duel` |
+| dnd | dnd（布尔），猜拳免打扰开关，斗地主的邀请也按它处理；只发给有猜拳的服务端 |
 | duel_invite | id（成员 id）、bet（下注，必须是 `economy.duel.stakes` 里的一档） |
 | duel_answer | duel（对局 id）、accept（布尔），只有被邀请的一方能回应 |
 | duel_throw | duel、hand（`rock` / `scissors` / `paper`），每局只认第一次 |
+| ddz_invite | ids（两位成员的 id）、base（底分，必须是 `economy.doudizhu.stakes` 里的一档） |
+| ddz_answer | table（牌桌 id）、accept（布尔），只有被邀请的两位能回应 |
+| ddz_bid | table、bid（0 不叫，1–3 叫分，必须高于已有的叫分） |
+| ddz_play | table、cards（牌号 0–53 的数组，最多 20 张；空数组为不出） |
+| ddz_auto | table、on（布尔）：打开或取消自己座位的托管 |
+| ddz_again | table：结算后要求和同样两位、同样底分再来一局 |
+| ddz_leave | table：离桌。邀请阶段等于取消或拒绝，对局中座位交给托管，结算后关闭牌桌 |
 
-服务端消息：`joined {room,you,members,info,features,cheer}`、`cheer {target,minShare,total,shares,rounds}`、`cheer_done {round,rewards}`（合力应援，见下文）、`profile {id,showcase,progress}`（回给请求的人：showcase 为这位成员存档里选的展示卡 ID，最多 3 张，没选时为空；progress 为 `{cards,emotes,skins}`，每项 `[已拥有, 总数]`，计法和图鉴一致，初始表情算已拥有；没有存档的成员为 null）、`poke {from,to,quiet?}`（全房间都收到，包括发起人；被戳的人开了猜拳免打扰时，发给被戳者的那份带 `quiet: true`，客户端只让桌宠弹一下，不出气泡）、`drink {id}`（这位成员喝了水，客户端在它的桌宠旁边显示一个杯子）、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`motion_snapshot`、`motion_delta`、`motion_edge`、`motion_edges`（见动作格式一节）、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate,status}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`pong`、`error {code,message,reason?}`。`features` 列出这个服务端在 1.1 之外支持的房间消息，现在是 `["poke", "profile", "cheer", "status", "drink", "name"]`（`drink`：`drink` 消息；`name`：`set_name`），`features` 和 `cheer` 只发给加入时带了 motionVersion（2 及以上）的客户端，更早的客户端收到的 `joined` 保持原样；旧服务端没有这个字段。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开，name 为房主起的房间名（屏蔽词已打码，没起名时为空字符串）；房主、公开状态或房间名变化时服务端广播 `room_info`。房间名跟着房间走：房主离开后名字留下，新房主可以改；服务端停机时和房主、公开状态一起保存（`room_restore`），10 分钟内重启后房间重新建立时恢复。屏蔽词表更新后，名字显示有变化的房间会收到一条 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate,status`，plate 为经服务端核对的铭牌 ID，没有时为 null；status 为联机状态 ID，只能是 `fish`（摸鱼）、`work`（工作）、`study`（学习）、`game`（打游戏）、`music`（听歌）、`live`（看直播）之一（`rooms.ROOM_STATUSES`），其他值一律当作没有，没有时为 null。状态由玩家自己选，只在内存里随连接保存。之前的服务端不认识 status，而且 state 至少要有 character、nick、plate 之一，所以客户端改状态时连同昵称一起发；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
+服务端消息：`joined {room,you,members,info,features,cheer}`、`cheer {target,minShare,total,shares,rounds}`、`cheer_done {round,rewards}`（合力应援，见下文）、`profile {id,showcase,progress}`（回给请求的人：showcase 为这位成员存档里选的展示卡 ID，最多 3 张，没选时为空；progress 为 `{cards,emotes,skins}`，每项 `[已拥有, 总数]`，计法和图鉴一致，初始表情算已拥有；没有存档的成员为 null）、`poke {from,to,quiet?}`（全房间都收到，包括发起人；被戳的人开了猜拳免打扰时，发给被戳者的那份带 `quiet: true`，客户端只让桌宠弹一下，不出气泡）、`drink {id}`（这位成员喝了水，客户端在它的桌宠旁边显示一个杯子）、`room_info {host,public}`、`member_joined {member}`、`member_left {id}`、`tap {id,count,total}`、`motion {id,dx,dy,keyDown,left,right}`、`motion_batch {motions:[{id,dx,dy,keyDown,left,right}, ...]}`、`motion_snapshot`、`motion_delta`、`motion_edge`、`motion_edges`（见动作格式一节）、`emote {id,emote}`、`scratch {id,shards}`、`state {id,character,nick,plate,status}`、`duel_invite`、`duel_start`、`duel_round`、`duel_result`、`duel_over`（猜拳一节）、`ddz_*`（斗地主一节）、`pong`、`error {code,message,reason?}`。`features` 列出这个服务端在 1.1 之外支持的房间消息，现在是 `["poke", "profile", "cheer", "status", "drink", "name"]`（`drink`：`drink` 消息；`name`：`set_name`），`features` 和 `cheer` 只发给加入时带了 motionVersion（2 及以上）的客户端，更早的客户端收到的 `joined` 保持原样；旧服务端没有这个字段。`info` 和 `room_info` 是房间级状态：host 为房主的成员 id，public 表示房间是否公开，name 为房主起的房间名（屏蔽词已打码，没起名时为空字符串）；房主、公开状态或房间名变化时服务端广播 `room_info`。房间名跟着房间走：房主离开后名字留下，新房主可以改；服务端停机时和房主、公开状态一起保存（`room_restore`），10 分钟内重启后房间重新建立时恢复。屏蔽词表更新后，名字显示有变化的房间会收到一条 `room_info`。成员包含 `id,uid,nick,character,taps,motion,plate,status,ddz`，ddz 为这条连接加入时是否带了 `ddz: true`（没有斗地主的服务端一律为 false），plate 为经服务端核对的铭牌 ID，没有时为 null；status 为联机状态 ID，只能是 `fish`（摸鱼）、`work`（工作）、`study`（学习）、`game`（打游戏）、`music`（听歌）、`live`（看直播）之一（`rooms.ROOM_STATUSES`），其他值一律当作没有，没有时为 null。状态由玩家自己选，只在内存里随连接保存。之前的服务端不认识 status，而且 state 至少要有 character、nick、plate 之一，所以客户端改状态时连同昵称一起发；加入时的 motion 为该成员最近一次桌宠动作。`uid = sha256(player_id + ':' + room)[:10]` 用于记录同桌位置。
 
 合力应援：存档上报 `/api/activity` 后，服务端把这次计入收益的敲击（每分钟计入收益的部分，已过防连点冷却）加到这份存档最近加入的房间的应援条上；累计敲击不满 1 万下的存档不计入。房间里至少有 2 份不同存档时条才会涨。一份存档本轮出力满 50 下就算出力，从这时起它的出力才上条（不满 50 下的先记着，不上条）；条的目标是 300 × 出力人数（至少按 2 人算），所以满条等于出力的人平均每人 300 下，很多人各敲几十下凑不满条；条满并且至少 2 人出力时这一轮结束，每位出力的存档得 10 × 出力人数 碎片（账本来源 `cheer`，每份存档每天最多 1000），条清零。中途加入：出力立刻上条，满 50 下后计入人数，目标和每人奖励随之变大。中途离开：已出的力留在条上；离开后 60 秒内仍计入人数、仍能领本轮奖励（掉线重连的同一份存档接着算），过了 60 秒不再计入人数，但已上条的出力留在条上，目标随之变小，下一次有人上报时再判断是否满条。`cheer` 为条的现状：`target` 为当前目标，`total` 为已上条的出力（不超过 `target`），`shares` 为在场成员（按成员 id）本轮的出力，包括还没满 50 下的，`count` 为出力人数，`reward` 为现在满条时每人能得的碎片，`rounds` 为这个房间完成的轮数；条在涨时最多每 2 秒发一次，有人离开时、一轮结束后（跟在 `cheer_done` 后面）也发，加入时放在 `joined.cheer` 里。`cheer_done.rewards` 为这一轮每位在场得奖成员拿到的碎片，当天已到上限的为 0。状态里的 `cheer {day,got,cap,minTaps}` 为当天从应援拿到的碎片、每日上限和参与门槛。
 
@@ -66,15 +73,25 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | no_member | `kick` 的 id 不在房间里或是房主自己；`poke` 的 id 不在房间里或是自己 |
 | host_needs_save | 无存档的房主设置公开 |
 | host_needs_account | 接入了主站账号的服务端上，没带有效 accountToken 加入的房主设置公开 |
-| in_duel | 要移出的成员正在猜拳 |
+| in_duel | 要移出的成员正在猜拳，或斗地主对局中 |
 | no_duel | 服务器没有猜拳（manifest 没有 `economy.duel`） |
 | duel_locked / duel_target_locked | 自己 / 对方没有存档，或累计敲击不足 |
 | duel_busy / duel_target_busy | 自己 / 对方的存档已有一场对局或待回应的邀请 |
 | duel_self | 邀请自己，或同一存档的另一条连接 |
 | duel_cooldown | 对方 30 秒内拒绝过或没回应过你的邀请 |
 | duel_cap | 这一档赢了会让某一方今天的净赢超过上限 |
-| no_shards | 邀请方碎片不够这一档 |
+| no_shards | 邀请方碎片不够这一档猜拳的下注或斗地主的押金 |
 | duel_gone | 回应或出拳时对局已经结束（客户端不提示） |
+| no_ddz | 服务器没有斗地主（manifest 没有 `economy.doudizhu`） |
+| ddz_locked / ddz_target_locked | 自己 / 被邀请的某一位没有存档，或累计敲击不足 |
+| ddz_busy / ddz_target_busy | 自己 / 被邀请的某一位的存档已在一张牌桌上（待回应的邀请也算） |
+| ddz_target_old | 被邀请的某一位的客户端不会打斗地主（加入时没带 `ddz`） |
+| ddz_self | 三位里有重复的成员，或两条连接是同一个存档 |
+| ddz_cooldown | 被邀请的某一位 30 秒内拒绝过或没回应过你的邀请 |
+| ddz_target_poor | 被邀请的某一位碎片不够押金（自己不够返回 `no_shards`） |
+| ddz_cap / ddz_target_cap | 自己 / 被邀请的某一位今天斗地主的净赢已到上限 |
+| ddz_gone | 牌桌已经不在这个阶段，或这条连接不在桌上（客户端不提示） |
+| ddz_turn / ddz_bad | 没轮到这个座位 / 叫分或出的牌不合规则（客户端不提示，按服务端的状态继续） |
 
 `room_full` 的 reason：`kicked`（被房主移出，发完这条后服务端关闭这条连接）、`banned`（存档在这个房间的封禁名单上，加入被拒，连接保持）、`need_save`（无存档加入公开房间，加入被拒，连接保持）。其他错误不带 reason 字段。
 
@@ -86,6 +103,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - 公开房间要求账号：客户端先读 `GET /api/info`，`accountLogin` 为 true 且没登录时不请求列表，公开房间一节只显示登录键；登录后带主站令牌请求，令牌只发给登录时所在的服务器。列表返回 401 时按未登录处理（`account_expired` 同时清除本地的登录状态）。房主没登录时不显示公开开关，房间已经公开时除外（用来改回私密）。`/api/info` 读不到时按没接入账号处理，服务端返回 401 时同样显示登录键。
 - 喝水和房间名：旧客户端忽略 `drink` 和 `room_info` 里的 name。新客户端只在 `features` 有 `drink` 时发送 `drink`，有 `name` 时给房主显示改名键；旧服务端的 `room_info` 和 `GET /rooms` 没有 name，客户端按没起名显示。客户端开了隐藏昵称时也不显示房间名。
 - 猜拳：旧客户端忽略 `duel_*` 消息（`RoomClient` 不认识的类型直接丢弃），成员字段没有变化；它收不到也回应不了邀请，邀请它的人 15 秒后看到超时。新客户端只在 `GET /api/me` 带 `duel` 时显示猜拳键、发送 `dnd` 和猜拳消息；旧服务端的状态没有这一项。`join` 里的 dnd 只在打开时带上，旧服务端忽略多出来的字段。
+- 斗地主：新客户端在 `join` 里带 `ddz: true`，旧服务端忽略多出来的字段；成员的 `ddz` 标出哪些连接能被邀请，邀请旧客户端返回 `ddz_target_old`。旧客户端忽略 `ddz_*` 消息和成员的 `ddz` 字段。新客户端只在 `GET /api/economy` 带 `doudizhu`、`GET /api/me` 带 `ddz` 时显示斗地主入口，旧服务端没有这两项。
 
 ## HTTP API
 
@@ -93,7 +111,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 |---|---|
 | GET /api/manifest | v4 素材清单：`assets-packs/manifest.json` 加上 economy 配置（不含服务端私有的 `antiCheat`） |
 | GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance` |
-| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
+| GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、ddz（`{net}`，今天斗地主的净赢；没有斗地主的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
 | POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节 |
@@ -196,6 +214,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | `update` | 更新奖励 | 一次领取的奖励个数 |
 | `scratch_buy`、`scratch_prize` | 刮刮乐购买花费、刮开时的碎片奖励（只在有碎片时记） | 1 |
 | `duel_bet`、`duel_prize`、`duel_refund` | 猜拳双方的下注、胜者奖金、无胜者时退回的下注（后两项按结算当天记） | 1 |
+| `ddz_deposit`、`ddz_return`、`ddz_refund` | 斗地主的押金、结算时退回的押金加减输赢、没有胜负时原样退回的押金（后两项按结算当天记） | 1 |
 | `coin_buy` | 买驼币花费 | 买的枚数 |
 | `park_scratch`、`lottery_prize` | 乐园的碎片奖：驼币刮刮乐、每日夺宝（团子赛跑发驼币，记在驼币流水） | 1 |
 | `redeem` | 兑换码发的碎片 | 1 |
@@ -577,11 +596,38 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - `duel_over` 的 reason：`declined`、`timeout`（邀请没回应）、`gone`、`no_shards`、`duel_cap`、`idle`、`draws`；后两种已退款。
 - 余额：客户端收到 `duel_start`、`duel_result`、`duel_over` 后重新读一次 `GET /api/me`。
 
+## 斗地主
+
+房间里三位成员之间的斗地主，用碎片结算。数值在 economy 配置 `economy.doudizhu`，服务端和客户端读同一份；没有这一项的服务端没有斗地主，状态里也没有 `ddz`，斗地主消息返回 `no_ddz`。规则在 `server/app/ddz_rules.py`，牌局在 `server/app/ddz.py`；客户端的 `client/src/ddz/rules.ts` 是同一套规则，两边都用 `client/src/ddz/rules.fixture.json` 核对。
+
+牌号 0–53：0–51 的点数为 `牌号 // 4 + 3`（3–10、J=11、Q=12、K=13、A=14、2=15），花色为 `牌号 % 4`（0 黑桃、1 红心、2 梅花、3 方块）；52 小王，53 大王。座位编号 0–2，按出牌顺序，0 是发起人。除 `ddz_live` 外，斗地主消息只发给桌上的三个座位，都带 `table`（牌桌 id）。
+
+牌型：单张、对子、三张、三带一、三带一对、顺子（5 张起，到 A 为止）、连对（3 对起）、飞机（2 组三张起，可各带一张或各带一对）、四带二、四带两对、炸弹、王炸。带的对子不能是王。一手牌可能有多种读法（如 `333444` 加两张单牌），只要有一种读法能压过上家的某一种读法就可以出。
+
+- 资格：三位都要有存档，累计敲击（`totals.taps`）满 `minTaps`，碎片不少于押金，连接加入时带了 `ddz: true`。三位必须在同一个房间，不能是同一个存档。一个存档同一时间只能在一张牌桌上（待回应的邀请也算，跨房间也算）；斗地主和猜拳各算各的。
+- 押金：`底分 × capMult × 2`，是地主在封顶倍数下最多输的数。三位都接受后在一个数据库事务里扣三份押金，任何一位不够资格就都不扣，三位收到 `ddz_over`（`no_shards`、`ddz_cap` 或 `ddz_locked`）。结算时每个座位拿回押金加减自己的输赢。
+- 每日净赢上限：每个存档每个北京时间日期，已结算对局的输赢累加（输的局是负数，退款的局不算）。这个数达到 `dailyWinCap` 后，这个存档当天不能再开新的一局；已经开始的一局照常结算，所以净赢可以超过上限一局的量。输不设上限。这个上限和猜拳的上限分开计算。对局的日期取扣押金时的日期。
+- 邀请：发起人发 `ddz_invite`，服务端把 `ddz_invite {table,from,ids,base,deposit,sec}` 发给三位，ids 按座位顺序。被邀请方接受后三位收到 `ddz_answer {table,id}`。任何一位拒绝、`inviteSec` 秒内没有全部接受、有人离开房间，邀请作废，三位收到 `ddz_over {table,reason,by?}`。被邀请方开了免打扰时服务端替他拒绝，他收不到邀请。被拒绝或超时后，发起人 30 秒内不能再邀请拒绝或没回应的存档（`ddz_cooldown`）；发起人自己离开房间时对两位都计这 30 秒。
+- 发牌：扣款成功后向全房间广播 `ddz_live {table,ids,on:true}`，然后每个座位收到 `ddz_deal {table,seats,you,hand,base,cap,deal,turn,sec}`：seats 为三个座位的 `{id,nick,character,auto,away}`，you 为自己的座位，hand 为 17 张牌，cap 为封顶倍数，deal 为这桌第几次发牌，turn 为先叫分的座位（随机）。
+- 叫分：从 turn 起每个座位叫一次，0 为不叫，1–3 必须高于已有的叫分。每次叫分三位收到 `ddz_bid {table,seat,bid,turn?,sec?}`。有人叫 3 分或三位都叫过后，叫分最高的座位当地主，三位收到 `ddz_landlord {table,seat,bid,bottom,mult,turn,sec}`，地主拿走 bottom 的三张底牌并先出。三位都不叫则重新发牌；连续 3 次没人叫，押金原样退回（`ddz_over` `nobid`）。
+- 出牌：轮到的座位发 `ddz_play`，三位收到 `ddz_play {table,seat,cards,left,mult,bombs,turn?,sec?,lead?}`：cards 为空是不出，left 为这个座位剩下的张数，lead 为 true 时另外两位都没要，turn 重新领出。领出的座位不能不出。不合规则的出牌返回 `ddz_bad`，没轮到返回 `ddz_turn`。
+- 倍数：`叫分 × 2^炸弹数`，春天或反春再乘 2，最多 `capMult`。炸弹和王炸都算一个炸弹。春天：地主赢，两位农民一手牌都没出过。反春：农民赢，地主只出过第一手。
+- 结算：先出完牌的一方赢。每位农民输赢 `底分 × 倍数`，地主输赢两位农民的总和；赢到的部分扣掉 `rake`% 销毁（向下取整）。三位收到 `ddz_result {table,winner,landlord,bid,bombs,spring,mult,base,deltas,hands,sec}`：winner 为 `landlord` 或 `farmers`，spring 为 0、1（春天）、2（反春），deltas 为每个座位的输赢（赢家是扣过销毁后的数），hands 为每个座位剩下的牌。同时向全房间广播 `ddz_live {table,ids,on:false,gains}`，gains 为赢家的成员 id 和到手碎片，客户端在赢家桌宠旁显示。
+- 再来一局：结算后 `againSec` 秒内，三位各发一次 `ddz_again`（每次三位收到 `ddz_again {table,seat}`），三位都发了就重新扣押金、发牌。到时间、有人离桌或离开房间、结算时已有座位没人，牌桌关闭，三位收到 `ddz_closed {table}`。
+- 时间和托管：叫分 `bidSec` 秒，出牌 `playSec` 秒。到时间由服务端代打：叫分时不叫，出牌时能不出就不出，领出时出最小的一张。一个座位连续 2 次超时后进入托管，托管的座位每手 1.2 秒后由服务端代打，直到本人发 `ddz_auto {on:false}`；轮到自己时取消托管，这一手重新计时。座位状态变化时三位收到 `ddz_seat {table,seat,id,away,auto,turn?,sec?}`。
+- 掉线和离开：座位属于存档。成员离开房间（`leave`、断线、被移出）后座位由服务端代打，输赢照常结算；同一存档再加入这个房间时拿回座位，收到 `ddz_state`（整局的状态：`phase,you,hand,seats,base,cap,deal,bid,landlord,bottom,mult,bombs,turn,lead,trick,sec,of`，seats 多带 `left` 和 `bid`，trick 为这一轮每个座位出的牌，sec 为这一手剩余秒数，of 为这一手的总秒数），其他座位收到带新成员 id 的 `ddz_seat`。发 `ddz_leave` 离桌的成员留在房间里，座位托管到这局结束，结算时照常收到 `ddz_result`；离桌后再离开房间又加入的，和掉线一样拿回座位。三个座位都离开了房间时这一局作废，押金退回（`ddz_over` `gone`）。对局中的成员不能被房主移出（`in_duel`）。
+- `ddz_over` 的 reason：`declined`、`timeout`、`gone`（by 为离开的成员）、`nobid`、`no_shards`、`ddz_cap`、`ddz_locked`、`error`。扣过的押金都已退回。
+- 只结算一次：服务端在内存里先把牌桌标为结算中再访问数据库，数据库里用 `UPDATE ddz_games SET state=... WHERE id=? AND state='open'` 的条件更新确认，只有第一次成功的结算发碎片。
+- 新加入房间的成员收到房间里进行中牌桌的 `ddz_live {on:true}`，客户端用它在成员列表里标出牌局中的成员。
+- 余额：客户端收到 `ddz_deal`、`ddz_state`、`ddz_result`、`ddz_over` 后重新读一次 `GET /api/me`。
+
 ## 数据迁移
 
 刮刮乐新增 `scratch_cards` 表和 `players.scratch_pity` 列，启动时自动补上。已揭开的卡保留 30 天，启动时清理更早的。
 
 猜拳新增 `duels` 表（启动时自动创建）：扣款时写入一行，state 从 `open` 变为 `won`（winner 为赢家存档）或 `refunded`，只变一次。房间只在内存里，服务端重启后上次没结算的对局没法继续，启动时把 `open` 的对局全部退款。
+
+斗地主新增 `ddz_games` 和 `ddz_seats` 表（启动时自动创建）：扣押金时写入一局和三个座位，state 从 `open` 变为 `settled`（`ddz_seats.delta` 为每个座位的输赢，`burnt` 为销毁的碎片）或 `refunded`，只变一次。牌桌只在内存里，启动时把 `open` 的对局全部退还押金。
 
 
 首次启动新版本时，旧碎片乘 16，旧抽卡次数和箱余额每份换成 160 碎片，随后清零旧余额。迁移由 skin_pity 列的存在性标记，只执行一次。已拥有物品、draw_pity 大隐藏进度和 drawn_total 累计次数保留。发布前备份数据库并在备份副本验证换算；回滚时同时恢复匹配版本的数据库。
