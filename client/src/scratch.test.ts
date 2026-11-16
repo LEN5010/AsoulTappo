@@ -4,6 +4,7 @@ import { craftCost, getItem } from "./items";
 import { poolOf } from "./resonance";
 import { Coating, HOST, SCRATCH_EMOTES, cellOf, faceKey, faceOf, oddsRows, outcomeOf, ownedScratchEmotes, toneOf } from "./scratch";
 import { economy } from "./stores/economy";
+import { realPoolSize } from "./test/pool";
 
 const shards = (amount: number) => ({ kind: "shards" as const, amount, at: [0, 1, 2] });
 
@@ -79,8 +80,8 @@ describe("the scratch emote set", () => {
     expect(SCRATCH_EMOTES).toHaveLength(20);
     const pool = Object.values(poolOf()).flat();
     expect(pool.some((item) => item.source || item.id.startsWith("emote:achao."))).toBe(false);
-    // the pool is what it was before the set existed, plus the 36 衣橱 cards
-    expect(pool).toHaveLength(590);
+    // the set adds nothing to the pool
+    expect(pool).toHaveLength(realPoolSize());
     const item = getItem("emote:achao.01")!;
     expect(item).toMatchObject({ kind: "emote", name: "兜风", source: "scratch", starter: false });
     expect(craftCost(item)).toBeNull();

@@ -4,15 +4,15 @@ import { craftCost, getItem, ownsCharacter } from "./items";
 import { baseRates, commonKindRates, effectiveRates, poolOf } from "./resonance";
 import { economy, setEconomy } from "./stores/economy";
 import { exampleEconomy } from "./test/economy";
+import { realPoolCounts, realPoolSize } from "./test/pool";
 
 const R = exampleEconomy.resonance.rates;
 const W = exampleEconomy.resonance.commonKindWeights;
 
-it("builds one all-member pool with 590 distinct items", () => {
+it("builds one all-member pool of distinct items", () => {
   const p = poolOf();
-  expect([p.common.length,p.uncommon.length,p.rare.length,p.limited.length,p.epic.length,p.legendary.length,p.skin.length])
-    .toEqual([372,75,60,36,23,10,14]);
-  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(590);
+  expect(Object.fromEntries(Object.entries(p).map(([r, items]) => [r, items.length]))).toEqual(realPoolCounts());
+  expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(realPoolSize());
   // Holo versions come from their card's draws, never from a tier of the pool.
   expect(Object.values(p).flat().some((i) => i.id.startsWith("holo:"))).toBe(false);
   expect(p.limited.every((i) => i.kind === "card" && getCard(i.ref)?.series.startsWith("wardrobe-"))).toBe(true);

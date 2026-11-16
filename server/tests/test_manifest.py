@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.manifest import Manifest, find_packs_dir
+from fixtures import real_pool_counts
 
 REPO = Path(__file__).resolve().parents[2]
 PACKS = find_packs_dir()
@@ -134,7 +135,7 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 590
+    assert len(dropped) == sum(real_pool_counts(M).values())
     # scratch emotes are collectible but stay out of the pool
     assert len(M.scratch_emotes) == 20 and not dropped & {f"emote:{k}" for k in M.scratch_emotes}
     # holo versions are items of their own, outside the pool
@@ -144,7 +145,7 @@ def test_accessories_starter_and_economy():
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin", "limited")] == [372, 75, 60, 23, 10, 14, 36]
+    assert {r: len(v) for r, v in M.resonance_pool.items()} == real_pool_counts(M)
     for c in M.cards.values():
         if c["series"].startswith("wardrobe-"):
             assert c["rarity"] == "limited"

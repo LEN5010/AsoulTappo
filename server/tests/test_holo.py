@@ -9,7 +9,7 @@ from app import economy
 from app.game import BOARD_POINTS, Game, GameError, player_id_for
 from app.manifest import Manifest
 from app.store import Store
-from fixtures import Clock, SeqRng
+from fixtures import Clock, SeqRng, real_pool_counts
 
 TOKEN = "holo-player-token-0001"
 NEW = "1.2.4"
@@ -47,8 +47,7 @@ def test_the_21_holo_versions_are_items_outside_the_pool():
         assert set(c["holo"]["shine"]) == {"laserIntensity", "skinProtection", "clothBoost", "hueStart", "hueRange"}
     pooled = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not pooled & set(M.holos.values())
-    # 590 in the pool, 21 holo versions besides
-    assert len(pooled) + len(M.holos) == 611
+    assert len(pooled) == sum(real_pool_counts(M).values())
 
 
 def test_the_chance_comes_from_the_economy():
@@ -147,7 +146,7 @@ def test_holo_versions_score_on_the_board_but_are_not_cards():
 def test_progress_and_totals_count_the_holo_versions():
     g = Game(Store(":memory:"), M, now=Clock())
     status = g.status(TOKEN)
-    assert status["totals"]["items"] == 590 + 21 + 20
+    assert status["totals"]["items"] == sum(real_pool_counts(M).values()) + 21 + 20
     pid = player_id_for(TOKEN)
     g.store.add_item(pid, HOLO, 0)
     assert g.collection_progress(g.store.owned(pid))["cards"] == [1, len(M.cards) + 21]

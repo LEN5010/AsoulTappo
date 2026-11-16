@@ -27,8 +27,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 18000, "taps": 0, "perTap": 1.603, "multiplier": 1, "perMinute": 96.2}
-    # 590 from resonance, the 21 holo versions and the 20 scratch emotes
-    assert r["totals"]["items"] == 631
+    # the pool, the holo versions and the scratch emotes
+    assert r["totals"]["items"] == sum(map(len, g.manifest.resonance_pool.values())) + len(g.manifest.holos) + 20
 
 
 def test_taps_pay_along_the_log_curve():

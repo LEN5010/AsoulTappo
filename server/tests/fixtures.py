@@ -64,3 +64,17 @@ class Clock:
 
     def __call__(self) -> float:
         return self.t
+
+
+# Non-starter emotes per tier of the real pool. They change only with a new emote set; cards and skins are counted
+# from the manifest, so adding a skin or a card needs no change in the tests.
+POOL_EMOTES = {"common": 320, "uncommon": 75, "rare": 60}
+
+
+def real_pool_counts(m: Manifest) -> dict[str, int]:
+    """The size of each tier of [m]'s resonance pool, counted from the manifest's cards and skins."""
+    counts = {r: POOL_EMOTES.get(r, 0) for r in ("common", "uncommon", "rare", "epic", "legendary", "limited")}
+    for c in m.data["cards"]:
+        counts[c["rarity"]] += 1
+    counts["skin"] = len(m.data["skins"])
+    return counts
