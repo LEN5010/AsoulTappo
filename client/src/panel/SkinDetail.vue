@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // Skin detail. With the album's skins it steps through the owned ones, and the artwork opens in a full-panel viewer.
-import { computed, ref, watch } from "vue";
+// An owned skin can be given a note, shown instead of its title (stores/skinNotes.ts); the title then sits in the table.
+import { computed, nextTick, ref, watch } from "vue";
 import { characterColor, memberOf, skinTitle } from "../manifest";
 import { getCharacter, skinSeries } from "../characters";
 import { ownsCharacter } from "../items";
 import { collection } from "../stores/player";
-import { settings } from "../stores/settings";
+import { SKIN_NOTE_MAX, settings } from "../stores/settings";
+import { setSkinNote, shownSkinName, skinNote } from "../stores/skinNotes";
 import { ui } from "../stores/ui";
 import { pet } from "../stores/pet";
 import Modal from "../ui/Modal.vue";
@@ -35,6 +37,22 @@ function step(delta: -1 | 1) {
 }
 const viewing = ref(false);
 watch(owned, (o) => !o && (viewing.value = false));
+
+const naming = ref(false);
+const noteDraft = ref("");
+const noteBox = ref<HTMLInputElement>();
+async function startNaming() {
+  noteDraft.value = skinNote(props.name);
+  naming.value = true;
+  await nextTick();
+  noteBox.value?.select();
+}
+function saveNote() {
+  if (!naming.value) return;
+  naming.value = false;
+  setSkinNote(props.name, noteDraft.value);
+}
+watch(() => props.name, () => (naming.value = false));
 </script>
 
 <template>
@@ -47,9 +65,18 @@ watch(owned, (o) => !o && (viewing.value = false));
       </div>
       <div class="info">
         <span class="ui-tag gold">皮肤藏品</span>
-        <h3>{{ skinTitle(name) }}</h3>
+        <div class="name-row">
+          <input
+            v-if="naming" ref="noteBox" v-model="noteDraft" class="ui-input note" :maxlength="SKIN_NOTE_MAX" :placeholder="skinTitle(name)"
+            aria-label="备注名" spellcheck="false" @keydown.enter="saveNote" @keydown.esc.stop="naming = false" @blur="saveNote"
+          />
+          <h3 v-else>{{ shownSkinName(name) }}</h3>
+          <button v-if="owned && !naming" type="button" class="ui-btn small ghost rename" aria-label="备注名" title="备注名" @click="startNaming">
+            <Icon name="pencil" :size="15" />
+          </button>
+        </div>
         <p class="member"><i :style="{ background: characterColor(memberOf(name)) }"></i>{{ memberOf(name) }}</p>
-        <dl><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
+        <dl><div v-if="skinNote(name)"><dt>原名</dt><dd>{{ skinTitle(name) }}</dd></div><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
         <div class="live-preview"><PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" /><small>桌宠预览</small></div>
         <button v-if="owned" type="button" class="ui-btn primary equip" :disabled="equipped" @click="settings.character = name"><Icon name="shirt" :size="15" />{{ equipped ? '已装备' : '装备皮肤' }}</button>
         <button v-else type="button" class="ui-btn primary equip" @click="resonate"><Icon name="spark" :size="15" />去共鸣获取</button>
@@ -77,7 +104,10 @@ watch(owned, (o) => !o && (viewing.value = false));
 /* The skin picture has no ground of its own; it sits on the same paper as in the album. */
 .full { background-color: var(--c-100); }
 .info { display: flex; flex: 1; min-width: 0; align-items: flex-start; flex-direction: column; gap: 9px; padding-top: 4px; }
-h3 { margin: 6px 0 2px; font: 800 clamp(22px, 3cqw, 28px)/1.25 var(--font); text-wrap: balance; }
+.name-row { display: flex; align-items: center; gap: 6px; width: 100%; margin: 6px 0 2px; }
+h3 { min-width: 0; margin: 0; font: 800 clamp(22px, 3cqw, 28px)/1.25 var(--font); text-wrap: balance; overflow-wrap: anywhere; }
+.note { flex: 1; min-width: 0; font: 800 clamp(18px, 2.4cqw, 22px)/1.25 var(--font); }
+.rename { flex: none; padding: 0 6px; }
 .member { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--ink); font-size: var(--fs-body); font-weight: 700; }
 .member i { width: 4px; height: 11px; }
 dl { width: 100%; margin: 12px 0 0; font-size: var(--fs-body); }

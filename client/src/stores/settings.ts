@@ -96,9 +96,13 @@ export interface Settings {
   termsAgreed: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
+  /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
+  skinNotes: Record<string, string>;
 }
 
 const KEY = "asoultappo.settings.v1";
+/** Longest skin note, in characters. */
+export const SKIN_NOTE_MAX = 10;
 const LEGACY_SERVER_URL = "http://121.36.224.230:8000";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -156,7 +160,21 @@ export const DEFAULT_SETTINGS: Settings = {
   captureH: 412,
   termsAgreed: "",
   promoSeen: false,
+  skinNotes: {},
 };
+
+/** A note as it is kept: trimmed and at most SKIN_NOTE_MAX characters. */
+export const cleanSkinNote = (text: string) => [...text.trim()].slice(0, SKIN_NOTE_MAX).join("");
+
+function cleanSkinNotes(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [name, text] of Object.entries(raw).slice(0, 64)) {
+    const note = typeof text === "string" ? cleanSkinNote(text) : "";
+    if (note && name.length <= 32) out[name] = note;
+  }
+  return out;
+}
 
 export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
   const out: Settings = { ...DEFAULT_SETTINGS };
@@ -199,6 +217,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
+  out.skinNotes = cleanSkinNotes(out.skinNotes);
   return out;
 }
 

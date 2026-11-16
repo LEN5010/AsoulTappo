@@ -124,7 +124,9 @@ async function syncSettings() {
   };
   const unlisten = await listen<Partial<Settings>>("desktop:settings", ({ payload }) => apply(payload),
     { target: isPanelWindow ? "panel" : "main" });
-  const stop = watch(() => ({ ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase] }), (value, old) => {
+  const stop = watch(() => ({
+    ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase], skinNotes: { ...settings.skinNotes },
+  }), (value, old) => {
     if (receiving) return;
     const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>
       JSON.stringify(v) !== JSON.stringify(old[key as keyof Settings]),
