@@ -1,5 +1,5 @@
-// The bubble over the own pet for reminders (src/nudge.ts has the timing) and the tomato timer (stores/pomodoro.ts):
-// one at a time, gone by itself after a while.
+// The bubble over the own pet for reminders (src/nudge.ts has the timing), the tomato timer (stores/pomodoro.ts) and
+// todos (stores/todo.ts): one at a time, gone by itself after a while.
 import { ref } from "vue";
 import {
   LINES, LUNCH_ASK, LUNCH_REPLY, NIGHT_LINES, NudgeClock, greetLine, minuteOfDay, pick, type NudgeDays, type NudgeKind,
@@ -8,11 +8,16 @@ import type { PomodoroBubble } from "../pomodoro";
 import { drank } from "./room";
 import { settings } from "./settings";
 
+/** A todo that came due (`todo`), or several at once (`todos`, a key opens the list). */
+export type TodoBubble = "todo" | "todos";
+
 export interface Nudge {
-  kind: NudgeKind | PomodoroBubble;
+  kind: NudgeKind | PomodoroBubble | TodoBubble;
   text: string;
-  /** The answer to the lunch question, shown briefly without keys. */
+  /** The answer to the lunch question or a todo ticked off, shown briefly without keys. */
   reply?: boolean;
+  /** The todo of a `todo` bubble. */
+  todo?: string;
 }
 
 export const nudge = ref<Nudge | null>(null);
@@ -82,6 +87,34 @@ export function offerPomodoro(kind: PomodoroBubble, text: string): boolean {
   close(kind === "again" ? AGAIN_MS : SHOW_MS);
   clock?.mark(Date.now());
   return true;
+}
+
+const POMODORO: readonly string[] = ["rest", "back", "again"] satisfies PomodoroBubble[];
+/** The bubble up is the tomato timer's, or a todo's or the lunch question that still waits for an answer. */
+const keepsSpot = (n: Nudge | null) =>
+  !!n && (POMODORO.includes(n.kind) || (["todo", "todos", "lunch"].includes(n.kind) && !n.reply));
+
+/** The player is away from the computer; true while the reminders' clock is not running. */
+export const playerAway = () => (clock ? clock.away(Date.now()) : true);
+
+/**
+ * A todo's bubble, shown now unless something else holds the spot over the pet, the tomato timer or another todo has
+ * the bubble, the lunch question waits for an answer, or the player is away; whether it went up. It takes the place
+ * of the other reminders (water, sitting, hello, bedtime).
+ */
+export function offerTodo(kind: TodoBubble, text: string, todo?: string): boolean {
+  if (held() || keepsSpot(nudge.value) || playerAway()) return false;
+  nudge.value = { kind, text, todo };
+  close(SHOW_MS);
+  clock?.mark(Date.now());
+  return true;
+}
+
+/** Todo [id] was ticked off: the pet says a short line, in place of that todo's bubble or where the spot is free. */
+export function sayTodoDone(text: string, id: string) {
+  if (held() || (keepsSpot(nudge.value) && nudge.value?.todo !== id)) return;
+  nudge.value = { kind: "todo", text, reply: true };
+  close(REPLY_MS);
 }
 
 /** A rest of the tomato timer began: it is the break the sitting reminder asks for, bubble or not. */

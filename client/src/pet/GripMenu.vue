@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // The strip's menu, opened from the handle at the left end of the strip or of the own name plate: fold the strip,
-// swap it for the name plate and back, the shard pops, and the tomato timer's page. It opens above the handle, or below
+// swap it for the name plate and back, the shard pops, the tomato timer's page and the todos' page. It opens above the handle, or below
 // where the screen ends above it.
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";
 
 /** `plate`: the own name plate stands in the strip's place. */
 defineProps<{ plate: boolean; shardPop: boolean }>();
-defineEmits<{ fold: []; swap: []; shardPop: []; pomodoro: [] }>();
+defineEmits<{ fold: []; swap: []; shardPop: []; pomodoro: []; todo: [] }>();
 
 const root = ref<HTMLElement>();
 const down = ref(false);
@@ -32,6 +32,9 @@ onMounted(() => {
     </button>
     <button type="button" role="menuitem" @click="$emit('pomodoro')">
       <Icon name="tomato" :size="16" /><span>番茄钟</span>
+    </button>
+    <button type="button" role="menuitem" @click="$emit('todo')">
+      <Icon name="todo" :size="16" /><span>待办</span>
     </button>
   </div>
 </template>

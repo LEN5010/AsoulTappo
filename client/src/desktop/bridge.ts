@@ -6,6 +6,7 @@ import * as player from "../stores/player";
 import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
 import * as pomodoroStore from "../stores/pomodoro";
+import * as todoStore from "../stores/todo";
 import { economy, setEconomy } from "../stores/economy";
 import { restingMotion, type PetMotion } from "../net/protocol";
 import { remoteMotion } from "../net/MotionFrames";
@@ -28,13 +29,14 @@ const groupSources = {
     cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value }),
   publicRooms: () => room.publicRooms.value,
   pomodoro: () => pomodoroStore.pomodoro.value,
+  todos: () => todoStore.todos.value,
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate }) =>
     ({ id, uid, nick, character, plate })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
     scratchCard: groupSources.scratchCard(), park: groupSources.park(), economy: groupSources.economy(), freshItems: groupSources.freshItems(), counter: groupSources.counter(), room: groupSources.room(),
-    publicRooms: groupSources.publicRooms(), pomodoro: groupSources.pomodoro(), members: groupSources.members() };
+    publicRooms: groupSources.publicRooms(), pomodoro: groupSources.pomodoro(), todos: groupSources.todos(), members: groupSources.members() };
 }
 const groupsFor = <K extends keyof Groups>(key: K) => groupSources[key]();
 type Groups = ReturnType<typeof groups>;
@@ -59,6 +61,7 @@ function applyGroups(s: Partial<Groups>) {
   if (s.scratchCard !== undefined) player.scratchCard.value = s.scratchCard;
   if (s.park !== undefined) parkStore.park.value = s.park;
   if (s.pomodoro !== undefined) pomodoroStore.pomodoro.value = s.pomodoro;
+  if (s.todos !== undefined) todoStore.todos.value = s.todos;
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
     player.freshItems.clear();
@@ -271,6 +274,7 @@ export async function initDesktop(): Promise<() => void> {
         case "tidyRemotes": tidyRemotes(); break;
         case "beginPomodoro": pomodoroStore.beginPomodoro(); break;
         case "endPomodoro": pomodoroStore.endPomodoro(); break;
+        case "todo": todoStore.todoRequest(args[0] as todoStore.TodoMethod, args[1]); break;
       }
       await publish();
       await emitTo("panel", `desktop:reply:${id}`, { result });

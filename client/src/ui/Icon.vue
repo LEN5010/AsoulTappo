@@ -62,9 +62,12 @@ const PATHS: Record<string, string[]> = {
   // The strip's menu (GripMenu.vue).
   fold: ["M4 19h16", "M12 5v10", "M7.5 10.5L12 15l4.5-4.5"],
   swap: ["M7 4L3.5 7.5 7 11", "M3.5 7.5h15", "M17 13l3.5 3.5L17 20", "M20.5 16.5h-15"],
+  // Todos (TodoDock.vue): two ticked rows.
+  todo: ["M3.5 7.5l2 2L9 6", "M12.5 8h8", "M3.5 15.5l2 2L9 14", "M12.5 16h8"],
   // Room statuses (roomStatus.ts); `off` is showing none, `status` the key that opens them.
   off: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M5.6 5.6l12.8 12.8"],
   bell: ["M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z", "M10 20.5a2.2 2.2 0 0 0 4 0"],
+  "bell-off": ["M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z", "M10 20.5a2.2 2.2 0 0 0 4 0", "M4 4l16 16"],
   // The notice board key in the panel's top bar.
   megaphone: ["M4 9.5h3.5L17 5v14l-9.5-4.5H4z", "M7.5 14.5l1.3 5h2.7l-1.2-4.3", "M20.5 10v4"],
   status: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M8.5 14a4 4 0 0 0 7 0", "M9 9.5h.01", "M15 9.5h.01"],

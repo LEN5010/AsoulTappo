@@ -424,3 +424,20 @@ it("drops the panel's pose subscription when the desk bridge stops", async () =>
   stops.shift()!();
   expect(subscribed).toHaveBeenLastCalledWith([]);
 });
+
+it("shows the desk's todos in the panel and changes them in the desk", async () => {
+  await context(false);
+  const deskTodos = await import("../stores/todo");
+  deskTodos.addTodo({ title: "交周报", at: null, repeat: "none" });
+  await context(true);
+  const panelTodos = await import("../stores/todo");
+  expect(panelTodos.todos.value.map((t) => t.title)).toEqual(["交周报"]);
+  panelTodos.addTodo({ title: "开会", at: null, repeat: "none" });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(deskTodos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
+  expect(panelTodos.todos.value.map((t) => t.title)).toEqual(["交周报", "开会"]);
+  panelTodos.finishTodo(deskTodos.todos.value[0].id);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(deskTodos.todos.value[0].doneAt).not.toBeNull();
+  expect(panelTodos.todos.value[0].doneAt).not.toBeNull();
+});

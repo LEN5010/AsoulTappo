@@ -113,6 +113,26 @@ fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> Result<(), String>
     Ok(())
 }
 
+/// The desk's todo box is being typed into (or no longer is). The Windows overlay is kept from taking focus
+/// (WS_EX_NOACTIVATE, see setup), so it cannot get keys; for the typing it is made focusable and focused, and
+/// afterwards it goes back. Elsewhere the overlay takes focus on a click already.
+#[tauri::command]
+fn set_overlay_typing(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    if let Some(window) = main_window(&app) {
+        window.set_focusable(on).map_err(|e| {
+            applog!("overlay", "focusable {} failed: {e}", on_off(on));
+            e.to_string()
+        })?;
+        if on {
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = (app, on);
+    Ok(())
+}
+
 fn on_off(on: bool) -> &'static str {
     if on {
         "on"
@@ -826,6 +846,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_click_through,
             set_always_on_top,
+            set_overlay_typing,
             set_hit_regions,
             set_dragging,
             open_panel,

@@ -88,7 +88,8 @@ export class NudgeClock {
     return lo + this.rand() * (hi - lo);
   }
 
-  private away(now: number) {
+  /** No input for AWAY_MS: the player is away from the computer (also before the first input). */
+  away(now: number) {
     return now - this.lastInput >= AWAY_MS;
   }
 

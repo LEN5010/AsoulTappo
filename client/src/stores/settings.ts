@@ -64,6 +64,10 @@ export interface Settings {
   pomodoroSound: boolean;
   /** A notice from the system too when a focus or a rest ends, seen while the pet is hidden or a game fills the screen. */
   pomodoroNotify: boolean;
+  /** The tomato timer's tune when a todo comes due (stores/todo.ts). */
+  todoSound: boolean;
+  /** A notice from the system too when a todo comes due. */
+  todoNotify: boolean;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
   /** How partners stand: each where it was dragged ("free"), or together in rows that move as one ("formation"). */
@@ -143,6 +147,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pomodoroAuto: false,
   pomodoroSound: true,
   pomodoroNotify: false,
+  todoSound: true,
+  todoNotify: false,
   showPartners: true,
   partnerLayout: "free",
   formationCols: 5,

@@ -7,12 +7,12 @@ import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
 
 /**
- * The plate leads with small keys for the other pages: the tomato timer (`pomodoro`: it runs), and in a room the own
- * status (`status`, "" for none; null leaves its key out).
+ * The plate leads with small keys for the other pages: the tomato timer (`pomodoro`: it runs), the todos (`todo`: one
+ * is past its time), and in a room the own status (`status`, "" for none; null leaves its key out).
  * `ceiling`: where the screen ends below the strip the dock opens above this viewport y (over the pet's head).
  */
-const props = defineProps<{ keys: string[]; status?: string | null; pomodoro?: boolean; ceiling?: number }>();
-defineEmits<{ pick: [key: string]; status: []; pomodoro: [] }>();
+const props = defineProps<{ keys: string[]; status?: string | null; pomodoro?: boolean; todo?: boolean; ceiling?: number }>();
+defineEmits<{ pick: [key: string]; status: []; pomodoro: []; todo: [] }>();
 
 const root = ref<HTMLElement>();
 const { up, style: lift } = useLift(root, () => props.ceiling);
@@ -67,7 +67,7 @@ function onWheel(e: WheelEvent) {
     aria-label="快捷表情"
     @wheel.prevent="onWheel"
   >
-    <div class="lead" :class="{ pair: status != null }">
+    <div class="lead">
       <button
         type="button" class="ui-btn" :class="{ running: pomodoro }" role="menuitem" title="番茄钟" aria-label="番茄钟"
         @click="$emit('pomodoro')"
@@ -75,7 +75,13 @@ function onWheel(e: WheelEvent) {
         <Icon name="tomato" :size="14" />
       </button>
       <button
-        v-if="status != null" type="button" class="ui-btn" role="menuitem" title="我的状态" aria-label="我的状态"
+        type="button" class="ui-btn" :class="{ running: todo }" role="menuitem" title="待办" aria-label="待办"
+        @click="$emit('todo')"
+      >
+        <Icon name="todo" :size="14" />
+      </button>
+      <button
+        v-if="status != null" type="button" class="ui-btn tall" role="menuitem" title="我的状态" aria-label="我的状态"
         @click="$emit('status')"
       >
         <Icon :name="roomStatus(status)?.icon ?? 'status'" :size="14" />
@@ -181,24 +187,26 @@ function onWheel(e: WheelEvent) {
   max-height: 30px;
 }
 
-/* Keys to the other pages: one small key, or in a room two stacked as tall as an emote key. */
+/* Keys to the other pages: two stacked as tall as an emote key, and in a room the status key beside them at full height. */
 .lead {
   flex: none;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, 20px);
   gap: 4px;
 }
 .lead .ui-btn {
   --key-lip-h: 2px;
   width: 30px;
-  height: 30px;
+  height: 20px;
   padding: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   color: var(--ink-2);
 }
-.lead.pair .ui-btn {
-  height: 20px;
-  border-radius: 7px;
+.lead .ui-btn.tall {
+  grid-row: 1 / span 2;
+  height: auto;
+  border-radius: 8px;
 }
 .lead .ui-btn.running {
   color: var(--c-600);

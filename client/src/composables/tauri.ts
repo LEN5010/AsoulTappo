@@ -134,6 +134,8 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
+/** While a text box on the desk is being typed into, the overlay takes keyboard focus (on Windows it never does otherwise). */
+export const setOverlayTyping = (on: boolean) => call("set_overlay_typing", { on });
 /** Registers the hide key ("" removes it). Rejects when the system refuses the shortcut. */
 /** What a global shortcut does: hide the pet and the panel, or flip click-through. */
 export type HotkeySlot = "hide" | "click-through";
