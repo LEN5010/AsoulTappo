@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 每日夺宝 (docs/design/amusement-park.md §7, §11; docs/design/park-ui-rebuild.md §5.4), laid out like a lottery's
+// 每日夺宝 (protocol/PROTOCOL.md 每日夺宝), laid out like a lottery's
 // draw broadcast: on the left the draw machine (a globe with a ring of the ten numbered balls over a coral cabinet with
 // the three number keys in its windows) and the tray of my stubs of the day under it; on the right the pool (the top prize, server-wide,
 // which rolls over until a draw has a top winner, with the second and the third under it) and the board of the latest

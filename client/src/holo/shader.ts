@@ -1,5 +1,5 @@
 // The holo (镭射款) shading: the art with foil over the white of the official mask. Carried over from
-// docs/design/holo-demo/index.html, tuned there against the official recordings; keep the two in step.
+// docs/assets/holo-demo/index.html (local notes), tuned there against the official recordings; keep the two in step.
 import type { HoloShine } from "../manifest";
 
 export const VERT = `

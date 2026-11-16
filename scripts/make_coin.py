@@ -2,7 +2,7 @@
 """Render the park coin (驼币) and the three stamp badges from the smiling 阿草 of the panel sidebar.
 
 The 阿草 line art becomes an embossed relief on a reeded coin, lit from the upper left,
-and is coloured with the UI's three gold tones (see docs/design/amusement-park.md §2.3).
+and is coloured with the UI's three gold tones.
 Copper and silver badges reuse the same shading with their own three-tone ramps.
 
 Run after changing the source picture or the colour tokens:
@@ -24,7 +24,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageMath
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "client/src/assets/brand/side-alpaca.webp"
 OUT = ROOT / "client/src/assets/park"
-DEFAULT_PREVIEW = Path("/Users/len5010/code/AsoulTappo/docs/design/assets/coin-preview.png")
+DEFAULT_PREVIEW = ROOT / "docs/assets/coin-preview.png"
 
 # Tokens from client/src/ui/tokens.css.
 GOLD_SOFT = "#FFE3A6"

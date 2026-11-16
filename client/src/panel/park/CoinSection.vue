@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The coin page of the park (docs/design/amusement-park.md §2, §4, §8.3, §10; docs/design/park-ui-rebuild.md §5.1):
+// The coin page of the park (protocol/PROTOCOL.md 乐园):
 // the big coin and the coins held, three tall keys that buy more, the stamp card with its badges, the redeem code in
 // the bottom bar, and the save's coin and redeem history behind the bar's 明细 key (CoinLedger). A pack key asks first
 // (what is bought, what it costs); bought coins fly from the key into the big coin. The stamp card's last slot is the

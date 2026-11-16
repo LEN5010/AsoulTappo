@@ -131,9 +131,10 @@ global_config.json
 /.local/
 
 # docs/ holds local working notes (plans, designs, measurements) and stays out of the repository.
-# The one exception is the architecture overview the README links to.
+# The exceptions are the architecture overview the README links to and the operations handbook.
 /docs/*
 !/docs/ARCHITECTURE.md
+!/docs/OPERATIONS.md
 
 # server runtime data (sqlite)
 /server/data/

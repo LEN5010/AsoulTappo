@@ -2,8 +2,8 @@
 """Normalise the five member dumplings (团子) for the park race.
 
 Each 2000x2000 source is cropped to its alpha bounding box, scaled so the content width is 90%
-of a 384x384 canvas, centred horizontally and bottom-aligned 3% above the lower edge
-(see docs/design/amusement-park.md §6.6). Sources are not in git; rerun after replacing them:
+of a 384x384 canvas, centred horizontally and bottom-aligned 3% above the lower edge.
+Sources are not in git; rerun after replacing them:
     server/.venv/bin/python scripts/make_tuanzi.py [SOURCE_DIR] [--preview [PATH]]
 
 Outputs client/src/assets/park/tuanzi/<member id>.webp (WebP quality 85).
@@ -17,8 +17,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = Path("/Users/len5010/code/AsoulTappo/docs/design/assets/tuanzi")
-DEFAULT_PREVIEW = Path("/Users/len5010/code/AsoulTappo/docs/design/assets/tuanzi-preview.png")
+DEFAULT_SOURCE = ROOT / "docs/assets/tuanzi"
+DEFAULT_PREVIEW = ROOT / "docs/assets/tuanzi-preview.png"
 OUT = ROOT / "client/src/assets/park/tuanzi"
 
 MEMBERS = ("jiaran", "nailin", "beila", "xinyi", "sinuo")

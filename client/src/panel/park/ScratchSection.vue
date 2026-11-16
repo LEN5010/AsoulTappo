@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The park's scratch cards (docs/design/amusement-park.md §5, docs/design/park-ui-rebuild.md §5.2): 阿草 keeps the
+// The park's scratch cards (protocol/PROTOCOL.md 刮刮乐): 阿草 keeps the
 // stall from the park's coral band (band.ts: its face, and the odds behind the band's info key); the save's own cards
 // of the latest days are behind the 明细 key in the bottom bar (ScratchLedger). The cards on sale
 // lie on the table: the one picked straight in front, another tilted behind it with its stub showing; pressing the

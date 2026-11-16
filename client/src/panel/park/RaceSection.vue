@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 团子赛跑 (docs/design/amusement-park.md §6, protocol/PROTOCOL.md 团子赛跑). There is no push channel: while the
+// 团子赛跑 (protocol/PROTOCOL.md 团子赛跑). There is no push channel: while the
 // page is shown the section asks GET /api/park/race (every 10 s while bets are open, soon around the start and the
 // end), keeps the offset to the server's clock, and plays the race's move list from startsAt, so every client shows
 // the same moment. The odds move with the coins staked until the start; a bet sends the odds the player saw and

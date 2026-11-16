@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The park (乐园, docs/design/amusement-park.md §11, docs/design/park-ui-rebuild.md §4): one sheet of paper whose top
+// The park (乐园, protocol/PROTOCOL.md 乐园): one sheet of paper whose top
 // edge is a coral band with the four pages (coins, scratch cards, the race and the lottery), the page's timer and
 // its host; the page picked fills the white body. The coins held and the server-wide pool (the lottery's top prize)
 // are in the panel's top bar (ParkChips). The games open at economy.park.coin.minTaps taps in all; until then
