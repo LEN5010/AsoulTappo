@@ -236,7 +236,7 @@ WARDROBE_SERIES = {
 
 # Card names by series, in card order (1.0 suit first). The API names only the suit, so these describe each portrait.
 WARDROBE_NAMES = {
-    "wardrobe-jiaran": ["毛绒新年", "糖果外套", "背包出发", "唱给你听", "白羽天使", "泡泡甜点",
+    "wardrobe-jiaran": ["毛绒新年", "糖果外套", "背包出发", "唱给你听", "圣嘉然", "泡泡甜点",
                         "雪地兔耳", "星月时钟", "草莓花园", "小恶魔", "舞会登场", "甜品乐园"],
     "wardrobe-nailin": ["白狐相伴", "冰晶王座", "蓝玫瑰", "火锅时间", "街口白纱", "海边派对",
                         "雪夜撑伞", "咖啡午后", "女王权杖", "红裙起舞", "桃花面纱", "黑猫红酒"],

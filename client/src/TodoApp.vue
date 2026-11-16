@@ -7,19 +7,26 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import {
   NO_WHEN, REPEATS, REPEAT_LABEL, TITLE_MAX, cleanTitle, doneTodos, sortTodos, whenOf, whenText, type Todo, type TodoRepeat,
   type TodoWhen,
 } from "./todo";
 import { addTodo, editWhen, finishTodo, removeTodo, todoNow, todos, undoTodo } from "./stores/todo";
-import { settings } from "./stores/settings";
+import { settings, todoSize } from "./stores/settings";
 import { pomodoroTune, wakeAudio } from "./audio/sfx";
 import { isTauri } from "./composables/tauri";
 import Icon from "./ui/Icon.vue";
 import TodoRow from "./todos/TodoRow.vue";
 import WhenPicker from "./todos/WhenPicker.vue";
 
+/** In the browser preview the page floats in a frame over the desk page (pet/TodoFrame.vue), which moves and hides it. */
+const framed = !isTauri && window.parent !== window;
+type FrameMessage = { type: "todo:hide" } | { type: "todo:move"; dx: number; dy: number } | { type: "todo:size"; w: number; h: number };
+const toFrame = (message: FrameMessage) =>
+  window.parent.postMessage(message, location.origin);
 if (!isTauri) document.documentElement.classList.add("browser-preview");
+if (framed) document.documentElement.classList.add("framed");
 
 // ---- the clock: the desk's ticks do not reach this window
 const CLOCK_MS = 15_000;
@@ -141,11 +148,65 @@ function onPointerDown(e: PointerEvent) {
 // ---- the window
 function drag(e: PointerEvent) {
   if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
-  if (isTauri) void getCurrentWindow().startDragging();
+  if (isTauri) return void getCurrentWindow().startDragging();
+  if (!framed) return;
+  // The frame moves under the pointer, so the steps are taken on the screen.
+  const head = e.currentTarget as HTMLElement;
+  head.setPointerCapture(e.pointerId);
+  let x = e.screenX;
+  let y = e.screenY;
+  const move = (m: PointerEvent) => {
+    toFrame({ type: "todo:move", dx: m.screenX - x, dy: m.screenY - y });
+    x = m.screenX;
+    y = m.screenY;
+  };
+  const end = () => {
+    head.removeEventListener("pointermove", move);
+    head.removeEventListener("pointerup", end);
+    head.removeEventListener("pointercancel", end);
+  };
+  head.addEventListener("pointermove", move);
+  head.addEventListener("pointerup", end);
+  head.addEventListener("pointercancel", end);
+}
+/** The grip at the bottom right corner sizes the window, taken on the screen as the window grows under the pointer. */
+function resize(e: PointerEvent) {
+  if (e.button !== 0 || (!isTauri && !framed)) return;
+  e.preventDefault();
+  closePops();
+  const grip = e.currentTarget as HTMLElement;
+  grip.setPointerCapture(e.pointerId);
+  const x0 = e.screenX;
+  const y0 = e.screenY;
+  const w0 = window.innerWidth;
+  const h0 = window.innerHeight;
+  let size = { w: w0, h: h0 };
+  let pending = 0;
+  const apply = () => {
+    pending = 0;
+    if (isTauri) void getCurrentWindow().setSize(new LogicalSize(size.w, size.h)).catch(() => {});
+    else toFrame({ type: "todo:size", ...size });
+  };
+  const move = (m: PointerEvent) => {
+    size = { w: todoSize(w0 + m.screenX - x0, "w"), h: todoSize(h0 + m.screenY - y0, "h") };
+    if (!pending) pending = requestAnimationFrame(apply);
+  };
+  const end = () => {
+    grip.removeEventListener("pointermove", move);
+    grip.removeEventListener("pointerup", end);
+    grip.removeEventListener("pointercancel", end);
+    if (pending) { cancelAnimationFrame(pending); apply(); }
+    settings.todoW = size.w;
+    settings.todoH = size.h;
+  };
+  grip.addEventListener("pointermove", move);
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
 }
 function hide() {
   closePops();
   if (isTauri) void invoke("hide_todo");
+  else if (framed) toFrame({ type: "todo:hide" });
   else window.close();
 }
 /** Esc closes the picker or the menu first, then drops what is being written, then hides the window. */
@@ -298,6 +359,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
       </footer>
+      <span class="grip" aria-hidden="true" @pointerdown="resize"></span>
     </section>
   </div>
 </template>
@@ -307,6 +369,8 @@ html, body, #app { margin: 0; width: 100%; height: 100%; background: transparent
 body { font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
 /* The browser preview's popup: a soft desk behind the card. */
 html.browser-preview body { background: linear-gradient(160deg, #e9edf3, #f3e3e8); }
+/* In a frame over the desk page only the card shows. */
+html.browser-preview.framed body { background: transparent; }
 </style>
 
 <style scoped>
@@ -318,6 +382,26 @@ html.browser-preview body { background: linear-gradient(160deg, #e9edf3, #f3e3e8
   box-sizing: border-box;
   -webkit-user-select: none;
   user-select: none;
+}
+/* The corner that sizes the window: two short strokes, darker under the pointer. */
+.grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 50%, var(--c-300) 50%, var(--c-300) 58%, transparent 58%,
+      transparent 70%, var(--c-300) 70%, var(--c-300) 78%, transparent 78%);
+  border-bottom-right-radius: var(--radius-l);
+}
+.grip:hover {
+  background:
+    linear-gradient(135deg, transparent 50%, var(--c-500) 50%, var(--c-500) 58%, transparent 58%,
+      transparent 70%, var(--c-500) 70%, var(--c-500) 78%, transparent 78%);
 }
 .card {
   position: relative;
@@ -481,6 +565,9 @@ html.browser-preview body { background: linear-gradient(160deg, #e9edf3, #f3e3e8
 .pop {
   left: 6px;
   right: 6px;
+  max-height: calc(100vh - 154px);
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 @keyframes pop-in {
   from {

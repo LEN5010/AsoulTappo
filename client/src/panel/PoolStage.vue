@@ -1,19 +1,24 @@
 <script setup lang="ts">
 // Resonance stage: the page itself. The dynamic cards are held as a fanned hand in front of slow rays
 // and a soft wash of the front card's colours; the front card leans toward the pointer. Beside it the
-// page names the card and sums up the collection, the 衣橱 series and the skins. The lineup deals the next card on its
+// page names the card and sums up the collection: the total, a gauge per tier, then the two special collections (the
+// 衣橱 series and the holo versions, each in its own material), and the skins. The lineup deals the next card on its
 // own.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { cardFrame, cardLabel, cardWord, poolName, TIER_LABEL } from "../cards";
+import { cardFrame, cardLabel, cardWord, ownsHolo, poolName, TIER_LABEL } from "../cards";
 import { characters, getCharacter } from "../characters";
 import { getCard, characterColor, manifest, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { allPlates, plateMembers, type Plate } from "../pet/plates";
 import { poolOf } from "../resonance";
 import { collection } from "../stores/player";
+import { economy } from "../stores/economy";
 import { reducedMotion } from "../stores/theme";
+import { openPanel, ui } from "../stores/ui";
+import { tiltTransform } from "../holo/shader";
+import { useTilt } from "../holo/useTilt";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
@@ -45,18 +50,54 @@ const meter = computed(() =>
     return { ...s, got, total: pool[s.rarity].length, fill: `${(got / pool[s.rarity].length) * 100}%` };
   }),
 );
-const collected = computed(() => have(all));
-/** The limited tier, one closet per member beside the total: its series plate, how much of it is owned, the newest owned
- * card on top. */
+/** The newest of [owned]: the first one among the recent drops, else the last in catalogue order. */
+function newest<T extends { id: string }>(owned: readonly T[], item: (x: T) => string): T | undefined {
+  const byItem = new Map(owned.map((x) => [item(x), x]));
+  for (const drop of collection.recent) {
+    const hit = byItem.get(drop.item);
+    if (hit) return hit;
+  }
+  return owned.at(-1);
+}
+const fill = (got: number, total: number) => `${total ? (got / total) * 100 : 0}%`;
+/** The limited tier: one series plate per member, a segment each, and the newest owned card of all on the left. */
 const closets = allPlates().flatMap((plate) => (plate.kind === "series" ? [plate] : []));
-const wardrobe = computed(() => closets.map((plate) => {
-  const got = plate.cards.filter((c) => collection.owned[`card:${c.id}`]);
-  const member = plateMembers(plate)[0] ?? "";
-  return {
-    plate, member, color: characterColor(member), got: got.length, total: plate.cards.length,
-    cover: (got.at(-1) ?? plate.cards[0])!.thumb,
-  };
-}));
+const wardrobe = computed(() => {
+  const members = closets.map((plate) => {
+    const got = plate.cards.filter((c) => collection.owned[`card:${c.id}`]).length;
+    const member = plateMembers(plate)[0] ?? "";
+    return { plate, member, color: characterColor(member), got, total: plate.cards.length, fill: fill(got, plate.cards.length) };
+  });
+  const cards = closets.flatMap((p) => p.cards);
+  const owned = cards.filter((c) => collection.owned[`card:${c.id}`]);
+  const cover = newest(owned, (c) => `card:${c.id}`);
+  return { members, got: owned.length, total: cards.length, cover: (cover ?? cards[0])?.thumb, has: !!cover };
+});
+/** The holo versions (镭射款), only where the server deals them: the newest owned one shines on the left. */
+const holoCards = manifest.cards.filter((c) => c.holo);
+const holoOn = computed(() => holoCards.length > 0 && !!economy.value?.resonance.holoChance);
+const holo = computed(() => {
+  const owned = holoCards.filter((c) => ownsHolo(c, collection.owned));
+  return { got: owned.length, total: holoCards.length, fill: fill(owned.length, holoCards.length), card: newest(owned, (c) => `holo:${c.id}`) };
+});
+const holoEl = ref<HTMLElement>();
+const { tilt: holoTilt, lit: holoLit, moving: holoMoving, follow: holoFollow, leave: holoLeave } = useTilt();
+/**
+ * At this size the shading would only blur the art: the art stays a plain image, and the foil is the spectrum through
+ * the card's own mask, drifting on its own; the card leans under the pointer.
+ */
+const holoFoil = computed(() => {
+  const mask = holo.value.card?.holo ? `url(${assetUrl(holo.value.card.holo.mask)})` : "";
+  return { maskImage: mask, WebkitMaskImage: mask };
+});
+/** The collection's page, at the holo filter. */
+function openHolo() {
+  ui.dexFilter = "holo";
+  openPanel("dex");
+}
+/** The holo versions count as items of their own, as the collection's page counts them. */
+const collected = computed(() => have(all) + (holoOn.value ? holo.value.got : 0));
+const totalItems = computed(() => all.length + (holoOn.value ? holo.value.total : 0));
 
 const selected = ref(previews[0]?.id ?? "");
 const at = computed(() => Math.max(0, previews.findIndex((i) => i.id === selected.value)));
@@ -360,28 +401,54 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="meter">
-        <div class="total-row">
-          <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i></p>
-          <div v-if="wardrobe.length" class="wardrobe" role="group" aria-label="衣橱">
-            <button
-              v-for="w in wardrobe" :key="w.plate.id" type="button" class="closet" :class="{ done: w.got === w.total }"
-              :disabled="busy" :title="`${w.plate.name} ${w.got}/${w.total}`" :aria-label="`${w.plate.name} ${w.got}/${w.total}`"
-              @click="emit('plate', w.plate)"
-            >
-              <span class="closet-art ui-frame frame-pearl"><img :src="assetUrl(w.cover)" alt="" draggable="false" /></span>
-              <span class="closet-text">
-                <span class="closet-who"><i :style="{ background: w.color }"></i>{{ w.member }}</span>
-                <span class="closet-count"><b>{{ w.got }}</b><i>/{{ w.total }}</i></span>
-              </span>
-            </button>
-          </div>
-        </div>
+        <p class="total"><b>{{ collected }}</b><i>/ {{ totalItems }}</i></p>
         <ul class="tiers">
           <li v-for="t in meter" :key="t.rarity" :class="t.rarity" :title="`${t.label} ${t.got}/${t.total}`">
             <span class="t-head"><Icon :name="t.icon" :size="12" /><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
             <span class="t-bar" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`"><i :style="{ width: t.fill }"></i></span>
           </li>
         </ul>
+        <div v-if="wardrobe.total || holoOn" class="specials">
+          <div v-if="wardrobe.total" class="special closet" role="group" aria-label="衣橱">
+            <span class="mini pearl" :class="{ dim: !wardrobe.has }" aria-hidden="true">
+              <img v-if="wardrobe.cover" :src="assetUrl(wardrobe.cover)" alt="" draggable="false" />
+            </span>
+            <span class="s-body">
+              <span class="s-head"><em>衣橱</em><b>{{ wardrobe.got }}</b><i>/{{ wardrobe.total }}</i></span>
+              <span class="segs">
+                <button
+                  v-for="w in wardrobe.members" :key="w.plate.id" type="button" class="seg" :class="{ done: w.got === w.total }"
+                  :disabled="busy" :title="w.plate.name" :aria-label="`${w.plate.name} ${w.got}/${w.total}`" @click="emit('plate', w.plate)"
+                >
+                  <span class="seg-bar"><i :style="{ width: w.fill }"></i></span>
+                  <span class="seg-who">
+                    <i :style="{ background: w.color }"></i>{{ w.member }}
+                    <Icon v-if="w.got === w.total" name="check" :size="10" /><b v-else>{{ w.got }}</b>
+                  </span>
+                </button>
+              </span>
+            </span>
+          </div>
+          <button
+            v-if="holoOn" type="button" class="special holo" :disabled="busy" title="镭射" :aria-label="`镭射 ${holo.got}/${holo.total}`"
+            @click="openHolo" @pointermove="holoFollow($event, holoEl)" @pointerleave="holoLeave"
+          >
+            <span
+              ref="holoEl" class="mini foil" :class="{ lit: holoLit }"
+              :style="holoMoving ? { transform: tiltTransform(holoTilt, 300) } : undefined" aria-hidden="true"
+            >
+              <span v-if="holo.card?.holo" class="foil-art">
+                <img :src="assetUrl(holo.card.thumb)" alt="" draggable="false" />
+                <i class="foil-sheen" :style="holoFoil"></i>
+              </span>
+              <span v-else class="foil-back"><Icon name="spark" :size="14" /></span>
+            </span>
+            <span class="s-body">
+              <span class="s-head"><em>镭射</em><b>{{ holo.got }}</b><i>/{{ holo.total }}</i></span>
+              <span class="t-bar foil-bar"><i :style="{ width: holo.fill }"></i></span>
+            </span>
+          </button>
+        </div>
       </div>
       </div>
 
@@ -699,7 +766,7 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-paper);
 }
 .feature-slot {
-  min-height: 108px;
+  min-height: 96px;
 }
 
 /* The front card's member stands behind the sheet with only her head over its top edge, in the corner the title
@@ -812,7 +879,7 @@ h3 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  margin: 8px 0 6px;
+  margin: 6px 0 4px;
   overflow: hidden;
   text-wrap: balance;
   font: 800 clamp(22px, 3.1cqw, 30px)/1.25 var(--font);
@@ -877,10 +944,10 @@ h3 {
 .tiers {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   align-items: center;
-  gap: 8px 22px;
+  gap: 8px 16px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -932,79 +999,220 @@ h3 {
   transition: width var(--dur-stage) var(--ease-out);
 }
 
-/* The 衣橱 series beside the total, one key per member: the newest owned card in its frame, the member and the count. */
-.total-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+/* The special collections under the tier gauges, each in its material: 衣橱 in pearl, the holo versions in the foil
+ * spectrum. A small card on the left (the newest owned one), the name and count, and the gauge. */
+.specials {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 10px;
 }
-.wardrobe {
-  min-width: 0;
-  display: flex;
-  gap: 4px;
-}
-.closet {
+.special {
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 7px 3px 3px;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 12px 8px 8px;
   border: 0;
-  border-radius: var(--radius-s);
-  background: none;
+  border-radius: var(--radius-m);
+  overflow: hidden;
   color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.special.closet {
+  background: linear-gradient(115deg, color-mix(in srgb, var(--holo-lilac) 22%, var(--surface)),
+    color-mix(in srgb, var(--holo-pink) 14%, var(--surface)));
+}
+.special.holo {
+  background: var(--c-50);
   cursor: pointer;
   transition: background var(--dur-base) var(--ease-out);
 }
-.closet:hover:not(:disabled) {
-  background: var(--c-50);
+/* A faint wash of the foil spectrum, drifting as the band of a holo draw does. */
+.special.holo::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--grad-holo);
+  background-size: 300% 100%;
+  opacity: 0.16;
+  animation: holo-drift 9s ease-in-out infinite alternate;
+  pointer-events: none;
 }
-.closet-art {
+.special.holo:hover:not(:disabled)::before {
+  opacity: 0.26;
+}
+.special > * {
+  position: relative;
+  z-index: 1;
+}
+.mini {
   flex: none;
   display: block;
-  width: 24px;
+  width: 34px;
   aspect-ratio: 2 / 3;
   padding: 2px;
-  border-radius: 4px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px -3px rgba(var(--shadow-rgb), 0.5);
 }
-.closet-art img {
+.mini img,
+.mini > :deep(*) {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 2px;
+  border-radius: 3px;
+  overflow: hidden;
 }
-.closet-text {
+.mini.pearl {
+  background: linear-gradient(125deg, var(--pearl), var(--holo-pink) 20%, #fff 30%, var(--holo-lilac) 45%, var(--pearl-deep) 62%,
+    var(--holo-mint) 80%, var(--holo-cream));
+}
+.mini.pearl.dim img {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+.mini.foil {
+  background: var(--grad-holo);
+  background-size: 300% 100%;
+  animation: holo-drift 7s ease-in-out infinite alternate;
+  transition: transform 120ms var(--ease-out);
+}
+.foil-art {
+  position: relative;
+  isolation: isolate;
+}
+.foil-art img {
+  position: absolute;
+  inset: 0;
+}
+/* The spectrum through the card's mask, light over the art; brighter under the pointer. */
+.foil-sheen {
+  position: absolute;
+  inset: 0;
+  background: var(--grad-holo);
+  background-size: 300% 100%;
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+  animation: holo-drift 5s ease-in-out infinite alternate;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.mini.lit .foil-sheen {
+  opacity: 1;
+}
+.foil-back {
+  display: grid !important;
+  place-items: center;
+  background: var(--grad-holo);
+  background-size: 300% 100%;
+  color: #fff;
+}
+.s-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+.s-head {
+  display: flex;
+  align-items: baseline;
   gap: 3px;
-  text-align: left;
   white-space: nowrap;
 }
-.closet-who {
+.s-head em {
+  margin-right: 5px;
+  font: 800 var(--fs-label)/1 var(--font);
+  font-style: normal;
+  color: var(--ink-2);
+}
+.s-head b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+}
+.s-head i {
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  font-style: normal;
+  color: var(--ink-3);
+}
+/* One segment per member: her gauge in pearl, her name and count under it; a full one is ticked. */
+.segs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.seg {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.seg:hover:not(:disabled) {
+  color: var(--ink);
+}
+.seg-bar {
+  display: block;
+  height: 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+}
+.seg-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--pearl-deep), var(--holo-lilac) 60%, var(--holo-pink));
+  transition: width var(--dur-stage) var(--ease-out);
+}
+.seg:hover:not(:disabled) .seg-bar {
+  box-shadow: 0 0 0 1px var(--pearl);
+}
+.seg-who {
   display: flex;
   align-items: center;
   gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
   font: 700 var(--fs-caption)/1 var(--font);
-  color: var(--ink-2);
 }
-.closet-who i {
+.seg-who i {
   flex: none;
   width: 5px;
   height: 5px;
   border-radius: 50%;
 }
-.closet-count b {
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-}
-.closet-count i {
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  font-style: normal;
+.seg-who b {
+  margin-left: 2px;
+  font: 800 var(--fs-caption)/1 var(--font-latin);
   color: var(--ink-3);
 }
-.closet.done .closet-count b {
-  color: var(--c-700);
+.seg.done .seg-who svg {
+  margin-left: 1px;
+  color: var(--pearl-deep);
+}
+.foil-bar {
+  margin-top: 0;
+  background: rgba(255, 255, 255, 0.75);
+}
+.foil-bar i {
+  background: var(--grad-holo);
+  background-size: 300% 100%;
 }
 
 /* Skins as acrylic standees: the bust in a wide clear outline, on an oval base, its name underneath. */
@@ -1181,10 +1389,9 @@ h3 {
   .fan:hover .s1:not(:disabled) { transform: translateX(13%) rotate(6deg) scale(0.93); }
   .fan:hover .s2:not(:disabled) { transform: translateX(23%) rotate(11deg) scale(0.86); }
   .total b { font-size: 36px; }
-  .tiers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
-  /* Too narrow for the cards beside the total: the closets keep the member and the count. */
-  .closet-art { display: none; }
-  .closet { padding-left: 7px; }
+  .tiers { gap: 8px 12px; }
+  /* Narrow: the special collections stack, the 衣橱 one first. */
+  .specials { grid-template-columns: minmax(0, 1fr); }
 }
 @container panel (max-width: 660px) {
   .pool-stage { flex-direction: column; align-items: center; gap: 18px; padding: 18px 16px 12px; }

@@ -1,6 +1,6 @@
 // The own pet's todos (src/todo.ts has the rules), kept on this device by the desk window. The desk's clock and the
 // bubble over the pet are in stores/todoClock.ts. The todos' own window and the panel show the desk window's copy and
-// change it there (desktop/bridge.ts, desktop/todoBridge.ts); in the browser preview the todos' popup and the desk share
+// change it there (desktop/bridge.ts, desktop/todoBridge.ts); in the browser preview the todos' frame and the desk share
 // the stored list and follow each other's writes through the storage event.
 //
 // No import of the nudge or room stores here: the todos' window loads this module, and those start desk work.
@@ -126,7 +126,7 @@ function retimeOne(id: string, when: TodoWhen) {
   todoHooks.dropped(id);
 }
 
-// The browser preview: the todos' popup and the desk are two pages of one origin, and each writes the stored list.
+// The browser preview: the todos' frame and the desk are two pages of one origin, and each writes the stored list.
 if (!isTauri && typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("storage", (e) => {
     if (e.key !== TODOS_KEY) return;

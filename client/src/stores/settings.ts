@@ -74,6 +74,9 @@ export interface Settings {
   /** Where the todos' window was left: its top left corner in screen pixels; both -1 before it was first moved. */
   todoX: number;
   todoY: number;
+  /** The todos' window's size in logical pixels, set by the grip at its corner (TODO_MIN to TODO_MAX). */
+  todoW: number;
+  todoH: number;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
   /** How partners stand: each where it was dragged ("free"), or together in rows that move as one ("formation"). */
@@ -114,6 +117,12 @@ const KEY = "asoultappo.settings.v1";
 /** Longest skin note, in characters. */
 export const SKIN_NOTE_MAX = 10;
 const LEGACY_SERVER_URL = "http://121.36.224.230:8000";
+
+/** The todos' window's size limits: below the minimum the time picker no longer fits. */
+export const TODO_MIN = { w: 280, h: 340 } as const;
+export const TODO_MAX = { w: 800, h: 1200 } as const;
+export const todoSize = (v: number, side: "w" | "h") =>
+  Math.round(Math.min(TODO_MAX[side], Math.max(TODO_MIN[side], Number.isFinite(v) ? v : TODO_MIN[side])));
 
 export const DEFAULT_SETTINGS: Settings = {
   serverUrl: "https://len5010.top/tappo",
@@ -158,6 +167,8 @@ export const DEFAULT_SETTINGS: Settings = {
   todoPinned: true,
   todoX: -1,
   todoY: -1,
+  todoW: 320,
+  todoH: 460,
   showPartners: true,
   partnerLayout: "free",
   formationCols: 5,
@@ -231,6 +242,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   // Screen pixels may be negative left of or above the main monitor.
   out.todoX = Math.round(out.todoX);
   out.todoY = Math.round(out.todoY);
+  out.todoW = todoSize(out.todoW, "w");
+  out.todoH = todoSize(out.todoH, "h");
   if (!roomStatus(out.status)) out.status = "";
   if (!/^#[0-9a-f]{6}$/i.test(out.captureBg)) out.captureBg = DEFAULT_SETTINGS.captureBg;
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));

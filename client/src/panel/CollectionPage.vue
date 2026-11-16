@@ -160,6 +160,14 @@ const category = ref("card");
 const CATEGORIES = [{ id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" }];
 const selectedSeries = ref("all");
 const cardFilter = ref<AlbumFilter>("all");
+// Asked from another page (the resonance page's holo collection): all the cards, at that filter.
+watch(() => ui.dexFilter, (filter) => {
+  if (!filter) return;
+  category.value = "card";
+  selectedSeries.value = "all";
+  cardFilter.value = filter;
+  ui.dexFilter = "";
+}, { immediate: true });
 const CARD_FILTERS = [
   { id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "holo", label: "镭射" },
   { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" },

@@ -374,13 +374,20 @@ fn show_window(window: &WebviewWindow) -> Result<(), String> {
 /// bottom right of the pet's monitor. The page shows it once it has drawn (`show_todo`). Moves are reported to the
 /// desk (`todo:moved`), which keeps the spot.
 #[tauri::command]
-async fn open_todo(app: tauri::AppHandle, x: Option<i32>, y: Option<i32>, on_top: bool) -> Result<(), String> {
+async fn open_todo(
+    app: tauri::AppHandle,
+    x: Option<i32>,
+    y: Option<i32>,
+    w: Option<f64>,
+    h: Option<f64>,
+    on_top: bool,
+) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("todo") {
         return show_window(&window);
     }
     let window = WebviewWindowBuilder::new(&app, "todo", WebviewUrl::App("index.html?window=todo".into()))
         .title("待办")
-        .inner_size(TODO_SIZE.0, TODO_SIZE.1)
+        .inner_size(w.unwrap_or(TODO_SIZE.0), h.unwrap_or(TODO_SIZE.1))
         .resizable(false)
         .maximizable(false)
         .minimizable(false)
@@ -429,7 +436,9 @@ fn place_todo(app: &tauri::AppHandle, window: &WebviewWindow) -> Result<(), Stri
     let Some(monitor) = monitor else { return Ok(()) };
     let area = monitor.work_area();
     let scale = monitor.scale_factor();
-    let (w, h, margin) = ((TODO_SIZE.0 * scale) as i32, (TODO_SIZE.1 * scale) as i32, (TODO_MARGIN * scale) as i32);
+    // Its own size: the page may have set another one with the grip at its corner.
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let (w, h, margin) = (size.width as i32, size.height as i32, (TODO_MARGIN * scale) as i32);
     window
         .set_position(PhysicalPosition::new(
             area.position.x + area.size.width as i32 - w - margin,

@@ -16,6 +16,7 @@ import AdminBubble from "./pet/AdminBubble.vue";
 import DuelBubble from "./pet/DuelBubble.vue";
 import PokeBubble from "./pet/PokeBubble.vue";
 import NudgeBubble from "./pet/NudgeBubble.vue";
+import TodoFrame from "./pet/TodoFrame.vue";
 import PomodoroChip from "./pet/PomodoroChip.vue";
 import { NUDGE_HEIGHT, NUDGE_WIDTH, noteNudgeInput, nudge, startNudges } from "./stores/nudge";
 import { beginPomodoro, endPomodoro, focusing, notePomodoroPress, pomodoro, startPomodoroClock } from "./stores/pomodoro";
@@ -49,7 +50,7 @@ import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
   nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, viewport, type FormationPlace, type Pos, type Size,
 } from "./stores/desk";
-import { openPanel, openTodoWindow, togglePanel, ui } from "./stores/ui";
+import { openPanel, openTodoWindow, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
@@ -573,6 +574,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     <Transition name="panel">
       <MainPanel v-if="!isTauri && ui.panelOpen" @reset-pet="resetPet" />
     </Transition>
+    <TodoFrame v-if="!isTauri && todoFrame.open" />
   </div>
 </template>
 

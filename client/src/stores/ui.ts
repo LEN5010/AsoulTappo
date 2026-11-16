@@ -3,7 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { isPanelWindow, isTauri } from "../composables/tauri";
 import { settings } from "./settings";
 export type Page = "emotes" | "resonance" | "dex" | "checkin" | "park" | "room" | "cheer" | "settings";
-export const ui = reactive({ panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false });
+export const ui = reactive({
+  panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
+  /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
+  dexFilter: "" as "" | "holo",
+});
 // The scratch page became part of the park: a page named the old way (from the other window, say) opens the park.
 watch(() => ui.page as string, (page) => { if (page === "scratch") ui.page = "park"; }, { flush: "sync", immediate: true });
 export function openPanel(page?: Page, opts: { craftTarget?: string } = {}): void {
@@ -23,19 +27,21 @@ export function closePanel(): void {
   if (isPanelWindow) void invoke("hide_panel");
 }
 
-let todoPopup: Window | null = null;
+/** The browser preview's todos' window: a frame over the desk page (pet/TodoFrame.vue), where it was left. */
+export const todoFrame = reactive({ open: false, x: -1, y: -1, w: 0, h: 0 });
 /**
  * The todos' own window, from the desk: opened where it was left, or shown and focused when it is open already. The
- * browser preview opens a popup of the same size.
+ * browser preview floats the same page in a frame of the same size over the desk page.
  */
 export function openTodoWindow(): void {
   ui.quickOpen = false;
   if (isTauri) {
     const placed = settings.todoX !== -1 || settings.todoY !== -1;
-    void invoke("open_todo", { x: placed ? settings.todoX : null, y: placed ? settings.todoY : null, onTop: settings.todoPinned })
+    void invoke("open_todo", {
+      x: placed ? settings.todoX : null, y: placed ? settings.todoY : null, w: settings.todoW, h: settings.todoH, onTop: settings.todoPinned,
+    })
       .catch((e: unknown) => console.warn("open_todo failed", e));
     return;
   }
-  if (todoPopup && !todoPopup.closed) { todoPopup.focus(); return; }
-  todoPopup = window.open(`${import.meta.env.BASE_URL || "/"}?window=todo`, "asoultappo-todo", "popup,width=320,height=460");
+  todoFrame.open = true;
 }
