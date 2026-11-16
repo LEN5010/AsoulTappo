@@ -11,92 +11,176 @@
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Desk Overlay Window
-The client has two independent windows, a small one for todos and an optional one for recording. The transparent, frameless desk window (`main`) covers the monitor work area and renders the user's pet and room members' pets. The `alwaysOnTop` and click-through settings apply to this window.
+Rules of play (rates, prices, limits) live in the server's economy file and reach the client through `/api/economy`;
+the catalog (cards, emotes, skins, series) lives in `assets-packs/manifest.json`. This page names neither's values.
 
-The panel (`panel`) is a regular, resizable taskbar window, created on first open and reused after hiding. It uses normal application stacking, native dragging, and a minimize button. The tray and pet menu open it even while the desk is click-through. Closing the panel hides its window; the desk continues running.
+## Windows
 
-The todos' window (`todo`, `TodoApp.vue`) is a small frameless window (320 by 460 at first; the grip at the card's bottom right corner sizes it from 280 by 340 up, kept as `todoW`, `todoH`) with its own card and title bar, created on first open (`open_todo`) and hidden on close, so it opens again at once. It is a normal focusable window, so typing works on Windows too, where the desk never takes focus. It stays on top unless its pin is off (`todoPinned`, `set_todo_on_top`), has no taskbar entry, joins all Spaces on macOS, and opens where it was left (`todo:moved` from its move events, kept by the desk as `todoX`, `todoY` in screen pixels while that spot is on a monitor; the first time at the bottom right of the pet's monitor). The quick emotes' todo key, the strip's menu and the bubble for several todos open it; the hide key hides it with the pet and brings it back if it was open. It loads the todo and settings stores only (`desktop/todoBridge.ts`): the desk sends it the list on every change (`desktop:todos`) and runs its changes (`todo` and `todoSync` requests, answered to the window that asked). The browser preview floats the same page (`?window=todo`) in a frame over the desk page (`pet/TodoFrame.vue`), moved by its title bar and hidden by its close key over postMessage; the two pages share local storage and follow each other's writes of the todos and the settings through the storage event.
+The client runs up to four windows. Each has its own entry and root component.
 
-The capture window (`capture`, off by default) is a regular window with a title bar and a taskbar entry, not on top and not a tool window. It draws the user's pet as it stands on the desk (emote bubble, shard pops, the strip with the tap count; no partners) on a flat colour, scaled to the window, for recording and screenshot software: OBS's window capture leaves tool windows out of its list, and the desk overlay is one (`tool_window.rs`). The recording software keys the colour out. `settings.captureOpen` is the only state: the settings page and the tray change it, the desk opens or closes the window after it (`desktop/capture.ts`, `set_capture_window`), the window's close button reports back to the desk, and a window left open is reopened at the next start, at the size it was last dragged to (`captureW`, `captureH`, from the window's own resize events). The arrangement follows WuwaTappoNative's capture window. The hide key hides it with the pet and the panel. The page has its own entry (`capture.html`, `src/capture.ts`) and loads the pet's drawing only: no player or room code, and it never changes settings. It hears the global `input` events itself (`pet/PetPose.ts`) and the desk sends it everything else it shows (`capture:view`: character, mouse sensitivity, colour, tap count, emote and combo frames), at most once a frame. It is usually behind the game being recorded, so nothing in it waits for the window to be in front; on macOS its web view's occlusion check is turned off (`paint_when_covered`), since WebKit otherwise stops painting a fully covered window. Whether WebView2 keeps painting a covered window has not been checked on Windows.
+| Window | Root | Kind |
+| --- | --- | --- |
+| `main` (the desk) | `App.vue` | Transparent, frameless, covers the monitor's work area; draws the own pet and room members' pets. On-top and click-through settings apply here. Never takes focus on Windows. |
+| `panel` | `PanelApp.vue` | Regular resizable taskbar window. Created on first open, hidden on close; the desk keeps running. The tray and the pet's menu open it even while the desk is click-through. |
+| `todo` | `TodoApp.vue` | Small frameless focusable window for the todo list. See [Todos](#todos). |
+| `capture` | `CaptureApp.vue` (`capture.html`) | Off by default. See [Capture window](#capture-window). |
 
-`desktop/bridge.ts` mirrors player, collection, counter, and room state from the desk to the panel using targeted Tauri events. Panel actions run in the desk, which owns the room socket, activity reporting, and presence heartbeat. Settings sync as property patches in both directions (`desktop/settingsSync.ts`); the desk passes the panel's patches on to the todos' window and back. The panel subscribes to independent player, collection, counter, and room-profile slices while visible. Only the room page subscribes to member runtime updates, coalesced per changed member every 50ms. Hiding or minimizing the panel stops those subscriptions and preview input, and keeps an in-progress resonance reveal; reopening refreshes all state slices and continues that reveal. KeepAlive pages pause their videos and automatic scrolling when deactivated. The desk counts input once and continues room networking and income reporting. Browser previews render the panel inside the desk.
+The hide key hides every window together and restores the ones that were open.
 
-Mouse pass-through is updated dynamically based on interactive regions:
-1. Interactive desk elements carry `data-hit` (pets, counter bar, quick emote dock, resonance bubble). `hit.ts` observes hit-target size, position, insertion and removal, collects bounding boxes when layout changes, and sends them via `set_hit_regions`. Geometry animations sample frames only during playback.
-2. A Rust background thread (`spawn_hit_test`) checks the cursor position against the active hit regions and toggles `set_ignore_cursor_events`.
-3. While dragging (`set_dragging(true)`), the overlay remains interactive until pointer release.
+### Desk and panel
 
-## Client (`client/`)
-**Rust (`src-tauri/`)**
-- `input.rs` — global keyboard/mouse hook (own low-level hooks on Windows, `rdev` on macOS), emitting `key_down`, `key_up`, `mouse_down/up{button}` and `mouse_move{dx,dy}`. It never forwards which key was pressed.
-- `gamepad.rs` — background controller input, sharing button transitions and press statistics between Windows XInput and PlayStation HID.
-- `gamepad/playstation.rs` — shared HIDAPI access to Sony DualShock 4, DualSense and DualSense Edge on Windows/macOS. Parses simple and enhanced USB/Bluetooth reports, ignores axes and packet counters, applies the XInput trigger threshold, and releases held buttons on disconnect. Discovery retries every two seconds. On Windows, remapper setups use HidHide to hide the physical device from the pet and grant access to the remapper.
-- `overlay_macos.rs` — AppKit screen enumeration, work-area placement and refitting in points, with window-relative mouse coordinates. Window access is dispatched to the main thread.
-- `hit.rs` — hit-region rectangle matching for cursor pass-through; `tool_window.rs` keeps the overlay out of other apps' occlusion checks on Windows.
-- `hotkey.rs` — the hide key and the click-through key, registered as system shortcuts (no input permission, not through the hook).
-- `access.rs` — macOS input permission check (Input Monitoring or Accessibility), reported to the desk without prompting.
-- `elevation.rs` — running as administrator and the single instance on Windows: a hook never hears input meant for an elevated window.
-- `autostart.rs` — start at login, read back from the system each time: `SMAppService` on macOS 13+, a LaunchAgent plist on 10.15–12, the HKCU `Run` value on Windows.
-- `monitor_pref.rs` — the monitor last picked from the tray, remembered by display name and origin.
-- `update.rs` — installs one exact version from its own GitHub release.
-- `applog.rs`, `diag.rs` — the plain-text log players export from settings, with system descriptions that never include window titles or keys.
-- `media.rs` — bundled pages and assets for the macOS web view, with byte ranges.
-- `lib.rs` — desk interaction commands, panel, todos' and capture window lifecycle, work-area sizing, and system tray menu.
+- The desk owns all network state: the room socket, activity reports and the presence heartbeat. Panel actions are requests the desk runs.
+- `desktop/bridge.ts` mirrors player, collection, counter and room state to the panel with targeted Tauri events. The panel subscribes to separate slices while visible; only the room page subscribes to member runtime updates (coalesced per member every 50ms).
+- Hiding or minimizing the panel drops its subscriptions and preview input but keeps a reveal in progress; reopening refreshes every slice. KeepAlive pages pause videos and auto scrolling when deactivated.
+- Settings travel as property patches in both directions (`desktop/settingsSync.ts`). The desk relays the panel's patches to the todo window and back.
+- Browser previews render the panel inside the desk page.
 
-**Frontend (`src/`)**
-- `App.vue` — desk root placing the local pet, remote room members' pets, and the resonance shortcut.
-- `PanelApp.vue` — independent panel root, native open events, and input preview.
-- `TodoApp.vue` — the todos' window root: title bar, list and the bar that adds a todo (`todos/TodoRow.vue`, `todos/WhenPicker.vue`).
-- `CaptureApp.vue` — capture window root: the user's pet on the chosen colour.
-- `desktop/` — state mirroring, settings patches, and panel and todos' window action requests to the desk.
-- `pet/` — layered pet renderer (`PetView.vue`), drag actor (`PetActor.vue`), `CounterBar.vue`, single-row `QuickEmote.vue` dock (it leads with small keys for the tomato timer's page `PomodoroDock.vue`, the todos' window and, in a room, the own status), `StatusDock.vue` (the status keys, `ui/StatusKeys.vue`, on a plate under the strip or the own name tag), `EmoteBubble.vue`, `ComboBubble.vue`, `NamePill.vue` and `NamePlate.vue`. Bubbles over the own pet: rock-paper-scissors (`DuelBubble.vue`, `StakeKeys.vue`; `duelPick.ts` opens poke, duel and profile keys over a partner's pet), `PokeBubble.vue`, `NudgeBubble.vue` (the pet's own reminders and hellos from `nudge.ts`, the tomato timer's questions, and todos that came due with their 完成 and 稍后 keys), `CooldownBubble.vue` (input faster than a hand), `AccessBubble.vue` (macOS permission) and `AdminBubble.vue` (an elevated game the hook cannot hear). The strip folds to a grip and the pet can dock to the bottom edge. A click on the grip of a pinned strip opens `GripMenu.vue`: fold the strip, swap it for the own name plate and back (the plate has the same grip), the shard pops, and the tomato timer's page (`pomodoro.ts`, `stores/pomodoro.ts`; `PomodoroChip.vue` counts down over the monitor and opens the page; the page holds the lengths and the switches for the tune, the system notice (`notify` in `src-tauri/src/lib.rs`, tauri-plugin-notification), auto start and long rests; the tray starts and stops it), and the todos' window; in a room a click on the plate opens the status keys. The own actor keeps one width whatever the strip shows, so switching never moves the pet.
-- `panel/` — `MainPanel.vue` (sidebar, top bar, page shutter) with eight pages:
-  - `EmotesPage.vue`: backpack with a fixed showcase (the pet stage beside eight favorite slots and the wallet), one filter bar (`MemberStrip.vue`, kind tabs, search) and scrolling shelves of all skins (locked ones dimmed and disabled) and owned emotes. Only the shelves scroll, so the slots stay in reach while dragging. The wallet links to resonance.
-  - `ResonancePage.vue`: one all-member pool with a self-rotating banner of its 33 dynamic cards, a separate row of skins that open their details, tier counts (`PoolStage.vue`), independent shared pity counters, income and single/ten/all draws. The pool includes every non-starter collectible once. A row of three 衣橱 keys (one per member, owned / 12) under the tier counts opens that member's series plate.
-  - `CollectionPage.vue`: dex with card, emote and skin categories. Cards retain series filters and the album/detail views; emotes retain the searchable album wall. Eligible missing cards and emotes are crafted directly in their details, with balance, pending and success states. Skins use portrait cards, member colors, ownership filters, a live pet preview and an equip action. Locked skins link to resonance. An owned skin takes a note of up to 10 characters from the pencil beside its name; the note replaces the skin's title in the dex, the detail and the backpack on this device only (`stores/skinNotes.ts`, kept in the local settings as `skinNotes`), and the detail lists the skin's own title under 原名 while a note is set.
-  - `CheckinPage.vue`: this month's calendar; today's square is a sealed card that turns over to the prize.
-  - `ScratchPage.vue`: scratch cards; the server decides the prize, the page only uncovers it.
-  - `OnlinePage.vue`: a table of live pets (`RoomStage.vue`), six to a row, that opens another row whenever the room fills one, up to `MAX_ROOM_SIZE`; the cheer bar (one cell per contributing save, a facepile and the prize), the public room list, the room ticket, desk settings (led by the own room status: `roomStatus.ts`, a fixed list the server checks too, picked with `ui/StatusKeys.vue`) and the member list. A member's status shows on its name tag on the desk, in the member list and on its profile.
-  - `CheerPage.vue` (排行): the own namecard (`ProfileCard.vue`), editable in place, then the server-wide collection board: the top three on a podium, the rest as rows with their collection score, big hidden cards and skins; an info button opens the points table. Board rows and room members open the same read-only card.
-  - `SettingsPage.vue`: the account row and a profile strip with the nickname and totals, then the pet, window, online, sound and about groups in two columns.
-- Dialogs over the panel, one at a time in this order: `TermsDialog.vue` (until the current terms are agreed to the desk stays offline), `UpdateDialog.vue` (cannot be closed below the server's minimum version), `NoticeBoard.vue` (server announcements, one page each; opens by itself while one is due and from the top bar's notice key), `SkinSpotlight.vue` (see Adding skins) and `UpdateRewardDialog.vue`.
-- Album tabs include all series together. Unowned cards retain color with reduced brightness; up to three visible owned videos loop; all unowned cards, including dancing cards, show static posters. Offscreen album videos release their source. The resonance stage and its detail modal use a preview mode: all dynamic cards play at normal brightness regardless of ownership. Card videos are bundled under `public/assets/cards/<series>/*.mp4` and referenced through `bundle:` URLs. All 33 clips retain their complete duration, using H.264 at 640 pixels wide / 30 fps (CRF 28, preset veryslow); audio tracks up to 192 kbps are copied unchanged and higher ones are re-encoded to 192 kbps AAC. The server packs contain full-resolution static artwork and theme resources.
-- `panel/RevealScene.vue` — the reveal of a draw, laid over the page area so the sidebar and title bar stay. `RevealBands.vue` replays the page-turn bands: they cover the page before `resonate` updates the stores, a third band in the best result's tone announces a hidden card or skin, then the bands leave and `RevealTile.vue` deals one tile per draw (batches over ten group repeats). Rare and above land face down in their tone (`CardBack.vue`) and turn on a click or on 全部翻开; hidden cards, skins and a first dancing card then lift into `RevealSpotlight.vue`, which flies the art between its tile and the stage and plays card videos. `reveal.ts` holds the pure rules (announcement, sealing, spotlights, board order) and `reveal-board.ts` builds the tiles, giving a skin its member's theme tone. Holo versions (镭射款, `holo:<card id>`, see `cards.ts`) are drawn by `holo/`: a WebGL shader over the card art and its mask that follows a tilt toward the pointer (`HoloArt.vue`, `useTilt.ts`; a small pool of canvases so only the card under the pointer, the detail or the spotlight runs one; without WebGL the art with a still sheen). The album marks owned ones (`HoloBadge.vue`) and filters them; the detail and the viewer show the holo version by default with a switch to the plain one; a first holo version lifts into the spotlight, which sways it once. The board offers the same draw again while the player can afford it.
-- `resonance.ts` — pure client pool construction and effective rates. The server constructs the same pools from manifest v4, with shared cards retaining one item id in the unified pool.
-- `ui/` — design tokens (`tokens.css`), shared components (`Icon`, `SegTabs`, `FilterChips`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`) and helpers (`motion.ts`, `focus.ts`, `palette.ts`). `Modal` and `RevealScene` teleport to `.panel-overlay` and carry `data-overlay`, which keeps Esc from closing the panel underneath them.
-- `stores/` — reactive state for `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, and `theme`.
-- Todos (`todo.ts` the pure rules, `stores/todo.ts` the list, `stores/todoClock.ts` the desk's clock, `TodoApp.vue` the window): a list kept on this device only, in the desk window's local storage (`asoultappo.todos`); the todos' window and the panel read the desk's copy and change it there through the bridge (`todos` state for the panel, `desktop:todos` for the todos' window, the `todo` request). Each todo has a title, an optional reminder time and a repeat (none, daily, working days, weekly). The time is a day and a time of day, or a whole day (`allDay`): that one rings at 9:00 of its day, set for today after 9:00 it starts as rung, and it is overdue only once its day is over; lists stored before it have no `allDay` and stay timed. The desk steps the list every 5 seconds: a time rings once (`rang` holds the time it rang for, so a clock set back does not ring it again); one found more than 2 minutes after its time (the app was closed, the computer slept, the clock was set forward) is late and rings without the tune. A ring goes over the own pet through `stores/nudge.ts` (`offerTodo`): one todo gets its own bubble, several share one that opens the todos' window; it waits while the player is away or the tomato timer, another todo or the lunch question holds the bubble, takes the place of the other reminders, and those wait while a todo does. The rings still waiting are kept too (`asoultappo.todos.waiting`), so a bubble lost to quitting goes up after the next start, without the tune or the notice again. The tune is the tomato timer's (`todoSound`), the system notice is optional (`todoNotify`, a sample goes out when switched on) and goes out on time even while the bubble waits. 稍后 rings again in 10 minutes. Ticking off a repeating todo moves it to its next time after now; unticked it stays overdue and does not ring again. Ticked-off todos go after 7 days. The window's list puts the overdue todos first, then by time (a whole day before the timed ones of that day), the untimed ones last, and the ticked-off ones folded under it; a tick settles after a second and can be taken back meanwhile. A title is edited in place; a click on a todo's time opens the time picker with the repeat choice, and a new time rings afresh. The bar at the bottom adds a todo (Enter or the send key, the box keeps the focus); under it a time key and a repeat key: the time picker has a week of days and a month to page through, a switch for a time of day with quick hours (9, 12, 18 and 20, and an hour from now for today) and hour and minute boxes; a repeat without a day starts today. The tune and the system notice are two icon switches in the title bar, next to the pin. Ticking one off makes the pet say a line and gives nothing.
-- Member support colors follow the catalog: 嘉然 `#E799B0`, 乃琳 `#576690`, 贝拉 `#DB7D74`, 心宜 `#C93773`, 思诺 `#7252C0`. They mark members (dots, click masks, reveal tones); the interface itself uses one coral, `#FC966E`, in `ui/tokens.css`.
-- `net/` — `protocol.ts`, `TapBatcher.ts`, `MotionSender.ts`, `MotionFrames.ts`, `RoomClient.ts`, and `api.ts`. MotionSender coalesces bounded pet-layer offsets at 10Hz in quarter pixels, sends button edges immediately and clears queued movement on disconnect. The server sends continuous motion as one room batch every 100ms, with immediate ordered button edges. Each peer has its own writer; adjacent queued position batches merge to their newest values, while reliable events retain order. Send timeout and an outbox limit of 256 messages remove stalled receivers.
-- Packed motion (clients and servers after 1.1.3, negotiated by `motionVersion: 2` in `join` and `joined`): a client sends `pose` with the fields that changed (`x`, `y` in quarter pixels, `b` for the keyboard, left and right button bits) and names the members it draws with `motion_subscribe`. The server answers a subscription with `motion_snapshot` and from then on sends that receiver `motion_delta` batches and `motion_edge` messages holding changed fields only, for subscribed members only. A client or server from before this keeps the full `motion` and `motion_batch` messages and hears every member; both kinds share a room.
-- `MotionFrames` holds the other members' poses outside Vue's reactive state. Everything heard within a frame is painted once: `PetView` writes the new place of the mouse and keyboard layers straight to their elements, and a 100ms CSS transition (the update interval) glides the mouse layer there, so no script runs between updates. A press shorter than a frame stays down for 70ms. Both paws are compositing layers of their own (`will-change: transform`), so moving one repaints nothing. A pet subscribes while its window is on screen and it is in view; the set of painted pets is the subscription sent to the server. The desk forwards poses to the panel's room page for the pets drawn there, and taps, emotes and combos for every member.
+### Click-through
+
+1. Interactive desk elements carry `data-hit`. `hit.ts` watches their size, position, insertion and removal and sends the boxes with `set_hit_regions`. Geometry animations are sampled only while they play.
+2. A Rust thread (`spawn_hit_test`) checks the cursor against the regions and toggles `set_ignore_cursor_events`. It polls every 30ms while the cursor moves, every 100ms after two still seconds, and every 250ms while the pet is hidden or click-through.
+3. While dragging (`set_dragging(true)`) the desk stays interactive until release.
+
+### Todos
+
+- Files: `todo.ts` (pure rules), `stores/todo.ts` (the list), `stores/todoClock.ts` (the desk's clock), `TodoApp.vue`, `todos/TodoRow.vue`, `todos/WhenPicker.vue`, `desktop/todoBridge.ts`.
+- The list is kept on this device only, in the desk window's local storage (`asoultappo.todos`). The todo window and the panel read the desk's copy and change it through the bridge (`desktop:todos` to the window, `todo` and `todoSync` requests back).
+- The window opens with `open_todo`, stays on top unless unpinned (`todoPinned`, `set_todo_on_top`), has no taskbar entry, and remembers its size (`todoW`, `todoH`) and place (`todoX`, `todoY`; first time at the bottom right of the pet's monitor).
+- A todo has a title, an optional time (a day and a time of day, or a whole day that rings at 9:00) and a repeat (none, daily, working days, weekly).
+- The desk steps the list every 5 seconds. A time rings once (`rang` records it, so a clock set back does not ring again); one found more than 2 minutes late rings without the tune.
+- Rings go over the own pet through `stores/nudge.ts` (`offerTodo`): one todo gets its own bubble, several share one. Rings still waiting are stored (`asoultappo.todos.waiting`) and go up after the next start without the tune or notice again.
+- Ticking off a repeating todo moves it to its next time. Ticked-off todos go after 7 days.
+- The browser preview floats the same page (`?window=todo`) in a frame over the desk page (`pet/TodoFrame.vue`); the two pages follow each other through the storage event.
+
+### Capture window
+
+- A regular window (title bar, taskbar entry, not on top) that draws the own pet on a flat colour for recording software. OBS's window capture skips tool windows, and the desk is one (`tool_window.rs`). Follows WuwaTappoNative's capture window.
+- `settings.captureOpen` is the only state. The desk opens or closes the window after it (`desktop/capture.ts`, `set_capture_window`); a window left open reopens at the next start at its last size (`captureW`, `captureH`).
+- The page loads the pet's drawing only, no player or room code. It hears `input` events itself (`pet/PetPose.ts`); the desk sends it the rest (`capture:view`) at most once a frame.
+- On macOS its web view keeps painting while covered (`paint_when_covered`). Not checked on Windows.
+
+## Client: Rust (`client/src-tauri/src/`)
+
+| File | Job |
+| --- | --- |
+| `lib.rs` | Desk commands, window lifecycle (panel, todo, capture), work-area sizing, tray menu |
+| `input.rs` | Global keyboard and mouse hook (own low-level hooks on Windows, `rdev` on macOS). Emits `key_down`, `key_up`, `mouse_down/up{button}`, `mouse_move{dx,dy}`; never which key |
+| `gamepad.rs`, `gamepad/playstation.rs` | Controller buttons from XInput (Windows) and Sony HID (DualShock 4, DualSense, Edge; USB and Bluetooth). The HID scan lists Sony devices only, every 5 seconds |
+| `hit.rs`, `tool_window.rs` | Hit-region matching; keeps the desk out of other apps' occlusion checks on Windows |
+| `overlay_macos.rs` | AppKit screen enumeration and work-area placement, on the main thread |
+| `hotkey.rs` | Hide key and click-through key as system shortcuts |
+| `access.rs` | macOS input permission check, reported without prompting |
+| `elevation.rs` | Run as administrator and single instance on Windows |
+| `autostart.rs` | Start at login: `SMAppService` (macOS 13+), LaunchAgent (10.15–12), HKCU `Run` (Windows) |
+| `monitor_pref.rs` | The monitor picked from the tray |
+| `update.rs` | Installs one exact version from its GitHub release |
+| `applog.rs`, `diag.rs` | The log players export from settings; never window titles or keys |
+| `media.rs` | Bundled pages and assets for the macOS web view, with byte ranges |
+
+## Client: front end (`client/src/`)
+
+| Path | Job |
+| --- | --- |
+| `App.vue`, `PanelApp.vue`, `TodoApp.vue`, `CaptureApp.vue` | Window roots |
+| `desktop/` | State mirroring, settings patches, requests from the panel and the todo window to the desk |
+| `pet/` | The pet and everything over it on the desk (see below) |
+| `panel/` | The panel's pages and dialogs (see below) |
+| `panel/park/` | 乐园: coins, scratch cards, race, lottery. Rules in `protocol/PROTOCOL.md` |
+| `holo/` | WebGL shader for holo cards (镭射款) |
+| `net/` | Room socket and HTTP API (see [Network](#network)) |
+| `stores/` | Reactive state: `settings`, `player`, `room`, `desk`, `counter`, `pet`, `ui`, `theme`, `todo`, `nudge`, `pomodoro`, `activity` |
+| `ui/` | Design tokens (`tokens.css`), shared components (`Icon`, `SegTabs`, `FilterChips`, `Modal`, `ItemArt`, `CharacterAvatar`, `RangeInput`) and helpers |
+| `resonance.ts`, `reveal.ts`, `cards.ts`, `items.ts`, `scratch.ts`, `todo.ts`, … | Pure rules with their own tests |
+| `test/` | Test helpers: example economy, pool sizes counted from the manifest |
+
+Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member colours (嘉然 `#E799B0`, 乃琳 `#576690`, 贝拉 `#DB7D74`, 心宜 `#C93773`, 思诺 `#7252C0`) only mark members.
+
+`Modal` and `RevealScene` teleport to `.panel-overlay` and carry `data-overlay`, so Esc closes them and not the panel.
+
+### Desk (`pet/`)
+
+- `PetView.vue` draws the layered pet; `PetActor.vue` drags it; `CounterBar.vue` is the strip with the tap count. The own actor keeps one width whatever the strip shows.
+- `QuickEmote.vue` is the single-row emote dock. It starts with small keys for the tomato timer (`PomodoroDock.vue`), the todo window and, in a room, the own status (`StatusDock.vue`, `ui/StatusKeys.vue`).
+- The strip folds to a grip; the pet can dock to the bottom edge. A click on the grip opens `GripMenu.vue`.
+- Bubbles over the own pet: `EmoteBubble`, `ComboBubble`, `DuelBubble` (with `StakeKeys`), `PokeBubble`, `NudgeBubble` (reminders, tomato timer, todos), `CooldownBubble` (input faster than a hand), `AccessBubble` (macOS permission), `AdminBubble` (an elevated game the hook cannot hear). `duelPick.ts` opens poke, duel and profile keys over a partner's pet.
+- Tomato timer: `pomodoro.ts`, `stores/pomodoro.ts`, `PomodoroChip.vue`. The system notice goes through `notify` in `lib.rs` (tauri-plugin-notification).
+
+### Panel (`panel/`)
+
+`MainPanel.vue` holds the sidebar, top bar and page shutter. Each page loads when first shown.
+
+| Page | Content |
+| --- | --- |
+| `EmotesPage.vue` (背包) | Pet stage, eight favourite slots, wallet; shelves of skins and owned emotes. Only the shelves scroll |
+| `ResonancePage.vue` (共鸣) | One pool for all members, a banner of dynamic cards, skin row, tier counts (`PoolStage.vue`), pity counters, draws, 衣橱 keys |
+| `CollectionPage.vue` (图鉴) | Cards, emotes and skins; crafting in the detail; skin notes (`stores/skinNotes.ts`, this device only) |
+| `CheckinPage.vue` (签到) | This month's calendar |
+| `ParkPage.vue` (乐园) | The four park sections in `panel/park/` |
+| `OnlinePage.vue` (联机) | Room table (`RoomStage.vue`), cheer bar, public room list, ticket, own status (`roomStatus.ts`), members |
+| `CheerPage.vue` (排行) | Own namecard (`ProfileCard.vue`) and the collection board |
+| `SettingsPage.vue` (设置) | Account, profile strip, then pet, window, online, sound and about groups in two columns |
+
+Dialogs over the panel, one at a time in this order: `TermsDialog` (the desk stays offline until the current terms are agreed), `UpdateDialog` (cannot be closed below the server's minimum version), `NoticeBoard` (server announcements), `SkinSpotlight` (see [Adding skins](#adding-skins)), `UpdateRewardDialog`.
+
+### Draw reveal
+
+- `RevealScene.vue` lies over the page area. `RevealBands.vue` covers the page before `resonate` updates the stores; a third band in the best result's tone announces a hidden card or skin.
+- `RevealTile.vue` deals one tile per draw. Rare and above land face down (`CardBack.vue`) and turn on a click; hidden cards, skins and a first dancing card lift into `RevealSpotlight.vue`.
+- `reveal.ts` holds the pure rules; `reveal-board.ts` builds the tiles.
+- Holo versions (`holo:<card id>`, `cards.ts`) are drawn by `holo/`: a shader over the art and its mask that follows a tilt toward the pointer (`HoloArt.vue`, `useTilt.ts`). A small pool of canvases means only the card under the pointer, the detail or the spotlight runs one. Without WebGL the art shows a still sheen.
+
+### Cards and albums
+
+- Card videos are bundled under `public/assets/cards/<series>/*.mp4` (`bundle:` URLs): H.264, 640 px wide, 30 fps, CRF 28, preset veryslow; audio up to 192 kbps copied, higher re-encoded to 192 kbps AAC. The server's packs hold the full-size still art.
+- Albums: unowned cards stay in colour but dimmed and show still posters; up to three visible owned videos loop; offscreen videos release their source. The resonance stage plays every dynamic card at full brightness regardless of ownership.
+
+## Network
+
+- `net/`: `protocol.ts`, `TapBatcher.ts`, `MotionSender.ts`, `MotionFrames.ts`, `RoomClient.ts`, `api.ts`.
+- `MotionSender` coalesces pet-layer offsets at 10Hz in quarter pixels, sends button edges at once and clears queued movement on disconnect.
+- Packed motion (`motionVersion: 2` in `join` and `joined`, clients and servers after 1.1.3): a client sends `pose` with the changed fields and names the members it draws with `motion_subscribe`. The server answers with `motion_snapshot`, then `motion_delta` batches and `motion_edge` messages for subscribed members only. Older peers keep the full `motion` and `motion_batch` messages; both kinds share a room.
+- `MotionFrames` keeps other members' poses outside Vue's reactive state. `PetView` writes the mouse and keyboard layers straight to their elements once a frame, and a 100ms CSS transition glides the mouse layer. A press shorter than a frame stays down for 70ms.
+- A pet subscribes while its window is on screen and it is in view. The desk forwards poses to the panel's room page for the pets drawn there.
+
+## Server (`server/app/`)
+
+| File | Job |
+| --- | --- |
+| `main.py` | FastAPI app: `/ws` rooms, `/api/*` player endpoints, `/admin/*` for the main site's backend, `/packs` asset packs |
+| `rooms.py` | Rooms in memory (up to 20 members): motion subscriptions and batches (100ms motion, 50ms button edges), per-connection writers, pokes, cheer progress. On stop it stores each room's listing, host and removed saves; for ten minutes after the next start it hands them back as members rejoin |
+| `game.py` | Progression: income from taps, draws, check-in, scratch cards, duels, cheer rewards, update rewards, crafting, loadouts, the collection board. Every shard change goes to `shard_ledger` |
+| `store.py` | SQLite access for everything above |
+| `manifest.py` | Loads the catalog and builds the resonance pools, including the pool for an older client (`resonance_pool_for`) |
+| `economy.py` | Loads the economy file named by `ASOULTAPPO_ECONOMY` |
+| `cards.py`, `scratch.py` | Pure resonance and scratch rolls with an injectable RNG |
+| `duel.py` | Rock-paper-scissors invites and timers in memory, bets in the store |
+| `park.py`, `park_scratch.py`, `park_race.py`, `race.py`, `lottery.py`, `redeem.py` | 乐园: coins, scratch cards, race, lottery, redeem codes |
+| `notice.py`, `releases.py` | Minimum client version and announcements; the newest release for the update check |
+| `accounts.py`, `moderation.py` | Main-site account lookup; nickname blocklist pushed by the main site |
+| `tracking.py`, `analytics.py` | Counts for the admin pages (client versions, room samples, daily counts) and their reports. Counts only: never what was said or shown, nor who did it to whom. Admin changes go to `admin_log` |
+
+Pools: higher tiers prefer unowned items; a completed tier's odds move to common, except tiers the economy marks as repeating. Repeats turn into shards at once. Skins and cards with a `since` newer than the client stay out of its pool.
 
 ## Adding skins
 
-A skin is one entry in `SKINS` (`scripts/asset_catalog.py`) plus `client/src/assets/characters/<member><series>/bgImage.webp`, fitted to the member's canvas: the desk, monitor and keyboard where the member's are, so the member's paw layers line up. Then rebuild the previews (`build_previews.py`), add a `HEADS` entry in `characters.ts` when the head top differs, copy `SKINS` into both manifests and rebuild the UI font subset for new names.
+A skin is one entry in `SKINS` (`scripts/asset_catalog.py`) plus `client/src/assets/characters/<member><series>/bgImage.webp`, fitted to the member's canvas so the paw layers line up. Then:
 
-- `name` is the id (`<member><series>`, the save item and the room field) and never changes; `title` renames a skin on screen as the member followed by its own name, such as 嘉然帝江 (`skinTitle` in `manifest.ts`).
-- `since` is the release that ships the picture. The server keeps the skin out of the resonance pool of older clients (`Manifest.resonance_pool_for`), so the server can be deployed before the release.
-- The skins sharing the newest `since` are that release's launch spotlight (`stores/spotlight.ts`, `panel/SkinSpotlight.vue`): shown once per device after the terms, the update dialog and the server announcements, before the update reward, titled with their series. Nothing else needs writing; the closed state is kept as `skins:<since>` in the announcements' read list.
+1. rebuild the previews (`scripts/build_previews.py`);
+2. add a `HEADS` entry in `characters.ts` when the head top differs;
+3. copy `SKINS` into both manifests;
+4. rebuild the UI font subset for new names (`scripts/build_ui_assets.py`).
 
-## Server (`server/`)
-- `app/main.py` — FastAPI application serving `/ws` for real-time rooms, `/api/*` for progression/collection/draws, `/admin/*` for the main site's backend (stats, accounts, economy, saves, update rewards, blocked words, notice) and `/packs` for static asset packs.
-- `app/rooms.py` — in-memory room management (up to 20 members per room), motion subscriptions, 100ms room motion batching, 50ms button-edge batches, per-connection writers, pokes and each room's cheer progress. Rooms live in memory: on the stop signal the server notes each room's listing, host save and removed saves (`RoomManager.snapshot`), stores them as it shuts down, and for ten minutes after the next start hands them back as members rejoin.
-- `app/game.py` & `app/store.py` — SQLite-backed progression. Shards come from taps only: `18000 × (1 − e^−x)` over one China day (x a cubic in thousands of taps: 10 000 taps pay 9000, 20 000 pay 13 000, 30 000 pay 16 000), the first 120 taps of a minute, none during the cooldown after input faster than a hand or at one steady rate for about 10 minutes (a cooldown that doubles with each repeat on the same day). Each draw costs 160 shards with independent legendary (400) and skin (200) pity counters; tier rates live in the manifest. Higher tiers prefer unowned items and a completed tier's odds move to common, except the epic tier, which keeps rolling repeats. Repeats turn into shards at once (emote 5, normal card 20, small hidden card 360). Skins newer than the client stay out of its pool. The same module runs check-in, scratch cards, duels, cheer rewards, update rewards, crafting, loadouts and the collection board (by collection score; clients from before it ask for the old order by cards); every shard change is written to `shard_ledger`. New players receive 1600 shards.
-- `app/cards.py`, `app/scratch.py` — pure resonance and scratch rolls with an injectable RNG; `app/duel.py` — rock-paper-scissors invites, hands and timers in memory, bets and outcomes in the store.
-- `app/notice.py` — minimum client version and announcements; `app/releases.py` — the newest release from the main site's list for the update check; `app/accounts.py` — main-site account lookup; `app/moderation.py` — the nickname blocklist pushed by the main site.
-- `app/tracking.py` — numbers for the main site's admin pages: the client version each save last ran, a room sample once a minute, and server-wide counts per day (room joins, pokes, profile views, emotes, duel invites, cheer rounds), kept in memory and written with each sample. `app/analytics.py` reads them back with the ledger, drops and daily activity for `/admin/insights`, `/admin/online` and `/admin/anomalies`. Admin changes are written to `admin_log` with the main site's admin and a reason. Counts only: never what was said or shown, nor who did it to whom.
+- `name` is the id (`<member><series>`, the save item and the room field) and never changes. `title` is the name on screen, the member followed by the skin's own name (`skinTitle` in `manifest.ts`).
+- `since` is the release that ships the picture. The server keeps the skin out of older clients' pools, so the server can be deployed first.
+- The skins sharing the newest `since` are that release's launch spotlight (`stores/spotlight.ts`, `panel/SkinSpotlight.vue`), shown once per device.
+- Tests count skins and cards from the manifest, so they need no change.
 
-## Rendering and persistence costs
+## Performance notes
 
-- Backpack and dex sticker grids mount the visible rows plus two rows of overscan on each side. Dynamic emotes use static 160px covers in lists and favorite slots, and play their original animation when previewed or sent. Generated covers carry `thumb` and `animated` in the asset manifest.
-- Pet backgrounds have 480px and 960px variants selected by displayed scale. Small avatars use a separate 264×224 crop. `scripts/build_previews.py` rebuilds these files from the bundled originals and is also called by the main asset pipeline.
-- Pool skin scrolling caches dimensions through ResizeObserver and cancels its animation frame while paused, off-page or hidden. The room table applies its contour to the static background layer.
-- Name plates follow page activation: hiding/minimizing the panel or deactivating a cached page releases video subscriptions and cancels sweep animations. Desktop plates keep playing independently of the panel.
-- On macOS, bundled asset decompression and byte-range response copies run on blocking workers. The video cache retains up to eight decompressed clips.
-- Resonance maintains missing-item pools incrementally during each transaction. Repeated item gains merge into one increment per item; drop history uses a single executemany call. Status and presence scan the player's item IDs through the covering index and count matches in the manifest's collectible set. A status response computes the China calendar date once for income, check-in, scratch cards and duels. SQLite remains the persistence backend.
-- SQLite runs in WAL mode with `synchronous=NORMAL` (file databases only). Back the database up with `sqlite3 ... ".backup"` as the deploy scripts do; copying the `.db` file alone misses what is still in the `-wal` file. A save is marked active once a day in memory before the insert is repeated, the collectible count is remembered per save until its items change, and a rolled-back transaction drops both. `duel_net` reads the two per-day indexes.
-- `stores/activity.ts` tracks two states. A window that is not on screen (the pet hidden from the tray or by the hotkey, the document hidden) stops pose subscriptions, name plate loops and mouse inertia. A desk with no local input and no room event for 30 seconds pauses looping decoration only (name plate videos and sweeps, endless animations); the next input or room event resumes it. The panel never idles. The native hit test polls every 30ms while the cursor moves, every 100ms once it has been still for two seconds, and every 250ms while the pet is hidden or click-through; it reads the cursor on every poll, the window's visibility every 250ms and its position and scale every 500ms (and right after a refit).
-- The page loads per window: the entry holds Vue, the manifest and the stores, `App.vue` and `PanelApp.vue` are separate chunks, and each panel page is loaded when first shown, then the rest in the background. The page shutter stays down until a page's chunk is in.
-- Database timings and room traffic can be reproduced with `server/.venv/bin/python scripts/benchmark_server.py` (`--root` measures another checkout).
+- Sticker grids mount the visible rows plus two rows of overscan. Dynamic emotes show static 160px covers in lists and play when previewed or sent.
+- Pet backgrounds come in 480px and 960px variants, chosen by displayed scale; small avatars use a 264×224 crop (`scripts/build_previews.py`).
+- `stores/activity.ts`: a window off screen stops pose subscriptions, name plate loops and mouse inertia. A desk with no input and no room event for 30 seconds pauses looping decoration only. The panel never idles.
+- Each window loads its own chunk; each panel page loads when first shown, then the rest in the background.
+- On macOS, asset decompression and byte-range copies run on blocking workers; the video cache keeps up to eight clips.
+- Server: resonance keeps missing-item pools incrementally per transaction and writes history with one `executemany`. SQLite runs in WAL mode with `synchronous=NORMAL`; back up with `sqlite3 ... ".backup"`, since copying the `.db` alone misses the `-wal` file.
+- Database timings and room traffic: `server/.venv/bin/python scripts/benchmark_server.py` (`--root` measures another checkout).
