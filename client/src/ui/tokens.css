@@ -433,7 +433,8 @@
 .ui-tile.rare .ui-well {
   background: var(--rar-rare-bg);
 }
-.ui-tile.epic .ui-well {
+.ui-tile.epic .ui-well,
+.ui-tile.limited .ui-well {
   background: var(--rar-epic-bg);
 }
 .ui-tile.legendary .ui-well {
@@ -497,7 +498,9 @@
   --tone-glow: rgba(var(--c-500-rgb), 0.72);
   --tone-ink: var(--ink);
 }
-.tone-epic {
+/* The limited tier wears epic's wine. */
+.tone-epic,
+.tone-limited {
   --tone-fill: var(--grad-deep);
   --tone-glow: color-mix(in srgb, var(--c-800) 72%, transparent);
   --tone-ink: #fff;
@@ -523,7 +526,8 @@
   --seal-mark: var(--c-700);
   --seal-rule: rgba(255, 255, 255, 0.7);
 }
-.tone-epic {
+.tone-epic,
+.tone-limited {
   --seal-fill: var(--c-800);
   --seal-mark: #fff;
   --seal-rule: rgba(255, 255, 255, 0.4);

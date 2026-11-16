@@ -79,8 +79,8 @@ describe("the scratch emote set", () => {
     expect(SCRATCH_EMOTES).toHaveLength(20);
     const pool = Object.values(poolOf()).flat();
     expect(pool.some((item) => item.source || item.id.startsWith("emote:achao."))).toBe(false);
-    // the pool is what it was before the set existed
-    expect(pool).toHaveLength(554);
+    // the pool is what it was before the set existed, plus the 36 衣橱 cards
+    expect(pool).toHaveLength(590);
     const item = getItem("emote:achao.01")!;
     expect(item).toMatchObject({ kind: "emote", name: "兜风", source: "scratch", starter: false });
     expect(craftCost(item)).toBeNull();

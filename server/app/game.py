@@ -56,8 +56,8 @@ PARK_NEWS_LIMIT = 5
 # about 1 draw). Big hidden cards: 0.1% with a 400-draw pity, about 330 draws. Skins: 0.2% with a 200-draw pity,
 # about 165. Epic cards (small hidden cards and epic normal cards share one 4.5% tier): about 22. Common cards: about
 # 2. Emotes count about half their craft price (480, 960 and 1600 shards), so the 475 of them do not outweigh the
-# cards; scratch emotes count as rare ones. Starter emotes count nothing.
-BOARD_POINTS = {"big": 300, "skin": 150, "epic": 20, "card": 2,
+# cards; scratch emotes count as rare ones. Starter emotes count nothing. Limited cards count as epic ones.
+BOARD_POINTS = {"big": 300, "skin": 150, "epic": 20, "limited": 20, "card": 2,
                 "emoteRare": 3, "emoteScratch": 3, "emoteUncommon": 2, "emote": 1}
 
 
@@ -72,7 +72,9 @@ def board_kind(item: dict[str, Any], manifest: Manifest) -> str:
         return "skin"
     if item["kind"] == "card":
         card = manifest.cards[item["id"][5:]]
-        return "big" if card.get("tier") == "big" else "epic" if card.get("rarity") == "epic" else "card"
+        if card.get("tier") == "big":
+            return "big"
+        return card["rarity"] if card.get("rarity") in ("epic", "limited") else "card"
     if item["source"]:
         return "emoteScratch"
     return {"uncommon": "emoteUncommon", "rare": "emoteRare"}.get(item["rarity"], "emote")
@@ -321,7 +323,8 @@ class Game:
                 "multiplier": 1, "perMinute": round(per_tap * 60, 1)}
 
     def resonate(self, token: str, count: int = 1, version: str | None = None) -> dict[str, Any]:
-        """[version] is the client's: skins it cannot show stay out of its pool (see Manifest.resonance_pool_for)."""
+        """[version] is the client's: cards and skins it cannot show stay out of its pool (see
+        Manifest.resonance_pool_for), and a tier left empty gives its odds to common."""
         pool = self.manifest.resonance_pool_for(version)
         pid = player_id_for(token)
         cfg = self.manifest.resonance

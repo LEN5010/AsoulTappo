@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // A name plate: the strip across the eyes in a gold frame, with the nickname in white on a dark wash at the left.
-// A big hidden card plays its video; a sweep plate (a still picture on coral) glides between its two bands.
+// A big hidden card plays its video; a sweep plate (a still picture on coral) glides between its two bands; a series
+// plate plays its own video under one fixed crop.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { usePageActive } from "../composables/usePageActive";
@@ -8,7 +9,7 @@ import { renderActive } from "../stores/activity";
 import { reducedMotion } from "../stores/theme";
 import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
-import { getPlate, plateArt, sweepArt, sweepFrames, panCycle, videoFace } from "./plates";
+import { getPlate, motionArt, plateArt, sweepArt, sweepFrames, panCycle, videoFace, type ArtBox } from "./plates";
 import { followVideo } from "./plateVideo";
 
 const props = withDefaults(
@@ -27,33 +28,38 @@ const plate = computed(() => getPlate(props.card));
 const card = computed(() => (plate.value?.kind === "card" ? plate.value.card : null));
 const crop = computed(() => (plate.value?.kind === "card" ? plate.value.crop : null));
 const sweep = computed(() => (plate.value?.kind === "sweep" ? plate.value.sweep : null));
+const series = computed(() => (plate.value?.kind === "series" ? plate.value : null));
 const inner = computed(() => ({ w: props.width - FRAME * 2, h: props.height - FRAME * 2 }));
 const sweepBoxes = computed(() => (sweep.value ? sweepArt(sweep.value, inner.value.w, inner.value.h) : null));
+/** A series plate's video and its poster sit in the same box for the whole loop. */
+const seriesArt = computed(() => (series.value ? motionArt(series.value, inner.value.w, inner.value.h) : null));
 const stillArt = computed(() =>
-  sweepBoxes.value?.face ?? (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
-const artSrc = computed(() => sweep.value?.src ?? (card.value ? assetUrl(card.value.thumb) : ""));
+  sweepBoxes.value?.face ?? seriesArt.value ?? (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
+const artSrc = computed(() =>
+  sweep.value?.src ?? (series.value ? assetUrl(series.value.poster) : card.value ? assetUrl(card.value.thumb) : ""));
+const videoSrc = computed(() => series.value?.video ?? card.value?.video ?? null);
 const pageActive = usePageActive();
 // The video and the sweep loop for as long as they are let: they stop with the idle desk too.
 const moving = computed(() => pageActive.value && renderActive.value && !props.still && !reducedMotion.value);
-const playing = computed(() => !!card.value?.video && moving.value);
+const playing = computed(() => !!videoSrc.value && moving.value);
 
 const canvas = ref<HTMLCanvasElement>();
 const drawn = ref(false);
 let stop: (() => void) | undefined;
 
-watch([playing, card, canvas, inner], () => {
+watch([playing, plate, canvas, inner], () => {
   stop?.();
   stop = undefined;
   drawn.value = false;
-  const cvs = canvas.value, src = card.value?.video, cr = crop.value;
+  const cvs = canvas.value, src = videoSrc.value, cr = crop.value, fixed = seriesArt.value;
   const ctx = cvs?.getContext("2d");
-  if (!playing.value || !cvs || !ctx || !src || !cr) return;
+  if (!playing.value || !cvs || !ctx || !src || !(cr || fixed)) return;
   const { w, h } = inner.value;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   cvs.width = Math.round(w * dpr);
   cvs.height = Math.round(h * dpr);
   stop = followVideo(assetUrl(src), (video) => {
-    const art = plateArt(videoFace(cr, performance.now()), w, h);
+    const art: ArtBox = fixed ?? plateArt(videoFace(cr!, performance.now()), w, h);
     const k = video.videoWidth / art.width;
     ctx.drawImage(video, -art.left * k, -art.top * k, w * k, h * k, 0, 0, cvs.width, cvs.height);
     drawn.value = true;

@@ -28,11 +28,26 @@ def test_anti_cheat_settings_stay_on_the_server():
 
 
 def test_the_client_gets_prices_odds_and_its_input_guard():
-    got = TestClient(main.app).get("/api/economy").json()
+    got = TestClient(main.app).get("/api/economy", headers={"X-Client-Version": "1.2.4"}).json()
     data, _ = economy.load(economy.EXAMPLE)
     cfg = main.game.cfg
     assert got == {**data, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
                                         "cooldownSec": cfg.tap_cooldown_sec}}
+
+
+def test_an_older_client_sees_the_limited_odds_in_common_as_its_draws_have_them():
+    data, _ = economy.load(economy.EXAMPLE)
+    rates = data["resonance"]["rates"]
+    client = TestClient(main.app)
+    for version in ("1.2.3", "1.2.2", ""):
+        headers = {"X-Client-Version": version} if version else {}
+        got = client.get("/api/economy", headers=headers).json()["resonance"]
+        assert "limited" not in got["rates"]
+        assert got["rates"]["common"] == pytest.approx(rates["common"] + rates["limited"])
+        assert {k: v for k, v in got["rates"].items() if k != "common"} == \
+            {k: v for k, v in rates.items() if k not in ("common", "limited")}
+        assert {k: v for k, v in got.items() if k != "rates"} == \
+            {k: v for k, v in data["resonance"].items() if k != "rates"}
 
 
 def test_anti_cheat_settings_override_the_defaults(tmp_path):

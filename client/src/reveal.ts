@@ -8,7 +8,7 @@ export interface Revealed {
 }
 type CardTier = "big" | "small" | "normal";
 
-const ORDER: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
+const ORDER: Rarity[] = ["legendary", "skin", "epic", "limited", "rare", "uncommon", "common"];
 const rank = (d: Revealed) => ORDER.indexOf(d.rarity);
 
 /** Up to this many results are dealt one tile per draw. Bigger batches group repeats. */
@@ -43,10 +43,10 @@ export function boardOf<T extends Revealed & { count: number; shards: number }>(
   return drops.length <= DEAL_LIMIT ? drops.map((d) => ({ ...d, got: 1 })) : groupDrops(sortDrops(drops));
 }
 
-/** Results that take the whole scene when they turn over: hidden cards, skins, a first animated card. */
+/** Results that take the whole scene when they turn over: hidden cards, skins, a first animated or limited card. */
 export function spotlights(drop: Revealed, tier?: CardTier): boolean {
   if (drop.rarity === "legendary" || drop.rarity === "skin" || tier === "big" || tier === "small") return true;
-  return drop.new && drop.rarity === "epic" && drop.item.startsWith("card:");
+  return drop.new && (drop.rarity === "epic" || drop.rarity === "limited") && drop.item.startsWith("card:");
 }
 
 /**

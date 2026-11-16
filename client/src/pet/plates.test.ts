@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { manifest } from "../manifest";
 import {
   ACHAO_ARMS_MS, ACHAO_FACE_MS, ACHAO_FALL_MS, ACHAO_RISE_MS, BANNER_ASPECT, BANNER_EYES, BANNER_FIT, CARD_PAN, PAN_CYCLE_MS,
-  PLATE_ANCHOR, PLATE_CROPS, PLATE_SWEEPS, allPlates, bannerArt, getPlate, nameBand, panAt, panCycle, plateArt, plateCard,
-  plateNeeds, plateSet, plateSize, plateUnlocked, sweepArt, sweepFrames, videoFace,
+  PLATE_ANCHOR, PLATE_CROPS, PLATE_MOTIONS, PLATE_SWEEPS, allPlates, bannerArt, getPlate, motionArt, nameBand, panAt, panCycle,
+  plateArt, plateCard, plateCards, plateMembers, plateNeeds, plateSet, plateSize, plateUnlocked, sweepArt, sweepFrames, videoFace,
 } from "./plates";
 
 describe("name plates", () => {
@@ -99,9 +99,10 @@ describe("阿草's plate", () => {
   const achao = () => getPlate("achao")!;
 
   it("comes from the manifest, after the cards, with a picture for every manifest plate", () => {
-    expect(manifest.plates).toEqual([{ id: "achao", name: "阿草", emoteSet: "achao" }]);
-    expect(allPlates().map((p) => p.id)).toEqual([...manifest.cards.filter((c) => c.tier === "big").map((c) => c.id), "achao"]);
-    expect(Object.keys(PLATE_SWEEPS)).toEqual(manifest.plates.map((p) => p.id));
+    expect(manifest.plates[0]).toEqual({ id: "achao", name: "阿草", emoteSet: "achao" });
+    expect(allPlates().map((p) => p.id)).toEqual([...manifest.cards.filter((c) => c.tier === "big").map((c) => c.id), ...manifest.plates.map((p) => p.id)]);
+    expect(Object.keys(PLATE_SWEEPS)).toEqual(manifest.plates.filter((p) => p.series === undefined).map((p) => p.id));
+    expect(Object.keys(PLATE_MOTIONS)).toEqual(manifest.plates.filter((p) => p.series !== undefined).map((p) => p.id));
     expect(manifest.plates.some((p) => manifest.cards.some((c) => c.id === p.id))).toBe(false);
     const p = achao();
     expect(p).toMatchObject({ kind: "sweep", name: "阿草", set: "achao" });
@@ -203,5 +204,57 @@ describe("the profile banner", () => {
     expect(boxes.face.width).toBeLessThan(w);
     expect(boxes.face.left).toBeGreaterThanOrEqual(0);
     expect(boxes.face.left + boxes.face.width).toBeLessThanOrEqual(w);
+  });
+});
+
+describe("the 衣橱 plates", () => {
+  const ids = ["wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila"];
+  const series = () => ids.map((id) => {
+    const p = getPlate(id)!;
+    if (p.kind !== "series") throw new Error(`${id} is not a series plate`);
+    return p;
+  });
+
+  it("are unlocked by the twelve cards of their member's series", () => {
+    for (const [p, member] of series().map((p, i) => [p, ["嘉然", "乃琳", "贝拉"][i]!] as const)) {
+      expect(plateMembers(p)).toEqual([member]);
+      const cards = manifest.cards.filter((c) => c.series === p.series);
+      expect(cards).toHaveLength(12);
+      expect(plateCards(p)).toEqual(cards);
+      expect(plateNeeds(p)).toEqual(cards.map((c) => `card:${c.id}`));
+      expect(plateCard(p.id)).toBeNull();
+      const owned = Object.fromEntries(plateNeeds(p).map((i) => [i, 1]));
+      expect(plateUnlocked(p.id, owned)).toBe(true);
+      delete owned[plateNeeds(p).at(-1)!];
+      expect(plateUnlocked(p.id, owned)).toBe(false);
+    }
+  });
+
+  it("cover the strip, leaving bare at most their gap at the left", () => {
+    for (const p of series()) {
+      for (const [w, h] of [[224, 26], [116, 20], [336, 36], [87, 12], [452, 36]] as const) {
+        const art = motionArt(p, w, h);
+        expect(art.left).toBeLessThanOrEqual((p.motion.gap ?? 0) * w + 1e-9);
+        expect(art.left + art.width).toBeGreaterThanOrEqual(w - 1e-9);
+        expect(art.top).toBeLessThanOrEqual(1e-9);
+        expect(art.top + art.height).toBeGreaterThanOrEqual(h - 1e-9);
+      }
+    }
+    // 贝拉 sits left in her video: the gap brings her eyes over to the anchor, bare strip under the nickname.
+    const beila = series()[2]!, art = motionArt(beila, 224, 26);
+    expect(art.left).toBeGreaterThan(0);
+    expect(art.left + beila.motion.face.fx * art.width).toBeCloseTo(PLATE_ANCHOR * 224);
+  });
+
+  it("cover the profile banner, even a narrow one", () => {
+    for (const p of series()) {
+      for (const w of [540, 120]) {
+        const h = 184, art = bannerArt(p.motion.face, w, h, p.aspect);
+        expect(art.left).toBe(0);
+        expect(art.width).toBeGreaterThanOrEqual(w);
+        expect(art.top).toBeLessThanOrEqual(0);
+        expect(art.top + art.height).toBeGreaterThanOrEqual(h - 1e-9);
+      }
+    }
   });
 });

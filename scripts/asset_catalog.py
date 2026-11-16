@@ -220,6 +220,36 @@ CARDS = [
     ("casket", "1785126321010", "夜的终章", ["贝拉"]),
 ]
 
+# 衣橱: the members' space-background portraits from the Bilibili personal outfits (个性装扮) 1.0 and 2.0, one series a
+# member, in the limited tier. Each suit is (item_id, portrait count); a card is c<item_id><nn>, its source
+# <suit>_sp_image<n>.jpg (1242 x 1988) under the wardrobe source folder. Names are numbered across a member's 1.0 suit
+# first, then 2.0 (wardrobe_card_name). `since` is the release that ships them, as for skins.
+WARDROBE_SINCE = "1.2.4"
+WARDROBE_RARITY = "limited"
+WARDROBE_SERIES = {
+    # series id: (display name, member, suits)
+    "wardrobe-jiaran": ("嘉然的衣橱", "嘉然", [("5461", 4), ("34805", 8)]),
+    "wardrobe-nailin": ("乃琳的衣橱", "乃琳", [("33498", 4), ("40357", 8)]),
+    "wardrobe-beila": ("贝拉的衣橱", "贝拉", [("32978", 4), ("37644", 8)]),
+}
+
+
+def wardrobe_card_name(n: int) -> str:
+    return f"衣橱 {n:02d}"
+
+
+def wardrobe_cards() -> list[tuple[str, str, str, str, int]]:
+    """(series, card id without the c, name, member, portrait number) for every wardrobe card, in series order."""
+    out = []
+    for series, (_, member, suits) in WARDROBE_SERIES.items():
+        n = 0
+        for suit, count in suits:
+            for k in range(1, count + 1):
+                n += 1
+                out.append((series, f"{suit}{k:02d}", wardrobe_card_name(n), member, k))
+    return out
+
+
 BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724002', '1781070981009', '1762331462002', '1756378523002', '1700742793033'}
 SMALL_HIDDEN_IDS = {'1762331462009', '1700742793026', '1756378523010', '1700742793022', '1781070981010', '1745315724008', '1700742793023', '1748345610011'}
 BIG_HIDDEN_IDS.update({'1787896765003', '1785126321002'})
@@ -229,7 +259,7 @@ STILL_VIDEO_IDS = {
     '1762331462004', '1745315724003', '1748345610002', '1748345610003', '1756378523003',
     '1700742793022', '1700742793023', '1700742793026',
 }
-RARITIES = ["common", "uncommon", "rare", "epic", "legendary"]
+RARITIES = ["common", "uncommon", "rare", "epic", "legendary", "limited"]
 
 
 def card_tier(card_id: str) -> str:
@@ -290,9 +320,18 @@ SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for me
     skin(member, "2025生日", "1.2.2") for member in ("心宜", "思诺")]
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote
-# of `emoteSet` is owned; the client keeps the picture and its crop (client/src/pet/plates.ts). Ids must never
-# be card ids (those are "c" and digits).
-PLATES = [{"id": "achao", "name": "阿草", "emoteSet": SCRATCH_EMOTE_SET[0]}]
+# of `emoteSet` is owned, or every card of `series`; the client keeps the picture and its crop
+# (client/src/pet/plates.ts). Ids must never be card ids (those are "c" and digits).
+PLATES = [{"id": "achao", "name": "阿草", "emoteSet": SCRATCH_EMOTE_SET[0]}] + [
+    {"id": series, "name": name, "series": series}
+    for series, (name, _, _) in WARDROBE_SERIES.items()]
+# The 2.0 theme head video each wardrobe plate plays (<item_id>_<skin>_head_myself_mp4_bg.mp4 under the wardrobe
+# source's head-video folder), encoded to client/public/assets/plates/<plate id>.mp4 with a poster beside it.
+WARDROBE_PLATE_VIDEOS = {
+    "wardrobe-jiaran": "34805_skin1",
+    "wardrobe-nailin": "40357_skin0",
+    "wardrobe-beila": "37644_skin0",
+}
 
 
 # -------------------------------------------------------- frames and badges

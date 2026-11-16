@@ -12,7 +12,9 @@ Weights are percentages unless said otherwise.
 - ``resonance``: one draw costs ``cost`` shards; ``rates`` by tier, hard ``pity`` for the legendary and skin tiers,
   ``commonKindWeights`` split the common tier between cards and emotes. ``duplicateRefund`` is what a duplicate turns
   into at once (emotes, and cards by tier; big hidden cards never repeat). ``repeatTiers`` keep their odds once
-  everything in them is owned; their repeats turn into shards.
+  everything in them is owned; their repeats turn into shards. ``rates.limited`` is the limited tier (the 衣橱 cards):
+  without it those cards stay out of the pool. A tier a client's pool leaves empty (the limited tier for a client
+  older than its cards) gives its odds to common, and ``GET /api/economy`` shows that client the rates so folded.
 - ``craftCost``: shards to craft a missing item, by rarity.
 - ``checkin``: daily check-in prizes by amount; a prize pays its shards give or take ``spread`` (uniform), so the
   amounts are seldom round while the mean is unchanged.
@@ -92,7 +94,18 @@ def drop_config(anti: dict[str, Any]) -> DropConfig:
     return DropConfig(**anti)
 
 
-def client_view(economy: dict[str, Any], cfg: DropConfig) -> dict[str, Any]:
-    """What GET /api/economy answers: the economy and the thresholds of the client's own input guard."""
-    return {**economy, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
-                                    "cooldownSec": cfg.tap_cooldown_sec}}
+def client_view(economy: dict[str, Any], cfg: DropConfig,
+                pool: dict[str, list[dict]] | None = None) -> dict[str, Any]:
+    """What GET /api/economy answers: the economy and the thresholds of the client's own input guard. With the
+    client's resonance [pool], a tier it leaves empty is folded into common, as its draws do."""
+    out = {**economy, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
+                                   "cooldownSec": cfg.tap_cooldown_sec}}
+    res = economy.get("resonance")
+    if pool is None or not res:
+        return out
+    rates = dict(res["rates"])
+    for tier in [t for t in rates if t != "common" and not pool.get(t)]:
+        rates["common"] = round(rates["common"] + rates.pop(tier), 6)
+    if rates != res["rates"]:
+        out["resonance"] = {**res, "rates": rates}
+    return out

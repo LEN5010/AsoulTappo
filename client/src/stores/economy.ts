@@ -15,7 +15,8 @@ export type Economy = {
    * a minute counts tapsPerMinute taps at most. */
   income: { dailyCap: number; curve: [number, number, number]; tapsPerMinute: number };
   resonance: {
-    cost: number; rates: Record<Rarity, number>; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number };
+    /** An older server names no limited tier. */
+    cost: number; rates: Record<Exclude<Rarity, "limited">, number> & { limited?: number }; pity: { legendary: number; skin: number }; commonKindWeights: { card: number; emote: number };
     /** Shards a repeat turns into: every emote, and cards by tier. */
     duplicateRefund: Partial<Record<"emote" | "big" | "small" | "normal", number>>;
     /** Tiers that keep their odds once complete, rolling repeats. */

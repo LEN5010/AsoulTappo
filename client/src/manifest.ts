@@ -4,8 +4,9 @@
 //   pack:<path>    downloaded on demand from the room server (<server>/packs/<path>)
 import raw from "./data/manifest.json";
 
-export type Rarity = "common" | "uncommon" | "rare" | "epic" | "skin" | "legendary";
-export const RARITY_ORDER: Rarity[] = ["common", "uncommon", "rare", "epic", "skin", "legendary"];
+/** `limited` is the 衣橱 cards' tier: static portraits in a tier of their own, with no pity. */
+export type Rarity = "common" | "uncommon" | "rare" | "limited" | "epic" | "skin" | "legendary";
+export const RARITY_ORDER: Rarity[] = ["common", "uncommon", "rare", "limited", "epic", "skin", "legendary"];
 
 export interface ManifestCharacter { id: string; name: string; color: string }
 export interface ManifestCard {
@@ -21,6 +22,8 @@ export interface ManifestCard {
   video: string | null;
   /** The video is one still picture over the card's sound. */
   still: boolean;
+  /** The release that ships the card, for cards newer than the first ones. */
+  since?: string;
 }
 export interface ThemeIcon { n: string; s: string }
 export interface ManifestTheme {
@@ -73,8 +76,15 @@ export interface ManifestDecor {
   unlock: { series: string; min: number };
 }
 export interface ManifestSeries { id: string; name: string; total: number }
-/** A name plate besides the big hidden cards: worn once every emote of `emoteSet` is owned. */
-export interface ManifestPlate { id: string; name: string; emoteSet: string }
+/**
+ * A name plate besides the big hidden cards: worn once every emote of `emoteSet`, or every card of `series`, is
+ * owned. A series plate plays its own `video` (`poster` is its first frame, `still` that frame at full size;
+ * `aspect` is height over width).
+ */
+export type ManifestPlate = { id: string; name: string } & (
+  | { emoteSet: string; series?: undefined }
+  | { series: string; emoteSet?: undefined; video: string; poster: string; still: string; aspect: number }
+);
 export interface Manifest {
   version: number;
   characters: ManifestCharacter[];

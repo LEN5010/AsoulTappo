@@ -3,8 +3,8 @@ import { computed, onMounted, ref } from "vue";
 import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
-import { type Item, RARITY_LABEL } from "../items";
-import { poolOf, effectiveRates } from "../resonance";
+import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
+import { baseRates, poolOf, effectiveRates } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, status, online, error } from "../stores/player";
 import Icon from "../ui/Icon.vue";
@@ -13,10 +13,13 @@ import PoolStage from "./PoolStage.vue";
 import RevealScene from "./RevealScene.vue";
 import CardDetail from "./CardDetail.vue";
 import SkinDetail from "./SkinDetail.vue";
+import PlateDetail from "./PlateDetail.vue";
+import type { Plate } from "../pet/plates";
 
 const pool = poolOf();
 const complete = computed(() => Object.values(pool).flat().every((i) => collection.owned[i.id]));
 const rates = computed(() => effectiveRates(pool, collection.owned));
+const base = computed(() => baseRates());
 // Decode the draw sounds while the page sits idle, so the first draw is not silent.
 onMounted(prime);
 const revealing = ref(false);
@@ -28,7 +31,8 @@ const again = computed(() =>
 const probabilities = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
-const tiers: Rarity[] = ["legendary", "skin", "epic", "rare", "uncommon", "common"];
+const plate = ref<Plate | null>(null);
+const tiers: Rarity[] = RARITY_DESC;
 const pityTiers = ["legendary", "skin"] as const;
 /** Prices and odds from the server; the keys and the table wait for them. */
 const res = computed(() => economy.value?.resonance ?? null);
@@ -62,7 +66,7 @@ async function nextBatch() {
 <template>
   <div class="resonance-page ui-scroll">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
-    <PoolStage :busy="revealing" :paused="probabilities || !!detail || !!skin" @inspect="inspect" />
+    <PoolStage :busy="revealing" :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event" />
     <footer class="console">
       <div class="pities">
         <template v-for="r in pityTiers" :key="r">
@@ -98,12 +102,13 @@ async function nextBatch() {
     </footer>
     <Modal v-if="probabilities" title="共鸣概率" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
-        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ res.rates[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
+        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ base[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
     </Modal>
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
+    <PlateDetail v-if="plate" :plate="plate" @close="plate = null" />
     <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" :again="again" @again="drawAgain" @close="revealing = false" />
   </div>
 </template>

@@ -7,6 +7,7 @@ Collectible items have namespaced ids:
   card:<card id>   emote:<emote key>   char:<skin name>
 Starter items (see ``starter`` in the manifest) are owned by every player and never drop.
 An emote set with a ``source`` (scratch) is won there only: its emotes are neither in the resonance pool nor crafted.
+A card or skin with a ``since`` ships with that release: older clients' pools leave it out.
 """
 from __future__ import annotations
 
@@ -88,23 +89,32 @@ class Manifest:
         """char:<name> -> (major, minor, patch) of the release that ships the skin, for skins that name one."""
         return {f"char:{s['name']}": version_key(s["since"])[:3] for s in self.data["skins"] if s.get("since")}
 
+    @cached_property
+    def item_since(self) -> dict[str, tuple]:
+        """Item id -> (major, minor, patch) of the release that ships it, for the cards and skins that name one."""
+        cards = {f"card:{c['id']}": version_key(c["since"])[:3] for c in self.data["cards"] if c.get("since")}
+        return {**cards, **self.skin_since}
+
     def resonance_pool_for(self, version: str | None) -> dict[str, list[dict]]:
-        """The pool a client of [version] can show: skins from a later release are left out, as is every skin with a
-        `since` when the version is missing or unreadable. A pre-release counts as its release. None: the whole pool."""
+        """The pool a client of [version] can show: cards and skins from a later release are left out, as is every
+        one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
+        None: the whole pool."""
         if version is None:
             return self.resonance_pool
         key = version_key(version)
         have = key[:3] if key else (0, 0, 0)
-        held = {iid for iid, since in self.skin_since.items() if since > have}
+        held = {iid for iid, since in self.item_since.items() if since > have}
         if not held:
             return self.resonance_pool
         return {r: [i for i in items if i["id"] not in held] for r, items in self.resonance_pool.items()}
 
     @cached_property
     def resonance_pool(self) -> dict[str, list[dict]]:
-        pool = {r: [] for r in self.resonance["rates"]}
+        """Items by tier. An item whose tier has no rate in the economy (say the limited tier before its rate is set)
+        stays out of the pool."""
+        pool: dict[str, list[dict]] = {r: [] for r in self.resonance["rates"]}
         for item in self.items.values():
-            if item["id"] not in self.starter and not item["source"]:
+            if item["id"] not in self.starter and not item["source"] and item["rarity"] in pool:
                 pool[item["rarity"]].append(item)
         return pool
 
@@ -153,14 +163,18 @@ class Manifest:
 
     @cached_property
     def plates(self) -> dict[str, list[str]]:
-        """Name plates besides the big hidden cards: plate id -> the emote item ids that unlock it (every emote
-        of its `emoteSet`). A plate whose set is unknown or empty is left out; older manifests have none."""
+        """Name plates besides the big hidden cards: plate id -> the item ids that unlock it (every emote of its
+        `emoteSet`, or every card of its `series`). A plate whose set is unknown or empty is left out; older
+        manifests have none."""
         sets = {s["id"]: s["emotes"] for s in self.data.get("emoteSets", [])}
         out: dict[str, list[str]] = {}
         for p in self.data.get("plates", []):
-            emotes = sets.get(p["emoteSet"])
-            if emotes:
-                out[p["id"]] = [f"emote:{e['key']}" for e in emotes]
+            if p.get("series"):
+                needs = [f"card:{c['id']}" for c in self.data["cards"] if c["series"] == p["series"]]
+            else:
+                needs = [f"emote:{e['key']}" for e in sets.get(p.get("emoteSet"), [])]
+            if needs:
+                out[p["id"]] = needs
         return out
 
     @cached_property

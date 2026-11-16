@@ -137,7 +137,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   --tone-glow: rgba(var(--c-500-rgb), 0.35);
 }
 .tone-rare { --dot: var(--c-500); }
-.tone-epic { --dot: var(--c-800); }
+.tone-epic, .tone-limited { --dot: var(--c-800); }
 .tone-skin { --dot: var(--tone-glow); }
 .tone-legendary { --dot: var(--gold); }
 

@@ -389,9 +389,10 @@ def api_manifest() -> dict:
 
 
 @app.get("/api/economy")
-def api_economy() -> dict:
-    """Prices, odds and caps for the client to show (the economy file without its server-only part)."""
-    return economy_file.client_view(manifest.economy, game.cfg)
+def api_economy(x_client_version: str = Header(default="")) -> dict:
+    """Prices, odds and caps for the client to show (the economy file without its server-only part), the odds as
+    that client's draws have them."""
+    return economy_file.client_view(manifest.economy, game.cfg, manifest.resonance_pool_for(x_client_version))
 
 
 @app.get("/api/me")

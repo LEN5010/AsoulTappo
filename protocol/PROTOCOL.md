@@ -92,7 +92,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单：`assets-packs/manifest.json` 加上 economy 配置（不含服务端私有的 `antiCheat`） |
-| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json` |
+| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致 |
 | GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
@@ -121,20 +121,21 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
 | GET /packs/... | 卡面原图及主题动画资源 |
 
-收藏分按每件物品平均要抽几次折算，1 分约等于 1 抽：大隐藏 300 分，皮肤 150 分，史诗卡 20 分，普通卡 2 分。表情约按合成价的比例计分：普通 1、罕见 2、稀有 3，阿草表情按稀有算，初始表情不计分。`points` 为 `{big,skin,epic,card,emoteRare,emoteScratch,emoteUncommon,emote}` 各一件的分数，客户端据此显示分数表。之前的客户端不带 order，看到的仍是按卡片数的排名；它们都不在线后，order 的默认值可以改为 score。
+收藏分按每件物品平均要抽几次折算，1 分约等于 1 抽：大隐藏 300 分，皮肤 150 分，史诗卡和限定卡 20 分，普通卡 2 分。表情约按合成价的比例计分：普通 1、罕见 2、稀有 3，阿草表情按稀有算，初始表情不计分。`points` 为 `{big,skin,epic,limited,card,emoteRare,emoteScratch,emoteUncommon,emote}` 各一件的分数，客户端据此显示分数表；之前的客户端不认识 `limited`，分数表里不显示这一行。之前的客户端不带 order，看到的仍是按卡片数的排名；它们都不在线后，order 的默认值可以改为 score。
 
 从 1.1.4 起，状态中的 `dailyTaps` 为 `{day,count}`，day 是北京时间日期，count 是当天全部有效敲击数，包含每分钟收益上限以外的有效敲击。`income.taps` 继续记录参与碎片收益计算的次数。客户端的今日计数也按北京时间换日，并使用 `dailyTaps` 跨设备同步。旧库升级时以已有的当日收益计数初始化新统计，后续按全部有效敲击累加。
 
-铭牌显示在其他成员桌面上该玩家桌宠的下方。`plate` 字段是铭牌 ID，有两种：
+铭牌显示在其他成员桌面上该玩家桌宠的下方。`plate` 字段是铭牌 ID，有三种：
 
 - 大隐藏卡的卡片 ID（形如 `c1762331462002`）。解锁条件是集齐这张卡所在收藏集里该成员的全部卡片（包括大隐藏本身）：几位成员共用的收藏集只要求该成员的卡，双人卡要求整个双人收藏集。客户端取卡面眼睛所在的一条横条，播放卡面视频。
 - manifest 顶层 `plates` 里的铭牌 ID，每项为 `{id,name,emoteSet}`，拥有表情套 `emoteSet` 的全部表情即解锁。目前只有阿草铭牌 `achao`，由刮刮乐的 20 个阿草表情解锁。客户端显示侧栏的阿草图，横条从手臂慢慢扫到脸上再回到手臂。
+- manifest 顶层 `plates` 里带 `series` 的铭牌，每项为 `{id,name,series,video,poster,still,aspect}`，拥有收藏集 `series` 的全部卡片即解锁。现在是三个衣橱铭牌 `wardrobe-jiaran`、`wardrobe-nailin`、`wardrobe-beila`，各由对应成员衣橱的 12 张限定卡解锁。video 是随客户端安装的视频，poster 是它的首帧，still 是 `/packs` 里的原尺寸静帧（个人主页名片用），aspect 是画面的高比宽。客户端按固定裁切播放视频。
 
-`plates` 的 ID 不与卡片 ID 重复。服务端和客户端读同一份 manifest 判断解锁；没有 `plates` 的旧 manifest 只认大隐藏卡。存档里已装备但未集齐的铭牌，读取装备和进房间时会被取下。裁切位置和动效节奏保存在客户端 `client/src/pet/plates.ts`。联机页的座位仍显示普通名牌。
+`plates` 的 ID 不与卡片 ID 重复。服务端和客户端读同一份 manifest 判断解锁；没有 `plates` 的旧 manifest 只认大隐藏卡，认不出 `emoteSet` 或 `series` 的铭牌不能解锁。存档里已装备但未集齐的铭牌，读取装备和进房间时会被取下。裁切位置和动效节奏保存在客户端 `client/src/pet/plates.ts`。联机页的座位仍显示普通名牌。
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 
-物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。rarity 为 `legendary`、`skin`、`epic`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
+物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
 
 状态示例：
 
@@ -277,9 +278,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 ## 共鸣与兑换
 
-五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 554 件：85 张卡、455 张表情、14 款皮肤。
+五位成员共用一个池子，所有非初始卡片、表情和皮肤一起参与共鸣。三张心宜与思诺共有卡各自只入池一次，共用同一个拥有记录。可抽内容共 590 件：121 张卡（含 36 张限定卡）、455 张表情、14 款皮肤。
 
-清单 `skins` 每项为 `{name, member, title?, since?}`。name 是皮肤 ID（素材目录、`char:<name>` 物品、房间的 character 字段），以成员名开头，之后不再改动；title 是界面上显示的名称（成员名加皮肤自己的名字，如 `嘉然帝江`），没有时显示 name；since 是带上这款皮肤图片的客户端版本（x.y.z）。共鸣时客户端版本低于 since 的，这款皮肤不进它的皮肤池；预发布版本按对应正式版算（1.2.0-rc.3 算 1.2.0），不带版本或版本读不出时，带 since 的皮肤都不进池。这样老客户端不会抽到自己显示不了的皮肤。客户端把 since 最新的那一批皮肤作为开屏公告展示一次。
+清单 `skins` 每项为 `{name, member, title?, since?}`。name 是皮肤 ID（素材目录、`char:<name>` 物品、房间的 character 字段），以成员名开头，之后不再改动；title 是界面上显示的名称（成员名加皮肤自己的名字，如 `嘉然帝江`），没有时显示 name；since 是带上这款皮肤图片的客户端版本（x.y.z）。共鸣时客户端版本低于 since 的，这款皮肤不进它的皮肤池；预发布版本按对应正式版算（1.2.0-rc.3 算 1.2.0），不带版本或版本读不出时，带 since 的皮肤都不进池。这样老客户端不会抽到自己显示不了的皮肤。客户端把 since 最新的那一批皮肤作为开屏公告展示一次。卡片也可以带 since，规则相同：衣橱的限定卡 since 为 1.2.4，之前的客户端抽不到，它们的限定档并入普通档。
 
 | 档位 | 内容 |
 |---|---|
@@ -288,15 +289,16 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 史诗 | 小隐藏与跳舞卡 |
 | 稀有 | 动态表情 |
 | 罕见 | 绽放收藏集与脑洞波表情 |
+| 限定 | 衣橱卡：嘉然、乃琳、贝拉的个性装扮立绘各 12 张 |
 | 普通 | 普通卡与普通表情 |
 
-各档概率在 `economy.resonance.rates`，传说和皮肤两档的保底次数在 `economy.resonance.pity`。
+各档概率在 `economy.resonance.rates`，传说和皮肤两档的保底次数在 `economy.resonance.pity`。没有列出概率的档位不进池，没有 `limited` 的服务端不出限定卡。限定档在普通档之前判定，其他档位的区间不变；没有保底，集齐 36 张后概率并入普通档。
 
 每次消耗 `economy.resonance.cost` 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档，`repeatTiers` 里的档位（目前只有史诗档）除外：史诗档集齐后保留原概率，在整档里等概率抽，出的都是重复。普通档先按 `commonKindWeights`（普卡 : 表情）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复。重复按上面的标准兑换成碎片。某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
 
 稀有表情为此间为爱、绮梦漫游、匣中惊鸿三套动态表情，共 60 个；罕见为绽放收藏集与脑洞波各三套，共 75 个；普通表情共 320 个。已有物品按原 ID 保留。
 
-新玩家获得初始碎片。兑换价格按稀有度在 `economy.craftCost`；史诗、传说、皮肤和初始表情不参与兑换。
+新玩家获得初始碎片。兑换价格按稀有度在 `economy.craftCost`；史诗、限定、传说、皮肤和初始表情不参与兑换。
 
 ## 刮刮乐
 

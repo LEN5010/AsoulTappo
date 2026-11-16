@@ -5,12 +5,17 @@ import { economy } from "./stores/economy";
 
 export type ResonancePool = Record<Rarity, Item[]>;
 export function poolOf(): ResonancePool {
-  const pool: ResonancePool = { legendary: [], skin: [], epic: [], rare: [], uncommon: [], common: [] };
+  const pool: ResonancePool = { legendary: [], skin: [], epic: [], limited: [], rare: [], uncommon: [], common: [] };
   for (const item of collectible) if (item.rarity) pool[item.rarity].push(item);
   return pool;
 }
 
-const NO_RATES: Record<Rarity, number> = { legendary: 0, skin: 0, epic: 0, rare: 0, uncommon: 0, common: 0 };
+const NO_RATES: Record<Rarity, number> = { legendary: 0, skin: 0, epic: 0, limited: 0, rare: 0, uncommon: 0, common: 0 };
+
+/** The server's base rates; a tier it does not name (the limited tier on an older server) has none. */
+export function baseRates(): Record<Rarity, number> {
+  return { ...NO_RATES, ...economy.value?.resonance.rates };
+}
 
 /**
  * A tier with nothing left to find gives its odds to common, unless it keeps rolling repeats (the server does the same).
@@ -19,9 +24,9 @@ const NO_RATES: Record<Rarity, number> = { legendary: 0, skin: 0, epic: 0, rare:
 export function effectiveRates(pool: ResonancePool, owned: Record<string, number>): Record<Rarity, number> {
   const res = economy.value?.resonance;
   if (!res) return { ...NO_RATES };
-  const rates = { ...res.rates };
+  const rates = baseRates();
   const repeating = new Set(res.repeatTiers ?? []);
-  for (const rarity of ["legendary", "skin", "epic", "rare", "uncommon"] as const) {
+  for (const rarity of ["legendary", "skin", "epic", "limited", "rare", "uncommon"] as const) {
     if (!repeating.has(rarity) && !pool[rarity].some((item) => !owned[item.id])) {
       rates.common += rates[rarity];
       rates[rarity] = 0;

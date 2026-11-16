@@ -52,6 +52,11 @@ def roll_tier(rates, available, pity, hard_pity, rng: Rng) -> str:
     edge += rates["rare"]
     if "uncommon" in available and edge / 100 <= x < (edge + rates["uncommon"]) / 100:
         return "uncommon"
+    edge += rates["uncommon"]
+    # Last before common, so the tiers above keep their ranges whether or not the economy names it.
+    limited = rates.get("limited", 0)
+    if "limited" in available and edge / 100 <= x < (edge + limited) / 100:
+        return "limited"
     return "common"
 
 

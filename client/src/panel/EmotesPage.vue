@@ -17,7 +17,7 @@ import PetBust from "./PetBust.vue";
 import NamePill from "../pet/NamePill.vue";
 import NamePlate from "../pet/NamePlate.vue";
 import PlateDetail from "./PlateDetail.vue";
-import { allPlates, plateSize, plateUnlocked, type Plate } from "../pet/plates";
+import { allPlates, plateMembers, plateSize, plateUnlocked, type Plate } from "../pet/plates";
 import { usePageActive } from "../composables/usePageActive";
 import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
@@ -77,7 +77,8 @@ const petSkins = computed(() =>
       || a.name.localeCompare(b.name, "zh-CN")),
 );
 
-// Name plates on partners' desks (big hidden cards, then 阿草's): unlocked ones first, each group in manifest order.
+// Name plates on partners' desks (big hidden cards, then 阿草's and the 衣橱 ones): unlocked ones first, each group in
+// manifest order.
 // Shown as a partner at x0.8 would see it.
 const { width: PLATE_W, height: PLATE_H } = plateSize(0.8);
 const pageActive = usePageActive();
@@ -86,7 +87,7 @@ const plateView = ref<Plate | null>(null);
 const plateOpen = (id: string) => plateUnlocked(id, collection.owned);
 const plateNick = computed(() => settings.nick.trim() || "匿名小面包");
 /** 阿草's plate belongs to no member: it stays on the shelf whoever is picked. */
-const plateShown = (p: Plate) => p.kind !== "card" || p.card.characters.some(inMember);
+const plateShown = (p: Plate) => { const members = plateMembers(p); return !members.length || members.some(inMember); };
 const plates = computed(() =>
   allPlates()
     .filter((p) => plateShown(p) && (!query.value || p.name.includes(query.value)))

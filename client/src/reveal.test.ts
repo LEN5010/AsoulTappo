@@ -24,13 +24,15 @@ describe("resonance reveal", () => {
     expect(boardOf(big).map((x) => [x.item, x.got])).toEqual([["card:test", 1], ["emote:b", 1], ["emote:a", 9]]);
   });
 
-  it("spotlights hidden cards, skins and a first animated card only", () => {
+  it("spotlights hidden cards, skins and a first animated or limited card only", () => {
     expect(spotlights(d("legendary"), "big")).toBe(true);
     expect(spotlights(d("skin", "char:x"))).toBe(true);
     expect(spotlights(d("epic"), "small")).toBe(true);
     expect(spotlights(d("epic", "card:dance", true), "normal")).toBe(true);
     expect(spotlights(d("epic", "card:dance"), "normal")).toBe(false);
     expect(spotlights(d("rare", "emote:a", true))).toBe(false);
+    expect(spotlights(d("limited", "card:closet", true), "normal")).toBe(true);
+    expect(spotlights(d("limited", "card:closet"), "normal")).toBe(false);
   });
 
   it("seals every tile in a dealt batch, spotlights and animated emotes in a grouped one", () => {

@@ -29,7 +29,8 @@ describe("manifest", () => {
     expect(getEmote(manifest.emoteSets[0].emotes[0].key)).toBeTruthy();
     expect(manifest.decor).toEqual([]);
     expect(manifest.accessories).toEqual([]);
-    expect(manifest.cards).toHaveLength(85);
+    expect(manifest.cards).toHaveLength(121);
+    expect(manifest.cards.filter((c) => c.rarity === "limited").map((c) => c.since)).toEqual(Array(36).fill("1.2.4"));
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
     expect(characterColor("贝拉山海经")).toBe(characterColor("贝拉"));
@@ -48,11 +49,13 @@ describe("manifest", () => {
     expect(getTheme("nope").id).toBe(d.id);
     expect(Object.values(d.parts).flat().every((r) => (r as string).startsWith("bundle:"))).toBe(true);
   });
-  it("lists 阿草's plate, unlocked by the scratch set, under an id no card has", () => {
-    expect(manifest.plates).toEqual([{ id: "achao", name: "阿草", emoteSet: "achao" }]);
+  it("lists 阿草's plate and the 衣橱 plates, each under an id no card has", () => {
+    expect(manifest.plates[0]).toEqual({ id: "achao", name: "阿草", emoteSet: "achao" });
+    expect(manifest.plates.map((p) => p.id)).toEqual(["achao", "wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila"]);
     for (const p of manifest.plates) {
       expect(getCard(p.id)).toBeUndefined();
-      expect(manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes).toHaveLength(20);
+      if (p.series === undefined) expect(manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes).toHaveLength(20);
+      else expect(manifest.cards.filter((c) => c.series === p.series)).toHaveLength(12);
     }
   });
   it("wire emote keys fit the server limit", () => {

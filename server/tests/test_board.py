@@ -188,6 +188,9 @@ def test_what_each_item_is_worth():
     assert {worth[f"card:{c}"] for c in COMMON} == {2}
     assert {r: {worth[i] for i in ids} for r, ids in EMOTES.items()} == {"common": {1}, "uncommon": {2}, "rare": {3}}
     assert {worth[i] for i in SCRATCH_EMOTES} == {3}
+    # Wardrobe cards (the limited tier) count as epic ones.
+    assert {worth[f"card:{c['id']}"] for c in M.data["cards"] if c["rarity"] == "limited"} == {20}
+    assert BOARD_POINTS["limited"] == BOARD_POINTS["epic"]
     assert not M.starter & set(worth)
     assert set(BOARD_POINTS.values()) == {300, 150, 20, 3, 2, 1}
 

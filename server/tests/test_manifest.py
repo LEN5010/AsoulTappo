@@ -46,6 +46,10 @@ def all_refs(m: dict):
         for pose in ("left", "right"):
             if a.get(pose):
                 yield a[pose]
+    for p in m.get("plates", []):
+        for key in ("video", "poster", "still"):
+            if p.get(key):
+                yield p[key]
 
 
 def test_every_referenced_file_exists():
@@ -76,7 +80,7 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    assert len(cards) == 85
+    assert len(cards) == 121
     assert sum(c["tier"] == "big" for c in cards) == 10
     assert sum(c["tier"] == "small" for c in cards) == 10
     assert M.cards["c1748345610010"]["tier"] == "big"
@@ -128,7 +132,7 @@ def test_accessories_starter_and_economy():
     assert M.starter == {f"emote:{k}" for k in starter}
     dropped = {i["id"] for tier in M.resonance_pool.values() for i in tier}
     assert not dropped & M.starter
-    assert len(dropped) == 554
+    assert len(dropped) == 590
     # scratch emotes are collectible but stay out of the pool
     assert len(M.scratch_emotes) == 20 and not dropped & {f"emote:{k}" for k in M.scratch_emotes}
     assert len(M.items) == len(dropped) + len(M.starter) + len(M.scratch_emotes)
@@ -136,8 +140,11 @@ def test_accessories_starter_and_economy():
 
 
 def test_pool_counts_and_card_rarities():
-    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin")] == [372, 75, 60, 23, 10, 14]
+    assert [len(M.resonance_pool[r]) for r in ("common", "uncommon", "rare", "epic", "legendary", "skin", "limited")] == [372, 75, 60, 23, 10, 14, 36]
     for c in M.cards.values():
+        if c["series"].startswith("wardrobe-"):
+            assert c["rarity"] == "limited"
+            continue
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
     assert all(set(r) == {"name"} for r in M.data["rarities"].values())
 
@@ -154,7 +161,35 @@ def test_emote_tiers_match_the_curated_sets():
     assert M.resonance["duplicateRefund"] == {"emote": 5, "normal": 20, "small": 360}
     assert M.resonance["repeatTiers"] == ["epic"]
     assert M.resonance["commonKindWeights"] == {"card": 45, "emote": 41.2}
-    assert M.resonance["rates"] == {"legendary": .1, "skin": .2, "epic": 4.5, "rare": 3, "uncommon": 6, "common": 86.2}
+    assert M.resonance["rates"] == {"legendary": .1, "skin": .2, "epic": 4.5, "rare": 3, "uncommon": 6, "limited": 2,
+                                    "common": 84.2}
+
+
+def test_wardrobe_cards_are_twelve_still_portraits_a_member_from_1_2_5():
+    cards = [c for c in M.data["cards"] if c["rarity"] == "limited"]
+    assert len(cards) == 36
+    for series, member in (("wardrobe-jiaran", "嘉然"), ("wardrobe-nailin", "乃琳"), ("wardrobe-beila", "贝拉")):
+        mine = [c for c in cards if c["series"] == series]
+        assert len(mine) == 12 and all(c["characters"] == [member] for c in mine)
+        assert [c["name"] for c in mine] == [f"衣橱 {n:02d}" for n in range(1, 13)]
+    for c in cards:
+        assert c["id"][0] == "c" and c["id"][1:].isdigit()
+        assert c["tier"] == "normal" and c["video"] is None and c["since"] == "1.2.4"
+        assert c["thumb"].startswith("bundle:cards/thumb/") and c["full"].startswith(f"pack:cards/{c['series']}/")
+    assert M.data["rarities"]["limited"] == {"name": "限定"}
+    # only the wardrobe cards name a release
+    assert {c["id"] for c in M.data["cards"] if c.get("since")} == {c["id"] for c in cards}
+
+
+def test_wardrobe_plates_play_a_bundled_video_and_unlock_with_their_series():
+    plates = {p["id"]: p for p in M.data["plates"]}
+    for series in ("wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila"):
+        p = plates[series]
+        assert p["series"] == series
+        assert p["video"] == f"bundle:plates/{series}.mp4" and p["poster"] == f"bundle:plates/{series}.webp"
+        assert p["still"] == f"pack:plates/{series}.webp" and 0.8 < p["aspect"] < 0.9
+        assert M.plates[series] == [f"card:{c['id']}" for c in M.data["cards"] if c["series"] == series]
+        assert len(M.plates[series]) == 12
 
 
 def test_skin_directories_match_manifest():

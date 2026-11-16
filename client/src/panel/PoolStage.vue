@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Resonance stage: the page itself. The dynamic cards are held as a fanned hand in front of slow rays
 // and a soft wash of the front card's colours; the front card leans toward the pointer. Beside it the
-// page names the card and sums up the collection and its skins. The lineup deals the next card on its own.
+// page names the card and sums up the collection, the 衣橱 series and the skins. The lineup deals the next card on its
+// own.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
@@ -9,6 +10,7 @@ import { cardFrame, cardLabel, cardWord, poolName, TIER_LABEL } from "../cards";
 import { characters, getCharacter } from "../characters";
 import { getCard, characterColor, manifest, type Rarity } from "../manifest";
 import type { Item } from "../items";
+import { allPlates, plateMembers, type Plate } from "../pet/plates";
 import { poolOf } from "../resonance";
 import { collection } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
@@ -16,7 +18,7 @@ import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
 const props = defineProps<{ busy: boolean; paused?: boolean }>();
-const emit = defineEmits<{ inspect: [item: Item] }>();
+const emit = defineEmits<{ inspect: [item: Item]; plate: [plate: Plate] }>();
 
 const LINEUP_SIZE = 7;
 const FAN_SIZE = 3;
@@ -44,6 +46,17 @@ const meter = computed(() =>
   }),
 );
 const collected = computed(() => have(all));
+/** The limited tier, one closet per member beside the total: its series plate, how much of it is owned, the newest owned
+ * card on top. */
+const closets = allPlates().flatMap((plate) => (plate.kind === "series" ? [plate] : []));
+const wardrobe = computed(() => closets.map((plate) => {
+  const got = plate.cards.filter((c) => collection.owned[`card:${c.id}`]);
+  const member = plateMembers(plate)[0] ?? "";
+  return {
+    plate, member, color: characterColor(member), got: got.length, total: plate.cards.length,
+    cover: (got.at(-1) ?? plate.cards[0])!.thumb,
+  };
+}));
 
 const selected = ref(previews[0]?.id ?? "");
 const at = computed(() => Math.max(0, previews.findIndex((i) => i.id === selected.value)));
@@ -347,7 +360,22 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="meter">
-        <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i></p>
+        <div class="total-row">
+          <p class="total"><b>{{ collected }}</b><i>/ {{ all.length }}</i></p>
+          <div v-if="wardrobe.length" class="wardrobe" role="group" aria-label="衣橱">
+            <button
+              v-for="w in wardrobe" :key="w.plate.id" type="button" class="closet" :class="{ done: w.got === w.total }"
+              :disabled="busy" :title="`${w.plate.name} ${w.got}/${w.total}`" :aria-label="`${w.plate.name} ${w.got}/${w.total}`"
+              @click="emit('plate', w.plate)"
+            >
+              <span class="closet-art ui-frame frame-rose"><img :src="assetUrl(w.cover)" alt="" draggable="false" /></span>
+              <span class="closet-text">
+                <span class="closet-who"><i :style="{ background: w.color }"></i>{{ w.member }}</span>
+                <span class="closet-count"><b>{{ w.got }}</b><i>/{{ w.total }}</i></span>
+              </span>
+            </button>
+          </div>
+        </div>
         <ul class="tiers">
           <li v-for="t in meter" :key="t.rarity" :class="t.rarity" :title="`${t.label} ${t.got}/${t.total}`">
             <span class="t-head"><Icon :name="t.icon" :size="12" /><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
@@ -830,10 +858,12 @@ h3 {
   gap: 14px;
 }
 .total {
+  flex: none;
   display: flex;
   align-items: baseline;
   gap: 6px;
   margin: 0;
+  white-space: nowrap;
 }
 .total b {
   font: 800 44px/0.9 var(--font-latin);
@@ -900,6 +930,81 @@ h3 {
   border-radius: inherit;
   background: var(--fill);
   transition: width var(--dur-stage) var(--ease-out);
+}
+
+/* The 衣橱 series beside the total, one key per member: the newest owned card in its frame, the member and the count. */
+.total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wardrobe {
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+}
+.closet {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px 3px 3px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-base) var(--ease-out);
+}
+.closet:hover:not(:disabled) {
+  background: var(--c-50);
+}
+.closet-art {
+  flex: none;
+  display: block;
+  width: 24px;
+  aspect-ratio: 2 / 3;
+  padding: 2px;
+  border-radius: 4px;
+}
+.closet-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 2px;
+}
+.closet-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  white-space: nowrap;
+}
+.closet-who {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-2);
+}
+.closet-who i {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.closet-count b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+}
+.closet-count i {
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  font-style: normal;
+  color: var(--ink-3);
+}
+.closet.done .closet-count b {
+  color: var(--c-700);
 }
 
 /* Skins as acrylic standees: the bust in a wide clear outline, on an oval base, its name underneath. */
@@ -1077,6 +1182,9 @@ h3 {
   .fan:hover .s2:not(:disabled) { transform: translateX(23%) rotate(11deg) scale(0.86); }
   .total b { font-size: 36px; }
   .tiers { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+  /* Too narrow for the cards beside the total: the closets keep the member and the count. */
+  .closet-art { display: none; }
+  .closet { padding-left: 7px; }
 }
 @container panel (max-width: 660px) {
   .pool-stage { flex-direction: column; align-items: center; gap: 18px; padding: 18px 16px 12px; }

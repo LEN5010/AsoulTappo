@@ -27,8 +27,8 @@ def give(g, pid, items):
 
 
 def test_manifest_lists_the_achao_plate():
-    assert M.data["plates"] == [{"id": "achao", "name": "阿草", "emoteSet": "achao"}]
-    assert M.plates == {"achao": ACHAO} and len(ACHAO) == 20
+    assert M.data["plates"][0] == {"id": "achao", "name": "阿草", "emoteSet": "achao"}
+    assert M.plates["achao"] == ACHAO and len(ACHAO) == 20
     # plate ids are worn in the same field as card ids, so they never meet
     assert not set(M.plates) & set(M.cards)
 
@@ -86,3 +86,17 @@ def test_a_room_shows_the_plate_once_the_set_is_whole(monkeypatch):
         ws.send_json({"type": "state", "plate": "achao"})
         assert ws.receive_json() == {"type": "state", "id": welcome["you"], "character": "嘉然", "nick": "a",
                                      "plate": "achao", "status": None}
+
+
+def test_a_wardrobe_plate_is_worn_once_its_twelve_cards_are_owned():
+    g, pid = game()
+    needs = M.plates["wardrobe-nailin"]
+    assert len(needs) == 12 and all(i.startswith("card:") for i in needs)
+    give(g, pid, needs[:-1])
+    with pytest.raises(GameError):
+        g.set_loadout(TOKEN, {"plate": "wardrobe-nailin"})
+    give(g, pid, needs[-1:])
+    assert g.set_loadout(TOKEN, {"plate": "wardrobe-nailin"})["plate"] == "wardrobe-nailin"
+    # another member's wardrobe plate is still out of reach
+    with pytest.raises(GameError):
+        g.set_loadout(TOKEN, {"plate": "wardrobe-beila"})

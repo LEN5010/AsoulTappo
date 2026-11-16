@@ -42,6 +42,9 @@
   },
   "legendary": {
    "name": "传说"
+  },
+  "limited": {
+   "name": "限定"
   }
  },
  "defaultTheme": "jiaran-eat",
@@ -858,6 +861,21 @@
    "id": "casket",
    "name": "贝拉的冒险 · 匣中惊鸿",
    "total": 9
+  },
+  {
+   "id": "wardrobe-jiaran",
+   "name": "嘉然的衣橱",
+   "total": 12
+  },
+  {
+   "id": "wardrobe-nailin",
+   "name": "乃琳的衣橱",
+   "total": 12
+  },
+  {
+   "id": "wardrobe-beila",
+   "name": "贝拉的衣橱",
+   "total": 12
   }
  ],
  "cards": [
@@ -2138,6 +2156,582 @@
    "full": "pack:cards/casket/c1785126321010.webp",
    "video": "bundle:cards/casket/c1785126321010.mp4",
    "still": false
+  },
+  {
+   "id": "c546101",
+   "name": "衣橱 01",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c546101.webp",
+   "full": "pack:cards/wardrobe-jiaran/c546101.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c546102",
+   "name": "衣橱 02",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c546102.webp",
+   "full": "pack:cards/wardrobe-jiaran/c546102.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c546103",
+   "name": "衣橱 03",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c546103.webp",
+   "full": "pack:cards/wardrobe-jiaran/c546103.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c546104",
+   "name": "衣橱 04",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c546104.webp",
+   "full": "pack:cards/wardrobe-jiaran/c546104.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480501",
+   "name": "衣橱 05",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480501.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480501.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480502",
+   "name": "衣橱 06",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480502.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480502.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480503",
+   "name": "衣橱 07",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480503.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480503.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480504",
+   "name": "衣橱 08",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480504.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480504.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480505",
+   "name": "衣橱 09",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480505.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480505.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480506",
+   "name": "衣橱 10",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480506.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480506.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480507",
+   "name": "衣橱 11",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480507.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480507.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3480508",
+   "name": "衣橱 12",
+   "series": "wardrobe-jiaran",
+   "sub": null,
+   "characters": [
+    "嘉然"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3480508.webp",
+   "full": "pack:cards/wardrobe-jiaran/c3480508.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3349801",
+   "name": "衣橱 01",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3349801.webp",
+   "full": "pack:cards/wardrobe-nailin/c3349801.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3349802",
+   "name": "衣橱 02",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3349802.webp",
+   "full": "pack:cards/wardrobe-nailin/c3349802.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3349803",
+   "name": "衣橱 03",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3349803.webp",
+   "full": "pack:cards/wardrobe-nailin/c3349803.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3349804",
+   "name": "衣橱 04",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3349804.webp",
+   "full": "pack:cards/wardrobe-nailin/c3349804.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035701",
+   "name": "衣橱 05",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035701.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035701.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035702",
+   "name": "衣橱 06",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035702.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035702.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035703",
+   "name": "衣橱 07",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035703.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035703.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035704",
+   "name": "衣橱 08",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035704.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035704.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035705",
+   "name": "衣橱 09",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035705.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035705.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035706",
+   "name": "衣橱 10",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035706.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035706.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035707",
+   "name": "衣橱 11",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035707.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035707.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c4035708",
+   "name": "衣橱 12",
+   "series": "wardrobe-nailin",
+   "sub": null,
+   "characters": [
+    "乃琳"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c4035708.webp",
+   "full": "pack:cards/wardrobe-nailin/c4035708.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3297801",
+   "name": "衣橱 01",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3297801.webp",
+   "full": "pack:cards/wardrobe-beila/c3297801.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3297802",
+   "name": "衣橱 02",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3297802.webp",
+   "full": "pack:cards/wardrobe-beila/c3297802.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3297803",
+   "name": "衣橱 03",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3297803.webp",
+   "full": "pack:cards/wardrobe-beila/c3297803.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3297804",
+   "name": "衣橱 04",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3297804.webp",
+   "full": "pack:cards/wardrobe-beila/c3297804.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764401",
+   "name": "衣橱 05",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764401.webp",
+   "full": "pack:cards/wardrobe-beila/c3764401.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764402",
+   "name": "衣橱 06",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764402.webp",
+   "full": "pack:cards/wardrobe-beila/c3764402.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764403",
+   "name": "衣橱 07",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764403.webp",
+   "full": "pack:cards/wardrobe-beila/c3764403.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764404",
+   "name": "衣橱 08",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764404.webp",
+   "full": "pack:cards/wardrobe-beila/c3764404.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764405",
+   "name": "衣橱 09",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764405.webp",
+   "full": "pack:cards/wardrobe-beila/c3764405.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764406",
+   "name": "衣橱 10",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764406.webp",
+   "full": "pack:cards/wardrobe-beila/c3764406.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764407",
+   "name": "衣橱 11",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764407.webp",
+   "full": "pack:cards/wardrobe-beila/c3764407.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
+  },
+  {
+   "id": "c3764408",
+   "name": "衣橱 12",
+   "series": "wardrobe-beila",
+   "sub": null,
+   "characters": [
+    "贝拉"
+   ],
+   "rarity": "limited",
+   "tier": "normal",
+   "thumb": "bundle:cards/thumb/c3764408.webp",
+   "full": "pack:cards/wardrobe-beila/c3764408.webp",
+   "video": null,
+   "still": false,
+   "since": "1.2.4"
   }
  ],
  "emoteSets": [
@@ -5055,6 +5649,33 @@
    "id": "achao",
    "name": "阿草",
    "emoteSet": "achao"
+  },
+  {
+   "id": "wardrobe-jiaran",
+   "name": "嘉然的衣橱",
+   "series": "wardrobe-jiaran",
+   "video": "bundle:plates/wardrobe-jiaran.mp4",
+   "poster": "bundle:plates/wardrobe-jiaran.webp",
+   "still": "pack:plates/wardrobe-jiaran.webp",
+   "aspect": 0.8647
+  },
+  {
+   "id": "wardrobe-nailin",
+   "name": "乃琳的衣橱",
+   "series": "wardrobe-nailin",
+   "video": "bundle:plates/wardrobe-nailin.mp4",
+   "poster": "bundle:plates/wardrobe-nailin.webp",
+   "still": "pack:plates/wardrobe-nailin.webp",
+   "aspect": 0.8647
+  },
+  {
+   "id": "wardrobe-beila",
+   "name": "贝拉的衣橱",
+   "series": "wardrobe-beila",
+   "video": "bundle:plates/wardrobe-beila.mp4",
+   "poster": "bundle:plates/wardrobe-beila.webp",
+   "still": "pack:plates/wardrobe-beila.webp",
+   "aspect": 0.8647
   }
  ]
 }

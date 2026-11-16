@@ -6,11 +6,12 @@ export type CardTier = ManifestCard["tier"];
 export const TIER_LABEL: Record<CardTier, string> = { big: "大隐藏", small: "小隐藏", normal: "普通款" };
 export const TIER_RANK: Record<CardTier, number> = { big: 0, small: 1, normal: 2 };
 
-/** The metal frame a card wears: gold for big hidden cards, coral for small hidden and dance cards, none for the rest. */
+/** The metal frame a card wears: gold for big hidden cards, coral for small hidden, dance and limited cards, none for
+ *  the rest. */
 export function cardFrame(card: Pick<ManifestCard, "tier" | "rarity"> | undefined): "frame-gold" | "frame-rose" | "" {
   if (!card) return "";
   if (card.tier === "big") return "frame-gold";
-  return card.tier === "small" || card.rarity === "epic" ? "frame-rose" : "";
+  return card.tier === "small" || card.rarity === "epic" || card.rarity === "limited" ? "frame-rose" : "";
 }
 
 /** The word stamped on a card in the reveal and on the resonance page: VOICE when its video is a still picture

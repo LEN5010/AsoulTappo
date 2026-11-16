@@ -1,6 +1,8 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from app import economy
 from app.game import Game, GameError, day_of, player_id_for
 from app.manifest import Manifest
 from app.store import Store
@@ -25,8 +27,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 18000, "taps": 0, "perTap": 1.603, "multiplier": 1, "perMinute": 96.2}
-    # 554 from resonance and the 20 scratch emotes
-    assert r["totals"]["items"] == 574
+    # 590 from resonance and the 20 scratch emotes
+    assert r["totals"]["items"] == 610
 
 
 def test_taps_pay_along_the_log_curve():
@@ -133,9 +135,70 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
         assert skins(version) == every - birthday
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
-    # Only skins are held back.
-    assert {r: len(v) for r, v in M.resonance_pool_for("1.1.4").items() if r != "skin"} == \
-        {r: len(v) for r, v in M.resonance_pool.items() if r != "skin"}
+    # Besides skins only the wardrobe cards (the limited tier) are held back.
+    assert {r: len(v) for r, v in M.resonance_pool_for("1.1.4").items() if r not in ("skin", "limited")} == \
+        {r: len(v) for r, v in M.resonance_pool.items() if r not in ("skin", "limited")}
+
+
+def test_wardrobe_cards_stay_out_of_clients_older_than_1_2_4():
+    M = Manifest.load()
+    wardrobe = {f"card:{c['id']}" for c in M.data["cards"] if c["rarity"] == "limited"}
+    assert {i["id"] for i in M.resonance_pool["limited"]} == wardrobe and len(wardrobe) == 36
+    for version in (None, "1.2.4", "1.2.4-rc.2", "v1.3.0"):
+        assert {i["id"] for i in M.resonance_pool_for(version)["limited"]} == wardrobe
+    for version in ("1.2.3", "1.2.3-rc.1", "1.2.2", ""):
+        assert M.resonance_pool_for(version)["limited"] == []
+
+
+def test_the_limited_tier_sits_just_above_common():
+    # Example rates: the five tiers above take 13.8 of 100, the limited tier the next 2.
+    g, _ = game(SeqRng(.139, .5))
+    drop = g.resonate(TOKEN, 1, "1.2.4")["drops"][0]
+    assert drop["rarity"] == "limited" and drop["new"] and drop["item"].startswith("card:c")
+    g, _ = game(SeqRng(.137, .5))
+    assert g.resonate(TOKEN, 1, "1.2.4")["drops"][0]["rarity"] == "uncommon"
+    g, _ = game(SeqRng(.159, .5))
+    assert g.resonate(TOKEN, 1, "1.2.4")["drops"][0]["rarity"] == "common"
+
+
+def test_an_older_client_rolling_the_limited_range_gets_common():
+    g, _ = game(SeqRng(.139, .5))
+    assert g.resonate(TOKEN, 1, "1.2.3")["drops"][0]["rarity"] == "common"
+
+
+def test_the_limited_tier_gives_missing_cards_and_closes_once_all_are_owned():
+    g, _ = game(SeqRng(.139, .5))
+    pid = player_id_for(TOKEN)
+    cards = [i["id"] for i in g.manifest.resonance_pool["limited"]]
+    for item in cards[:-1]:
+        g.store.add_item(pid, item, 0)
+    g.store.update_player(pid, shards=160 * 2)
+    drop = g.resonate(TOKEN, 1, "1.2.4")["drops"][0]
+    assert drop == {**drop, "item": cards[-1], "rarity": "limited", "new": True, "shards": 0}
+    # All 36 owned: the limited range lands on common, never a repeat.
+    assert g.resonate(TOKEN, 1, "1.2.4")["drops"][0]["rarity"] == "common"
+
+
+def test_wardrobe_cards_cannot_be_crafted():
+    g, _ = game()
+    item = next(i["id"] for i in g.manifest.resonance_pool["limited"])
+    g.store.update_player(player_id_for(TOKEN), shards=100_000)
+    with pytest.raises(GameError) as e:
+        g.craft(TOKEN, item)
+    assert e.value.code == "bad_item"
+
+
+def test_a_tier_the_economy_has_no_rate_for_stays_out_of_the_pool(tmp_path):
+    raw = json.loads(economy.EXAMPLE.read_text(encoding="utf-8"))
+    rates = raw["resonance"]["rates"]
+    rates["common"] += rates.pop("limited")
+    path = tmp_path / "economy.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    m = Manifest.load(economy=path)
+    assert "limited" not in m.resonance_pool
+    g = Game(Store(":memory:"), m, rng=SeqRng(.139, .5), now=Clock())
+    g.status(TOKEN)
+    assert g.resonate(TOKEN, 1, "1.2.4")["drops"][0]["rarity"] == "common"
 
 
 def test_an_older_client_on_skin_pity_gets_a_skin_it_can_show():

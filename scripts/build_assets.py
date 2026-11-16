@@ -449,6 +449,82 @@ def build_cards(ctx: Ctx, series_ids: set[str] | None = None) -> list[dict]:
     return cards
 
 
+# The space-background portraits are 1242 x 1988: the same trim off the top and the bottom makes them 2:3.
+PORTRAIT_SIZE = (1242, 1988)
+PLATE_VIDEO_W = 540
+
+
+def build_wardrobe(src: Path, force: bool) -> list[dict]:
+    """The wardrobe cards from <src>/space-bg/<suit>_sp_image<n>.jpg: thumbnail bundled, full size in the packs."""
+    cards = []
+    for series, num, name, member, k in cat.wardrobe_cards():
+        img = src / "space-bg" / f"{num[:-2]}_sp_image{k}.jpg"
+        if not img.is_file():
+            raise SystemExit(f"missing source for wardrobe card {num} ({img})")
+        cid = f"c{num}"
+        thumb_rel = f"cards/thumb/{cid}.webp"
+        full_rel = f"cards/{series}/{cid}.webp"
+        if force or not (BUNDLE / thumb_rel).exists() or not (PACKS / full_rel).exists():
+            im = load_rgba(img).convert("RGB")
+            if im.size != PORTRAIT_SIZE:
+                raise SystemExit(f"{img}: {im.size}, expected {PORTRAIT_SIZE}")
+            h = im.width * 3 // 2
+            top = (im.height - h) // 2
+            im = im.crop((0, top, im.width, top + h))
+            save_webp(resize_w(im, CARD_FULL_W), PACKS / full_rel, q=WEBP_Q)
+            save_webp(im.resize(CARD_THUMB, Image.LANCZOS), BUNDLE / thumb_rel, q=80)
+        cards.append({
+            "id": cid, "name": name, "series": series, "sub": None, "characters": [member],
+            "rarity": cat.WARDROBE_RARITY, "tier": "normal",
+            "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None, "still": False,
+            "since": cat.WARDROBE_SINCE,
+        })
+    return cards
+
+
+def build_wardrobe_plates(src: Path, force: bool) -> dict[str, dict]:
+    """Each wardrobe plate's head video from <src>/head-video: silent and PLATE_VIDEO_W wide with a poster of its first
+    frame, both bundled, and that frame at full size in the packs for the profile namecard. Returns plate id ->
+    {video, poster, still, aspect} for the manifest."""
+    out = {}
+    for plate, vid in cat.WARDROBE_PLATE_VIDEOS.items():
+        source = src / "head-video" / f"{vid}_head_myself_mp4_bg.mp4"
+        if not source.is_file():
+            raise SystemExit(f"missing head video for {plate} ({source})")
+        video, poster = BUNDLE / "plates" / f"{plate}.mp4", BUNDLE / "plates" / f"{plate}.webp"
+        still = PACKS / "plates" / f"{plate}.webp"
+        if force or not video.exists():
+            video.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(source), "-an",
+                            "-vf", f"scale={PLATE_VIDEO_W}:-2:flags=lanczos,fps={VIDEO_FPS}",
+                            "-c:v", "libx264", "-crf", VIDEO_CRF, "-preset", VIDEO_PRESET, "-pix_fmt", "yuv420p",
+                            "-movflags", "+faststart", str(video)], check=True)
+        if force or not poster.exists() or not still.exists():
+            frame = first_frame_at(source, 0).convert("RGB")
+            save_webp(resize_w(frame, PLATE_VIDEO_W), poster, q=80)
+            save_webp(frame, still, q=WEBP_Q)
+        with Image.open(still) as im:
+            aspect = round(im.height / im.width, 4)
+        out[plate] = {"video": f"bundle:plates/{plate}.mp4", "poster": f"bundle:plates/{plate}.webp",
+                      "still": f"pack:plates/{plate}.webp", "aspect": aspect}
+    return out
+
+
+def first_frame_at(src: Path, seconds: float) -> Image.Image:
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", str(seconds), "-i", str(src), "-frames:v", "1",
+                        "-f", "image2pipe", "-vcodec", "png", "-"], check=True, capture_output=True)
+    return load_rgba(r.stdout)
+
+
+def manifest_plates(motion: dict[str, dict]) -> list[dict]:
+    """The catalog's plates, a wardrobe plate with its video when it has been built."""
+    return [{**p, **motion.get(p["id"], {})} for p in cat.PLATES]
+
+
+def series_name(series: str) -> str:
+    return cat.CARD_SERIES[series][0] if series in cat.CARD_SERIES else cat.WARDROBE_SERIES[series][0]
+
+
 def starter_items(emotes: list[dict]) -> dict:
     first_set: dict[str, dict] = {}
     for s in emotes:
@@ -486,6 +562,9 @@ def collect_pack_files(manifest: dict) -> dict[str, list[str]]:
         packs[t["pack"]] = sorted(paths)
     for c in manifest["cards"]:
         packs.setdefault(f"cards-{c['series']}", []).append(c["full"].split(":", 1)[1])
+    for p in manifest.get("plates", []):
+        if p.get("still"):
+            packs.setdefault("plates", []).append(p["still"].split(":", 1)[1])
     return {k: sorted(v) for k, v in packs.items()}
 
 
@@ -500,9 +579,32 @@ def build_index(manifest: dict) -> dict:
         if pid.startswith("theme-"):
             title = next(t["name"] for t in manifest["themes"] if t["pack"] == pid)
         elif pid.startswith("cards-"):
-            title = cat.CARD_SERIES[pid[6:]][0] + " · 卡面"
+            title = series_name(pid[6:]) + " · 卡面"
+        elif pid == "plates":
+            title = "铭牌"
         out.append({"id": pid, "title": title, "size": sum(x["size"] for x in files), "files": files})
     return {"version": 1, "packs": out}
+
+
+RARITIES = {
+    "common": {"name": "普通"},
+    "uncommon": {"name": "罕见"},
+    "rare": {"name": "稀有"},
+    "epic": {"name": "史诗"},
+    "legendary": {"name": "传说"},
+    "limited": {"name": "限定"},
+}
+
+
+def series_list(cards: list[dict]) -> list[dict]:
+    names = {**{k: v[0] for k, v in cat.CARD_SERIES.items()}, **{k: v[0] for k, v in cat.WARDROBE_SERIES.items()}}
+    return [{"id": k, "name": name, "total": sum(1 for c in cards if c["series"] == k)} for k, name in names.items()]
+
+
+def write_manifests(manifest: dict) -> None:
+    write_json(PACKS / "manifest.json", manifest)
+    write_json(CLIENT_MANIFEST, manifest)
+    write_json(PACKS / "index.json", build_index(manifest))
 
 
 def main() -> None:
@@ -513,16 +615,40 @@ def main() -> None:
     ap.add_argument("--emotes-only", action="store_true", help="Add collection emotes from the member/collection layout")
     ap.add_argument("--collection-src", help="Additional member/collection source when rebuilding all assets")
     ap.add_argument("--series", nargs="+", choices=cat.CARD_SERIES, help="Series to update with --cards-only")
+    ap.add_argument("--wardrobe-src", help="Wardrobe sources (space-bg/, head-video/); without it the wardrobe cards "
+                                           "and plates are kept from the current manifest")
+    ap.add_argument("--wardrobe-only", action="store_true",
+                    help="Update the wardrobe cards and plates only, leaving every other asset as it is")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
     if args.emotes_only and args.cards_only:
         ap.error("--emotes-only and --cards-only are mutually exclusive")
+    if args.wardrobe_only and not args.wardrobe_src:
+        ap.error("--wardrobe-only requires --wardrobe-src")
+    if args.wardrobe_only and (args.cards_only or args.emotes_only):
+        ap.error("--wardrobe-only is a mode of its own")
+    previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+    wardrobe_ids = set(cat.WARDROBE_SERIES)
+    if args.wardrobe_src:
+        wardrobe = build_wardrobe(Path(args.wardrobe_src), args.force)
+        motion = build_wardrobe_plates(Path(args.wardrobe_src), args.force)
+    else:
+        wardrobe = [c for c in previous["cards"] if c["series"] in wardrobe_ids]
+        motion = {p["id"]: {k: p[k] for k in ("video", "poster", "still", "aspect")}
+                  for p in previous.get("plates", []) if "video" in p}
+    if args.wardrobe_only:
+        manifest = {**previous, "rarities": RARITIES, "plates": manifest_plates(motion)}
+        manifest["cards"] = [c for c in previous["cards"] if c["series"] not in wardrobe_ids] + wardrobe
+        manifest["series"] = series_list(manifest["cards"])
+        write_manifests(manifest)
+        print(f"{len(wardrobe)} wardrobe cards, {len(motion)} plate videos")
+        return
 
     if args.series and not args.cards_only:
         ap.error("--series requires --cards-only")
     if args.cards_only or args.emotes_only:
-        manifest = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+        manifest = previous
         selected = set(args.series or cat.CARD_SERIES)
         cards = ([c for c in manifest["cards"] if c["series"] not in selected] + build_cards(ctx, selected)
                  if args.cards_only else manifest["cards"])
@@ -539,7 +665,6 @@ def main() -> None:
         replaced = {s["id"] for s in additions}
         emotes = [s for s in emotes if s["id"] not in replaced] + additions
     elif not args.cards_only:
-        previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
         collection_ids = {s[0] for s in cat.COLLECTION_EMOTE_SETS}
         emotes += [s for s in previous["emoteSets"] if s["id"] in collection_ids]
     # Listed last and in every mode, whatever the emote sets came from.
@@ -550,35 +675,26 @@ def main() -> None:
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
+    cards = [c for c in cards if c["series"] not in wardrobe_ids] + wardrobe
     manifest = {
         "version": 4,
         "characters": cat.CHARACTERS,
-        "rarities": {
-            "common": {"name": "普通"},
-            "uncommon": {"name": "罕见"},
-            "rare": {"name": "稀有"},
-            "epic": {"name": "史诗"},
-            "legendary": {"name": "传说"},
-        },
+        "rarities": RARITIES,
         "defaultTheme": cat.DEFAULT_THEME,
         "themes": themes,
-        "series": [{"id": k, "name": v[0], "total": sum(1 for c in cards if c["series"] == k)}
-                   for k, v in cat.CARD_SERIES.items()],
+        "series": series_list(cards),
         "cards": cards,
         "emoteSets": emotes,
         "decor": decor,
         "accessories": accessories,
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
-        "plates": cat.PLATES,
+        "plates": manifest_plates(motion),
     }
     from build_previews import build_emote_covers, build_pet_previews
     build_emote_covers(manifest)
     build_pet_previews()
-    write_json(PACKS / "manifest.json", manifest)
-    write_json(CLIENT_MANIFEST, manifest)
-    index = build_index(manifest)
-    write_json(PACKS / "index.json", index)
+    write_manifests(manifest)
 
     def tree_size(p: Path) -> int:
         return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())

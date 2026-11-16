@@ -47,13 +47,18 @@ watch(box, (el) => {
 }, { immediate: true });
 onBeforeUnmount(() => observer?.disconnect());
 const artWidth = computed(() => Math.max(0, Math.min(width.value - TEXT_ROOM, HEIGHT * BANNER_ASPECT)));
-/** A card plate shows its full-size still over its thumbnail; a sweep plate its cut-out on coral. */
+/** A card plate shows its full-size still over its thumbnail, a series plate its full-size frame over the video's
+ * poster, a sweep plate its cut-out on coral. */
 const art = computed(() => {
   const p = props.plate, w = artWidth.value;
   if (!p || !w) return null;
-  return p.kind === "card"
-    ? { src: assetUrl(p.card.full), back: `url(${assetUrl(p.card.thumb)})`, at: bannerArt(p.crop, w, HEIGHT), sweep: false }
-    : { src: p.sweep.src, back: undefined, at: sweepArt(p.sweep, w, HEIGHT, BANNER_FIT).face, sweep: true };
+  if (p.kind === "card") {
+    return { src: assetUrl(p.card.full), back: `url(${assetUrl(p.card.thumb)})`, at: bannerArt(p.crop, w, HEIGHT), sweep: false };
+  }
+  if (p.kind === "series") {
+    return { src: assetUrl(p.still), back: `url(${assetUrl(p.poster)})`, at: bannerArt(p.motion.face, w, HEIGHT, p.aspect), sweep: false };
+  }
+  return { src: p.sweep.src, back: undefined, at: sweepArt(p.sweep, w, HEIGHT, BANNER_FIT).face, sweep: true };
 });
 const plateCard = computed(() => (props.plate?.kind === "card" ? props.plate.card : null));
 

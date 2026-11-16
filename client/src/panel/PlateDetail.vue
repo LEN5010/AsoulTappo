@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // A name plate before wearing it: its picture, the set that unlocks it, and the own pet with the plate under it
-// as partners see it. A card plate shows the card and its cards; a sweep plate its picture and its emotes.
+// as partners see it. A card plate shows the card and its cards; a sweep plate its picture and its emotes; a series
+// plate its video and its series.
 import { computed } from "vue";
 import { assetUrl } from "../asset";
 import { cardFrame, poolName } from "../cards";
@@ -8,12 +9,13 @@ import { characterColor, emoteCover, manifest, type ManifestCard, type ManifestE
 import { collection } from "../stores/player";
 import { settings } from "../stores/settings";
 import { ui } from "../stores/ui";
+import { reducedMotion } from "../stores/theme";
 import { pet } from "../stores/pet";
 import Modal from "../ui/Modal.vue";
 import Icon from "../ui/Icon.vue";
 import PetView from "../pet/PetView.vue";
 import NamePlate from "../pet/NamePlate.vue";
-import { nameBand, plateNeeds, plateSet, plateSize, type Plate } from "../pet/plates";
+import { nameBand, plateCards, plateMembers, plateNeeds, plateSize, type Plate } from "../pet/plates";
 
 const props = defineProps<{ plate: Plate }>();
 const emit = defineEmits<{ close: [] }>();
@@ -26,9 +28,11 @@ const owns = (item: string) => !!collection.owned[item];
 const has = (c: ManifestCard) => owns(`card:${c.id}`);
 const hasEmote = (e: ManifestEmote) => owns(`emote:${e.key}`);
 const card = computed(() => (props.plate.kind === "card" ? props.plate.card : null));
+const series = computed(() => (props.plate.kind === "series" ? props.plate : null));
 const owned = computed(() => !card.value || has(card.value));
-/** The cards to collect, the big hidden card first. */
-const set = computed(() => (card.value ? plateSet(card.value) : []));
+/** The cards to collect, a big hidden card first. */
+const set = computed(() => plateCards(props.plate));
+const members = computed(() => plateMembers(props.plate));
 /** The emotes to collect: owned ones first, each group in set order. */
 const emotes = computed(() => {
   const all = props.plate.kind === "sweep" ? props.plate.emotes : [];
@@ -39,8 +43,9 @@ const collected = computed(() => needs.value.filter(owns).length);
 const unlocked = computed(() => collected.value === needs.value.length);
 const worn = computed(() => settings.plate === props.plate.id);
 const nick = computed(() => settings.nick.trim() || "匿名小面包");
+const seriesId = computed(() => card.value?.series ?? series.value?.series ?? "");
 const pool = computed(() =>
-  card.value ? poolName(manifest.series.find((s) => s.id === card.value!.series)?.name ?? card.value.series) : "");
+  seriesId.value ? poolName(manifest.series.find((s) => s.id === seriesId.value)?.name ?? seriesId.value) : "");
 function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
 </script>
 
@@ -53,15 +58,19 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
       <div v-else-if="plate.kind === 'sweep'" class="art ui-frame frame-gold sweep">
         <img :src="plate.sweep.src" :alt="plate.name" />
       </div>
+      <div v-else-if="series" class="art ui-frame frame-gold motion" :style="{ aspectRatio: `1 / ${series.aspect}` }">
+        <img v-if="reducedMotion" :src="assetUrl(series.poster)" :alt="plate.name" />
+        <video v-else :src="assetUrl(series.video)" :poster="assetUrl(series.poster)" autoplay loop muted playsinline></video>
+      </div>
       <div class="info">
         <span class="ui-tag gold">铭牌</span>
         <h3>{{ plate.name }}</h3>
-        <p v-if="card" class="member"><i :style="{ background: characterColor(card.characters[0]!) }"></i>{{ card.characters.join(" / ") }}</p>
+        <p v-if="members.length" class="member"><i :style="{ background: characterColor(members[0]!) }"></i>{{ members.join(" / ") }}</p>
         <dl>
-          <div v-if="card"><dt>系列</dt><dd>{{ pool }}</dd></div>
+          <div v-if="pool"><dt>系列</dt><dd>{{ pool }}</dd></div>
           <div><dt>解锁</dt><dd>{{ unlocked ? '已解锁' : `${collected} / ${needs.length}` }}</dd></div>
         </dl>
-        <ul v-if="card" class="set" :style="{ '--n': set.length }" aria-label="解锁需要的卡片">
+        <ul v-if="set.length" class="set" :style="{ '--n': set.length }" aria-label="解锁需要的卡片">
           <li
             v-for="c in set" :key="c.id" :class="[cardFrame(c), { missing: !has(c) }]"
             :title="`${c.name}：${has(c) ? '已拥有' : '未获得'}`"
@@ -80,7 +89,9 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
           <small>桌宠预览</small>
         </div>
         <button v-if="unlocked" type="button" class="ui-btn primary equip" :disabled="worn" @click="settings.plate = plate.id"><Icon name="check" :size="15" />{{ worn ? '使用中' : '使用铭牌' }}</button>
-        <button v-else-if="card" type="button" class="ui-btn primary equip" @click="go('resonance')"><Icon name="spark" :size="15" />去共鸣获取</button>
+        <template v-else-if="set.length">
+          <button v-if="ui.page !== 'resonance'" type="button" class="ui-btn primary equip" @click="go('resonance')"><Icon name="spark" :size="15" />去共鸣获取</button>
+        </template>
         <button v-else-if="ui.page !== 'park'" type="button" class="ui-btn primary equip" @click="go('park')"><Icon name="ticket" :size="15" />去刮刮乐</button>
       </div>
     </div>
@@ -90,7 +101,7 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
 <style scoped>
 .plate-detail { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); align-items: stretch; gap: 24px; }
 .art { --radius: var(--radius-l); align-self: center; width: 100%; aspect-ratio: 2 / 3; box-sizing: border-box; padding: 6px; background: var(--frame-fill) var(--frame-at) / var(--frame-size); }
-.art img { width: 100%; height: 100%; display: block; object-fit: cover; background: center / cover no-repeat; border-radius: calc(var(--radius-l) - 5px); }
+.art img, .art video { width: 100%; height: 100%; display: block; object-fit: cover; background: center / cover no-repeat; border-radius: calc(var(--radius-l) - 5px); }
 .art.locked img { filter: brightness(0.74); }
 /* A cut-out picture on the coral it stands on in the plate. */
 .art.sweep img { background: var(--c-500); }

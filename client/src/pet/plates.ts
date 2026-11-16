@@ -1,10 +1,12 @@
-// Name plates worn under the pet on partners' desks. Two kinds:
+// Name plates worn under the pet on partners' desks. Three kinds:
 // - a big hidden card, worn under its card id, cut down to the strip across the eyes. The crops below are measured
 //   on the card art; `video` entries were measured frame by frame on the card video, which is framed differently.
 // - a plate listed in the manifest (`plates`), unlocked by a whole emote set: a still picture that sweeps between
 //   two bands of it (PLATE_SWEEPS).
+// - a plate listed in the manifest with a card `series` (衣橱), unlocked by the whole series: its own video, cut
+//   with one fixed crop like a big hidden card's (PLATE_MOTIONS).
 import alpaca from "../assets/brand/side-alpaca.webp";
-import { getCard, manifest, type ManifestCard, type ManifestEmote } from "../manifest";
+import { getCard, manifest, type ManifestCard, type ManifestEmote, type ManifestPlate } from "../manifest";
 
 /** A face on the card: eye centre (fx, fy) and face width (fw), all as fractions of the card. */
 export interface PlateFace { fx: number; fy: number; fw: number }
@@ -69,10 +71,31 @@ export const PLATE_SWEEPS: Readonly<Record<string, PlateSweep>> = {
   },
 };
 
+/**
+ * A series plate's video under one fixed crop: the face as fractions of the video frame, at the middle of where the
+ * eyes go over the loop, drawn a little smaller than a tight crop so more of the face shows. `gap` is how much of the
+ * strip's width the video may leave bare at the left, under the nickname, to bring a face that sits left in its video
+ * over to the anchor.
+ */
+export interface PlateMotion { face: PlateFace; gap?: number }
+
+export const PLATE_MOTIONS: Readonly<Record<string, PlateMotion>> = {
+  "wardrobe-jiaran": { face: { fx: 0.646, fy: 0.34, fw: 0.146 } }, // 嘉然个性装扮 2.0, dark theme
+  "wardrobe-nailin": { face: { fx: 0.655, fy: 0.358, fw: 0.195 } }, // 乃琳个性装扮 2.0, light theme
+  "wardrobe-beila": { face: { fx: 0.471, fy: 0.42, fw: 0.18 }, gap: 0.2 }, // 贝拉个性装扮 2.0, light theme
+};
+
+type SeriesPlate = Extract<ManifestPlate, { series: string }>;
+
 export type Plate =
   | { kind: "card"; id: string; name: string; card: ManifestCard; crop: PlateCrop }
   /** `set` is the emote set that unlocks it. */
-  | { kind: "sweep"; id: string; name: string; set: string; emotes: ManifestEmote[]; sweep: PlateSweep };
+  | { kind: "sweep"; id: string; name: string; set: string; emotes: ManifestEmote[]; sweep: PlateSweep }
+  /** `cards` is the series that unlocks it; `video`, `poster` and `still` are asset references. */
+  | {
+    kind: "series"; id: string; name: string; series: string; cards: ManifestCard[];
+    video: string; poster: string; still: string; aspect: number; motion: PlateMotion;
+  };
 
 const TIER_ORDER = { big: 0, small: 1, normal: 2 } as const;
 
@@ -83,12 +106,22 @@ const PLATES: readonly Plate[] = [
     return card.tier === "big" && crop ? [{ kind: "card", id: card.id, name: card.name, card, crop }] : [];
   }),
   ...manifest.plates.flatMap((p): Plate[] => {
+    if (getCard(p.id)) return [];
+    if (p.series !== undefined) return seriesPlate(p);
     const sweep = PLATE_SWEEPS[p.id];
     const emotes = manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes ?? [];
-    return sweep && emotes.length && !getCard(p.id)
-      ? [{ kind: "sweep", id: p.id, name: p.name, set: p.emoteSet, emotes, sweep }] : [];
+    return sweep && emotes.length ? [{ kind: "sweep", id: p.id, name: p.name, set: p.emoteSet, emotes, sweep }] : [];
   }),
 ];
+
+function seriesPlate(p: SeriesPlate): Plate[] {
+  const motion = PLATE_MOTIONS[p.id];
+  const cards = manifest.cards.filter((c) => c.series === p.series);
+  return motion && cards.length ? [{
+    kind: "series", id: p.id, name: p.name, series: p.series, cards,
+    video: p.video, poster: p.poster, still: p.still, aspect: p.aspect, motion,
+  }] : [];
+}
 const plateIndex = new Map(PLATES.map((p) => [p.id, p]));
 
 export const allPlates = (): readonly Plate[] => PLATES;
@@ -96,6 +129,13 @@ export const allPlates = (): readonly Plate[] => PLATES;
 /** The plate behind a plate id: a big hidden card with a crop, or a manifest plate with its picture. */
 export function getPlate(id: string | null | undefined): Plate | null {
   return (id && plateIndex.get(id)) || null;
+}
+
+/** The members a plate shows. */
+export function plateMembers(plate: Plate): string[] {
+  if (plate.kind === "card") return plate.card.characters;
+  if (plate.kind === "series") return [...new Set(plate.cards.flatMap((c) => c.characters))];
+  return [];
 }
 
 /** The card behind a plate id, if it is a big hidden card with a crop. */
@@ -115,11 +155,15 @@ export function plateSet(card: ManifestCard): ManifestCard[] {
     .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
 }
 
-/** Item ids a plate asks for: its card set, or every emote of its set. Same rule as the server (game.py plate_needs). */
+/** The cards a plate asks for: a big hidden card's set, or a series plate's series; none for an emote plate. */
+export function plateCards(plate: Plate): ManifestCard[] {
+  if (plate.kind === "card") return plateSet(plate.card);
+  return plate.kind === "series" ? plate.cards : [];
+}
+
+/** Item ids a plate asks for: its cards, or every emote of its set. Same rule as the server (game.py plate_needs). */
 export function plateNeeds(plate: Plate): string[] {
-  return plate.kind === "card"
-    ? plateSet(plate.card).map((c) => `card:${c.id}`)
-    : plate.emotes.map((e) => `emote:${e.key}`);
+  return plate.kind === "sweep" ? plate.emotes.map((e) => `emote:${e.key}`) : plateCards(plate).map((c) => `card:${c.id}`);
 }
 
 /** A plate is worn once its whole set is collected. */
@@ -152,8 +196,12 @@ export const CARD_ASPECT = 1.5;
 
 export interface ArtBox { width: number; height: number; left: number; top: number }
 
-/** `at`, moved as little as needed so art larger than the strip covers it and art smaller stays whole inside it. */
-const within = (at: number, slack: number) => Math.min(Math.max(at, Math.min(0, slack)), Math.max(0, slack));
+/**
+ * `at`, moved as little as needed so art larger than the strip covers it and art smaller stays whole inside it.
+ * `room` lets art larger than the strip start that far in from the strip's start, leaving a bare edge.
+ */
+const within = (at: number, slack: number, room = 0) =>
+  Math.min(Math.max(at, Math.min(0, slack)), Math.max(room, slack));
 
 /** How large the face is drawn: `span` is face width over the frame's height. */
 export interface ArtFit { span: number }
@@ -168,23 +216,38 @@ export const BANNER_EYES = 0.45;
 
 /**
  * Where the picture (height `aspect` x its width) goes in a w x h strip: eyes at `anchor` across and mid-height,
- * never past the picture's edges where it is larger than the strip, never cut where it is smaller.
+ * never past the picture's edges where it is larger than the strip, never cut where it is smaller. `gap` (a share of
+ * the strip's width) lets the picture start that far in from the left, bare strip showing there.
  */
 export function plateArt(
-  face: PlateFace, w: number, h: number, anchor = PLATE_ANCHOR, aspect = CARD_ASPECT, fit: ArtFit = STRIP_FIT,
+  face: PlateFace, w: number, h: number, anchor = PLATE_ANCHOR, aspect = CARD_ASPECT, fit: ArtFit = STRIP_FIT, gap = 0,
 ): ArtBox {
   const width = (fit.span * h) / face.fw;
   const height = width * aspect;
-  return { width, height, left: within(anchor * w - face.fx * width, w - width), top: within(h / 2 - face.fy * height, h - height) };
+  return {
+    width, height,
+    left: within(anchor * w - face.fx * width, w - width, gap * w),
+    top: within(h / 2 - face.fy * height, h - height),
+  };
+}
+
+/** Where a series plate's video (and its poster) goes in a w x h strip. On a long strip (a large pet) the video is drawn
+ * larger, at least as wide as the strip, so it never leaves the right of the strip bare. */
+export function motionArt(plate: Extract<Plate, { kind: "series" }>, w: number, h: number): ArtBox {
+  const { face, gap = 0 } = plate.motion;
+  const fit = { span: Math.max(FACE_SPAN, (w * face.fw) / h) };
+  return plateArt(face, w, h, PLATE_ANCHOR, plate.aspect, fit, gap);
 }
 
 /**
  * Where a card goes on a profile namecard: the full-size still exactly as wide as the artwork, so it is drawn at about
- * its own resolution (the video is too small for a banner), the eyes BANNER_EYES down.
+ * its own resolution (the video is too small for a banner), the eyes BANNER_EYES down. A wide picture on a narrow
+ * banner is drawn as tall as the banner instead, overflowing at the right.
  */
 export function bannerArt(crop: PlateCrop, w: number, h: number, aspect = CARD_ASPECT): ArtBox {
-  const height = w * aspect;
-  return { width: w, height, left: 0, top: within(BANNER_EYES * h - (crop.bannerFy ?? crop.fy) * height, h - height) };
+  const width = Math.max(w, h / aspect);
+  const height = width * aspect;
+  return { width, height, left: 0, top: within(BANNER_EYES * h - (crop.bannerFy ?? crop.fy) * height, h - height) };
 }
 
 /** Where a sweep plate's picture goes on its face and on its first band. */
