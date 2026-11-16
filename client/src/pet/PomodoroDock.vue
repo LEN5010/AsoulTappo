@@ -319,9 +319,6 @@ function stop() {
 .opt[aria-pressed="true"] .icon {
   color: var(--c-600);
 }
-@media (prefers-reduced-motion: reduce) {
-  .ring .arc { transition: none; }
-}
 @keyframes drop-in {
   from {
     opacity: 0;

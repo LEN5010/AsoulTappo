@@ -5,6 +5,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { reducedMotion } from "../stores/theme";
 import { takeFocus, trapTab } from "../ui/focus";
 import Icon from "../ui/Icon.vue";
+import type { Tilt } from "../holo/shader";
 import { clampPan, FIT, fitSize, zoomAt, type Size, type View } from "./album";
 import StepKeys from "./StepKeys.vue";
 
@@ -18,6 +19,8 @@ const props = defineProps<{
   steps?: boolean;
   prev?: boolean;
   next?: boolean;
+  /** A lean for the art (a holo card under the pointer); it stays level while zoomed. */
+  tilt?: Tilt;
 }>();
 const emit = defineEmits<{ close: []; step: [delta: -1 | 1] }>();
 
@@ -36,6 +39,16 @@ const view = ref<View>(FIT);
 const eased = ref(false);
 const dragging = ref(false);
 const zoomed = computed(() => view.value.scale > 1.001);
+/** Pan and zoom from the top left corner; a lean turns the art about its centre on top of that. */
+const transform = computed(() => {
+  const { x, y, scale } = view.value;
+  const move = `translate(${x}px, ${y}px) scale(${scale})`;
+  const t = props.tilt;
+  if (!t || zoomed.value || (!t.rx && !t.ry)) return move;
+  const cx = size.value.w / 2;
+  const cy = size.value.h / 2;
+  return `${move} translate(${cx}px, ${cy}px) perspective(1600px) rotateX(${t.rx.toFixed(2)}deg) rotateY(${t.ry.toFixed(2)}deg) translate(${-cx}px, ${-cy}px)`;
+});
 
 watch(() => props.id, () => {
   view.value = FIT;
@@ -131,7 +144,7 @@ onBeforeUnmount(() => {
     <div ref="stage" class="stage" @pointerdown.self="pressedStage = true" @click.self="pressedStage && emit('close')" @wheel.prevent="onWheel">
       <div
         class="frame" :class="{ zoomed, dragging, eased }"
-        :style="{ width: `${size.w}px`, height: `${size.h}px`, transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }"
+        :style="{ width: `${size.w}px`, height: `${size.h}px`, transform }"
         @dblclick="onDouble" @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
         @dragstart.prevent @load.capture="onLoad" @loadedmetadata.capture="onLoad"
       >

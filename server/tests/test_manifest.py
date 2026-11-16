@@ -34,6 +34,8 @@ def all_refs(m: dict):
         yield c["full"]
         if c["video"]:
             yield c["video"]
+        if c.get("holo"):
+            yield c["holo"]["mask"]
     for s in m["emoteSets"]:
         for e in s["emotes"]:
             yield e["img"]
@@ -135,7 +137,9 @@ def test_accessories_starter_and_economy():
     assert len(dropped) == 590
     # scratch emotes are collectible but stay out of the pool
     assert len(M.scratch_emotes) == 20 and not dropped & {f"emote:{k}" for k in M.scratch_emotes}
-    assert len(M.items) == len(dropped) + len(M.starter) + len(M.scratch_emotes)
+    # holo versions are items of their own, outside the pool
+    assert len(M.holos) == 21 and not dropped & set(M.holos.values())
+    assert len(M.items) == len(dropped) + len(M.starter) + len(M.scratch_emotes) + len(M.holos)
     assert M.craft_cost == {"common": 480, "uncommon": 960, "rare": 1600}
 
 
@@ -171,7 +175,8 @@ def test_wardrobe_cards_are_twelve_still_portraits_a_member_from_1_2_5():
     for series, member in (("wardrobe-jiaran", "嘉然"), ("wardrobe-nailin", "乃琳"), ("wardrobe-beila", "贝拉")):
         mine = [c for c in cards if c["series"] == series]
         assert len(mine) == 12 and all(c["characters"] == [member] for c in mine)
-        assert [c["name"] for c in mine] == [f"衣橱 {n:02d}" for n in range(1, 13)]
+        assert all(c["name"] and not c["name"].startswith("衣橱") for c in mine)
+    assert len({c["name"] for c in M.data["cards"]}) == len(M.data["cards"])
     for c in cards:
         assert c["id"][0] == "c" and c["id"][1:].isdigit()
         assert c["tier"] == "normal" and c["video"] is None and c["since"] == "1.2.4"

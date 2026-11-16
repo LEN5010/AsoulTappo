@@ -87,6 +87,9 @@ export interface Drop {
   count: number;
   /** shards gained for a duplicate */
   shards: number;
+  /** The draw was the card's holo version: `new` is then the holo version's, `cardNew` the card's. */
+  holo?: boolean;
+  cardNew?: boolean;
 }
 export interface ResonanceResult extends PlayerStatus {
   drops: Drop[];
@@ -122,7 +125,7 @@ export interface BoardRow {
 /** Why the asking save is off the collection board: its own choice, or no main-site account on a server with them. */
 export type BoardOff = "hidden" | "account";
 /** What one item is worth in the collection score, by kind. */
-export type BoardPointKind = "big" | "skin" | "epic" | "limited" | "card" | "emoteRare" | "emoteScratch" | "emoteUncommon" | "emote";
+export type BoardPointKind = "big" | "skin" | "epic" | "limited" | "holo" | "card" | "emoteRare" | "emoteScratch" | "emoteUncommon" | "emote";
 export type BoardPoints = Partial<Record<BoardPointKind, number>>;
 /** The server-wide collection board by score: its top rows, the card total, the points table, and where the asking
  * save stands. */

@@ -814,10 +814,6 @@ async function copy() {
   from { opacity: 1; }
   to { opacity: 0; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .cheer-faces > .me:not(.off) { animation: none; }
-  .cheer-bar.flash > .ui-bar::after { display: none; }
-}
 .cheer-prize {
   flex: none;
   display: inline-flex;

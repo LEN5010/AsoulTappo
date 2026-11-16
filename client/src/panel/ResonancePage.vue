@@ -103,6 +103,7 @@ async function nextBatch() {
     <Modal v-if="probabilities" title="共鸣概率" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
         <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ base[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
+        <tr v-if="res.holoChance"><td>镭射款</td><td colspan="2">抽到对应卡片时 {{ +res.holoChance.toFixed(2) }}%</td><td>—</td></tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
     </Modal>

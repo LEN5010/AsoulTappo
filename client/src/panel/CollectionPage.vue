@@ -14,8 +14,8 @@ import VirtualGrid from "../ui/VirtualGrid.vue";
 import SegTabs from "../ui/SegTabs.vue";
 import FilterChips from "../ui/FilterChips.vue";
 import Icon from "../ui/Icon.vue";
-import { poolName } from "../cards";
-import CardAlbum, { type AlbumFilter } from "./CardAlbum.vue";
+import { cardProgress, poolName, type AlbumFilter } from "../cards";
+import CardAlbum from "./CardAlbum.vue";
 import CardDetail from "./CardDetail.vue";
 import CraftAction from "../ui/CraftAction.vue";
 import SkinAlbum from "./SkinAlbum.vue";
@@ -160,9 +160,13 @@ const category = ref("card");
 const CATEGORIES = [{ id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" }];
 const selectedSeries = ref("all");
 const cardFilter = ref<AlbumFilter>("all");
-const CARD_FILTERS = [{ id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" }];
+const CARD_FILTERS = [
+  { id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "holo", label: "镭射" },
+  { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" },
+];
 const cards = computed(() => manifest.cards.filter((c) => selectedSeries.value === "all" || c.series === selectedSeries.value));
-const seriesCount = (list: ManifestCard[]) => `${list.filter((c) => collection.owned[`card:${c.id}`]).length}/${list.length}`;
+/** Holo versions count as cards of their own, as in the collection progress. */
+const seriesCount = (list: ManifestCard[]) => cardProgress(list, collection.owned).join("/");
 const poolTabs = computed(() => [
   { id: "all", label: "全部", count: seriesCount(manifest.cards) },
   ...manifest.series.map((s) => ({ id: s.id, label: poolName(s.name), count: seriesCount(manifest.cards.filter((c) => c.series === s.id)) })),

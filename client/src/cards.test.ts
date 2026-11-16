@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byTier, cardFrame, cardLabel, cardWord, playsCardVideo, poolName } from "./cards";
+import { albumCards, byTier, cardFrame, cardLabel, cardProgress, cardWord, holoId, ownsHolo, playsCardVideo, poolName } from "./cards";
 import { manifest } from "./manifest";
 
 describe("cardWord", () => {
@@ -77,7 +77,63 @@ describe("cardFrame", () => {
     expect(cardFrame({ tier: "big", rarity: "legendary" })).toBe("frame-gold");
     expect(cardFrame({ tier: "small", rarity: "epic" })).toBe("frame-rose");
     expect(cardFrame({ tier: "normal", rarity: "epic" })).toBe("frame-rose");
+    expect(cardFrame({ tier: "normal", rarity: "limited" })).toBe("frame-pearl");
     expect(cardFrame({ tier: "normal", rarity: "common" })).toBe("");
     expect(cardFrame(undefined)).toBe("");
+  });
+});
+
+describe("holo versions", () => {
+  const holos = manifest.cards.filter((c) => c.holo);
+  const plain = manifest.cards.find((c) => !c.holo)!;
+
+  it("are 21 static normal cards, seven in each of the three series with official masks", () => {
+    expect(holos).toHaveLength(21);
+    const bySeries = Object.fromEntries(["moon", "casket", "reverie"].map((s) => [s, holos.filter((c) => c.series === s).length]));
+    expect(bySeries).toEqual({ moon: 7, casket: 7, reverie: 7 });
+    for (const c of holos) {
+      expect(c.tier).toBe("normal");
+      expect(c.video).toBeNull();
+      expect(c.holo!.mask).toBe(`pack:holo/${c.id}.webp`);
+      expect(c.holo!.since).toBe("1.2.4");
+      for (const v of Object.values(c.holo!.shine)) expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("are owned by their own item, not by the card", () => {
+    const card = holos[0]!;
+    expect(holoId(card)).toBe(`holo:${card.id}`);
+    expect(ownsHolo(card, { [`card:${card.id}`]: 1 })).toBe(false);
+    expect(ownsHolo(card, { [`holo:${card.id}`]: 1 })).toBe(true);
+    expect(ownsHolo(plain, { [`holo:${plain.id}`]: 1 })).toBe(false);
+  });
+
+  it("count as cards of their own in the progress", () => {
+    const card = holos[0]!;
+    expect(cardProgress(manifest.cards, {})).toEqual([0, manifest.cards.length + 21]);
+    expect(cardProgress([card], { [`card:${card.id}`]: 1 })).toEqual([1, 2]);
+    expect(cardProgress([card], { [`card:${card.id}`]: 1, [`holo:${card.id}`]: 1 })).toEqual([2, 2]);
+    expect(cardProgress([plain], { [`card:${plain.id}`]: 3 })).toEqual([1, 1]);
+  });
+});
+
+describe("albumCards", () => {
+  const holos = manifest.cards.filter((c) => c.holo);
+  it("lists the 21 holo cards under 镭射, owned or not", () => {
+    expect(albumCards(manifest.cards, "holo", {}).map((c) => c.id).sort()).toEqual(holos.map((c) => c.id).sort());
+    const one = holos[3]!;
+    expect(albumCards(manifest.cards, "holo", { [`holo:${one.id}`]: 1 })).toHaveLength(21);
+  });
+
+  it("filters by the card itself otherwise, hidden cards first", () => {
+    const card = holos[0]!;
+    // A holo version alone does not make the card owned.
+    expect(albumCards(manifest.cards, "owned", { [`holo:${card.id}`]: 1 })).toEqual([]);
+    expect(albumCards(manifest.cards, "owned", { [`card:${card.id}`]: 1 }).map((c) => c.id)).toEqual([card.id]);
+    expect(albumCards(manifest.cards, "missing", { [`card:${card.id}`]: 1 })).toHaveLength(manifest.cards.length - 1);
+    expect(albumCards(manifest.cards, "hidden", {}).every((c) => c.tier !== "normal")).toBe(true);
+    const all = albumCards(manifest.cards, "all", {});
+    expect(all).toHaveLength(manifest.cards.length);
+    expect(all.map((c) => c.tier)).toEqual([...all].sort(byTier).map((c) => c.tier));
   });
 });

@@ -74,7 +74,4 @@ import Icon from "../ui/Icon.vue";
   0%, 55% { background-position: 160% 0; }
   100% { background-position: -60% 0; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .sheen { animation: none; opacity: 0; }
-}
 </style>

@@ -68,7 +68,9 @@ def test_progress_counts_as_the_album_does():
     owned = g.store.owned(pid)
     progress = g.collection_progress(owned)
     emotes = [e["key"] for s in M.data["emoteSets"] for e in s["emotes"]]
-    assert progress == {"cards": [0, len(M.cards)], "emotes": [len(M.starter), len(emotes)], "skins": [0, len(M.skins)]}
+    # holo versions count as cards, as the album counts them
+    assert progress == {"cards": [0, len(M.cards) + len(M.holos)], "emotes": [len(M.starter), len(emotes)],
+                        "skins": [0, len(M.skins)]}
     give(g, pid, [f"card:{CARDS[0]}", f"char:{next(iter(M.skins))}", next(iter(M.starter))])
     progress = g.collection_progress(g.store.owned(pid))
     # an owned starter emote is not counted twice
@@ -103,7 +105,7 @@ def test_room_members_ask_for_each_others_profiles(monkeypatch):
         reply = b.receive_json()
         assert reply["type"] == "profile" and reply["id"] == ja["you"]
         assert reply["showcase"] == [CARDS[1], CARDS[0]]
-        assert reply["progress"]["cards"] == [2, len(M.cards)]
+        assert reply["progress"]["cards"] == [2, len(M.cards) + len(M.holos)]
         # b joined without a save
         time.sleep(PROFILE_INTERVAL)
         a.send_json({"type": "profile", "id": jb["you"]})

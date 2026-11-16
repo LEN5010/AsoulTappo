@@ -363,7 +363,11 @@ export async function resonate(count = 1): Promise<Drop[] | null> {
   const r = await call((api) => api.resonate(count));
   if (!r) return null;
   status.value = r;
-  for (const d of r.drops) if (d.new) freshItems.add(d.item);
+  for (const d of r.drops) {
+    // A holo draw is two items: `new` is the holo version's, `cardNew` the card's.
+    if (d.holo && d.new) freshItems.add(`holo:${d.item.slice(5)}`);
+    if (d.holo ? d.cardNew : d.new) freshItems.add(d.item);
+  }
   await reloadCollection();
   return r.drops;
 }

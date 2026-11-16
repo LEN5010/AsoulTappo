@@ -101,11 +101,22 @@
   --gold-rgb: 229, 155, 53;
   --gold-soft: #FFE3A6;
   --grad-gold: linear-gradient(180deg, var(--gold-soft), var(--gold) 54%, color-mix(in oklab, var(--gold) 78%, var(--c-700)));
+  /* Pearl is the limited (衣橱) material: a pale silver with a faint holographic sheen, set on night plum. */
+  --pearl: #B9AECB;
+  --pearl-deep: #76689A;
+  --holo-pink: #FFBFD5;
+  --holo-lilac: #CBC0FF;
+  --holo-mint: #B5E9DE;
+  --holo-cream: #FFDDB8;
+  --grad-pearl: linear-gradient(115deg, var(--holo-pink), var(--holo-lilac) 40%, var(--holo-mint) 70%, var(--holo-cream));
+  --night: #3B2A45;
+  --grad-night: linear-gradient(180deg, #54405F, var(--night) 45%);
   /* Rarity ladder inside the one hue, gold on top. */
   --rar-common-bg: var(--surface);
   --rar-uncommon-bg: var(--c-100);
   --rar-rare-bg: var(--c-300);
   --rar-epic-bg: var(--c-800);
+  --rar-limited-bg: var(--night);
   --rar-legendary-bg: var(--gold-soft);
 
   --ok: #2F9E68;
@@ -216,12 +227,6 @@
 @keyframes breathe {
   50% {
     opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ui-btn.pulse:not(:disabled)::after {
-    opacity: 0.6;
-    animation: none;
   }
 }
 /* Quiet key: no lip and no shadow; the face only comes up under the pointer. */
@@ -433,9 +438,11 @@
 .ui-tile.rare .ui-well {
   background: var(--rar-rare-bg);
 }
-.ui-tile.epic .ui-well,
-.ui-tile.limited .ui-well {
+.ui-tile.epic .ui-well {
   background: var(--rar-epic-bg);
+}
+.ui-tile.limited .ui-well {
+  background: var(--rar-limited-bg);
 }
 .ui-tile.legendary .ui-well {
   background: var(--rar-legendary-bg);
@@ -498,11 +505,14 @@
   --tone-glow: rgba(var(--c-500-rgb), 0.72);
   --tone-ink: var(--ink);
 }
-/* The limited tier wears epic's wine. */
-.tone-epic,
-.tone-limited {
+.tone-epic {
   --tone-fill: var(--grad-deep);
   --tone-glow: color-mix(in srgb, var(--c-800) 72%, transparent);
+  --tone-ink: #fff;
+}
+.tone-limited {
+  --tone-fill: var(--grad-night);
+  --tone-glow: color-mix(in srgb, var(--holo-lilac) 80%, transparent);
   --tone-ink: #fff;
 }
 .tone-legendary {
@@ -526,20 +536,25 @@
   --seal-mark: var(--c-700);
   --seal-rule: rgba(255, 255, 255, 0.7);
 }
-.tone-epic,
-.tone-limited {
+.tone-epic {
   --seal-fill: var(--c-800);
   --seal-mark: #fff;
   --seal-rule: rgba(255, 255, 255, 0.4);
 }
+.tone-limited {
+  --seal-fill: var(--night);
+  --seal-mark: var(--holo-lilac);
+  --seal-rule: rgba(255, 255, 255, 0.35);
+}
 
 /*
- * Card frames by tier: gold for big hidden cards, coral for small ones. Bands of light and shade
- * read as metal; drawn at 220% and slid by --frame-x / --frame-y, the light moves across the
- * frame as the card leans. At rest both sit where the spotlight's lean rests (30% 20%).
+ * Card frames by tier: gold for big hidden cards, coral for small ones, pearl for limited ones. Bands of light and
+ * shade read as metal; drawn at 220% and slid by --frame-x / --frame-y, the light moves across the frame as the card
+ * leans. At rest all sit where the spotlight's lean rests (30% 20%).
  */
 .frame-gold,
-.frame-rose {
+.frame-rose,
+.frame-pearl {
   --frame-size: 220% 220%;
   --frame-at: calc(var(--frame-x, 0.3) * 100%) calc(var(--frame-y, 0.2) * 100%);
 }
@@ -554,6 +569,13 @@
     var(--c-500) 0%, var(--c-300) 15%, var(--c-100) 21%, var(--c-300) 27%,
     var(--c-500) 40%, var(--c-700) 54%, var(--c-500) 66%,
     var(--c-100) 80%, var(--c-300) 88%, var(--c-500) 100%);
+}
+/* Silver whose highlights split into pale pink, lilac, mint and cream as the light moves: holographic, kept faint. */
+.frame-pearl {
+  --frame-fill: linear-gradient(125deg,
+    var(--pearl) 0%, var(--holo-pink) 12%, #fff 19%, var(--holo-lilac) 27%,
+    var(--pearl) 40%, var(--pearl-deep) 53%, var(--pearl) 64%,
+    var(--holo-mint) 73%, #fff 80%, var(--holo-cream) 88%, var(--pearl) 100%);
 }
 
 /* Settings-style list: a sheet of paper whose rows are split by the only hairline allowed. */

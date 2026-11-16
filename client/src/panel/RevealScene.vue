@@ -10,7 +10,8 @@ import { assetUrl } from "../asset";
 import * as sfx from "../audio/sfx";
 import { characterColor } from "../manifest";
 import type { Drop } from "../net/api";
-import { DEAL_LIMIT } from "../reveal";
+import { warmHolo } from "../holo/renderer";
+import { DEAL_LIMIT, newItems } from "../reveal";
 import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import { takeFocus, trapTab } from "../ui/focus";
@@ -82,7 +83,7 @@ const shape = computed(() => {
   return { "--cols": cols, "--rows": Math.ceil(n / cols), "--deal-at": `${DEAL_AT_MS}ms` };
 });
 const sealedLeft = computed(() => entries.value.some((_, i) => !opened.has(i)));
-const newCount = computed(() => drops.value.filter((d) => d.new).length);
+const newCount = computed(() => newItems(drops.value));
 
 /** Tiles whose repeats have been stamped, and the shards that have reached the counter so far. */
 const exchanged = reactive(new Set<number>());
@@ -210,8 +211,10 @@ function throwShards(index: number, shards: number) {
 
 const artPreloader = createImagePreloader();
 function preload(list: BoardEntry[], from = 0) {
-  artPreloader.setWindow(list.slice(from).filter((e) => e.spot && e.card && !e.card.video)
-    .map((e) => assetUrl(e.card!.full)));
+  const ahead = list.slice(from).filter((e) => e.spot && e.card && !e.card.video);
+  artPreloader.setWindow(ahead.map((e) => assetUrl(e.card!.full)));
+  // The holo shading reads its own copies, asked for with CORS.
+  for (const e of ahead) if (e.holo && e.card?.holo) warmHolo(assetUrl(e.card.full), assetUrl(e.card.holo.mask));
 }
 
 /** `count` names the batch on the bands; a repeat passes it because its props have not caught up yet. */

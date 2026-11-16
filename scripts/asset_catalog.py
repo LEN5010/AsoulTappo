@@ -234,8 +234,20 @@ WARDROBE_SERIES = {
 }
 
 
-def wardrobe_card_name(n: int) -> str:
-    return f"衣橱 {n:02d}"
+# Card names by series, in card order (1.0 suit first). The API names only the suit, so these describe each portrait.
+WARDROBE_NAMES = {
+    "wardrobe-jiaran": ["毛绒新年", "糖果外套", "背包出发", "唱给你听", "白羽天使", "泡泡甜点",
+                        "雪地兔耳", "星月时钟", "草莓花园", "小恶魔", "舞会登场", "甜品乐园"],
+    "wardrobe-nailin": ["白狐相伴", "冰晶王座", "蓝玫瑰", "火锅时间", "街口白纱", "海边派对",
+                        "雪夜撑伞", "咖啡午后", "女王权杖", "红裙起舞", "桃花面纱", "黑猫红酒"],
+    "wardrobe-beila": ["海边月夜", "樱花校园", "演唱会", "接力赛跑", "天鹅芭蕾", "星空漫步",
+                       "白貂折扇", "雏菊精灵", "暗夜刀客", "绣球与猫", "兔耳读书", "彩带派对"],
+}
+
+
+def wardrobe_card_name(series: str, n: int) -> str:
+    """The name of card [n] (from 1) of a wardrobe series."""
+    return WARDROBE_NAMES[series][n - 1]
 
 
 def wardrobe_cards() -> list[tuple[str, str, str, str, int]]:
@@ -246,8 +258,49 @@ def wardrobe_cards() -> list[tuple[str, str, str, str, int]]:
         for suit, count in suits:
             for k in range(1, count + 1):
                 n += 1
-                out.append((series, f"{suit}{k:02d}", wardrobe_card_name(n), member, k))
+                out.append((series, f"{suit}{k:02d}", wardrobe_card_name(series, n), member, k))
     return out
+
+
+# 镭射款 (holo): the static normal cards of 此间为爱, 匣中惊鸿 and 绮梦漫游 that Bilibili sells a holo version of. Each
+# has the official mask (`upgrade_cover_url` of lottery_home_detail: white where the foil goes) and the shading
+# parameters of its `shine_effect_config`, camel-cased. The four 绮梦漫游 cards the API gives `{}` take the values the
+# series repeats (1 / 1 / 0.68 / 0 / 1). The mask source is <holo-src>/<numeric id>.webp (or .png / .jpg).
+HOLO_SINCE = "1.2.4"
+_HOLO_DEFAULT = (1, 1, 0.68, 0, 1)
+HOLO_CARDS = {
+    # numeric card id: (laserIntensity, skinProtection, clothBoost, hueStart, hueRange)
+    "1781070981002": (0.78, 1.5, 0.14, 0.96, 0.2),
+    "1781070981003": (0.42, 1.33, 0.55, 0.59, 0),
+    "1781070981004": (0.56, 1.5, 0.62, 0.47, 0.23),
+    "1781070981005": (0.5, 1, 0.9, 0, 1),
+    "1781070981006": (1.04, 1.25, 0.61, 0.81, 0.49),
+    "1781070981007": (0.47, 1.56, 0.5, 0.11, 0.09),
+    "1781070981008": (0.62, 1.84, 0, 0.07, 0.03),
+    "1785126321003": (1, 1, 0.68, 0.51, 0.1),
+    "1785126321004": (0.61, 1, 0.81, 0.43, 0.67),
+    "1785126321005": (1, 1.72, 1.34, 0.43, 0.69),
+    "1785126321006": (0.97, 1.14, 0.49, 0.87, 0.43),
+    "1785126321007": (1.38, 1, 0.68, 0.52, 0.52),
+    "1785126321008": (1, 1.65, 1.13, 0.84, 0.79),
+    "1785126321009": (1.55, 1, 0.86, 0.73, 0.44),
+    "1787896765002": (1, 1, 0.68, 0, 1),
+    "1787896765004": (1, 1, 0.68, 0, 1),
+    "1787896765005": _HOLO_DEFAULT,
+    "1787896765006": _HOLO_DEFAULT,
+    "1787896765007": _HOLO_DEFAULT,
+    "1787896765008": _HOLO_DEFAULT,
+    "1787896765009": (1, 1, 0.68, 0, 1),
+}
+HOLO_SHINE_KEYS = ("laserIntensity", "skinProtection", "clothBoost", "hueStart", "hueRange")
+
+
+def card_holo(card_id: str) -> dict | None:
+    """The manifest's `holo` of a card that has a holo version: its mask in the packs, shading and release."""
+    shine = HOLO_CARDS.get(card_id)
+    if shine is None:
+        return None
+    return {"mask": f"pack:holo/c{card_id}.webp", "shine": dict(zip(HOLO_SHINE_KEYS, shine)), "since": HOLO_SINCE}
 
 
 BIG_HIDDEN_IDS = {'1700742793031', '1700742793032', '1748345610010', '1745315724002', '1781070981009', '1762331462002', '1756378523002', '1700742793033'}

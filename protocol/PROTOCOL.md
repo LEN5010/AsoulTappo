@@ -92,7 +92,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单：`assets-packs/manifest.json` 加上 economy 配置（不含服务端私有的 `antiCheat`） |
-| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致 |
+| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance` |
 | GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
@@ -109,7 +109,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /api/scratch | 刮刮乐状态：day（北京时间日期）、left（今天还能买几张）、pity（距上次出阿草表情已买的张数）、card（已买未揭开的卡 `{id,cells}`，没有时为 null） |
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
-| GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录） |
+| GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录）。1.2.4 以前的客户端看不到镭射款（`holo:` 物品） |
 | GET /api/loadout | character、favorites、plate、showcase、nick、board |
 | POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked`；showcase 为主页展示卡的卡片 ID 列表，最多 3 张、必须已拥有，超过或不认识返回 `bad_item`，未拥有返回 `locked`，空列表清空；nick 为收藏榜上显示的昵称（最多 24 字，空字符串用默认昵称），board 为 false 时不上收藏榜。这两项客户端只上传，读取装备时不会覆盖本地设置 |
 | GET /api/board | 全服收藏榜。`order` 为 `score`（按收藏分，显示收藏分的客户端）或 `cards`（默认，按卡片数，之前的客户端）。`cards`（前 50：`[{id,rank,nick,character,plate,cards,big,skins,score}]`，cards、big、skins 为卡片、大隐藏、皮肤数量，score 为收藏分；order=score 时按收藏分、大隐藏数、最后一件计分物品的获得时间排序，order=cards 时按卡片数、大隐藏数、最后一张卡的获得时间排序，只列有卡片的存档；昵称取 loadout 的 nick，为空时取这个存档最近一次在房间里用的昵称（加入或改名时记录，默认昵称不记），都没有时为默认昵称，经屏蔽词处理；铭牌未集齐时为 null）、`total`（卡片总数）、`points`（收藏分表，见下）、`me`（`{rank,cards,big,skins,score,off}`，rank 为所选排序下的名次，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
@@ -121,7 +121,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /packs/index.json | 素材文件路径、大小及 SHA-256 |
 | GET /packs/... | 卡面原图及主题动画资源 |
 
-收藏分按每件物品平均要抽几次折算，1 分约等于 1 抽：大隐藏 300 分，皮肤 150 分，史诗卡和限定卡 20 分，普通卡 2 分。表情约按合成价的比例计分：普通 1、罕见 2、稀有 3，阿草表情按稀有算，初始表情不计分。`points` 为 `{big,skin,epic,limited,card,emoteRare,emoteScratch,emoteUncommon,emote}` 各一件的分数，客户端据此显示分数表；之前的客户端不认识 `limited`，分数表里不显示这一行。之前的客户端不带 order，看到的仍是按卡片数的排名；它们都不在线后，order 的默认值可以改为 score。
+收藏分按每件物品平均要抽几次折算，1 分约等于 1 抽：大隐藏 300 分，皮肤 150 分，史诗卡、限定卡和镭射款 20 分，普通卡 2 分；镭射款和它的普卡各算各的，按卡片数排名时不算镭射款。表情约按合成价的比例计分：普通 1、罕见 2、稀有 3，阿草表情按稀有算，初始表情不计分。`points` 为 `{big,skin,epic,limited,holo,card,emoteRare,emoteScratch,emoteUncommon,emote}` 各一件的分数，客户端据此显示分数表；之前的客户端不认识 `limited` 和 `holo`，分数表里不显示这两行。之前的客户端不带 order，看到的仍是按卡片数的排名；它们都不在线后，order 的默认值可以改为 score。
 
 从 1.1.4 起，状态中的 `dailyTaps` 为 `{day,count}`，day 是北京时间日期，count 是当天全部有效敲击数，包含每分钟收益上限以外的有效敲击。`income.taps` 继续记录参与碎片收益计算的次数。客户端的今日计数也按北京时间换日，并使用 `dailyTaps` 跨设备同步。旧库升级时以已有的当日收益计数初始化新统计，后续按全部有效敲击累加。
 
@@ -135,7 +135,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 
-物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
+物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`、`holo:<卡片 id>`（镭射款，见共鸣一节）。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。抽到镭射款时 item 仍是普卡的 `card:<id>`，另带 `holo: true` 和 `cardNew`：这时 new 指镭射款是不是第一次得到，cardNew 指普卡是不是。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
 
 状态示例：
 
@@ -298,7 +298,16 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 稀有表情为此间为爱、绮梦漫游、匣中惊鸿三套动态表情，共 60 个；罕见为绽放收藏集与脑洞波各三套，共 75 个；普通表情共 320 个。已有物品按原 ID 保留。
 
-新玩家获得初始碎片。兑换价格按稀有度在 `economy.craftCost`；史诗、限定、传说、皮肤和初始表情不参与兑换。
+新玩家获得初始碎片。兑换价格按稀有度在 `economy.craftCost`；史诗、限定、传说、皮肤、镭射款和初始表情不参与兑换。
+
+### 镭射款
+
+此间为爱、匣中惊鸿、绮梦漫游三个收藏集各有 7 张静态普卡有镭射款，共 21 张。清单里这些卡带 `holo {mask, shine, since}`：mask 是 `/packs` 里的官方遮罩（白色是镭射区域），shine 是着色参数 `{laserIntensity, skinProtection, clothBoost, hueStart, hueRange}`，since 为 1.2.4。
+
+- 镭射款是独立的物品 `holo:<卡片 id>`，不进任何档位，只在共鸣抽到对应普卡时按 `economy.resonance.holoChance`（百分比）变成镭射款；没有这一项的服务端不出镭射款。刮刮乐等其他来源不出镭射款。
+- 抽到镭射款时同时得到这张普卡。第一次得到某张镭射款时这一抽不退碎片，普卡是重复的也一样，普卡数量不变；已经有这张镭射款时按普卡重复退碎片。同一批里第二次抽到同一张镭射款算重复。
+- 客户端版本低于 since 的不出镭射款，也不为它多掷一次；预发布版按对应正式版算，不带版本或版本读不出的也不出。
+- 镭射款算进收集进度（按卡片算）和收藏分，总共 611 件可收集：共鸣池的 590 件加 21 张镭射款。
 
 ## 刮刮乐
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { boardOf, DEAL_LIMIT, groupDrops, sealed, sortDrops, spotlights } from "./reveal";
+import { boardOf, DEAL_LIMIT, groupDrops, newItems, sealed, sortDrops, spotlights } from "./reveal";
 import type { Rarity } from "./manifest";
-const d = (rarity: Rarity, item = "card:test", fresh = false) => ({ rarity, item, new: fresh, count: 1, shards: 0 });
+const d = (rarity: Rarity, item = "card:test", fresh = false) =>
+  ({ rarity, item, new: fresh, count: 1, shards: 0 } as { rarity: Rarity; item: string; new: boolean; count: number; shards: number; holo?: boolean; cardNew?: boolean });
 
 describe("resonance reveal", () => {
   it("sorts rarity tiers including uncommon, then new before duplicates", () => {
@@ -43,5 +44,38 @@ describe("resonance reveal", () => {
     expect(sealed(d("uncommon", "emote:a"), true)).toBe(false);
     expect(sealed(d("epic", "card:dance"), true, "normal")).toBe(false);
     expect(sealed(d("legendary"), true, "big")).toBe(true);
+  });
+
+  describe("holo versions", () => {
+    const holo = (fresh: boolean, cardNew = false) => ({ ...d("common", "card:h", fresh), holo: true, cardNew });
+
+    it("spotlight a first holo version only, whatever the card was", () => {
+      expect(spotlights(holo(true, true), "normal")).toBe(true);
+      expect(spotlights(holo(true, false), "normal")).toBe(true);
+      expect(spotlights(holo(false), "normal")).toBe(false);
+      expect(spotlights(d("common", "card:h", true), "normal")).toBe(false);
+    });
+
+    it("stay sealed in a grouped board so they turn with their light", () => {
+      expect(sealed(holo(false), true, "normal")).toBe(true);
+      expect(sealed(d("common", "card:h"), true, "normal")).toBe(false);
+    });
+
+    it("read just after limited cards and keep apart from plain draws of the card", () => {
+      const drops = [d("common", "card:h"), d("rare", "emote:r"), holo(false), d("limited", "card:w"), d("common", "card:h")];
+      expect(sortDrops(drops).map((x) => [x.rarity, !!x.holo])).toEqual([
+        ["limited", false], ["common", true], ["rare", false], ["common", false], ["common", false],
+      ]);
+      const grouped = groupDrops([d("common", "card:h"), holo(true, true), d("common", "card:h"), holo(false)]);
+      expect(grouped.map((x) => [x.item, !!x.holo, x.got, x.new])).toEqual([
+        ["card:h", false, 2, false], ["card:h", true, 2, true],
+      ]);
+      expect(grouped[1]!.cardNew).toBe(true);
+    });
+
+    it("count the card as a second new item when it came with its holo version", () => {
+      expect(newItems([holo(true, true)])).toBe(2);
+      expect(newItems([holo(true, false), holo(false), d("common", "card:x", true), d("common", "card:y")])).toBe(2);
+    });
   });
 });

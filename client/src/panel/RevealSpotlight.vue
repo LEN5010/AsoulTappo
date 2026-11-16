@@ -3,13 +3,16 @@
 // The art flies between the tile and the stage, so the board below never loses its place. Once it
 // lands it sways, and leans toward the pointer in 3D with glare and a holo sheen on hidden cards.
 // Glare and holo are oversized layers that only move, with no blend modes, so a playing video
-// stays smooth under them.
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+// stays smooth under them. A holo version (镭射款) is drawn by its shading instead: it swings once
+// left and right so the light runs across the foil, and then follows the pointer.
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { vCardSound } from "../audio/cardSound";
 import { cardFrame, cardWord } from "../cards";
 import { PET_BASE } from "../characters";
+import HoloArt from "../holo/HoloArt.vue";
+import { FLAT, MAX_TILT, type Tilt } from "../holo/shader";
 import { characterColor } from "../manifest";
 import { EASE_IN_OUT, EASE_OUT } from "../ui/motion";
 import Icon from "../ui/Icon.vue";
@@ -32,6 +35,8 @@ const SWAY_MS = 6000;
 /** How fast the lean catches up: quick behind the pointer, slower back into the sway. */
 const FOLLOW_MS = 70;
 const SETTLE_MS = 240;
+/** The one swing of a holo card once it lands: right, left and back over SWING_MS, MAX_TILT each way. */
+const SWING_MS = 2400;
 /** A drawn card's own sound plays a little above full volume. */
 const DRAWN_GAIN = 1.15;
 
@@ -45,8 +50,14 @@ const hidden = computed(() => card.value?.tier === "big" || card.value?.tier ===
 const big = computed(() => props.entry.drop.rarity === "legendary");
 /** Hidden cards wear their tier's frame, the same one their tile and the pool's hand show. */
 const frameTier = computed(() => cardFrame(card.value));
+/** The holo version's shading, when that is what came. */
+const foil = computed(() => (props.entry.holo ? card.value?.holo : undefined));
+/** The lean handed to the shading, written every frame with the hero's. */
+const foilTilt = shallowRef<Tilt>(FLAT);
+const leanDeg = computed(() => (foil.value ? MAX_TILT * 2 : TILT_DEG));
 const word = computed(() => {
   if (skin.value) return "SKIN";
+  if (foil.value) return "HOLO";
   return card.value ? cardWord(card.value) : "NEW";
 });
 const playing = computed(() => !!card.value?.video && landed.value && !leaving.value && pageActive.value);
@@ -176,13 +187,21 @@ let aim: { x: number; y: number } | null = null;
 let frame = 0;
 let last = 0;
 let swayFrom = 0;
+/** When the holo swing ends; the pointer takes over after it. */
+let swingUntil = 0;
 /** On the way out the lean flattens on a fixed clock, so it is level when the hero lands on its tile. */
 let leaveAt = 0;
 const leaveFrom: Pose = { ...REST };
 const FLATTEN_MS = OUT_MS * 0.8;
 
 function target(now: number): Pose {
-  if (aim) return { rx: (0.5 - aim.y) * TILT_DEG, ry: (aim.x - 0.5) * TILT_DEG, px: aim.x, py: aim.y };
+  if (now < swingUntil) {
+    const t = 1 - (swingUntil - now) / SWING_MS;
+    // One full sine with an eased start and end, so it leaves and comes back to level smoothly.
+    const s = Math.sin(t * 2 * Math.PI) * Math.sin(t * Math.PI);
+    return { ...REST, rx: 1.5 * s, ry: MAX_TILT * s };
+  }
+  if (aim) return { rx: (0.5 - aim.y) * leanDeg.value, ry: (aim.x - 0.5) * leanDeg.value, px: aim.x, py: aim.y };
   const c = Math.cos(((now - swayFrom) / SWAY_MS) * 2 * Math.PI);
   return { ...REST, rx: 2 * c, ry: -5 * c };
 }
@@ -198,17 +217,24 @@ function step(now: number) {
     for (const key of keys) pose[key] = leaveFrom[key] + (REST[key] - leaveFrom[key]) * eased;
   } else {
     const to = target(now);
-    const k = 1 - Math.exp(-dt / (aim ? FOLLOW_MS : SETTLE_MS));
+    const k = now < swingUntil ? 1 : 1 - Math.exp(-dt / (aim ? FOLLOW_MS : SETTLE_MS));
     for (const key of keys) pose[key] += (to[key] - pose[key]) * k;
   }
   el.style.transform = `perspective(1000px) rotateX(${pose.rx.toFixed(2)}deg) rotateY(${pose.ry.toFixed(2)}deg)`;
   el.style.setProperty("--px", pose.px.toFixed(3));
   el.style.setProperty("--py", pose.py.toFixed(3));
+  if (foil.value) foilTilt.value = { rx: pose.rx, ry: pose.ry };
   frame = requestAnimationFrame(step);
 }
 function startSway() {
   if (props.calm || frame) return;
-  swayFrom = performance.now();
+  const now = performance.now();
+  swayFrom = now;
+  if (foil.value) {
+    swingUntil = now + SWING_MS;
+    // The sway picks up from level where the swing leaves off.
+    swayFrom = swingUntil - SWAY_MS / 4;
+  }
   frame = requestAnimationFrame(step);
 }
 
@@ -306,7 +332,8 @@ defineExpose({ close });
             <span v-else-if="card" ref="cardEl" class="card" :class="frameTier">
               <i v-if="frameTier" class="metal" aria-hidden="true"></i>
               <img class="art" :src="entry.art" :alt="entry.title" draggable="false" />
-              <img v-if="!card.video" class="art full" :class="{ ready: fullReady }" :src="assetUrl(card.full)" alt="" draggable="false" @load="fullReady = true" />
+              <span v-if="foil" class="art"><HoloArt :art="assetUrl(card.full)" :mask="assetUrl(foil.mask)" :shine="foil.shine" :tilt="foilTilt" lit /></span>
+              <img v-else-if="!card.video" class="art full" :class="{ ready: fullReady }" :src="assetUrl(card.full)" alt="" draggable="false" @load="fullReady = true" />
               <video v-if="playing" v-card-sound="DRAWN_GAIN" class="art" :src="assetUrl(card.video)" :poster="entry.art" loop playsinline></video>
               <i v-if="hidden" ref="holo" class="holo" aria-hidden="true"></i>
               <i ref="glare" class="glare" aria-hidden="true"></i>
@@ -423,7 +450,8 @@ defineExpose({ close });
 }
 /* A band of the tier's metal inside the white edge. Same proportions as RevealTile's frame. */
 .card.frame-gold,
-.card.frame-rose {
+.card.frame-rose,
+.card.frame-pearl {
   border-radius: 5cqw;
   background: var(--frame-fill) var(--frame-at) / var(--frame-size);
 }
@@ -445,7 +473,8 @@ defineExpose({ close });
 }
 /* Images and videos keep their own size under auto, so the size inside the frame is spelled out. */
 .card.frame-gold .art,
-.card.frame-rose .art {
+.card.frame-rose .art,
+.card.frame-pearl .art {
   inset: 1.5cqw;
   width: calc(100% - 3cqw);
   height: calc(100% - 3cqw);
@@ -604,6 +633,11 @@ defineExpose({ close });
   font-size: 17px;
   line-height: 30px;
   border-radius: var(--radius-key-s);
+}
+/* A limited card's label is the pearl of its frame. */
+.tone-limited .kind {
+  --tag-bg: var(--grad-pearl);
+  --tag-fg: var(--night);
 }
 h3 {
   margin: 10px 0 8px;

@@ -5,13 +5,15 @@ import { getCharacter } from "../characters";
 import { getItem, RARITY_LABEL, type Item } from "../items";
 import { getCard, manifest, memberOf, type ManifestCard } from "../manifest";
 import type { Drop } from "../net/api";
-import { boardOf, DEAL_LIMIT, sealed, spotlights } from "../reveal";
+import { boardOf, DEAL_LIMIT, dropKey, sealed, spotlights } from "../reveal";
 
 export interface BoardEntry {
   key: string;
   drop: Drop & { got: number };
   item: Item;
   card?: ManifestCard;
+  /** The card's holo version (镭射款) came. */
+  holo: boolean;
   title: string;
   who: string;
   /** What it is once turned over: 大隐藏, 桌宠皮肤, 稀有表情. */
@@ -38,6 +40,9 @@ const MEMBER_TONES: Record<string, { color: string; top: string; bottom: string;
 };
 const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ");
 
+/** A holo version sits on the coral of the rare tier: a step above its plain card, in the one hue of the page. */
+const HOLO_TONE = "tone-rare";
+
 /** A skin's tone is its member's colour, so the reveal reads as hers. */
 export function memberTone(skin: string): Record<string, string> {
   const id = manifest.characters.find((c) => c.name === memberOf(skin))?.id;
@@ -60,22 +65,24 @@ export function entriesOf(drops: readonly Drop[]): BoardEntry[] {
     const item = getItem(drop.item);
     if (!item) return [];
     const card = item.kind === "card" ? getCard(item.ref) : undefined;
+    const holo = !!drop.holo && !!card?.holo;
     const skin = drop.rarity === "skin";
     const label = card ? cardLabel(card) : { title: item.name, who: skin ? memberOf(item.ref) : item.characters.join(" · ") };
-    const kind = skin ? "桌宠皮肤" : card && card.tier !== "normal" ? TIER_LABEL[card.tier]
+    const kind = skin ? "桌宠皮肤" : holo ? "镭射款" : card && card.tier !== "normal" ? TIER_LABEL[card.tier]
       : `${RARITY_LABEL[drop.rarity]}${card ? "卡片" : "表情"}`;
     const art = card ? assetUrl(card.thumb) : skin ? getCharacter(item.ref)?.bg ?? "" : assetUrl(item.art);
     return [{
-      key: `${drop.item}:${i}`,
+      key: `${dropKey(drop)}:${i}`,
       drop,
       item,
       card,
+      holo,
       title: label.title,
       who: label.who,
       kind,
       sealed: sealed(drop, grouped, card?.tier),
       spot: spotlights(drop, card?.tier),
-      tone: `tone-${drop.rarity}`,
+      tone: holo ? HOLO_TONE : `tone-${drop.rarity}`,
       toneStyle: skin ? memberTone(item.ref) : {},
       tilt: TILTS[i % TILTS.length]!,
       art,

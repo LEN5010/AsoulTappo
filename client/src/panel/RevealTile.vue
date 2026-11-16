@@ -4,9 +4,11 @@
 // the same card-sized back and glow alike, so nothing shows until a tile turns. Rare and above turn
 // with a flash, a ring and a burst of stars; plain ones turn quietly. An animated emote stays on a plate of its tone, a
 // plain sticker peels off the paper it was turned on. A repeat gets a stamp of the shards it turned into.
+// A holo version (镭射款) wears its small mark and a band of foil light runs across it as it turns.
 import { computed } from "vue";
 import { cardFrame } from "../cards";
 import type { BoardEntry } from "./reveal-board";
+import HoloBadge from "../holo/HoloBadge.vue";
 import CardBack from "./CardBack.vue";
 import PetBust from "./PetBust.vue";
 import Icon from "../ui/Icon.vue";
@@ -29,7 +31,7 @@ const emit = defineEmits<{ press: [] }>();
 
 const sticker = computed(() => props.entry.item.kind === "emote");
 /** Common and uncommon: sealed only as a first copy, and turned without the fanfare. */
-const quiet = computed(() => props.entry.drop.rarity === "common" || props.entry.drop.rarity === "uncommon");
+const quiet = computed(() => !props.entry.holo && (props.entry.drop.rarity === "common" || props.entry.drop.rarity === "uncommon"));
 /** Animated emotes sit on a plate of their tone, so they read apart from plain stickers at a glance. */
 const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare");
 /** Hidden cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
@@ -76,6 +78,10 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
             <i v-if="plated" class="pad" aria-hidden="true"></i>
             <i v-else-if="turned && !calm" class="pad paper" aria-hidden="true"></i>
             <img class="sticker-art" :src="entry.art" alt="" draggable="false" />
+          </template>
+          <template v-if="entry.holo">
+            <i v-if="turned && !calm" class="foil-run" aria-hidden="true"></i>
+            <HoloBadge class="holo-mark" />
           </template>
           <i v-if="turned && !calm" class="flash" aria-hidden="true"></i>
         </span>
@@ -137,7 +143,8 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   --tone-glow: rgba(var(--c-500-rgb), 0.35);
 }
 .tone-rare { --dot: var(--c-500); }
-.tone-epic, .tone-limited { --dot: var(--c-800); }
+.tone-epic { --dot: var(--c-800); }
+.tone-limited { --dot: var(--pearl-deep); }
 .tone-skin { --dot: var(--tone-glow); }
 .tone-legendary { --dot: var(--gold); }
 
@@ -231,6 +238,23 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   height: calc(100% - 3cqw);
   border-radius: 3.5cqw;
   box-shadow: none;
+}
+/* The holo mark sits in the art's corner, inside the white edge. */
+.holo-mark {
+  position: absolute;
+  z-index: 1;
+  right: 7%;
+  top: 5%;
+}
+/* As the face comes round, a band of foil light runs once from corner to corner. */
+.foil-run {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-m);
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 191, 213, 0.75) 40%, rgba(255, 255, 255, 0.95) 47%,
+    rgba(181, 233, 222, 0.75) 54%, rgba(203, 192, 255, 0.7) 61%, transparent 70%) 140% 0 / 300% 100% no-repeat;
+  animation: foil-run 900ms var(--ease-out) 300ms both;
 }
 .sticker-art {
   position: relative;
@@ -482,6 +506,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   72% { transform: translateZ(12px) rotateY(-14deg) scale(1.04); animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
   88% { transform: translateZ(0) rotateY(5deg) scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
   100% { transform: translateZ(0) rotateY(0deg) scale(1); }
+}
+@keyframes foil-run {
+  from { background-position: 140% 0; opacity: 1; }
+  80% { opacity: 1; }
+  to { background-position: -40% 0; opacity: 0; }
 }
 @keyframes turn-flash-soft {
   0%, 30% { opacity: 0; }

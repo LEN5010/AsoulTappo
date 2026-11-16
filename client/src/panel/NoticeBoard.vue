@@ -179,7 +179,4 @@ function step(e: KeyboardEvent, i: number) {
 @keyframes turn {
   from { opacity: 0; transform: translateY(6px); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .page { animation: none; }
-}
 </style>

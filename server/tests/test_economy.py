@@ -46,8 +46,10 @@ def test_an_older_client_sees_the_limited_odds_in_common_as_its_draws_have_them(
         assert got["rates"]["common"] == pytest.approx(rates["common"] + rates["limited"])
         assert {k: v for k, v in got["rates"].items() if k != "common"} == \
             {k: v for k, v in rates.items() if k not in ("common", "limited")}
+        # and no holo chance: those clients get no holo versions
+        assert "holoChance" not in got
         assert {k: v for k, v in got.items() if k != "rates"} == \
-            {k: v for k, v in data["resonance"].items() if k != "rates"}
+            {k: v for k, v in data["resonance"].items() if k not in ("rates", "holoChance")}
 
 
 def test_anti_cheat_settings_override_the_defaults(tmp_path):

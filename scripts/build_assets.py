@@ -516,6 +516,44 @@ def first_frame_at(src: Path, seconds: float) -> Image.Image:
     return load_rgba(r.stdout)
 
 
+# Holo masks are black and white and only steer the foil, so a smaller lossy copy does: 720 wide is about the largest
+# the card is ever drawn at, and the 21 come to about 0.3 MB.
+HOLO_MASK_W = 720
+HOLO_MASK_Q = 60
+
+
+def build_holo_masks(src: Path, force: bool) -> int:
+    """The official holo masks from <src>/<numeric id>.(webp|png|jpg) into the packs (holo/c<id>.webp), grey."""
+    built = 0
+    for card_id in cat.HOLO_CARDS:
+        out = PACKS / "holo" / f"c{card_id}.webp"
+        if not force and out.exists():
+            continue
+        img = next((src / f"{card_id}{ext}" for ext in (".webp", ".png", ".jpg") if (src / f"{card_id}{ext}").is_file()),
+                   None)
+        if img is None:
+            raise SystemExit(f"missing holo mask for card {card_id} under {src}")
+        with Image.open(img) as im:
+            mask = im.convert("L")
+        # Same 2:3 as the card art (1242 x 1863 from the API, or the art's own 1080 x 1620).
+        mask = mask.resize((HOLO_MASK_W, HOLO_MASK_W * 3 // 2), Image.LANCZOS)
+        save_webp(mask, out, q=HOLO_MASK_Q)
+        built += 1
+    return built
+
+
+def attach_holo(cards: list[dict]) -> list[dict]:
+    """Every card as the catalog has it for holo: `holo` set on the cards with a holo version, gone elsewhere."""
+    out = []
+    for c in cards:
+        c = {k: v for k, v in c.items() if k != "holo"}
+        holo = cat.card_holo(c["id"][1:])
+        if holo:
+            c["holo"] = holo
+        out.append(c)
+    return out
+
+
 def manifest_plates(motion: dict[str, dict]) -> list[dict]:
     """The catalog's plates, a wardrobe plate with its video when it has been built."""
     return [{**p, **motion.get(p["id"], {})} for p in cat.PLATES]
@@ -565,6 +603,9 @@ def collect_pack_files(manifest: dict) -> dict[str, list[str]]:
     for p in manifest.get("plates", []):
         if p.get("still"):
             packs.setdefault("plates", []).append(p["still"].split(":", 1)[1])
+    for c in manifest["cards"]:
+        if c.get("holo"):
+            packs.setdefault("holo", []).append(c["holo"]["mask"].split(":", 1)[1])
     return {k: sorted(v) for k, v in packs.items()}
 
 
@@ -582,6 +623,8 @@ def build_index(manifest: dict) -> dict:
             title = series_name(pid[6:]) + " · 卡面"
         elif pid == "plates":
             title = "铭牌"
+        elif pid == "holo":
+            title = "镭射遮罩"
         out.append({"id": pid, "title": title, "size": sum(x["size"] for x in files), "files": files})
     return {"version": 1, "packs": out}
 
@@ -619,6 +662,10 @@ def main() -> None:
                                            "and plates are kept from the current manifest")
     ap.add_argument("--wardrobe-only", action="store_true",
                     help="Update the wardrobe cards and plates only, leaving every other asset as it is")
+    ap.add_argument("--holo-src", help="Official holo masks (<numeric card id>.webp); without it the masks in the "
+                                       "packs are kept")
+    ap.add_argument("--holo-only", action="store_true",
+                    help="Update the holo masks and the cards' holo entries only, leaving every other asset as it is")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
@@ -628,7 +675,16 @@ def main() -> None:
         ap.error("--wardrobe-only requires --wardrobe-src")
     if args.wardrobe_only and (args.cards_only or args.emotes_only):
         ap.error("--wardrobe-only is a mode of its own")
+    if args.holo_only and (args.cards_only or args.emotes_only or args.wardrobe_only):
+        ap.error("--holo-only is a mode of its own")
     previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+    if args.holo_src:
+        print(f"{build_holo_masks(Path(args.holo_src), args.force)} holo masks built")
+    if args.holo_only:
+        manifest = {**previous, "cards": attach_holo(previous["cards"])}
+        write_manifests(manifest)
+        print(f"{sum(1 for c in manifest['cards'] if c.get('holo'))} holo cards")
+        return
     wardrobe_ids = set(cat.WARDROBE_SERIES)
     if args.wardrobe_src:
         wardrobe = build_wardrobe(Path(args.wardrobe_src), args.force)
@@ -639,7 +695,7 @@ def main() -> None:
                   for p in previous.get("plates", []) if "video" in p}
     if args.wardrobe_only:
         manifest = {**previous, "rarities": RARITIES, "plates": manifest_plates(motion)}
-        manifest["cards"] = [c for c in previous["cards"] if c["series"] not in wardrobe_ids] + wardrobe
+        manifest["cards"] = attach_holo([c for c in previous["cards"] if c["series"] not in wardrobe_ids] + wardrobe)
         manifest["series"] = series_list(manifest["cards"])
         write_manifests(manifest)
         print(f"{len(wardrobe)} wardrobe cards, {len(motion)} plate videos")
@@ -675,7 +731,7 @@ def main() -> None:
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
-    cards = [c for c in cards if c["series"] not in wardrobe_ids] + wardrobe
+    cards = attach_holo([c for c in cards if c["series"] not in wardrobe_ids] + wardrobe)
     manifest = {
         "version": 4,
         "characters": cat.CHARACTERS,

@@ -27,8 +27,8 @@ def test_new_player_and_online_time_pays_nothing():
         clock.t += 20
     assert r["shards"] == 1600
     assert r["income"] == {"day": day_of(clock.t), "today": 0, "cap": 18000, "taps": 0, "perTap": 1.603, "multiplier": 1, "perMinute": 96.2}
-    # 590 from resonance and the 20 scratch emotes
-    assert r["totals"]["items"] == 610
+    # 590 from resonance, the 21 holo versions and the 20 scratch emotes
+    assert r["totals"]["items"] == 631
 
 
 def test_taps_pay_along_the_log_curve():
@@ -227,9 +227,13 @@ def test_completed_high_tier_rolls_into_common(rarity, roll):
 
 @pytest.mark.parametrize("kind,roll", [("card", 0), ("emote", .9999)])
 def test_common_prefers_unowned_within_kind_then_refunds_duplicates(kind, roll):
-    g, _ = game(SeqRng(.5, roll, .5, roll))
+    # The repeat of a card lands on the first card, which has a holo version: the last roll keeps it plain.
+    g, _ = game(SeqRng(.5, roll, .5, roll, .99))
     pid = player_id_for(TOKEN)
     pool = [item for item in g.manifest.resonance_pool["common"] if item["kind"] == kind]
+    # The one left to find has no holo version, which would take a roll of its own.
+    last = [item for item in pool if item["id"] not in g.manifest.holos][-1]
+    pool = [item for item in pool if item is not last] + [last]
     for item in pool[:-1]:
         g.store.add_item(pid, item["id"], 0)
     r = g.resonate(TOKEN, 2)

@@ -15,6 +15,8 @@ Weights are percentages unless said otherwise.
   everything in them is owned; their repeats turn into shards. ``rates.limited`` is the limited tier (the 衣橱 cards):
   without it those cards stay out of the pool. A tier a client's pool leaves empty (the limited tier for a client
   older than its cards) gives its odds to common, and ``GET /api/economy`` shows that client the rates so folded.
+  ``holoChance`` is the chance (0 to 100) that a draw of a card with a holo version (镭射款) is that version; without it
+  there are none. Clients older than the holo versions never get one and are not sent it.
 - ``craftCost``: shards to craft a missing item, by rarity.
 - ``checkin``: daily check-in prizes by amount; a prize pays its shards give or take ``spread`` (uniform), so the
   amounts are seldom round while the mean is unchanged.
@@ -83,7 +85,16 @@ def load(path: Path | str | None = None) -> tuple[dict[str, Any], dict[str, Any]
     data = json.loads(Path(path or economy_path()).read_text(encoding="utf-8"))
     data = {k: v for k, v in data.items() if not k.startswith("_")}
     anti = data.pop(SERVER_ONLY, None) or {}
+    check(data)
     return data, anti
+
+
+def check(data: dict[str, Any]) -> None:
+    """Refuses settings that would roll nonsense: so far the holo chance, a percentage."""
+    chance = data.get("resonance", {}).get("holoChance")
+    if chance is not None and (isinstance(chance, bool) or not isinstance(chance, (int, float))
+                               or not 0 <= chance <= 100):
+        raise ValueError(f"resonance.holoChance must be a percentage from 0 to 100, not {chance!r}")
 
 
 def drop_config(anti: dict[str, Any]) -> DropConfig:
@@ -95,17 +106,24 @@ def drop_config(anti: dict[str, Any]) -> DropConfig:
 
 
 def client_view(economy: dict[str, Any], cfg: DropConfig,
-                pool: dict[str, list[dict]] | None = None) -> dict[str, Any]:
+                pool: dict[str, list[dict]] | None = None, holo: bool = True) -> dict[str, Any]:
     """What GET /api/economy answers: the economy and the thresholds of the client's own input guard. With the
-    client's resonance [pool], a tier it leaves empty is folded into common, as its draws do."""
+    client's resonance [pool], a tier it leaves empty is folded into common, as its draws do. Without [holo] (a client
+    that gets no holo versions) the holo chance is left out."""
     out = {**economy, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
                                    "cooldownSec": cfg.tap_cooldown_sec}}
     res = economy.get("resonance")
-    if pool is None or not res:
+    if not res:
         return out
-    rates = dict(res["rates"])
-    for tier in [t for t in rates if t != "common" and not pool.get(t)]:
-        rates["common"] = round(rates["common"] + rates.pop(tier), 6)
-    if rates != res["rates"]:
-        out["resonance"] = {**res, "rates": rates}
+    view = res
+    if not holo and "holoChance" in res:
+        view = {k: v for k, v in res.items() if k != "holoChance"}
+    if pool is not None:
+        rates = dict(res["rates"])
+        for tier in [t for t in rates if t != "common" and not pool.get(t)]:
+            rates["common"] = round(rates["common"] + rates.pop(tier), 6)
+        if rates != res["rates"]:
+            view = {**view, "rates": rates}
+    if view is not res:
+        out["resonance"] = view
     return out

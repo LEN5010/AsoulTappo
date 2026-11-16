@@ -56,9 +56,6 @@ function resonate() {
 @keyframes deal {
   from { opacity: 0; transform: translateY(18px); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .lineup li { animation: none; }
-}
 .acts {
   display: flex;
   justify-content: flex-end;

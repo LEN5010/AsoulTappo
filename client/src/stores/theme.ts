@@ -3,12 +3,12 @@ import { toHttpBase } from "../net/protocol";
 import { buildSkin } from "../skin";
 import { settings } from "./settings";
 
+/**
+ * Always false: the system's reduce-motion setting is not followed, so the curtain, the card flips and the shard
+ * flights play everywhere (Windows sets it whenever its animation effects are off). The calm branches that read it
+ * stay in place for now.
+ */
 export const reducedMotion = ref(false);
-if (typeof window !== "undefined" && window.matchMedia) {
-  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-  reducedMotion.value = mq.matches;
-  mq.addEventListener?.("change", (e) => (reducedMotion.value = e.matches));
-}
 
 export const skin = computed(() =>
   buildSkin("jiaran-eat", settings.character, toHttpBase(settings.serverUrl), import.meta.env.BASE_URL || "/"),

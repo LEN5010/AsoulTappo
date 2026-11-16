@@ -21,6 +21,8 @@ export type Economy = {
     duplicateRefund: Partial<Record<"emote" | "big" | "small" | "normal", number>>;
     /** Tiers that keep their odds once complete, rolling repeats. */
     repeatTiers?: Rarity[];
+    /** Percent of draws of a card with a holo version that are that version; none without it. */
+    holoChance?: number;
   };
   craftCost: Partial<Record<Rarity, number>>;
   /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */

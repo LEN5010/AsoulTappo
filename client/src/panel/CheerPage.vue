@@ -92,7 +92,7 @@ const rest = computed(() => (board.value?.cards ?? []).slice(3));
 const bustOf = (character: string) => (characters[character] ?? characters[memberOf(character)])?.bg ?? "";
 /** The points table behind the info button, in reading order; kinds the server does not send are left out. */
 const POINT_ROWS: [BoardPointKind, string][] = [
-  ["big", "大隐藏"], ["skin", "皮肤"], ["epic", "史诗卡（含小隐藏）"], ["limited", "限定卡"], ["card", "普通卡"],
+  ["big", "大隐藏"], ["skin", "皮肤"], ["epic", "史诗卡（含小隐藏）"], ["limited", "限定卡"], ["holo", "镭射款"], ["card", "普通卡"],
   ["emoteRare", "稀有表情"], ["emoteScratch", "阿草表情"], ["emoteUncommon", "罕见表情"], ["emote", "普通表情"],
 ];
 const pointRows = computed(() =>

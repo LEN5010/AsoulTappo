@@ -4,7 +4,9 @@ The server only needs the *metadata* (items, rarities); the image and video file
 packs directory. The economy comes from its own private file (app/economy.py) and is merged in as ``economy``.
 
 Collectible items have namespaced ids:
-  card:<card id>   emote:<emote key>   char:<skin name>
+  card:<card id>   emote:<emote key>   char:<skin name>   holo:<card id>
+A card with a ``holo`` has a holo version (镭射款), an item of its own: resonance turns a draw of the card into it at
+``resonance.holoChance`` (see Game.resonate); it is never in a tier of the pool and never crafted.
 Starter items (see ``starter`` in the manifest) are owned by every player and never drop.
 An emote set with a ``source`` (scratch) is won there only: its emotes are neither in the resonance pool nor crafted.
 A card or skin with a ``since`` ships with that release: older clients' pools leave it out.
@@ -72,6 +74,9 @@ class Manifest:
                 add("emote", e["key"], s.get("rarity", "common"), e["name"], s.get("source"))
         for skin in self.data["skins"]:
             add("char", skin["name"], "skin", skin.get("title") or skin["name"])
+        for c in self.data["cards"]:
+            if c.get("holo"):
+                add("holo", c["id"], "holo", c["name"])
         return out
 
     @cached_property
@@ -91,19 +96,36 @@ class Manifest:
 
     @cached_property
     def item_since(self) -> dict[str, tuple]:
-        """Item id -> (major, minor, patch) of the release that ships it, for the cards and skins that name one."""
+        """Item id -> (major, minor, patch) of the release that ships it, for the cards, holo versions and skins that
+        name one."""
         cards = {f"card:{c['id']}": version_key(c["since"])[:3] for c in self.data["cards"] if c.get("since")}
-        return {**cards, **self.skin_since}
+        holos = {f"holo:{c['id']}": version_key(c["holo"]["since"])[:3] for c in self.data["cards"]
+                 if c.get("holo", {}).get("since")}
+        return {**cards, **holos, **self.skin_since}
+
+    @cached_property
+    def holos(self) -> dict[str, str]:
+        """card:<id> -> holo:<id> for every card with a holo version."""
+        return {f"card:{c['id']}": f"holo:{c['id']}" for c in self.data["cards"] if c.get("holo")}
+
+    def holos_for(self, version: str | None) -> dict[str, str]:
+        """The holo versions a client of [version] can show, by the rule of resonance_pool_for. None: all of them."""
+        held = self.held_for(version)
+        return {card: holo for card, holo in self.holos.items() if holo not in held}
+
+    def held_for(self, version: str | None) -> frozenset[str]:
+        """Item ids a client of [version] cannot show (see resonance_pool_for); empty for None."""
+        if version is None:
+            return frozenset()
+        key = version_key(version)
+        have = key[:3] if key else (0, 0, 0)
+        return frozenset(iid for iid, since in self.item_since.items() if since > have)
 
     def resonance_pool_for(self, version: str | None) -> dict[str, list[dict]]:
         """The pool a client of [version] can show: cards and skins from a later release are left out, as is every
         one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
         None: the whole pool."""
-        if version is None:
-            return self.resonance_pool
-        key = version_key(version)
-        have = key[:3] if key else (0, 0, 0)
-        held = {iid for iid, since in self.item_since.items() if since > have}
+        held = self.held_for(version)
         if not held:
             return self.resonance_pool
         return {r: [i for i in items if i["id"] not in held] for r, items in self.resonance_pool.items()}
@@ -111,10 +133,11 @@ class Manifest:
     @cached_property
     def resonance_pool(self) -> dict[str, list[dict]]:
         """Items by tier. An item whose tier has no rate in the economy (say the limited tier before its rate is set)
-        stays out of the pool."""
+        stays out of the pool, as do holo versions, which come from their card's draws."""
         pool: dict[str, list[dict]] = {r: [] for r in self.resonance["rates"]}
         for item in self.items.values():
-            if item["id"] not in self.starter and not item["source"] and item["rarity"] in pool:
+            if (item["id"] not in self.starter and not item["source"] and item["kind"] != "holo"
+                    and item["rarity"] in pool):
                 pool[item["rarity"]].append(item)
         return pool
 

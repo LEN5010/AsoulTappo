@@ -115,7 +115,7 @@ dt { color: var(--ink-3); } dd { margin: 0; font-weight: 700; }
 /* The set in one row, in the metal frames of the album: missing cards dimmed. */
 .set { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 36px)); gap: 4px; width: 100%; margin: 0; padding: 0; list-style: none; }
 .set li { aspect-ratio: 2 / 3; box-sizing: border-box; padding: 2px; border-radius: 5px; background: var(--c-100); }
-.set li.frame-gold, .set li.frame-rose { background: var(--frame-fill) var(--frame-at) / var(--frame-size); }
+.set li.frame-gold, .set li.frame-rose, .set li.frame-pearl { background: var(--frame-fill) var(--frame-at) / var(--frame-size); }
 .set img { width: 100%; height: 100%; display: block; object-fit: cover; border-radius: 3px; }
 .set li.missing img { filter: var(--dim); }
 /* The emote set in two rows of ten: missing ones in grey, still whole. */

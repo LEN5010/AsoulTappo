@@ -368,7 +368,7 @@ onBeforeUnmount(() => {
               :disabled="busy" :title="`${w.plate.name} ${w.got}/${w.total}`" :aria-label="`${w.plate.name} ${w.got}/${w.total}`"
               @click="emit('plate', w.plate)"
             >
-              <span class="closet-art ui-frame frame-rose"><img :src="assetUrl(w.cover)" alt="" draggable="false" /></span>
+              <span class="closet-art ui-frame frame-pearl"><img :src="assetUrl(w.cover)" alt="" draggable="false" /></span>
               <span class="closet-text">
                 <span class="closet-who"><i :style="{ background: w.color }"></i>{{ w.member }}</span>
                 <span class="closet-count"><b>{{ w.got }}</b><i>/{{ w.total }}</i></span>

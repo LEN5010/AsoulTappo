@@ -1,21 +1,49 @@
 <script setup lang="ts">
-// The album keeps card colors and plays visible owned videos; unowned cards stay still.
-import { computed, onBeforeUnmount, watch, type ObjectDirective } from "vue";
+// The album keeps card colors and plays visible owned videos; unowned cards stay still. An owned holo version
+// (镭射款) is marked in the corner; under the pointer that one card leans and its foil moves.
+import { computed, onBeforeUnmount, ref, watch, type ObjectDirective } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl, warmVideo } from "../asset";
-import { byTier, cardFrame, cardLabel, playsCardVideo, TIER_LABEL } from "../cards";
+import { albumCards, cardFrame, cardLabel, ownsHolo, playsCardVideo, TIER_LABEL, type AlbumFilter } from "../cards";
+import HoloArt from "../holo/HoloArt.vue";
+import HoloBadge from "../holo/HoloBadge.vue";
+import { tiltTransform } from "../holo/shader";
+import { useTilt } from "../holo/useTilt";
 import { characterColor, type ManifestCard } from "../manifest";
 import { collection } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
-
-export type AlbumFilter = "all" | "hidden" | "owned" | "missing";
 
 const props = defineProps<{ cards: ManifestCard[]; filter: AlbumFilter }>();
 /** `inspect` hands over the cards as shown, for stepping in the detail; none under 未拥有, where nothing can be viewed. */
 defineEmits<{ inspect: [card: ManifestCard, from: DOMRect | undefined, cards: ManifestCard[] | undefined] }>();
 
 const owned = (c: ManifestCard) => collection.owned[`card:${c.id}`] ?? 0;
+const holo = (c: ManifestCard) => ownsHolo(c, collection.owned);
+/** Under 镭射 a card without its holo version is dimmed, even when the card itself is owned. */
+const locked = (c: ManifestCard) => (props.filter === "holo" ? !holo(c) : !owned(c));
+
+// One holo card at a time runs the shading: the one under the pointer, until it is level again after the pointer left.
+const tilting = ref<string | null>(null);
+const { tilt, lit, follow, leave, reset } = useTilt(undefined, () => (tilting.value = null));
+function enter(card: ManifestCard) {
+  if (playsCardVideo(card, owned(card), reducedMotion.value)) warmVideo(assetUrl(card.video));
+  if (!holo(card) || tilting.value === card.id) return;
+  reset();
+  tilting.value = card.id;
+}
+function move(card: ManifestCard, e: PointerEvent) {
+  if (tilting.value !== card.id) return;
+  follow(e, (e.currentTarget as HTMLElement).querySelector(".art"));
+}
+function exit(card: ManifestCard) {
+  if (tilting.value === card.id) leave();
+}
+/** The card opens in its detail, which covers the album: it goes level at once and lets its canvas go. */
+function stopTilt() {
+  reset();
+  tilting.value = null;
+}
 const active = usePageActive();
 const inView = new Set<HTMLVideoElement>();
 const videos = new Set<HTMLVideoElement>();
@@ -52,16 +80,7 @@ const vVisibleVideo: ObjectDirective<HTMLVideoElement> = {
 };
 watch(active, scheduleVideos);
 onBeforeUnmount(() => visibility.disconnect());
-const visible = computed(() =>
-  props.cards
-    .filter((card) => {
-      if (props.filter === "owned") return owned(card) > 0;
-      if (props.filter === "missing") return owned(card) === 0;
-      if (props.filter === "hidden") return card.tier !== "normal";
-      return true;
-    })
-    .sort(byTier),
-);
+const visible = computed(() => albumCards(props.cards, props.filter, collection.owned));
 </script>
 
 <template>
@@ -69,21 +88,29 @@ const visible = computed(() =>
     <div class="grid">
       <button
         v-for="card in visible" :key="card.id" type="button"
-        class="slot ui-tile" :class="[card.tier, { locked: !owned(card) }]"
+        class="slot ui-tile" :class="[card.tier, { locked: locked(card), tilting: tilting === card.id }]"
         :title="card.name" data-rise
-        @pointerenter="playsCardVideo(card, owned(card), reducedMotion) && warmVideo(assetUrl(card.video))"
-        @click="$emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined, filter === 'missing' ? undefined : visible)"
+        @pointerenter="enter(card)" @pointermove="move(card, $event)" @pointerleave="exit(card)"
+        @click="stopTilt(); $emit('inspect', card, owned(card) ? ($event.currentTarget as HTMLElement).querySelector('.art')?.getBoundingClientRect() : undefined, filter === 'missing' ? undefined : visible)"
       >
-        <span class="art ui-frame ui-well" :class="[cardFrame(card), { framed: !!cardFrame(card) }]">
+        <span
+          class="art ui-frame ui-well" :class="[cardFrame(card), { framed: !!cardFrame(card) }]"
+          :style="tilting === card.id ? { transform: tiltTransform(tilt, 600) } : undefined"
+        >
+          <HoloArt
+            v-if="tilting === card.id && card.holo"
+            :art="assetUrl(card.thumb)" :mask="assetUrl(card.holo.mask)" :shine="card.holo.shine" :tilt="tilt" :lit="lit" :alt="card.name"
+          />
           <video
-            v-if="playsCardVideo(card, owned(card), reducedMotion)" v-visible-video
+            v-else-if="playsCardVideo(card, owned(card), reducedMotion)" v-visible-video
             :data-src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
             :aria-label="card.name" autoplay loop muted playsinline preload="none"
           ></video>
           <img v-else :src="assetUrl(card.thumb)" :alt="card.name" loading="lazy" decoding="async" draggable="false" />
           <i v-if="card.tier !== 'normal'" class="tier ui-tag" :class="{ gold: card.tier === 'big' }">{{ TIER_LABEL[card.tier] }}</i>
-          <b v-if="owned(card) > 1" class="count ui-tag dark">×{{ owned(card) }}</b>
+          <b v-if="owned(card) > 1" class="count ui-tag dark" :class="{ beside: holo(card) }">×{{ owned(card) }}</b>
+          <HoloBadge v-if="holo(card)" class="holo-mark" />
           <span v-if="card.video && owned(card)" class="live" title="动态卡面"><Icon name="play" :size="9" /></span>
         </span>
         <span class="name">
@@ -173,6 +200,20 @@ const visible = computed(() =>
   z-index: 1;
   line-height: 16px;
   padding: 0 5px;
+}
+.count.beside {
+  right: 27px;
+}
+.holo-mark {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  z-index: 1;
+}
+/* The leaning card: no zoom on top of the lean, and a shadow that lifts it off the page. */
+.slot.tilting .art {
+  z-index: 1;
+  box-shadow: 0 12px 22px -12px rgba(var(--shadow-rgb), 0.55);
 }
 .live {
   position: absolute;

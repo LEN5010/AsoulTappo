@@ -6,7 +6,8 @@ describe("collection progress", () => {
   const emotes = manifest.emoteSets.flatMap((s) => s.emotes);
   it("counts starter emotes as owned, as the album does", () => {
     expect(collectionProgress({})).toEqual({
-      cards: [0, manifest.cards.length],
+      // Holo versions (镭射款) count as cards, as on the server.
+      cards: [0, manifest.cards.length + 21],
       emotes: [manifest.starter.emotes.length, emotes.length],
       skins: [0, manifest.skins.length],
     });
@@ -20,5 +21,10 @@ describe("collection progress", () => {
     expect(p.cards[0]).toBe(1);
     expect(p.skins[0]).toBe(1);
     expect(p.emotes[0]).toBe(manifest.starter.emotes.length + 1);
+  });
+
+  it("counts an owned holo version besides its card", () => {
+    const card = manifest.cards.find((c) => c.holo)!;
+    expect(collectionProgress({ [`card:${card.id}`]: 1, [`holo:${card.id}`]: 1 }).cards[0]).toBe(2);
   });
 });

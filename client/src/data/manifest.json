@@ -922,7 +922,18 @@
    "thumb": "bundle:cards/thumb/c1781070981002.webp",
    "full": "pack:cards/moon/c1781070981002.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981002.webp",
+    "shine": {
+     "laserIntensity": 0.78,
+     "skinProtection": 1.5,
+     "clothBoost": 0.14,
+     "hueStart": 0.96,
+     "hueRange": 0.2
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981003",
@@ -937,7 +948,18 @@
    "thumb": "bundle:cards/thumb/c1781070981003.webp",
    "full": "pack:cards/moon/c1781070981003.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981003.webp",
+    "shine": {
+     "laserIntensity": 0.42,
+     "skinProtection": 1.33,
+     "clothBoost": 0.55,
+     "hueStart": 0.59,
+     "hueRange": 0
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981004",
@@ -952,7 +974,18 @@
    "thumb": "bundle:cards/thumb/c1781070981004.webp",
    "full": "pack:cards/moon/c1781070981004.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981004.webp",
+    "shine": {
+     "laserIntensity": 0.56,
+     "skinProtection": 1.5,
+     "clothBoost": 0.62,
+     "hueStart": 0.47,
+     "hueRange": 0.23
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981005",
@@ -967,7 +1000,18 @@
    "thumb": "bundle:cards/thumb/c1781070981005.webp",
    "full": "pack:cards/moon/c1781070981005.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981005.webp",
+    "shine": {
+     "laserIntensity": 0.5,
+     "skinProtection": 1,
+     "clothBoost": 0.9,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981006",
@@ -982,7 +1026,18 @@
    "thumb": "bundle:cards/thumb/c1781070981006.webp",
    "full": "pack:cards/moon/c1781070981006.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981006.webp",
+    "shine": {
+     "laserIntensity": 1.04,
+     "skinProtection": 1.25,
+     "clothBoost": 0.61,
+     "hueStart": 0.81,
+     "hueRange": 0.49
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981007",
@@ -997,7 +1052,18 @@
    "thumb": "bundle:cards/thumb/c1781070981007.webp",
    "full": "pack:cards/moon/c1781070981007.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981007.webp",
+    "shine": {
+     "laserIntensity": 0.47,
+     "skinProtection": 1.56,
+     "clothBoost": 0.5,
+     "hueStart": 0.11,
+     "hueRange": 0.09
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1781070981008",
@@ -1012,7 +1078,18 @@
    "thumb": "bundle:cards/thumb/c1781070981008.webp",
    "full": "pack:cards/moon/c1781070981008.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1781070981008.webp",
+    "shine": {
+     "laserIntensity": 0.62,
+     "skinProtection": 1.84,
+     "clothBoost": 0,
+     "hueStart": 0.07,
+     "hueRange": 0.03
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1762331462009",
@@ -1900,7 +1977,18 @@
    "thumb": "bundle:cards/thumb/c1787896765002.webp",
    "full": "pack:cards/reverie/c1787896765002.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765002.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765003",
@@ -1930,7 +2018,18 @@
    "thumb": "bundle:cards/thumb/c1787896765004.webp",
    "full": "pack:cards/reverie/c1787896765004.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765004.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765005",
@@ -1945,7 +2044,18 @@
    "thumb": "bundle:cards/thumb/c1787896765005.webp",
    "full": "pack:cards/reverie/c1787896765005.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765005.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765006",
@@ -1960,7 +2070,18 @@
    "thumb": "bundle:cards/thumb/c1787896765006.webp",
    "full": "pack:cards/reverie/c1787896765006.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765006.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765007",
@@ -1975,7 +2096,18 @@
    "thumb": "bundle:cards/thumb/c1787896765007.webp",
    "full": "pack:cards/reverie/c1787896765007.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765007.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765008",
@@ -1990,7 +2122,18 @@
    "thumb": "bundle:cards/thumb/c1787896765008.webp",
    "full": "pack:cards/reverie/c1787896765008.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765008.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765009",
@@ -2005,7 +2148,18 @@
    "thumb": "bundle:cards/thumb/c1787896765009.webp",
    "full": "pack:cards/reverie/c1787896765009.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1787896765009.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0,
+     "hueRange": 1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1787896765010",
@@ -2050,7 +2204,18 @@
    "thumb": "bundle:cards/thumb/c1785126321003.webp",
    "full": "pack:cards/casket/c1785126321003.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321003.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0.51,
+     "hueRange": 0.1
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321004",
@@ -2065,7 +2230,18 @@
    "thumb": "bundle:cards/thumb/c1785126321004.webp",
    "full": "pack:cards/casket/c1785126321004.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321004.webp",
+    "shine": {
+     "laserIntensity": 0.61,
+     "skinProtection": 1,
+     "clothBoost": 0.81,
+     "hueStart": 0.43,
+     "hueRange": 0.67
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321005",
@@ -2080,7 +2256,18 @@
    "thumb": "bundle:cards/thumb/c1785126321005.webp",
    "full": "pack:cards/casket/c1785126321005.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321005.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1.72,
+     "clothBoost": 1.34,
+     "hueStart": 0.43,
+     "hueRange": 0.69
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321006",
@@ -2095,7 +2282,18 @@
    "thumb": "bundle:cards/thumb/c1785126321006.webp",
    "full": "pack:cards/casket/c1785126321006.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321006.webp",
+    "shine": {
+     "laserIntensity": 0.97,
+     "skinProtection": 1.14,
+     "clothBoost": 0.49,
+     "hueStart": 0.87,
+     "hueRange": 0.43
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321007",
@@ -2110,7 +2308,18 @@
    "thumb": "bundle:cards/thumb/c1785126321007.webp",
    "full": "pack:cards/casket/c1785126321007.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321007.webp",
+    "shine": {
+     "laserIntensity": 1.38,
+     "skinProtection": 1,
+     "clothBoost": 0.68,
+     "hueStart": 0.52,
+     "hueRange": 0.52
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321008",
@@ -2125,7 +2334,18 @@
    "thumb": "bundle:cards/thumb/c1785126321008.webp",
    "full": "pack:cards/casket/c1785126321008.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321008.webp",
+    "shine": {
+     "laserIntensity": 1,
+     "skinProtection": 1.65,
+     "clothBoost": 1.13,
+     "hueStart": 0.84,
+     "hueRange": 0.79
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321009",
@@ -2140,7 +2360,18 @@
    "thumb": "bundle:cards/thumb/c1785126321009.webp",
    "full": "pack:cards/casket/c1785126321009.webp",
    "video": null,
-   "still": false
+   "still": false,
+   "holo": {
+    "mask": "pack:holo/c1785126321009.webp",
+    "shine": {
+     "laserIntensity": 1.55,
+     "skinProtection": 1,
+     "clothBoost": 0.86,
+     "hueStart": 0.73,
+     "hueRange": 0.44
+    },
+    "since": "1.2.4"
+   }
   },
   {
    "id": "c1785126321010",
@@ -2159,7 +2390,7 @@
   },
   {
    "id": "c546101",
-   "name": "衣橱 01",
+   "name": "毛绒新年",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2175,7 +2406,7 @@
   },
   {
    "id": "c546102",
-   "name": "衣橱 02",
+   "name": "糖果外套",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2191,7 +2422,7 @@
   },
   {
    "id": "c546103",
-   "name": "衣橱 03",
+   "name": "背包出发",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2207,7 +2438,7 @@
   },
   {
    "id": "c546104",
-   "name": "衣橱 04",
+   "name": "唱给你听",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2223,7 +2454,7 @@
   },
   {
    "id": "c3480501",
-   "name": "衣橱 05",
+   "name": "白羽天使",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2239,7 +2470,7 @@
   },
   {
    "id": "c3480502",
-   "name": "衣橱 06",
+   "name": "泡泡甜点",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2255,7 +2486,7 @@
   },
   {
    "id": "c3480503",
-   "name": "衣橱 07",
+   "name": "雪地兔耳",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2271,7 +2502,7 @@
   },
   {
    "id": "c3480504",
-   "name": "衣橱 08",
+   "name": "星月时钟",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2287,7 +2518,7 @@
   },
   {
    "id": "c3480505",
-   "name": "衣橱 09",
+   "name": "草莓花园",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2303,7 +2534,7 @@
   },
   {
    "id": "c3480506",
-   "name": "衣橱 10",
+   "name": "小恶魔",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2319,7 +2550,7 @@
   },
   {
    "id": "c3480507",
-   "name": "衣橱 11",
+   "name": "舞会登场",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2335,7 +2566,7 @@
   },
   {
    "id": "c3480508",
-   "name": "衣橱 12",
+   "name": "甜品乐园",
    "series": "wardrobe-jiaran",
    "sub": null,
    "characters": [
@@ -2351,7 +2582,7 @@
   },
   {
    "id": "c3349801",
-   "name": "衣橱 01",
+   "name": "白狐相伴",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2367,7 +2598,7 @@
   },
   {
    "id": "c3349802",
-   "name": "衣橱 02",
+   "name": "冰晶王座",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2383,7 +2614,7 @@
   },
   {
    "id": "c3349803",
-   "name": "衣橱 03",
+   "name": "蓝玫瑰",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2399,7 +2630,7 @@
   },
   {
    "id": "c3349804",
-   "name": "衣橱 04",
+   "name": "火锅时间",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2415,7 +2646,7 @@
   },
   {
    "id": "c4035701",
-   "name": "衣橱 05",
+   "name": "街口白纱",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2431,7 +2662,7 @@
   },
   {
    "id": "c4035702",
-   "name": "衣橱 06",
+   "name": "海边派对",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2447,7 +2678,7 @@
   },
   {
    "id": "c4035703",
-   "name": "衣橱 07",
+   "name": "雪夜撑伞",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2463,7 +2694,7 @@
   },
   {
    "id": "c4035704",
-   "name": "衣橱 08",
+   "name": "咖啡午后",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2479,7 +2710,7 @@
   },
   {
    "id": "c4035705",
-   "name": "衣橱 09",
+   "name": "女王权杖",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2495,7 +2726,7 @@
   },
   {
    "id": "c4035706",
-   "name": "衣橱 10",
+   "name": "红裙起舞",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2511,7 +2742,7 @@
   },
   {
    "id": "c4035707",
-   "name": "衣橱 11",
+   "name": "桃花面纱",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2527,7 +2758,7 @@
   },
   {
    "id": "c4035708",
-   "name": "衣橱 12",
+   "name": "黑猫红酒",
    "series": "wardrobe-nailin",
    "sub": null,
    "characters": [
@@ -2543,7 +2774,7 @@
   },
   {
    "id": "c3297801",
-   "name": "衣橱 01",
+   "name": "海边月夜",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2559,7 +2790,7 @@
   },
   {
    "id": "c3297802",
-   "name": "衣橱 02",
+   "name": "樱花校园",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2575,7 +2806,7 @@
   },
   {
    "id": "c3297803",
-   "name": "衣橱 03",
+   "name": "演唱会",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2591,7 +2822,7 @@
   },
   {
    "id": "c3297804",
-   "name": "衣橱 04",
+   "name": "接力赛跑",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2607,7 +2838,7 @@
   },
   {
    "id": "c3764401",
-   "name": "衣橱 05",
+   "name": "天鹅芭蕾",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2623,7 +2854,7 @@
   },
   {
    "id": "c3764402",
-   "name": "衣橱 06",
+   "name": "星空漫步",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2639,7 +2870,7 @@
   },
   {
    "id": "c3764403",
-   "name": "衣橱 07",
+   "name": "白貂折扇",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2655,7 +2886,7 @@
   },
   {
    "id": "c3764404",
-   "name": "衣橱 08",
+   "name": "雏菊精灵",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2671,7 +2902,7 @@
   },
   {
    "id": "c3764405",
-   "name": "衣橱 09",
+   "name": "暗夜刀客",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2687,7 +2918,7 @@
   },
   {
    "id": "c3764406",
-   "name": "衣橱 10",
+   "name": "绣球与猫",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2703,7 +2934,7 @@
   },
   {
    "id": "c3764407",
-   "name": "衣橱 11",
+   "name": "兔耳读书",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [
@@ -2719,7 +2950,7 @@
   },
   {
    "id": "c3764408",
-   "name": "衣橱 12",
+   "name": "彩带派对",
    "series": "wardrobe-beila",
    "sub": null,
    "characters": [

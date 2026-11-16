@@ -13,6 +13,8 @@ it("builds one all-member pool with 590 distinct items", () => {
   expect([p.common.length,p.uncommon.length,p.rare.length,p.limited.length,p.epic.length,p.legendary.length,p.skin.length])
     .toEqual([372,75,60,36,23,10,14]);
   expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(590);
+  // Holo versions come from their card's draws, never from a tier of the pool.
+  expect(Object.values(p).flat().some((i) => i.id.startsWith("holo:"))).toBe(false);
   expect(p.limited.every((i) => i.kind === "card" && getCard(i.ref)?.series.startsWith("wardrobe-"))).toBe(true);
   // the economy names no craft price for them
   expect(p.limited.map(craftCost).every((c) => c === null)).toBe(true);

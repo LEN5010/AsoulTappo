@@ -56,8 +56,9 @@ PARK_NEWS_LIMIT = 5
 # about 1 draw). Big hidden cards: 0.1% with a 400-draw pity, about 330 draws. Skins: 0.2% with a 200-draw pity,
 # about 165. Epic cards (small hidden cards and epic normal cards share one 4.5% tier): about 22. Common cards: about
 # 2. Emotes count about half their craft price (480, 960 and 1600 shards), so the 475 of them do not outweigh the
-# cards; scratch emotes count as rare ones. Starter emotes count nothing. Limited cards count as epic ones.
-BOARD_POINTS = {"big": 300, "skin": 150, "epic": 20, "limited": 20, "card": 2,
+# cards; scratch emotes count as rare ones. Starter emotes count nothing. Limited cards and holo versions (镭射款) count
+# as epic ones; a holo version counts besides its card, but not as a card on the board by cards.
+BOARD_POINTS = {"big": 300, "skin": 150, "epic": 20, "limited": 20, "holo": 20, "card": 2,
                 "emoteRare": 3, "emoteScratch": 3, "emoteUncommon": 2, "emote": 1}
 
 
@@ -70,6 +71,8 @@ def board_kind(item: dict[str, Any], manifest: Manifest) -> str:
     """The BOARD_POINTS key of a collectible item (an entry of Manifest.items)."""
     if item["kind"] == "char":
         return "skin"
+    if item["kind"] == "holo":
+        return "holo"
     if item["kind"] == "card":
         card = manifest.cards[item["id"][5:]]
         if card.get("tier") == "big":
@@ -324,10 +327,16 @@ class Game:
 
     def resonate(self, token: str, count: int = 1, version: str | None = None) -> dict[str, Any]:
         """[version] is the client's: cards and skins it cannot show stay out of its pool (see
-        Manifest.resonance_pool_for), and a tier left empty gives its odds to common."""
+        Manifest.resonance_pool_for), and a tier left empty gives its odds to common.
+
+        A drawn card with a holo version the client can show (Manifest.holos_for) is that version at holoChance
+        percent: the save gets the holo version and the card. A first holo version pays no shards even when the card
+        is a repeat (and the card's count stays); a repeat one pays as a repeat of the card."""
         pool = self.manifest.resonance_pool_for(version)
         pid = player_id_for(token)
         cfg = self.manifest.resonance
+        holo_chance = cfg.get("holoChance") or 0
+        holos = self.manifest.holos_for(version) if holo_chance > 0 else {}
         drops = []
         with self.store.transaction() as st:
             now = self.now()
@@ -358,12 +367,19 @@ class Game:
                     item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
                 iid = item["id"]
                 fresh = iid not in owned
-                gained = 0 if fresh else self.duplicate_shards(iid)
+                holo = holos.get(iid)
+                if holo is not None and self.rng.random() * 100 >= holo_chance:
+                    holo = None
+                holo_fresh = holo is not None and holo not in owned
+                gained = 0 if fresh or holo_fresh else self.duplicate_shards(iid)
                 refund += gained
-                # A repeat that turns into shards is not kept.
-                if fresh or not gained:
+                # A repeat that turns into shards is not kept, nor is the card a first holo version came with.
+                if fresh or not (gained or holo_fresh):
                     owned[iid] = owned.get(iid, 0) + 1
                     increments[iid] = increments.get(iid, 0) + 1
+                if holo_fresh:
+                    owned[holo] = 1
+                    increments[holo] = 1
                 if fresh:
                     missing[rarity].remove(item)
                     if rarity == "common":
@@ -373,9 +389,13 @@ class Game:
                 drop = {"item": iid, "rarity": rarity, "new": fresh, "count": owned[iid], "shards": gained}
                 if item["kind"] == "card":
                     drop["tier"] = self.manifest.cards[iid[5:]]["tier"]
+                if holo is not None:
+                    # `new` is the holo version's; `cardNew` says whether the card came first too.
+                    drop.update(holo=True, new=holo_fresh, cardNew=fresh)
                 drops.append(drop)
             st.add_items(pid, increments, now)
-            st.log_drops(pid, drops, now)
+            # The log keeps what came: a holo draw as its holo version.
+            st.log_drops(pid, [{**d, "item": holos[d["item"]]} if d.get("holo") else d for d in drops], now)
             st.update_player(pid, shards=p["shards"] - n * cfg["cost"] + refund,
                              draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
             day = day_of(now)
@@ -853,10 +873,18 @@ class Game:
             raise GameError("account_not_linked", "这个账号没有桌宠存档")
         self.admin_note(actor, "unlink", {"userId": main_user_id}, pid or "", reason)
 
-    def collection(self, token: str) -> dict[str, Any]:
+    def collection(self, token: str, version: str | None = None) -> dict[str, Any]:
+        """What the save holds and its latest drops, without the holo versions a client of [version] cannot show (see
+        Manifest.holos_for); None: everything."""
         pid = player_id_for(token)
         self.store.get_player(pid, self.now())
-        return {"owned": self.store.owned(pid), "recent": self.store.recent_drops(pid)}
+        held = set(self.manifest.holos.values()) - set(self.manifest.holos_for(version).values())
+        owned = self.store.owned(pid)
+        recent = self.store.recent_drops(pid)
+        if held:
+            owned = {iid: n for iid, n in owned.items() if iid not in held}
+            recent = [d for d in recent if d["item"] not in held]
+        return {"owned": owned, "recent": recent}
 
     # ----------------------------------------------------------------- loadout
     def _owns(self, owned: dict[str, int], item_id: str) -> bool:
@@ -964,10 +992,11 @@ class Game:
         return self.get_loadout(token)
 
     def collection_progress(self, owned: dict[str, int]) -> dict[str, list[int]]:
-        """[owned, total] of cards, emotes and skins, counted as the client's album does: starter emotes count."""
+        """[owned, total] of cards, emotes and skins, counted as the client's album does: starter emotes count, and so
+        do holo versions, as cards."""
         counts = {"card": [0, 0], "emote": [0, 0], "char": [0, 0]}
         for item_id, item in self.manifest.items.items():
-            count = counts[item["kind"]]
+            count = counts["card" if item["kind"] == "holo" else item["kind"]]
             count[1] += 1
             if self._owns(owned, item_id):
                 count[0] += 1

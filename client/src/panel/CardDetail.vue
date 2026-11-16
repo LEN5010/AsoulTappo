@@ -1,10 +1,14 @@
 <script setup lang="ts">
 // Card detail: the artwork beside its facts. Videos start with sound when the card audio setting is on.
 // With the album's cards it steps through the owned ones, and the artwork opens in a full-panel viewer.
+// An owned holo version (镭射款) shows first and leans toward the pointer; a key turns back to the plain card.
 import { computed, nextTick, onMounted, ref, watch, type ObjectDirective } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl, warmVideo } from "../asset";
-import { cardFrame, cardLabel, playsCardVideo, poolName, TIER_LABEL } from "../cards";
+import { cardFrame, cardLabel, ownsHolo, playsCardVideo, poolName, TIER_LABEL } from "../cards";
+import HoloArt from "../holo/HoloArt.vue";
+import { tiltTransform } from "../holo/shader";
+import { useTilt } from "../holo/useTilt";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
 import { economy } from "../stores/economy";
 import { getItem } from "../items";
@@ -75,6 +79,17 @@ onMounted(async () => {
   if (props.from && artEl.value) flyFrom(props.from, artEl.value, assetUrl(props.card.thumb));
 });
 
+/** The save's own holo version; a preview (a partner's card, the pool) shows the plain card. */
+const hasHolo = computed(() => !props.preview && ownsHolo(props.card, collection.owned));
+const holoOn = ref(true);
+const holo = computed(() => (hasHolo.value && holoOn.value ? props.card.holo : undefined));
+const { tilt, lit, follow, leave, reset } = useTilt();
+watch(() => props.card.id, () => {
+  holoOn.value = true;
+  reset();
+});
+watch(holo, (h) => !h && reset());
+
 const viewable = computed(() => props.preview || count.value > 0);
 const viewing = ref(false);
 watch(viewable, (v) => !v && (viewing.value = false));
@@ -85,6 +100,7 @@ const paused = ref(false);
 const muted = ref(!settings.cardAudio);
 let resume = { at: 0, paused: false };
 function setViewing(on: boolean) {
+  reset();
   const v = video.value;
   resume = v ? { at: v.currentTime, paused: v.paused } : { at: 0, paused: false };
   viewing.value = on;
@@ -124,9 +140,17 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
 <template>
   <Modal :title="card.name" wide :still="!!from" :covered="viewing" @close="emit('close')">
     <div class="detail" :class="card.tier">
-      <div ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count }]">
+      <div
+        ref="artEl" class="art ui-frame" :class="[cardFrame(card), { framed: !!cardFrame(card), locked: !preview && !count, leaning: !!holo }]"
+        :style="holo && !viewing ? { transform: tiltTransform(tilt, 1200) } : undefined"
+        @pointermove="holo && !viewing && follow($event, artEl)" @pointerleave="leave()"
+      >
+          <HoloArt
+            v-if="holo && !viewing" :key="card.id"
+            :art="assetUrl(card.full)" :mask="assetUrl(holo.mask)" :shine="holo.shine" :tilt="tilt" :lit="lit" :alt="card.name"
+          />
           <video
-            v-if="animated && pageActive && !viewing" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+            v-else-if="animated && pageActive && !viewing" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
             :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
             :muted="muted" loop playsinline
             @play="paused = false" @pause="paused = true"
@@ -135,7 +159,13 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
 
         <button v-if="viewable" type="button" class="zoom" aria-label="放大" @click="setViewing(true)"></button>
         <StepKeys v-if="cards" :prev="!!prevCard" :next="!!nextCard" :keyboard="!viewing" @step="step" />
-        <div v-if="animated" class="controls">
+        <div v-if="hasHolo" class="controls">
+          <span class="faces" role="group" aria-label="卡面">
+            <button type="button" class="ui-btn small ghost" :aria-pressed="!holoOn" @click="holoOn = false">普通</button>
+            <button type="button" class="ui-btn small ghost" :aria-pressed="holoOn" @click="holoOn = true">镭射</button>
+          </span>
+        </div>
+        <div v-else-if="animated" class="controls">
           <button type="button" class="ui-btn small ghost" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
@@ -146,13 +176,14 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
       </div>
 
       <div class="info">
-        <span class="ui-tag" :class="{ gold: card.tier === 'big', dark: card.tier === 'normal' }">{{ TIER_LABEL[card.tier] }}</span>
+        <span class="ui-tag" :class="{ gold: card.tier === 'big', dark: card.tier === 'normal' }">{{ holo ? "镭射款" : TIER_LABEL[card.tier] }}</span>
         <h3>{{ label.title }}</h3>
         <p class="who"><i :style="{ background: characterColor(card.characters[0] ?? '') }" aria-hidden="true"></i>{{ label.who }}</p>
         <dl>
           <div><dt>卡池</dt><dd>{{ pool }}</dd></div>
           <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
           <div v-if="card.video"><dt>卡面</dt><dd>{{ card.still ? "有声" : "动态" }}</dd></div>
+          <div v-if="card.holo && !preview"><dt>镭射款</dt><dd :class="{ missing: !hasHolo }">{{ hasHolo ? "已拥有" : "未拥有" }}</dd></div>
         </dl>
         <CraftAction :key="item.id" :item="item" />
         <button
@@ -168,17 +199,28 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
     <template #front>
       <ArtViewer
         v-if="viewing" :id="card.id" :ratio="2 / 3" :label="card.name"
-        :steps="!!cards" :prev="!!prevCard" :next="!!nextCard"
+        :steps="!!cards" :prev="!!prevCard" :next="!!nextCard" :tilt="holo ? tilt : undefined"
         @step="step" @close="setViewing(false)"
       >
+        <HoloArt
+          v-if="holo" :key="card.id"
+          :art="assetUrl(card.full)" :mask="assetUrl(holo.mask)" :shine="holo.shine" :tilt="tilt" :lit="lit" :alt="card.name"
+          @pointermove="follow($event, $event.currentTarget as Element)" @pointerleave="leave()"
+        />
         <video
-          v-if="animated && pageActive" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
+          v-else-if="animated && pageActive" :key="card.id" ref="video" v-release-video :src="assetUrl(card.video)" :poster="assetUrl(card.thumb)"
           :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }"
           :muted="muted" loop playsinline
           @play="paused = false" @pause="paused = true"
         ></video>
         <img v-else :key="card.id" :src="assetUrl(card.full)" :style="{ backgroundImage: `url(${assetUrl(card.thumb)})` }" :alt="card.name" draggable="false" />
-        <template v-if="animated" #controls>
+        <template v-if="hasHolo" #controls>
+          <span class="faces" role="group" aria-label="卡面">
+            <button type="button" class="ui-btn small ghost" :aria-pressed="!holoOn" @click="holoOn = false">普通</button>
+            <button type="button" class="ui-btn small ghost" :aria-pressed="holoOn" @click="holoOn = true">镭射</button>
+          </span>
+        </template>
+        <template v-else-if="animated" #controls>
           <button type="button" class="ui-btn small ghost" :aria-label="paused ? '播放' : '暂停'" @click="togglePlay">
             <Icon :name="paused ? 'play' : 'pause'" :size="14" />
           </button>
@@ -270,6 +312,36 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
 .controls .ui-btn:active:not(:disabled) {
   --key-top: var(--c-100);
   --key-bottom: var(--c-100);
+}
+/* Plain or holo face: one frosted pill, the face on show in coral. Used over the art here and in the viewer. */
+.faces {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--radius-key-s);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(6px);
+}
+.controls .faces .ui-btn,
+.faces .ui-btn[aria-pressed]:not(:disabled) {
+  --key-top: transparent;
+  --key-bottom: transparent;
+  --key-y: 0px;
+  --key-lip-h: 0px;
+  width: auto;
+  height: 28px;
+  padding: 0 10px;
+  color: var(--ink-2);
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.faces .ui-btn[aria-pressed="true"]:not(:disabled) {
+  --key-top: var(--c-500);
+  --key-bottom: var(--c-500);
+  color: #fff;
+}
+/* The leaning holo card: its lean is written inline, the shadow lifts it off the sheet. */
+.art.leaning {
+  box-shadow: 0 18px 34px -18px rgba(var(--shadow-rgb), 0.5);
 }
 
 .info {

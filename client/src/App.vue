@@ -555,9 +555,6 @@ body { font-family: var(--font); color: var(--ink); -webkit-font-smoothing: anti
 html.browser-preview body {
   background: radial-gradient(1200px 600px at 20% 10%, #cfe0f5, transparent), radial-gradient(900px 600px at 90% 90%, #f3d7e3, transparent), #dfe6ef;
 }
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
-}
 </style>
 
 <style scoped>
@@ -568,9 +565,6 @@ html.browser-preview body {
 .strip-enter-active { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-spring); }
 .strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }
 .strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 -14px; }
-@media (prefers-reduced-motion: reduce) {
-  .strip-enter-active, .strip-leave-active { transition: none; }
-}
 .desk > :deep(*) { pointer-events: auto; }
 /* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
  * on any wallpaper. The side padding keeps the plate centred under the pet. */

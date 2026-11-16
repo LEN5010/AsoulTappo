@@ -24,7 +24,19 @@ export interface ManifestCard {
   still: boolean;
   /** The release that ships the card, for cards newer than the first ones. */
   since?: string;
+  /** Set on a card with a holo version (镭射款), an item of its own: holo:<card id>. */
+  holo?: ManifestHolo;
 }
+/** Shading of a holo version, from the official shine_effect_config (see src/holo/shader.ts). */
+export interface HoloShine {
+  laserIntensity: number;
+  skinProtection: number;
+  clothBoost: number;
+  hueStart: number;
+  hueRange: number;
+}
+/** `mask` is white where the foil goes; `since` is the release that ships the holo versions. */
+export interface ManifestHolo { mask: string; shine: HoloShine; since: string }
 export interface ThemeIcon { n: string; s: string }
 export interface ManifestTheme {
   id: string;

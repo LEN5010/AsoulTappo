@@ -13,8 +13,6 @@ import AccountDialog from "./AccountDialog.vue";
 import Modal from "../ui/Modal.vue";
 import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
-import { beginPomodoro, endPomodoro, pomodoro, pomodoroPlan } from "../stores/pomodoro";
-import { LONG_EVERY, longRestMin } from "../pomodoro";
 import RangeInput from "../ui/RangeInput.vue";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
@@ -112,26 +110,27 @@ watch(recording, (slot) => {
   if (slot) { keyNote.value = { ...keyNote.value, [slot]: "" }; window.addEventListener("keydown", onRecordKey, true); }
 });
 
-// Both columns end on one line: groups are split so the rows come out about even (the desk-only window group goes
-// with the pet group; the browser preview has no window group and a shorter About), and each group then grows in step
-// with its row count, so the shorter column's rows stretch a few pixels each instead of leaving blank paper. Rows now:
-// desk 18 and 17 on macOS (19 and 17 on Windows), preview 14 and 14.
-type Group = "pet" | "window" | "online" | "pomodoro" | "sound" | "about";
-const COLUMNS: Group[][] = isTauri
-  ? [["pet", "window", "sound"], ["online", "pomodoro", "about"]]
-  : [["pet", "about"], ["online", "pomodoro", "sound"]];
+// Every row is one height and a group's title with the gap above it takes one row's height too, so the rows of the two
+// columns line up. A setting that only matters with a switch on sits in that switch's row, so the row count depends
+// on the platform only. Rows now: 7 and 5 + the start rows (1 on macOS, 2 on Windows, none in the browser preview)
+// on the left; 3, 3 and 6 (5 in the preview) on the right. The whole rows a column is short by go above its last
+// group, so both columns end on one line: on Windows the right column is one row short. The tomato timer's lengths
+// and switches live on its own page.
+type Group = "pet" | "window" | "online" | "sound" | "about";
+const COLUMNS: Group[][] = [["pet", "window"], ["online", "sound", "about"]];
 const rows = computed<Record<Group, number>>(() => ({
-  pet: 9,
-  window: 3 + HOTKEYS.length + (settings.captureOpen ? 1 : 0) + (admin.value?.supported ? 1 : 0) + (autostart.value?.supported ? 1 : 0),
-  online: 4,
-  pomodoro: 7,
+  pet: 7,
+  window: 3 + HOTKEYS.length + (autostart.value?.supported ? 1 : 0) + (admin.value?.supported ? 1 : 0),
+  online: 3,
   sound: 3,
   about: isTauri ? 6 : 5,
 }));
+const lift = computed(() => {
+  const height = COLUMNS.map((c) => c.reduce((n, g) => n + rows.value[g] + 1, 0));
+  const top = Math.max(...height);
+  return COLUMNS.map((c, i) => (c.length > 1 ? top - height[i]! : 0));
+});
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
-
-const longMin = computed(() => longRestMin(pomodoroPlan()));
-const pomodoroState = computed(() => (!pomodoro.value ? "未开始" : pomodoro.value.phase === "focus" ? "专注中" : "休息中"));
 
 // Start at login. The system holds the state; a failed change shows what the system says now.
 const autostart = ref<AutostartStatus | null>(null);
@@ -228,9 +227,9 @@ async function exportLogFile() {
     </section>
 
     <div class="columns">
-      <div v-for="(column, ci) in COLUMNS" :key="ci" class="column">
+      <div v-for="(column, ci) in COLUMNS" :key="ci" class="column" :style="{ '--lift': lift[ci] }">
         <template v-for="group in column" :key="group">
-          <section v-if="group === 'pet'" data-rise :style="{ '--rows': rows.pet }">
+          <section v-if="group === 'pet'" data-rise>
             <h4 class="ui-label"><span>桌宠表现</span></h4>
             <div class="ui-group ui-frame">
               <label class="ui-row">
@@ -247,17 +246,16 @@ async function exportLogFile() {
                   <b class="ui-val">{{ (settings.emoteHoldMs / 1000).toFixed(1) }} 秒</b>
                 </span>
               </label>
-              <label class="ui-row">
-                <span>鼠标爪跟随光标</span>
-                <input v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
-              </label>
-              <label class="ui-row" :class="{ off: !settings.mouseFollow }">
-                <span>跟随灵敏度</span>
-                <span class="ui-ctl">
-                  <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" :disabled="!settings.mouseFollow" />
-                  <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
+              <div class="ui-row">
+                <label for="set-follow">鼠标爪跟随光标</label>
+                <span class="version-side">
+                  <span v-if="settings.mouseFollow" class="ui-ctl" title="跟随灵敏度">
+                    <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" aria-label="跟随灵敏度" />
+                    <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
+                  </span>
+                  <input id="set-follow" v-model="settings.mouseFollow" class="ui-switch" type="checkbox" />
                 </span>
-              </label>
+              </div>
               <div class="ui-row">
                 <span>桌宠位置</span>
                 <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
@@ -277,7 +275,7 @@ async function exportLogFile() {
             </div>
           </section>
 
-          <section v-else-if="group === 'window'" data-rise :style="{ '--rows': rows.window }">
+          <section v-else-if="group === 'window'" data-rise>
             <h4 class="ui-label"><span>窗口设置</span></h4>
             <div class="ui-group ui-frame">
               <label class="ui-row">
@@ -301,14 +299,13 @@ async function exportLogFile() {
                   </button>
                 </span>
               </div>
-              <label class="ui-row">
-                <span>采集窗口</span>
-                <input v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
-              </label>
-              <label v-if="settings.captureOpen" class="ui-row">
-                <span>采集背景色</span>
-                <input v-model="settings.captureBg" class="swatch" type="color" />
-              </label>
+              <div class="ui-row">
+                <label for="set-capture">采集窗口</label>
+                <span class="version-side">
+                  <input v-if="settings.captureOpen" v-model="settings.captureBg" class="swatch" type="color" title="采集背景色" aria-label="采集背景色" />
+                  <input id="set-capture" v-model="settings.captureOpen" class="ui-switch" type="checkbox" />
+                </span>
+              </div>
               <label v-if="autostart?.supported" class="ui-row">
                 <span>开机自启动</span>
                 <span class="version-side">
@@ -329,16 +326,12 @@ async function exportLogFile() {
             </div>
           </section>
 
-          <section v-else-if="group === 'online'" data-rise :style="{ '--rows': rows.online }">
+          <section v-else-if="group === 'online'" data-rise>
             <h4 class="ui-label"><span>联机</span></h4>
             <div class="ui-group ui-frame">
               <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
                 <span>显示伙伴铭牌</span>
                 <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
-              </label>
-              <label class="ui-row">
-                <span>隐藏伙伴 ID</span>
-                <input v-model="settings.hideNicks" class="ui-switch" type="checkbox" />
               </label>
               <label class="ui-row">
                 <span>猜拳免打扰</span>
@@ -351,47 +344,7 @@ async function exportLogFile() {
             </div>
           </section>
 
-          <section v-else-if="group === 'pomodoro'" data-rise :style="{ '--rows': rows.pomodoro }">
-            <h4 class="ui-label"><span>番茄钟</span></h4>
-            <div class="ui-group ui-frame">
-              <label class="ui-row">
-                <span>专注时长</span>
-                <span class="ui-ctl">
-                  <RangeInput v-model="settings.pomodoroFocus" :min="5" :max="120" :step="5" />
-                  <b class="ui-val minutes">{{ settings.pomodoroFocus }} 分钟</b>
-                </span>
-              </label>
-              <label class="ui-row">
-                <span>休息时长</span>
-                <span class="ui-ctl">
-                  <RangeInput v-model="settings.pomodoroRest" :min="1" :max="60" :step="1" />
-                  <b class="ui-val minutes">{{ settings.pomodoroRest }} 分钟</b>
-                </span>
-              </label>
-              <label class="ui-row">
-                <span>每 {{ LONG_EVERY }} 轮长休息 {{ longMin }} 分钟</span>
-                <input v-model="settings.pomodoroLong" class="ui-switch" type="checkbox" />
-              </label>
-              <label class="ui-row">
-                <span>自动开始下一轮</span>
-                <input v-model="settings.pomodoroAuto" class="ui-switch" type="checkbox" />
-              </label>
-              <label class="ui-row">
-                <span>提示音</span>
-                <input v-model="settings.pomodoroSound" class="ui-switch" type="checkbox" />
-              </label>
-              <label class="ui-row">
-                <span>系统通知</span>
-                <input v-model="settings.pomodoroNotify" class="ui-switch" type="checkbox" />
-              </label>
-              <div class="ui-row">
-                <span>{{ pomodoroState }}</span>
-                <button v-if="pomodoro" type="button" class="ui-btn small" @click="endPomodoro">结束</button>
-                <button v-else type="button" class="ui-btn small primary" @click="beginPomodoro">开始</button>
-              </div>
-            </div>
-          </section>
-          <section v-else-if="group === 'sound'" data-rise :style="{ '--rows': rows.sound }">
+          <section v-else-if="group === 'sound'" data-rise>
             <h4 class="ui-label"><span>声音</span></h4>
             <div class="ui-group ui-frame">
               <label class="ui-row">
@@ -412,7 +365,7 @@ async function exportLogFile() {
             </div>
           </section>
 
-          <section v-else data-rise :style="{ '--rows': rows.about }">
+          <section v-else data-rise>
             <h4 class="ui-label"><span>关于</span></h4>
             <div class="ui-group ui-frame">
               <div class="ui-row">
@@ -541,9 +494,6 @@ async function exportLogFile() {
   3% { scale: 1.35; rotate: 45deg; }
   6% { scale: 0.85; rotate: 80deg; }
   8% { scale: 1.05; rotate: 90deg; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .promo-key.wiggle .icon { animation: none; }
 }
 .version-side {
   flex: none;
@@ -724,25 +674,20 @@ async function exportLogFile() {
   flex-direction: column;
   gap: 14px;
 }
-/* Groups grow in step with their row count (--rows), so a shorter column spreads its rows evenly to end on the
-   same line as the other. */
-.column > section {
-  flex: var(--rows, 1) 1 auto;
-  display: flex;
-  flex-direction: column;
+/* One grid for both columns: rows are 48px, and a title (24px line, 10px under it) with the 14px gap above it is 48px
+   as well, so every row of one column sits level with a row of the other. */
+.column > section > .ui-label {
+  line-height: 24px;
 }
-.column > section > .ui-group {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+.columns .ui-group > .ui-row {
+  height: 48px;
 }
-.column > section > .ui-group > .ui-row {
-  flex: 1 0 auto;
+.column > section:last-child {
+  margin-top: calc(var(--lift, 0) * 48px);
 }
 .columns .ui-row.off > span:first-child {
   color: var(--ink-3);
 }
-.columns .ui-range:disabled,
 .columns .ui-switch:disabled {
   opacity: 0.45;
   cursor: default;
@@ -755,14 +700,12 @@ async function exportLogFile() {
 .columns .ui-ctl {
   width: 172px;
 }
-/* Room for "120 分钟". */
-.columns .ui-val.minutes {
-  width: 64px;
-}
-
 @container panel (max-width: 860px) {
   .columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .column > section:last-child {
+    margin-top: 0;
   }
   .profile {
     flex-wrap: wrap;
