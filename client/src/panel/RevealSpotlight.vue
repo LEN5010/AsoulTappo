@@ -639,6 +639,18 @@ defineExpose({ close });
   --tag-bg: var(--grad-pearl);
   --tag-fg: var(--night);
 }
+/* On the holo band: the band drifts, the label is night plum and the white word takes a darker shadow to read. */
+.tone-holo .band {
+  background-size: 300% 100%;
+  animation: holo-drift 7s ease-in-out infinite alternate;
+}
+.tone-holo .kind {
+  --tag-bg: var(--night);
+  --tag-fg: #fff;
+}
+.tone-holo .word {
+  text-shadow: 0 2px 0 rgba(59, 42, 69, 0.3), 0 0 22px rgba(59, 42, 69, 0.2);
+}
 h3 {
   margin: 10px 0 8px;
   font: 800 clamp(28px, 4cqw, 40px)/1.2 var(--font);

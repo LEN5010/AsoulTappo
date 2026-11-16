@@ -672,6 +672,16 @@ onDeactivated(() => {
   color: var(--tone-ink, var(--ink));
   animation: solo-facts-in 380ms var(--ease-out) 160ms both;
 }
+.solo-band.tone-holo {
+  background-size: 300% 100%;
+  animation: solo-band-in 420ms var(--ease-in-out) both, holo-drift 7s ease-in-out 420ms infinite alternate;
+}
+.tone-holo .solo-kind {
+  --tag-bg: var(--night);
+}
+.tone-holo .solo-word {
+  text-shadow: 0 2px 0 rgba(59, 42, 69, 0.3), 0 0 22px rgba(59, 42, 69, 0.2);
+}
 .solo-band.calm,
 .solo-facts.calm {
   animation: none;

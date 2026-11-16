@@ -111,6 +111,8 @@
   --grad-pearl: linear-gradient(115deg, var(--holo-pink), var(--holo-lilac) 40%, var(--holo-mint) 70%, var(--holo-cream));
   --night: #3B2A45;
   --grad-night: linear-gradient(180deg, #54405F, var(--night) 45%);
+  /* The holo version's (镭射款) band: the whole foil spectrum, drawn at 300% wide and drifted so it shimmers. */
+  --grad-holo: linear-gradient(110deg, #5FC8F5, #9A84F5 20%, #F27DBE 40%, #F7B860 60%, #5ED6B4 80%, #5FC8F5);
   /* Rarity ladder inside the one hue, gold on top. */
   --rar-common-bg: var(--surface);
   --rar-uncommon-bg: var(--c-100);
@@ -515,10 +517,21 @@
   --tone-glow: color-mix(in srgb, var(--holo-lilac) 80%, transparent);
   --tone-ink: #fff;
 }
+/* A holo version's back takes --tone-fill too: no --seal-fill. */
+.tone-holo {
+  --tone-fill: var(--grad-holo);
+  --tone-glow: color-mix(in srgb, #9A84F5 78%, transparent);
+  --tone-ink: var(--night);
+}
 .tone-legendary {
   --tone-fill: var(--grad-gold);
   --tone-glow: rgba(var(--gold-rgb), 0.85);
   --tone-ink: var(--ink);
+}
+/* The holo band drifts across its 300% width and back. */
+@keyframes holo-drift {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
 }
 /* Card backs climb the rarity ladder: paper, tint, light coral, wine. Legendary and skin backs take --tone-fill. */
 .tone-common {

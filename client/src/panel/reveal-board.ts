@@ -40,8 +40,8 @@ const MEMBER_TONES: Record<string, { color: string; top: string; bottom: string;
 };
 const rgbOf = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(", ");
 
-/** A holo version sits on the coral of the rare tier: a step above its plain card, in the one hue of the page. */
-const HOLO_TONE = "tone-rare";
+/** A holo version has a tone of its own: the foil spectrum (tokens.css). */
+const HOLO_TONE = "tone-holo";
 
 /** A skin's tone is its member's colour, so the reveal reads as hers. */
 export function memberTone(skin: string): Record<string, string> {

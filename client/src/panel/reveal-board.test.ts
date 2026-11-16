@@ -22,12 +22,12 @@ describe("entriesOf", () => {
   const card = manifest.cards.find((c) => c.holo)!;
   const drop = (over: object) => ({ item: `card:${card.id}`, rarity: "common" as const, tier: "normal" as const, new: false, count: 1, shards: 20, ...over });
 
-  it("lifts a first holo version into the spotlight under its own label, on the coral band", () => {
+  it("lifts a first holo version into the spotlight under its own label, on the holo band", () => {
     const [e] = entriesOf([drop({ holo: true, new: true, cardNew: false, shards: 0 })]);
     expect(e!.holo).toBe(true);
     expect(e!.spot).toBe(true);
     expect(e!.kind).toBe("镭射款");
-    expect(e!.tone).toBe("tone-rare");
+    expect(e!.tone).toBe("tone-holo");
   });
 
   it("shows a repeat holo version marked but without the spotlight, and a plain draw as before", () => {
