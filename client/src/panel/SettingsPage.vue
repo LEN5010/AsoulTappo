@@ -500,7 +500,6 @@ async function exportLogFile() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-right: 4px;
 }
 /* The colour itself, the size of a switch. */
 .swatch {
