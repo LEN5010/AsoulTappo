@@ -33,7 +33,6 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
       <DdzSeats class="who" :seats="seats" :size="44" />
       <div class="deal">
         <span class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ invite.base.toLocaleString("en-US") }}</b></span>
-        <span class="stake"><small>押</small><Icon name="shard" :size="14" /><b>{{ invite.deposit.toLocaleString("en-US") }}</b></span>
       </div>
       <div class="acts">
         <template v-if="!invite.sent && !invite.answered">
@@ -46,7 +45,7 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
     </template>
     <template v-else>
       <span class="fan" aria-hidden="true">
-        <DdzCard :card="51" :width="34" /><DdzCard :card="53" :width="34" /><DdzCard :card="44" :width="34" />
+        <DdzCard :card="51" :width="44" /><DdzCard :card="44" :width="44" /><DdzCard :card="53" :width="44" />
       </span>
       <div class="title">
         <h4>斗地主</h4>
@@ -90,6 +89,10 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5);
   pointer-events: none;
 }
+/* At rest the cards rise out of the bottom left corner: the line gives way there instead of running behind them. */
+.banner:not(.inviting)::before {
+  mask: radial-gradient(ellipse 64px 46px at 54px 100%, transparent 70%, #000 100%);
+}
 .banner::after {
   content: "";
   position: absolute;
@@ -102,11 +105,13 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
   -webkit-mask-composite: source-in;
 }
 .banner > * { position: relative; z-index: 1; }
-/* Three cards fanned out of the corner. */
-.fan { flex: none; display: flex; align-items: flex-end; width: 78px; height: 56px; margin-bottom: -22px; }
-.fan > * + * { margin-left: -14px; }
-.fan > :nth-child(1) { rotate: -12deg; translate: 0 4px; }
-.fan > :nth-child(3) { rotate: 12deg; translate: 0 4px; }
+/* Three cards held as a hand: turned about one point under the strip, each over the one before it, so the big joker on
+   the right shows 阿草 whole; their feet are cut off by the strip's edge. */
+.fan { flex: none; position: relative; align-self: stretch; width: 92px; margin-left: -6px; }
+/* Over the card's own `position: relative`. */
+.banner .fan > * { position: absolute; left: calc(50% - 22px); bottom: -8px; transform-origin: 50% 170%; }
+.fan > :nth-child(1) { rotate: -16deg; }
+.fan > :nth-child(3) { rotate: 16deg; }
 .title { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .title h4 { margin: 0; font: 800 22px/1 var(--font); letter-spacing: 1px; text-shadow: 0 2px 0 var(--c-600); }
 .note { margin: 0; font: 800 var(--fs-label)/1.2 var(--font); opacity: 0.95; }

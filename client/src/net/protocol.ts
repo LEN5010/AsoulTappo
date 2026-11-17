@@ -109,10 +109,10 @@ export type DdzMessage =
   | { type: "ddz_answer"; table: string; id: string }
   /** Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, error); deposits went back. */
   | { type: "ddz_over"; table: string; reason: string; by?: string }
-  /** A deal: the own hand, and the seat that bids first. */
+  /** A deal: the own hand, and the seat that bids first once the cards are dealt out (`dealSec`). */
   | {
     type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; you: number; hand: number[]; base: number; cap: number; deal: number;
-    turn: number; sec: number;
+    turn: number; sec: number; dealSec?: number;
   }
   /** A bid (0 passes); `turn` bids next while the bidding goes on. */
   | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number }

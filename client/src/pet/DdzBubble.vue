@@ -32,7 +32,7 @@ const drain = () => ({ animationDuration: `${Math.max(0, (t.value?.until ?? 0) -
       <template v-else>
         <header class="who">
           <DdzSeats :seats="seats" :size="28" bare />
-          <span class="stake"><Icon name="shard" :size="13" />{{ t.base.toLocaleString("en-US") }}<small>押 {{ t.deposit.toLocaleString("en-US") }}</small></span>
+          <span class="stake"><Icon name="shard" :size="13" />{{ t.base.toLocaleString("en-US") }}</span>
         </header>
         <div class="body" :class="{ tall: ddzBubble === 'over' }">
           <p v-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
@@ -55,7 +55,6 @@ const drain = () => ({ animationDuration: `${Math.max(0, (t.value?.until ?? 0) -
 .ddz { display: flex; flex-direction: column; gap: 8px; }
 .who { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 30px; padding: 0 2px; }
 .stake { flex: none; display: inline-flex; align-items: center; gap: 2px; font: 800 var(--fs-strong)/1 var(--font-latin); color: var(--c-700); }
-.stake small { margin-left: 6px; font: 700 var(--fs-caption)/1 var(--font); color: var(--ink-2); }
 /* One row for every step, so the paper keeps its size; without a countdown the row also takes the bar's place. */
 .body { height: 44px; display: flex; align-items: center; justify-content: center; }
 .body.tall { height: 58px; }

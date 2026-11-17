@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Starting a dou dizhu game: the three seats on a strip of the mat (the own one and the two members picked), the
-// base stake as three keys with the deposit under each, the room's members as keys to pick two of, and the key that
-// sends the invite. Members who cannot be asked are greyed.
+// base stake as three keys in a tray, the room's members as keys to pick two of, and the key that sends the invite.
+// Members who cannot be asked are greyed.
 import { computed, ref, watch } from "vue";
 import { status } from "../../stores/player";
 import { members, shownNick, youId } from "../../stores/room";
@@ -13,7 +13,6 @@ import Modal from "../../ui/Modal.vue";
 import DdzSeats from "./DdzSeats.vue";
 
 const emit = defineEmits<{ close: [] }>();
-const TIERS = ["low", "mid", "high"];
 
 const stakes = computed(() => ddzConfig.value?.stakes ?? []);
 const base = ref(stakes.value.find(ddzStakeOpen) ?? 0);
@@ -67,15 +66,13 @@ function send() {
       <div>
         <p class="label">底分</p>
         <div class="stakes">
-          <div v-for="(s, i) in stakes" :key="s" class="stake">
-            <button
-              type="button" class="ui-btn key" :class="[TIERS[Math.min(i, TIERS.length - 1)], { on: base === s }]"
-              :aria-pressed="base === s" :disabled="!ddzStakeOpen(s)" @click="base = s"
-            >
-              <Icon name="shard" :size="13" />{{ s.toLocaleString("en-US") }}
-            </button>
-            <small>押 {{ ddzDeposit(s).toLocaleString("en-US") }}</small>
-          </div>
+          <button
+            v-for="s in stakes" :key="s" type="button" class="ui-btn stake" :class="{ primary: base === s }"
+            :aria-pressed="base === s" :disabled="!ddzStakeOpen(s)"
+            :title="ddzStakeOpen(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
+          >
+            <Icon name="shard" :size="14" />{{ s.toLocaleString("en-US") }}
+          </button>
         </div>
       </div>
       <div>
@@ -136,17 +133,21 @@ function send() {
 .body { padding: 18px 24px 22px; display: flex; flex-direction: column; gap: 16px; }
 .label { margin: 0 0 8px; font: 800 12px/1 var(--font); color: var(--ink-2); }
 
-/* The base stakes: the duel's three keys, one step deeper per stake; the one chosen stays down. */
-.stakes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.stake { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; }
-.stake .ui-btn.key { width: 100%; min-width: 0; height: 40px; padding: 0; gap: 2px; font: 800 15px/1 var(--font-latin); color: var(--ink); }
-.key .icon { color: var(--c-600); }
-.stake .ui-btn.mid:not(:disabled) { --key-top: var(--c-100); --key-bottom: var(--c-200); --key-lip: var(--c-300); }
-.stake .ui-btn.high:not(:disabled) { --key-top: var(--c-400); --key-bottom: var(--c-500); --key-lip: var(--c-600); }
-.stake .ui-btn.on:not(:disabled) { --key-y: 2px; --key-lip-h: 1px; box-shadow: 0 0 0 2px var(--c-600); }
-.stake small { font: 700 var(--fs-caption)/1 var(--font); color: var(--ink-2); white-space: nowrap; }
-.key:disabled { color: var(--ink-3); }
-.key:disabled .icon, .key:disabled + small { color: var(--ink-3); }
+/* The base stakes: three keys in one tray, all alike; the one chosen is the coral key, pressed down. A stake whose
+   deposit the save cannot pay is greyed, the deposit in its tooltip. */
+.stakes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 6px 8px;
+  border-radius: calc(var(--radius-key) + 6px);
+  background: var(--c-100);
+}
+.stake { height: 44px; min-width: 0; padding: 0; gap: 3px; font: 800 18px/1 var(--font-latin); }
+.stake .icon { color: var(--c-600); }
+.stake.primary:not(:disabled) { color: #fff; text-shadow: 0 1px 0 var(--c-600); }
+.stake.primary:not(:disabled) .icon { color: #fff; }
+.stake:disabled, .stake:disabled .icon { color: var(--ink-3); }
 
 /* The room's members: a key each, with a face. A picked one stays down with a tick. */
 .members { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 164px; overflow: auto; padding: 2px 2px 5px; margin: -2px -2px -5px; }

@@ -15,8 +15,8 @@ Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in tu
 - ``ddz_answer`` {id}: member `id` accepted.
 - ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | error. Deposits taken went back.
-- ``ddz_deal`` {seats: [{id, nick, character, auto, away}], you, hand, base, cap, deal, turn, sec}: a deal; `turn`
-  bids first.
+- ``ddz_deal`` {seats: [{id, nick, character, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec}: a deal;
+  the clients deal the cards out over `dealSec` seconds, then `turn` bids first with `sec` seconds.
 - ``ddz_bid`` {seat, bid, turn?, sec?}: a bid (0 passes); `turn` bids next when the bidding goes on.
 - ``ddz_landlord`` {seat, bid, bottom, mult, turn, sec}: `seat` is the landlord, takes `bottom` and leads.
 - ``ddz_play`` {seat, cards, left, mult, bombs, turn?, sec?, lead?}: a play ([] passes); `turn` plays next and leads
@@ -55,6 +55,8 @@ AUTO_SEC = 1.2
 AUTO_AFTER = 2
 # Deals nobody bids on before the table is given up and the deposits go back.
 MAX_DEALS = 3
+# The clients deal the cards out face down and turn them over in this long; the first bid's time starts after it.
+DEAL_SEC = 2.2
 
 INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
 
@@ -383,7 +385,7 @@ class Tables:
             s.hand = sorted(deck[i * 17:(i + 1) * 17])
             s.bid, s.plays, s.again = None, 0, False
         first = self.rng.randrange(3)
-        sec = self._give_turn(table, first, self.bank.cfg()["bidSec"])
+        sec = self._give_turn(table, first, self.bank.cfg()["bidSec"], wait=DEAL_SEC)
         seats = [{"id": s.id, "nick": s.nick, "character": s.character, "auto": s.auto,
                   "away": s.peer is None or s.quit} for s in table.seats]
         cfg = self.bank.cfg()
@@ -391,10 +393,11 @@ class Tables:
             if s.peer is not None and not s.quit:
                 s.peer.enqueue({"type": "ddz_deal", "table": table.id, "seats": seats, "you": i, "hand": s.hand,
                                 "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "turn": first,
-                                "sec": sec})
+                                "sec": sec, "dealSec": DEAL_SEC})
 
-    def _give_turn(self, table: Table, seat: int, sec: float) -> float:
-        """Hands the move to [seat] for [sec] seconds (a seat played for moves at once); returns the seconds."""
+    def _give_turn(self, table: Table, seat: int, sec: float, wait: float = 0.0) -> float:
+        """Hands the move to [seat] for [sec] seconds, starting [wait] seconds from now (a seat played for moves at
+        once); returns the seconds of the move."""
         self._cancel_timer(table)
         s = table.seats[seat]
         if s.auto or s.peer is None:
@@ -402,9 +405,9 @@ class Tables:
         table.turn = seat
         table.step += 1
         table.turn_sec = sec
-        table.deadline = self.clock() + sec
+        table.deadline = self.clock() + wait + sec
         step = table.step
-        table.timer = self.timers.later(sec, lambda: self._expired(table, step))
+        table.timer = self.timers.later(wait + sec, lambda: self._expired(table, step))
         return sec
 
     async def _expired(self, table: Table, step: int) -> None:

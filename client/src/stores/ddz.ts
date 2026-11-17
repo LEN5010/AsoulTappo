@@ -78,6 +78,10 @@ export interface DdzState {
   bottom: number[];
   mult: number;
   bombs: number;
+  /** This deal's bombs in the order they were played (a seat taken again knows only how many, as bombs). */
+  boosts: ("bomb" | "rocket")[];
+  /** The cards are dealt out until then (local ms); the bids wait for it. */
+  dealUntil: number;
   /** The seat to move, null between moves. */
   turn: number | null;
   /** The seat to move leads: nothing to beat. */
@@ -184,7 +188,8 @@ const countdown = (sec: number) => ({ sec, until: Date.now() + sec * 1000 });
 function blank(id: string): DdzState {
   return {
     id, phase: "invite", you: 0, seats: [], sent: false, answered: false, accepted: [], base: 0, deposit: 0, cap: 0, deal: 0,
-    hand: [], bid: 0, landlord: null, bottom: [], mult: 1, bombs: 0, turn: null, lead: false, trick: [null, null, null],
+    hand: [], bid: 0, landlord: null, bottom: [], mult: 1, bombs: 0, boosts: [], dealUntil: 0, turn: null, lead: false,
+    trick: [null, null, null],
     sec: 0, until: 0, acted: false, result: null, closed: false, reason: "", by: "", log: [],
   };
 }
@@ -255,10 +260,15 @@ export function onDdzMessage(msg: DdzMessage): void {
       Object.assign(t, {
         bid: msg.bid, landlord: msg.landlord, bottom: msg.bottom, mult: msg.mult, bombs: msg.bombs, turn: msg.turn,
         lead: msg.lead, trick: msg.trick, sec: msg.of, until: Date.now() + msg.sec * 1000,
+        boosts: Array<"bomb">(msg.bombs).fill("bomb"),
       });
       note(t, { kind: "sync" });
     } else {
+      // The first bid's time starts once the cards are dealt out.
+      const wait = (msg.dealSec ?? 0) * 1000;
       setTurn(t, msg.turn, msg.sec);
+      t.dealUntil = Date.now() + wait;
+      t.until += wait;
       note(t, { kind: "deal" });
     }
     ddz.value = t;
@@ -307,6 +317,7 @@ export function onDdzMessage(msg: DdzMessage): void {
       if (msg.seat === t.you && msg.cards.length) t.hand = t.hand.filter((c) => !msg.cards.includes(c));
       t.mult = msg.mult;
       t.bombs = msg.bombs;
+      if (isBomb(msg.cards)) t.boosts.push(msg.cards.length === 2 ? "rocket" : "bomb");
       t.lead = !!msg.lead;
       setTurn(t, msg.turn, msg.sec);
       note(t, { kind: "play", seat: msg.seat, cards: msg.cards, bomb: isBomb(msg.cards) });
@@ -403,7 +414,7 @@ const myTurn = (t: DdzState | null, phase: DdzState["phase"]): t is DdzState =>
 export function bidDdz(bid: number): void {
   if (viaDesk("bid", bid)) return;
   const t = ddz.value;
-  if (!myTurn(t, "bid") || (bid !== 0 && (bid <= t.bid || bid > 3))) return;
+  if (!myTurn(t, "bid") || Date.now() < t.dealUntil || (bid !== 0 && (bid <= t.bid || bid > 3))) return;
   t.acted = true;
   sendDdz({ type: "ddz_bid", table: t.id, bid });
 }

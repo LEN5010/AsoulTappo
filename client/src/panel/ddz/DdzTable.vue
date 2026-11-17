@@ -3,7 +3,7 @@
 // middle, the two other seats' live pets behind it and the own pet beside the hand. Cards are picked by click, by
 // dragging across them, or by their rank on the keyboard; the keys under the hand carry the key that presses them.
 // Drawn on a stage of at least 748×600 that is scaled as one piece to the room the panel has.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { hints, playable } from "../../ddz/rules";
 import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey } from "../../ddz/table";
 import { cardSlide, flip } from "../../audio/sfx";
@@ -12,6 +12,8 @@ import { pet } from "../../stores/pet";
 import { localPet, members, shownNick } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import { autoDdz, againDdz, bidDdz, ddz, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
+import NamePlate from "../../pet/NamePlate.vue";
+import { getPlate } from "../../pet/plates";
 import PetView from "../../pet/PetView.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
@@ -34,6 +36,13 @@ const memberOf = (seat: number) => {
   return s.away ? null : members.get(s.id) ?? null;
 };
 const nickOf = (seat: number) => (seat === you.value ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
+/** The name plate a seat shows in place of its name tag: the own one when worn, a partner's unless plates are off. */
+const PLATE = { w: 168, h: 24 };
+const plateOf = (seat: number): string | undefined => {
+  if (seat === you.value) return getPlate(settings.plate)?.id;
+  const m = memberOf(seat);
+  return settings.showPlates && m ? getPlate(m.plate)?.id : undefined;
+};
 
 // ---- the stage: at least BASE, scaled as one piece
 const BASE = { w: 748, h: 600 };
@@ -57,6 +66,49 @@ const fresh = ref(new Set<number>());
 let freshTimer: ReturnType<typeof setTimeout> | undefined;
 /** Changes with every deal, so the cards come in one by one again. */
 const dealt = ref(0);
+
+// ---- the deal: the cards fly in face down from the bottom cards one by one, then turn over left to right in a
+// wave. The keys to bid wait for it (the server starts the first bid's time after `dealSec`). FLIP_MS and
+// FLIP_STEP_MS are the `turn-over` animation's length and its delay per card in the stylesheet.
+const DEAL_FLIGHT_MS = 260;
+const FLIP_MS = 440;
+const FLIP_STEP_MS = 36;
+/** Cards dealt so far while a deal runs (the other seats' counts follow it); null when no deal runs. */
+const dealtN = ref<number | null>(null);
+const dealing = computed(() => dealtN.value !== null);
+/** The hand still shows its backs. */
+const shut = ref(false);
+const dealStep = ref(0);
+let dealTimers: ReturnType<typeof setTimeout>[] = [];
+function startDeal() {
+  dealTimers.forEach(clearTimeout);
+  dealTimers = [];
+  const total = t.value.dealUntil - Date.now();
+  const n = t.value.hand.length;
+  if (total <= 0 || !n) { dealtN.value = null; shut.value = false; return; }
+  const turnOver = FLIP_MS + (n - 1) * FLIP_STEP_MS;
+  const span = Math.max(0, total - turnOver - DEAL_FLIGHT_MS);
+  dealStep.value = n > 1 ? span / (n - 1) : 0;
+  dealtN.value = 0;
+  shut.value = true;
+  for (let i = 0; i < n; i++) {
+    dealTimers.push(setTimeout(() => { dealtN.value = i + 1; if (i % 2 === 0) cardSlide(); }, i * dealStep.value));
+  }
+  dealTimers.push(setTimeout(() => { shut.value = false; flip(); }, span + DEAL_FLIGHT_MS));
+  dealTimers.push(setTimeout(() => { dealtN.value = null; }, total));
+}
+/** Cards a seat shows: while the deal runs, as many as were dealt out so far. */
+const leftOf = (seat: number) => {
+  const left = t.value.seats[seat]!.left;
+  return dealtN.value === null ? left : Math.min(left, dealtN.value);
+};
+/** Where card [i] of the hand flies in from: the bottom cards at the top of the stage, as an offset from its place. */
+function dealFrom(i: number): Record<string, string> {
+  const x = HAND_LEFT + handX.value + i * handFan.value.step + CARD / 2;
+  const y = stage.value.h - 166 + (CARD * 1.42) / 2;
+  return { "--fx": `${stage.value.w / 2 - x}px`, "--fy": `${46 - y}px` };
+}
+
 watch(() => t.value.hand, (hand) => {
   const held = new Set(hand);
   if ([...selected.value].some((c) => !held.has(c))) selected.value = new Set([...selected.value].filter((c) => held.has(c)));
@@ -79,7 +131,7 @@ function setCards(from: number, to: number, on: boolean) {
 }
 // A press picks or drops the card under it; dragging on gives every card it crosses the same.
 function handDown(e: PointerEvent) {
-  if (e.button !== 0 || !playing.value) return;
+  if (e.button !== 0 || !playing.value || dealing.value) return;
   const at = cardUnder(e);
   if (at < 0) { selected.value = new Set(); return; }
   drag = { on: !selected.value.has(t.value.hand[at]!), at, id: e.pointerId };
@@ -123,7 +175,7 @@ function pass() {
   }
 }
 function bid(n: number) {
-  if (myTurn.value && t.value.phase === "bid" && !t.value.acted && (n === 0 || n > t.value.bid)) bidDdz(n);
+  if (myTurn.value && !dealing.value && t.value.phase === "bid" && !t.value.acted && (n === 0 || n > t.value.bid)) bidDdz(n);
 }
 
 // Leaving a game under way asks first: the seat is played to the end and the result still counts.
@@ -174,17 +226,64 @@ function drain() {
 const shownMult = ref(1);
 const multEl = ref<HTMLElement>();
 const matEl = ref<HTMLElement>();
+const factorsEl = ref<HTMLElement>();
 const mult = computed(() => (t.value.phase === "bid" ? Math.max(1, t.value.bid) : t.value.mult));
+/** A bomb's ×2 flies from its cards into the row of factors first; the big number goes up when it lands. */
+const FLY_DELAY_MS = 180;
+const FLY_MS = 480;
 let stopCount: (() => void) | undefined;
+let countTimer: ReturnType<typeof setTimeout> | undefined;
 watch(mult, (to, from) => {
   stopCount?.();
+  clearTimeout(countTimer);
   if (from === undefined || to <= from) { shownMult.value = to; return; }
-  stopCount = countTo(shownMult, to, 380);
-  multEl.value?.animate(
-    [{ scale: "1" }, { scale: "1.28", offset: 0.3 }, { scale: "0.96", offset: 0.7 }, { scale: "1" }],
-    { duration: 460, easing: "ease-out" },
-  );
+  const e = t.value.log.at(-1);
+  countTimer = setTimeout(() => {
+    stopCount = countTo(shownMult, to, 380);
+    multEl.value?.animate(
+      [{ scale: "1" }, { scale: "1.28", offset: 0.3 }, { scale: "0.96", offset: 0.7 }, { scale: "1" }],
+      { duration: 460, easing: "ease-out" },
+    );
+  }, e?.kind === "play" && e.bomb ? FLY_DELAY_MS + FLY_MS : 0);
 }, { immediate: true });
+
+/**
+ * The multiplier as its factors: the bid, then ×2 for each bomb and rocket, and 封顶 in place of the first one that
+ * would take it past the cap (the bombs after that add nothing).
+ */
+const factors = computed(() => {
+  const x = t.value;
+  if (!x.bid) return [];
+  const out = [{ key: `bid-${x.deal}-${x.bid}`, label: "叫分", value: String(x.bid) }];
+  let at = x.bid;
+  for (const [i, kind] of x.boosts.entries()) {
+    if (at * 2 > x.cap) {
+      out.push({ key: `cap-${x.deal}`, label: "封顶", value: "" });
+      break;
+    }
+    at *= 2;
+    out.push({ key: `boost-${x.deal}-${i}`, label: kind === "rocket" ? "王炸" : "炸弹", value: "×2" });
+  }
+  return out;
+});
+/** Flies the newest factor in from the cards of [seat], once per factor. */
+const flown = new Set<string>();
+function flyIn(seat: number) {
+  const chip = factorsEl.value?.lastElementChild as HTMLElement | null | undefined;
+  const key = chip?.dataset.key;
+  if (!chip || !key || key.startsWith("bid-") || flown.has(key)) return;
+  flown.add(key);
+  const from = matEl.value?.querySelector(`.zone[data-seat="${seat}"]`)?.getBoundingClientRect();
+  if (!from) return;
+  const to = chip.getBoundingClientRect();
+  const dx = (from.left + from.width / 2 - (to.left + to.width / 2)) / unit.value;
+  const dy = (from.top + from.height / 2 - (to.top + to.height / 2)) / unit.value;
+  chip.animate([
+    { translate: `${dx}px ${dy}px`, scale: "1.7", opacity: 0 },
+    { translate: `${dx}px ${dy}px`, scale: "1.7", opacity: 1, offset: 0.18 },
+    { translate: "0 0", scale: "1", opacity: 1 },
+  ], { duration: FLY_MS, delay: FLY_DELAY_MS, easing: "cubic-bezier(0.55, 0, 0.3, 1)", fill: "backwards" });
+}
 
 /** What a seat has in front of it: its last play, its bid while the seats bid, its cards left at the end. */
 function zone(seat: number): { key: string; cards: number[]; said: string; small: boolean } {
@@ -217,7 +316,8 @@ function onEvent(e: DdzEvent) {
     case "deal":
       clearPicked();
       dealt.value = e.seq;
-      for (let i = 0; i < 6; i++) setTimeout(cardSlide, i * 85);
+      flown.clear();
+      startDeal();
       break;
     case "bid":
       cardSlide();
@@ -235,6 +335,7 @@ function onEvent(e: DdzEvent) {
       flip(!e.bomb);
       if (e.bomb) {
         boom.value = { seq: e.seq, seat: e.seat };
+        void nextTick(() => flyIn(e.seat));
         matEl.value?.animate(
           [{ translate: "0 0" }, { translate: "-7px 3px" }, { translate: "6px -3px" }, { translate: "-4px 2px" }, { translate: "2px -1px" }, { translate: "0 0" }],
           { duration: 420, easing: "ease-out" },
@@ -250,6 +351,8 @@ function onEvent(e: DdzEvent) {
 watch(() => t.value.log.at(-1)?.seq, () => {
   for (const e of t.value.log) if (e.seq > seen) { seen = e.seq; onEvent(e); }
 });
+// The table opens with its first deal, which is already in the log: deal it out before the hand is first drawn.
+startDeal();
 
 onMounted(() => {
   window.addEventListener("keydown", onKey);
@@ -263,6 +366,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKey);
   observer?.disconnect();
   clearTimeout(freshTimer);
+  clearTimeout(countTimer);
+  dealTimers.forEach(clearTimeout);
   stopCount?.();
 });
 </script>
@@ -298,9 +403,14 @@ onBeforeUnmount(() => {
           <div class="mult">
             <small>底分<Icon name="shard" :size="12" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
             <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
+            <span ref="factorsEl" class="factors">
+              <span v-for="f in factors" :key="f.key" class="factor" :data-key="f.key">
+                {{ f.label }}<b v-if="f.value">{{ f.value }}</b>
+              </span>
+            </span>
           </div>
 
-          <div v-for="z in zones" :key="z.side" class="zone" :class="z.side">
+          <div v-for="z in zones" :key="z.side" class="zone" :class="z.side" :data-seat="z.seat">
             <span v-if="z.said" :key="z.key" class="said" :class="{ bid: z.bid }">{{ z.said }}</span>
             <span v-else-if="z.cards.length" :key="`c-${z.key}`" class="cards" :class="{ small: z.small }">
               <DdzCard
@@ -319,8 +429,18 @@ onBeforeUnmount(() => {
             :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'right'"
           />
           <PetView v-else :character="t.seats[p.seat]!.character" :scale="0.85" />
-          <div class="plate">
-            <div class="pill" :class="{ turn: t.turn === p.seat }">
+          <div class="under">
+            <span v-if="plateOf(p.seat)" class="worn" :class="{ turn: t.turn === p.seat && !dealing }">
+              <NamePlate
+                :card="plateOf(p.seat)!" :nick="nickOf(p.seat)" :color="characterColor(t.seats[p.seat]!.character)"
+                :width="PLATE.w" :height="PLATE.h" :font="12"
+              />
+              <span class="badges">
+                <em v-if="t.landlord === p.seat" class="ui-tag dark">地主</em>
+                <em v-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
+              </span>
+            </span>
+            <div v-else class="pill" :class="{ turn: t.turn === p.seat && !dealing }">
               <i :style="{ background: characterColor(t.seats[p.seat]!.character) }" aria-hidden="true"></i>
               <span class="nick">{{ nickOf(p.seat) }}</span>
               <em v-if="t.landlord === p.seat" class="ui-tag dark">地主</em>
@@ -328,29 +448,34 @@ onBeforeUnmount(() => {
               <em v-else-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
             </div>
             <div v-if="playing" class="count" :class="{ few: t.phase === 'play' && t.seats[p.seat]!.left <= 2 }">
-              <span class="stack"><DdzCard v-for="n in Math.min(3, t.seats[p.seat]!.left)" :key="n" :card="null" :width="26" /></span>
-              <b>{{ t.seats[p.seat]!.left }}</b>
+              <span class="stack"><DdzCard v-for="n in Math.min(3, leftOf(p.seat))" :key="n" :card="null" :width="26" /></span>
+              <b>{{ leftOf(p.seat) }}</b>
             </div>
           </div>
-          <span v-if="playing && t.turn === p.seat" :key="t.until" class="clock"><i :style="drain()"></i></span>
+          <span v-if="playing && t.turn === p.seat && !dealing" :key="t.until" class="clock"><i :style="drain()"></i></span>
         </div>
 
         <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }">
           <div
-            ref="handEl" class="hand" :class="{ idle: !playing }"
+            ref="handEl" class="hand" :class="{ idle: !playing || dealing }"
             @pointerdown="handDown" @pointermove="handMove" @pointerup="handUp" @pointercancel="handUp"
           >
-            <DdzCard
-              v-for="(c, i) in t.hand" :key="`${dealt}-${c}`" :card="c" :width="CARD" class="held" :plain="i < t.hand.length - 1"
-              :class="{ up: selected.has(c), fresh: fresh.has(c) }"
+            <span
+              v-for="(c, i) in t.hand" :key="`${dealt}-${c}`" class="held"
+              :class="{ up: selected.has(c), fresh: fresh.has(c), shut, turning: dealing && !shut }"
               :style="{
                 translate: `${handX + i * handFan.step}px ${selected.has(c) || fresh.has(c) ? 0 : LIFT}px`,
-                zIndex: i, animationDelay: `${i * 28}ms`,
+                zIndex: i, '--i': i, animationDelay: `${shut ? i * dealStep : i * 28}ms`, ...(shut ? dealFrom(i) : {}),
               }"
-            />
+            >
+              <span class="sides">
+                <DdzCard class="face" :card="c" :width="CARD" :plain="i < t.hand.length - 1" />
+                <DdzCard v-if="dealing" class="back" :card="null" :width="CARD" />
+              </span>
+            </span>
           </div>
         </div>
-        <span v-if="myTurn" :key="t.until" class="clock wide"><i :style="drain()"></i></span>
+        <span v-if="myTurn && !dealing" :key="t.until" class="clock wide"><i :style="drain()"></i></span>
 
         <div class="me">
           <PetView
@@ -358,7 +483,14 @@ onBeforeUnmount(() => {
             :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
             :emote="localPet.emote" :win="localPet.win" :pulse="localPet.pulse"
           />
-          <div class="pill" :class="{ turn: t.turn === you }">
+          <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">
+            <NamePlate
+              :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(settings.character)"
+              :width="PLATE.w" :height="PLATE.h" :font="12"
+            />
+            <span class="badges"><em v-if="t.landlord === you" class="ui-tag dark">地主</em></span>
+          </span>
+          <div v-else class="pill" :class="{ turn: t.turn === you && !dealing }">
             <i :style="{ background: characterColor(settings.character) }" aria-hidden="true"></i>
             <span class="nick">{{ nickOf(you) }}</span>
             <em v-if="t.landlord === you" class="ui-tag dark">地主</em>
@@ -373,7 +505,7 @@ onBeforeUnmount(() => {
             </button>
           </template>
           <button v-else-if="mine.auto" type="button" class="ui-btn primary" @click="autoDdz(false)">取消托管</button>
-          <template v-else-if="myTurn && t.phase === 'bid'">
+          <template v-else-if="myTurn && t.phase === 'bid' && !dealing">
             <button type="button" class="ui-btn" :disabled="t.acted" @click="bid(0)">不叫<kbd>ESC</kbd></button>
             <button
               v-for="n in 3" :key="n" type="button" class="ui-btn bid" :class="{ primary: n === 3 }"
@@ -477,7 +609,8 @@ onBeforeUnmount(() => {
 }
 /* The multiplier is the one big number of the table. */
 .mult {
-  --at: max(30px, calc((100% - 195px) * 0.35));
+  /* At the mat's lowest (254) the block (small 20, number 82, factors 24) ends 17 above the own cards on the table. */
+  --at: max(22px, calc((100% - 195px) * 0.35));
   position: absolute;
   left: 50%;
   top: var(--at);
@@ -502,11 +635,29 @@ onBeforeUnmount(() => {
 }
 .mult small b { font: 800 15px/1 var(--font-latin); letter-spacing: 0.3px; }
 .mult .x {
-  font: 800 92px/88px var(--font-latin);
+  font: 800 92px/82px var(--font-latin);
   letter-spacing: -2px;
   text-shadow: 0 3px 0 var(--c-600), 0 10px 18px rgba(var(--c-900-rgb), 0.28);
 }
-.mult .x i { font-style: normal; font-size: 52px; margin-right: 2px; opacity: 0.9; }
+/* The smaller × keeps out of the line's height, which stays the number's 82. */
+.mult .x i { font-style: normal; font-size: 52px; line-height: 0; margin-right: 2px; opacity: 0.9; }
+/* What the big number is made of, as on the receipt: the bid, then ×2 for each bomb. Always takes its room, so the
+   number does not move when the first factor comes. */
+.factors { display: flex; gap: 6px; height: 22px; margin-top: 2px; }
+.factor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.24);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  animation: pop 260ms var(--ease-pop) backwards;
+}
+.factor b { font: 800 15px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
 
 /* What each seat has in front of it. Cards on the table lie a little askew; the ones in the hand do not. */
@@ -567,7 +718,15 @@ onBeforeUnmount(() => {
 .seat.right { right: 24px; }
 .seat :deep(.bg), .me :deep(.bg) { filter: var(--contour); }
 .seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
-.plate { display: flex; align-items: center; gap: 8px; max-width: 100%; margin-top: 2px; }
+/* The name tag (or plate) right under the pet; the cards left hang beside it on the side of the table's middle, so
+   nothing reaches the mat's edge. */
+.under { position: relative; display: flex; align-items: center; margin-top: 2px; }
+/* A name plate in place of the tag: whose move it is rings it, and its tags sit on its top right corner like stickers. */
+.worn { position: relative; flex: none; display: block; border-radius: 7px; transition: box-shadow var(--dur-base); }
+.worn.turn { box-shadow: 0 0 0 2.5px var(--c-600); }
+.me .worn.turn { box-shadow: 0 0 0 2.5px var(--c-500); }
+.worn .badges { position: absolute; right: -6px; top: -9px; display: flex; gap: 3px; pointer-events: none; }
+.worn .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
 .pill {
   display: flex;
   align-items: center;
@@ -591,7 +750,9 @@ onBeforeUnmount(() => {
 .pill .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill .ui-tag { flex: none; margin: 0 -5px 0 2px; }
 .pill .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
-.count { flex: none; display: flex; align-items: center; gap: 5px; font: 800 26px/1 var(--font-latin); color: #fff; text-shadow: 0 2px 0 var(--c-600); }
+.count { position: absolute; top: 50%; translate: 0 -50%; display: flex; align-items: center; gap: 5px; font: 800 26px/1 var(--font-latin); color: #fff; text-shadow: 0 2px 0 var(--c-600); white-space: nowrap; }
+.seat.left .count { left: 100%; margin-left: 10px; }
+.seat.right .count { right: 100%; margin-right: 10px; }
 .count .stack { display: flex; }
 .count .stack > * + * { margin-left: -19px; }
 /* Nearly out: the number goes onto a white disc, in deep coral. */
@@ -628,18 +789,47 @@ onBeforeUnmount(() => {
 .hand-wrap { position: absolute; bottom: 74px; height: 110px; z-index: 4; pointer-events: none; }
 .hand { position: relative; height: 110px; pointer-events: auto; touch-action: none; }
 .hand.idle { pointer-events: none; }
+/* A card of the hand: the outer box flies it in and moves it, the inner one turns it over. */
 .held {
+  --fx: 0px;
+  --fy: -90px;
   position: absolute;
   left: 0;
   top: 0;
-  transition: translate 150ms var(--ease-out), box-shadow 150ms;
+  width: 64px;
+  height: calc(64px * 1.42);
+  perspective: 600px;
+  transition: translate 150ms var(--ease-out);
   animation: deal 320ms var(--ease-out) backwards;
 }
+/* Dealt out: from the bottom cards, small and turning, one after another. */
+.held.shut { animation-duration: 260ms; animation-timing-function: cubic-bezier(0.3, 0.6, 0.35, 1); }
 @keyframes deal {
-  from { opacity: 0; transform: translate(0, -90px) scale(0.7); }
+  from { opacity: 0; transform: translate(var(--fx), var(--fy)) scale(0.62) rotate(-12deg); }
+  20% { opacity: 1; }
 }
+.sides {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+/* Over the card's own `position: relative`. */
+.held .sides > * { position: absolute; inset: 0; backface-visibility: hidden; }
+.held .sides > .back { transform: rotateY(180deg); }
+.held.shut .sides { transform: rotateY(180deg); }
+/* Turned over one after another, left to right: each lifts a little as it stands on edge, then lies down face up.
+   Holds its back until its turn comes. */
+.held.turning .sides { animation: turn-over 440ms linear calc(var(--i) * 36ms) both; }
+@keyframes turn-over {
+  from { transform: translateY(0) rotateY(180deg) scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.8, 0.6); }
+  50% { transform: translateY(-10px) rotateY(90deg) scale(1.08); animation-timing-function: cubic-bezier(0.2, 0.4, 0.3, 1); }
+  to { transform: translateY(0) rotateY(0deg) scale(1); }
+}
+.held .face { transition: box-shadow 150ms; }
 /* A picked card stands up: a coral line along its top and coral light under it. */
-.held.up, .held.fresh {
+.held.up .face, .held.fresh .face {
   box-shadow: 0 0 0 1px rgba(var(--c-900-rgb), 0.12), 0 -3px 0 var(--c-500), 0 10px 16px -4px rgba(var(--c-500-rgb), 0.95),
     -3px 3px 6px -2px rgba(var(--c-900-rgb), 0.3);
 }

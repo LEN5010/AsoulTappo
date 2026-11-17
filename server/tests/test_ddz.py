@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app import ddz_rules as rules
-from app.ddz import AUTO_AFTER, AUTO_SEC, MAX_DEALS, RETRY_SEC, Bank, Tables
+from app.ddz import AUTO_AFTER, AUTO_SEC, DEAL_SEC, MAX_DEALS, RETRY_SEC, Bank, Tables
 from app.game import Game, GameError, PlayerId, player_id_for
 from app.manifest import Manifest
 from app.rooms import RoomManager
@@ -20,12 +20,12 @@ from test_duel import ManualTimers, Sock, settle
 M = Manifest.load()
 CFG = M.ddz
 SHARDS = 100_000
-BASE = 100
+BASE = 250
 DEPOSIT = BASE * CFG["capMult"] * 2
 
 
 def test_the_example_numbers():
-    assert CFG == {"stakes": [10, 100, 1000], "capMult": 24, "rake": 10, "inviteSec": 15, "bidSec": 15,
+    assert CFG == {"stakes": [50, 250, 500], "capMult": 24, "rake": 10, "inviteSec": 15, "bidSec": 15,
                    "playSec": 30, "againSec": 30, "dailyWinCap": 50000, "minTaps": 10000}
 
 
@@ -142,7 +142,7 @@ def run(coro):
 # ------------------------------------------------------------------ the bank
 def test_deposit_is_the_most_a_landlord_can_lose():
     bank = World().bank
-    assert bank.deposit(100) == 100 * 24 * 2
+    assert bank.deposit(250) == 250 * 24 * 2
     with pytest.raises(GameError) as e:
         bank.deposit(123)
     assert e.value.code == "bad_message"
@@ -164,16 +164,16 @@ def test_start_takes_three_deposits_and_settle_pays_once():
     pids = [save(w.g, n) for n in "abc"]
     row = w.bank.start(pids, BASE)
     assert [w.shards(p) for p in pids] == [SHARDS - DEPOSIT] * 3
-    assert w.bank.settle(row, 0, True, 6) == [1080, -600, -600]
-    assert [w.shards(p) for p in pids] == [SHARDS + 1080, SHARDS - 600, SHARDS - 600]
+    assert w.bank.settle(row, 0, True, 6) == [2700, -1500, -1500]
+    assert [w.shards(p) for p in pids] == [SHARDS + 2700, SHARDS - 1500, SHARDS - 1500]
     assert w.bank.settle(row, 0, True, 6) is None and not w.bank.refund(row)
-    assert [w.shards(p) for p in pids] == [SHARDS + 1080, SHARDS - 600, SHARDS - 600]
-    assert [w.bank.net(p) for p in pids] == [1080, -600, -600]
+    assert [w.shards(p) for p in pids] == [SHARDS + 2700, SHARDS - 1500, SHARDS - 1500]
+    assert [w.bank.net(p) for p in pids] == [2700, -1500, -1500]
     day = w.g.store.ledger_amount
     from app.game import day_of
     today = day_of(w.clock.t)
-    assert day(pids[0], today, "ddz_deposit") == -DEPOSIT and day(pids[0], today, "ddz_return") == DEPOSIT + 1080
-    assert day(pids[1], today, "ddz_return") == DEPOSIT - 600
+    assert day(pids[0], today, "ddz_deposit") == -DEPOSIT and day(pids[0], today, "ddz_return") == DEPOSIT + 2700
+    assert day(pids[1], today, "ddz_return") == DEPOSIT - 1500
 
 
 def test_refund_hands_the_deposits_back_once():
@@ -189,12 +189,12 @@ def test_games_a_restart_cut_short_are_refunded(tmp_path):
     g = Game(Store(path), Manifest.load(), now=Clock())
     pids = [save(g, n) for n in "abc"]
     Bank(g).start(pids, BASE)
-    done = Bank(g).start(pids, 10)
+    done = Bank(g).start(pids, 50)
     Bank(g).settle(done, 2, False, 3)
     g.store.close()
     g = Game(Store(path), Manifest.load(), now=Clock())
     assert Bank(g).refund_open() == 1 and Bank(g).refund_open() == 0
-    assert g.store.get_player(pids[0], g.now())["shards"] == SHARDS + 27
+    assert g.store.get_player(pids[0], g.now())["shards"] == SHARDS + 135
 
 
 @pytest.mark.parametrize("seat, change, code", [
@@ -217,26 +217,27 @@ def test_who_may_sit_down(seat, change, code):
 def test_a_save_that_won_the_days_cap_starts_no_more_games():
     w = World()
     pids = [save(w.g, n, shards=10_000_000) for n in "abc"]
-    # 24 times 1000, both farmers: 43200 after the cut; the next game still starts, the one after does not.
-    w.bank.settle(w.bank.start(pids, 1000), 0, True, 24)
-    assert w.bank.net(pids[0]) == 43200
-    w.bank.settle(w.bank.start(pids, 1000), 0, True, 24)
+    # 24 times 500 for the landlord: 21600 after the cut. Below the day's cap the next game still starts (the third
+    # one too, at 43200); past it, none does.
+    for _ in range(3):
+        w.bank.settle(w.bank.start(pids, 500), 0, True, 24)
+    assert w.bank.net(pids[0]) == 64800
     with pytest.raises(GameError) as e:
-        w.bank.check(pids, 10)
+        w.bank.check(pids, 50)
     assert e.value.code == "ddz_cap"
     with pytest.raises(GameError) as e:
-        w.bank.check([pids[1], pids[0], pids[2]], 10)
+        w.bank.check([pids[1], pids[0], pids[2]], 50)
     assert e.value.code == "ddz_target_cap"
     w.clock.t += 86400
-    assert w.bank.check(pids, 10) == 480
+    assert w.bank.check(pids, 50) == 2400
 
 
 def test_status_carries_the_days_net():
     w = World()
     pids = [save(w.g, n) for n in "abc"]
     w.bank.settle(w.bank.start(pids, BASE), 1, False, 2)
-    assert w.g.status("a-ddz-token-0001")["ddz"] == {"net": 180}
-    assert w.g.status("b-ddz-token-0001")["ddz"] == {"net": -400}
+    assert w.g.status("a-ddz-token-0001")["ddz"] == {"net": 450}
+    assert w.g.status("b-ddz-token-0001")["ddz"] == {"net": -1000}
 
 
 # ------------------------------------------------------------------ invites
@@ -265,6 +266,9 @@ def test_an_invite_reaches_the_three_and_starts_when_both_accept():
         assert deals[0]["seats"] == [{"id": p.id, "nick": p.nick, "character": "嘉然", "auto": False, "away": False}
                                      for p in w.peers]
         assert (deals[0]["base"], deals[0]["cap"], deals[0]["deal"], deals[0]["sec"]) == (BASE, 24, 1, CFG["bidSec"])
+        # The first bid's time starts once the clients have dealt the cards out.
+        assert deals[0]["dealSec"] == DEAL_SEC
+        assert [h.delay for h in w.timers.live()] == [DEAL_SEC + CFG["bidSec"]]
         assert all(w.t.in_game(p) for p in w.peers)
     run(go())
 
@@ -490,10 +494,10 @@ def test_the_landlord_wins_a_spring():
         result = w.last("ddz_result")
         t_hands = result["hands"]
         assert result == {"type": "ddz_result", "table": tid, "winner": "landlord", "landlord": 0, "bid": 3,
-                          "bombs": 0, "spring": 1, "mult": 6, "base": BASE, "deltas": [1080, -600, -600],
+                          "bombs": 0, "spring": 1, "mult": 6, "base": BASE, "deltas": [2700, -1500, -1500],
                           "hands": t_hands, "sec": CFG["againSec"]}
         assert t_hands[0] == [] and len(t_hands[1]) == len(t_hands[2]) == 17
-        assert [w.shards(p) for p in w.pids] == [SHARDS + 1080, SHARDS - 600, SHARDS - 600]
+        assert [w.shards(p) for p in w.pids] == [SHARDS + 2700, SHARDS - 1500, SHARDS - 1500]
         assert all(s.of("ddz_result") == [result] for s in w.socks)
         assert not any(w.t.in_game(p) for p in w.peers) and w.t.by_id[tid].phase == "over"
     run(go())
@@ -514,9 +518,9 @@ def test_the_farmers_win_a_counter_spring_and_the_room_hears_who_won():
             await w.t.play(w.peers[seat], tid, [] if seat != 1 else [t.seats[1].hand[0]])
         await settle()
         result = w.last("ddz_result")
-        assert (result["winner"], result["spring"], result["mult"], result["deltas"]) == ("farmers", 2, 2, [-400, 180, 180])
+        assert (result["winner"], result["spring"], result["mult"], result["deltas"]) == ("farmers", 2, 2, [-1000, 450, 450])
         assert seen.of("ddz_live") == [{"type": "ddz_live", "table": tid, "ids": [a.id, b.id, c.id], "on": False,
-                                        "gains": {b.id: 180, c.id: 180}}]
+                                        "gains": {b.id: 450, c.id: 450}}]
     run(go())
 
 
@@ -772,10 +776,10 @@ def test_a_game_over_the_socket(api):
                 assert ws.receive_json()["type"] == "ddz_play"
             turn = (turn + 1) % 3
         result = a.receive_json()
-        assert result["type"] == "ddz_result" and result["deltas"] == [1080, -600, -600] and result["spring"] == 1
-        assert a.receive_json()["gains"] == {ja["you"]: 1080}
+        assert result["type"] == "ddz_result" and result["deltas"] == [2700, -1500, -1500] and result["spring"] == 1
+        assert a.receive_json()["gains"] == {ja["you"]: 2700}
         me = c.get("/api/me", headers={"X-Player-Token": tok("a")}).json()
-        assert me["shards"] == SHARDS + 1080 and me["ddz"] == {"net": 1080}
+        assert me["shards"] == SHARDS + 2700 and me["ddz"] == {"net": 2700}
 
 
 def test_a_server_without_the_game_answers_no_ddz(api, monkeypatch):

@@ -608,7 +608,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - 押金：`底分 × capMult × 2`，是地主在封顶倍数下最多输的数。三位都接受后在一个数据库事务里扣三份押金，任何一位不够资格就都不扣，三位收到 `ddz_over`（`no_shards`、`ddz_cap` 或 `ddz_locked`）。结算时每个座位拿回押金加减自己的输赢。
 - 每日净赢上限：每个存档每个北京时间日期，已结算对局的输赢累加（输的局是负数，退款的局不算）。这个数达到 `dailyWinCap` 后，这个存档当天不能再开新的一局；已经开始的一局照常结算，所以净赢可以超过上限一局的量。输不设上限。这个上限和猜拳的上限分开计算。对局的日期取扣押金时的日期。
 - 邀请：发起人发 `ddz_invite`，服务端把 `ddz_invite {table,from,ids,base,deposit,sec}` 发给三位，ids 按座位顺序。被邀请方接受后三位收到 `ddz_answer {table,id}`。任何一位拒绝、`inviteSec` 秒内没有全部接受、有人离开房间，邀请作废，三位收到 `ddz_over {table,reason,by?}`。被邀请方开了免打扰时服务端替他拒绝，他收不到邀请。被拒绝或超时后，发起人 30 秒内不能再邀请拒绝或没回应的存档（`ddz_cooldown`）；发起人自己离开房间时对两位都计这 30 秒。
-- 发牌：扣款成功后向全房间广播 `ddz_live {table,ids,on:true}`，然后每个座位收到 `ddz_deal {table,seats,you,hand,base,cap,deal,turn,sec}`：seats 为三个座位的 `{id,nick,character,auto,away}`，you 为自己的座位，hand 为 17 张牌，cap 为封顶倍数，deal 为这桌第几次发牌，turn 为先叫分的座位（随机）。
+- 发牌：扣款成功后向全房间广播 `ddz_live {table,ids,on:true}`，然后每个座位收到 `ddz_deal {table,seats,you,hand,base,cap,deal,turn,sec,dealSec}`：seats 为三个座位的 `{id,nick,character,auto,away}`，you 为自己的座位，hand 为 17 张牌，cap 为封顶倍数，deal 为这桌第几次发牌，turn 为先叫分的座位（随机）。客户端用 dealSec 秒演发牌（盖着发到手里再翻开），演完才能叫分；turn 的 sec 秒从 dealSec 秒之后开始算。
 - 叫分：从 turn 起每个座位叫一次，0 为不叫，1–3 必须高于已有的叫分。每次叫分三位收到 `ddz_bid {table,seat,bid,turn?,sec?}`。有人叫 3 分或三位都叫过后，叫分最高的座位当地主，三位收到 `ddz_landlord {table,seat,bid,bottom,mult,turn,sec}`，地主拿走 bottom 的三张底牌并先出。三位都不叫则重新发牌；连续 3 次没人叫，押金原样退回（`ddz_over` `nobid`）。
 - 出牌：轮到的座位发 `ddz_play`，三位收到 `ddz_play {table,seat,cards,left,mult,bombs,turn?,sec?,lead?}`：cards 为空是不出，left 为这个座位剩下的张数，lead 为 true 时另外两位都没要，turn 重新领出。领出的座位不能不出。不合规则的出牌返回 `ddz_bad`，没轮到返回 `ddz_turn`。
 - 倍数：`叫分 × 2^炸弹数`，春天或反春再乘 2，最多 `capMult`。炸弹和王炸都算一个炸弹。春天：地主赢，两位农民一手牌都没出过。反春：农民赢，地主只出过第一手。

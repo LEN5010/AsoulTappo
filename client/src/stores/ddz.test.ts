@@ -64,8 +64,8 @@ it("joins saying it plays, and offers a game only when the save looks able to st
   expect(socket.sent[0]).toMatchObject({ type: "join", ddz: true });
   expect(d.ddzOn.value).toBe(true);
   expect(d.ddzCanStart.value).toBe(true);
-  expect([10, 100, 1000].map(d.ddzDeposit)).toEqual([480, 4800, 48000]);
-  expect([10, 100, 1000, 50].map(d.ddzStakeOpen)).toEqual([true, true, false, false]);
+  expect([50, 250, 500].map(d.ddzDeposit)).toEqual([2400, 12000, 24000]);
+  expect([50, 250, 500, 100].map(d.ddzStakeOpen)).toEqual([true, true, false, false]);
   expect(d.ddzCanInvite(r.members.get("a")!)).toBe(true);
   expect(d.ddzCanInvite(r.members.get("me")!)).toBe(false);
   expect(d.ddzCanInvite(r.members.get("old")!)).toBe(false); // a client from before the game
@@ -82,14 +82,15 @@ it("joins saying it plays, and offers a game only when the save looks able to st
 it("sends an invite only for two other members, and tracks who accepted", async () => {
   const { socket, d } = await setup();
   const sent = socket.sent.length;
-  d.inviteDdz(["a"], 10);
-  d.inviteDdz(["a", "a"], 10);
-  d.inviteDdz(["a", "old"], 10);
-  d.inviteDdz(["a", "b"], 1000); // cannot pay the deposit
-  d.inviteDdz(["a", "b"], 100);
-  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_invite", ids: ["a", "b"], base: 100 }]);
-  socket.recv({ type: "ddz_invite", table: "t1", from: "me", ids: ["me", "a", "b"], base: 100, deposit: 4800, sec: 15 });
-  expect(d.ddz.value).toMatchObject({ id: "t1", phase: "invite", you: 0, sent: true, accepted: ["me"], base: 100, deposit: 4800 });
+  d.inviteDdz(["a"], 50);
+  d.inviteDdz(["a", "a"], 50);
+  d.inviteDdz(["a", "old"], 50);
+  d.inviteDdz(["a", "b"], 500); // cannot pay the deposit
+  d.inviteDdz(["a", "b"], 100); // not a stake
+  d.inviteDdz(["a", "b"], 250);
+  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_invite", ids: ["a", "b"], base: 250 }]);
+  socket.recv({ type: "ddz_invite", table: "t1", from: "me", ids: ["me", "a", "b"], base: 250, deposit: 12000, sec: 15 });
+  expect(d.ddz.value).toMatchObject({ id: "t1", phase: "invite", you: 0, sent: true, accepted: ["me"], base: 250, deposit: 12000 });
   expect(d.ddz.value!.seats.map((s) => s.nick)).toEqual(["我", "贝", "琳"]);
   expect(d.ddzBusy.value).toBe(true);
   expect(d.ddzCanStart.value).toBe(false);
@@ -127,9 +128,11 @@ it("plays a game from the deal to the result", async () => {
   d.answerDdz(true);
   socket.recv({ type: "ddz_live", table: "t", ids: ["a", "me", "b"], on: true });
   expect([...d.ddzPlaying.value]).toEqual(["a", "me", "b"]);
-  socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15 });
+  socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 1.8 });
   const t = () => d.ddz.value!;
-  expect(t()).toMatchObject({ phase: "bid", you: 1, turn: 0, base: 100, cap: 24, deposit: 4800 });
+  expect(t()).toMatchObject({ phase: "bid", you: 1, turn: 0, base: 100, cap: 24, deposit: 4800, sec: 15 });
+  // The cards are dealt out first; the first bid's time starts after that.
+  expect([t().dealUntil - Date.now(), t().until - Date.now()]).toEqual([1800, 16800]);
   expect(t().hand[0]).toBe(52); // held highest first
   expect(t().seats.map((s) => s.left)).toEqual([17, 17, 17]);
   expect(d.ddzAtTable.value).toBe(true);
@@ -141,6 +144,9 @@ it("plays a game from the deal to the result", async () => {
   d.bidDdz(1); // not this seat's turn
   expect(socket.sent).toHaveLength(sent);
   socket.recv({ type: "ddz_bid", table: "t", seat: 0, bid: 1, turn: 1, sec: 15 });
+  d.bidDdz(2); // the cards are still being dealt out
+  expect(socket.sent).toHaveLength(sent);
+  await vi.advanceTimersByTimeAsync(1800);
   d.bidDdz(1); // not above the bid
   d.bidDdz(2);
   d.bidDdz(3); // one move a turn
@@ -183,7 +189,7 @@ it("plays a game from the deal to the result", async () => {
   d.playDdz([52, 53]);
   socket.recv({ type: "ddz_play", table: "t", seat: 1, cards: [52, 53], left: 14, mult: 4, bombs: 1, turn: 2, sec: 30, lead: false });
   expect(t().trick).toEqual([null, [52, 53], null]);
-  expect(t()).toMatchObject({ mult: 4, bombs: 1 });
+  expect(t()).toMatchObject({ mult: 4, bombs: 1, boosts: ["rocket"] });
   expect(t().log.at(-1)).toMatchObject({ kind: "play", seat: 1, bomb: true });
   expect(t().log.map((e) => e.seq)).toEqual([...t().log.map((e) => e.seq)].sort((a, b) => a - b));
 
@@ -218,7 +224,7 @@ it("takes its seat again from the whole state, and walks away from a game", asyn
     landlord: 2, bottom: [1, 2, 3], mult: 6, bombs: 1, turn: 2, lead: false, trick: [[8], [], null], sec: 12.5, of: 30,
   });
   const t = d.ddz.value!;
-  expect(t).toMatchObject({ phase: "play", you: 2, landlord: 2, mult: 6, turn: 2, sec: 30, deposit: 480 });
+  expect(t).toMatchObject({ phase: "play", you: 2, landlord: 2, mult: 6, turn: 2, sec: 30, deposit: 480, boosts: ["bomb"], dealUntil: 0 });
   expect(t.hand).toEqual([53, 4, 0]);
   expect(t.seats.map((s) => s.left)).toEqual([5, 9, 3]);
   expect(d.ddzLast(t)).toEqual({ seat: 0, cards: [8] });
