@@ -11,6 +11,9 @@ mod input;
 mod media;
 mod autostart;
 mod monitor_pref;
+// Windows only at run time; its tap logic is plain code, tested everywhere.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod tablet;
 #[cfg(target_os = "macos")]
 mod overlay_macos;
 #[cfg(target_os = "windows")]

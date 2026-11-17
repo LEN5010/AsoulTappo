@@ -65,6 +65,7 @@ The hide key hides every window together and restores the ones that were open.
 | --- | --- |
 | `lib.rs` | Desk commands, window lifecycle (panel, todo, capture), work-area sizing, tray menu |
 | `input.rs` | Global keyboard and mouse hook (own low-level hooks on Windows, `rdev` on macOS). Emits `key_down`, `key_up`, `mouse_down/up{button}`, `mouse_move{dx,dy}`; never which key |
+| `tablet.rs` | Windows: a pen tablet in Windows Ink mode never reaches the mouse hook, so its HID reports are read through Raw Input (digitizer page, `RIDEV_INPUTSINK`): the cursor's position on each report, a left press and release for the tip. A tip-down the mouse hook also saw within 30 ms is left to the hook, so drivers in mouse mode count once |
 | `gamepad.rs`, `gamepad/playstation.rs` | Controller buttons from XInput (Windows) and Sony HID (DualShock 4, DualSense, Edge; USB and Bluetooth). The HID scan lists Sony devices only, every 5 seconds |
 | `hit.rs`, `tool_window.rs` | Hit-region matching; keeps the desk out of other apps' occlusion checks on Windows |
 | `overlay_macos.rs` | AppKit screen enumeration and work-area placement, on the main thread |

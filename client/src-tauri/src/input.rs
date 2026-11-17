@@ -1,4 +1,5 @@
-//! Global keyboard / mouse hook (own low-level hooks on Windows, `rdev` elsewhere).
+//! Global keyboard / mouse hook (own low-level hooks on Windows, `rdev` elsewhere). On Windows a pen tablet's
+//! reports join the same stream (src/tablet.rs).
 //!
 //! PRIVACY: this module never forwards *which* key was pressed. The frontend
 //! only learns "a key went down/up", which mouse button, and relative mouse
@@ -170,6 +171,17 @@ where
             }
         }
     });
+
+    // A pen in Windows Ink mode never reaches the mouse hook; its reports are read on a thread of their own.
+    #[cfg(target_os = "windows")]
+    {
+        let mut producer = Producer { tx: tx.clone(), last_move: None };
+        std::thread::spawn(move || {
+            if let Err(e) = crate::tablet::run(move |ev, injected| producer.push(ev, injected)) {
+                applog!("tablet", "not listening for pen reports: {e}");
+            }
+        });
+    }
 
     std::thread::spawn(move || loop {
         let hook = {
@@ -369,6 +381,10 @@ mod win_hook {
             };
             match ev {
                 Some(ev) => {
+                    if wparam as u32 == WM_LBUTTONDOWN {
+                        // So a pen tap that a tablet driver also sends as a mouse press counts once.
+                        crate::tablet::note_mouse_left_down();
+                    }
                     let injected = matches!(ev, EventType::ButtonPress(_)).then(|| info.flags & LLMHF_INJECTED != 0);
                     if let Some(injected) = injected {
                         super::note_raw_press(injected);
@@ -425,7 +441,7 @@ fn went_silent(last_input: u32, last_heard: u32) -> bool {
 /// `spawn_hook` installs a new one.
 ///
 /// It also fires, harmlessly, while the hook is muted rather than gone: the secure desktop
-/// (UAC, lock screen), pen or touch input that never reaches the mouse hook. `MIN_LIFE`
+/// (UAC, lock screen), touch input that never reaches the mouse hook. `MIN_LIFE`
 /// keeps that from replacing it on every check. An elevated window in front mutes it for as
 /// long as it stays there (src/elevation.rs); the hook is left alone meanwhile.
 #[cfg(target_os = "windows")]

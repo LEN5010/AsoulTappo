@@ -57,12 +57,14 @@ hidapi = { version = "2.6.7", default-features = false, features = ["macos-share
 [target.'cfg(target_os = "windows")'.dependencies]
 hidapi = { version = "2.6.7", default-features = false, features = ["windows-native"] }
 # XInput for game controllers (src/gamepad.rs), the stuck-drag check (src/lib.rs), the
-# input hook and its watchdog (src/input.rs), the overlay's tool-window subclass
+# input hook and its watchdog (src/input.rs), pen tablets through Raw Input (src/tablet.rs), the overlay's tool-window subclass
 # (src/tool_window.rs), the diagnostics written to the log (src/diag.rs) and restarting as
 # administrator (src/elevation.rs; ShellExecuteExW's struct needs Win32_System_Registry).
 windows-sys = { version = "0.61", features = [
+    "Win32_Devices_HumanInterfaceDevice",
     "Win32_Graphics_Gdi",
     "Win32_Security",
+    "Win32_UI_Input",
     "Win32_UI_Input_XboxController",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
