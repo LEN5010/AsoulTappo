@@ -11,6 +11,7 @@ import { inRoom, registerTap, syncMotion, youId } from "./room";
 import { settings } from "./settings";
 import { popShards } from "./shardPop";
 import { noteActivity, windowVisible } from "./activity";
+import { noteAutoInput } from "./autoHint";
 
 const pose = new PetPose();
 export const pet = pose.pet;
@@ -29,7 +30,9 @@ watch(() => status.value?.tapCooldown, (seconds) => {
   tapCooldown.value = guard.until;
 });
 
-function tap(): void {
+watch(() => status.value?.autoInput, (seconds) => noteAutoInput(seconds), { immediate: true });
+
+function tap(injected?: boolean): void {
   const was = guard.until;
   if (!guard.allow(Date.now())) {
     tapStats.blocked += 1;
@@ -39,7 +42,7 @@ function tap(): void {
   }
   tapStats.counted += 1;
   registerTap();
-  countInput();
+  countInput(injected);
   bumpCounter();
   popShards();
 }
@@ -50,7 +53,7 @@ export function onInput(e: InputEvent, count = true): void {
   pose.input(e, settings.mouseFollow && windowVisible.value ? settings.mouseSensitivity : null);
   if (e.kind !== "key_down" && e.kind !== "mouse_down") return;
   tapStats[e.kind === "key_down" ? "keys" : "mouse"] += 1;
-  if (count) tap();
+  if (count) tap(e.injected);
 }
 
 export function stopPet(): void { pose.stop(); }

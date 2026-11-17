@@ -12,11 +12,14 @@ export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "
 export type WindowLabel = typeof windowLabel;
 
 export type MouseButton = "left" | "right" | "middle" | "other";
-/** Privacy-filtered input events from the Rust hook (src-tauri/src/input.rs). No key identity. */
+/**
+ * Privacy-filtered input events from the Rust hook (src-tauri/src/input.rs). No key identity. A press says whether
+ * other software sent it (an auto-clicker, a macro, a remote-control program) where the system tells: Windows.
+ */
 export type InputEvent =
-  | { kind: "key_down" }
+  | { kind: "key_down"; injected?: boolean }
   | { kind: "key_up" }
-  | { kind: "mouse_down"; button: MouseButton }
+  | { kind: "mouse_down"; button: MouseButton; injected?: boolean }
   | { kind: "mouse_up"; button: MouseButton }
   | { kind: "mouse_move"; dx: number; dy: number };
 

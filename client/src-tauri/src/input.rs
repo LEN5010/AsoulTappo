@@ -132,7 +132,9 @@ pub fn note_emit_failure() {
 }
 
 /// Spawn the global hook and the thread that filters its events; `emit` is called
-/// for every filtered event.
+/// for every filtered event. With a key or button press it is also told whether other
+/// software sent it (an auto-clicker, a macro, a remote-control program): `Some` where
+/// the system says (Windows), `None` where it does not and for every other event.
 ///
 /// The OS hook callback only timestamps the event and queues it: Windows silently
 /// removes a low-level hook whose callback runs past `LowLevelHooksTimeout`, which
@@ -144,14 +146,14 @@ pub fn note_emit_failure() {
 /// never unhooks; the OS removes a thread's hooks when the thread exits.
 pub fn spawn_hook<F>(emit: F)
 where
-    F: Fn(InputEvent) + Send + 'static,
+    F: Fn(InputEvent, Option<bool>) + Send + 'static,
 {
-    let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant)>();
+    let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant, Option<bool>)>();
 
     std::thread::spawn(move || {
         let mut state = InputState::new();
         let mut filtered = Vec::new();
-        for (ev, at) in rx {
+        for (ev, at, injected) in rx {
             state.handle(&ev, at, &mut filtered);
             for out in filtered.drain(..) {
                 let counter = match out {
@@ -163,7 +165,8 @@ where
                 if let Some(counter) = counter {
                     counter.fetch_add(1, Ordering::Relaxed);
                 }
-                emit(out);
+                let press = matches!(out, InputEvent::KeyDown | InputEvent::MouseDown { .. });
+                emit(out, if press { injected } else { None });
             }
         }
     });
@@ -241,12 +244,13 @@ fn note_raw_press(injected: bool) {
 /// What a hook callback does with an event: note that the hook is alive, drop wheel
 /// events, thin out mouse moves, queue the rest for the filter thread.
 struct Producer {
-    tx: Sender<(EventType, Instant)>,
+    tx: Sender<(EventType, Instant, Option<bool>)>,
     last_move: Option<Instant>,
 }
 
 impl Producer {
-    fn push(&mut self, ev: EventType) {
+    /// `injected`: for a press, whether other software sent it, where the hook can tell.
+    fn push(&mut self, ev: EventType, injected: Option<bool>) {
         watchdog::heard();
         let now = Instant::now();
         match ev {
@@ -262,7 +266,7 @@ impl Producer {
             }
             _ => {}
         }
-        let _ = self.tx.send((ev, now));
+        let _ = self.tx.send((ev, now, injected));
     }
 }
 
@@ -287,7 +291,7 @@ fn listen(mut producer: Producer) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     rdev::set_is_main_thread(false);
     applog!("hook", "listening");
-    rdev::listen(move |event| producer.push(event.event_type)).map_err(|e| format!("{e:?}"))
+    rdev::listen(move |event| producer.push(event.event_type, None)).map_err(|e| format!("{e:?}"))
 }
 
 /// Plain low-level hooks whose callbacks only read the event and queue it.
@@ -318,11 +322,11 @@ mod win_hook {
         static PRODUCER: RefCell<Option<Producer>> = const { RefCell::new(None) };
     }
 
-    fn push(ev: EventType) {
+    fn push(ev: EventType, injected: Option<bool>) {
         PRODUCER.with(|p| {
             if let Ok(mut p) = p.try_borrow_mut() {
                 if let Some(p) = p.as_mut() {
-                    p.push(ev);
+                    p.push(ev, injected);
                 }
             }
         });
@@ -335,10 +339,11 @@ mod win_hook {
             let vk = info.vkCode;
             match wparam as u32 {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
-                    super::note_raw_press(info.flags & LLKHF_INJECTED != 0);
-                    push(EventType::KeyPress(Key::Unknown(vk)))
+                    let injected = info.flags & LLKHF_INJECTED != 0;
+                    super::note_raw_press(injected);
+                    push(EventType::KeyPress(Key::Unknown(vk)), Some(injected))
                 }
-                WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk))),
+                WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk)), None),
                 _ => {}
             }
         }
@@ -364,10 +369,11 @@ mod win_hook {
             };
             match ev {
                 Some(ev) => {
-                    if matches!(ev, EventType::ButtonPress(_)) {
-                        super::note_raw_press(info.flags & LLMHF_INJECTED != 0);
+                    let injected = matches!(ev, EventType::ButtonPress(_)).then(|| info.flags & LLMHF_INJECTED != 0);
+                    if let Some(injected) = injected {
+                        super::note_raw_press(injected);
                     }
-                    push(ev);
+                    push(ev, injected);
                 }
                 // Not forwarded, but the system counts it as input: without this the watchdog
                 // takes a hook that only hears scrolling for a dead one.

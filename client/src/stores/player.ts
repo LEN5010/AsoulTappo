@@ -297,8 +297,9 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   if (timer) { void refresh(); void heartbeat(); }
 }, { flush: "sync" });
 
-export function countInput(): void {
-  current.reporter.add(1);
+/** One tap; `injected` as the input hook said of it (see InputEvent). */
+export function countInput(injected?: boolean): void {
+  current.reporter.add(1, injected);
 }
 
 /** The input guard stopped counting taps until `until` (ms): tell the server now, so the multiplier stops too. */

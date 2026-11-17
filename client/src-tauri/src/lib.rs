@@ -135,6 +135,16 @@ fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) ->
     export_log_files(&app)
 }
 
+/// An input event as the page gets it. `injected` is there only with a key or button press on a system that
+/// tells whether other software sent it: true for one from an auto-clicker, a macro or a remote-control program.
+#[derive(serde::Serialize, Clone)]
+struct HeardInput {
+    #[serde(flatten)]
+    event: input::InputEvent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    injected: Option<bool>,
+}
+
 /// Whether this is the debug build (`--features debug-log`), which logs more from the page too.
 #[tauri::command]
 fn debug_log() -> bool {
@@ -1202,7 +1212,7 @@ pub fn run() {
             let input_overlay = overlay.clone();
             // Debug build: when the last click line was written, and clicks skipped since.
             let click_log: Mutex<(Option<Instant>, u32)> = Mutex::new((None, 0));
-            input::spawn_hook(move |ev| {
+            input::spawn_hook(move |ev, injected| {
                 let down = matches!(ev, input::InputEvent::MouseDown { .. });
                 let passing = input_overlay.passing.load(Ordering::Relaxed);
                 // A press that fell through the overlay landed on another window. The Windows overlay
@@ -1227,14 +1237,14 @@ pub fn run() {
                     }
                 }
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
-                if handle.emit("input", ev).is_err() {
+                if handle.emit("input", HeardInput { event: ev, injected }).is_err() {
                     input::note_emit_failure();
                 }
             });
             // Background controller input: Windows XInput and PS4/PS5 HID on Windows/macOS.
             let pad_handle = app.handle().clone();
             gamepad::spawn_poller(move |ev| {
-                let _ = pad_handle.emit("input", ev);
+                let _ = pad_handle.emit("input", HeardInput { event: ev, injected: None });
             });
 
             Ok(())
@@ -1249,4 +1259,23 @@ pub fn run() {
                 let _ = _app.emit_to("main", "tray", "open-panel");
             }
         });
+}
+
+#[cfg(test)]
+mod heard_input_tests {
+    use super::*;
+
+    #[test]
+    fn the_page_is_told_who_sent_a_press_only_where_the_hook_can_tell() {
+        let json = |event, injected| serde_json::to_value(HeardInput { event, injected }).unwrap();
+        assert_eq!(json(input::InputEvent::KeyDown, None), serde_json::json!({ "kind": "key_down" }));
+        assert_eq!(
+            json(input::InputEvent::KeyDown, Some(true)),
+            serde_json::json!({ "kind": "key_down", "injected": true })
+        );
+        assert_eq!(
+            json(input::InputEvent::MouseDown { button: input::MouseButton::Left }, Some(false)),
+            serde_json::json!({ "kind": "mouse_down", "button": "left", "injected": false })
+        );
+    }
 }

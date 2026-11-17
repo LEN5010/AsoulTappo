@@ -62,6 +62,26 @@ describe("ActivityReporter", () => {
       { taps: 0, session: "s".repeat(24), sequence: 2, cooldown: 50 },
     ]);
   });
+  it("says how many taps other software sent once the hook can tell", async () => {
+    const batches: unknown[] = [];
+    const session = "s".repeat(24);
+    const r = new ActivityReporter(async (batch) => { batches.push(batch); }, session);
+    // A hook that cannot tell (macOS, a gamepad press): the batch says nothing.
+    r.add(2);
+    await r.flush();
+    r.add(1, false);
+    r.add(3, true);
+    r.add(1);
+    await r.flush();
+    // The count starts over with each batch, and a batch of a hand's taps says zero.
+    r.add(4, false);
+    await r.flush();
+    expect(batches).toEqual([
+      { taps: 2, session, sequence: 1 },
+      { taps: 5, session, sequence: 2, injected: 3 },
+      { taps: 4, session, sequence: 3, injected: 0 },
+    ]);
+  });
   it("retries the committed batch identity without crediting new input twice", async () => {
     const seen = new Set<string>();
     let credited = 0;

@@ -21,6 +21,11 @@ export interface PlayerStatus {
   checkin?: { available: boolean };
   /** Seconds before taps count again after input too fast for a hand; missing on older servers. */
   tapCooldown?: number;
+  /**
+   * Seconds for which the server counts this save's input as automatic (an auto-clicker, a macro), 0 when it does
+   * not; missing on older servers. Rooms do not show the save's taps and motion meanwhile.
+   */
+  autoInput?: number;
   /** Scratch cards left today and cards since the last emote; missing on servers without them. */
   scratch?: { left: number; pity: number };
   /** Rock-paper-scissors: today's net win (prizes minus bets). Missing on servers without duels. */
@@ -181,6 +186,8 @@ export interface ActivityBatch {
   sequence: number;
   /** Seconds left of a cooldown the input guard started, on the first batch after it trips. */
   cooldown?: number;
+  /** How many of the taps other software sent; left out where the input hook cannot tell. */
+  injected?: number;
 }
 
 export class Api {
@@ -270,6 +277,9 @@ export class Api {
 /** Accumulates taps locally and reports only the count, in batches. */
 export class ActivityReporter {
   private pending = 0;
+  /** Of the pending taps, those other software sent; `tells` once the hook has said so for any press. */
+  private pendingInjected = 0;
+  private tells = false;
   private sequence = 0;
   private batch: ActivityBatch | null = null;
   private busy: Promise<boolean> | null = null;
@@ -277,8 +287,11 @@ export class ActivityReporter {
   private coolUntil = 0;
   constructor(private send: (batch: ActivityBatch) => Promise<unknown>, private session = newToken()) {}
 
-  add(n = 1): void {
+  /** Counts taps; `injected` is what the hook said of them, undefined where it cannot tell. */
+  add(n = 1, injected?: boolean): void {
     this.pending = Math.min(this.pending + n, 5000 - (this.batch?.taps ?? 0));
+    if (injected !== undefined) this.tells = true;
+    if (injected) this.pendingInjected = Math.min(this.pendingInjected + n, this.pending);
   }
   get size(): number {
     return this.pending + (this.batch?.taps ?? 0);
@@ -297,6 +310,8 @@ export class ActivityReporter {
     if (!this.batch && !this.due(now)) return Promise.resolve(true);
     if (!this.batch) {
       this.batch = { taps: this.pending, session: this.session, sequence: ++this.sequence };
+      if (this.tells) this.batch.injected = this.pendingInjected;
+      this.pendingInjected = 0;
       const cooldown = Math.ceil((this.coolUntil - now) / 1000);
       if (cooldown > 0) this.batch.cooldown = cooldown;
       this.coolUntil = 0;
