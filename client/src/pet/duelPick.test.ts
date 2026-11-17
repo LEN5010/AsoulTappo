@@ -313,12 +313,12 @@ describe("poking and the profile key over a partner's pet", () => {
     const guest = room.loadProfile("guest");
     await vi.advanceTimersByTimeAsync(0);
     // one request answers both waits for the same member; the next waits for the server's spacing
-    expect(socket.sent.filter((m) => m.type === "profile")).toEqual([{ type: "profile", id: "friend" }]);
+    expect(socket.sent.filter((m) => m.type === "profile")).toEqual([{ type: "profile", id: "friend", showcase: 5 }]);
     socket.recv({ type: "profile", id: "friend", showcase: ["c1"], progress });
     await expect(friend).resolves.toEqual({ showcase: ["c1"], progress });
     await expect(again).resolves.toEqual({ showcase: ["c1"], progress });
     await vi.advanceTimersByTimeAsync(room.PROFILE_GAP_MS);
-    expect(socket.sent.at(-1)).toEqual({ type: "profile", id: "guest" });
+    expect(socket.sent.at(-1)).toEqual({ type: "profile", id: "guest", showcase: 5 });
     await vi.advanceTimersByTimeAsync(room.PROFILE_TIMEOUT_MS);
     await expect(guest).resolves.toBeNull();
     expect(await room.loadProfile("me")).toBeNull(); // the own profile is read locally

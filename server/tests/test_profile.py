@@ -1,4 +1,4 @@
-"""Profiles room members open: up to three showcase cards from the loadout, and collection progress."""
+"""Profiles room members open: up to five showcase cards from the loadout, and collection progress."""
 import json
 import time
 
@@ -29,10 +29,16 @@ def give(g, pid, items):
         g.store.add_item(pid, item, 0)
 
 
-def test_the_showcase_takes_up_to_three_owned_cards():
+def test_the_showcase_takes_up_to_five_owned_cards():
     g, pid = game()
-    give(g, pid, [f"card:{c}" for c in CARDS[:4]])
+    give(g, pid, [f"card:{c}" for c in CARDS[:5]])
+    assert MAX_SHOWCASE == 5
     assert g.get_loadout(TOKEN)["showcase"] == []
+    assert g.set_loadout(TOKEN, {"showcase": CARDS[:5]})["showcase"] == CARDS[:5]
+    # A profile is cut to what its asker lays out: three for a client that does not say, never more than five.
+    assert g.member_profile(TOKEN)["showcase"] == CARDS[:3]
+    assert g.member_profile(TOKEN, 5)["showcase"] == CARDS[:5]
+    assert g.member_profile(TOKEN, 9)["showcase"] == CARDS[:5]
     assert g.set_loadout(TOKEN, {"showcase": CARDS[:3]})["showcase"] == CARDS[:3]
     # repeats count once
     assert g.set_loadout(TOKEN, {"showcase": [CARDS[1], CARDS[1]]})["showcase"] == [CARDS[1]]

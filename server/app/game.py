@@ -43,7 +43,9 @@ FREE_EMOTES = frozenset({"thumbup"})
 CHEER_DAILY_CAP = 1000
 CHEER_MIN_TAPS = 10000
 # Cards a player may pin to the profile room members open.
-MAX_SHOWCASE = 3
+#: Showcase cards on a profile. A client from before 1.2.5 lays out three: a profile is cut to what its asker shows.
+MAX_SHOWCASE = 5
+OLD_SHOWCASE = 3
 # The nickname a save shows on the boards, as long as room nicknames.
 MAX_BOARD_NICK = 24
 # `nick` and `board` (false keeps the save off the boards) are only sent, never applied back by clients.
@@ -1051,9 +1053,9 @@ class Game:
                 count[0] += 1
         return {"cards": counts["card"], "emotes": counts["emote"], "skins": counts["char"]}
 
-    def member_profile(self, token: str | None) -> dict[str, Any]:
+    def member_profile(self, token: str | None, shown: int = OLD_SHOWCASE) -> dict[str, Any]:
         """What a room member's profile shows of a save: its showcase cards and collection progress.
-        A member without a save has neither."""
+        A member without a save has neither. [shown] is how many showcase cards the asker lays out."""
         if not token:
             return {"showcase": [], "progress": None}
         try:
@@ -1063,12 +1065,13 @@ class Game:
         # A token no save was ever made for (a client that joined without one) shows nothing and makes no save.
         if not self.store.has_player(pid):
             return {"showcase": [], "progress": None}
-        return self._profile_of(pid)
+        return self._profile_of(pid, shown)
 
-    def _profile_of(self, pid: str) -> dict[str, Any]:
+    def _profile_of(self, pid: str, shown: int = OLD_SHOWCASE) -> dict[str, Any]:
         p = self.store.get_player(pid, self.now())
         owned = self.store.owned(pid)
-        return {"showcase": self._stored_loadout(p, owned)["showcase"], "progress": self.collection_progress(owned)}
+        cards = self._stored_loadout(p, owned)["showcase"][:max(0, min(shown, MAX_SHOWCASE))]
+        return {"showcase": cards, "progress": self.collection_progress(owned)}
 
     # ------------------------------------------------------------------- boards
     def _listed(self, pid: str, loadout: dict[str, Any], linked: set[str] | None) -> str | None:
@@ -1165,13 +1168,13 @@ class Game:
             },
         }
 
-    def board_profile(self, bid: str, require_account: bool) -> dict[str, Any]:
+    def board_profile(self, bid: str, require_account: bool, shown: int = OLD_SHOWCASE) -> dict[str, Any]:
         """The profile of a save on the collection board's top rows; raises GameError("no_member") otherwise."""
         data = self._work_out_board(require_account)
         pid = data["ids"].get(bid)
         if pid is None:
             raise GameError("no_member", "not on the board")
-        return self._profile_of(pid)
+        return self._profile_of(pid, shown)
 
     # -------------------------------------------------------------------- room
     def note_room_nick(self, token: str | None, nick: str) -> None:

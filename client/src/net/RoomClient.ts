@@ -2,7 +2,7 @@ import type {
   CheerState, ClientMessage, DdzClientMessage, DdzMessage, DuelMessage, Hand, Member, MemberProfile, MotionDelta, PackedMotion, PetMotion, ProfilePatch, RoomInfo, ServerMessage,
   StateUpdate,
 } from "./protocol";
-import { MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
+import { MAX_SHOWCASE, MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
 import { APP_VERSION } from "../version";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
@@ -175,7 +175,7 @@ export class RoomClient {
     this.send({ type: "set_name", name });
   }
   sendProfile(id: string): void {
-    this.send({ type: "profile", id });
+    this.send({ type: "profile", id, showcase: MAX_SHOWCASE });
   }
   sendEmote(emote: string): void {
     this.send({ type: "emote", emote });

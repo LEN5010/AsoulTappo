@@ -1,5 +1,6 @@
 import { reactive, watch } from "vue";
 import { defaultCharacter } from "../characters";
+import { MAX_SHOWCASE } from "../net/protocol";
 import { roomStatus } from "../roomStatus";
 import { isTauri } from "../composables/tauri";
 
@@ -235,7 +236,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
     : [];
   out.showcase = Array.isArray(out.showcase)
-    ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, 3)
+    ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, MAX_SHOWCASE)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
   if (out.partnerLayout !== "free" && out.partnerLayout !== "formation") out.partnerLayout = "free";

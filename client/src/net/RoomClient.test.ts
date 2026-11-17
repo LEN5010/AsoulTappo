@@ -84,7 +84,7 @@ describe("RoomClient", () => {
     ws.open();
     ws.recv({ type: "joined", room: "r", you: "me", members: [], features: ["poke", "profile"] });
     c.sendProfile("x");
-    expect(ws.sent.at(-1)).toEqual({ type: "profile", id: "x" });
+    expect(ws.sent.at(-1)).toEqual({ type: "profile", id: "x", showcase: 5 });
     const progress = { cards: [2, 85], emotes: [20, 495], skins: [0, 9] };
     ws.recv({ type: "profile", id: "x", showcase: ["c1"], progress });
     expect(ev.onProfile).toHaveBeenLastCalledWith("x", { showcase: ["c1"], progress });

@@ -95,6 +95,8 @@ class ProfileMsg(_Msg):
 
     type: Literal["profile"] = "profile"
     id: str = Field(min_length=1, max_length=32)
+    #: How many showcase cards the asker lays out; a client from before 1.2.5 says nothing and lays out three.
+    showcase: int = Field(default=3, ge=0, le=16)
 
 
 class StateMsg(_Msg):

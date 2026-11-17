@@ -419,9 +419,11 @@ def api_board(order: Literal["cards", "score"] = "cards", who: PlayerId = Depend
 
 
 @app.get("/api/board/profile/{bid}")
-def api_board_profile(bid: str, who: PlayerId = Depends(player)) -> dict:
-    """The showcase and progress of a save on the collection board's top rows."""
-    out = _guard(game.board_profile, bid, accounts is not None)
+def api_board_profile(bid: str, showcase: int = Query(default=3, ge=0, le=16),
+                      who: PlayerId = Depends(player)) -> dict:
+    """The showcase and progress of a save on the collection board's top rows. [showcase] is how many showcase cards
+    the asker lays out (three, for a client from before 1.2.5)."""
+    out = _guard(game.board_profile, bid, accounts is not None, showcase)
     game.tracker.count("board_profile")
     return out
 
@@ -1216,7 +1218,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await err("no_member", "no such member")
                     continue
                 peer.profile_at = now
-                shown = await run_in_threadpool(game.member_profile, target.token)
+                shown = await run_in_threadpool(game.member_profile, target.token, msg.showcase)
                 game.tracker.count("profile")
                 await send(ProfileReply(id=target.id, **shown).model_dump())
             elif isinstance(msg, EmoteMsg):

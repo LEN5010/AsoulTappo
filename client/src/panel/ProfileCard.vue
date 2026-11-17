@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // A profile as others see it, one namecard: the plate's artwork across the right fading into paper, the pet's bust
-// framed on the upper edge, the name and collection counts on the paper, and up to three showcase cards pinned
-// over the lower right corner. The own card on the 排行 page is the same card made editable: a key swaps the plate,
-// an empty slot picks a card, a pinned card's corner key takes it down. The owner opens the pickers and the cards.
+// framed on the upper edge, the name and collection counts on the paper, and up to five showcase cards pinned
+// over the lower right corner, held as a fanned hand once there are more than three. The own card on the 排行 page is
+// the same card made editable: a key swaps the plate, the empty slot after the pinned cards picks the next one, a
+// pinned card's corner key takes it down. The owner opens the pickers and the cards.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { cardFrame } from "../cards";
@@ -64,11 +65,16 @@ const plateCard = computed(() => (props.plate?.kind === "card" ? props.plate.car
 
 const color = computed(() => characterColor(props.character));
 const bust = computed(() => (characters[props.character] ?? characters[memberOf(props.character)])?.bg ?? "");
-/** Others' cards show only what is pinned; the own card keeps its empty slots to fill. */
-const slots = computed(() =>
-  props.editable ? Array.from({ length: MAX_SHOWCASE }, (_, i) => props.showcase[i] ?? null) : props.showcase);
+const pinned = computed(() => props.showcase.slice(0, MAX_SHOWCASE));
+/** Others' cards show only what is pinned; the own card has one empty slot after them while there is room. */
+const slots = computed<(ManifestCard | null)[]>(() =>
+  (props.editable && pinned.value.length < MAX_SHOWCASE ? [...pinned.value, null] : pinned.value));
+/** More than three are held as a hand: they overlap and fan out from the middle. */
+const fanned = computed(() => pinned.value.length > 3);
 /** How each pinned card leans, left to right; an empty slot stands straight. */
 const TILTS = [-6, 2, 7];
+const FAN_STEP = 5;
+const tilt = (i: number) => (fanned.value ? (i - (pinned.value.length - 1) / 2) * FAN_STEP : TILTS[i] ?? 0);
 const stats = computed(() => (["cards", "emotes", "skins"] as const).map((kind, i) => ({
   label: ["卡片", "表情", "皮肤"][i],
   count: props.progress?.[kind] ?? null,
@@ -108,8 +114,8 @@ const px = (n: number) => `${n}px`;
     <button v-if="editable && swappable" type="button" class="ui-btn small swap" @click="emit('swap')">
       {{ plate ? "换铭牌" : "戴铭牌" }}
     </button>
-    <ul v-if="slots.length && !failed" class="showcase" aria-label="展示卡">
-      <li v-for="(card, i) in slots" :key="card?.id ?? `empty-${i}`" :style="{ '--tilt': card ? `${TILTS[i]}deg` : '0deg' }">
+    <ul v-if="slots.length && !failed" class="showcase" :class="{ fanned }" aria-label="展示卡">
+      <li v-for="(card, i) in slots" :key="card?.id ?? `empty-${i}`" :class="{ spare: !card }" :style="{ '--tilt': card ? `${tilt(i)}deg` : '0deg' }">
         <template v-if="card">
           <button type="button" class="pin" :class="[cardFrame(card), { framed: !!cardFrame(card) }]" :title="card.name" @click="emit('open', card)">
             <img :src="assetUrl(card.thumb)" :alt="card.name" decoding="async" draggable="false" />
@@ -118,7 +124,7 @@ const px = (n: number) => `${n}px`;
             <Icon name="close" :size="10" />
           </button>
         </template>
-        <button v-else type="button" class="pin empty" title="选展示卡" aria-label="选展示卡" @click="emit('pick')">
+        <button v-else type="button" class="pin empty" :title="`选展示卡 ${pinned.length}/${MAX_SHOWCASE}`" aria-label="选展示卡" @click="emit('pick')">
           <Icon name="plus" :size="18" />
         </button>
       </li>
@@ -325,7 +331,20 @@ button.art-box:hover .art {
   transition: transform var(--dur-base) var(--ease-out);
 }
 .showcase li:hover {
+  z-index: 2;
   transform: translateY(-6px) rotate(0deg);
+}
+/* A hand of four or five: each card lies over the one before it, pivoting low so the fan opens at the top. The
+ * empty slot stands clear of the hand. */
+.fanned li {
+  width: 72px;
+  transform-origin: 50% 120%;
+}
+.fanned li + li {
+  margin-left: -18px;
+}
+.fanned li.spare {
+  margin-left: 0;
 }
 .pin {
   display: block;

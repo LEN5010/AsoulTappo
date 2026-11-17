@@ -172,7 +172,8 @@ export type ClientMessage =
   /** Drank water after a reminder; only to servers that list "drink". */
   | { type: "drink" }
   /** Only to servers that list "profile" in `joined.features`. */
-  | { type: "profile"; id: string }
+  /** `showcase`: how many showcase cards this client lays out; servers before 1.2.5 ignore it and send three. */
+  | { type: "profile"; id: string; showcase?: number }
   | { type: "emote"; emote: string }
   | ({ type: "state" } & ProfilePatch)
   | { type: "ping" }
@@ -238,14 +239,14 @@ export interface CheerState {
 
 /** [owned, total] of each kind, counted as the album does. */
 export interface CollectionProgress { cards: [number, number]; emotes: [number, number]; skins: [number, number] }
-/** What a member's profile shows of its save: up to three showcase card ids, and progress (null without a save). */
+/** What a member's profile shows of its save: up to MAX_SHOWCASE showcase card ids, and progress (null without a save). */
 export interface MemberProfile { showcase: string[]; progress: CollectionProgress | null }
 
 export const MAX_ROOM_SIZE = 20;
 /** Characters of a room name, as the server cuts it (rooms.ROOM_NAME_MAX). */
 export const ROOM_NAME_MAX = 16;
 /** Cards a save may pin to its profile. */
-export const MAX_SHOWCASE = 3;
+export const MAX_SHOWCASE = 5;
 /** Longest nick the boards keep; the same as game.py MAX_BOARD_NICK. */
 export const MAX_BOARD_NICK = 24;
 

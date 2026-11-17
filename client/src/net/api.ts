@@ -2,7 +2,7 @@
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
 import { APP_VERSION } from "../version";
 import type { Rarity } from "../manifest";
-import type { MemberProfile } from "./protocol";
+import { MAX_SHOWCASE, type MemberProfile } from "./protocol";
 import type { Economy } from "../stores/economy";
 
 export interface PlayerStatus {
@@ -266,7 +266,8 @@ export class Api {
   loadout = () => this.call<Loadout>("GET", "/api/loadout");
   setLoadout = (patch: LoadoutPatch) => this.call<Loadout>("POST", "/api/loadout", patch);
   board = () => this.call<Board>("GET", "/api/board?order=score");
-  boardProfile = (id: string) => this.call<MemberProfile>("GET", `/api/board/profile/${encodeURIComponent(id)}`);
+  boardProfile = (id: string) =>
+    this.call<MemberProfile>("GET", `/api/board/profile/${encodeURIComponent(id)}?showcase=${MAX_SHOWCASE}`);
   info = () => this.call<ServerInfo>("GET", "/api/info", undefined, {});
   /** The newest client release, which the server reads from the main site. */
   latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});

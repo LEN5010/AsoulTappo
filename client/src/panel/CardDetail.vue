@@ -188,7 +188,7 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
         <CraftAction :key="item.id" :item="item" />
         <button
           v-if="count && !preview" type="button" class="ui-btn showcase" :disabled="showcaseFull"
-          :title="showcaseFull ? '主页最多展示 3 张，先取下一张' : undefined" :aria-pressed="shown" @click="toggleShowcase"
+          :title="showcaseFull ? `主页最多展示 ${MAX_SHOWCASE} 张，先取下一张` : undefined" :aria-pressed="shown" @click="toggleShowcase"
         >
           <Icon :name="shown ? 'check' : 'plus'" :size="15" />{{ shown ? "取消展示" : showcaseFull ? "展示位已满" : "展示到主页" }}
         </button>
