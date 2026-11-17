@@ -73,6 +73,12 @@ export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenF
   return listen<TrayAction>("tray", (ev) => cb(ev.payload));
 }
 
+/** An emote key was pressed: the place of the quick emote it stands for, from 1. */
+export async function listenEmoteKey(cb: (place: number) => void): Promise<UnlistenFn> {
+  if (!isTauri) return () => {};
+  return listen<number>("emote-key", (ev) => cb(ev.payload));
+}
+
 /** Windows: whether the pet runs as administrator, whether this account could, and the player's choice. */
 export interface AdminStatus { supported: boolean; elevated: boolean; canElevate: boolean; runAsAdmin: boolean }
 export async function adminStatus(): Promise<AdminStatus | null> {
@@ -149,10 +155,9 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
-/** Registers the hide key ("" removes it). Rejects when the system refuses the shortcut. */
-/** What a global shortcut does: hide the pet and the panel, or flip click-through. */
-export type HotkeySlot = "hide" | "click-through";
-/** Registers [keys] for [slot] ("" removes it); rejects with the system's refusal, or "taken" by the other slot. */
+/** What a global shortcut does: hide the pet and the panel, flip click-through, or play the quick emote at a place. */
+export type HotkeySlot = "hide" | "click-through" | `emote-${number}`;
+/** Registers [keys] for [slot] ("" removes it); rejects with the system's refusal, or "taken" by another slot. */
 export const setHotkey = (slot: HotkeySlot, keys: string): Promise<void> =>
   (isTauri ? invoke<void>("set_hotkey", { slot, keys }) : Promise.resolve());
 /**

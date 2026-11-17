@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { adminStatus, autostartStatus, copyText, exportLog, isTauri, openAboutLink, setHotkey, setAutostart, setRunAsAdmin, type AdminStatus, type AutostartStatus, type HotkeySlot } from "../composables/tauri";
-import { shortcutLabel, shortcutOf } from "../desktop/bossKey";
+import { emoteKeysLabel, emoteModsOf, setEmoteKeys, shortcutLabel, shortcutOf } from "../desktop/bossKey";
 import { status, saveCode, activeAccount, setAccount, refreshAccount } from "../stores/player";
 import { Api, type ServerInfo } from "../net/api";
 import { MainAccountApi } from "../net/mainAccount";
@@ -82,8 +82,10 @@ const HOTKEYS: { slot: HotkeySlot; label: string; key: "bossKey" | "clickThrough
   { slot: "click-through", label: "点击穿透热键", key: "clickThroughKey" },
   { slot: "hide", label: "隐藏热键", key: "bossKey" },
 ];
-const recording = ref<HotkeySlot | null>(null);
-const keyNote = ref<Partial<Record<HotkeySlot, string>>>({});
+// The emote keys are one row: a press on any digit gives their modifiers, and 1 to 8 follow.
+const recording = ref<HotkeySlot | "emotes" | null>(null);
+const keyNote = ref<Partial<Record<HotkeySlot | "emotes", string>>>({});
+const refusal = (e: unknown) => (String(e) === "taken" ? "和另一个热键重复" : "无法使用");
 async function saveKey(slot: HotkeySlot, keys: string) {
   recording.value = null;
   const key = HOTKEYS.find((h) => h.slot === slot)!.key;
@@ -92,8 +94,19 @@ async function saveKey(slot: HotkeySlot, keys: string) {
     settings[key] = keys;
     keyNote.value = { ...keyNote.value, [slot]: "" };
   } catch (e) {
-    keyNote.value = { ...keyNote.value, [slot]: String(e) === "taken" ? "和另一个热键重复" : "无法使用" };
+    keyNote.value = { ...keyNote.value, [slot]: refusal(e) };
     await setHotkey(slot, settings[key]).catch(() => {});
+  }
+}
+async function saveEmoteKey(mods: string) {
+  recording.value = null;
+  try {
+    await setEmoteKeys(mods, setHotkey);
+    settings.emoteKey = mods;
+    keyNote.value = { ...keyNote.value, emotes: "" };
+  } catch (e) {
+    keyNote.value = { ...keyNote.value, emotes: refusal(e) };
+    await setEmoteKeys(settings.emoteKey, setHotkey).catch(() => {});
   }
 }
 function onRecordKey(e: KeyboardEvent) {
@@ -102,6 +115,11 @@ function onRecordKey(e: KeyboardEvent) {
   const slot = recording.value;
   if (!slot) return;
   if (e.code === "Escape") { recording.value = null; return; }
+  if (slot === "emotes") {
+    const mods = emoteModsOf(e);
+    if (mods) void saveEmoteKey(mods);
+    return;
+  }
   const keys = shortcutOf(e);
   if (keys) void saveKey(slot, keys);
 }
@@ -112,15 +130,15 @@ watch(recording, (slot) => {
 
 // Every row is one height and a group's title with the gap above it takes one row's height too, so the rows of the two
 // columns line up. A setting that only matters with a switch on sits in that switch's row, so the row count depends
-// on the platform only. Rows now: 7 and 5 + the start rows (1 on macOS, 2 on Windows, none in the browser preview)
+// on the platform only. Rows now: 7 and 6 + the start rows (1 on macOS, 2 on Windows, none in the browser preview)
 // on the left; 3, 3 and 6 (5 in the preview) on the right. The whole rows a column is short by go above its last
-// group, so both columns end on one line: on Windows the right column is one row short. The tomato timer's lengths
+// group, so both columns end on one line: on Windows the right column is two rows short. The tomato timer's lengths
 // and switches live on its own page.
 type Group = "pet" | "window" | "online" | "sound" | "about";
 const COLUMNS: Group[][] = [["pet", "window"], ["online", "sound", "about"]];
 const rows = computed<Record<Group, number>>(() => ({
   pet: 7,
-  window: 3 + HOTKEYS.length + (autostart.value?.supported ? 1 : 0) + (admin.value?.supported ? 1 : 0),
+  window: 4 + HOTKEYS.length + (autostart.value?.supported ? 1 : 0) + (admin.value?.supported ? 1 : 0),
   online: 3,
   sound: 3,
   about: isTauri ? 6 : 5,
@@ -296,6 +314,19 @@ async function exportLogFile() {
                     @click="recording = recording === h.slot ? null : h.slot"
                   >
                     {{ recording === h.slot ? "按下组合键" : settings[h.key] ? shortcutLabel(settings[h.key], IS_MAC) : "未设置" }}
+                  </button>
+                </span>
+              </div>
+              <div class="ui-row">
+                <span>表情热键</span>
+                <span class="version-side">
+                  <small v-if="keyNote.emotes" role="status" class="check-note">{{ keyNote.emotes }}</small>
+                  <button v-if="settings.emoteKey && recording !== 'emotes'" type="button" class="ui-btn small" @click="saveEmoteKey('')">清除</button>
+                  <button
+                    type="button" class="ui-btn small" :class="{ primary: recording === 'emotes' }"
+                    @click="recording = recording === 'emotes' ? null : 'emotes'"
+                  >
+                    {{ recording === "emotes" ? "按下组合键加数字" : settings.emoteKey ? emoteKeysLabel(settings.emoteKey, IS_MAC) : "未设置" }}
                   </button>
                 </span>
               </div>

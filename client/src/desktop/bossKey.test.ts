@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { shortcutLabel, shortcutOf } from "./bossKey";
+import { describe, expect, it, vi } from "vitest";
+import { emoteKeysLabel, emoteModsOf, setEmoteKeys, shortcutLabel, shortcutOf } from "./bossKey";
 
 const press = (code: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) =>
   ({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
@@ -27,5 +27,36 @@ describe("the hide key", () => {
     expect(shortcutLabel("Shift+Super+Digit1")).toBe("Shift+Win+1");
     expect(shortcutLabel("Alt+Super+ArrowUp", true)).toBe("Option+Cmd+↑");
     expect(shortcutLabel("F8")).toBe("F8");
+  });
+});
+
+describe("the emote keys", () => {
+  it("are recorded as the modifiers of a press on a digit", () => {
+    expect(emoteModsOf(press("Digit3", { ctrlKey: true, altKey: true }))).toBe("Control+Alt");
+    expect(emoteModsOf(press("Digit0", { metaKey: true }))).toBe("Super");
+    expect(emoteModsOf(press("KeyH", { ctrlKey: true }))).toBeNull();
+    expect(emoteModsOf(press("Digit3", { shiftKey: true }))).toBeNull();
+    expect(emoteKeysLabel("Control+Alt")).toBe("Ctrl+Alt+1~8");
+  });
+
+  it("are registered one for each place", async () => {
+    const set = vi.fn(async () => {});
+    await setEmoteKeys("Control+Alt", set);
+    expect(set).toHaveBeenCalledTimes(8);
+    expect(set).toHaveBeenNthCalledWith(1, "emote-1", "Control+Alt+Digit1");
+    expect(set).toHaveBeenNthCalledWith(8, "emote-8", "Control+Alt+Digit8");
+    set.mockClear();
+    await setEmoteKeys("", set);
+    expect(set).toHaveBeenNthCalledWith(5, "emote-5", "");
+  });
+
+  it("are all removed when the system refuses one", async () => {
+    const held: Record<string, string> = {};
+    const set = vi.fn(async (slot: string, keys: string) => {
+      if (keys.endsWith("Digit3")) throw "taken";
+      held[slot] = keys;
+    });
+    await expect(setEmoteKeys("Alt", set)).rejects.toBe("taken");
+    expect(Object.values(held).filter(Boolean)).toEqual([]);
   });
 });

@@ -41,7 +41,7 @@ import { remotePetSize } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
 import { PET_BASE, formReach, headAnchor } from "./characters";
 import { starterEmotesOf } from "./items";
-import { characterColor } from "./manifest";
+import { getEmote, characterColor } from "./manifest";
 import { settings } from "./stores/settings";
 import { counter, followServer, watchDay } from "./stores/counter";
 import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
@@ -50,6 +50,7 @@ import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
 import { duel, inRoom, poked, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
+import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
 import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
@@ -61,7 +62,7 @@ import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent,
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
-  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenTodoMoved, listenTray, setAlwaysOnTop,
+  debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenEmoteKey, listenTodoMoved, listenTray, setAlwaysOnTop,
   setClickThrough, setHotkey, setHitRegions, type InputBlocked,
 } from "./composables/tauri";
 
@@ -245,6 +246,11 @@ const quickKeys = computed(() => (settings.favorites.length ? settings.favorites
 function pickQuick(key: string) {
   sendEmote(key);
 }
+/** An emote key: the quick emote at [place] of the strip, counted as the strip shows them. */
+function pickQuickAt(place: number) {
+  const key = quickKeys.value.filter((k) => getEmote(k))[place - 1];
+  if (key) sendEmote(key);
+}
 function pickStatus(id: string) {
   settings.status = id;
   statusOpen.value = ui.quickOpen = false;
@@ -379,6 +385,7 @@ const nearRight = (x: number, scale: number, minEmote: number) =>
 // ---- window, input and tray
 let unInput: (() => void) | undefined;
 let unTray: (() => void) | undefined;
+let unEmoteKey: (() => void) | undefined;
 let unOutside: (() => void) | undefined;
 let hits: ReturnType<typeof startHitReporter> | undefined;
 let stopDebugLog: (() => void) | undefined;
@@ -428,6 +435,7 @@ onMounted(async () => {
   unInput = await listenInput((e) => { onInput(e); noteNudgeInput(); });
   unOutside = await listenOutsideClick(closeQuickAway);
   unTodoMoved = await listenTodoMoved(keepTodoSpot);
+  unEmoteKey = await listenEmoteKey(pickQuickAt);
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "open-panel") openPanel();
@@ -469,6 +477,7 @@ onBeforeUnmount(() => {
   unInput?.();
   unOutside?.();
   unTray?.();
+  unEmoteKey?.();
   hits?.stop();
   stopDebugLog?.();
   unBlocked?.();
@@ -489,6 +498,7 @@ watch(() => settings.alwaysOnTop, (v) => setAlwaysOnTop(v), { immediate: true })
 // The settings page reports a refused shortcut when it is recorded; at startup it is only in the log.
 watch(() => settings.bossKey, (v) => void setHotkey("hide", v).catch(() => {}), { immediate: true });
 watch(() => settings.clickThroughKey, (v) => void setHotkey("click-through", v).catch(() => {}), { immediate: true });
+watch(() => settings.emoteKey, (v) => void setEmoteKeys(v, setHotkey).catch(() => {}), { immediate: true });
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
   if (v) {

@@ -1,6 +1,6 @@
-//! Global shortcuts: the hide key, which hides the pet, the panel, the todos' window and the capture window and shows them again, and
-//! the click-through key, which flips click-through. Registered with the system, so they need no input permission
-//! and do not go through the hook.
+//! Global shortcuts: the hide key, which hides the pet, the panel, the todos' window and the capture window and shows them again,
+//! the click-through key, which flips click-through, and the emote keys, which play a quick emote each. Registered
+//! with the system, so they need no input permission and do not go through the hook.
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
@@ -19,32 +19,43 @@ static TODO_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 enum Slot {
     Hide,
     ClickThrough,
+    /// The quick emote at this place, from 1.
+    Emote(u8),
 }
+
+/// How many quick emotes have a key of their own.
+const EMOTES: u8 = 8;
+const SLOTS: usize = 2 + EMOTES as usize;
 
 impl Slot {
     fn parse(name: &str) -> Result<Self, String> {
         match name {
             "hide" => Ok(Self::Hide),
             "click-through" => Ok(Self::ClickThrough),
-            _ => Err(format!("unknown hotkey {name}")),
+            _ => match name.strip_prefix("emote-").and_then(|n| n.parse::<u8>().ok()) {
+                Some(n) if (1..=EMOTES).contains(&n) => Ok(Self::Emote(n)),
+                _ => Err(format!("unknown hotkey {name}")),
+            },
         }
     }
     fn index(self) -> usize {
         match self {
             Self::Hide => 0,
             Self::ClickThrough => 1,
+            Self::Emote(n) => 1 + n as usize,
         }
     }
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Hide => "hide",
-            Self::ClickThrough => "click-through",
+            Self::Hide => "hide".into(),
+            Self::ClickThrough => "click-through".into(),
+            Self::Emote(n) => format!("emote-{n}"),
         }
     }
 }
 
 /// The shortcut registered for each slot, in Slot::index order.
-static REGISTERED: Mutex<[Option<Shortcut>; 2]> = Mutex::new([None, None]);
+static REGISTERED: Mutex<[Option<Shortcut>; SLOTS]> = Mutex::new([None; SLOTS]);
 
 fn toggle(app: &AppHandle) {
     let Some(main) = app.get_webview_window("main") else { return };
@@ -94,12 +105,16 @@ fn press(app: &AppHandle, slot: Slot) {
             applog!("hotkey", "toggle click-through");
             let _ = app.emit_to("main", "tray", "toggle-click-through");
         }
+        // The desk knows which emotes its strip holds.
+        Slot::Emote(n) => {
+            let _ = app.emit_to("main", "emote-key", n);
+        }
     }
 }
 
-/// Replaces the shortcut of [slot] ("hide" or "click-through") with [keys] (`Control+Alt+KeyH`); empty removes it.
-/// The error is the system's refusal, usually because another program holds the shortcut, or "taken" when the
-/// other slot already uses it. On an error the slot keeps no shortcut.
+/// Replaces the shortcut of [slot] ("hide", "click-through", "emote-1" to "emote-8") with [keys] (`Control+Alt+KeyH`);
+/// empty removes it. The error is the system's refusal, usually because another program holds the shortcut, or
+/// "taken" when another slot already uses it. On an error the slot keeps no shortcut.
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, slot: String, keys: String) -> Result<(), String> {
     let slot = Slot::parse(&slot)?;

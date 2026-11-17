@@ -1,5 +1,6 @@
-// The hide key as the settings page records and shows it. Stored as the shortcut the system registers:
-// modifiers then one key code, "Control+Alt+KeyH".
+// The global shortcuts as the settings page records and shows them. Stored as the shortcut the system registers:
+// modifiers then one key code, "Control+Alt+KeyH". The emote keys share their modifiers and end in 1 to 8, so only the
+// modifiers are stored ("Control+Alt").
 
 const MODIFIER_CODES = /^(Control|Alt|Shift|Meta|OS)(Left|Right)$/;
 /** Keys a shortcut may end in: letters, digits, function keys and a few named ones. */
@@ -31,4 +32,36 @@ export function shortcutLabel(keys: string, mac = false): string {
     if (k === "Alt" && mac) return "Option";
     return NAMES[k] ?? k.replace(/^(Key|Digit)/, "");
   }).join("+");
+}
+
+/** How many quick emotes have a key: the strip holds this many at most. */
+export const EMOTE_KEYS = 8;
+
+/** The modifiers of a press on a digit ("Control+Alt"), for the emote keys; null for any other press. */
+export function emoteModsOf(e: KeyPress): string | null {
+  return shortcutOf(e)?.match(/^(.+)\+Digit[0-9]$/)?.[1] ?? null;
+}
+
+/** The shortcut of the quick emote at [place] (from 1) under the stored modifiers. */
+export function emoteShortcut(mods: string, place: number): string {
+  return `${mods}+Digit${place}`;
+}
+
+/** "Control+Alt" as "Ctrl+Alt+1~8". */
+export function emoteKeysLabel(mods: string, mac = false): string {
+  return `${shortcutLabel(mods, mac)}+1~${EMOTE_KEYS}`;
+}
+
+/**
+ * Registers the emote keys under [mods] through [set] ("" removes them all). When the system refuses one of them the
+ * others are removed again and the refusal is thrown: the keys work as a row or not at all.
+ */
+export async function setEmoteKeys(mods: string, set: (slot: `emote-${number}`, keys: string) => Promise<void>): Promise<void> {
+  const places = Array.from({ length: EMOTE_KEYS }, (_, i) => i + 1);
+  try {
+    for (const n of places) await set(`emote-${n}`, mods ? emoteShortcut(mods, n) : "");
+  } catch (e) {
+    for (const n of places) await set(`emote-${n}`, "").catch(() => {});
+    throw e;
+  }
 }

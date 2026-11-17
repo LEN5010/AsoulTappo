@@ -99,6 +99,8 @@ export interface Settings {
   bossKey: string;
   /** Global shortcut that flips click-through ("" = none), in the same form as bossKey. */
   clickThroughKey: string;
+  /** Modifiers of the emote keys ("" = none), e.g. "Control+Alt": with 1 to 8 they play the quick emote at that place. */
+  emoteKey: string;
   /** The capture window is open: a regular window with the own pet on a flat colour, for OBS and screenshots. */
   captureOpen: boolean;
   /** Background of the capture window, "#rrggbb"; keyed out in the recording software. */
@@ -183,6 +185,7 @@ export const DEFAULT_SETTINGS: Settings = {
   petDocked: false,
   bossKey: "",
   clickThroughKey: "",
+  emoteKey: "",
   captureOpen: false,
   captureBg: "#00ff00",
   captureW: 560,
