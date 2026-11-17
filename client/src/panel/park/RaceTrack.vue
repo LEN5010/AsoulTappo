@@ -3,7 +3,7 @@
 // squares inlaid in it (race.ts boardOf, cellOf: all squares the same size), square 0 in the top left corner as start
 // and finish (coral with a coral and white checkered finish line), the boost square a key standing up from the board,
 // the trip square a pit sunk into it, the portal's two ends the same coral ring, the flip square a coral disc with
-// two arrows, the other corners a faint picture of the park. The squares are paper in two shades by turns, parted by
+// two arrows, the again square a paper die, the hook square a coral hook, the other corners a faint picture of the park. The squares are paper in two shades by turns, parted by
 // hairlines. Inside the ring the board rises as an island with a sheet of paper on it, the infield; the page puts
 // what fits the phase there (the slot). The board takes the largest size the track's box allows, leaving head room
 // over it for a five-high stack on the top row and its crown.
@@ -12,7 +12,8 @@
 // glowing, the others faded; its die in the page's row raised), then the group hops square by square along the ring
 // (race.ts stepPath: on to the finish and back when the roll carries past it); from SQUARE_AT the special square it
 // landed on acts: a boost or trip square pushes it on the same way, a portal end swallows it and the other end gives
-// it back, a flip square turns its stack upside down, each tuanzi there jumping in an arc to its new height. Every
+// it back, a flip square turns its stack upside down, each tuanzi there jumping in an arc to its new height (as a
+// climber does on its way to the top), an again or hook square walks the group on. Every
 // hop squashes and stretches about the foot of the group's stack, and the group springs back after it lands. A word
 // pops over the dumpling at the moments that matter. The moves are one Web Animations run each, as long as their part
 // of the step (stepPhases) and the spring back; under reduced motion everything jumps and stands still.
@@ -25,7 +26,7 @@ import alpaca from "../../assets/brand/side-alpaca.webp";
 import { COIN } from "./coin";
 import {
   boardOf, cellOf, cornersOf, HOP_AT, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, spots, SQUARE_AT,
-  squareKind, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind, type Race, type Spot,
+  SKILL_NAMES, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind, type Race, type Spot,
 } from "./race";
 import TuanziToken from "./TuanziToken.vue";
 
@@ -33,13 +34,19 @@ import TuanziToken from "./TuanziToken.vue";
  * [cleared]: the race is over and its result stands in the infield; the field leaves the board. [rate]: how fast [t]
  * runs against the wall clock (a replay at 2×); the moves play at that rate.
  */
-const props = defineProps<{ race: Race | null; t: number; track: number; members: string[]; cleared?: boolean; rate?: number }>();
+const props = defineProps<{
+  race: Race | null; t: number; track: number; members: string[]; cleared?: boolean; rate?: number;
+  /** The map's name, lettered on the island under the paper. */
+  caption?: string;
+}>();
 
 const nameOf = (m: string) => manifest.characters.find((c) => c.id === m)?.name ?? m;
 
 const BOOST = economy.value?.park?.race?.squares.boost ?? 2;
 const TRIP = Math.abs(economy.value?.park?.race?.squares.trip ?? -1);
-const WORDS: Record<MomentKind, string> = { lead: "领先", boost: "冲呀", trip: "哎呀", carry: "抓紧了" };
+const WORDS: Record<MomentKind, string> = {
+  lead: "领先", boost: "冲呀", trip: "哎呀", carry: "抓紧了", skill: "", again: "再掷一次", hook: "钩住了",
+};
 
 /*
  * Sizes in units (a square's side; race.ts cellOf), the same as the CSS (.ring): a tuanzi is D wide, its feet stand
@@ -73,7 +80,9 @@ const cellStyle = (sq: number) => {
   const c = cellOf(sq, props.track);
   return { gridColumn: c.col + 1, gridRow: c.row + 1 };
 };
-const kindOf = (sq: number) => (sq ? squareKind(props.race?.setup, sq) : null);
+/** The special square on [sq], with the squares a boost or trip there moves. */
+const squareAt = (sq: number) => (sq ? squareOn(props.race?.setup, sq, BOOST, TRIP) : null);
+const kindOf = (sq: number) => squareAt(sq)?.kind ?? null;
 /** The corners other than the start, each with a faint picture unless a special square is there. */
 const DECOS = ["ferris", "coin", "alpaca"] as const;
 const decoOf = (sq: number): (typeof DECOS)[number] | null =>
@@ -93,7 +102,7 @@ const acting = computed(() => {
   const s = step.value;
   const h = head.value;
   if (!s?.square || !h || h.part < SQUARE_AT) return [] as number[];
-  return s.square === "portal" ? props.race?.setup.portal ?? [] : [s.to];
+  return s.square === "portal" && s.end !== undefined ? [s.to, s.end] : [s.to];
 });
 
 const stacks = computed(() =>
@@ -127,11 +136,13 @@ const hops = computed(() => {
     const s = moves.value[i];
     const under = i === h.current;
     if (under && h.part < HOP_AT) break;
-    const acted = s.end !== undefined && !(under && h.part < SQUARE_AT);
+    const acted = (s.end !== undefined || !!s.stack) && !(under && h.part < SQUARE_AT);
     playStep(st, s, acted);
     const key = `${i}${acted ? "b" : "a"}`;
-    for (const m of [s.m, ...(s.carry ?? [])]) out[m] = key;
+    // Without a square the group has nothing more to do when a climber under it moves: it keeps its hop.
+    for (const m of [s.m, ...(s.carry ?? [])]) out[m] = s.end === undefined ? `${i}a` : key;
     if (acted && s.square === "flip") for (const m of st.get(s.to) ?? []) out[m] = key;
+    if (acted) for (const m of s.react ?? []) out[m] = key;
   }
   return out;
 });
@@ -148,8 +159,10 @@ const roll = computed<{ m: string; key: string; text: string; down: boolean } | 
   if (!w || !s || w.part < HOP_AT) return null;
   if ((s.square === "boost" || s.square === "trip") && w.part >= SQUARE_AT) {
     const down = s.square === "trip";
-    return { m: s.m, key: `${w.i}b`, text: down ? `−${TRIP}` : `+${BOOST}`, down };
+    const by = squareAt(s.to)?.by ?? (down ? TRIP : BOOST);
+    return { m: s.m, key: `${w.i}b`, text: down ? `−${by}` : `+${by}`, down };
   }
+  if (s.square === "again" && w.part >= SQUARE_AT) return { m: s.m, key: `${w.i}b`, text: `+${s.dice[1]}`, down: false };
   return { m: s.m, key: `${w.i}a`, text: `+${s.steps}`, down: false };
 });
 
@@ -161,7 +174,10 @@ const moment = computed(() => {
   if (!w || !s) return null;
   const i = w.i;
   const m = momentOf(s, i ? leadAfter.value[i - 1] : lanes.value[0], leadAfter.value[i]);
-  return m && w.part >= m.from ? { ...m, key: `${i}${m.kind}`, text: WORDS[m.kind] } : null;
+  if (!m || w.part < m.from) return null;
+  // A skill's word is its name: the mover's own, or the climber's.
+  const text = m.kind === "skill" ? SKILL_NAMES[m.m === s.m && s.skill ? s.skill : "climb"] ?? "" : WORDS[m.kind];
+  return { ...m, key: `${i}${m.kind}`, text };
 });
 
 /** The last step is done and the result not yet up: the field stands still, the start corner flashing. */
@@ -350,9 +366,10 @@ watch(hops, (now, before) => {
       const ms = late < catchUp ? Math.max(1, full - late) : full;
       let frames: Keyframe[];
       if (b && s.square === "portal") frames = portalFrames(from, to, unit, ms);
-      else if (b && s.square === "flip") frames = flipFrames(from, to, unit, ms);
+      else if (b && (s.square === "flip" || s.react?.includes(m))) frames = flipFrames(from, to, unit, ms);
       else {
-        const path = stepPath(s, props.track, BOOST, TRIP)[b ? "push" : "hop"];
+        const by = squareAt(s.to)?.by;
+        const path = stepPath(s, props.track, by ?? BOOST, by ?? TRIP)[b ? "push" : "hop"];
         if (!path.length) continue;
         const lvl = [s.m, ...(s.carry ?? [])].indexOf(m);
         const n = 1 + (s.carry?.length ?? 0);
@@ -377,11 +394,17 @@ watch(hops, (now, before) => {
             start: sq === 0, alt: sq % 2 === 1, flash: tail && sq === 0, acting: acting.includes(sq),
           }]"
         >
-          <span v-if="kindOf(sq) === 'boost'" class="cap" :title="`+${BOOST}`">
-            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ BOOST }}
+          <span v-if="kindOf(sq) === 'boost'" class="cap" :title="`+${squareAt(sq)?.by}`">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ squareAt(sq)?.by }}
           </span>
-          <span v-else-if="kindOf(sq) === 'trip'" class="pit" :title="`−${TRIP}`">
-            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>−{{ TRIP }}
+          <span v-else-if="kindOf(sq) === 'trip'" class="pit" :title="`−${squareAt(sq)?.by}`">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>−{{ squareAt(sq)?.by }}
+          </span>
+          <span v-else-if="kindOf(sq) === 'again'" class="redo" title="再掷一次" aria-hidden="true">
+            <svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2.6" /><circle cx="5.6" cy="5.6" r="1" /><circle cx="10.4" cy="5.6" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="5.6" cy="10.4" r="1" /><circle cx="10.4" cy="10.4" r="1" /></svg>
+          </span>
+          <span v-else-if="kindOf(sq) === 'hook'" class="grab" title="钩索" aria-hidden="true">
+            <svg viewBox="0 0 16 16"><path d="M8 2v7.2a3 3 0 1 1-6 0V8M8 2 5.6 4.4M8 2l2.4 2.4M11 9.5l3 3M14 9.5l-3 3" /></svg>
           </span>
           <span v-else-if="kindOf(sq) === 'portal'" class="gate" aria-hidden="true"><i></i></span>
           <span v-else-if="kindOf(sq) === 'flip'" class="turn" aria-hidden="true">
@@ -391,7 +414,7 @@ watch(hops, (now, before) => {
           <img v-else-if="decoOf(sq) === 'coin'" class="deco coin" :src="COIN" alt="" draggable="false" />
           <img v-else-if="decoOf(sq) === 'alpaca'" class="deco alpaca" :src="alpaca" alt="" draggable="false" />
         </div>
-        <div class="island" aria-hidden="true"></div>
+        <div class="island"><span v-if="caption" class="plate">{{ caption }}</span></div>
         <div class="infield"><slot /></div>
         <div
           v-for="m in members" :key="m" :ref="(el) => { if (el) tzEls[m] = el as HTMLElement }" class="tz" :data-m="m"
@@ -603,9 +626,53 @@ watch(hops, (now, before) => {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* A portal or flip square at work: it swells once, a glow coming and going round it. */
+/* The again square: a paper die lying on the slab. */
+.redo {
+  position: absolute;
+  inset: 16%;
+  display: grid;
+  place-items: center;
+  border-radius: 24%;
+  background: var(--surface);
+  box-shadow: 0 0 0 calc(var(--u) * 0.04) var(--c-500), 0 calc(var(--u) * 0.07) 0 calc(var(--u) * 0.02) var(--c-600);
+  color: var(--c-600);
+  rotate: -8deg;
+}
+.redo svg {
+  width: 100%;
+  height: 100%;
+}
+.redo rect {
+  fill: none;
+}
+.redo circle {
+  fill: currentColor;
+}
+/* The hook square: a coral disc with a hook thrown ahead. */
+.grab {
+  position: absolute;
+  inset: 14%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 calc(var(--u) * 0.06) 0 var(--c-600);
+  color: var(--ink);
+}
+.grab svg {
+  width: 62%;
+  height: 62%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* A portal, flip, again or hook square at work: it swells once, a glow coming and going round it. */
 .gate::after,
-.turn::after {
+.turn::after,
+.redo::after,
+.grab::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -615,11 +682,15 @@ watch(hops, (now, before) => {
   pointer-events: none;
 }
 .tile.acting .gate,
-.tile.acting .turn {
+.tile.acting .turn,
+.tile.acting .redo,
+.tile.acting .grab {
   animation: acting 520ms var(--ease-out);
 }
 .tile.acting .gate::after,
-.tile.acting .turn::after {
+.tile.acting .turn::after,
+.tile.acting .redo::after,
+.tile.acting .grab::after {
   animation: acting-glow 520ms var(--ease-out);
 }
 @keyframes acting {
@@ -655,6 +726,16 @@ watch(hops, (now, before) => {
     inset 0 1.5px 0 rgba(255, 255, 255, 0.35),
     0 calc(var(--u) * 0.05) 0 var(--c-600),
     0 calc(var(--u) * 0.05 + 1px) calc(var(--u) * 0.12) rgba(var(--c-900-rgb), 0.3);
+}
+/* The map's name, lettered on the island's lower edge. */
+.plate {
+  position: absolute;
+  left: calc(var(--u) * 0.3);
+  bottom: calc(var(--u) * 0.035);
+  font: 800 clamp(9px, calc(var(--u) * 0.16), var(--fs-caption)) / 1 var(--font);
+  letter-spacing: 0.12em;
+  color: color-mix(in oklab, var(--ink) 72%, var(--c-500));
+  white-space: nowrap;
 }
 .infield {
   position: relative;
@@ -805,12 +886,14 @@ watch(hops, (now, before) => {
   right: 6px;
 }
 .say.lead,
+.say.skill,
 .say.boost {
   background: var(--c-500);
   color: var(--ink);
   box-shadow: 0 0 0 2px var(--surface), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
 }
 .say.lead::after,
+.say.skill::after,
 .say.boost::after {
   background: var(--c-500);
   box-shadow: 2px 2px 0 0 var(--surface);

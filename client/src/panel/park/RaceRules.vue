@@ -8,7 +8,7 @@ import ParkCoin from "./ParkCoin.vue";
 import ParkSheet from "./ParkSheet.vue";
 import RaceDie from "./RaceDie.vue";
 import TuanziToken from "./TuanziToken.vue";
-import { KIND_NAMES, type RaceKind } from "./race";
+import { KIND_NAMES, SKILL_NAMES, skillText, type RaceKind } from "./race";
 
 defineEmits<{ close: [] }>();
 
@@ -17,8 +17,12 @@ const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);
 const BOOST = CFG.squares.boost;
 const TRIP = Math.abs(CFG.squares.trip);
-/** Every die a race deals, best first; the config's own on a server without forms. */
-const DICE = CFG.forms?.length ? CFG.forms.map((f) => f.dice) : [CFG.dice];
+/** A race is run on a map, whose boost and trip squares each carry their own number; and deals skills. */
+const MAPS = !!CFG.maps?.length;
+const SKILLS = CFG.skills ?? [];
+/** Every die a race deals, best first; the config's own on a server without forms or skills. */
+const DICE = SKILLS.length ? SKILLS.map((k) => k.dice) : CFG.forms?.length ? CFG.forms.map((f) => f.dice) : [CFG.dice];
+
 const LOW = Math.min(...DICE.flat());
 const HIGH = Math.max(...DICE.flat());
 /** The places each kind of bet covers, first to last, for its mini podium. */
@@ -29,13 +33,13 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
 
 <template>
   <ParkSheet title="赛跑规则" @close="$emit('close')">
-    <div class="race-rules park-sheet-columns">
+    <div class="race-rules park-sheet-columns" :class="{ skilled: SKILLS.length }">
       <ul class="park-sheet-list single" aria-label="跑法">
         <li class="park-sheet-row">
           <span class="park-sheet-lead dice"><RaceDie v-for="(f, k) in CFG.dice" :key="k" :face="f" /></span>
           <span class="park-sheet-main"><b>每轮按顺序各掷一次骰子</b><small>前进 {{ LOW }}–{{ HIGH }} 格</small></span>
         </li>
-        <li v-if="CFG.forms?.length" class="park-sheet-row">
+        <li v-if="!SKILLS.length && CFG.forms?.length" class="park-sheet-row">
           <span class="park-sheet-lead forms" aria-hidden="true">
             <span v-for="(d, j) in [DICE[0], DICE[DICE.length - 1]]" :key="j" class="form-dice">
               <RaceDie v-for="(f, k) in d" :key="k" :face="f" />
@@ -65,11 +69,11 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
           <span class="park-sheet-lead bare" aria-hidden="true">
             <i class="sq"><span class="cap"><svg viewBox="0 0 12 12"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ BOOST }}</span></i>
           </span>
-          <span class="park-sheet-main"><b>加速</b><small>再前进 {{ BOOST }} 格</small></span>
+          <span class="park-sheet-main"><b>加速</b><small>{{ MAPS ? "再前进几格" : `再前进 ${BOOST} 格` }}</small></span>
           <span class="park-sheet-lead bare" aria-hidden="true">
             <i class="sq"><span class="pit"><svg viewBox="0 0 12 12"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>−{{ TRIP }}</span></i>
           </span>
-          <span class="park-sheet-main"><b>绊倒</b><small>后退 {{ TRIP }} 格</small></span>
+          <span class="park-sheet-main"><b>绊倒</b><small>{{ MAPS ? "再后退几格" : `后退 ${TRIP} 格` }}</small></span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead bare" aria-hidden="true"><i class="sq"><span class="gate"><i></i></span></i></span>
@@ -78,6 +82,16 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
             <i class="sq"><span class="turn"><svg viewBox="0 0 16 16"><path d="M5 13.5V2.5M2 5.5l3-3 3 3M11 2.5v11M8 10.5l3 3 3-3" /></svg></span></i>
           </span>
           <span class="park-sheet-main"><b>翻转</b><small>整叠颠倒</small></span>
+        </li>
+        <li v-if="MAPS" class="park-sheet-row">
+          <span class="park-sheet-lead bare" aria-hidden="true">
+            <i class="sq"><span class="redo"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2.6" /><circle cx="5.6" cy="5.6" r="1" /><circle cx="10.4" cy="5.6" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="5.6" cy="10.4" r="1" /><circle cx="10.4" cy="10.4" r="1" /></svg></span></i>
+          </span>
+          <span class="park-sheet-main"><b>再掷</b><small>多掷一次</small></span>
+          <span class="park-sheet-lead bare" aria-hidden="true">
+            <i class="sq"><span class="grab"><svg viewBox="0 0 16 16"><path d="M8 2v7.2a3 3 0 1 1-6 0V8M8 2 5.6 4.4M8 2l2.4 2.4M11 9.5l3 3M14 9.5l-3 3" /></svg></span></i>
+          </span>
+          <span class="park-sheet-main"><b>钩索</b><small>追上前方团子</small></span>
         </li>
       </ul>
       <ul class="park-sheet-list single" aria-label="名次与押法">
@@ -88,6 +102,7 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
           </span>
           <span class="park-sheet-main"><b>同一格中位置靠上者名次在前</b></span>
         </li>
+
         <li v-for="k in CFG.kinds" :key="k" class="park-sheet-row">
           <span class="park-sheet-lead podium" aria-hidden="true">
             <i v-for="(_, p) in MEMBERS" :key="p" :class="{ on: PLACES[k].includes(p) }" :style="{ '--p': p }"></i>
@@ -105,6 +120,13 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
         <li class="park-sheet-row">
           <span class="park-sheet-lead odds" aria-hidden="true"><ParkCoin :size="24" :tilt="false" /><b>×4.2</b></span>
           <span class="park-sheet-main"><b>猜中得 押注 × 赔率 枚驼币</b><small>每场合计后四舍五入</small></span>
+        </li>
+      </ul>
+      <!-- The skills a race deals, one to a runner: under both columns, four to a row. -->
+      <ul v-if="SKILLS.length" class="skills" aria-label="技能">
+        <li v-for="k in SKILLS" :key="k.id">
+          <b class="skill">{{ SKILL_NAMES[k.id] ?? k.id }}</b>
+          <small>{{ skillText(k) }}</small>
         </li>
       </ul>
     </div>
@@ -255,6 +277,90 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   width: 62%;
   height: 62%;
   stroke-width: 1.8;
+}
+.redo {
+  position: absolute;
+  inset: 16%;
+  display: grid;
+  place-items: center;
+  border-radius: 24%;
+  background: var(--surface);
+  box-shadow: 0 0 0 1.5px var(--c-500), 0 2px 0 1px var(--c-600);
+  color: var(--c-600);
+  rotate: -8deg;
+}
+.race-rules .redo svg {
+  width: 100%;
+  height: 100%;
+  stroke: none;
+}
+.redo rect {
+  fill: none;
+}
+.redo circle {
+  fill: currentColor;
+}
+.grab {
+  position: absolute;
+  inset: 14%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 0 var(--c-600);
+  color: var(--ink);
+}
+.race-rules .grab svg {
+  width: 62%;
+  height: 62%;
+  stroke-width: 1.8;
+}
+.skills {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.skills li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 6px;
+  border-radius: var(--radius-m);
+  background: var(--c-100);
+  text-align: center;
+}
+.skills small {
+  font: 600 var(--fs-caption)/1.3 var(--font);
+  color: var(--ink-2);
+}
+/* With the skills under them the rows stand a little lower, and lower still on a short panel, so the sheet fits. */
+.race-rules.skilled .park-sheet-row {
+  --lead: 44px;
+}
+@container panel (max-height: 620px) {
+  .race-rules.skilled .park-sheet-row {
+    --lead: 34px;
+    min-height: 40px;
+  }
+  .skills li {
+    flex-direction: row;
+    justify-content: center;
+    padding: 5px 6px;
+  }
+}
+/* A skill's name: the coral tab a runner wears on its key. */
+.skill {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--c-500);
+  font: 800 var(--fs-caption)/1.1 var(--font);
+  color: var(--ink);
+  white-space: nowrap;
 }
 /* Two squares share a row: their words keep to one line. */
 .race-rules .park-sheet-main small {

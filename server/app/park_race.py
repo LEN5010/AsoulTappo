@@ -27,6 +27,7 @@ import secrets
 from typing import Any, Callable, Iterable
 
 from . import race
+from .notice import version_key
 from .game import Game, GameError, player_id_for
 from .park import Park
 from .store import DAY_OFFSET, day_of
@@ -59,6 +60,16 @@ HISTORY = 30
 SEED_BYTES = 32
 # Simulated races behind a race's chances when the manifest names no `sims`.
 SIMS = 20000
+
+
+# The first client that plays a race run on a map or with skills; older ones get such a race's result only.
+MAPS_SINCE = (1, 2, 5)
+
+
+def plays_maps(version: str | None) -> bool:
+    """Whether a client reporting [version] can play a race on a map or with skills (a pre-release as its release)."""
+    key = version_key(version)
+    return key is not None and key[:3] >= MAPS_SINCE
 
 
 class OddsChanged(GameError):
@@ -168,7 +179,7 @@ class Races:
         rules = self.rules
         setup = race.deal(rules, self.dealer)
         # Drawn after the squares from the same dealer, so the squares come out as before; public with the setup.
-        forms = race.deal_forms(rules, self.dealer)
+        forms = race.deal_skills(rules, self.dealer) or race.deal_forms(rules, self.dealer)
         if forms:
             setup.update(forms)
         else:
@@ -278,7 +289,7 @@ class Races:
 
     # ------------------------------------------------------------------ bets
     def bet(self, token: str, race_id: int, kind: str, member: str, coins: int,
-            shown: float | None = None) -> dict[str, Any]:
+            shown: float | None = None, version: str | None = None) -> dict[str, Any]:
         """Stakes [coins] on (kind, member) of the race taking bets at the odds the stakes so far give; a save stakes
         at most maxCoins a race (no cap when it is 0 or missing). [shown]: the odds the client showed; lower current odds refuse the bet (OddsChanged)
         and change nothing, higher ones are taken."""
@@ -309,13 +320,14 @@ class Races:
                 raise OddsChanged(odds / 10)
             self.park.spend(st, pid, coins, SPEND, now)
             st.race_add_bet(race_id, pid, kind, member, coins, odds, now)
-        return {**g.status(token), "park": self.park.state(token), "race": self._race(g.store.race_get(race_id),
-                                                                                       pid, g.now())}
+        return {**g.status(token), "park": self.park.state(token),
+                "race": self._race(g.store.race_get(race_id), pid, g.now(), version)}
 
     # ------------------------------------------------------------------ view
-    def view(self, token: str) -> dict[str, Any]:
+    def view(self, token: str, version: str | None = None) -> dict[str, Any]:
         """The race shown now (taking bets, running or the latest finished), the finished race before it, the
-        latest winners, and when the next race's bets open."""
+        latest winners, and when the next race's bets open. [version] is the client's: one from before maps and
+        skills gets the result of a race run with them, without the moves it could not play."""
         cfg = self.cfg
         g = self.game
         pid = player_id_for(token)
@@ -331,8 +343,8 @@ class Races:
         return {
             "now": now,
             "nextAt": opened_at(cfg, now) + interval,
-            "race": self._race(shown, pid, now) if shown else None,
-            "last": self._race(last, pid, now) if last else None,
+            "race": self._race(shown, pid, now, version) if shown else None,
+            "last": self._race(last, pid, now, version) if last else None,
             "winners": [{"id": r["id"], "member": json.loads(r["ranking"])[0]} for r in settled],
         }
 
@@ -355,7 +367,7 @@ class Races:
             return None
         return _result(again)
 
-    def history(self, token: str) -> dict[str, Any]:
+    def history(self, token: str, version: str | None = None) -> dict[str, Any]:
         """The latest HISTORY finished races, newest first: each one's China day (of its start), the ranking of a
         settled race and whether it can be played again, and the save's bets on it in coins."""
         g = self.game
@@ -375,26 +387,29 @@ class Races:
                     # Refunded in full.
                     item["mine"] = {"staked": staked, "net": 0}
             else:
-                item.update(phase="done", ranking=json.loads(r["ranking"]), replay=self.played(r) is not None)
+                setup = json.loads(r["setup"])
+                known = plays_maps(version) or not (setup.get("map") or setup.get("skills"))
+                item.update(phase="done", ranking=json.loads(r["ranking"]),
+                            replay=known and self.played(r) is not None)
                 if mine:
                     won = payout(b["prize"] for b in mine)
                     item["mine"] = {"staked": staked, "won": won, "net": won - staked}
             out.append(item)
         return {"races": out}
 
-    def replay(self, token: str, race_id: int) -> dict[str, Any]:
+    def replay(self, token: str, race_id: int, version: str | None = None) -> dict[str, Any]:
         """A settled race as the view gives it, to play again: 404 no_race unless it is settled, no_replay when its
         move list is gone (played())."""
         g = self.game
         row = g.store.race_get(race_id)
         if not row or row["status"] != "settled":
             raise GameError("no_race", "没有这一场")
-        out = self._race(row, player_id_for(token), g.now())
+        out = self._race(row, player_id_for(token), g.now(), version)
         if not out["replay"]:
             raise GameError("no_replay", "这一场没有回放")
         return {"race": out}
 
-    def _race(self, row: dict[str, Any], pid: str, now: float) -> dict[str, Any]:
+    def _race(self, row: dict[str, Any], pid: str, now: float, version: str | None = None) -> dict[str, Any]:
         status = row["status"]
         phase = {"open": "betting" if now < row["starts_at"] else "starting", "running": "running",
                  "settled": "done", "void": "void"}[status]
@@ -420,6 +435,8 @@ class Races:
             # Public from the start on: the seed and everything it decides.
             out.update(seed=row["seed"], endsAt=row["ends_at"], ranking=json.loads(row["ranking"]))
             result = self.played(row)
+            if (setup.get("map") or setup.get("skills")) and not plays_maps(version):
+                result = None
             if result is not None:
                 # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS;
                 # rows from before the rounds' dice have no rest, and played without them (rollMs 0).

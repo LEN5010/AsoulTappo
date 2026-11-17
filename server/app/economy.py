@@ -59,7 +59,10 @@ Weights are percentages unless said otherwise.
     ``fairCap``. A save stakes at most ``maxCoins`` a race, any number when it is 0 or missing (clients before 1.2.4
     need a number there). ``squares``: five special squares in ``range``; boost
     and trip move a landing group by ``boost`` and ``trip``, the portal's ends are ``portalGap`` apart, the flip
-    square turns its stack upside down. ``roomAt`` is in coins.
+    square turns its stack upside down. ``roomAt`` is in coins. With ``maps`` ([{id, name, track, squares: [{at,
+    kind, by?, to?}]}]) each race is run on one of them, on its own track and squares; with ``skills`` ([{id, dice,
+    chance?, by?}], ids in race.SKILLS) each race deals them instead of forms. Clients before 1.2.5 are given only
+    the result of such a race (see race.py and PROTOCOL.md).
   - ``lottery``: ``daily`` tickets a save for each draw; the draw is at minute ``drawAt`` of the China day and sales
     close at ``closeAt``. The top prize is the server-wide pool: it starts at ``pool.seed``, every coin spent in the
     park adds ``pool.perCoin``, and it rolls over until a draw has a top winner. The second prize is ``secondEach``

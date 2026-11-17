@@ -21,6 +21,7 @@ from typing import Any
 
 from . import banners as banner_file
 from . import economy as economy_file
+from . import race as race_rules
 from .notice import version_key
 
 APP_DIR = Path(__file__).resolve().parent
@@ -51,6 +52,9 @@ class Manifest:
         data["economy"], anti = economy_file.load(economy)
         m = cls(data, anti)
         m.banners  # a banner the server could not run stops the start
+        if (m.park or {}).get("race"):
+            # So does a race map or skill the race could not be run with.
+            race_rules.Rules.of(m.park["race"], [c["id"] for c in data["characters"]])
         return m
 
     @cached_property

@@ -36,6 +36,7 @@ import { COIN_SMALL } from "./coin";
 import { shortDay } from "./lottery";
 import {
   chinaDay, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, playLength, replayAt, replayTime,
+  SKILL_NAMES, skillText, trackOf,
   ROUND, roundAt, roundDice, roundsOf, staggered, stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
   type RacePast, type ReplayClock,
 } from "./race";
@@ -203,8 +204,12 @@ const atSpeed = (toss: Toss): Toss => {
   const k = speed.value;
   return k === 1 ? toss : { ...toss, ms: toss.ms / k, delay: (toss.delay ?? 0) / k, at: (toss.at ?? 0) / k };
 };
-/** A runner's key title: its name, and its form on races that deal them. */
+/** A member's skill in the race taking bets, on races that deal them. */
+const skillOf = (m: string) => race.value?.setup.skills?.[m];
+/** A runner's key title: its name, and its skill or form on races that deal them. */
 function runnerTitle(m: string): string {
+  const skill = skillOf(m);
+  if (skill) return `${nameOf(m)} · ${SKILL_NAMES[skill.id] ?? skill.id}：${skillText(skill)}`;
   const form = race.value?.setup.forms?.[m];
   return form ? `${nameOf(m)} · 状态${FORM_NAMES[form] ?? form}` : nameOf(m);
 }
@@ -593,7 +598,7 @@ function flyToPodium() {
     <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
     <RaceTrack
-      :key="trackKey" class="lap" :race="stage" :t="stageNow" :rate="speed" :track="CFG.track" :members="MEMBERS"
+      :key="trackKey" class="lap" :race="stage" :t="stageNow" :rate="speed" :track="trackOf(stage?.setup, CFG.track)" :members="MEMBERS" :caption="stage?.setup.map?.name"
       :cleared="infield === 'podium'"
     >
       <div ref="infieldEl" class="panes">
@@ -621,6 +626,7 @@ function flyToPodium() {
                 <span v-if="race?.setup.dice" class="form" :aria-label="`骰子 ${diceOf(m).join(' ')}`">
                   <RaceDie v-for="(f, k) in diceOf(m)" :key="k" :face="f" :color="colorOf(m)" />
                 </span>
+                <span v-if="skillOf(m)" class="skill">{{ SKILL_NAMES[skillOf(m)!.id] ?? skillOf(m)!.id }}</span>
                 <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
               </button>
             </div>
@@ -981,6 +987,21 @@ function flyToPodium() {
 .form .race-die {
   --s: 13px;
   --die-shadow: none;
+}
+/* The runner's skill this race: a coral tab stuck on the key's other corner. */
+.skill {
+  position: absolute;
+  top: -8px;
+  left: -6px;
+  z-index: 2;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--c-500);
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow-key);
+  font: 800 var(--fs-caption)/1.1 var(--font);
+  color: var(--ink);
+  white-space: nowrap;
+  rotate: -4deg;
 }
 /* The coins I have on a runner: a coin stuck on the key's corner. */
 .mine {

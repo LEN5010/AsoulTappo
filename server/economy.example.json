@@ -304,6 +304,176 @@
           ]
         }
       ],
+      "maps": [
+        {
+          "id": "ring",
+          "name": "环形跑道",
+          "track": 24,
+          "squares": [
+            {
+              "at": 5,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 9,
+              "kind": "portal",
+              "to": 14
+            },
+            {
+              "at": 11,
+              "kind": "again"
+            },
+            {
+              "at": 17,
+              "kind": "trip",
+              "by": 1
+            },
+            {
+              "at": 20,
+              "kind": "flip"
+            }
+          ]
+        },
+        {
+          "id": "sprint",
+          "name": "冲刺短道",
+          "track": 20,
+          "squares": [
+            {
+              "at": 4,
+              "kind": "boost",
+              "by": 3
+            },
+            {
+              "at": 8,
+              "kind": "hook"
+            },
+            {
+              "at": 12,
+              "kind": "trip",
+              "by": 2
+            },
+            {
+              "at": 15,
+              "kind": "again"
+            },
+            {
+              "at": 17,
+              "kind": "flip"
+            }
+          ]
+        },
+        {
+          "id": "long",
+          "name": "长途远征",
+          "track": 28,
+          "squares": [
+            {
+              "at": 4,
+              "kind": "again"
+            },
+            {
+              "at": 7,
+              "kind": "portal",
+              "to": 13
+            },
+            {
+              "at": 10,
+              "kind": "hook"
+            },
+            {
+              "at": 16,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 19,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 22,
+              "kind": "flip"
+            },
+            {
+              "at": 25,
+              "kind": "trip",
+              "by": 1
+            }
+          ]
+        }
+      ],
+      "skills": [
+        {
+          "id": "steady",
+          "dice": [
+            2,
+            3
+          ]
+        },
+        {
+          "id": "burst",
+          "dice": [
+            1,
+            2,
+            3
+          ],
+          "chance": 25
+        },
+        {
+          "id": "chase",
+          "dice": [
+            1,
+            2,
+            3
+          ],
+          "by": 2
+        },
+        {
+          "id": "porter",
+          "dice": [
+            1,
+            2,
+            3
+          ],
+          "by": 2
+        },
+        {
+          "id": "solo",
+          "dice": [
+            1,
+            2,
+            3
+          ],
+          "chance": 50,
+          "by": 1
+        },
+        {
+          "id": "dash",
+          "dice": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "id": "shield",
+          "dice": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "id": "climb",
+          "dice": [
+            1,
+            2,
+            3
+          ]
+        }
+      ],
       "sims": 20000,
       "payout": 0.85,
       "minOdds": 1.1,

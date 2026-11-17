@@ -359,3 +359,81 @@ describe("a replay's clock", () => {
     expect(chinaDay(Date.UTC(2026, 10, 15, 16, 30) / 1000)).toBe("2026-11-16");
   });
 });
+
+// Races the server ran on its maps with skills dealt (server/app/race.py, the example economy): between them every
+// special square and every skill acts.
+import mapRaces from "./raceMaps.fixture.json";
+import { playStep, skillText, squareOn, trackOf, SKILL_NAMES } from "./race";
+
+describe("a race on a map with skills", () => {
+  const races = mapRaces as unknown as { setup: RaceSetup; start: string[]; moves: RaceStep[]; ranking: string[] }[];
+
+  it("is rebuilt from its moves alone, to the server's ranking", () => {
+    for (const r of races) {
+      const end = stacksAt(r.start, r.moves, { done: r.moves.length, current: -1, part: 0 });
+      expect(rankOf(end)).toEqual(r.ranking);
+    }
+  });
+
+  it("walks every step to the squares the server names", () => {
+    for (const r of races) {
+      const track = trackOf(r.setup, 24);
+      expect(track).toBe(r.setup.map!.track);
+      for (const s of r.moves) {
+        const by = squareOn(r.setup, s.to)?.by ?? 0;
+        const { hop, push } = stepPath(s, track, by, by);
+        expect(hop[hop.length - 1]).toBe(s.to);
+        if (s.square === "boost" || s.square === "trip" || s.square === "again") expect(push[push.length - 1]).toBe(s.end);
+        if (s.square === "hook") expect(push[push.length - 1] ?? s.to).toBe(s.end);
+        if (s.square === "portal" || s.square === "flip" || !s.square) expect(push).toEqual([]);
+      }
+    }
+  });
+
+  it("shows the die's face in the round's dice, whatever a skill added", () => {
+    const moves: RaceStep[] = [
+      { m: "a", dice: [2], steps: 4, from: 0, to: 4, skill: "burst" },
+      { m: "b", dice: [3, 1], steps: 3, from: 0, to: 3, square: "again", end: 4 },
+    ];
+    expect(roundDice({ moves, rest: [] } as unknown as Race, 0).map((d) => d.face)).toEqual([2, 3]);
+  });
+
+  it("finds a map's squares from either end of a portal", () => {
+    const setup: RaceSetup = { map: { id: "t", name: "t", track: 20, squares: [
+      { at: 3, kind: "boost", by: 4 }, { at: 6, kind: "portal", to: 11 }, { at: 9, kind: "hook" },
+    ] } };
+    expect(squareOn(setup, 3)).toEqual({ at: 3, kind: "boost", by: 4 });
+    expect(squareOn(setup, 6)?.to).toBe(11);
+    expect(squareOn(setup, 11)).toEqual({ at: 11, kind: "portal", to: 6 });
+    expect(squareKind(setup, 9)).toBe("hook");
+    expect(squareKind(setup, 10)).toBeNull();
+    // Before maps the boost and trip squares move by the config's numbers.
+    expect(squareOn({ boost: 5, trip: 7, portal: [9, 13] }, 5, 2, -1)).toEqual({ at: 5, kind: "boost", by: 2 });
+    expect(squareOn({ boost: 5, trip: 7, portal: [9, 13] }, 7, 2, -1)).toEqual({ at: 7, kind: "trip", by: 1 });
+    expect(squareOn({ boost: 5, trip: 7, portal: [9, 13] }, 13)?.to).toBe(9);
+  });
+
+  it("leaves a solo's riders where they stood and puts a climber on top", () => {
+    const stacks = new Map<number, string[]>([[3, ["a", "b", "c"]], [5, ["d"]]]);
+    playStep(stacks, { m: "a", dice: [1], steps: 3, from: 3, to: 6, skill: "solo", left: ["b", "c"] });
+    expect(stacks.get(3)).toEqual(["b", "c"]);
+    expect(stacks.get(6)).toEqual(["a"]);
+    playStep(stacks, { m: "b", dice: [2], steps: 2, from: 3, to: 5, carry: ["c"], react: ["d"], stack: ["b", "c", "d"] });
+    expect(stacks.get(5)).toEqual(["b", "c", "d"]);
+  });
+
+  it("stops a dash on the finish it would pass", () => {
+    expect(stepPath({ m: "a", dice: [3], steps: 3, from: 22, to: 24, skill: "dash" }, 24, 0, 0).hop).toEqual([23, 24]);
+    expect(stepPath({ m: "a", dice: [3], steps: 3, from: 22, to: 23 }, 24, 0, 0).hop).toEqual([23, 24, 23]);
+  });
+
+  it("names a skill's moment after the skill", () => {
+    expect(momentOf({ m: "a", dice: [2], steps: 4, from: 0, to: 4, skill: "burst" }, "b", "a")).toEqual({ kind: "skill", m: "a", from: HOP_AT });
+    expect(momentOf({ m: "a", dice: [2], steps: 2, from: 0, to: 2, react: ["c"], stack: ["a", "c"] }, "b", "b"))
+      .toEqual({ kind: "skill", m: "c", from: SQUARE_AT });
+    for (const id of ["steady", "burst", "chase", "porter", "solo", "dash", "shield", "climb"]) {
+      expect(SKILL_NAMES[id]).toBeTruthy();
+      expect(skillText({ id, chance: 25, by: 2 })).toBeTruthy();
+    }
+  });
+});

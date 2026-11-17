@@ -9,7 +9,8 @@ from app import race
 from app.manifest import Manifest
 
 M = Manifest.load()
-CFG = M.park["race"]
+# The lap with five dealt squares and forms, as races ran before maps and skills (tests/test_race_maps.py has those).
+CFG = {k: v for k, v in M.park["race"].items() if k not in ("maps", "skills")}
 MEMBERS = tuple(c["id"] for c in M.data["characters"])
 RULES = race.Rules.of(CFG, MEMBERS)
 J, N, B, X, S = "jiaran", "nailin", "beila", "xinyi", "sinuo"

@@ -20,6 +20,23 @@ counted over many simulated races (chances()), and move with the coins staked, n
 odds_tenths(). Races dealt before forms roll the same die for everyone; their odds lean by each member's popularity,
 or are the same for all, and stay under the fair odds of alike members.
 
+With `maps` a race is run on one of them instead, drawn at random: a map names its own `track` and its special
+squares, any number of them, each `{at, kind}`: the four kinds above (boost and trip with `by` squares, a portal with
+its other end `to`), `again` (the mover rolls its die once more and the group walks on by it) and `hook` (the group
+is pulled onto the nearest occupied square ahead; it stays when there is none).
+
+With `skills` a race deals each member one of them instead of a form (deal_skills()): the faces of its die and what it
+does, by id (`chance` in percent and `by` in squares come from the manifest):
+
+- steady: nothing but its die.
+- burst: each move, `chance` to walk the die twice.
+- chase: moving while last on the track, `by` squares more.
+- porter: moving with others on its head, `by` squares more.
+- solo: moving with others on its head, `chance` to leave them behind and walk `by` more for each one left.
+- dash: need not land on the finish exactly; a move that would carry past it ends on it.
+- shield: a trip square, and a portal that would take it back, do nothing to its group.
+- climb: when a group lands on its square and it is not on top, it goes to the top.
+
 The real race draws from StreamRng (SHA-256 of the seed), which anyone can recompute from the published seed.
 """
 from __future__ import annotations
@@ -38,6 +55,11 @@ MAX_ODDS_TENTHS = 990
 PLACES = {"win": 1, "top2": 2, "last": 1}
 # The faces of the die rolled for the order (apart from the dice a move rolls).
 ORDER_FACES = 6
+# The special squares a map may hold, and the skills a race may deal.
+SQUARE_KINDS = ("boost", "trip", "portal", "flip", "again", "hook")
+SKILLS = ("steady", "burst", "chase", "porter", "solo", "dash", "shield", "climb")
+# The shortest lap the board is drawn for.
+MIN_TRACK = 14
 
 
 # ---------------------------------------------------------------- randomness
@@ -90,6 +112,10 @@ class Rules:
     portal_gap: tuple[int, int] = (1, 1 << 30)
     # The forms a race deals its members: (id, the faces of its die). None: everyone rolls `dice`.
     forms: tuple[tuple[str, tuple[int, ...]], ...] = ()
+    # The maps a race is run on, one drawn for each (read_map()). None: the lap of `track`, five squares dealt.
+    maps: tuple[dict[str, Any], ...] = ()
+    # The skills a race deals instead of forms (read_skill()).
+    skills: tuple[dict[str, Any], ...] = ()
 
     @classmethod
     def of(cls, cfg: dict[str, Any], members: list[str] | tuple[str, ...]) -> "Rules":
@@ -98,12 +124,69 @@ class Rules:
         forms = tuple((str(f["id"]), tuple(int(x) for x in f["dice"])) for f in cfg.get("forms") or ())
         return cls(members=tuple(members), track=int(cfg["track"]), dice=tuple(cfg["dice"]),
                    square_range=(int(sq["range"][0]), int(sq["range"][1])), boost=int(sq["boost"]),
-                   trip=int(sq["trip"]), portal_gap=(int(gap[0]), int(gap[1])), forms=forms)
+                   trip=int(sq["trip"]), portal_gap=(int(gap[0]), int(gap[1])), forms=forms,
+                   maps=tuple(read_map(m) for m in cfg.get("maps") or ()),
+                   skills=tuple(read_skill(k) for k in cfg.get("skills") or ()))
+
+
+def read_map(raw: dict[str, Any]) -> dict[str, Any]:
+    """A map of the manifest as a setup carries it: {id, name, track, squares: [{at, kind, by?, to?}]}. Raises
+    ValueError on one the race could not be run on: an odd or short track, an unknown kind, a square on the start or
+    the finish, two squares on one, a boost or trip without a whole `by` of 1 or more, a portal whose `to` is not
+    past its `at`."""
+    mid = str(raw.get("id") or "")
+    track = int(raw["track"])
+    if not mid or track < MIN_TRACK or track % 2:
+        raise ValueError(f"race map {mid!r}: needs an id and an even track of {MIN_TRACK} squares or more")
+    squares: list[dict[str, Any]] = []
+    taken: set[int] = set()
+    for q in raw.get("squares") or ():
+        kind, at = q.get("kind"), int(q["at"])
+        if kind not in SQUARE_KINDS:
+            raise ValueError(f"race map {mid}: unknown square {kind!r}")
+        out: dict[str, Any] = {"at": at, "kind": kind}
+        ends = [at]
+        if kind in ("boost", "trip"):
+            out["by"] = int(q["by"])
+            if out["by"] < 1:
+                raise ValueError(f"race map {mid}: the {kind} square on {at} needs by of 1 or more")
+        elif kind == "portal":
+            out["to"] = int(q["to"])
+            if out["to"] <= at:
+                raise ValueError(f"race map {mid}: the portal on {at} must lead further on")
+            ends.append(out["to"])
+        if any(not 0 < e < track or e in taken for e in ends):
+            raise ValueError(f"race map {mid}: square {ends} is off the track or taken")
+        taken.update(ends)
+        squares.append(out)
+    return {"id": mid, "name": str(raw.get("name") or mid), "track": track, "squares": squares}
+
+
+def read_skill(raw: dict[str, Any]) -> dict[str, Any]:
+    """A skill of the manifest: {id, dice, chance?, by?}, chance in percent. Raises ValueError on an unknown id, an
+    empty die, or a skill without the number it needs."""
+    sid = raw.get("id")
+    dice = [int(x) for x in raw.get("dice") or ()]
+    if sid not in SKILLS or not dice or min(dice) < 1:
+        raise ValueError(f"race skill {sid!r}: unknown, or without a die")
+    out: dict[str, Any] = {"id": sid, "dice": dice}
+    if sid in ("burst", "solo"):
+        out["chance"] = int(raw["chance"])
+        if not 0 < out["chance"] <= 100:
+            raise ValueError(f"race skill {sid}: chance is a percentage above 0")
+    if sid in ("chase", "porter", "solo"):
+        out["by"] = int(raw.get("by", 1))
+        if out["by"] < 1:
+            raise ValueError(f"race skill {sid}: by is 1 or more")
+    return out
 
 
 def deal(rules: Rules, rng: Any) -> dict[str, Any]:
-    """A race's setup, five different squares in the range: the portal's two ends [a, b] (a < b, b − a within
+    """A race's setup. With maps: {"map": one of them at random}, copied in so that the setup alone replays the
+    race. Otherwise five different squares in the range: the portal's two ends [a, b] (a < b, b − a within
     portal_gap), one of the pairs at random, then the boost, trip and flip squares from the rest."""
+    if rules.maps:
+        return {"map": rng.choice(rules.maps)}
     lo, hi = rules.square_range
     g0, g1 = rules.portal_gap
     pairs = [(a, b) for a in range(lo, hi + 1) for b in range(a + 1, hi + 1) if g0 <= b - a <= g1]
@@ -124,6 +207,49 @@ def deal_forms(rules: Rules, rng: Any) -> dict[str, Any] | None:
     picks = rng.sample(range(k), n) if k >= n else [rng.randrange(k) for _ in range(n)]
     return {"forms": {m: rules.forms[i][0] for m, i in zip(rules.members, picks)},
             "dice": {m: list(rules.forms[i][1]) for m, i in zip(rules.members, picks)}}
+
+
+def deal_skills(rules: Rules, rng: Any) -> dict[str, Any] | None:
+    """Each member's skill for one race: {"skills": {member: {id, chance?, by?}}, "dice": {member: its die's faces}},
+    dealt as the forms are: different ones with at least as many skills as members, else one drawn each; None without
+    skills."""
+    if not rules.skills:
+        return None
+    n = len(rules.members)
+    k = len(rules.skills)
+    picks = rng.sample(range(k), n) if k >= n else [rng.randrange(k) for _ in range(n)]
+    return {"skills": {m: {key: v for key, v in rules.skills[i].items() if key != "dice"}
+                       for m, i in zip(rules.members, picks)},
+            "dice": {m: list(rules.skills[i]["dice"]) for m, i in zip(rules.members, picks)}}
+
+
+def track_of(rules: Rules, setup: dict[str, Any]) -> int:
+    """The squares of the lap a setup is run on: its map's, or the manifest's."""
+    return int((setup.get("map") or {}).get("track") or rules.track)
+
+
+def _squares(rules: Rules, setup: dict[str, Any]) -> dict[int, tuple[str, int]]:
+    """What acts on each special square of a setup: (kind, its number): the squares a boost pushes on or a trip sets
+    back, the other end of a portal, 0 for the rest."""
+    acts: dict[int, tuple[str, int]] = {}
+    if setup.get("map"):
+        for q in setup["map"]["squares"]:
+            if q["kind"] == "portal":
+                acts[q["at"]] = ("portal", q["to"])
+                acts[q["to"]] = ("portal", q["at"])
+            else:
+                acts[q["at"]] = (q["kind"], int(q.get("by", 0)))
+        return acts
+    acts[setup["boost"]] = ("boost", rules.boost)
+    acts[setup["trip"]] = ("trip", -rules.trip)
+    # Setups from before the portal and the flip square have neither.
+    if setup.get("portal"):
+        a, b = setup["portal"]
+        acts[a] = ("portal", b)
+        acts[b] = ("portal", a)
+    if setup.get("flip") is not None:
+        acts[setup["flip"]] = ("flip", 0)
+    return acts
 
 
 def _shuffle(items: list[int], below: Any) -> None:
@@ -166,26 +292,20 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     winning move in the last round, [{m, face}] in the order, which never move.
 
     Each member rolls its own die, setup["dice"][member], or rules.dice on setups from before forms. Draw order: the
-    lanes (one shuffle), the order (opening()), each move's die (below(len(its faces))), then rest's dice the same
-    way."""
+    lanes (one shuffle), the order (opening()), then for each move its die (below(len(its faces))), a burst's chance
+    (below(100)), a solo's chance when it has others on its head (below(100)), the second die of an `again` square;
+    then rest's dice as the moves' dice."""
     members = rules.members
     below = rng.below
     own = setup.get("dice") or {}
     dice = [tuple(own.get(m) or rules.dice) for m in members]
-    track = rules.track
-    push = {setup["boost"]: rules.boost, setup["trip"]: rules.trip}
-    square_kind = {setup["boost"]: "boost", setup["trip"]: "trip"}
-    # Setups from before the portal and the flip square have neither.
-    portal = setup.get("portal")
-    other_end: dict[int, int] = {}
-    if portal:
-        a, b = portal
-        other_end = {a: b, b: a}
-        square_kind.update({a: "portal", b: "portal"})
-    if setup.get("flip") is not None:
-        square_kind[setup["flip"]] = "flip"
+    track = track_of(rules, setup)
+    acts = _squares(rules, setup)
+    dealt = setup.get("skills") or {}
+    skills = [dealt.get(m) for m in members]
     n = len(members)
     idx = list(range(n))
+    climbers = [d for d in idx if skills[d] and skills[d]["id"] == "climb"]
 
     start = idx[:]
     _shuffle(start, below)
@@ -203,26 +323,73 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     moves: list[dict[str, Any]] = []
     while True:
         for at, d in enumerate(order):
-            roll = dice[d][below(len(dice[d]))]
+            faces = dice[d]
+            roll = faces[below(len(faces))]
             p = pos[d]
+            skill = skills[d]
+            sid = skill["id"] if skill else None
             if p:
                 s = stack[p]
                 k = s.index(d)
                 group = s[k:]
-                if k:
-                    stack[p] = s[:k]
-                else:
-                    del stack[p]
+                under = s[:k]
             else:
                 group = [d]
-            land = bounce(p + roll, track)
+                under = []
+            # What the mover's skill adds to the die, and the skill once it has acted.
+            bonus = 0
+            used = None
+            left: list[int] = []
+            if sid == "burst":
+                if below(100) < skill["chance"]:
+                    bonus, used = roll, sid
+            elif sid == "chase":
+                if min(idx, key=lambda x: (pos[x], height(x))) == d:
+                    bonus, used = skill["by"], sid
+            elif sid == "porter":
+                if len(group) > 1:
+                    bonus, used = skill["by"], sid
+            elif sid == "solo":
+                if len(group) > 1 and below(100) < skill["chance"]:
+                    left, group = group[1:], [d]
+                    bonus, used = len(left) * skill["by"], sid
+            if p:
+                if under or left:
+                    stack[p] = under + left
+                else:
+                    del stack[p]
+            steps = roll + bonus
+
+            def reach(square: int) -> int:
+                # A dash ends on the finish it would pass; everyone else walks back from it.
+                nonlocal used
+                if sid == "dash" and square > track:
+                    used = sid
+                    return track
+                return bounce(square, track)
+
+            land = reach(p + steps)
             # Only the square the die gives acts, once: where the group ends up then does nothing more.
-            kind = square_kind.get(land)
+            kind, arg = acts.get(land, (None, 0))
             q = land
-            if kind in ("boost", "trip"):
-                q = bounce(land + push[land], track)
+            thrown = [roll]
+            if kind == "boost":
+                q = reach(land + arg)
+            elif kind == "trip":
+                if sid == "shield":
+                    kind, used = None, sid
+                else:
+                    q = bounce(land - arg, track)
             elif kind == "portal":
-                q = other_end[land]
+                if sid == "shield" and arg < land:
+                    kind, used = None, sid
+                else:
+                    q = arg
+            elif kind == "again":
+                thrown.append(faces[below(len(faces))])
+                q = reach(land + thrown[1])
+            elif kind == "hook":
+                q = min((sq for sq in stack if sq > land), default=land)
             if q:
                 stack.setdefault(q, []).extend(group)
             if kind == "flip":
@@ -230,12 +397,25 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
                 stack[q].reverse()
             for g in group:
                 pos[g] = q
-            step: dict[str, Any] = {"m": members[d], "dice": [roll], "steps": roll, "from": p, "to": land}
+            # A climber the group landed on goes to the top of the square, the lower one first.
+            react = [c for c in stack.get(q, ()) if c in climbers and c not in group] if climbers else []
+            react = [c for c in react if stack[q][-1] != c or len(react) > 1]
+            for c in react:
+                stack[q].remove(c)
+                stack[q].append(c)
+            step: dict[str, Any] = {"m": members[d], "dice": thrown, "steps": steps, "from": p, "to": land}
             if len(group) > 1:
                 step["carry"] = [members[g] for g in group[1:]]
             if kind:
                 step["square"] = kind
                 step["end"] = q
+            if used:
+                step["skill"] = used
+            if left:
+                step["left"] = [members[g] for g in left]
+            if react:
+                step["react"] = [members[c] for c in react]
+                step["stack"] = [members[c] for c in stack[q]]
             moves.append(step)
             if q == track:
                 ranked = sorted(idx, key=lambda x: (pos[x], height(x)), reverse=True)

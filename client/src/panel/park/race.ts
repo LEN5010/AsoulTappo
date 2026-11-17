@@ -17,6 +17,10 @@ export interface RaceConfig {
   dice: number[];
   /** The forms a race deals its members, each with the faces of the die it rolls for that race. */
   forms?: RaceForm[];
+  /** The maps a race is run on, one drawn for each; without them, the lap of `track` with five squares dealt. */
+  maps?: RaceMap[];
+  /** The skills a race deals its members instead of forms, each with the faces of its die. */
+  skills?: (RaceSkill & { dice: number[] })[];
   /** Simulated races behind a race's chances. */
   sims?: number;
   payout: number;
@@ -45,11 +49,46 @@ export interface RaceStep {
   /** The special square landed on, and where the group is once it has acted (the same square for a flip). */
   square?: SquareKind;
   end?: number;
+  /** The mover's skill, when it acted in this step. */
+  skill?: string;
+  /** A solo's riders, left behind on the square it moved from. */
+  left?: string[];
+  /** The climbers the group landed on, gone to the top; [stack] is the square then, bottom to top. */
+  react?: string[];
+  stack?: string[];
 }
 
 /** The special squares: boost and trip push the group on or back, a portal end takes it to the other, a flip turns
- * the stack there upside down. */
-export type SquareKind = "boost" | "trip" | "portal" | "flip";
+ * the stack there upside down, again rolls the mover's die once more, a hook pulls the group onto the nearest
+ * dumplings ahead. */
+export type SquareKind = "boost" | "trip" | "portal" | "flip" | "again" | "hook";
+
+/** A special square of a map: where, what, and its number: the squares a boost or trip moves, a portal's other end. */
+export interface MapSquare { at: number; kind: SquareKind; by?: number; to?: number }
+
+/** A map a race is run on: its own lap and squares. */
+export interface RaceMap { id: string; name: string; track: number; squares: MapSquare[] }
+
+/** A skill as a race deals it: `chance` in percent, `by` in squares, as the skill needs them. */
+export interface RaceSkill { id: string; chance?: number; by?: number }
+
+export const SKILL_NAMES: Record<string, string> = {
+  steady: "稳健", burst: "爆发", chase: "追赶", porter: "驮运", solo: "独行", dash: "冲线", shield: "护盾", climb: "登顶",
+};
+
+/** What a skill does, in a few words. */
+export function skillText(k: RaceSkill): string {
+  switch (k.id) {
+    case "burst": return `${k.chance}% 走两倍`;
+    case "chase": return `垫底时 +${k.by}`;
+    case "porter": return `驮着团子 +${k.by}`;
+    case "solo": return `${k.chance}% 甩下团子，每个 +${k.by}`;
+    case "dash": return "越过终点也算到";
+    case "shield": return "不被绊倒和传回";
+    case "climb": return "被踩到就爬上顶";
+    default: return "只靠骰子";
+  }
+}
 
 /** A form a race deals: its id and the faces of the die its member rolls. */
 export interface RaceForm { id: string; dice: number[] }
@@ -64,10 +103,14 @@ export const FORM_NAMES: Record<string, string> = { great: "极佳", good: "良�
  * have each member's popularity, which their opening odds leaned on.
  */
 export interface RaceSetup {
-  boost: number;
-  trip: number;
+  /** Races dealt before maps: where the boost and trip squares are (they move by the config's numbers). */
+  boost?: number;
+  trip?: number;
   portal?: [number, number];
   flip?: number;
+  /** The map the race is run on, with its own lap and squares, and each member's skill. */
+  map?: RaceMap;
+  skills?: Record<string, RaceSkill>;
   forms?: Record<string, string>;
   dice?: Record<string, number[]>;
   chance?: { sims: number } & Record<RaceKind, Record<string, number>>;
@@ -191,7 +234,7 @@ export const roundsOf = (race: Race): number => Math.ceil((race.moves?.length ??
  * winning move, the faces drawn only to be shown (race.rest).
  */
 export function roundDice(race: Race, r: number): OrderRoll[] {
-  const out = (race.moves ?? []).slice(r * ROUND, (r + 1) * ROUND).map((s) => ({ m: s.m, face: s.steps }));
+  const out = (race.moves ?? []).slice(r * ROUND, (r + 1) * ROUND).map((s) => ({ m: s.m, face: s.dice[0] ?? s.steps }));
   return r === roundsOf(race) - 1 ? [...out, ...(race.rest ?? [])] : out;
 }
 
@@ -364,15 +407,30 @@ export function cellOf(square: number, track: number): Cell {
   return { col: 0, row: rows - 1 - (p - cols + 1) };
 }
 
-/** The special square on [square] of [setup], if any. */
-export function squareKind(setup: RaceSetup | undefined, square: number): SquareKind | null {
+/** The lap [setup] is run on: its map's, or the config's [track]. */
+export const trackOf = (setup: RaceSetup | undefined, track: number): number => setup?.map?.track ?? track;
+
+/**
+ * The special square on [square] of [setup], if any: a map's as it is (a portal from either end, `to` the other);
+ * on races dealt before maps, the boost and trip squares move by the config's [boost] and [trip].
+ */
+export function squareOn(setup: RaceSetup | undefined, square: number, boost = 0, trip = 0): MapSquare | null {
   if (!setup) return null;
-  if (square === setup.boost) return "boost";
-  if (square === setup.trip) return "trip";
-  if (setup.portal?.includes(square)) return "portal";
-  if (square === setup.flip) return "flip";
+  if (setup.map) {
+    const q = setup.map.squares.find((x) => x.at === square || (x.kind === "portal" && x.to === square));
+    if (!q) return null;
+    return q.at === square ? q : { at: square, kind: "portal", to: q.at };
+  }
+  if (square === setup.boost) return { at: square, kind: "boost", by: boost };
+  if (square === setup.trip) return { at: square, kind: "trip", by: Math.abs(trip) };
+  if (setup.portal?.includes(square)) return { at: square, kind: "portal", to: setup.portal[0] + setup.portal[1] - square };
+  if (square === setup.flip) return { at: square, kind: "flip" };
   return null;
 }
+
+/** The kind of special square on [square] of [setup], if any. */
+export const squareKind = (setup: RaceSetup | undefined, square: number): SquareKind | null =>
+  squareOn(setup, square)?.kind ?? null;
 
 /** Where a move of [steps] from [from] ends: past the finish it walks back from it (race.py bounce). */
 export const bounce = (square: number, track: number): number =>
@@ -395,15 +453,23 @@ export function walkPath(from: number, steps: number, track: number): number[] {
   return out;
 }
 
+/** walkPath, for a walk the server ended on [end]: a dash stops on the finish it would pass (race.py run). */
+function walkTo(from: number, steps: number, track: number, end: number): number[] {
+  if (end === track && from + steps > track) return Array.from({ length: track - from }, (_, k) => from + k + 1);
+  return walkPath(from, steps, track);
+}
+
 /**
- * The squares of step [s], one at a time: the hop the die gives, then the push of a boost (+[boost]) or trip (−[trip])
- * square, each ending where the server says (to, end). A portal or flip square walks no squares: push is empty.
+ * The squares of step [s], one at a time: the hop the die gives, then what the square there adds: the push of a boost
+ * (+[boost]) or trip (−[trip]) square, the second die of an again square, the way to the dumplings a hook pulls onto;
+ * each ending where the server says (to, end). A portal or flip square walks no squares: push is empty.
  */
 export function stepPath(s: RaceStep, track: number, boost: number, trip: number): { hop: number[]; push: number[] } {
-  const hop = walkPath(s.from, s.steps, track);
-  const walks = s.square === "boost" || s.square === "trip";
-  const push = s.end === undefined || !walks ? [] : walkPath(s.to, s.square === "trip" ? -trip : boost, track);
-  return { hop, push };
+  const hop = walkTo(s.from, s.steps, track, s.to);
+  if (s.end === undefined) return { hop, push: [] };
+  const by = s.square === "boost" ? boost : s.square === "trip" ? -trip : s.square === "again" ? s.dice[1] ?? 0
+    : s.square === "hook" ? s.end - s.to : 0;
+  return { hop, push: by ? walkTo(s.to, by, track, s.end) : [] };
 }
 
 /** A dumpling's place: its square and its height in the stack there (0 at the bottom); on square 0, its lane. */
@@ -413,12 +479,13 @@ export interface Spot { square: number; level: number; lane?: number }
  * Square 0 holds the dumplings still on the start line, side by side in lane order; every other square a stack,
  * bottom to top. A move from square 0 takes the mover alone; anywhere else it takes those above it too.
  */
-function lift(stacks: Map<number, string[]>, from: number, member: string): string[] {
+function lift(stacks: Map<number, string[]>, from: number, step: RaceStep): string[] {
   const s = stacks.get(from) ?? [];
-  const k = s.indexOf(member);
-  if (k < 0) return [member];
-  const group = from === 0 ? [member] : s.slice(k);
-  const rest = from === 0 ? s.filter((m) => m !== member) : s.slice(0, k);
+  const k = s.indexOf(step.m);
+  if (k < 0) return [step.m];
+  // A solo leaves its riders: they stay on the square, on those under it.
+  const group = from === 0 ? [step.m] : s.slice(k).filter((m) => !step.left?.includes(m));
+  const rest = s.filter((m) => !group.includes(m));
   if (rest.length) stacks.set(from, rest);
   else stacks.delete(from);
   return group;
@@ -434,9 +501,12 @@ function put(stacks: Map<number, string[]>, square: number, group: string[]): vo
  * the flip square turns upside down, the group just put on top included (race.py run).
  */
 export function playStep(stacks: Map<number, string[]>, s: RaceStep, acted = true): void {
-  const group = lift(stacks, s.from, s.m);
-  put(stacks, s.end === undefined || !acted ? s.to : s.end, group);
+  const group = lift(stacks, s.from, s);
+  const end = s.end === undefined || !acted ? s.to : s.end;
+  put(stacks, end, group);
   if (acted && s.square === "flip") stacks.get(s.to)?.reverse();
+  // The climbers the group landed on are on top by now.
+  if (acted && s.stack) stacks.set(end, [...s.stack]);
 }
 
 /**
@@ -484,16 +554,20 @@ export function leaders(start: readonly string[], moves: readonly RaceStep[]): s
 
 // ---------------------------------------------------------------- moments worth a word
 
-export type MomentKind = "lead" | "boost" | "trip" | "carry";
+export type MomentKind = "lead" | "boost" | "trip" | "carry" | "skill" | "again" | "hook";
 
 /** A word over the mover in the step under way: what, from which share of the step on. */
 export interface Moment { kind: MomentKind; m: string; from: number }
 
 /**
- * The step's moment, if any, by weight: a fall on the trip square, a push on the boost square, taking the lead,
+ * The step's moment, if any, by weight: a skill at work, the again or hook square, a fall on the trip square, a push on the boost square, taking the lead,
  * carrying others along. [before] is the leader before the step, [after] the leader once it is done.
  */
 export function momentOf(s: RaceStep, before: string | undefined, after: string | undefined): Moment | null {
+  // A skill first: the mover's as it sets off, a climber's once the group has landed on it.
+  if (s.skill) return { kind: "skill", m: s.m, from: HOP_AT };
+  if (s.react?.length) return { kind: "skill", m: s.react[s.react.length - 1], from: SQUARE_AT };
+  if (s.square === "again" || s.square === "hook") return { kind: s.square, m: s.m, from: SQUARE_AT };
   if (s.square === "trip") return { kind: "trip", m: s.m, from: SQUARE_AT };
   if (s.square === "boost") return { kind: "boost", m: s.m, from: SQUARE_AT };
   if (after && before !== after && [s.m, ...(s.carry ?? [])].includes(after)) {

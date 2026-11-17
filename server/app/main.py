@@ -568,27 +568,29 @@ class RaceBetBody(BaseModel):
 
 
 @app.get("/api/park/race")
-def api_park_race(who: PlayerId = Depends(player)) -> dict:
+def api_park_race(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
     """The race shown now, the finished one before it, the latest winners and when the next bets open."""
-    return _guard(races.view, who)
+    return _guard(races.view, who, x_client_version)
 
 
 @app.get("/api/park/race/history")
-def api_park_race_history(who: PlayerId = Depends(player)) -> dict:
+def api_park_race_history(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
     """The latest finished races: day, ranking, whether each can be played again, and my bets on it."""
-    return _guard(races.history, who)
+    return _guard(races.history, who, x_client_version)
 
 
 @app.get("/api/park/race/replay/{race_id}")
-def api_park_race_replay(race_id: int, who: PlayerId = Depends(player)) -> dict:
+def api_park_race_replay(race_id: int, who: PlayerId = Depends(player),
+                         x_client_version: str = Header(default="")) -> dict:
     """A settled race with its move list, as GET /api/park/race gives a race, to play again."""
-    return _guard(races.replay, who, race_id)
+    return _guard(races.replay, who, race_id, x_client_version)
 
 
 @app.post("/api/park/race/bet")
-def api_park_race_bet(body: RaceBetBody, who: PlayerId = Depends(player)) -> dict:
+def api_park_race_bet(body: RaceBetBody, who: PlayerId = Depends(player),
+                      x_client_version: str = Header(default="")) -> dict:
     try:
-        return races.bet(who, body.race, body.kind, body.member, body.coins, body.odds)
+        return races.bet(who, body.race, body.kind, body.member, body.coins, body.odds, x_client_version)
     except OddsChanged as e:
         # _guard's detail plus the current odds, which the client shows again.
         raise HTTPException(status_code=STATUS[e.code], detail={"code": e.code, "message": e.message, "odds": e.odds})
