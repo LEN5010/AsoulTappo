@@ -5,7 +5,7 @@
 // window leaves the app offline and asks again next time.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { DOC_TITLES, STATEMENT, type DocName } from "../legal";
-import { agree, declineAndQuit, holdLeft, termsCurrent } from "../legal/consent";
+import { HOLD_MS, agree, declineAndQuit, holdLeft, termsCurrent } from "../legal/consent";
 import { ui } from "../stores/ui";
 import Modal from "../ui/Modal.vue";
 import LegalDoc from "./LegalDoc.vue";
@@ -25,6 +25,8 @@ function read(doc: DocName | null) {
 const TICK_MS = 100;
 const shownMs = ref(0);
 const left = computed(() => holdLeft(shownMs.value));
+/** How much of the hold has passed, 0 to 1: the bar under the statement. */
+const held = computed(() => Math.min(1, shownMs.value / HOLD_MS));
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   timer = setInterval(() => {
@@ -51,6 +53,12 @@ function confirm() {
       <template v-else>
         <div class="statement">
           <p v-for="line in STATEMENT" :key="line">{{ line }}</p>
+          <div
+            class="hold" :class="{ done: left === 0 }" role="progressbar" aria-label="阅读进度"
+            aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(held * 100)"
+          >
+            <i :style="{ width: `${held * 100}%` }"></i>
+          </div>
         </div>
         <p class="lead">
           <template v-if="termsCurrent">使用 AsoulTappo 受</template><template v-else>使用 AsoulTappo 前，请阅读并同意</template><button
@@ -88,6 +96,24 @@ function confirm() {
 }
 .statement p:first-child {
   font-weight: 800;
+}
+/* The hold as a bar: it fills while the statement is in view, and the key under it unlocks when it is full. */
+.hold {
+  height: 8px;
+  margin-top: 14px;
+  border-radius: 4px;
+  background: var(--c-200);
+  overflow: hidden;
+}
+.hold i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-500);
+  transition: width 100ms linear;
+}
+.hold.done i {
+  background: var(--ok);
 }
 .lead {
   margin: 0 0 20px;
