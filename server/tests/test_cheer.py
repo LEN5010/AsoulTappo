@@ -224,6 +224,24 @@ def test_only_saves_with_enough_taps_in_all_cheer_and_only_with_taps_that_paid()
     assert g.report_activity(token, per_minute, "s" * 16, 3)["cheerTaps"] == per_minute - 50
 
 
+def test_presses_other_software_sent_do_not_fill_the_bar_and_are_still_paid():
+    g = game()
+    token = "cheer-token-dddd04"
+    pid = player_id_for(token)
+    g.status(token)
+    g.store.update_player(pid, taps_total=CHEER_MIN_TAPS)
+    g.now.t += 60
+    out = g.report_activity(token, 50, "s" * 16, 1, injected=30)
+    assert out["cheerTaps"] == 20 and out["credited"] == 50
+    g.now.t += 60
+    assert g.report_activity(token, 50, "s" * 16, 2, injected=50)["cheerTaps"] == 0
+    # A save whose input counts as automatic fills nothing, and is paid as before.
+    g.now.t += 60
+    g.store.update_player(pid, auto_until=g.now() + 600)
+    out = g.report_activity(token, 50, "s" * 16, 3)
+    assert out["cheerTaps"] == 0 and out["credited"] == 50
+
+
 def test_rooms_fill_the_bar_from_reported_taps_and_pay_over_the_socket(monkeypatch):
     g = game()
     tokens = ["cheer-token-dddd04", "cheer-token-eeee05"]

@@ -3,6 +3,7 @@
 import { ref, watch } from "vue";
 import type { InputEvent } from "../composables/tauri";
 import { PetPose } from "../pet/PetPose";
+import { ShownPresses } from "../pet/ShownPresses";
 import { DEFAULT_RULES, TapGuard } from "../pet/TapGuard";
 import { economy } from "./economy";
 import { bumpCounter } from "./counter";
@@ -15,9 +16,11 @@ import { noteAutoInput } from "./autoHint";
 
 const pose = new PetPose();
 export const pet = pose.pet;
+// The room gets the hand's presses only: what other software sent moves the own pet and stays on this desk.
+const shown = new ShownPresses();
 
-watch(() => [pet.dx, pet.dy, pet.keyDown, pet.left, pet.right, inRoom.value, youId.value],
-  () => syncMotion({ ...pet }), { flush: "sync" });
+watch(() => [pet.dx, pet.dy, shown.state.keyDown, shown.state.left, shown.state.right, inRoom.value, youId.value],
+  () => syncMotion({ dx: pet.dx, dy: pet.dy, ...shown.state }), { flush: "sync" });
 
 const guard = new TapGuard(() => economy.value?.tapGuard ?? DEFAULT_RULES);
 /** Presses this page received and what became of them, for the debug build's log (src/debugLog.ts). */
@@ -41,7 +44,8 @@ function tap(injected?: boolean): void {
     return;
   }
   tapStats.counted += 1;
-  registerTap();
+  // Counted and paid like any tap; the room's count is of hands.
+  if (!injected) registerTap();
   countInput(injected);
   bumpCounter();
   popShards();
@@ -51,12 +55,16 @@ export function onInput(e: InputEvent, count = true): void {
   noteActivity();
   // A hidden pet runs no inertia frames; keys and buttons still reach the room.
   pose.input(e, settings.mouseFollow && windowVisible.value ? settings.mouseSensitivity : null);
+  shown.input(e);
   if (e.kind !== "key_down" && e.kind !== "mouse_down") return;
   tapStats[e.kind === "key_down" ? "keys" : "mouse"] += 1;
   if (count) tap(e.injected);
 }
 
-export function stopPet(): void { pose.stop(); }
+export function stopPet(): void {
+  pose.stop();
+  shown.stop();
+}
 
 watch(() => settings.mouseFollow, (enabled) => { if (!enabled) pose.stopMouse(); }, { flush: "sync" });
 watch(windowVisible, (visible) => { if (!visible) pose.stopMouse(); }, { flush: "sync" });

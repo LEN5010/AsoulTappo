@@ -136,6 +136,20 @@ def player_id_for(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()[:16]
 
 
+def _guard_notes(stored: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A session's stored guard notes: those of everything it sent, and those of what its rooms were shown. Rows
+    written before the second stream hold the first one's notes alone."""
+    try:
+        notes = json.loads(stored) if stored else {}
+    except ValueError:
+        notes = {}
+    if not isinstance(notes, dict):
+        return {}, {}
+    if notes.get("v") == 2 and isinstance(notes.get("all"), dict) and isinstance(notes.get("shown"), dict):
+        return notes["all"], notes["shown"]
+    return notes, {}
+
+
 class Game:
     def __init__(self, store: Store, manifest: Manifest, cfg: DropConfig | None = None,
                  rng: Rng | None = None, now: Callable[[], float] = time.time, guard: Guard | None = None) -> None:
@@ -227,30 +241,38 @@ class Game:
                 st.mark_active(pid, today)
         out = self.status(token)
         out["credited"] = credited
-        # Taps for the room's cheer round (popped by the server before answering): those that paid shards.
-        out["cheerTaps"] = paid_taps if p["taps_total"] + credited >= CHEER_MIN_TAPS else 0
+        # Taps for the room's cheer round (popped by the server before answering): those that paid shards, less the
+        # presses other software sent, and none while the save's input counts as automatic: the bar is the room's
+        # count, and a room counts hands only. Income is not touched by either.
+        cheer = paid_taps
+        if injected:
+            cheer = min(cheer, max(0, taps - min(int(injected), taps)))
+        if self.auto_input(pid):
+            cheer = 0
+        out["cheerTaps"] = cheer if p["taps_total"] + credited >= CHEER_MIN_TAPS else 0
         return out
 
     def _judge(self, st: Store, p: dict[str, Any], pid: str, today: str, now: float, last: dict[str, Any],
                taps: int, injected: int | None) -> str:
         """Hands one batch of a session to the guard (app/guard.py) and keeps what it found: how long the save's
         input counts as automatic, and the day's flags. Judged on what the session sent, so a cooldown hides nothing.
+
+        A client that tells which presses other software sent keeps those out of its rooms itself, so the rooms are
+        shown the rest: that rest is judged as a stream of its own (the same batches without the injected presses,
+        with notes of its own), and rooms hide the save while it counts as automatic. From a client that cannot tell,
+        the rooms get everything, and the one judgement stands for both.
         Returns the session's notes for its next batch."""
-        try:
-            notes = json.loads(last["guard"]) if last["guard"] else {}
-        except ValueError:
-            notes = {}
-        if not isinstance(notes, dict):
-            notes = {}
+        notes, shown_notes = _guard_notes(last["guard"])
         if injected is not None:
             injected = max(0, min(int(injected), taps))
         elapsed = now - last["last_at"] if 0 < last["last_at"] < now else 0.0
         try:
             span = self.guard.judge(Batch(taps, injected, elapsed, now), notes)
-            kept = json.dumps(notes, separators=(",", ":"))
+            shown = span if injected is None else self.guard.judge(Batch(taps - injected, 0, elapsed, now), shown_notes)
+            kept = json.dumps({"v": 2, "all": notes, "shown": shown_notes}, separators=(",", ":"))
         except Exception:  # a broken rule must not cost anyone their taps
             log.exception("the guard failed on a batch")
-            span, kept = 0.0, last["guard"]
+            span, shown, kept = 0.0, 0.0, last["guard"]
         if injected:
             st.add_tap_flags(today, pid, injected=injected)
         if span > 0:
@@ -259,12 +281,16 @@ class Game:
             if now + span > p["auto_until"]:
                 p["auto_until"] = now + span
                 st.update_player(pid, auto_until=p["auto_until"])
-        self._auto[pid] = p["auto_until"]
+        if injected is None:
+            # Everything this client sends is what its rooms get: the save's own state, a restart included.
+            self._auto[pid] = p["auto_until"]
+        elif shown > 0:
+            self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
         return kept
 
     def auto_input(self, pid: str | None) -> bool:
-        """Whether the save's input counts as automatic now, as of its last report to this process: rooms ask this
-        for every tap and motion, so it never reads the database."""
+        """Whether what the save's client sends its rooms counts as automatic now (see _judge), as of its last
+        report to this process: rooms ask this for every tap and motion, so it never reads the database."""
         if not pid:
             return False
         until = self._auto.get(pid)

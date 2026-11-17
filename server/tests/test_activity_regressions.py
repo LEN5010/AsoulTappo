@@ -239,12 +239,15 @@ def test_the_guard_sees_each_batch_as_sent_and_keeps_notes_per_session():
     send(game, clock, 40, None, 1)
     send(game, clock, 40, 55, 2)       # more than the taps: taken as all of them
     send(game, clock, 40, 40, 1, "other", every=7.0)
-    assert [(b.taps, b.injected, b.elapsed) for b in guard.seen] == [(40, None, 0.0), (40, 40, 20.0), (40, 40, 0.0)]
-    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"run": 1}
-    assert json.loads(game.store.activity_session(pid, "other")["guard"]) == {"run": 1}
+    # A client that tells injected presses apart has the rest judged too, as the stream its rooms are shown.
+    assert [(b.taps, b.injected, b.elapsed) for b in guard.seen] == [
+        (40, None, 0.0), (40, 40, 20.0), (0, 0, 20.0), (40, 40, 0.0), (0, 0, 0.0)]
+    kept = {"v": 2, "all": {"run": 1}, "shown": {"run": 0}}
+    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == kept
+    assert json.loads(game.store.activity_session(pid, "other")["guard"]) == kept
     # A batch sent again is not judged twice.
     game.report_activity(TOKEN, 40, "s", 2, injected=40)
-    assert len(guard.seen) == 3
+    assert len(guard.seen) == 5
 
 
 def test_input_judged_automatic_is_flagged_and_still_paid():
@@ -254,7 +257,8 @@ def test_input_judged_automatic_is_flagged_and_still_paid():
     assert send(game, clock, 40, 40, 2)["autoInput"] == 0
     result = send(game, clock, 40, 40, 3)
     assert result["autoInput"] == 1800 and result["tapCooldown"] == 0 and result["credited"] == 40
-    assert game.auto_input(pid)
+    # Its client kept every one of those presses out of the room, so the room has nothing of it to hide.
+    assert not game.auto_input(pid)
     # Each further batch judged automatic keeps it going; the day's flags count the start once.
     assert send(game, clock, 40, 40, 4)["autoInput"] == 1800
     flags = game.store.tap_flags_of(day_of_clock(clock), 10)
@@ -272,16 +276,17 @@ def test_input_judged_automatic_is_flagged_and_still_paid():
 
 def test_automatic_input_is_remembered_across_a_restart(tmp_path):
     path = tmp_path / "game.db"
-    game, clock = make_guarded(Streak(need=1), path)
+    game, clock = make_guarded(Busy(), path)
     pid = game.status(TOKEN)["player"]
-    send(game, clock, 40, 40, 1)
+    send(game, clock, 120, None, 1)
+    assert game.auto_input(pid)
     game.store.close()
-    again = Game(Store(str(path)), tiny_manifest(), now=clock, guard=Streak(need=99))
+    again = Game(Store(str(path)), tiny_manifest(), now=clock, guard=Busy(at=10_000))
     assert again.status(TOKEN)["autoInput"] == 1800
     # Rooms hear of it with the save's next report.
     assert not again.auto_input(pid)
     clock.t += 20
-    again.report_activity(TOKEN, 5, "s", 2, injected=0)
+    again.report_activity(TOKEN, 5, "s", 2)
     assert again.auto_input(pid)
 
 
@@ -298,7 +303,52 @@ def test_a_guard_that_fails_costs_no_taps_and_keeps_its_notes():
     send(game, clock, 40, 40, 1)
     result = send(game, clock, 13, 13, 2)
     assert result["credited"] == 13 and result["autoInput"] == 0
-    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"run": 1}
+    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"v": 2, "all": {"run": 1}, "shown": {"run": 0}}
+
+
+class Busy(Guard):
+    """Another stand-in: a batch of `at` taps or more counts as automatic, whoever sent them."""
+
+    def __init__(self, at=100, span=1800.0):
+        self.at, self.span = at, span
+
+    def judge(self, batch, notes):
+        return self.span if batch.taps >= self.at else 0.0
+
+
+def test_rooms_hide_a_save_only_while_what_they_are_shown_is_automatic():
+    game, clock = make_guarded(Busy())
+    pid = game.status(TOKEN)["player"]
+    # 120 presses, 90 of them from other software: the status says so, the 30 the room is shown are a hand's.
+    result = send(game, clock, 120, 90, 1)
+    assert result["autoInput"] == 1800 and not game.auto_input(pid)
+    # 120 presses none of which the system marked: the room is shown all of them.
+    result = send(game, clock, 120, 0, 2)
+    assert result["autoInput"] == 1800 and game.auto_input(pid)
+    # It lasts as long as the judgement says, whatever the batches after it are.
+    send(game, clock, 10, 0, 3)
+    assert game.auto_input(pid)
+    clock.t += 1800
+    assert not game.auto_input(pid)
+
+
+def test_a_client_that_cannot_tell_is_judged_once_for_both():
+    game, clock = make_guarded(Busy())
+    pid = game.status(TOKEN)["player"]
+    result = send(game, clock, 120, None, 1)
+    assert result["autoInput"] == 1800 and game.auto_input(pid)
+    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"v": 2, "all": {}, "shown": {}}
+
+
+def test_notes_from_before_the_second_stream_are_read_as_the_first():
+    guard = Streak(need=2)
+    game, clock = make_guarded(guard)
+    pid = game.status(TOKEN)["player"]
+    send(game, clock, 40, 40, 1)
+    with game.store.transaction() as st:
+        row = st.activity_session(pid, "s")
+        st.save_activity_sequence(pid, "s", row["sequence"], row["last_at"], row["fast_since"], '{"run":1}')
+    assert send(game, clock, 40, 40, 2)["autoInput"] == 1800
 
 
 def test_the_guard_file_is_loaded_by_path(tmp_path, monkeypatch):

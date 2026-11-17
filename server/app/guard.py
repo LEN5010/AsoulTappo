@@ -1,8 +1,12 @@
 """Telling automatic input (an auto-clicker, a macro) from a hand, kept out of the public repository.
 
 The server hands every batch of a session's taps to a guard and takes back how long the save's input counts as
-automatic. While it does, the save's status says so (``autoInput``, see protocol/PROTOCOL.md) and rooms stop showing
-its taps and motion; nothing is taken from its income.
+automatic. While it does, the save's status says so (``autoInput``, see protocol/PROTOCOL.md); nothing is taken from
+its income.
+
+Rooms count hands only. A client that tells which presses other software sent keeps those out of its rooms, so the
+server asks a second time about the rest of each batch (``taps - injected``, with notes of its own) and rooms stop
+showing the save's taps and motion while that answer holds. From a client that cannot tell, the first answer hides it.
 
 The rules live in a Python file named by ``ASOULTAPPO_GUARD``, next to the economy file on the server. It defines
 ``judge(batch, notes)`` with the meaning of ``Guard.judge`` below. Without the variable nothing is judged.

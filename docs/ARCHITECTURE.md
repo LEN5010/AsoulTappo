@@ -102,6 +102,7 @@ Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member col
 ### Desk (`pet/`)
 
 - `PetView.vue` draws the layered pet; `PetActor.vue` drags it; `CounterBar.vue` is the strip with the tap count. The own actor keeps one width whatever the strip shows.
+- `PetPose.ts` turns input events into the own pet's pose. `ShownPresses.ts` keeps the pose a room is sent: the same without the presses other software sent (an auto-clicker, a macro), which are counted and paid but stay out of the room's tap count and its bar.
 - `QuickEmote.vue` is the single-row emote dock. It starts with small keys for the tomato timer (`PomodoroDock.vue`), the todo window and, in a room, the own status (`StatusDock.vue`, `ui/StatusKeys.vue`).
 - The strip folds to a grip; the pet can dock to the bottom edge. A click on the grip opens `GripMenu.vue`.
 - Bubbles over the own pet: `EmoteBubble`, `ComboBubble`, `DuelBubble` (with `StakeKeys`), `DdzBubble` (a 斗地主 invite, and the way back to the table on the own turn), `PokeBubble`, `NudgeBubble` (reminders, tomato timer, todos), `CooldownBubble` (input faster than a hand), `AccessBubble` (macOS permission), `AdminBubble` (an elevated game the hook cannot hear), `AutoInputBubble` (the server counts the save's input as automatic; once a day, see `stores/autoHint.ts`) and the note its key opens, `AutoInputNote`. `duelPick.ts` opens poke, duel and profile keys over a partner's pet.
