@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The layered desk pet (background, keyboard paw, mouse paw, click images) plus the emote bubble and the tap
-// combo.
+// combo. A two-form skin lays its second picture over the first and shows it while the player keeps typing.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { remoteMotion } from "../net/MotionFrames";
@@ -11,6 +11,7 @@ import ComboBubble from "./ComboBubble.vue";
 import Icon from "../ui/Icon.vue";
 import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
+import { SkinForm } from "./SkinForm";
 
 const props = withDefaults(
   defineProps<{
@@ -102,6 +103,20 @@ watch(
 );
 const pressed = computed(() => props.keyDown || pulseDown.value);
 
+// ---- the second form of a two-form skin: the own pet times its presses, another member's pet its tap batches
+const formOn = ref(false);
+let form: SkinForm | undefined;
+watch(() => assets.value?.form, (has) => {
+  form?.reset();
+  form = has ? new SkinForm((on) => (formOn.value = on)) : undefined;
+}, { immediate: true });
+onBeforeUnmount(() => form?.reset());
+watch([() => props.keyDown, () => props.leftDown, () => props.rightDown, () => props.pulse], (now, was) => {
+  if (form && now.some((v, i) => (i === 3 ? v !== was[i] : v && !was[i]))) form.press(Date.now());
+});
+const sized = (p: { bg: string; bgSmall: string; bgMedium: string }) =>
+  (s.value <= 1 ? p.bgSmall : s.value <= 2 ? p.bgMedium : p.bg);
+
 // ---- the cup after a drink of water
 const SIP_MS = 3200;
 const sipShown = ref(0);
@@ -141,7 +156,8 @@ const bubbleAnchor = computed(() => ({
 <template>
   <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
     <div v-if="assets" class="art">
-      <img class="layer bg" :src="scale <= 1 ? assets.bgSmall : scale <= 2 ? assets.bgMedium : assets.bg" :style="{ width: box.width }" draggable="false" alt="" />
+      <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
+      <img v-if="assets.form" class="layer bg form" :class="{ shown: formOn }" :src="sized(assets.form)" :style="{ width: box.width }" draggable="false" alt="" />
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <span v-if="motionId || leftDown" class="layer mouse click" :class="{ 'click-left': motionId }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
@@ -169,6 +185,10 @@ const bubbleAnchor = computed(() => ({
 .layer { position: absolute; pointer-events: none; }
 /* Width only, bottom-aligned: a picture taller than the canvas holds headwear above it and draws past the top. */
 .bg { left: 0; bottom: 0; height: auto; }
+/* The second form fades in over the first, which then hides; going back, the first shows before the fade out. */
+.bg.under { visibility: hidden; transition: visibility 0s linear var(--dur-slow); }
+.bg.form { opacity: 0; transition: opacity var(--dur-slow) var(--ease-out); }
+.bg.form.shown { opacity: 1; }
 /* The two paws are layers of their own: moving one changes where its layer is put, and nothing is painted
    again. Without this every step of a paw repaints the tiles under the pet. */
 .kb, .mouse { will-change: transform; }

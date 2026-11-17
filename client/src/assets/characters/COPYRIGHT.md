@@ -7,4 +7,4 @@ Copyright of these character images belongs to A-SOUL. The GPL-2.0 license cover
 Non-commercial fan project. Rights holders: open an issue and the assets will be removed promptly.
 
 Per character: `bgImage.webp`, `keyboardImage.webp`, `mouseImage.webp`, `leftClickImage.webp`, `rightClickImage.webp` (the original PNGs, stored as lossless WebP).
-Skin folders start with the member's name, such as `贝拉山海经`. Only `bgImage.webp` is required; any other layer falls back to the member's.
+Skin folders start with the member's name, such as `贝拉山海经`. Only `bgImage.webp` is required; any other layer falls back to the member's. A two-form skin also has `formImage.webp`, its second picture.

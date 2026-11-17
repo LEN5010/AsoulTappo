@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { spotlight, spotlightOf } from "./spotlight";
 
 describe("launch spotlight", () => {
-  it("is the skins sharing the newest release, titled with their series", () => {
-    expect(spotlight).toEqual({ id: "skins:1.2.2", title: "2025生日", skins: ["心宜2025生日", "思诺2025生日"] });
+  it("is the skins sharing the newest release, titled 新皮肤 when their series differ", () => {
+    expect(spotlight).toEqual({ id: "skins:1.2.5", title: "新皮肤", skins: ["嘉然然龙", "乃琳法师", "贝拉炎头队长"] });
   });
 
   it("follows the newest since and ignores skins without one", () => {

@@ -126,13 +126,16 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
     later = set(M.skin_since)
     winter = {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
     birthday = {"char:心宜2025生日", "char:思诺2025生日"}
-    assert later == winter | birthday
+    forms = {"char:嘉然然龙", "char:乃琳法师", "char:贝拉炎头队长"}
+    assert later == winter | birthday | forms
     skins = lambda version: {i["id"] for i in M.resonance_pool_for(version)["skin"]}
     every = {i["id"] for i in M.resonance_pool["skin"]}
-    for version in (None, "1.2.2", "v1.2.2", "1.2.2-rc.1", "1.3.0"):
+    for version in (None, "1.2.5", "v1.2.5", "1.2.5-rc.1", "1.3.0"):
         assert skins(version) == every
+    for version in ("1.2.2", "v1.2.4", "1.2.4-rc.1"):
+        assert skins(version) == every - forms
     for version in ("1.2.0", "v1.2.1", "1.2.0-rc.3"):
-        assert skins(version) == every - birthday
+        assert skins(version) == every - birthday - forms
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
     # Besides skins only the wardrobe cards (the limited tier) are held back.

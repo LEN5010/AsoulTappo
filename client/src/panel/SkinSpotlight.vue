@@ -16,7 +16,7 @@ function resonate() {
 
 <template>
   <Modal v-if="spotlight && spotlightShown" :key="spotlight.id" :title="spotlight.title" heading wide @close="readSpotlight">
-    <span class="ui-tag gold">新皮肤</span>
+    <span v-if="spotlight.title !== '新皮肤'" class="ui-tag gold">新皮肤</span>
     <ul class="lineup">
       <li v-for="(name, i) in spotlight.skins" :key="name" :style="{ '--tilt': `${TILTS[i % TILTS.length]}deg`, '--i': i }">
         <SkinArt :name="name" owned />

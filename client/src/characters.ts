@@ -1,7 +1,8 @@
 // Character assets live in src/assets/characters/<name>/{bgImage,keyboardImage,mouseImage,leftClickImage,rightClickImage}.webp
 // Pet images under assets/characters (copyright: assets/characters/COPYRIGHT.md).
 // A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.webp
-// is required, the other layers come from the member.
+// is required, the other layers come from the member. A two-form skin also has formImage.webp, its second picture
+// on the same canvas (pet/SkinForm.ts says when it shows).
 import { memberOf } from "./manifest";
 
 const files = import.meta.glob("./assets/characters/*/*.webp", {
@@ -25,6 +26,8 @@ export interface CharacterAssets {
   mouse: string;
   leftClick: string;
   rightClick: string;
+  /** The second picture of a two-form skin, in the same three sizes as `bg`. */
+  form?: { bg: string; bgSmall: string; bgMedium: string };
 }
 
 function build(): Record<string, CharacterAssets> {
@@ -48,6 +51,13 @@ function build(): Record<string, CharacterAssets> {
       mouse: f.mouseImage,
       leftClick: f.leftClickImage ?? f.mouseImage,
       rightClick: f.rightClickImage ?? f.mouseImage,
+      ...(own.formImage ? {
+        form: {
+          bg: own.formImage,
+          bgSmall: preview(name, "form-480") ?? own.formImage,
+          bgMedium: preview(name, "form-960") ?? own.formImage,
+        },
+      } : {}),
     };
   }
   return out;
@@ -97,6 +107,10 @@ const HEADS: Record<string, { x: number; y: number }> = {
   嘉然冬日奇迹: { x: 152, y: 0 },
   贝拉冬日奇迹: { x: 146, y: -1 },
   乃琳冬日奇迹: { x: 150, y: 3 },
+  // Two-form skins: the first form's head; the second only adds horns, fire or a crown around it.
+  嘉然然龙: { x: 152, y: 7 },
+  乃琳法师: { x: 150, y: 14 },
+  贝拉炎头队长: { x: 146, y: 5 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
   return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };

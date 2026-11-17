@@ -29,3 +29,21 @@ describe("skins", () => {
       .toEqual([base.keyboard, base.mouse, base.leftClick, base.rightClick]);
   });
 });
+
+describe("two-form skins", () => {
+  it.each([["嘉然然龙", "嘉然"], ["乃琳法师", "乃琳"], ["贝拉炎头队长", "贝拉"]])("ship %s with both pictures and %s's input layers", (name, member) => {
+    const skin = characters[name]!;
+    const base = characters[member]!;
+    expect(skin.form).toBeTruthy();
+    expect(skin.form!.bg).not.toBe(skin.bg);
+    expect(skin.form!.bgSmall).not.toBe(skin.form!.bg);
+    expect(skin.form!.bgMedium).not.toBe(skin.form!.bg);
+    expect(skin.portrait).toBeTruthy();
+    expect([skin.keyboard, skin.mouse, skin.leftClick, skin.rightClick])
+      .toEqual([base.keyboard, base.mouse, base.leftClick, base.rightClick]);
+  });
+  it("are the only skins with a second picture", () => {
+    expect(Object.values(characters).filter((c) => c.form).map((c) => c.name).sort())
+      .toEqual(["乃琳法师", "嘉然然龙", "贝拉炎头队长"].sort());
+  });
+});

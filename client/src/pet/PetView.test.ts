@@ -28,3 +28,16 @@ describe("member click colors", () => {
     },
   );
 });
+
+describe("two-form skins", () => {
+  it("lay the second picture, hidden, over the first", async () => {
+    const html = await renderToString(createSSRApp(PetView, { character: "嘉然然龙" }));
+    expect(html).toContain(characters["嘉然然龙"].form!.bgSmall);
+    expect(html.match(/class="layer bg form"/g)).toHaveLength(1);
+    expect(html).not.toContain("shown");
+  });
+  it("draw one picture for a skin without a second form", async () => {
+    const html = await renderToString(createSSRApp(PetView, { character: "嘉然山海经" }));
+    expect(html.match(/class="layer bg/g)).toHaveLength(1);
+  });
+});

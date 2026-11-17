@@ -60,6 +60,12 @@ def build_pet_previews() -> int:
             crop = im.crop((round(im.width * 90 / 240), top,
                             round(im.width * 222 / 240), top + round((im.height - top) * 112 / 135)))
             save(crop, out / "face.webp", (264, 224))
+        form = source.with_name("formImage.webp")
+        if form.exists():
+            # The second form of a two-form skin: drawn on the pet only, so no face crop.
+            with Image.open(form) as im:
+                save_width(im, out / "form-480.webp", 480)
+                save_width(im, out / "form-960.webp", 960)
         count += 1
     return count
 
