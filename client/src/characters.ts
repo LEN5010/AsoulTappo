@@ -2,7 +2,8 @@
 // Pet images under assets/characters (copyright: assets/characters/COPYRIGHT.md).
 // A skin is a folder whose name starts with its member, such as 贝拉山海经: only bgImage.webp
 // is required, the other layers come from the member. A two-form skin also has formImage.webp, its second picture
-// on the same canvas (pet/SkinForm.ts says when it shows).
+// on the same canvas (pet/SkinForm.ts says when it shows), and may have formLoop.webp: frames of one part of the
+// second picture, side by side, that play over it while it shows (formLoop.json says where; scripts/make_form_loop.py).
 import { memberOf } from "./manifest";
 
 const files = import.meta.glob("./assets/characters/*/*.webp", {
@@ -10,6 +11,20 @@ const files = import.meta.glob("./assets/characters/*/*.webp", {
   query: "?url",
   import: "default",
 }) as Record<string, string>;
+
+/** Where the frames of a form loop go, in pixels of the second picture (`width` x `height`). */
+export interface FormLoopSpec {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  frames: number;
+  /** each frame shows this long */
+  ms: number;
+  width: number;
+  height: number;
+}
+const loops = import.meta.glob("./assets/characters/*/formLoop.json", { eager: true, import: "default" }) as Record<string, FormLoopSpec>;
 
 const previews = import.meta.glob("./assets/previews/characters/*/*.webp", {
   eager: true, query: "?url", import: "default",
@@ -27,7 +42,7 @@ export interface CharacterAssets {
   leftClick: string;
   rightClick: string;
   /** The second picture of a two-form skin, in the same three sizes as `bg`. */
-  form?: { bg: string; bgSmall: string; bgMedium: string };
+  form?: { bg: string; bgSmall: string; bgMedium: string; loop?: FormLoopSpec & { src: string } };
 }
 
 function build(): Record<string, CharacterAssets> {
@@ -40,6 +55,7 @@ function build(): Record<string, CharacterAssets> {
   const out: Record<string, CharacterAssets> = {};
   for (const [name, own] of Object.entries(tmp)) {
     const f = { ...tmp[memberOf(name)], ...own };
+    const loop = loops[`./assets/characters/${name}/formLoop.json`];
     if (!f.bgImage || !f.keyboardImage || !f.mouseImage) continue;
     out[name] = {
       name,
@@ -56,6 +72,7 @@ function build(): Record<string, CharacterAssets> {
           bg: own.formImage,
           bgSmall: preview(name, "form-480") ?? own.formImage,
           bgMedium: preview(name, "form-960") ?? own.formImage,
+          ...(own.formLoop && loop ? { loop: { ...loop, src: own.formLoop } } : {}),
         },
       } : {}),
     };

@@ -36,6 +36,11 @@ describe("two-form skins", () => {
     expect(html.match(/class="layer bg form"/g)).toHaveLength(1);
     expect(html).not.toContain("shown");
   });
+  it("run no loop while the first picture shows", async () => {
+    const html = await renderToString(createSSRApp(PetView, { character: "贝拉炎头队长" }));
+    expect(html).toContain(characters["贝拉炎头队长"].form!.bgSmall);
+    expect(html).not.toContain(characters["贝拉炎头队长"].form!.loop!.src);
+  });
   it("draw one picture for a skin without a second form", async () => {
     const html = await renderToString(createSSRApp(PetView, { character: "嘉然山海经" }));
     expect(html.match(/class="layer bg/g)).toHaveLength(1);

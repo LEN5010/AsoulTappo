@@ -106,6 +106,7 @@ Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member col
 - Bubbles over the own pet: `EmoteBubble`, `ComboBubble`, `DuelBubble` (with `StakeKeys`), `DdzBubble` (a 斗地主 invite, and the way back to the table on the own turn), `PokeBubble`, `NudgeBubble` (reminders, tomato timer, todos), `CooldownBubble` (input faster than a hand), `AccessBubble` (macOS permission), `AdminBubble` (an elevated game the hook cannot hear). `duelPick.ts` opens poke, duel and profile keys over a partner's pet.
 - Tomato timer: `pomodoro.ts`, `stores/pomodoro.ts`, `PomodoroChip.vue`. The system notice goes through `notify` in `lib.rs` (tauri-plugin-notification).
 - Two-form skins (`pet/SkinForm.ts`): `PetView` lays `formImage.webp` over the first picture after a stretch of continuous typing and takes it off when idle. The own pet times its press edges, another member's pet its tap batches, so no message carries the form. Album, avatars and the spotlight show the first picture.
+- Form loops: a skin with `formLoop.webp` (frames side by side) and `formLoop.json` (where on the second picture, how many, how long each) has the parts the second picture adds move. `PetView` mounts the loop only while the second form shows and steps a transform through the frames, so it costs nothing at rest.
 
 ### Panel (`panel/`)
 
@@ -184,6 +185,7 @@ A skin is one entry in `SKINS` (`scripts/asset_catalog.py`) plus `client/src/ass
 - `since` is the release that ships the picture. The server keeps the skin out of older clients' pools, so the server can be deployed first.
 - The skins sharing the newest `since` are that release's launch spotlight (`stores/spotlight.ts`, `panel/SkinSpotlight.vue`), shown once per device, titled with their series or 新皮肤 when the batch mixes series.
 - A two-form skin adds `formImage.webp` on the same canvas; `build_previews.py` writes its `form-480` and `form-960` too.
+- To move the parts the second picture adds, add the skin to `LOOPS` in `scripts/make_form_loop.py` (a flame that burns) and put the second picture with the parts drawn in under `docs/assets/form-loops/`. The script writes `formImage.webp` without them, plus `formLoop.webp` and `formLoop.json`. Rebuild the previews after it.
 - Tests count skins and cards from the manifest, so they need no change.
 
 ## Performance notes

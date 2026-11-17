@@ -46,4 +46,17 @@ describe("two-form skins", () => {
     expect(Object.values(characters).filter((c) => c.form).map((c) => c.name).sort())
       .toEqual(["乃琳法师", "嘉然然龙", "贝拉炎头队长"].sort());
   });
+  it("are the only skins with a moving part", () => {
+    expect(Object.values(characters).filter((c) => c.form?.loop).map((c) => c.name).sort())
+      .toEqual(["贝拉炎头队长"]);
+  });
+  it("loop the moving part within its second picture", () => {
+    const loop = characters["贝拉炎头队长"]!.form!.loop!;
+    expect(loop.src).toBeTruthy();
+    expect(loop.frames).toBeGreaterThan(1);
+    expect(loop.ms).toBeGreaterThan(0);
+    expect(loop.x).toBeGreaterThanOrEqual(0);
+    expect(loop.x + loop.w).toBeLessThanOrEqual(loop.width);
+    expect(loop.y + loop.h).toBeLessThanOrEqual(loop.height);
+  });
 });
