@@ -34,7 +34,7 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
 </script>
 
 <template>
-  <div class="pool-card" :aria-label="`头奖 累积奖池 ${fmt(pool ?? 0)}`">
+  <div class="pool-card frame-gold" :aria-label="`头奖 累积奖池 ${fmt(pool ?? 0)}`">
     <div class="pool-head" aria-hidden="true">
       <span class="tier-name">头奖</span>
       <small>累积奖池</small>
@@ -64,21 +64,34 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
 
 <style scoped src="./lottery-ball.css"></style>
 <style scoped>
+/* Sunlit gold-foil plaque framed by .frame-gold: luminous enough to keep --ink digits >7:1, with the lower tiers
+ * recessed in crisp cream wells below. */
 .pool-card {
+  --plaque-face: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gold-soft) 22%, #fff) 0%,
+    var(--gold-soft) 56%,
+    color-mix(in oklab, var(--gold-soft) 72%, var(--gold)) 100%
+  );
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 14px 14px 16px;
+  padding: 11px 11px 11px 13px;
+  box-sizing: border-box;
+  border: 3px solid transparent;
   border-radius: var(--radius-l);
-  background: var(--grad-sky);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  background: var(--plaque-face) padding-box, var(--frame-fill) var(--frame-at) / var(--frame-size) border-box;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.9),
+    0 10px 22px -14px rgba(var(--gold-rgb), 0.55),
+    0 2px 4px rgba(var(--shadow-rgb), 0.06);
   color: var(--ink);
 }
 .pool-head {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 7px;
 }
 .tier-name {
   font: 800 var(--fs-label)/1 var(--font);
@@ -88,11 +101,14 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
   font-size: var(--fs-section);
 }
 .pool-head small {
-  font: 700 var(--fs-label)/1 var(--font);
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-2);
   white-space: nowrap;
 }
 .pool-head .match {
-  align-self: center;
   margin-left: auto;
 }
 .pool-amount {
@@ -102,6 +118,12 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
   font: 800 50px/1 var(--font-latin);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+.pool-amount svg {
+  color: color-mix(in oklab, var(--gold) 68%, var(--c-700));
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.8));
 }
 .tiers {
   display: grid;
@@ -118,14 +140,15 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
   min-width: 0;
   padding: 8px 10px 9px;
   border-radius: var(--radius-m);
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(var(--c-900-rgb), 0.08);
 }
 .tier-head {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-/* The number's three digits: a ball where the digit must match, an empty slot where it need not. */
+/* The number's three digits: a coral ball where the digit must match, a dashed empty slot where it need not. */
 .match {
   display: inline-flex;
   gap: 3px;
@@ -134,15 +157,16 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
   --s: 12px;
 }
 .match .hole {
+  box-sizing: border-box;
   width: 12px;
   height: 12px;
+  border: 1.5px dashed var(--c-300);
   border-radius: 50%;
-  background: rgba(var(--c-900-rgb), 0.1);
+  background: var(--c-50);
 }
-/* On the coral card the balls are white. */
+/* On the gold plaque the three required balls sit slightly larger. */
 .pool-head .match .lball {
   --s: 15px;
-  background: var(--surface);
 }
 .amount {
   display: inline-flex;
@@ -161,17 +185,37 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
   color: var(--ink-2);
 }
 
+@container panel (max-height: 680px) {
+  .pool-card {
+    gap: 6px;
+    padding: 8px 10px 8px 11px;
+  }
+  .pool-amount {
+    font-size: 40px;
+  }
+  .pool-amount svg {
+    width: 24px;
+    height: 24px;
+  }
+  .tiers li {
+    gap: 4px;
+    padding: 6px 9px 7px;
+  }
+  .tiers .amount {
+    font-size: 19px;
+  }
+}
+
 @container panel (max-width: 760px) {
   .pool-card {
     gap: 6px;
-    padding: 10px 12px;
+    padding: 7px 9px;
   }
   .pool-head .tier-name {
     font-size: var(--fs-strong);
   }
-  .pool-head .match i {
-    width: 11px;
-    height: 11px;
+  .pool-head .match .lball {
+    --s: 11px;
   }
   .pool-amount {
     font-size: 32px;
@@ -207,7 +251,7 @@ const needs = (hit: number) => [0, 1, 2].map((j) => j >= 3 - hit);
       "amount tiers";
     align-items: center;
     gap: 6px 12px;
-    padding: 10px 12px;
+    padding: 7px 9px;
   }
   .pool-head {
     grid-area: head;

@@ -322,6 +322,10 @@ function flyToPodium() {
       [{ transform: "scaleY(0)", transformOrigin: "50% 100%" }, { transform: "none", transformOrigin: "50% 100%" }],
       { duration: 520, delay: 160 + i * 70, easing: EASE_OUT, fill: "backwards" },
     );
+    place.querySelector<HTMLElement>(".podium-crown")?.animate(
+      [{ opacity: 0, transform: "scale(0.35) translateY(8px)" }, { opacity: 1, transform: "none" }],
+      { duration: 420, delay: 520, easing: EASE_OUT, fill: "backwards" },
+    );
   });
 }
 
@@ -369,7 +373,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 
     <div ref="stageEl" class="stage">
       <RaceTrack
-        :key="trackKey" class="lap" :race="stage" :t="stageNow" :rate="speed" :track="track" :members="MEMBERS"
+        :key="trackKey" class="lap" :class="{ behind: view === 'podium' }" :race="stage" :t="stageNow" :rate="speed" :track="track" :members="MEMBERS"
         :caption="stage?.setup.map?.name" :cleared="view === 'podium'"
       />
       <p v-if="loadError || replayError" class="ui-error note" role="alert">{{ replayError || loadError }}</p>
@@ -384,7 +388,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
               v-for="(m, i) in ranking" :key="m" class="place" :class="[`p${i + 1}`, { lit: lit(i), missed: missed(i) }]"
               :title="nameOf(m)"
             >
-              <TuanziToken :member="m" :size="i === 0 ? 72 : i < 3 ? 48 : 32" :grey="missed(i)" :data-m="m" />
+              <span class="figure">
+                <Icon v-if="i === 0" class="podium-crown" name="crown" :size="24" />
+                <TuanziToken :member="m" :size="i === 0 ? 72 : i < 3 ? 48 : 32" :grey="missed(i)" :data-m="m" />
+              </span>
               <span class="step">{{ i + 1 }}</span>
             </li>
           </ol>
@@ -420,9 +427,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       </TransitionGroup>
       <ul v-if="tickets.length" class="tickets" aria-label="我的押注">
         <li v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }">
-          <TuanziToken :member="t.member" :size="24" />
-          <small>{{ t.kind }}</small><b>{{ oddsList(t.odds) }}</b>
-          <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+          <span class="ticket-paper">
+            <i class="perf" aria-hidden="true"></i>
+            <TuanziToken :member="t.member" :size="24" />
+            <small>{{ t.kind }}</small><b>{{ oddsList(t.odds) }}</b>
+            <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+          </span>
         </li>
       </ul>
     </aside>
@@ -431,7 +441,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       <TransitionGroup v-if="seats.length && view === 'run'" tag="ol" name="seat" class="lineup" aria-label="出场顺序">
         <li
           v-for="m in seats" :key="m" class="seat"
-          :class="{ turn: mover === m, waiting: mover === m && moverWaits }" :title="nameOf(m)"
+          :class="{ turn: mover === m, waiting: mover === m && moverWaits, done: !!seatDice[m]?.out }" :title="nameOf(m)"
         >
           <span class="slot">
             <RaceDie
@@ -483,9 +493,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   user-select: none;
 }
 .bar h1 {
+  flex: none;
   margin: 0;
   font: 800 var(--fs-section)/1 var(--font);
   letter-spacing: 0.04em;
+  white-space: nowrap;
   color: var(--ink);
 }
 .map,
@@ -503,11 +515,21 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .map {
   background: var(--surface);
   color: var(--ink);
+  box-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.12);
 }
-.mode,
-.round {
-  background: rgba(var(--c-900-rgb), 0.12);
+.mode {
+  background: rgba(255, 255, 255, 0.52);
   color: var(--ink);
+}
+.mode.live {
+  background: var(--c-800);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(var(--c-900-rgb), 0.22);
+}
+.round {
+  background: rgba(255, 255, 255, 0.44);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 .dot {
   width: 7px;
@@ -525,9 +547,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .progress {
   flex: 0 1 220px;
   min-width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(var(--c-900-rgb), 0.16);
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(var(--c-900-rgb), 0.18);
+  box-shadow: inset 0 1px 1px rgba(var(--c-900-rgb), 0.15);
   overflow: hidden;
 }
 .progress > i {
@@ -546,6 +569,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 }
 .live-key {
   gap: 6px;
+  color: var(--c-800);
+}
+.live-key .dot {
+  background: var(--c-700);
 }
 
 /* ---- the stage: the board as large as it fits, what is between races on a card over it */
@@ -559,6 +586,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 }
 .lap {
   flex: 1 1 auto;
+  transition: opacity var(--dur-slow) var(--ease-out), filter var(--dur-slow) var(--ease-out);
+}
+.lap.behind {
+  opacity: 0.42;
+  filter: saturate(0.82);
+}
+.calm .lap {
+  transition: none;
 }
 .note {
   position: absolute;
@@ -575,12 +610,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   top: 50%;
   z-index: 6;
   translate: -50% -50%;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   border-radius: var(--radius-l);
   background: var(--surface);
-  box-shadow: var(--shadow-paper), 0 18px 44px -18px rgba(var(--c-900-rgb), 0.5);
+  box-shadow: var(--shadow-paper), 0 20px 48px -14px rgba(var(--c-900-rgb), 0.42);
 }
 .card-enter-active {
   transition: opacity 320ms var(--ease-out), scale 320ms var(--ease-pop);
@@ -596,24 +633,27 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   opacity: 0;
 }
 .wait {
-  gap: 6px;
-  min-width: 168px;
-  padding: 16px 28px 18px;
+  gap: 8px;
+  min-width: 176px;
+  padding: 16px 30px 20px;
 }
 .wait small {
-  font: 800 var(--fs-label)/1 var(--font);
-  color: var(--ink-2);
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--c-100);
+  font: 800 var(--fs-label)/1.1 var(--font);
+  color: var(--c-700);
 }
 .wait b {
-  font: 800 44px/1 var(--font-latin);
+  font: 800 46px/1 var(--font-latin);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
-/* ---- finished: the podium, the last two on the floor beside it, and what my bets won */
+/* ---- finished: the podium (1st step in gold and crowned), the last two beside it, and what my bets won */
 .result {
-  gap: 10px;
-  padding: 26px 34px 18px;
+  gap: 12px;
+  padding: 32px 34px 18px;
 }
 .podium {
   display: flex;
@@ -627,12 +667,31 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   width: 92px;
   --tuanzi-size: 64px;
 }
+.figure {
+  position: relative;
+  line-height: 0;
+}
+.podium-crown {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: -12px;
+  translate: -50% 0;
+  color: var(--gold);
+  filter:
+    drop-shadow(0 1.4px 0 #fff) drop-shadow(0 -1.4px 0 #fff)
+    drop-shadow(1.4px 0 0 #fff) drop-shadow(-1.4px 0 0 #fff)
+    drop-shadow(0 2px 3px rgba(var(--c-900-rgb), 0.3));
+}
+.podium-crown :deep(path) {
+  fill: var(--gold-soft);
+}
 /* Second on the left, the winner in the middle, third on the right; the last two stand on the floor beside. */
-.place.p1 { order: 2; --tuanzi-size: 96px; width: 112px; }
+.place.p1 { order: 2; --tuanzi-size: 96px; width: 114px; }
 .place.p2 { order: 1; }
 .place.p3 { order: 3; }
 .place.p4,
@@ -646,22 +705,48 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   display: grid;
   place-items: center;
   width: 100%;
-  height: 20px;
+  height: 18px;
   border-radius: var(--radius-s) var(--radius-s) 0 0;
-  background: var(--c-100);
+  background: color-mix(in oklab, var(--c-100) 65%, var(--surface));
   font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink-3);
 }
-.p1 .step { height: 64px; font-size: 28px; }
-.p2 .step { height: 44px; }
-.p3 .step { height: 30px; }
+/* 1st place: the legendary gold step. */
+.p1 .step {
+  height: 66px;
+  font-size: 30px;
+  background: var(--grad-gold);
+  color: var(--ink);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.72),
+    inset 0 0 0 1.5px var(--gold);
+}
+.p2 .step {
+  height: 44px;
+  background: var(--c-200);
+  color: var(--ink-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+.p3 .step {
+  height: 30px;
+  background: var(--c-100);
+  color: var(--ink-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
 .p4 .step,
 .p5 .step {
   font-size: var(--fs-number);
 }
-.place.lit .step {
+.place.lit:not(.p1) .step {
   background: var(--c-500);
   color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 14px rgba(var(--c-500-rgb), 0.5);
+}
+.place.p1.lit .step {
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 2px var(--gold),
+    0 0 20px rgba(var(--gold-rgb), 0.65);
 }
 .place.missed .step {
   opacity: 0.6;
@@ -740,7 +825,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   color: var(--ink-3);
 }
 .runner.first .no {
-  color: var(--c-700);
+  color: var(--gold);
+  text-shadow: 0 1px 0 rgba(var(--c-900-rgb), 0.14);
 }
 .runner .face {
   --tuanzi-size: 44px;
@@ -759,9 +845,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 }
 .hue {
   flex: none;
-  width: 3px;
-  height: 12px;
-  border-radius: 1px;
+  width: 4px;
+  height: 13px;
+  border-radius: 2px;
 }
 .name {
   font: 800 var(--fs-body)/1.1 var(--font);
@@ -784,10 +870,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* How far along: a thin bar, the member's place on the track. */
+/* How far along: a crisp bar, gold for the 1st-place leader. */
 .along {
   display: block;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
   background: var(--c-100);
   overflow: hidden;
@@ -796,8 +882,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--c-500);
+  background: linear-gradient(90deg, var(--c-400), var(--c-500));
   transition: width 480ms var(--ease-out);
+}
+.runner.first .along > i {
+  background: var(--grad-gold);
 }
 .tail {
   display: flex;
@@ -824,27 +913,49 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   width: 15px;
   height: 15px;
 }
-/* My bets: paper tickets under the field, the winners coral once the race is run. */
+/* My bets: notched paper stubs under the field, the winners coral once the race is run. */
 .tickets {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
-  padding: 0;
+  padding: 2px 1px;
   list-style: none;
   overflow: hidden;
 }
 .ticket {
   display: inline-flex;
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.14)) drop-shadow(0 2px 4px rgba(var(--c-900-rgb), 0.12));
+}
+.ticket-paper {
+  --x: 8px;
+  --bite: 3.2px;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 30px;
-  padding: 0 9px 0 5px;
+  padding: 0 9px 0 13px;
   box-sizing: border-box;
   border-radius: var(--radius-s);
   background: var(--surface);
-  border-left: 3px dotted var(--c-300);
-  box-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.12), 0 3px 6px -3px rgba(var(--c-900-rgb), 0.2);
+  -webkit-mask:
+    radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
+    radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
+  -webkit-mask-composite: source-in;
+  mask:
+    radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
+    radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
+  mask-composite: intersect;
+}
+.ticket .perf {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: var(--x);
+  width: 3px;
+  margin-left: -1.5px;
+  background: radial-gradient(circle, var(--c-400) 1.1px, transparent 1.5px) 50% 0 / 3px 5px repeat-y;
 }
 .ticket small {
   font: 700 var(--fs-label)/1 var(--font);
@@ -866,9 +977,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   width: 14px;
   height: 14px;
 }
-.ticket.won {
+.ticket.won .ticket-paper {
   background: var(--c-500);
-  border-left-color: #fff;
+}
+.ticket.won .perf {
+  background: radial-gradient(circle, #fff 1.1px, transparent 1.5px) 50% 0 / 3px 5px repeat-y;
 }
 .ticket.won small,
 .ticket.won .coin {
@@ -876,8 +989,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 }
 
 /*
- * ---- under the board: the lineup, a row of seats in the order of play, first to move on the left: each a die in the
- * member's colour over its tuanzi.
+ * ---- under the board: the lineup dock, five seats in left-to-right turn order, each a die over its tuanzi.
  */
 .deck {
   grid-area: deck;
@@ -885,26 +997,42 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: 0 18px 10px;
+  padding: 0 18px 9px;
 }
 .lineup {
-  --seat: 58px;
+  --seat: 54px;
   --die-size: calc(var(--seat) * 0.62);
   --face: calc(var(--seat) * 0.66);
   display: flex;
   align-items: flex-end;
-  gap: 22px;
+  gap: 20px;
   margin: 0;
-  padding: 0;
+  padding: 6px 20px 7px;
   list-style: none;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
 }
 .seat {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--seat) * 0.12);
+  gap: calc(var(--seat) * 0.1);
   width: var(--seat);
+}
+/* Directional chevron between seats showing left-to-right play order. */
+.seat + .seat::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  bottom: calc(var(--seat) * 0.36);
+  width: 5px;
+  height: 5px;
+  border-top: 2px solid var(--c-300);
+  border-right: 2px solid var(--c-300);
+  rotate: 45deg;
+  pointer-events: none;
 }
 /* The die rests on the seat's top; it rises when its tuanzi's turn comes, and fades once that move is done. */
 .slot {
@@ -929,13 +1057,21 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   display: grid;
   place-items: center;
   width: var(--seat);
-  height: calc(var(--seat) * 0.82);
+  height: calc(var(--seat) * 0.8);
   border-radius: 999px;
   background: var(--c-100);
   --tuanzi-size: var(--face);
-  transition: translate 280ms var(--ease-pop), background 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
+  transition:
+    translate 280ms var(--ease-pop),
+    opacity 280ms var(--ease-out),
+    background 280ms var(--ease-out),
+    box-shadow 280ms var(--ease-out);
+}
+.seat.done .head {
+  opacity: 0.56;
 }
 .seat.turn .head {
+  opacity: 1;
   translate: 0 -4px;
   background: var(--c-500);
   box-shadow: var(--shadow-backlight);
@@ -950,16 +1086,17 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .seat-move {
   transition: transform 640ms var(--ease-in-out);
 }
-/* The last round: a coral tag stamped at the deck's right. */
+/* The last round: a crisp coral badge stamped cleanly at the deck's upper right. */
 .cue {
   position: absolute;
-  right: 18px;
-  bottom: 34px;
+  z-index: 3;
+  right: 22px;
+  top: 2px;
   margin: 0;
   padding: 4px 12px;
   border-radius: 999px;
   background: var(--c-500);
-  box-shadow: var(--shadow-backlight);
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow-backlight);
   font: 800 var(--fs-body)/1.2 var(--font);
   color: var(--ink);
   white-space: nowrap;
@@ -984,6 +1121,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .calm .seat .head,
 .calm .seat-die,
 .calm .along > i,
+.calm .scrim-enter-active,
+.calm .scrim-leave-active,
 .calm .card-enter-active,
 .calm .card-leave-active {
   transition: none;
@@ -995,7 +1134,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
     grid-template-rows: 46px minmax(0, 1fr) 88px;
   }
   .lineup {
-    --seat: 48px;
+    --seat: 44px;
+    gap: 16px;
+    padding: 4px 16px 5px;
+  }
+  .seat + .seat::before {
+    left: -11px;
   }
   .runner {
     min-height: 54px;

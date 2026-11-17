@@ -49,7 +49,9 @@ onBeforeUnmount(onUp);
   width: min(var(--w), 100vw - 24px);
   height: min(var(--h), 100vh - 24px);
   border-radius: var(--radius-l);
-  box-shadow: 0 24px 60px -24px rgba(var(--c-900-rgb), 0.55);
+  box-shadow:
+    0 0 0 1px rgba(var(--c-900-rgb), 0.14),
+    0 24px 60px -24px rgba(var(--c-900-rgb), 0.55);
   pointer-events: auto;
 }
 </style>

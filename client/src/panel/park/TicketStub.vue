@@ -23,7 +23,8 @@ withDefaults(defineProps<{ side?: "left" | "right"; size?: "s" | "m" | "l" }>(),
   --bite: 6px;
   display: inline-flex;
   flex: none;
-  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.18)) drop-shadow(0 3px 4px rgba(var(--c-900-rgb), 0.12));
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.18)) drop-shadow(0 3px 5px rgba(var(--c-900-rgb), 0.12));
+  transition: transform var(--dur-base) var(--ease-out), filter var(--dur-base) var(--ease-out);
 }
 .s {
   --h: 40px;
@@ -48,16 +49,23 @@ withDefaults(defineProps<{ side?: "left" | "right"; size?: "s" | "m" | "l" }>(),
   padding: 0 14px 0 calc(var(--tab) + 10px);
   box-sizing: border-box;
   border-radius: var(--radius-s);
-  background: var(--surface);
+  /* A tinted tear-tab on one side of the perforation and crisp white paper on the other. */
+  background: linear-gradient(90deg, var(--c-100) var(--x), var(--surface) var(--x));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
   /* The two bites, top and bottom, on the perforation's line. */
+  -webkit-mask:
+    radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
+    radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
   mask:
     radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
     radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
+  -webkit-mask-composite: source-in;
   mask-composite: intersect;
 }
 .right .paper {
   --x: calc(100% - var(--tab));
   padding: 0 calc(var(--tab) + 10px) 0 14px;
+  background: linear-gradient(90deg, var(--surface) var(--x), var(--c-100) var(--x));
 }
 /* The perforation: a column of small coral dots between the two bites. */
 .perf {

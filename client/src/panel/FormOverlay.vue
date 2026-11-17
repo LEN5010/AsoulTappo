@@ -25,7 +25,7 @@ const loop = computed(() => {
 <template>
   <span v-if="form" class="form-overlay" :class="{ on }" aria-hidden="true">
     <img class="second" :src="form.bg" alt="" draggable="false" />
-    <span v-if="loop && on" class="fit" :style="loop.fit">
+    <span v-if="loop" class="fit" :style="loop.fit">
       <span class="loop" :style="loop.box"><img :src="loop.src" alt="" draggable="false" /></span>
     </span>
   </span>
@@ -68,6 +68,7 @@ const loop = computed(() => {
   left: 0;
   top: 0;
   height: 100%;
+  will-change: transform;
   animation: loop-steps var(--loop-dur) steps(var(--loop-steps)) infinite;
 }
 @keyframes loop-steps {

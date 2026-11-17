@@ -7,6 +7,7 @@ import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
 import { bannerLeft, bannerRates, baseRates, heldItems, poolOf, effectiveRates, runningBanners } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, status, online, error } from "../stores/player";
+import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
@@ -101,7 +102,7 @@ async function nextBatch() {
 <template>
   <div class="resonance-page ui-scroll">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
-    <Transition name="pool" mode="out-in">
+    <Transition name="pool" mode="out-in" :css="!reducedMotion">
       <BannerStage
         v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
         :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect"
@@ -114,7 +115,7 @@ async function nextBatch() {
     </Transition>
     <footer class="console">
       <div class="pities">
-        <div v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.id === 'legendary' && g.percent >= PITY_NEAR }]">
+        <div v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.percent >= PITY_NEAR && !reducedMotion }]">
           <span>
             <Icon :name="g.icon" :size="14" />
             {{ g.label }} <b>{{ g.count }}</b><i>/ {{ g.hard ?? '—' }}</i>
@@ -123,7 +124,7 @@ async function nextBatch() {
         </div>
       </div>
       <div class="supply">
-        <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
+        <p><span>可共鸣</span><b :class="{ empty: draws < 1 }">{{ draws }}</b><span>次</span></p>
         <p v-if="income" class="today" :title="nextTapText(income)">
           <Icon name="shard" :size="13" />今日已获得<b>{{ formatCount(income.today) }}</b>
         </p>
@@ -134,7 +135,7 @@ async function nextBatch() {
           <span class="act-label">共鸣一次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
-        <button type="button" class="ui-btn act ten primary pulse" :disabled="revealing || !online || !res || draws < 10 || complete" @click="draw(10)">
+        <button type="button" class="ui-btn act ten primary" :class="{ pulse: !reducedMotion }" :disabled="revealing || !online || !res || draws < 10 || complete" @click="draw(10)">
           <span class="act-label">共鸣十次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
@@ -145,9 +146,23 @@ async function nextBatch() {
     </footer>
     <Modal v-if="probabilities" :title="banner ? `${banner.name}概率` : '共鸣概率'" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
-        <tr v-if="banner" class="featured-row"><td>限定</td><td>{{ banner.rate }}%</td><td>{{ rates.featured }}%</td><td>{{ banner.pity ? `${banner.pity} 次` : '—' }}</td></tr>
-        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ base[r] }}%</td><td>{{ rates.tiers[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
-        <tr v-if="res.holoChance"><td>镭射款</td><td colspan="2">抽到对应卡片时 {{ +res.holoChance.toFixed(2) }}%</td><td>—</td></tr>
+        <tr v-if="banner" class="featured-row" :class="{ zero: rates.featured === 0 }">
+          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>限定</span></td>
+          <td class="num">{{ banner.rate }}%</td>
+          <td class="num cur">{{ rates.featured }}%</td>
+          <td class="pity-col"><span v-if="banner.pity" class="pity-pill">{{ banner.pity }} 次</span><template v-else>—</template></td>
+        </tr>
+        <tr v-for="r in tiers" :key="r" :class="[r, { zero: rates.tiers[r] === 0 && base[r] > 0, boosted: rates.tiers[r] > base[r] }]">
+          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>{{ RARITY_LABEL[r] }}</span></td>
+          <td class="num">{{ base[r] }}%</td>
+          <td class="num cur">{{ rates.tiers[r] }}%</td>
+          <td class="pity-col"><span v-if="r === 'legendary' || r === 'skin'" class="pity-pill">{{ res.pity[r] }} 次</span><template v-else>—</template></td>
+        </tr>
+        <tr v-if="res.holoChance" class="holo-row">
+          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>镭射款</span></td>
+          <td colspan="2" class="holo-odds">抽到对应卡片时 <b>{{ +res.holoChance.toFixed(2) }}%</b></td>
+          <td class="pity-col">—</td>
+        </tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
       <p v-if="banner && res" class="rates-note">限定从普通档取概率。卡池结束后，限定内容进入此间共鸣。</p>
@@ -180,7 +195,7 @@ async function nextBatch() {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 12px 16px 14px 24px;
+  padding: 12px 16px 13px 24px;
   border-radius: 20px 20px 0 0;
   background: var(--surface);
   box-shadow: 0 -10px 28px -18px rgba(var(--shadow-rgb), 0.38), 0 -1px 2px rgba(var(--shadow-rgb), 0.05);
@@ -193,6 +208,7 @@ async function nextBatch() {
   gap: 8px;
 }
 .pity {
+  --near-glow: rgba(var(--c-500-rgb), 0.65);
   min-width: 0;
   font-size: var(--fs-label);
   font-weight: 700;
@@ -222,10 +238,16 @@ async function nextBatch() {
   height: 6px;
   margin-top: 4px;
 }
+.pity.legendary {
+  --near-glow: rgba(var(--gold-rgb), 0.72);
+}
 .pity.legendary svg {
   color: var(--gold);
 }
 /* A limited pool's own promise, in its pearl. */
+.pity.featured {
+  --near-glow: color-mix(in srgb, var(--holo-lilac) 85%, transparent);
+}
 .pity.featured svg {
   color: var(--pearl-deep);
 }
@@ -246,29 +268,20 @@ async function nextBatch() {
 .pool-leave-to {
   opacity: 0;
 }
-.featured-row td:first-child {
-  font-weight: 800;
-  color: var(--pearl-deep);
-}
-.rates-note {
-  margin: 12px 0 0;
-  font-size: var(--fs-label);
-  color: var(--ink-3);
-}
 .pity.legendary .ui-bar > i {
   background: var(--grad-gold);
 }
-/* Nearly there: the legendary gauge glows and breathes slowly. */
+/* Nearly there: past 90% of hard pity the gauge glows in its material and breathes slowly. */
 .pity.near .ui-bar {
   overflow: visible;
 }
 .pity.near .ui-bar > i {
-  box-shadow: 0 0 10px 1px rgba(var(--gold-rgb), 0.7);
+  box-shadow: 0 0 10px 1px var(--near-glow);
   animation: near-breathe 2.8s var(--ease-in-out) infinite;
 }
 @keyframes near-breathe {
   50% {
-    box-shadow: 0 0 4px 0 rgba(var(--gold-rgb), 0.35);
+    box-shadow: 0 0 4px 0 color-mix(in srgb, var(--near-glow) 45%, transparent);
   }
 }
 .supply {
@@ -291,6 +304,10 @@ async function nextBatch() {
 .supply b {
   font: 800 26px/1 var(--font-latin);
   color: var(--ink);
+  transition: color var(--dur-fast);
+}
+.supply b.empty {
+  color: var(--ink-3);
 }
 /* Today's tap shards, set like the pity counts beside them. */
 .supply .today {
@@ -315,7 +332,7 @@ async function nextBatch() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-bottom: 3px;
+  padding-bottom: 4px;
 }
 .act {
   flex-direction: column;
@@ -324,12 +341,27 @@ async function nextBatch() {
 .once {
   min-width: 112px;
 }
-/* The space bar of the row: taller and wider than any other key. */
+/* The space bar of the row: taller, wider, and set over a deeper 4px lip with a top catchlight. */
 .ten {
   height: 60px;
-  min-width: clamp(150px, 24cqw, 230px);
-  padding: 0 28px;
+  min-width: clamp(144px, 20cqw, 214px);
+  padding: 0 26px;
   font-size: 18px;
+}
+.ten:not(:disabled) {
+  --key-lip-h: 4px;
+}
+.ten:not(:disabled):active {
+  --key-y: 4px;
+  --key-lip-h: 0px;
+}
+.ten:not(:disabled)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  pointer-events: none;
 }
 .act-label {
   display: inline-flex;
@@ -343,37 +375,61 @@ async function nextBatch() {
   gap: 3px;
   font: 800 var(--fs-label)/1 var(--font-latin);
   letter-spacing: 0.04em;
-  opacity: 0.75;
+  opacity: 0.78;
 }
 .once:not(:disabled) .act-cost svg {
   color: var(--c-500);
+}
+.ten:not(:disabled) .act-cost svg {
+  color: var(--c-800);
+  fill: rgba(255, 255, 255, 0.42);
 }
 .rates-btn {
   width: 36px;
   padding: 0;
 }
-@container panel (max-width: 820px) {
+@container panel (max-width: 920px) {
   .console {
-    gap: 12px;
+    gap: 14px;
     padding-left: 18px;
   }
-  .supply .today {
-    display: none;
+  .pities {
+    flex: 0 1 162px;
   }
   .ten {
-    min-width: 140px;
-    padding: 0 18px;
+    min-width: 148px;
+    padding: 0 20px;
   }
   .once {
     min-width: 0;
     padding: 0 16px;
   }
 }
+@container panel (max-width: 820px) {
+  .console {
+    gap: 12px;
+    padding-left: 16px;
+  }
+  .pities {
+    flex: 0 1 152px;
+  }
+  .supply .today {
+    display: none;
+  }
+  .ten {
+    min-width: 136px;
+    padding: 0 16px;
+  }
+  .once {
+    min-width: 0;
+    padding: 0 14px;
+  }
+}
 /* Narrow: the keys keep their row; the supply line gives way first. */
 @container panel (max-width: 720px) {
   .console {
     gap: 8px;
-    padding: 10px 10px 12px 14px;
+    padding: 10px 10px 11px 14px;
   }
   .supply {
     display: none;
@@ -394,17 +450,139 @@ async function nextBatch() {
   }
   .console {
     padding-top: 8px;
-    padding-bottom: 10px;
+    padding-bottom: 9px;
   }
 }
+
+/* Probabilities table: tonal material bars, right-aligned Barlow percentages, and flat pity pills. */
 .rates {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--fs-body);
 }
-th, td {
+.rates th {
+  padding: 2px 8px 9px;
+  border-bottom: 1px solid var(--c-200);
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-3);
+  text-align: right;
+  white-space: nowrap;
+}
+.rates th:first-child {
   text-align: left;
-  padding: 10px 6px;
+}
+.rates td {
+  padding: 9px 8px;
   border-bottom: 1px solid var(--c-100);
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.rates tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tier-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.swatch {
+  flex: none;
+  width: 4px;
+  height: 13px;
+  border-radius: 2px;
+  background: var(--swatch, var(--c-200));
+}
+.rates .featured-row {
+  --swatch: var(--grad-pearl);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--holo-lilac) 18%, var(--surface)), transparent 80%);
+}
+.rates .featured-row .tier-cell {
+  font-weight: 800;
+  color: var(--night);
+}
+.rates .legendary {
+  --swatch: var(--grad-gold);
+  background: linear-gradient(90deg, color-mix(in oklab, var(--gold-soft) 28%, var(--surface)), transparent 80%);
+}
+.rates .legendary .tier-cell {
+  font-weight: 800;
+}
+.rates .skin { --swatch: var(--c-500); }
+.rates .epic { --swatch: var(--c-800); }
+.rates .limited { --swatch: var(--pearl); }
+.rates .rare { --swatch: var(--c-400); }
+.rates .uncommon { --swatch: var(--c-300); }
+.rates .common { --swatch: var(--c-200); }
+.rates .holo-row {
+  --swatch: var(--grad-holo);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--holo-lilac) 12%, var(--surface)),
+    color-mix(in srgb, var(--holo-mint) 12%, var(--surface)) 55%, transparent);
+}
+.rates .num {
+  text-align: right;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.rates .num.cur {
+  color: var(--ink);
+}
+.rates .boosted .num.cur {
+  color: var(--c-700);
+}
+.rates .zero .tier-cell,
+.rates .zero .num.cur {
+  color: var(--ink-3);
+}
+.rates .holo-odds {
+  text-align: right;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.rates .holo-odds b {
+  margin-left: 3px;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--night);
+}
+.rates .pity-col {
+  text-align: right;
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.pity-pill {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: var(--radius-s);
+  background: var(--c-100);
+  color: var(--ink-2);
+  font: 800 var(--fs-caption)/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.rates .featured-row .pity-pill {
+  background: color-mix(in srgb, var(--holo-lilac) 24%, var(--surface));
+  color: var(--night);
+}
+.rates .legendary .pity-pill {
+  background: color-mix(in oklab, var(--gold-soft) 45%, var(--surface));
+  color: var(--ink);
+}
+.rates-wait {
+  margin: 0;
+  padding: 16px 0 8px;
+  text-align: center;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.rates-note {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: var(--c-50);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--ink-2);
 }
 </style>

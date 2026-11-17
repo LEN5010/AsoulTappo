@@ -67,11 +67,11 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead bare" aria-hidden="true">
-            <i class="sq"><span class="cap"><svg viewBox="0 0 12 12"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ BOOST }}</span></i>
+            <i class="sq"><span class="cap"><svg viewBox="0 0 12 12"><path d="M2.5 7.4 6 3.8l3.5 3.6M2.5 10.4 6 6.8l3.5 3.6" /></svg>+{{ BOOST }}</span></i>
           </span>
           <span class="park-sheet-main"><b>加速</b><small>{{ MAPS ? "再前进几格" : `再前进 ${BOOST} 格` }}</small></span>
           <span class="park-sheet-lead bare" aria-hidden="true">
-            <i class="sq"><span class="pit"><svg viewBox="0 0 12 12"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>−{{ TRIP }}</span></i>
+            <i class="sq"><span class="pit"><svg viewBox="0 0 12 12"><path d="M2.5 1.8 6 5.4l3.5-3.6M2.5 4.8 6 8.4l3.5-3.6" /></svg>−{{ TRIP }}</span></i>
           </span>
           <span class="park-sheet-main"><b>绊倒</b><small>{{ MAPS ? "再后退几格" : `后退 ${TRIP} 格` }}</small></span>
         </li>
@@ -105,7 +105,7 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
 
         <li v-for="k in CFG.kinds" :key="k" class="park-sheet-row">
           <span class="park-sheet-lead podium" aria-hidden="true">
-            <i v-for="(_, p) in MEMBERS" :key="p" :class="{ on: PLACES[k].includes(p) }" :style="{ '--p': p }"></i>
+            <i v-for="(_, p) in MEMBERS" :key="p" :class="{ on: PLACES[k].includes(p), gold: k === 'win' && p === 0 }" :style="{ '--p': p }"></i>
           </span>
           <span class="park-sheet-main"><b>{{ KIND_NAMES[k] }}</b><small>{{ PLACE_WORDS[k] }}</small></span>
         </li>
@@ -192,10 +192,10 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   box-shadow: 0 0 0 2px var(--c-300);
   overflow: hidden;
 }
-/* The start and finish: coral, a coral and white checkered line where the lap ends. */
+/* The start and finish: coral check, with a coral and white checkered line where the lap ends. */
 .sq.start {
   padding-bottom: 3px;
-  background: var(--c-200);
+  background: repeating-conic-gradient(var(--c-200) 0 25%, var(--c-50) 0 50%) 0 0 / 8px 8px;
 }
 .sq.start::after {
   content: "";
@@ -228,19 +228,19 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 0;
   border-radius: 5px;
   font: 800 11px/1 var(--font-latin);
-  color: var(--ink);
 }
 .cap {
-  bottom: calc(12% + 2px);
-  background: linear-gradient(180deg, var(--c-400), var(--c-500));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 0 var(--c-600);
+  background: linear-gradient(180deg, var(--c-200), var(--c-300));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 0 0 1.5px var(--c-500);
+  color: var(--ink);
 }
 .pit {
-  background: color-mix(in oklab, var(--c-600) 80%, var(--c-700));
-  box-shadow: inset 0 3px 3px rgba(var(--c-900-rgb), 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.35);
+  background: var(--c-700);
+  box-shadow: inset 0 2.5px 3px rgba(var(--c-900-rgb), 0.48), inset 0 -1px 0 rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 .race-rules .cap svg,
 .race-rules .pit svg {
@@ -254,14 +254,14 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   place-items: center;
   border-radius: 50%;
   background: var(--c-500);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1px 0 var(--c-600);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 0 0 1px var(--c-600);
 }
 .gate i {
   width: 58%;
   height: 58%;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 40%, var(--c-200), var(--c-400) 60%, var(--c-600));
-  box-shadow: inset 0 1px 2px rgba(var(--c-900-rgb), 0.45), 0 0 0 1.5px #fff;
+  background: radial-gradient(circle at 50% 40%, #fff, var(--c-300) 58%, var(--c-600));
+  box-shadow: inset 0 1px 2px rgba(var(--c-900-rgb), 0.42), 0 0 0 1.5px #fff;
 }
 .turn {
   position: absolute;
@@ -270,13 +270,13 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   place-items: center;
   border-radius: 50%;
   background: var(--c-100);
-  box-shadow: 0 0 0 2px var(--c-500), 0 2px 0 1px var(--c-600);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), inset 0 0 0 1.5px var(--c-500);
   color: var(--c-700);
 }
 .race-rules .turn svg {
   width: 62%;
   height: 62%;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
 }
 .redo {
   position: absolute;
@@ -285,9 +285,9 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   place-items: center;
   border-radius: 24%;
   background: var(--surface);
-  box-shadow: 0 0 0 1.5px var(--c-500), 0 2px 0 1px var(--c-600);
-  color: var(--c-600);
-  rotate: -8deg;
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1.5px var(--c-500);
+  color: var(--c-700);
+  rotate: -6deg;
 }
 .race-rules .redo svg {
   width: 100%;
@@ -306,8 +306,8 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--c-500);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 0 var(--c-600);
+  background: linear-gradient(180deg, var(--c-300), var(--c-400));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 0 0 1.5px var(--c-600);
   color: var(--ink);
 }
 .race-rules .grab svg {
@@ -405,6 +405,10 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
 }
 .podium i.on {
   background: var(--c-500);
+}
+.podium i.gold {
+  background: var(--grad-gold);
+  box-shadow: inset 0 0 0 1px var(--gold);
 }
 .odds {
   gap: 2px;

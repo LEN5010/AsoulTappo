@@ -1,10 +1,13 @@
 /*
- * ---- a lottery ball: a coral sphere (two steps of the ramp, by odd and even) with a white round label and the digit
- * in ink; one small sharp highlight and a soft dark edge along the bottom. --s is its size. Used in the globe, in the
- * windows and, without a label, as the pool card's match marks (LotteryPrizes.vue).
+ * ---- a lottery ball: a lacquered coral sphere (two distinct steps of the ramp, by odd and even, so tumbling balls
+ * read apart) with a convex white round label and the digit in ink; an angled specular gloss oval and warm rim shade.
+ * --s is its size. Used in the globe, in the windows and, without a label, as the pool card's match marks.
  */
 .lball {
   --s: 24px;
+  --ball-hi: var(--c-300);
+  --ball-mid: var(--c-500);
+  --ball-lo: var(--c-600);
   position: relative;
   display: inline-grid;
   place-items: center;
@@ -12,24 +15,29 @@
   width: var(--s);
   height: var(--s);
   border-radius: 50%;
-  background: var(--c-500);
+  background: radial-gradient(circle at 32% 28%, var(--ball-hi) 0%, var(--ball-mid) 56%, var(--ball-lo) 100%);
   box-shadow:
-    inset 0 calc(var(--s) * -0.08) calc(var(--s) * 0.09) rgba(var(--c-900-rgb), 0.32),
-    inset 0 calc(var(--s) * 0.03) 0 rgba(255, 255, 255, 0.3);
+    inset 0 calc(var(--s) * -0.09) calc(var(--s) * 0.12) rgba(var(--c-900-rgb), 0.34),
+    inset 0 calc(var(--s) * 0.04) calc(var(--s) * 0.06) rgba(255, 255, 255, 0.44),
+    0 calc(var(--s) * 0.04) calc(var(--s) * 0.08) -1px rgba(var(--c-900-rgb), 0.22);
   font-style: normal;
 }
 .lball.odd {
-  background: var(--c-600);
+  --ball-hi: var(--c-500);
+  --ball-mid: var(--c-700);
+  --ball-lo: var(--c-800);
 }
 .lball::after {
   content: "";
   position: absolute;
-  left: 16%;
-  top: 9%;
-  width: 20%;
-  height: 12%;
+  left: 15%;
+  top: 10%;
+  width: 22%;
+  height: 13%;
   border-radius: 50%;
+  rotate: -28deg;
   background: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
 }
 .lball > b {
   display: grid;
@@ -37,8 +45,10 @@
   width: 62%;
   height: 62%;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: inset 0 calc(var(--s) * -0.025) 0 rgba(var(--c-900-rgb), 0.12);
+  background: radial-gradient(circle at 38% 32%, #fff 48%, var(--c-50) 100%);
+  box-shadow:
+    inset 0 calc(var(--s) * -0.025) 0 rgba(var(--c-900-rgb), 0.14),
+    0 0 0 calc(var(--s) * 0.02) rgba(var(--c-900-rgb), 0.12);
   font: 800 calc(var(--s) * 0.44) / 1 var(--font-latin);
   color: var(--ink);
 }

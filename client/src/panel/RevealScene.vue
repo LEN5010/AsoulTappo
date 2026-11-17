@@ -418,7 +418,7 @@ onDeactivated(() => {
             <span v-if="newCount"><Icon name="spark" :size="13" />新收藏 <b>{{ newCount }}</b></span>
             <span v-if="exchanged.size" class="paid" :class="{ empty: !paid }"><Icon name="shard" :size="15" />兑换 <b :key="bump" class="count">+{{ paid }}</b> 碎片</span>
           </p>
-          <button v-if="sealedLeft" type="button" class="ui-btn primary large pulse" :disabled="auto" @click="turnAll">
+          <button v-if="sealedLeft" type="button" class="ui-btn primary large" :class="{ pulse: !calm }" :disabled="auto" @click="turnAll">
             <Icon name="spark" :size="16" />全部翻开
           </button>
           <template v-else>
@@ -562,14 +562,7 @@ onDeactivated(() => {
   color: var(--c-700);
   animation: count-pop 320ms var(--ease-pop) both;
 }
-.calm /* Laid out from the first stamp so the shards have somewhere to fly, shown once the first one lands. */
-.tally .paid {
-  transition: opacity 180ms var(--ease-out);
-}
-.tally .paid.empty {
-  opacity: 0;
-}
-.tally .count {
+.calm .tally .count {
   animation: none;
 }
 .flights {
@@ -672,6 +665,10 @@ onDeactivated(() => {
   color: var(--tone-ink, var(--ink));
   animation: solo-facts-in 380ms var(--ease-out) 160ms both;
 }
+.tone-limited .solo-kind {
+  --tag-bg: var(--grad-pearl);
+  --tag-fg: var(--night);
+}
 .solo-band.tone-holo {
   background-size: 300% 100%;
   animation: solo-band-in 420ms var(--ease-in-out) both, holo-drift 7s ease-in-out 420ms infinite alternate;
@@ -680,7 +677,7 @@ onDeactivated(() => {
   --tag-bg: var(--night);
 }
 .tone-holo .solo-word {
-  text-shadow: 0 2px 0 rgba(59, 42, 69, 0.3), 0 0 22px rgba(59, 42, 69, 0.2);
+  text-shadow: 0 2px 0 color-mix(in srgb, var(--night) 30%, transparent), 0 0 22px color-mix(in srgb, var(--night) 20%, transparent);
 }
 .solo-band.calm,
 .solo-facts.calm {

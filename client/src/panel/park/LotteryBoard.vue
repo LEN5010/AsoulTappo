@@ -24,7 +24,7 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   <div v-if="past.length" class="board">
     <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span><span>奖金</span></div>
     <ol class="rows ui-scroll">
-      <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day) }">
+      <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day), hit: h.top.length > 0 }">
         <span class="day">{{ shortDay(h.day) }}</span>
         <span
           class="num" :class="{ in: !!reveal && reveal === h.day && stopped === 3 }"
@@ -41,7 +41,7 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
 </template>
 
 <style scoped>
-/* The board: a header strip, then one draw a row, the newest on white. */
+/* The board: a header strip, then one draw a row, the newest featured on white with a coral (or gold) edge mark. */
 .board {
   flex: 0 1 auto;
   display: flex;
@@ -54,7 +54,7 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
 .board-head,
 .rows li {
   display: grid;
-  grid-template-columns: 56px 48px minmax(0, 1fr) auto;
+  grid-template-columns: 54px 56px minmax(0, 1fr) 76px;
   align-items: center;
   column-gap: 8px;
   padding: 0 12px;
@@ -66,7 +66,9 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   font: 700 var(--fs-caption)/1 var(--font);
   color: var(--ink-2);
 }
-/* The prize column is as wide as each row's amount, so it lines up on the right. */
+.board-head span {
+  white-space: nowrap;
+}
 .board-head span:nth-child(4) {
   text-align: right;
 }
@@ -77,18 +79,38 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   padding: 0 0 12px;
   overflow-y: auto;
   list-style: none;
+  -webkit-mask: linear-gradient(180deg, #000 calc(100% - 12px), transparent);
   mask: linear-gradient(180deg, #000 calc(100% - 12px), transparent);
 }
 .rows li {
-  min-height: 32px;
+  min-height: 33px;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
 }
+.rows li + li + li {
+  border-top: 1px solid var(--c-100);
+}
 .rows li:first-child {
+  position: relative;
   min-height: 46px;
+  padding-left: 14px;
   background: var(--surface);
+  box-shadow: 0 1px 0 var(--c-100);
   color: var(--ink);
+}
+.rows li:first-child::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3.5px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c-500);
+}
+.rows li:first-child.hit::before {
+  background: var(--gold);
 }
 /* The drawn number in plain digits; the newest one larger, in the ramp's deep coral. */
 .num {
@@ -131,7 +153,7 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   color: var(--ink);
 }
 .prize svg {
-  color: var(--c-700);
+  color: color-mix(in oklab, var(--gold) 72%, var(--c-700));
 }
 .prize.none {
   color: var(--ink-3);
@@ -156,23 +178,40 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   40% { opacity: 1; }
 }
 
+/* Side column too narrow for four columns (e.g. 920×620 where panel is 900px): drop the winner names into 往期 so the
+ * header and rows share a clean three-column grid without wrapping. */
+@container panel (max-width: 910px) {
+  .board-head,
+  .rows li {
+    grid-template-columns: 54px 56px minmax(0, 1fr);
+  }
+  .board-head span:nth-child(3),
+  .rows li .winners {
+    display: none;
+  }
+}
+
 @container panel (max-width: 760px) {
   .board-head,
   .rows li:not(:first-child) {
     display: none;
   }
+  /* The latest draw on one line: its day, the number and the top prize; who won is in 往期. */
   .rows {
     overflow: visible;
     padding: 0;
-  }
-  /* The latest draw on one line: its day, the number and the top prize; who won is in 往期. */
-  .rows {
+    -webkit-mask: none;
     mask: none;
   }
   .rows li:first-child {
     grid-template-columns: minmax(0, 1fr) auto auto;
     min-height: 0;
-    padding: 8px 8px 8px 10px;
+    padding: 8px 10px 8px 13px;
+    box-shadow: none;
+  }
+  .rows li:first-child::before {
+    top: 6px;
+    bottom: 6px;
   }
   .rows li:first-child .winners {
     display: none;

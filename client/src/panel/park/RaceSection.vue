@@ -310,8 +310,11 @@ function openReplay(id: number) {
     <div class="bill" :class="{ live }">
       <RaceTrack class="mini" :race="preview" :t="0" :track="trackOf(race?.setup, CFG.track)" :members="MEMBERS" cleared />
       <div class="about">
-        <h3 v-if="race?.setup.map">{{ race.setup.map.name }}<small>{{ race.setup.map.track }} 格</small></h3>
-        <button v-if="live" type="button" class="ui-btn primary watch-key" @click="openRaceWindow()">
+        <h3 v-if="race?.setup.map">{{ race.setup.map.name }}<small class="sq-count">{{ race.setup.map.track }} 格</small></h3>
+        <button
+          v-if="live" type="button" class="ui-btn primary watch-key" :class="{ pulse: !reducedMotion }"
+          @click="openRaceWindow()"
+        >
           <i class="live-dot" aria-hidden="true"></i>观赛
         </button>
         <div v-else-if="shownRanking.length" class="before">
@@ -322,7 +325,7 @@ function openReplay(id: number) {
             </li>
           </ol>
           <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(counted) }}</span>
-          <button v-if="replayable" type="button" class="ui-btn small ghost again-key" aria-label="回放" @click="openReplay(shown!.id)">
+          <button v-if="replayable" type="button" class="ui-btn small again-key" aria-label="回放" @click="openReplay(shown!.id)">
             <Icon name="play" :size="15" />
           </button>
         </div>
@@ -341,7 +344,10 @@ function openReplay(id: number) {
               >
                 <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
                 <span class="tag">
-                  <span class="name">{{ nameOf(m) }}</span>
+                  <span class="who-name">
+                    <i class="hue" :style="{ background: colorOf(m) }" aria-hidden="true"></i>
+                    <span class="name">{{ nameOf(m) }}</span>
+                  </span>
                   <span :key="`win${tickOf('win', m)?.n ?? 0}`" class="odds" :class="tickOf('win', m)?.dir">
                     <b>{{ x(oddsOf("win", m)) }}</b>
                     <svg v-if="tickOf('win', m)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
@@ -355,6 +361,7 @@ function openReplay(id: number) {
                 </span>
                 <span v-if="skillOf(m)" class="skill">{{ SKILL_NAMES[skillOf(m)!.id] ?? skillOf(m)!.id }}</span>
                 <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
+                <i class="runner-pool" aria-hidden="true"><i :style="{ width: `${share('win', m) * 100}%` }"></i></i>
               </button>
       </div>
     </div>
@@ -397,9 +404,12 @@ function openReplay(id: number) {
           v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
           :title="ticketTitle(t)"
         >
-          <TuanziToken :member="t.member" :size="24" />
-          <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
-          <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+          <span class="ticket-paper">
+            <i class="perf" aria-hidden="true"></i>
+            <TuanziToken :member="t.member" :size="24" />
+            <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
+            <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+          </span>
         </span>
       </span>
       </template>
@@ -431,16 +441,16 @@ function openReplay(id: number) {
         <span v-if="!left" class="full">本场已押满</span>
         <template v-else>
           <span class="stepper">
-            <button type="button" class="ui-btn small ghost" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
+            <button type="button" class="ui-btn small step-key" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
               <Icon name="minus" :size="14" />
             </button>
             <b>{{ stake }}</b>
-            <button type="button" class="ui-btn small ghost" :disabled="stake >= most" aria-label="多押一枚" @click="stake++">
+            <button type="button" class="ui-btn small step-key" :disabled="stake >= most" aria-label="多押一枚" @click="stake++">
               <Icon name="plus" :size="14" />
             </button>
           </span>
           <button
-            type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy }"
+            type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy && !reducedMotion }"
             :disabled="busy || !!betBlock" :aria-busy="busy" :title="betBlock || undefined" @click="place"
           >
             <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />
@@ -465,18 +475,20 @@ function openReplay(id: number) {
 }
 
 /*
- * ---- the bill: a sheet of paper across the top, the race's map small on its left, what is on beside it
+ * ---- the bill: a tonal --c-100 showcase mat across the top (never paper on paper!), the race's map small on its left
  */
 .bill {
   flex: none;
   display: flex;
   align-items: stretch;
   gap: 18px;
-  margin: 16px 22px 0;
+  margin: 14px 22px 0;
   padding: 10px 18px 10px 10px;
   border-radius: var(--radius-l);
-  background: var(--surface);
-  box-shadow: var(--shadow-paper);
+  background: var(--c-100);
+}
+.bill.live {
+  background: linear-gradient(90deg, var(--c-100) 40%, var(--c-200));
 }
 .mini {
   flex: none;
@@ -491,19 +503,22 @@ function openReplay(id: number) {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 12px;
+  gap: 11px;
 }
 .about h3 {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin: 0;
   font: 800 var(--fs-section)/1.1 var(--font);
   color: var(--ink);
 }
-.about h3 small {
-  font: 700 var(--fs-label)/1 var(--font);
-  color: var(--ink-2);
+.about h3 .sq-count {
+  padding: 2px 8px;
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  font: 800 var(--fs-label)/1.25 var(--font);
+  color: var(--c-700);
 }
 /* The way in once the race is out: the page's main key, a dot beating on it. */
 .watch-key {
@@ -525,8 +540,9 @@ function openReplay(id: number) {
 /* The race before: its order first to last, the winner crowned, what my bets won, and the key that plays it again. */
 .before {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   min-width: 0;
 }
 .before small {
@@ -574,43 +590,63 @@ function openReplay(id: number) {
 }
 .runners {
   /* The tuanzi on a key: as large as the paper's height and a fifth of its width allow, under it the name and the
-   * odds. */
-  --face: clamp(26px, min(20cqw - 16px, 100cqh - 66px), 96px);
+   * odds. Spans wide under .bill so the showcase and the five keys read as one architectural block. */
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 70px), 96px);
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: clamp(5px, 2cqw, 14px);
-  width: min(100%, calc(5 * (var(--face) + 24px)));
+  gap: clamp(6px, 1.8cqw, 14px);
+  width: min(100%, 880px);
 }
 /* With the race's die under the odds too. */
 .runners.dice {
-  --face: clamp(26px, min(20cqw - 16px, 100cqh - 84px), 96px);
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 88px), 96px);
 }
 /* A void race: its line over the runners, which give it the room. */
 .field-pane.off .runners {
-  --face: clamp(24px, min(20cqw - 16px, 100cqh - 104px), 96px);
+  --face: clamp(24px, min(20cqw - 16px, 100cqh - 108px), 96px);
 }
 .runner {
   flex-direction: column;
   gap: 0;
   min-width: 0;
   height: auto;
-  padding: clamp(4px, 3cqh, 10px) 4px clamp(4px, 3cqh, 8px);
+  padding: clamp(4px, 3cqh, 10px) 6px clamp(8px, 3.5cqh, 13px);
+  box-shadow:
+    inset 0 0 0 1px var(--c-100),
+    0 var(--key-lip-h) 0 var(--key-lip),
+    0 calc(var(--key-lip-h) + 1px) calc(var(--key-lip-h) * 2 + 2px) -3px rgba(var(--c-900-rgb), 0.25),
+    var(--key-glow);
 }
 .runner .face {
   --tuanzi-size: var(--face);
   margin-bottom: 2px;
+  transition: transform var(--dur-base) var(--ease-out);
 }
-/* Under the tuanzi its name and odds to win: one line on a wide sheet, the name over the odds on a narrow one. */
+.runner:hover:not(:disabled) .face {
+  transform: translateY(-2px) scale(1.04);
+}
+/* Under the tuanzi its name (with 4px member bar) and odds to win: one line on a wide sheet, stacked on a narrow one. */
 .tag {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-@container infield (min-width: 400px) {
+.who-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.hue {
+  flex: none;
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+}
+@container infield (min-width: 440px) {
   .tag {
     flex-direction: row;
     align-items: baseline;
-    gap: 4px;
+    gap: 5px;
   }
 }
 .runner .name {
@@ -665,15 +701,41 @@ function openReplay(id: number) {
 }
 /* The runner picked: latched in coral. */
 .runner.on:not(:disabled) {
-  --key-top: var(--c-200);
+  --key-top: var(--c-100);
   --key-bottom: var(--c-200);
   --key-lip: var(--c-500);
+  box-shadow:
+    inset 0 0 0 2px var(--c-500),
+    0 var(--key-lip-h) 0 var(--key-lip),
+    0 calc(var(--key-lip-h) + 1px) calc(var(--key-lip-h) * 2 + 2px) -3px rgba(var(--c-900-rgb), 0.25);
 }
 .runner.on .name {
   color: var(--ink);
 }
 .runner:disabled .face {
   opacity: 0.85;
+}
+/* Crowd Win market-share bar along the runner key's foot. */
+.runner-pool {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-100);
+  overflow: hidden;
+  pointer-events: none;
+}
+.runner.on:not(:disabled) .runner-pool {
+  background: rgba(var(--c-900-rgb), 0.1);
+}
+.runner-pool > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c-400), var(--c-600));
+  transition: width var(--dur-stage) var(--ease-out);
 }
 /* The faces of the runner's die this race, small, in its colour. */
 .form {
@@ -723,8 +785,12 @@ function openReplay(id: number) {
   color: var(--ink);
 }
 @container infield (max-height: 84px) {
-  .runner .name {
+  .who-name {
     display: none;
+  }
+  .runner-pool {
+    bottom: 2px;
+    height: 2px;
   }
 }
 @container infield (max-height: 104px) {
@@ -825,13 +891,17 @@ function openReplay(id: number) {
   left: 50%;
   top: -5px;
   translate: -50% 0;
-  color: var(--c-600);
+  color: var(--gold);
   filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 -1px 0 #fff) drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff);
 }
-/* My bets: small paper tickets, the winners coral once the race is run. */
+.champ-crown :deep(path) {
+  fill: var(--gold-soft);
+}
+/* My bets: notched paper stubs, the winners coral once the race is run. */
 .tickets {
   display: flex;
   gap: 6px;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
   mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
   min-width: 0;
   max-width: 100%;
@@ -842,15 +912,37 @@ function openReplay(id: number) {
 .ticket {
   flex: none;
   display: inline-flex;
+  filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.14)) drop-shadow(0 2px 4px rgba(var(--c-900-rgb), 0.12));
+}
+.ticket-paper {
+  --x: 8px;
+  --bite: 3.2px;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   height: 30px;
-  padding: 0 9px 0 5px;
+  padding: 0 9px 0 13px;
   box-sizing: border-box;
   border-radius: var(--radius-s);
   background: var(--surface);
-  border-left: 3px dotted var(--c-300);
-  box-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.12), 0 3px 6px -3px rgba(var(--c-900-rgb), 0.2);
+  -webkit-mask:
+    radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
+    radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
+  -webkit-mask-composite: source-in;
+  mask:
+    radial-gradient(circle at var(--x) 0, transparent var(--bite), #000 calc(var(--bite) + 0.5px)),
+    radial-gradient(circle at var(--x) 100%, transparent var(--bite), #000 calc(var(--bite) + 0.5px));
+  mask-composite: intersect;
+}
+.ticket .perf {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: var(--x);
+  width: 3px;
+  margin-left: -1.5px;
+  background: radial-gradient(circle, var(--c-400) 1.1px, transparent 1.5px) 50% 0 / 3px 5px repeat-y;
 }
 .ticket small {
   font: 700 var(--fs-label)/1 var(--font);
@@ -872,9 +964,11 @@ function openReplay(id: number) {
   width: 14px;
   height: 14px;
 }
-.ticket.won {
+.ticket.won .ticket-paper {
   background: var(--c-500);
-  border-left-color: #fff;
+}
+.ticket.won .perf {
+  background: radial-gradient(circle, #fff 1.1px, transparent 1.5px) 50% 0 / 3px 5px repeat-y;
 }
 .ticket.won small,
 .ticket.won .coin {
@@ -891,6 +985,11 @@ function openReplay(id: number) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.step-key {
+  width: 28px;
+  padding: 0;
+  --key-lip-h: 2px;
 }
 .stepper b {
   min-width: 22px;
@@ -924,10 +1023,11 @@ function openReplay(id: number) {
   flex: 1 1 0;
   min-width: 0;
 }
-/* The key that plays the finished race on the slip again: a round quiet key after its result. */
+/* The key that plays the finished race on the bill again: a crisp mini key after its result. */
 .again-key {
-  width: 32px;
+  width: 30px;
   padding: 0;
+  --key-lip-h: 2px;
 }
 .again-key svg,
 .past-play {
@@ -1018,8 +1118,13 @@ function openReplay(id: number) {
   color: var(--c-700);
 }
 
-.calm .pool > i {
+.calm .pool > i,
+.calm .runner-pool > i,
+.calm .runner .face {
   transition: none;
+}
+.calm .runner:hover:not(:disabled) .face {
+  transform: none;
 }
 .calm .odds .arrow,
 .calm .odds b,
@@ -1035,8 +1140,12 @@ function openReplay(id: number) {
     height: 132px;
   }
 }
-/* Narrow panels: the kind keys stack their name over the odds, and the slip stays on one line. */
+/* Narrow panels: shrink the map preview, stack the kind keys, and keep the slip on one line. */
 @container panel (max-width: 840px) {
+  .mini {
+    width: 224px;
+    height: 126px;
+  }
   .kind-key {
     flex-direction: column;
     gap: 1px;
@@ -1058,6 +1167,24 @@ function openReplay(id: number) {
   }
 }
 @container panel (max-width: 680px) {
+  .bill {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px 12px;
+  }
+  .mini {
+    width: min(100%, 260px);
+    height: 124px;
+  }
+  .about {
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+  }
+  .before {
+    justify-content: center;
+  }
   .picked {
     display: none;
   }

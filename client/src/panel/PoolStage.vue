@@ -90,7 +90,7 @@ const { tilt: holoTilt, lit: holoLit, moving: holoMoving, follow: holoFollow, le
  */
 const holoFoil = computed(() => {
   const mask = holo.value.card?.holo ? `url(${assetUrl(holo.value.card.holo.mask)})` : "";
-  return { maskImage: mask, WebkitMaskImage: mask };
+  return { WebkitMaskImage: mask, maskImage: mask };
 });
 /** The collection's page, at the holo filter. */
 function openHolo() {
@@ -405,8 +405,8 @@ onBeforeUnmount(() => {
       <div class="meter">
         <p class="total"><b>{{ collected }}</b><i>/ {{ totalItems }}</i></p>
         <ul class="tiers">
-          <li v-for="t in meter" :key="t.rarity" :class="t.rarity" :title="`${t.label} ${t.got}/${t.total}`">
-            <span class="t-head"><Icon :name="t.icon" :size="12" /><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
+          <li v-for="t in meter" :key="t.rarity" :class="[t.rarity, { done: t.got === t.total }]" :title="`${t.label} ${t.got}/${t.total}`">
+            <span class="t-head"><Icon :name="t.icon" :size="12" /><em class="t-name">{{ t.label }}</em><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
             <span class="t-bar" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`"><i :style="{ width: t.fill }"></i></span>
           </li>
         </ul>
@@ -480,8 +480,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .pool-stage {
-  /* About seven tenths of the page, short of what the lineup and the action bar need, and of the width the text needs. */
-  --hero-h: max(200px, min(0.7 * (100cqh - 46px), 100cqh - 262px, 44cqw));
+  /* Fits the fanned hand, lineup, pool tabs, sheet and standees above the sticky console without scrolling. */
+  --hero-h: max(196px, min(0.66 * (100cqh - 46px), 100cqh - 296px, 42cqw));
   --card-w: calc(var(--hero-h) * 0.7);
   --stage-gap: 28px;
   position: relative;
@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: stretch;
   gap: var(--stage-gap);
-  padding: 26px 26px 12px 34px;
+  padding: 18px 26px 10px 34px;
   box-sizing: border-box;
 }
 
@@ -504,8 +504,8 @@ onBeforeUnmount(() => {
   width: calc(var(--card-w) * 1.3 + 90px);
   overflow: hidden;
   pointer-events: none;
-  mask: radial-gradient(closest-side, #000 25%, transparent 100%);
   -webkit-mask: radial-gradient(closest-side, #000 25%, transparent 100%);
+  mask: radial-gradient(closest-side, #000 25%, transparent 100%);
 }
 /* Blur a postage-stamp image, then scale the already-filtered layer. The mask stays on .wash. */
 .wash-blob {
@@ -542,7 +542,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 14px;
+  gap: 10px;
 }
 /* The hand of cards. Cards pivot on their bottom edge, so the ones behind fan out at the top. */
 .fan {
@@ -560,8 +560,8 @@ onBeforeUnmount(() => {
   aspect-ratio: 1;
   overflow: hidden;
   border-radius: 50%;
-  mask: radial-gradient(circle, #000 18%, transparent 66%);
   -webkit-mask: radial-gradient(circle, #000 18%, transparent 66%);
+  mask: radial-gradient(circle, #000 18%, transparent 66%);
   opacity: 0.45;
   pointer-events: none;
 }
@@ -628,6 +628,9 @@ onBeforeUnmount(() => {
 }
 .fan:hover .s0:not(:disabled) .face {
   box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--c-500-rgb), 0.45), 0 24px 32px -16px rgba(var(--shadow-rgb), 0.6);
+}
+.fan:hover .s0.gold:not(:disabled) .face {
+  box-shadow: 0 0 0 3px #fff, 0 0 28px 4px rgba(var(--gold-rgb), 0.52), 0 24px 32px -16px rgba(var(--shadow-rgb), 0.6);
 }
 .fan:hover .s1:not(:disabled) {
   transform: translateX(17%) rotate(8deg) scale(0.93);
@@ -718,12 +721,14 @@ onBeforeUnmount(() => {
   padding: 3px 18px 4px;
   border-radius: 0 0 var(--radius-l) var(--radius-l);
   background: var(--c-800);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
   color: #fff;
   font: 800 var(--fs-caption)/1 var(--font-latin);
   letter-spacing: 0.18em;
   white-space: nowrap;
 }
 .gold .crest {
+  background: linear-gradient(180deg, var(--c-900), var(--ink));
   box-shadow: 0 0 0 1px var(--gold);
   color: var(--gold-soft);
 }
@@ -751,8 +756,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-top: 4px;
+  gap: 10px;
+  padding-top: 0;
 }
 /* One paper sheet, above the fanned cards. It overlaps the hand's right edge so the back cards slide under it. */
 .sheet {
@@ -760,15 +765,15 @@ onBeforeUnmount(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 11px;
   margin-left: calc(var(--stage-gap) * -1 - 18px);
-  padding: 16px 18px 14px;
+  padding: 13px 18px 12px;
   border-radius: var(--radius-l);
   background: var(--surface);
   box-shadow: var(--shadow-paper);
 }
 .feature-slot {
-  min-height: 96px;
+  min-height: 78px;
 }
 
 /* The front card's member stands behind the sheet with only her head over its top edge, in the corner the title
@@ -827,7 +832,7 @@ onBeforeUnmount(() => {
 }
 h3 {
   margin: 0;
-  font: 800 clamp(42px, 6cqw, 58px)/1.05 var(--font);
+  font: 800 clamp(36px, 5.2cqw, 48px)/1.04 var(--font);
   letter-spacing: 0.03em;
 }
 
@@ -881,10 +886,10 @@ h3 {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  margin: 6px 0 4px;
+  margin: 4px 0 3px;
   overflow: hidden;
   text-wrap: balance;
-  font: 800 clamp(22px, 3.1cqw, 30px)/1.25 var(--font);
+  font: 800 clamp(20px, 2.8cqw, 26px)/1.22 var(--font);
   letter-spacing: 0.02em;
 }
 .owned {
@@ -924,7 +929,7 @@ h3 {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 .total {
   flex: none;
@@ -935,11 +940,11 @@ h3 {
   white-space: nowrap;
 }
 .total b {
-  font: 800 44px/0.9 var(--font-latin);
+  font: 800 38px/0.9 var(--font-latin);
   color: var(--ink);
 }
 .total i {
-  font: 800 22px/1 var(--font-latin);
+  font: 800 20px/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
 }
@@ -949,7 +954,7 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   align-items: center;
-  gap: 8px 16px;
+  gap: 6px 16px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -976,9 +981,21 @@ h3 {
   margin-right: 1px;
   color: var(--mark, var(--c-700));
 }
+.t-name {
+  font: 700 var(--fs-caption)/1 var(--font);
+  font-style: normal;
+  color: var(--ink-2);
+}
 .t-head b {
+  margin-left: auto;
   font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink);
+}
+.tiers .done .t-head b {
+  color: var(--c-700);
+}
+.tiers .legendary.done .t-head b {
+  color: color-mix(in oklab, var(--gold) 72%, var(--ink));
 }
 .t-head i {
   font: 800 var(--fs-label)/1 var(--font-latin);
@@ -987,8 +1004,8 @@ h3 {
 }
 .t-bar {
   display: block;
-  height: 8px;
-  margin-top: 6px;
+  height: 7px;
+  margin-top: 4px;
   border-radius: 2px;
   background: var(--c-100);
   overflow: hidden;
@@ -1014,9 +1031,9 @@ h3 {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   margin: 0;
-  padding: 8px 12px 8px 8px;
+  padding: 6px 10px 6px 7px;
   border: 0;
   border-radius: var(--radius-m);
   overflow: hidden;
@@ -1052,10 +1069,10 @@ h3 {
   position: relative;
   z-index: 1;
 }
-.mini {
+.special > .mini {
   flex: none;
   display: block;
-  width: 34px;
+  width: 30px;
   aspect-ratio: 2 / 3;
   padding: 2px;
   box-sizing: border-box;
@@ -1076,14 +1093,21 @@ h3 {
     var(--holo-mint) 80%, var(--holo-cream));
 }
 .mini.pearl.dim img {
-  opacity: 0.45;
-  filter: grayscale(0.6);
+  filter: var(--dim);
 }
 .mini.foil {
   background: var(--grad-holo);
   background-size: 300% 100%;
   animation: holo-drift 7s ease-in-out infinite alternate;
   transition: transform 120ms var(--ease-out);
+}
+.hold .special.holo::before,
+.calm .special.holo::before,
+.hold .mini.foil,
+.calm .mini.foil,
+.hold .foil-sheen,
+.calm .foil-sheen {
+  animation-play-state: paused;
 }
 .foil-art {
   position: relative;
@@ -1099,10 +1123,10 @@ h3 {
   inset: 0;
   background: var(--grad-holo);
   background-size: 300% 100%;
-  mask-size: 100% 100%;
-  mask-repeat: no-repeat;
   -webkit-mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
   mix-blend-mode: soft-light;
   opacity: 0.7;
   animation: holo-drift 5s ease-in-out infinite alternate;
@@ -1156,16 +1180,19 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 0;
-  padding: 0;
+  margin: -3px -4px;
+  padding: 3px 4px;
   border: 0;
+  border-radius: 5px;
   background: none;
   color: var(--ink-2);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .seg:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.68);
   color: var(--ink);
 }
 .seg-bar {
@@ -1188,16 +1215,15 @@ h3 {
 .seg-who {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
   white-space: nowrap;
   font: 700 var(--fs-caption)/1 var(--font);
 }
 .seg-who i {
   flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
+  width: 3.5px;
+  height: 10px;
 }
 .seg-who b {
   margin-left: 2px;
@@ -1221,12 +1247,13 @@ h3 {
 .skins {
   min-width: 0;
   overflow-x: auto;
-  padding: 10px 0 2px;
+  padding: 4px 0 2px;
   scrollbar-width: none;
 }
 .marquee .skins {
   overflow: hidden;
   /* The row dissolves at the two ends it scrolls off, not along each bust. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 .skins::-webkit-scrollbar { display: none; }
@@ -1247,13 +1274,13 @@ h3 {
 .skin-stand {
   position: relative;
   flex: none;
-  width: 84px;
+  width: 82px;
   padding: 0;
   border: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   background: none;
   color: var(--ink);
   cursor: pointer;
@@ -1261,19 +1288,36 @@ h3 {
 .stand {
   position: relative;
   display: block;
-  width: 64px;
-  height: 66px;
-  transition: transform var(--dur-base) var(--ease-out);
+  width: 58px;
+  height: 58px;
+}
+.stand::before {
+  content: "";
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 1px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c-100);
+  box-shadow: 0 2px 0 var(--c-200), 0 3px 6px -2px rgba(var(--shadow-rgb), 0.22);
+  transition: background var(--dur-base), box-shadow var(--dur-base);
 }
 .skin-bust {
   position: relative;
   z-index: 1;
+  display: block;
   width: 100%;
-  height: 100%;
-  filter: var(--contour);
+  height: calc(100% - 3px);
+  filter: var(--contour) drop-shadow(0 2px 2px rgba(var(--shadow-rgb), 0.18));
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.skin-stand:hover:not(:disabled) .stand {
-  transform: translateY(-3px);
+.skin-stand:hover:not(:disabled) .skin-bust {
+  transform: translateY(-4px);
+}
+.skin-stand:hover:not(:disabled) .stand::before {
+  background: var(--c-200);
+  box-shadow: 0 2px 0 var(--c-300), 0 4px 8px -2px rgba(var(--shadow-rgb), 0.24);
 }
 .skin-name {
   max-width: 100%;
@@ -1305,20 +1349,24 @@ h3 {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 5px;
 }
-.mini {
+.lineup .mini {
   position: relative;
+  width: 100%;
+  max-width: 36px;
+  justify-self: center;
   aspect-ratio: 0.76;
   padding: 2px;
+  box-sizing: border-box;
   border: 0;
   border-radius: var(--radius-s);
   background: var(--c-100);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
 }
-.mini:hover:not(:disabled) {
+.lineup .mini:hover:not(:disabled) {
   transform: translateY(-2px);
 }
-.mini.on {
+.lineup .mini.on {
   box-shadow: 0 0 0 2px var(--c-500);
 }
 /* The rotation's clock: reaching the end deals the next card. */
@@ -1392,6 +1440,8 @@ h3 {
   .fan:hover .s2:not(:disabled) { transform: translateX(23%) rotate(11deg) scale(0.86); }
   .total b { font-size: 36px; }
   .tiers { gap: 8px 12px; }
+  .t-name { display: none; }
+  .t-head b { margin-left: 0; }
   /* Narrow: the special collections stack, the 衣橱 one first. */
   .specials { grid-template-columns: minmax(0, 1fr); }
 }
@@ -1403,7 +1453,7 @@ h3 {
   .sheet { margin-left: 0; }
 }
 /* Keeps the action bar above the fold: the total still sums up what the tier gauges break down. */
-@container panel (max-height: 600px) {
+@container panel (max-height: 640px) {
   .tiers {
     display: none;
   }

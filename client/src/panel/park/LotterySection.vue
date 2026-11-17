@@ -259,6 +259,7 @@ function onWheel(i: number, e: WheelEvent) {
 
 // ---- what plays on the keys runs under one generation (plays, lotteryPlays.ts): settle() ends it all at once, on the
 // state it was heading for.
+const blowing = ref(false);
 function settle() {
   plays.bump();
   if (reeling.value) endReels("still");
@@ -285,7 +286,9 @@ const DIGITS = "0123456789".split("");
 const odd = (d: string | undefined) => Number(d) % 2 === 1;
 
 const machineEl = ref<HTMLElement>();
-const tubeMask = `tube-${useId()}`;
+const uid = useId();
+const tubeMask = `tube-${uid}`;
+const boreMask = `bore-${uid}`;
 const globeEl = ref<HTMLElement>();
 const cabinetEl = ref<HTMLElement>();
 const tubePathEl = ref<SVGPathElement>();
@@ -294,6 +297,8 @@ const tubePathEl = ref<SVGPathElement>();
 interface Pt { x: number; y: number }
 interface Tube {
   w: number; h: number; d: string; width: number; ball: number; exit: Pt; entry: Pt; end: number; y: number;
+  /** Horizontal centres of the three cabinet windows, where drawn balls drop out of the track. */
+  ports: number[];
   /** The globe's centre and inner radius, and the outlet's angle on its rim. */
   cx: number; cy: number; R: number; angle: number;
 }
@@ -319,7 +324,9 @@ function layoutTube() {
   const gb = g.getBoundingClientRect();
   const cb = cab.getBoundingClientRect();
   const first = cols[0]!.getBoundingClientRect();
+  const midCol = cols[1]!.getBoundingClientRect();
   const lastCol = cols[2]!.getBoundingClientRect();
+  const ports = [first, midCol, lastCol].map((b) => b.left + b.width / 2 - mb.left);
   const ball = parseFloat(getComputedStyle(g).getPropertyValue("--ball")) || 26;
   const r = gb.width / 2;
   const cx = gb.left + r - mb.left;
@@ -339,7 +346,7 @@ function layoutTube() {
   const f = (p: Pt) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
   tube.value = {
     w: mb.width, h: mb.height, d: `M ${f(exit)} C ${f(c1)} ${f(c2)} ${f(entry)} H ${end.toFixed(1)}`,
-    width: ball + 4, ball, exit, entry, end, y, cx, cy, R: r - 2, angle,
+    width: ball + 4, ball, exit, entry, end, y, ports, cx, cy, R: r - 2, angle,
   };
   fillGlobe(r - 2, ball / 2, angle);
 }
@@ -411,15 +418,18 @@ function airOn() {
   for (const d of DIGITS) if (!sim.has(d)) sim.add(d);
   syncPresent();
   sim.airTarget = 1;
+  blowing.value = true;
   wake();
 }
 function airOff() {
+  blowing.value = false;
   if (!globeSim) return;
   globeSim.airTarget = 0;
   wake();
 }
 /** Everything stops where it should end up: the air off, the pile fallen still, no ball on its way. */
 function haltGlobe() {
+  blowing.value = false;
   cancelAnimationFrame(loopFrame);
   loopFrame = 0;
   runs = [];
@@ -782,33 +792,47 @@ function onPopKey(e: KeyboardEvent) {
         <!-- The draw machine: the glass globe of numbered balls on its base, the tube from its rim to the track along
              the cabinet's top, and the three windows: the number keys, or the draw's balls. -->
         <div ref="machineEl" class="machine" :class="{ drum }">
-          <!-- The tube is clear glass: a tint over whatever is behind it, its two walls (a mask cuts the inside out of a
-               wider stroke) and a line of light along its top. -->
+          <!-- The tube is clear glass: a channel shadow, drop-port collars over the three windows, a bore-clipped line
+               of light along its inside, its two walls and an outlet flange at the globe's rim. -->
           <svg v-if="tube" class="tube" :width="tube.w" :height="tube.h" aria-hidden="true">
             <defs>
               <mask :id="tubeMask" maskUnits="userSpaceOnUse" x="0" y="0" :width="tube.w" :height="tube.h">
                 <path :d="tube.d" stroke="#fff" :stroke-width="tube.width + 3" />
                 <path :d="tube.d" stroke="#000" :stroke-width="tube.width" />
               </mask>
+              <mask :id="boreMask" maskUnits="userSpaceOnUse" x="0" y="0" :width="tube.w" :height="tube.h">
+                <path :d="tube.d" stroke="#fff" :stroke-width="tube.width - 3" />
+              </mask>
             </defs>
+            <path class="tube-shadow" :d="tube.d" :stroke-width="tube.width + 4" transform="translate(0 2)" />
+            <rect
+              v-for="(px, pi) in tube.ports" :key="pi" class="tube-port"
+              :x="px - tube.ball * 0.48" :y="tube.y + tube.width * 0.34"
+              :width="tube.ball * 0.96" :height="6" rx="2.5"
+            />
             <path class="tube-tint" :d="tube.d" :stroke-width="tube.width" />
             <path ref="tubePathEl" class="tube-glass" :d="tube.d" :stroke-width="tube.width" />
+            <g :mask="`url(#${boreMask})`">
+              <path class="tube-shine" :d="tube.d" :transform="`translate(-1.5 ${-tube.width * 0.3})`" />
+            </g>
             <path class="tube-edge" :d="tube.d" :stroke-width="tube.width + 3" :mask="`url(#${tubeMask})`" />
-            <path class="tube-shine" :d="tube.d" :transform="`translate(0 ${-tube.width / 2 + 4})`" />
+            <circle class="tube-collar" :cx="tube.exit.x" :cy="tube.exit.y" :r="tube.width * 0.54" />
           </svg>
           <!-- The drawn balls on their way from the globe to their windows (placed by script). -->
           <i
             v-for="b in drops" :key="b.id" class="drop lball" :class="{ odd: odd(b.d) }" :data-id="b.id" aria-hidden="true"
             :style="{ '--s': `${b.size}px` }"
           ><b>{{ b.d }}</b></i>
-          <div class="stand" aria-hidden="true">
-            <div ref="globeEl" class="globe" :class="{ ready: globeReady }">
+          <div class="stand" :class="{ blowing }" aria-hidden="true">
+            <div ref="globeEl" class="globe" :class="{ ready: globeReady, blowing }">
+              <i class="air-plume"></i>
               <i
                 v-for="d in DIGITS" :key="d" class="gball lball" :class="{ odd: odd(d), out: !present[d] }" :data-d="d"
               ><b>{{ d }}</b></i>
               <svg class="glass" viewBox="0 0 100 100">
-                <path d="M15 46 A36 36 0 0 1 46 15" />
-                <path class="far" d="M83 62 A36 36 0 0 1 68 82" />
+                <path d="M14 45 A36 36 0 0 1 45 14" />
+                <circle class="spark-dot" cx="54" cy="13.5" r="1.8" />
+                <path class="far" d="M84 61 A36 36 0 0 1 67 83" />
               </svg>
             </div>
             <i class="base"></i>
@@ -816,7 +840,7 @@ function onPopKey(e: KeyboardEvent) {
           <div ref="cabinetEl" class="cabinet">
             <!-- The keys take clicks, the wheel and their ▲/▼ keys; the keyboard goes to the hidden field under them. -->
             <div ref="keysEl" class="keys" :class="[faceIn, { drum }]">
-              <div v-for="(d, i) in faces" :key="i" class="key-col">
+              <div v-for="(d, i) in faces" :key="i" class="key-col" :class="{ filled: drum && inSlot(i), selected: !drum && at === i }">
                 <span v-if="drum" class="socket">
                   <i v-if="inSlot(i)" class="lball slot-ball" :class="{ odd: odd(winning[i]), pop: !tube }"><b>{{ winning[i] }}</b></i>
                 </span>
@@ -860,6 +884,7 @@ function onPopKey(e: KeyboardEvent) {
               :class="{
                 fresh: fresh.includes(i), held: held && fresh.includes(i),
                 out: lastOnTable && revealDigits(t.tier, stopped).out,
+                'top-win': lastOnTable && stamped && t.tier === 'top',
               }"
             >
               <TicketStub size="s">
@@ -895,7 +920,10 @@ function onPopKey(e: KeyboardEvent) {
       <button
         v-if="hasPast" type="button" class="ui-btn small past-key" :class="{ aside: !!lastAside }" title="往期"
         aria-label="往期" :aria-expanded="pop === 'past'" @click="toggle('past')"
-      ><Icon name="clock" :size="15" /><span>往期</span></button>
+      >
+        <Icon name="clock" :size="15" /><span>往期</span>
+        <i v-if="lastAside" class="past-dot" aria-hidden="true"></i>
+      </button>
       <!-- My result of the draw whose stubs are in the tray. -->
       <div v-if="last && lastOnTable && last.mine.length" class="last">
         <span class="when">{{ lastName }}</span>
@@ -905,28 +933,46 @@ function onPopKey(e: KeyboardEvent) {
         </span>
       </div>
 
-      <div v-if="pop === 'past'" class="pop past ui-scroll">
-        <ul v-if="lastAside" class="past-stubs">
-          <li v-for="(t, i) in lastAside.mine" :key="i">
-            <TicketStub size="s">
-              <span v-for="(c, j) in digits(t.number, t.tier)" :key="j" class="digit" :class="{ on: c.hit }">{{ c.d }}</span>
-            </TicketStub>
-          </li>
-        </ul>
-        <ul v-if="past.length" class="history">
-          <li v-for="h in past" :key="h.day">
-            <span>{{ shortDay(h.day) }}</span>
-            <b>{{ h.number }}</b>
-            <span class="winners" :class="{ none: !h.top.length }">{{ h.winners }}</span>
-            <span class="prize" :class="{ none: !h.top.length }">
-              <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
-              <template v-else>—</template>
-            </span>
-            <span v-if="h.won !== null" class="won" :class="{ on: h.won > 0 }">{{ h.won > 0 ? `+${fmt(h.won)}` : "未中奖" }}</span>
-            <span v-else></span>
-          </li>
-        </ul>
-      </div>
+      <Transition :css="!calm" name="pop-up">
+        <div v-if="pop === 'past'" class="pop past ui-scroll">
+          <div v-if="lastAside" class="past-aside">
+            <div class="past-aside-head">
+              <span>{{ lastName }}</span>
+              <b>{{ lastAside.number }}</b>
+              <span class="past-aside-won" :class="{ on: lastAside.won > 0 }">
+                <template v-if="lastAside.won > 0"><Icon name="shard" :size="13" />+{{ fmt(lastAside.won) }}</template>
+                <template v-else>未中奖</template>
+              </span>
+            </div>
+            <ul class="past-stubs">
+              <li v-for="(t, i) in lastAside.mine" :key="i" :class="{ out: !t.tier }">
+                <TicketStub size="s">
+                  <span v-for="(c, j) in digits(t.number, t.tier)" :key="j" class="digit" :class="{ on: c.hit }">{{ c.d }}</span>
+                </TicketStub>
+                <b v-if="t.prize" class="stamp" :class="{ top: t.tier === 'top' }">+{{ fmt(t.prize) }}</b>
+              </li>
+            </ul>
+          </div>
+          <div v-if="past.length" class="history-wrap">
+            <div class="history-head" aria-hidden="true">
+              <span>日期</span><span>号码</span><span>头奖</span><span>奖金</span><span>我的</span>
+            </div>
+            <ul class="history">
+              <li v-for="h in past" :key="h.day">
+                <span>{{ shortDay(h.day) }}</span>
+                <b>{{ h.number }}</b>
+                <span class="winners" :class="{ none: !h.top.length }">{{ h.winners }}</span>
+                <span class="prize" :class="{ none: !h.top.length }">
+                  <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
+                  <template v-else>—</template>
+                </span>
+                <span v-if="h.won !== null" class="won" :class="{ on: h.won > 0 }">{{ h.won > 0 ? `+${fmt(h.won)}` : "未中奖" }}</span>
+                <span v-else></span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </Transition>
 
       <!-- The buy keys, all alike: what they do, then the coins they take. -->
       <div v-if="!state.drawn" class="park-actions-main">
@@ -945,7 +991,7 @@ function onPopKey(e: KeyboardEvent) {
           <small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />{{ state.left }}</small>
         </button>
         <button
-          type="button" class="ui-btn primary buy-key" :class="{ pulse: pickReady }" :disabled="!pickReady"
+          type="button" class="ui-btn primary buy-key" :class="{ pulse: pickReady && !calm }" :disabled="!pickReady"
           :aria-busy="busy === 'pick'" @click="buyPicked"
         >
           <span class="pick-num">买<b
@@ -1017,19 +1063,33 @@ function onPopKey(e: KeyboardEvent) {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.tube-edge {
+.tube-shadow {
+  stroke: rgba(var(--c-900-rgb), 0.14);
+}
+.tube-port {
+  fill: rgba(255, 255, 255, 0.58);
+  stroke: var(--c-600);
+  stroke-width: 1.4;
+}
+.tube-collar {
+  fill: var(--c-100);
   stroke: var(--c-400);
+  stroke-width: 2;
+}
+.tube-edge {
+  stroke: var(--c-600);
+  opacity: 0.72;
 }
 /* A touch of coral over the white page, then a white veil, so the glass shows on the page and on the cabinet alike. */
 .tube-tint {
   stroke: rgba(var(--c-500-rgb), 0.12);
 }
 .tube-glass {
-  stroke: rgba(255, 255, 255, 0.5);
+  stroke: rgba(255, 255, 255, 0.54);
 }
 .tube-shine {
   stroke: #fff;
-  stroke-width: 2;
+  stroke-width: 2.4;
   opacity: 0.9;
 }
 .stand {
@@ -1039,7 +1099,7 @@ function onPopKey(e: KeyboardEvent) {
   flex-direction: column;
   align-items: center;
 }
-/* The glass: nearly clear, a crisp outline with a white rim inside it, a reflection arc over the balls. */
+/* Sunlit blown-glass vessel: bright dome bloom top-left, crisp inner meniscus, warm caustics along the bottom cup. */
 .globe {
   --globe: 140px;
   --ball: 27px;
@@ -1047,12 +1107,46 @@ function onPopKey(e: KeyboardEvent) {
   z-index: 1;
   width: var(--globe);
   height: var(--globe);
+  overflow: hidden;
   border-radius: 50%;
-  background: rgba(255, 250, 247, 0.94);
+  background: radial-gradient(
+    circle at 32% 26%,
+    #fff 0%,
+    color-mix(in srgb, var(--c-50) 95%, transparent) 38%,
+    color-mix(in srgb, var(--c-100) 91%, transparent) 74%,
+    color-mix(in srgb, var(--c-200) 96%, transparent) 100%
+  );
   box-shadow:
     0 0 0 2px var(--c-300),
-    inset 0 0 0 2px #fff,
-    inset 0 -12px 16px -12px rgba(var(--c-500-rgb), 0.35);
+    0 10px 20px -12px rgba(var(--c-900-rgb), 0.28),
+    inset 0 2px 1px #fff,
+    inset 0 0 0 2px rgba(255, 255, 255, 0.88),
+    inset 0 -16px 22px -10px rgba(var(--c-500-rgb), 0.42);
+}
+/* Upward warm air jet while the blower runs. */
+.air-plume {
+  position: absolute;
+  inset: 38% 18% 0;
+  border-radius: 50% 50% 44% 44%;
+  background: radial-gradient(
+    50% 92% at 50% 100%,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(var(--c-500-rgb), 0.22) 52%,
+    transparent 100%
+  );
+  opacity: 0;
+  transform: scaleY(0.75);
+  transform-origin: 50% 100%;
+  transition: opacity var(--dur-base), transform var(--dur-base) var(--ease-out);
+  pointer-events: none;
+}
+.globe.blowing .air-plume {
+  opacity: 1;
+  animation: air-gust 520ms var(--ease-in-out) infinite alternate;
+}
+@keyframes air-gust {
+  from { transform: scale(0.94, 0.88); }
+  to { transform: scale(1.06, 1.08); }
 }
 .glass {
   position: absolute;
@@ -1064,12 +1158,16 @@ function onPopKey(e: KeyboardEvent) {
 .glass path {
   fill: none;
   stroke: #fff;
-  stroke-width: 3.2;
+  stroke-width: 3.4;
   stroke-linecap: round;
+}
+.glass .spark-dot {
+  fill: #fff;
+  opacity: 0.92;
 }
 .glass .far {
   stroke-width: 2;
-  opacity: 0.7;
+  opacity: 0.74;
 }
 /* A ball in the globe sits at its centre; the simulation moves and turns it. */
 .gball {
@@ -1085,7 +1183,7 @@ function onPopKey(e: KeyboardEvent) {
 .globe:not(.ready) .gball {
   opacity: 0;
 }
-/* The base the globe sits in: a coral block with its thickness showing below. */
+/* The base the globe sits in: a coral collar with a blower lamp on its front and its thickness showing below. */
 .base {
   position: relative;
   width: 64%;
@@ -1093,17 +1191,38 @@ function onPopKey(e: KeyboardEvent) {
   margin-top: -9px;
   border-radius: 9px 9px 5px 5px;
   background: linear-gradient(180deg, var(--c-400), var(--c-500));
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 5px 0 var(--c-600);
+  box-shadow:
+    inset 0 4px 5px -2px rgba(var(--c-900-rgb), 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.35),
+    0 5px 0 var(--c-600);
 }
-/* The cabinet: the track runs in its top band, the windows under it. */
+.base::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  width: 22px;
+  height: 4px;
+  margin-left: -11px;
+  border-radius: 999px;
+  background: rgba(var(--c-900-rgb), 0.22);
+  box-shadow: inset 0 1px 1px rgba(var(--shadow-rgb), 0.2);
+  transition: background var(--dur-base), box-shadow var(--dur-base);
+}
+.stand.blowing .base::after {
+  background: var(--gold-soft);
+  box-shadow: 0 0 8px 1px rgba(255, 255, 255, 0.8);
+}
+/* The cabinet: a molded coral console with a bottom lip; the track runs in its top band, the windows under it. */
 .cabinet {
   margin-top: 5px;
   padding: 37px 14px 12px;
   border-radius: 20px;
   background: var(--grad-sky);
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.35),
-    0 12px 24px -16px rgba(var(--shadow-rgb), 0.45);
+    inset 0 2px 0 rgba(255, 255, 255, 0.45),
+    0 5px 0 var(--c-600),
+    0 14px 26px -14px rgba(var(--shadow-rgb), 0.48);
 }
 /* A drawn ball between the globe and its window, placed by script from the machine's top left corner. */
 .drop {
@@ -1136,13 +1255,23 @@ function onPopKey(e: KeyboardEvent) {
   padding: 10px 10px;
   border-radius: 14px;
   background: var(--c-100);
-  box-shadow: inset 0 3px 6px rgba(var(--c-900-rgb), 0.2), 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 3px 6px rgba(var(--c-900-rgb), 0.2), 0 1px 0 rgba(255, 255, 255, 0.38);
   transition: background var(--dur-slow), box-shadow var(--dur-slow);
 }
-/* The draw lights the windows up: white, ringed, each with a cup for its ball. */
+.key-col.selected {
+  box-shadow:
+    inset 0 0 0 2px var(--c-500),
+    inset 0 3px 6px rgba(var(--c-900-rgb), 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.45);
+}
+/* The draw readies the windows in cream, then lights each one white as its ball lands. */
 .keys.drum .key-col {
+  background: var(--c-50);
+  box-shadow: inset 0 0 0 2px var(--c-300), inset 0 3px 6px rgba(var(--c-900-rgb), 0.12);
+}
+.keys.drum .key-col.filled {
   background: var(--surface);
-  box-shadow: inset 0 0 0 3px var(--c-300), 0 0 16px 3px rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 3px var(--c-300), 0 0 16px 3px rgba(255, 255, 255, 0.72);
 }
 .socket {
   display: grid;
@@ -1157,7 +1286,7 @@ function onPopKey(e: KeyboardEvent) {
   height: var(--slot-ball);
   border-radius: 50%;
   background: var(--c-100);
-  box-shadow: inset 0 2px 4px rgba(var(--c-900-rgb), 0.12);
+  box-shadow: inset 0 2px 5px rgba(var(--c-900-rgb), 0.14);
 }
 .slot-ball {
   --s: var(--slot-ball);
@@ -1190,23 +1319,33 @@ function onPopKey(e: KeyboardEvent) {
 .numkey:disabled .face {
   color: var(--ink-3);
 }
-/* The small keys on a number key's top and bottom edge: one digit up, one down. */
+/* Low-profile rocker tabs on a number key's top and bottom bezel: quiet at rest, crisp on hover or selection. */
 .step {
-  --key-lip-h: 2px;
+  --key-top: var(--c-50);
+  --key-bottom: var(--c-100);
+  --key-lip-h: 1.5px;
   position: absolute;
   left: 50%;
   z-index: 1;
-  width: 40px;
-  height: 20px;
-  margin-left: -20px;
+  width: 38px;
+  height: 18px;
+  margin-left: -19px;
   padding: 0;
   border-radius: var(--radius-s);
   color: var(--ink-3);
+  opacity: 0.78;
   transition:
     transform var(--dur-release) var(--ease-spring),
     box-shadow var(--dur-release) var(--ease-spring),
     color var(--dur-fast),
     opacity var(--dur-base);
+}
+.key-col:hover .step:not(:disabled),
+.key-col.selected .step:not(:disabled),
+.step:focus-visible {
+  --key-top: #fff;
+  --key-bottom: var(--key-white-shade);
+  opacity: 1;
 }
 .step:hover:not(:disabled) {
   color: var(--ink);
@@ -1218,7 +1357,7 @@ function onPopKey(e: KeyboardEvent) {
   rotate: 180deg;
 }
 .step.down {
-  bottom: 0;
+  bottom: 1px;
 }
 /* Off with the sales. */
 .step:disabled {
@@ -1287,13 +1426,24 @@ function onPopKey(e: KeyboardEvent) {
   animation: none;
 }
 
-/* A spinning key: a window onto a column of digits, the two in view placed by script; the edges fall away like a drum. */
+/* A spinning key: a window onto a curved drum of digits, the two in view placed by script. */
 .reel {
   position: absolute;
   inset: 0;
   overflow: hidden;
   border-radius: inherit;
+  -webkit-mask: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
   mask: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
+}
+.reel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 12px 10px -8px rgba(var(--c-900-rgb), 0.18),
+    inset 0 -12px 10px -8px rgba(var(--c-900-rgb), 0.18);
+  pointer-events: none;
 }
 .rc {
   position: absolute;
@@ -1326,7 +1476,7 @@ function onPopKey(e: KeyboardEvent) {
   pointer-events: none;
 }
 
-/* ---- the tray: my stubs in a grid of five, the empty places pale, the count bought at the end of the first row */
+/* ---- the tray: my stubs in a grid of five, empty places in dashed coral outlines, the count at the end */
 .tray {
   grid-area: tray;
   justify-self: center;
@@ -1352,6 +1502,9 @@ function onPopKey(e: KeyboardEvent) {
   display: flex;
   transition: opacity var(--dur-slow) var(--ease-out);
 }
+.lottery:not(.calm) .cell:not(.held):not(.out):hover :deep(.ticket-stub) {
+  transform: translateY(-2px) rotate(-1deg);
+}
 .cell :deep(.paper) {
   width: 62px;
   min-width: 0;
@@ -1365,14 +1518,18 @@ function onPopKey(e: KeyboardEvent) {
 .cell.out {
   opacity: 0.45;
 }
+/* Empty ticket slot: a flat dashed outline, never a pressable keycap or solid block. */
 .slot {
+  box-sizing: border-box;
+  border: 2px dashed var(--c-200);
   border-radius: var(--radius-s);
-  background: var(--c-100);
+  background: none;
 }
 .digit {
+  position: relative;
   display: inline-block;
 }
-/* Drawn: what matched is coral, the rest steps back. */
+/* Drawn: what matched is coral (with a small mark beneath), the rest steps back. */
 .drawn .digit {
   color: var(--ink-3);
 }
@@ -1380,7 +1537,21 @@ function onPopKey(e: KeyboardEvent) {
 .past-stubs .digit.on {
   color: var(--c-700);
 }
-/* What a stub won, on its corner. */
+.drawn .digit.on::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 4px;
+  height: 2.5px;
+  margin-left: -2px;
+  border-radius: 999px;
+  background: var(--c-500);
+}
+.cell.top-win .digit.on::after {
+  background: var(--gold);
+}
+/* What a stub won, on its corner; gold foil for the top jackpot. */
 .stamp {
   position: absolute;
   top: -9px;
@@ -1395,8 +1566,8 @@ function onPopKey(e: KeyboardEvent) {
   white-space: nowrap;
 }
 .stamp.top {
-  background: var(--c-400);
-  box-shadow: 0 0 0 2px var(--surface), 0 0 12px 2px rgba(var(--c-500-rgb), 0.7);
+  background: var(--grad-gold);
+  box-shadow: 0 0 0 2px var(--surface), 0 4px 12px rgba(var(--gold-rgb), 0.68);
   color: var(--ink);
 }
 .count {
@@ -1412,7 +1583,7 @@ function onPopKey(e: KeyboardEvent) {
 }
 
 /*
- * ---- the side: the pool on coral, then the board of the latest draws. It takes the height the machine and the tray
+ * ---- the side: the gold pool plaque, then the board of the latest draws. It takes the height the machine and the tray
  * give the row (size containment keeps it from adding its own), and the board's rows scroll inside it when short.
  */
 .side {
@@ -1449,7 +1620,7 @@ function onPopKey(e: KeyboardEvent) {
   color: var(--ink);
 }
 .prize svg {
-  color: var(--c-700);
+  color: color-mix(in oklab, var(--gold) 72%, var(--c-700));
 }
 .prize.none {
   color: var(--ink-3);
@@ -1459,16 +1630,24 @@ function onPopKey(e: KeyboardEvent) {
   visibility: hidden;
 }
 
-/* ---- the bottom bar: 往期 on a narrow panel or with the last draw's stubs aside, my result, the buy keys */
+/* ---- the bottom bar: 往期 (with a dot when the last draw's stubs sit inside), my result, the buy keys */
 .past-key {
-  gap: 4px;
+  gap: 5px;
   padding: 0 11px 0 9px;
-}
-.past-key:not(.aside) {
-  display: none;
 }
 .past-key svg {
   color: var(--c-700);
+}
+.past-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow: 0 0 0 1.5px var(--c-100);
+  pointer-events: none;
 }
 .last {
   display: flex;
@@ -1548,12 +1727,24 @@ function onPopKey(e: KeyboardEvent) {
   position: absolute;
   z-index: 3;
   margin: 0;
-  padding: 14px 16px;
+  padding: 12px 14px;
   box-sizing: border-box;
   overflow-y: auto;
-  border-radius: var(--radius-m);
+  border-radius: var(--radius-l);
   background: var(--surface);
-  box-shadow: var(--shadow-paper), 0 10px 28px -12px rgba(var(--c-900-rgb), 0.3);
+  box-shadow: var(--shadow-paper), 0 12px 32px -12px rgba(var(--c-900-rgb), 0.34);
+  transform-origin: 24px 100%;
+}
+.pop-up-enter-active {
+  transition: transform var(--dur-base) var(--ease-spring), opacity var(--dur-fast) var(--ease-out);
+}
+.pop-up-leave-active {
+  transition: transform var(--dur-fast) var(--ease-in), opacity var(--dur-fast) var(--ease-in);
+}
+.pop-up-enter-from,
+.pop-up-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
 }
 .past {
   left: 16px;
@@ -1561,41 +1752,100 @@ function onPopKey(e: KeyboardEvent) {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 420px;
+  width: 432px;
   max-width: calc(100% - 32px);
-  max-height: 240px;
+  max-height: 268px;
 }
-/* My stubs of the last draw, on a tinted strip above the list. */
+/* My stubs of the last draw, on a tinted card above the list. */
+.past-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 11px 10px;
+  border-radius: var(--radius-m);
+  background: var(--c-50);
+}
+.past-aside-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.past-aside-head b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  letter-spacing: 0.06em;
+  color: var(--c-700);
+}
+.past-aside-won {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-3);
+}
+.past-aside-won.on {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--c-700);
+}
 .past-stubs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px 8px;
   margin: 0;
-  padding: 10px 12px;
-  border-radius: var(--radius-s);
-  background: var(--c-100);
+  padding: 0;
   list-style: none;
+}
+.past-stubs li {
+  position: relative;
+  display: flex;
+}
+.past-stubs li.out {
+  opacity: 0.5;
 }
 .past-stubs .digit {
   color: var(--ink-3);
 }
 /* One draw a row: the day, the number, the top prize winners, the top prize, my result. */
-.history {
+.history-wrap {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0 2px;
-  list-style: none;
+  gap: 4px;
 }
+.history-head,
 .history li {
   display: grid;
   grid-template-columns: 4.6em 3em minmax(0, 1fr) 76px 64px;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+}
+.history-head {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--c-100);
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-3);
+}
+.history-head span:nth-child(4),
+.history-head span:nth-child(5) {
+  text-align: right;
+}
+.history {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.history li {
+  min-height: 30px;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-3);
+}
+.history li + li {
+  border-top: 1px solid var(--c-100);
 }
 .history b {
   font: 800 var(--fs-number)/1 var(--font-latin);
@@ -1627,9 +1877,13 @@ function onPopKey(e: KeyboardEvent) {
 @keyframes stamp-in {
   from { transform: scale(1.7); opacity: 0; }
 }
+.calm .air-plume {
+  display: none;
+}
 .calm .cell,
 .calm .step,
-.calm .key-col {
+.calm .key-col,
+.calm .base::after {
   transition: none;
 }
 
@@ -1646,9 +1900,6 @@ function onPopKey(e: KeyboardEvent) {
     gap: 12px 14px;
     padding: 14px 16px;
   }
-  .past-key:not(.aside) {
-    display: inline-flex;
-  }
   .globe {
     --globe: 104px;
     --ball: 21px;
@@ -1656,6 +1907,12 @@ function onPopKey(e: KeyboardEvent) {
   .base {
     height: 14px;
     margin-top: -7px;
+  }
+  .base::after {
+    bottom: 2px;
+    width: 16px;
+    height: 3px;
+    margin-left: -8px;
   }
   .cabinet {
     padding: 32px 8px 8px;
@@ -1706,6 +1963,8 @@ function onPopKey(e: KeyboardEvent) {
   /* The bar stays one row: 往期 keeps its mark, the keys their price, the win its number. */
   .park-actions {
     gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
   .park-actions > .park-actions-main {
     gap: 8px;
@@ -1717,10 +1976,6 @@ function onPopKey(e: KeyboardEvent) {
   .past-key > span,
   .when {
     display: none;
-  }
-  .park-actions {
-    padding-left: 12px;
-    padding-right: 12px;
   }
   .buy-key {
     gap: 3px;
@@ -1734,13 +1989,107 @@ function onPopKey(e: KeyboardEvent) {
   }
 }
 
+/* Medium-short panel (561px..680px, e.g. 920×620 where panel is 900×600): tighten the vertical globe, cabinet and two-row
+ * stub tray so all 10 ticket slots stay wholly above .park-actions without clipping. */
+@container panel (max-height: 680px) {
+  .stage {
+    --tray-h: 82px;
+    gap: 8px 16px;
+    padding: 8px 16px;
+  }
+  .globe {
+    --globe: 96px;
+    --ball: 20px;
+  }
+  .base {
+    height: 12px;
+    margin-top: -6px;
+  }
+  .base::after {
+    bottom: 1.5px;
+    width: 16px;
+    height: 3px;
+    margin-left: -8px;
+  }
+  .cabinet {
+    margin-top: 4px;
+    padding: 26px 10px 8px;
+    border-radius: 16px;
+  }
+  .keys {
+    --key-w: 62px;
+    --key-h: 58px;
+    --slot-ball: 48px;
+    gap: 7px;
+  }
+  .key-col {
+    padding: 6px;
+    border-radius: 11px;
+  }
+  .numkey {
+    border-radius: var(--radius-m);
+  }
+  .face,
+  .rc {
+    font-size: 46px;
+  }
+  .blank,
+  .rc.void::after {
+    width: 24px;
+    height: 24px;
+    border-width: 2.5px;
+  }
+  .caret {
+    top: 14px;
+    height: 30px;
+  }
+  .step {
+    width: 30px;
+    height: 15px;
+    margin-left: -15px;
+  }
+  .step.up {
+    top: 1px;
+  }
+  .tray {
+    padding: 7px 10px 7px 12px;
+  }
+  .stubs {
+    grid-auto-rows: 31px;
+    row-gap: 6px;
+  }
+  .stubs :deep(.ticket-stub) {
+    --h: 31px;
+    --font-size: 17px;
+    --tab: 9px;
+    --bite: 3.8px;
+  }
+  .count {
+    line-height: 31px;
+  }
+  .count b {
+    font-size: 20px;
+  }
+  .side {
+    gap: 8px;
+  }
+}
+
+@container panel (max-width: 760px) and (max-height: 680px) {
+  .keys {
+    --key-w: 52px;
+    --slot-ball: 46px;
+    gap: 6px;
+  }
+}
+
 /* Short panel: the globe beside smaller keys, the pool's amount beside its tiers; the body scrolls, the bar stays. */
 @container panel (max-height: 560px) {
   .stage {
-    --tray-h: 106px;
+    --tray-h: 84px;
     align-content: start;
-    gap: 10px 20px;
-    padding: 10px 16px 12px;
+    gap: 8px 20px;
+    padding: 8px 16px 10px;
   }
   /* The globe stands beside the cabinet; the tube runs across onto the track. */
   .machine {
@@ -1756,8 +2105,14 @@ function onPopKey(e: KeyboardEvent) {
     height: 14px;
     margin-top: -7px;
   }
+  .base::after {
+    bottom: 2px;
+    width: 16px;
+    height: 3px;
+    margin-left: -8px;
+  }
   .stubs {
-    row-gap: 10px;
+    row-gap: 6px;
   }
   .cabinet {
     margin-top: 0;

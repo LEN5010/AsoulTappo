@@ -88,16 +88,71 @@ const cellStyle = (sq: number) => {
   const c = board.value.cell(sq);
   return { gridColumn: c.col + 1, gridRow: c.row + 1 };
 };
-/** On a route: the pictures where no square lies, and each portal's two ends (their middles, in units). */
+/** On a route: the continuous stone channel, the step chevrons along it, the scenery, and each portal's curved arc. */
+const originDeg = computed(() => {
+  if (props.track < 1) return 0;
+  const a = board.value.cell(0);
+  const b = board.value.cell(1);
+  return Math.round((Math.atan2(b.row - a.row, b.col - a.col) * 180) / Math.PI);
+});
+const routePoints = computed(() =>
+  routed.value ? squares.value.map((sq) => `${board.value.cell(sq).col + 0.5},${board.value.cell(sq).row + 0.5}`).join(" ") : "",
+);
+const wayPath = computed(() => {
+  if (!routed.value) return "";
+  const f = (n: number) => Math.round(n * 1000) / 1000;
+  const parts: string[] = [];
+  for (let sq = 0; sq < props.track; sq++) {
+    const a = board.value.cell(sq);
+    const b = board.value.cell(sq + 1);
+    const ux = b.col - a.col;
+    const uy = b.row - a.row;
+    const mx = (a.col + b.col) / 2 + 0.5;
+    const my = (a.row + b.row) / 2 + 0.5;
+    const tx = mx + ux * 0.028;
+    const ty = my + uy * 0.028;
+    const bx = mx - ux * 0.032;
+    const by = my - uy * 0.032;
+    parts.push(`M${f(bx - uy * 0.062)} ${f(by + ux * 0.062)}L${f(tx)} ${f(ty)}L${f(bx + uy * 0.062)} ${f(by - ux * 0.062)}`);
+  }
+  return parts.join("");
+});
 const SCENERY = ["ferris", "alpaca", "crown"] as const;
 const scenery = computed(() =>
   (routed.value ? sceneryCells(board.value, props.track, SCENERY.length) : []).map((c, k) => ({ ...c, kind: SCENERY[k] })),
 );
 const links = computed(() => {
-  if (!routed.value) return [];
+  const setup = props.race?.setup;
+  const pairs: (readonly [number, number])[] = setup?.map
+    ? setup.map.squares.filter((q) => q.kind === "portal" && q.to !== undefined).map((q) => [q.at, q.to!] as const)
+    : setup?.portal ? [setup.portal] : [];
+  if (!pairs.length) return [];
+  const { cols, rows } = board.value;
+  const cx = cols / 2;
+  const cy = rows / 2;
+  const clamp = (v: number, hi: number) => Math.min(hi - 0.22, Math.max(0.22, v));
+  const f = (n: number) => Math.round(n * 1000) / 1000;
   const mid = (sq: number) => ({ x: board.value.cell(sq).col + 0.5, y: board.value.cell(sq).row + 0.5 });
-  return (props.race?.setup.map?.squares ?? []).filter((q) => q.kind === "portal" && q.to !== undefined)
-    .map((q) => ({ key: q.at, a: mid(q.at), b: mid(q.to!) }));
+  return pairs.map(([at, to]) => {
+    const a = mid(at);
+    const b = mid(to);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const bow = Math.min(0.85, Math.max(0.38, len * 0.22));
+    const q1 = { x: mx + (-dy / len) * bow, y: my + (dx / len) * bow };
+    const q2 = { x: mx + (dy / len) * bow, y: my + (-dx / len) * bow };
+    const pick = Math.hypot(q1.x - cx, q1.y - cy) <= Math.hypot(q2.x - cx, q2.y - cy) ? q1 : q2;
+    const q = { x: clamp(pick.x, cols), y: clamp(pick.y, rows) };
+    const r = Math.min(0.33, len * 0.28);
+    const la = Math.hypot(q.x - a.x, q.y - a.y) || 1;
+    const lb = Math.hypot(q.x - b.x, q.y - b.y) || 1;
+    const p1 = { x: f(a.x + ((q.x - a.x) / la) * r), y: f(a.y + ((q.y - a.y) / la) * r) };
+    const p2 = { x: f(b.x + ((q.x - b.x) / lb) * r), y: f(b.y + ((q.y - b.y) / lb) * r) };
+    return { key: at, at, d: `M${p1.x} ${p1.y}Q${f(q.x)} ${f(q.y)} ${p2.x} ${p2.y}`, p1, p2 };
+  });
 });
 /** The special square on [sq], with the squares a boost or trip there moves. */
 const squareAt = (sq: number) => (sq && sq < props.track ? squareOn(props.race?.setup, sq, BOOST, TRIP) : null);
@@ -128,6 +183,8 @@ const stacks = computed(() =>
   head.value ? stacksAt(lanes.value, moves.value, head.value) : new Map<number, string[]>([[0, [...lanes.value]]]),
 );
 const places = computed<Record<string, Spot>>(() => spots(stacks.value));
+/** The square under the active mover while its step plays. */
+const activeSq = computed(() => (ready.value && step.value ? places.value[step.value.m]?.square ?? -1 : -1));
 /** How many stand on each member, for what floats over a stack. */
 const above = computed(() => {
   const out: Record<string, number> = {};
@@ -425,8 +482,9 @@ watch(hops, (now, before) => {
   <div class="track" :class="{ calm: reducedMotion }">
     <div class="board" :class="{ live: ready && step, cleared, routed }" :style="{ '--w': board.cols, '--h': board.rows }">
       <div ref="ringEl" class="ring">
-        <svg v-if="links.length" class="links" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
-          <line v-for="l in links" :key="l.key" :x1="l.a.x" :y1="l.a.y" :x2="l.b.x" :y2="l.b.y" />
+        <svg v-if="routed && routePoints" class="route" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+          <polyline class="groove" :points="routePoints" />
+          <polyline class="bridge" :points="routePoints" />
         </svg>
         <span
           v-for="c in scenery" :key="c.kind" class="scene" :class="c.kind" aria-hidden="true"
@@ -438,18 +496,23 @@ watch(hops, (now, before) => {
           v-for="sq in squares" :key="sq" class="tile" :data-sq="sq" :style="cellStyle(sq)"
           :class="[cornerClass(sq), kindOf(sq), {
             start: sq === 0, finish: routed && sq === finish, alt: sq % 2 === 1, flash: tail && sq === finish,
-            acting: acting.includes(sq),
+            acting: acting.includes(sq), spot: activeSq === sq,
           }]"
         >
-          <i v-if="routed && sq && sq < track && !kindOf(sq)" class="no" aria-hidden="true">{{ sq }}</i>
-          <span v-if="kindOf(sq) === 'boost'" class="cap" :title="`+${squareAt(sq)?.by}`">
-            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ squareAt(sq)?.by }}
+          <i v-if="routed && sq && sq < track" class="no" aria-hidden="true">{{ sq }}</i>
+          <svg
+            v-if="sq === 0" class="origin" :style="{ rotate: `${originDeg}deg` }" viewBox="0 0 16 16"
+            aria-hidden="true"
+          ><path d="M4.2 4.2 8 8l-3.8 3.8M8.6 4.2 12.4 8l-3.8 3.8" /></svg>
+          <span v-else-if="routed && sq === finish" class="goal" aria-hidden="true"><Icon name="crown" :size="16" /></span>
+          <span v-else-if="kindOf(sq) === 'boost'" class="cap" :title="`+${squareAt(sq)?.by}`">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.4 6 3.8l3.5 3.6M2.5 10.4 6 6.8l3.5 3.6" /></svg>+{{ squareAt(sq)?.by }}
           </span>
           <span v-else-if="kindOf(sq) === 'trip'" class="pit" :title="`−${squareAt(sq)?.by}`">
-            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" /></svg>−{{ squareAt(sq)?.by }}
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 1.8 6 5.4l3.5-3.6M2.5 4.8 6 8.4l3.5-3.6" /></svg>−{{ squareAt(sq)?.by }}
           </span>
           <span v-else-if="kindOf(sq) === 'again'" class="redo" title="再掷一次" aria-hidden="true">
-            <svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2.6" /><circle cx="5.6" cy="5.6" r="1" /><circle cx="10.4" cy="5.6" r="1" /><circle cx="8" cy="8" r="1" /><circle cx="5.6" cy="10.4" r="1" /><circle cx="10.4" cy="10.4" r="1" /></svg>
+            <svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2.6" /><circle cx="5.6" cy="5.6" r="1.1" /><circle cx="10.4" cy="5.6" r="1.1" /><circle cx="8" cy="8" r="1.1" /><circle cx="5.6" cy="10.4" r="1.1" /><circle cx="10.4" cy="10.4" r="1.1" /></svg>
           </span>
           <span v-else-if="kindOf(sq) === 'hook'" class="grab" title="钩索" aria-hidden="true">
             <svg viewBox="0 0 16 16"><path d="M8 2v7.2a3 3 0 1 1-6 0V8M8 2 5.6 4.4M8 2l2.4 2.4M11 9.5l3 3M14 9.5l-3 3" /></svg>
@@ -462,10 +525,21 @@ watch(hops, (now, before) => {
           <img v-else-if="decoOf(sq) === 'coin'" class="deco coin" :src="COIN" alt="" draggable="false" />
           <img v-else-if="decoOf(sq) === 'alpaca'" class="deco alpaca" :src="alpaca" alt="" draggable="false" />
         </div>
+        <svg v-if="routed && wayPath" class="ways" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+          <path class="way" :d="wayPath" />
+        </svg>
         <template v-if="!routed">
           <div class="island"><span v-if="caption" class="plate">{{ caption }}</span></div>
           <div v-if="$slots.default" class="infield"><slot /></div>
         </template>
+        <svg v-if="links.length" class="links" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+          <g v-for="l in links" :key="l.key" class="warp" :class="{ lit: acting.includes(l.at) }">
+            <path class="halo" :d="l.d" />
+            <path class="chord" :d="l.d" />
+            <circle class="node" :cx="l.p1.x" :cy="l.p1.y" r="0.065" />
+            <circle class="node" :cx="l.p2.x" :cy="l.p2.y" r="0.065" />
+          </g>
+        </svg>
         <div
           v-for="m in members" :key="m" :ref="(el) => { if (el) tzEls[m] = el as HTMLElement }" class="tz" :data-m="m"
           :class="{
@@ -506,11 +580,13 @@ watch(hops, (now, before) => {
 .board {
   --rim: 0.08;
   --lip: 0.06;
+  --head-u: 0.5;
+  --head-px: 8px;
   --u: min(
     calc((100cqw - 8px) / (var(--w) + 2 * var(--rim))),
-    calc((100cqh - 12px) / (var(--h) + 2 * var(--rim) + var(--lip) + 0.5))
+    calc((100cqh - 12px) / (var(--h) + 2 * var(--rim) + var(--lip) + var(--head-u)))
   );
-  --head: calc(8px + var(--u) * 0.5);
+  --head: calc(var(--head-px) + var(--u) * var(--head-u));
   /* A tuanzi (D of a unit); see RaceTrack's script. */
   --d: calc(var(--u) * 0.8);
   --line: max(1px, calc(var(--u) * 0.024));
@@ -523,10 +599,19 @@ watch(hops, (now, before) => {
   border-radius: calc(var(--ring-r) + var(--rim) * var(--u));
   background: var(--c-500);
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.4),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.42),
     inset 0 -1px 0 rgba(var(--c-900-rgb), 0.12),
     0 calc(var(--lip) * var(--u)) 0 var(--c-600),
     0 calc(var(--lip) * var(--u) + 2px) calc(var(--u) * 0.3) calc(var(--u) * -0.1) rgba(var(--c-900-rgb), 0.35);
+}
+/* Map-only thumbnail on the stall page: no stacks stand over it, so the board takes the full box. */
+.track.mini .board {
+  --head-u: 0;
+  --head-px: 0px;
+  --u: min(
+    calc((100cqw - 4px) / (var(--w) + 2 * var(--rim))),
+    calc((100cqh - 6px) / (var(--h) + 2 * var(--rim) + var(--lip)))
+  );
 }
 .board.cleared .tz {
   opacity: 0;
@@ -547,8 +632,8 @@ watch(hops, (now, before) => {
   background: var(--c-300);
 }
 /*
- * On a route the squares are stepping stones across the slab: no face of its own, a faint print of dots on the coral,
- * each stone inlaid by itself.
+ * On a route the squares are stepping stones linked along a recessed stone course: no full face of its own, a faint
+ * print of dots on the coral, and the route bridge joining each stone to the next while keeping parallel columns apart.
  */
 .routed .ring {
   background: none;
@@ -559,38 +644,15 @@ watch(hops, (now, before) => {
   inset: 0;
   background: #fff;
   opacity: 0.14;
+  -webkit-mask: url("../../assets/patterns/halftone.svg") 0 0 / calc(var(--u) * 3.2) calc(var(--u) * 1.6);
   mask: url("../../assets/patterns/halftone.svg") 0 0 / calc(var(--u) * 3.2) calc(var(--u) * 1.6);
   pointer-events: none;
 }
 .routed .ring::after {
   display: none;
 }
-.routed .tile {
-  margin: calc(var(--u) * 0.035);
-  border-radius: calc(var(--u) * 0.14);
-  box-shadow:
-    inset 0 calc(var(--u) * 0.04) calc(var(--u) * 0.06) rgba(var(--c-900-rgb), 0.2),
-    0 1px 0 rgba(255, 255, 255, 0.45),
-    0 0 0 var(--line) rgba(var(--c-900-rgb), 0.1);
-}
-/* A square's number, small in its corner. */
-.no {
-  position: absolute;
-  left: 9%;
-  top: 8%;
-  font: 800 max(9px, calc(var(--u) * 0.17)) / 1 var(--font-latin);
-  font-style: normal;
-  color: var(--c-400);
-}
-/* The finish of a route: the bold check of a flag, a paper ring inside it. */
-.routed .tile.finish {
-  overflow: hidden;
-  background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / calc(var(--u) * 0.31) calc(var(--u) * 0.31);
-}
-.routed .tile.start::after {
-  display: none;
-}
-/* A portal's two ends: a dashed line across the slab, under the stones. */
+.route,
+.ways,
 .links {
   position: absolute;
   inset: 0;
@@ -599,12 +661,111 @@ watch(hops, (now, before) => {
   overflow: visible;
   pointer-events: none;
 }
-.links line {
-  stroke: #fff;
-  stroke-opacity: 0.7;
-  stroke-width: 0.07;
+.route {
+  z-index: 0;
+}
+.route .groove,
+.route .bridge {
+  fill: none;
   stroke-linecap: round;
-  stroke-dasharray: 0.02 0.19;
+  stroke-linejoin: round;
+}
+.route .groove {
+  stroke: var(--c-600);
+  stroke-width: 0.48;
+}
+.route .bridge {
+  stroke: var(--c-200);
+  stroke-width: 0.34;
+}
+.ways {
+  z-index: 2;
+}
+.ways .way {
+  fill: none;
+  stroke: var(--c-600);
+  stroke-width: 0.032;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.routed .tile {
+  z-index: 1;
+  margin: calc(var(--u) * 0.055);
+  border-radius: calc(var(--u) * 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 calc(var(--u) * -0.025) 0 var(--c-100),
+    0 calc(var(--u) * 0.02) calc(var(--u) * 0.05) rgba(var(--c-900-rgb), 0.16),
+    0 0 0 var(--line) rgba(var(--c-900-rgb), 0.12);
+}
+/* A square's number, tucked cleanly in its top-left corner outside any special stone's inlay. */
+.no {
+  position: absolute;
+  z-index: 2;
+  left: 5%;
+  top: 4.5%;
+  padding: 1px 2.5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.9);
+  font: 800 max(8.5px, calc(var(--u) * 0.135)) / 1 var(--font-latin);
+  font-style: normal;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+/* The finish of a route: a bold checkered flag framing a gold-rimmed champion medallion. */
+.routed .tile.finish {
+  overflow: hidden;
+  background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / calc(var(--u) * 0.28) calc(var(--u) * 0.28);
+}
+.routed .tile.start::after {
+  display: none;
+}
+.goal {
+  position: absolute;
+  inset: 19%;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--gold-soft) 32%, #fff), var(--gold-soft));
+  box-shadow:
+    0 0 0 max(1.5px, calc(var(--u) * 0.04)) var(--gold),
+    0 calc(var(--u) * 0.03) calc(var(--u) * 0.08) rgba(var(--c-900-rgb), 0.28);
+  color: var(--gold);
+}
+.goal :deep(.icon) {
+  width: 64%;
+  height: 64%;
+}
+/* A portal's two ends: a gentle curved dashed arc linking rim to rim across the board. */
+.links {
+  z-index: 4;
+}
+.warp .halo,
+.warp .chord {
+  fill: none;
+  stroke-linecap: round;
+}
+.warp .halo {
+  stroke: var(--c-600);
+  stroke-opacity: 0.52;
+  stroke-width: 0.085;
+  stroke-dasharray: 0.09 0.15;
+}
+.warp .chord {
+  stroke: #fff;
+  stroke-opacity: 0.94;
+  stroke-width: 0.048;
+  stroke-dasharray: 0.09 0.15;
+}
+.warp .node {
+  fill: #fff;
+  stroke: var(--c-600);
+  stroke-width: 0.03;
+}
+.warp.lit .halo {
+  stroke: var(--c-500);
+  stroke-opacity: 0.95;
+  stroke-width: 0.12;
 }
 /* Pictures of the park printed on the slab where no square lies. */
 .scene {
@@ -621,6 +782,7 @@ watch(hops, (now, before) => {
 .scene.alpaca {
   margin: 10%;
   background: #fff;
+  -webkit-mask: url("../../assets/brand/side-alpaca.webp") center / contain no-repeat;
   mask: url("../../assets/brand/side-alpaca.webp") center / contain no-repeat;
 }
 
@@ -632,30 +794,59 @@ watch(hops, (now, before) => {
   z-index: 1;
   border-radius: inherit;
   box-shadow:
-    inset 0 calc(var(--u) * 0.05) calc(var(--u) * 0.08) rgba(var(--c-900-rgb), 0.28),
+    inset 0 calc(var(--u) * 0.05) calc(var(--u) * 0.08) rgba(var(--c-900-rgb), 0.26),
     inset 0 0 0 1px rgba(var(--c-900-rgb), 0.1);
   pointer-events: none;
 }
 
-/* ---- the squares: paper in two shades by turns, a hairline between */
+/* ---- the squares: paper in two shades by turns, a hairline between; never keycaps */
 .tile {
   position: relative;
   display: grid;
   place-items: center;
   margin: calc(var(--line) / 2);
   background: var(--surface);
+  transition: box-shadow var(--dur-base) var(--ease-out);
 }
 .tile.alt {
   background: var(--c-100);
+}
+/* Active mover's stone: ringed in warm coral so the mover anchors to the board. */
+.tile.spot {
+  z-index: 2;
+  box-shadow:
+    inset 0 0 0 max(2px, calc(var(--u) * 0.055)) var(--c-500),
+    0 0 calc(var(--u) * 0.18) rgba(var(--c-500-rgb), 0.45);
 }
 .tile.tl { border-top-left-radius: calc(var(--ring-r) - var(--line) / 2); }
 .tile.tr { border-top-right-radius: calc(var(--ring-r) - var(--line) / 2); }
 .tile.br { border-bottom-right-radius: calc(var(--ring-r) - var(--line) / 2); }
 .tile.bl { border-bottom-left-radius: calc(var(--ring-r) - var(--line) / 2); }
-/* The start, also the finish: a faint coral check, with a coral and white checkered line where the lap ends. */
+/* The start (and on the lap, also the finish): coral check with a directional launch chevron towards square 1. */
 .tile.start {
   overflow: hidden;
-  background: repeating-conic-gradient(var(--c-200) 0 25%, var(--c-50) 0 50%) 0 0 / calc(var(--u) * 0.25) calc(var(--u) * 0.25);
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.82) 34%, transparent 66%),
+    repeating-conic-gradient(var(--c-200) 0 25%, var(--c-50) 0 50%) 0 0 / calc(var(--u) * 0.25) calc(var(--u) * 0.25);
+}
+.routed .tile.start {
+  box-shadow:
+    inset 0 0 0 max(2px, calc(var(--u) * 0.045)) var(--c-400),
+    0 calc(var(--u) * 0.02) calc(var(--u) * 0.05) rgba(var(--c-900-rgb), 0.16);
+}
+.origin {
+  width: 52%;
+  height: 52%;
+  fill: none;
+  stroke: var(--c-600);
+  stroke-width: 2.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+  pointer-events: none;
+}
+.board:not(.routed) .origin {
+  translate: 0 -8%;
 }
 .tile.start::after {
   content: "";
@@ -666,11 +857,11 @@ watch(hops, (now, before) => {
   height: calc(var(--u) * 0.2);
   background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / calc(var(--u) * 0.2) calc(var(--u) * 0.2);
 }
-.tile.start.flash {
+.tile.flash {
   animation: finish-flash 900ms var(--ease-out) 2;
 }
 @keyframes finish-flash {
-  40% { box-shadow: inset 0 0 0 calc(var(--u) * 0.08) rgba(255, 255, 255, 0.7), var(--glow-l); }
+  40% { box-shadow: inset 0 0 0 calc(var(--u) * 0.08) rgba(255, 255, 255, 0.78), var(--glow-l); }
 }
 /* The other corners: a faint picture of the park. */
 .deco {
@@ -691,62 +882,66 @@ watch(hops, (now, before) => {
   opacity: 0.28;
   filter: grayscale(1);
 }
-/* The boost square: a key of the slab standing up out of the paper, an arrow up and the squares it pushes. */
+/* Boost & trip squares: flush inlaid stone pads (never raised keycaps!). */
 .cap,
 .pit {
   position: absolute;
-  inset: 12%;
+  inset: 13.5%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--u) * 0.04);
-  border-radius: var(--radius-key-s);
-  font: 800 max(var(--fs-strong), calc(var(--u) * 0.28)) / 1 var(--font-latin);
+  gap: calc(var(--u) * 0.02);
+  border-radius: calc(var(--u) * 0.12);
+  font: 800 max(11.5px, calc(var(--u) * 0.26)) / 1 var(--font-latin);
+}
+/* Boost: warm coral inlay flush with the tile, double chevron up. */
+.cap {
+  background: linear-gradient(180deg, var(--c-200), var(--c-300));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 0 0 max(1.5px, calc(var(--u) * 0.038)) var(--c-500);
   color: var(--ink);
 }
-.cap {
-  bottom: calc(12% + var(--u) * 0.07);
-  background: linear-gradient(180deg, var(--c-400), var(--c-500));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 calc(var(--u) * 0.07) 0 var(--c-600),
-    0 calc(var(--u) * 0.07 + 2px) calc(var(--u) * 0.14) calc(var(--u) * -0.04) rgba(var(--c-900-rgb), 0.4);
-}
-/* The trip square: a pit sunk through the paper into the slab, an arrow down and the squares it sets back. */
+/* Trip: recessed terracotta pit sunk into the slab, crisp white chevron & digits. */
 .pit {
-  background: color-mix(in oklab, var(--c-600) 80%, var(--c-700));
+  background: var(--c-700);
   box-shadow:
-    inset 0 calc(var(--u) * 0.08) calc(var(--u) * 0.1) rgba(var(--c-900-rgb), 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 calc(var(--u) * 0.06) calc(var(--u) * 0.09) rgba(var(--c-900-rgb), 0.48),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.28),
     0 1px 0 rgba(255, 255, 255, 0.8);
+  color: #fff;
 }
-/* Both ends of the portal: the same coral ring round a hole into the slab, so they read as a pair. */
+/* Both ends of the portal: flush coral collar round a glowing hole into the slab. */
 .gate {
   position: absolute;
-  inset: 16%;
+  inset: 16.5%;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: var(--c-500);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 calc(var(--u) * 0.04) 0 var(--c-600);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 0 max(1px, calc(var(--u) * 0.025)) var(--c-600);
 }
 .gate i {
   width: 58%;
   height: 58%;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 40%, var(--c-200), var(--c-400) 60%, var(--c-600));
-  box-shadow: inset 0 calc(var(--u) * 0.04) calc(var(--u) * 0.06) rgba(var(--c-900-rgb), 0.45), 0 0 0 calc(var(--u) * 0.04) #fff;
+  background: radial-gradient(circle at 50% 40%, #fff, var(--c-300) 58%, var(--c-600));
+  box-shadow: inset 0 calc(var(--u) * 0.04) calc(var(--u) * 0.06) rgba(var(--c-900-rgb), 0.42), 0 0 0 calc(var(--u) * 0.038) #fff;
 }
-/* The flip square: a paper disc on the slab, an arrow up beside an arrow down. */
+/* The flip square: flush inlaid disc on the tile, arrows up and down. */
 .turn {
   position: absolute;
-  inset: 14%;
+  inset: 15%;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: var(--c-100);
-  box-shadow: 0 0 0 calc(var(--u) * 0.05) var(--c-500), 0 calc(var(--u) * 0.06) 0 calc(var(--u) * 0.02) var(--c-600);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 0 0 max(1.5px, calc(var(--u) * 0.042)) var(--c-500);
   color: var(--c-700);
 }
 .turn svg {
@@ -754,21 +949,23 @@ watch(hops, (now, before) => {
   height: 62%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* The again square: a paper die lying on the slab. */
+/* The again square: flush inlaid die emblem on the stone. */
 .redo {
   position: absolute;
-  inset: 16%;
+  inset: 17%;
   display: grid;
   place-items: center;
   border-radius: 24%;
   background: var(--surface);
-  box-shadow: 0 0 0 calc(var(--u) * 0.04) var(--c-500), 0 calc(var(--u) * 0.07) 0 calc(var(--u) * 0.02) var(--c-600);
-  color: var(--c-600);
-  rotate: -8deg;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 0 0 max(1.5px, calc(var(--u) * 0.04)) var(--c-500);
+  color: var(--c-700);
+  rotate: -6deg;
 }
 .redo svg {
   width: 100%;
@@ -780,15 +977,17 @@ watch(hops, (now, before) => {
 .redo circle {
   fill: currentColor;
 }
-/* The hook square: a coral disc with a hook thrown ahead. */
+/* The hook square: flush coral medallion with a grappling hook. */
 .grab {
   position: absolute;
-  inset: 14%;
+  inset: 15%;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--c-500);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 calc(var(--u) * 0.06) 0 var(--c-600);
+  background: linear-gradient(180deg, var(--c-300), var(--c-400));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 max(1.5px, calc(var(--u) * 0.038)) var(--c-600);
   color: var(--ink);
 }
 .grab svg {
@@ -796,11 +995,13 @@ watch(hops, (now, before) => {
   height: 62%;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* A portal, flip, again or hook square at work: it swells once, a glow coming and going round it. */
+/* Any special square at work: swells once with a coral glow round it. */
+.cap::after,
+.pit::after,
 .gate::after,
 .turn::after,
 .redo::after,
@@ -813,12 +1014,16 @@ watch(hops, (now, before) => {
   opacity: 0;
   pointer-events: none;
 }
+.tile.acting .cap,
+.tile.acting .pit,
 .tile.acting .gate,
 .tile.acting .turn,
 .tile.acting .redo,
 .tile.acting .grab {
   animation: acting 520ms var(--ease-out);
 }
+.tile.acting .cap::after,
+.tile.acting .pit::after,
 .tile.acting .gate::after,
 .tile.acting .turn::after,
 .tile.acting .redo::after,
@@ -833,8 +1038,8 @@ watch(hops, (now, before) => {
 }
 .cap svg,
 .pit svg {
-  width: max(12px, calc(var(--u) * 0.24));
-  height: max(12px, calc(var(--u) * 0.24));
+  width: max(11px, calc(var(--u) * 0.22));
+  height: max(11px, calc(var(--u) * 0.22));
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;
@@ -842,7 +1047,7 @@ watch(hops, (now, before) => {
   stroke-linejoin: round;
 }
 
-/* ---- inside the ring the slab rises again, an island; the infield is a sheet of paper on it */
+/* ---- inside the lap ring the slab rises as a stadium island with a park watermark and nameplate */
 .island,
 .infield {
   grid-row: 2 / -2;
@@ -852,21 +1057,49 @@ watch(hops, (now, before) => {
   position: relative;
   z-index: 2;
   margin: calc(var(--line) * -0.5);
-  border-radius: calc(var(--u) * 0.08);
-  background: var(--c-500);
+  border-radius: calc(var(--u) * 0.1);
+  background: linear-gradient(180deg, var(--c-400), var(--c-500) 45%);
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.35),
-    0 calc(var(--u) * 0.05) 0 var(--c-600),
-    0 calc(var(--u) * 0.05 + 1px) calc(var(--u) * 0.12) rgba(var(--c-900-rgb), 0.3);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.38),
+    0 calc(var(--u) * 0.045) 0 var(--c-600),
+    0 calc(var(--u) * 0.045 + 1px) calc(var(--u) * 0.12) rgba(var(--c-900-rgb), 0.28);
 }
-/* The map's name, lettered on the island's lower edge. */
+/* Inner stadium infield track line. */
+.island::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--u) * 0.18);
+  border-radius: calc(var(--u) * 0.07);
+  border: max(1px, calc(var(--u) * 0.02)) dashed rgba(255, 255, 255, 0.32);
+  pointer-events: none;
+}
+/* Subtle A-SOUL park mark printed in the center of the stadium island. */
+.island::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: calc(var(--u) * 1.9);
+  aspect-ratio: 3.172;
+  translate: -50% -50%;
+  background: #fff;
+  opacity: 0.2;
+  -webkit-mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  pointer-events: none;
+}
+/* The map's name, centered along the island's lower edge. */
 .plate {
   position: absolute;
-  left: calc(var(--u) * 0.3);
-  bottom: calc(var(--u) * 0.035);
-  font: 800 clamp(9px, calc(var(--u) * 0.16), var(--fs-caption)) / 1 var(--font);
+  left: 50%;
+  bottom: calc(var(--u) * 0.26);
+  translate: -50% 0;
+  padding: calc(var(--u) * 0.03) calc(var(--u) * 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+  font: 800 clamp(9px, calc(var(--u) * 0.15), var(--fs-label)) / 1.2 var(--font);
   letter-spacing: 0.12em;
-  color: color-mix(in oklab, var(--ink) 72%, var(--c-500));
+  color: var(--ink);
   white-space: nowrap;
 }
 .infield {
@@ -907,10 +1140,14 @@ watch(hops, (now, before) => {
   bottom: -5%;
   height: 18%;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(var(--c-900-rgb), 0.32), transparent);
+  background: radial-gradient(closest-side, rgba(var(--c-900-rgb), 0.34), transparent);
 }
 .tz.top::before {
   display: none;
+}
+/* Contact shadow between stacked dumplings so each visibly rests on the head beneath it. */
+.tz.top .body {
+  filter: drop-shadow(0 max(1.5px, calc(var(--u) * 0.025)) max(1.5px, calc(var(--u) * 0.025)) rgba(var(--c-900-rgb), 0.24));
 }
 .body {
   width: 100%;
@@ -963,11 +1200,11 @@ watch(hops, (now, before) => {
   left: calc(50% + var(--d) * 0.55);
   translate: 0 0;
 }
-/* The squares walked: the coral digits with the white outline of the desk's combo count. */
+/* The squares walked: coral digits with a crisp white sticker outline. */
 .roll {
   font: 800 calc(var(--d) * 0.5) / 1 var(--font-latin);
   color: var(--c-600);
-  -webkit-text-stroke: 4px var(--surface);
+  -webkit-text-stroke: clamp(2.5px, calc(var(--d) * 0.08), 4.2px) var(--surface);
   paint-order: stroke fill;
   text-shadow: 0 2px 6px rgba(var(--c-900-rgb), 0.25);
   white-space: nowrap;
@@ -975,7 +1212,7 @@ watch(hops, (now, before) => {
   animation: roll 1100ms var(--ease-out) both;
 }
 .roll.down {
-  color: var(--ink-2);
+  color: var(--c-800);
 }
 @keyframes roll {
   0% { opacity: 0; transform: translateY(10px) scale(0.6); }
@@ -984,13 +1221,13 @@ watch(hops, (now, before) => {
   78% { opacity: 1; transform: translateY(-10px); }
   100% { opacity: 0; transform: translateY(-16px); }
 }
-/* A word: a white speech bubble off the head's upper right (upper left near the right turn). */
+/* A word: a speech bubble off the head's upper right (upper left near the right turn). */
 .say {
   position: absolute;
   z-index: 3;
   left: 72%;
   bottom: calc(76% + var(--over, 0) * var(--u));
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   background: var(--surface);
   box-shadow: 0 0 0 2px var(--c-300), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
@@ -1004,10 +1241,11 @@ watch(hops, (now, before) => {
 .say::after {
   content: "";
   position: absolute;
-  left: 6px;
-  bottom: -5px;
-  width: 9px;
-  height: 9px;
+  z-index: -1;
+  left: 7px;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
   background: var(--surface);
   box-shadow: 2px 2px 0 0 var(--c-300);
   transform: rotate(45deg) skew(8deg, 8deg);
@@ -1020,63 +1258,99 @@ watch(hops, (now, before) => {
 }
 .say.flip::after {
   left: auto;
-  right: 6px;
+  right: 7px;
 }
-.say.lead,
 .say.skill,
 .say.boost {
   background: var(--c-500);
   color: var(--ink);
   box-shadow: 0 0 0 2px var(--surface), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
 }
-.say.lead::after,
 .say.skill::after,
 .say.boost::after {
   background: var(--c-500);
   box-shadow: 2px 2px 0 0 var(--surface);
 }
+/* 1st-place lead callout: legendary gold-soft pill. */
+.say.lead {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--gold-soft) 32%, #fff), var(--gold-soft));
+  color: var(--ink);
+  box-shadow: 0 0 0 2px var(--gold), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
+}
+.say.lead::after {
+  background: var(--gold-soft);
+  box-shadow: 2px 2px 0 0 var(--gold);
+}
+.say.trip {
+  background: var(--c-100);
+  color: var(--c-800);
+  box-shadow: 0 0 0 2px var(--c-500), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
+}
+.say.trip::after {
+  background: var(--c-100);
+  box-shadow: 2px 2px 0 0 var(--c-500);
+}
 @keyframes say {
   from { opacity: 0; transform: scale(0.4); }
 }
-/* The winner, crowned while the field stands still at the line. */
+/* The 1st-place leader, crowned in gold with a crisp white sticker contour. */
 .crown {
   position: absolute;
   left: 50%;
-  bottom: 80%;
+  bottom: 81%;
   translate: -50% 0;
-  color: var(--c-600);
-  filter: drop-shadow(0 1px 0 #fff) drop-shadow(0 -1px 0 #fff) drop-shadow(1px 0 0 #fff) drop-shadow(-1px 0 0 #fff);
+  color: var(--gold);
+  filter:
+    drop-shadow(0 1.2px 0 #fff) drop-shadow(0 -1.2px 0 #fff)
+    drop-shadow(1.2px 0 0 #fff) drop-shadow(-1.2px 0 0 #fff)
+    drop-shadow(0 2px 2px rgba(var(--c-900-rgb), 0.28));
   animation: say 420ms var(--ease-pop) both;
+}
+.crown :deep(path) {
+  fill: var(--gold-soft);
 }
 
 
 .calm .tz,
-.calm .body {
+.calm .body,
+.calm .tile {
   transition: none;
 }
 .calm .tz.waiting .body,
 .calm .roll,
 .calm .say,
 .calm .crown,
-.calm .tile.start.flash,
+.calm .tile.flash,
+.calm .tile.acting .cap,
+.calm .tile.acting .pit,
 .calm .tile.acting .gate,
 .calm .tile.acting .turn,
+.calm .tile.acting .redo,
+.calm .tile.acting .grab,
+.calm .tile.acting .cap::after,
+.calm .tile.acting .pit::after,
 .calm .tile.acting .gate::after,
-.calm .tile.acting .turn::after {
+.calm .tile.acting .turn::after,
+.calm .tile.acting .redo::after,
+.calm .tile.acting .grab::after {
   animation: none;
 }
 
-/* A small board (the race page's bill): the map alone, its marks without their arrows and the squares' numbers. */
+/* A small board (the race page's bill): clean map preview without tiny numbers, chevrons or arrows. */
 @container (max-width: 420px) {
   .no,
   .plate,
+  .ways,
   .cap svg,
   .pit svg {
     display: none;
   }
+  .island::after {
+    width: calc(var(--u) * 2.2);
+  }
   .cap,
   .pit {
-    font-size: calc(var(--u) * 0.4);
+    font-size: calc(var(--u) * 0.42);
   }
 }
 

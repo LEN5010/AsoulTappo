@@ -16,6 +16,7 @@ import { economy } from "../stores/economy";
 import { noPark } from "../stores/park";
 import { online } from "../stores/player";
 import { settings } from "../stores/settings";
+import { reducedMotion } from "../stores/theme";
 import { openRaceWindow } from "../stores/ui";
 import PetBubble from "./PetBubble.vue";
 
@@ -55,7 +56,8 @@ function watchRace() {
 
 <template>
   <PetBubble :open="up && !props.paused" :width="RACE_WIDTH" :shift="shift" :below="below">
-    <div class="race" role="status">
+    <div class="race" :class="{ calm: reducedMotion }" role="status">
+      <i class="dot" aria-hidden="true"></i>
       <p>团子赛跑开赛了</p>
       <button type="button" class="ui-btn small primary" @click="watchRace">观赛</button>
     </div>
@@ -63,6 +65,17 @@ function watchRace() {
 </template>
 
 <style scoped>
-.race { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.race p { flex: 1; min-width: 0; margin: 0; font: 700 var(--fs-label)/1.4 var(--font); white-space: nowrap; }
+.race { display: flex; align-items: center; gap: 7px; min-height: 28px; }
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-600);
+  box-shadow: 0 0 0 2px var(--c-200);
+  animation: race-beat 1.2s var(--ease-out) infinite;
+}
+.calm .dot { animation: none; }
+@keyframes race-beat { 50% { opacity: 0.3; } }
+.race p { flex: 1; min-width: 0; margin: 0; font: 800 var(--fs-label)/1.4 var(--font); white-space: nowrap; }
 </style>

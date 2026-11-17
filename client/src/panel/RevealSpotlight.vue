@@ -69,10 +69,12 @@ const FORM_ON_MS = 3200;
 const FORM_OFF_MS = 1600;
 const twoForm = computed(() => skin.value && !props.calm && !!getCharacter(props.entry.item.ref)?.form);
 const formOn = ref(false);
+const formPulse = ref(0);
 let formTimer = 0;
 function turnForm(on: boolean, after: number) {
   formTimer = window.setTimeout(() => {
     formOn.value = on;
+    if (on) formPulse.value += 1;
     turnForm(!on, on ? FORM_ON_MS : FORM_OFF_MS);
   }, after);
 }
@@ -342,11 +344,12 @@ defineExpose({ close });
     <div class="stage">
       <div class="hero-cell" @pointermove="lean" @pointerleave="rest" @click.stop>
         <i v-if="landed && !calm" class="ring" aria-hidden="true"></i>
+        <i v-if="formPulse && !leaving && !calm" :key="formPulse" class="ring form-ring" aria-hidden="true"></i>
         <div ref="hero" class="hero">
           <div ref="tilt" class="tilt">
             <template v-if="skin">
               <i ref="plate" class="plate" aria-hidden="true"></i>
-              <span ref="frameEl" class="frame">
+              <span ref="frameEl" class="frame" :class="{ shifted: formOn && !leaving }">
                 <img ref="pet" class="pet" :class="{ under: formOn }" :src="entry.art" :alt="entry.title" draggable="false" />
                 <FormOverlay v-if="twoForm && landed && !leaving" class="pet-form" :name="entry.item.ref" :on="formOn" />
               </span>
@@ -372,7 +375,10 @@ defineExpose({ close });
       </div>
       <div class="facts">
         <b class="word" aria-hidden="true"><i v-for="(c, n) in [...word]" :key="n" :style="{ '--n': n }">{{ c }}</i></b>
-        <span class="ui-tag dark kind">{{ entry.kind }}</span>
+        <p class="kind-row">
+          <span class="ui-tag dark kind">{{ entry.kind }}</span>
+          <span v-if="twoForm" class="ui-tag form-tag" :class="{ second: formOn }">{{ formOn ? '二形态' : '一形态' }}</span>
+        </p>
         <h3>{{ entry.title }}</h3>
         <p class="who"><i :style="{ background: memberColor }"></i>{{ entry.who }}</p>
         <p class="own">
@@ -447,6 +453,10 @@ defineExpose({ close });
   box-shadow: 0 0 0 4px #fff, 0 0 30px 6px var(--tone-glow), inset 0 0 30px 6px var(--tone-glow);
   pointer-events: none;
   animation: ring-out 700ms var(--ease-out) both;
+}
+.form-ring {
+  width: min(56cqh, 380px);
+  animation: form-ring-out 560ms var(--ease-out) both;
 }
 .hero {
   position: relative;
@@ -560,6 +570,9 @@ defineExpose({ close });
   inset: 0;
   clip-path: inset(-50% -50% -50% -50% round 0px);
 }
+.frame.shifted {
+  animation: form-shift 420ms var(--ease-spring);
+}
 .pet {
   position: absolute;
   inset: 0;
@@ -657,12 +670,30 @@ defineExpose({ close });
   animation: none;
 }
 /* Chinese reads small beside the Latin word, so the facts run a size or two above body text. */
-.kind {
-  margin-top: 14px;
+.kind-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.kind,
+.form-tag {
   padding: 0 12px;
   font-size: 17px;
   line-height: 30px;
   border-radius: var(--radius-key-s);
+}
+.form-tag {
+  --tag-bg: rgba(255, 255, 255, 0.88);
+  --tag-fg: var(--ink);
+  font-size: 15px;
+  transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base);
+}
+.form-tag.second {
+  --tag-bg: var(--grad-pearl);
+  --tag-fg: var(--night);
+  box-shadow: 0 0 0 2px #fff;
 }
 /* A limited card's label is the pearl of its frame. */
 .tone-limited .kind {
@@ -674,12 +705,15 @@ defineExpose({ close });
   background-size: 300% 100%;
   animation: holo-drift 7s ease-in-out infinite alternate;
 }
+.calm .band {
+  animation: none;
+}
 .tone-holo .kind {
   --tag-bg: var(--night);
   --tag-fg: #fff;
 }
 .tone-holo .word {
-  text-shadow: 0 2px 0 rgba(59, 42, 69, 0.3), 0 0 22px rgba(59, 42, 69, 0.2);
+  text-shadow: 0 2px 0 color-mix(in srgb, var(--night) 30%, transparent), 0 0 22px color-mix(in srgb, var(--night) 20%, transparent);
 }
 h3 {
   margin: 10px 0 8px;
@@ -758,6 +792,15 @@ h3 {
 @keyframes ring-out {
   from { opacity: 1; scale: 0.5; }
   to { opacity: 0; scale: 1.5; }
+}
+@keyframes form-ring-out {
+  from { opacity: 0.9; scale: 0.55; }
+  to { opacity: 0; scale: 1.38; }
+}
+@keyframes form-shift {
+  0% { scale: 1; }
+  45% { scale: 1.028; }
+  100% { scale: 1; }
 }
 @keyframes hero-sheen {
   from { background-position: 160% 0; }

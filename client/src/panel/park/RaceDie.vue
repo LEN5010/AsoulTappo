@@ -120,28 +120,30 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   border-radius: 24%;
-  background: linear-gradient(180deg, #fff 40%, var(--c-50));
+  background: linear-gradient(180deg, #fff 36%, var(--c-50));
   box-shadow:
-    inset 0 0 0 max(1px, calc(var(--s) * 0.035)) var(--c-300),
+    inset 0 1px 0 #fff,
+    inset 0 0 0 max(1px, calc(var(--s) * 0.038)) var(--c-300),
     var(--die-shadow, 0 max(2px, calc(var(--s) * 0.06)) 0 var(--c-400),
       0 calc(var(--s) * 0.1) calc(var(--s) * 0.16) calc(var(--s) * -0.05) rgba(var(--c-900-rgb), 0.4));
 }
 /* A member's die: its colour, lighter at the top, a darker rim and lip; white pips. */
 .tinted .cube {
-  background: linear-gradient(180deg, color-mix(in oklab, var(--die) 70%, #fff), var(--die) 70%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--die) 76%, #fff),
+    var(--die) 58%,
+    color-mix(in oklab, var(--die) 90%, var(--c-900))
+  );
   box-shadow:
-    inset 0 0 0 max(1px, calc(var(--s) * 0.035)) color-mix(in oklab, var(--die) 80%, var(--c-900)),
-    inset 0 max(1px, calc(var(--s) * 0.05)) 0 rgba(255, 255, 255, 0.35),
-    var(--die-shadow, 0 max(2px, calc(var(--s) * 0.06)) 0 color-mix(in oklab, var(--die) 72%, var(--c-900)),
+    inset 0 0 0 max(1px, calc(var(--s) * 0.04)) color-mix(in oklab, var(--die) 78%, var(--c-900)),
+    inset 0 max(1px, calc(var(--s) * 0.05)) 0 rgba(255, 255, 255, 0.38),
+    var(--die-shadow, 0 max(2px, calc(var(--s) * 0.06)) 0 color-mix(in oklab, var(--die) 70%, var(--c-900)),
       0 calc(var(--s) * 0.1) calc(var(--s) * 0.16) calc(var(--s) * -0.05) rgba(var(--c-900-rgb), 0.4));
-}
-.tinted .pips i {
-  background: #fff;
-  box-shadow: 0 max(0.5px, calc(var(--s) * 0.015)) 0 rgba(var(--c-900-rgb), 0.3);
 }
 .pips {
   position: absolute;
-  inset: 14%;
+  inset: 13%;
   display: grid;
   grid-template: repeat(3, 1fr) / repeat(3, 1fr);
 }
@@ -149,13 +151,22 @@ onMounted(() => {
   opacity: 0;
 }
 .pips i {
-  width: 72%;
+  width: 78%;
   aspect-ratio: 1;
   place-self: center;
   border-radius: 50%;
   background: var(--c-700);
+  box-shadow: inset 0 max(0.5px, calc(var(--s) * 0.025)) max(0.5px, calc(var(--s) * 0.025)) rgba(var(--c-900-rgb), 0.2);
 }
-.f1 i { grid-area: 2 / 2; }
+.f1 i {
+  grid-area: 2 / 2;
+  width: 88%;
+}
+.tinted .pips i {
+  background: #FFFFFF;
+  opacity: 1;
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.38);
+}
 .f2 i:nth-child(1) { grid-area: 1 / 1; }
 .f2 i:nth-child(2) { grid-area: 3 / 3; }
 .f3 i:nth-child(1) { grid-area: 1 / 1; }
