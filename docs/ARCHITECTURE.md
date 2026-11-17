@@ -23,6 +23,7 @@ The client runs up to four windows. Each has its own entry and root component.
 | `main` (the desk) | `App.vue` | Transparent, frameless, covers the monitor's work area; draws the own pet and room members' pets. On-top and click-through settings apply here. Never takes focus on Windows. |
 | `panel` | `PanelApp.vue` | Regular resizable taskbar window. Created on first open, hidden on close; the desk keeps running. The tray and the pet's menu open it even while the desk is click-through. |
 | `todo` | `TodoApp.vue` | Small frameless focusable window for the todo list. See [Todos](#todos). |
+| `race` | `RaceApp.vue` | Frameless taskbar window that shows a dumpling race. Created when opened, destroyed on close. See [Race window](#race-window). |
 | `capture` | `CaptureApp.vue` (`capture.html`) | Off by default. See [Capture window](#capture-window). |
 
 The hide key hides every window together and restores the ones that were open.
@@ -40,6 +41,15 @@ The hide key hides every window together and restores the ones that were open.
 1. Interactive desk elements carry `data-hit`. `hit.ts` watches their size, position, insertion and removal and sends the boxes with `set_hit_regions`. Geometry animations are sampled only while they play.
 2. A Rust thread (`spawn_hit_test`) checks the cursor against the regions and toggles `set_ignore_cursor_events`. It polls every 30ms while the cursor moves, every 100ms after two still seconds, and every 250ms while the pet is hidden or click-through.
 3. While dragging (`set_dragging(true)`) the desk stays interactive until release.
+
+### Race window
+
+- Files: `RaceApp.vue`, `panel/park/RaceWatch.vue` (the page), `panel/park/RaceTrack.vue` (the board), `panel/park/SkillCutIn.vue`, `panel/park/raceFeed.ts` (polling and the server clock), `desktop/raceBridge.ts`, `pet/RaceBubble.vue`, `pet/RaceFrame.vue`.
+- The park's race page takes bets and lists past races; it draws no race. `openRaceWindow(replay?)` (`stores/ui.ts`) calls `open_race`: the live race, or a finished one by id. A window already open gets `race:open` and comes to the front.
+- The window holds no connection. It reads the economy from the shared local storage, keeps settings in step through `desktop:settings`, and sends its requests to the desk (`park` action, `stores/park.ts` `parkTry`).
+- The board follows the map: a lap (start and finish in one corner) or, when the map has a `path`, stepping stones along the route with the finish as its own square (`race.ts` `layoutOf`).
+- `settings.raceRemind` (the switch on the race page) makes the desk follow the race quietly and show a bubble over the pet when one starts, with a key that opens the window.
+- The browser preview draws the same page in a frame over the desk page (`pet/RaceFrame.vue`).
 
 ### Todos
 
@@ -82,8 +92,8 @@ The hide key hides every window together and restores the ones that were open.
 
 | Path | Job |
 | --- | --- |
-| `App.vue`, `PanelApp.vue`, `TodoApp.vue`, `CaptureApp.vue` | Window roots |
-| `desktop/` | State mirroring, settings patches, requests from the panel and the todo window to the desk |
+| `App.vue`, `PanelApp.vue`, `TodoApp.vue`, `RaceApp.vue`, `CaptureApp.vue` | Window roots |
+| `desktop/` | State mirroring, settings patches, requests from the panel, the todo window and the race window to the desk |
 | `pet/` | The pet and everything over it on the desk (see below) |
 | `panel/` | The panel's pages and dialogs (see below) |
 | `panel/park/` | 乐园: coins, scratch cards, race, lottery. Rules in `protocol/PROTOCOL.md` |

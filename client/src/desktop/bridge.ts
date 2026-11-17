@@ -265,6 +265,7 @@ export async function initDesktop(): Promise<() => void> {
         case "endPomodoro": pomodoroStore.endPomodoro(); break;
         case "todo": todoStore.todoRequest(args[0] as todoStore.TodoMethod, args[1]); break;
         case "todoSync": result = { settings, todos: todoStore.todos.value }; break;
+        case "raceSync": result = { settings }; break;
         case "ddz": ddzStore.ddzRequest(args[0] as ddzStore.DdzOp, ...args.slice(1)); break;
       }
       await publish();

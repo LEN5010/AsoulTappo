@@ -372,6 +372,8 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 
 /// The todos' window, in logical pixels: a card with its own title bar on a transparent window.
 const TODO_SIZE: (f64, f64) = (320.0, 460.0);
+/// The race's window, in logical pixels (the browser preview's frame is the same size: src/pet/RaceFrame.vue).
+const RACE_SIZE: (f64, f64) = (1180.0, 740.0);
 /// Its distance from the corner of the work area the first time it opens, in logical pixels.
 const TODO_MARGIN: f64 = 24.0;
 
@@ -458,6 +460,65 @@ fn place_todo(app: &tauri::AppHandle, window: &WebviewWindow) -> Result<(), Stri
             area.position.y + area.size.height as i32 - h - margin,
         ))
         .map_err(|e| e.to_string())
+}
+
+/// The race's own window: the page that watches a dumpling race, frameless, a regular window in the taskbar, as
+/// large as `RACE_SIZE` or the work area allows, in the middle of its monitor. `replay` is the finished race it
+/// plays, none for the live one: a window already open is told (`race:open`) and brought to the front. The page
+/// shows it once it has drawn (`show_race`). Closing it closes it: the next call makes it again.
+#[tauri::command]
+async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("race") {
+        app.emit_to("race", "race:open", replay).map_err(|e| e.to_string())?;
+        return show_window(&window);
+    }
+    let url = match replay {
+        Some(id) => format!("index.html?window=race&replay={id}"),
+        None => "index.html?window=race".to_string(),
+    };
+    let window = WebviewWindowBuilder::new(&app, "race", WebviewUrl::App(url.into()))
+        .title("团子赛跑")
+        .inner_size(RACE_SIZE.0, RACE_SIZE.1)
+        .min_inner_size(880.0, 560.0)
+        .maximizable(false)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .shadow(false)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|e| {
+            applog!("race", "create failed: {e}");
+            e.to_string()
+        })?;
+    applog!("race", "created");
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        window.set_size(PhysicalSize::new(
+            (RACE_SIZE.0 * scale).min(area.size.width as f64 - 20.0) as u32,
+            (RACE_SIZE.1 * scale).min(area.size.height as f64 - 20.0) as u32,
+        )).map_err(|e| e.to_string())?;
+    }
+    window.center().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn show_race(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("race") {
+        Some(window) => show_window(&window),
+        None => Ok(()),
+    }
+}
+
+#[tauri::command]
+fn close_race(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("race") {
+        Some(window) => window.close().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -960,6 +1021,9 @@ pub fn run() {
             toggle_panel,
             show_panel,
             hide_panel,
+            open_race,
+            show_race,
+            close_race,
             open_todo,
             show_todo,
             hide_todo,

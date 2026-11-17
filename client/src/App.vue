@@ -17,6 +17,8 @@ import DuelBubble from "./pet/DuelBubble.vue";
 import PokeBubble from "./pet/PokeBubble.vue";
 import NudgeBubble from "./pet/NudgeBubble.vue";
 import TodoFrame from "./pet/TodoFrame.vue";
+import RaceFrame from "./pet/RaceFrame.vue";
+import RaceBubble, { RACE_HEIGHT, RACE_WIDTH } from "./pet/RaceBubble.vue";
 import PomodoroChip from "./pet/PomodoroChip.vue";
 import { NUDGE_HEIGHT, NUDGE_WIDTH, noteNudgeInput, nudge, startNudges } from "./stores/nudge";
 import { beginPomodoro, endPomodoro, focusing, notePomodoroPress, pomodoro, startPomodoroClock } from "./stores/pomodoro";
@@ -56,7 +58,7 @@ import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
   nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, viewport, type FormationPlace, type Pos, type Size,
 } from "./stores/desk";
-import { openPanel, openTodoWindow, todoFrame, togglePanel, ui } from "./stores/ui";
+import { openPanel, openTodoWindow, raceFrame, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
@@ -367,6 +369,7 @@ const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.v
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
+const racePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: RACE_WIDTH, h: RACE_HEIGHT }, viewport.value));
 const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
 const autoNotePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
@@ -553,6 +556,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
+      <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">
@@ -609,6 +613,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <MainPanel v-if="!isTauri && ui.panelOpen" @reset-pet="resetPet" />
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
+    <RaceFrame v-if="!isTauri && raceFrame.open" />
   </div>
 </template>
 

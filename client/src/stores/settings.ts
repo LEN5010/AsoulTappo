@@ -73,6 +73,8 @@ export interface Settings {
   todoSound: boolean;
   /** A notice from the system too when a todo comes due. */
   todoNotify: boolean;
+  /** The pet says so when a dumpling race starts, with a key to watch it (pet/RaceBubble.vue). */
+  raceRemind: boolean;
   /** The todos' window stays over other windows. */
   todoPinned: boolean;
   /** Where the todos' window was left: its top left corner in screen pixels; both -1 before it was first moved. */
@@ -173,6 +175,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pomodoroNotify: false,
   todoSound: true,
   todoNotify: false,
+  raceRemind: false,
   todoPinned: true,
   todoX: -1,
   todoY: -1,

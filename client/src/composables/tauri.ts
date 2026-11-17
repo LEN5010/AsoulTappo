@@ -7,8 +7,10 @@ const windowParam = typeof window !== "undefined" ? new URLSearchParams(window.l
 export const isPanelWindow = isTauri && windowParam === "panel";
 /** The todos' own window (`?window=todo`): a window of the app, or in the browser preview a frame over the desk page (pet/TodoFrame.vue). */
 export const isTodoWindow = windowParam === "todo";
+/** The race's own window (`?window=race`), in the app only: the browser preview shows it over the desk page (pet/RaceFrame.vue). */
+export const isRaceWindow = isTauri && windowParam === "race";
 /** This window's label in the app: the desk overlay is "main". */
-export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "todo" : "main";
+export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "todo" : isRaceWindow ? "race" : "main";
 export type WindowLabel = typeof windowLabel;
 
 export type MouseButton = "left" | "right" | "middle" | "other";

@@ -4,15 +4,15 @@ import { windowLabel, type WindowLabel } from "../composables/tauri";
 export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "claimUpdateRewards" | "loadCheckins" |
   "loadScratch" | "buyScratch" | "revealScratch" | "sendEmote" | "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" |
   "setAccount" | "setRoomPublic" | "setRoomName" | "kickMember" | "loadPublicRooms" | "inviteDuel" | "loadProfile" | "loadBoard" |
-  "loadBoardProfile" | "park" | "beginPomodoro" | "endPomodoro" | "todo" | "todoSync" | "ddz";
+  "loadBoardProfile" | "park" | "beginPomodoro" | "endPomodoro" | "todo" | "todoSync" | "raceSync" | "ddz";
 
-/** `from`: the window that asks and hears the reply, the panel or the todos' window. */
+/** `from`: the window that asks and hears the reply: the panel, the todos' window or the race's. */
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[]; from?: WindowLabel }
 interface DesktopReply<T> { result: T; error?: string }
 
 export const DESKTOP_REQUEST_TIMEOUT_MS = 30000;
 
-/** Panel and todo window actions run in the desk window. Never retry a mutation after a lost reply. */
+/** The other windows' actions run in the desk window. Never retry a mutation after a lost reply. */
 export async function requestDesktop<T = void>(action: DesktopAction, ...args: unknown[]): Promise<T> {
   const id = crypto.randomUUID();
   return new Promise<T>((resolve, reject) => {

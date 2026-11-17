@@ -49,3 +49,23 @@ export function openTodoWindow(): void {
   }
   todoFrame.open = true;
 }
+
+/**
+ * The browser preview's race window: a frame over the desk page (pet/RaceFrame.vue). `replay`: the finished race it
+ * plays, 0 for the live one; `n` counts the openings, each a fresh start.
+ */
+export const raceFrame = reactive({ open: false, replay: 0, n: 0 });
+/**
+ * The race's own window, from the desk or the panel: the live race, or finished race [replay] played again. Opened,
+ * or shown and told what to play when it is open already.
+ */
+export function openRaceWindow(replay = 0): void {
+  ui.quickOpen = false;
+  if (isTauri) {
+    void invoke("open_race", { replay: replay || null }).catch((e: unknown) => console.warn("open_race failed", e));
+    return;
+  }
+  raceFrame.replay = replay;
+  raceFrame.n++;
+  raceFrame.open = true;
+}

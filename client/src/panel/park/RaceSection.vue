@@ -1,33 +1,27 @@
 <script setup lang="ts">
-// 团子赛跑 (protocol/PROTOCOL.md 团子赛跑). There is no push channel: while the
-// page is shown the section asks GET /api/park/race (every 10 s while bets are open, soon around the start and the
-// end), keeps the offset to the server's clock, and plays the race's move list from startsAt, so every client shows
-// the same moment. The odds move with the coins staked until the start; a bet sends the odds the player saw and
-// locks them, and when they have dropped meanwhile the slip shows the new ones to confirm. The countdown, the rules
-// key and the host (the latest champion) go up in the park's coral band (band.ts).
-// The page is the board (RaceTrack) with a sheet of paper in the middle that holds one thing at a time: the five
-// runners as keys, each with its odds to win (and my coins on it), while bets are open or the race is void; the
-// order's dice at the start; while it runs, the field in its order of play, each under its own die in its colour, the
-// five dice thrown together at the start of each round and the one whose turn it is raised; the podium once it has
-// finished. The runners fold away as the race comes out, the tuanzi fly from
-// their squares onto the podium at the finish, and the runners rise again for the next race. The bet slip is the
-// bottom bar: a runner picked, its three kinds, the stake and the bet key; nothing picked, my tickets, or the last
-// champion and what I won on that race.
-// 往期 on the slip lists the latest finished races (GET /api/park/race/history); one picked, or the replay key by a
-// finished race's result, plays that race again on the board on a clock of its own (race.ts replayTime), at 1× or
-// 2×, with a key to its result. Only the board and the infield follow the replay; the polling, the odds, the bets,
-// the countdown and the balance stay with the live race, and when the live race starts the exit key turns into 直播.
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+// 团子赛跑 (protocol/PROTOCOL.md 团子赛跑): the page takes the bets and lists the past races; a race is watched in a
+// window of its own (RaceWatch.vue; stores/ui.ts openRaceWindow). While the page is shown it follows the live race
+// (raceFeed.ts). The odds move with the coins staked until the start; a bet sends the odds the player saw and locks
+// them, and when they have dropped meanwhile the slip shows the new ones to confirm. The countdown, the rules key and
+// the host (the latest champion) go up in the park's coral band (band.ts).
+// On top is the bill: the map of the race taking bets, small, and beside it what is on: once the race has started,
+// the key that opens its window; else the result of the race before with the key that plays it again; and the switch
+// for the pet's word when a race starts (pet/RaceBubble.vue). Under it the five runners as keys, each with its odds to
+// win, its die, its skill and my coins on it. The bet slip is the bottom bar: a runner picked, its three kinds, the
+// stake and the bet key; nothing picked, 往期 and my tickets. 往期 lists the latest finished races
+// (GET /api/park/race/history); one picked plays in the race's window.
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
 import { online } from "../../stores/player";
 import { loadPark, park, parkTry } from "../../stores/park";
+import { settings } from "../../stores/settings";
 import { reducedMotion } from "../../stores/theme";
+import { openRaceWindow } from "../../stores/ui";
 import { ACHAO } from "../../ui/achao";
 import Icon from "../../ui/Icon.vue";
-import { EASE_OUT } from "../../ui/motion";
 import { useBand } from "./band";
-import RaceDie, { type Toss } from "./RaceDie.vue";
+import RaceDie from "./RaceDie.vue";
 import RaceRules from "./RaceRules.vue";
 import RaceTrack from "./RaceTrack.vue";
 import ParkCoin from "./ParkCoin.vue";
@@ -35,140 +29,41 @@ import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import { shortDay } from "./lottery";
 import {
-  chinaDay, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, playLength, replayAt, replayTime,
-  SKILL_NAMES, skillText, trackOf,
-  ROUND, roundAt, roundDice, roundsOf, staggered, stageOf, tuanziArt, type Race, type RaceAnswer, type RaceKind,
-  type RacePast, type ReplayClock,
+  FORM_NAMES, hits, KIND_NAMES, SKILL_NAMES, skillText, trackOf, tuanziArt, type Race, type RaceKind, type RacePast,
 } from "./race";
+import { raceClock, useRaceFeed } from "./raceFeed";
 
 // ParkPage opens the sections only once the server's economy is known.
 const CFG = economy.value!.park!.race!;
 /** The members in manifest order: the lanes before a race's own are drawn. */
 const MEMBERS = manifest.characters.map((c) => c.id);
 const KINDS = CFG.kinds;
-/** How often the odds are asked for while bets are open, ms. */
-const BETTING_POLL = 10_000;
-/** How often the race is asked for while it is about to start, ms. */
-const STARTING_POLL = 350;
-/** How long the last round's cue stays up, ms. */
-const CUE_MS = 2600;
-/** The faces of the order's die. */
-const ORDER_FACES = [1, 2, 3, 4, 5, 6];
-/** How long a win counts up beside the podium, ms. */
+/** How long a win counts up on the bill, ms. */
 const COUNT_MS = 1200;
 const fmt = (n: number) => Math.abs(n).toLocaleString("en-US");
 const character = (m: string) => manifest.characters.find((c) => c.id === m);
 const nameOf = (m: string) => character(m)?.name ?? m;
 const x = (n: number | undefined) => (n === undefined ? "" : `×${n.toFixed(1)}`);
 
-const data = ref<RaceAnswer | null>(null);
-const loadError = ref("");
-/** Server time minus local time, ms. */
-const offset = ref(0);
-const now = ref(Date.now());
-const serverNow = computed(() => now.value + offset.value);
-
-/** The live race: the one bets, polling, the countdown and the balance follow. */
-const race = computed(() => data.value?.race ?? null);
-const last = computed(() => data.value?.last ?? null);
-const phase = computed(() => race.value?.phase ?? null);
-
-/** A finished race played again: the race, its clock, and a count of jumps that starts the board afresh. */
-const replay = ref<{ race: Race; day: string; clock: ReplayClock; n: number } | null>(null);
-/** The race on the board and its time: the replay's while one plays, else the live race at the server's time. */
-const stage = computed(() => replay.value?.race ?? race.value);
-const stageNow = computed(() => {
-  const p = replay.value;
-  return p ? replayTime(p.race, p.clock, now.value) : serverNow.value;
-});
-/** How fast the board's time runs. */
-const speed = computed(() => replay.value?.clock.speed ?? 1);
-
-const isPlaying = (r: Race | null, t: number) => !!r?.moves && !!r.endsAt && t < r.endsAt * 1000;
-const isFinished = (r: Race | null, t: number) => !!r?.ranking && !!r.endsAt && t >= r.endsAt * 1000;
-/** The race on the board is still playing (its moves are out, its end not reached), or has finished. */
-const playing = computed(() => isPlaying(stage.value, stageNow.value));
-const finished = computed(() => isFinished(stage.value, stageNow.value));
-/** The same for the live race. */
-const livePlaying = computed(() => isPlaying(race.value, serverNow.value));
-const liveFinished = computed(() => isFinished(race.value, serverNow.value));
-
-// ---------------------------------------------------------------- polling and the clock
-let active = false;
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
-let clockTimer: ReturnType<typeof setInterval> | null = null;
-let loading = false;
-const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
-
-/** When to ask next: every 10 s while bets are open, soon around the start and the end, slowly otherwise. */
-function nextDelay(): number {
-  const r = race.value;
-  const t = serverNow.value;
-  const until = (at: number) => at * 1000 - t + 300;
-  if (!r || r.phase === "done" || r.phase === "void") return Math.max(1000, Math.min(5000, until(data.value?.nextAt ?? 0)));
-  if (r.phase === "betting") return Math.max(1000, Math.min(BETTING_POLL, until(r.startsAt)));
-  if (r.phase === "running" && r.endsAt && t < r.endsAt * 1000) return Math.max(1000, until(r.endsAt));
-  // Starting: the server starts the race on its next tick; the opening's dice come with it.
-  return r.phase === "starting" ? STARTING_POLL : 1000;
-}
-
-async function poll() {
-  if (pollTimer) clearTimeout(pollTimer);
-  pollTimer = null;
-  // A hidden window asks again once it shows (onVisible).
-  if (!active || loading || hidden()) return;
-  loading = true;
-  const sent = Date.now();
-  const reply = await parkTry<RaceAnswer>("GET", "/api/park/race");
-  loading = false;
-  if (reply.ok) {
-    const got = Date.now();
-    offset.value = reply.data.now * 1000 - (sent + got) / 2;
-    data.value = reply.data;
-    loadError.value = "";
-  } else if (reply.error.status > 0) {
-    loadError.value = reply.error.message;
-  }
-  if (active) pollTimer = setTimeout(poll, reply.ok ? nextDelay() : 5000);
-}
-
-function onVisible() {
-  if (!hidden()) void poll();
-}
-function start() {
-  if (active) return;
-  active = true;
-  void poll();
-  clockTimer = setInterval(() => (now.value = Date.now()), 100);
-  document.addEventListener("visibilitychange", onVisible);
-}
-function stop() {
-  active = false;
-  if (pollTimer) clearTimeout(pollTimer);
-  if (clockTimer) clearInterval(clockTimer);
-  pollTimer = null;
-  clockTimer = null;
-  document.removeEventListener("visibilitychange", onVisible);
-}
-onMounted(start);
-onActivated(start);
-onDeactivated(stop);
-onBeforeUnmount(stop);
+const feed = useRaceFeed();
+const { data, loadError, serverNow, race, last, phase } = feed;
+const poll = feed.poll;
+/** The live race has finished, and its result is in. */
+const liveFinished = feed.finished;
+/** The live race is out: its window is the place to be. */
+const live = feed.live;
+onMounted(feed.start);
+onActivated(feed.start);
+onDeactivated(feed.stop);
+onBeforeUnmount(feed.stop);
 
 // ---------------------------------------------------------------- the countdown
-/** h:mm:ss, or m:ss under an hour: a day's race is most of a day away. */
-function clock(sec: number): string {
-  const s = Math.max(0, Math.ceil(sec));
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const h = Math.floor(s / 3600);
-  return h ? `${h}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}` : `${Math.floor(s / 60)}:${pad(s % 60)}`;
-}
 const countdown = computed<{ label: string; time: string }>(() => {
   const r = race.value;
   const t = serverNow.value / 1000;
-  if (r?.phase === "betting") return { label: "开跑", time: clock(r.startsAt - t) };
-  if (r && (r.phase === "starting" || livePlaying.value)) return { label: "比赛中", time: "" };
-  return { label: "下一场", time: clock((data.value?.nextAt ?? t) - t) };
+  if (r?.phase === "betting") return { label: "开跑", time: raceClock(r.startsAt - t) };
+  if (r && live.value) return { label: "比赛中", time: "" };
+  return { label: "下一场", time: raceClock((data.value?.nextAt ?? t) - t) };
 });
 /** Winners come newest first. */
 const champion = computed(() => data.value?.winners[0]?.member ?? "");
@@ -182,28 +77,13 @@ useBand("race", () => ({
   info: { label: "规则", open: () => (rules.value = true) },
 }));
 
-// ---------------------------------------------------------------- the race under way
-const head = computed(() => {
-  const r = stage.value;
-  return r?.start && r.moves?.length ? playhead(r, stageNow.value) : null;
-});
-/** The opening (the dice for the order) while it plays. */
-const opening = computed(() => (stage.value && playing.value ? openingAt(stage.value, stageNow.value) : null));
-/** The order of play: the manifest's until the opening has settled it; none for a race from before the opening. */
-const seats = computed<string[]>(() => {
-  const r = stage.value;
-  if (r?.order && (!opening.value || opening.value.lined)) return r.order;
-  return r?.order || !r?.moves ? MEMBERS : [];
-});
+// ---------------------------------------------------------------- the race's map and runners
+/** The race's board with nobody on it: the map alone, for the bill. */
+const preview = computed<Race | null>(() => (race.value ? { ...race.value, start: undefined, moves: undefined } : null));
 /** A member's colour, for its dice. */
 const colorOf = (m: string) => character(m)?.color;
-/** The faces of the die a member rolls in [r]: its form's, or the config's on races dealt before forms. */
-const diceOf = (m: string, r: Race | null = race.value) => r?.setup.dice?.[m] ?? CFG.dice;
-/** A throw on the race's time as the wall clock plays it (a replay at 2× throws twice as fast). */
-const atSpeed = (toss: Toss): Toss => {
-  const k = speed.value;
-  return k === 1 ? toss : { ...toss, ms: toss.ms / k, delay: (toss.delay ?? 0) / k, at: (toss.at ?? 0) / k };
-};
+/** The faces of the die a member rolls in the race: its form's, or the config's on races dealt before forms. */
+const diceOf = (m: string) => race.value?.setup.dice?.[m] ?? CFG.dice;
 /** A member's skill in the race taking bets, on races that deal them. */
 const skillOf = (m: string) => race.value?.setup.skills?.[m];
 /** A runner's key title: its name, and its skill or form on races that deal them. */
@@ -213,67 +93,6 @@ function runnerTitle(m: string): string {
   const form = race.value?.setup.forms?.[m];
   return form ? `${nameOf(m)} · 状态${FORM_NAMES[form] ?? form}` : nameOf(m);
 }
-
-/** A seat's die: its face, keyed so each throw remounts it once; the throw while it is in the air. */
-interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
-/**
- * A member's die in the opening: the face it shows, keyed by the round it was last thrown in; the throw while its
- * round is in the air (staggered among those throwing), dimmed once its place is settled.
- */
-function openingDie(m: string): SeatDie | null {
-  const o = opening.value;
-  const rolls = stage.value?.rolls;
-  if (!o || !rolls || o.round < 0) return null;
-  const k = o.rolling.indexOf(m);
-  let thrown = o.round;
-  while (thrown > 0 && !rolls[thrown].some((r) => r.m === m)) thrown--;
-  if (k >= 0 && o.tumbling) {
-    const face = rolls[o.round][k].face;
-    const { delay, ms } = staggered(OPEN_ROLL_MS, k, o.rolling.length);
-    const toss = reducedMotion.value ? null : atSpeed({ ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 });
-    return { key: `${m}o${thrown}`, face, toss, out: false };
-  }
-  return { key: `${m}o${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
-}
-/** The round whose dice are out, once the opening is over. */
-const round = computed(() => (stage.value?.moves && !opening.value ? roundAt(stage.value, stageNow.value) : null));
-/**
- * A member's die in a round: the five thrown together at the round's start (staggered, landing by DICE_TOSS of
- * rollMs), lying in the row after; dimmed once its move is done.
- */
-function roundDie(m: string): SeatDie | null {
-  const r = stage.value;
-  const ra = round.value;
-  if (!r || !ra) return null;
-  const dice = roundDice(r, ra.round);
-  const k = dice.findIndex((d) => d.m === m);
-  if (k < 0) return null;
-  const len = (r.rollMs ?? 0) * DICE_TOSS;
-  const { delay, ms } = staggered(len, k, dice.length);
-  const toss = reducedMotion.value || ra.since >= len
-    ? null
-    : atSpeed({ ms, delay, at: ra.since, pool: diceOf(m, r), seed: ra.round * ROUND + k, height: 110 });
-  const i = ra.round * ROUND + k;
-  const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
-  return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
-}
-const seatDice = computed(() =>
-  Object.fromEntries(seats.value.map((m) => [m, opening.value ? openingDie(m) : roundDie(m)])),
-);
-/** Whose turn it is in the step under way, and where the step is. */
-const turn = computed(() => {
-  const r = stage.value;
-  const h = head.value;
-  if (!r?.moves || !h || h.current < 0) return null;
-  return { m: r.moves[h.current].m, stage: stageOf(h.part) };
-});
-/** The last round's dice have just been thrown. */
-const lastRound = computed(() => {
-  const r = stage.value;
-  const ra = round.value;
-  if (!r || !ra || !playing.value || roundsOf(r) < 2 || ra.round !== roundsOf(r) - 1) return false;
-  return ra.since < CUE_MS;
-});
 
 // ---------------------------------------------------------------- the odds board
 const betting = computed(() => phase.value === "betting" && serverNow.value < (race.value?.startsAt ?? 0) * 1000);
@@ -410,17 +229,17 @@ const ticketTitle = (t: { kind: RaceKind; member: string }) =>
 const betBlock = computed(() => (!online.value ? "未连接" : ""));
 
 // ---------------------------------------------------------------- results
-/** The live race whose result is shown: this one once it has played, the one before while bets are open. */
-const shown = computed<Race | null>(() => (liveFinished.value ? race.value : betting.value ? last.value : null));
-const result = computed(() => shown.value?.result ?? null);
+/** The race whose result is on the bill: the live one once it has played, the one before while bets are open. */
+const shown = computed<Race | null>(() => (liveFinished.value ? race.value : phase.value === "betting" ? last.value : null));
+const shownRanking = computed(() => shown.value?.ranking ?? []);
+/** It can be played again in the race's window. */
+const replayable = computed(() => !!shown.value && (shown.value.replay ?? !!shown.value.moves?.length));
 // The park's balance and today's result follow a race the save had bets in.
 watch(() => (race.value?.phase === "done" && race.value.mine.length ? race.value.id : null), (id) => {
   if (id) void loadPark();
 });
-/** The coins my bets won, counting up from 0 once the result is in; nothing shows for a race that won nothing. */
-const won = computed(() => result.value?.won ?? 0);
-/** The champion of the race shown on the slip while bets are open: the last race's. */
-const lastChampion = computed(() => last.value?.ranking?.[0] ?? data.value?.winners[0]?.member ?? "");
+/** The coins my bets won on the race shown, counting up from 0 once the result is in. */
+const won = computed(() => shown.value?.result?.won ?? 0);
 const counted = ref(0);
 let countFrame = 0;
 watch(() => [shown.value?.id, won.value] as const, ([, to]) => {
@@ -440,39 +259,14 @@ watch(() => [shown.value?.id, won.value] as const, ([, to]) => {
 }, { immediate: true });
 onBeforeUnmount(() => cancelAnimationFrame(countFrame));
 
-/** What the infield holds: the odds board, the race under way, or the podium. */
-const infield = computed<"field" | "run" | "podium">(() => {
-  if (finished.value) return "podium";
-  if (replay.value) return "run";
-  if (betting.value || !race.value || race.value.phase === "void") return "field";
-  return "run";
-});
-const ranking = computed(() => (finished.value ? stage.value?.ranking ?? [] : []));
-/** A place lights up when one of my bets on the tuanzi in it won. */
-function lit(place: number): boolean {
-  const r = stage.value;
-  const m = ranking.value[place];
-  return !!r && !!m && r.mine.some((b) => b.member === m && hits(b.kind, b.member, ranking.value));
-}
-/** A place I had bets on, none of which won: it greys out. */
-function missed(place: number): boolean {
-  const m = ranking.value[place];
-  return !!m && !!stage.value?.mine.some((b) => b.member === m) && !lit(place);
-}
-/** What my bets won on the podium's race: counting up on the live one, standing on a replay. */
-const podiumWon = computed(() => (replay.value ? replay.value.race.result?.won ?? 0 : won.value));
-const podiumCount = computed(() => (replay.value ? podiumWon.value : counted.value));
-
-// ---------------------------------------------------------------- 往期 and replays
+// ---------------------------------------------------------------- 往期
 /** The 往期 list is open, and the races in it (loaded each time it opens). */
 const pastOpen = ref(false);
 const past = ref<RacePast[] | null>(null);
-const replayError = ref("");
 const slipEl = ref<HTMLElement | null>(null);
 
 async function togglePast() {
   pastOpen.value = !pastOpen.value;
-  replayError.value = "";
   if (!pastOpen.value) return;
   const reply = await parkTry<{ races: RacePast[] }>("GET", "/api/park/race/history");
   if (reply.ok) past.value = reply.data.races;
@@ -501,95 +295,10 @@ function pastDay(h: RacePast): string {
   return `${shortDay(h.day)} ${t.getUTCHours()}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
 }
 const pastNet = (net: number) => (net > 0 ? `+${fmt(net)}` : net < 0 ? `−${fmt(net)}` : "0");
-
-/** Plays race [id] again from its start: the race in hand when it has its moves, else asked for. */
-async function openReplay(id: number, day?: string) {
+/** Plays race [id] again in the race's window. */
+function openReplay(id: number) {
   pastOpen.value = false;
-  replayError.value = "";
-  const have = [race.value, last.value].find((r) => r?.id === id && r.phase === "done" && r.moves?.length);
-  let r = have ?? null;
-  if (!r) {
-    const reply = await parkTry<{ race: Race }>("GET", `/api/park/race/replay/${id}`);
-    if (!reply.ok) {
-      replayError.value = reply.error.message;
-      return;
-    }
-    r = reply.data.race;
-  }
-  pick.value = null;
-  replay.value = { race: r, day: day ?? chinaDay(r.startsAt), clock: replayAt(r, 0, Date.now(), 1), n: (replay.value?.n ?? 0) + 1 };
-}
-/** Moves the replay to [from] ms into the race (0: from the start, the end: its result). */
-function seek(from: number) {
-  const p = replay.value;
-  if (p) replay.value = { ...p, clock: replayAt(p.race, from, Date.now(), p.clock.speed), n: p.n + 1 };
-}
-/** Plays the replay at [k]×, on from where it is. */
-function setSpeed(k: number) {
-  const p = replay.value;
-  if (!p) return;
-  const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
-  replay.value = { ...p, clock: replayAt(p.race, at, Date.now(), k) };
-}
-const toEnd = () => replay.value && seek(playLength(replay.value.race));
-function closeReplay() {
-  replay.value = null;
-  replayError.value = "";
-}
-/** The live race has started while a replay plays: the exit key goes to it. */
-const liveOn = computed(() => !!replay.value && (phase.value === "starting" || livePlaying.value));
-/** The finished race on the slip that can be played again: this one on its podium, the last one while bets are open. */
-const replayable = computed<Race | null>(() => {
-  const r = shown.value;
-  return r && (r.replay ?? !!r.moves?.length) ? r : null;
-});
-/** The board starts afresh on every replay jump, and back on the live race. */
-const trackKey = computed(() => (replay.value ? `r${replay.value.race.id}-${replay.value.n}` : "live"));
-
-// ---------------------------------------------------------------- between the phases
-/*
- * The panes cross-fade (the board folds away, the race comes in; the podium fades, the board rises). At the finish
- * there is no fade: the panes swap at once and each tuanzi flies from its square on the board onto the podium
- * (FLIP), the steps rising under them. Without motion every change is a plain swap.
- */
-const infieldEl = ref<HTMLElement | null>(null);
-const cut = ref(reducedMotion.value);
-let flipFrom: Map<string, DOMRect> | null = null;
-watch(infield, (to, from) => {
-  const flip = from === "run" && to === "podium";
-  cut.value = reducedMotion.value || flip;
-  flipFrom = null;
-  if (!flip || reducedMotion.value || !infieldEl.value) return;
-  flipFrom = new Map();
-  const board = infieldEl.value.closest(".board");
-  for (const el of board?.querySelectorAll<HTMLElement>(".tz[data-m]") ?? []) {
-    const token = el.querySelector(".tuanzi-token");
-    if (token) flipFrom.set(el.dataset.m!, token.getBoundingClientRect());
-  }
-  void nextTick(flyToPodium);
-}, { flush: "pre" });
-
-function flyToPodium() {
-  const from = flipFrom;
-  flipFrom = null;
-  const root = infieldEl.value?.querySelector<HTMLElement>(".podium");
-  if (!from || !root) return;
-  root.querySelectorAll<HTMLElement>(".place").forEach((place, i) => {
-    const token = place.querySelector<HTMLElement>("[data-m]");
-    const was = token && from.get(token.dataset.m!);
-    if (token && was) {
-      const to = token.getBoundingClientRect();
-      if (to.width) {
-        const move = `translate(${was.left - to.left}px, ${was.top - to.top}px) scale(${was.width / to.width})`;
-        token.animate([{ transform: move, transformOrigin: "0 0" }, { transform: "none", transformOrigin: "0 0" }],
-          { duration: 720, delay: i * 70, easing: EASE_OUT, fill: "backwards" });
-      }
-    }
-    place.querySelector<HTMLElement>(".step")?.animate(
-      [{ transform: "scaleY(0)", transformOrigin: "50% 100%" }, { transform: "none", transformOrigin: "50% 100%" }],
-      { duration: 520, delay: 160 + i * 70, easing: EASE_OUT, fill: "backwards" },
-    );
-  });
+  openRaceWindow(id);
 }
 </script>
 
@@ -597,16 +306,34 @@ function flyToPodium() {
   <section class="race" :class="{ calm: reducedMotion }" aria-label="团子赛跑">
     <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
-    <RaceTrack
-      :key="trackKey" class="lap" :race="stage" :t="stageNow" :rate="speed" :track="trackOf(stage?.setup, CFG.track)" :members="MEMBERS" :caption="stage?.setup.map?.name"
-      :cleared="infield === 'podium'"
-    >
-      <div ref="infieldEl" class="panes">
-        <Transition name="swap" :css="!cut">
-          <!-- Bets open, a void race, or nothing loaded yet: the five runners, each with its odds to win. -->
-          <div v-if="infield === 'field'" key="field" class="pane field-pane" :class="{ off: race?.phase === 'void' }">
-            <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
-            <div class="runners" :class="{ dice: !!race?.setup.dice }" role="group" aria-label="团子">
+    <!-- The bill: the race's map, and what is on: the way in once it has started, else the result before. -->
+    <div class="bill" :class="{ live }">
+      <RaceTrack class="mini" :race="preview" :t="0" :track="trackOf(race?.setup, CFG.track)" :members="MEMBERS" cleared />
+      <div class="about">
+        <h3 v-if="race?.setup.map">{{ race.setup.map.name }}<small>{{ race.setup.map.track }} 格</small></h3>
+        <button v-if="live" type="button" class="ui-btn primary watch-key" @click="openRaceWindow()">
+          <i class="live-dot" aria-hidden="true"></i>观赛
+        </button>
+        <div v-else-if="shownRanking.length" class="before">
+          <small>{{ liveFinished ? "本场" : "上一场" }}</small>
+          <ol class="order" aria-label="名次">
+            <li v-for="(m, i) in shownRanking" :key="m" class="champ" :title="nameOf(m)">
+              <TuanziToken :member="m" :size="i === 0 ? 48 : 32" /><Icon v-if="i === 0" class="champ-crown" name="crown" :size="16" />
+            </li>
+          </ol>
+          <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(counted) }}</span>
+          <button v-if="replayable" type="button" class="ui-btn small ghost again-key" aria-label="回放" @click="openReplay(shown!.id)">
+            <Icon name="play" :size="15" />
+          </button>
+        </div>
+        <label class="remind"><input v-model="settings.raceRemind" type="checkbox" class="ui-switch" />开赛提醒</label>
+      </div>
+    </div>
+
+    <!-- The five runners, each with its odds to win: keys while bets are open. -->
+    <div class="field-pane" :class="{ off: race?.phase === 'void' }">
+      <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
+      <div class="runners" :class="{ dice: !!race?.setup.dice }" role="group" aria-label="团子">
               <button
                 v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner" :data-runner="m"
                 :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
@@ -629,88 +356,17 @@ function flyToPodium() {
                 <span v-if="skillOf(m)" class="skill">{{ SKILL_NAMES[skillOf(m)!.id] ?? skillOf(m)!.id }}</span>
                 <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
               </button>
-            </div>
-          </div>
-
-          <!--
-            Under way: the field in its order of play, each tuanzi under its own die in its colour; in the opening the
-            dice for the order, then each round's five thrown together. The one whose turn it is stands up, its die
-            raised; a die whose move is done fades. The last round's cue in the corner.
-          -->
-          <div v-else-if="infield === 'run'" key="run" class="pane run-pane">
-            <TransitionGroup v-if="seats.length" tag="ol" name="seat" class="lineup" :class="{ opening: !!opening }" aria-label="出场顺序">
-              <li
-                v-for="m in seats" :key="m" class="seat"
-                :class="{ turn: turn?.m === m, waiting: turn?.m === m && turn.stage !== 'walk' }" :title="nameOf(m)"
-              >
-                <span class="slot">
-                  <RaceDie
-                    v-if="seatDice[m]" :key="seatDice[m]!.key" class="seat-die" :class="{ out: seatDice[m]!.out }"
-                    :face="seatDice[m]!.face" :toss="seatDice[m]!.toss" :color="colorOf(m)"
-                  />
-                </span>
-                <span class="head"><TuanziToken :member="m" :size="48" /></span>
-              </li>
-            </TransitionGroup>
-            <p v-if="lastRound" class="cue" role="status">最后一轮</p>
-          </div>
-
-          <!-- Finished: the podium, the last two on the floor beside it, and what my bets won. -->
-          <div v-else key="podium" class="pane podium-pane">
-            <div class="result">
-              <ol class="podium" aria-label="本场名次">
-                <li
-                  v-for="(m, i) in ranking" :key="m" class="place" :class="[`p${i + 1}`, { lit: lit(i), missed: missed(i) }]"
-                  :title="nameOf(m)"
-                >
-                  <TuanziToken :member="m" :size="i === 0 ? 72 : i < 3 ? 48 : 32" :grey="missed(i)" :data-m="m" />
-                  <span class="step">{{ i + 1 }}</span>
-                </li>
-              </ol>
-              <p v-if="podiumWon > 0" class="net" role="status" :aria-label="`+${fmt(podiumWon)} 驼币`">
-                <ParkCoin class="net-coin" fill :tilt="false" /><b>+{{ fmt(podiumCount) }}</b>
-              </p>
-            </div>
-          </div>
-        </Transition>
       </div>
-    </RaceTrack>
+    </div>
 
     <RaceRules v-if="rules" @close="rules = false" />
 
     <!--
       The bet slip. A runner picked: its three kinds (odds, and a thin bar of the coins on each), the stake and the bet
-      key. Nothing picked: 往期, my tickets on this race; with none while bets are open, the last champion and what my
-      bets on that race won; by a finished race's result, the key to play it again. A replay: its day and how far it
-      is, 2×, its result (or once there, again from the start) and back to the live race.
+      key. Nothing picked: 往期 and my tickets on this race.
     -->
     <div ref="slipEl" class="park-actions slip" @keydown="onSlipKey">
-      <template v-if="replay">
-        <span class="replay-day"><Icon name="play" :size="13" />{{ shortDay(replay.day) }}</span>
-        <i class="replay-bar" aria-hidden="true">
-          <i :style="{ width: `${Math.min(1, (stageNow - replay.race.startsAt * 1000) / Math.max(1, playLength(replay.race))) * 100}%` }"></i>
-        </i>
-        <div class="park-actions-main">
-          <button
-            type="button" class="ui-btn small ghost speed-key" :class="{ on: speed === 2 }" :aria-pressed="speed === 2"
-            @click="setSpeed(speed === 2 ? 1 : 2)"
-          >2×</button>
-          <button v-if="!finished" type="button" class="ui-btn small ghost" aria-label="跳到结果" @click="toEnd">
-            <Icon name="skip" :size="16" />
-          </button>
-          <button v-else type="button" class="ui-btn small ghost" aria-label="再看一遍" @click="seek(0)">
-            <Icon name="refresh" :size="16" />
-          </button>
-          <button
-            type="button" class="ui-btn small exit-key" :class="{ primary: liveOn }" :aria-label="liveOn ? '直播' : '退出回放'"
-            @click="closeReplay"
-          >
-            <template v-if="liveOn"><i class="live-dot" aria-hidden="true"></i>直播</template>
-            <Icon v-else name="close" :size="16" />
-          </button>
-        </div>
-      </template>
-      <template v-else-if="betting && pick && race">
+      <template v-if="betting && pick && race">
         <span class="picked"><TuanziToken :member="pick.member" :size="32" />{{ nameOf(pick.member) }}</span>
         <span class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
           <button
@@ -746,23 +402,12 @@ function flyToPodium() {
           <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
         </span>
       </span>
-      <span v-else-if="betting && lastChampion" class="last">
-        <span class="champ" :title="nameOf(lastChampion)">
-          <TuanziToken :member="lastChampion" :size="32" /><Icon class="champ-crown" name="crown" :size="14" />
-        </span>
-        <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(won) }}</span>
-      </span>
-      <button
-        v-if="replayable && (liveFinished || !tickets.length)" type="button" class="ui-btn small ghost again-key"
-        aria-label="回放"
-        @click="openReplay(replayable.id)"
-      ><Icon name="play" :size="15" /></button>
       </template>
 
-      <div v-if="pastOpen && !replay" class="pop past ui-scroll">
+      <div v-if="pastOpen" class="pop past ui-scroll">
         <ul v-if="past" class="history" :class="{ timed: pastTimed }">
           <li v-for="h in past" :key="h.id">
-            <button type="button" class="past-row" :disabled="!h.replay" @click="openReplay(h.id, h.day)">
+            <button type="button" class="past-row" :disabled="!h.replay" @click="openReplay(h.id)">
               <span class="day">{{ pastDay(h) }}</span>
               <span v-if="h.ranking" class="order">
                 <span v-for="(m, i) in h.ranking" :key="m" class="champ" :title="nameOf(m)">
@@ -782,7 +427,7 @@ function flyToPodium() {
         </ul>
       </div>
 
-      <div v-if="!replay && betting && (pick || !left)" class="park-actions-main">
+      <div v-if="betting && (pick || !left)" class="park-actions-main">
         <span v-if="!left" class="full">本场已押满</span>
         <template v-else>
           <span class="stepper">
@@ -804,13 +449,13 @@ function flyToPodium() {
           </button>
         </template>
       </div>
-      <p v-if="betError || replayError" class="ui-error" role="alert">{{ betError || replayError }}</p>
+      <p v-if="betError" class="ui-error" role="alert">{{ betError }}</p>
     </div>
   </section>
 </template>
 
 <style scoped>
-/* On the park's sheet, under the coral band: the lap fills the height, the slip is the bottom bar. */
+/* On the park's sheet, under the coral band: the bill, the runners filling the height, the slip the bottom bar. */
 .race {
   display: flex;
   flex-direction: column;
@@ -818,56 +463,108 @@ function flyToPodium() {
 .load-error {
   margin: 14px 22px 0;
 }
-.lap {
-  flex: 1 1 auto;
-  min-height: 330px;
-}
 
-/* ---- the panes: one at a time fills the infield; one leaving lies over the next while it fades */
-.panes {
-  position: relative;
-  flex: 1 1 auto;
+/*
+ * ---- the bill: a sheet of paper across the top, the race's map small on its left, what is on beside it
+ */
+.bill {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  margin: 16px 22px 0;
+  padding: 10px 18px 10px 10px;
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+}
+.mini {
+  flex: none;
+  width: 320px;
+  height: 178px;
+  pointer-events: none;
+}
+.about {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
 }
-.pane {
-  flex: 1 1 auto;
+.about h3 {
   display: flex;
-  min-height: 0;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font: 800 var(--fs-section)/1.1 var(--font);
+  color: var(--ink);
 }
-.swap-leave-active {
-  position: absolute;
-  inset: 0;
-  transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out);
+.about h3 small {
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
 }
-.swap-enter-active {
-  transition: opacity 420ms var(--ease-out) 120ms, transform 520ms var(--ease-out) 120ms;
+/* The way in once the race is out: the page's main key, a dot beating on it. */
+.watch-key {
+  gap: 8px;
+  min-width: 132px;
+  height: 44px;
+  font-size: var(--fs-section);
 }
-/* The board folds away under the race and rises again for the next one; the rest fade. */
-.swap-leave-to {
-  opacity: 0;
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-beat 1.2s var(--ease-out) infinite;
 }
-.swap-leave-to.field-pane {
-  transform: translateY(-14px) scale(0.96);
+@keyframes live-beat {
+  50% { opacity: 0.25; }
 }
-.swap-enter-from {
-  opacity: 0;
+/* The race before: its order first to last, the winner crowned, what my bets won, and the key that plays it again. */
+.before {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.swap-enter-from.field-pane {
-  transform: translateY(28px);
+.before small {
+  flex: none;
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+}
+.order {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.remind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+  cursor: pointer;
 }
 
 /*
- * ---- bets open: five runner keys standing in a row on the paper, each a tuanzi over its name and its odds to win.
- * The pane is a size container: the keys follow the paper's width and height.
+ * ---- five runner keys standing in a row, each a tuanzi over its name and its odds to win. The pane is a size
+ * container: the keys follow its width and height.
  */
 .field-pane {
   container: infield / size;
+  flex: 1 1 0;
+  min-height: 132px;
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  margin: 14px 22px 12px;
 }
 .void {
   margin: 0;
@@ -878,7 +575,7 @@ function flyToPodium() {
 .runners {
   /* The tuanzi on a key: as large as the paper's height and a fifth of its width allow, under it the name and the
    * odds. */
-  --face: clamp(26px, min(20cqw - 16px, 100cqh - 56px), 88px);
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 66px), 96px);
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: clamp(5px, 2cqw, 14px);
@@ -886,11 +583,11 @@ function flyToPodium() {
 }
 /* With the race's die under the odds too. */
 .runners.dice {
-  --face: clamp(26px, min(20cqw - 16px, 100cqh - 74px), 88px);
+  --face: clamp(26px, min(20cqw - 16px, 100cqh - 84px), 96px);
 }
 /* A void race: its line over the runners, which give it the room. */
 .field-pane.off .runners {
-  --face: clamp(24px, min(20cqw - 16px, 100cqh - 80px), 88px);
+  --face: clamp(24px, min(20cqw - 16px, 100cqh - 104px), 96px);
 }
 .runner {
   flex-direction: column;
@@ -1062,208 +759,6 @@ function flyToPodium() {
   }
 }
 
-/*
- * ---- under way: the lineup, a row of seats in the order of play, first to move on the left: each a die in the
- * member's colour over its tuanzi. The pane is a size container: the seats follow its width and height.
- */
-.run-pane {
-  container: infield / size;
-  position: relative;
-  align-items: center;
-  justify-content: center;
-}
-.lineup {
-  /* A seat's width; its die and its tuanzi, as large as the pane's height leaves room for both. */
-  --seat: clamp(30px, min(17cqw, 52cqh), 96px);
-  --die-size: calc(var(--seat) * 0.62);
-  --face: calc(var(--seat) * 0.66);
-  display: flex;
-  align-items: flex-end;
-  gap: clamp(4px, 2.4cqw, 18px);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.seat {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(var(--seat) * 0.12);
-  width: var(--seat);
-}
-/* The die rests on the seat's top; it rises when its tuanzi's turn comes, and fades once that move is done. */
-.slot {
-  display: grid;
-  place-items: end center;
-  width: var(--die-size);
-  height: var(--die-size);
-}
-.seat-die {
-  --s: var(--die-size);
-  transition: opacity 280ms var(--ease-out), translate 280ms var(--ease-pop), scale 280ms var(--ease-pop);
-}
-.seat-die.out {
-  opacity: 0.35;
-}
-.seat.turn .seat-die {
-  translate: 0 calc(var(--seat) * -0.16);
-  scale: 1.08;
-  filter: drop-shadow(0 0 calc(var(--seat) * 0.08) rgba(var(--c-500-rgb), 0.9));
-}
-.seat .head {
-  display: grid;
-  place-items: center;
-  width: var(--seat);
-  height: calc(var(--seat) * 0.82);
-  border-radius: 999px;
-  background: var(--c-100);
-  --tuanzi-size: var(--face);
-  transition: translate 280ms var(--ease-pop), background 280ms var(--ease-out), box-shadow 280ms var(--ease-out);
-}
-.seat.turn .head {
-  translate: 0 -4px;
-  background: var(--c-500);
-  box-shadow: var(--shadow-backlight);
-}
-.seat.waiting .head {
-  animation: seat-glow 1s var(--ease-in-out) infinite alternate;
-}
-@keyframes seat-glow {
-  from { box-shadow: 0 0 0 0 rgba(var(--c-500-rgb), 0.6); }
-  to { box-shadow: 0 0 0 7px rgba(var(--c-500-rgb), 0); }
-}
-.seat-move {
-  transition: transform 640ms var(--ease-in-out);
-}
-/* The last round: a small coral tag stamped in the infield's corner. */
-.cue {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 2;
-  margin: 0;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--c-500);
-  box-shadow: var(--shadow-backlight);
-  font: 800 var(--fs-label)/1.2 var(--font);
-  color: var(--ink);
-  white-space: nowrap;
-  animation: cue 2.6s var(--ease-out) both;
-}
-@keyframes cue {
-  0% { opacity: 0; transform: scale(1.6); }
-  14% { opacity: 1; transform: scale(0.94); }
-  22% { transform: scale(1); }
-  85% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
-}
-
-/* ---- finished: the podium, then what my bets won; sized by the infield (a size container) */
-.podium-pane {
-  container: infield / size;
-  align-items: center;
-  justify-content: center;
-}
-.result {
-  /* One unit of the podium: the infield's width or height, whichever is tighter. */
-  --u: min(1.1cqw, 4cqh);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: clamp(10px, calc(var(--u) * 4), 36px);
-}
-.podium {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.place {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: clamp(34px, calc(var(--u) * 13), 84px);
-  --tuanzi-size: clamp(24px, calc(var(--u) * 8), 48px);
-}
-/* Second on the left, the winner in the middle, third on the right; the last two stand on the floor beside. */
-.place.p1 { order: 2; --tuanzi-size: clamp(34px, calc(var(--u) * 12), 72px); }
-.place.p2 { order: 1; }
-.place.p3 { order: 3; }
-.place.p4,
-.place.p5 {
-  width: clamp(22px, calc(var(--u) * 7.5), 48px);
-  --tuanzi-size: clamp(20px, calc(var(--u) * 5.5), 32px);
-}
-.place.p4 { order: 4; margin-left: clamp(4px, var(--u), 10px); }
-.place.p5 { order: 5; }
-.step {
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 22px;
-  border-radius: var(--radius-s) var(--radius-s) 0 0;
-  background: var(--c-100);
-  font: 800 var(--fs-heading)/1 var(--font-latin);
-  color: var(--ink-3);
-}
-.p1 .step { height: clamp(30px, calc(var(--u) * 8.5), 52px); }
-.p2 .step { height: clamp(22px, calc(var(--u) * 6), 36px); }
-.p3 .step { height: clamp(18px, calc(var(--u) * 4.3), 26px); }
-.p4 .step,
-.p5 .step {
-  height: 18px;
-  font-size: var(--fs-number);
-}
-/* A place one of my winning bets is on; one I bet on that won nothing goes grey (the tuanzi too). */
-.place.lit .step {
-  background: var(--c-500);
-  color: var(--ink);
-}
-.place.missed .step {
-  color: var(--ink-3);
-  opacity: 0.6;
-}
-.net {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 4px;
-  color: var(--c-700);
-}
-/* The coin as tall as the number. */
-.net-coin {
-  --size: clamp(22px, calc(var(--u) * 6.4), 44px);
-}
-.net b {
-  font: 800 clamp(20px, calc(var(--u) * 7), 48px)/1 var(--font-latin);
-  font-variant-numeric: tabular-nums;
-  animation: win-pop 600ms var(--ease-pop) both;
-}
-/* A narrow sheet: the podium and the win close up. */
-@container infield (max-width: 320px) {
-  .result {
-    gap: 8px;
-  }
-  .podium {
-    gap: 4px;
-  }
-  .net {
-    gap: 3px;
-  }
-  .net-coin {
-    --size: 20px;
-  }
-}
-@keyframes win-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  100% { transform: none; opacity: 1; }
-}
-
 /* ---- the slip */
 .picked {
   display: inline-flex;
@@ -1320,12 +815,6 @@ function flyToPodium() {
   border-radius: inherit;
   background: var(--c-600);
   transition: width var(--dur-stage) var(--ease-out);
-}
-/* The last race while bets are open: its champion crowned, and what my bets on it won. */
-.last {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
 }
 .champ {
   position: relative;
@@ -1445,61 +934,6 @@ function flyToPodium() {
   color: var(--c-700);
 }
 
-/* ---- a replay on the slip: its day, a thin bar of how far it is, then its keys */
-.replay-day {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: 800 var(--fs-strong)/1 var(--font);
-  color: var(--ink-2);
-}
-.replay-day svg {
-  color: var(--c-700);
-}
-.replay-bar {
-  flex: 1 1 0;
-  min-width: 40px;
-  max-width: 260px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--c-200);
-  overflow: hidden;
-}
-.replay-bar > i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--c-600);
-}
-.speed-key {
-  min-width: 40px;
-  font: 800 var(--fs-number)/1 var(--font-latin);
-}
-/* 2× latched: a step darker than the strip, as the kind keys. */
-.slip .speed-key.on:not(:disabled) {
-  --key-top: var(--c-200);
-  --key-bottom: var(--c-200);
-  color: var(--c-700);
-}
-.exit-key {
-  gap: 6px;
-  min-width: 40px;
-}
-/* The live race has started: the exit key goes to it, a dot beating on it. */
-.live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: live-beat 1.2s var(--ease-out) infinite;
-}
-@keyframes live-beat {
-  50% {
-    opacity: 0.25;
-  }
-}
-
 /* ---- 往期: the latest races rise from the slip, one a row; a row with a replay is a key */
 .pop {
   position: absolute;
@@ -1590,26 +1024,15 @@ function flyToPodium() {
 .calm .odds .arrow,
 .calm .odds b,
 .calm .kind-key.repriced .odds b,
-.calm .net b,
-.calm .seat.waiting .head {
-  animation: none;
-}
-.calm .seat-move,
-.calm .seat .head,
-.calm .seat-die {
-  transition: none;
-}
 .calm .live-dot {
   animation: none;
 }
-/* Without motion the cue stands still for its time. */
-.calm .cue {
-  animation: none;
-}
 
+/* A low panel: the map gives the runners its height. */
 @container panel (max-height: 560px) {
-  .lap {
-    min-height: 250px;
+  .mini {
+    width: 250px;
+    height: 132px;
   }
 }
 /* Narrow panels: the kind keys stack their name over the odds, and the slip stays on one line. */

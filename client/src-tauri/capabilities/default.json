@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Desk overlay, independent panel and the todos' window: events, window dragging and controls, copying text.",
+  "description": "Desk overlay, independent panel, the todos' window and the race's: events, window dragging and controls, copying text.",
   "windows": [
     "main",
     "panel",
-    "todo"
+    "todo",
+    "race"
   ],
   "permissions": [
     "core:default",

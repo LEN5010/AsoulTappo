@@ -4,7 +4,7 @@
 import { computed, ref, watch } from "vue";
 import { ApiError, type ParkState, type ParkStatus, type PlayerStatus } from "../net/api";
 import { toHttpBase } from "../net/protocol";
-import { isPanelWindow } from "../composables/tauri";
+import { isPanelWindow, isRaceWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { rememberNews, unseenNews } from "../parkNews";
 import { account, attempt, freshItems, reloadCollection, saveCode, status } from "./player";
@@ -15,6 +15,9 @@ export type ParkMethod = "GET" | "POST";
 /** A refused or failed park request. `status` is 0 when nothing came back from the server. */
 export interface ParkError { status: number; code: string; message: string; detail: Record<string, unknown> }
 export type ParkReply<T> = { ok: true; data: T } | { ok: false; error: ParkError };
+
+/** The panel and the race's window hold no connection of their own: their requests run in the desk window. */
+const relayed = isPanelWindow || isRaceWindow;
 
 /** The save's park, once loaded (loadPark); null before that, after a save or server switch, and without a park. */
 export const park = ref<ParkState | null>(null);
@@ -78,11 +81,11 @@ export async function parkRequest<T>(method: ParkMethod, path: string, body?: un
 }
 
 /**
- * Any request of the park or redeem codes (paths under /api/park or /api/redeem), from either window. The answer's
+ * Any request of the park or redeem codes (paths under /api/park or /api/redeem), from any window. The answer's
  * status and park state are applied before it resolves; a failure resolves with the error, never rejects.
  */
 export async function parkTry<T>(method: ParkMethod, path: string, body?: unknown): Promise<ParkReply<T>> {
-  if (!isPanelWindow) return parkRequest<T>(method, path, body);
+  if (!relayed) return parkRequest<T>(method, path, body);
   let reply: ParkReply<T>;
   try {
     reply = await requestDesktop<ParkReply<T>>("park", method, path, body);
@@ -124,7 +127,7 @@ export function claimGift(): Promise<number | null> {
 }
 
 // ---------------------------------------------------------------- the desk keeps the state current
-if (!isPanelWindow) {
+if (!relayed) {
   // Another save or server: its park is loaded afresh.
   watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, () => { park.value = null; }, { flush: "sync" });
   watch(() => status.value?.park?.coins, (coins) => {
