@@ -92,8 +92,10 @@ export function collectionProgress(owned: Record<string, number>): CollectionPro
   };
 }
 
+/** Shards to craft [item]; null for what is never crafted, and for what a limited pool keeps to itself for now. */
 export function craftCost(item: Item): number | null {
   return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter && !item.source
+    && !economy.value?.resonance.held?.includes(item.id)
     ? economy.value?.craftCost[item.rarity] ?? null : null;
 }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Sequence
 
+from . import banners
 from . import scratch as scratchlogic
 from .cards import Rng
 from .game import SCRATCH_DAYS, GameError, player_id_for
@@ -183,8 +184,10 @@ class ParkScratch:
         """Skins a client of [version] can show, or the big hidden cards."""
         m = self.park.game.manifest
         if tier == "skin":
-            return [i["id"] for i in m.resonance_pool_for(version).get("skin", []) if i["kind"] == "char"]
-        return [f"card:{c['id']}" for c in m.data["cards"] if c.get("tier") == "big"]
+            return [i["id"] for i in m.resonance_pool_for(version, self.park.game.now()).get("skin", [])
+                    if i["kind"] == "char"]
+        held = banners.held(m.banners, self.park.game.now())
+        return [f"card:{c['id']}" for c in m.data["cards"] if c.get("tier") == "big" and f"card:{c['id']}" not in held]
 
     def reveal(self, token: str, card_id: int) -> dict[str, Any]:
         """Pays a card's prize. Revealing it again answers the same prize and pays nothing. `announce` (popped by the

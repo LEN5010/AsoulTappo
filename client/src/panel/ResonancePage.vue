@@ -1,29 +1,51 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
 import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
-import { baseRates, poolOf, effectiveRates } from "../resonance";
+import { bannerLeft, bannerRates, baseRates, heldItems, poolOf, effectiveRates, runningBanners } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, status, online, error } from "../stores/player";
+import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import PoolStage from "./PoolStage.vue";
+import BannerStage from "./BannerStage.vue";
+import PoolTabs from "./PoolTabs.vue";
 import RevealScene from "./RevealScene.vue";
 import CardDetail from "./CardDetail.vue";
 import SkinDetail from "./SkinDetail.vue";
 import PlateDetail from "./PlateDetail.vue";
 import type { Plate } from "../pet/plates";
 
-const pool = poolOf();
-const complete = computed(() => Object.values(pool).flat().every((i) => collection.owned[i.id]));
-const rates = computed(() => effectiveRates(pool, collection.owned));
+const pool = computed(() => poolOf(heldItems()));
+// The pools: the standing one, and the limited ones the server runs now. A minute's tick opens and closes them and
+// counts their time down.
+const now = ref(Date.now());
+const clock = window.setInterval(() => (now.value = Date.now()), 30_000);
+onBeforeUnmount(() => window.clearInterval(clock));
+const banners = computed(() => runningBanners(now.value));
+const banner = computed(() => banners.value.find((b) => b.id === ui.pool) ?? null);
+const pools = computed(() => [
+  { id: "", name: "此间共鸣" },
+  ...banners.value.map((b) => ({ id: b.id, name: b.name, left: bannerLeft(b, now.value) })),
+]);
+// A pool that ended while it was on show hands the page back to the standing pool.
+watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = ""; });
+const featuredLeft = computed(() => !!banner.value?.items.some((id) => !collection.owned[id]));
+const standingDone = computed(() => Object.values(pool.value).flat().every((i) => collection.owned[i.id]));
+const complete = computed(() => standingDone.value && !featuredLeft.value);
+const rates = computed(() => banner.value
+  ? bannerRates(banner.value, pool.value, collection.owned)
+  : { featured: 0, tiers: effectiveRates(pool.value, collection.owned) });
 const base = computed(() => baseRates());
 // Decode the draw sounds while the page sits idle, so the first draw is not silent.
 onMounted(prime);
 const revealing = ref(false);
 const pending = ref(0);
+/** The pool the draws in progress are from: switching pools waits for them. */
+let drawing = "";
 /** Size of the last request, offered again from the result board. */
 const last = ref(0);
 const again = computed(() =>
@@ -33,31 +55,44 @@ const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
 const plate = ref<Plate | null>(null);
 const tiers: Rarity[] = RARITY_DESC;
-const pityTiers = ["legendary", "skin"] as const;
 /** Prices and odds from the server; the keys and the table wait for them. */
 const res = computed(() => economy.value?.resonance ?? null);
 const cost = computed(() => res.value?.cost ?? 0);
 const income = computed(() => todayIncome(status.value));
-const missingTier = (r: "legendary" | "skin") => pool[r].some((i) => !collection.owned[i.id]);
+const missingTier = (r: "legendary" | "skin") => pool.value[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
 }
 /** Past this share of the hard pity the legendary gauge glows. */
 const PITY_NEAR = 90;
-const pityPercent = (r: "legendary" | "skin") =>
-  res.value ? Math.min(100, (status.value?.resonance.pity[r] ?? 0) / res.value.pity[r] * 100) : 0;
+/** The gauges of the bar: a limited pool's own promise first, then the save's two; the bar has room for two. */
+const gauges = computed(() => {
+  const out: { id: string; label: string; icon: string; count: number; hard: number | null }[] = [];
+  const b = banner.value;
+  if (b?.pity && featuredLeft.value) {
+    out.push({ id: "featured", label: "限定", icon: "spark", count: status.value?.resonance.banners?.[b.id]?.pity ?? 0, hard: b.pity });
+  }
+  for (const r of ["legendary", "skin"] as const) {
+    if (missingTier(r)) {
+      out.push({ id: r, label: r === "legendary" ? "大隐藏" : "皮肤", icon: r === "legendary" ? "crown" : "shirt",
+        count: status.value?.resonance.pity[r] ?? 0, hard: res.value?.pity[r] ?? null });
+    }
+  }
+  return out.slice(0, 2).map((g) => ({ ...g, percent: g.hard ? Math.min(100, g.count / g.hard * 100) : 0 }));
+});
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
   pending.value = count;
   last.value = count;
+  drawing = banner.value?.id ?? "";
   revealing.value = true;
 }
 function drawAgain() {
   pending.value = last.value;
 }
 async function nextBatch() {
-  const result = await resonate(Math.min(pending.value, 100));
+  const result = await resonate(Math.min(pending.value, 100), drawing || undefined);
   pending.value = result ? Math.max(0, pending.value - result.length) : 0;
   return result;
 }
@@ -66,18 +101,26 @@ async function nextBatch() {
 <template>
   <div class="resonance-page ui-scroll">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
-    <PoolStage :busy="revealing" :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event" />
+    <Transition name="pool" mode="out-in">
+      <BannerStage
+        v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
+        :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect"
+      >
+        <template #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
+      </BannerStage>
+      <PoolStage v-else :busy="revealing" :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event">
+        <template v-if="banners.length" #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
+      </PoolStage>
+    </Transition>
     <footer class="console">
       <div class="pities">
-        <template v-for="r in pityTiers" :key="r">
-          <div v-if="missingTier(r)" class="pity" :class="[r, { near: r === 'legendary' && pityPercent(r) >= PITY_NEAR }]">
-            <span>
-              <Icon :name="r === 'legendary' ? 'crown' : 'shirt'" :size="14" />
-              {{ r === 'legendary' ? '大隐藏' : '皮肤' }} <b>{{ status?.resonance.pity[r] ?? 0 }}</b><i>/ {{ res?.pity[r] ?? '—' }}</i>
-            </span>
-            <div class="ui-bar"><i :style="{ width: `${pityPercent(r)}%` }"></i></div>
-          </div>
-        </template>
+        <div v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.id === 'legendary' && g.percent >= PITY_NEAR }]">
+          <span>
+            <Icon :name="g.icon" :size="14" />
+            {{ g.label }} <b>{{ g.count }}</b><i>/ {{ g.hard ?? '—' }}</i>
+          </span>
+          <div class="ui-bar"><i :style="{ width: `${g.percent}%` }"></i></div>
+        </div>
       </div>
       <div class="supply">
         <p><span>可共鸣</span><b>{{ draws }}</b><span>次</span></p>
@@ -100,12 +143,14 @@ async function nextBatch() {
         </button>
       </div>
     </footer>
-    <Modal v-if="probabilities" title="共鸣概率" heading @close="probabilities = false">
+    <Modal v-if="probabilities" :title="banner ? `${banner.name}概率` : '共鸣概率'" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
-        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ base[r] }}%</td><td>{{ rates[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
+        <tr v-if="banner" class="featured-row"><td>限定</td><td>{{ banner.rate }}%</td><td>{{ rates.featured }}%</td><td>{{ banner.pity ? `${banner.pity} 次` : '—' }}</td></tr>
+        <tr v-for="r in tiers" :key="r"><td>{{ RARITY_LABEL[r] }}</td><td>{{ base[r] }}%</td><td>{{ rates.tiers[r] }}%</td><td>{{ r === 'legendary' || r === 'skin' ? `${res.pity[r]} 次` : '—' }}</td></tr>
         <tr v-if="res.holoChance"><td>镭射款</td><td colspan="2">抽到对应卡片时 {{ +res.holoChance.toFixed(2) }}%</td><td>—</td></tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
+      <p v-if="banner && res" class="rates-note">限定从普通档取概率。卡池结束后，限定内容进入此间共鸣。</p>
     </Modal>
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
@@ -179,6 +224,36 @@ async function nextBatch() {
 }
 .pity.legendary svg {
   color: var(--gold);
+}
+/* A limited pool's own promise, in its pearl. */
+.pity.featured svg {
+  color: var(--pearl-deep);
+}
+.pity.featured .ui-bar > i {
+  background: var(--grad-pearl);
+}
+/* Switching pools: the stage crosses over, the bar under it stays. */
+.pool-enter-active {
+  transition: opacity 240ms, transform 320ms var(--ease-out);
+}
+.pool-leave-active {
+  transition: opacity 120ms var(--ease-in);
+}
+.pool-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.pool-leave-to {
+  opacity: 0;
+}
+.featured-row td:first-child {
+  font-weight: 800;
+  color: var(--pearl-deep);
+}
+.rates-note {
+  margin: 12px 0 0;
+  font-size: var(--fs-label);
+  color: var(--ink-3);
 }
 .pity.legendary .ui-bar > i {
   background: var(--grad-gold);

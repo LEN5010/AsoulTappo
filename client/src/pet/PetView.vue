@@ -44,10 +44,13 @@ const props = withDefaults(
     bubbleShift?: { x: number; y: number };
     /** emote bubble grows to the left (pet near the right screen edge) */
     flipBubble?: boolean;
+    /** A showcase holds a two-form skin in one of its forms; left out, presses decide (SkinForm.ts). */
+    form?: boolean | null;
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, sip: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
     emote: null, combo: null, win: null, minEmote: 44, maxEmote: Infinity, bubbleShift: () => ({ x: 0, y: 0 }), flipBubble: false,
+    form: null,
   },
 );
 
@@ -105,11 +108,12 @@ watch(
 const pressed = computed(() => props.keyDown || pulseDown.value);
 
 // ---- the second form of a two-form skin: the own pet times its presses, another member's pet its tap batches
-const formOn = ref(false);
+const typedForm = ref(false);
+const formOn = computed(() => (props.form ?? typedForm.value) && !!assets.value?.form);
 let form: SkinForm | undefined;
 watch(() => assets.value?.form, (has) => {
   form?.reset();
-  form = has ? new SkinForm((on) => (formOn.value = on)) : undefined;
+  form = has ? new SkinForm((on) => (typedForm.value = on)) : undefined;
 }, { immediate: true });
 onBeforeUnmount(() => form?.reset());
 watch([() => props.keyDown, () => props.leftDown, () => props.rightDown, () => props.pulse], (now, was) => {

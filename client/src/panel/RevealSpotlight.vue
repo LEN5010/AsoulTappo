@@ -5,18 +5,19 @@
 // Glare and holo are oversized layers that only move, with no blend modes, so a playing video
 // stays smooth under them. A holo version (镭射款) is drawn by its shading instead: it swings once
 // left and right so the light runs across the foil, and then follows the pointer.
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { vCardSound } from "../audio/cardSound";
 import { cardFrame, cardWord } from "../cards";
-import { PET_BASE } from "../characters";
+import { getCharacter, PET_BASE } from "../characters";
 import HoloArt from "../holo/HoloArt.vue";
 import { FLAT, MAX_TILT, type Tilt } from "../holo/shader";
 import { characterColor } from "../manifest";
 import { EASE_IN_OUT, EASE_OUT } from "../ui/motion";
 import Icon from "../ui/Icon.vue";
 import type { BoardEntry } from "./reveal-board";
+import FormOverlay from "./FormOverlay.vue";
 
 const props = defineProps<{
   entry: BoardEntry;
@@ -61,6 +62,26 @@ const word = computed(() => {
   return card.value ? cardWord(card.value) : "NEW";
 });
 const playing = computed(() => !!card.value?.video && landed.value && !leaving.value && pageActive.value);
+// A two-form skin shows what it does: once it has landed it changes into its second form and back, for as long as it
+// stays up.
+const FORM_FIRST_MS = 900;
+const FORM_ON_MS = 3200;
+const FORM_OFF_MS = 1600;
+const twoForm = computed(() => skin.value && !props.calm && !!getCharacter(props.entry.item.ref)?.form);
+const formOn = ref(false);
+let formTimer = 0;
+function turnForm(on: boolean, after: number) {
+  formTimer = window.setTimeout(() => {
+    formOn.value = on;
+    turnForm(!on, on ? FORM_ON_MS : FORM_OFF_MS);
+  }, after);
+}
+watch(() => twoForm.value && landed.value && !leaving.value && pageActive.value, (show) => {
+  window.clearTimeout(formTimer);
+  formOn.value = false;
+  if (show) turnForm(true, FORM_FIRST_MS);
+});
+onBeforeUnmount(() => window.clearTimeout(formTimer));
 const memberColor = computed(() => characterColor(props.entry.item.characters[0] ?? ""));
 const BURST = Array.from({ length: 12 }, (_, n) => ({
   angle: `${n * 30 + (n % 2) * 11}deg`,
@@ -326,7 +347,8 @@ defineExpose({ close });
             <template v-if="skin">
               <i ref="plate" class="plate" aria-hidden="true"></i>
               <span ref="frameEl" class="frame">
-                <img ref="pet" class="pet" :src="entry.art" :alt="entry.title" draggable="false" />
+                <img ref="pet" class="pet" :class="{ under: formOn }" :src="entry.art" :alt="entry.title" draggable="false" />
+                <FormOverlay v-if="twoForm && landed && !leaving" class="pet-form" :name="entry.item.ref" :on="formOn" />
               </span>
             </template>
             <span v-else-if="card" ref="cardEl" class="card" :class="frameTier">
@@ -548,6 +570,14 @@ defineExpose({ close });
 }
 .skin.landed:not(.calm) .pet {
   animation: pet-hop 520ms var(--ease-spring) both;
+}
+/* The second form of a two-form skin fades in over the first, which then hides (as on the desktop). */
+.pet.under {
+  visibility: hidden;
+  transition: visibility 0s linear var(--dur-slow);
+}
+.pet-form {
+  filter: var(--sticker-lg);
 }
 
 .burst {

@@ -9,6 +9,7 @@ import { collection } from "../stores/player";
 import { SKIN_NOTE_MAX, settings } from "../stores/settings";
 import { setSkinNote, shownSkinName, skinNote } from "../stores/skinNotes";
 import { ui } from "../stores/ui";
+import { poolFor } from "../resonance";
 import { pet } from "../stores/pet";
 import Modal from "../ui/Modal.vue";
 import Icon from "../ui/Icon.vue";
@@ -22,7 +23,7 @@ const props = defineProps<{ name: string; names?: readonly string[] }>();
 const emit = defineEmits<{ close: []; step: [name: string] }>();
 const owned = computed(() => ownsCharacter(props.name, collection.owned));
 const equipped = computed(() => settings.character === props.name);
-function resonate() { ui.page = 'resonance'; emit('close'); }
+function resonate() { ui.pool = poolFor(`char:${props.name}`); ui.page = 'resonance'; emit('close'); }
 
 // Stepping passes over unowned skins, as the card album does with unowned cards.
 const neighbour = (delta: -1 | 1) => {
@@ -53,6 +54,15 @@ function saveNote() {
   setSkinNote(props.name, noteDraft.value);
 }
 watch(() => props.name, () => (naming.value = false));
+
+// A two-form skin changes in the preview as it does on the desktop, by typing; a form key holds one of the two, and
+// the same key again lets go.
+const twoForm = computed(() => !!getCharacter(props.name)?.form);
+const formPin = ref<boolean | null>(null);
+function pinForm(form: boolean) {
+  formPin.value = formPin.value === form ? null : form;
+}
+watch(() => props.name, () => (formPin.value = null));
 </script>
 
 <template>
@@ -77,7 +87,14 @@ watch(() => props.name, () => (naming.value = false));
         </div>
         <p class="member"><i :style="{ background: characterColor(memberOf(name)) }"></i>{{ memberOf(name) }}</p>
         <dl><div v-if="skinNote(name)"><dt>原名</dt><dd>{{ skinTitle(name) }}</dd></div><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
-        <div class="live-preview"><PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" /><small>桌宠预览</small></div>
+        <div class="live-preview">
+          <PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" :form="formPin" />
+          <div v-if="twoForm" class="form-keys" role="group" aria-label="形态">
+            <button type="button" class="ui-btn small" :class="{ primary: formPin === false }" :aria-pressed="formPin === false" @click="pinForm(false)">一形态</button>
+            <button type="button" class="ui-btn small" :class="{ primary: formPin === true }" :aria-pressed="formPin === true" @click="pinForm(true)">二形态</button>
+          </div>
+          <small v-else>桌宠预览</small>
+        </div>
         <button v-if="owned" type="button" class="ui-btn primary equip" :disabled="equipped" @click="settings.character = name"><Icon name="shirt" :size="15" />{{ equipped ? '已装备' : '装备皮肤' }}</button>
         <button v-else type="button" class="ui-btn primary equip" @click="resonate"><Icon name="spark" :size="15" />去共鸣获取</button>
       </div>
@@ -115,6 +132,7 @@ dl div { display: flex; justify-content: space-between; padding: 10px 0; border-
 dt { color: var(--ink-3); } dd { margin: 0; font-weight: 700; }
 .live-preview { display: flex; flex: 1; width: 100%; align-items: center; justify-content: flex-end; flex-direction: column; padding: 12px 0; }
 .live-preview small { font-size: var(--fs-caption); color: var(--ink-3); }
+.form-keys { display: flex; gap: 8px; margin-top: 6px; }
 .equip { align-self: stretch; margin-top: auto; }
 @container panel (max-width: 660px) { .skin-detail { grid-template-columns: minmax(0, 1fr); gap: 20px; } .portrait { width: min(100%, 260px); justify-self: center; } }
 </style>

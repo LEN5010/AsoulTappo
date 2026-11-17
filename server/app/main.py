@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from . import analytics
+from . import banners as banner_file
 from . import economy as economy_file
 from .accounts import MainAccounts, http_me
 from .ddz import Bank as DdzBank, Tables
@@ -325,7 +326,9 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "no_park": 404, "park_locked": 409, "no_coins": 409, "bad_count": 400, "card_hidden": 409,
           "race_closed": 409, "race_cap": 409, "odds_changed": 409, "no_race": 404, "no_replay": 404, "lottery_closed": 409, "lottery_cap": 409,
           "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
-          "login_required": 401, "too_many_tries": 429, "no_code": 409}
+          "login_required": 401, "too_many_tries": 429, "no_code": 409,
+          # A limited pool that is not running (banners.py).
+          "no_banner": 409}
 
 
 def _guard(fn, *args):
@@ -387,6 +390,8 @@ class PresenceBody(BaseModel):
 
 class ResonanceBody(BaseModel):
     count: int = Field(default=1, ge=1, le=100)
+    #: A limited pool's id (app/banners.py); without it the draws are from the standing pool.
+    banner: str | None = Field(default=None, max_length=64)
 
 
 class ScratchRevealBody(BaseModel):
@@ -430,8 +435,12 @@ def api_manifest() -> dict:
 def api_economy(x_client_version: str = Header(default="")) -> dict:
     """Prices, odds and caps for the client to show (the economy file without its server-only part), the odds as
     that client's draws have them."""
-    return economy_file.client_view(manifest.economy, game.cfg, manifest.resonance_pool_for(x_client_version),
-                                    holo=bool(manifest.holos_for(x_client_version)))
+    now = game.now()
+    return economy_file.client_view(
+        manifest.economy, game.cfg, manifest.resonance_pool_for(x_client_version, now),
+        holo=bool(manifest.holos_for(x_client_version)),
+        banners=[b.view() for b in manifest.banners_for(x_client_version, now)],
+        held=sorted(banner_file.held(manifest.banners, now)))
 
 
 @app.get("/api/me")
@@ -464,7 +473,7 @@ def api_presence(body: PresenceBody, who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/resonance/draw")
 def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player),
                  x_client_version: str = Header(default="")) -> dict:
-    return _guard(game.resonate, who, body.count, x_client_version)
+    return _guard(game.resonate, who, body.count, x_client_version, body.banner)
 
 
 @app.post("/api/craft")

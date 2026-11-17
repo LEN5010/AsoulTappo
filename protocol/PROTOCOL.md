@@ -110,11 +110,11 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单：`assets-packs/manifest.json` 加上 economy 配置（不含服务端私有的 `antiCheat`） |
-| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance` |
+| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance`。`resonance.banners` 是这个版本现在能抽、或一小时内开始的限定卡池 `[{id,name,start,end,items,rate,pity?}]`（start、end 为秒），`resonance.held` 是被限定卡池留住、暂时不在常驻池里的物品 id；都没有时不带。配置文件里的整份卡池日程不下发 |
 | GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、autoInput（见敲击收益与活动）、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、ddz（`{net}`，今天斗地主的净赢；没有斗地主的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?,injected?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数；injected 是这批敲击里由其他软件模拟的次数，客户端分辨不了时不带 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
-| POST /api/resonance/draw | `{count}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节 |
+| POST /api/resonance/draw | `{count, banner?}`，count 为 1–100，实际次数取 count、100、余额可支付次数的最小值，返回状态和 drops。皮肤池按 `X-Client-Version` 过滤，见共鸣一节。banner 是限定卡池的 id，不带就抽常驻池；卡池不在进行中或这个版本抽不了时返回 409 `no_banner`，不扣碎片 |
 | POST /api/craft | `{item}`，兑换未拥有的普通卡，以及普通、罕见、稀有表情，返回状态和 item |
 | GET /api/checkin | 签到日历：today（北京时间日期）、available（今天还能不能签）、days（本月已签的 `{day,prize,shards}`，按日期排列，prize 为奖励档下标） |
 | POST /api/checkin | 每日签到，每个存档每天一次，北京时间（UTC+8）零点刷新。服务端按 economy 配置 `economy.checkin.prizes` 的权重抽一档，实发碎片在该档数额上下浮动 `economy.checkin.spread`（均匀分布，按比例上下浮动，四舍五入取整），返回状态和 `prize:{index,shards,day}`，index 为奖励档的下标；当天已签返回 409 `checked_in` |
@@ -319,6 +319,17 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 稀有表情为此间为爱、绮梦漫游、匣中惊鸿三套动态表情，共 60 个；罕见为绽放收藏集与脑洞波各三套，共 75 个；普通表情共 320 个。已有物品按原 ID 保留。
 
 新玩家获得初始碎片。兑换价格按稀有度在 `economy.craftCost`；史诗、限定、传说、皮肤、镭射款和初始表情不参与兑换。
+
+### 限定卡池
+
+服务端在 `economy.resonance.banners` 里排限定卡池，每个有开始和结束时间（带时区的 ISO 8601）、限定物品（卡片或皮肤的物品 id）、限定概率 `rate`（百分比）和可选的限定保底 `pity`。
+
+- 限定物品从写进配置起就不在常驻池里，卡池还没开始时也一样；卡池结束后进入常驻池，按自己的档位和概率出。被留住期间不能兑换，刮刮乐也不出。
+- 抽限定卡池等于抽常驻池再多一档：`rate` 从普通档的区间里取，抽中时在还没有的限定物品里等概率选一件，drop 带 `featured: true`，rarity 仍是物品自己的档位。限定物品不出重复，全部拥有后这个卡池和常驻池抽到的一样。
+- 大隐藏和皮肤的保底是存档的，抽哪个池都累计；抽到限定皮肤也算抽到皮肤，皮肤保底清零。限定保底只在这个卡池里累计：距上次限定物品 `pity` 抽必出。大隐藏保底和限定保底同时到期时先出大隐藏，下一抽出限定。
+- 状态的 `resonance.banners` 是 `{<卡池 id>: {pity, drawn}}`：这份存档在进行中卡池里的限定保底进度和抽数，没抽过的卡池不列。
+- 限定物品里有这个客户端版本显示不了的（`since` 更新）时，不向它下发这个卡池，它带着这个 id 抽卡返回 `no_banner`。不带 banner 的旧客户端只抽常驻池。
+- 同一时间进行的两个卡池不能有相同的限定物品；配置有误时服务端不启动。
 
 ### 镭射款
 

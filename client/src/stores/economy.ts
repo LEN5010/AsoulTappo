@@ -10,6 +10,12 @@ import { settings } from "./settings";
 /** The client's own input guard (src/pet/TapGuard.ts): a fast second, a streak of them, and the cooldown that follows. */
 export interface TapGuardRules { fastPerSecond: number; fastStreakSec: number; cooldownSec: number }
 
+/**
+ * A limited pool (server/app/banners.py): the standing pool with `items` in a tier of their own, drawn at `rate`
+ * percent and for certain on the `pity`-th draw since the last one. `start` and `end` are seconds.
+ */
+export interface Banner { id: string; name: string; start: number; end: number; items: string[]; rate: number; pity?: number }
+
 export type Economy = {
   /** Shards per day: dailyCap × (1 − e^−x), x = a·m + b·m² + c·m³ for m thousand taps and curve = [a, b, c];
    * a minute counts tapsPerMinute taps at most. */
@@ -23,6 +29,10 @@ export type Economy = {
     repeatTiers?: Rarity[];
     /** Percent of draws of a card with a holo version that are that version; none without it. */
     holoChance?: number;
+    /** Limited pools this client can draw from now or within the hour (resonance.ts). */
+    banners?: Banner[];
+    /** Item ids a limited pool keeps out of the standing pool, running or yet to start. */
+    held?: string[];
   };
   craftCost: Partial<Record<Rarity, number>>;
   /** Daily check-in prizes, smallest first; weights are percentages. A prize pays its shards give or take `spread`. */

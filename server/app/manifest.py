@@ -19,6 +19,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from . import banners as banner_file
 from . import economy as economy_file
 from .notice import version_key
 
@@ -48,7 +49,9 @@ class Manifest:
         p = Path(path) if path else find_packs_dir() / "manifest.json"
         data = json.loads(p.read_text(encoding="utf-8"))
         data["economy"], anti = economy_file.load(economy)
-        return cls(data, anti)
+        m = cls(data, anti)
+        m.banners  # a banner the server could not run stops the start
+        return m
 
     @cached_property
     def economy(self) -> dict:
@@ -121,14 +124,32 @@ class Manifest:
         have = key[:3] if key else (0, 0, 0)
         return frozenset(iid for iid, since in self.item_since.items() if since > have)
 
-    def resonance_pool_for(self, version: str | None) -> dict[str, list[dict]]:
-        """The pool a client of [version] can show: cards and skins from a later release are left out, as is every
-        one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
-        None: the whole pool."""
+    def resonance_pool_for(self, version: str | None, now: float | None = None) -> dict[str, list[dict]]:
+        """The standing pool a client of [version] can show: cards and skins from a later release are left out, as
+        is every one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
+        None: the whole pool. With [now], the items of banners that have not ended are left out too (app/banners.py)."""
         held = self.held_for(version)
+        if now is not None:
+            held |= banner_file.held(self.banners, now)
         if not held:
             return self.resonance_pool
         return {r: [i for i in items if i["id"] not in held] for r, items in self.resonance_pool.items()}
+
+    @cached_property
+    def banners(self) -> tuple[banner_file.Banner, ...]:
+        """The economy's limited pools (resonance.banners), past, running and to come."""
+        return banner_file.load(self.resonance.get("banners"), self.items)
+
+    def banners_for(self, version: str | None, now: float) -> list[banner_file.Banner]:
+        """The banners a client of [version] is told of at [now]: running or about to start, and featuring nothing
+        it cannot show."""
+        held = self.held_for(version)
+        return [b for b in self.banners
+                if b.start - banner_file.ANNOUNCE_SECONDS <= now < b.end and not held.intersection(b.items)]
+
+    def banner(self, banner_id: str, version: str | None, now: float) -> banner_file.Banner | None:
+        """The running banner [banner_id], if a client of [version] can draw from it at [now]."""
+        return next((b for b in self.banners_for(version, now) if b.id == banner_id and b.running(now)), None)
 
     @cached_property
     def resonance_pool(self) -> dict[str, list[dict]]:

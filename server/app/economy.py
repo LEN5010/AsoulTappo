@@ -16,7 +16,9 @@ Weights are percentages unless said otherwise.
   without it those cards stay out of the pool. A tier a client's pool leaves empty (the limited tier for a client
   older than its cards) gives its odds to common, and ``GET /api/economy`` shows that client the rates so folded.
   ``holoChance`` is the chance (0 to 100) that a draw of a card with a holo version (镭射款) is that version; without it
-  there are none. Clients older than the holo versions never get one and are not sent it.
+  there are none. Clients older than the holo versions never get one and are not sent it. ``banners`` are the limited
+  pools (see ``app/banners.py``): each {id, name, start, end, items, rate, pity}. A client is sent the ones it can
+  draw from, and the ids of every item a banner keeps out of the standing pool as ``held``.
 - ``craftCost``: shards to craft a missing item, by rarity.
 - ``checkin``: daily check-in prizes by amount; a prize pays its shards give or take ``spread`` (uniform), so the
   amounts are seldom round while the mean is unchanged.
@@ -118,18 +120,27 @@ def drop_config(anti: dict[str, Any]) -> DropConfig:
 
 
 def client_view(economy: dict[str, Any], cfg: DropConfig,
-                pool: dict[str, list[dict]] | None = None, holo: bool = True) -> dict[str, Any]:
+                pool: dict[str, list[dict]] | None = None, holo: bool = True,
+                banners: list[dict[str, Any]] | None = None, held: list[str] | None = None) -> dict[str, Any]:
     """What GET /api/economy answers: the economy and the thresholds of the client's own input guard. With the
     client's resonance [pool], a tier it leaves empty is folded into common, as its draws do. Without [holo] (a client
-    that gets no holo versions) the holo chance is left out."""
+    that gets no holo versions) the holo chance is left out. The economy's own list of limited pools never goes out:
+    the client gets [banners], those it can draw from now or within the hour, and [held], the items kept out of the
+    standing pool for a banner."""
     out = {**economy, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
                                    "cooldownSec": cfg.tap_cooldown_sec}}
     res = economy.get("resonance")
     if not res:
         return out
     view = res
+    if "banners" in res or banners or held:
+        view = {k: v for k, v in res.items() if k != "banners"}
+        if banners:
+            view["banners"] = banners
+        if held:
+            view["held"] = held
     if not holo and "holoChance" in res:
-        view = {k: v for k, v in res.items() if k != "holoChance"}
+        view = {k: v for k, v in view.items() if k != "holoChance"}
     if pool is not None:
         rates = dict(res["rates"])
         for tier in [t for t in rates if t != "common" and not pool.get(t)]:

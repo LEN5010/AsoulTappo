@@ -53,7 +53,7 @@ def test_activity_resonance_collection_flow(client):
 def test_resonance_draw_passes_the_client_version_to_the_pool(client, monkeypatch):
     seen = []
     real = main.game.manifest.resonance_pool_for
-    monkeypatch.setattr(main.game.manifest, "resonance_pool_for", lambda v: seen.append(v) or real(v))
+    monkeypatch.setattr(main.game.manifest, "resonance_pool_for", lambda v, now=None: seen.append(v) or real(v, now))
     client.post("/api/resonance/draw", json={}, headers={**H, "X-Client-Version": "1.1.4"})
     client.post("/api/resonance/draw", json={}, headers=H)
     assert seen == ["1.1.4", ""]

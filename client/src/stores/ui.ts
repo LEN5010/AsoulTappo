@@ -7,6 +7,8 @@ export const ui = reactive({
   panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
   /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
   dexFilter: "" as "" | "holo",
+  /** The pool on show on the resonance page: a limited pool's id, or "" for the standing pool. */
+  pool: "",
   /** Desk window only: the panel is up on the room page, as it last reported (desktop/bridge.ts). */
   roomSeen: false,
 });

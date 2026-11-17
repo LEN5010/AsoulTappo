@@ -6,9 +6,12 @@ import SkinArt from "./SkinArt.vue";
 import { characterColor, memberOf, skinTitle } from "../manifest";
 import { readSpotlight, spotlight, spotlightShown } from "../stores/spotlight";
 import { ui } from "../stores/ui";
+import { poolFor } from "../resonance";
 
 const TILTS = [-3, 2.2, -1.4, 3.2];
 function resonate() {
+  // The new skins may be a limited pool's: the page opens on it.
+  ui.pool = spotlight?.skins.map((name) => poolFor(`char:${name}`)).find(Boolean) ?? "";
   ui.page = "resonance";
   readSpotlight();
 }

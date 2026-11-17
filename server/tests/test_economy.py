@@ -31,6 +31,8 @@ def test_the_client_gets_prices_odds_and_its_input_guard():
     got = TestClient(main.app).get("/api/economy", headers={"X-Client-Version": "1.2.4"}).json()
     data, _ = economy.load(economy.EXAMPLE)
     cfg = main.game.cfg
+    # The schedule of limited pools stays on the server (tests/test_banners.py covers what a client is sent).
+    data["resonance"] = {k: v for k, v in data["resonance"].items() if k != "banners"}
     assert got == {**data, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
                                         "cooldownSec": cfg.tap_cooldown_sec}}
 
@@ -49,7 +51,7 @@ def test_an_older_client_sees_the_limited_odds_in_common_as_its_draws_have_them(
         # and no holo chance: those clients get no holo versions
         assert "holoChance" not in got
         assert {k: v for k, v in got.items() if k != "rates"} == \
-            {k: v for k, v in data["resonance"].items() if k not in ("rates", "holoChance")}
+            {k: v for k, v in data["resonance"].items() if k not in ("rates", "holoChance", "banners")}
 
 
 def test_anti_cheat_settings_override_the_defaults(tmp_path):

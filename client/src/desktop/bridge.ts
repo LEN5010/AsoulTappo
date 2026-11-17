@@ -238,7 +238,7 @@ export async function initDesktop(): Promise<() => void> {
       let result: unknown;
       switch (action) {
         case "sync": result = { settings, page: ui.page, craftTarget: ui.craftTarget, state: groups() }; break;
-        case "resonate": result = await player.resonate(args[0] as number); break;
+        case "resonate": result = await player.resonate(args[0] as number, (args[1] as string | null) ?? undefined); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
         case "checkin": result = await player.checkin(); break;
         case "claimUpdateRewards": result = await player.claimUpdateRewards(); break;

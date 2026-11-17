@@ -20,9 +20,10 @@ class DropConfig:
     tap_cooldown_sec: float = 60.0
 
 
-def roll_tier(rates, available, pity, hard_pity, rng: Rng) -> str:
-    """Unavailable tiers land on common; legendary pity takes precedence."""
-    x = rng.random()
+def roll_tier(rates, available, pity, hard_pity, rng: Rng, x: float | None = None) -> str:
+    """Unavailable tiers land on common; legendary pity takes precedence. [x] is the roll when the caller drew it."""
+    if x is None:
+        x = rng.random()
     edge = rates["legendary"]
     if "legendary" in available and (pity["legendary"] + 1 >= hard_pity["legendary"] or x < edge / 100):
         return "legendary"
@@ -43,6 +44,12 @@ def roll_tier(rates, available, pity, hard_pity, rng: Rng) -> str:
     if "limited" in available and edge / 100 <= x < (edge + limited) / 100:
         return "limited"
     return "common"
+
+
+def roll_featured(rate: float, pity: int, hard_pity: int | None, x: float) -> bool:
+    """Whether a draw from a limited pool is a featured item: for certain on the [hard_pity]-th draw since the last
+    one, else at [rate] percent. The range is the top of the roll, which roll_tier gives to common."""
+    return (hard_pity is not None and pity + 1 >= hard_pity) or x >= 1 - rate / 100
 
 
 def default_rng() -> Rng:

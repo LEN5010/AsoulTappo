@@ -10,8 +10,8 @@ import HoloArt from "../holo/HoloArt.vue";
 import { tiltTransform } from "../holo/shader";
 import { useTilt } from "../holo/useTilt";
 import { characterColor, manifest, type ManifestCard } from "../manifest";
-import { economy } from "../stores/economy";
-import { getItem } from "../items";
+import { craftCost, getItem } from "../items";
+import { poolFor } from "../resonance";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { collection } from "../stores/player";
 import { settings } from "../stores/settings";
@@ -192,7 +192,7 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
         >
           <Icon :name="shown ? 'check' : 'plus'" :size="15" />{{ shown ? "取消展示" : showcaseFull ? "展示位已满" : "展示到主页" }}
         </button>
-        <button v-if="!count && !economy?.craftCost[card.rarity] && !preview" type="button" class="ui-btn primary resonance" @click="ui.page = 'resonance'; emit('close')">去共鸣获取</button>
+        <button v-if="!count && craftCost(item) === null && !preview" type="button" class="ui-btn primary resonance" @click="ui.pool = poolFor(item.id); ui.page = 'resonance'; emit('close')">去共鸣获取</button>
       </div>
     </div>
 

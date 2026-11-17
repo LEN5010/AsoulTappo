@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { getCard, manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
-import { baseRates, commonKindRates, effectiveRates, poolOf } from "./resonance";
+import { bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, poolFor, poolOf, runningBanners } from "./resonance";
 import { economy, setEconomy } from "./stores/economy";
 import { exampleEconomy } from "./test/economy";
 import { realPoolCounts, realPoolSize } from "./test/pool";
@@ -79,4 +79,57 @@ it("original members are owned and skin ownership comes from collection", () => 
     expect(craftCost(getItem(`char:${s.name}`)!)).toBeNull();
   }
   expect(craftCost(getItem(`card:${manifest.cards.find((c) => c.rarity === "common")!.id}`)!)).toBe(480);
+});
+
+// ---- limited pools
+const T0 = Date.UTC(2026, 10, 21, 4);
+const SKINS = ["char:嘉然然龙", "char:乃琳法师"];
+const BANNER = { id: "forms", name: "双形态", start: T0 / 1000, end: T0 / 1000 + 7 * 86400, items: SKINS, rate: 5, pity: 90 };
+function withBanner(run: () => void) {
+  setEconomy({ ...exampleEconomy, resonance: { ...exampleEconomy.resonance, banners: [BANNER], held: SKINS } });
+  try { run(); } finally { setEconomy(exampleEconomy); }
+}
+it("keeps what a limited pool holds out of the standing pool and out of crafting", () => {
+  withBanner(() => {
+    const p = poolOf(heldItems());
+    expect(p.skin).toHaveLength(poolOf().skin.length - SKINS.length);
+    expect(Object.values(p).flat().some((i) => SKINS.includes(i.id))).toBe(false);
+    expect(isHeld(SKINS[0]!)).toBe(true);
+    const card = poolOf().common.find((i) => i.kind === "card")!;
+    expect(craftCost(card)).not.toBeNull();
+    setEconomy({ ...exampleEconomy, resonance: { ...exampleEconomy.resonance, held: [card.id] } });
+    expect(craftCost(card)).toBeNull();
+  });
+  expect(heldItems().size).toBe(0);
+});
+it("runs a banner between its start and its end", () => {
+  withBanner(() => {
+    expect(runningBanners(T0 - 1)).toEqual([]);
+    expect(runningBanners(T0).map((b) => b.id)).toEqual(["forms"]);
+    expect(runningBanners(T0 + 7 * 86400_000)).toEqual([]);
+    expect(poolFor(SKINS[1]!, T0)).toBe("forms");
+    expect(poolFor(SKINS[1]!, T0 - 1)).toBe("");
+    expect(poolFor("char:嘉然山海经", T0)).toBe("");
+    expect(featuredItems(BANNER).map((i) => i.name)).toEqual(["嘉然然龙", "乃琳法师"]);
+  });
+});
+it("counts a banner's time down in days, hours and minutes", () => {
+  const end = BANNER.end * 1000;
+  expect(bannerLeft(BANNER, T0)).toBe("7 天");
+  expect(bannerLeft(BANNER, end - (6 * 24 + 13) * 3600_000 + 60_000)).toBe("6 天 12 小时");
+  expect(bannerLeft(BANNER, end - 5 * 3600_000)).toBe("5 小时 0 分");
+  expect(bannerLeft(BANNER, end - 90_000)).toBe("2 分钟");
+  expect(bannerLeft(BANNER, end + 1)).toBe("0 分钟");
+});
+it("takes a banner's rate from common until the save has every featured item", () => {
+  withBanner(() => {
+    const p = poolOf(heldItems());
+    const { featured, tiers } = bannerRates(BANNER, p, {});
+    expect(featured).toBe(5);
+    expect(tiers.common).toBeCloseTo(R.common - 5);
+    expect(featured + Object.values(tiers).reduce((a, b) => a + b)).toBeCloseTo(100);
+    const whole = bannerRates(BANNER, p, Object.fromEntries(SKINS.map((id) => [id, 1])));
+    expect(whole.featured).toBe(0);
+    expect(whole.tiers.common).toBeCloseTo(R.common);
+  });
 });

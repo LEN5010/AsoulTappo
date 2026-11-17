@@ -359,9 +359,9 @@ export async function reloadCollection(): Promise<void> {
   }
 }
 
-export async function resonate(count = 1): Promise<Drop[] | null> {
-  if (isPanelWindow) return requestDesktop("resonate", count);
-  const r = await call((api) => api.resonate(count));
+export async function resonate(count = 1, banner?: string): Promise<Drop[] | null> {
+  if (isPanelWindow) return requestDesktop("resonate", count, banner);
+  const r = await call((api) => api.resonate(count, banner));
   if (!r) return null;
   status.value = r;
   for (const d of r.drops) {

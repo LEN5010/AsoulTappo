@@ -115,7 +115,7 @@ Colours: the interface uses one coral, `#FC966E`, in `ui/tokens.css`. Member col
 | Page | Content |
 | --- | --- |
 | `EmotesPage.vue` (背包) | Pet stage, eight favourite slots, wallet; shelves of skins and owned emotes. Only the shelves scroll |
-| `ResonancePage.vue` (共鸣) | One pool for all members, a banner of dynamic cards, skin row, tier counts (`PoolStage.vue`), pity counters, draws, 衣橱 keys |
+| `ResonancePage.vue` (共鸣) | The standing pool for all members: a hand of dynamic cards, skin row, tier counts, 衣橱 keys (`PoolStage.vue`). While the server runs limited pools, keys over the title switch to them (`PoolTabs.vue`, `BannerStage.vue`: the featured items piled on a pearl card, a two-form skin changing as it types). Pity counters and draws follow the pool on show |
 | `CollectionPage.vue` (图鉴) | Cards, emotes and skins; crafting in the detail; skin notes (`stores/skinNotes.ts`, this device only) |
 | `CheckinPage.vue` (签到) | This month's calendar |
 | `ParkPage.vue` (乐园) | The four park sections in `panel/park/` |
@@ -137,6 +137,7 @@ Dialogs over the panel, one at a time in this order: `TermsDialog` (the desk sta
 - `RevealScene.vue` lies over the page area. `RevealBands.vue` covers the page before `resonate` updates the stores; a third band in the best result's tone announces a hidden card or skin.
 - `RevealTile.vue` deals one tile per draw. Rare and above land face down (`CardBack.vue`) and turn on a click; hidden cards, skins and a first dancing card lift into `RevealSpotlight.vue`.
 - `reveal.ts` holds the pure rules; `reveal-board.ts` builds the tiles.
+- A two-form skin lifted into the spotlight changes into its second form and back while it stays up (`FormOverlay.vue`).
 - Holo versions (`holo:<card id>`, `cards.ts`) are drawn by `holo/`: a shader over the art and its mask that follows a tilt toward the pointer (`HoloArt.vue`, `useTilt.ts`). A small pool of canvases means only the card under the pointer, the detail or the spotlight runs one. Without WebGL the art shows a still sheen.
 
 ### Cards and albums
@@ -164,6 +165,7 @@ Dialogs over the panel, one at a time in this order: `TermsDialog` (the desk sta
 | `economy.py` | Loads the economy file named by `ASOULTAPPO_ECONOMY` |
 | `guard.py` | Hands each batch of taps to the rules that tell automatic input (an auto-clicker, a macro) from a hand. The rules are not in this repository: a Python file named by `ASOULTAPPO_GUARD`; without it nothing is judged. A save judged automatic is told so in its status and hidden in rooms, and loses no income |
 | `cards.py`, `scratch.py` | Pure resonance and scratch rolls with an injectable RNG |
+| `banners.py` | Limited pools from the economy file: featured items stay out of the standing pool until their banner ends, and a draw from a running banner has them in a tier of its own with its own pity |
 | `duel.py` | Rock-paper-scissors invites and timers in memory, bets in the store |
 | `ddz.py`, `ddz_rules.py`, `store_ddz.py` | 斗地主 between three room members: tables, hands and timers in memory, deposits and results in the store. A seat belongs to a save: the server plays for a member who is away until the save rejoins the room |
 | `park.py`, `park_scratch.py`, `park_race.py`, `race.py`, `lottery.py`, `redeem.py` | 乐园: coins, scratch cards, race, lottery, redeem codes |

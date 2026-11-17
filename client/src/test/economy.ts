@@ -6,7 +6,9 @@ import type { Economy } from "../stores/economy";
 
 export const ECONOMY_KEY = "asoultappo.economy.v1";
 const { antiCheat: _server, _note: _about, ...data } = example;
-export const exampleEconomy = data as unknown as Economy;
+// The file's schedule of limited pools stays on the server: a client is sent the running ones (economy.client_view).
+const { banners: _schedule, ...resonance } = data.resonance;
+export const exampleEconomy = { ...data, resonance } as unknown as Economy;
 /** The default server of src/stores/settings.ts. */
 const DEFAULT_SERVER = "https://len5010.top/tappo";
 

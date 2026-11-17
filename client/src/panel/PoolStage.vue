@@ -12,7 +12,7 @@ import { characters, getCharacter } from "../characters";
 import { getCard, characterColor, manifest, type Rarity } from "../manifest";
 import type { Item } from "../items";
 import { allPlates, plateMembers, type Plate } from "../pet/plates";
-import { poolOf } from "../resonance";
+import { heldItems, poolOf } from "../resonance";
 import { collection } from "../stores/player";
 import { economy } from "../stores/economy";
 import { reducedMotion } from "../stores/theme";
@@ -36,18 +36,20 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "common", label: "普通", icon: "star5" },
 ];
 
-const pool = poolOf();
-const all = Object.values(pool).flat();
-const previews = [...pool.legendary, ...pool.epic].filter((i) => i.kind === "card");
-const skins = pool.skin.flatMap((item) => {
+// The standing pool: what a limited pool keeps to itself for now is not counted or shown here.
+const pool = computed(() => poolOf(heldItems()));
+const all = computed(() => Object.values(pool.value).flat());
+/** The dynamic cards on show. A limited pool has not featured one of them so far; the hand is dealt once. */
+const previews = [...pool.value.legendary, ...pool.value.epic].filter((i) => i.kind === "card");
+const skins = computed(() => pool.value.skin.flatMap((item) => {
   const bg = getCharacter(item.ref)?.bg;
   return bg ? [{ item, bg }] : [];
-});
+}));
 const have = (items: Item[]) => items.filter((i) => collection.owned[i.id]).length;
 const meter = computed(() =>
-  STATS.filter((s) => pool[s.rarity].length).map((s) => {
-    const got = have(pool[s.rarity]);
-    return { ...s, got, total: pool[s.rarity].length, fill: `${(got / pool[s.rarity].length) * 100}%` };
+  STATS.filter((s) => pool.value[s.rarity].length).map((s) => {
+    const got = have(pool.value[s.rarity]);
+    return { ...s, got, total: pool.value[s.rarity].length, fill: `${(got / pool.value[s.rarity].length) * 100}%` };
   }),
 );
 /** The newest of [owned]: the first one among the recent drops, else the last in catalogue order. */
@@ -96,8 +98,8 @@ function openHolo() {
   openPanel("dex");
 }
 /** The holo versions count as items of their own, as the collection's page counts them. */
-const collected = computed(() => have(all) + (holoOn.value ? holo.value.got : 0));
-const totalItems = computed(() => all.length + (holoOn.value ? holo.value.total : 0));
+const collected = computed(() => have(all.value) + (holoOn.value ? holo.value.got : 0));
+const totalItems = computed(() => all.value.length + (holoOn.value ? holo.value.total : 0));
 
 const selected = ref(previews[0]?.id ?? "");
 const at = computed(() => Math.max(0, previews.findIndex((i) => i.id === selected.value)));
@@ -371,7 +373,7 @@ onBeforeUnmount(() => {
 
     <div class="info">
       <header class="title">
-        <span class="ui-eyebrow">RESONANCE</span>
+        <slot name="switch"><span class="ui-eyebrow">RESONANCE</span></slot>
         <h3 ref="titleEl">此间共鸣</h3>
       </header>
 

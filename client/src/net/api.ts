@@ -15,7 +15,11 @@ export interface PlayerStatus {
   income: { day?: string; today?: number; cap?: number; taps?: number; perTap?: number; multiplier: number; perMinute: number };
   /** All credited taps for the China calendar day; available from server 1.1.4. */
   dailyTaps?: { day: string; count: number };
-  resonance: { pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number };
+  resonance: {
+    pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number;
+    /** The save's draws from each limited pool that runs: how many, and how many since its last featured item. */
+    banners?: Record<string, { pity: number; drawn: number }>;
+  };
   totals: { taps: number; activeMinutes: number; owned: number; items: number };
   /** Missing on servers without daily check-in. */
   checkin?: { available: boolean };
@@ -97,6 +101,8 @@ export interface Drop {
   /** The draw was the card's holo version: `new` is then the holo version's, `cardNew` the card's. */
   holo?: boolean;
   cardNew?: boolean;
+  /** A featured item of the limited pool the draw was from. */
+  featured?: boolean;
 }
 export interface ResonanceResult extends PlayerStatus {
   drops: Drop[];
@@ -233,7 +239,9 @@ export class Api {
   }
 
   presence = (session: string) => this.call<PlayerStatus>("POST", "/api/presence", { session });
-  resonate = (count = 1) => this.call<ResonanceResult>("POST", "/api/resonance/draw", { count });
+  /** [banner]: a limited pool's id; without it the standing pool. */
+  resonate = (count = 1, banner?: string) =>
+    this.call<ResonanceResult>("POST", "/api/resonance/draw", banner ? { count, banner } : { count });
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   /** Prices, odds and caps (src/stores/economy.ts); servers from before /api/economy carry them in the manifest. */
   economy = async (): Promise<Economy> => {

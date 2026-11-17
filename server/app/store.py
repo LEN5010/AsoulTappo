@@ -608,6 +608,20 @@ class Store(AdminStore, ParkStore, DdzStore):
                 self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, now))
             return sum(1 for n in paid.values() if n), sum(paid.values())
 
+    def banner_draws(self, pid: str) -> dict[str, dict[str, int]]:
+        """banner id -> {pity, drawn} for every limited pool the save drew from."""
+        with self._lock:
+            rows = self._db.execute("SELECT banner, pity, drawn FROM banner_draws WHERE player_id=?", (pid,)).fetchall()
+        return {r["banner"]: {"pity": r["pity"], "drawn": r["drawn"]} for r in rows}
+
+    def save_banner_draws(self, pid: str, banner: str, pity: int, drawn: int) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO banner_draws (player_id, banner, pity, drawn) VALUES (?,?,?,?) "
+                "ON CONFLICT(player_id, banner) DO UPDATE SET pity=excluded.pity, drawn=excluded.drawn",
+                (pid, banner, pity, drawn))
+            self._commit()
+
     def log_drops(self, pid: str, drops: list[dict], now: float) -> None:
         with self._lock:
             self._db.executemany(

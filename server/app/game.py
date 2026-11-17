@@ -10,6 +10,7 @@ from datetime import date
 from functools import cached_property
 from typing import Any, Callable, Literal
 
+from . import banners
 from . import cards as cardlogic
 from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
@@ -336,14 +337,17 @@ class Game:
                 # typing at 60 taps pays from here.
                 "multiplier": 1, "perMinute": round(per_tap * 60, 1)}
 
-    def resonate(self, token: str, count: int = 1, version: str | None = None) -> dict[str, Any]:
+    def resonate(self, token: str, count: int = 1, version: str | None = None,
+                 banner_id: str | None = None) -> dict[str, Any]:
         """[version] is the client's: cards and skins it cannot show stay out of its pool (see
         Manifest.resonance_pool_for), and a tier left empty gives its odds to common.
 
         A drawn card with a holo version the client can show (Manifest.holos_for) is that version at holoChance
         percent: the save gets the holo version and the card. A first holo version pays no shards even when the card
-        is a repeat (and the card's count stays); a repeat one pays as a repeat of the card."""
-        pool = self.manifest.resonance_pool_for(version)
+        is a repeat (and the card's count stays); a repeat one pays as a repeat of the card.
+
+        With [banner_id] the draws are from that limited pool (app/banners.py): the standing pool with the banner's
+        featured items in a tier of their own, which a drop names with `featured`."""
         pid = player_id_for(token)
         cfg = self.manifest.resonance
         holo_chance = cfg.get("holoChance") or 0
@@ -351,6 +355,10 @@ class Game:
         drops = []
         with self.store.transaction() as st:
             now = self.now()
+            pool = self.manifest.resonance_pool_for(version, now)
+            banner = self.manifest.banner(banner_id, version, now) if banner_id else None
+            if banner_id and banner is None:
+                raise GameError("no_banner", "这个卡池已经结束了")
             p = st.get_player(pid, now)
             if p["shards"] < cfg["cost"]:
                 raise GameError("no_shards", "碎片不足")
@@ -366,11 +374,28 @@ class Game:
                               for kind, items in common.items()}
             # A tier with nothing left to find drops out and its odds go to common, unless it keeps rolling repeats.
             repeating = set(cfg.get("repeatTiers", ()))
+            featured = [self.manifest.items[i] for i in banner.items if i not in owned] if banner else []
+            mine = st.banner_draws(pid).get(banner.id, {"pity": 0, "drawn": 0}) if banner else None
             for _ in range(n):
                 available = {r for r in missing if missing[r]} | repeating
-                rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng)
-                candidates = missing[rarity] or pool[rarity]
-                if rarity == "common":
+                x = self.rng.random()
+                # The legendary pity goes first, as in the standing pool; the banner's own comes on the next draw.
+                up = (bool(featured) and not ("legendary" in available and pity["legendary"] + 1 >= cfg["pity"]["legendary"])
+                      and cardlogic.roll_featured(banner.rate, mine["pity"], banner.pity, x))
+                if up:
+                    item = featured.pop(min(int(self.rng.random() * len(featured)), len(featured) - 1))
+                    rarity = item["rarity"]
+                    candidates = [item]
+                else:
+                    rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng, x)
+                    candidates = missing[rarity] or pool[rarity]
+                if mine is not None:
+                    mine["drawn"] += 1
+                    # A whole set keeps no count: there is nothing left for it to promise.
+                    mine["pity"] = 0 if up or not featured else mine["pity"] + 1
+                if up:
+                    pass
+                elif rarity == "common":
                     item = cardlogic.pick_common_group(
                         [(weight, common_missing[kind] or common[kind])
                          for kind, weight in cfg["commonKindWeights"].items() if common[kind]], self.rng)
@@ -391,13 +416,15 @@ class Game:
                 if holo_fresh:
                     owned[holo] = 1
                     increments[holo] = 1
-                if fresh:
+                if fresh and not up:
                     missing[rarity].remove(item)
                     if rarity == "common":
                         common_missing[item["kind"]].remove(item)
                 for r in pity:
                     pity[r] = 0 if rarity == r else pity[r] + 1
                 drop = {"item": iid, "rarity": rarity, "new": fresh, "count": owned[iid], "shards": gained}
+                if up:
+                    drop["featured"] = True
                 if item["kind"] == "card":
                     drop["tier"] = self.manifest.cards[iid[5:]]["tier"]
                 if holo is not None:
@@ -411,6 +438,8 @@ class Game:
                              draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
             day = day_of(now)
             st.add_ledger(pid, day, "draw", -n * cfg["cost"], n)
+            if banner:
+                st.save_banner_draws(pid, banner.id, mine["pity"], mine["drawn"])
             if refund:
                 st.add_ledger(pid, day, "duplicate", refund, sum(1 for d in drops if d["shards"] > 0))
         return {**self.status(token), "drops": drops}
@@ -439,7 +468,8 @@ class Game:
         item = self.manifest.items.get(item_id)
         cost = self.manifest.craft_cost.get(item["rarity"] or "") if item else None
         if (item is None or item["kind"] not in ("emote", "card") or item["source"]
-                or item_id in self.manifest.starter or cost is None):
+                or item_id in self.manifest.starter or cost is None
+                or item_id in banners.held(self.manifest.banners, now)):
             raise GameError("bad_item", "unknown item")
         with self.store.transaction() as st:
             p = st.get_player(pid, now)
@@ -692,6 +722,11 @@ class Game:
             "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
             "autoInput": max(0, math.ceil(p["auto_until"] - now)),
         }
+        if self.manifest.banners:
+            # The save's count in each limited pool that runs or is about to: draws there, and since its last featured item.
+            mine = self.store.banner_draws(pid)
+            open_now = {b.id for b in self.manifest.banners_for(None, now)}
+            out["resonance"]["banners"] = {bid: v for bid, v in mine.items() if bid in open_now}
         if self.manifest.scratch:
             out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:

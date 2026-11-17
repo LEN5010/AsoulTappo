@@ -89,7 +89,7 @@ it("applies action results to both windows before resolving an awaited draw", as
     return drops;
   });
   expect(await panel.player.resonate(1)).toEqual(drops);
-  expect(desk.player.resonate).toHaveBeenCalledWith(1);
+  expect(desk.player.resonate).toHaveBeenCalledWith(1, undefined);
   expect(panel.player.collection.owned["card:test"]).toBe(1);
 });
 
