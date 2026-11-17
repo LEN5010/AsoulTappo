@@ -32,7 +32,8 @@ import {
 } from "./pet/duelPick";
 import AccessBubble from "./pet/AccessBubble.vue";
 import AutoInputBubble from "./pet/AutoInputBubble.vue";
-import { autoHint, closeAutoHint } from "./stores/autoHint";
+import AutoInputNote from "./pet/AutoInputNote.vue";
+import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, closeAutoHint, openAutoNote } from "./stores/autoHint";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
@@ -361,6 +362,7 @@ const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { 
 const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
 const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
+const autoNotePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT }, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 /**
  * Viewport y a plate opened upwards from the own strip stays above: the pet's top, or the top of the emote bubble
@@ -397,7 +399,7 @@ let unAccess: (() => void) | undefined;
 const accessHint = ref(false);
 // The note that the save's input counts as automatic waits its turn behind the two above and a cooldown's countdown,
 // which use the same spot.
-const autoShown = computed(() => autoHint.value && !adminHint.value && !accessHint.value && !status.value?.tapCooldown);
+const autoShown = computed(() => autoHint.value && !autoNote.value && !adminHint.value && !accessHint.value && !status.value?.tapCooldown);
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
@@ -419,7 +421,7 @@ onMounted(async () => {
   // Reminders wait while the pet is hidden or another bubble holds the spot over it, during a tomato timer's focus
   // and while a todo waits to go up.
   stopNudges = startNudges(() =>
-    !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value || accessHint.value || autoShown.value || tapCooldown.value > Date.now(),
+    !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value || accessHint.value || autoShown.value || autoNote.value || tapCooldown.value > Date.now(),
   () => focusing.value || todosWaiting());
   stopPomodoro = startPomodoroClock();
   stopTodos = startTodoClock();
@@ -533,9 +535,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <CooldownBubble :until="tapCooldown" />
-      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || !!nudge" />
+      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
-      <AutoInputBubble v-if="autoShown" @close="closeAutoHint()" />
+      <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
+      <AutoInputNote :open="autoNote && !duel && !ddzBubble" v-bind="autoNotePlace" @close="closeAutoHint()" />
       <DuelBubble v-bind="duelPlace" />
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />

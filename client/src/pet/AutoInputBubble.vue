@@ -1,27 +1,45 @@
 <script setup lang="ts">
-// Over the pet once the server counts this save's input as automatic (an auto-clicker, a macro). Stays until closed.
-const emit = defineEmits<{ close: [] }>();
+// Over the pet once the server counts this save's input as automatic (an auto-clicker, a macro). Stays until its key
+// opens the note behind it (AutoInputNote.vue). The other bubbles over the pet are white paper; this one is a coral
+// plate with a breathing glow, so it is not taken for one of them.
+const emit = defineEmits<{ open: [] }>();
 </script>
 
 <template>
   <div class="anchor">
-    <div class="auto" data-hit data-no-drag role="alert">
-      <p>识别到自动点击</p>
-      <button type="button" class="ui-btn small primary" @click="emit('close')">知道了</button>
-    </div>
+    <Transition name="alert" appear>
+      <div class="auto" data-hit data-no-drag role="alert">
+        <span class="mark" aria-hidden="true">!</span>
+        <p>识别到自动点击</p>
+        <button type="button" class="ui-btn small" @click="emit('open')">看看</button>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; z-index: 6; }
 .auto {
-  position: absolute; left: 0; bottom: 8px; display: flex; align-items: center; gap: 10px; width: max-content;
-  padding: 8px 10px 8px 12px; transform: translateX(-50%); border-radius: 14px; background: var(--surface);
-  box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4); color: var(--ink);
+  position: absolute; left: 0; bottom: 10px; display: flex; align-items: center; gap: 10px; width: max-content;
+  padding: 10px 10px 10px 12px; transform: translateX(-50%); border-radius: var(--radius-l);
+  background: var(--grad-sky); color: var(--ink);
+  box-shadow: 0 8px 18px -6px rgba(var(--c-900-rgb), 0.45), var(--glow-l);
+  animation: breathe 2.2s var(--ease-in-out) infinite alternate;
 }
 .auto::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
-  border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
+  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% -1px;
+  border: 8px solid transparent; border-top-color: var(--c-500); border-bottom: 0;
 }
-.auto p { margin: 0; font: 800 var(--fs-label)/1.35 var(--font); white-space: nowrap; }
+.mark {
+  flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface); color: var(--c-700); font: 800 var(--fs-section)/1 var(--font-latin);
+}
+.auto p { margin: 0; font: 800 var(--fs-strong)/1.3 var(--font); white-space: nowrap; }
+@keyframes breathe {
+  from { box-shadow: 0 8px 18px -6px rgba(var(--c-900-rgb), 0.45), 0 0 0 0 rgba(var(--c-500-rgb), 0.55); }
+  to { box-shadow: 0 8px 18px -6px rgba(var(--c-900-rgb), 0.45), 0 0 22px 6px rgba(var(--c-500-rgb), 0.7); }
+}
+/* Lands with a bounce: the scale goes on its own property, the centering stays on the transform. */
+.alert-enter-active { transition: opacity var(--dur-fast), scale var(--dur-slow) var(--ease-pop); transform-origin: 50% 100%; }
+.alert-enter-from { opacity: 0; scale: 0.6; }
 </style>
