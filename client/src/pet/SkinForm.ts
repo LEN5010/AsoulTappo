@@ -11,7 +11,7 @@ export interface FormRules {
   restMs: number;
 }
 
-export const FORM_RULES: FormRules = { holdMs: 4000, gapMs: 1500, restMs: 3000 };
+export const FORM_RULES: FormRules = { holdMs: 2000, gapMs: 1500, restMs: 3000 };
 
 const realTimers: Timers = {
   set: (cb, ms) => setTimeout(cb, ms),

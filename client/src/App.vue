@@ -36,7 +36,7 @@ import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
-import { PET_BASE, headAnchor } from "./characters";
+import { PET_BASE, formReach, headAnchor } from "./characters";
 import { starterEmotesOf } from "./items";
 import { characterColor } from "./manifest";
 import { settings } from "./stores/settings";
@@ -78,6 +78,17 @@ const PLATE_GRIP = 14;
 const ownWidth = computed(() =>
   Math.max(barWidth.value, Math.round(PET_BASE.width * settings.scale) + PLATE_GRIP * 2));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
+/**
+ * Room kept free on the right of a pet for what its second form draws past the picture (an open wing), so the screen
+ * edge never cuts it. Kept in both forms, so the pet does not move when it changes. The own pet already has the
+ * actor's margin beside it.
+ */
+const ownReach = computed(() => {
+  const s = settings.scale;
+  return Math.max(0, Math.ceil(formReach(settings.character) * s - (ownWidth.value - PET_BASE.width * s) / 2));
+});
+const remoteReach = (m: RemoteMember) => Math.ceil(formReach(m.character) * settings.remoteScale);
+const reaching = (size: Size, reach: number): Size => ({ w: size.w + reach, h: size.h });
 /** Height of the strip under the pet, measured while it shows. */
 const stripHeight = ref(36);
 /** The own pet's size with the strip under it, which a docked or folded pet does not have. */
@@ -112,16 +123,16 @@ function onOwnTap() {
 const barShown = computed(() => !settings.clickThrough && (barPinned.value || peek.value));
 const ownPos = computed<Pos>(() => {
   if (settings.petDocked) {
-    const x = clamp({ x: settings.petX, y: 0 }, ownSize.value).x;
-    return peek.value ? clamp({ x, y: dockY(settings.scale) }, fullSize.value) : { x, y: dockY(settings.scale) };
+    const x = clamp({ x: settings.petX, y: 0 }, reaching(ownSize.value, ownReach.value)).x;
+    return peek.value ? clamp({ x, y: dockY(settings.scale) }, reaching(fullSize.value, ownReach.value)) : { x, y: dockY(settings.scale) };
   }
   // Room for the strip is kept under the pet also while the strip is away, so a click can always show it.
-  const size = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  const size = reaching({ w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) }, ownReach.value);
   return settings.petX < 0 ? defaultPetPos(size) : clamp({ x: settings.petX, y: settings.petY }, size);
 });
 function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
-  const placed = placePet(p, fullSize.value, settings.scale);
+  const placed = placePet(p, reaching(fullSize.value, ownReach.value), settings.scale);
   dragDock.value = placed.docked;
   return placed.pos;
 }
@@ -328,15 +339,15 @@ const remoteDocked = (m: RemoteMember) => {
 const remoteAt = (m: RemoteMember): Pos => {
   if (inFormation.value) return formation.value.cells[formationIndex.value.get(m.id) ?? 0] ?? ownPos.value;
   const p = remotePos.get(memberKey(m)) ?? ownPos.value;
-  const at = clamp(p, remoteSize.value);
+  const at = clamp(p, reaching(remoteSize.value, remoteReach(m)));
   return remoteDocked(m) ? { x: at.x, y: dockY(settings.remoteScale) } : at;
 };
 /** A partner docks on the bottom edge like the own pet; in formation mode the last row does. */
 const placeRemoteDrag = (m: RemoteMember, p: Pos) =>
-  inFormation.value ? dragFormation(m, p) : placePet(p, remoteSize.value, settings.remoteScale).pos;
+  inFormation.value ? dragFormation(m, p) : placePet(p, reaching(remoteSize.value, remoteReach(m)), settings.remoteScale).pos;
 function onRemoteMoved(m: RemoteMember, p: Pos) {
   if (inFormation.value) return saveFormation();
-  const placed = placePet(p, remoteSize.value, settings.remoteScale);
+  const placed = placePet(p, reaching(remoteSize.value, remoteReach(m)), settings.remoteScale);
   placeRemote(memberKey(m), placed.docked ? { ...placed.pos, docked: true } : placed.pos);
 }
 /** A docked partner's name has no room under the desk; it goes over the desk's front instead. */

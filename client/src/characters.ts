@@ -91,6 +91,12 @@ export function getCharacter(name: string): CharacterAssets | undefined {
   return characters[name] ?? characters[memberOf(name)] ?? characters[defaultCharacter];
 }
 
+/** How far, in base canvas px, the second form's loop draws past the right edge of the picture (嘉然然龙's open wing). */
+export function formReach(name: string): number {
+  const l = getCharacter(name)?.form?.loop;
+  return l ? Math.max(0, ((l.x + l.w) / l.width - 1) * PET_BASE.width) : 0;
+}
+
 /** Skin folder names are the member name followed by the collection name. */
 export const skinSeries = (name: string) => name.slice(memberOf(name).length);
 

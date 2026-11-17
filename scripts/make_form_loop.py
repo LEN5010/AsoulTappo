@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Animate the parts a two-form skin's second picture adds, as a short loop.
 
-The second pictures are the first ones plus parts, such as the flame on 贝拉炎头队长's head. The part is
-lifted off the second picture, formImage.webp is written again with the first picture under it, and the part is
-drawn moving in a few frames. The flame burns: its root and outline stay, tongues lick up its sides, ripples climb
-through it, and now and then a small flame breaks off the tip and rises.
+The second pictures are the first ones plus parts. Two kinds of motion:
+- a flame burns (贝拉炎头队长): the flame is lifted off the second picture, formImage.webp is written again with
+  the first picture under it, and the flame is drawn moving: its root and outline stay, tongues lick up its sides,
+  ripples climb through it, and now and then a small flame breaks off the tip and rises;
+- a glint (乃琳法师's crown): the part stays in formImage.webp, and the frames hold only light laid over it, a
+  broad and a narrow stripe sweeping across its flat colour and a star opening on its highest point as they pass.
 PetView lays the frames over the second picture and steps through them while it shows; formLoop.json says
 where they go on the picture and how fast they run.
 
-The sources are the second pictures with the part drawn in, on the aligned 1280 canvas; they are not in git.
+The sources of the flames are the second pictures with the part drawn in, on the aligned 1280 canvas; they are
+not in git. A glint reads formImage.webp.
 Rerun after replacing a source or changing LOOPS:
     server/.venv/bin/python scripts/make_form_loop.py [SOURCE_DIR] [--only SKIN] [--preview PATH]
 
@@ -24,7 +27,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 CHARACTERS = ROOT / "client/src/assets/characters"
@@ -55,10 +58,37 @@ class Flame:
     flicker: float
 
 
-LOOPS: dict[str, Flame] = {
+@dataclass(frozen=True)
+class Glint:
+    # Where the part is on the 1280 canvas.
+    search: tuple[int, int, int, int]
+    frames: int
+    ms: int
+    # The frame the sweep starts on, and how many frames it takes to cross the part.
+    start: int
+    sweep: int
+    # How far the stripes lean: pixels to the right per pixel up.
+    slant: float
+    # Widths of the broad stripe, the gap behind it and the narrow stripe after that, in pixels.
+    stripes: tuple[int, int, int]
+    # How far the stripes' colour goes from the part's flat colour towards warm white (0..1).
+    lift: float
+    # The star on the part's highest point: outer radius in pixels and how many frames it shows, opening as the
+    # broad stripe reaches it; filled with `star_fill` and outlined with `ink`, the drawing's outline colour.
+    star: int
+    star_frames: int
+    star_fill: tuple[int, int, int]
+    ink: tuple[int, int, int]
+
+
+LOOPS: dict[str, Flame | Glint] = {
     "贝拉炎头队长": Flame(
         search=(600, 0, 900, 262), frames=12, ms=75, lick=0.11, ripple=0.06,
         pieces=((0.0, -0.08), (0.5, 0.1)), piece_life=0.45, piece_rise=0.3, flicker=0.07,
+    ),
+    "乃琳法师": Glint(
+        search=(570, 320, 980, 475), frames=40, ms=60, start=6, sweep=12, slant=0.5, stripes=(34, 8, 10), lift=0.6,
+        star=20, star_frames=7, star_fill=(255, 255, 255), ink=(39, 28, 26),
     ),
 }
 
@@ -223,19 +253,107 @@ def flame_frames(base: Image.Image, form: Image.Image, loop: Flame):
     return body, frames, box
 
 
-def build(skin: str, loop: Flame, source_dir: Path, preview: Path | None) -> None:
+def stripe_cover(u: float, left: float, right: float) -> float:
+    """How much of a pixel centred at u lies between left and right."""
+    return max(0.0, min(u + 0.5, right) - max(u - 0.5, left))
+
+
+def star_image(radius: float, turn: float, fill: tuple[int, int, int], ink: tuple[int, int, int]) -> Image.Image:
+    """A four-pointed star, one flat colour with an outline, drawn large and scaled down so its edges are smooth."""
+    scale = 4
+    side = math.ceil(2 * radius + 8) * scale
+    im = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    centre = side / 2
+    points = []
+    for i in range(8):
+        r = radius * scale * (1.0 if i % 2 == 0 else 0.4)
+        a = turn + i * math.pi / 4 - math.pi / 2
+        points.append((centre + r * math.cos(a), centre + r * math.sin(a)))
+    ImageDraw.Draw(im).polygon(points, fill=(*fill, 255), outline=(*ink, 255), width=max(1, round(radius * 0.12 * scale)))
+    return im.resize((side // scale, side // scale), Image.Resampling.LANCZOS)
+
+
+def glint_frames(base: Image.Image, form: Image.Image, loop: Glint):
+    """Frames of light over the part: the stripes take the part's flat colour towards warm white, fully on the
+    flat colour and less on the soft edge towards its outline, so the outline stays dark. Most frames are empty."""
+    # Where a line of the first picture under the part comes close to its colour the difference misses single
+    # pixels; closing the mask takes them back.
+    mask = changed(base, form, loop.search).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3))
+    x0, y0, x1, y1 = mask.getbbox()
+    fp, mp = form.load(), mask.load()
+    inside = [(x, y) for y in range(y0, y1) for x in range(x0, x1) if mp[x, y]]
+    lum = lambda c: (c[0] + c[1] + c[2]) / 3
+    flat = sorted(fp[x, y][:3] for x, y in inside if lum(fp[x, y]) > lum(loop.ink) + 90)
+    fill = flat[len(flat) // 2]
+    dark, light = lum(loop.ink), lum(fill)
+    weight = {}
+    for x, y in inside:
+        c = fp[x, y]
+        if c[3] < 255 or lum(c) > light + 25:
+            continue
+        w = min(1.0, max(0.0, (lum(c) - dark) / (light - dark)))
+        # The part is warm; grey hair the closing took in is not lit.
+        if w > 0 and c[0] - c[2] >= 0.5 * (fill[0] - fill[2]) * w:
+            weight[x, y] = w
+    lit = tuple(round(f + loop.lift * (t - f)) for f, t in zip(fill, (255, 250, 225)))
+
+    # A stripe is the set of pixels with the same u; u grows to the right and leans the stripes like /.
+    mid = (y0 + y1) / 2
+    at = lambda x, y: x + loop.slant * (y - mid)
+    broad, gap, narrow = loop.stripes
+    first, last = at(x0, y0) - broad, at(x1, y1) + gap + narrow
+    fronts = [first + (last - first) * (j + 0.5) / loop.sweep for j in range(loop.sweep)]
+
+    top = min(y for _, y in inside)
+    row = [x for x, y in inside if y == top]
+    tip = (sum(row) / len(row), float(top))
+    opens = loop.start + next(j for j, p in enumerate(fronts) if p + broad / 2 >= at(*tip))
+
+    size = form.size
+    frames = []
+    for k in range(loop.frames):
+        out = Image.new("RGBA", size, (0, 0, 0, 0))
+        j = k - loop.start
+        if 0 <= j < loop.sweep:
+            p = fronts[j]
+            op = out.load()
+            for (x, y), w in weight.items():
+                u = at(x, y)
+                cover = min(1.0, stripe_cover(u, p, p + broad) + stripe_cover(u, p - gap - narrow, p - gap))
+                if cover > 0:
+                    op[x, y] = (*lit, round(255 * cover * w))
+        i = k - opens
+        if 0 <= i < loop.star_frames:
+            t = (i + 0.5) / loop.star_frames
+            radius = loop.star * math.sin(math.pi * t) ** 0.6
+            if radius >= 2:
+                star = star_image(radius, math.radians(25) * t, loop.star_fill, loop.ink)
+                out.alpha_composite(star, (round(tip[0] - star.width / 2), round(tip[1] - star.height / 2)))
+        frames.append(out)
+    union = frames[0].getchannel("A")
+    for im in frames[1:]:
+        union = ImageChops.lighter(union, im.getchannel("A"))
+    box = union.getbbox()
+    return [im.crop(box) for im in frames], box
+
+
+def build(skin: str, loop: Flame | Glint, source_dir: Path, preview: Path | None) -> None:
     folder = CHARACTERS / skin
     base = Image.open(folder / "bgImage.webp").convert("RGBA")
-    form = Image.open(source_dir / f"{skin}.webp").convert("RGBA")
-    if base.size != form.size:
-        raise SystemExit(f"{skin}: the source is {form.size}, the first picture {base.size}")
-    body, frames, box = flame_frames(base, form, loop)
+    if isinstance(loop, Flame):
+        form = Image.open(source_dir / f"{skin}.webp").convert("RGBA")
+        if base.size != form.size:
+            raise SystemExit(f"{skin}: the source is {form.size}, the first picture {base.size}")
+        body, frames, box = flame_frames(base, form, loop)
+        body.save(folder / "formImage.webp", "WEBP", lossless=True, quality=100, method=6)
+    else:
+        form = body = Image.open(folder / "formImage.webp").convert("RGBA")
+        frames, box = glint_frames(base, form, loop)
     cw, ch = box[2] - box[0], box[3] - box[1]
     strip = Image.new("RGBA", ((cw + GAP) * loop.frames, ch), (0, 0, 0, 0))
     for k, im in enumerate(frames):
         strip.paste(im, (k * (cw + GAP), 0))
 
-    body.save(folder / "formImage.webp", "WEBP", lossless=True, quality=100, method=6)
     # The part is painted soft, so the strip takes lossy colour with exact alpha.
     strip.save(folder / "formLoop.webp", "WEBP", quality=90, alpha_quality=100, method=6)
     # Where a frame goes on the second picture, in its pixels; the strip is the frames side by side.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characters, getCharacter, headAnchor } from "./characters";
+import { characters, formReach, getCharacter, headAnchor, PET_BASE } from "./characters";
 import { starterEmotesOf } from "./items";
 
 describe("skins", () => {
@@ -48,15 +48,22 @@ describe("two-form skins", () => {
   });
   it("are the only skins with a moving part", () => {
     expect(Object.values(characters).filter((c) => c.form?.loop).map((c) => c.name).sort())
-      .toEqual(["贝拉炎头队长"]);
+      .toEqual(["乃琳法师", "嘉然然龙", "贝拉炎头队长"].sort());
   });
-  it("loop the moving part within its second picture", () => {
-    const loop = characters["贝拉炎头队长"]!.form!.loop!;
+  // A loop may reach past the top (贝拉炎头队长's flame) or the right edge (嘉然然龙's open wing) of the picture; the
+  // pet draws it outside its box.
+  it.each(["贝拉炎头队长", "乃琳法师", "嘉然然龙"])("loop the moving part of %s over its second picture", (name) => {
+    const loop = characters[name]!.form!.loop!;
     expect(loop.src).toBeTruthy();
     expect(loop.frames).toBeGreaterThan(1);
     expect(loop.ms).toBeGreaterThan(0);
     expect(loop.x).toBeGreaterThanOrEqual(0);
-    expect(loop.x + loop.w).toBeLessThanOrEqual(loop.width);
+    expect(loop.x + loop.w).toBeLessThanOrEqual(loop.width * 1.25);
     expect(loop.y + loop.h).toBeLessThanOrEqual(loop.height);
+  });
+  it("keep room on the right only for a loop past the right edge", () => {
+    expect(formReach("嘉然然龙")).toBeGreaterThan(0);
+    expect(formReach("嘉然然龙")).toBeLessThanOrEqual(PET_BASE.width * 0.25);
+    expect([formReach("乃琳法师"), formReach("贝拉炎头队长"), formReach("嘉然")]).toEqual([0, 0, 0]);
   });
 });
