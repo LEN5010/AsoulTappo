@@ -29,11 +29,11 @@ const mainTab = ref<MainKind>("all");
 const query = ref("");
 const actionNote = ref("");
 
-// A member card narrows the shelves to her and equips her original skin; ALL only lifts the filter.
+// A member key narrows the shelves to her and changes nothing else: the pet is only changed from the shelf of skins.
+// The picked key again, or ALL, lifts the filter.
 const member = ref("all");
 function pickMember(name: string) {
-  member.value = name;
-  if (name !== "all") settings.character = name;
+  member.value = name === member.value ? "all" : name;
 }
 const inMember = (name: string) => member.value === "all" || memberOf(name) === member.value;
 /** 阿草's emotes belong to no member: they stay on the shelf whoever is picked. */

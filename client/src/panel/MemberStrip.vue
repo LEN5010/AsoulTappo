@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Backpack filter: a member card narrows the shelves to her, the ALL card lifts the filter.
+// Backpack filter: a member key narrows the shelves to her, the ALL key lifts the filter. It only filters.
 import { characters } from "../characters";
 import { manifest } from "../manifest";
 import Icon from "../ui/Icon.vue";
@@ -23,7 +23,7 @@ const pick = (name: string) => emit("update:modelValue", name);
     <button
       v-for="m in manifest.characters" :key="m.id" type="button"
       class="member" :class="{ on: modelValue === m.name }"
-      :aria-pressed="modelValue === m.name" :title="`使用${m.name}原皮`" @click="pick(m.name)"
+      :aria-pressed="modelValue === m.name" :title="`只看${m.name}`" @click="pick(m.name)"
     >
       <PetBust v-if="characters[m.name]" class="bust" :src="characters[m.name]!.bg" />
       <b>{{ m.name }}</b>
