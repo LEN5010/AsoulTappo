@@ -92,22 +92,36 @@ def test_a_first_holo_version_of_a_held_card_pays_no_shards():
     assert owned[CARD] == 1 and owned[HOLO] == 1
 
 
-def test_a_repeat_holo_version_pays_as_a_repeat_card():
+def test_a_repeat_holo_version_pays_the_holo_refund():
     g, pid = game(100, COMMON, 0, 0, owned=[CARD, HOLO])
     r = g.resonate(TOKEN, 1, NEW)
     drop = r["drops"][0]
-    refund = M.resonance["duplicateRefund"]["normal"]
+    refund = M.resonance["duplicateRefund"]["holo"]
+    assert refund == 180
     assert drop["holo"] is True and drop["new"] is False and drop["cardNew"] is False and drop["shards"] == refund
     assert r["shards"] == 1600 - 160 + refund
     owned = g.store.owned(pid)
     assert owned[CARD] == 1 and owned[HOLO] == 1
 
 
+def test_a_repeat_holo_version_pays_as_its_card_when_the_economy_names_no_holo_refund():
+    g, pid = game(100, COMMON, 0, 0, owned=[CARD, HOLO])
+    g.manifest.resonance["duplicateRefund"].pop("holo")
+    drop = g.resonate(TOKEN, 1, NEW)["drops"][0]
+    assert drop["holo"] is True and drop["shards"] == M.resonance["duplicateRefund"]["normal"]
+
+
+def test_a_repeat_card_without_its_holo_version_still_pays_the_card_refund():
+    g, pid = game(100, COMMON, 0, 99, owned=[CARD, HOLO])
+    drop = g.resonate(TOKEN, 1, NEW)["drops"][0]
+    assert not drop.get("holo") and drop["shards"] == M.resonance["duplicateRefund"]["normal"]
+
+
 def test_the_second_holo_version_in_one_batch_is_a_repeat():
     g, pid = game(100, COMMON, 0, 0, COMMON, 0, 0)
     drops = g.resonate(TOKEN, 2, NEW)["drops"]
     assert [(d["item"], d.get("holo"), d["new"], d["shards"]) for d in drops] == [
-        (CARD, True, True, 0), (CARD, True, False, M.resonance["duplicateRefund"]["normal"])]
+        (CARD, True, True, 0), (CARD, True, False, M.resonance["duplicateRefund"]["holo"])]
     assert g.store.owned(pid)[HOLO] == 1
 
 

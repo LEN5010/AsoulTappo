@@ -371,7 +371,7 @@ class Game:
                 if holo is not None and self.rng.random() * 100 >= holo_chance:
                     holo = None
                 holo_fresh = holo is not None and holo not in owned
-                gained = 0 if fresh or holo_fresh else self.duplicate_shards(iid)
+                gained = 0 if fresh or holo_fresh else self.duplicate_shards(iid, holo is not None)
                 refund += gained
                 # A repeat that turns into shards is not kept, nor is the card a first holo version came with.
                 if fresh or not (gained or holo_fresh):
@@ -405,9 +405,12 @@ class Game:
         return {**self.status(token), "drops": drops}
 
     # ------------------------------------------------------------------- craft
-    def duplicate_shards(self, item_id: str) -> int:
-        """Shards a repeat of this item turns into: emotes alike, cards by tier."""
+    def duplicate_shards(self, item_id: str, holo: bool = False) -> int:
+        """Shards a repeat of this item turns into: emotes alike, cards by tier. A repeat holo version (镭射款) pays
+        ``holo`` when the economy names it, else what its card pays."""
         refunds = self.manifest.resonance["duplicateRefund"]
+        if holo and "holo" in refunds:
+            return int(refunds["holo"])
         if item_id.startswith("emote:"):
             return int(refunds.get("emote", 0))
         card = self.manifest.cards.get(item_id[5:]) if item_id.startswith("card:") else None

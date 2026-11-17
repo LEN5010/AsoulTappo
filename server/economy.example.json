@@ -31,7 +31,8 @@
     "duplicateRefund": {
       "emote": 5,
       "normal": 20,
-      "small": 360
+      "small": 360,
+      "holo": 180
     },
     "repeatTiers": [
       "epic"
