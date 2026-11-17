@@ -371,3 +371,20 @@ def test_the_guard_file_is_loaded_by_path(tmp_path, monkeypatch):
 def day_of_clock(clock):
     from app.store import day_of
     return day_of(clock.t)
+
+
+class ShownBreaks(Guard):
+    """Fails on what a batch showed its rooms (no injected presses in it), judges the batch itself as Busy does."""
+
+    def judge(self, batch, notes):
+        if batch.injected == 0:
+            raise ZeroDivisionError
+        return 1800.0 if batch.taps >= 100 else 0.0
+
+
+def test_a_rule_failing_on_what_rooms_were_shown_keeps_its_judgement_of_the_batch():
+    game, clock = make_guarded(ShownBreaks())
+    pid = game.status(TOKEN)["player"]
+    result = send(game, clock, 120, 90, 1)
+    assert result["autoInput"] == 1800 and result["credited"] > 0
+    assert not game.auto_input(pid)

@@ -268,11 +268,19 @@ class Game:
         elapsed = now - last["last_at"] if 0 < last["last_at"] < now else 0.0
         try:
             span = self.guard.judge(Batch(taps, injected, elapsed, now), notes)
-            shown = span if injected is None else self.guard.judge(Batch(taps - injected, 0, elapsed, now), shown_notes)
+            shown = span
             kept = json.dumps({"v": 2, "all": notes, "shown": shown_notes}, separators=(",", ":"))
         except Exception:  # a broken rule must not cost anyone their taps
             log.exception("the guard failed on a batch")
             span, shown, kept = 0.0, 0.0, last["guard"]
+        else:
+            if injected is not None:
+                try:
+                    shown = self.guard.judge(Batch(taps - injected, 0, elapsed, now), shown_notes)
+                    kept = json.dumps({"v": 2, "all": notes, "shown": shown_notes}, separators=(",", ":"))
+                except Exception:  # the first judgement stands; the rooms go on showing the save
+                    log.exception("the guard failed on what a batch showed its rooms")
+                    shown = 0.0
         if injected:
             st.add_tap_flags(today, pid, injected=injected)
         if span > 0:
