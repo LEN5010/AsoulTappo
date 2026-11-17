@@ -23,14 +23,16 @@ TEXT_WEIGHTS = (400, 400, 800)
 
 
 def ui_text() -> str:
-    """Printable ASCII plus every non-ASCII character in the client source and catalog, and in the server
-    source, whose refusal messages the client shows as they come."""
+    """Printable ASCII plus every non-ASCII character in the client source and catalog, in the server source,
+    whose refusal messages the client shows as they come, and in the example economy file."""
     chars = {chr(c) for c in range(0x20, 0x7f)}
     for path in (CLIENT / "src").rglob("*"):
         if path.suffix in {".vue", ".ts", ".json", ".md"} and not path.name.endswith(".test.ts"):
             chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
     for path in (ROOT / "server" / "app").rglob("*.py"):
         chars.update(NON_ASCII.findall(path.read_text(encoding="utf-8")))
+    # Names the client shows as the server gives them: the example economy's maps and pools.
+    chars.update(NON_ASCII.findall((ROOT / "server" / "economy.example.json").read_text(encoding="utf-8")))
     return "".join(sorted(chars))
 
 
