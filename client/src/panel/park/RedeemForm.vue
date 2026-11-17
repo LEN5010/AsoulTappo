@@ -2,13 +2,14 @@
 // Redeem codes (protocol/PROTOCOL.md 兑换码), in the coin page's bottom bar: the field and one key on one line; why
 // not, or the reward in big numbers, shows between them. Coins redeemed also rise from the top bar's coin chip.
 // On a server with account login only a save linked to an account redeems, so a guest gets the sign-in instead.
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { Api, type ServerInfo } from "../../net/api";
 import { toHttpBase } from "../../net/protocol";
 import { accountLoginTrusted } from "../../net/trust";
 import { activeAccount, saveCode } from "../../stores/player";
 import { parkTry } from "../../stores/park";
 import { settings } from "../../stores/settings";
+import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
 import AccountDialog from "../AccountDialog.vue";
 import { COIN_SMALL } from "./coin";
@@ -16,11 +17,14 @@ import { popCoins } from "./pops";
 import { redeemMessage } from "./redeem";
 
 const code = ref("");
+const inputEl = ref<HTMLInputElement>();
 const busy = ref(false);
 const reward = ref<{ shards: number; coins: number } | null>(null);
 /** Counts rewards, so the same amount twice still pops anew. */
 const rewardId = ref(0);
 const error = ref("");
+/** Increments on each error so the field replays its subtle nudge. */
+const errorSeq = ref(0);
 /** The server answered login_required, or says up front that it signs in with accounts and this device has none. */
 const needLogin = ref(false);
 const signingIn = ref(false);
@@ -62,6 +66,7 @@ function lock(seconds: number) {
 async function redeem() {
   const text = code.value.trim();
   if (!text || busy.value || locked.value) return;
+  code.value = text;
   busy.value = true;
   error.value = "";
   reward.value = null;
@@ -81,11 +86,38 @@ async function redeem() {
   }
   if (e.code === "too_many_tries") lock(Number(e.detail.seconds) || 900);
   error.value = redeemMessage(e.code, e.message);
+  errorSeq.value++;
 }
 /** Typing a new code clears what the last one said. */
 function typed() {
   error.value = "";
   reward.value = null;
+}
+/** Pasting trims surrounding whitespace and line breaks automatically so copied codes work on the first press. */
+function onPaste(e: ClipboardEvent) {
+  const raw = e.clipboardData?.getData("text");
+  if (raw == null) return;
+  e.preventDefault();
+  const cleaned = raw.trim().replace(/[\r\n\t]+/g, "");
+  const el = e.target as HTMLInputElement;
+  const start = el.selectionStart ?? code.value.length;
+  const end = el.selectionEnd ?? code.value.length;
+  const next = (code.value.slice(0, start) + cleaned + code.value.slice(end)).trim().slice(0, 64);
+  code.value = next;
+  typed();
+  void nextTick(() => {
+    const pos = Math.min(next.length, start + cleaned.length);
+    el.setSelectionRange(pos, pos);
+  });
+}
+function onBlur() {
+  const trimmed = code.value.trim();
+  if (trimmed !== code.value) code.value = trimmed;
+}
+function clearCode() {
+  code.value = "";
+  typed();
+  inputEl.value?.focus({ preventScroll: true });
 }
 const shownError = computed(() => (locked.value ? `输错太多次，${lockMinutes.value} 分钟后再试` : error.value));
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -93,23 +125,34 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 
 <template>
   <AccountDialog v-if="signingIn && mainApi" :main-api="mainApi" start="login" @close="signingIn = false" @done="signingIn = false" />
-  <div v-if="needLogin" class="redeem-bar login">
+  <div v-if="needLogin" class="redeem-bar login" :class="{ calm: reducedMotion }">
     <p class="why"><Icon name="lock" :size="16" />登录 Asasfans 账号后兑换</p>
     <button v-if="mainApi" type="button" class="ui-btn primary" @click="signingIn = true">登录</button>
   </div>
-  <form v-else class="redeem-bar" @submit.prevent="redeem">
+  <form v-else class="redeem-bar" :class="{ calm: reducedMotion }" @submit.prevent="redeem">
     <label class="name" for="redeem-code">兑换码</label>
-    <input
-      id="redeem-code" v-model="code" class="ui-input code" maxlength="64" placeholder="XXXX-XXXX-XXXX"
-      autocomplete="off" autocapitalize="characters" spellcheck="false"
-      @input="typed"
-    />
+    <div :key="errorSeq" class="code-wrap" :class="{ invalid: !!shownError, busy }">
+      <input
+        ref="inputEl" id="redeem-code" v-model="code" class="ui-input code" :class="{ 'has-clear': !!code && !busy && !locked }"
+        maxlength="64" placeholder="XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        :disabled="busy || locked" :aria-invalid="shownError ? 'true' : undefined"
+        @input="typed" @paste="onPaste" @blur="onBlur"
+      />
+      <button
+        v-if="code && !busy && !locked" type="button" class="clear-key" title="清空" aria-label="清空"
+        @click="clearCode"
+      ><Icon name="close" :size="12" /></button>
+    </div>
     <p v-if="shownError" class="err" role="alert">{{ shownError }}</p>
-    <p v-else-if="reward" :key="rewardId" class="got" role="status">
+    <p v-else-if="reward" :key="rewardId" class="got" role="status" aria-live="polite">
       <span v-if="reward.shards" :title="`碎片 +${fmt(reward.shards)}`"><Icon name="shard" :size="22" />+{{ fmt(reward.shards) }}</span>
       <span v-if="reward.coins" :title="`驼币 +${fmt(reward.coins)}`"><img :src="COIN_SMALL" alt="" draggable="false" />+{{ fmt(reward.coins) }}</span>
     </p>
-    <button type="submit" class="ui-btn primary go" :disabled="!code.trim() || busy || locked" :aria-busy="busy">兑换</button>
+    <button
+      type="submit" class="ui-btn primary go" :class="{ submitting: busy }"
+      :disabled="!code.trim() || busy || locked" :aria-busy="busy"
+      @keydown.enter="($event as KeyboardEvent).repeat && $event.preventDefault()"
+    >兑换</button>
   </form>
 </template>
 
@@ -128,25 +171,81 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   font: 800 var(--fs-strong)/1 var(--font);
   color: var(--ink-2);
 }
-.code {
+.code-wrap {
+  position: relative;
   flex: 1 1 120px;
   min-width: 0;
-  max-width: 360px;
+  max-width: 340px;
+  display: flex;
+  align-items: center;
+}
+.code-wrap.invalid {
+  animation: err-nudge 260ms var(--ease-out);
+}
+.code {
+  width: 100%;
   font: 800 var(--fs-strong)/1 var(--font-latin);
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  background: var(--surface);
+  box-shadow: inset 0 1px 2px rgba(var(--c-900-rgb), 0.06), var(--shadow-paper);
+  transition: box-shadow var(--dur-fast), background var(--dur-fast), opacity var(--dur-fast);
+}
+.code.has-clear {
+  padding-right: 32px;
 }
 .code::placeholder {
   letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+.code:hover:not(:disabled):not(:focus) {
+  box-shadow: inset 0 0 0 1px var(--c-300), var(--shadow-paper);
+}
+.code:focus {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--ink), 0 6px 14px -8px rgba(var(--c-900-rgb), 0.25);
+}
+.code-wrap.invalid .code:not(:focus) {
+  box-shadow: 0 0 0 1.5px var(--c-700), var(--shadow-paper);
+}
+.code:disabled {
+  background: color-mix(in oklab, var(--c-100) 45%, var(--surface));
+  color: var(--ink-3);
+  cursor: default;
+}
+.clear-key {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-100);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.clear-key:hover {
+  background: var(--c-200);
+  color: var(--ink);
 }
 .go {
   flex: none;
   min-width: 84px;
   margin-left: auto;
 }
+.go.submitting {
+  cursor: progress;
+}
 .err {
   min-width: 0;
   margin: 0;
+  padding: 3px 9px;
+  border-radius: var(--radius-s);
+  background: color-mix(in oklab, var(--bad-soft) 72%, var(--surface));
   font-size: var(--fs-label);
   font-weight: 700;
   line-height: 1.3;
@@ -164,6 +263,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   align-items: center;
   gap: 5px;
   font: 800 30px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--c-700);
   animation: got-pop 520ms var(--ease-pop) both;
 }
@@ -182,8 +282,18 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   0% { opacity: 0; scale: 0.4; translate: 0 10px; }
   100% { opacity: 1; scale: 1; translate: 0 0; }
 }
-.calm .got span {
+@keyframes err-nudge {
+  0%, 100% { transform: translateX(0); }
+  28% { transform: translateX(-4px); }
+  68% { transform: translateX(3px); }
+}
+.calm .got span,
+.calm .code-wrap.invalid {
   animation: none;
+}
+.calm .code,
+.calm .clear-key {
+  transition: none;
 }
 .why {
   display: flex;
@@ -207,7 +317,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
   .redeem-bar {
     gap: 10px;
   }
-  .code {
+  .code-wrap {
     max-width: none;
   }
   .got span {

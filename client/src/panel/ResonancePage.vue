@@ -4,9 +4,9 @@ import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
 import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
-import { bannerLeft, bannerRates, baseRates, heldItems, poolOf, effectiveRates, runningBanners } from "../resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, poolOf, effectiveRates, runningBanners, tiersIn } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
-import { collection, resonate, draws, status, online, error } from "../stores/player";
+import { collection, resonate, draws, shards, status, online, error } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
@@ -35,12 +35,17 @@ const pools = computed(() => [
 // A pool that ended while it was on show hands the page back to the standing pool.
 watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = ""; });
 const featuredLeft = computed(() => !!banner.value?.items.some((id) => !collection.owned[id]));
-const standingDone = computed(() => Object.values(pool.value).flat().every((i) => collection.owned[i.id]));
-const complete = computed(() => standingDone.value && !featuredLeft.value);
 const rates = computed(() => banner.value
   ? bannerRates(banner.value, pool.value, collection.owned)
-  : { featured: 0, tiers: effectiveRates(pool.value, collection.owned) });
-const base = computed(() => baseRates());
+  : { featured: 0, tiers: effectiveRates(pool.value, collection.owned), shared: [] });
+const base = computed(() => (banner.value ? bannerBaseRates(banner.value) : baseRates()));
+// Everything this pool's odds can reach is owned: a tier it gives no odds (the limited tier in the standing pool) does
+// not keep it open.
+const standingDone = computed(() => tiersIn(base.value).every((r) => pool.value[r].every((i) => collection.owned[i.id])));
+const complete = computed(() => !!economy.value && standingDone.value && !featuredLeft.value);
+/** What a limited pool's featured items are called: skins when they all are. */
+const featuredWord = computed(() =>
+  (banner.value && featuredItems(banner.value).every((i) => i.kind === "character") ? "本期皮肤" : "本期限定"));
 // Decode the draw sounds while the page sits idle, so the first draw is not silent.
 onMounted(prime);
 const revealing = ref(false);
@@ -55,24 +60,29 @@ const probabilities = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
 const plate = ref<Plate | null>(null);
-const tiers: Rarity[] = RARITY_DESC;
+/** The table's rows: the tiers this pool gives odds. */
+const tiers = computed<Rarity[]>(() => RARITY_DESC.filter((r) => base.value[r] > 0));
 /** Prices and odds from the server; the keys and the table wait for them. */
 const res = computed(() => economy.value?.resonance ?? null);
 const cost = computed(() => res.value?.cost ?? 0);
 const income = computed(() => todayIncome(status.value));
+const canOnce = computed(() => !revealing.value && online.value && !!res.value && !complete.value && draws.value >= 1);
+const canTen = computed(() => !revealing.value && online.value && !!res.value && !complete.value && draws.value >= 10);
+const onceShort = computed(() => (res.value && cost.value > shards.value ? cost.value - shards.value : 0));
+const tenShort = computed(() => (res.value && cost.value * 10 > shards.value ? cost.value * 10 - shards.value : 0));
 const missingTier = (r: "legendary" | "skin") => pool.value[r].some((i) => !collection.owned[i.id]);
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
 }
-/** Past this share of the hard pity the legendary gauge glows. */
+/** Past this share of the hard pity the gauge glows with anticipation. */
 const PITY_NEAR = 90;
 /** The gauges of the bar: a limited pool's own promise first, then the save's two; the bar has room for two. */
 const gauges = computed(() => {
   const out: { id: string; label: string; icon: string; count: number; hard: number | null }[] = [];
   const b = banner.value;
   if (b?.pity && featuredLeft.value) {
-    out.push({ id: "featured", label: "限定", icon: "spark", count: status.value?.resonance.banners?.[b.id]?.pity ?? 0, hard: b.pity });
+    out.push({ id: "featured", label: featuredWord.value, icon: "spark", count: status.value?.resonance.banners?.[b.id]?.pity ?? 0, hard: b.pity });
   }
   for (const r of ["legendary", "skin"] as const) {
     if (missingTier(r)) {
@@ -80,8 +90,26 @@ const gauges = computed(() => {
         count: status.value?.resonance.pity[r] ?? 0, hard: res.value?.pity[r] ?? null });
     }
   }
-  return out.slice(0, 2).map((g) => ({ ...g, percent: g.hard ? Math.min(100, g.count / g.hard * 100) : 0 }));
+  return out.slice(0, 2).map((g) => ({
+    ...g,
+    percent: g.hard ? Math.min(100, g.count / g.hard * 100) : 0,
+    left: g.hard ? Math.max(0, g.hard - g.count) : null,
+  }));
 });
+/** Post-reveal keyboard guard so holding or mashing Space/Enter to close RevealScene never misfires a new draw. */
+let revealClosedAt = 0;
+function guardDrawKey(e: KeyboardEvent) {
+  if (e.repeat || ((e.key === " " || e.key === "Enter") && performance.now() - revealClosedAt < 450)) {
+    e.preventDefault();
+  }
+}
+function guardDrawKeyUp(e: KeyboardEvent) {
+  if (e.key === " " && performance.now() - revealClosedAt < 450) e.preventDefault();
+}
+function onRevealClose() {
+  revealClosedAt = performance.now();
+  revealing.value = false;
+}
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
   pending.value = count;
@@ -100,12 +128,12 @@ async function nextBatch() {
 </script>
 
 <template>
-  <div class="resonance-page ui-scroll">
+  <div class="resonance-page ui-scroll" :class="{ calm: reducedMotion }">
     <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
     <Transition name="pool" mode="out-in" :css="!reducedMotion">
       <BannerStage
         v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
-        :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect"
+        :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
       >
         <template #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
       </BannerStage>
@@ -113,29 +141,52 @@ async function nextBatch() {
         <template v-if="banners.length" #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
       </PoolStage>
     </Transition>
-    <footer class="console">
+    <footer class="console" :class="{ 'state-empty': !complete && draws < 1, 'state-once': !complete && draws >= 1 && draws < 10, 'state-ten': !complete && draws >= 10 }">
       <div class="pities">
-        <div v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.percent >= PITY_NEAR && !reducedMotion }]">
+        <div
+          v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.percent >= PITY_NEAR }]"
+          :title="g.left !== null ? `剩余 ${g.left} 次保底` : undefined"
+        >
           <span>
             <Icon :name="g.icon" :size="14" />
-            {{ g.label }} <b>{{ g.count }}</b><i>/ {{ g.hard ?? '—' }}</i>
+            {{ g.label }}
+            <em v-if="g.percent >= PITY_NEAR" class="near-tag">即将</em>
+            <b>{{ g.count }}</b><i>/ {{ g.hard ?? '—' }}</i>
           </span>
           <div class="ui-bar"><i :style="{ width: `${g.percent}%` }"></i></div>
         </div>
       </div>
       <div class="supply">
-        <p><span>可共鸣</span><b :class="{ empty: draws < 1 }">{{ draws }}</b><span>次</span></p>
-        <p v-if="income" class="today" :title="nextTapText(income)">
+        <p class="draws-line">
+          <span>可共鸣</span>
+          <b :class="{ empty: draws < 1, abundant: draws >= 10 }">{{ draws }}</b>
+          <span>次</span>
+          <em v-if="!complete && res && draws < 1" class="short-pill">碎片不足</em>
+        </p>
+        <p v-if="!complete && res && draws < 1 && onceShort > 0" class="today short" :title="income ? nextTapText(income) : undefined">
+          <Icon name="shard" :size="13" />还差<b>{{ formatCount(onceShort) }}</b>碎片
+        </p>
+        <p v-else-if="income" class="today" :title="nextTapText(income)">
           <Icon name="shard" :size="13" />今日已获得<b>{{ formatCount(income.today) }}</b>
+          <i v-if="!complete && res && draws >= 1 && draws < 10 && tenShort > 0" class="ten-gap">· 差 {{ formatCount(tenShort) }} 满十次</i>
         </p>
       </div>
       <b v-if="complete" class="done">已集齐</b>
       <div class="keys">
-        <button type="button" class="ui-btn large act once" :disabled="revealing || !online || !res || draws < 1 || complete" @click="draw(1)">
+        <button
+          type="button" class="ui-btn large act once"
+          :class="{ primary: canOnce && !canTen, pulse: canOnce && !canTen && !reducedMotion }"
+          :disabled="!canOnce"
+          @keydown="guardDrawKey" @keyup="guardDrawKeyUp" @click="draw(1)"
+        >
           <span class="act-label">共鸣一次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
-        <button type="button" class="ui-btn act ten primary" :class="{ pulse: !reducedMotion }" :disabled="revealing || !online || !res || draws < 10 || complete" @click="draw(10)">
+        <button
+          type="button" class="ui-btn act ten primary" :class="{ pulse: canTen && !reducedMotion }"
+          :disabled="!canTen"
+          @keydown="guardDrawKey" @keyup="guardDrawKeyUp" @click="draw(10)"
+        >
           <span class="act-label">共鸣十次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
@@ -146,8 +197,8 @@ async function nextBatch() {
     </footer>
     <Modal v-if="probabilities" :title="banner ? `${banner.name}概率` : '共鸣概率'" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
-        <tr v-if="banner" class="featured-row" :class="{ zero: rates.featured === 0 }">
-          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>限定</span></td>
+        <tr v-if="banner?.rate" class="featured-row" :class="{ zero: rates.featured === 0 }">
+          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>{{ featuredWord }}</span></td>
           <td class="num">{{ banner.rate }}%</td>
           <td class="num cur">{{ rates.featured }}%</td>
           <td class="pity-col"><span v-if="banner.pity" class="pity-pill">{{ banner.pity }} 次</span><template v-else>—</template></td>
@@ -158,6 +209,11 @@ async function nextBatch() {
           <td class="num cur">{{ rates.tiers[r] }}%</td>
           <td class="pity-col"><span v-if="r === 'legendary' || r === 'skin'" class="pity-pill">{{ res.pity[r] }} 次</span><template v-else>—</template></td>
         </tr>
+        <tr v-for="r in rates.shared" :key="`shared-${r}`" class="featured-row">
+          <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>{{ featuredWord }}</span></td>
+          <td colspan="2" class="holo-odds">抽到{{ RARITY_LABEL[r] }}时 <b>{{ banner!.share }}%</b></td>
+          <td class="pity-col"><span v-if="banner!.pity" class="pity-pill">{{ banner!.pity }} 次</span><template v-else>—</template></td>
+        </tr>
         <tr v-if="res.holoChance" class="holo-row">
           <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>镭射款</span></td>
           <td colspan="2" class="holo-odds">抽到对应卡片时 <b>{{ +res.holoChance.toFixed(2) }}%</b></td>
@@ -165,12 +221,12 @@ async function nextBatch() {
         </tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
-      <p v-if="banner && res" class="rates-note">限定从普通档取概率。卡池结束后，限定内容进入此间共鸣。</p>
+      <p v-if="banner && res" class="rates-note">卡池结束后，{{ featuredWord }}进入此间共鸣。</p>
     </Modal>
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
     <PlateDetail v-if="plate" :plate="plate" @close="plate = null" />
-    <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" :again="again" @again="drawAgain" @close="revealing = false" />
+    <RevealScene v-if="revealing" :load="nextBatch" :remaining="pending" :again="again" @again="drawAgain" @close="onRevealClose" />
   </div>
 </template>
 
@@ -271,22 +327,77 @@ async function nextBatch() {
 .pity.legendary .ui-bar > i {
   background: var(--grad-gold);
 }
-/* Nearly there: past 90% of hard pity the gauge glows in its material and breathes slowly. */
+/* Nearly there: past 90% of hard pity the gauge glows in its material, sweeps a soft sheen and breathes slowly. */
+.near-tag {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--c-100);
+  color: var(--c-700);
+  font: 800 10px/1.2 var(--font);
+  font-style: normal;
+}
+.pity.legendary .near-tag {
+  background: color-mix(in oklab, var(--gold-soft) 55%, var(--surface));
+  color: var(--ink);
+}
+.pity.featured .near-tag {
+  background: color-mix(in srgb, var(--holo-lilac) 28%, var(--surface));
+  color: var(--night);
+}
+.pity.near b {
+  color: var(--c-700);
+}
+.pity.legendary.near b {
+  color: color-mix(in oklab, var(--gold) 65%, var(--ink));
+}
+.pity.featured.near b {
+  color: var(--night);
+}
 .pity.near .ui-bar {
   overflow: visible;
 }
 .pity.near .ui-bar > i {
+  position: relative;
   box-shadow: 0 0 10px 1px var(--near-glow);
   animation: near-breathe 2.8s var(--ease-in-out) infinite;
+}
+.pity.near .ui-bar > i::before {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  translate: 0 -50%;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 8px 2px var(--near-glow);
+}
+.pity.near .ui-bar > i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.72) 50%, transparent 80%) 150% 0 / 220% 100% no-repeat;
+  animation: near-sheen 2.8s var(--ease-in-out) infinite;
+}
+.calm .pity.near .ui-bar > i,
+.calm .pity.near .ui-bar > i::after {
+  animation: none;
 }
 @keyframes near-breathe {
   50% {
     box-shadow: 0 0 4px 0 color-mix(in srgb, var(--near-glow) 45%, transparent);
   }
 }
+@keyframes near-sheen {
+  0%, 45% { background-position: 150% 0; }
+  100% { background-position: -60% 0; }
+}
 .supply {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -309,18 +420,46 @@ async function nextBatch() {
 .supply b.empty {
   color: var(--ink-3);
 }
+.supply b.abundant {
+  color: var(--c-700);
+}
+.short-pill {
+  margin-left: 2px;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  background: var(--c-100);
+  color: var(--ink-3);
+  font: 700 var(--fs-caption)/1.2 var(--font);
+  font-style: normal;
+}
 /* Today's tap shards, set like the pity counts beside them. */
 .supply .today {
   gap: 4px;
   font-size: var(--fs-label);
 }
+.supply .today.short {
+  color: var(--ink-3);
+}
 .supply .today svg {
   align-self: center;
   color: var(--c-700);
 }
+.supply .today.short svg {
+  color: var(--ink-3);
+}
 .supply .today b {
   margin-left: 2px;
   font: 800 var(--fs-strong)/1 var(--font-latin);
+}
+.supply .today.short b {
+  color: var(--ink-2);
+}
+.ten-gap {
+  margin-left: 2px;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  font-style: normal;
+  color: var(--ink-3);
 }
 .done {
   flex: none;
@@ -377,10 +516,10 @@ async function nextBatch() {
   letter-spacing: 0.04em;
   opacity: 0.78;
 }
-.once:not(:disabled) .act-cost svg {
+.once:not(.primary):not(:disabled) .act-cost svg {
   color: var(--c-500);
 }
-.ten:not(:disabled) .act-cost svg {
+.act.primary:not(:disabled) .act-cost svg {
   color: var(--c-800);
   fill: rgba(255, 255, 255, 0.42);
 }
@@ -395,6 +534,10 @@ async function nextBatch() {
   }
   .pities {
     flex: 0 1 162px;
+  }
+  .short-pill,
+  .ten-gap {
+    display: none;
   }
   .ten {
     min-width: 148px;

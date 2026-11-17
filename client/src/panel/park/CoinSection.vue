@@ -68,6 +68,9 @@ const note = computed(() => buyError.value || (busy.value ? "" : blocked(1)) || 
 
 // ---- the question before a buy: the pack and the key it was asked from (the coins fly from that key)
 const asking = ref<{ n: number; pile: 1 | 3 | 5; key: HTMLElement } | null>(null);
+const packsEl = ref<HTMLElement>();
+const ledgerKey = ref<HTMLButtonElement>();
+const cancelKey = ref<HTMLButtonElement>();
 const okKey = ref<HTMLButtonElement>();
 
 function ask(p: (typeof PACKS)[number], ev: MouseEvent) {
@@ -80,29 +83,65 @@ function confirmBuy() {
   asking.value = null;
   if (a) void buy(a.n, a.key);
 }
-/** Enter buys unless a key of the dialog has focus (it presses that key itself); a held Enter presses nothing. */
-function onAskKey(e: KeyboardEvent) {
-  if (e.key !== "Enter" || e.isComposing) return;
-  if (e.repeat) {
+/** Arrow keys step focus across enabled buy keys; held Enter/Space never repeat-opens the dialog. */
+function onPacksKey(e: KeyboardEvent) {
+  if ((e.key === "Enter" || e.key === " ") && e.repeat) {
     e.preventDefault();
     return;
   }
+  const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  if (!step || !packsEl.value) return;
+  const items = [...packsEl.value.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const at = items.indexOf(document.activeElement as HTMLButtonElement);
+  if (at < 0) return;
+  e.preventDefault();
+  items[(at + step + items.length) % items.length]?.focus();
+}
+/**
+ * Capture-phase guard while the confirm modal is up: blocks held Enter/Space repeats from double-activating buttons,
+ * lets Left/Right switch between 取消 and 购买, and confirms on Enter when no dialog button holds focus.
+ */
+function onAskKey(e: KeyboardEvent) {
+  if (e.isComposing) return;
+  if ((e.key === "Enter" || e.key === " ") && e.repeat) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const pair = [cancelKey.value, okKey.value].filter((b): b is HTMLButtonElement => !!b);
+    if (pair.length === 2) {
+      e.preventDefault();
+      const idx = pair.indexOf(document.activeElement as HTMLButtonElement);
+      pair[idx === 0 ? 1 : 0]!.focus();
+    }
+    return;
+  }
+  if (e.key !== "Enter") return;
   if ((document.activeElement as HTMLElement | null)?.closest?.("[role=dialog] button")) return;
   e.preventDefault();
   confirmBuy();
 }
 watch(asking, async (a, was) => {
   if (a && !was) {
-    window.addEventListener("keydown", onAskKey);
+    window.addEventListener("keydown", onAskKey, true);
     // After the dialog has taken focus for itself: the buy key gets it, so Enter and Tab start there.
     await nextTick();
     requestAnimationFrame(() => okKey.value?.focus({ preventScroll: true }));
   } else if (!a) {
-    window.removeEventListener("keydown", onAskKey);
+    window.removeEventListener("keydown", onAskKey, true);
   }
 });
 // The state it was asked in is gone (offline, too few shards): the question goes too.
 watch(() => asking.value && blocked(asking.value.n), (why) => { if (why) asking.value = null; });
+
+/** Keeps keyboard focus on a live control if the pack key just bought can no longer be afforded. */
+function restorePackFocus(fromKey: HTMLElement) {
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement !== fromKey) return;
+  if (!(fromKey as HTMLButtonElement).disabled) return;
+  const fallback = packsEl.value?.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? ledgerKey.value;
+  fallback?.focus({ preventScroll: true });
+}
 
 async function buy(n: number, key: HTMLElement) {
   if (blocked(n) !== null) return;
@@ -116,6 +155,8 @@ async function buy(n: number, key: HTMLElement) {
     // Busy covers the request only: the keys work again while the coins are still flying.
     busy.value = 0;
   }
+  await nextTick();
+  restorePackFocus(key);
   if (!ok) {
     buyError.value = parkError.value?.message ?? "";
     release();
@@ -308,78 +349,94 @@ onDeactivated(() => {
 });
 onBeforeUnmount(() => {
   active = false;
-  window.removeEventListener("keydown", onAskKey);
+  window.removeEventListener("keydown", onAskKey, true);
   cancelAnimationFrame(rollFrame);
   for (const a of ghosts) a.cancel();
 });
 
 /** Each badge's name with the stamps toward it. */
 const badgeTip = (i: number) => `${BADGES[i]} ${fmt(Math.min(stampsTotal.value, CFG.badges[i]))} / ${fmt(CFG.badges[i])}`;
+const countTip = computed(() => `累计集章 ${fmt(stampsTotal.value)}`);
 /** The first badge not earned yet: it shows how far the stamps have come toward it. */
 const nextBadge = computed(() => (badge.value < BADGES.length ? badge.value : -1));
 const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!);
 </script>
 
 <template>
-  <section class="coins" aria-label="驼币">
+  <section class="coins" :class="{ calm: reducedMotion }" aria-label="驼币">
     <div ref="sky" class="sky" aria-hidden="true"></div>
     <div class="stage">
-      <div class="top" data-rise>
-        <div class="wallet">
-          <span ref="heroCoin" class="hero-coin">
-            <span ref="spinner" class="spin"><ParkCoin fill sheen :tilt="false" /></span>
-          </span>
-          <div class="held">
-            <p class="balance"><b>{{ fmt(shown) }}</b><span>驼币</span></p>
-            <!-- Both lines keep their room while the park loads, so nothing jumps when it arrives. -->
-            <p class="net" :class="{ up: net > 0, wait: !state }" :title="netTip">
-              <span>今日</span><Icon name="shard" :size="14" /><b>{{ netText }}</b>
-            </p>
-          </div>
-        </div>
-
-        <div class="buy">
-          <div class="packs" role="group" aria-label="买驼币">
-            <button
-              v-for="p in PACKS" :key="p.n" type="button" class="ui-btn pack"
-              :class="{ primary: p.n === 1 && live1, pulse: p.n === 1 && live1 }"
-              :disabled="outOfReach(p.n)" :aria-busy="busy === p.n" :aria-disabled="busy ? 'true' : undefined"
-              :title="keyTip(p.n)" @click="ask(p, $event)"
-            >
-              <span class="pile"><CoinStack :count="p.pile" :size="32" :grey="outOfReach(p.n)" /></span>
-              <span class="pack-n">{{ p.n }} 枚</span>
-              <small class="pack-cost"><Icon name="shard" :size="11" />{{ fmt(p.n * CFG.price) }}</small>
-            </button>
-          </div>
-          <p class="note" role="status">{{ note }}</p>
-        </div>
-      </div>
-
-      <!-- The stamp card: 29 slots for stamps, and the coin they pay in the last one. -->
-      <div ref="card" class="card" :class="wrapping" data-rise>
-        <div class="stamps" role="img" :aria-label="`${inked} / ${PER}`">
-          <Stamp v-for="i in PER - 1" :key="i" :index="i" :empty="i > inked" :size="28" />
-          <span class="reward" aria-hidden="true"><ParkCoin :size="28" :tilt="false" /><b>+1</b></span>
-        </div>
-        <div class="count">
-          <p class="count-n" aria-hidden="true"><b>{{ inked }}</b><span>/ {{ PER }}</span></p>
-          <p class="count-note">集章进度</p>
-        </div>
-        <ol class="badges">
-          <li v-for="(art, i) in BADGE_ART" :key="i" :class="{ earned: i < badge }" :title="badgeTip(i)">
-            <img :src="art" :alt="BADGES[i]" draggable="false" />
-            <span class="badge-text">
-              <span class="badge-name">{{ BADGES[i] }}</span>
-              <b class="badge-at">{{ fmt(CFG.badges[i]!) }}</b>
-              <i v-if="i === nextBadge" class="badge-bar" aria-hidden="true"><i :style="{ width: `${badgePart(i) * 100}%` }"></i></i>
+      <div class="stage-inner">
+        <div class="top" data-rise>
+          <div class="wallet">
+            <span ref="heroCoin" class="hero-coin">
+              <span ref="spinner" class="spin"><ParkCoin fill sheen :tilt="false" /></span>
             </span>
-          </li>
-        </ol>
+            <div class="held">
+              <p class="balance"><b>{{ fmt(shown) }}</b><span>驼币</span></p>
+              <!-- Both lines keep their room while the park loads, so nothing jumps when it arrives. -->
+              <p class="net" :class="{ up: net > 0, down: net < 0, wait: !state }" :title="netTip">
+                <span>今日</span><Icon name="shard" :size="14" /><b>{{ netText }}</b>
+              </p>
+            </div>
+          </div>
+
+          <div class="buy">
+            <div ref="packsEl" class="packs" role="group" aria-label="买驼币" @keydown="onPacksKey">
+              <button
+                v-for="p in PACKS" :key="p.n" type="button" class="pack"
+                :class="{ primary: p.n === 1 && live1, pulse: p.n === 1 && live1 && !reducedMotion }"
+                :disabled="outOfReach(p.n)" :aria-busy="busy === p.n" :aria-disabled="busy ? 'true' : undefined"
+                :title="keyTip(p.n)" @click="ask(p, $event)"
+              >
+                <span class="pile">
+                  <CoinStack :count="p.pile" :size="32" :grey="outOfReach(p.n)" :sheen="p.n === 1 && live1" />
+                </span>
+                <span class="pack-n">{{ p.n }} 枚</span>
+                <small class="pack-cost"><Icon name="shard" :size="11" />{{ fmt(p.n * CFG.price) }}</small>
+              </button>
+            </div>
+            <p class="note" role="status">{{ note }}</p>
+          </div>
+        </div>
+
+        <!-- The stamp card: 29 slots for stamps, and the coin they pay in the last one. -->
+        <div ref="card" class="card" :class="wrapping" data-rise>
+          <div class="stamps" role="img" :aria-label="`${inked} / ${PER}`">
+            <Stamp v-for="i in PER - 1" :key="i" :index="i" :empty="i > inked" :next="!full && i === inked + 1" :size="28" />
+            <span class="reward" :class="{ imminent: !full && inked === PER - 1 }" aria-hidden="true">
+              <ParkCoin :size="26" :tilt="false" :sheen="inked >= PER - 3" />
+              <b>+1</b>
+            </span>
+          </div>
+          <div class="count" :title="countTip">
+            <p class="count-n" aria-hidden="true"><b>{{ inked }}</b><span>/ {{ PER }}</span></p>
+            <p class="count-note">集章进度</p>
+          </div>
+          <ol class="badges">
+            <li
+              v-for="(art, i) in BADGE_ART" :key="i"
+              :class="{ earned: i < badge, next: i === nextBadge, gold: i === 2 && i < badge }"
+              :title="badgeTip(i)"
+            >
+              <span class="badge-well" :class="{ 'frame-gold': i === 2 && i < badge }">
+                <img :src="art" :alt="BADGES[i]" draggable="false" />
+              </span>
+              <span class="badge-text">
+                <span class="badge-name">{{ BADGES[i] }}</span>
+                <b class="badge-at">{{ fmt(CFG.badges[i]!) }}</b>
+                <i v-if="i === nextBadge" class="badge-bar" aria-hidden="true"><i :style="{ width: `${badgePart(i) * 100}%` }"></i></i>
+              </span>
+            </li>
+          </ol>
+        </div>
       </div>
     </div>
 
     <div class="park-actions">
-      <button type="button" class="ui-btn park-ledger-key" @click="ledger = true"><Icon name="clock" :size="16" /><span>明细</span></button>
+      <button ref="ledgerKey" type="button" class="ui-btn park-ledger-key" @click="ledger = true">
+        <Icon name="clock" :size="16" /><span>明细</span>
+      </button>
       <RedeemForm />
     </div>
 
@@ -388,12 +445,12 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
     <Modal v-if="asking" title="买驼币" heading @close="asking = null">
       <div class="deal">
         <span class="deal-coins">
-          <CoinStack :count="asking.pile" :size="40" /><b>{{ asking.n }}</b><span>枚</span>
+          <CoinStack :count="asking.pile" :size="40" sheen /><b>{{ asking.n }}</b><span>枚</span>
         </span>
         <span class="deal-cost"><Icon name="shard" :size="20" /><b>{{ fmt(asking.n * CFG.price) }}</b></span>
       </div>
       <div class="confirm">
-        <button type="button" class="ui-btn" @click="asking = null">取消</button>
+        <button ref="cancelKey" type="button" class="ui-btn" @click="asking = null">取消</button>
         <button ref="okKey" type="button" class="ui-btn primary" @click="confirmBuy">购买</button>
       </div>
     </Modal>
@@ -412,8 +469,15 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 22px;
-  padding: 22px 26px;
+  padding: 20px 26px;
+}
+.stage-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
 }
 /* Coins in flight; above the page, under nothing that clips them but the body's scroll box. */
 .sky {
@@ -424,7 +488,7 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   pointer-events: none;
 }
 
-/* ---- the big coin and the coins held */
+/* ---- The big coin, held balance, and today's net capsule */
 .top {
   display: flex;
   align-items: center;
@@ -437,27 +501,49 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   gap: 20px;
   min-width: 0;
 }
-/* The coin is a thing: it leans and casts a shadow; under the pointer it straightens and lifts. */
+/* The coin is a collectible thing: it leans over a soft warm ground halo; under the pointer it straightens, lifts and glints. */
 .hero-coin {
-  --size: 168px;
+  --size: 164px;
+  position: relative;
   flex: none;
   display: block;
   width: var(--size);
   height: var(--size);
   rotate: -8deg;
-  transition: rotate var(--dur-slow) var(--ease-spring), translate var(--dur-slow) var(--ease-spring);
+  transition:
+    rotate var(--dur-slow) var(--ease-spring),
+    translate var(--dur-slow) var(--ease-spring),
+    scale var(--dur-slow) var(--ease-spring);
+}
+.hero-coin::before {
+  content: "";
+  position: absolute;
+  inset: 10%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--c-500-rgb), 0.22) 0%, transparent 72%);
+  pointer-events: none;
+  transition: opacity var(--dur-base), scale var(--dur-slow) var(--ease-out);
 }
 .hero-coin:hover {
+  --coin-glint-pos: -65%;
   rotate: 0deg;
   translate: 0 -6px;
+  scale: 1.02;
+}
+.hero-coin:hover::before {
+  scale: 1.08;
 }
 .spin {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
 }
 .held {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .balance {
   display: flex;
@@ -467,58 +553,174 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 }
 .balance b {
   font: 800 72px/0.9 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .balance span {
-  font: 700 var(--fs-strong)/1 var(--font);
+  font: 800 var(--fs-strong)/1 var(--font);
   color: var(--ink-2);
 }
+/* Tonal pill for today's net result: no lip (not pressable), clear positive vs spent contrast. */
 .net {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   margin: 10px 0 0;
-  color: var(--ink-2);
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  background: var(--c-100);
+  color: var(--ink-3);
+  cursor: default;
 }
 .net span {
-  margin-right: 4px;
+  margin-right: 2px;
   font: 700 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
 }
 .net svg {
   color: var(--c-600);
 }
 .net b {
   font: 800 var(--fs-heading)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+}
+.net.up {
+  background: color-mix(in oklab, var(--c-200) 46%, var(--c-100));
 }
 .net.up b {
   color: var(--c-700);
 }
+.net.down b {
+  color: var(--ink-2);
+}
+.net.wait {
+  visibility: hidden;
+}
 
-/* ---- buying: three tall keys, and why not */
+/* ---- Buying: three tall two-layer arcade keycaps (1 / 5 / 10 coins), bottom edge anchored at 4px */
 .buy {
   flex: none;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
-}
-.net.wait {
-  visibility: hidden;
+  gap: 8px;
 }
 .packs {
   display: flex;
   gap: 12px;
-  padding-bottom: 3px;
+  margin-bottom: 4px;
 }
 .pack {
+  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
+  --face-inset: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(var(--c-900-rgb), 0.05);
+  --lip: var(--c-200);
+  --key-lip-h: 4px;
+  --key-y: 0px;
+  --lip-shadow: 0 5px 10px -4px rgba(var(--c-900-rgb), 0.24);
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
   flex-direction: column;
+  align-items: center;
   justify-content: flex-end;
   gap: 4px;
   width: 104px;
   height: 112px;
-  padding: 10px 8px 12px;
+  padding: 10px 8px 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: none;
+  color: var(--ink);
+  font: 800 var(--fs-body)/1 var(--font);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transform: translateY(var(--key-y));
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    color var(--dur-fast);
+}
+.pack::before,
+.pack::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.pack::before {
+  z-index: -2;
+  background: var(--lip);
+  box-shadow: var(--lip-shadow);
+  transform: translateY(var(--key-lip-h));
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    box-shadow var(--dur-release) var(--ease-spring),
+    background var(--dur-fast);
+}
+.pack::after {
+  z-index: -1;
+  background: var(--face);
+  box-shadow: var(--face-inset);
+}
+.pack.primary:not(:disabled) {
+  --face: linear-gradient(180deg, var(--c-400), var(--c-500));
+  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.44);
+  --lip: var(--c-600);
+  --lip-shadow: var(--shadow-backlight), 0 5px 10px -4px rgba(var(--c-900-rgb), 0.26);
+}
+/* Breathing halo on the primary 1-coin key while it can be pressed. */
+.pack.pulse:not(:disabled) .pile::before {
+  content: "";
+  position: absolute;
+  inset: -4px -10px;
+  z-index: -1;
+  border-radius: inherit;
+  box-shadow: var(--glow-l);
+  opacity: 0;
+  pointer-events: none;
+  animation: pack-breathe 2.8s var(--ease-in-out) infinite;
+}
+@keyframes pack-breathe {
+  50% { opacity: 0.85; }
+}
+.pack:hover:not(:disabled) {
+  --face: #fff;
+  --lip: var(--c-300);
+  --key-y: -2px;
+  --key-lip-h: 6px;
+  --stack-fan: -1.8px;
+  --coin-glint-pos: -65%;
+}
+.pack.primary:hover:not(:disabled) {
+  --face: linear-gradient(180deg, color-mix(in oklab, var(--c-400) 72%, #fff), var(--c-400));
+  --lip: var(--c-600);
+}
+.pack:active:not(:disabled) {
+  --key-y: 4px;
+  --key-lip-h: 0px;
+  --stack-fan: 0px;
+  --lip-shadow: 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
+}
+.pack:active:not(:disabled)::before {
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
+}
+/* Out of reach: flat tonal slot with zero lip. */
+.pack:disabled {
+  --face: var(--c-100);
+  --face-inset: none;
+  --lip: transparent;
+  --key-y: 0px;
+  --key-lip-h: 0px;
+  --lip-shadow: none;
+  color: var(--ink-3);
+  cursor: default;
 }
 .pile {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: flex-end;
@@ -532,11 +734,29 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--c-100);
   font: 800 var(--fs-strong)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
   color: var(--ink-2);
 }
+.pack-cost svg {
+  color: var(--c-600);
+}
+.pack.primary:not(:disabled) .pack-cost {
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--ink);
+}
+.pack.primary:not(:disabled) .pack-cost svg {
+  color: var(--c-800);
+}
 .pack:disabled .pack-cost {
+  background: transparent;
+  color: var(--ink-3);
+}
+.pack:disabled .pack-cost svg {
   color: var(--ink-3);
 }
 .note {
@@ -547,46 +767,72 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   color: var(--c-700);
 }
 
-/* ---- the stamp card: a tonal block; the stamps, how many, then the badges they lead to on the right */
+/* ---- The stamp card: debossed tonal slab with 29 stamp sockets, the +1 reward socket, and three alpaca medallions */
 .card {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 14px 22px;
-  padding: 16px 22px;
-  border-radius: var(--radius-m);
+  gap: 14px 20px;
+  padding: 15px 20px;
+  border-radius: var(--radius-l);
   background: var(--c-100);
+  box-shadow: inset 0 1px 2px rgba(var(--c-900-rgb), 0.06);
 }
 .stamps {
   display: grid;
   grid-template-columns: repeat(10, 28px);
-  gap: 10px 12px;
+  place-items: center;
+  gap: 9px 10px;
 }
-/* The last slot: the coin a full card pays, marked +1. */
+/* The 30th slot: a lit coin socket holding the bonus coin a full card pays. */
 .reward {
   position: relative;
-  width: 28px;
-  height: 28px;
-  transition: opacity var(--dur-base) var(--ease-out);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--c-50);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1.5px var(--c-300);
+  transition: opacity var(--dur-base) var(--ease-out), box-shadow var(--dur-base);
+}
+.reward.imminent {
+  background: #fff;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 2px var(--c-500),
+    0 0 12px rgba(var(--c-500-rgb), 0.45);
+  animation: reward-pulse 2.2s var(--ease-in-out) infinite;
+}
+@keyframes reward-pulse {
+  50% {
+    box-shadow:
+      inset 0 1px 0 #fff,
+      0 0 0 2px var(--c-600),
+      0 0 18px rgba(var(--c-500-rgb), 0.68);
+  }
 }
 .reward b {
   position: absolute;
-  right: -9px;
-  bottom: -6px;
-  padding: 2px 3px 1px;
+  right: -8px;
+  bottom: -5px;
+  padding: 2px 3.5px 1px;
   border-radius: 6px;
   background: var(--c-600);
   box-shadow: 0 0 0 1.5px var(--c-100);
   font: 800 11px/1 var(--font-latin);
   color: #fff;
 }
-/* How many, and where stamps come from. */
+/* How many stamps on the card, with lifetime total in tooltip. */
 .count {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 5px;
   margin-right: auto;
+  cursor: default;
 }
 .count p {
   margin: 0;
@@ -604,11 +850,13 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 .count b {
   min-width: 2ch;
   font: 800 34px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   text-align: right;
   color: var(--ink);
 }
 .count span {
   font: 800 var(--fs-number)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
 /* A full card: every slot flashes at once, then the stamps clear and the coin leaves its slot. */
@@ -630,9 +878,11 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   40% { scale: 1.22; filter: brightness(1.25); }
   100% { scale: 1; filter: none; }
 }
+
+/* ---- Three alpaca badges (铜驼 / 银驼 / 金驼): recessed sockets until earned; 金驼 wears the top gold-foil frame */
 .badges {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -641,12 +891,50 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   cursor: default;
 }
+.badge-well {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--c-200) 44%, var(--c-100));
+  box-shadow:
+    inset 0 1.5px 3px rgba(var(--c-900-rgb), 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.65);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.badges .next .badge-well {
+  background: color-mix(in oklab, var(--c-50) 65%, var(--c-100));
+  box-shadow:
+    inset 0 1px 2px rgba(var(--c-900-rgb), 0.06),
+    0 0 0 1.5px var(--c-300);
+}
+.badges .earned .badge-well {
+  background: var(--surface);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 3px 8px -3px rgba(var(--c-900-rgb), 0.22);
+}
+/* 金驼: highest alpaca honor, framed in the legendary gold material. */
+.badges .gold .badge-well.frame-gold {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(180deg, #FFFBF1, var(--gold-soft)) padding-box,
+    var(--frame-fill) var(--frame-at) / var(--frame-size) border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 4px 10px -4px rgba(var(--gold-rgb), 0.5);
+}
+.badges li.earned:hover .badge-well {
+  transform: translateY(-2px);
+}
 .badges img {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   object-fit: contain;
   /* Not earned: the same badge in flat opaque grey, so silver and gold do not pass for earned metal. */
   filter: grayscale(1) contrast(0.55) brightness(1.18);
@@ -668,17 +956,24 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 }
 .badge-at {
   font: 800 var(--fs-label)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-3);
+}
+.next .badge-name {
+  color: var(--ink-2);
 }
 .earned .badge-name,
 .earned .badge-at {
   color: var(--ink);
 }
+.gold .badge-name {
+  color: var(--c-800);
+}
 /* The next badge: how far the stamps in all have come toward it. */
 .badge-bar {
   display: block;
-  width: 40px;
-  height: 3px;
+  width: 42px;
+  height: 4px;
   margin-top: 2px;
   overflow: hidden;
   border-radius: 2px;
@@ -687,10 +982,11 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 .badge-bar i {
   display: block;
   height: 100%;
-  background: var(--c-600);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c-500), var(--c-600));
 }
 
-/* ---- the question before a buy: the pack against its price, then the two keys */
+/* ---- The question before a buy: the pack against its price, then the two keys */
 .deal {
   display: flex;
   align-items: center;
@@ -711,6 +1007,7 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 .deal-coins b {
   margin-left: 6px;
   font: 800 34px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .deal-coins span {
@@ -722,6 +1019,7 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
 }
 .deal-cost b {
   font: 800 26px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .confirm {
@@ -733,28 +1031,106 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   min-width: 96px;
 }
 
-/* ---- reduced motion: nothing moves, the numbers just change */
-.calm .hero-coin {
+/* ---- Reduced motion: nothing moves, pulses or sweeps; the numbers just change */
+.calm .hero-coin,
+.calm .hero-coin::before,
+.calm .pack,
+.calm .pack::before,
+.calm .badge-well,
+.calm .reward {
   transition: none;
 }
 .calm .hero-coin:hover {
   translate: none;
+  scale: none;
+}
+.calm .badges li.earned:hover .badge-well {
+  transform: none;
+}
+.calm .pack.pulse .pile::before,
+.calm .reward.imminent {
+  animation: none;
+}
+
+/* ---- 920×620 window (panel container 900×600): keeps both rows single-line with zero scroll or clipping */
+@container panel (max-width: 960px), panel (max-height: 640px) {
+  .stage {
+    padding: 14px 20px;
+  }
+  .stage-inner {
+    gap: 14px;
+  }
+  .hero-coin {
+    --size: 136px;
+  }
+  .wallet {
+    gap: 16px;
+  }
+  .balance b {
+    font-size: 60px;
+  }
+  .packs {
+    gap: 10px;
+  }
+  .pack {
+    width: 92px;
+    height: 100px;
+    padding: 8px 6px 9px;
+  }
+  .note:empty {
+    display: none;
+  }
+  .card {
+    gap: 12px 14px;
+    padding: 12px 16px;
+  }
+  .stamps {
+    grid-template-columns: repeat(10, 26px);
+    gap: 7px 7px;
+  }
+  .stamps :deep(.stamp) {
+    width: 26px !important;
+    height: 26px !important;
+  }
+  .reward {
+    width: 28px;
+    height: 28px;
+  }
+  .count b {
+    font-size: 28px;
+  }
+  .badges {
+    gap: 10px;
+  }
+  .badge-well {
+    width: 44px;
+    height: 44px;
+  }
+  .badges img {
+    width: 36px;
+    height: 36px;
+  }
+  .badge-bar {
+    width: 36px;
+  }
 }
 
 @container panel (max-width: 760px) {
   .stage {
-    gap: 18px;
-    padding: 18px 20px;
+    padding: 16px 18px;
+  }
+  .stage-inner {
+    gap: 16px;
   }
   .top {
     flex-direction: column;
     align-items: stretch;
   }
   .hero-coin {
-    --size: 120px;
+    --size: 116px;
   }
   .balance b {
-    font-size: 60px;
+    font-size: 56px;
   }
   .buy {
     align-items: stretch;
@@ -766,26 +1142,27 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   /* No room beside the stamps and the count: the badges take a row of their own, each with its words beside it. */
   .card {
     gap: 12px 16px;
-    padding: 14px 18px;
+    padding: 14px 16px;
   }
   .stamps {
-    gap: 8px 6px;
-  }
-  .count b {
-    font-size: 28px;
+    gap: 7px 6px;
   }
   .badges {
     flex-basis: 100%;
-    gap: 8px 18px;
+    gap: 8px 16px;
     flex-wrap: wrap;
   }
   .badges li {
     flex-direction: row;
     gap: 8px;
   }
+  .badge-well {
+    width: 36px;
+    height: 36px;
+  }
   .badges img {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
   }
   .badge-text {
     flex-direction: row;
@@ -796,29 +1173,34 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
   }
   .badge-bar {
     flex-basis: 100%;
+    width: 100%;
     margin-top: 1px;
   }
   .note:empty {
     display: none;
   }
 }
+
 @container panel (max-height: 560px) {
   .stage {
-    gap: 12px;
-    padding: 12px 16px 14px;
+    padding: 10px 16px 12px;
     justify-content: flex-start;
   }
+  .stage-inner {
+    gap: 10px;
+  }
   .hero-coin {
-    --size: 96px;
+    --size: 92px;
   }
   .wallet {
     gap: 14px;
   }
   .balance b {
-    font-size: 48px;
+    font-size: 46px;
   }
   .net {
     margin-top: 6px;
+    padding: 3px 10px 3px 8px;
   }
   .net b {
     font-size: var(--fs-section);
@@ -827,12 +1209,12 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
     gap: 6px;
   }
   .pack {
-    height: 84px;
-    padding: 6px 8px 8px;
+    height: 82px;
+    padding: 6px 6px 7px;
     gap: 2px;
   }
   .pile {
-    zoom: 0.75;
+    zoom: 0.74;
   }
   .pack-n {
     font-size: var(--fs-strong);
@@ -841,16 +1223,16 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
     font-size: var(--fs-label);
   }
   .card {
-    gap: 10px 16px;
+    gap: 10px 14px;
     padding: 10px 12px;
   }
   .stamps {
-    grid-template-columns: repeat(15, 28px);
-    gap: 6px 4px;
-    zoom: 0.8;
+    grid-template-columns: repeat(15, 26px);
+    gap: 5px 4px;
+    zoom: 0.82;
   }
   .count b {
-    font-size: 26px;
+    font-size: 24px;
   }
   /* Two long rows of stamps: the count and the badges go beside them or on the next line, words under each badge. */
   .badges {
@@ -862,9 +1244,13 @@ const badgePart = (i: number) => Math.min(1, stampsTotal.value / CFG.badges[i]!)
     flex-direction: column;
     gap: 3px;
   }
+  .badge-well {
+    width: 34px;
+    height: 34px;
+  }
   .badges img {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
   }
   .badge-text {
     flex-direction: column;

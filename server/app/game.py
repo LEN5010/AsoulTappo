@@ -382,8 +382,9 @@ class Game:
         percent: the save gets the holo version and the card. A first holo version pays no shards even when the card
         is a repeat (and the card's count stays); a repeat one pays as a repeat of the card.
 
-        With [banner_id] the draws are from that limited pool (app/banners.py): the standing pool with the banner's
-        featured items in a tier of their own, which a drop names with `featured`."""
+        With [banner_id] the draws are from that limited pool (app/banners.py): the standing pool at the banner's
+        odds, with its featured items found in their own tier or in one of their own; a drop names one with
+        `featured`."""
         pid = player_id_for(token)
         cfg = self.manifest.resonance
         holo_chance = cfg.get("holoChance") or 0
@@ -412,8 +413,12 @@ class Game:
             repeating = set(cfg.get("repeatTiers", ()))
             featured = [self.manifest.items[i] for i in banner.items if i not in owned] if banner else []
             mine = st.banner_draws(pid).get(banner.id, {"pity": 0, "drawn": 0}) if banner else None
+            rates = banner.tier_rates(cfg["rates"]) if banner else cfg["rates"]
             for _ in range(n):
                 available = {r for r in missing if missing[r]} | repeating
+                if banner and banner.share:
+                    # A tier with a featured item left to find stays, whatever is left of its standing items.
+                    available |= {item["rarity"] for item in featured}
                 x = self.rng.random()
                 # The legendary pity goes first, as in the standing pool; the banner's own comes on the next draw.
                 up = (bool(featured) and not ("legendary" in available and pity["legendary"] + 1 >= cfg["pity"]["legendary"])
@@ -423,8 +428,17 @@ class Game:
                     rarity = item["rarity"]
                     candidates = [item]
                 else:
-                    rarity = cardlogic.roll_tier(cfg["rates"], available, pity, cfg["pity"], self.rng, x)
+                    rarity = cardlogic.roll_tier(rates, available, pity, cfg["pity"], self.rng, x)
                     candidates = missing[rarity] or pool[rarity]
+                    shared = [item for item in featured if item["rarity"] == rarity] if banner and banner.share else []
+                    # The tier's standing items are all found and it rolls no repeats: the featured ones are what
+                    # kept it in the roll.
+                    only = not missing[rarity] and rarity not in repeating
+                    if shared and (only or self.rng.random() * 100 < banner.share):
+                        up = True
+                        item = shared[min(int(self.rng.random() * len(shared)), len(shared) - 1)]
+                        featured.remove(item)
+                        candidates = [item]
                 if mine is not None:
                     mine["drawn"] += 1
                     # A whole set keeps no count: there is nothing left for it to promise.

@@ -25,6 +25,8 @@ const DICE = SKILLS.length ? SKILLS.map((k) => k.dice) : CFG.forms?.length ? CFG
 
 const LOW = Math.min(...DICE.flat());
 const HIGH = Math.max(...DICE.flat());
+/** The dice beside the first rule: the plain die, or with skills (a die each) the lowest and highest face of all. */
+const LEAD_DICE = SKILLS.length ? [LOW, HIGH] : CFG.dice;
 /** The places each kind of bet covers, first to last, for its mini podium. */
 const PLACES: Record<RaceKind, number[]> = { win: [0], top2: [0, 1], last: [MEMBERS.length - 1] };
 /** Which places each kind pays on, in words. */
@@ -36,7 +38,7 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
     <div class="race-rules park-sheet-columns" :class="{ skilled: SKILLS.length }">
       <ul class="park-sheet-list single" aria-label="跑法">
         <li class="park-sheet-row">
-          <span class="park-sheet-lead dice"><RaceDie v-for="(f, k) in CFG.dice" :key="k" :face="f" /></span>
+          <span class="park-sheet-lead dice"><RaceDie v-for="(f, k) in LEAD_DICE" :key="k" :face="f" /></span>
           <span class="park-sheet-main"><b>每轮按顺序各掷一次骰子</b><small>前进 {{ LOW }}–{{ HIGH }} 格</small></span>
         </li>
         <li v-if="!SKILLS.length && CFG.forms?.length" class="park-sheet-row">

@@ -12,6 +12,7 @@ const props = defineProps<{
   reveal: string;
   /** Trailing digits of that draw at rest. */
   stopped: number;
+  calm?: boolean;
 }>();
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -21,7 +22,7 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
 
 <template>
   <!-- One draw a row, newest first: its day, its number, who won the top prize and what each won. -->
-  <div v-if="past.length" class="board">
+  <div v-if="past.length" class="board" :class="{ calm }">
     <div class="board-head" aria-hidden="true"><span>日期</span><span>开奖号码</span><span>头奖</span><span>奖金</span></div>
     <ol class="rows ui-scroll">
       <li v-for="h in past" :key="h.day" :class="{ unseen: unseen(h.day), hit: h.top.length > 0 }">
@@ -87,6 +88,13 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
+  transition: background var(--dur-fast);
+}
+.rows li:not(:first-child):hover {
+  background: color-mix(in oklab, var(--c-100) 55%, var(--c-50));
+}
+.rows li.hit:not(:first-child) {
+  color: var(--ink);
 }
 .rows li + li + li {
   border-top: 1px solid var(--c-100);
@@ -112,21 +120,32 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
 .rows li:first-child.hit::before {
   background: var(--gold);
 }
-/* The drawn number in plain digits; the newest one larger, in the ramp's deep coral. */
+/* The drawn number in crisp fixed-width tabular digits; the newest one framed in soft coral tint. */
 .num {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
   font: 800 17px/1 var(--font-latin);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
   white-space: nowrap;
   color: var(--ink);
 }
 .num i {
   display: inline-block;
+  width: 0.62em;
   font-style: normal;
+  text-align: center;
 }
 .rows li:first-child .num {
-  font-size: 22px;
+  gap: 2px;
+  font-size: 21px;
   color: var(--c-700);
+}
+.rows li:first-child .num i {
+  width: 0.76em;
+  padding: 2px 0;
+  border-radius: 4px;
+  background: var(--c-50);
 }
 .day {
   white-space: nowrap;
@@ -169,9 +188,12 @@ const unseen = (day: string) => !!props.reveal && props.reveal === day && props.
 }
 
 /* Once the draw rests on the keys, its digits drop onto the board right to left. */
-.reveal .num.in i {
+.reveal .board:not(.calm) .num.in i {
   animation: ball-in 420ms var(--ease-pop) both;
   animation-delay: calc((2 - var(--i)) * 90ms);
+}
+.board.calm .rows li {
+  transition: none;
 }
 @keyframes ball-in {
   from { transform: translateY(-24px); opacity: 0; }

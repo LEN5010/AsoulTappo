@@ -295,12 +295,42 @@ def test_a_race_with_skills_names_its_close_ups_and_lasts_as_long_as_they_take()
             assert (move["m"] == c["m"] and move.get("skill")) or c["m"] in move.get("react", [])
         if cuts:
             seen += 1
-            assert r["cutMs"] == park_race.cut_ms(r["stepMs"])
+            assert r["cutMs"] == park_race.PACED_CUT_MS
         else:
             assert "cutMs" not in r
-        assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(
-            r["leadMs"], len(r["moves"]), r["stepMs"], r["slowMs"], cuts=len(cuts)) / 1000
+        rounds = -(-len(r["moves"]) // park_race.ROUND)
+        assert r["endsAt"] == r["startsAt"] + (r["leadMs"] + rounds * r["rollMs"] + sum(r["stepsMs"])
+                                               + len(cuts) * r.get("cutMs", 0) + park_race.TAIL_MS) / 1000
     assert seen
+
+
+def test_a_race_on_a_map_is_paced_by_the_square():
+    races, clock = make()
+    races.tick()
+    clock.t += CFG["betting"] + 1
+    races.tick()
+    r = races.view(TOKEN, "1.2.5")["race"]
+    pace = r["pace"]
+    assert pace == park_race.PACE and r["rollMs"] == park_race.PACED_ROLL_MS
+    assert len(r["stepsMs"]) == len(r["moves"])
+    for i, (move, ms) in enumerate(zip(r["moves"], r["stepsMs"])):
+        want = pace["lit"] + move["steps"] * pace["hop"] + pace["rest"]
+        push = park_race.pushed(move)
+        if push is not None:
+            want += pace["gap"] + (push * pace["hop"] if push else pace["act"])
+        assert ms == (want if i < r["slowFrom"] else want * park_race.SLOW_MS // park_race.STEP_MS)
+    # One square more is one hop longer, whatever the roll.
+    plain = [(m["steps"], ms) for i, (m, ms) in enumerate(zip(r["moves"], r["stepsMs"]))
+             if i < r["slowFrom"] and park_race.pushed(m) is None]
+    assert {ms - steps * pace["hop"] for steps, ms in plain} == {pace["lit"] + pace["rest"]}
+
+
+def test_a_paced_race_too_long_for_its_window_is_scaled_down_whole():
+    moves = [{"m": "a", "steps": 3, "to": 3}] * 12
+    full, half = park_race.paced_times(moves), park_race.paced_times(moves, 0.5)
+    assert half["pace"] == {k: v // 2 for k, v in park_race.PACE.items()}
+    assert half["roll"] == full["roll"] // 2 and half["cut"] == full["cut"] // 2
+    assert park_race.paced_ms(half, 2) <= park_race.paced_ms(full, 2) // 2
 
 
 # ---------------------------------------------------------------- a map's route across the board

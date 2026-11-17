@@ -4,6 +4,7 @@ import {
   DICE_TOSS, rollStart, roundAt, roundDice, roundsOf, chinaDay, playLength, replayAt, replayTime,
   airFaces, boardOf, bounce, cellOf, cutOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
   type Race, type RaceSetup, type RaceStep,
+  stepTimes,
 } from "./race";
 import fixture from "./race.fixture.json";
 
@@ -60,12 +61,12 @@ describe("race playback", () => {
 
   it("waits for the lead, steps on the beat and slows down for the last round", () => {
     expect(playhead(race(), T0 + 3999)).toEqual({ done: 0, current: -1, part: 0 });
-    expect(playhead(race(), T0 + 4000 + 2 * 3000 + 1500)).toEqual({ done: 2, current: 2, part: 0.5 });
+    expect(playhead(race(), T0 + 4000 + 2 * 3000 + 1500)).toMatchObject({ done: 2, current: 2, part: 0.5 });
     expect(stepStart(race(), 25)).toBe(4000 + 25 * 3000);
     expect(stepStart(race(), 27)).toBe(4000 + 25 * 3000 + 2 * 4000);
     expect(stepLength(race(), 24)).toBe(3000);
     expect(stepLength(race(), 25)).toBe(4000);
-    expect(playhead(race(), T0 + 4000 + 25 * 3000 + 1000)).toEqual({ done: 25, current: 25, part: 0.25 });
+    expect(playhead(race(), T0 + 4000 + 25 * 3000 + 1000)).toMatchObject({ done: 25, current: 25, part: 0.25 });
     // A longer opening pushes every step back.
     expect(stepStart(race({ leadMs: 7000 }), 0)).toBe(7000);
     // Without slowFrom every step is stepMs long.
@@ -85,8 +86,8 @@ describe("race playback", () => {
     expect(stepStart(r, 7)).toBe(4000 + 2 * 4800 + 7 * 5000 + 2 * 2600);
     // During the close-up the step is under way and has not moved; then it plays as any other.
     expect(playhead(r, t(stepStart(r, 2) + 1300))).toEqual({ done: 2, current: 2, part: 0, cut: 0.5 });
-    expect(playhead(r, t(stepStart(r, 2) + 2600 + 2500))).toEqual({ done: 2, current: 2, part: 0.5 });
-    expect(playhead(r, t(stepStart(r, 3) + 2500))).toEqual({ done: 3, current: 3, part: 0.5 });
+    expect(playhead(r, t(stepStart(r, 2) + 2600 + 2500))).toMatchObject({ done: 2, current: 2, part: 0.5 });
+    expect(playhead(r, t(stepStart(r, 3) + 2500))).toMatchObject({ done: 3, current: 3, part: 0.5 });
     // The words of the step before are cleared for it.
     expect(saidAt({ done: 2, current: 2, part: 0, cut: 0.1 })).toEqual({ i: 2, part: 0 });
     expect(saidAt({ done: 2, current: 2, part: 0.1 })).toEqual({ i: 1, part: 1 });
@@ -235,6 +236,32 @@ describe("race playback", () => {
     expect(short.ms).toBeGreaterThanOrEqual(150);
   });
 
+  it("paces a race by the square where the server gives its steps their own lengths", () => {
+    const pace = { lit: 800, hop: 400, gap: 300, act: 900, rest: 700 };
+    const moves = [
+      { m: "a", dice: [1], steps: 1, from: 0, to: 1 },
+      { m: "b", dice: [3], steps: 3, from: 0, to: 3, square: "boost" as const, end: 5 },
+      { m: "c", dice: [2], steps: 2, from: 0, to: 2, square: "portal" as const, end: 9 },
+    ];
+    const stepsMs = [1900, 3800, 3500];
+    const r = race({ moves, stepsMs, pace, slowFrom: 3, stepMs: 5000, slowMs: 5000 });
+    const lead = stepStart(r, 0);
+    expect(stepStart(r, 1) - lead).toBe(1900);
+    expect(stepStart(r, 2) - lead).toBe(1900 + 3800);
+    // A hop takes as long on every square: one square, then three.
+    expect(stepTimes(r, 0)).toMatchObject({ len: 1900, hopAt: 800, hopLen: 400, pushLen: 0 });
+    expect(stepTimes(r, 1)).toMatchObject({ hopAt: 800, hopLen: 1200, squareAt: 2300, pushLen: 800 });
+    // A portal walks no squares: the pace's time for a square that acts.
+    expect(stepTimes(r, 2)).toMatchObject({ hopLen: 800, squareAt: 1900, pushLen: 900 });
+    const t = (ms: number) => r.startsAt * 1000 + lead + 1900 + ms;
+    expect(playhead(r, t(799)).part).toBeLessThan(HOP_AT);
+    expect(playhead(r, t(800)).part).toBeCloseTo(HOP_AT);
+    expect(playhead(r, t(2299)).part).toBeLessThan(SQUARE_AT);
+    expect(playhead(r, t(2300))).toMatchObject({ current: 1, ms: 2300 });
+    expect(playhead(r, t(2300)).part).toBeCloseTo(SQUARE_AT);
+    expect(playhead(r, t(3799)).part).toBeLessThan(1);
+    expect(playhead(r, t(3800)).current).toBe(2);
+  });
   it("lays the 24 squares round a 9 × 5 board, clockwise from the top left corner, all the same size", () => {
     expect(boardOf(24)).toEqual({ cols: 9, rows: 5 });
     expect(cornersOf(24)).toEqual([0, 8, 12, 20]);

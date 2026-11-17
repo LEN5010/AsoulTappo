@@ -10,19 +10,34 @@
   gap: 14px;
 }
 
-/* Keycap tabs on the paper, as the band's: white keys, the one shown latched. */
+/* Keycap tabs on the paper, as PoolTabs: white keys over a rounded lip, the one shown latched in coral. */
 .park-sheet-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-bottom: 3px;
 }
 .park-sheet-tabs .ui-btn {
-  min-width: 84px;
-  font-size: var(--fs-number);
+  min-width: 88px;
+  height: 34px;
+  padding: 0 16px;
+  font-size: var(--fs-strong);
+  color: var(--ink-2);
+}
+.park-sheet-tabs .ui-btn:hover:not(:disabled):not(.on) {
+  color: var(--ink);
 }
 .park-sheet-tabs .ui-btn.on:not(:disabled) {
-  color: var(--c-700);
+  --key-top: var(--c-400);
+  --key-bottom: var(--c-500);
+  --key-lip: var(--c-600);
+  --key-y: 2px;
+  --key-lip-h: 1px;
+  color: var(--ink);
   cursor: default;
+}
+.park-sheet.calm .park-sheet-tabs .ui-btn {
+  transition: none;
 }
 
 /* Panels that swap in place share one grid cell, so the sheet keeps its height when the tab changes. */

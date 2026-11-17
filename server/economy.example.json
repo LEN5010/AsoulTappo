@@ -308,15 +308,22 @@
         {
           "id": "ring",
           "name": "环形跑道",
-          "track": 24,
+          "track": 32,
+          "path": {
+            "from": [
+              0,
+              0
+            ],
+            "runs": "R11 D6 L11 U4"
+          },
           "squares": [
             {
-              "at": 5,
+              "at": 4,
               "kind": "boost",
-              "by": 2
+              "by": 3
             },
             {
-              "at": 9,
+              "at": 8,
               "kind": "portal",
               "to": 14
             },
@@ -326,173 +333,229 @@
             },
             {
               "at": 17,
-              "kind": "trip",
-              "by": 1
+              "kind": "hook"
             },
             {
               "at": 20,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 23,
               "kind": "flip"
+            },
+            {
+              "at": 26,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 29,
+              "kind": "trip",
+              "by": 4
             }
           ]
         },
         {
           "id": "ladder",
           "name": "蛇梯坡道",
-          "track": 28,
+          "track": 50,
           "path": {
             "from": [
               0,
-              4
+              6
             ],
-            "runs": "R8 U2 L8 U2 R8"
+            "runs": "R11 U2 L11 U2 R11 U2 L11"
           },
           "squares": [
             {
-              "at": 2,
+              "at": 3,
               "kind": "boost",
-              "by": 2
+              "by": 3
             },
             {
-              "at": 6,
+              "at": 7,
               "kind": "portal",
-              "to": 12
+              "to": 19
             },
             {
-              "at": 9,
+              "at": 10,
               "kind": "again"
             },
             {
-              "at": 14,
+              "at": 15,
               "kind": "hook"
             },
             {
-              "at": 16,
-              "kind": "portal",
-              "to": 22
-            },
-            {
-              "at": 19,
-              "kind": "flip"
-            },
-            {
-              "at": 24,
-              "kind": "again"
+              "at": 22,
+              "kind": "trip",
+              "by": 3
             },
             {
               "at": 26,
+              "kind": "portal",
+              "to": 36
+            },
+            {
+              "at": 29,
+              "kind": "flip"
+            },
+            {
+              "at": 33,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 39,
+              "kind": "again"
+            },
+            {
+              "at": 42,
+              "kind": "hook"
+            },
+            {
+              "at": 45,
               "kind": "trip",
-              "by": 3
+              "by": 4
+            },
+            {
+              "at": 48,
+              "kind": "trip",
+              "by": 5
             }
           ]
         },
         {
           "id": "spiral",
           "name": "回旋塔",
-          "track": 30,
+          "track": 50,
           "path": {
             "from": [
               0,
               0
             ],
-            "runs": "R6 D6 L6 U4 R4 D2 L2"
+            "runs": "R11 D6 L11 U4 R9 D2 L7"
           },
           "squares": [
             {
-              "at": 2,
+              "at": 3,
               "kind": "again"
             },
             {
-              "at": 4,
+              "at": 6,
               "kind": "portal",
-              "to": 9
+              "to": 13
             },
             {
-              "at": 7,
+              "at": 9,
               "kind": "boost",
-              "by": 3
+              "by": 4
             },
             {
-              "at": 13,
+              "at": 16,
               "kind": "hook"
             },
             {
-              "at": 15,
-              "kind": "portal",
-              "to": 21
+              "at": 20,
+              "kind": "trip",
+              "by": 3
             },
             {
-              "at": 18,
+              "at": 24,
+              "kind": "portal",
+              "to": 34
+            },
+            {
+              "at": 27,
               "kind": "flip"
             },
             {
-              "at": 23,
+              "at": 31,
+              "kind": "boost",
+              "by": 3
+            },
+            {
+              "at": 37,
+              "kind": "again"
+            },
+            {
+              "at": 41,
+              "kind": "trip",
+              "by": 4
+            },
+            {
+              "at": 44,
               "kind": "boost",
               "by": 2
             },
             {
-              "at": 26,
+              "at": 47,
               "kind": "trip",
-              "by": 2
-            },
-            {
-              "at": 28,
-              "kind": "trip",
-              "by": 3
+              "by": 5
             }
           ]
         },
         {
           "id": "coaster",
           "name": "过山车",
-          "track": 34,
+          "track": 46,
           "path": {
             "from": [
               0,
-              4
+              6
             ],
-            "runs": "U4 R2 D4 R2 U4 R2 D4 R2 U4 R2 D4"
+            "runs": "U6 R2 D6 R2 U6 R2 D6 R2 U6 R2 D6"
           },
           "squares": [
             {
-              "at": 2,
+              "at": 3,
               "kind": "portal",
-              "to": 8
+              "to": 11
             },
             {
-              "at": 5,
+              "at": 7,
               "kind": "again"
-            },
-            {
-              "at": 11,
-              "kind": "hook"
             },
             {
               "at": 14,
+              "kind": "hook"
+            },
+            {
+              "at": 18,
               "kind": "portal",
-              "to": 20
+              "to": 27
             },
             {
-              "at": 17,
+              "at": 21,
               "kind": "boost",
-              "by": 2
+              "by": 3
             },
             {
-              "at": 23,
+              "at": 24,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 30,
               "kind": "flip"
             },
             {
-              "at": 25,
+              "at": 33,
               "kind": "boost",
-              "by": 3
+              "by": 4
             },
             {
-              "at": 28,
+              "at": 37,
               "kind": "again"
             },
             {
-              "at": 33,
+              "at": 40,
+              "kind": "hook"
+            },
+            {
+              "at": 43,
               "kind": "trip",
-              "by": 3
+              "by": 4
             }
           ]
         }
@@ -501,8 +564,11 @@
         {
           "id": "steady",
           "dice": [
-            2,
-            3
+            3,
+            4,
+            4,
+            5,
+            5
           ]
         },
         {
@@ -510,7 +576,10 @@
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5,
+            6
           ],
           "chance": 25
         },
@@ -519,35 +588,46 @@
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5,
+            6
           ],
-          "by": 2
+          "by": 4
         },
         {
           "id": "porter",
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5,
+            6
           ],
-          "by": 2
+          "by": 5
         },
         {
           "id": "solo",
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5,
+            6
           ],
           "chance": 50,
-          "by": 1
+          "by": 2
         },
         {
           "id": "dash",
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5
           ]
         },
         {
@@ -555,7 +635,10 @@
           "dice": [
             1,
             2,
-            3
+            3,
+            4,
+            5,
+            6
           ]
         },
         {
@@ -563,7 +646,10 @@
           "dice": [
             1,
             2,
-            3
+            2,
+            3,
+            4,
+            5
           ]
         }
       ],

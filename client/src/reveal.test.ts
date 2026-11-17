@@ -31,6 +31,9 @@ describe("resonance reveal", () => {
     expect(spotlights(d("epic"), "small")).toBe(true);
     expect(spotlights(d("epic", "card:dance", true), "normal")).toBe(true);
     expect(spotlights(d("epic", "card:dance"), "normal")).toBe(false);
+    // A card with a video plays every time, a repeat too.
+    expect(spotlights(d("epic", "card:dance"), "normal", true)).toBe(true);
+    expect(sealed(d("epic", "card:dance"), true, "normal", true)).toBe(true);
     expect(spotlights(d("rare", "emote:a", true))).toBe(false);
     expect(spotlights(d("limited", "card:closet", true), "normal")).toBe(true);
     expect(spotlights(d("limited", "card:closet"), "normal")).toBe(false);

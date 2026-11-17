@@ -57,12 +57,13 @@ export function boardOf<T extends Revealed & { count: number; shards: number }>(
 }
 
 /**
- * Results that take the whole scene when they turn over: hidden cards, skins, a first animated or limited card, a
- * first holo version.
+ * Results that take the whole scene when they turn over: hidden cards, skins, every card with a [video] (a repeat
+ * too: it plays before it turns into shards), a first limited card, a first holo version.
  */
-export function spotlights(drop: Revealed, tier?: CardTier): boolean {
+export function spotlights(drop: Revealed, tier?: CardTier, video = false): boolean {
   if (drop.rarity === "legendary" || drop.rarity === "skin" || tier === "big" || tier === "small") return true;
   if (drop.holo) return drop.new;
+  if (video) return true;
   return drop.new && (drop.rarity === "epic" || drop.rarity === "limited") && drop.item.startsWith("card:");
 }
 
@@ -72,6 +73,6 @@ export function spotlights(drop: Revealed, tier?: CardTier): boolean {
  * which is the animated emotes (face up they would start playing the moment they land), and holo
  * versions, which flash as they turn.
  */
-export function sealed(drop: Revealed, grouped: boolean, tier?: CardTier): boolean {
-  return grouped ? spotlights(drop, tier) || drop.rarity === "rare" || !!drop.holo : true;
+export function sealed(drop: Revealed, grouped: boolean, tier?: CardTier, video = false): boolean {
+  return grouped ? spotlights(drop, tier, video) || drop.rarity === "rare" || !!drop.holo : true;
 }

@@ -142,7 +142,7 @@ class Manifest:
     @cached_property
     def banners(self) -> tuple[banner_file.Banner, ...]:
         """The economy's limited pools (resonance.banners), past, running and to come."""
-        return banner_file.load(self.resonance.get("banners"), self.items)
+        return banner_file.load(self.resonance.get("banners"), self.items, self.resonance.get("rates"))
 
     def banners_for(self, version: str | None, now: float) -> list[banner_file.Banner]:
         """The banners a client of [version] is told of at [now]: running or about to start, and featuring nothing

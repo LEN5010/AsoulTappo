@@ -23,9 +23,9 @@ import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import { shortDay } from "./lottery";
 import {
-  chinaDay, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, OPEN_ROLL_MS, openingAt, playhead, playLength, rankOf, replayAt,
-  replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES, skillText, spots, stacksAt, staggered, stageOf, trackOf,
-  type Race, type ReplayClock,
+  chinaDay, cutOf, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, leaders, momentOf, OPEN_ROLL_MS, openingAt, playhead,
+  playLength, rankOf, replayAt, replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES, skillText, spots,
+  stacksAt, staggered, stageOf, stepStart, trackOf, type Race, type ReplayClock,
 } from "./race";
 import { isFinished, isPlaying, raceClock, useRaceFeed } from "./raceFeed";
 
@@ -54,10 +54,16 @@ onBeforeUnmount(feed.stop);
 // ---------------------------------------------------------------- the race on the board
 /** A finished race played again: the race, its day, its clock, and a count of jumps that starts the board afresh. */
 const played = ref<{ race: Race; day: string; clock: ReplayClock; n: number } | null>(null);
+const playRate = ref<1 | 2>(1);
+const paused = ref(false);
+const boardPeek = ref(false);
 const replayError = ref("");
+const progressEl = ref<HTMLElement | null>(null);
 /** Asks for race [id] and plays it from its start; 0 goes back to the live race. */
 async function load(id: number) {
   replayError.value = "";
+  paused.value = false;
+  boardPeek.value = false;
   if (!id) {
     played.value = null;
     return;
@@ -72,7 +78,9 @@ async function load(id: number) {
     }
     r = reply.data.race;
   }
-  played.value = { race: r, day: chinaDay(r.startsAt), clock: replayAt(r, 0, Date.now(), 1), n: (played.value?.n ?? 0) + 1 };
+  played.value = {
+    race: r, day: chinaDay(r.startsAt), clock: replayAt(r, 0, Date.now(), playRate.value), n: (played.value?.n ?? 0) + 1,
+  };
 }
 watch(() => props.replay ?? 0, load, { immediate: true });
 
@@ -82,36 +90,137 @@ const stageNow = computed(() => {
   const p = played.value;
   return p ? replayTime(p.race, p.clock, now.value) : serverNow.value;
 });
-const speed = computed(() => played.value?.clock.speed ?? 1);
+/** Playback rate for animations & dice throws (never 0, even while paused). */
+const speed = computed(() => (played.value ? playRate.value : 1));
 const playing = computed(() => isPlaying(stage.value, stageNow.value));
 const finished = computed(() => isFinished(stage.value, stageNow.value));
 const track = computed(() => trackOf(stage.value?.setup, CFG.value?.track ?? 24));
 /** The board starts afresh on every replay jump, and back on the live race. */
 const trackKey = computed(() => (played.value ? `r${played.value.race.id}-${played.value.n}` : `live${race.value?.id ?? 0}`));
 
+watch(finished, (done) => {
+  if (done) paused.value = false;
+  else boardPeek.value = false;
+});
+watch(() => stage.value?.id, () => {
+  boardPeek.value = false;
+});
+
 /** Moves the replay to [from] ms into the race (0: from the start, the end: its result). */
 function seek(from: number) {
   const p = played.value;
-  if (p) played.value = { ...p, clock: replayAt(p.race, from, Date.now(), p.clock.speed), n: p.n + 1 };
+  if (!p) return;
+  boardPeek.value = false;
+  const end = playLength(p.race);
+  const clamped = Math.max(0, Math.min(end, from));
+  if (clamped >= end) paused.value = false;
+  const effSpeed = paused.value && clamped < end ? 0 : playRate.value;
+  played.value = { ...p, clock: replayAt(p.race, clamped, Date.now(), effSpeed), n: p.n + 1 };
 }
 /** Plays the replay at [k]×, on from where it is. */
-function setSpeed(k: number) {
+function setSpeed(k: 1 | 2) {
+  playRate.value = k;
   const p = played.value;
   if (!p) return;
   const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
-  played.value = { ...p, clock: replayAt(p.race, at, Date.now(), k) };
+  played.value = { ...p, clock: replayAt(p.race, at, Date.now(), paused.value ? 0 : k) };
+}
+function togglePause() {
+  const p = played.value;
+  if (!p || finished.value) return;
+  const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
+  paused.value = !paused.value;
+  played.value = { ...p, clock: replayAt(p.race, at, Date.now(), paused.value ? 0 : playRate.value) };
+}
+function stepSeek(dir: -1 | 1) {
+  const p = played.value;
+  const moves = p?.race.moves;
+  if (!p || !moves?.length) return;
+  const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
+  if (dir > 0) {
+    const nextIdx = moves.findIndex((_, i) => stepStart(p.race, i) > at + 80);
+    seek(nextIdx >= 0 ? stepStart(p.race, nextIdx) : playLength(p.race));
+  } else {
+    let prevIdx = -1;
+    for (let i = moves.length - 1; i >= 0; i--) {
+      if (stepStart(p.race, i) < at - 280) {
+        prevIdx = i;
+        break;
+      }
+    }
+    seek(prevIdx >= 0 ? stepStart(p.race, prevIdx) : 0);
+  }
+}
+const canReplayStage = computed(() => finished.value && !!stage.value?.moves?.length);
+function replayStage() {
+  boardPeek.value = false;
+  paused.value = false;
+  if (played.value) seek(0);
+  else if (stage.value) void load(stage.value.id);
 }
 const toEnd = () => played.value && seek(playLength(played.value.race));
 const progress = computed(() => {
   const p = played.value;
   return p ? Math.min(1, (stageNow.value - p.race.startsAt * 1000) / Math.max(1, playLength(p.race))) : 0;
 });
+/** Key moments along the replay timeline (skills, portals, flips and lead changes) for quick visual scrubbing. */
+const replayMarks = computed(() => {
+  const r = played.value?.race;
+  if (!r?.start || !r.moves?.length) return [];
+  const total = playLength(r);
+  if (total <= 0) return [];
+  const lead = leaders(r.start, r.moves);
+  const out: { at: number; pct: number; label: string; kind: "skill" | "lead" | "special" }[] = [];
+  r.moves.forEach((s, i) => {
+    const at = stepStart(r, i);
+    const pct = Math.min(97, Math.max(3, (at / total) * 100));
+    const rNo = Math.floor(i / ROUND) + 1;
+    const cut = cutOf(r, i);
+    const m = momentOf(s, i ? lead[i - 1] : r.start![0], lead[i]);
+    if (cut) {
+      const sk = r.setup.skills?.[cut.m];
+      out.push({ at, pct, kind: "skill", label: `第 ${rNo} 轮 · ${nameOf(cut.m)} ${sk ? SKILL_NAMES[sk.id] ?? "" : ""}`.trim() });
+    } else if (s.square === "portal" || s.square === "flip") {
+      out.push({ at, pct, kind: "special", label: `第 ${rNo} 轮 · ${nameOf(s.m)} ${s.square === "portal" ? "传送门" : "翻转"}` });
+    } else if (m?.kind === "lead") {
+      out.push({ at, pct, kind: "lead", label: `第 ${rNo} 轮 · ${nameOf(m.m)} 领先` });
+    }
+  });
+  // Keep markers spaced enough to read cleanly on the bar.
+  return out.filter((mk, idx, arr) => idx === 0 || mk.pct - arr[idx - 1]!.pct >= 4.5);
+});
+function seekFromEvent(e: PointerEvent) {
+  const el = progressEl.value;
+  const p = played.value;
+  if (!el || !p) return;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width) return;
+  const u = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  seek(u * playLength(p.race));
+}
+function onProgressDown(e: PointerEvent) {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const target = e.currentTarget as HTMLElement;
+  target.setPointerCapture?.(e.pointerId);
+  seekFromEvent(e);
+  const onMove = (ev: PointerEvent) => seekFromEvent(ev);
+  const onUp = () => {
+    target.removeEventListener("pointermove", onMove);
+    target.removeEventListener("pointerup", onUp);
+    target.removeEventListener("pointercancel", onUp);
+  };
+  target.addEventListener("pointermove", onMove);
+  target.addEventListener("pointerup", onUp);
+  target.addEventListener("pointercancel", onUp);
+}
 /** The live race is under way while a replay plays: a key goes to it. */
 const liveOn = computed(() => !!played.value && feed.live.value);
 
-/** What is over the board: nothing while a race runs, the wait for the next one, or the podium. */
-const view = computed<"run" | "wait" | "podium">(() => {
-  if (finished.value) return "podium";
+/** What is over the board: nothing while a race runs or while inspecting the final board, the wait, or the podium. */
+const view = computed<"run" | "wait" | "podium" | "board">(() => {
+  if (finished.value) return boardPeek.value ? "board" : "podium";
   if (played.value || playing.value || stage.value?.phase === "starting") return "run";
   return "wait";
 });
@@ -149,8 +258,13 @@ const standing = computed(() => {
 const field = computed(() => JSON.parse(standing.value) as { order: string[]; squares: Record<string, number>; led: boolean });
 const order = computed(() => field.value.order);
 const squares = computed(() => field.value.squares);
-/** How far along [m] is, 0 to 1. */
+/** How far along [m] is, 0 to 1, and its square readout on the side card. */
 const along = (m: string) => (finished.value && order.value[0] === m ? 1 : Math.min(1, (squares.value[m] ?? 0) / track.value));
+function sqLabel(m: string): string {
+  const sq = squares.value[m] ?? 0;
+  if ((finished.value && order.value[0] === m) || sq >= track.value) return "终";
+  return `${sq}/${track.value}`;
+}
 const skillOf = (m: string) => stage.value?.setup.skills?.[m];
 /** A member's skill, or its form on races from before skills: the name and what it does. */
 function traitOf(m: string): { name: string; text: string } | null {
@@ -161,6 +275,7 @@ function traitOf(m: string): { name: string; text: string } | null {
 }
 const diceOf = (m: string) => stage.value?.setup.dice?.[m] ?? CFG.value?.dice ?? [];
 const mineOn = (m: string) => stage.value?.mine.filter((b) => b.member === m).reduce((n, b) => n + b.coins, 0) ?? 0;
+const backedMembers = computed(() => [...new Set((stage.value?.mine ?? []).map((b) => b.member))]);
 
 // ---------------------------------------------------------------- the order of play and its dice
 /** The opening (the dice for the order) while it plays. */
@@ -243,17 +358,36 @@ const mover = computed(() => {
   return r?.moves && h && h.current >= 0 ? r.moves[h.current].m : "";
 });
 const moverWaits = computed(() => !!mover.value && !!head.value && stageOf(head.value.part) !== "walk");
-/** The last round's dice have just been thrown. */
-const lastRound = computed(() => {
+/** The last round is under way, and its opening cue. */
+const inFinalRound = computed(() => {
   const r = stage.value;
   const ra = round.value;
-  if (!r || !ra || roundsOf(r) < 2 || ra.round !== roundsOf(r) - 1) return false;
-  return ra.since < CUE_MS;
+  return !!r && !!ra && roundsOf(r) >= 2 && ra.round === roundsOf(r) - 1;
 });
-/** What the bar says is on. */
+const lastRound = computed(() => inFinalRound.value && (round.value?.since ?? Infinity) < CUE_MS);
+/** Five turn-rhythm pips inside the current round: which seats have moved, and whose turn is active. */
+const roundPips = computed<("done" | "now" | "todo")[]>(() => {
+  const r = stage.value;
+  const ra = round.value;
+  const h = head.value;
+  if (!r?.moves || !ra || !h) return [];
+  const base = ra.round * ROUND;
+  return Array.from({ length: ROUND }, (_, k) => {
+    const idx = base + k;
+    if (h.current === idx) return "now";
+    if (idx < h.done && idx < r.moves!.length) return "done";
+    return "todo";
+  });
+});
+/** What the bar says is on: in replays includes total rounds (already settled); in live avoids spoiling the end round. */
 const status = computed(() => {
+  if (finished.value) return view.value === "board" ? "终局赛道" : "本场名次";
   if (opening.value) return "掷骰定序";
-  if (round.value) return `第 ${round.value.round + 1} 轮`;
+  if (round.value && stage.value) {
+    const cur = round.value.round + 1;
+    if (played.value) return `第 ${cur}/${roundsOf(stage.value)} 轮`;
+    return inFinalRound.value ? `第 ${cur} 轮 · 冲线` : `第 ${cur} 轮`;
+  }
   return "";
 });
 
@@ -293,7 +427,7 @@ const stageEl = ref<HTMLElement | null>(null);
 let flipFrom: Map<string, DOMRect> | null = null;
 watch(view, (to, from) => {
   flipFrom = null;
-  if (from !== "run" || to !== "podium" || reducedMotion.value || !stageEl.value) return;
+  if ((from !== "run" && from !== "board") || to !== "podium" || reducedMotion.value || !stageEl.value) return;
   flipFrom = new Map();
   for (const el of stageEl.value.querySelectorAll<HTMLElement>(".tz[data-m]")) {
     const token = el.querySelector(".tuanzi-token");
@@ -330,13 +464,33 @@ function flyToPodium() {
 }
 
 function onBarDown(e: PointerEvent) {
-  if (e.button === 0 && !(e.target as HTMLElement).closest("button")) emit("drag", e);
+  if (e.button === 0 && !(e.target as HTMLElement).closest("button, [data-no-bar-drag]")) emit("drag", e);
 }
-// Escape closes it, and only it: in the browser preview the panel under the frame hears the same key.
+// Escape closes it, and only it; replay & post-race board shortcuts stay local to the watch window.
 function onKey(e: KeyboardEvent) {
-  if (e.key !== "Escape") return;
-  e.stopPropagation();
-  emit("close");
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    emit("close");
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  if (finished.value && (e.key === "b" || e.key === "B") && !e.repeat) {
+    e.preventDefault();
+    e.stopPropagation();
+    boardPeek.value = !boardPeek.value;
+    return;
+  }
+  if (!played.value) return;
+  if (e.key === " " && !e.repeat && !(e.target as HTMLElement | null)?.closest("button")) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (finished.value) replayStage();
+    else togglePause();
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    e.stopPropagation();
+    stepSeek(e.key === "ArrowLeft" ? -1 : 1);
+  }
 }
 onMounted(() => window.addEventListener("keydown", onKey, true));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
@@ -350,30 +504,63 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       <span v-if="stage?.setup.map" class="map">{{ stage.setup.map.name }}</span>
       <span v-if="played" class="mode"><Icon name="play" :size="12" />回放 {{ shortDay(played.day) }}</span>
       <span v-else-if="view === 'run'" class="mode live"><i class="dot" aria-hidden="true"></i>直播</span>
-      <span v-if="status" class="round">{{ status }}</span>
+      <span v-if="status" class="round" :class="{ final: inFinalRound && view === 'run' }">
+        <span>{{ status }}</span>
+        <span v-if="roundPips.length && view === 'run'" class="round-pips" aria-hidden="true">
+          <i v-for="(p, pi) in roundPips" :key="pi" :class="p"></i>
+        </span>
+      </span>
       <span class="grow"></span>
       <template v-if="played">
-        <i class="progress" aria-hidden="true"><i :style="{ width: `${progress * 100}%` }"></i></i>
+        <div
+          ref="progressEl" class="progress-wrap" data-no-bar-drag role="slider" aria-label="回放进度"
+          :aria-valuemin="0" :aria-valuemax="100" :aria-valuenow="Math.round(progress * 100)"
+          @pointerdown="onProgressDown"
+        >
+          <i class="progress" aria-hidden="true"><i :style="{ width: `${progress * 100}%` }"></i></i>
+          <i
+            v-for="(mk, mi) in replayMarks" :key="mi" class="mark" :class="mk.kind"
+            :style="{ left: `${mk.pct}%` }" :title="mk.label"
+          ></i>
+        </div>
         <button
-          type="button" class="ui-btn small ghost speed-key" :class="{ on: speed === 2 }" :aria-pressed="speed === 2"
-          @click="setSpeed(speed === 2 ? 1 : 2)"
+          v-if="!finished" type="button" class="ui-btn small ghost icon-key"
+          :aria-label="paused ? '继续' : '暂停'" :title="paused ? '继续' : '暂停'" @click="togglePause"
+        >
+          <Icon :name="paused ? 'play' : 'pause'" :size="15" />
+        </button>
+        <button
+          type="button" class="ui-btn small ghost speed-key" :class="{ on: playRate === 2 }" :aria-pressed="playRate === 2"
+          @click="setSpeed(playRate === 2 ? 1 : 2)"
         >2×</button>
-        <button v-if="!finished" type="button" class="ui-btn small ghost" aria-label="跳到结果" @click="toEnd">
+        <button v-if="!finished" type="button" class="ui-btn small ghost icon-key" aria-label="跳到结果" title="跳到结果" @click="toEnd">
           <Icon name="skip" :size="16" />
         </button>
-        <button v-else type="button" class="ui-btn small ghost" aria-label="再看一遍" @click="seek(0)">
+        <button v-else type="button" class="ui-btn small ghost icon-key" aria-label="再看一遍" title="再看一遍" @click="replayStage">
           <Icon name="refresh" :size="16" />
         </button>
         <button v-if="liveOn" type="button" class="ui-btn small live-key" @click="played = null">
           <i class="dot" aria-hidden="true"></i>直播
         </button>
       </template>
-      <button type="button" class="ui-btn small ghost" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="16" /></button>
+      <template v-else-if="finished">
+        <button
+          type="button" class="ui-btn small ghost bar-toggle" :aria-pressed="boardPeek"
+          @click="boardPeek = !boardPeek"
+        >
+          <Icon :name="boardPeek ? 'crown' : 'grid'" :size="14" /><span>{{ boardPeek ? "领奖台" : "查看终局" }}</span>
+        </button>
+        <button v-if="canReplayStage" type="button" class="ui-btn small ghost bar-toggle" @click="replayStage">
+          <Icon name="refresh" :size="14" /><span>回放</span>
+        </button>
+      </template>
+      <button type="button" class="ui-btn small ghost icon-key" aria-label="关闭" @click="emit('close')"><Icon name="close" :size="16" /></button>
     </header>
 
     <div ref="stageEl" class="stage">
       <RaceTrack
-        :key="trackKey" class="lap" :class="{ behind: view === 'podium' }" :race="stage" :t="stageNow" :rate="speed" :track="track" :members="MEMBERS"
+        :key="trackKey" class="lap" :class="{ behind: view === 'podium' }" :race="stage" :t="stageNow" :rate="speed"
+        :paused="paused" :backed="backedMembers" :track="track" :members="MEMBERS"
         :caption="stage?.setup.map?.name" :cleared="view === 'podium'"
       />
       <p v-if="loadError || replayError" class="ui-error note" role="alert">{{ replayError || loadError }}</p>
@@ -386,7 +573,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           <ol class="podium" aria-label="本场名次">
             <li
               v-for="(m, i) in ranking" :key="m" class="place" :class="[`p${i + 1}`, { lit: lit(i), missed: missed(i) }]"
-              :title="nameOf(m)"
+              :title="`${i + 1}. ${nameOf(m)}`"
             >
               <span class="figure">
                 <Icon v-if="i === 0" class="podium-crown" name="crown" :size="24" />
@@ -399,6 +586,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
             <ParkCoin class="net-coin" fill :tilt="false" /><b>+{{ fmt(won) }}</b>
           </p>
           <p v-if="!played && wait?.time" class="next">{{ wait.label }} <b>{{ wait.time }}</b></p>
+          <div class="result-actions">
+            <button type="button" class="ui-btn small" @click="boardPeek = true">
+              <Icon name="grid" :size="14" /><span>查看终局</span>
+            </button>
+            <button v-if="canReplayStage" type="button" class="ui-btn small primary" @click="replayStage">
+              <Icon name="refresh" :size="14" /><span>{{ played ? "再看一遍" : "回放本场" }}</span>
+            </button>
+          </div>
         </div>
       </Transition>
     </div>
@@ -415,7 +610,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
               <span v-if="traitOf(m)" class="trait" :title="traitOf(m)!.text || undefined">{{ traitOf(m)!.name }}</span>
             </span>
             <span v-if="skillOf(m)" class="does">{{ traitOf(m)!.text }}</span>
-            <i class="along" aria-hidden="true"><i :style="{ width: `${along(m) * 100}%` }"></i></i>
+            <span class="along-row">
+              <i class="along" aria-hidden="true"><i :style="{ width: `${along(m) * 100}%` }"></i></i>
+              <small v-if="field.led || finished" class="sq-num">{{ sqLabel(m) }}</small>
+            </span>
           </span>
           <span class="tail">
             <span class="form" :aria-label="`骰子 ${diceOf(m).join(' ')}`">
@@ -452,6 +650,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
           <span class="head"><TuanziToken :member="m" :size="48" /></span>
         </li>
       </TransitionGroup>
+      <div v-else-if="view === 'board'" class="board-dock" role="toolbar" aria-label="终局查看">
+        <span class="dock-label">终局赛道</span>
+        <button type="button" class="ui-btn small" @click="boardPeek = false">
+          <Icon name="crown" :size="14" /><span>领奖台</span>
+        </button>
+        <button v-if="canReplayStage" type="button" class="ui-btn small primary" @click="replayStage">
+          <Icon name="refresh" :size="14" /><span>{{ played ? "再看一遍" : "回放本场" }}</span>
+        </button>
+      </div>
       <p v-if="lastRound" class="cue" role="status">最后一轮</p>
     </footer>
     </div>
@@ -527,9 +734,36 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   box-shadow: 0 1px 3px rgba(var(--c-900-rgb), 0.22);
 }
 .round {
-  background: rgba(255, 255, 255, 0.44);
+  gap: 7px;
+  background: rgba(255, 255, 255, 0.48);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+.round.final {
+  background: var(--surface);
+  color: var(--c-800);
+  box-shadow: 0 1px 3px rgba(var(--c-900-rgb), 0.16);
+}
+.round-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.round-pips i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(var(--c-900-rgb), 0.2);
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast);
+}
+.round-pips i.done {
+  background: var(--c-700);
+}
+.round-pips i.now {
+  width: 7px;
+  height: 7px;
+  background: var(--ink);
+  box-shadow: 0 0 0 1.5px var(--surface);
 }
 .dot {
   width: 7px;
@@ -544,20 +778,65 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .grow {
   flex: 1 1 auto;
 }
+.progress-wrap {
+  position: relative;
+  flex: 0 1 236px;
+  min-width: 64px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
 .progress {
-  flex: 0 1 220px;
-  min-width: 40px;
+  width: 100%;
   height: 6px;
   border-radius: 3px;
   background: rgba(var(--c-900-rgb), 0.18);
   box-shadow: inset 0 1px 1px rgba(var(--c-900-rgb), 0.15);
   overflow: hidden;
+  transition: height var(--dur-fast);
+}
+.progress-wrap:hover .progress {
+  height: 8px;
 }
 .progress > i {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--surface);
+}
+.mark {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  translate: -50% -50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(var(--c-900-rgb), 0.28);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.mark.skill {
+  width: 6px;
+  height: 6px;
+  background: var(--c-800);
+  box-shadow: 0 0 0 1.5px var(--surface);
+}
+.mark.lead {
+  background: var(--gold-soft);
+  box-shadow: 0 0 0 1px var(--gold);
+}
+.progress-wrap:hover .mark {
+  transform: scale(1.2);
+}
+.icon-key {
+  width: 30px;
+  padding: 0;
+}
+.bar-toggle {
+  gap: 5px;
+  padding: 0 10px;
 }
 .speed-key {
   min-width: 40px;
@@ -779,6 +1058,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.result-actions .ui-btn {
+  gap: 5px;
+}
 
 /* ---- the field down the right: a sheet of paper, first on top */
 .side {
@@ -870,8 +1158,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* How far along: a crisp bar, gold for the 1st-place leader. */
+/* How far along: a crisp bar paired with the runner's exact square count, gold for the 1st-place leader. */
+.along-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .along {
+  flex: 1 1 0;
   display: block;
   height: 4px;
   border-radius: 2px;
@@ -888,14 +1182,27 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .runner.first .along > i {
   background: var(--grad-gold);
 }
+.sq-num {
+  flex: none;
+  min-width: 28px;
+  text-align: right;
+  font: 800 11px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+.runner.first .sq-num {
+  color: var(--c-700);
+}
 .tail {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 5px;
 }
+/* Three faces to a row: a six-sided die takes two rows, not the words' room. */
 .form {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
   gap: 2px;
 }
 .form .race-die {
@@ -1086,6 +1393,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .seat-move {
   transition: transform 640ms var(--ease-in-out);
 }
+/* Post-race final board dock: sits in the deck strip below the board so no tile is ever obscured. */
+.board-dock {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 6px 10px 6px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+}
+.dock-label {
+  font: 800 var(--fs-label)/1 var(--font);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.board-dock .ui-btn {
+  gap: 5px;
+}
 /* The last round: a crisp coral badge stamped cleanly at the deck's upper right. */
 .cue {
   position: absolute;
@@ -1121,6 +1447,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .calm .seat .head,
 .calm .seat-die,
 .calm .along > i,
+.calm .round-pips i,
+.calm .progress,
+.calm .mark,
 .calm .scrim-enter-active,
 .calm .scrim-leave-active,
 .calm .card-enter-active,
@@ -1141,6 +1470,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   .seat + .seat::before {
     left: -11px;
   }
+  .board-dock {
+    margin-bottom: 4px;
+  }
+  .result {
+    gap: 9px;
+    padding: 24px 28px 14px;
+  }
   .runner {
     min-height: 54px;
   }
@@ -1152,7 +1488,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
   .sheet {
     grid-template-columns: minmax(0, 1fr) 236px;
   }
-  .form {
+  .form,
+  .round-pips {
     display: none;
   }
 }

@@ -110,7 +110,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 路由 | 请求与响应 |
 |---|---|
 | GET /api/manifest | v4 素材清单：`assets-packs/manifest.json` 加上 economy 配置（不含服务端私有的 `antiCheat`） |
-| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance`。`resonance.banners` 是这个版本现在能抽、或一小时内开始的限定卡池 `[{id,name,start,end,items,rate,pity?}]`（start、end 为秒），`resonance.held` 是被限定卡池留住、暂时不在常驻池里的物品 id；都没有时不带。配置文件里的整份卡池日程不下发 |
+| GET /api/economy | economy 配置（价格、概率、上限，不含 `antiCheat`），另加 `tapGuard {fastPerSecond, fastStreakSec, cooldownSec}`。客户端同意协议并连上服务器后读取，缓存在本地；字段说明见 `server/app/economy.py`，示例数值见 `server/economy.example.json`。`resonance.rates` 按 `X-Client-Version` 给：这个版本的共鸣池里没有内容的档位（1.2.4 以前的客户端没有限定档）不列出，概率并入普通档，和它实际抽到的一致；抽不到镭射款的版本（1.2.4 以前）不带 `resonance.holoChance`。`resonance.banners` 是这个版本现在能抽、或一小时内开始的限定卡池 `[{id,name,start,end,items,rate?,rates?,share?,pity?}]`（start、end 为秒，后四项没设的不带），`resonance.held` 是被限定卡池留住、暂时不在常驻池里的物品 id；都没有时不带。配置文件里的整份卡池日程不下发 |
 | GET /api/me | player、shards、income、dailyTaps、resonance、totals、checkin、tapCooldown、autoInput（见敲击收益与活动）、scratch、duel（`{net}`，今天猜拳的净赢；没有猜拳的服务端不带）、ddz（`{net}`，今天斗地主的净赢；没有斗地主的服务端不带）、cheer（`{day,got,cap,minTaps}`，见合力应援）、updateRewards（进行中且这个存档还没领的更新奖励 `[{id,version,shards}]`，按创建先后）、park（`{coins,news,gifted?}`，见乐园一节；没有乐园的服务端不带） |
 | POST /api/activity | `{taps,session,sequence,cooldown?,injected?}`，返回状态和 credited；cooldown 是客户端自己触发冷却后剩余的秒数；injected 是这批敲击里由其他软件模拟的次数，客户端分辨不了时不带 |
 | POST /api/presence | `{session}`，记录在线并返回状态；在线本身不给碎片 |
@@ -324,10 +324,12 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 ### 限定卡池
 
-服务端在 `economy.resonance.banners` 里排限定卡池，每个有开始和结束时间（带时区的 ISO 8601）、限定物品（卡片或皮肤的物品 id）、限定概率 `rate`（百分比）和可选的限定保底 `pity`。
+服务端在 `economy.resonance.banners` 里排限定卡池，每个有开始和结束时间（带时区的 ISO 8601）、限定物品（卡片或皮肤的物品 id），以及下面两种出法里的至少一种：限定概率 `rate`（百分比，可带限定保底 `pity`），或者主打份额 `share`（百分比）。卡池还可以带自己的档位概率 `rates`。
 
 - 限定物品从写进配置起就不在常驻池里，卡池还没开始时也一样；卡池结束后进入常驻池，按自己的档位和概率出。被留住期间不能兑换，刮刮乐也不出。
 - 抽限定卡池等于抽常驻池再多一档：`rate` 从普通档的区间里取，抽中时在还没有的限定物品里等概率选一件，drop 带 `featured: true`，rarity 仍是物品自己的档位。限定物品不出重复，全部拥有后这个卡池和常驻池抽到的一样。
+- `rates` 是 `{<档位>: 百分比}`，只在这个卡池里替换常驻池同名档位的概率，没写的档位照常驻池；普通档不能写，取剩余。常驻池把某个档位的概率写成 0 时，这个档位的物品只在给它概率的限定卡池里出；`/api/economy` 的 `resonance.rates` 照样带这个 0。`rates` 换过之后的各档位加上 `rate` 不能超过 100。
+- `share` 不加档位：抽到某个档位、限定物品里又有这个档位还没有的，`share`% 出其中一件（等概率，drop 带 `featured: true`），其余照这个档位在常驻池里的出法。这个档位在常驻池里已经没有可出的东西时，只要限定物品里还有就出限定物品。`rate` 和 `share` 可以同时用。
 - 大隐藏和皮肤的保底是存档的，抽哪个池都累计；抽到限定皮肤也算抽到皮肤，皮肤保底清零。限定保底只在这个卡池里累计：距上次限定物品 `pity` 抽必出。大隐藏保底和限定保底同时到期时先出大隐藏，下一抽出限定。
 - 状态的 `resonance.banners` 是 `{<卡池 id>: {pity, drawn}}`：这份存档在进行中卡池里的限定保底进度和抽数，没抽过的卡池不列。
 - 限定物品里有这个客户端版本显示不了的（`since` 更新）时，不向它下发这个卡池，它带着这个 id 抽卡返回 `no_banner`。不带 banner 的旧客户端只抽常驻池。
@@ -485,7 +487,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 - `pool`：`{win|top2|last: {成员 id: 驼币数}}`，这一场所有存档押的合计，五个成员都有，没人押为 0。
 - `bettors`：押过这一场的存档数。
 - `mine`：自己押的每一注 `[{kind, member, coins, odds}]`，按下注顺序，同一选项押几次就有几条，`odds` 是那一注锁定的赔率。结算后每条多一个 `prize`：这一注赢到的驼币，`coins × odds`，一位小数，没押中为 0。
-- 开跑后另有 `seed`、`endsAt`、`ranking`（第一到最后）、`replay`，以及播放用的 `leadMs`、`rollMs`、`stepMs`、`slowFrom`、`slowMs`、`start`（第 0 格里的排位，五个成员 id）、`order`（行动顺序，五个成员 id，先走的在前）、`rolls`（定顺序的每一轮骰子，见下）、`moves`、`rest`（见下）；有技能特写的场次还有 `cuts`、`cutMs`（见播放）。`replay` 为 false 的旧场次（见往期）没有播放用的这些字段，只有结果。
+- 开跑后另有 `seed`、`endsAt`、`ranking`（第一到最后）、`replay`，以及播放用的 `leadMs`、`rollMs`、`stepMs`、`slowFrom`、`slowMs`、按格数计时的场次的 `stepsMs` 和 `pace`（见播放）、`start`（第 0 格里的排位，五个成员 id）、`order`（行动顺序，五个成员 id，先走的在前）、`rolls`（定顺序的每一轮骰子，见下）、`moves`、`rest`（见下）；有技能特写的场次还有 `cuts`、`cutMs`（见播放）。`replay` 为 false 的旧场次（见往期）没有播放用的这些字段，只有结果。
 - 结算后，押过的人另有 `result: {staked, won, net}`，单位驼币，按这一场所有注合计：`staked` 押的驼币，`won` 实际发的驼币（见结算），`net` = `won − staked`。
 
 `phase`：`betting` 下注中；`starting` 已停止下注，服务端几秒内开跑；`running`；`done` 已结算；`void` 停机错过开跑，已退币。
@@ -512,7 +514,9 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 技能特写：`cuts` 是 `[{at, m}]`，每个成员的技能在这一场第一次起作用的那一步（走的团子自己的技能先于被踩到的登顶；一步只有一个特写，同一步里第二个第一次起作用的成员留到它下一次）。第 `at` 步轮到时先停 `cutMs`，演成员 `m` 的技能名和说明，然后这一步照常走；这一步之后的每一步、每一轮的骰子都顺延 `cutMs`，`endsAt` 也包含全部特写的时间。没有特写的场次不带这两个字段。
 
-通常 `rollMs` 4800、`stepMs` 5000、`slowMs` 6600、`cutMs` 2600；一场太长、会播到下一场下注时，`stepMs` 和 `slowMs` 按同一比例缩短，`rollMs` 和 `cutMs` 跟着 `stepMs` 缩短（`stepMs × 4800 ÷ 5000`、`stepMs × 2600 ÷ 5000` 向下取整），`leadMs` 不变。加入每轮掷骰之前的场次没有 `rest`，`rollMs` 为 0，按旧时间轴播放；节奏放慢之前存下的场次按它自己的 `stepMs` 播放。按示例数值模拟两万场（带地图和技能）：步数中位 35，p99 64，最长 94 步；播放时长中位约 232 秒，p99 约 409 秒，最长约 589 秒。示例的比赛窗口是 590 秒（86400 − 85800 − 10），个别更长的场次按上面的办法播快。客户端用 `now` 校正本机时钟。
+按格数计时：带地图或技能的场次每一步的长短跟着它要演的内容走，另带 `stepsMs`（每一步的毫秒数，和 `moves` 等长）和 `pace` `{lit, hop, gap, act, rest}`。第 i 步在 `startsAt + leadMs + (r + 1) × rollMs + stepsMs` 前 i 项之和开始（再加上它之前的特写），长 `stepsMs[i]`。一步里依次是：点亮走的团子 `lit`；整组每格 `hop` 跳到落点，共 `steps × hop`；特殊格或登顶起作用时先停 `gap`，再每移动一格 `hop`（加速、绊脚、再走一次、钩子），不走格子的（传送门、翻转、登顶）用 `act`；最后停 `rest`。最后一轮的每一项都乘 `slowMs ÷ stepMs`。通常 `pace` 是 `{lit: 600, hop: 360, gap: 150, act: 600, rest: 500}`、`rollMs` 2800、`cutMs` 2000；一场太长时这些时间按同一比例缩短，`stepMs` 和 `slowMs` 只用来算最后一轮的倍数。按示例数值模拟一万二千场：步数中位 42，p99 79；播放时长中位约 160 秒，p99 约 290 秒，最长约 434 秒。
+
+没有地图也没有技能的场次按固定步长播放：通常 `rollMs` 4800、`stepMs` 5000、`slowMs` 6600、`cutMs` 2600；一场太长、会播到下一场下注时，`stepMs` 和 `slowMs` 按同一比例缩短，`rollMs` 和 `cutMs` 跟着 `stepMs` 缩短（`stepMs × 4800 ÷ 5000`、`stepMs × 2600 ÷ 5000` 向下取整），`leadMs` 不变。加入每轮掷骰之前的场次没有 `rest`，`rollMs` 为 0，按旧时间轴播放；节奏放慢之前存下的场次按它自己的 `stepMs` 播放，按格数计时之前存下的带地图或技能的场次没有 `stepsMs`，也按固定步长播放。示例的比赛窗口是 590 秒（86400 − 85800 − 10），更长的场次按上面的办法播快。客户端用 `now` 校正本机时钟。
 
 公平：
 

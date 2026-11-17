@@ -46,6 +46,13 @@ PRIZE = "race_prize"
 # skill named and explained, once a member (cuts_of()). cutMs is CUT_MS, scaled as the steps are (cut_ms()).
 #
 # ROLL_MS, STEP_MS and CUT_MS keep their ratios: a stored race's dice and close-ups are worked out from its step_ms.
+#
+# A race on a map or with skills is paced by the square instead (paced_times()): a step lasts as long as what it
+# shows. The mover is lit for PACE lit, the group hops PACE hop a square, a special square that acts takes PACE gap
+# and then PACE hop for each square it pushes (PACE act where it moves no squares: a portal, a flip, a climb), and
+# the step rests for PACE rest; the last round's steps are SLOW_MS / STEP_MS as long. Its rounds' dice take
+# PACED_ROLL_MS and its close-ups PACED_CUT_MS. The race row keeps these times with its moves (result.times), and
+# they are scaled together when the race would run past its window.
 LEAD_MS = 4000
 REROLL_MS = 1500
 ROLL_MS = 4800
@@ -53,6 +60,9 @@ STEP_MS = 5000
 SLOW_MS = 6600
 CUT_MS = 2600
 TAIL_MS = 4000
+PACE = {"lit": 600, "hop": 360, "gap": 150, "act": 600, "rest": 500}
+PACED_ROLL_MS = 2800
+PACED_CUT_MS = 2000
 # Moves a round: one for each member, in the order.
 ROUND = 5
 RUN_MARGIN = 10
@@ -124,6 +134,38 @@ def cuts_of(moves: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 out.append({"at": i, "m": m})
                 break
     return out
+
+
+def pushed(move: dict[str, Any]) -> int | None:
+    """What a special square does in [move], in squares walked: None when it does nothing, 0 when it moves the
+    group without walking it (a portal, a flip, a climb onto the top)."""
+    if move.get("end") is None and not move.get("stack"):
+        return None
+    if move.get("square") in ("boost", "trip", "again", "hook") and move.get("end") is not None:
+        return max(1, abs(move["end"] - move["to"]))
+    return 0
+
+
+def paced_times(moves: list[dict[str, Any]], scale: float = 1.0) -> dict[str, Any]:
+    """The times of a race paced by the square, ms, at [scale] of full length: `pace` (PACE scaled), each step's
+    length in `steps`, a round's dice in `roll` and a close-up in `cut`."""
+    pace = {k: max(1, math.floor(v * scale)) for k, v in PACE.items()}
+    first = slow_from(len(moves))
+    steps = []
+    for i, move in enumerate(moves):
+        t = pace["lit"] + max(0, int(move["steps"])) * pace["hop"] + pace["rest"]
+        push = pushed(move)
+        if push is not None:
+            t += pace["gap"] + (push * pace["hop"] if push else pace["act"])
+        steps.append(t if i < first else t * SLOW_MS // STEP_MS)
+    return {"pace": pace, "steps": steps, "roll": max(1, math.floor(PACED_ROLL_MS * scale)),
+            "cut": max(1, math.floor(PACED_CUT_MS * scale))}
+
+
+def paced_ms(times: dict[str, Any], cuts: int) -> int:
+    """How long the rounds' dice, the steps and [cuts] close-ups of a paced race take together."""
+    rounds = -(-len(times["steps"]) // ROUND)
+    return rounds * times["roll"] + sum(times["steps"]) + cuts * times["cut"]
 
 
 def lead_ms(rounds: int) -> int:
@@ -225,16 +267,28 @@ class Races:
         window_ms = (int(cfg["interval"]) - int(cfg["betting"]) - RUN_MARGIN) * 1000
         step_ms, slow_ms = STEP_MS, SLOW_MS
         cuts = len(cuts_of(outcome["moves"]))
-        moving = playback_ms(0, steps, step_ms, slow_ms, cuts=cuts) - TAIL_MS
         room = window_ms - lead - TAIL_MS
-        if moving > room:
-            # Every share shrinks by the same factor; rounding down only ever shortens.
-            step_ms = max(1, math.floor(STEP_MS * room / moving))
-            slow_ms = max(1, math.floor(SLOW_MS * room / moving))
-        return {"id": race_id, "starts_at": float(starts),
-                "ends_at": starts + playback_ms(lead, steps, step_ms, slow_ms, cuts=cuts) / 1000, "step_ms": step_ms,
+        result = _result(outcome)
+        if setup.get("map") or setup.get("skills"):
+            times = paced_times(outcome["moves"])
+            moving = paced_ms(times, cuts)
+            if moving > room:
+                # Every time shrinks by the same factor; rounding down only ever shortens.
+                step_ms = max(1, math.floor(STEP_MS * room / moving))
+                slow_ms = max(1, math.floor(SLOW_MS * room / moving))
+                times = paced_times(outcome["moves"], room / moving)
+            result["times"] = times
+            length = lead + paced_ms(times, cuts) + TAIL_MS
+        else:
+            moving = playback_ms(0, steps, step_ms, slow_ms, cuts=cuts) - TAIL_MS
+            if moving > room:
+                # Every share shrinks by the same factor; rounding down only ever shortens.
+                step_ms = max(1, math.floor(STEP_MS * room / moving))
+                slow_ms = max(1, math.floor(SLOW_MS * room / moving))
+            length = playback_ms(lead, steps, step_ms, slow_ms, cuts=cuts)
+        return {"id": race_id, "starts_at": float(starts), "ends_at": starts + length / 1000, "step_ms": step_ms,
                 "slow_ms": slow_ms, "seed": seed.hex(), "hash": race.seed_hash(seed), "setup": json.dumps(setup),
-                "ranking": json.dumps(outcome["ranking"]), "result": json.dumps(_result(outcome))}
+                "ranking": json.dumps(outcome["ranking"]), "result": json.dumps(result)}
 
     def tick(self) -> list[dict[str, Any]]:
         """Starts, settles or calls off the races that are due, then prepares the current and the next race when
@@ -477,6 +531,12 @@ class Races:
                 # Rows from before the close-ups name none, and played without them.
                 if result.get("cuts"):
                     out.update(cuts=result["cuts"], cutMs=cut_ms(row["step_ms"]))
+                # A race paced by the square: its own times for the dice, the close-ups and every step.
+                times = result.get("times")
+                if times:
+                    out.update(rollMs=times["roll"], stepsMs=times["steps"], pace=times["pace"])
+                    if result.get("cuts"):
+                        out["cutMs"] = times["cut"]
                 if rolls:
                     out.update(order=result["order"], rolls=rolls)
             out["replay"] = result is not None

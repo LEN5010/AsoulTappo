@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { getCard, manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
-import { bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, poolFor, poolOf, runningBanners } from "./resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, poolFor, poolOf, runningBanners, standingPool, tiersIn } from "./resonance";
 import { economy, setEconomy } from "./stores/economy";
 import { exampleEconomy } from "./test/economy";
 import { realPoolCounts, realPoolSize } from "./test/pool";
@@ -102,6 +102,26 @@ it("keeps what a limited pool holds out of the standing pool and out of crafting
   });
   expect(heldItems().size).toBe(0);
 });
+it("keeps a tier at 0 out of the standing pool and sends its cards to the banner that rates it", () => {
+  const rates = { ...R, limited: 0, common: R.common + R.limited! };
+  const banner = { ...BANNER, rates: { limited: 5 } };
+  setEconomy({ ...exampleEconomy, resonance: { ...exampleEconomy.resonance, rates, banners: [banner] } });
+  try {
+    const card = poolOf().limited[0]!;
+    expect(standingPool().limited).toEqual([]);
+    expect(standingPool().common.length).toBe(poolOf().common.length);
+    expect(tiersIn(baseRates())).not.toContain("limited");
+    expect(tiersIn(bannerBaseRates(banner))).toContain("limited");
+    expect(poolFor(card.id, T0)).toBe("forms");
+    // No banner running: nowhere but the standing pool to send it.
+    expect(poolFor(card.id, T0 - 1)).toBe("");
+  } finally {
+    setEconomy(exampleEconomy);
+  }
+  // At the example's own odds the tier is in the standing pool.
+  expect(standingPool().limited.length).toBe(poolOf().limited.length);
+  expect(poolFor(poolOf().limited[0]!.id, T0)).toBe("");
+});
 it("runs a banner between its start and its end", () => {
   withBanner(() => {
     expect(runningBanners(T0 - 1)).toEqual([]);
@@ -131,5 +151,26 @@ it("takes a banner's rate from common until the save has every featured item", (
     const whole = bannerRates(BANNER, p, Object.fromEntries(SKINS.map((id) => [id, 1])));
     expect(whole.featured).toBe(0);
     expect(whole.tiers.common).toBeCloseTo(R.common);
+  });
+});
+it("reads a banner's own odds and the tiers its featured items share", () => {
+  withBanner(() => {
+    const { rate: _rate, ...plain } = BANNER;
+    const shared = { ...plain, rates: { skin: 3, limited: 5 }, share: 40 };
+    const base = bannerBaseRates(shared);
+    expect(base.skin).toBe(3);
+    expect(base.limited).toBe(5);
+    expect(Object.values(base).reduce((a, b) => a + b)).toBeCloseTo(100);
+    const p = poolOf(heldItems());
+    // Every standing skin found: the tier stays for the featured ones.
+    const owned = Object.fromEntries(p.skin.map((i) => [i.id, 1]));
+    const now = bannerRates(shared, p, owned);
+    expect(now.featured).toBe(0);
+    expect(now.shared).toEqual(["skin"]);
+    expect(now.tiers.skin).toBe(3);
+    for (const id of SKINS) owned[id] = 1;
+    const whole = bannerRates(shared, p, owned);
+    expect(whole.shared).toEqual([]);
+    expect(whole.tiers.skin).toBe(exampleEconomy.resonance.repeatTiers?.includes("skin") ? 3 : 0);
   });
 });

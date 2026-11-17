@@ -1,30 +1,41 @@
 <script setup lang="ts">
 // The stage of a limited pool, laid out as the standing pool's (PoolStage.vue): a hero on the left, the pool's name
-// and a sheet of paper on the right. The hero is a pearl card with the featured items piled on it as stickers. A
-// featured skin sits at its desk as on the desktop; a two-form skin types for a moment and changes into its second
-// form, as it does for the player. The lineup under the card brings the next item to the front on its own.
+// and a sheet of paper on the right. Where the pool raises the limited tier's odds the hero is the standing pool's
+// hand (CardHand.vue) dealing the limited cards, with the featured item on show standing at its foot; else it is a
+// pearl card with the featured items piled on it as stickers. A featured skin sits at its desk as on the desktop; a two-form skin
+// types for a moment and changes into its second form, as it does for the player. The sheet lists what the pool
+// holds: its featured items as standees (the one on show times its own turn), then the 衣橱 series as a row
+// (CollectionRows.vue); under the sheet the 衣橱 cards pass by. A pool with more featured items than a row of
+// standees takes keeps a lineup under the hero.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { getCharacter, PET_BASE, skinSeries } from "../characters";
+import { formReach, getCharacter, PET_BASE, skinSeries } from "../characters";
 import { cardLabel } from "../cards";
 import { characterColor, getCard, memberOf } from "../manifest";
-import type { Item } from "../items";
-import { featuredItems } from "../resonance";
+import { collectible, RARITY_LABEL, type Item } from "../items";
+import type { Rarity } from "../manifest";
+import { bannerBaseRates, featuredItems } from "../resonance";
 import { collection } from "../stores/player";
 import type { Banner } from "../stores/economy";
 import { reducedMotion } from "../stores/theme";
+import { arrowSelect } from "../ui/focus";
 import Icon from "../ui/Icon.vue";
 import PetView from "../pet/PetView.vue";
 import PetBust from "./PetBust.vue";
+import CardHand from "./CardHand.vue";
+import CollectionRows from "./CollectionRows.vue";
+import type { Plate } from "../pet/plates";
 
 const props = defineProps<{ banner: Banner; busy: boolean; paused?: boolean }>();
-const emit = defineEmits<{ inspect: [item: Item] }>();
+const emit = defineEmits<{ inspect: [item: Item]; plate: [plate: Plate] }>();
 
 /** A skin types this long in its first form, then shows its second for the rest of its turn. */
 const TYPE_MS = 1900;
 const KEY_MS = 120;
 const PILE = 3;
+/** A row of standees takes this many featured items; more get a lineup under the hero. */
+const STANDS = 5;
 const LEAN_DEG = 8;
 
 const items = computed(() => featuredItems(props.banner));
@@ -46,16 +57,72 @@ const figure = (item: Item, step: number): Figure => {
   const card = skin ? undefined : getCard(item.ref);
   return { item, step, skin, twoForm: skin && !!getCharacter(item.ref)?.form, art: card ? assetUrl(card.full) : "" };
 };
-/** The pile: the item on show and the next ones behind it. */
+/** The limited tier's cards (the 衣橱 cards), where this pool raises their odds. */
+const LIMITED = collectible.filter((item) => item.rarity === "limited" && item.kind === "card");
+const raised = computed(() => !!props.banner.rates?.limited && bannerBaseRates(props.banner).limited > 0);
+/** The limited cards a member at a time, so neighbours differ: the hand deals them in this order. */
+const DEALT = (() => {
+  const by = new Map<string, Item[]>();
+  for (const item of LIMITED) {
+    const member = item.characters[0] ?? "";
+    by.set(member, [...(by.get(member) ?? []), item]);
+  }
+  const rows = [...by.values()];
+  const dealt: Item[] = [];
+  for (let i = 0; rows.some((row) => row[i]); i++) for (const row of rows) if (row[i]) dealt.push(row[i]!);
+  return dealt;
+})();
+/** The same cards passing under the sheet. */
+const strip = computed(() =>
+  (raised.value ? DEALT : []).map((item) => ({ item, art: assetUrl(getCard(item.ref)?.thumb ?? item.art) })));
+/** Keyboard focus in the strip stops it and lets it scroll, so the focused card is in view. */
+const stripKeyed = ref(false);
+function onStripKey(e: KeyboardEvent) {
+  const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  const root = e.currentTarget as HTMLElement | null;
+  if (!step || !root) return;
+  const cards = [...root.querySelectorAll<HTMLButtonElement>(".strip-group:first-child button:not(:disabled)")];
+  const cur = cards.indexOf(document.activeElement as HTMLButtonElement);
+  if (cur < 0) return;
+  e.preventDefault();
+  cards[(cur + step + cards.length) % cards.length]?.focus();
+}
+/** The pile: the item on show and, on the pearl card, the next ones behind it. */
 const pile = computed(() => {
   const n = items.value.length;
-  return Array.from({ length: Math.min(PILE, n) }, (_, step) => figure(items.value[(at.value + step) % n]!, step));
+  const shown = raised.value ? Math.min(1, n) : Math.min(PILE, n);
+  return Array.from({ length: shown }, (_, step) => figure(items.value[(at.value + step) % n]!, step));
+});
+/** What the pool's featured items are called: skins when they all are. */
+const featuredWord = computed(() => (items.value.every((i) => i.kind === "character") ? "本期皮肤" : "本期限定"));
+/** With too many featured items for a row of standees, a lineup under the hero picks among them. */
+const lined = computed(() => items.value.length > STANDS);
+const odds = (r: Rarity) => (props.banner.rates?.[r] ? `${RARITY_LABEL[r]} ${props.banner.rates[r]}%` : "");
+/** The odds beside the featured items: their own tier's rate here, or the tiers of theirs this pool rates. */
+const featuredOdds = computed(() => {
+  if (props.banner.rate) return `UP ${props.banner.rate}%`;
+  const tiers = [...new Set(items.value.flatMap((i) => i.rarity ?? []))];
+  return tiers.map(odds).filter(Boolean).join(" · ");
 });
 const front = computed(() => pile.value[0]);
+const petReach = computed(() => {
+  const extra = Math.max(0, ...items.value.map((item) => item.kind === "character" ? formReach(item.ref) : 0));
+  return 1 + extra / PET_BASE.width;
+});
 /** The two pictures of the skin on show, for its form keys. */
 const forms = computed(() => {
   const c = front.value?.twoForm ? getCharacter(front.value.item.ref) : undefined;
   return c?.form ? [c.bgSmall, c.form.bgSmall] : null;
+});
+
+/** The skin on show peeks over the top of the sheet, in the form the hero shows; a long pool name leaves it no room. */
+const PEEK_NAME = 5;
+const peek = computed(() => {
+  const item = active.value;
+  const c = item?.kind === "character" ? getCharacter(item.ref) : undefined;
+  if (!c || props.banner.name.length > PEEK_NAME) return null;
+  const second = formShown.value && !!c.form;
+  return { key: `${item!.id}${second ? "+" : ""}`, src: second ? c.form!.bg : c.bg };
 });
 
 const feature = computed(() => {
@@ -73,6 +140,8 @@ const feature = computed(() => {
 const pageActive = usePageActive();
 const pointing = ref(false);
 watch(() => props.busy, () => (pointing.value = false));
+// A detail sheet hands focus back to the card that opened it: that is not the keyboard walking the strip.
+watch(() => props.paused, (paused) => { if (!paused) stripKeyed.value = false; }, { flush: "post" });
 const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
 const hold = computed(() => !playing.value || pointing.value);
 
@@ -153,12 +222,23 @@ function go(step: number) {
   pinned.value = null;
   at.value = (at.value + step + n) % n;
 }
+function onFeaturedKey(e: KeyboardEvent) {
+  const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  const root = e.currentTarget as HTMLElement | null;
+  if (!step || !root) return;
+  const buttons = [...root.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+  const cur = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  if (cur < 0) return;
+  e.preventDefault();
+  const next = (cur + step + buttons.length) % buttons.length;
+  buttons[next]?.focus();
+  go(next - at.value);
+}
 
-// The pet is drawn in pixels of its 240-wide canvas: its scale follows the pearl plate's width (--card-w), not the
-// wider .hand box, so the front pet and its open second-form wing stay centered on .plate and clear of .sheet.
+// The showcase width sets the pet's canvas size. The card fan reserves room for the second-form wing.
 const plateEl = ref<HTMLElement>();
 const plateW = ref(0);
-const frontScale = computed(() => Math.max(0.5, (plateW.value * 0.96) / PET_BASE.width));
+const frontScale = computed(() => Math.max(0.5, plateW.value * (raised.value ? 1 : 0.96) / PET_BASE.width));
 const backScale = computed(() => frontScale.value * 0.58);
 let resize: ResizeObserver | undefined;
 onMounted(() => {
@@ -170,6 +250,8 @@ onMounted(() => {
   if (plateEl.value) resize.observe(plateEl.value);
   if (heroEl.value) resize.observe(heroEl.value);
 });
+// Another pool may stand the item on another plate.
+watch(plateEl, (el) => { if (el) resize?.observe(el); }, { flush: "post" });
 onBeforeUnmount(() => {
   resize?.disconnect();
   cancelAnimationFrame(leanFrame);
@@ -187,7 +269,27 @@ onBeforeUnmount(() => {
       </Transition>
     </div>
 
-    <div class="hand">
+    <CardHand
+      v-if="raised" class="card-hand" bare :items="DEALT" :busy="busy" :paused="paused" :hold="pointing" crest="LIMITED"
+      :style="{ '--pet-reach': petReach }"
+      @inspect="emit('inspect', $event)" @pointerenter="pointing = true"
+    >
+      <template #foreground>
+        <div v-if="front" ref="plateEl" class="hand-foreground">
+          <i v-if="formPulse && !reducedMotion" :key="formPulse" class="form-ring" aria-hidden="true"></i>
+          <TransitionGroup name="pile" :css="!reducedMotion">
+            <button
+              v-for="f in pile" :key="f.item.id" type="button" class="figure s0" :class="{ card: !f.skin }"
+              :disabled="busy" :title="f.item.name" :aria-label="`查看${f.item.name}`" @click="emit('inspect', f.item)"
+            >
+              <PetView v-if="f.skin" class="pet-sticker" :character="f.item.ref" :scale="frontScale" :key-down="keyDown" :form="formShown" />
+              <span v-else class="card-face frame-pearl"><img :src="f.art" alt="" draggable="false" /></span>
+            </button>
+          </TransitionGroup>
+        </div>
+      </template>
+    </CardHand>
+    <div v-else class="feature-hand" :class="{ lined }">
       <div
         ref="heroEl" class="hero" :style="{ '--lean': `${LEAN_DEG}deg` }"
         @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd"
@@ -214,12 +316,13 @@ onBeforeUnmount(() => {
             <span v-else class="card-face frame-pearl"><img :src="f.art" alt="" draggable="false" /></span>
           </button>
         </TransitionGroup>
+        <span class="inspect-pill" aria-hidden="true"><Icon name="search" :size="11" />查看</span>
         <Icon name="spark" :size="24" class="twinkle top" />
         <Icon name="spark" :size="13" class="twinkle side" />
       </div>
-      <div v-if="items.length > 1" class="lineup" @pointerenter="pointing = true">
+      <div v-if="lined" class="lineup" @pointerenter="pointing = true">
         <button type="button" class="flip ui-btn ghost" aria-label="上一个" :disabled="busy" @click="go(-1)"><Icon name="back" :size="18" /></button>
-        <div class="row">
+        <div class="row" @keydown="arrowSelect($event, $event.currentTarget as HTMLElement)">
           <button
             v-for="(item, i) in items" :key="item.id" type="button" class="mini" :class="{ on: i === at, got: owns(item) }"
             :disabled="busy" :title="item.name" :aria-pressed="i === at" @click="go(i - at)"
@@ -242,6 +345,11 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="sheet" :class="{ 'has-forms': !!forms }">
+        <div v-if="peek" class="peek" aria-hidden="true">
+          <Transition name="peek" mode="out-in" :css="!reducedMotion">
+            <PetBust :key="peek.key" class="peek-bust" :src="peek.src" />
+          </Transition>
+        </div>
         <div class="feature-slot">
           <Transition name="feature" mode="out-in" :css="!reducedMotion">
             <div v-if="feature" :key="active?.id" class="feature">
@@ -259,7 +367,7 @@ onBeforeUnmount(() => {
           </Transition>
         </div>
 
-        <div v-if="forms" class="forms" role="group" aria-label="形态">
+        <div v-if="forms" class="forms" role="group" aria-label="形态" @keydown="arrowSelect($event, $event.currentTarget as HTMLElement)">
           <template v-for="(f, i) in forms" :key="i">
             <span v-if="i" class="form-bridge" aria-hidden="true">
               <Icon name="forward" :size="14" class="form-arrow" :class="{ on: formShown }" />
@@ -275,28 +383,50 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="meter">
-          <div class="meter-head">
-            <p class="total"><b>{{ got }}</b><i>/ {{ items.length }}</i><em>限定主打</em></p>
-            <span class="promise">
-              <b class="up-rate">UP {{ banner.rate }}%</b>
-              <template v-if="banner.pity"><i>·</i>{{ banner.pity }} 次保底</template>
-            </span>
-          </div>
-          <ul class="featured">
-            <li v-for="(item, i) in items" :key="item.id">
-              <button type="button" class="seg" :class="{ on: i === at, done: owns(item) }" :disabled="busy" :aria-label="item.name" @click="go(i - at)">
-                <span class="seg-art" aria-hidden="true">
-                  <PetBust v-if="item.kind === 'character'" class="seg-bust" :src="getCharacter(item.ref)!.bg" />
-                  <span v-else class="seg-card frame-pearl"><img :src="assetUrl(item.art)" alt="" draggable="false" /></span>
-                  <Icon :name="owns(item) ? 'check' : 'lock'" :size="10" class="seg-badge" />
+          <div class="lead">
+            <p class="l-head">
+              <em>{{ featuredWord }}</em><b>{{ got }}</b><i>/{{ items.length }}</i>
+              <span v-if="featuredOdds" class="odds">{{ featuredOdds }}</span>
+              <span v-if="banner.pity" class="odds">{{ banner.pity }} 次保底</span>
+            </p>
+            <div class="stands" @keydown="onFeaturedKey" @pointerenter="pointing = true">
+              <button
+                v-for="(item, i) in items" :key="item.id" type="button" class="stand-key" :class="{ on: i === at, done: owns(item) }"
+                :disabled="busy" :title="item.name" :aria-label="i === at ? `查看${item.name}` : `换到${item.name}`"
+                :aria-pressed="i === at" @click="i === at ? emit('inspect', item) : go(i - at)"
+              >
+                <span class="stand" aria-hidden="true">
+                  <PetBust v-if="item.kind === 'character'" class="stand-bust" :src="getCharacter(item.ref)!.bg" />
+                  <span v-else class="stand-card frame-pearl"><img :src="assetUrl(item.art)" alt="" draggable="false" /></span>
                 </span>
-                <span class="seg-who">
-                  <i :style="{ background: characterColor(item.characters[0] ?? '') }"></i><span>{{ item.name }}</span>
-                </span>
-                <span class="seg-bar"><i></i></span>
+                <b class="stand-name"><Icon :name="owns(item) ? 'check' : 'lock'" :size="11" /><span>{{ item.name }}</span></b>
+                <i v-if="i === at && !lined && items.length > 1 && !reducedMotion" class="tick" aria-hidden="true" @animationend="go(1)"></i>
               </button>
-            </li>
-          </ul>
+            </div>
+          </div>
+          <CollectionRows :closet="raised" :busy="busy" :hold="hold" @plate="emit('plate', $event)">
+            <template #closet><span v-if="odds('limited')" class="odds">{{ odds("limited") }}</span></template>
+          </CollectionRows>
+        </div>
+      </div>
+
+      <div
+        v-if="strip.length" class="closet-strip" :class="{ keyed: stripKeyed }" role="region" aria-label="衣橱卡牌"
+        :style="{ '--marquee': `${strip.length * 2.1}s` }"
+        @pointerdown="stripKeyed = false" @keydown="onStripKey"
+        @focusin="stripKeyed = ($event.target as HTMLElement).matches(':focus-visible')"
+        @focusout="stripKeyed = false"
+      >
+        <div class="strip-track">
+          <div v-for="copy in reducedMotion ? 1 : 2" :key="copy" class="strip-group" :aria-hidden="copy === 2 ? true : undefined">
+            <button
+              v-for="(c, i) in strip" :key="c.item.id" type="button" class="strip-card"
+              :tabindex="copy === 1 && i === 0 ? undefined : -1"
+              :disabled="busy" :title="c.item.name" :aria-label="`查看${c.item.name}`" @click="emit('inspect', c.item)"
+            >
+              <span class="card-face frame-pearl"><img :src="c.art" alt="" draggable="false" /></span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -364,7 +494,7 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.hand {
+.feature-hand {
   position: relative;
   z-index: 1;
   flex: none;
@@ -380,6 +510,13 @@ onBeforeUnmount(() => {
   position: relative;
   flex: none;
   height: var(--hero-h);
+}
+/* Without a lineup the hero has its room: the cards stand clear over the item on show. */
+.feature-hand:not(.lined) {
+  justify-content: center;
+}
+.feature-hand:not(.lined) .hero {
+  height: calc(var(--hero-h) + 54px);
 }
 /* The pearl card the stickers are piled on: leans toward the pointer with sliding pearl metal and specular glare. */
 .plate {
@@ -476,6 +613,27 @@ onBeforeUnmount(() => {
   letter-spacing: 0.18em;
   white-space: nowrap;
 }
+/* The figure occupies space below the cards, with only its head overlapping the fan. */
+.card-hand {
+  --pet-overlap: calc(var(--card-w) * 0.16);
+  --pill-bottom: calc(var(--pet-overlap) + 8px);
+  align-self: flex-start;
+  gap: 0;
+}
+.hand-foreground {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  justify-items: start;
+  width: calc(var(--card-w) * 1.09);
+  max-width: calc((100% - 20px) / var(--pet-reach));
+  margin-top: calc(0px - var(--pet-overlap));
+}
+.hand-foreground .form-ring {
+  left: 50%;
+  top: 50%;
+  width: 80%;
+}
 /* Pearl shockwave behind the active skin when it transforms into its second form. */
 .form-ring {
   position: absolute;
@@ -559,6 +717,20 @@ onBeforeUnmount(() => {
 /* A card among the featured items stands in the pile inside its pearl metal frame. */
 .figure.card.s0 { left: 10%; top: 21%; width: 56%; }
 .figure.card:not(.s0) { width: 30%; }
+.hand-foreground .figure.s0 {
+  position: relative;
+  inset: auto;
+  grid-area: 1 / 1;
+}
+.hand-foreground .figure.card.s0 {
+  width: 40%;
+  justify-self: center;
+}
+.hand-foreground .figure.pile-leave-active {
+  position: absolute;
+  bottom: 0;
+  pointer-events: none;
+}
 .card-face {
   display: block;
   aspect-ratio: 2 / 3;
@@ -596,6 +768,30 @@ onBeforeUnmount(() => {
 .pile-leave-to {
   opacity: 0;
   translate: -30% 6%;
+}
+.inspect-pill {
+  position: absolute;
+  z-index: 4;
+  left: calc(var(--card-w) * 0.5);
+  bottom: 10px;
+  translate: -50% 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1.5px var(--pearl), 0 6px 14px -6px rgba(var(--shadow-rgb), 0.35);
+  color: var(--night);
+  font: 800 var(--fs-caption)/1.2 var(--font);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base), translate var(--dur-base) var(--ease-out);
+}
+.hero:hover .inspect-pill,
+.hero:has(.s0:focus-visible) .inspect-pill {
+  opacity: 1;
+  translate: -50% 0;
 }
 .twinkle {
   position: absolute;
@@ -730,8 +926,112 @@ h3 {
   background: var(--surface);
   box-shadow: var(--shadow-paper);
 }
+.meter :deep(.c-row:last-child) {
+  padding-bottom: 2px;
+}
+/* Under the sheet, on the page itself: the limited cards this pool rates pass by as small pearl cards. */
+.closet-strip {
+  flex: none;
+  min-width: 0;
+  margin-left: calc(var(--stage-gap) * -1 - 18px);
+  padding: 5px 0;
+  overflow: hidden;
+  scrollbar-width: none;
+  /* The row dissolves at the two ends it passes off. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+.closet-strip::-webkit-scrollbar { display: none; }
+.closet-strip.keyed,
+.calm .closet-strip {
+  overflow-x: auto;
+}
+.strip-track {
+  display: flex;
+  width: max-content;
+  animation: strip-pass var(--marquee, 80s) linear infinite;
+}
+.hold .strip-track,
+.closet-strip:hover .strip-track {
+  animation-play-state: paused;
+}
+.keyed .strip-track,
+.calm .strip-track {
+  animation: none;
+}
+.strip-group {
+  flex: none;
+  display: flex;
+  gap: 9px;
+  padding-right: 9px;
+}
+.strip-card {
+  flex: none;
+  width: 36px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  rotate: -2deg;
+  transition: translate var(--dur-base) var(--ease-out), rotate var(--dur-base) var(--ease-out);
+}
+.strip-card:nth-child(even) {
+  rotate: 2deg;
+}
+.strip-card .card-face {
+  width: 100%;
+  padding: 2px;
+  border-radius: 7px;
+  box-shadow: 0 0 0 2px #fff, 0 6px 10px -7px rgba(var(--shadow-rgb), 0.6);
+}
+.strip-card .card-face img {
+  border-radius: 5px;
+}
+.strip-card:hover:not(:disabled),
+.strip-card:focus-visible {
+  translate: 0 -3px;
+  rotate: 0deg;
+}
+.strip-card:focus-visible {
+  outline: none;
+}
+.strip-card:focus-visible .card-face {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--pearl-deep);
+}
+@keyframes strip-pass {
+  to { transform: translateX(-50%); }
+}
+/* Behind the sheet, so only what rises over its top edge shows. */
+.peek {
+  --peek-w: clamp(64px, 11cqw, 92px);
+  position: absolute;
+  z-index: -1;
+  right: 10px;
+  bottom: calc(100% - var(--peek-w) * 0.08);
+  width: var(--peek-w);
+  height: calc(var(--peek-w) * 1.04);
+  pointer-events: none;
+}
+.peek-bust {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  rotate: 7deg;
+  filter: var(--contour) drop-shadow(0 2px 3px rgba(var(--shadow-rgb), 0.18));
+}
+.peek-enter-active {
+  transition: translate 520ms var(--ease-pop);
+}
+.peek-leave-active {
+  transition: translate 200ms var(--ease-in);
+}
+.peek-enter-from,
+.peek-leave-to {
+  translate: 0 100%;
+}
 .feature-slot {
-  min-height: 78px;
+  min-height: 70px;
 }
 .feature {
   min-width: 0;
@@ -912,7 +1212,7 @@ h3 {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: clamp(56px, 9.2cqh, 80px);
+  height: clamp(36px, 5.6cqh, 48px);
   padding: 4px 6px 0;
   box-sizing: border-box;
   border-radius: var(--radius-s);
@@ -988,240 +1288,188 @@ h3 {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 .sheet:not(.has-forms) .meter {
   flex: 1;
   justify-content: flex-end;
-  gap: 12px;
 }
-.meter-head {
+/* The featured items: how many are found, the pool's odds for them, and each one a standee on the paper. */
+.lead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+.l-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-.total {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  gap: 3px;
   margin: 0;
+  min-width: 0;
   white-space: nowrap;
 }
-.total > b {
-  font: 800 38px/0.9 var(--font-latin);
+.l-head em {
+  margin-right: 5px;
+  font: 800 var(--fs-body)/1 var(--font);
+  font-style: normal;
   color: var(--ink);
 }
-.total > i {
-  font: 800 20px/1 var(--font-latin);
+.l-head b {
+  font: 800 18px/1 var(--font-latin);
+  color: var(--ink);
+}
+.l-head i {
+  font: 800 var(--fs-label)/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
 }
-.total > em {
-  margin-left: 3px;
-  font: 800 var(--fs-label)/1 var(--font);
-  font-style: normal;
-  color: var(--ink-2);
-}
-.promise {
-  flex: none;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 4px 9px;
+/* The pool's own odds for a row, a quiet tag at its right end. */
+.odds {
+  align-self: center;
+  margin-left: auto;
+  padding: 3px 7px;
   border-radius: var(--radius-s);
-  background: color-mix(in srgb, var(--holo-lilac) 20%, var(--c-50));
-  color: var(--night);
-  font: 700 var(--fs-caption)/1 var(--font);
+  background: var(--c-50);
+  color: var(--c-700);
+  font: 800 var(--fs-caption)/1 var(--font);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.promise .up-rate {
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  letter-spacing: 0.04em;
-  color: var(--pearl-deep);
+.odds + .odds {
+  margin-left: 4px;
 }
-.promise i {
-  font-style: normal;
-  color: var(--pearl-deep);
+.stands {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
 }
-
-/* Tonal collectible showcase slots on paper: stacked vertically so every featured item's name has the full card width. */
-.featured {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  grid-auto-flow: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.featured li {
-  min-width: 0;
-}
-.seg {
-  width: 100%;
+.stand-key {
+  position: relative;
+  flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 5px;
-  padding: 6px 6px 7px;
-  box-sizing: border-box;
+  align-items: center;
+  gap: 3px;
+  padding: 0 0 6px;
   border: 0;
-  border-radius: var(--radius-m);
-  background: var(--c-50);
+  background: none;
   color: var(--ink-2);
   font: inherit;
-  text-align: left;
   cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
 }
-.seg:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--holo-lilac) 14%, var(--c-50));
-  color: var(--ink);
-}
-.seg.on {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--holo-lilac) 24%, var(--surface)),
-    color-mix(in srgb, var(--holo-pink) 16%, var(--surface)));
-  outline: 2px solid var(--pearl-deep);
-  outline-offset: -2px;
-  color: var(--ink);
-}
-/* Banners without a dual-form strip give their featured slots a taller showcase portrait. */
-.sheet:not(.has-forms) .seg {
-  gap: 6px;
-  padding: 8px 8px;
-}
-.seg-art {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  width: 100%;
-  height: clamp(36px, 5.5cqh, 46px);
-  padding-top: 2px;
-  box-sizing: border-box;
+.stand-key:focus-visible {
+  outline: 2px solid var(--c-500);
+  outline-offset: 2px;
   border-radius: var(--radius-s);
-  background: rgba(255, 255, 255, 0.72);
-  overflow: hidden;
 }
-.seg-badge {
-  position: absolute;
-  top: 4px;
-  right: 5px;
-  color: var(--ink-3);
-}
-.seg.done .seg-badge {
-  color: var(--pearl-deep);
-}
-.seg.on .seg-art {
-  background: rgba(255, 255, 255, 0.85);
-}
-.sheet:not(.has-forms) .seg-art {
-  height: clamp(68px, 12cqh, 104px);
-}
-.seg-bust {
+.stand {
+  position: relative;
   display: block;
-  width: auto;
-  height: 100%;
-  max-width: 100%;
-  filter: var(--contour);
+  width: 62px;
+  height: 62px;
+}
+.stand::before {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 0;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c-100);
+  box-shadow: 0 2px 0 var(--c-200), 0 3px 6px -2px rgba(var(--shadow-rgb), 0.22);
+  transition: background var(--dur-base), box-shadow var(--dur-base);
+}
+.stand-bust,
+.stand-card {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: calc(100% - 3px);
   transition: transform var(--dur-base) var(--ease-out);
 }
-.seg:hover:not(:disabled) .seg-bust,
-.seg:hover:not(:disabled) .seg-card {
-  transform: translateY(-2px);
+.stand-bust {
+  filter: var(--contour) drop-shadow(0 2px 2px rgba(var(--shadow-rgb), 0.18));
 }
-.seg-card {
-  display: block;
-  height: 100%;
-  aspect-ratio: 2 / 3;
+.stand-card {
+  width: 36px;
+  margin: 0 auto;
   padding: 2px;
   box-sizing: border-box;
   border-radius: 5px;
-  background: var(--frame-fill) var(--frame-at) / var(--frame-size);
-  box-shadow: 0 2px 5px -3px rgba(var(--shadow-rgb), 0.45);
-  transition: transform var(--dur-base) var(--ease-out);
+  overflow: hidden;
 }
-.seg-card img {
+.stand-card img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: 3px;
 }
-.seg:not(.done):not(.on) .seg-bust,
-.seg:not(.done):not(.on) .seg-card {
-  filter: var(--dim);
+.stand-key:hover:not(:disabled) .stand-bust,
+.stand-key:hover:not(:disabled) .stand-card,
+.stand-key.on .stand-bust,
+.stand-key.on .stand-card {
+  transform: translateY(-4px);
 }
-.seg-bar {
-  display: block;
-  height: 5px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.78);
-  overflow: hidden;
+.stand-key.on .stand::before {
+  background: var(--c-400);
+  box-shadow: 0 2px 0 var(--c-500), 0 5px 10px -2px rgba(var(--c-500-rgb), 0.45);
 }
-.seg:not(.on) .seg-bar {
-  background: var(--c-200);
-}
-.seg-bar i {
-  display: block;
-  width: 0;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--grad-pearl);
-  transition: width var(--dur-stage) var(--ease-out);
-}
-.seg.done .seg-bar i {
-  width: 100%;
-}
-.seg-who {
+.stand-name {
+  max-width: 100%;
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-width: 0;
-  font-size: var(--fs-caption);
-  font-weight: 700;
+  gap: 3px;
+  font: 700 var(--fs-label)/1.3 var(--font);
   white-space: nowrap;
 }
-.seg-who > i {
-  flex: none;
-  width: 3.5px;
-  height: 11px;
-  border-radius: 1px;
-}
-.seg-who > span {
-  flex: 1;
+.stand-name > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.stand-name svg {
+  flex: none;
+  color: var(--ink-3);
+}
+.stand-key.done .stand-name svg {
+  color: var(--c-600, var(--c-700));
+}
+.stand-key.on .stand-name {
+  color: var(--ink);
+  font-weight: 800;
+}
+/* The turn of the standee on show, under its name. */
+.stand-key .tick {
+  left: 22%;
+  right: 22%;
+  bottom: 0;
+  background: var(--c-500);
+}
+.stands:has(:focus-visible) .tick {
+  animation-play-state: paused;
+}
 
 @container panel (max-width: 820px) {
-  .series,
-  .promise {
+  .series {
     display: none;
   }
   .banner-stage {
     --stage-gap: 18px;
     padding-right: 18px;
   }
-  .hand {
+  .feature-hand {
     width: calc(var(--card-w) * 1.22);
   }
-  .total > b {
-    font-size: 34px;
+  .stand {
+    width: 50px;
+    height: 50px;
   }
-  .featured {
-    gap: 6px;
-  }
-  .seg {
-    padding: 5px 6px 6px;
-  }
-  .seg-who {
-    gap: 3px;
-    font-size: var(--fs-caption);
+  .peek {
+    display: none;
   }
 }
 @container panel (max-width: 660px) {
@@ -1231,9 +1479,13 @@ h3 {
     gap: 18px;
     padding: 18px 16px 12px;
   }
-  .hand {
+  .feature-hand,
+  .card-hand {
     --hero-h: 214px;
     --card-w: 150px;
+  }
+  .card-hand {
+    align-self: center;
   }
   .wash {
     left: 50%;
@@ -1248,15 +1500,29 @@ h3 {
     margin-left: 0;
   }
 }
+/* A shorter panel: the forms and the standees give way before the last row slips under the action bar. */
+@container panel (max-height: 700px) {
+  .form-art {
+    height: 36px;
+  }
+  .stand {
+    width: 48px;
+    height: 48px;
+  }
+  .feature-slot {
+    min-height: 64px;
+  }
+}
 @container panel (max-height: 600px) {
   .form-art {
-    height: 46px;
+    height: 38px;
   }
-  .total > b {
-    font-size: 32px;
+  .stand {
+    width: 38px;
+    height: 38px;
   }
-  .seg-art {
-    display: none;
+  .lead {
+    padding-bottom: 8px;
   }
 }
 </style>

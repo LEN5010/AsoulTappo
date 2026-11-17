@@ -129,25 +129,11 @@ watch(recording, (slot) => {
 });
 
 // Every row is one height and a group's title with the gap above it takes one row's height too, so the rows of the two
-// columns line up. A setting that only matters with a switch on sits in that switch's row, so the row count depends
-// on the platform only. Rows now: 7 and 6 + the start rows (1 on macOS, 2 on Windows, none in the browser preview)
-// on the left; 3, 3 and 6 (5 in the preview) on the right. The whole rows a column is short by go above its last
-// group, so both columns end on one line: on Windows the right column is two rows short. The tomato timer's lengths
-// and switches live on its own page.
+// columns line up, and the groups that start level (窗口设置 and 关于, each under eight rows) keep their titles on one
+// line. A setting that only matters with a switch on sits in that switch's row. The columns end where their rows do:
+// the right one a few rows sooner. The tomato timer's lengths and switches live on its own page.
 type Group = "pet" | "window" | "online" | "sound" | "about";
 const COLUMNS: Group[][] = [["pet", "window"], ["online", "sound", "about"]];
-const rows = computed<Record<Group, number>>(() => ({
-  pet: 7,
-  window: 4 + HOTKEYS.length + (autostart.value?.supported ? 1 : 0) + (admin.value?.supported ? 1 : 0),
-  online: 3,
-  sound: 3,
-  about: isTauri ? 6 : 5,
-}));
-const lift = computed(() => {
-  const height = COLUMNS.map((c) => c.reduce((n, g) => n + rows.value[g] + 1, 0));
-  const top = Math.max(...height);
-  return COLUMNS.map((c, i) => (c.length > 1 ? top - height[i]! : 0));
-});
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
 
 // Start at login. The system holds the state; a failed change shows what the system says now.
@@ -245,7 +231,7 @@ async function exportLogFile() {
     </section>
 
     <div class="columns">
-      <div v-for="(column, ci) in COLUMNS" :key="ci" class="column" :style="{ '--lift': lift[ci] }">
+      <div v-for="(column, ci) in COLUMNS" :key="ci" class="column">
         <template v-for="group in column" :key="group">
           <section v-if="group === 'pet'" data-rise>
             <h4 class="ui-label"><span>桌宠表现</span></h4>
@@ -267,7 +253,7 @@ async function exportLogFile() {
               <div class="ui-row">
                 <label for="set-follow">鼠标爪跟随光标</label>
                 <span class="version-side">
-                  <span v-if="settings.mouseFollow" class="ui-ctl" title="跟随灵敏度">
+                  <span v-if="settings.mouseFollow" class="ui-ctl beside-switch" title="跟随灵敏度">
                     <RangeInput v-model="settings.mouseSensitivity" :min="0.1" :max="1" :step="0.05" aria-label="跟随灵敏度" />
                     <b class="ui-val">{{ settings.mouseSensitivity.toFixed(2) }}</b>
                   </span>
@@ -712,9 +698,6 @@ async function exportLogFile() {
 .columns .ui-group > .ui-row {
   height: 48px;
 }
-.column > section:last-child {
-  margin-top: calc(var(--lift, 0) * 48px);
-}
 .columns .ui-row.off > span:first-child {
   color: var(--ink-3);
 }
@@ -730,12 +713,23 @@ async function exportLogFile() {
 .columns .ui-ctl {
   width: 172px;
 }
+/* A slider with a switch after it: narrower by the switch and the gap, so it starts where the other sliders do. */
+.columns .ui-ctl.beside-switch {
+  width: calc(172px - 42px - 10px);
+  gap: 8px;
+}
+.columns .ui-ctl.beside-switch .ui-val {
+  width: 34px;
+}
+/* A row's name stays on one line. */
+.columns .ui-row > span:first-child,
+.columns .ui-row > label:first-child {
+  flex: none;
+  white-space: nowrap;
+}
 @container panel (max-width: 860px) {
   .columns {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .column > section:last-child {
-    margin-top: 0;
   }
   .profile {
     flex-wrap: wrap;

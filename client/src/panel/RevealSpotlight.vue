@@ -47,9 +47,15 @@ const leaving = ref(false);
 const fullReady = ref(false);
 const card = computed(() => props.entry.card);
 const skin = computed(() => props.entry.item.kind === "character");
+const skinChar = computed(() => (skin.value ? getCharacter(props.entry.item.ref) : undefined));
 const hidden = computed(() => card.value?.tier === "big" || card.value?.tier === "small");
 const big = computed(() => props.entry.drop.rarity === "legendary");
-/** Hidden cards wear their tier's frame, the same one their tile and the pool's hand show. */
+/** Short protection frame so rapid clicks or Space presses cannot accidentally skip an entrance climax. */
+const guardMs = computed(() => (props.calm ? 160 : big.value || skin.value ? 680 : 460));
+const canClose = ref(false);
+let guardTimer = 0;
+
+/** Hidden and limited cards wear their tier's frame, the same one their tile and the pool's hand show. */
 const frameTier = computed(() => cardFrame(card.value));
 /** The holo version's shading, when that is what came. */
 const foil = computed(() => (props.entry.holo ? card.value?.holo : undefined));
@@ -62,13 +68,16 @@ const word = computed(() => {
   return card.value ? cardWord(card.value) : "NEW";
 });
 const playing = computed(() => !!card.value?.video && landed.value && !leaving.value && pageActive.value);
-// A two-form skin shows what it does: once it has landed it changes into its second form and back, for as long as it
-// stays up.
+
+// A two-form skin shows what it does: once it has landed it changes into its second form and back, and the player can
+// also toggle or pin either form directly inside the spotlight (including under reducedMotion).
 const FORM_FIRST_MS = 900;
 const FORM_ON_MS = 3200;
 const FORM_OFF_MS = 1600;
-const twoForm = computed(() => skin.value && !props.calm && !!getCharacter(props.entry.item.ref)?.form);
+const twoForm = computed(() => !!skinChar.value?.form);
+const formThumbs = computed(() => (skinChar.value?.form ? [skinChar.value.bgSmall, skinChar.value.form.bgSmall] : null));
 const formOn = ref(false);
+const pinnedForm = ref<boolean | null>(null);
 const formPulse = ref(0);
 let formTimer = 0;
 function turnForm(on: boolean, after: number) {
@@ -78,12 +87,29 @@ function turnForm(on: boolean, after: number) {
     turnForm(!on, on ? FORM_ON_MS : FORM_OFF_MS);
   }, after);
 }
-watch(() => twoForm.value && landed.value && !leaving.value && pageActive.value, (show) => {
+watch(() => twoForm.value && !props.calm && landed.value && !leaving.value && pageActive.value && pinnedForm.value === null, (autoCycle) => {
   window.clearTimeout(formTimer);
-  formOn.value = false;
-  if (show) turnForm(true, FORM_FIRST_MS);
+  if (pinnedForm.value === null) formOn.value = false;
+  if (autoCycle) turnForm(true, FORM_FIRST_MS);
 });
-onBeforeUnmount(() => window.clearTimeout(formTimer));
+function selectForm(next: boolean) {
+  if (!twoForm.value || leaving.value) return;
+  window.clearTimeout(formTimer);
+  pinnedForm.value = next;
+  if (formOn.value !== next) {
+    formOn.value = next;
+    if (!props.calm) formPulse.value += 1;
+  }
+}
+function stepForm(dir?: number) {
+  if (!twoForm.value || leaving.value) return;
+  selectForm(dir === undefined ? !formOn.value : dir > 0);
+}
+onBeforeUnmount(() => {
+  window.clearTimeout(formTimer);
+  window.clearTimeout(guardTimer);
+});
+
 const memberColor = computed(() => characterColor(props.entry.item.characters[0] ?? ""));
 const BURST = Array.from({ length: 12 }, (_, n) => ({
   angle: `${n * 30 + (n % 2) * 11}deg`,
@@ -278,6 +304,9 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
 const go = ref<HTMLButtonElement>();
 onMounted(() => {
   go.value?.focus({ preventScroll: true });
+  guardTimer = window.setTimeout(() => {
+    canClose.value = true;
+  }, guardMs.value);
   if (props.calm) return;
   band.value?.animate([{ transform: LEFT }, { transform: "none" }], { duration: 300, easing: EASE_IN_OUT, fill: "both" });
   const start = onTile();
@@ -297,6 +326,11 @@ onMounted(() => {
     startSway();
   }, () => {});
 });
+
+function requestClose() {
+  if (!canClose.value || leaving.value) return;
+  void close();
+}
 
 async function close() {
   if (leaving.value) return;
@@ -329,28 +363,31 @@ async function close() {
   emit("done");
 }
 
-defineExpose({ close });
+defineExpose({ close, requestClose, stepForm });
 </script>
 
 <template>
   <div
-    class="spot" :class="[entry.tone, { skin, hidden, big, landed, leaving, calm }]" :style="entry.toneStyle"
-    role="group" :aria-label="`${entry.kind}：${entry.title}`" @click="close"
+    class="spot" :class="[entry.tone, { skin, hidden, big, landed, leaving, calm, paused: !pageActive }]" :style="entry.toneStyle"
+    role="group" :aria-label="`${entry.kind}：${entry.title}`" @click="requestClose"
   >
     <i ref="veil" class="veil" aria-hidden="true"></i>
     <div ref="band" class="band" aria-hidden="true">
       <i v-if="landed && !calm" class="flash"></i>
     </div>
     <div class="stage">
-      <div class="hero-cell" @pointermove="lean" @pointerleave="rest" @click.stop>
+      <div class="hero-cell" @pointermove="lean" @pointerleave="rest" @click.stop="twoForm && stepForm()">
+        <i class="spot-rays" aria-hidden="true"><i></i></i>
+        <i v-if="skin" class="skin-podium" aria-hidden="true"></i>
         <i v-if="landed && !calm" class="ring" aria-hidden="true"></i>
+        <i v-if="big && landed && !calm" class="ring ring-outer" aria-hidden="true"></i>
         <i v-if="formPulse && !leaving && !calm" :key="formPulse" class="ring form-ring" aria-hidden="true"></i>
         <div ref="hero" class="hero">
           <div ref="tilt" class="tilt">
             <template v-if="skin">
               <i ref="plate" class="plate" aria-hidden="true"></i>
-              <span ref="frameEl" class="frame" :class="{ shifted: formOn && !leaving }">
-                <img ref="pet" class="pet" :class="{ under: formOn }" :src="entry.art" :alt="entry.title" draggable="false" />
+              <span ref="frameEl" class="frame" :class="{ shifted: formOn && !leaving && !calm }">
+                <img ref="pet" class="pet" :class="{ under: formOn && landed && !leaving }" :src="entry.art" :alt="entry.title" draggable="false" />
                 <FormOverlay v-if="twoForm && landed && !leaving" class="pet-form" :name="entry.item.ref" :on="formOn" />
               </span>
             </template>
@@ -375,10 +412,19 @@ defineExpose({ close });
       </div>
       <div class="facts">
         <b class="word" aria-hidden="true"><i v-for="(c, n) in [...word]" :key="n" :style="{ '--n': n }">{{ c }}</i></b>
-        <p class="kind-row">
+        <div class="kind-row">
           <span class="ui-tag dark kind">{{ entry.kind }}</span>
-          <span v-if="twoForm" class="ui-tag form-tag" :class="{ second: formOn }">{{ formOn ? '二形态' : '一形态' }}</span>
-        </p>
+          <div v-if="twoForm && formThumbs" class="form-switch" role="group" aria-label="形态" @click.stop>
+            <button
+              v-for="(thumb, i) in formThumbs" :key="i" type="button"
+              class="form-pill" :class="{ on: formOn === !!i }" :aria-pressed="formOn === !!i"
+              @click="selectForm(!!i)"
+            >
+              <span class="form-mini" aria-hidden="true"><img :src="thumb" alt="" draggable="false" /></span>
+              <span>{{ i ? "二形态" : "一形态" }}</span>
+            </button>
+          </div>
+        </div>
         <h3>{{ entry.title }}</h3>
         <p class="who"><i :style="{ background: memberColor }"></i>{{ entry.who }}</p>
         <p class="own">
@@ -388,7 +434,11 @@ defineExpose({ close });
         </p>
       </div>
     </div>
-    <button ref="go" type="button" class="ui-btn primary large go" @click.stop="close">继续</button>
+    <div class="spot-foot" :class="{ ready: canClose }">
+      <button ref="go" type="button" class="ui-btn primary large go" :class="{ pulse: canClose && !calm }" @click.stop="requestClose">
+        继续<Icon name="forward" :size="16" />
+      </button>
+    </div>
   </div>
 </template>
 
@@ -414,11 +464,29 @@ defineExpose({ close });
   position: absolute;
   left: -4%;
   right: -4%;
-  top: 23%;
-  height: 54%;
+  top: 22%;
+  height: 56%;
   overflow: hidden;
   background: var(--tone-fill);
-  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.55), 0 18px 40px -24px var(--tone-glow);
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.58), 0 22px 44px -22px var(--tone-glow);
+}
+.band::before,
+.band::after {
+  content: "";
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.48) 18%, rgba(255, 255, 255, 0.48) 82%, transparent);
+  pointer-events: none;
+}
+.band::before { top: 9px; }
+.band::after { bottom: 9px; }
+.big .band {
+  box-shadow:
+    0 0 0 6px rgba(255, 255, 255, 0.72),
+    0 0 36px 4px rgba(var(--gold-rgb), 0.45),
+    0 24px 48px -20px var(--tone-glow);
 }
 .flash {
   position: absolute;
@@ -431,7 +499,7 @@ defineExpose({ close });
 }
 .stage {
   position: absolute;
-  inset: 0 0 64px;
+  inset: 0 0 68px;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   align-items: center;
@@ -441,6 +509,60 @@ defineExpose({ close });
   display: grid;
   place-items: center;
   height: 100%;
+}
+/* Slow radial spotlight beams behind the hero, masked cleanly so edges dissolve into the band. */
+.spot-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(82cqh, 520px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  border-radius: 50%;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 68%);
+  mask: radial-gradient(circle, #000 18%, transparent 68%);
+  transition: opacity 420ms var(--ease-out);
+}
+.landed .spot-rays {
+  opacity: 0.42;
+}
+.big.landed .spot-rays {
+  opacity: 0.62;
+}
+.spot-rays i {
+  position: absolute;
+  inset: -20%;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.88) 0 4.5deg, transparent 4.5deg 18deg);
+  animation: spot-rays-turn 72s linear infinite;
+}
+.calm .spot-rays i,
+.paused .spot-rays i,
+.leaving .spot-rays {
+  animation-play-state: paused;
+}
+.leaving .spot-rays {
+  opacity: 0;
+  transition-duration: 160ms;
+}
+/* Soft elliptical floor glow under a skin's desk scene so it stands on a lit stage. */
+.skin-podium {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  width: min(44cqw, 460px);
+  height: 46px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0.18) 48%, transparent 74%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.landed:not(.leaving) .skin-podium {
+  opacity: 1;
 }
 .ring {
   position: absolute;
@@ -454,8 +576,17 @@ defineExpose({ close });
   pointer-events: none;
   animation: ring-out 700ms var(--ease-out) both;
 }
+.ring-outer {
+  width: min(82cqh, 530px);
+  box-shadow: 0 0 0 2px var(--gold-soft), 0 0 38px 8px rgba(var(--gold-rgb), 0.72);
+  animation: ring-out 880ms var(--ease-out) 90ms both;
+}
 .form-ring {
   width: min(56cqh, 380px);
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 26px 5px color-mix(in srgb, var(--holo-lilac) 80%, transparent),
+    inset 0 0 22px 4px color-mix(in srgb, var(--holo-pink) 65%, transparent);
   animation: form-ring-out 560ms var(--ease-out) both;
 }
 .hero {
@@ -479,6 +610,12 @@ defineExpose({ close });
   border-radius: var(--radius-l);
   background: var(--surface);
   box-shadow: 0 0 0 5px #fff, 0 24px 44px -18px rgba(var(--shadow-rgb), 0.55);
+}
+.big .card {
+  box-shadow:
+    0 0 0 5px #fff,
+    0 0 32px 4px rgba(var(--gold-rgb), 0.52),
+    0 26px 48px -18px rgba(var(--shadow-rgb), 0.6);
 }
 /* A band of the tier's metal inside the white edge. Same proportions as RevealTile's frame. */
 .card.frame-gold,
@@ -580,14 +717,15 @@ defineExpose({ close });
   height: 100%;
   object-fit: contain;
   filter: var(--sticker-lg);
+  opacity: 1;
+  transition: opacity var(--dur-slow) var(--ease-out);
 }
 .skin.landed:not(.calm) .pet {
   animation: pet-hop 520ms var(--ease-spring) both;
 }
-/* The second form of a two-form skin fades in over the first, which then hides (as on the desktop). */
+/* Smoothly crossfades out as FormOverlay fades in, avoiding any silhouette pop at the end of the transition. */
 .pet.under {
-  visibility: hidden;
-  transition: visibility 0s linear var(--dur-slow);
+  opacity: 0;
 }
 .pet-form {
   filter: var(--sticker-lg);
@@ -677,23 +815,85 @@ defineExpose({ close });
   gap: 8px;
   margin: 14px 0 0;
 }
-.kind,
-.form-tag {
+.kind {
   padding: 0 12px;
   font-size: 17px;
   line-height: 30px;
   border-radius: var(--radius-key-s);
 }
-.form-tag {
-  --tag-bg: rgba(255, 255, 255, 0.88);
+/* Legendary hidden cards wear their gold foil tag. */
+.big .kind {
+  --tag-bg: var(--grad-gold);
   --tag-fg: var(--ink);
-  font-size: 15px;
-  transition: background var(--dur-base), color var(--dur-base), box-shadow var(--dur-base);
+  box-shadow: 0 0 0 1.5px #fff;
 }
-.form-tag.second {
-  --tag-bg: var(--grad-pearl);
-  --tag-fg: var(--night);
-  box-shadow: 0 0 0 2px #fff;
+/* Interactive dual-form keycaps so the player can toggle Form 1 / Form 2 right inside the spotlight. */
+.form-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.form-pill {
+  --key-top: rgba(255, 255, 255, 0.92);
+  --key-bottom: var(--key-white-shade);
+  --key-lip: var(--c-200);
+  --key-lip-h: 2px;
+  --key-y: 0px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px 0 5px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-key-s);
+  background: linear-gradient(180deg, var(--key-top), var(--key-bottom));
+  box-shadow: 0 var(--key-lip-h) 0 var(--key-lip), 0 3px 8px -3px rgba(var(--c-900-rgb), 0.25);
+  color: var(--ink-2);
+  font: 800 13px/1 var(--font);
+  cursor: pointer;
+  transform: translateY(var(--key-y));
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    box-shadow var(--dur-release) var(--ease-spring),
+    color var(--dur-fast);
+}
+.form-pill:hover:not(.on) {
+  --key-top: #fff;
+  --key-bottom: #fff;
+  --key-y: -1px;
+  color: var(--ink);
+}
+.form-pill.on {
+  --key-top: color-mix(in srgb, var(--holo-pink) 58%, #fff);
+  --key-bottom: color-mix(in srgb, var(--holo-lilac) 64%, #fff);
+  --key-lip: var(--pearl-deep);
+  --key-y: 1px;
+  --key-lip-h: 1px;
+  box-shadow: 0 0 0 1.5px #fff, 0 var(--key-lip-h) 0 var(--key-lip), 0 3px 8px -3px rgba(var(--c-900-rgb), 0.28);
+  color: var(--night);
+}
+.form-pill:active {
+  --key-y: 2px;
+  --key-lip-h: 0px;
+  transition-duration: var(--dur-press);
+}
+.form-mini {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.form-mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
 }
 /* A limited card's label is the pearl of its frame. */
 .tone-limited .kind {
@@ -766,11 +966,27 @@ h3 {
   stroke-width: 0;
   fill: currentColor;
 }
-.go {
+
+/* Bottom rhythm cue + continue keycap: steps softly from guard state into ready pulse. */
+.spot-foot {
   position: absolute;
   z-index: 2;
   right: 24px;
   bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  opacity: 0.58;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+.spot-foot.ready {
+  opacity: 1;
+}
+.leaving .spot-foot {
+  opacity: 0;
+  transition-duration: 140ms;
+}
+.go {
   min-width: 132px;
 }
 
@@ -780,6 +996,9 @@ h3 {
 @keyframes flash-out {
   from { opacity: 0.9; }
   to { opacity: 0; }
+}
+@keyframes spot-rays-turn {
+  to { rotate: 360deg; }
 }
 @keyframes hit {
   0% { translate: 0 0; }
@@ -841,13 +1060,13 @@ h3 {
   to { opacity: 1; transform: none; }
 }
 
-@container reveal (max-width: 600px) {
+@container reveal (max-width: 680px) {
   .stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .hero { height: min(62cqh, 420px); }
   .facts { padding-right: 18px; }
   .spark.s3, .spark.s4 { display: none; }
 }
-@container reveal (max-height: 480px) {
+@container reveal (max-height: 520px) {
   .band { top: 18%; height: 64%; }
   .hero { height: 70cqh; }
   h3 { margin: 6px 0; }

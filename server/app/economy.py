@@ -17,7 +17,7 @@ Weights are percentages unless said otherwise.
   older than its cards) gives its odds to common, and ``GET /api/economy`` shows that client the rates so folded.
   ``holoChance`` is the chance (0 to 100) that a draw of a card with a holo version (镭射款) is that version; without it
   there are none. Clients older than the holo versions never get one and are not sent it. ``banners`` are the limited
-  pools (see ``app/banners.py``): each {id, name, start, end, items, rate, pity}. A client is sent the ones it can
+  pools (see ``app/banners.py``): each {id, name, start, end, items, rate, rates, share, pity}. A client is sent the ones it can
   draw from, and the ids of every item a banner keeps out of the standing pool as ``held``.
 - ``craftCost``: shards to craft a missing item, by rarity.
 - ``checkin``: daily check-in prizes by amount; a prize pays its shards give or take ``spread`` (uniform), so the

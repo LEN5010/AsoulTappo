@@ -46,6 +46,8 @@ const GRID = 40;
 const BRUSH = 0.075;
 /** Long enough for the card to land. */
 const DEAL_MS = 460;
+/** Past this share of hard pity the sticker gauge glows softly. */
+const PITY_NEAR = 70;
 const NAMES: Record<CardKind, string> = { basic: "普通", premium: "豪华" };
 // The park opens only once the server's economy is known (ParkPage).
 const SCRATCH = parkScratch();
@@ -53,7 +55,7 @@ const ON_SALE = onSale();
 const EMOTE_SET = SCRATCH.cards.basic.emote?.set ?? "";
 const fmt = (n: number) => n.toLocaleString("en-US");
 /** Result tags by level: a miss and the coins back are plain, then coral, wine and gold. */
-const TAGS: Record<string, string> = { 0: "light", plain: "light", 1: "", 2: "dark", 3: "gold" };
+const TAGS: Record<string, string> = { 0: "light", plain: "light", 1: "coral", 2: "dark", 3: "gold frame-gold" };
 /** Stickers in the album lean a little, each its own way. */
 const leanOf = (n: number) => `${((n * 7) % 5) * 2 - 4}deg`;
 const emoteSrc = (key: string) => assetUrl(emoteCover(key));
@@ -67,8 +69,9 @@ const whole = ref<boolean | null>(null);
 const complete = computed(() => whole.value ?? ownedKeys.value.size >= SCRATCH_EMOTES.length);
 const pityMax = SCRATCH.cards.basic.emote?.pity ?? 10;
 const pityPercent = computed(() => Math.min(100, (pity.value / pityMax) * 100));
+const pityNear = computed(() => pityPercent.value >= PITY_NEAR && !calm.value);
 
-/** The plate the whole set unlocks, under the album as a partner at x0.7 would see it, standing still. */
+/** The plate the whole set unlocks, under the album as a partner at x0.7 would see it. */
 const albumPlate = allPlates().find((p) => p.kind === "sweep" && p.set === EMOTE_SET) ?? null;
 const PLATE_SCALE = 0.7;
 const plateBox = plateSize(PLATE_SCALE);
@@ -116,12 +119,18 @@ const lone = computed(() => old.value || offSale.value);
 const deck = computed<readonly CardKind[]>(() => (lone.value ? [kind.value] : ON_SALE));
 /** The column shows the shelf of the card in front, the first card's for one off sale. */
 const shelf = computed<CardKind>(() => (offSale.value ? FIRST : kind.value));
+/** A bought card has landed on the table and awaits revealing. */
+const canPeel = computed(() => !!card.value && !open.value && !dealing.value);
 
 const outcome = computed(() => (card.value ? outcomeOf(card.value.cells) : null));
 const cells = computed(() => card.value?.cells.map(cellOf) ?? Array.from({ length: 9 }, () => null));
 const result = computed(() => (open.value ? outcome.value : null));
 const level = computed<Level>(() => (result.value && card.value ? levelOf(result.value, card.value.kind, prize.value) : 0));
-const winAt = computed(() => new Set(result.value && result.value.kind !== "miss" ? result.value.at : []));
+const winList = computed(() => (result.value && result.value.kind !== "miss" ? result.value.at : []));
+const winAt = computed(() => new Set(winList.value));
+const winStep = (i: number) => Math.max(0, winList.value.indexOf(i));
+const cardTop = computed(() => topPrize(card.value?.kind ?? kind.value));
+
 /** What the card paid, as its tag says it: an amount once known, else the thing won. */
 const resultText = computed(() => {
   const r = result.value;
@@ -140,7 +149,7 @@ const resultText = computed(() => {
 const resultAmount = computed(() => resultText.value.startsWith("+"));
 
 // ---- a win's amount counts up on the tag, longer the bigger the win; a plain refund or no motion shows it at once
-const ROLL_MS: Record<1 | 2 | 3, number> = { 1: 600, 2: 900, 3: 1300 };
+const ROLL_MS: Record<1 | 2 | 3, number> = { 1: 580, 2: 880, 3: 1260 };
 const resultTarget = computed<number | null>(() => {
   const r = result.value;
   if (!r) return null;
@@ -149,9 +158,11 @@ const resultTarget = computed<number | null>(() => {
   return r.kind === "shards" ? r.amount : null;
 });
 const rolled = ref(0);
+const landed = ref(false);
 let rollFrame = 0;
 watch(resultTarget, (to) => {
   cancelAnimationFrame(rollFrame);
+  landed.value = false;
   if (to == null) {
     rolled.value = 0;
     return;
@@ -168,6 +179,7 @@ watch(resultTarget, (to) => {
     const t = Math.min(1, (now - start) / ms);
     rolled.value = Math.round(to * (1 - (1 - t) ** 3));
     if (t < 1) rollFrame = requestAnimationFrame(step);
+    else landed.value = true;
   };
   rollFrame = requestAnimationFrame(step);
 }, { immediate: true });
@@ -235,7 +247,8 @@ mark.onload = () => {
 const MARK_RATIO = 2287 / 721;
 
 const FALLBACK: Record<string, string> = {
-  "--c-400": "#FFAD8A", "--c-500": "#FC966E", "--c-600": "#F17D5C", "--c-700": "#C34637", "--gold": "#E59B35", "--gold-soft": "#FFE3A6",
+  "--c-200": "#FFDDCA", "--c-300": "#FFC6AA", "--c-400": "#FFAD8A",
+  "--c-500": "#FC966E", "--c-600": "#F17D5C", "--c-700": "#C34637", "--c-800": "#A12F35",
 };
 const rgbOf = (hex: string) => {
   const h = hex.replace("#", "");
@@ -264,9 +277,9 @@ function markIn(color: string, w: number, h: number): HTMLCanvasElement | null {
 }
 
 /**
- * Sizes `el` to its box and fills it with the coating of a [k] card: coral foil for the basic card, gold for the
- * premium one; one diagonal band of light across it, and the A-SOUL mark pressed in white in the middle. False while
- * the page has no size.
+ * Sizes `el` to its box and fills it with the metallic foil coating of a [k] card: warm coral foil for the basic card,
+ * burnished rose-wine foil within the coral ramp for the premium one (keeping --gold strictly for legendary wins),
+ * dual specular bands of light, an inset die-stamped border, and the A-SOUL mark embossed in white.
  */
 function drawCoat(el: HTMLCanvasElement, k: CardKind): boolean {
   const w = el.clientWidth;
@@ -279,29 +292,46 @@ function drawCoat(el: HTMLCanvasElement, k: CardKind): boolean {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const css = getComputedStyle(el);
   const tok = (name: string) => css.getPropertyValue(name).trim() || FALLBACK[name]!;
-  const gold = k === "premium";
+  const wine = k === "premium";
   const fill = ctx.createLinearGradient(0, 0, w, h);
   let shade: string;
-  if (gold) {
-    // --grad-gold, laid across the diagonal.
-    shade = mix(tok("--gold"), tok("--c-700"), 0.78);
-    fill.addColorStop(0, tok("--gold-soft"));
-    fill.addColorStop(0.54, tok("--gold"));
+  if (wine) {
+    // Burnished rose-wine metallic foil across the coral ramp (--c-300 .. --c-800).
+    shade = tok("--c-800");
+    fill.addColorStop(0, mix(tok("--c-300"), "#FFFFFF", 0.72));
+    fill.addColorStop(0.28, tok("--c-500"));
+    fill.addColorStop(0.62, tok("--c-700"));
     fill.addColorStop(1, shade);
   } else {
     shade = tok("--c-600");
-    fill.addColorStop(0, tok("--c-400"));
+    fill.addColorStop(0, mix(tok("--c-300"), "#FFFFFF", 0.8));
+    fill.addColorStop(0.45, tok("--c-400"));
     fill.addColorStop(1, tok("--c-500"));
   }
   ctx.fillStyle = fill;
   ctx.fillRect(0, 0, w, h);
+
+  // Dual diagonal specular bands so the untouched foil reads as brushed metal.
   const shine = ctx.createLinearGradient(0, 0, w, h);
-  shine.addColorStop(0.3, "rgba(255, 255, 255, 0)");
-  shine.addColorStop(0.41, `rgba(255, 255, 255, ${gold ? 0.5 : 0.36})`);
-  shine.addColorStop(0.47, "rgba(255, 255, 255, 0.12)");
-  shine.addColorStop(0.55, "rgba(255, 255, 255, 0)");
+  shine.addColorStop(0.22, "rgba(255, 255, 255, 0)");
+  shine.addColorStop(0.36, `rgba(255, 255, 255, ${wine ? 0.44 : 0.38})`);
+  shine.addColorStop(0.44, "rgba(255, 255, 255, 0.08)");
+  shine.addColorStop(0.52, "rgba(255, 255, 255, 0)");
+  shine.addColorStop(0.64, "rgba(255, 255, 255, 0)");
+  shine.addColorStop(0.71, `rgba(255, 255, 255, ${wine ? 0.22 : 0.18})`);
+  shine.addColorStop(0.78, "rgba(255, 255, 255, 0)");
   ctx.fillStyle = shine;
   ctx.fillRect(0, 0, w, h);
+
+  // Die-stamped foil frame hairline inside the coating edge.
+  ctx.strokeStyle = `rgba(255, 255, 255, ${wine ? 0.38 : 0.44})`;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(5.5, 5.5, Math.max(0, w - 11), Math.max(0, h - 11));
+  if (wine) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.strokeRect(8.5, 8.5, Math.max(0, w - 17), Math.max(0, h - 17));
+  }
+
   if (mark.complete && mark.naturalWidth) {
     const mw = Math.round(w * 0.5);
     const mh = Math.round(mw / MARK_RATIO);
@@ -313,9 +343,9 @@ function drawCoat(el: HTMLCanvasElement, k: CardKind): boolean {
     const under = markIn(shade, pw, ph);
     const face = markIn("#fff", pw, ph);
     if (under && face) {
-      ctx.globalAlpha = 0.75;
+      ctx.globalAlpha = 0.72;
       ctx.drawImage(under, x + 1, y + 1.5, mw, mh);
-      ctx.globalAlpha = 0.95;
+      ctx.globalAlpha = 0.96;
       ctx.drawImage(face, x, y, mw, mh);
       ctx.globalAlpha = 1;
     }
@@ -568,6 +598,23 @@ function press() {
   else void buy();
 }
 
+/**
+ * Space peels an already-bought card resting on the table (card && !open && !dealing), and NEVER buys a card.
+ * Combined with Space-blocking on .buy and distinct keys on the action buttons, spamming Space cannot spend coins.
+ */
+function onKey(e: KeyboardEvent) {
+  if (!active || e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (odds.value || history.value || plateView.value || document.querySelector("[data-overlay]")) return;
+  const el = document.activeElement as HTMLElement | null;
+  if (el?.closest?.("input, textarea, select, [contenteditable]")) return;
+  if (e.code !== "Space" && e.key !== " ") return;
+  if (canPeel.value) {
+    e.preventDefault();
+    e.stopPropagation();
+    finish();
+  }
+}
+
 let active = false;
 // The page is kept alive: mounting (the park may open while the page is shown) and coming back both load the table.
 onMounted(() => {
@@ -578,6 +625,7 @@ onActivated(enter);
 function enter() {
   if (active) return;
   active = true;
+  window.addEventListener("keydown", onKey);
   void load();
   void loadScratch();
   void nextTick(() => {
@@ -585,13 +633,18 @@ function enter() {
     paintIdle();
   });
 }
-onDeactivated(() => {
+function leave() {
+  if (!active) return;
   active = false;
+  window.removeEventListener("keydown", onKey);
   timers.forEach(clearTimeout);
   timers = [];
   dealing.value = false;
   last = null;
-});
+}
+onDeactivated(leave);
+onBeforeUnmount(leave);
+
 // Another save: its table starts empty, and its card still to reveal is asked for.
 watch(() => status.value?.player, (player, was) => {
   if (!was || player === was) return;
@@ -636,8 +689,18 @@ watch(() => status.value?.player, (player, was) => {
               <div class="field">
                 <template v-if="k === kind">
                   <ol class="cells" :class="{ veiled: !card || (!open && coated !== card.id) }">
-                    <li v-for="(c, i) in cells" :key="i" :class="{ win: winAt.has(i), lose: !!result && !winAt.has(i) }">
-                      <ScratchTile v-if="c" :cell="c" />
+                    <li
+                      v-for="(c, i) in cells" :key="i"
+                      :class="[
+                        { win: winAt.has(i), lose: !!result && !winAt.has(i) },
+                        winAt.has(i) && level === 3 ? 'frame-gold' : '',
+                      ]"
+                      :style="winAt.has(i) ? { '--wi': winStep(i) } : undefined"
+                    >
+                      <ScratchTile
+                        v-if="c" :cell="c" :hit="winAt.has(i)" :muted="!!result && !winAt.has(i)"
+                        :top="c.kind === 'shards' && c.amount === cardTop" :level="level"
+                      />
                     </li>
                   </ol>
                   <canvas
@@ -649,14 +712,24 @@ watch(() => status.value?.player, (player, was) => {
                 <i v-if="k === kind && card && !open && untouched && !calm" class="sheen" aria-hidden="true"></i>
               </div>
             </div>
+
+            <!-- Tactile quick-peel micro-keycap right under the scratching hand once scratching begins. -->
+            <button
+              v-if="k === kind && canPeel && !untouched" type="button" class="ui-btn small quick-peel"
+              @click="finish"
+            >
+              <Icon name="spark" :size="13" /><span>全部刮开</span>
+            </button>
+
             <b
               v-if="k === kind && result" :key="card?.id" class="ui-tag result"
-              :class="[TAGS[String(level)], { word: !resultAmount, still: level === 0 || level === 'plain' }]" role="status"
+              :class="[TAGS[String(level)], { word: !resultAmount, still: level === 0 || level === 'plain', landed }]" role="status"
             >
               <Icon v-if="resultAmount" name="shard" :size="26" />{{ resultAmount ? `+${fmt(rolled)}` : resultText }}
             </b>
             <button
-              v-if="k !== kind" type="button" class="swap" :aria-label="NAMES[k]" :disabled="!canSwap" @click="swap(k)"
+              v-if="k !== kind" type="button" class="swap" :aria-label="NAMES[k]" :title="canSwap ? NAMES[k] : undefined"
+              :disabled="!canSwap" @click="swap(k)"
             ></button>
           </div>
         </div>
@@ -668,42 +741,47 @@ watch(() => status.value?.player, (player, was) => {
         the cards swap. The showcase is left out while the premium card is off sale.
       -->
       <div class="column" data-rise>
-      <aside class="shelf album" :class="{ away: shelf !== 'basic' }" :inert="shelf !== 'basic'">
-        <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
-        <ol class="stickers ui-scroll">
-          <li
-            v-for="(e, i) in SCRATCH_EMOTES" :key="e.key"
-            :class="{ has: ownedKeys.has(e.key), fresh: fresh === e.key }" :title="ownedKeys.has(e.key) ? e.name : undefined"
-            :style="{ '--lean': leanOf(i) }"
-          >
-            <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" loading="lazy" decoding="async" draggable="false" />
-          </li>
-        </ol>
-        <div class="album-foot">
-          <b v-if="complete" class="done">已集齐</b>
-          <div v-else class="pity">
-            <span>保底<b>{{ pity }}</b><i>/ {{ pityMax }}</i></span>
-            <div class="ui-bar"><i :style="{ width: `${pityPercent}%` }"></i></div>
+        <aside class="shelf album" :class="{ away: shelf !== 'basic' }" :inert="shelf !== 'basic'">
+          <h4 class="ui-label"><span>阿草表情</span><small>{{ ownedKeys.size }} / {{ SCRATCH_EMOTES.length }}</small></h4>
+          <ol class="stickers ui-scroll">
+            <li
+              v-for="(e, i) in SCRATCH_EMOTES" :key="e.key"
+              :class="{ has: ownedKeys.has(e.key), fresh: fresh === e.key }" :title="ownedKeys.has(e.key) ? e.name : undefined"
+              :style="{ '--lean': leanOf(i) }"
+            >
+              <img :src="emoteSrc(e.key)" :alt="ownedKeys.has(e.key) ? e.name : ''" loading="lazy" decoding="async" draggable="false" />
+            </li>
+          </ol>
+          <div class="album-foot">
+            <p v-if="complete" class="done"><Icon name="check" :size="14" /><b>已集齐</b></p>
+            <div v-else class="pity" :class="{ near: pityNear }">
+              <span>保底<b>{{ pity }}</b><i>/ {{ pityMax }}</i></span>
+              <div class="ui-bar"><i :style="{ width: `${pityPercent}%` }"></i></div>
+            </div>
+            <button
+              v-if="albumPlate" type="button" class="album-plate" :class="{ locked: !plateOpen }"
+              :title="`预览铭牌：${albumPlate.name}`" @click="plateView = true"
+            >
+              <span class="plate-stage">
+                <NamePlate
+                  :card="albumPlate.id" :nick="plateNick" :color="characterColor(settings.character)"
+                  :width="plateBox.width" :height="plateBox.height" :font="plateFont"
+                  :still="!plateOpen || shelf !== 'basic' || calm"
+                />
+                <span v-if="!plateOpen" class="plate-lock" aria-hidden="true"><Icon name="lock" :size="11" /></span>
+              </span>
+              <i class="plate-ledge" aria-hidden="true"></i>
+            </button>
           </div>
-          <button
-            v-if="albumPlate" type="button" class="album-plate" :class="{ locked: !plateOpen }"
-            :title="`预览铭牌：${albumPlate.name}`" @click="plateView = true"
-          >
-            <NamePlate
-              :card="albumPlate.id" :nick="plateNick" :color="characterColor(settings.character)"
-              :width="plateBox.width" :height="plateBox.height" :font="plateFont" still
-            />
-          </button>
-        </div>
-      </aside>
+        </aside>
 
-      <!-- The premium card's prizes worth showing: the top amount, a skin and a big hidden card (ScratchShowcase.vue). -->
-      <aside
-        v-if="ON_SALE.includes('premium')" class="shelf prizes" :class="{ away: shelf !== 'premium' }" :inert="shelf !== 'premium'"
-      >
-        <h4 class="ui-label"><span>大奖</span></h4>
-        <ScratchShowcase :shown="shelf === 'premium'" />
-      </aside>
+        <!-- The premium card's prizes worth showing: the top amount, a skin and a big hidden card (ScratchShowcase.vue). -->
+        <aside
+          v-if="ON_SALE.includes('premium')" class="shelf prizes" :class="{ away: shelf !== 'premium' }" :inert="shelf !== 'premium'"
+        >
+          <h4 class="ui-label"><span>大奖</span></h4>
+          <ScratchShowcase :shown="shelf === 'premium'" />
+        </aside>
       </div>
     </div>
 
@@ -717,14 +795,17 @@ watch(() => status.value?.player, (player, was) => {
       <p v-if="error" class="ui-error stall-error" role="alert">{{ error }}</p>
       <span v-else-if="!lone" class="top"><small>最高</small><Icon name="shard" :size="18" /><b>{{ fmt(topPrize(kind)) }}</b></span>
       <div class="park-actions-main">
-        <button v-if="card && !open" type="button" class="ui-btn large peel" @click="finish">全部刮开</button>
+        <button v-if="card && !open" key="peel" type="button" class="ui-btn large peel" :disabled="dealing" @click="finish">
+          <span>全部刮开</span>
+        </button>
         <template v-else-if="toCoins">
           <span class="price"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</span>
-          <button type="button" class="ui-btn large go" @click="parkTab = 'coin'">去换驼币</button>
+          <button key="go" type="button" class="ui-btn large go" @click="parkTab = 'coin'">去换驼币</button>
         </template>
         <button
-          v-else type="button" class="ui-btn primary large buy" :class="{ pulse: canBuy && !card }"
-          :disabled="!canBuy && !unpaid && !(lone && settled)" :aria-busy="buying || paying" @click="press"
+          v-else key="buy" type="button" class="ui-btn primary large buy" :class="{ pulse: canBuy && !card && !calm }"
+          :disabled="!canBuy && !unpaid && !(lone && settled)" :aria-busy="buying || paying"
+          @keydown.space.prevent @keyup.space.prevent @click="press"
         >
           <span>{{ keyLabel }}</span>
           <small v-if="!unpaid && !lone && online" class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />×{{ cost }}</small>
@@ -747,12 +828,12 @@ watch(() => status.value?.player, (player, was) => {
 .floor {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(212px, 31%);
+  grid-template-columns: minmax(0, 1fr) minmax(216px, 32%);
   align-items: center;
   gap: 20px;
   --floor-l: 18px;
   --floor-t: 4px;
-  padding: var(--floor-t) 26px 4px var(--floor-l);
+  padding: var(--floor-t) 24px 4px var(--floor-l);
 }
 
 /* ---- the table: two tickets, one in front and one tilted behind it */
@@ -775,7 +856,7 @@ watch(() => status.value?.player, (player, was) => {
 .deck {
   --h: clamp(260px, calc(100cqh - 322px), 400px);
   --stub-h: 46px;
-  --pad: 16px;
+  --pad: 15px;
   --w: calc(var(--h) - var(--stub-h) + var(--pad));
   /* Far enough up that the name and price on the stub behind clear the front ticket. */
   --dx: calc(var(--w) * 0.1);
@@ -790,29 +871,36 @@ watch(() => status.value?.player, (player, was) => {
   width: var(--w);
   height: var(--h);
 }
-/* A ticket is a thing to keep, not a key: no lip. The shadow is a filter on the outer box, as the paper is cut. */
+/* A ticket is a physical keepsake, not a keycap: no lip. Drop shadow sits on the outer box outside the paper's mask. */
 .ticket {
   position: absolute;
   left: 0;
   bottom: 0;
   width: var(--w);
   height: var(--h);
-  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.14)) drop-shadow(0 6px 10px rgba(var(--c-900-rgb), 0.12));
-  transition: transform var(--dur-stage) var(--ease-out), filter var(--dur-base) var(--ease-out);
+  filter: drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.16)) drop-shadow(0 8px 14px rgba(var(--c-900-rgb), 0.14));
+  transition: transform 360ms var(--ease-out), filter var(--dur-base) var(--ease-out);
 }
 .ticket.front {
   z-index: 2;
 }
-/* The card being scratched lifts off the page a little more. */
+/* The card being scratched lifts off the page with crisper elevation. */
 .ticket.front.on {
-  filter: drop-shadow(0 2px 2px rgba(var(--c-900-rgb), 0.16)) drop-shadow(0 14px 18px rgba(var(--c-900-rgb), 0.2));
+  filter: drop-shadow(0 2px 3px rgba(var(--c-900-rgb), 0.18)) drop-shadow(0 16px 22px rgba(var(--c-900-rgb), 0.22));
 }
 .ticket.behind {
   z-index: 1;
+  filter: brightness(0.95) drop-shadow(0 1px 2px rgba(var(--c-900-rgb), 0.14)) drop-shadow(0 5px 10px rgba(var(--c-900-rgb), 0.12));
   transform: translate(var(--dx), calc(var(--dy) * -1)) rotate(6deg);
 }
-.ticket.behind:not(.locked):hover {
-  transform: translate(var(--dx), calc(var(--dy) * -1 - 6px)) rotate(4deg);
+.ticket.behind:not(.locked):hover,
+.ticket.behind:not(.locked):focus-within {
+  filter: brightness(1.02) drop-shadow(0 3px 5px rgba(var(--c-900-rgb), 0.18)) drop-shadow(0 12px 20px rgba(var(--c-900-rgb), 0.2));
+  transform: translate(calc(var(--dx) + 3px), calc(var(--dy) * -1 - 8px)) rotate(3.5deg);
+}
+.ticket.behind:not(.locked):active {
+  transform: translate(calc(var(--dx) + 1px), calc(var(--dy) * -1 - 3px)) rotate(4.5deg);
+  transition-duration: var(--dur-press);
 }
 .swap {
   position: absolute;
@@ -831,63 +919,106 @@ watch(() => status.value?.player, (player, was) => {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
 }
-/* The card itself: coral, with a half-round bite out of each side on the stub's perforations. */
+
+/* Cardstock: warm sunlit coral for basic, deep wine (--c-700/--c-800) with crisp specular bevel for premium.
+ * Half-round punch notches sit on the stub's perforation line; -webkit-mask precedes mask for WKWebView. */
 .paper {
-  --notch: calc(var(--stub-h) - 6px);
+  --notch: calc(var(--stub-h) - 5px);
   position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-l);
-  background: var(--grad-sky);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--c-400) 76%, #fff) 0%,
+    var(--c-400) var(--notch),
+    var(--c-500) var(--notch),
+    color-mix(in oklab, var(--c-500) 86%, var(--c-600)) 100%
+  );
+  -webkit-mask:
+    radial-gradient(circle at 0 var(--notch), transparent 10.5px, #000 11px),
+    radial-gradient(circle at 100% var(--notch), transparent 10.5px, #000 11px);
   mask:
-    radial-gradient(circle at 0 var(--notch), transparent 11px, #000 11.5px),
-    radial-gradient(circle at 100% var(--notch), transparent 11px, #000 11.5px);
+    radial-gradient(circle at 0 var(--notch), transparent 10.5px, #000 11px),
+    radial-gradient(circle at 100% var(--notch), transparent 10.5px, #000 11px);
+  -webkit-mask-composite: source-in;
   mask-composite: intersect;
 }
-/* The inner rule of the card backs; the premium card's is gold. */
+.premium .paper {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--c-700) 86%, var(--c-600)) 0%,
+    var(--c-700) var(--notch),
+    var(--c-800) var(--notch),
+    color-mix(in oklab, var(--c-800) 78%, var(--c-900)) 100%
+  );
+}
+/* Printed inner border and top catchlight; premium uses restrained white/rose bevel without abusing --gold. */
 .paper::before {
   content: "";
   position: absolute;
-  inset: 6px;
-  border-radius: var(--radius-m);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.72),
+    inset 0 0 0 6px transparent,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36);
+  pointer-events: none;
+}
+.paper::after {
+  content: "";
+  position: absolute;
+  inset: 5.5px;
+  border-radius: calc(var(--radius-l) - 5px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.56);
   pointer-events: none;
 }
 .premium .paper::before {
-  box-shadow: inset 0 0 0 3px var(--gold-soft), inset 0 0 0 4px rgba(var(--gold-rgb), 0.6);
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.42);
 }
-/* Printed on the stub: the A-SOUL mark, the name, the price and the card's number; a row of perforations under it. */
+.premium .paper::after {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.34), inset 0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+
+/* Printed on the stub: the A-SOUL mark, the name, the price capsule and the card's serial; perforations under it. */
 .stub {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   height: var(--stub-h);
   margin: 0;
-  padding: 2px 22px 0;
+  padding: 1px 20px 2px;
   box-sizing: border-box;
   color: var(--ink);
   white-space: nowrap;
   container: stub / inline-size;
 }
+.premium .stub {
+  color: var(--on-ink);
+  text-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.36);
+}
 .stub::after {
   content: "";
   position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 5px;
+  left: 18px;
+  right: 18px;
+  bottom: 3.5px;
   height: 3px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.85) 1.1px, transparent 1.6px) 0 50% / 8px 3px repeat-x;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.88) 1.25px, transparent 1.75px) 0 50% / 7.5px 3px repeat-x;
+}
+.premium .stub::after {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.58) 1.25px, transparent 1.75px) 0 50% / 7.5px 3px repeat-x;
 }
 .stub-mark {
   flex: none;
-  width: 58px;
+  width: 56px;
   aspect-ratio: 3.172;
   background: #fff;
-  mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
   -webkit-mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
 }
 .name {
   font: 800 var(--fs-section)/1 var(--font);
@@ -899,19 +1030,37 @@ watch(() => status.value?.player, (player, was) => {
   align-items: center;
   gap: 3px;
   font: 800 var(--fs-number)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
+}
+.stub .price {
+  padding: 3px 8px 3px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.48);
+  font-size: 15px;
+}
+.premium .stub .price {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--on-ink);
 }
 .price img,
 .buy-cost img {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   filter: drop-shadow(0 1px 1px rgba(var(--c-900-rgb), 0.25));
 }
 .serial {
   margin-left: auto;
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  letter-spacing: 0.12em;
-  opacity: 0.72;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.28);
+  font: 800 11px/1.2 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  opacity: 0.86;
+}
+.premium .serial {
+  background: rgba(255, 255, 255, 0.14);
 }
 /* A small ticket keeps its name and price; the number goes. */
 @container stub (max-width: 300px) {
@@ -919,14 +1068,20 @@ watch(() => status.value?.player, (player, was) => {
     display: none;
   }
 }
-/* The nine cells, and over them the coating, in a white window. */
+
+/* The nine cells, and over them the coating, in a crisp white window. */
 .field {
   position: relative;
   flex: 1;
   container-type: inline-size;
-  margin: 2px var(--pad) var(--pad);
+  margin: 3px var(--pad) var(--pad);
   border-radius: var(--radius-m);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92);
+  background: color-mix(in oklab, var(--c-200) 55%, var(--surface));
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.94), inset 0 1px 3px rgba(var(--c-900-rgb), 0.14);
+}
+.premium .field {
+  background: color-mix(in oklab, var(--c-700) 24%, var(--c-100));
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.88), inset 0 1px 4px rgba(var(--c-900-rgb), 0.28);
 }
 .ticket.deal {
   animation: deal-in 440ms var(--ease-out) both;
@@ -934,12 +1089,13 @@ watch(() => status.value?.player, (player, was) => {
 @keyframes deal-in {
   from { opacity: 0; transform: translateY(-18px) rotate(-3deg) scale(0.94); }
 }
+
 .cells {
   position: absolute;
-  inset: 0;
+  inset: 3px;
   display: grid;
   grid-template: repeat(3, minmax(0, 1fr)) / repeat(3, minmax(0, 1fr));
-  gap: 2.8cqw;
+  gap: 2.6cqw;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -954,40 +1110,59 @@ watch(() => status.value?.player, (player, was) => {
   place-items: center;
   min-width: 0;
   min-height: 0;
-  border-radius: var(--radius-m);
+  box-sizing: border-box;
+  border-radius: calc(var(--radius-m) - 2px);
   background: var(--c-100);
 }
 .ticket.on .cells li {
   background: var(--surface);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(var(--c-900-rgb), 0.08);
 }
-/* The three alike: framed in the prize's tone, the other six step back. */
+
+/* Three-of-a-kind progression: plain refund -> coral (lv-1) -> deep wine (lv-2) -> legendary gold (lv-3). */
 .cells .win {
-  --burst: rgba(var(--c-500-rgb), 0.7);
+  --burst: rgba(var(--c-500-rgb), 0.62);
+  --pop-delay: calc(var(--wi, 0) * 65ms);
   z-index: 1;
-  box-shadow: 0 0 0 3px var(--c-700), 0 0 14px 1px var(--burst);
-  animation: cell-pop 520ms var(--ease-spring) both;
+  background: linear-gradient(180deg, #fff, var(--c-50));
+  box-shadow: 0 0 0 2.5px var(--c-600), 0 0 14px 1px var(--burst);
+  animation:
+    cell-pop 520ms var(--ease-spring) var(--pop-delay) both,
+    win-pulse 2.4s var(--ease-in-out) calc(var(--pop-delay) + 520ms) infinite;
 }
-/* The coins back: framed, no glow and no pop. */
+/* Coins back / sub-2x refund: calm crisp outline, no pop or pulse. */
 .lv-plain .cells .win {
-  box-shadow: 0 0 0 2px var(--c-300);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--c-300), 0 1px 3px rgba(var(--c-900-rgb), 0.1);
   animation: none;
 }
 .lv-2 .cells .win {
-  box-shadow: 0 0 0 3px var(--c-800), 0 0 16px 2px var(--burst);
+  --burst: color-mix(in srgb, var(--c-700) 58%, transparent);
+  background: linear-gradient(180deg, #fff, var(--c-100));
+  box-shadow: 0 0 0 3px var(--c-800), 0 0 18px 2px var(--burst);
 }
 .lv-3 .cells .win {
-  box-shadow: 0 0 0 3px var(--gold), 0 0 20px 3px rgba(var(--gold-rgb), 0.8);
-  background: linear-gradient(180deg, #FFFBF1, var(--gold-soft));
+  --burst: rgba(var(--gold-rgb), 0.78);
+  border: 2.5px solid transparent;
+  background:
+    linear-gradient(180deg, #FFFDF6, var(--gold-soft)) padding-box,
+    var(--frame-fill) var(--frame-at) / var(--frame-size) border-box;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 22px 3px var(--burst);
 }
-.cells .lose > * {
-  opacity: 0.38;
-  transition: opacity var(--dur-slow) var(--ease-out);
+.cells .lose {
+  background: color-mix(in oklab, var(--c-50) 68%, var(--surface));
+  box-shadow: none;
+  transition: background var(--dur-slow) var(--ease-out);
 }
 @keyframes cell-pop {
   0% { transform: scale(0.86); }
-  55% { transform: scale(1.1); }
-  100% { transform: none; }
+  55% { transform: scale(1.09); }
+  100% { transform: scale(1); }
 }
+@keyframes win-pulse {
+  50% { filter: brightness(1.04); transform: scale(1.025); }
+}
+
 /* Behind both tickets, centred on the front one. */
 .burst {
   position: absolute;
@@ -1009,6 +1184,7 @@ watch(() => status.value?.player, (player, was) => {
   background:
     radial-gradient(circle, rgba(var(--gold-rgb), 0.5), transparent 58%),
     repeating-conic-gradient(rgba(var(--gold-rgb), 0.55) 0deg 9deg, transparent 9deg 24deg);
+  -webkit-mask: radial-gradient(circle closest-side, #000 46%, transparent 94%);
   mask: radial-gradient(circle closest-side, #000 46%, transparent 94%);
   animation: rays 3.2s var(--ease-out) both;
 }
@@ -1051,20 +1227,49 @@ watch(() => status.value?.player, (player, was) => {
   pointer-events: none;
   transition: opacity var(--dur-slow) var(--ease-out);
 }
-/* A band of light keeps crossing an untouched card. */
+/* Dual-band metallic sheen crossing an untouched active card. */
 .sheen {
   position: absolute;
   inset: 0;
   border-radius: var(--radius-m);
-  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.4) 50%, transparent 62%) 160% 0 / 260% 100% no-repeat;
-  animation: coat-sheen 3.2s var(--ease-in-out) infinite;
+  background: linear-gradient(
+    108deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.16) 41%,
+    rgba(255, 255, 255, 0.48) 48%,
+    rgba(255, 255, 255, 0.12) 54%,
+    transparent 62%
+  ) 165% 0 / 260% 100% no-repeat;
+  animation: coat-sheen 3s var(--ease-in-out) infinite;
   pointer-events: none;
 }
 @keyframes coat-sheen {
-  0%, 55% { background-position: 160% 0; }
-  100% { background-position: -60% 0; }
+  0%, 52% { background-position: 165% 0; }
+  100% { background-position: -65% 0; }
 }
-/* What the card paid, stuck across its bottom edge. */
+
+/* Quick-peel micro-keycap tucked at the ticket's foot once scratching starts: zero overlap with the 9 cells. */
+.quick-peel {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 0;
+  translate: -50% 50%;
+  gap: 4px;
+  padding: 0 13px;
+  box-shadow:
+    0 var(--key-lip-h) 0 var(--key-lip),
+    0 6px 14px -4px rgba(var(--c-900-rgb), 0.32);
+  animation: quick-in 200ms var(--ease-spring) both;
+}
+.quick-peel svg {
+  color: var(--c-600);
+}
+@keyframes quick-in {
+  from { opacity: 0; scale: 0.84; }
+}
+
+/* Result plaque stuck across the ticket's bottom edge, graded by celebration tier. */
 .result {
   position: absolute;
   z-index: 3;
@@ -1073,18 +1278,50 @@ watch(() => status.value?.player, (player, was) => {
   translate: -50% 50%;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 0 18px;
+  box-sizing: border-box;
   border-radius: var(--radius-m);
-  box-shadow: 0 3px 8px -3px rgba(var(--c-900-rgb), 0.35);
-  font: 800 36px/50px var(--font-latin);
+  box-shadow: 0 4px 12px -4px rgba(var(--c-900-rgb), 0.36);
+  font: 800 36px/48px var(--font-latin);
   /* Even digits, so the tag holds its width while the amount counts up. */
   font-variant-numeric: tabular-nums;
-  animation: tag-in 420ms var(--ease-pop) 120ms both;
+  animation: tag-in 420ms var(--ease-pop) 100ms both;
+}
+.result.light {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--c-200), 0 4px 10px -4px rgba(var(--c-900-rgb), 0.24);
+  color: var(--c-700);
+}
+.result.coral {
+  background: linear-gradient(180deg, var(--c-400), var(--c-500));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 5px 14px -4px rgba(var(--c-500-rgb), 0.65);
+  color: var(--ink);
+}
+.result.dark {
+  background: var(--grad-deep);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 16px -4px rgba(var(--c-900-rgb), 0.45);
+  color: var(--on-ink);
+  text-shadow: 0 1px 2px rgba(var(--c-900-rgb), 0.4);
+}
+.result.gold {
+  border: 2.5px solid transparent;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--gold-soft) 28%, #fff), var(--gold-soft) 56%, var(--gold)) padding-box,
+    var(--frame-fill) var(--frame-at) / var(--frame-size) border-box;
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), 0 6px 18px -4px rgba(var(--gold-rgb), 0.72);
+  color: var(--ink);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.result.gold svg {
+  color: color-mix(in oklab, var(--gold) 74%, var(--c-700));
+}
+.result.landed {
+  animation: tag-snap 240ms var(--ease-spring);
 }
 /* Words, not an amount: set in the text face. */
 .result.word {
-  font: 800 22px/50px var(--font);
+  font: 800 22px/48px var(--font);
   letter-spacing: 0.04em;
 }
 /* A miss and the coins back: the tag is just there. */
@@ -1092,7 +1329,10 @@ watch(() => status.value?.player, (player, was) => {
   animation: none;
 }
 @keyframes tag-in {
-  from { opacity: 0; scale: 0.5; }
+  from { opacity: 0; scale: 0.52; }
+}
+@keyframes tag-snap {
+  45% { scale: 1.08; }
 }
 
 /* ---- the column beside the table: the same frame for both cards, the one not in front hidden in place */
@@ -1114,7 +1354,7 @@ watch(() => status.value?.player, (player, was) => {
   margin-bottom: 8px;
 }
 
-/* ---- the album: 阿草's twenty stickers, a slot each */
+/* ---- the album: 阿草's twenty stickers, recessed silhouette grooves for unowned, tilted die-cut stickers for owned */
 .stickers {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1128,54 +1368,69 @@ watch(() => status.value?.player, (player, was) => {
   display: grid;
   place-items: center;
   aspect-ratio: 1;
+  box-sizing: border-box;
   border-radius: var(--radius-m);
-  background: var(--c-50);
+  border: 1.5px dashed var(--c-200);
+  background: var(--c-100);
+  box-shadow: inset 0 2px 4px rgba(var(--c-900-rgb), 0.08);
 }
 .stickers .has {
-  background: var(--c-100);
+  border: 0;
+  background: var(--c-50);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(var(--c-900-rgb), 0.08);
 }
-/* Owned: the sticker in colour, stuck on a little crooked; it straightens under the pointer. Contour only: a fifth
- * pass over twenty tiles drops frames during page turns. */
+/* Owned: the sticker in colour, stuck on a little crooked; it straightens and lifts under the pointer.
+ * Contour only at rest: a fifth shadow pass over twenty tiles would drop frames during page turns. */
 .stickers img {
   position: absolute;
-  inset: 12%;
-  width: 76%;
-  height: 76%;
+  inset: 13%;
+  width: 74%;
+  height: 74%;
   object-fit: contain;
   filter: var(--contour);
   user-select: none;
-  transition: rotate var(--dur-base) var(--ease-out), scale var(--dur-base) var(--ease-out), filter var(--dur-base) var(--ease-out);
+  transition:
+    rotate var(--dur-base) var(--ease-out),
+    scale var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    filter var(--dur-base) var(--ease-out);
 }
 .stickers .has img {
-  inset: 3%;
-  width: 94%;
-  height: 94%;
+  inset: 4%;
+  width: 92%;
+  height: 92%;
   rotate: var(--lean);
 }
 .stickers .has:hover img {
   rotate: 0deg;
-  scale: 1.08;
+  scale: 1.1;
+  filter: var(--sticker);
 }
-/* Not owned yet: the same picture in grey, opaque and straight, without the white edge; it lights up under the pointer. */
+/* Unowned: recessed silhouette impression in the slot, previewing softly on hover. */
 .stickers li:not(.has) img {
-  filter: grayscale(1);
+  filter: grayscale(1) brightness(0.84) contrast(0.82);
+  opacity: 0.44;
 }
 .stickers li:not(.has):hover img {
-  filter: none;
+  filter: grayscale(0.35);
+  opacity: 0.85;
+  scale: 1.04;
 }
 .stickers .fresh {
-  outline: 2px solid var(--c-500);
-  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--c-500), 0 0 12px rgba(var(--c-500-rgb), 0.48);
 }
 .stickers .fresh img {
   animation: cell-pop 560ms var(--ease-spring) 200ms both;
 }
+
 .album-foot {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
 }
 .pity {
-  padding-top: 12px;
+  --near-glow: rgba(var(--c-500-rgb), 0.65);
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-2);
@@ -1189,10 +1444,12 @@ watch(() => status.value?.player, (player, was) => {
 .pity b {
   margin-left: auto;
   font: 800 var(--fs-strong)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .pity span i {
   font: 800 var(--fs-label)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   font-style: normal;
   color: var(--ink-3);
 }
@@ -1200,30 +1457,97 @@ watch(() => status.value?.player, (player, was) => {
   height: 6px;
   margin-top: 4px;
 }
+.pity.near .ui-bar {
+  overflow: visible;
+}
+.pity.near .ui-bar > i {
+  box-shadow: 0 0 10px 1px var(--near-glow);
+  animation: pity-breathe 2.6s var(--ease-in-out) infinite;
+}
+@keyframes pity-breathe {
+  50% {
+    box-shadow: 0 0 4px 0 color-mix(in srgb, var(--near-glow) 42%, transparent);
+  }
+}
+
 .done {
-  padding-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
   font-size: var(--fs-strong);
   color: var(--c-700);
 }
-/* 阿草's plate under the album: grey until the set is whole. */
+
+/* Display cradle for 阿草's sweep NamePlate: a recessed --c-100 easel stand with a tactile pedestal ledge. */
 .album-plate {
+  --key-lip-h: 2px;
+  --key-y: 0px;
+  position: relative;
   display: flex;
-  justify-content: center;
-  margin-top: 8px;
-  padding: 4px 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px 6px;
   border: 0;
   border-radius: var(--radius-m);
-  background: none;
+  background: linear-gradient(180deg, var(--c-50), var(--c-100));
+  box-shadow:
+    0 var(--key-lip-h) 0 var(--c-200),
+    0 4px 10px -4px rgba(var(--c-900-rgb), 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  transform: translateY(var(--key-y));
   cursor: pointer;
+  transition: transform var(--dur-release) var(--ease-spring), box-shadow var(--dur-release) var(--ease-spring);
 }
-.album-plate > * {
+.album-plate.locked {
+  background: var(--c-100);
+}
+.album-plate:hover {
+  --key-y: -1px;
+  background: linear-gradient(180deg, #fff, var(--c-50));
+}
+.album-plate:active {
+  --key-y: 2px;
+  --key-lip-h: 0px;
+  transition-duration: var(--dur-press);
+}
+.plate-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform var(--dur-base) var(--ease-out);
 }
-.album-plate:hover > * {
-  transform: translateY(-2px);
+.album-plate:hover .plate-stage {
+  transform: translateY(-1px);
 }
-.album-plate.locked > * {
-  filter: grayscale(1);
+.album-plate.locked .plate-stage > :first-child {
+  filter: grayscale(0.88) brightness(0.94);
+}
+.plate-lock {
+  position: absolute;
+  right: -5px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(var(--c-900-rgb), 0.24);
+  color: var(--ink-2);
+}
+.plate-ledge {
+  width: 56%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-300);
+  opacity: 0.7;
+}
+.album-plate:not(.locked) .plate-ledge {
+  background: linear-gradient(90deg, transparent, var(--c-500), transparent);
+  opacity: 0.9;
 }
 .album-plate:focus-visible {
   outline: 2px solid var(--c-500);
@@ -1246,6 +1570,7 @@ watch(() => status.value?.player, (player, was) => {
 }
 .top b {
   font: 800 26px/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .buy,
@@ -1259,18 +1584,45 @@ watch(() => status.value?.player, (player, was) => {
 }
 
 .calm .ticket,
-.calm .stickers img {
+.calm .stickers img,
+.calm .album-plate,
+.calm .plate-stage {
   transition: none;
 }
 .calm .ticket.deal,
 .calm .ticket.lv-3,
 .calm .cells .win,
+.calm .quick-peel,
 .calm .result,
-.calm .stickers .fresh img {
+.calm .stickers .fresh img,
+.calm .pity.near .ui-bar > i {
   animation: none;
 }
 .calm .burst {
   display: none;
+}
+
+/* Compact desktop heights (e.g. 920×620 where panel height is 600px): 5-column sticker grid keeps the entire album,
+ * pity bar, NamePlate stand and bottom .park-actions visible without scrolling or clipping. */
+@container panel (max-height: 640px) {
+  .floor {
+    --floor-t: 4px;
+    padding-bottom: 4px;
+  }
+  .shelf .ui-label {
+    margin-bottom: 6px;
+  }
+  .stickers {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .album-foot {
+    gap: 6px;
+    padding-top: 7px;
+  }
+  .album-plate {
+    padding: 5px 8px 5px;
+  }
 }
 
 /* Narrow: the column goes under the table, the stickers in one row that scrolls sideways. */
@@ -1298,15 +1650,12 @@ watch(() => status.value?.player, (player, was) => {
   .album-foot {
     flex-direction: row;
     align-items: center;
-    gap: 16px;
+    gap: 14px;
+    padding-top: 4px;
   }
   .pity,
   .done {
     flex: 1;
-    padding-top: 4px;
-  }
-  .album-plate {
-    margin-top: 0;
   }
   .buy,
   .peel,
@@ -1314,15 +1663,11 @@ watch(() => status.value?.player, (player, was) => {
     min-width: 140px;
   }
 }
+
 @container panel (max-height: 560px) {
   .floor {
-    --floor-t: 6px;
-    padding-bottom: 10px;
-  }
-  /* Short: the album in five columns, so the column fits beside the ticket. */
-  .stickers {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 5px;
+    --floor-t: 4px;
+    padding-bottom: 6px;
   }
   .buy,
   .peel,

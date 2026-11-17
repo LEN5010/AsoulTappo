@@ -1,5 +1,5 @@
 """Limited pools (app/banners.py): featured items leave the standing pool until their banner ends, and a draw from a
-running banner has them in a tier of its own."""
+running banner finds them in a tier of their own or among the draws of their tier, at the banner's odds."""
 import pytest
 from fastapi.testclient import TestClient
 
@@ -119,6 +119,64 @@ def test_the_legendary_pity_goes_before_the_banners():
     assert second["featured"]
 
 
+#: A banner with odds of its own for two tiers, whose skins are found among the skins it gives.
+SHARED = {"rate": 0, "pity": None, "rates": {"skin": 3, "limited": 5}, "share": 40}
+
+
+def test_a_banner_rolls_its_own_odds_for_the_tiers_it_names():
+    # .02 is an epic at the standing pool's odds, and a skin where skins have 3%.
+    for pool, tier in ((None, "epic"), ("forms", "skin")):
+        g, clock = game(.02, .99, 0, m=manifest(**SHARED))
+        clock.t += 2 * DAY
+        assert g.resonate(TOKEN, 1, NEW, pool)["drops"][0]["rarity"] == tier
+
+
+def test_a_share_of_the_tiers_draws_are_its_featured_items():
+    # A skin, the share's roll inside 40%, the first of the missing ones.
+    g, clock = game(.002, .39, 0, m=manifest(**SHARED))
+    clock.t += 2 * DAY
+    out = g.resonate(TOKEN, 1, NEW, "forms")
+    assert out["drops"][0] == {"item": SKINS[0], "rarity": "skin", "new": True, "count": 1, "shards": 0, "featured": True}
+    assert out["resonance"]["banners"] == {"forms": {"pity": 0, "drawn": 1}}
+    assert out["resonance"]["pity"]["skin"] == 0
+
+
+def test_the_rest_of_the_tiers_draws_are_its_standing_items():
+    g, clock = game(.002, .4, 0, m=manifest(**SHARED))
+    clock.t += 2 * DAY
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["rarity"] == "skin" and "featured" not in drop and drop["item"] not in SKINS
+
+
+@pytest.mark.parametrize("share_roll, featured", [(.39, True), (.4, False)])
+def test_a_skin_from_the_saves_pity_is_a_featured_one_the_same_share_of_the_time(share_roll, featured):
+    # .9 is a common draw, but the save's skin pity is due: the skin it gives goes through the share's roll as well.
+    g, clock = game(.9, share_roll, 0, m=manifest(**SHARED))
+    pid = player_id_for(TOKEN)
+    g.store.update_player(pid, skin_pity=g.manifest.resonance["pity"]["skin"] - 1)
+    clock.t += 2 * DAY
+    out = g.resonate(TOKEN, 1, NEW, "forms")
+    drop = out["drops"][0]
+    assert drop["rarity"] == "skin" and (drop["item"] in SKINS) is featured and drop.get("featured", False) is featured
+    assert out["resonance"]["pity"]["skin"] == 0
+
+
+def test_a_shared_tier_with_every_featured_item_found_gives_its_standing_items():
+    g, clock = game(.002, 0, 0, m=manifest(**SHARED))
+    pid = player_id_for(TOKEN)
+    for iid in SKINS:
+        g.store.add_item(pid, iid, 0)
+    clock.t += 2 * DAY
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["rarity"] == "skin" and "featured" not in drop
+
+
+def test_the_client_is_told_a_banners_own_odds_and_share():
+    view = manifest(**SHARED).banners[0].view()
+    assert view["rates"] == {"skin": 3, "limited": 5} and view["share"] == 40
+    assert "rate" not in view and "pity" not in view
+
+
 @pytest.mark.parametrize("when", [0, 9 * DAY])
 def test_a_banner_that_is_not_running_refuses_the_draw_and_takes_nothing(when):
     g, clock = game(.5)
@@ -152,6 +210,11 @@ def test_a_featured_card_cannot_be_crafted_while_its_banner_holds_it():
     {"items": ["char:nobody"]},
     {"items": []},
     {"rate": 0},
+    {"rate": 0, "share": 0},
+    {"share": 120},
+    {"rates": {"common": 5}},
+    {"rates": {"skin": 99}},
+    {"rates": ["skin"]},
     {"pity": 0},
     {"end": "2020-01-01T00:00:00+08:00"},
     {"start": "2026-11-21T12:00:00"},
@@ -203,3 +266,34 @@ def test_the_draw_route_takes_the_banner(monkeypatch):
     assert client.post("/api/resonance/draw", json={"count": 1, "banner": "nope"}, headers=headers).status_code == 409
     eco = client.get("/api/economy", headers=headers).json()
     assert [b["id"] for b in eco["resonance"]["banners"]] == ["forms"] and eco["resonance"]["held"] == sorted(SKINS)
+
+
+def test_a_tier_at_zero_in_the_standing_pool_is_found_in_a_banner_that_rates_it():
+    # The standing pool keeps the limited tier at 0: its cards are found only where a banner gives the tier odds.
+    def closet(**over):
+        m = manifest(**over)
+        rates = m.resonance["rates"]
+        rates["common"] += rates["limited"]
+        rates["limited"] = 0
+        return m
+    # .17 is past every standing tier; with skins at 3% and the limited tier at 5% it is inside the limited range.
+    g, clock = game(.17, 0, 0, m=closet(**SHARED))
+    clock.t += 2 * DAY
+    assert g.resonate(TOKEN, 1, NEW)["drops"][0]["rarity"] == "common"
+    g, clock = game(.17, .99, 0, m=closet(**SHARED))
+    clock.t += 2 * DAY
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["rarity"] == "limited" and drop["new"] and "featured" not in drop
+    # The client is told the standing pool's 0 and the banner's own odds.
+    view = economy.client_view(g.manifest.economy, g.cfg, g.manifest.resonance_pool_for(NEW, clock.t))
+    assert view["resonance"]["rates"]["limited"] == 0
+
+
+def test_a_banners_common_cards_come_as_holo_versions_too():
+    m = manifest()
+    m.resonance["holoChance"] = 100
+    # A common card, as in the standing pool (tests/test_holo.py): tier, kind, item, then the holo roll.
+    g, clock = game(.5, 0, 0, 0, m=m)
+    clock.t += 2 * DAY
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["rarity"] == "common" and drop["holo"] is True

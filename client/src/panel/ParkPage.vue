@@ -8,12 +8,13 @@
 // that still waits for the first visit of the day (`gift` in the park's state) is asked for it here. While the page is
 // open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
 // without coins moving.
-import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { economy } from "../stores/economy";
 import { status } from "../stores/player";
 import { claimGift, loadPark, noPark, park, parkError } from "../stores/park";
 import { reducedMotion } from "../stores/theme";
 import { ACHAO } from "../ui/achao";
+import Icon from "../ui/Icon.vue";
 import { bandOf, clearFlash, flashedHost, flashHost, parkTab, type ParkTab } from "./park/band";
 import { popCoins } from "./park/pops";
 import ParkBand from "./park/ParkBand.vue";
@@ -98,14 +99,54 @@ async function enter() {
   }
 }
 
+/**
+ * Booth shortcuts while the park is shown and unlocked: `[` / `]` cycle booths and `Alt+1`..`Alt+4` jump directly,
+ * standing down when an overlay is up or focus is inside an editable field (and leaving plain `0`–`9` free for
+ * `MainPanel`'s sidebar nav and `LotterySection`'s number picker).
+ */
+function onPageKey(e: KeyboardEvent) {
+  if (!active || locked.value || noPark.value || !ready.value || e.isComposing || e.repeat) return;
+  if (document.querySelector("[data-overlay]")) return;
+  const el = (e.target as HTMLElement | null) ?? (document.activeElement as HTMLElement | null);
+  if (el?.closest?.("input, textarea, select, [contenteditable]")) return;
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    const m = /^Digit([1-4])$/.exec(e.code);
+    if (m) {
+      e.preventDefault();
+      tab.value = TABS[Number(m[1]) - 1]!.id;
+    }
+    return;
+  }
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "[" || e.key === "]")) {
+    e.preventDefault();
+    const at = TABS.findIndex((t) => t.id === tab.value);
+    const next = ((at < 0 ? 0 : at) + (e.key === "]" ? 1 : -1) + TABS.length) % TABS.length;
+    tab.value = TABS[next]!.id;
+  }
+}
+
+let listening = false;
+function setListening(on: boolean) {
+  if (on === listening) return;
+  listening = on;
+  if (on) window.addEventListener("keydown", onPageKey);
+  else window.removeEventListener("keydown", onPageKey);
+}
+
+onMounted(() => setListening(true));
 onActivated(() => {
   active = true;
+  setListening(true);
   void enter();
 });
 onDeactivated(() => {
   active = false;
+  setListening(false);
 });
-onBeforeUnmount(clearFlash);
+onBeforeUnmount(() => {
+  setListening(false);
+  clearFlash();
+});
 // Another save, a server that has just been reached, or the taps that open the park: load it again.
 watch(() => [status.value?.player, taps.value >= minTaps.value] as const, ([player, enough], [was, before]) => {
   if (active && player && (player !== was || (enough && !before))) void enter();
@@ -138,11 +179,17 @@ watch(() => status.value?.park?.gifted, (n) => {
           <p v-if="loadError" class="ui-error park-error" role="alert">{{ loadError }}</p>
           <p v-if="!ready" class="closed" role="status">连接服务器后开放</p>
           <div v-else-if="locked" class="lock" data-rise>
-            <ParkCoin :size="120" grey />
+            <div class="lock-medallion" aria-hidden="true">
+              <ParkCoin :size="112" grey />
+              <span class="lock-seal"><Icon name="lock" :size="15" /></span>
+            </div>
             <p class="lock-text">累计敲击 <b>{{ fmt(minTaps) }}</b> 下后开放</p>
-            <div class="lock-bar">
+            <div class="lock-card" role="progressbar" :aria-valuenow="taps" :aria-valuemin="0" :aria-valuemax="minTaps">
+              <div class="lock-meta">
+                <span><b>{{ fmt(taps) }}</b> / {{ fmt(minTaps) }}</span>
+                <em>{{ Math.floor(lockPercent) }}%</em>
+              </div>
               <div class="ui-bar"><i :style="{ width: `${lockPercent}%` }"></i></div>
-              <span><b>{{ fmt(taps) }}</b> / {{ fmt(minTaps) }}</span>
             </div>
           </div>
           <KeepAlive v-else>
@@ -164,7 +211,7 @@ watch(() => status.value?.park?.gifted, (n) => {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  padding: 28px 20px 14px 16px;
+  padding: 26px 20px 14px 16px;
 }
 .sheet {
   flex: 1;
@@ -203,48 +250,123 @@ watch(() => status.value?.park?.gifted, (n) => {
   text-align: center;
 }
 
-/* ---- the lock: a grey coin, and how far there is to go */
+/* ---- The lock: a sealed medallion well, the tap threshold, and a tonal progress plaque. */
 .lock {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 32px 22px 40px;
+  gap: 16px;
+  padding: 28px 22px 34px;
+}
+.lock-medallion {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 152px;
+  height: 152px;
+  border-radius: 50%;
+  background: var(--c-100);
+  box-shadow: inset 0 2px 5px rgba(var(--c-900-rgb), 0.08);
+}
+.lock-medallion::before {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border: 2px dashed var(--c-200);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.lock-seal {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 2px 6px -2px rgba(var(--c-900-rgb), 0.25);
+  color: var(--c-700);
 }
 .lock-text {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   font: 800 var(--fs-section)/1.4 var(--font);
   color: var(--ink);
+  text-align: center;
 }
 .lock-text b {
-  font: 800 24px/1 var(--font-latin);
+  margin: 0 2px;
+  font: 800 26px/1 var(--font-latin);
+  color: var(--c-700);
 }
-.lock-bar {
+.lock-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, 100%);
+  padding: 12px 16px 14px;
+  box-sizing: border-box;
+  border-radius: var(--radius-m);
+  background: var(--c-100);
+}
+.lock-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
-  width: min(360px, 100%);
-}
-.lock-bar .ui-bar {
-  flex: 1;
-}
-.lock-bar span {
   font: 800 var(--fs-number)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-2);
-  white-space: nowrap;
 }
-.lock-bar b {
+.lock-meta b {
+  font-size: 20px;
   color: var(--ink);
 }
+.lock-meta em {
+  font-style: normal;
+  color: var(--c-700);
+}
+.lock-card .ui-bar {
+  height: 10px;
+  border-radius: 5px;
+}
+.lock-card .ui-bar > i {
+  background: linear-gradient(90deg, var(--c-400), var(--c-500) 70%, var(--c-600));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.calm .lock-card .ui-bar > i {
+  transition: none;
+}
 
+@container panel (max-height: 640px) {
+  .park-page {
+    padding: 20px 18px 12px 14px;
+  }
+  .lock {
+    gap: 12px;
+    padding-block: 18px 22px;
+  }
+  .lock-medallion {
+    width: 132px;
+    height: 132px;
+  }
+}
 @container panel (max-height: 560px) {
   .park-page {
     padding-top: 10px;
   }
   .lock {
-    gap: 12px;
-    padding-block: 16px 20px;
+    gap: 10px;
+    padding-block: 12px 16px;
+  }
+  .lock-medallion {
+    width: 112px;
+    height: 112px;
+  }
+  .lock-medallion :deep(.park-coin) {
+    --size: 86px !important;
   }
 }
 @container panel (max-width: 680px) {

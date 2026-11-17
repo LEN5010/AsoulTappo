@@ -82,14 +82,14 @@ export const SKILL_NAMES: Record<string, string> = {
 /** What a skill does, in a few words. */
 export function skillText(k: RaceSkill): string {
   switch (k.id) {
-    case "burst": return `${k.chance}% 走两倍`;
-    case "chase": return `垫底时 +${k.by}`;
-    case "porter": return `驮着团子 +${k.by}`;
-    case "solo": return `${k.chance}% 甩下团子，每个 +${k.by}`;
-    case "dash": return "越过终点也算到";
-    case "shield": return "不被绊倒和传回";
-    case "climb": return "被踩到就爬上顶";
-    default: return "只靠骰子";
+    case "burst": return `${k.chance}% 概率走两倍点数`;
+    case "chase": return `排在最后时多走 ${k.by} 格`;
+    case "porter": return `背着团子时多走 ${k.by} 格`;
+    case "solo": return `${k.chance}% 独走，每留一只 +${k.by} 格`;
+    case "dash": return "超过终点时停在终点";
+    case "shield": return "不受绊倒和回退传送影响";
+    case "climb": return "被叠上时移到最上层";
+    default: return "无额外效果";
   }
 }
 
@@ -119,6 +119,8 @@ export interface RaceSetup {
   chance?: { sims: number } & Record<RaceKind, Record<string, number>>;
   popularity?: Record<string, number>;
 }
+
+export interface RacePace { lit: number; hop: number; gap: number; act: number; rest: number }
 
 /** One die of the opening, rolled for the order of play. */
 export interface OrderRoll { m: string; face: number }
@@ -155,6 +157,13 @@ export interface Race {
   /** The steps that open with a close-up of a member's skill (the first time it is at work), and how long each holds its step back. */
   cuts?: RaceCut[];
   cutMs?: number;
+  /**
+   * A race paced by the square (park_race.py paced_times): every step's own length, and the times it is made of:
+   * the mover lit, a hop of one square, the pause before a special square acts, a square that moves the group
+   * without walking it, and the rest after.
+   */
+  stepsMs?: number[];
+  pace?: RacePace;
   /** The lanes on the start line, top lane first. */
   start?: string[];
   /** Who moves first to last, every round; missing on races from before the opening dice. */
@@ -231,11 +240,25 @@ export function stepStart(race: Race, i: number): number {
   const slow = race.slowMs ?? step;
   const lead = (race.leadMs ?? 0) + (roundOf(i) + 1) * (race.rollMs ?? 0);
   const cuts = (race.cuts?.filter((c) => c.at < i).length ?? 0) * (race.cutMs ?? 0);
+  if (race.stepsMs) return cuts + lead + before(race.stepsMs)[Math.min(i, race.stepsMs.length)]!;
   return cuts + (i < slowFrom ? lead + i * step : lead + slowFrom * step + (i - slowFrom) * slow);
+}
+
+/** Running totals of a paced race's step lengths: [i] is what the steps before step i take. */
+const totals = new WeakMap<number[], number[]>();
+function before(steps: number[]): number[] {
+  let out = totals.get(steps);
+  if (!out) {
+    out = [0];
+    for (const ms of steps) out.push(out[out.length - 1]! + ms);
+    totals.set(steps, out);
+  }
+  return out;
 }
 
 /** How long step [i] lasts, ms. */
 export function stepLength(race: Race, i: number): number {
+  if (race.stepsMs) return race.stepsMs[i] ?? 1;
   const slowFrom = race.slowFrom ?? race.moves?.length ?? 0;
   return i < slowFrom ? race.stepMs ?? 1 : race.slowMs ?? race.stepMs ?? 1;
 }
@@ -259,7 +282,7 @@ export function roundDice(race: Race, r: number): OrderRoll[] {
  * Where playback is at server time [t] (ms): steps fully done, the step under way (or -1), and how far into it. While
  * the step's close-up is up it has not moved yet: [part] is 0 and [cut] how far into the close-up.
  */
-export interface Playhead { done: number; current: number; part: number; cut?: number }
+export interface Playhead { done: number; current: number; part: number; cut?: number; ms?: number }
 
 export function playhead(race: Race, t: number): Playhead {
   const moves = race.moves ?? [];
@@ -272,7 +295,10 @@ export function playhead(race: Race, t: number): Playhead {
     const cut = cutLength(race, i);
     if (at < from + cut) return { done: i, current: i, part: 0, cut: (at - from) / cut };
     const len = stepLength(race, i);
-    if (at < from + cut + len) return { done: i, current: i, part: (at - from - cut) / len };
+    if (at < from + cut + len) {
+      const ms = at - from - cut;
+      return { done: i, current: i, part: race.pace ? partAt(stepTimes(race, i), ms) : ms / len, ms };
+    }
   }
   return { done: moves.length, current: -1, part: 0 };
 }
@@ -306,10 +332,58 @@ export type StepStage = "lit" | "walk";
 export const stageOf = (part: number): StepStage => (part < HOP_AT ? "lit" : "walk");
 
 /** A step of [len] ms in ms from its start: the hop, and what a special square does. */
-export interface StepPhases { hopAt: number; hopLen: number; squareAt: number; pushLen: number }
+export interface StepPhases { len: number; hopAt: number; hopLen: number; squareAt: number; pushLen: number }
 
 export function stepPhases(len: number): StepPhases {
-  return { hopAt: len * HOP_AT, hopLen: len * HOP_LEN, squareAt: len * SQUARE_AT, pushLen: len * PUSH_LEN };
+  return { len, hopAt: len * HOP_AT, hopLen: len * HOP_LEN, squareAt: len * SQUARE_AT, pushLen: len * PUSH_LEN };
+}
+
+/**
+ * What a special square does in step [s], in squares walked: null when it does nothing, 0 when it moves the group
+ * without walking it (a portal, a flip, a climb onto the top). As park_race.py pushed().
+ */
+export function pushed(s: RaceStep): number | null {
+  if (s.end === undefined && !s.stack) return null;
+  if ((s.square === "boost" || s.square === "trip" || s.square === "again" || s.square === "hook") && s.end !== undefined) {
+    return Math.max(1, Math.abs(s.end - s.to));
+  }
+  return 0;
+}
+
+/**
+ * Step [i] of [race] in ms from its start. On a race paced by the square a hop takes the same time on every square:
+ * the hop lasts its squares, a square that acts follows after the pace's gap, and the step rests for what is left of
+ * its length. Else the step's length in the shares above.
+ */
+export function stepTimes(race: Race, i: number): StepPhases {
+  const len = stepLength(race, i);
+  const s = race.moves?.[i];
+  const pace = race.pace;
+  if (!pace || !race.stepsMs || !s) return stepPhases(len);
+  // The last round's steps are longer by the same factor in all their times.
+  const k = i >= (race.slowFrom ?? Infinity) && race.stepMs ? (race.slowMs ?? race.stepMs) / race.stepMs : 1;
+  const push = pushed(s);
+  const hopAt = pace.lit * k;
+  const hopLen = Math.max(0, s.steps) * pace.hop * k;
+  const squareAt = hopAt + hopLen + (push === null ? 0 : pace.gap * k);
+  const pushLen = push === null ? 0 : (push ? push * pace.hop : pace.act) * k;
+  // The server's length stands: times that would not fit in it shrink together.
+  const fit = Math.min(1, len / Math.max(1, squareAt + pushLen));
+  return { len, hopAt: hopAt * fit, hopLen: hopLen * fit, squareAt: squareAt * fit, pushLen: pushLen * fit };
+}
+
+/**
+ * How far a step is at [ms] from its start, in the shares above whatever its own times are: HOP_AT when the hop sets
+ * off, SQUARE_AT when the square acts (when the hop has landed, on a step with none), SQUARE_AT + PUSH_LEN when it is
+ * done, 1 at the end.
+ */
+export function partAt(p: StepPhases, ms: number): number {
+  const span = (from: number, to: number, a: number, b: number) => a + (b - a) * (to > from ? Math.min(1, Math.max(0, (ms - from) / (to - from))) : 1);
+  if (ms < p.hopAt) return span(0, p.hopAt, 0, HOP_AT);
+  if (ms < p.squareAt) return span(p.hopAt, p.squareAt, HOP_AT, SQUARE_AT);
+  const done = p.squareAt + p.pushLen;
+  if (p.pushLen > 0 && ms < done) return span(p.squareAt, done, SQUARE_AT, SQUARE_AT + PUSH_LEN);
+  return span(done, p.len, p.pushLen > 0 ? SQUARE_AT + PUSH_LEN : SQUARE_AT, 1);
 }
 
 /**

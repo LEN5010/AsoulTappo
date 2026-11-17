@@ -28,9 +28,17 @@ export function runningBanners(now: number): Banner[] {
   return (economy.value?.resonance.banners ?? []).filter((b) => b.start <= at && at < b.end).sort((a, b) => a.end - b.end);
 }
 
-/** The pool to open for [id]: the running limited pool that features it, else the standing pool (""). */
+/**
+ * The pool to open for [id]: the running limited pool that features it, or the one that gives its tier odds when the
+ * standing pool gives it none, else the standing pool ("").
+ */
 export function poolFor(id: string, now = Date.now()): string {
-  return runningBanners(now).find((b) => b.items.includes(id))?.id ?? "";
+  const running = runningBanners(now);
+  const featuring = running.find((b) => b.items.includes(id));
+  if (featuring) return featuring.id;
+  const rarity = getItem(id)?.rarity;
+  if (!rarity || !economy.value || baseRates()[rarity] > 0) return "";
+  return running.find((b) => (b.rates?.[rarity] ?? 0) > 0)?.id ?? "";
 }
 
 /** A banner's featured items this build knows, in the server's order. */
@@ -54,36 +62,71 @@ export function baseRates(): Record<Rarity, number> {
   return { ...NO_RATES, ...economy.value?.resonance.rates };
 }
 
+/** The tiers a draw at [rates] can give: a tier at 0 (the limited tier where only a limited pool rates it) is out. */
+export function tiersIn(rates: Record<Rarity, number>): Rarity[] {
+  return (Object.keys(rates) as Rarity[]).filter((r) => rates[r] > 0);
+}
+
 /**
- * A tier with nothing left to find gives its odds to common, unless it keeps rolling repeats (the server does the same).
- * All zero until the server's economy is known.
+ * The standing pool as its page counts it: without [held], and without the tiers the server gives no odds there.
+ * Before the server's economy is known nothing is left out.
  */
-export function effectiveRates(pool: ResonancePool, owned: Record<string, number>): Record<Rarity, number> {
+export function standingPool(held?: ReadonlySet<string>): ResonancePool {
+  const pool = poolOf(held);
+  if (!economy.value) return pool;
+  const rates = baseRates();
+  for (const r of Object.keys(pool) as Rarity[]) if (!(rates[r] > 0)) pool[r] = [];
+  return pool;
+}
+
+/**
+ * A tier with nothing left to find gives its odds to common, unless it keeps rolling repeats or is one of [kept]
+ * (the server does the same). [from] are the odds before that, the standing pool's unless given. All zero until the
+ * server's economy is known.
+ */
+export function effectiveRates(
+  pool: ResonancePool, owned: Record<string, number>, from?: Record<Rarity, number>, kept?: ReadonlySet<Rarity>,
+): Record<Rarity, number> {
   const res = economy.value?.resonance;
   if (!res) return { ...NO_RATES };
-  const rates = baseRates();
+  const rates = { ...(from ?? baseRates()) };
   const repeating = new Set(res.repeatTiers ?? []);
   for (const rarity of ["legendary", "skin", "epic", "limited", "rare", "uncommon"] as const) {
-    if (!repeating.has(rarity) && !pool[rarity].some((item) => !owned[item.id])) {
+    if (!repeating.has(rarity) && !kept?.has(rarity) && !pool[rarity].some((item) => !owned[item.id])) {
       rates.common += rates[rarity];
       rates[rarity] = 0;
     }
   }
+  rates.common = +rates.common.toFixed(6);
+  return rates;
+}
+
+/** The odds of a draw from [banner] by tier, before anything drops out: its own where it names them. */
+export function bannerBaseRates(banner: Banner): Record<Rarity, number> {
+  const rates = baseRates();
+  if (!banner.rates) return rates;
+  Object.assign(rates, banner.rates);
+  const others = Object.entries(rates).reduce((sum, [tier, rate]) => (tier === "common" ? sum : sum + rate), 0);
+  rates.common = +Math.max(0, 100 - others).toFixed(6);
   return rates;
 }
 
 /**
- * The odds of a draw from [banner]: its featured tier takes `rate` from common while the save lacks one of its items
- * (the server does the same), the rest is the standing pool's.
+ * The odds of a draw from [banner] (the server does the same). `tiers`: the banner's odds; a tier with a featured
+ * item left to find under `share` stays in the roll. `featured`: the featured tier's own `rate`, taken from common
+ * while the save lacks one of its items. `shared`: the tiers whose draws are featured items `share` percent of the
+ * time, for as long as one is left to find.
  */
 export function bannerRates(
   banner: Banner, pool: ResonancePool, owned: Record<string, number>,
-): { featured: number; tiers: Record<Rarity, number> } {
-  const tiers = effectiveRates(pool, owned);
-  if (!economy.value || !banner.items.some((id) => !owned[id])) return { featured: 0, tiers };
-  const featured = Math.min(banner.rate, tiers.common);
+): { featured: number; tiers: Record<Rarity, number>; shared: Rarity[] } {
+  const left = featuredItems(banner).filter((item) => !owned[item.id]);
+  const shared = banner.share ? [...new Set(left.flatMap((item) => item.rarity ?? []))] : [];
+  const tiers = effectiveRates(pool, owned, bannerBaseRates(banner), new Set(shared));
+  if (!economy.value || !left.length) return { featured: 0, tiers, shared: [] };
+  const featured = Math.min(banner.rate ?? 0, tiers.common);
   tiers.common = +(tiers.common - featured).toFixed(6);
-  return { featured, tiers };
+  return { featured, tiers, shared };
 }
 
 export function commonKindRates(pool: ResonancePool, owned: Record<string, number>): { card: number; emote: number } {

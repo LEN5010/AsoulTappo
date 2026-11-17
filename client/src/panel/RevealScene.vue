@@ -4,8 +4,8 @@
 // as a response lands and the page underneath would give the result away. They give nothing away
 // either: they uncover a board of identical backs, and only turning a tile shows what it is.
 // A repeat has already turned into shards on the server; once its face is up the board stamps it
-// and throws the shards into the counter at the foot, so nothing about repeats shows before a turn.
-import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef } from "vue";
+// and throws the shards into the counter, so nothing about repeats shows before a turn.
+import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef, watch } from "vue";
 import { assetUrl } from "../asset";
 import * as sfx from "../audio/sfx";
 import { characterColor } from "../manifest";
@@ -53,6 +53,8 @@ const SHARD_STEP_MS = 45;
 const SHARDS_AIRBORNE_MAX = 24;
 const SHARD_EASE = "cubic-bezier(0.12, 0.6, 0.88, 0.4)";
 const SHARD_SVG = '<svg viewBox="-2 0 28 24"><path d="M12 3l6 7-6 11-6-11z"/><path class="cut" d="M6 10h12M12 3l-2 7 2 11 2-11z"/></svg>';
+/** Brief breathing beat after the final flip/spotlight before Esc/Enter closes the board. */
+const SETTLE_BEAT_MS = 260;
 
 const calm = computed(() => reducedMotion.value);
 const phase = ref<"cover" | "board">("cover");
@@ -62,6 +64,8 @@ const entries = shallowRef<BoardEntry[]>([]);
 const opened = reactive(new Set<number>());
 const turned = reactive(new Set<number>());
 const spot = shallowRef<{ index: number; tile: HTMLElement | null } | null>(null);
+/** True during the 300ms flip before a spotlight lifts off its tile, locking concurrent flips. */
+const spotPending = ref(false);
 const auto = ref(false);
 /** Draws left as the board shows them. A repeat bumps the page's queue before its bands have covered the old board. */
 const frozen = ref<number | null>(null);
@@ -69,11 +73,13 @@ const left = computed(() => frozen.value ?? props.remaining ?? 0);
 let alive = true;
 let round = 0;
 let spotDone: (() => void) | undefined;
+let boardReadyAt = 0;
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const bands = ref<InstanceType<typeof RevealBands>>();
 const spotlight = ref<InstanceType<typeof RevealSpotlight>>();
+const repeatBtn = ref<HTMLButtonElement>();
 
 const grouped = computed(() => drops.value.length > DEAL_LIMIT);
 const single = computed(() => entries.value.length === 1);
@@ -82,14 +88,41 @@ const shape = computed(() => {
   const cols = Math.min(n, n > 6 ? 5 : n === 6 ? 3 : n);
   return { "--cols": cols, "--rows": Math.ceil(n / cols), "--deal-at": `${DEAL_AT_MS}ms` };
 });
-const sealedLeft = computed(() => entries.value.some((_, i) => !opened.has(i)));
-const newCount = computed(() => newItems(drops.value));
+const openedCount = computed(() => opened.size);
+const sealedCount = computed(() => Math.max(0, entries.value.length - opened.size));
+const sealedLeft = computed(() => sealedCount.value > 0);
+/** Counts only opened tiles so sealed cards never spoil whether new items are hiding among them. */
+const newCount = computed(() => newItems(entries.value.filter((_, i) => opened.has(i)).map((e) => e.drop)));
+
+/** High-tier hits revealed so far, summarized in the top tally bar on multi-draw boards. */
+const highlights = computed(() => {
+  let legendary = 0;
+  let skin = 0;
+  let limited = 0;
+  let holo = 0;
+  entries.value.forEach((e, i) => {
+    if (!opened.has(i)) return;
+    const n = e.drop.got;
+    if (e.drop.rarity === "legendary") legendary += n;
+    else if (e.drop.rarity === "skin") skin += n;
+    else if (e.holo) holo += n;
+    else if (e.drop.rarity === "limited") limited += n;
+  });
+  return [
+    ...(legendary ? [{ key: "legendary", label: "大隐藏", count: legendary }] : []),
+    ...(skin ? [{ key: "skin", label: "皮肤", count: skin }] : []),
+    ...(limited ? [{ key: "limited", label: "限定", count: limited }] : []),
+    ...(holo ? [{ key: "holo", label: "镭射款", count: holo }] : []),
+  ];
+});
 
 /** Tiles whose repeats have been stamped, and the shards that have reached the counter so far. */
 const exchanged = reactive(new Set<number>());
 const paid = ref(0);
 /** Bumped as each shard lands, to replay the counter's pop. */
 const bump = ref(0);
+const pendingStamps = ref(0);
+const flyingShards = ref(0);
 const flightLayer = ref<HTMLElement>();
 const scheduled = new Set<number>();
 const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -97,14 +130,32 @@ let stampAt = 0;
 let waiting = 0;
 let airborne: Animation[] = [];
 
+const unscheduledShards = computed(() =>
+  entries.value.some((e, i) => opened.has(i) && e.drop.shards > 0 && !exchanged.has(i)),
+);
+/** True while any opened duplicate is still waiting for its stamp or has shards in flight to the counter. */
+const settling = computed(() => unscheduledShards.value || pendingStamps.value > 0 || flyingShards.value > 0);
+
+function focusPrimary() {
+  root.value?.querySelector<HTMLElement>(".foot .primary")?.focus({ preventScroll: true });
+}
+watch(sealedLeft, (hasSealed) => {
+  if (!hasSealed) {
+    boardReadyAt = performance.now() + (calm.value ? 120 : SETTLE_BEAT_MS);
+    if (!spot.value) void nextTick(focusPrimary);
+  }
+});
+
 /** Stops what is still on its way: queued stamps and shards in the air. */
 function stopExchange() {
   for (const t of timers) clearTimeout(t);
   timers.clear();
   stampAt = 0;
   waiting = 0;
+  pendingStamps.value = 0;
   for (const a of airborne) a.cancel();
   airborne = [];
+  flyingShards.value = 0;
 }
 /** Clears the stamps and the counter, once the board they belong to is covered. */
 function clearExchange() {
@@ -140,15 +191,22 @@ function exchange(index: number, delay: number) {
   const at = Math.max(now + delay, stampAt);
   stampAt = at + (waiting > 6 ? STAMP_STEP_BUSY_MS : STAMP_STEP_MS);
   waiting += 1;
+  pendingStamps.value += 1;
   later(() => {
     waiting -= 1;
-    if (!alive || mine !== round) return;
+    if (!alive || mine !== round) {
+      pendingStamps.value = Math.max(0, pendingStamps.value - 1);
+      return;
+    }
     exchanged.add(index);
-    later(() => alive && mine === round && throwShards(index, shards), SHARDS_AFTER_STAMP_MS);
+    later(() => {
+      pendingStamps.value = Math.max(0, pendingStamps.value - 1);
+      if (alive && mine === round) throwShards(index, shards);
+    }, SHARDS_AFTER_STAMP_MS);
   }, at - now);
 }
 
-/** The shards leave the stamp in a fan, hang for a moment, then drop into the counter. */
+/** The shards leave the stamp in a fan, hang for a moment, then arc into the tally counter. */
 function throwShards(index: number, shards: number) {
   const layer = flightLayer.value;
   const tile = root.value?.querySelectorAll<HTMLElement>(".tile")[index];
@@ -166,6 +224,7 @@ function throwShards(index: number, shards: number) {
   const gold = entries.value[index]?.card?.tier === "small";
   const p0 = { x: sx - base.left, y: sy - base.top };
   const p3 = { x: to.left + to.width / 2 - base.left, y: to.top + to.height / 2 - base.top };
+  const upward = p3.y < p0.y;
   const count = airborne.length > SHARDS_AIRBORNE_MAX ? 1 : shards >= 300 ? 7 : shards >= 40 ? 4 : shards >= 15 ? 3 : 2;
   const each = Math.floor(shards / count);
   const mine = round;
@@ -176,7 +235,9 @@ function throwShards(index: number, shards: number) {
     const angle = ((-90 + spread + (Math.random() - 0.5) * 18) * Math.PI) / 180;
     const reach = (gold ? 70 : 48) + Math.random() * 26;
     const p1 = { x: p0.x + Math.cos(angle) * reach, y: p0.y + Math.sin(angle) * reach };
-    const p2 = { x: p3.x + (p1.x - p3.x) * 0.2, y: p3.y - 90 };
+    const p2 = upward
+      ? { x: p3.x + (p1.x - p3.x) * 0.26, y: Math.max(14, p3.y + 38) }
+      : { x: p3.x + (p1.x - p3.x) * 0.2, y: p3.y - 90 };
     const spin = (k % 2 ? 1 : -1) * (220 + Math.random() * 160);
     const frames: Keyframe[] = [];
     for (let i = 0; i <= 24; i++) {
@@ -200,11 +261,13 @@ function throwShards(index: number, shards: number) {
       fill: "both",
     });
     airborne.push(flight);
+    flyingShards.value = airborne.length;
     flight.finished.then(() => {
       if (alive && mine === round) credit(share);
     }, () => {}).finally(() => {
       piece.remove();
       airborne = airborne.filter((a) => a !== flight);
+      flyingShards.value = airborne.length;
     });
   }
 }
@@ -222,6 +285,7 @@ async function run(count = props.remaining ?? 1) {
   const mine = ++round;
   frozen.value = phase.value === "board" ? left.value : null;
   spot.value = null;
+  spotPending.value = false;
   artPreloader.clear();
   spotDone = undefined;
   auto.value = false;
@@ -250,13 +314,14 @@ async function run(count = props.remaining ?? 1) {
   preload(list);
   entries.value = list;
   list.forEach((e, i) => (!e.sealed || calm.value) && opened.add(i));
+  boardReadyAt = performance.now() + (calm.value ? 120 : SETTLE_BEAT_MS);
   phase.value = "board";
   frozen.value = null;
   await nextTick();
   // Tiles dealt face up (common ones in a grouped board) are stamped once they have landed.
   list.forEach((_, i) => opened.has(i) && exchange(i, DEAL_AT_MS + Math.min(i, 14) * 42 + STAMP_AFTER_DEAL_MS));
   if (!calm.value) await bands.value?.leave();
-  if (alive && mine === round) root.value?.querySelector<HTMLElement>(".foot .primary")?.focus({ preventScroll: true });
+  if (alive && mine === round) focusPrimary();
 }
 
 function showSpot(index: number): Promise<void> {
@@ -271,7 +336,8 @@ function showSpot(index: number): Promise<void> {
 function spotClosed() {
   sfx.stopTheme();
   spot.value = null;
-  void nextTick(() => root.value?.querySelector<HTMLElement>(".foot .primary")?.focus({ preventScroll: true }));
+  boardReadyAt = performance.now() + (calm.value ? 120 : SETTLE_BEAT_MS);
+  void nextTick(focusPrimary);
   const done = spotDone;
   spotDone = undefined;
   done?.();
@@ -289,24 +355,36 @@ async function turn(index: number) {
   sfx.flip();
   if (!entry.spot) return exchange(index, STAMP_AFTER_TURN_MS);
   const mine = round;
+  spotPending.value = true;
   await wait(calm.value ? 0 : SPOT_AFTER_MS);
+  spotPending.value = false;
   if (alive && mine === round) await showSpot(index);
   // The stamp lands as the card does, back on its tile.
   if (alive && mine === round) exchange(index, 0);
 }
 
 function press(index: number) {
-  if (auto.value || spot.value) return;
+  if (auto.value || spot.value || spotPending.value) return;
   void turn(index);
+}
+
+/** Turns the next sealed card in board order, Scrolling it into view on grouped multi-boards. */
+function turnNext() {
+  if (auto.value || spot.value || spotPending.value) return;
+  const next = entries.value.findIndex((_, i) => !opened.has(i));
+  if (next < 0) return;
+  const tile = root.value?.querySelectorAll<HTMLElement>(".tile")[next];
+  tile?.scrollIntoView({ block: "nearest", behavior: calm.value ? "auto" : "smooth" });
+  void turn(next);
 }
 
 /** Quiet tiles turn in a quick ripple first, then each spotlight in board order. */
 async function turnAll() {
-  if (auto.value || spot.value) return;
+  if (auto.value || spot.value || spotPending.value) return;
   auto.value = true;
   const mine = round;
-  const waiting = entries.value.map((_, i) => i).filter((i) => !opened.has(i));
-  const quiet = waiting.filter((i) => !entries.value[i]!.spot);
+  const waitingList = entries.value.map((_, i) => i).filter((i) => !opened.has(i));
+  const quiet = waitingList.filter((i) => !entries.value[i]!.spot);
   for (const i of quiet) {
     opened.add(i);
     if (!calm.value) turned.add(i);
@@ -315,7 +393,7 @@ async function turnAll() {
     if (!calm.value) await wait(TURN_STEP_MS);
     if (!alive || mine !== round) return;
   }
-  for (const i of waiting.filter((i) => entries.value[i]!.spot)) {
+  for (const i of waitingList.filter((i) => entries.value[i]!.spot)) {
     if (!alive || mine !== round) return;
     await turn(i);
   }
@@ -332,6 +410,13 @@ const closing = ref(false);
 const OUT_MS = 460;
 async function fadeOut() {
   if (closing.value) return;
+  // Credit any still-queued or airborne repeat shards before closing so the local tally ends complete.
+  if (settling.value) {
+    const total = entries.value.reduce((sum, e, i) => sum + (opened.has(i) ? e.drop.shards : 0), 0);
+    stopExchange();
+    entries.value.forEach((e, i) => opened.has(i) && e.drop.shards > 0 && exchanged.add(i));
+    if (total > paid.value) credit(total - paid.value);
+  }
   sfx.stopTheme();
   if (calm.value) {
     emit("close");
@@ -347,6 +432,7 @@ const solo = computed(() => (single.value ? entries.value[0] : undefined));
 /** Only a first copy gets the stamp; how many are owned is already in the line under the name. */
 const soloWord = computed(() => (solo.value?.drop.new ? "NEW" : ""));
 function repeat() {
+  if (spot.value || spotPending.value || frozen.value !== null || closing.value) return;
   const count = props.again ?? 1;
   emit("again");
   void run(count);
@@ -354,16 +440,88 @@ function repeat() {
 
 const root = ref<HTMLElement>();
 let release: (() => void) | undefined;
+
+/**
+ * Capture-phase keyboard handler:
+ * - Blocks auto-repeat (`e.repeat`) on Space / Enter / Escape so holding Space can NEVER rapid-fire or spend shards.
+ * - Space flips the next sealed card (or advances Spotlight after its guard frame), and stops on the settled board.
+ * - Enter flips all remaining sealed cards (or activates a specifically focused tile/button), and settles once ready.
+ * - Escape closes Spotlight, flips remaining sealed cards, and returns to the pool once all cards & shard flights settle.
+ */
 function onKey(e: KeyboardEvent) {
-  if (e.key === "Tab" && root.value) trapTab(root.value, e);
-  if (e.key !== "Escape" || phase.value !== "board" || closing.value) return;
-  if (spot.value) void spotlight.value?.close();
-  else if (sealedLeft.value) void turnAll();
-  else finish();
+  if (e.key === "Tab" && root.value) {
+    trapTab(root.value, e);
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+  const isActionKey = e.key === " " || e.key === "Enter" || e.key === "Escape";
+  if (e.repeat) {
+    if (isActionKey) e.preventDefault();
+    return;
+  }
+  if (phase.value !== "board" || closing.value || frozen.value !== null) {
+    if (isActionKey) e.preventDefault();
+    return;
+  }
+  if (spot.value) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      spotlight.value?.stepForm(-1);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      spotlight.value?.stepForm(1);
+    } else if (isActionKey) {
+      e.preventDefault();
+      spotlight.value?.requestClose();
+    }
+    return;
+  }
+  if (sealedLeft.value) {
+    if (e.key === " ") {
+      e.preventDefault();
+      turnNext();
+    } else if (e.key === "Enter") {
+      // Allow Enter on a specifically focused sealed tile or the "依次翻开" button to run its own click;
+      // otherwise Enter flips all remaining sealed cards in one sweep.
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.classList.contains("tile") || active?.classList.contains("step-btn")) return;
+      e.preventDefault();
+      void turnAll();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      void turnAll();
+    }
+    return;
+  }
+  // All cards are face-up on the board:
+  if (e.key === " ") {
+    // Never allow Space on the settled board to trigger repeat() (which spends shards) or close prematurely.
+    e.preventDefault();
+    return;
+  }
+  const settledReady = !settling.value && !spotPending.value && performance.now() >= boardReadyAt;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (settledReady) finish();
+  } else if (e.key === "Enter") {
+    if (document.activeElement === repeatBtn.value) {
+      if (!settledReady) e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    if (settledReady) finish();
+  }
 }
+
+/** Absorbs Space keyup on buttons inside the overlay so native button click-on-keyup never misfires. */
+function onKeyUp(e: KeyboardEvent) {
+  if (e.key === " ") e.preventDefault();
+}
+
 onMounted(async () => {
   sfx.prime();
-  window.addEventListener("keydown", onKey);
+  window.addEventListener("keydown", onKey, true);
+  window.addEventListener("keyup", onKeyUp, true);
   void run();
   await nextTick();
   release = takeFocus(root.value);
@@ -373,7 +531,8 @@ onBeforeUnmount(() => {
   stopExchange();
   artPreloader.clear();
   sfx.stopTheme(0.2);
-  window.removeEventListener("keydown", onKey);
+  window.removeEventListener("keydown", onKey, true);
+  window.removeEventListener("keyup", onKeyUp, true);
   release?.();
 });
 // Teleported content stays behind when its page turns away (a desk shortcut can do that).
@@ -391,6 +550,26 @@ onDeactivated(() => {
       role="dialog" aria-modal="true" aria-label="共鸣结果" tabindex="-1"
     >
       <section v-if="phase === 'board'" class="board" :class="{ grouped, single }">
+        <header v-if="!single" class="head">
+          <div class="tally">
+            <span class="pill total">
+              共<b>{{ drops.length }}</b>件
+              <template v-if="sealedLeft">
+                <i class="sep">·</i>已翻开<b>{{ openedCount }}</b><small>/{{ entries.length }}</small>
+              </template>
+            </span>
+            <span v-if="newCount" class="pill fresh-pill">
+              <Icon name="spark" :size="13" />新收藏<b>{{ newCount }}</b>
+            </span>
+            <span v-for="h in highlights" :key="h.key" class="pill hit-pill" :class="h.key">
+              {{ h.label }}<b>×{{ h.count }}</b>
+            </span>
+            <span v-if="exchanged.size" class="pill paid" :class="{ empty: !paid, active: settling }">
+              <Icon name="shard" :size="15" />兑换<b :key="bump" class="count">+{{ paid }}</b>碎片
+            </span>
+          </div>
+        </header>
+
         <div class="deal ui-scroll" :class="{ solo: !!solo }" :style="shape">
           <i v-if="solo" class="solo-band" :class="[opened.has(0) ? solo.tone : 'tone-sealed', { calm }]" :style="opened.has(0) ? solo.toneStyle : undefined" aria-hidden="true"></i>
           <RevealTile
@@ -413,19 +592,29 @@ onDeactivated(() => {
         </div>
 
         <footer class="foot">
-          <p class="tally">
+          <p v-if="single" class="tally solo-tally">
             <span class="total"><b>{{ drops.length }}</b>件</span>
             <span v-if="newCount"><Icon name="spark" :size="13" />新收藏 <b>{{ newCount }}</b></span>
             <span v-if="exchanged.size" class="paid" :class="{ empty: !paid }"><Icon name="shard" :size="15" />兑换 <b :key="bump" class="count">+{{ paid }}</b> 碎片</span>
           </p>
-          <button v-if="sealedLeft" type="button" class="ui-btn primary large" :class="{ pulse: !calm }" :disabled="auto" @click="turnAll">
-            <Icon name="spark" :size="16" />全部翻开
-          </button>
+          <i v-else class="foot-gap" aria-hidden="true"></i>
+
+          <template v-if="sealedLeft">
+            <button v-if="sealedCount > 1" type="button" class="ui-btn large step-btn" :disabled="auto || spotPending" @click="turnNext">
+              依次翻开
+            </button>
+            <button type="button" class="ui-btn primary large" :class="{ pulse: !calm }" :disabled="auto || spotPending" @click="turnAll">
+              <Icon name="spark" :size="16" />全部翻开
+            </button>
+          </template>
           <template v-else>
-            <button v-if="again && !left" type="button" class="ui-btn large" :disabled="!!spot || frozen !== null || closing" @click="repeat">
+            <button
+              v-if="again && !left" ref="repeatBtn" type="button" class="ui-btn large"
+              :disabled="!!spot || spotPending || frozen !== null || closing" @click="repeat"
+            >
               共鸣{{ again === 1 ? "一次" : "十次" }}
             </button>
-            <button type="button" class="ui-btn primary large" :disabled="!!spot || frozen !== null || closing" @click="finish">
+            <button type="button" class="ui-btn primary large" :disabled="!!spot || spotPending || frozen !== null || closing" @click="finish">
               {{ left ? `收下并继续（剩余 ${left} 次）` : "收下" }}
             </button>
           </template>
@@ -461,17 +650,109 @@ onDeactivated(() => {
   background: var(--c-50);
 }
 
+/* A warm floor under the board, so the page is not bare white. */
 .board {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
+  background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--c-200) 75%, transparent));
 }
+
+/* Top summary strip for 10-pull and multi-pull boards: obtained count, flip progress, highlights and total converted shards. */
+.head {
+  flex: none;
+  padding: 12px 26px 0;
+}
+.head .tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-paper);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.pill b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  color: var(--ink);
+}
+.pill small {
+  font: 800 var(--fs-body)/1 var(--font-latin);
+  color: var(--ink-3);
+}
+.sep {
+  margin: 0 2px;
+  font-style: normal;
+  color: var(--c-300);
+}
+.fresh-pill {
+  background: var(--c-100);
+  box-shadow: none;
+  color: var(--c-700);
+}
+.fresh-pill b {
+  color: var(--c-700);
+}
+.fresh-pill :deep(svg) {
+  stroke-width: 0;
+  fill: var(--c-500);
+}
+.hit-pill {
+  font-weight: 800;
+  box-shadow: none;
+}
+.hit-pill.legendary {
+  background: var(--grad-gold);
+  color: var(--ink);
+}
+.hit-pill.skin {
+  background: var(--c-200);
+  color: var(--ink);
+}
+.hit-pill.limited {
+  background: var(--grad-pearl);
+  color: var(--night);
+}
+.hit-pill.limited b {
+  color: var(--night);
+}
+.hit-pill.holo {
+  background: var(--night);
+  color: #fff;
+}
+.hit-pill.holo b {
+  color: var(--holo-cream);
+}
+.head .paid {
+  margin-left: auto;
+  background: var(--surface);
+  box-shadow: var(--shadow-paper), inset 0 0 0 1.5px var(--c-200);
+  color: var(--ink);
+  transition: opacity 180ms var(--ease-out), box-shadow var(--dur-base);
+}
+.head .paid.active {
+  box-shadow: var(--shadow-paper), inset 0 0 0 1.5px var(--c-500);
+}
+
 .deal {
   --gap-x: 20px;
-  --gap-y: 18px;
-  --caption: 44px;
-  --tile-max: 188px;
+  --gap-y: 16px;
+  --caption: 42px;
+  --tile-max: 184px;
   flex: 1;
   min-height: 0;
   container: deal / size;
@@ -480,7 +761,7 @@ onDeactivated(() => {
   align-content: center;
   justify-content: center;
   gap: var(--gap-y) var(--gap-x);
-  padding: 22px 28px 10px;
+  padding: 14px 28px 10px;
   box-sizing: border-box;
   /* cq units measure the content box, inside the padding. */
   --tile-w: min(
@@ -492,6 +773,7 @@ onDeactivated(() => {
 /* Leaves room for the facts column beside it. */
 .single .deal {
   --tile-max: min(270px, 42cqw);
+  padding-top: 22px;
 }
 .grouped .deal {
   display: grid;
@@ -508,12 +790,15 @@ onDeactivated(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 20px 15px 24px;
+  padding: 11px 20px 14px 24px;
   border-radius: 20px 20px 0 0;
   background: var(--surface);
   box-shadow: 0 -10px 28px -18px rgba(var(--shadow-rgb), 0.38), 0 -1px 2px rgba(var(--shadow-rgb), 0.05);
 }
-.tally {
+.foot-gap {
+  flex: 1;
+}
+.solo-tally {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -525,26 +810,26 @@ onDeactivated(() => {
   font-weight: 700;
   color: var(--ink-2);
 }
-.tally span {
+.solo-tally span {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
   white-space: nowrap;
 }
-.tally b {
+.solo-tally b {
   font: 800 var(--fs-heading)/1 var(--font-latin);
   color: var(--ink);
 }
-.tally svg {
+.solo-tally :deep(svg) {
   align-self: center;
   stroke-width: 0;
   fill: var(--c-500);
 }
 .foot .ui-btn {
-  min-width: 132px;
+  min-width: 126px;
 }
 /* Shards land here; its icon is drawn like a shard in flight. */
-.tally .paid svg {
+.tally .paid :deep(svg) {
   stroke: #fff;
   stroke-width: 1.6;
   fill: var(--c-500);
@@ -613,19 +898,17 @@ onDeactivated(() => {
 .closing .flights {
   animation: fade-out 160ms var(--ease-in) both;
 }
-@container reveal (max-width: 560px) {
-  .tally .total {
+@container reveal (max-width: 640px) {
+  .solo-tally .total {
     display: none;
+  }
+  .foot {
+    justify-content: flex-end;
   }
   .foot .ui-btn {
     min-width: 0;
     padding: 0 18px;
   }
-}
-
-/* A warm floor under the board, so the page is not bare white. */
-.board {
-  background: linear-gradient(180deg, transparent 45%, color-mix(in srgb, var(--c-200) 75%, transparent));
 }
 
 /* Single draw: the card on a band of its tone, the facts beside it. */
@@ -664,6 +947,10 @@ onDeactivated(() => {
   translate: 0 -24px;
   color: var(--tone-ink, var(--ink));
   animation: solo-facts-in 380ms var(--ease-out) 160ms both;
+}
+.tone-legendary .solo-kind {
+  --tag-bg: var(--grad-gold);
+  --tag-fg: var(--ink);
 }
 .tone-limited .solo-kind {
   --tag-bg: var(--grad-pearl);
@@ -744,7 +1031,7 @@ onDeactivated(() => {
 .solo-facts .own small b {
   font-size: 17px;
 }
-.solo-facts .own svg {
+.solo-facts .own :deep(svg) {
   stroke-width: 0;
   fill: currentColor;
 }
@@ -753,6 +1040,7 @@ onDeactivated(() => {
 .closing .tile {
   animation: tile-out 300ms var(--ease-in) calc(var(--i) * 18ms) both;
 }
+.closing .head,
 .closing .solo-band,
 .closing .solo-facts,
 .closing .foot {

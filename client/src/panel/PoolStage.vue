@@ -1,32 +1,29 @@
 <script setup lang="ts">
-// Resonance stage: the page itself. The dynamic cards are held as a fanned hand in front of slow rays
-// and a soft wash of the front card's colours; the front card leans toward the pointer. Beside it the
-// page names the card and sums up the collection: the total, a gauge per tier, then the two special collections (the
-// 衣橱 series and the holo versions, each in its own material), and the skins. The lineup deals the next card on its
-// own.
+// Resonance stage: the page itself. The dynamic cards are held as a fanned hand (CardHand.vue) in front of a soft
+// wash of the front card's colours. Beside it the
+// page names the card and sums up the collection: the total, the tiers side by side as one instrument, then the
+// special collections as rows (CollectionRows.vue: the holo versions, and the 衣橱 series where this pool gives its
+// tier odds), and the skins.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { cardFrame, cardLabel, cardWord, ownsHolo, poolName, TIER_LABEL } from "../cards";
+import { cardLabel, cardWord, ownsHolo, poolName, TIER_LABEL } from "../cards";
 import { characters, getCharacter } from "../characters";
 import { getCard, characterColor, manifest, type Rarity } from "../manifest";
 import type { Item } from "../items";
-import { allPlates, plateMembers, type Plate } from "../pet/plates";
-import { heldItems, poolOf } from "../resonance";
+import type { Plate } from "../pet/plates";
+import { heldItems, standingPool } from "../resonance";
 import { collection } from "../stores/player";
 import { economy } from "../stores/economy";
 import { reducedMotion } from "../stores/theme";
-import { openPanel, ui } from "../stores/ui";
-import { tiltTransform } from "../holo/shader";
-import { useTilt } from "../holo/useTilt";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
+import CardHand from "./CardHand.vue";
+import CollectionRows from "./CollectionRows.vue";
 
 const props = defineProps<{ busy: boolean; paused?: boolean }>();
 const emit = defineEmits<{ inspect: [item: Item]; plate: [plate: Plate] }>();
 
-const LINEUP_SIZE = 7;
-const FAN_SIZE = 3;
 const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "legendary", label: "大隐藏", icon: "crown" },
   { rarity: "skin", label: "皮肤", icon: "shirt" },
@@ -36,8 +33,9 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
   { rarity: "common", label: "普通", icon: "star5" },
 ];
 
-// The standing pool: what a limited pool keeps to itself for now is not counted or shown here.
-const pool = computed(() => poolOf(heldItems()));
+// The standing pool: what a limited pool keeps to itself for now, and a tier only a limited pool gives odds, is not
+// counted or shown here.
+const pool = computed(() => standingPool(heldItems()));
 const all = computed(() => Object.values(pool.value).flat());
 /** The dynamic cards on show. A limited pool has not featured one of them so far; the hand is dealt once. */
 const previews = [...pool.value.legendary, ...pool.value.epic].filter((i) => i.kind === "card");
@@ -52,124 +50,20 @@ const meter = computed(() =>
     return { ...s, got, total: pool.value[s.rarity].length, fill: `${(got / pool.value[s.rarity].length) * 100}%` };
   }),
 );
-/** The newest of [owned]: the first one among the recent drops, else the last in catalogue order. */
-function newest<T extends { id: string }>(owned: readonly T[], item: (x: T) => string): T | undefined {
-  const byItem = new Map(owned.map((x) => [item(x), x]));
-  for (const drop of collection.recent) {
-    const hit = byItem.get(drop.item);
-    if (hit) return hit;
-  }
-  return owned.at(-1);
-}
-const fill = (got: number, total: number) => `${total ? (got / total) * 100 : 0}%`;
-/** The limited tier: one series plate per member, a segment each, and the newest owned card of all on the left. */
-const closets = allPlates().flatMap((plate) => (plate.kind === "series" ? [plate] : []));
-const wardrobe = computed(() => {
-  const members = closets.map((plate) => {
-    const got = plate.cards.filter((c) => collection.owned[`card:${c.id}`]).length;
-    const member = plateMembers(plate)[0] ?? "";
-    return { plate, member, color: characterColor(member), got, total: plate.cards.length, fill: fill(got, plate.cards.length) };
-  });
-  const cards = closets.flatMap((p) => p.cards);
-  const owned = cards.filter((c) => collection.owned[`card:${c.id}`]);
-  const cover = newest(owned, (c) => `card:${c.id}`);
-  return { members, got: owned.length, total: cards.length, cover: (cover ?? cards[0])?.thumb, has: !!cover };
-});
-/** The holo versions (镭射款), only where the server deals them: the newest owned one shines on the left. */
+/** The holo versions (镭射款) count here only where the server deals them. */
 const holoCards = manifest.cards.filter((c) => c.holo);
 const holoOn = computed(() => holoCards.length > 0 && !!economy.value?.resonance.holoChance);
-const holo = computed(() => {
-  const owned = holoCards.filter((c) => ownsHolo(c, collection.owned));
-  return { got: owned.length, total: holoCards.length, fill: fill(owned.length, holoCards.length), card: newest(owned, (c) => `holo:${c.id}`) };
-});
-const holoEl = ref<HTMLElement>();
-const { tilt: holoTilt, lit: holoLit, moving: holoMoving, follow: holoFollow, leave: holoLeave } = useTilt();
-/**
- * At this size the shading would only blur the art: the art stays a plain image, and the foil is the spectrum through
- * the card's own mask, drifting on its own; the card leans under the pointer.
- */
-const holoFoil = computed(() => {
-  const mask = holo.value.card?.holo ? `url(${assetUrl(holo.value.card.holo.mask)})` : "";
-  return { WebkitMaskImage: mask, maskImage: mask };
-});
-/** The collection's page, at the holo filter. */
-function openHolo() {
-  ui.dexFilter = "holo";
-  openPanel("dex");
-}
+const holoGot = computed(() => holoCards.filter((c) => ownsHolo(c, collection.owned)).length);
+/** The 衣橱 series is summed up here only while the standing pool gives its tier odds. */
+const closetOn = computed(() => pool.value.limited.length > 0);
 /** The holo versions count as items of their own, as the collection's page counts them. */
-const collected = computed(() => have(all.value) + (holoOn.value ? holo.value.got : 0));
-const totalItems = computed(() => all.value.length + (holoOn.value ? holo.value.total : 0));
+const collected = computed(() => have(all.value) + (holoOn.value ? holoGot.value : 0));
+const totalItems = computed(() => all.value.length + (holoOn.value ? holoCards.length : 0));
+const allFill = computed(() => `${totalItems.value ? (collected.value / totalItems.value) * 100 : 0}%`);
 
-const selected = ref(previews[0]?.id ?? "");
-const at = computed(() => Math.max(0, previews.findIndex((i) => i.id === selected.value)));
-const active = computed(() => previews[at.value]);
+/** The card on show, as the hand reports it (CardHand.vue). */
+const active = ref<Item | undefined>(previews[0]);
 const card = computed(() => (active.value?.kind === "card" ? getCard(active.value.ref) : undefined));
-const neighbour = (step: number) => previews[(at.value + step + previews.length) % previews.length]!;
-const cardOf = (item: Item) => getCard(item.ref);
-
-/** Which way the cards are travelling: forward deals the next card to the front. */
-const dealing = ref(1);
-/** Steps still to play, one card at a time. A jump of several is the same deal, played faster. */
-let pending = 0;
-let stepTimer = 0;
-let rushTimer = 0;
-const STEP_GAP = 260;
-const RUSH_GAP = 180;
-/** Matches --deal on .fan.rush, so the fast timing stays until the last card has landed. */
-const RUSH_MS = 360;
-const rush = ref(false);
-function stopRush() {
-  window.clearTimeout(rushTimer);
-  rushTimer = 0;
-  rush.value = false;
-}
-function go(step: number) {
-  if (!step || props.busy) return;
-  if (reducedMotion.value) {
-    window.clearTimeout(stepTimer);
-    stepTimer = 0;
-    pending = 0;
-    stopRush();
-    dealing.value = Math.sign(step);
-    selected.value = neighbour(step).id;
-    return;
-  }
-  const max = Math.max(1, previews.length - 1);
-  pending = Math.max(-max, Math.min(max, step));
-  if (Math.abs(step) > 1) {
-    window.clearTimeout(rushTimer);
-    rushTimer = 0;
-    rush.value = true;
-  } else if (!stepTimer) {
-    stopRush();
-  }
-  runStep();
-}
-function runStep() {
-  if (stepTimer || !pending) return;
-  const dir = Math.sign(pending);
-  pending -= dir;
-  dealing.value = dir;
-  selected.value = neighbour(dir).id;
-  if (!pending) {
-    if (rush.value) rushTimer = window.setTimeout(stopRush, RUSH_MS);
-    return;
-  }
-  stepTimer = window.setTimeout(() => {
-    stepTimer = 0;
-    runStep();
-  }, rush.value ? RUSH_GAP : STEP_GAP);
-}
-
-/** The hand: the card on show and the next ones peeking out behind it. */
-const fan = computed(() =>
-  Array.from({ length: Math.min(FAN_SIZE, previews.length) }, (_, step) => {
-    const item = neighbour(step);
-    const c = cardOf(item);
-    return { item, step, card: c, gold: c?.tier === "big", frame: cardFrame(c) };
-  }),
-);
 const feature = computed(() => {
   const c = card.value;
   const item = active.value;
@@ -219,57 +113,6 @@ const peekSize = computed(() => {
   return size >= PEEK_MIN ? Math.round(size) : 0;
 });
 
-// The shown card keeps the middle of the strip while the others slide past it. The progress
-// bar under it times the rotation, so pausing that animation pauses everything.
-const stripSize = Math.min(LINEUP_SIZE, previews.length);
-const lineup = computed(() =>
-  Array.from({ length: stripSize }, (_, i) => {
-    const step = i - Math.floor(stripSize / 2);
-    return { item: neighbour(step), step };
-  }),
-);
-const pointing = ref(false);
-watch(() => props.busy, () => (pointing.value = false));
-
-// The front card leans toward the pointer, up to LEAN_DEG, and the light on its frame and face
-// follows. The pointer is read once per frame and written as custom properties on the hand.
-const LEAN_DEG = 8;
-const fanEl = ref<HTMLElement>();
-let leanBox: DOMRect | null = null;
-let leanFrame = 0;
-let leanAt = { x: 0, y: 0 };
-function writeLean(x: number, y: number) {
-  const front = fanEl.value?.querySelector(".s0");
-  if (!(front instanceof HTMLElement)) return;
-  front.style.setProperty("--lx", x.toFixed(3));
-  front.style.setProperty("--ly", y.toFixed(3));
-  front.style.setProperty("--frame-x", (0.3 + x * 0.25).toFixed(3));
-  front.style.setProperty("--frame-y", (0.2 + y * 0.25).toFixed(3));
-}
-function leanStart(e: PointerEvent) {
-  pointing.value = true;
-  leanBox = (e.currentTarget as HTMLElement).getBoundingClientRect();
-}
-function leanMove(e: PointerEvent) {
-  if (!leanBox || !playing.value) return;
-  const clampUnit = (v: number) => Math.max(-1, Math.min(1, v));
-  leanAt = {
-    x: clampUnit(((e.clientX - leanBox.left) / leanBox.width) * 2 - 1),
-    y: clampUnit(((e.clientY - leanBox.top) / leanBox.height) * 2 - 1),
-  };
-  if (!leanFrame) leanFrame = requestAnimationFrame(() => {
-    leanFrame = 0;
-    writeLean(leanAt.x, leanAt.y);
-  });
-}
-function leanEnd() {
-  pointing.value = false;
-  leanBox = null;
-  cancelAnimationFrame(leanFrame);
-  leanFrame = 0;
-  writeLean(0, 0);
-}
-
 const skinViewport = ref<HTMLElement>();
 const skinGroup = ref<HTMLElement[]>();
 const skinFocused = ref(false);
@@ -285,8 +128,6 @@ const canMarquee = computed(() => !reducedMotion.value && skinWidth.value > view
 const scrolling = computed(() => canMarquee.value && pageActive.value && !props.busy && !props.paused && !skinFocused.value);
 /** One group width at the old 24px/s, so the loop keeps the same pace at any panel size. */
 const marqueeDuration = computed(() => `${Math.max(8, skinWidth.value / 24)}s`);
-const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
-watch(playing, (on) => { if (!on) writeLean(0, 0); });
 let resize: ResizeObserver | undefined;
 onMounted(() => {
   resize = new ResizeObserver(() => {
@@ -302,16 +143,13 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   resize?.disconnect();
-  cancelAnimationFrame(leanFrame);
-  window.clearTimeout(stepTimer);
-  window.clearTimeout(rushTimer);
 });
 </script>
 
 <template>
   <section
     class="pool-stage"
-    :class="{ hold: !pageActive || busy || paused || pointing || skinFocused, calm: reducedMotion, marquee: canMarquee, run: scrolling }"
+    :class="{ calm: reducedMotion, marquee: canMarquee, run: scrolling }"
     :style="{ '--marquee': marqueeDuration }"
   >
     <div class="wash" aria-hidden="true">
@@ -322,54 +160,7 @@ onBeforeUnmount(() => {
       </Transition>
     </div>
 
-    <div class="hand">
-      <div ref="fanEl" class="fan" :class="{ rush }" :style="{ '--lean': `${LEAN_DEG}deg` }" @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd">
-        <i class="rays" aria-hidden="true"><i></i></i>
-        <TransitionGroup :name="dealing > 0 ? 'fan-fwd' : 'fan-back'" :css="!reducedMotion">
-          <button
-            v-for="f in fan" :key="f.item.id" type="button"
-            class="fan-card" :class="[`s${f.step}`, f.frame, { gold: f.gold }]"
-            :disabled="busy" :title="f.item.name" :tabindex="f.step ? -1 : undefined"
-            :aria-label="f.step ? `换到${f.item.name}` : `查看${f.item.name}`"
-            @click="f.step ? go(f.step) : emit('inspect', f.item)"
-          >
-            <span class="face">
-              <span class="art ui-frame">
-                <video
-                  v-if="!f.step && f.card?.video && playing" :key="f.card.id"
-                  :src="assetUrl(f.card.video)" :poster="assetUrl(f.card.thumb)" autoplay loop muted playsinline
-                ></video>
-                <img
-                  v-else-if="f.card" :src="assetUrl(f.step || f.card.video ? f.card.thumb : f.card.full)" alt=""
-                  :style="{ backgroundImage: `url(${assetUrl(f.card.thumb)})` }" draggable="false"
-                />
-                <i v-if="!f.step" class="glare" aria-hidden="true"></i>
-              </span>
-              <b class="crest">A-SOUL</b>
-            </span>
-          </button>
-        </TransitionGroup>
-        <Icon name="spark" :size="26" class="twinkle top" />
-        <Icon name="spark" :size="14" class="twinkle side" />
-      </div>
-      <div class="lineup" @pointerenter="pointing = true" @pointerleave="pointing = false">
-        <button v-if="previews.length > 1" type="button" class="flip ui-btn ghost" aria-label="上一张" :disabled="busy" @click="go(-1)">
-          <Icon name="back" :size="18" />
-        </button>
-        <TransitionGroup tag="div" name="strip" class="row" :css="!reducedMotion">
-          <button
-            v-for="{ item, step } in lineup" :key="item.id" type="button" class="mini" :class="{ on: !step }"
-            :disabled="busy" :title="item.name" :aria-pressed="!step" @click="go(step)"
-          >
-            <span class="ui-frame"><img :src="assetUrl(item.art)" :alt="item.name" draggable="false" /></span>
-            <i v-if="!step && !reducedMotion && previews.length > 1" class="tick" aria-hidden="true" @animationend="go(1)"></i>
-          </button>
-        </TransitionGroup>
-        <button v-if="previews.length > 1" type="button" class="flip next ui-btn ghost" aria-label="下一张" :disabled="busy" @click="go(1)">
-          <Icon name="back" :size="18" />
-        </button>
-      </div>
-    </div>
+    <CardHand :items="previews" :busy="busy" :paused="paused" :hold="skinFocused" @inspect="emit('inspect', $event)" @show="active = $event" />
 
     <div class="info">
       <header class="title">
@@ -403,54 +194,20 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="meter">
-        <p class="total"><b>{{ collected }}</b><i>/ {{ totalItems }}</i></p>
+        <p class="total">
+          <b>{{ collected }}</b><i>/ {{ totalItems }}</i>
+          <span class="all-bar" aria-hidden="true"><i :style="{ width: allFill }"></i></span>
+        </p>
         <ul class="tiers">
           <li v-for="t in meter" :key="t.rarity" :class="[t.rarity, { done: t.got === t.total }]" :title="`${t.label} ${t.got}/${t.total}`">
-            <span class="t-head"><Icon :name="t.icon" :size="12" /><em class="t-name">{{ t.label }}</em><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
-            <span class="t-bar" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`"><i :style="{ width: t.fill }"></i></span>
+            <span class="t-ring" :style="{ '--p': t.fill }" role="img" :aria-label="`${t.label} ${t.got}/${t.total}`">
+              <Icon :name="t.icon" :size="15" />
+            </span>
+            <span class="t-count"><b>{{ t.got }}</b><i>/{{ t.total }}</i></span>
+            <em class="t-name">{{ t.label }}</em>
           </li>
         </ul>
-        <div v-if="wardrobe.total || holoOn" class="specials">
-          <div v-if="wardrobe.total" class="special closet" role="group" aria-label="衣橱">
-            <span class="mini pearl" :class="{ dim: !wardrobe.has }" aria-hidden="true">
-              <img v-if="wardrobe.cover" :src="assetUrl(wardrobe.cover)" alt="" draggable="false" />
-            </span>
-            <span class="s-body">
-              <span class="s-head"><em>衣橱</em><b>{{ wardrobe.got }}</b><i>/{{ wardrobe.total }}</i></span>
-              <span class="segs">
-                <button
-                  v-for="w in wardrobe.members" :key="w.plate.id" type="button" class="seg" :class="{ done: w.got === w.total }"
-                  :disabled="busy" :title="w.plate.name" :aria-label="`${w.plate.name} ${w.got}/${w.total}`" @click="emit('plate', w.plate)"
-                >
-                  <span class="seg-bar"><i :style="{ width: w.fill }"></i></span>
-                  <span class="seg-who">
-                    <i :style="{ background: w.color }"></i>{{ w.member }}
-                    <Icon v-if="w.got === w.total" name="check" :size="10" /><b v-else>{{ w.got }}</b>
-                  </span>
-                </button>
-              </span>
-            </span>
-          </div>
-          <button
-            v-if="holoOn" type="button" class="special holo" :disabled="busy" title="镭射" :aria-label="`镭射 ${holo.got}/${holo.total}`"
-            @click="openHolo" @pointermove="holoFollow($event, holoEl)" @pointerleave="holoLeave"
-          >
-            <span
-              ref="holoEl" class="mini foil" :class="{ lit: holoLit }"
-              :style="holoMoving ? { transform: tiltTransform(holoTilt, 300) } : undefined" aria-hidden="true"
-            >
-              <span v-if="holo.card?.holo" class="foil-art">
-                <img :src="assetUrl(holo.card.thumb)" alt="" draggable="false" />
-                <i class="foil-sheen" :style="holoFoil"></i>
-              </span>
-              <span v-else class="foil-back"><Icon name="spark" :size="14" /></span>
-            </span>
-            <span class="s-body">
-              <span class="s-head"><em>镭射</em><b>{{ holo.got }}</b><i>/{{ holo.total }}</i></span>
-              <span class="t-bar foil-bar"><i :style="{ width: holo.fill }"></i></span>
-            </span>
-          </button>
-        </div>
+        <CollectionRows :closet="closetOn" holo :busy="busy" :hold="!pageActive || busy || paused" @plate="emit('plate', $event)" />
       </div>
       </div>
 
@@ -531,222 +288,6 @@ onBeforeUnmount(() => {
 .wash-enter-from,
 .wash-leave-to {
   opacity: 0;
-}
-
-/* The hand and, under it, the lineup that deals it. */
-.hand {
-  position: relative;
-  z-index: 1;
-  flex: none;
-  width: calc(var(--card-w) * 1.3);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-}
-/* The hand of cards. Cards pivot on their bottom edge, so the ones behind fan out at the top. */
-.fan {
-  --lx: 0;
-  --ly: 0;
-  position: relative;
-  flex: none;
-  height: var(--hero-h);
-}
-.rays {
-  position: absolute;
-  left: calc(var(--card-w) * 0.5 - var(--hero-h) * 0.75);
-  top: calc(var(--hero-h) * -0.25);
-  width: calc(var(--hero-h) * 1.5);
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: 50%;
-  -webkit-mask: radial-gradient(circle, #000 18%, transparent 66%);
-  mask: radial-gradient(circle, #000 18%, transparent 66%);
-  opacity: 0.45;
-  pointer-events: none;
-}
-.rays i {
-  position: absolute;
-  inset: -20%;
-  background: repeating-conic-gradient(rgba(255, 255, 255, 0.85) 0 4deg, transparent 4deg 20deg);
-  animation: rays-turn 96s linear infinite;
-}
-.hold .rays i,
-.calm .rays i {
-  animation-play-state: paused;
-}
-.fan-card {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: var(--card-w);
-  height: var(--hero-h);
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  transform-origin: 50% 100%;
-  transition: transform var(--deal, 520ms) var(--ease-out), opacity 320ms;
-}
-/* A jump of several cards plays each deal faster. One card at a time stays on the defaults. */
-.fan.rush {
-  --deal: 360ms;
-  --deal-fade: 280ms;
-}
-/* The card itself: a metal frame (the same share of the width as the reveal's framed cards) around the art. */
-.face {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding: calc(var(--card-w) * 0.015);
-  box-sizing: border-box;
-  border-radius: var(--radius-m);
-  background: var(--frame-fill, var(--surface)) var(--frame-at, 0 0) / var(--frame-size, auto);
-  box-shadow: 0 0 0 3px #fff, 0 16px 28px -16px rgba(var(--shadow-rgb), 0.6);
-  transform: perspective(900px) rotateX(0deg) rotateY(0deg);
-  transition: transform 160ms var(--ease-out), box-shadow var(--dur-base);
-}
-.s0 {
-  z-index: 3;
-  transform: translateY(0) rotate(-3deg);
-}
-.s0 .face {
-  transform: perspective(900px) rotateX(calc(var(--ly) * -1 * var(--lean))) rotateY(calc(var(--lx) * var(--lean)));
-}
-.s1 {
-  z-index: 2;
-  transform: translateX(9%) rotate(4deg) scale(0.93);
-}
-.s2 {
-  z-index: 1;
-  transform: translateX(16%) rotate(8deg) scale(0.86);
-}
-/* Under the pointer the front card stands up straight and the ones behind spread out. */
-.fan:hover .s0:not(:disabled) {
-  transform: translateY(-6px) rotate(0deg);
-}
-.fan:hover .s0:not(:disabled) .face {
-  box-shadow: 0 0 0 3px #fff, 0 0 26px 4px rgba(var(--c-500-rgb), 0.45), 0 24px 32px -16px rgba(var(--shadow-rgb), 0.6);
-}
-.fan:hover .s0.gold:not(:disabled) .face {
-  box-shadow: 0 0 0 3px #fff, 0 0 28px 4px rgba(var(--gold-rgb), 0.52), 0 24px 32px -16px rgba(var(--shadow-rgb), 0.6);
-}
-.fan:hover .s1:not(:disabled) {
-  transform: translateX(17%) rotate(8deg) scale(0.93);
-}
-.fan:hover .s2:not(:disabled) {
-  transform: translateX(31%) rotate(15deg) scale(0.86);
-}
-/* The ones behind sit in its shade until the pointer picks one out. */
-.fan-card:not(.s0) .face::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: rgba(var(--c-900-rgb), 0.22);
-  transition: opacity var(--dur-base);
-}
-.fan-card:not(.s0):hover .face::after {
-  opacity: 0.4;
-}
-/* A soft glare on the face, sliding opposite the lean. */
-.glare {
-  position: absolute;
-  left: -50%;
-  top: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.42), transparent 34%);
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(calc(var(--lx) * 22%), calc(var(--ly) * 22%));
-  transition: opacity var(--dur-base), transform 160ms var(--ease-out);
-}
-.fan:hover .glare {
-  opacity: 1;
-}
-.calm .s0 .face {
-  --lean: 0deg;
-}
-.calm .glare {
-  display: none;
-}
-/* Forward: the front card is thrown off to the left, a new one slips in at the back. */
-.fan-fwd-leave-active,
-.fan-back-leave-active {
-  z-index: 4;
-  transition: transform var(--deal, 520ms) var(--ease-in-out), opacity var(--deal-fade, 420ms) var(--ease-in);
-}
-.fan-fwd-leave-to,
-.fan:hover .s0.fan-fwd-leave-to {
-  opacity: 0;
-  transform: translate(-46%, 6%) rotate(-18deg) scale(0.9);
-}
-.fan-fwd-enter-from {
-  opacity: 0;
-  transform: translateX(22%) rotate(12deg) scale(0.8);
-}
-/* Back: the last card drops away behind, the previous one is pulled back in from the left. */
-.fan-back-leave-active {
-  z-index: 0;
-}
-.fan-back-leave-to {
-  opacity: 0;
-  transform: translateX(22%) rotate(12deg) scale(0.8);
-}
-.fan-back-enter-from {
-  opacity: 0;
-  transform: translate(-46%, 6%) rotate(-18deg) scale(0.9);
-}
-.art {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: var(--c-900);
-}
-.art img,
-.art video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: center / cover;
-}
-.crest {
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 3px 18px 4px;
-  border-radius: 0 0 var(--radius-l) var(--radius-l);
-  background: var(--c-800);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
-  color: #fff;
-  font: 800 var(--fs-caption)/1 var(--font-latin);
-  letter-spacing: 0.18em;
-  white-space: nowrap;
-}
-.gold .crest {
-  background: linear-gradient(180deg, var(--c-900), var(--ink));
-  box-shadow: 0 0 0 1px var(--gold);
-  color: var(--gold-soft);
-}
-.twinkle {
-  position: absolute;
-  z-index: 4;
-  color: var(--gold-soft);
-  fill: var(--surface);
-  stroke-width: 1.2;
-  pointer-events: none;
-}
-.twinkle.top {
-  top: -14px;
-  left: -16px;
-}
-.twinkle.side {
-  top: 12px;
-  left: 14px;
 }
 
 .info {
@@ -923,12 +464,13 @@ h3 {
   transform: translateX(-8px);
 }
 
-/* The collection at a glance: the total, then one small gauge per tier. */
+/* The collection at a glance: the total beside its own bar, then a medal a tier: its mark in a ring that fills. */
 .meter {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 10px;
 }
 .total {
@@ -943,18 +485,32 @@ h3 {
   font: 800 38px/0.9 var(--font-latin);
   color: var(--ink);
 }
-.total i {
+.total > i {
   font: 800 20px/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
 }
-.tiers {
+.all-bar {
   flex: 1;
+  align-self: center;
+  height: 10px;
+  margin-left: 10px;
+  border-radius: 5px;
+  background: var(--c-100);
+  overflow: hidden;
+}
+.all-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c-400), var(--c-500));
+  transition: width var(--dur-stage) var(--ease-out);
+}
+.tiers {
+  flex: none;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: 1fr;
-  align-items: center;
-  gap: 6px 16px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -963,284 +519,68 @@ h3 {
 .tiers li {
   --fill: var(--c-500);
   min-width: 0;
-}
-.tiers .legendary { --fill: var(--grad-gold); --mark: var(--gold); }
-.tiers .skin { --fill: var(--c-500); }
-.tiers .epic { --fill: var(--c-800); }
-.tiers .rare { --fill: var(--c-500); }
-.tiers .uncommon { --fill: var(--c-400); }
-.tiers .common { --fill: var(--c-300); }
-.t-head {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  white-space: nowrap;
+  gap: 5px;
 }
-.t-head svg {
-  flex: none;
-  margin-right: 1px;
+.tiers .legendary { --fill: var(--gold); --mark: var(--gold); }
+.tiers .skin { --fill: var(--c-500); }
+.tiers .epic { --fill: var(--c-800); --mark: var(--c-800); }
+.tiers .rare { --fill: var(--c-600); }
+.tiers .uncommon { --fill: var(--c-500); }
+.tiers .common { --fill: var(--c-400); }
+.t-ring {
+  position: relative;
+  width: 42px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--fill) var(--p), var(--c-100) 0);
   color: var(--mark, var(--c-700));
 }
-.t-name {
-  font: 700 var(--fs-caption)/1 var(--font);
-  font-style: normal;
-  color: var(--ink-2);
-}
-.t-head b {
-  margin-left: auto;
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  color: var(--ink);
-}
-.tiers .done .t-head b {
-  color: var(--c-700);
-}
-.tiers .legendary.done .t-head b {
-  color: color-mix(in oklab, var(--gold) 72%, var(--ink));
-}
-.t-head i {
-  font: 800 var(--fs-label)/1 var(--font-latin);
-  font-style: normal;
-  color: var(--ink-3);
-}
-.t-bar {
-  display: block;
-  height: 7px;
-  margin-top: 4px;
-  border-radius: 2px;
-  background: var(--c-100);
-  overflow: hidden;
-}
-.t-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--fill);
-  transition: width var(--dur-stage) var(--ease-out);
-}
-
-/* The special collections under the tier gauges, each in its material: 衣橱 in pearl, the holo versions in the foil
- * spectrum. A small card on the left (the newest owned one), the name and count, and the gauge. */
-.specials {
-  flex: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
-  gap: 10px;
-}
-.special {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-  padding: 6px 10px 6px 7px;
-  border: 0;
-  border-radius: var(--radius-m);
-  overflow: hidden;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-}
-.special.closet {
-  background: linear-gradient(115deg, color-mix(in srgb, var(--holo-lilac) 22%, var(--surface)),
-    color-mix(in srgb, var(--holo-pink) 14%, var(--surface)));
-}
-.special.holo {
-  background: var(--c-50);
-  cursor: pointer;
-  transition: background var(--dur-base) var(--ease-out);
-}
-/* A faint wash of the foil spectrum, drifting as the band of a holo draw does. */
-.special.holo::before {
+/* The paper inside the ring: what is left is a band 5px wide. */
+.t-ring::before {
   content: "";
   position: absolute;
-  inset: 0;
-  z-index: 0;
-  background: var(--grad-holo);
-  background-size: 300% 100%;
-  opacity: 0.16;
-  animation: holo-drift 9s ease-in-out infinite alternate;
-  pointer-events: none;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--surface);
 }
-.special.holo:hover:not(:disabled)::before {
-  opacity: 0.26;
-}
-.special > * {
+.t-ring svg {
   position: relative;
-  z-index: 1;
 }
-.special > .mini {
-  flex: none;
-  display: block;
-  width: 30px;
-  aspect-ratio: 2 / 3;
-  padding: 2px;
-  box-sizing: border-box;
-  border-radius: 5px;
-  box-shadow: 0 2px 6px -3px rgba(var(--shadow-rgb), 0.5);
+.tiers .done .t-ring::before {
+  background: color-mix(in srgb, var(--fill) 14%, var(--surface));
 }
-.mini img,
-.mini > :deep(*) {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 3px;
-  overflow: hidden;
-}
-.mini.pearl {
-  background: linear-gradient(125deg, var(--pearl), var(--holo-pink) 20%, #fff 30%, var(--holo-lilac) 45%, var(--pearl-deep) 62%,
-    var(--holo-mint) 80%, var(--holo-cream));
-}
-.mini.pearl.dim img {
-  filter: var(--dim);
-}
-.mini.foil {
-  background: var(--grad-holo);
-  background-size: 300% 100%;
-  animation: holo-drift 7s ease-in-out infinite alternate;
-  transition: transform 120ms var(--ease-out);
-}
-.hold .special.holo::before,
-.calm .special.holo::before,
-.hold .mini.foil,
-.calm .mini.foil,
-.hold .foil-sheen,
-.calm .foil-sheen {
-  animation-play-state: paused;
-}
-.foil-art {
-  position: relative;
-  isolation: isolate;
-}
-.foil-art img {
-  position: absolute;
-  inset: 0;
-}
-/* The spectrum through the card's mask, light over the art; brighter under the pointer. */
-.foil-sheen {
-  position: absolute;
-  inset: 0;
-  background: var(--grad-holo);
-  background-size: 300% 100%;
-  -webkit-mask-size: 100% 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  mask-repeat: no-repeat;
-  mix-blend-mode: soft-light;
-  opacity: 0.7;
-  animation: holo-drift 5s ease-in-out infinite alternate;
-  transition: opacity var(--dur-base) var(--ease-out);
-}
-.mini.lit .foil-sheen {
-  opacity: 1;
-}
-.foil-back {
-  display: grid !important;
-  place-items: center;
-  background: var(--grad-holo);
-  background-size: 300% 100%;
-  color: #fff;
-}
-.s-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.s-head {
+.t-count {
   display: flex;
   align-items: baseline;
-  gap: 3px;
+  gap: 1px;
   white-space: nowrap;
 }
-.s-head em {
-  margin-right: 5px;
-  font: 800 var(--fs-label)/1 var(--font);
-  font-style: normal;
-  color: var(--ink-2);
-}
-.s-head b {
+.t-count b {
   font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--ink);
 }
-.s-head i {
+.tiers .done .t-count b {
+  color: var(--c-700);
+}
+.tiers .legendary.done .t-count b {
+  color: color-mix(in oklab, var(--gold) 72%, var(--ink));
+}
+.t-count i {
   font: 800 var(--fs-label)/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
 }
-/* One segment per member: her gauge in pearl, her name and count under it; a full one is ticked. */
-.segs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-.seg {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: -3px -4px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--ink-2);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.seg:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.68);
-  color: var(--ink);
-}
-.seg-bar {
-  display: block;
-  height: 6px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.75);
-  overflow: hidden;
-}
-.seg-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--pearl-deep), var(--holo-lilac) 60%, var(--holo-pink));
-  transition: width var(--dur-stage) var(--ease-out);
-}
-.seg:hover:not(:disabled) .seg-bar {
-  box-shadow: 0 0 0 1px var(--pearl);
-}
-.seg-who {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  white-space: nowrap;
+.t-name {
+  margin-top: -2px;
   font: 700 var(--fs-caption)/1 var(--font);
-}
-.seg-who i {
-  flex: none;
-  width: 3.5px;
-  height: 10px;
-}
-.seg-who b {
-  margin-left: 2px;
-  font: 800 var(--fs-caption)/1 var(--font-latin);
-  color: var(--ink-3);
-}
-.seg.done .seg-who svg {
-  margin-left: 1px;
-  color: var(--pearl-deep);
-}
-.foil-bar {
-  margin-top: 0;
-  background: rgba(255, 255, 255, 0.75);
-}
-.foil-bar i {
-  background: var(--grad-holo);
-  background-size: 300% 100%;
+  font-style: normal;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
 
 /* Skins as acrylic standees: the bust in a wide clear outline, on an oval base, its name underneath. */
@@ -1327,100 +667,10 @@ h3 {
   font: 700 var(--fs-caption)/1.3 var(--font);
 }
 
-.lineup {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-bottom: 8px;
-}
-.flip {
-  flex: none;
-  width: 22px;
-  height: 40px;
-  padding: 0;
-}
-.flip.next svg {
-  transform: rotate(180deg);
-}
-.row {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px;
-}
-.lineup .mini {
-  position: relative;
-  width: 100%;
-  max-width: 36px;
-  justify-self: center;
-  aspect-ratio: 0.76;
-  padding: 2px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-s);
-  background: var(--c-100);
-  cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast);
-}
-.lineup .mini:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-.lineup .mini.on {
-  box-shadow: 0 0 0 2px var(--c-500);
-}
-/* The rotation's clock: reaching the end deals the next card. */
-.tick {
-  position: absolute;
-  left: 1px;
-  right: 1px;
-  bottom: -8px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--c-500);
-  transform-origin: 0 50%;
-  animation: tick 6s linear both;
-}
-@keyframes tick {
-  from {
-    transform: scaleX(0);
-  }
-}
-@keyframes rays-turn {
-  to {
-    transform: rotate(1turn);
-  }
-}
 @keyframes skin-marquee {
   to {
     transform: translateX(-50%);
   }
-}
-.hold .tick,
-.lineup:has(:focus-visible) .tick {
-  animation-play-state: paused;
-}
-.mini span {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-.mini img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.strip-move,
-.strip-enter-active {
-  transition: transform 460ms var(--ease-out), opacity 300ms;
-}
-.strip-enter-from {
-  opacity: 0;
-}
-/* Gone at once: holding its grid cell would push the strip off line for the length of the slide. */
-.strip-leave-active {
-  display: none;
 }
 
 @container panel (max-width: 820px) {
@@ -1431,23 +681,13 @@ h3 {
     --stage-gap: 18px;
     padding-right: 18px;
   }
-  .hand {
-    width: calc(var(--card-w) * 1.22);
-  }
-  .s1 { transform: translateX(7%) rotate(3deg) scale(0.93); }
-  .s2 { transform: translateX(12%) rotate(6deg) scale(0.86); }
-  .fan:hover .s1:not(:disabled) { transform: translateX(13%) rotate(6deg) scale(0.93); }
-  .fan:hover .s2:not(:disabled) { transform: translateX(23%) rotate(11deg) scale(0.86); }
   .total b { font-size: 36px; }
-  .tiers { gap: 8px 12px; }
+  .t-ring { width: 36px; }
   .t-name { display: none; }
-  .t-head b { margin-left: 0; }
-  /* Narrow: the special collections stack, the 衣橱 one first. */
-  .specials { grid-template-columns: minmax(0, 1fr); }
 }
 @container panel (max-width: 660px) {
   .pool-stage { flex-direction: column; align-items: center; gap: 18px; padding: 18px 16px 12px; }
-  .hand { --hero-h: 214px; --card-w: 150px; }
+  .pool-stage :deep(.hand) { --hero-h: 214px; --card-w: 150px; }
   .wash { left: 50%; transform: translateX(-50%); height: 300px; bottom: auto; }
   .info { width: 100%; }
   .sheet { margin-left: 0; }

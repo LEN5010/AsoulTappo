@@ -29,7 +29,7 @@ import alpaca from "../../assets/brand/side-alpaca.webp";
 import { COIN } from "./coin";
 import {
   cornersOf, cutOf, HOP_AT, layoutOf, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, sceneryCells, spots,
-  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind,
+  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepPath, stepTimes, type MomentKind,
   type Race, type Spot,
 } from "./race";
 import SkillCutIn from "./SkillCutIn.vue";
@@ -41,6 +41,10 @@ import TuanziToken from "./TuanziToken.vue";
  */
 const props = defineProps<{
   race: Race | null; t: number; track: number; members: string[]; cleared?: boolean; rate?: number;
+  /** Replay is paused: freezes in-flight hops, speech bubbles and skill cut-ins in place. */
+  paused?: boolean;
+  /** Runners the player has coins on in this race, subtly marked on the board. */
+  backed?: readonly string[];
   /** The map's name, lettered on the island under the paper. */
   caption?: string;
 }>();
@@ -179,6 +183,22 @@ const acting = computed(() => {
   return s.square === "portal" && s.end !== undefined ? [s.to, s.end] : [s.to];
 });
 
+/**
+ * The way a hook pulls the group: from the hook's square through every square on to the dumplings it pulls onto. It is
+ * drawn from the moment the group lands on the hook until the step is over.
+ */
+const trail = computed(() => {
+  const s = step.value;
+  const h = head.value;
+  const r = props.race;
+  if (!s || !h || !r || s.square !== "hook" || s.end === undefined || s.end === s.to) return null;
+  const p = stepTimes(r, h.current);
+  if (h.ms !== undefined ? h.ms < p.hopAt + p.hopLen : h.part < SQUARE_AT) return null;
+  const mid = (sq: number) => ({ x: board.value.cell(sq).col + 0.5, y: board.value.cell(sq).row + 0.5 });
+  const way = [s.to, ...stepPath(s, props.track, BOOST, TRIP).push].map(mid);
+  return { key: h.current, points: way.map((c) => `${c.x},${c.y}`).join(" "), end: way[way.length - 1]! };
+});
+
 const stacks = computed(() =>
   head.value ? stacksAt(lanes.value, moves.value, head.value) : new Map<number, string[]>([[0, [...lanes.value]]]),
 );
@@ -192,15 +212,49 @@ const above = computed(() => {
   return out;
 });
 const movers = computed(() => (head.value ? moving(moves.value, head.value) : []));
+/** Drawn over everyone: the movers, and once the step has reordered the stack it landed on, that whole stack. */
+const lifted = computed(() => {
+  const h = head.value;
+  const s = h && h.current >= 0 ? moves.value[h.current] : undefined;
+  if (!h || !s || h.part < SQUARE_AT) return movers.value;
+  const turned = s.stack ?? (s.square === "flip" ? stacks.value.get(s.to) : undefined);
+  return turned ? [...movers.value, ...turned] : movers.value;
+});
+const rankingOrder = computed(() => rankOf(stacks.value));
 /** Who is ahead once the first group has moved: crowned. */
 const leader = computed(() => {
   const h = head.value;
-  return h && (h.done > 0 || (h.current >= 0 && h.part >= HOP_AT)) ? rankOf(stacks.value)[0] : "";
+  return h && (h.done > 0 || (h.current >= 0 && h.part >= HOP_AT)) ? rankingOrder.value[0] : "";
 });
+/** Every move in the race has played out (for inspecting the final board). */
+const ended = computed(() => !!head.value && head.value.current < 0 && head.value.done === moves.value.length && moves.value.length > 0);
+const isBacked = (m: string) => !!props.backed?.includes(m);
+
+function sqTitle(sq: number): string | undefined {
+  if (sq === 0) return routed.value ? "起点" : "起点 · 终点";
+  if (routed.value && sq === finish.value) return "终点";
+  const q = squareAt(sq);
+  if (!q) return undefined;
+  if (q.kind === "boost") return `加速 +${q.by}`;
+  if (q.kind === "trip") return `绊倒 −${q.by}`;
+  if (q.kind === "portal") return "传送门";
+  if (q.kind === "flip") return "翻转";
+  if (q.kind === "again") return "再掷一次";
+  if (q.kind === "hook") return "钩索";
+  return undefined;
+}
+function spotTitle(m: string): string {
+  const base = nameOf(m);
+  if (!head.value) return isBacked(m) ? `${base} · 已押` : base;
+  const idx = rankingOrder.value.indexOf(m);
+  const sq = places.value[m]?.square ?? 0;
+  const where = sq >= props.track || (ended.value && idx === 0) ? "终点" : !sq ? "起点" : `第 ${sq} 格`;
+  return `#${idx + 1} ${base} · ${where}${isBacked(m) ? " · 已押" : ""}`;
+}
 
 /**
  * The move each tuanzi last made: `${step}a` the hop to the die's square, `${step}b` what the special square there did
- * (for a flip, every tuanzi in the stack it turned).
+ * (for a flip, every tuanzi in the stack it turned; for a climb, the climber and everyone it leaves a level lower).
  */
 const hops = computed(() => {
   const out: Record<string, string> = {};
@@ -218,7 +272,7 @@ const hops = computed(() => {
     // Without a square the group has nothing more to do when a climber under it moves: it keeps its hop.
     for (const m of [s.m, ...(s.carry ?? [])]) out[m] = s.end === undefined ? `${i}a` : key;
     if (acted && s.square === "flip") for (const m of st.get(s.to) ?? []) out[m] = key;
-    if (acted) for (const m of s.react ?? []) out[m] = key;
+    if (acted && s.react?.length) for (const m of s.stack ?? s.react) out[m] = key;
   }
   return out;
 });
@@ -302,7 +356,7 @@ const ats = computed<Record<string, At>>(() => Object.fromEntries(props.members.
 function style(m: string) {
   const a = ats.value[m];
   // Lower on the board is nearer: in front; up a stack in front of those under it; the movers over everyone.
-  const z = 10 + Math.round(a.y * 10) + a.lvl + (movers.value.includes(m) ? 100 : 0);
+  const z = 10 + Math.round(a.y * 10) + a.lvl + (lifted.value.includes(m) ? 100 : 0);
   // --over: how far the top of its stack rises over it, in units, for what floats over the stack.
   const sq = places.value[m]?.square;
   const over = (above.value[m] ?? 0) * stepOf(sq ? stacks.value.get(sq)?.length ?? 1 : 1);
@@ -322,9 +376,17 @@ onMounted(() => (frame = requestAnimationFrame(() => (ready.value = true))));
 onBeforeUnmount(() => cancelAnimationFrame(frame));
 
 const rate = computed(() => props.rate ?? 1);
-// A change of rate carries the moves under way along.
+// A change of rate carries the moves under way along; pausing freezes them cleanly.
 watch(rate, (k) => {
   for (const node of Object.values(tzEls)) for (const a of node.getAnimations?.() ?? []) a.playbackRate = k;
+});
+watch(() => !!props.paused, (p) => {
+  for (const node of Object.values(tzEls)) {
+    for (const a of node.getAnimations?.() ?? []) {
+      if (p) a.pause();
+      else a.play();
+    }
+  }
 });
 
 /** Where the tuanzi was before the latest change, to move from. */
@@ -351,6 +413,10 @@ const SETTLE_MS = 260;
 /** The share of a hop's flight spent getting up to full stretch, and from there back to level. */
 const UP_PART = 0.2;
 const LEVEL_PART = 0.8;
+/** How far into a climb the rest of the stack starts to drop: the climber is out from under it by then. */
+const DROP_HANG = 0.38;
+/** A climb onto a group a square is still walking in: it starts this long before the group lands. */
+const CLIMB_MS = 600;
 
 const mix = (a: Scale, b: Scale, u: number): Scale => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
 /** A keyframe: [a] lifted [up] and moved [aside], squashed by [k] about the foot of its stack. */
@@ -432,6 +498,20 @@ function flipFrames(from: At, to: At, unit: number, ms: number): Keyframe[] {
   return frames;
 }
 
+/**
+ * A climb seen from the rest of the stack, in [ms] and SETTLE_MS more: it stands until the climber has swung out
+ * from under it, then drops the level it lost and springs back.
+ */
+function dropFrames(from: At, to: At, unit: number, ms: number): Keyframe[] {
+  const land = ms / (ms + SETTLE_MS);
+  return [
+    keyAt(0, from, unit, LEVEL),
+    keyAt(land * DROP_HANG, from, unit, LEVEL, 0, 0, { easing: "cubic-bezier(0.5, 0, 0.9, 0.5)" }),
+    keyAt(land, to, unit, SQUAT),
+    ...settle(land, to, unit),
+  ];
+}
+
 watch(hops, (now, before) => {
   const r = props.race;
   const h = head.value;
@@ -449,18 +529,25 @@ watch(hops, (now, before) => {
       if (!s) continue;
       const b = key.endsWith("b");
       const to = ats.value[m];
-      const p = stepPhases(stepLength(r, i));
+      const p = stepTimes(r, i);
       // The clock ticks every 100 ms, so a move is seen up to a tick late. Within a tick it plays from its start a
       // little faster and still lands on time (skipping ahead would make it jump); a page opened mid-move picks it up
       // where it is. The spring back after landing (SETTLE_MS) runs on into the rest of the step.
-      const late = h.current === i ? Math.max(0, (h.part - (b ? SQUARE_AT : HOP_AT)) * stepLength(r, i)) : 0;
+      const late = h.current === i ? Math.max(0, (h.ms ?? 0) - (b ? p.squareAt : p.hopAt)) : 0;
       const full = b ? p.pushLen : p.hopLen;
       // A tick of the clock is rate × as long on the race's time.
       const catchUp = CATCH_UP_MS * rate.value;
       const ms = late < catchUp ? Math.max(1, full - late) : full;
       let frames: Keyframe[];
-      if (b && s.square === "portal") frames = portalFrames(from, to, unit, ms);
-      else if (b && (s.square === "flip" || s.react?.includes(m))) frames = flipFrames(from, to, unit, ms);
+      // What a square pushes on walks in; the stack it lands on stays where it is until the climb.
+      const walksIn = s.end !== undefined && (m === s.m || !!s.carry?.includes(m));
+      let lead = 0;
+      if (b && s.square !== "flip" && s.react?.length && !walksIn) {
+        if (from.x === to.x && from.y === to.y && from.rise === to.rise) continue;
+        lead = s.end === undefined ? 0 : Math.max(0, ms - CLIMB_MS);
+        frames = (s.react.includes(m) ? flipFrames : dropFrames)(from, to, unit, ms - lead);
+      } else if (b && s.square === "portal") frames = portalFrames(from, to, unit, ms);
+      else if (b && s.square === "flip") frames = flipFrames(from, to, unit, ms);
       else {
         const by = squareAt(s.to)?.by;
         const path = stepPath(s, props.track, by ?? BOOST, by ?? TRIP)[b ? "push" : "hop"];
@@ -469,9 +556,11 @@ watch(hops, (now, before) => {
         const n = 1 + (s.carry?.length ?? 0);
         frames = walkFrames([from, ...path.map((sq, j) => (j === path.length - 1 ? to : footOf(sq, Math.max(0, lvl), n)))], unit, ms);
       }
-      const run = node.animate(frames, { duration: ms + SETTLE_MS });
+      // Until its turn comes it stands where it was (the styles under the animation are already the new place).
+      const run = node.animate(frames, { duration: ms - lead + SETTLE_MS, delay: lead, fill: "backwards" });
       run.playbackRate = rate.value;
       if (late >= catchUp) run.currentTime = late;
+      if (props.paused) run.pause();
     }
   }
   was = { ...ats.value };
@@ -480,7 +569,7 @@ watch(hops, (now, before) => {
 
 <template>
   <div class="track" :class="{ calm: reducedMotion }">
-    <div class="board" :class="{ live: ready && step, cleared, routed }" :style="{ '--w': board.cols, '--h': board.rows }">
+    <div class="board" :class="{ live: ready && step, paused, cleared, routed }" :style="{ '--w': board.cols, '--h': board.rows }">
       <div ref="ringEl" class="ring">
         <svg v-if="routed && routePoints" class="route" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
           <polyline class="groove" :points="routePoints" />
@@ -493,10 +582,10 @@ watch(hops, (now, before) => {
           <Icon v-if="c.kind !== 'alpaca'" :name="c.kind" :size="24" />
         </span>
         <div
-          v-for="sq in squares" :key="sq" class="tile" :data-sq="sq" :style="cellStyle(sq)"
+          v-for="sq in squares" :key="sq" class="tile" :data-sq="sq" :style="cellStyle(sq)" :title="sqTitle(sq)"
           :class="[cornerClass(sq), kindOf(sq), {
             start: sq === 0, finish: routed && sq === finish, alt: sq % 2 === 1, flash: tail && sq === finish,
-            acting: acting.includes(sq), spot: activeSq === sq,
+            ended: ended && !cleared && sq === finish, acting: acting.includes(sq), spot: activeSq === sq,
           }]"
         >
           <i v-if="routed && sq && sq < track" class="no" aria-hidden="true">{{ sq }}</i>
@@ -540,13 +629,18 @@ watch(hops, (now, before) => {
             <circle class="node" :cx="l.p2.x" :cy="l.p2.y" r="0.065" />
           </g>
         </svg>
+        <svg v-if="trail" :key="trail.key" class="trail" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+          <polyline class="trail-bed" :points="trail.points" pathLength="1" />
+          <polyline class="trail-dash" :points="trail.points" />
+          <circle class="trail-end" :cx="trail.end.x" :cy="trail.end.y" r="0.24" />
+        </svg>
         <div
           v-for="m in members" :key="m" :ref="(el) => { if (el) tzEls[m] = el as HTMLElement }" class="tz" :data-m="m"
           :class="{
             gated: !places[m]?.square, moving: movers.includes(m), mover: step?.m === m, top: (places[m]?.level ?? 0) > 0,
-            waiting: waiting && step?.m === m,
+            waiting: waiting && step?.m === m, backed: isBacked(m),
           }"
-          :style="style(m)" :title="nameOf(m)"
+          :style="style(m)" :title="spotTitle(m)"
         >
           <div class="body"><TuanziToken :member="m" /></div>
           <b v-if="ready && roll?.m === m" :key="roll.key" class="roll" :class="{ down: roll.down, side: above[m] || (places[m]?.level ?? 0) >= 2, flip: flipped(m) }" aria-hidden="true">{{ roll.text }}</b>
@@ -557,7 +651,7 @@ watch(hops, (now, before) => {
         </div>
         <SkillCutIn
           v-if="ready && cut" :key="cut.key" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
-          :color="cut.color" :ms="cut.ms" :at="cut.at"
+          :color="cut.color" :ms="cut.ms" :at="cut.at" :paused="paused"
         />
       </div>
     </div>
@@ -653,6 +747,7 @@ watch(hops, (now, before) => {
 }
 .route,
 .ways,
+.trail,
 .links {
   position: absolute;
   inset: 0;
@@ -767,6 +862,54 @@ watch(hops, (now, before) => {
   stroke-opacity: 0.95;
   stroke-width: 0.12;
 }
+/* A hook's pull, found like a way on a map: a bed runs out from the hook to the dumplings ahead, white dashes march
+   along it, and a ring pings where the group will land. Over the squares, under the dumplings. */
+.trail {
+  z-index: 5;
+}
+.trail polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.trail-bed {
+  stroke: var(--c-800);
+  stroke-opacity: 0.5;
+  stroke-width: 0.17;
+  stroke-dasharray: 1;
+  animation: trail-run 320ms var(--ease-out) both;
+}
+.trail-dash {
+  stroke: #fff;
+  stroke-width: 0.075;
+  stroke-dasharray: 0.13 0.17;
+  animation: trail-march 520ms linear infinite, trail-show 320ms linear both;
+}
+.trail-end {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 0.06;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: trail-ping 820ms var(--ease-out) 240ms infinite both;
+}
+.board.paused .trail * {
+  animation-play-state: paused;
+}
+@keyframes trail-run {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes trail-show {
+  from, 60% { opacity: 0; }
+}
+@keyframes trail-march {
+  to { stroke-dashoffset: -0.3; }
+}
+@keyframes trail-ping {
+  from { scale: 0.4; opacity: 1; }
+  to { scale: 1.5; opacity: 0; }
+}
 /* Pictures of the park printed on the slab where no square lies. */
 .scene {
   display: grid;
@@ -859,6 +1002,12 @@ watch(hops, (now, before) => {
 }
 .tile.flash {
   animation: finish-flash 900ms var(--ease-out) 2;
+}
+.tile.ended {
+  z-index: 2;
+  box-shadow:
+    inset 0 0 0 max(2px, calc(var(--u) * 0.055)) var(--gold),
+    0 0 calc(var(--u) * 0.2) rgba(var(--gold-rgb), 0.45);
 }
 @keyframes finish-flash {
   40% { box-shadow: inset 0 0 0 calc(var(--u) * 0.08) rgba(255, 255, 255, 0.78), var(--glow-l); }
@@ -1135,12 +1284,33 @@ watch(hops, (now, before) => {
 .tz::before {
   content: "";
   position: absolute;
-  left: 12%;
-  right: 12%;
+  left: 11%;
+  right: 11%;
   bottom: -5%;
-  height: 18%;
+  height: 19%;
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(var(--c-900-rgb), 0.34), transparent);
+  background: radial-gradient(closest-side, rgba(var(--c-900-rgb), 0.38) 28%, rgba(var(--c-900-rgb), 0.14) 68%, transparent);
+}
+.tz.backed:not(.gated)::before {
+  left: 8%;
+  right: 8%;
+  bottom: -6%;
+  height: 22%;
+  background: radial-gradient(closest-side, rgba(var(--c-500-rgb), 0.42) 56%, transparent);
+  box-shadow: inset 0 0 0 max(1.5px, calc(var(--u) * 0.032)) var(--c-500);
+}
+.tz.backed:not(.gated)::after {
+  content: "";
+  position: absolute;
+  right: 6%;
+  bottom: 4%;
+  z-index: 2;
+  width: clamp(6px, calc(var(--d) * 0.15), 10px);
+  height: clamp(6px, calc(var(--d) * 0.15), 10px);
+  border-radius: 50%;
+  background: var(--c-500);
+  box-shadow: 0 0 0 1.5px var(--surface), 0 1px 2px rgba(var(--c-900-rgb), 0.28);
+  pointer-events: none;
 }
 .tz.top::before {
   display: none;
@@ -1310,6 +1480,26 @@ watch(hops, (now, before) => {
   fill: var(--gold-soft);
 }
 
+
+.board.paused .tz.waiting .body,
+.board.paused .roll,
+.board.paused .say,
+.board.paused .crown,
+.board.paused .tile.flash,
+.board.paused .tile.acting .cap,
+.board.paused .tile.acting .pit,
+.board.paused .tile.acting .gate,
+.board.paused .tile.acting .turn,
+.board.paused .tile.acting .redo,
+.board.paused .tile.acting .grab,
+.board.paused .tile.acting .cap::after,
+.board.paused .tile.acting .pit::after,
+.board.paused .tile.acting .gate::after,
+.board.paused .tile.acting .turn::after,
+.board.paused .tile.acting .redo::after,
+.board.paused .tile.acting .grab::after {
+  animation-play-state: paused;
+}
 
 .calm .tz,
 .calm .body,

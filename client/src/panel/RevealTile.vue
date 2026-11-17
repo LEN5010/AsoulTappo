@@ -3,8 +3,8 @@
 // slapped on, both tilted until the pointer straightens them. Sealed ones all lie face down behind
 // the same card-sized back and glow alike, so nothing shows until a tile turns. Rare and above turn
 // with a flash, a ring and a burst of stars; plain ones turn quietly. An animated emote stays on a plate of its tone, a
-// plain sticker peels off the paper it was turned on. A repeat gets a stamp of the shards it turned into.
-// A holo version (镭射款) wears its small mark and a band of foil light runs across it as it turns.
+// plain sticker peels off the paper it was turned on. A repeat gets a physical stamp of the shards it turned into.
+// A holo version (镭射款) wears its small mark and a band of foil light runs across it as it turns and under the pointer.
 import { computed } from "vue";
 import { cardFrame } from "../cards";
 import type { BoardEntry } from "./reveal-board";
@@ -34,7 +34,7 @@ const sticker = computed(() => props.entry.item.kind === "emote");
 const quiet = computed(() => !props.entry.holo && (props.entry.drop.rarity === "common" || props.entry.drop.rarity === "uncommon"));
 /** Animated emotes sit on a plate of their tone, so they read apart from plain stickers at a glance. */
 const plated = computed(() => sticker.value && props.entry.drop.rarity === "rare");
-/** Hidden cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
+/** Hidden and limited cards wear their tier's frame, as they do in the spotlight and the pool's hand. */
 const frame = computed(() => cardFrame(props.entry.card));
 const actionable = computed(() => !props.open || props.entry.spot);
 const label = computed(() => (props.open ? `再看一次${props.entry.title}` : "翻开这一张"));
@@ -59,7 +59,14 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   <component
     :is="actionable ? 'button' : 'div'" :type="actionable ? 'button' : undefined"
     class="tile"
-    :class="[entry.tone, `kind-${entry.item.kind}`, { sticker, plated, quiet, open, sealed: !open, turned, lifted, calm, dense, actionable, spent }]"
+    :class="[
+      entry.tone,
+      `kind-${entry.item.kind}`,
+      {
+        sticker, plated, quiet, open, sealed: !open, turned, lifted, calm, dense, actionable, spent,
+        holo: entry.holo, 'is-new': entry.drop.new, stamped: !!exchanged,
+      },
+    ]"
     :style="{ '--i': Math.min(index, 14), '--tilt': `${entry.tilt}deg`, ...entry.toneStyle }"
     :aria-label="actionable ? label : undefined"
     @click="actionable && emit('press')"
@@ -79,13 +86,14 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
             <i v-else-if="turned && !calm" class="pad paper" aria-hidden="true"></i>
             <img class="sticker-art" :src="entry.art" alt="" draggable="false" />
           </template>
+          <i v-if="!sticker && !calm" class="hover-sheen" :class="frame" aria-hidden="true"></i>
           <template v-if="entry.holo">
             <i v-if="turned && !calm" class="foil-run" aria-hidden="true"></i>
             <HoloBadge class="holo-mark" />
           </template>
           <i v-if="turned && !calm" class="flash" aria-hidden="true"></i>
         </span>
-        <span v-if="entry.sealed" class="face face-back"><CardBack /></span>
+        <span v-if="entry.sealed" class="face face-back"><CardBack :calm="calm" /></span>
       </span>
       <template v-if="turned && !calm && !quiet">
         <i class="ring" aria-hidden="true"></i>
@@ -96,11 +104,15 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
         </span>
       </template>
       <span v-if="open && entry.drop.new" class="ui-tag fresh">新</span>
-      <span v-if="exchanged" class="stamp" :class="{ gold }"><Icon name="shard" :size="16" /><b>+{{ entry.drop.shards }}</b></span>
+      <span v-if="exchanged" class="stamp" :class="{ gold }">
+        <Icon name="shard" :size="16" /><b>+{{ entry.drop.shards }}</b>
+      </span>
     </span>
     <span class="caption">
       <b>{{ open ? entry.title : "？" }}</b>
       <small v-if="open"><i class="dot"></i>{{ entry.kind }}<em v-if="note">{{ note }}</em></small>
+      <!-- A sealed tile keeps the second line's room, so turning it moves nothing on the board. -->
+      <small v-else aria-hidden="true">&nbsp;</small>
     </span>
   </component>
 </template>
@@ -121,7 +133,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   color: var(--ink);
   text-align: left;
   user-select: none;
-    animation: card-drop 460ms var(--ease-spring) calc(var(--deal-at, 0ms) + var(--i) * 42ms) backwards;
+  animation: card-drop 460ms var(--ease-spring) calc(var(--deal-at, 0ms) + var(--i) * 42ms) backwards;
 }
 /* Only a sticker dealt face up is slapped on; a sealed one lands like any other card. */
 .sticker.open {
@@ -157,6 +169,10 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   /* Frames are sized in its width, matching the spotlight's card at any size. */
   container-type: inline-size;
 }
+/* Subtle physical thud when the shard conversion stamp hits the face. */
+.stamped:not(.calm) .body {
+  animation: stamp-thud 320ms var(--ease-out);
+}
 /*
  * Out of hit-testing: a face turned away in 3D still caught clicks meant for the tile beside it.
  * The tile's own box takes the pointer instead.
@@ -179,9 +195,10 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
 .tile:focus-visible .flipper {
   rotate: 0deg;
 }
-.actionable:hover .flipper,
-.actionable:focus-visible .flipper {
-  translate: 0 -5px;
+/* Every collectible — sealed or opened — straightens and lifts out of the board under the pointer. */
+.tile:not(.calm):hover .flipper,
+.tile:not(.calm):focus-visible .flipper {
+  translate: 0 -6px;
 }
 .sealed .flipper {
   transform: rotateY(180deg);
@@ -203,14 +220,14 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   transition: filter 420ms var(--ease-out), opacity 420ms var(--ease-out);
 }
 .spent .face-front {
-  filter: saturate(0.3);
-  opacity: 0.68;
+  filter: saturate(0.32);
+  opacity: 0.7;
 }
-/* One back for every rarity: the tone ladder in tokens.css stops at the front face. */
+/* One uniform coral back for every rarity: nothing spoils the front before a turn. */
 .face-back {
   --seal-fill: var(--c-500);
   --seal-mark: #fff;
-  --seal-rule: rgba(255, 255, 255, 0.55);
+  --seal-rule: rgba(255, 255, 255, 0.6);
   transform: rotateY(180deg);
 }
 
@@ -222,6 +239,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   border-radius: var(--radius-m);
   background: var(--surface);
   box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
+  transition: box-shadow var(--dur-base) var(--ease-out);
 }
 /* Same proportions as the spotlight's framed card, so the card flying home lands on this frame. */
 .card-frame {
@@ -230,6 +248,9 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   border-radius: 5cqw;
   background: var(--frame-fill) var(--frame-at) / var(--frame-size);
   box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
+  transition:
+    background-position 420ms var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
 }
 /* An image keeps its own size under auto, so the size inside the frame is spelled out. */
 .card-frame .card-art {
@@ -240,12 +261,111 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   border-radius: 3.5cqw;
   box-shadow: none;
 }
-/* The holo mark sits in the art's corner, inside the white edge. */
+
+/* Material-specific hover elevation and luster on opened collectibles. */
+.open:not(.calm):hover .card-face:not(.card-frame),
+.open:not(.calm):focus-visible .card-face:not(.card-frame),
+.open:not(.calm):hover .plate,
+.open:not(.calm):focus-visible .plate {
+  box-shadow: 0 0 0 3px #fff, 0 16px 26px -12px rgba(var(--shadow-rgb), 0.56);
+}
+.open:not(.calm):hover .card-frame,
+.open:not(.calm):focus-visible .card-frame {
+  background-position: 82% 76%;
+}
+.open:not(.calm):hover .card-frame.frame-gold,
+.open:not(.calm):focus-visible .card-frame.frame-gold {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 22px 3px rgba(var(--gold-rgb), 0.52),
+    0 18px 28px -12px rgba(var(--shadow-rgb), 0.58);
+}
+.open:not(.calm):hover .card-frame.frame-pearl,
+.open:not(.calm):focus-visible .card-frame.frame-pearl {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 22px 3px color-mix(in srgb, var(--holo-lilac) 58%, transparent),
+    0 18px 28px -12px rgba(var(--shadow-rgb), 0.58);
+}
+.open:not(.calm):hover .card-frame.frame-rose,
+.open:not(.calm):focus-visible .card-frame.frame-rose {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 20px 2px rgba(var(--c-500-rgb), 0.45),
+    0 18px 28px -12px rgba(var(--shadow-rgb), 0.58);
+}
+.holo.open:not(.calm):hover .card-face,
+.holo.open:not(.calm):focus-visible .card-face {
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 22px 3px color-mix(in srgb, var(--holo-lilac) 56%, transparent),
+    0 18px 28px -12px rgba(var(--shadow-rgb), 0.58);
+}
+
+/* Specular / foil sweep across opened cards and plates under the pointer. */
+.hover-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-m);
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 32%,
+    rgba(255, 255, 255, 0.48) 48%,
+    transparent 64%
+  ) 150% 0 / 260% 100% no-repeat;
+  opacity: 0;
+  transition: background-position 520ms var(--ease-out), opacity var(--dur-base);
+}
+.hover-sheen.frame-gold,
+.hover-sheen.frame-pearl,
+.hover-sheen.frame-rose {
+  border-radius: 5cqw;
+}
+.hover-sheen.frame-gold {
+  background: linear-gradient(
+    115deg,
+    transparent 28%,
+    color-mix(in oklab, var(--gold-soft) 65%, transparent) 42%,
+    rgba(255, 255, 255, 0.72) 49%,
+    color-mix(in oklab, var(--gold-soft) 55%, transparent) 56%,
+    transparent 70%
+  ) 150% 0 / 260% 100% no-repeat;
+}
+.hover-sheen.frame-pearl {
+  background: linear-gradient(
+    115deg,
+    transparent 26%,
+    color-mix(in srgb, var(--holo-pink) 58%, transparent) 39%,
+    rgba(255, 255, 255, 0.76) 48%,
+    color-mix(in srgb, var(--holo-mint) 58%, transparent) 57%,
+    color-mix(in srgb, var(--holo-lilac) 52%, transparent) 64%,
+    transparent 74%
+  ) 150% 0 / 260% 100% no-repeat;
+}
+.holo .hover-sheen {
+  background: var(--holo-film) 150% 0 / 260% 100% no-repeat;
+}
+.open:not(.spent):hover .hover-sheen,
+.open:not(.spent):focus-visible .hover-sheen {
+  opacity: 1;
+  background-position: -45% 0;
+}
+
+/* The holo mark sits in the art's corner; steps to top-left when top-right carries the 新 tag. */
 .holo-mark {
   position: absolute;
   z-index: 1;
   right: 7%;
   top: 5%;
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.holo.is-new .holo-mark {
+  right: auto;
+  left: 7%;
+}
+.holo.open:not(.calm):hover .holo-mark {
+  transform: scale(1.14);
 }
 /* As the face comes round, a band of foil light runs once from corner to corner. */
 .foil-run {
@@ -264,6 +384,11 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   height: 100%;
   object-fit: contain;
   filter: var(--sticker-lg);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.sticker.open:not(.calm):hover .sticker-art,
+.sticker.open:not(.calm):focus-visible .sticker-art {
+  transform: translateY(-3px) scale(1.06);
 }
 /* The card the sticker was turned on: a plate of its tone that stays, or paper that peels away. */
 .pad {
@@ -272,6 +397,10 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   border-radius: var(--radius-m);
   background: var(--tone-fill, var(--c-500));
   box-shadow: inset 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.45);
+  transition: box-shadow var(--dur-base) var(--ease-out);
+}
+.plated.open:not(.calm):hover .pad {
+  box-shadow: inset 0 0 0 3px #fff, 0 0 18px 2px rgba(var(--c-500-rgb), 0.38), 0 14px 22px -10px rgba(var(--shadow-rgb), 0.5);
 }
 .pad::after {
   content: "";
@@ -295,6 +424,9 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   height: 80%;
   rotate: -4deg;
 }
+.plated.open:not(.calm):hover .sticker-art {
+  rotate: 0deg;
+}
 .plated.turned:not(.calm) .sticker-art {
   animation: sticker-pop 560ms var(--ease-spring) 280ms both;
 }
@@ -313,29 +445,40 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   border-radius: var(--radius-m);
   background: linear-gradient(180deg, var(--surface) 35%, color-mix(in srgb, var(--tone-glow) 34%, var(--surface)));
   box-shadow: 0 0 0 3px #fff, 0 10px 18px -10px rgba(var(--shadow-rgb), 0.5);
+  transition: box-shadow var(--dur-base) var(--ease-out);
 }
 .bust {
   display: block;
   width: 112%;
   height: 92%;
   filter: var(--contour);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.open:not(.calm):hover .bust {
+  transform: translateY(-2px) scale(1.03);
 }
 
-/* Face down: the glow breathes because the tile is waiting to be pressed. */
+/* Face down: uniform coral edge light breathes while waiting to be pressed. */
 .sealed .body::before {
   content: "";
   position: absolute;
   inset: 3px;
   border-radius: var(--radius-m);
-  box-shadow: 0 0 22px 5px rgba(var(--c-500-rgb), 0.55);
+  box-shadow:
+    0 0 22px 5px rgba(var(--c-500-rgb), 0.55),
+    0 0 8px 1px rgba(var(--c-500-rgb), 0.35);
   rotate: var(--tilt);
-  opacity: 0.4;
+  opacity: 0.42;
   animation: seal-breathe 2.4s var(--ease-in-out) infinite;
-  transition: rotate var(--dur-base) var(--ease-out);
+  transition: rotate var(--dur-base) var(--ease-out), opacity var(--dur-base), box-shadow var(--dur-base);
 }
-.sealed:hover .body::before {
+.sealed:hover .body::before,
+.sealed:focus-visible .body::before {
   rotate: 0deg;
   opacity: 1;
+  box-shadow:
+    0 0 26px 6px rgba(var(--c-500-rgb), 0.72),
+    0 0 10px 2px rgba(255, 255, 255, 0.55);
   animation: none;
 }
 .calm .body::before {
@@ -394,17 +537,34 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   animation: burst-fly 720ms var(--ease-out) 220ms both;
 }
 
+/* Top-right "新" seal badge with crisp die-cut ring and spring pop. */
 .fresh {
   position: absolute;
   z-index: 4;
-  left: -6px;
+  right: -6px;
   top: -6px;
+  padding: 0 7px;
+  line-height: 18px;
+  box-shadow: 0 0 0 2px #fff, 0 4px 10px -3px rgba(var(--c-900-rgb), 0.42);
+  pointer-events: none;
+}
+.tone-legendary .fresh {
+  --tag-bg: var(--grad-gold);
+  --tag-fg: var(--ink);
+}
+.tone-limited .fresh {
+  --tag-bg: var(--grad-pearl);
+  --tag-fg: var(--night);
+}
+.turned:not(.calm) .fresh {
+  animation: fresh-pop 380ms var(--ease-pop) 260ms both;
 }
 .sticker .fresh {
-  top: 18%;
+  right: 1%;
+  top: 17%;
 }
 
-/* Slapped on over the art, sized in the tile's width so a grouped board and a single draw read alike. */
+/* Physical double-ruled ink stamp slapped onto repeats, sized in tile width for crisp legibility at any scale. */
 .stamp {
   position: absolute;
   z-index: 4;
@@ -413,32 +573,68 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   display: inline-flex;
   align-items: center;
   gap: 0.16em;
-  padding: 0.24em 0.5em 0.24em 0.36em;
+  padding: 0.25em 0.52em 0.25em 0.38em;
   border-radius: var(--radius-key-s);
   background: var(--surface);
-  box-shadow: 0 0 0 2px var(--c-500), 0 6px 14px -6px rgba(var(--shadow-rgb), 0.45);
+  box-shadow:
+    inset 0 0 0 2px var(--c-600),
+    0 0 0 2.5px #fff,
+    0 8px 16px -6px rgba(var(--shadow-rgb), 0.5);
   color: var(--c-700);
-  font: 800 clamp(13px, 14cqw, 30px)/1 var(--font-latin);
+  font: 800 clamp(13px, 14.5cqw, 30px)/1 var(--font-latin);
+  letter-spacing: 0.02em;
   white-space: nowrap;
   translate: -50% -50%;
   rotate: -6deg;
   pointer-events: none;
-  animation: stamp-in 460ms var(--ease-pop) both;
+  animation: stamp-slam 440ms var(--ease-pop) both;
 }
-.stamp svg {
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: 3.5px;
+  border-radius: calc(var(--radius-key-s) - 3px);
+  box-shadow: inset 0 0 0 1px var(--c-200);
+}
+.stamp::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--radius-key);
+  box-shadow: 0 0 0 2px var(--c-500);
+  opacity: 0;
+  animation: stamp-ring 480ms var(--ease-out) 140ms both;
+}
+.stamp :deep(svg) {
   width: 0.92em;
   height: 0.92em;
-  stroke-width: 2.4;
+  stroke-width: 2.3;
+  fill: color-mix(in oklab, var(--c-400) 45%, #fff);
 }
 .stamp.gold {
   background: var(--grad-gold);
   color: var(--ink);
-  box-shadow: 0 0 0 2px #fff, 0 0 18px 2px rgba(var(--gold-rgb), 0.65), 0 6px 14px -6px rgba(var(--shadow-rgb), 0.45);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in oklab, var(--gold) 65%, var(--c-800)),
+    0 0 0 2.5px #fff,
+    0 0 18px 2px rgba(var(--gold-rgb), 0.65),
+    0 8px 16px -6px rgba(var(--shadow-rgb), 0.5);
 }
-.calm .stamp {
+.stamp.gold::before {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+.stamp.gold::after {
+  box-shadow: 0 0 0 2px var(--gold);
+}
+.stamp.gold :deep(svg) {
+  fill: var(--gold-soft);
+}
+.calm .stamp,
+.calm .stamp::after {
   animation: none;
 }
-.lifted .stamp {
+.lifted .stamp,
+.lifted .fresh {
   visibility: hidden;
 }
 
@@ -473,6 +669,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   flex: none;
   width: 4px;
   height: 10px;
+  border-radius: 1px;
   background: var(--dot);
 }
 .caption em {
@@ -481,7 +678,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   font-style: normal;
   color: var(--ink-3);
 }
-.open.turned .caption {
+.open.turned:not(.calm) .caption {
   animation: caption-in 300ms var(--ease-out) 240ms both;
 }
 
@@ -532,7 +729,7 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   100% { transform: none; }
 }
 @keyframes seal-breathe {
-  50% { opacity: 1; }
+  50% { opacity: 0.92; }
 }
 @keyframes turn-flash {
   0%, 30% { opacity: 0; }
@@ -548,10 +745,25 @@ const SPARKS = Array.from({ length: 8 }, (_, n) => ({
   20% { opacity: 1; }
   100% { opacity: 0; translate: calc(var(--d) - 50%) -50%; scale: 1; }
 }
-@keyframes stamp-in {
-  0% { opacity: 0; scale: 1.9; rotate: -18deg; }
-  50% { opacity: 1; scale: 0.9; }
-  100% { opacity: 1; scale: 1; rotate: -6deg; }
+@keyframes fresh-pop {
+  0% { opacity: 0; transform: scale(0.4) rotate(10deg); }
+  65% { opacity: 1; transform: scale(1.14) rotate(-3deg); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes stamp-slam {
+  0% { opacity: 0; scale: 2.15; translate: -50% -68%; rotate: -18deg; }
+  44% { opacity: 1; scale: 0.9; translate: -50% -47%; rotate: -4.5deg; }
+  72% { scale: 1.04; translate: -50% -51%; rotate: -6.5deg; }
+  100% { opacity: 1; scale: 1; translate: -50% -50%; rotate: -6deg; }
+}
+@keyframes stamp-ring {
+  0% { opacity: 0.85; scale: 0.88; }
+  100% { opacity: 0; scale: 1.32; }
+}
+@keyframes stamp-thud {
+  0% { transform: none; }
+  38% { transform: translateY(2.5px) scale(0.985); }
+  100% { transform: none; }
 }
 @keyframes caption-in {
   from { opacity: 0; transform: translateY(4px); }

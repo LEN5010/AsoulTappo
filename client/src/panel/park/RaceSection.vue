@@ -10,7 +10,7 @@
 // win, its die, its skill and my coins on it. The bet slip is the bottom bar: a runner picked, its three kinds, the
 // stake and the bet key; nothing picked, 往期 and my tickets. 往期 lists the latest finished races
 // (GET /api/park/race/history); one picked plays in the race's window.
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
 import { online } from "../../stores/player";
@@ -52,10 +52,19 @@ const poll = feed.poll;
 const liveFinished = feed.finished;
 /** The live race is out: its window is the place to be. */
 const live = feed.live;
-onMounted(feed.start);
-onActivated(feed.start);
-onDeactivated(feed.stop);
-onBeforeUnmount(feed.stop);
+onMounted(startSection);
+onActivated(startSection);
+onDeactivated(stopSection);
+onBeforeUnmount(stopSection);
+
+function startSection() {
+  feed.start();
+  window.addEventListener("keydown", onPageEsc, true);
+}
+function stopSection() {
+  feed.stop();
+  window.removeEventListener("keydown", onPageEsc, true);
+}
 
 // ---------------------------------------------------------------- the countdown
 const countdown = computed<{ label: string; time: string }>(() => {
@@ -86,12 +95,15 @@ const colorOf = (m: string) => character(m)?.color;
 const diceOf = (m: string) => race.value?.setup.dice?.[m] ?? CFG.dice;
 /** A member's skill in the race taking bets, on races that deal them. */
 const skillOf = (m: string) => race.value?.setup.skills?.[m];
-/** A runner's key title: its name, and its skill or form on races that deal them. */
+/** A runner's key title: its name, skill/form, and current market popularity share. */
 function runnerTitle(m: string): string {
+  const k = activeKind.value;
+  const pct = Math.round(share(k, m) * 100);
+  const market = `${KIND_NAMES[k]} ${x(oddsOf(k, m))} · 热度 ${pct}%（${coinsOn(k, m)} 枚）`;
   const skill = skillOf(m);
-  if (skill) return `${nameOf(m)} · ${SKILL_NAMES[skill.id] ?? skill.id}：${skillText(skill)}`;
+  if (skill) return `${nameOf(m)} · ${SKILL_NAMES[skill.id] ?? skill.id}：${skillText(skill)} · ${market}`;
   const form = race.value?.setup.forms?.[m];
-  return form ? `${nameOf(m)} · 状态${FORM_NAMES[form] ?? form}` : nameOf(m);
+  return form ? `${nameOf(m)} · 状态${FORM_NAMES[form] ?? form} · ${market}` : `${nameOf(m)} · ${market}`;
 }
 
 // ---------------------------------------------------------------- the odds board
@@ -139,7 +151,11 @@ watch(race, (r) => {
 const tickOf = (kind: RaceKind, m: string) => ticks.value[`${kind}${m}`];
 
 // ---------------------------------------------------------------- bets
+const runnersEl = ref<HTMLElement | null>(null);
+const kindsEl = ref<HTMLElement | null>(null);
 const pick = ref<{ kind: RaceKind; member: string } | null>(null);
+/** The market reflected across all five runner keys: the picked kind, or 冠军 at rest. */
+const activeKind = computed<RaceKind>(() => pick.value?.kind ?? "win");
 const stake = ref(1);
 const busy = ref(false);
 const betError = ref("");
@@ -167,6 +183,32 @@ function chooseKind(kind: RaceKind) {
   if (!betting.value || !pick.value) return;
   pick.value = { ...pick.value, kind };
   betError.value = "";
+}
+function clearPick(restoreFocus = false) {
+  const m = pick.value?.member;
+  pick.value = null;
+  betError.value = "";
+  if (restoreFocus && m) {
+    void nextTick(() => runnersEl.value?.querySelector<HTMLButtonElement>(`[data-runner="${m}"]`)?.focus());
+  }
+}
+function onRunnersKey(e: KeyboardEvent) {
+  if (!betting.value || !online.value || !left.value) return;
+  const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-runner]");
+  if (!btn) return;
+  const cur = MEMBERS.indexOf(btn.dataset.runner ?? "");
+  if (cur < 0) return;
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    e.preventDefault();
+    const next = MEMBERS[(cur + (e.key === "ArrowLeft" ? -1 : 1) + MEMBERS.length) % MEMBERS.length]!;
+    pick.value = { kind: pick.value?.kind ?? "win", member: next };
+    stake.value = Math.max(1, Math.min(stake.value, most.value));
+    betError.value = "";
+    runnersEl.value?.querySelector<HTMLButtonElement>(`[data-runner="${next}"]`)?.focus();
+  } else if (e.key === "ArrowDown" && pick.value) {
+    e.preventDefault();
+    kindsEl.value?.querySelector<HTMLButtonElement>(".kind-key.on")?.focus();
+  }
 }
 
 async function place() {
@@ -196,8 +238,20 @@ async function place() {
   } else betError.value = reply.error.message;
 }
 
-/** My coins on [m] in the race on the track. */
+/** My coins on [m] in the race on the track, and on a single [kind] of [m]. */
 const mineOn = (m: string) => race.value?.mine.filter((b) => b.member === m).reduce((n, b) => n + b.coins, 0) ?? 0;
+const mineKindOn = (kind: RaceKind, m: string) =>
+  race.value?.mine.filter((b) => b.kind === kind && b.member === m).reduce((n, b) => n + b.coins, 0) ?? 0;
+const backedMembers = computed(() => [...new Set((race.value?.mine ?? []).map((b) => b.member))]);
+/** Expected gross return of the current slip selection (stake × odds, to a tenth). */
+const estReturn = computed(() => {
+  const p = pick.value;
+  if (!p) return "";
+  const o = oddsOf(p.kind, p.member);
+  if (o === undefined) return "";
+  const v = Math.round(stake.value * o * 10) / 10;
+  return Number.isInteger(v) ? fmt(v) : v.toFixed(1);
+});
 /**
  * My bets as tickets, one per selection: the odds each bet locked (most first; a range when there are more than
  * two), the coins in all, and whether it won once the race is run.
@@ -225,8 +279,16 @@ const oddsList = (odds: number[]) =>
 const ticketTitle = (t: { kind: RaceKind; member: string }) =>
   (race.value?.mine ?? []).filter((b) => b.kind === t.kind && b.member === t.member)
     .map((b) => `${nameOf(b.member)} ${KIND_NAMES[b.kind]} ${x(b.odds)} · ${b.coins} 枚`).join("\n");
+const allTicketsTitle = computed(() => tickets.value.map(ticketTitle).join("\n"));
+const kindKeyTitle = (k: RaceKind, m: string) =>
+  `${nameOf(m)} · ${KIND_NAMES[k]} ${x(oddsOf(k, m))} · 热度 ${Math.round(share(k, m) * 100)}%（${coinsOn(k, m)} 枚）`;
 /** Why the bet key cannot be pressed, for its tooltip. */
 const betBlock = computed(() => (!online.value ? "未连接" : ""));
+const betKeyTitle = computed(() => {
+  if (betBlock.value) return betBlock.value;
+  if (!pick.value || !estReturn.value) return undefined;
+  return `${nameOf(pick.value.member)} · ${KIND_NAMES[pick.value.kind]} · 可赢 ${estReturn.value} 枚`;
+});
 
 // ---------------------------------------------------------------- results
 /** The race whose result is on the bill: the live one once it has played, the one before while bets are open. */
@@ -280,10 +342,42 @@ watch(pastOpen, (open) => {
   else document.removeEventListener("pointerdown", onOutside, true);
 });
 onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutside, true));
-function onSlipKey(e: KeyboardEvent) {
-  if (e.key === "Escape" && pastOpen.value) {
+function onPageEsc(e: KeyboardEvent) {
+  if (e.key !== "Escape" || rules.value || document.querySelector("[data-overlay]")) return;
+  if (pastOpen.value) {
     pastOpen.value = false;
-    e.stopPropagation();
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  } else if (pick.value) {
+    clearPick(true);
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+}
+function onSlipKey(e: KeyboardEvent) {
+  if (e.key === "Escape") {
+    if (pastOpen.value) {
+      pastOpen.value = false;
+      e.stopPropagation();
+    } else if (pick.value) {
+      clearPick(true);
+      e.stopPropagation();
+    }
+    return;
+  }
+  if (!betting.value || !pick.value) return;
+  if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && kindsEl.value?.contains(e.target as Node)) {
+    e.preventDefault();
+    const cur = KINDS.indexOf(pick.value.kind);
+    const next = KINDS[(cur + (e.key === "ArrowLeft" ? -1 : 1) + KINDS.length) % KINDS.length]!;
+    chooseKind(next);
+    void nextTick(() => kindsEl.value?.querySelector<HTMLButtonElement>(`[data-kind="${next}"]`)?.focus());
+  } else if (e.key === "ArrowUp" || e.key === "+" || e.key === "=") {
+    e.preventDefault();
+    if (stake.value < most.value) stake.value++;
+  } else if (e.key === "ArrowDown" || e.key === "-") {
+    e.preventDefault();
+    if (stake.value > 1) stake.value--;
   }
 }
 /** Some day in the list has more than one race: the rows give the time as well. */
@@ -307,79 +401,115 @@ function openReplay(id: number) {
     <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
     <!-- The bill: the race's map, and what is on: the way in once it has started, else the result before. -->
-    <div class="bill" :class="{ live }">
-      <RaceTrack class="mini" :race="preview" :t="0" :track="trackOf(race?.setup, CFG.track)" :members="MEMBERS" cleared />
+    <div class="bill" :class="{ live, done: liveFinished }">
+      <RaceTrack
+        class="mini" :race="preview" :t="0" :track="trackOf(race?.setup, CFG.track)" :members="MEMBERS"
+        :backed="backedMembers" cleared
+      />
       <div class="about">
-        <h3 v-if="race?.setup.map">{{ race.setup.map.name }}<small class="sq-count">{{ race.setup.map.track }} 格</small></h3>
+        <div class="about-head">
+          <h3 v-if="race?.setup.map">{{ race.setup.map.name }}<small class="sq-count">{{ race.setup.map.track }} 格</small></h3>
+          <span v-if="live" class="state-pill live"><i class="live-dot" aria-hidden="true"></i>比赛中</span>
+          <span v-else-if="betting && countdown.time" class="state-pill wait">
+            <Icon name="clock" :size="12" />开跑 <b>{{ countdown.time }}</b>
+          </span>
+        </div>
         <button
           v-if="live" type="button" class="ui-btn primary watch-key" :class="{ pulse: !reducedMotion }"
           @click="openRaceWindow()"
         >
-          <i class="live-dot" aria-hidden="true"></i>观赛
+          <span class="live-beacon" aria-hidden="true"><i class="live-ring"></i><i class="live-dot"></i></span>
+          <span>直播观赛</span>
         </button>
         <div v-else-if="shownRanking.length" class="before">
-          <small>{{ liveFinished ? "本场" : "上一场" }}</small>
+          <small class="before-tag" :class="{ fresh: liveFinished }">{{ liveFinished ? "本场名次" : "上一场" }}</small>
           <ol class="order" aria-label="名次">
-            <li v-for="(m, i) in shownRanking" :key="m" class="champ" :title="nameOf(m)">
+            <li v-for="(m, i) in shownRanking" :key="m" class="champ" :title="`${i + 1}. ${nameOf(m)}`">
               <TuanziToken :member="m" :size="i === 0 ? 48 : 32" /><Icon v-if="i === 0" class="champ-crown" name="crown" :size="16" />
             </li>
           </ol>
           <span v-if="won > 0" class="last-net" :aria-label="`+${fmt(won)} 驼币`"><ParkCoin :size="22" :tilt="false" />+{{ fmt(counted) }}</span>
-          <button v-if="replayable" type="button" class="ui-btn small again-key" aria-label="回放" @click="openReplay(shown!.id)">
-            <Icon name="play" :size="15" />
+          <button
+            v-if="replayable" type="button" class="ui-btn small again-key" :class="{ primary: liveFinished }"
+            @click="openReplay(shown!.id)"
+          >
+            <Icon name="play" :size="14" /><span>{{ liveFinished ? "回放本场" : "回放" }}</span>
+          </button>
+          <button v-if="betting" type="button" class="ui-btn small ghost open-watch-key" @click="openRaceWindow()">
+            <Icon name="tv" :size="14" /><span>观赛</span>
           </button>
         </div>
-        <label class="remind"><input v-model="settings.raceRemind" type="checkbox" class="ui-switch" />开赛提醒</label>
+        <button v-else type="button" class="ui-btn small open-watch-key" @click="openRaceWindow()">
+          <Icon name="tv" :size="14" /><span>观赛</span>
+        </button>
+        <div class="about-foot">
+          <label class="remind"><input v-model="settings.raceRemind" type="checkbox" class="ui-switch" />开赛提醒</label>
+          <button
+            v-if="tickets.length && pick" type="button" class="staked-pill" :title="allTicketsTitle"
+            @click="clearPick()"
+          >
+            <img :src="COIN_SMALL" alt="" draggable="false" />
+            <span>已押 <b>{{ staked }}</b><template v-if="CFG.maxCoins">/{{ CFG.maxCoins }}</template> · {{ tickets.length }} 注</span>
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- The five runners, each with its odds to win: keys while bets are open. -->
+    <!-- The five runners, each showing the active market's odds & crowd share: keys while bets are open. -->
     <div class="field-pane" :class="{ off: race?.phase === 'void' }">
       <p v-if="race?.phase === 'void'" class="void" role="status">本场取消，驼币已退回</p>
-      <div class="runners" :class="{ dice: !!race?.setup.dice }" role="group" aria-label="团子">
-              <button
-                v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner" :data-runner="m"
-                :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
-                :disabled="!betting || !online || !left" :title="runnerTitle(m)" @click="chooseRunner(m)"
-              >
-                <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
-                <span class="tag">
-                  <span class="who-name">
-                    <i class="hue" :style="{ background: colorOf(m) }" aria-hidden="true"></i>
-                    <span class="name">{{ nameOf(m) }}</span>
-                  </span>
-                  <span :key="`win${tickOf('win', m)?.n ?? 0}`" class="odds" :class="tickOf('win', m)?.dir">
-                    <b>{{ x(oddsOf("win", m)) }}</b>
-                    <svg v-if="tickOf('win', m)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
-                      <path v-if="tickOf('win', m)!.dir === 'up'" d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" />
-                      <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
-                    </svg>
-                  </span>
-                </span>
-                <span v-if="race?.setup.dice" class="form" :aria-label="`骰子 ${diceOf(m).join(' ')}`">
-                  <RaceDie v-for="(f, k) in diceOf(m)" :key="k" :face="f" :color="colorOf(m)" />
-                </span>
-                <span v-if="skillOf(m)" class="skill">{{ SKILL_NAMES[skillOf(m)!.id] ?? skillOf(m)!.id }}</span>
-                <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
-                <i class="runner-pool" aria-hidden="true"><i :style="{ width: `${share('win', m) * 100}%` }"></i></i>
-              </button>
+      <div
+        ref="runnersEl" class="runners" :class="{ dice: !!race?.setup.dice }" role="group" aria-label="团子"
+        @keydown="onRunnersKey"
+      >
+        <button
+          v-for="m in MEMBERS" :key="m" type="button" class="ui-btn runner" :data-runner="m"
+          :class="{ on: pick?.member === m }" :aria-pressed="pick?.member === m"
+          :disabled="!betting || !online || !left" :title="runnerTitle(m)" @click="chooseRunner(m)"
+        >
+          <TuanziToken class="face" :member="m" :size="72" :grey="race?.phase === 'void'" />
+          <span class="tag">
+            <span class="who-name">
+              <i class="hue" :style="{ background: colorOf(m) }" aria-hidden="true"></i>
+              <span class="name">{{ nameOf(m) }}</span>
+            </span>
+            <span :key="`${activeKind}${tickOf(activeKind, m)?.n ?? 0}`" class="odds" :class="tickOf(activeKind, m)?.dir">
+              <small v-if="activeKind !== 'win'" class="kind-pill">{{ KIND_NAMES[activeKind] }}</small>
+              <b>{{ x(oddsOf(activeKind, m)) }}</b>
+              <svg v-if="tickOf(activeKind, m)" class="arrow" viewBox="0 0 12 12" aria-hidden="true">
+                <path v-if="tickOf(activeKind, m)!.dir === 'up'" d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" />
+                <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
+              </svg>
+            </span>
+          </span>
+          <span v-if="race?.setup.dice" class="form" :aria-label="`骰子 ${diceOf(m).join(' ')}`">
+            <RaceDie v-for="(f, k) in diceOf(m)" :key="k" :face="f" :color="colorOf(m)" />
+          </span>
+          <span v-if="skillOf(m)" class="skill">{{ SKILL_NAMES[skillOf(m)!.id] ?? skillOf(m)!.id }}</span>
+          <span v-if="mineOn(m)" class="mine"><img :src="COIN_SMALL" alt="" draggable="false" /><b>{{ mineOn(m) }}</b></span>
+          <i class="runner-pool" aria-hidden="true"><i :style="{ width: `${share(activeKind, m) * 100}%` }"></i></i>
+        </button>
       </div>
     </div>
 
     <RaceRules v-if="rules" @close="rules = false" />
 
     <!--
-      The bet slip. A runner picked: its three kinds (odds, and a thin bar of the coins on each), the stake and the bet
-      key. Nothing picked: 往期 and my tickets on this race.
+      The bet slip. A runner picked: its three kinds (odds, crowd share, and any coins already staked), the stake and
+      the bet key. Nothing picked: 往期 and my tickets on this race.
     -->
     <div ref="slipEl" class="park-actions slip" @keydown="onSlipKey">
       <template v-if="betting && pick && race">
-        <span class="picked"><TuanziToken :member="pick.member" :size="32" />{{ nameOf(pick.member) }}</span>
-        <span class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
+        <button type="button" class="ui-btn ghost small picked" title="重选" @click="clearPick(true)">
+          <TuanziToken :member="pick.member" :size="32" />
+          <span>{{ nameOf(pick.member) }}</span>
+          <Icon class="picked-x" name="close" :size="13" />
+        </button>
+        <span ref="kindsEl" class="kinds" role="group" :aria-label="`${nameOf(pick.member)}的押法`">
           <button
-            v-for="k in KINDS" :key="k" type="button" class="ui-btn kind-key"
+            v-for="k in KINDS" :key="k" type="button" class="ui-btn kind-key" :data-kind="k"
             :class="{ on: pick.kind === k, repriced: confirming && pick.kind === k }" :aria-pressed="pick.kind === k"
-            @click="chooseKind(k)"
+            :title="kindKeyTitle(k, pick.member)" @click="chooseKind(k)"
           >
             <small>{{ KIND_NAMES[k] }}</small>
             <s v-if="confirming && pick.kind === k">{{ x(repriced!.was) }}</s>
@@ -390,28 +520,31 @@ function openReplay(id: number) {
                 <path v-else d="M6 1.5V10M2.2 6.4 6 10.2l3.8-3.8" />
               </svg>
             </span>
-            <i class="pool" :title="`${coinsOn(k, pick.member)} 枚`"><i :style="{ width: `${share(k, pick.member) * 100}%` }"></i></i>
+            <span v-if="mineKindOn(k, pick.member)" class="kind-mine">
+              <img :src="COIN_SMALL" alt="" draggable="false" />{{ mineKindOn(k, pick.member) }}
+            </span>
+            <i class="pool" aria-hidden="true"><i :style="{ width: `${share(k, pick.member) * 100}%` }"></i></i>
           </button>
         </span>
       </template>
       <template v-else>
-      <button
-        v-if="data?.winners.length" type="button" class="ui-btn small park-ledger-key" :aria-expanded="pastOpen"
-        @click="togglePast"
-      ><Icon name="clock" :size="15" /><span>往期</span></button>
-      <span v-if="tickets.length" class="tickets" aria-label="我的押注">
-        <span
-          v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
-          :title="ticketTitle(t)"
-        >
-          <span class="ticket-paper">
-            <i class="perf" aria-hidden="true"></i>
-            <TuanziToken :member="t.member" :size="24" />
-            <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
-            <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+        <button
+          v-if="data?.winners.length" type="button" class="ui-btn small park-ledger-key" :aria-expanded="pastOpen"
+          @click="togglePast"
+        ><Icon name="clock" :size="15" /><span>往期</span></button>
+        <span v-if="tickets.length" class="tickets" aria-label="我的押注">
+          <span
+            v-for="t in tickets" :key="t.key" class="ticket" :class="{ won: t.won }"
+            :title="ticketTitle(t)"
+          >
+            <span class="ticket-paper">
+              <i class="perf" aria-hidden="true"></i>
+              <TuanziToken :member="t.member" :size="24" />
+              <small>{{ KIND_NAMES[t.kind] }}</small><b>{{ oddsList(t.odds) }}</b>
+              <span class="coin"><img :src="COIN_SMALL" alt="" draggable="false" />{{ t.coins }}</span>
+            </span>
           </span>
         </span>
-      </span>
       </template>
 
       <div v-if="pastOpen" class="pop past ui-scroll">
@@ -437,9 +570,11 @@ function openReplay(id: number) {
         </ul>
       </div>
 
-      <div v-if="betting && (pick || !left)" class="park-actions-main">
+      <div v-if="betting && (pick || !left || (CFG.maxCoins && staked > 0))" class="park-actions-main">
         <span v-if="!left" class="full">本场已押满</span>
+        <span v-else-if="!pick" class="quota">已押 <b>{{ staked }}</b>/{{ CFG.maxCoins }} 枚</span>
         <template v-else>
+          <small v-if="estReturn && !confirming" class="est">可赢 <b>{{ estReturn }}</b></small>
           <span class="stepper">
             <button type="button" class="ui-btn small step-key" :disabled="stake <= 1" aria-label="少押一枚" @click="stake--">
               <Icon name="minus" :size="14" />
@@ -451,7 +586,9 @@ function openReplay(id: number) {
           </span>
           <button
             type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy && !reducedMotion }"
-            :disabled="busy || !!betBlock" :aria-busy="busy" :title="betBlock || undefined" @click="place"
+            :disabled="busy || !!betBlock" :aria-busy="busy" :title="betKeyTitle"
+            @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
+            @click="place"
           >
             <img class="coin" :src="COIN_SMALL" alt="" draggable="false" />
             <template v-if="confirming && pick">确认 {{ x(oddsOf(pick.kind, pick.member)) }}</template>
@@ -503,7 +640,14 @@ function openReplay(id: number) {
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 11px;
+  gap: 10px;
+}
+.about-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
 }
 .about h3 {
   display: flex;
@@ -520,12 +664,52 @@ function openReplay(id: number) {
   font: 800 var(--fs-label)/1.25 var(--font);
   color: var(--c-700);
 }
-/* The way in once the race is out: the page's main key, a dot beating on it. */
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  font: 800 var(--fs-caption)/1 var(--font);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.state-pill.wait svg {
+  color: var(--c-600);
+}
+.state-pill.wait b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-700);
+}
+.state-pill.live {
+  background: var(--c-800);
+  color: #fff;
+}
+/* The way in once the race is out: the page's main key, a pulsing beacon on it. */
 .watch-key {
-  gap: 8px;
-  min-width: 132px;
+  gap: 9px;
+  min-width: 148px;
   height: 44px;
+  padding: 0 22px;
   font-size: var(--fs-section);
+}
+.live-beacon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+}
+.live-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0;
+  animation: live-ripple 1.6s var(--ease-out) infinite;
 }
 .live-dot {
   width: 8px;
@@ -535,7 +719,11 @@ function openReplay(id: number) {
   animation: live-beat 1.2s var(--ease-out) infinite;
 }
 @keyframes live-beat {
-  50% { opacity: 0.25; }
+  50% { opacity: 0.3; }
+}
+@keyframes live-ripple {
+  0% { transform: scale(0.55); opacity: 0.75; }
+  100% { transform: scale(1.35); opacity: 0; }
 }
 /* The race before: its order first to last, the winner crowned, what my bets won, and the key that plays it again. */
 .before {
@@ -545,10 +733,17 @@ function openReplay(id: number) {
   gap: 8px 10px;
   min-width: 0;
 }
-.before small {
+.before-tag {
   flex: none;
   font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
+}
+.before-tag.fresh {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--c-500);
+  font-weight: 800;
+  color: var(--ink);
 }
 .order {
   display: flex;
@@ -558,6 +753,12 @@ function openReplay(id: number) {
   padding: 0;
   list-style: none;
 }
+.about-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
 .remind {
   display: inline-flex;
   align-items: center;
@@ -565,6 +766,32 @@ function openReplay(id: number) {
   font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
   cursor: pointer;
+}
+.staked-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  font: 700 var(--fs-caption)/1 var(--font);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.staked-pill:hover {
+  background: var(--c-50);
+  color: var(--ink);
+}
+.staked-pill img {
+  width: 14px;
+  height: 14px;
+}
+.staked-pill b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--c-700);
 }
 
 /*
@@ -602,8 +829,12 @@ function openReplay(id: number) {
   --face: clamp(26px, min(20cqw - 16px, 100cqh - 88px), 96px);
 }
 /* A void race: its line over the runners, which give it the room. */
+/* A cancelled race: the notice stands clear of the skill tags that stick out over the keys' tops. */
+.field-pane.off {
+  gap: 14px;
+}
 .field-pane.off .runners {
-  --face: clamp(24px, min(20cqw - 16px, 100cqh - 108px), 96px);
+  --face: clamp(24px, min(20cqw - 16px, 100cqh - 118px), 96px);
 }
 .runner {
   flex-direction: column;
@@ -658,7 +889,19 @@ function openReplay(id: number) {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
+}
+.kind-pill {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--c-200);
+  font: 800 10px/1.2 var(--font);
+  color: var(--c-800);
+  white-space: nowrap;
+}
+.runner.on .kind-pill {
+  background: var(--c-500);
+  color: var(--ink);
 }
 .odds b {
   font: 800 var(--fs-section)/1.05 var(--font-latin);
@@ -740,6 +983,8 @@ function openReplay(id: number) {
 /* The faces of the runner's die this race, small, in its colour. */
 .form {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 2px;
   margin-top: 4px;
 }
@@ -830,8 +1075,19 @@ function openReplay(id: number) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 34px;
+  padding: 0 9px 0 5px;
   font: 800 var(--fs-number)/1 var(--font);
   color: var(--ink);
+}
+.picked-x {
+  color: var(--ink-3);
+  opacity: 0.75;
+  transition: opacity var(--dur-fast), color var(--dur-fast);
+}
+.picked:hover .picked-x {
+  color: var(--ink);
+  opacity: 1;
 }
 .kinds {
   display: flex;
@@ -852,8 +1108,26 @@ function openReplay(id: number) {
   font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
 }
+.kind-key.on small {
+  font-weight: 800;
+  color: var(--ink);
+}
 .kind-key .odds b {
   font-size: var(--fs-number);
+}
+.kind-mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 5px 1px 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  font: 800 var(--fs-caption)/1 var(--font-latin);
+  color: var(--ink);
+}
+.kind-mine img {
+  width: 12px;
+  height: 12px;
 }
 /* The odds dropped on the way: the old ones struck out, the new ones flare once. */
 .kind-key s {
@@ -997,9 +1271,18 @@ function openReplay(id: number) {
   font: 800 22px/1 var(--font-latin);
   color: var(--ink);
 }
-.full {
-  font: 700 var(--fs-body)/1 var(--font);
+.full,
+.quota,
+.est {
+  font: 700 var(--fs-label)/1 var(--font);
   color: var(--ink-2);
+  white-space: nowrap;
+}
+.quota b,
+.est b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-700);
 }
 .bet-key {
   min-width: 112px;
@@ -1023,13 +1306,15 @@ function openReplay(id: number) {
   flex: 1 1 0;
   min-width: 0;
 }
-/* The key that plays the finished race on the bill again: a crisp mini key after its result. */
-.again-key {
-  width: 30px;
-  padding: 0;
+/* The key that plays the finished race on the bill again, and the quiet watch key beside it. */
+.again-key,
+.open-watch-key {
+  gap: 5px;
+  padding: 0 11px 0 9px;
   --key-lip-h: 2px;
 }
-.again-key svg,
+.again-key:not(.primary) svg,
+.open-watch-key svg,
 .past-play {
   color: var(--c-700);
 }
@@ -1129,10 +1414,18 @@ function openReplay(id: number) {
 .calm .odds .arrow,
 .calm .odds b,
 .calm .kind-key.repriced .odds b,
-.calm .live-dot {
+.calm .live-dot,
+.calm .live-ring {
   animation: none;
 }
 
+/* Medium-short panel (e.g. 920×620 where panel is 900×600): tighten map height slightly so runner keys breathe. */
+@container panel (max-height: 620px) {
+  .mini {
+    width: 280px;
+    height: 152px;
+  }
+}
 /* A low panel: the map gives the runners its height. */
 @container panel (max-height: 560px) {
   .mini {
@@ -1141,6 +1434,11 @@ function openReplay(id: number) {
   }
 }
 /* Narrow panels: shrink the map preview, stack the kind keys, and keep the slip on one line. */
+@container panel (max-width: 900px) {
+  .est {
+    display: none;
+  }
+}
 @container panel (max-width: 840px) {
   .mini {
     width: 224px;
@@ -1158,7 +1456,9 @@ function openReplay(id: number) {
   .kind-key .odds b {
     font-size: var(--fs-strong);
   }
-  .kind-key s {
+  .kind-key s,
+  .kind-mine,
+  .kind-pill {
     display: none;
   }
   .pool {
@@ -1182,7 +1482,9 @@ function openReplay(id: number) {
     align-items: center;
     gap: 8px;
   }
-  .before {
+  .before,
+  .about-head,
+  .about-foot {
     justify-content: center;
   }
   .picked {

@@ -14,7 +14,14 @@ export interface TapGuardRules { fastPerSecond: number; fastStreakSec: number; c
  * A limited pool (server/app/banners.py): the standing pool with `items` in a tier of their own, drawn at `rate`
  * percent and for certain on the `pity`-th draw since the last one. `start` and `end` are seconds.
  */
-export interface Banner { id: string; name: string; start: number; end: number; items: string[]; rate: number; pity?: number }
+/**
+ * A limited pool (server/app/banners.py). `rates`: odds of its own for some tiers, common taking the rest. `share`:
+ * the percent of a tier's draws that are its featured items of that tier. `rate`: a featured tier of its own.
+ */
+export interface Banner {
+  id: string; name: string; start: number; end: number; items: string[];
+  rate?: number; rates?: Partial<Record<Rarity, number>>; share?: number; pity?: number;
+}
 
 export type Economy = {
   /** Shards per day: dailyCap × (1 − e^−x), x = a·m + b·m² + c·m³ for m thousand taps and curve = [a, b, c];

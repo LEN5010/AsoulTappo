@@ -152,10 +152,16 @@ const locked = computed(() => !!busy.value || !!reeling.value || !!reveal.value)
 const drum = computed(() => !!reveal.value || showDraw.value);
 /** Whether window [i] has its ball in: all three at rest, from the right one by one while a draw plays. */
 const inSlot = (i: number) => !reveal.value || i >= 3 - stopped.value;
-/** Where the caret shows: the key the next typed digit goes to. */
-const target = computed(() => (typing.value && !keysOff.value && !locked.value ? pickTarget(picks.value, at.value) : null));
+/** Where the caret shows: the key the next typed digit goes to, and the active column highlighted while picking. */
+const activeCol = computed(() => (!drum.value && !keysOff.value && !locked.value ? pickTarget(picks.value, at.value) : null));
+const target = computed(() => (typing.value ? activeCol.value : null));
 const pickReady = computed(() => typed.value.length === 3 && blocked(1) === null);
 const note = computed(() => buyError.value || blocked(1) || "");
+const fieldLabel = computed(() => {
+  const cur = pickFaces.value.join(" ");
+  const pos = activeCol.value !== null ? `，第 ${activeCol.value + 1} 位` : "";
+  return `号码 ${cur}${pos}`;
+});
 
 const pressTimers: ReturnType<typeof setTimeout>[] = [];
 function press(i: number) {
@@ -165,13 +171,55 @@ function press(i: number) {
   pressTimers[i] = setTimeout(() => (pressed.value = pressed.value.map((p, j) => p && j !== i)), PRESS_MS);
 }
 function put(d: string) {
-  const r = putDigit(picks.value, at.value, d);
-  if (r.key === null) return;
+  let col: number | null;
+  let next: [string, string, string];
+  if (at.value !== null) {
+    col = at.value;
+    next = [...picks.value];
+    next[col] = d;
+    at.value = col < 2 ? col + 1 : null;
+  } else if (picks.value.every(Boolean)) {
+    col = 0;
+    next = [d, "", ""];
+  } else {
+    const r = putDigit(picks.value, null, d);
+    if (r.key === null) return;
+    col = r.key;
+    next = [...r.picks];
+  }
   faceIn.value = "";
-  stepped.value = stepped.value.map((s, j) => (j === r.key ? 0 : s));
-  picks.value = r.picks;
-  at.value = null;
-  press(r.key);
+  stepped.value = stepped.value.map((s, j) => (j === col ? 0 : s));
+  picks.value = next;
+  press(col);
+  field.value?.focus({ preventScroll: true });
+}
+function backOne(mode: "back" | "del") {
+  faceIn.value = "";
+  const next: [string, string, string] = [...picks.value];
+  if (mode === "del") {
+    picks.value = dropDigit(picks.value, at.value);
+    return;
+  }
+  if (at.value !== null) {
+    if (next[at.value]) {
+      next[at.value] = "";
+      picks.value = next;
+    } else if (at.value > 0) {
+      const prev = at.value - 1;
+      next[prev] = "";
+      picks.value = next;
+      at.value = prev;
+    }
+    return;
+  }
+  for (let i = 2; i >= 0; i--) {
+    if (next[i]) {
+      next[i] = "";
+      picks.value = next;
+      at.value = i;
+      return;
+    }
+  }
 }
 /** Typed or pasted digits go onto the keys; the field itself stays empty. */
 function onType(e: Event) {
@@ -180,52 +228,89 @@ function onType(e: Event) {
   input.value = "";
 }
 function onKey(e: KeyboardEvent) {
-  if (e.isComposing) return;
-  if (e.key === "Enter") {
-    buyPicked();
-  } else if (e.key === "Escape") {
-    // Lets go of a picked key before the panel's own Escape closes the panel.
-    if (at.value !== null) {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Escape") {
+    if (pop.value) {
+      pop.value = "";
+      e.stopPropagation();
+    } else if (at.value !== null) {
       at.value = null;
       e.stopPropagation();
+    } else if (!keysOff.value && !locked.value && picks.value.some(Boolean)) {
+      faceIn.value = "";
+      picks.value = NO_PICKS;
+      e.stopPropagation();
     }
-  } else if (keysOff.value || locked.value) {
     return;
-  } else if (e.key === "Backspace" || e.key === "Delete") {
+  }
+  if (e.key === "Enter") {
     e.preventDefault();
-    faceIn.value = "";
-    picks.value = dropDigit(picks.value, at.value);
-    at.value = null;
+    if (!e.repeat && !locked.value) buyPicked();
+    return;
+  }
+  if (e.key === "r" || e.key === "R") {
+    e.preventDefault();
+    if (!e.repeat && !locked.value) buyRandom(1);
+    return;
+  }
+  if (keysOff.value || locked.value) return;
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault();
+    backOne(e.key === "Backspace" ? "back" : "del");
+    field.value?.focus({ preventScroll: true });
   } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
     e.preventDefault();
-    const from = at.value ?? pickTarget(picks.value, null) ?? 2;
+    const fallback = e.key === "ArrowLeft" ? 2 : 0;
+    const from = at.value ?? pickTarget(picks.value, null) ?? fallback;
     at.value = Math.min(2, Math.max(0, from + (e.key === "ArrowLeft" ? -1 : 1)));
+    field.value?.focus({ preventScroll: true });
   } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
     e.preventDefault();
-    step(at.value ?? pickTarget(picks.value, null) ?? 2, e.key === "ArrowUp" ? 1 : -1);
+    const col = at.value ?? pickTarget(picks.value, null) ?? 0;
+    at.value = col;
+    step(col, e.key === "ArrowUp" ? 1 : -1);
+    press(col);
+    field.value?.focus({ preventScroll: true });
   }
 }
 /**
  * Keys typed anywhere on the shown page while picking is open go to the number keys, ahead of the panel's digit page
  * shortcuts (a window listener in the bubble phase). Editable fields keep their keys (the hidden field has its own
- * handler), a focused tab keeps its arrows and a focused key its Enter; with picking closed everything passes through.
+ * handler), a focused tab keeps its left/right arrows and a focused key its Enter; with picking closed or an overlay
+ * open everything passes through.
  */
 function onPageKey(e: KeyboardEvent) {
-  const s = state.value;
-  if (!s || s.drawn || keysOff.value || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector("[data-overlay]")) return;
+  if (pop.value) {
+    if (e.key === "Escape") {
+      pop.value = "";
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+    return;
+  }
+  const s = state.value;
+  if (!s || s.drawn || keysOff.value) return;
   const el = document.activeElement;
+  if (el === field.value) return;
   const focused = (sel: string) => !!el?.closest?.(sel);
   if (focused("input, textarea, select, [contenteditable]")) return;
   const digit = /^[0-9]$/.test(e.key);
   const arrow = e.key.startsWith("Arrow");
-  if (!digit && !arrow && e.key !== "Backspace" && e.key !== "Enter") return;
-  if (arrow && focused("[role=tab]")) return;
+  const rKey = e.key === "r" || e.key === "R";
+  const back = e.key === "Backspace" || e.key === "Delete";
+  if (!digit && !arrow && !rKey && !back && e.key !== "Enter" && e.key !== "Escape") return;
+  if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && focused("[role=tab]")) return;
   if (e.key === "Enter" && focused("button, a, [role=button]")) return;
+  if (e.key === "Escape" && at.value === null && !picks.value.some(Boolean)) return;
   e.stopImmediatePropagation();
-  e.preventDefault();
-  if (!digit) onKey(e);
-  else if (!locked.value) put(e.key);
+  if (digit) {
+    e.preventDefault();
+    if (!locked.value) put(e.key);
+  } else {
+    onKey(e);
+  }
 }
 /** The direction the last step went, per key: its new digit comes in from that side. */
 const stepped = ref<number[]>([0, 0, 0]);
@@ -743,6 +828,55 @@ function digits(number: string, tier: LotteryTier | null, stopped = 3) {
   return number.split("").map((d, i) => ({ d, hit: lit[i]! }));
 }
 
+// ---- tray multipliers (倍投) & interactive stub picking
+const hoverNum = ref("");
+const stubMeta = computed(() => {
+  const totals = new Map<string, number>();
+  for (const t of table.value) totals.set(t.number, (totals.get(t.number) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return table.value.map((t) => {
+    const rank = (seen.get(t.number) ?? 0) + 1;
+    seen.set(t.number, rank);
+    const total = totals.get(t.number) ?? 1;
+    return { total, rank, latestMulti: total > 1 && rank === total };
+  });
+});
+const samePickedCount = computed(() =>
+  !lastOnTable.value && typed.value.length === 3
+    ? (state.value?.tickets.filter((n) => n === typed.value).length ?? 0)
+    : 0,
+);
+const echoNum = computed(() =>
+  hoverNum.value || (!lastOnTable.value && typed.value.length === 3 ? typed.value : ""),
+);
+function stubTitle(num: string, total: number, rank: number): string {
+  const multi = total > 1 ? ` · 共 ${total} 注（第 ${rank} 注）` : "";
+  return `号码 ${num}${multi}`;
+}
+function loadStubNumber(num: string) {
+  if (lastOnTable.value || keysOff.value || locked.value || num.length !== 3) return;
+  faceIn.value = "";
+  stepped.value = [0, 0, 0];
+  picks.value = [num[0]!, num[1]!, num[2]!];
+  at.value = null;
+  [0, 1, 2].forEach(press);
+  field.value?.focus({ preventScroll: true });
+}
+function focusEmptySlot() {
+  if (lastOnTable.value || keysOff.value || locked.value) return;
+  at.value = pickTarget(picks.value, null) ?? 0;
+  field.value?.focus({ preventScroll: true });
+}
+
+/** Personal participation & shard winnings summary for the 往期 popover. */
+const pastSummary = computed(() => {
+  const hist = state.value?.history ?? [];
+  if (!hist.length) return null;
+  const hitsCount = hist.filter((h) => h.won > 0).length;
+  const totalWon = hist.reduce((sum, h) => sum + h.won, 0);
+  return { days: hist.length, hits: hitsCount, total: totalWon };
+});
+
 // ---- the first showing of a draw (lotteryReveal.ts); the watch that starts it is below, after everything it ends.
 const { reveal, stopped, stamped, wonShown, startReveal, resetReveal } = useDrawReveal({
   plays, last, showDraw, faceIn, settle, layoutTube, airOn, airOff, sendBall,
@@ -840,7 +974,10 @@ function onPopKey(e: KeyboardEvent) {
           <div ref="cabinetEl" class="cabinet">
             <!-- The keys take clicks, the wheel and their ▲/▼ keys; the keyboard goes to the hidden field under them. -->
             <div ref="keysEl" class="keys" :class="[faceIn, { drum }]">
-              <div v-for="(d, i) in faces" :key="i" class="key-col" :class="{ filled: drum && inSlot(i), selected: !drum && at === i }">
+              <div
+                v-for="(d, i) in faces" :key="i" class="key-col"
+                :class="{ filled: drum && inSlot(i), selected: !drum && at === i, active: !drum && at === null && activeCol === i }"
+              >
                 <span v-if="drum" class="socket">
                   <i v-if="inSlot(i)" class="lball slot-ball" :class="{ odd: odd(winning[i]), pop: !tube }"><b>{{ winning[i] }}</b></i>
                 </span>
@@ -869,7 +1006,9 @@ function onPopKey(e: KeyboardEvent) {
                 </template>
               </div>
               <input
-                ref="field" class="field" type="text" inputmode="numeric" autocomplete="off" aria-label="号码"
+                ref="field" class="field" type="text" inputmode="numeric" autocomplete="off"
+                :aria-label="fieldLabel"
+                aria-keyshortcuts="0 1 2 3 4 5 6 7 8 9 ArrowUp ArrowDown ArrowLeft ArrowRight Backspace Enter R"
                 :disabled="keysOff" @input="onType" @keydown="onKey" @focus="typing = true" @blur="typing = false; at = null"
               />
             </div>
@@ -885,7 +1024,13 @@ function onPopKey(e: KeyboardEvent) {
                 fresh: fresh.includes(i), held: held && fresh.includes(i),
                 out: lastOnTable && revealDigits(t.tier, stopped).out,
                 'top-win': lastOnTable && stamped && t.tier === 'top',
+                multi: stubMeta[i]!.total > 1,
+                echo: echoNum === t.number && (stubMeta[i]!.total > 1 || typed === t.number),
+                interactive: !lastOnTable && !keysOff && !locked,
               }"
+              :title="stubTitle(t.number, stubMeta[i]!.total, stubMeta[i]!.rank)"
+              @mouseenter="hoverNum = t.number" @mouseleave="hoverNum = ''"
+              @click="loadStubNumber(t.number)"
             >
               <TicketStub size="s">
                 <span
@@ -894,8 +1039,14 @@ function onPopKey(e: KeyboardEvent) {
                 >{{ c.d }}</span>
               </TicketStub>
               <b v-if="t.prize && stamped" class="stamp" :class="{ top: t.tier === 'top' }">+{{ fmt(t.prize) }}</b>
+              <b v-else-if="stubMeta[i]!.latestMulti" class="mult-tag">×{{ stubMeta[i]!.total }}</b>
+              <small v-if="t.prize && stamped && stubMeta[i]!.total > 1 && stubMeta[i]!.latestMulti" class="mult-sub">×{{ stubMeta[i]!.total }}</small>
             </li>
-            <li v-for="n in slots" :key="`slot-${n}`" class="slot" aria-hidden="true"></li>
+            <li
+              v-for="n in slots" :key="`slot-${n}`" class="slot"
+              :class="{ ready: !lastOnTable && !keysOff && !locked }"
+              aria-hidden="true" @click="focusEmptySlot"
+            ></li>
           </ol>
           <span class="count"><template v-if="showCount"><b>{{ state.tickets.length }}</b>/{{ state.daily }}</template></span>
         </div>
@@ -905,7 +1056,7 @@ function onPopKey(e: KeyboardEvent) {
           <LotteryPrizes
             :pool="pool" :second="state.prize.second" :third="state.prize.third" :second-each="secondEach" :calm="calm"
           />
-          <LotteryBoard :past="past" :reveal="reveal" :stopped="stopped" />
+          <LotteryBoard :past="past" :reveal="reveal" :stopped="stopped" :calm="calm" />
         </aside>
       </template>
     </div>
@@ -934,11 +1085,21 @@ function onPopKey(e: KeyboardEvent) {
       </div>
 
       <Transition :css="!calm" name="pop-up">
-        <div v-if="pop === 'past'" class="pop past ui-scroll">
+        <div v-if="pop === 'past'" class="pop past ui-scroll" role="dialog" aria-label="往期开奖">
+          <div v-if="pastSummary" class="past-summary">
+            <span class="past-stat">共 <b>{{ pastSummary.days }}</b> 期 · 中奖 <b>{{ pastSummary.hits }}</b> 次</span>
+            <span class="past-total" :class="{ on: pastSummary.total > 0 }">
+              <span>合计</span>
+              <Icon name="shard" :size="13" />
+              <b>{{ pastSummary.total > 0 ? `+${fmt(pastSummary.total)}` : "0" }}</b>
+            </span>
+          </div>
           <div v-if="lastAside" class="past-aside">
             <div class="past-aside-head">
               <span>{{ lastName }}</span>
-              <b>{{ lastAside.number }}</b>
+              <span class="aside-balls" :aria-label="`开奖号码 ${lastAside.number}`">
+                <i v-for="(d, di) in lastAside.number.split('')" :key="di">{{ d }}</i>
+              </span>
               <span class="past-aside-won" :class="{ on: lastAside.won > 0 }">
                 <template v-if="lastAside.won > 0"><Icon name="shard" :size="13" />+{{ fmt(lastAside.won) }}</template>
                 <template v-else>未中奖</template>
@@ -958,16 +1119,19 @@ function onPopKey(e: KeyboardEvent) {
               <span>日期</span><span>号码</span><span>头奖</span><span>奖金</span><span>我的</span>
             </div>
             <ul class="history">
-              <li v-for="h in past" :key="h.day">
-                <span>{{ shortDay(h.day) }}</span>
+              <li v-for="h in past" :key="h.day" :class="{ 'mine-hit': (h.won ?? 0) > 0, played: h.won !== null }">
+                <span class="h-day">{{ shortDay(h.day) }}</span>
                 <b>{{ h.number }}</b>
                 <span class="winners" :class="{ none: !h.top.length }">{{ h.winners }}</span>
                 <span class="prize" :class="{ none: !h.top.length }">
                   <template v-if="h.top.length"><Icon name="shard" :size="13" />{{ fmt(h.each) }}</template>
                   <template v-else>—</template>
                 </span>
-                <span v-if="h.won !== null" class="won" :class="{ on: h.won > 0 }">{{ h.won > 0 ? `+${fmt(h.won)}` : "未中奖" }}</span>
-                <span v-else></span>
+                <span v-if="h.won !== null && h.won > 0" class="won on">
+                  <Icon name="shard" :size="12" />+{{ fmt(h.won) }}
+                </span>
+                <span v-else-if="h.won === 0" class="won">未中奖</span>
+                <span v-else class="won none">—</span>
               </li>
             </ul>
           </div>
@@ -976,27 +1140,35 @@ function onPopKey(e: KeyboardEvent) {
 
       <!-- The buy keys, all alike: what they do, then the coins they take. -->
       <div v-if="!state.drawn" class="park-actions-main">
-        <p class="note" :class="{ warn: !!buyError }" role="status">{{ note }}</p>
+        <p v-if="note" class="note" :class="{ warn: !!buyError }" role="status">{{ note }}</p>
         <button
           type="button" class="ui-btn buy-key" :disabled="blocked(1) !== null" :aria-busy="busy === 'random'"
+          aria-keyshortcuts="R"
+          @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
           @click="buyRandom(1)"
         >
-          <span>机选</span><small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />1</small>
+          <span>机选</span>
+          <small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />1</small>
         </button>
         <button
           v-if="state.left > 1" type="button" class="ui-btn buy-key"
-          :disabled="blocked(state.left) !== null" @click="buyRandom(state.left)"
+          :disabled="blocked(state.left) !== null"
+          @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
+          @click="buyRandom(state.left)"
         >
           <span>机选 {{ state.left }} 注</span>
           <small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />{{ state.left }}</small>
         </button>
         <button
           type="button" class="ui-btn primary buy-key" :class="{ pulse: pickReady && !calm }" :disabled="!pickReady"
-          :aria-busy="busy === 'pick'" @click="buyPicked"
+          :aria-busy="busy === 'pick'" aria-keyshortcuts="Enter"
+          :title="samePickedCount > 0 ? `已选 ${samePickedCount} 注，再买共 ${samePickedCount + 1} 注` : undefined"
+          @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
+          @click="buyPicked"
         >
           <span class="pick-num">买<b
             v-for="(d, i) in pickFaces" :key="i" :class="{ gap: d === '_' }" :aria-hidden="d === '_' || undefined"
-          >{{ d }}</b></span>
+          >{{ d }}</b><em v-if="samePickedCount > 0" class="mult-next">×{{ samePickedCount + 1 }}</em></span>
           <small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />1</small>
         </button>
       </div>
@@ -1258,6 +1430,12 @@ function onPopKey(e: KeyboardEvent) {
   box-shadow: inset 0 3px 6px rgba(var(--c-900-rgb), 0.2), 0 1px 0 rgba(255, 255, 255, 0.38);
   transition: background var(--dur-slow), box-shadow var(--dur-slow);
 }
+.key-col.active {
+  box-shadow:
+    inset 0 0 0 1.5px var(--c-400),
+    inset 0 3px 6px rgba(var(--c-900-rgb), 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.42);
+}
 .key-col.selected {
   box-shadow:
     inset 0 0 0 2px var(--c-500),
@@ -1502,8 +1680,23 @@ function onPopKey(e: KeyboardEvent) {
   display: flex;
   transition: opacity var(--dur-slow) var(--ease-out);
 }
-.lottery:not(.calm) .cell:not(.held):not(.out):hover :deep(.ticket-stub) {
+.cell.interactive {
+  cursor: pointer;
+}
+.lottery:not(.calm) .cell:not(.held):not(.out):hover :deep(.ticket-stub),
+.lottery:not(.calm) .cell.echo:not(.held):not(.out) :deep(.ticket-stub) {
   transform: translateY(-2px) rotate(-1deg);
+}
+.cell.multi :deep(.paper) {
+  background: linear-gradient(90deg, var(--c-200) var(--x), var(--surface) var(--x));
+}
+.cell.echo:not(.held) :deep(.ticket-stub) {
+  filter:
+    drop-shadow(0 0 0 var(--c-500))
+    drop-shadow(0 2px 6px rgba(var(--c-500-rgb), 0.45));
+}
+.cell.echo:not(.held) :deep(.paper) {
+  box-shadow: inset 0 0 0 1.5px var(--c-500), inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 .cell :deep(.paper) {
   width: 62px;
@@ -1511,7 +1704,8 @@ function onPopKey(e: KeyboardEvent) {
   padding: 0 7px 0 calc(var(--tab) + 6px);
 }
 /* Bought, waiting for the number to leave the keys. */
-.cell.held :deep(.ticket-stub) {
+.cell.held :deep(.ticket-stub),
+.cell.held .mult-tag {
   opacity: 0;
 }
 /* Drawn and matching nothing: the stub steps back. */
@@ -1524,6 +1718,14 @@ function onPopKey(e: KeyboardEvent) {
   border: 2px dashed var(--c-200);
   border-radius: var(--radius-s);
   background: none;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.slot.ready {
+  cursor: pointer;
+}
+.slot.ready:hover {
+  border-color: var(--c-300);
+  background: rgba(255, 255, 255, 0.55);
 }
 .digit {
   position: relative;
@@ -1569,6 +1771,36 @@ function onPopKey(e: KeyboardEvent) {
   background: var(--grad-gold);
   box-shadow: 0 0 0 2px var(--surface), 0 4px 12px rgba(var(--gold-rgb), 0.68);
   color: var(--ink);
+}
+/* Multiplier badge (×2, ×3...) when the same number is stacked in the tray. */
+.mult-tag {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  z-index: 2;
+  padding: 2px 5px 1px;
+  border-radius: 999px;
+  background: var(--c-500);
+  box-shadow: 0 0 0 1.5px var(--surface), 0 2px 4px -1px rgba(var(--c-900-rgb), 0.25);
+  font: 800 12px/1 var(--font-latin);
+  color: var(--ink);
+  white-space: nowrap;
+  animation: mult-pop 280ms var(--ease-pop) both;
+}
+.mult-sub {
+  position: absolute;
+  top: -8px;
+  left: -4px;
+  z-index: 2;
+  padding: 1px 4px;
+  border-radius: 999px;
+  background: var(--c-200);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  font: 800 11px/1 var(--font-latin);
+  color: var(--c-800);
+}
+@keyframes mult-pop {
+  from { transform: scale(0.5); opacity: 0; }
 }
 .count {
   flex: none;
@@ -1721,6 +1953,15 @@ function onPopKey(e: KeyboardEvent) {
 .pick-num b.gap {
   opacity: 0.55;
 }
+.mult-next {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  font: 800 12px/1.1 var(--font-latin);
+  font-style: normal;
+  color: var(--ink);
+}
 
 /* The pop-up: the full list rises from the bar. */
 .pop {
@@ -1751,10 +1992,39 @@ function onPopKey(e: KeyboardEvent) {
   bottom: calc(100% + 8px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  width: 432px;
+  gap: 10px;
+  width: 444px;
   max-width: calc(100% - 32px);
-  max-height: 268px;
+  max-height: 292px;
+}
+/* Personal participation & shard winnings summary across recent drawn days. */
+.past-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 11px;
+  border-radius: var(--radius-m);
+  background: var(--c-100);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.past-stat b {
+  font: 800 var(--fs-strong)/1 var(--font-latin);
+  color: var(--ink);
+}
+.past-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-3);
+}
+.past-total b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+}
+.past-total.on {
+  color: var(--c-700);
 }
 /* My stubs of the last draw, on a tinted card above the list. */
 .past-aside {
@@ -1773,9 +2043,21 @@ function onPopKey(e: KeyboardEvent) {
   font-weight: 700;
   color: var(--ink-2);
 }
-.past-aside-head b {
-  font: 800 var(--fs-number)/1 var(--font-latin);
-  letter-spacing: 0.06em;
+.aside-balls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.aside-balls i {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--c-300);
+  font: 800 13px/1 var(--font-latin);
+  font-style: normal;
   color: var(--c-700);
 }
 .past-aside-won {
@@ -1811,15 +2093,15 @@ function onPopKey(e: KeyboardEvent) {
 .history-wrap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 .history-head,
 .history li {
   display: grid;
-  grid-template-columns: 4.6em 3em minmax(0, 1fr) 76px 64px;
+  grid-template-columns: 4.5em 3em minmax(0, 1fr) 74px 72px;
   align-items: center;
-  gap: 10px;
-  padding: 0 2px;
+  gap: 8px;
+  padding: 0 6px;
 }
 .history-head {
   padding-bottom: 4px;
@@ -1839,7 +2121,9 @@ function onPopKey(e: KeyboardEvent) {
   list-style: none;
 }
 .history li {
-  min-height: 30px;
+  position: relative;
+  min-height: 31px;
+  border-radius: var(--radius-s);
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-3);
@@ -1847,13 +2131,42 @@ function onPopKey(e: KeyboardEvent) {
 .history li + li {
   border-top: 1px solid var(--c-100);
 }
-.history b {
-  font: 800 var(--fs-number)/1 var(--font-latin);
-  letter-spacing: 0.08em;
+.history li.played {
   color: var(--ink-2);
 }
+.history li.mine-hit {
+  padding-left: 9px;
+  background: var(--c-50);
+  color: var(--ink);
+}
+.history li.mine-hit::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--c-500);
+}
+.history b {
+  font: 800 var(--fs-number)/1 var(--font-latin);
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+.history li.mine-hit b {
+  color: var(--c-700);
+}
 .history .won {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
   text-align: right;
+  white-space: nowrap;
+}
+.history .won.none {
+  opacity: 0.55;
 }
 .history .won.on {
   font: 800 var(--fs-number)/1 var(--font-latin);
@@ -1880,7 +2193,11 @@ function onPopKey(e: KeyboardEvent) {
 .calm .air-plume {
   display: none;
 }
+.calm .mult-tag {
+  animation: none;
+}
 .calm .cell,
+.calm .slot,
 .calm .step,
 .calm .key-col,
 .calm .base::after {
