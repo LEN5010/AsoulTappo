@@ -36,7 +36,7 @@ esac
 
 ssh "$HOST" bash -s -- "$MODE" "$SHA" "$FLAG" <<'REMOTE'
 set -euo pipefail
-MODE=$1 SHA=$2 FLAG=$3
+MODE=$1 SHA=$2 FLAG=${3:-}
 BASE=/opt/asoultappo DB=/opt/asoultappo/data/asoultappo.db CFG=/opt/asoultappo/config ENV=/opt/asoultappo/server.env
 D=/root/asoultappo-build-$SHA TS=$(date -u +%Y%m%dT%H%M%SZ)
 sq() { sqlite3 -cmd ".timeout 30000" "$@"; }
