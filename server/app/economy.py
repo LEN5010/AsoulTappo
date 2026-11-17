@@ -11,8 +11,8 @@ Weights are percentages unless said otherwise.
   thousand taps (``curve`` = [a, b, c]); a minute pays for its first ``tapsPerMinute`` taps.
 - ``resonance``: one draw costs ``cost`` shards; ``rates`` by tier, hard ``pity`` for the legendary and skin tiers,
   ``commonKindWeights`` split the common tier between cards and emotes. ``duplicateRefund`` is what a duplicate turns
-  into at once (emotes, and cards by tier; big hidden cards never repeat; ``holo`` is a repeat holo version, which
-  pays what its card does when the key is missing). ``repeatTiers`` keep their odds once
+  into at once (emotes, and cards by tier; big hidden cards never repeat; ``holo`` is a repeat holo version and ``dance`` a dance card; each
+  pays what its card's tier does when the key is missing). ``repeatTiers`` keep their odds once
   everything in them is owned; their repeats turn into shards. ``rates.limited`` is the limited tier (the 衣橱 cards):
   without it those cards stay out of the pool. A tier a client's pool leaves empty (the limited tier for a client
   older than its cards) gives its odds to common, and ``GET /api/economy`` shows that client the rates so folded.

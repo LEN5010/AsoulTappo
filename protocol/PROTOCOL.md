@@ -135,7 +135,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 
-物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`、`holo:<卡片 id>`（镭射款，见共鸣一节）。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。抽到镭射款时 item 仍是普卡的 `card:<id>`，另带 `holo: true` 和 `cardNew`：这时 new 指镭射款是不是第一次得到，cardNew 指普卡是不是。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360，重复的镭射款为 180（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值，镭射款取 `holo` 键，没有该键时按它的卡片取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
+物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`、`holo:<卡片 id>`（镭射款，见共鸣一节）。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。抽到镭射款时 item 仍是普卡的 `card:<id>`，另带 `holo: true` 和 `cardNew`：这时 new 指镭射款是不是第一次得到，cardNew 指普卡是不是。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡为 20，重复的小隐藏和跳舞卡为 360，重复的镭射款为 180（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值，跳舞卡取 `dance` 键，镭射款取 `holo` 键，没有对应键时按卡片的 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
 
 状态示例：
 

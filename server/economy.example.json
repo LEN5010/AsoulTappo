@@ -32,6 +32,7 @@
       "emote": 5,
       "normal": 20,
       "small": 360,
+      "dance": 360,
       "holo": 180
     },
     "repeatTiers": [

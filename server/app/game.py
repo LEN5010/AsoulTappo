@@ -407,14 +407,19 @@ class Game:
     # ------------------------------------------------------------------- craft
     def duplicate_shards(self, item_id: str, holo: bool = False) -> int:
         """Shards a repeat of this item turns into: emotes alike, cards by tier. A repeat holo version (镭射款) pays
-        ``holo`` when the economy names it, else what its card pays."""
+        ``holo`` and a dance card (an epic card of the normal tier) ``dance``, when the economy names them, else what
+        the card's tier pays."""
         refunds = self.manifest.resonance["duplicateRefund"]
         if holo and "holo" in refunds:
             return int(refunds["holo"])
         if item_id.startswith("emote:"):
             return int(refunds.get("emote", 0))
         card = self.manifest.cards.get(item_id[5:]) if item_id.startswith("card:") else None
-        return int(refunds.get(card["tier"], 0)) if card else 0
+        if not card:
+            return 0
+        if card["rarity"] == "epic" and card["tier"] == "normal" and "dance" in refunds:
+            return int(refunds["dance"])
+        return int(refunds.get(card["tier"], 0))
 
     def refund_duplicate_cards(self) -> tuple[int, int]:
         """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
