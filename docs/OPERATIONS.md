@@ -10,8 +10,8 @@
 | --- | --- |
 | `/opt/asoultappo/app` | 运行的服务端代码，以只读方式挂到容器的 `/srv/app`。镜像里打包的代码是旧的，不用它 |
 | `/opt/asoultappo/data` | SQLite 数据库，挂到 `/srv/data` |
-| `/opt/asoultappo/config` | 私有数值文件 `economy.json`，挂到 `/srv/config`。没有这个挂载，服务端起不来 |
-| `/opt/asoultappo/server.env` | 环境变量，其中有管理密钥和 `ASOULTAPPO_ECONOMY=/srv/config/economy.json` |
+| `/opt/asoultappo/config` | 私有数值文件 `economy.json` 和自动输入的判定规则 `guard.py`，挂到 `/srv/config`。没有这个挂载，服务端起不来 |
+| `/opt/asoultappo/server.env` | 环境变量，其中有管理密钥、`ASOULTAPPO_ECONOMY=/srv/config/economy.json` 和 `ASOULTAPPO_GUARD=/srv/config/guard.py`。没有后一项时服务端照常运行，只是不判定自动输入 |
 | `/root/asoultappo-build-<提交>` | 每次部署的构建目录：这次提交的 `server/app` 和资源包清单 |
 | `/root` 下的 `asoultappo-*.db`、`asoultappo-app-*` | 每次切换前的数据库和代码备份 |
 
