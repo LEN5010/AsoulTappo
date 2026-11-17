@@ -275,3 +275,29 @@ def test_a_client_from_before_maps_gets_the_result_without_the_moves(version, pl
         with pytest.raises(Exception) as e:
             races.replay(TOKEN, past["id"], version)
         assert e.value.code == "no_replay"
+
+
+def test_a_race_with_skills_names_its_close_ups_and_lasts_as_long_as_they_take():
+    seen = 0
+    for k in range(6):
+        races, clock = make()
+        clock.t = T0 + k * CFG["interval"]
+        races.tick()
+        clock.t += CFG["betting"] + 1
+        races.tick()
+        r = races.view(TOKEN, "1.2.5")["race"]
+        cuts = r.get("cuts", [])
+        assert cuts == park_race.cuts_of(r["moves"])
+        # Once a member at most, each at a step where that member's skill is at work.
+        assert len({c["m"] for c in cuts}) == len(cuts) <= 5
+        for c in cuts:
+            move = r["moves"][c["at"]]
+            assert (move["m"] == c["m"] and move.get("skill")) or c["m"] in move.get("react", [])
+        if cuts:
+            seen += 1
+            assert r["cutMs"] == park_race.cut_ms(r["stepMs"])
+        else:
+            assert "cutMs" not in r
+        assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(
+            r["leadMs"], len(r["moves"]), r["stepMs"], r["slowMs"], cuts=len(cuts)) / 1000
+    assert seen

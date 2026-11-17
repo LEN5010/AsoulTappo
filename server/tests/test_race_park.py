@@ -275,7 +275,7 @@ def test_the_start_publishes_the_seed_and_the_moves_it_decides():
     steps = len(r["moves"])
     slow = 5 * ((steps - 1) // 5)
     lead = 4000 + 1500 * (len(r["rolls"]) - 1)
-    assert (r["leadMs"], r["rollMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (lead, 2400, 2500, 3300, slow)
+    assert (r["leadMs"], r["rollMs"], r["stepMs"], r["slowMs"], r["slowFrom"]) == (lead, 4800, 5000, 6600, slow)
     # The last round fills up with dice for those who never got to move.
     assert [d["m"] for d in r["rest"]] == r["order"][(steps - 1) % 5 + 1:]
     # Each round opens with its dice; the last round plays slowly: its last step starts after slowFrom normal steps,
@@ -291,11 +291,26 @@ def test_playback_timing():
     assert park_race.slow_from(30) == 25 and park_race.slow_from(31) == 30 and park_race.slow_from(5) == 0
     # One round of order dice, then each round rolled again adds REROLL_MS.
     assert park_race.lead_ms(1) == 4000 and park_race.lead_ms(3) == 4000 + 2 * 1500
-    # 22 steps: five rounds of dice, 20 steps at 2500, the last round's two at 3300.
-    assert park_race.playback_ms(4000, 22, 2500, 3300) == 4000 + 5 * 2400 + 20 * 2500 + 2 * 3300 + 4000
-    assert park_race.playback_ms(4000, 20, 2500, 3300) == 4000 + 4 * 2400 + 15 * 2500 + 5 * 3300 + 4000
+    # 22 steps: five rounds of dice, 20 steps at 5000, the last round's two at 6600.
+    assert park_race.playback_ms(4000, 22, 5000, 6600) == 4000 + 5 * 4800 + 20 * 5000 + 2 * 6600 + 4000
+    assert park_race.playback_ms(4000, 20, 5000, 6600) == 4000 + 4 * 4800 + 15 * 5000 + 5 * 6600 + 4000
     # The dice scale with the steps; without them (rows from before them) a round costs nothing.
     assert park_race.roll_ms(1250) == 1200 and park_race.playback_ms(0, 5, 1000, 1000, 0) == 5000 + 4000
+    # A race stored at the pace before this one plays as it did: its dice are worked out from its own steps.
+    assert park_race.roll_ms(2500) == 2400
+    # A close-up holds its step back, scaled as the steps are.
+    assert park_race.cut_ms(5000) == 2600 and park_race.cut_ms(2500) == 1300
+    assert park_race.playback_ms(0, 5, 5000, 5000, 0, cuts=2) == 5 * 5000 + 2 * 2600 + 4000
+
+
+def test_a_close_up_opens_the_first_step_each_members_skill_shows_in():
+    moves = [
+        {"m": "a"}, {"m": "b", "skill": "burst"}, {"m": "c", "react": ["a"]}, {"m": "b", "skill": "burst"},
+        # Two skills new in one step: the mover's now, the climber's the next time it shows.
+        {"m": "d", "skill": "porter", "react": ["e"]}, {"m": "c", "react": ["a", "e"]},
+    ]
+    assert park_race.cuts_of(moves) == [{"at": 1, "m": "b"}, {"at": 2, "m": "a"}, {"at": 4, "m": "d"}, {"at": 5, "m": "e"}]
+    assert park_race.cuts_of([{"m": "a"}, {"m": "b"}]) == []
 
 
 def test_the_longest_races_play_unhurried():
@@ -332,8 +347,8 @@ def test_a_short_run_window_slows_nothing_past_the_next_race():
     r = races.view(TOKEN)["race"]
     assert r["phase"] == "running"
     # 40 s less RUN_MARGIN for lead, steps and tail: both step lengths shrink together.
-    assert r["stepMs"] < 2500 and r["slowMs"] < 3300 and r["rollMs"] < 2400
-    assert abs(r["slowMs"] / r["stepMs"] - 3300 / 2500) < 0.01 and r["rollMs"] == r["stepMs"] * 2400 // 2500
+    assert r["stepMs"] < 5000 and r["slowMs"] < 6600 and r["rollMs"] < 4800
+    assert abs(r["slowMs"] / r["stepMs"] - 6600 / 5000) < 0.01 and r["rollMs"] == r["stepMs"] * 4800 // 5000
     assert r["endsAt"] <= t0 + cfg["interval"] - park_race.RUN_MARGIN
     n = len(r["moves"])
     assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(r["leadMs"], n, r["stepMs"], r["slowMs"]) / 1000

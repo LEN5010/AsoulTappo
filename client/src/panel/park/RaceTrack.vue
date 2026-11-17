@@ -25,9 +25,10 @@ import Icon from "../../ui/Icon.vue";
 import alpaca from "../../assets/brand/side-alpaca.webp";
 import { COIN } from "./coin";
 import {
-  boardOf, cellOf, cornersOf, HOP_AT, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, spots, SQUARE_AT,
-  SKILL_NAMES, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind, type Race, type Spot,
+  boardOf, cellOf, cornersOf, cutOf, HOP_AT, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, spots, SQUARE_AT,
+  SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind, type Race, type Spot,
 } from "./race";
+import SkillCutIn from "./SkillCutIn.vue";
 import TuanziToken from "./TuanziToken.vue";
 
 /**
@@ -178,6 +179,23 @@ const moment = computed(() => {
   // A skill's word is its name: the mover's own, or the climber's.
   const text = m.kind === "skill" ? SKILL_NAMES[m.m === s.m && s.skill ? s.skill : "climb"] ?? "" : WORDS[m.kind];
   return { ...m, key: `${i}${m.kind}`, text };
+});
+
+/**
+ * The close-up the step under way opens with: its member's skill, named and explained, before the step moves. [at] is
+ * how far in it is, read once as it comes up.
+ */
+const cut = computed(() => {
+  const r = props.race;
+  const h = head.value;
+  if (!r || !h || h.cut === undefined) return null;
+  const c = cutOf(r, h.current);
+  const skill = c ? r.setup.skills?.[c.m] : undefined;
+  if (!c || !skill) return null;
+  return {
+    key: `${r.id}:${c.at}`, m: c.m, who: nameOf(c.m), name: SKILL_NAMES[skill.id] ?? "", text: skillText(skill),
+    color: manifest.characters.find((x) => x.id === c.m)?.color, ms: (r.cutMs ?? 0) / Math.max(0.01, props.rate ?? 1), at: h.cut,
+  };
 });
 
 /** The last step is done and the result not yet up: the field stands still, the start corner flashing. */
@@ -425,12 +443,16 @@ watch(hops, (now, before) => {
           :style="style(m)" :title="nameOf(m)"
         >
           <div class="body"><TuanziToken :member="m" /></div>
-          <b v-if="ready && roll?.m === m" :key="roll.key" class="roll" :class="{ down: roll.down, side: above[m] || (places[m]?.level ?? 0) >= 2 }" aria-hidden="true">{{ roll.text }}</b>
+          <b v-if="ready && roll?.m === m" :key="roll.key" class="roll" :class="{ down: roll.down, side: above[m] || (places[m]?.level ?? 0) >= 2, flip: flipped(m) }" aria-hidden="true">{{ roll.text }}</b>
           <span v-if="ready && moment?.m === m" :key="moment.key" class="say" :class="[moment.kind, { flip: flipped(m) }]" aria-hidden="true">
             {{ moment.text }}
           </span>
           <span v-if="leader === m && !above[m]" class="crown" aria-hidden="true"><Icon name="crown" :size="22" /></span>
         </div>
+        <SkillCutIn
+          v-if="ready && cut" :key="cut.key" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
+          :color="cut.color" :ms="cut.ms" :at="cut.at"
+        />
       </div>
     </div>
   </div>
@@ -825,6 +847,11 @@ watch(hops, (now, before) => {
   left: calc(50% - var(--d) * 0.55);
   bottom: calc(100% + var(--over, 0) * var(--u) - var(--d) * 0.5);
   translate: -100% 0;
+}
+/* Near the right turn the word is on the left, so the digits go right. */
+.roll.side.flip {
+  left: calc(50% + var(--d) * 0.55);
+  translate: 0 0;
 }
 /* The squares walked: the coral digits with the white outline of the desk's combo count. */
 .roll {

@@ -41,11 +41,17 @@ PRIZE = "race_prize"
 # from slowFrom (the first move of the last round) on; endsAt follows the last step by TAIL_MS. stepMs and slowMs are
 # STEP_MS and SLOW_MS unless that would run past the next race's bets less RUN_MARGIN; then both are scaled down
 # together, and rollMs with them (roll_ms()). The lead is never scaled.
+#
+# A step opens with a close-up (cutMs before it moves) the first time a member's skill is at work in the race: the
+# skill named and explained, once a member (cuts_of()). cutMs is CUT_MS, scaled as the steps are (cut_ms()).
+#
+# ROLL_MS, STEP_MS and CUT_MS keep their ratios: a stored race's dice and close-ups are worked out from its step_ms.
 LEAD_MS = 4000
 REROLL_MS = 1500
-ROLL_MS = 2400
-STEP_MS = 2500
-SLOW_MS = 3300
+ROLL_MS = 4800
+STEP_MS = 5000
+SLOW_MS = 6600
+CUT_MS = 2600
 TAIL_MS = 4000
 # Moves a round: one for each member, in the order.
 ROUND = 5
@@ -99,23 +105,44 @@ def roll_ms(step_ms: int) -> int:
     return step_ms * ROLL_MS // STEP_MS
 
 
+def cut_ms(step_ms: int) -> int:
+    """How long a close-up holds a step back, for steps of [step_ms]: CUT_MS, scaled as the steps are."""
+    return step_ms * CUT_MS // STEP_MS
+
+
+def cuts_of(moves: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The steps that open with a close-up, `{at, m}`: the first step in which each member's skill is at work, the
+    mover's own before that of a climber the group lands on. One close-up a step: a second member whose skill shows
+    for the first time in the same step gets its own the next time."""
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for i, move in enumerate(moves):
+        at_work = ([move["m"]] if move.get("skill") else []) + list(move.get("react") or [])
+        for m in at_work:
+            if m not in seen:
+                seen.add(m)
+                out.append({"at": i, "m": m})
+                break
+    return out
+
+
 def lead_ms(rounds: int) -> int:
     """From startsAt to the first step: the first round of the order's dice, each round rolled again, then a pause."""
     return LEAD_MS + max(0, rounds - 1) * REROLL_MS
 
 
-def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int, roll: int | None = None) -> int:
+def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int, roll: int | None = None, cuts: int = 0) -> int:
     """From startsAt to endsAt: the lead, each round's dice ([roll], roll_ms(step_ms) when None), the steps before the
-    last round, the slow last round and the tail."""
+    last round, the slow last round, [cuts] close-ups and the tail."""
     first = slow_from(steps)
     rounds = -(-steps // ROUND)
     roll = roll_ms(step_ms) if roll is None else roll
-    return lead + rounds * roll + first * step_ms + (steps - first) * slow_ms + TAIL_MS
+    return lead + rounds * roll + first * step_ms + (steps - first) * slow_ms + cuts * cut_ms(step_ms) + TAIL_MS
 
 
 def _result(outcome: dict[str, Any]) -> dict[str, Any]:
     """What a race row keeps of its outcome (the ranking has its own column)."""
-    return {k: outcome[k] for k in ("start", "order", "rolls", "moves", "rest")}
+    return {**{k: outcome[k] for k in ("start", "order", "rolls", "moves", "rest")}, "cuts": cuts_of(outcome["moves"])}
 
 
 def room_message(peer_id: str, coins: int) -> dict[str, Any]:
@@ -197,14 +224,15 @@ class Races:
         lead = lead_ms(len(outcome["rolls"]))
         window_ms = (int(cfg["interval"]) - int(cfg["betting"]) - RUN_MARGIN) * 1000
         step_ms, slow_ms = STEP_MS, SLOW_MS
-        moving = playback_ms(0, steps, step_ms, slow_ms) - TAIL_MS
+        cuts = len(cuts_of(outcome["moves"]))
+        moving = playback_ms(0, steps, step_ms, slow_ms, cuts=cuts) - TAIL_MS
         room = window_ms - lead - TAIL_MS
         if moving > room:
             # Every share shrinks by the same factor; rounding down only ever shortens.
             step_ms = max(1, math.floor(STEP_MS * room / moving))
             slow_ms = max(1, math.floor(SLOW_MS * room / moving))
         return {"id": race_id, "starts_at": float(starts),
-                "ends_at": starts + playback_ms(lead, steps, step_ms, slow_ms) / 1000, "step_ms": step_ms,
+                "ends_at": starts + playback_ms(lead, steps, step_ms, slow_ms, cuts=cuts) / 1000, "step_ms": step_ms,
                 "slow_ms": slow_ms, "seed": seed.hex(), "hash": race.seed_hash(seed), "setup": json.dumps(setup),
                 "ranking": json.dumps(outcome["ranking"]), "result": json.dumps(_result(outcome))}
 
@@ -362,7 +390,7 @@ class Races:
             return None
         # The end pins the number of steps and of the opening's rounds as the race played them.
         ends = row["starts_at"] + playback_ms(lead_ms(len(again["rolls"])), len(again["moves"]), row["step_ms"],
-                                              row["slow_ms"]) / 1000
+                                              row["slow_ms"], cuts=len(cuts_of(again["moves"]))) / 1000
         if abs(ends - row["ends_at"]) > 1e-3:
             return None
         return _result(again)
@@ -446,6 +474,9 @@ class Races:
                            rollMs=roll_ms(row["step_ms"]) if rest is not None else 0, stepMs=row["step_ms"],
                            slowFrom=slow_from(len(result["moves"])), slowMs=row["slow_ms"], start=result["start"],
                            moves=result["moves"], rest=rest or [])
+                # Rows from before the close-ups name none, and played without them.
+                if result.get("cuts"):
+                    out.update(cuts=result["cuts"], cutMs=cut_ms(row["step_ms"]))
                 if rolls:
                     out.update(order=result["order"], rolls=rolls)
             out["replay"] = result is not None

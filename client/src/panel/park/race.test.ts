@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HOP_AT, hits, leaders, momentOf, moving, OPEN_AT, OPEN_ROLL_MS, openingAt, playhead, rankOf, REROLL_MS, PUSH_LEN,
   DICE_TOSS, rollStart, roundAt, roundDice, roundsOf, chinaDay, playLength, replayAt, replayTime,
-  airFaces, boardOf, bounce, cellOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
+  airFaces, boardOf, bounce, cellOf, cutOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
   type Race, type RaceSetup, type RaceStep,
 } from "./race";
 import fixture from "./race.fixture.json";
@@ -70,6 +70,28 @@ describe("race playback", () => {
     expect(stepStart(race({ leadMs: 7000 }), 0)).toBe(7000);
     // Without slowFrom every step is stepMs long.
     expect(stepStart(race({ slowFrom: undefined, slowMs: undefined }), 27)).toBe(4000 + 27 * 3000);
+  });
+
+  it("holds a step back for its close-up, and every step after it by as much", () => {
+    // Close-ups before steps 2 and 6, 2600 ms each (park_race.py cuts_of, cut_ms).
+    const r = race({ rollMs: 4800, stepMs: 5000, slowMs: 6600, rest: [], cutMs: 2600, cuts: [{ at: 2, m: "jiaran" }, { at: 6, m: "nailin" }] });
+    const t = (ms: number) => T0 + ms;
+    expect(cutOf(r, 2)).toEqual({ at: 2, m: "jiaran" });
+    expect(cutOf(r, 3)).toBeUndefined();
+    expect(stepStart(r, 2)).toBe(4000 + 4800 + 2 * 5000);
+    expect(stepStart(r, 3)).toBe(4000 + 4800 + 3 * 5000 + 2600);
+    // The next round's dice wait for it too; the second close-up is in that round.
+    expect(rollStart(r, 1)).toBe(4000 + 4800 + 5 * 5000 + 2600);
+    expect(stepStart(r, 7)).toBe(4000 + 2 * 4800 + 7 * 5000 + 2 * 2600);
+    // During the close-up the step is under way and has not moved; then it plays as any other.
+    expect(playhead(r, t(stepStart(r, 2) + 1300))).toEqual({ done: 2, current: 2, part: 0, cut: 0.5 });
+    expect(playhead(r, t(stepStart(r, 2) + 2600 + 2500))).toEqual({ done: 2, current: 2, part: 0.5 });
+    expect(playhead(r, t(stepStart(r, 3) + 2500))).toEqual({ done: 3, current: 3, part: 0.5 });
+    // The words of the step before are cleared for it.
+    expect(saidAt({ done: 2, current: 2, part: 0, cut: 0.1 })).toEqual({ i: 2, part: 0 });
+    expect(saidAt({ done: 2, current: 2, part: 0.1 })).toEqual({ i: 1, part: 1 });
+    // The end, as the server's endsAt.
+    expect(stepStart(r, 29) + stepLength(r, 29) + 4000).toBe(4000 + 6 * 4800 + 25 * 5000 + 5 * 6600 + 2 * 2600 + 4000);
   });
 
   it("opens every round with its dice, thrown together, and moves after them in the order", () => {

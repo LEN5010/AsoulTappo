@@ -123,6 +123,9 @@ export interface OrderRoll { m: string; face: number }
 /** A bet; once the race is settled, [prize] is what it won in coins, to a tenth (coins × odds). */
 export interface RaceBet { kind: RaceKind; member: string; coins: number; odds: number; prize?: number }
 
+/** A close-up: before step [at] moves, member [m]'s skill is named and explained. */
+export interface RaceCut { at: number; m: string }
+
 export interface Race {
   id: number;
   phase: RacePhase;
@@ -146,6 +149,9 @@ export interface Race {
   /** The first move of the last round, which plays at slowMs a step. */
   slowFrom?: number;
   slowMs?: number;
+  /** The steps that open with a close-up of a member's skill (the first time it is at work), and how long each holds its step back. */
+  cuts?: RaceCut[];
+  cutMs?: number;
   /** The lanes on the start line, top lane first. */
   start?: string[];
   /** Who moves first to last, every round; missing on races from before the opening dice. */
@@ -205,16 +211,24 @@ export const ROUND = 5;
 /** The round step [i] is in. */
 export const roundOf = (i: number): number => Math.floor(i / ROUND);
 
+/** The close-up step [i] opens with, if any. */
+export const cutOf = (race: Race, i: number): RaceCut | undefined => race.cuts?.find((c) => c.at === i);
+
+/** How long step [i]'s close-up holds it back, ms: cutMs, or 0 without one. */
+export const cutLength = (race: Race, i: number): number => (cutOf(race, i) ? race.cutMs ?? 0 : 0);
+
 /**
- * When step [i] starts, ms after startsAt: the lead, every round's dice up to its own (rollMs each), then stepMs a
- * step, and slowMs a step from slowFrom on (park_race.py playback_ms).
+ * When step [i]'s turn starts, ms after startsAt: the lead, every round's dice up to its own (rollMs each), then stepMs
+ * a step, slowMs a step from slowFrom on, and cutMs for every close-up before it (park_race.py playback_ms). Its own
+ * close-up comes first in its turn: it moves cutLength() later.
  */
 export function stepStart(race: Race, i: number): number {
   const step = race.stepMs ?? 1;
   const slowFrom = race.slowFrom ?? race.moves?.length ?? 0;
   const slow = race.slowMs ?? step;
   const lead = (race.leadMs ?? 0) + (roundOf(i) + 1) * (race.rollMs ?? 0);
-  return i < slowFrom ? lead + i * step : lead + slowFrom * step + (i - slowFrom) * slow;
+  const cuts = (race.cuts?.filter((c) => c.at < i).length ?? 0) * (race.cutMs ?? 0);
+  return cuts + (i < slowFrom ? lead + i * step : lead + slowFrom * step + (i - slowFrom) * slow);
 }
 
 /** How long step [i] lasts, ms. */
@@ -238,8 +252,11 @@ export function roundDice(race: Race, r: number): OrderRoll[] {
   return r === roundsOf(race) - 1 ? [...out, ...(race.rest ?? [])] : out;
 }
 
-/** Where playback is at server time [t] (ms): steps fully done, the step under way (or -1), and how far into it. */
-export interface Playhead { done: number; current: number; part: number }
+/**
+ * Where playback is at server time [t] (ms): steps fully done, the step under way (or -1), and how far into it. While
+ * the step's close-up is up it has not moved yet: [part] is 0 and [cut] how far into the close-up.
+ */
+export interface Playhead { done: number; current: number; part: number; cut?: number }
 
 export function playhead(race: Race, t: number): Playhead {
   const moves = race.moves ?? [];
@@ -249,8 +266,10 @@ export function playhead(race: Race, t: number): Playhead {
   for (let i = 0; i < moves.length; i++) {
     const from = stepStart(race, i);
     if (at < from) return { done: i, current: -1, part: 0 };
+    const cut = cutLength(race, i);
+    if (at < from + cut) return { done: i, current: i, part: 0, cut: (at - from) / cut };
     const len = stepLength(race, i);
-    if (at < from + len) return { done: i, current: i, part: (at - from) / len };
+    if (at < from + cut + len) return { done: i, current: i, part: (at - from - cut) / len };
   }
   return { done: moves.length, current: -1, part: 0 };
 }
@@ -296,6 +315,8 @@ export function stepPhases(len: number): StepPhases {
  */
 export function saidAt(head: Playhead): { i: number; part: number } | null {
   if (head.current < 0) return null;
+  // A close-up clears the words of the step before it.
+  if (head.cut !== undefined) return { i: head.current, part: 0 };
   return head.current > 0 && head.part < HOP_AT ? { i: head.current - 1, part: 1 } : { i: head.current, part: head.part };
 }
 
