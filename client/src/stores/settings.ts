@@ -1,4 +1,5 @@
 import { reactive, watch } from "vue";
+import { readRecentRooms, type RecentRoom } from "../recentRooms";
 import { defaultCharacter } from "../characters";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { roomStatus } from "../roomStatus";
@@ -15,6 +16,8 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
+  /** The rooms joined lately, newest first (recentRooms.ts). */
+  recentRooms: RecentRoom[];
   /** Tap batching window (100–200ms). */
   batchMs: number;
   /** Quick emotes mirrored to the server. */
@@ -139,6 +142,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
+  recentRooms: [],
   batchMs: 150,
   favorites: [],
   emoteHoldMs: 2500,
@@ -235,6 +239,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.volume = Math.min(1, Math.max(0, out.volume));
   out.pomodoroFocus = Math.min(120, Math.max(5, Math.round(out.pomodoroFocus)));
   out.pomodoroRest = Math.min(60, Math.max(1, Math.round(out.pomodoroRest)));
+  out.recentRooms = readRecentRooms(out.recentRooms);
   out.favorites = Array.isArray(out.favorites)
     ? out.favorites.filter((k): k is string => typeof k === "string").slice(0, 8)
     : [];

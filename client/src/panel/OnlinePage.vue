@@ -27,6 +27,8 @@ import ProfileDialog from "./ProfileDialog.vue";
 import { ui } from "../stores/ui";
 import AccountDialog from "./AccountDialog.vue";
 import PublicRoomList from "./PublicRoomList.vue";
+import RecentRoomList from "./RecentRoomList.vue";
+import { dropRoom } from "../recentRooms";
 import SegTabs from "../ui/SegTabs.vue";
 import { ddzOn, ddzPlaying } from "../stores/ddz";
 import DdzBanner from "./ddz/DdzBanner.vue";
@@ -331,6 +333,14 @@ async function copy() {
       <p v-if="lastError || notice" class="ui-error err" role="alert">{{ lastError || notice }}</p>
       <DdzBanner v-if="ddzOn" />
     </div>
+
+    <section v-if="conn === 'idle' && settings.recentRooms.length" data-rise>
+      <h4 class="ui-label"><span>加入过</span></h4>
+      <RecentRoomList
+        :rooms="settings.recentRooms" @join="(id) => { input = id; joinRoom(id); }"
+        @forget="(id) => (settings.recentRooms = dropRoom(settings.recentRooms, id))"
+      />
+    </section>
 
     <section v-if="conn === 'idle' && publicRooms === 'signin' && mainApi" data-rise>
       <h4 class="ui-label"><span>公开房间</span></h4>

@@ -1,4 +1,5 @@
 import { computed, markRaw, reactive, ref, watch } from "vue";
+import { dropRoom, nameRoom, noteRoom } from "../recentRooms";
 import { RoomClient, type ConnState, type RoomEvents } from "../net/RoomClient";
 import { TapBatcher } from "../net/TapBatcher";
 import { remoteMotion } from "../net/MotionFrames";
@@ -151,9 +152,12 @@ const events: RoomEvents = {
     clearMembers();
     list.forEach(add);
     writeLog("room", `joined, ${list.length} member(s)`);
+    // Only a room that let this desk in is remembered; its name follows with the room's info.
+    settings.recentRooms = noteRoom(settings.recentRooms, room, Date.now());
   },
   onRoomInfo(info) {
     roomInfo.value = info;
+    if (roomId.value && info) settings.recentRooms = nameRoom(settings.recentRooms, roomId.value, info.name);
   },
   onMemberJoined: add,
   onMemberLeft: remove,
@@ -271,6 +275,7 @@ const events: RoomEvents = {
     if (FINAL_ERRORS.has(code)) {
       // The client stopped for good: nothing may join this room again on its own.
       if ((code === "kicked" || code === "banned") && settings.lastRoom === roomId.value) settings.lastRoom = "";
+      if (code === "kicked" || code === "banned") settings.recentRooms = dropRoom(settings.recentRooms, roomId.value);
       roomId.value = "";
     }
   },
