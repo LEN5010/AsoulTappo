@@ -352,7 +352,8 @@ STARTER_EMOTES = 4
 # `since` is the release (x.y.z) that ships the skin's picture: the server keeps the skin out of the resonance pool of
 # clients older than it, and the skins sharing the newest `since` are the launch spotlight (client/src/stores/spotlight.ts).
 SKIN_TITLES = {"嘉然山海经": "帝江", "贝拉山海经": "毕方", "乃琳山海经": "九尾狐",
-               "嘉然2025生日": "小画嘉", "贝拉2025生日": "小滑板", "乃琳2025生日": "酒馆"}
+               "嘉然2025生日": "小画嘉", "贝拉2025生日": "小滑板", "乃琳2025生日": "酒馆",
+               "思诺2025生日": "2026生日"}
 
 
 def skin(member: str, series: str, since: str | None = None) -> dict:
