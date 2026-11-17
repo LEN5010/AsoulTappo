@@ -255,6 +255,29 @@ def test_a_race_is_prepared_with_a_map_skills_and_their_chances():
     assert su["map"]["id"] in {m["id"] for m in CFG["maps"]}
 
 
+def test_one_unfinishable_map_does_not_hold_up_the_schedule(monkeypatch, caplog):
+    races, clock = make()
+    races.cfg["sims"] = 10
+    races.cfg["skills"] = [{"id": "steady", "dice": [1, 2]}]
+    trap = {"id": "trap", "track": 14, "squares": [{"at": n, "kind": "trip", "by": n} for n in (1, 2)]}
+    plain = {"id": "plain", "track": 14, "squares": []}
+    maps = iter((trap, plain))
+    monkeypatch.setattr(race, "deal", lambda rules, rng: {"map": next(maps, plain)})
+    races.tick()
+    st = races.game.store
+    next_at = T0 + CFG["interval"]
+    assert st.race_get(T0) is None and st.race_get(next_at) is not None
+    races.tick()
+    assert st.race_get(T0) is None
+    assert caplog.text.count("did not finish") == 1
+    clock.t = next_at + CFG["betting"]
+    races.tick()
+    assert st.race_get(next_at)["status"] == "running"
+    clock.t = st.race_get(next_at)["ends_at"]
+    races.tick()
+    assert st.race_get(next_at)["status"] == "settled"
+
+
 @pytest.mark.parametrize("version, plays", [("1.2.5", True), ("1.2.5-rc.1", True), ("1.3.0", True), ("1.2.4", False),
                                              ("", False), (None, False)])
 def test_a_client_from_before_maps_gets_the_result_without_the_moves(version, plays):

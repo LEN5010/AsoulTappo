@@ -184,6 +184,24 @@ def test_refund_hands_the_deposits_back_once():
     assert [w.shards(p) for p in pids] == [SHARDS] * 3 and [w.bank.net(p) for p in pids] == [0, 0, 0]
 
 
+def test_shard_anomalies_count_winnings_on_settlement_day_and_skip_deposits():
+    from app.analytics import anomalies
+    from app.store import day_of
+
+    w = World()
+    pids = [save(w.g, n) for n in "abc"]
+    refunded = w.bank.start(pids, BASE)
+    settled = w.bank.start(pids, BASE)
+    yesterday = day_of(w.clock.t)
+    w.clock.t += 86400
+    w.bank.refund(refunded)
+    assert w.bank.settle(settled, 0, True, 1) == [450, -250, -250]
+    assert anomalies(w.g, yesterday)["shards"] == []
+    assert anomalies(w.g, None)["shards"] == [
+        {"player": pids[0], "userId": None, "gained": 450, "sources": {"ddz_win": 450}}
+    ]
+
+
 def test_games_a_restart_cut_short_are_refunded(tmp_path):
     path = str(tmp_path / "ddz.db")
     g = Game(Store(path), Manifest.load(), now=Clock())
@@ -600,7 +618,7 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
         # Another save's join changes nothing; its own takes the seat with the whole game.
         w.join("stranger", save(w.g, "s"))
         b2, sock = w.join("b", w.pids[1])
-        w.t.joined("r", b2)
+        await w.t.joined("r", b2)
         assert w.last("ddz_seat") == {"type": "ddz_seat", "table": tid, "seat": 1, "id": b2.id, "away": False,
                                       "auto": False}
         live, state = sock.got
@@ -615,6 +633,23 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
         await w.t.play(c, tid, [])
         await play_out(w, tid)
         assert w.last("ddz_result", 1)["winner"] == "landlord"
+    run(go())
+
+
+def test_rejoining_on_turn_updates_observers_and_other_seats():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        _, observer = w.join("observer", save(w.g, "observer"))
+        tid = await w.playing()
+        a, b, c = w.peers
+        await w.m.depart("r", a.id)
+        a2, _ = w.join("a", w.pids[0])
+        await w.t.joined("r", a2)
+        await settle()
+        assert observer.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid,
+                                               "ids": [a2.id, b.id, c.id], "on": True}
+        assert w.last("ddz_seat", 1) == {"type": "ddz_seat", "table": tid, "seat": 0, "id": a2.id,
+                                         "away": False, "auto": False, "turn": 0, "sec": CFG["playSec"]}
     run(go())
 
 

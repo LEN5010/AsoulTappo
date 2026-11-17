@@ -1,6 +1,7 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from threading import Barrier
 
 import pytest
 
@@ -230,6 +231,23 @@ def test_no_guard_judges_nothing():
         result = send(game, clock, 160, 160, i)
     assert result["autoInput"] == 0 and result["tapCooldown"] == 0 and result["credited"] == 160
     assert not game.auto_input(result["player"])
+
+
+def test_two_callers_can_read_an_expired_room_guard_result():
+    game, clock = make()
+    pid = game.status(TOKEN)["player"]
+    game._auto[pid] = clock.t - 1
+    ready = Barrier(2)
+
+    def shared_clock():
+        ready.wait(timeout=5)
+        return clock.t
+
+    game.now = shared_clock
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        checks = [threads.submit(game.auto_input, pid) for _ in range(2)]
+        assert [check.result() for check in checks] == [False, False]
+    assert pid not in game._auto
 
 
 def test_the_guard_sees_each_batch_as_sent_and_keeps_notes_per_session():

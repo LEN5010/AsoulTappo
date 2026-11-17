@@ -62,6 +62,26 @@ def test_other_loadout_writes_keep_the_showcase():
     assert g.get_loadout(TOKEN)["showcase"] == [CARDS[0]]
 
 
+def test_legacy_loadout_writes_preserve_later_showcase_slots(monkeypatch):
+    g, pid = game()
+    give(g, pid, [f"card:{c}" for c in CARDS[:5]])
+    monkeypatch.setattr(main, "game", g)
+    client = TestClient(main.app)
+    old = {"X-Player-Token": TOKEN, "X-Client-Version": "1.2.4"}
+    new = {**old, "X-Client-Version": "1.2.5"}
+    assert client.post("/api/loadout", headers=new, json={"showcase": CARDS[:5]}).json()["showcase"] == CARDS[:5]
+    assert client.get("/api/loadout", headers=old).json()["showcase"] == CARDS[:3]
+    assert client.post("/api/loadout", headers=old, json={"showcase": CARDS[:3], "nick": "旧版"}).status_code == 200
+    assert client.post("/api/loadout", headers=old, json={"showcase": CARDS[:2]}).json()["showcase"] == CARDS[:2]
+    assert client.post("/api/loadout", headers=old, json={"showcase": CARDS[:2], "nick": "再次保存"}).status_code == 200
+    assert client.get("/api/loadout", headers=new).json()["showcase"] == CARDS[:2] + CARDS[3:5]
+    assert client.post("/api/loadout", headers=old, json={"showcase": []}).json()["showcase"] == []
+    assert client.get("/api/loadout", headers=old).json()["showcase"] == []
+    assert client.post("/api/loadout", headers=old, json={"showcase": [], "nick": "更新昵称"}).status_code == 200
+    assert client.get("/api/loadout", headers=new).json()["showcase"] == CARDS[3:5]
+    assert client.post("/api/loadout", headers=new, json={"showcase": CARDS[:2]}).json()["showcase"] == CARDS[:2]
+
+
 def test_a_stored_card_the_save_does_not_hold_leaves_only_its_slot():
     g, pid = game()
     give(g, pid, [f"card:{CARDS[0]}", f"card:{CARDS[2]}"])

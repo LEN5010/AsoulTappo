@@ -58,3 +58,14 @@ class DdzStore(_StoreState):
         with self._lock:
             return self._db.execute("SELECT COALESCE(SUM(delta), 0) FROM ddz_seats WHERE player_id=? AND day=?",
                                     (pid, day)).fetchone()[0]
+
+    def ddz_winnings(self, starts_at: float, ends_at: float) -> list[dict[str, Any]]:
+        """Each save's winnings from games settled in the period, after rake."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT s.player_id, l.main_user_id, SUM(s.delta) AS amount, 'ddz_win' AS source "
+                "FROM ddz_games g JOIN ddz_seats s ON s.game_id = g.id "
+                "LEFT JOIN account_links l ON l.player_id = s.player_id "
+                "WHERE g.state = 'settled' AND g.settled >= ? AND g.settled < ? AND s.delta > 0 "
+                "GROUP BY s.player_id", (starts_at, ends_at)).fetchall()
+        return [dict(row) for row in rows]

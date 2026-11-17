@@ -46,21 +46,25 @@ const nameOf = (m: string) => character(m)?.name ?? m;
 const colorOf = (m: string) => character(m)?.color;
 const x = (n: number) => `×${n.toFixed(1)}`;
 
-const feed = useRaceFeed();
+const replaying = ref(!!props.replay);
+const feed = useRaceFeed({ scheduleOnly: () => replaying.value });
 const { now, serverNow, race, loadError } = feed;
 onMounted(feed.start);
 onBeforeUnmount(feed.stop);
 
 // ---------------------------------------------------------------- the race on the board
-/** A finished race played again: the race, its day, its clock, and a count of jumps that starts the board afresh. */
+/** A finished race played again: the race, its day, clock, and seek count used to reset move animations. */
 const played = ref<{ race: Race; day: string; clock: ReplayClock; n: number } | null>(null);
 const playRate = ref<1 | 2>(1);
 const paused = ref(false);
 const boardPeek = ref(false);
 const replayError = ref("");
-const progressEl = ref<HTMLElement | null>(null);
+let replayLoad = 0;
 /** Asks for race [id] and plays it from its start; 0 goes back to the live race. */
 async function load(id: number) {
+  const request = ++replayLoad;
+  clearScrub();
+  replaying.value = !!id;
   replayError.value = "";
   paused.value = false;
   boardPeek.value = false;
@@ -72,8 +76,10 @@ async function load(id: number) {
   let r = have ?? null;
   if (!r) {
     const reply = await parkTry<{ race: Race }>("GET", `/api/park/race/replay/${id}`);
+    if (request !== replayLoad) return;
     if (!reply.ok) {
       replayError.value = reply.error.message;
+      replaying.value = !!played.value;
       return;
     }
     r = reply.data.race;
@@ -82,24 +88,27 @@ async function load(id: number) {
     race: r, day: chinaDay(r.startsAt), clock: replayAt(r, 0, Date.now(), playRate.value), n: (played.value?.n ?? 0) + 1,
   };
 }
-watch(() => props.replay ?? 0, load, { immediate: true });
 
 /** The race on the board and its time: the replay's while one plays, else the live race at the server's time. */
+const scrubAt = ref<number | null>(null);
+const scrubbing = computed(() => scrubAt.value !== null);
 const stage = computed(() => played.value?.race ?? race.value);
 const stageNow = computed(() => {
   const p = played.value;
-  return p ? replayTime(p.race, p.clock, now.value) : serverNow.value;
+  if (!p) return serverNow.value;
+  return scrubAt.value === null ? replayTime(p.race, p.clock, now.value) : p.race.startsAt * 1000 + scrubAt.value;
 });
 /** Playback rate for animations & dice throws (never 0, even while paused). */
 const speed = computed(() => (played.value ? playRate.value : 1));
 const playing = computed(() => isPlaying(stage.value, stageNow.value));
 const finished = computed(() => isFinished(stage.value, stageNow.value));
 const track = computed(() => trackOf(stage.value?.setup, CFG.value?.track ?? 24));
-/** The board starts afresh on every replay jump, and back on the live race. */
-const trackKey = computed(() => (played.value ? `r${played.value.race.id}-${played.value.n}` : `live${race.value?.id ?? 0}`));
+const trackKey = computed(() => (played.value ? `r${played.value.race.id}` : `live${race.value?.id ?? 0}`));
 
 watch(finished, (done) => {
-  if (done) paused.value = false;
+  if (done) {
+    if (!scrubbing.value) paused.value = false;
+  }
   else boardPeek.value = false;
 });
 watch(() => stage.value?.id, () => {
@@ -189,32 +198,48 @@ const replayMarks = computed(() => {
   // Keep markers spaced enough to read cleanly on the bar.
   return out.filter((mk, idx, arr) => idx === 0 || mk.pct - arr[idx - 1]!.pct >= 4.5);
 });
-function seekFromEvent(e: PointerEvent) {
-  const el = progressEl.value;
-  const p = played.value;
-  if (!el || !p) return;
-  const rect = el.getBoundingClientRect();
-  if (!rect.width) return;
-  const u = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  seek(u * playLength(p.race));
+let scrub: { pointerId: number; left: number; width: number; x: number; length: number } | null = null;
+let scrubFrame = 0;
+function previewScrub() {
+  scrubFrame = 0;
+  if (!scrub) return;
+  const u = Math.max(0, Math.min(1, (scrub.x - scrub.left) / scrub.width));
+  scrubAt.value = u * scrub.length;
+}
+function clearScrub() {
+  cancelAnimationFrame(scrubFrame);
+  scrubFrame = 0;
+  scrub = null;
+  scrubAt.value = null;
 }
 function onProgressDown(e: PointerEvent) {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || scrub || !played.value) return;
+  const target = e.currentTarget as HTMLElement;
+  const { left, width } = target.getBoundingClientRect();
+  if (!width) return;
   e.stopPropagation();
   e.preventDefault();
-  const target = e.currentTarget as HTMLElement;
   target.setPointerCapture?.(e.pointerId);
-  seekFromEvent(e);
-  const onMove = (ev: PointerEvent) => seekFromEvent(ev);
-  const onUp = () => {
-    target.removeEventListener("pointermove", onMove);
-    target.removeEventListener("pointerup", onUp);
-    target.removeEventListener("pointercancel", onUp);
-  };
-  target.addEventListener("pointermove", onMove);
-  target.addEventListener("pointerup", onUp);
-  target.addEventListener("pointercancel", onUp);
+  scrub = { pointerId: e.pointerId, left, width, x: e.clientX, length: playLength(played.value.race) };
+  boardPeek.value = false;
+  previewScrub();
 }
+function onProgressMove(e: PointerEvent) {
+  if (!scrub || scrub.pointerId !== e.pointerId) return;
+  scrub.x = e.clientX;
+  if (!scrubFrame) scrubFrame = requestAnimationFrame(previewScrub);
+}
+function onProgressEnd(e: PointerEvent) {
+  if (!scrub || scrub.pointerId !== e.pointerId) return;
+  if (e.type === "pointerup") scrub.x = e.clientX;
+  cancelAnimationFrame(scrubFrame);
+  previewScrub();
+  const at = scrubAt.value;
+  clearScrub();
+  if (at !== null) seek(at);
+}
+watch(() => props.replay ?? 0, load, { immediate: true });
+onBeforeUnmount(() => { replayLoad++; clearScrub(); });
 /** The live race is under way while a replay plays: a key goes to it. */
 const liveOn = computed(() => !!played.value && feed.live.value);
 
@@ -286,11 +311,6 @@ const seats = computed<string[]>(() => {
   if (r?.order && (!opening.value || opening.value.lined)) return r.order;
   return r?.order || !r?.moves ? MEMBERS : [];
 });
-/** A throw on the race's time as the wall clock plays it (a replay at 2× throws twice as fast). */
-const atSpeed = (toss: Toss): Toss => {
-  const k = speed.value;
-  return k === 1 ? toss : { ...toss, ms: toss.ms / k, delay: (toss.delay ?? 0) / k, at: (toss.at ?? 0) / k };
-};
 /** A seat's die: its face, keyed so each throw remounts it once; the throw while it is in the air. */
 interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
 /**
@@ -307,7 +327,8 @@ function openingDie(m: string): SeatDie | null {
   if (k >= 0 && o.tumbling) {
     const face = rolls[o.round][k].face;
     const { delay, ms } = staggered(OPEN_ROLL_MS, k, o.rolling.length);
-    const toss = reducedMotion.value ? null : atSpeed({ ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 });
+    const toss = reducedMotion.value || scrubbing.value
+      ? null : { ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 };
     return { key: `${m}o${thrown}`, face, toss, out: false };
   }
   return { key: `${m}o${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
@@ -327,9 +348,9 @@ function roundDie(m: string): SeatDie | null {
   if (k < 0) return null;
   const len = (r.rollMs ?? 0) * DICE_TOSS;
   const { delay, ms } = staggered(len, k, dice.length);
-  const toss = reducedMotion.value || ra.since >= len
+  const toss = reducedMotion.value || scrubbing.value || ra.since >= len
     ? null
-    : atSpeed({ ms, delay, at: ra.since, pool: diceOf(m), seed: ra.round * ROUND + k, height: 110 });
+    : { ms, delay, at: ra.since, pool: diceOf(m), seed: ra.round * ROUND + k, height: 110 };
   const i = ra.round * ROUND + k;
   const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
   return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
@@ -427,7 +448,7 @@ const stageEl = ref<HTMLElement | null>(null);
 let flipFrom: Map<string, DOMRect> | null = null;
 watch(view, (to, from) => {
   flipFrom = null;
-  if ((from !== "run" && from !== "board") || to !== "podium" || reducedMotion.value || !stageEl.value) return;
+  if ((from !== "run" && from !== "board") || to !== "podium" || reducedMotion.value || scrubbing.value || !stageEl.value) return;
   flipFrom = new Map();
   for (const el of stageEl.value.querySelectorAll<HTMLElement>(".tz[data-m]")) {
     const token = el.querySelector(".tuanzi-token");
@@ -513,9 +534,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
       <span class="grow"></span>
       <template v-if="played">
         <div
-          ref="progressEl" class="progress-wrap" data-no-bar-drag role="slider" aria-label="回放进度"
+          class="progress-wrap" data-no-bar-drag role="slider" aria-label="回放进度"
           :aria-valuemin="0" :aria-valuemax="100" :aria-valuenow="Math.round(progress * 100)"
-          @pointerdown="onProgressDown"
+          @pointerdown="onProgressDown" @pointermove="onProgressMove" @pointerup="onProgressEnd"
+          @pointercancel="onProgressEnd" @lostpointercapture="onProgressEnd"
         >
           <i class="progress" aria-hidden="true"><i :style="{ width: `${progress * 100}%` }"></i></i>
           <i
@@ -539,7 +561,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         <button v-else type="button" class="ui-btn small ghost icon-key" aria-label="再看一遍" title="再看一遍" @click="replayStage">
           <Icon name="refresh" :size="16" />
         </button>
-        <button v-if="liveOn" type="button" class="ui-btn small live-key" @click="played = null">
+        <button v-if="liveOn" type="button" class="ui-btn small live-key" @click="load(0)">
           <i class="dot" aria-hidden="true"></i>直播
         </button>
       </template>
@@ -560,7 +582,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
     <div ref="stageEl" class="stage">
       <RaceTrack
         :key="trackKey" class="lap" :class="{ behind: view === 'podium' }" :race="stage" :t="stageNow" :rate="speed"
-        :paused="paused" :backed="backedMembers" :track="track" :members="MEMBERS"
+        :paused="paused" :seek="played?.n" :scrubbing="scrubbing" :backed="backedMembers" :track="track" :members="MEMBERS"
         :caption="stage?.setup.map?.name" :cleared="view === 'podium'"
       />
       <p v-if="loadError || replayError" class="ui-error note" role="alert">{{ replayError || loadError }}</p>
@@ -643,8 +665,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
         >
           <span class="slot">
             <RaceDie
-              v-if="seatDice[m]" :key="seatDice[m]!.key" class="seat-die" :class="{ out: seatDice[m]!.out }"
+              v-if="seatDice[m]" :key="`${seatDice[m]!.key}-${played?.n ?? 0}-${scrubbing}`" class="seat-die" :class="{ out: seatDice[m]!.out }"
               :face="seatDice[m]!.face!" :toss="seatDice[m]!.air ? tosses.now[m] : null" :color="colorOf(m)"
+              :paused="paused" :rate="speed"
             />
           </span>
           <span class="head"><TuanziToken :member="m" :size="48" /></span>

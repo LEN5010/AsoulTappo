@@ -36,7 +36,7 @@ esac
 
 ssh "$HOST" bash -s -- "$MODE" "$SHA" "$FLAG" <<'REMOTE'
 set -euo pipefail
-MODE=$1 SHA=$2 FLAG=$3
+MODE=$1 SHA=$2 FLAG=${3:-}
 BASE=/opt/asoultappo DB=/opt/asoultappo/data/asoultappo.db CFG=/opt/asoultappo/config ENV=/opt/asoultappo/server.env
 D=/root/asoultappo-build-$SHA TS=$(date -u +%Y%m%dT%H%M%SZ)
 sq() { sqlite3 -cmd ".timeout 30000" "$@"; }
@@ -50,8 +50,13 @@ run_server() { # name port data-dir app-dir config-dir image
 }
 
 check() { # port container
-  echo "economy $(code 127.0.0.1:$1/api/economy)  manifest $(code 127.0.0.1:$1/api/manifest)  release $(code 127.0.0.1:$1/api/client/release)"
+  local economy manifest release
+  economy=$(code "127.0.0.1:$1/api/economy") || economy=000
+  manifest=$(code "127.0.0.1:$1/api/manifest") || manifest=000
+  release=$(code "127.0.0.1:$1/api/client/release") || release=000
+  echo "economy $economy  manifest $manifest  release $release"
   echo "503 since start $(docker logs "$2" 2>&1 | grep -c '" 503' || true)"
+  [ "$economy" = 200 ] && [ "$manifest" = 200 ] && [ "$release" = 200 ]
 }
 
 LIVE=$(docker inspect -f '{{.Config.Image}}' asoultappo); LIVE=${LIVE#asoultappo-server:}
@@ -71,9 +76,11 @@ trial)
   chown -R www:www $T
   run_server asoultappo-trial 8011 $T/data $D/server/app $CFG "$SHA"
   sleep 6
-  check 8011 asoultappo-trial
+  trial_status=0
+  check 8011 asoultappo-trial || trial_status=$?
   docker logs asoultappo-trial 2>&1 | tail -5
   docker rm -f asoultappo-trial >/dev/null && rm -rf $T
+  [ "$trial_status" = 0 ] || exit "$trial_status"
   echo "trial removed; image asoultappo-server:$SHA kept for the switch"
   ;;
 switch)
@@ -88,14 +95,14 @@ switch)
   rsync -rc --delete --exclude __pycache__ $D/server/app/ $BASE/app/
   chown -R www:www $BASE/app
   run_server asoultappo 8000 $BASE/data $BASE/app $CFG "$SHA"
+  echo "backups $BAK $APPBAK; old container asoultappo-$LIVE stopped"
+  echo "rollback: docker stop -t 30 asoultappo && docker rename asoultappo asoultappo-$SHA &&"
+  echo "  rsync -rc --delete $APPBAK/ $BASE/app/ && docker rename asoultappo-$LIVE asoultappo && docker start asoultappo"
   sleep 6
   docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep '^asoultappo '
   check 8000 asoultappo
   echo "rooms left unread $(sq $DB 'select count(*) from room_restore')"
   docker logs asoultappo 2>&1 | tail -3
-  echo "backups $BAK $APPBAK; old container asoultappo-$LIVE stopped"
-  echo "rollback: docker stop -t 30 asoultappo && docker rename asoultappo asoultappo-$SHA &&"
-  echo "  rsync -rc --delete $APPBAK/ $BASE/app/ && docker rename asoultappo-$LIVE asoultappo && docker start asoultappo"
   ;;
 economy)
   NEW=/root/economy-$SHA-new.json
@@ -114,10 +121,10 @@ EOF
   cp -a $CFG/economy.json /root/economy-$SHA-before.json
   sq $DB ".backup /root/asoultappo-$SHA-before-economy.db"
   install -o www -g www -m 644 $NEW $CFG/economy.json && rm -f $NEW
+  echo "backups /root/economy-$SHA-before.json /root/asoultappo-$SHA-before-economy.db"
   docker restart -t 30 asoultappo >/dev/null
   sleep 6
   check 8000 asoultappo
-  echo "backups /root/economy-$SHA-before.json /root/asoultappo-$SHA-before-economy.db"
   ;;
 esac
 REMOTE

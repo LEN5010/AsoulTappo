@@ -265,7 +265,7 @@ mod win {
                         push(EventType::ButtonPress(Button::Left), Some(false));
                     }
                     if out.up {
-                        push(EventType::ButtonRelease(Button::Left), None);
+                        push(EventType::ButtonRelease(Button::Left), Some(false));
                     }
                 }
             }

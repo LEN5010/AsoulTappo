@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Board } from "../net/api";
 import type { MemberProfile } from "../net/protocol";
+import { exampleEconomy } from "../test/economy";
 
 type Handler = (event: { payload: unknown }) => unknown;
 const bus = vi.hoisted(() => ({ listeners: new Map<string, Set<Handler>>() }));
@@ -91,6 +92,26 @@ it("applies action results to both windows before resolving an awaited draw", as
   expect(await panel.player.resonate(1)).toEqual(drops);
   expect(desk.player.resonate).toHaveBeenCalledWith(1, undefined);
   expect(panel.player.collection.owned["card:test"]).toBe(1);
+});
+
+it("refreshes a panel's expired economy in the desk and publishes the replacement", async () => {
+  const desk = await context(false);
+  const deskEconomy = await import("../stores/economy");
+  const panel = await context(true);
+  const panelEconomy = await import("../stores/economy");
+  const { agree } = await import("../legal/consent");
+  agree();
+  let answer!: (value: Response) => void;
+  const pending = new Promise<Response>((resolve) => { answer = resolve; });
+  const fetchEconomy = vi.fn(() => pending);
+  vi.stubGlobal("fetch", fetchEconomy);
+  const refresh = Promise.all([desk.player.loadEconomy(), panel.player.loadEconomy()]);
+  await vi.advanceTimersByTimeAsync(0);
+  answer(new Response(JSON.stringify(exampleEconomy)));
+  await refresh;
+  expect(fetchEconomy).toHaveBeenCalledTimes(1);
+  expect(deskEconomy.economy.value?.resonance.cost).toBe(exampleEconomy.resonance.cost);
+  expect(panelEconomy.economy.value?.resonance.cost).toBe(exampleEconomy.resonance.cost);
 });
 
 it("runs scratch card requests in the desk and mirrors the card on the table into the panel", async () => {

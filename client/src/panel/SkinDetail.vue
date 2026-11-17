@@ -88,7 +88,7 @@ watch(() => props.name, () => (formPin.value = null));
         <p class="member"><i :style="{ background: characterColor(memberOf(name)) }"></i>{{ memberOf(name) }}</p>
         <dl><div v-if="skinNote(name)"><dt>原名</dt><dd>{{ skinTitle(name) }}</dd></div><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
         <div class="live-preview">
-          <PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" :form="formPin" />
+          <PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" :form="formPin" />
           <div v-if="twoForm" class="form-keys" role="group" aria-label="形态">
             <button type="button" class="ui-btn small" :class="{ primary: formPin === false }" :aria-pressed="formPin === false" @click="pinForm(false)">一形态</button>
             <button type="button" class="ui-btn small" :class="{ primary: formPin === true }" :aria-pressed="formPin === true" @click="pinForm(true)">二形态</button>

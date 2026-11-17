@@ -105,6 +105,28 @@ it("runs park requests in the desk, applies the answers and hands back the serve
   expect(calls).toHaveLength(sent);
 });
 
+it("shares matching race reads while in flight and fetches again after a session switch", async () => {
+  const sent: string[] = [];
+  let release!: (r: Response) => void;
+  vi.stubGlobal("fetch", async (url: string) => {
+    sent.push(url);
+    if (url.includes("://a/")) return new Promise<Response>((resolve) => { release = resolve; });
+    return response({ now: 1, nextAt: 2, race: null });
+  });
+  const { settings, park } = await load();
+  const schedule = "/api/park/race?view=schedule";
+  const first = park.parkRequest("GET", schedule);
+  expect(park.parkRequest("GET", schedule)).toBe(first);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sent).toEqual([`http://a${schedule}`]);
+  settings.serverUrl = "http://b";
+  expect(await park.parkRequest("GET", schedule)).toMatchObject({ ok: true });
+  release(response({ now: 2, nextAt: 3, race: null }));
+  expect(await first).toMatchObject({ ok: false, error: { code: "stale" } });
+  await park.parkRequest("GET", schedule);
+  expect(sent.filter((url) => url === `http://b${schedule}`)).toHaveLength(2);
+});
+
 it("forgets the park on another server, and a server without one is not asked", async () => {
   vi.stubGlobal("fetch", async (url: string) => {
     const { hostname, pathname } = new URL(url);

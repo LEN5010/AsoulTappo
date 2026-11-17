@@ -114,16 +114,21 @@ export function bannerBaseRates(banner: Banner): Record<Rarity, number> {
 /**
  * The odds of a draw from [banner] (the server does the same). `tiers`: the banner's odds; a tier with a featured
  * item left to find under `share` stays in the roll. `featured`: the featured tier's own `rate`, taken from common
- * while the save lacks one of its items. `shared`: the tiers whose draws are featured items `share` percent of the
- * time, for as long as one is left to find.
+ * while the save lacks one of its items. `shared`: the current chance that a draw in each shared tier is featured.
  */
 export function bannerRates(
   banner: Banner, pool: ResonancePool, owned: Record<string, number>,
-): { featured: number; tiers: Record<Rarity, number>; shared: Rarity[] } {
+): { featured: number; tiers: Record<Rarity, number>; shared: { rarity: Rarity; rate: number }[] } {
   const left = featuredItems(banner).filter((item) => !owned[item.id]);
-  const shared = banner.share ? [...new Set(left.flatMap((item) => item.rarity ?? []))] : [];
-  const tiers = effectiveRates(pool, owned, bannerBaseRates(banner), new Set(shared));
+  const share = banner.share ?? 0;
+  const sharedTiers = new Set(share ? left.flatMap((item) => item.rarity ?? []) : []);
+  const tiers = effectiveRates(pool, owned, bannerBaseRates(banner), sharedTiers);
   if (!economy.value || !left.length) return { featured: 0, tiers, shared: [] };
+  const repeats = economy.value.resonance.repeatTiers;
+  const shared = [...sharedTiers].map((rarity) => ({
+    rarity,
+    rate: repeats?.includes(rarity) || pool[rarity].some((item) => !owned[item.id]) ? share : 100,
+  }));
   const featured = Math.min(banner.rate ?? 0, tiers.common);
   tiers.common = +(tiers.common - featured).toFixed(6);
   return { featured, tiers, shared };

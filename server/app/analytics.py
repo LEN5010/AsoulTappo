@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date, timedelta
+from itertools import chain
 from typing import TYPE_CHECKING, Any
 
 from .notice import version_key
@@ -22,7 +23,7 @@ ANOMALY_LIMIT = 50
 # Saves listed by credited taps.
 HEAVY_LIMIT = 20
 # Ledger sources a save does not earn by playing; left out of the shard anomaly list.
-UNEARNED = frozenset({"starter", "update", "admin", "redeem"})
+UNEARNED = frozenset({"starter", "update", "admin", "redeem", "ddz_return", "ddz_refund"})
 
 
 def _days(today: str, days: int) -> list[str]:
@@ -153,7 +154,8 @@ def anomalies(game: Game, day: str | None) -> dict[str, Any]:
     taps = [tap_row(r) for r in game.store.tap_flags_of(day, ANOMALY_LIMIT)]
     heavy = [tap_row(r) for r in game.store.top_tappers(day, HEAVY_LIMIT)]
     gained: dict[str, dict[str, Any]] = {}
-    for r in game.store.ledger_day(day):
+    start = _start_of(day)
+    for r in chain(game.store.ledger_day(day), game.store.ddz_winnings(start, start + 86400)):
         if r["source"] in UNEARNED or r["amount"] <= 0:
             continue
         row = gained.setdefault(r["player_id"], {"player": r["player_id"], "userId": r["main_user_id"],

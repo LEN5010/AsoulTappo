@@ -128,8 +128,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | POST /api/scratch | 买一张刮刮乐，返回状态和 `card:{id,cells}`。已有未揭开的卡时原样返回这张卡，不再扣费。当天卖完返回 409 `sold_out`，碎片不足返回 409 `no_shards` |
 | POST /api/scratch/reveal | `{card}`，揭开这张卡并发放奖品，返回状态和 `prize:{shards,item}`。重复揭开返回同一份奖品，不再发放；卡不存在或不属于该存档返回 404 `no_card` |
 | GET /api/collection | owned（物品 ID → 数量）、recent（最近获得记录）。1.2.4 以前的客户端看不到镭射款（`holo:` 物品） |
-| GET /api/loadout | character、favorites、plate、showcase、nick、board |
-| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked`；showcase 为主页展示卡的卡片 ID 列表，最多 5 张（1.2.5 以前的服务端 3 张）、必须已拥有，超过或不认识返回 `bad_item`，未拥有返回 `locked`，空列表清空；nick 为收藏榜上显示的昵称（最多 24 字，空字符串用默认昵称），board 为 false 时不上收藏榜。这两项客户端只上传，读取装备时不会覆盖本地设置 |
+| GET /api/loadout | character、favorites、plate、showcase、nick、board。根据 `X-Client-Version`，1.2.5 以前的客户端收到可编辑的前三个展示卡位置。 |
+| POST /api/loadout | 更新 character、favorites（最多 8 个且已拥有）或 plate；五位原皮直接可用，皮肤要求已拥有；plate 必须是已解锁的铭牌 ID，null 或空字符串取下铭牌；不是铭牌的 ID 返回 `bad_item`，未集齐返回 `locked`；showcase 为主页展示卡的卡片 ID 列表，最多 5 张，必须已拥有，超过或不认识返回 `bad_item`，未拥有返回 `locked`。1.2.5 以前的客户端可更新或清空前三个位置，服务端保留后两个位置；nick 为收藏榜上显示的昵称（最多 24 字，空字符串用默认昵称），board 为 false 时不上收藏榜。这两项客户端只上传，读取装备时不会覆盖本地设置 |
 | GET /api/board | 全服收藏榜。`order` 为 `score`（按收藏分，显示收藏分的客户端）或 `cards`（默认，按卡片数，之前的客户端）。`cards`（前 50：`[{id,rank,nick,character,plate,cards,big,skins,score}]`，cards、big、skins 为卡片、大隐藏、皮肤数量，score 为收藏分；order=score 时按收藏分、大隐藏数、最后一件计分物品的获得时间排序，order=cards 时按卡片数、大隐藏数、最后一张卡的获得时间排序，只列有卡片的存档；昵称取 loadout 的 nick，为空时取这个存档最近一次在房间里用的昵称（加入或改名时记录，默认昵称不记），都没有时为默认昵称，经屏蔽词处理；铭牌未集齐时为 null）、`total`（卡片总数）、`points`（收藏分表，见下）、`me`（`{rank,cards,big,skins,score,off}`，rank 为所选排序下的名次，off 为 `hidden`（自己关了上榜）、`account`（服务端启用了主站账号而存档未关联）或 null）。榜单每 5 分钟重算一次 |
 | GET /api/board/profile/{id} | 收藏榜前 50 里某一行（`id`）的主页：`{showcase,progress}`，格式同房间消息 `profile`；查询参数 `showcase` 是请求方能摆几张展示卡，不带时按 3 张给；不在榜上返回 404 `no_member` |
 | GET /api/info | accountLogin（是否接入主站账号）、mainApi（主站 API 地址，未接入时为 null） |
@@ -153,7 +153,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 动态卡的 `video` 字段使用 `bundle:cards/<系列>/<id>.mp4`，随客户端安装并在本地播放。`/packs/index.json` 只索引服务端的静态卡面和主题资源。
 
-物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`、`holo:<卡片 id>`（镭射款，见共鸣一节）。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。抽到镭射款时 item 仍是普卡的 `card:<id>`，另带 `holo: true` 和 `cardNew`：这时 new 指镭射款是不是第一次得到，cardNew 指普卡是不是。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复表情为 5，重复的普通卡和跳舞卡为 20，重复的小隐藏为 360（`economy.resonance.duplicateRefund`，卡片按 `tier` 取值）。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
+物品 ID 为 `card:<id>`、`emote:<key>`、`char:<皮肤名称>`、`holo:<卡片 id>`（镭射款，见共鸣一节）。五位成员原皮默认拥有，初始表情不参与共鸣。`drops[]` 包含 `item,rarity,new,count,shards`，卡片额外包含 `tier`（`big` / `small` / `normal`）。抽到镭射款时 item 仍是普卡的 `card:<id>`，另带 `holo: true` 和 `cardNew`：这时 new 指镭射款是不是第一次得到，cardNew 指普卡是不是。rarity 为 `legendary`、`skin`、`epic`、`limited`、`rare`、`uncommon` 或 `common`。重复物品自动兑换成碎片，不再累计数量：新物品的 shards 为 0，重复物品按 `economy.resonance.duplicateRefund` 返还。表情取 `emote`，镭射款优先取 `holo`，史诗档且 `tier: normal` 的跳舞卡优先取 `dance`，其余情况按卡片的 `tier` 取值。1.1 之前累计的重复卡片在服务端启动时一次性按同样标准折算，数量改为 1。
 
 状态示例：
 
@@ -314,7 +314,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 限定 | 衣橱卡：嘉然、乃琳、贝拉的个性装扮立绘各 12 张 |
 | 普通 | 普通卡与普通表情 |
 
-各档概率在 `economy.resonance.rates`，传说和皮肤两档的保底次数在 `economy.resonance.pity`。没有列出概率的档位不进池，没有 `limited` 的服务端不出限定卡。限定档在普通档之前判定，其他档位的区间不变；没有保底，集齐 36 张后概率并入普通档。
+常驻池各档概率在 `economy.resonance.rates`，传说和皮肤两档的保底次数在 `economy.resonance.pity`。常驻池抽取概率大于 0 的档位，限定池可独立设置档位概率。限定档在普通档之前判定，其他档位的区间不变；没有保底，集齐 36 张后概率并入普通档。
 
 每次消耗 `economy.resonance.cost` 碎片。两个保底各自累计，抽中对应档位时清零；同时到期先出大隐藏，下次出皮肤。对应档位全部拥有时保留进度，新增内容后可继续触发。高档集齐后的概率并入普通档，`repeatTiers` 里的档位（目前只有史诗档）除外：史诗档集齐后保留原概率，在整档里等概率抽，出的都是重复。普通档先按 `commonKindWeights`（普卡 : 表情）选类型，再在该类型内等概率选择未拥有物品，该类型集齐后产生重复。重复按上面的标准兑换成碎片。某类集齐后仍保持类型比例。其他档位在未拥有物品内等概率选择。
 
@@ -328,7 +328,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 
 - 限定物品从写进配置起就不在常驻池里，卡池还没开始时也一样；卡池结束后进入常驻池，按自己的档位和概率出。被留住期间不能兑换，刮刮乐也不出。
 - 抽限定卡池等于抽常驻池再多一档：`rate` 从普通档的区间里取，抽中时在还没有的限定物品里等概率选一件，drop 带 `featured: true`，rarity 仍是物品自己的档位。限定物品不出重复，全部拥有后这个卡池和常驻池抽到的一样。
-- `rates` 是 `{<档位>: 百分比}`，只在这个卡池里替换常驻池同名档位的概率，没写的档位照常驻池；普通档不能写，取剩余。常驻池把某个档位的概率写成 0 时，这个档位的物品只在给它概率的限定卡池里出；`/api/economy` 的 `resonance.rates` 照样带这个 0。`rates` 换过之后的各档位加上 `rate` 不能超过 100。
+- `rates` 是 `{<档位>: 百分比}`，只在这个卡池里替换常驻池同名档位的概率，没写的档位照常驻池；普通档不能写，取剩余。常驻池省略一个档位或把它写成 0 时，该档只在设置了正概率的限定卡池里出。常驻池显式配置的 0 随 `/api/economy` 下发。`rates` 换过之后的各档位加上 `rate` 不能超过 100。
 - `share` 不加档位：抽到某个档位、限定物品里又有这个档位还没有的，`share`% 出其中一件（等概率，drop 带 `featured: true`），其余照这个档位在常驻池里的出法。这个档位在常驻池里已经没有可出的东西时，只要限定物品里还有就出限定物品。`rate` 和 `share` 可以同时用。
 - 大隐藏和皮肤的保底是存档的，抽哪个池都累计；抽到限定皮肤也算抽到皮肤，皮肤保底清零。限定保底只在这个卡池里累计：距上次限定物品 `pity` 抽必出。大隐藏保底和限定保底同时到期时先出大隐藏，下一抽出限定。
 - 状态的 `resonance.banners` 是 `{<卡池 id>: {pity, drawn}}`：这份存档在进行中卡池里的限定保底进度和抽数，没抽过的卡池不列。
@@ -340,7 +340,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 此间为爱、匣中惊鸿、绮梦漫游三个收藏集各有 7 张静态普卡有镭射款，共 21 张。清单里这些卡带 `holo {mask, shine, since}`：mask 是 `/packs` 里的官方遮罩（白色是镭射区域），shine 是着色参数 `{laserIntensity, skinProtection, clothBoost, hueStart, hueRange}`，since 为 1.2.4。
 
 - 镭射款是独立的物品 `holo:<卡片 id>`，不进任何档位，只在共鸣抽到对应普卡时按 `economy.resonance.holoChance`（百分比）变成镭射款；没有这一项的服务端不出镭射款。刮刮乐等其他来源不出镭射款。
-- 抽到镭射款时同时得到这张普卡。第一次得到某张镭射款时这一抽不退碎片，普卡是重复的也一样，普卡数量不变；已经有这张镭射款时按普卡重复退碎片。同一批里第二次抽到同一张镭射款算重复。
+- 抽到镭射款时同时得到这张普卡。第一次得到某张镭射款时这一抽不退碎片，普卡是重复的也一样，普卡数量不变；已拥有这张镭射款时按 `duplicateRefund.holo` 返还碎片，省略该键时按对应普卡档位返还。同一批里第二次抽到同一张镭射款算重复。
 - 客户端版本低于 since 的不出镭射款，也不为它多掷一次；预发布版按对应正式版算，不带版本或版本读不出的也不出。
 - 镭射款算进收集进度（按卡片算）和收藏分，可收集的总数是共鸣池的件数加镭射款的张数。
 
@@ -475,6 +475,8 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | 接口 | 说明 |
 | --- | --- |
 | GET /api/park/race | `{now, nextAt, race, last, winners}`。`race` 是现在展示的一场（下注中、跑着或刚跑完），没有时为 null；`last` 是它之前最近结算的一场；`winners` 是最近 5 场的冠军 `[{id, member}]`，从新到旧；`nextAt` 是下一场开始下注的时间 |
+| GET /api/park/race?view=summary | 与默认响应结构相同，含赔率、下注与比赛结果，省去回放的骰子、步序和播放时序。 |
+| GET /api/park/race?view=schedule | `{now, nextAt, race}`，供开赛提醒和回放中的直播入口使用。当前场次为 `{id, phase, startsAt, endsAt?}` 或 null。 |
 | POST /api/park/race/bet | `{race, kind, member, coins, odds?}`，返回状态、`park` 和 `race`。`odds` 是客户端显示的这个选项的赔率，可省略 |
 | GET /api/park/race/history | `{races}`：最近 30 场已结束的场次（已结算或作废），从新到旧，见往期 |
 | GET /api/park/race/replay/{id} | `{race}`：一场已结算场次，字段和 GET /api/park/race 的一场相同，用来重播。没有这一场或还没结算为 404 `no_race`；没有回放数据（见往期）为 404 `no_replay` |

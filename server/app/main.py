@@ -9,6 +9,7 @@ import signal
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 from typing import Literal
@@ -27,7 +28,7 @@ from .accounts import MainAccounts, http_me
 from .ddz import Bank as DdzBank, Tables
 from .duel import Duels
 from . import guard as guard_file
-from .game import Game, GameError, PlayerId, player_id_for
+from .game import Game, GameError, PlayerId, player_id_for, showcase_size
 from .manifest import Manifest, find_packs_dir
 from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
@@ -40,7 +41,7 @@ from .models import (
 from .moderation import Blocklist
 from .lottery import Lottery
 from .park import Park
-from .park_race import OddsChanged, Races, room_message as race_room_message
+from .park_race import OddsChanged, Races, RaceView, room_message as race_room_message
 from .park_scratch import ParkScratch
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
@@ -568,9 +569,10 @@ class RaceBetBody(BaseModel):
 
 
 @app.get("/api/park/race")
-def api_park_race(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
+def api_park_race(who: PlayerId = Depends(player), x_client_version: str = Header(default=""),
+                  view: RaceView = "full") -> dict:
     """The race shown now, the finished one before it, the latest winners and when the next bets open."""
-    return _guard(races.view, who, x_client_version)
+    return _guard(races.view, who, x_client_version, view)
 
 
 @app.get("/api/park/race/history")
@@ -717,13 +719,13 @@ async def api_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depends(pl
 
 
 @app.get("/api/loadout")
-def api_loadout(who: PlayerId = Depends(player)) -> dict:
-    return _guard(game.get_loadout, who)
+def api_loadout(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
+    return _guard(game.get_loadout, who, showcase_size(x_client_version))
 
 
 @app.post("/api/loadout")
-def api_set_loadout(body: LoadoutBody, who: PlayerId = Depends(player)) -> dict:
-    return _guard(game.set_loadout, who, body.model_dump(exclude_unset=True))
+def api_set_loadout(body: LoadoutBody, who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
+    return _guard(game.set_loadout, who, body.model_dump(exclude_unset=True), showcase_size(x_client_version))
 
 
 @app.get("/api/info")
@@ -866,9 +868,9 @@ def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
 
 
 @app.get("/admin/anomalies", dependencies=[Depends(admin)])
-def admin_anomalies(day: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")) -> dict:
+def admin_anomalies(day: date | None = Query(default=None)) -> dict:
     """Saves whose taps look automated and the saves that gained the most shards on [day] (default today)."""
-    return analytics.anomalies(game, day)
+    return analytics.anomalies(game, day.isoformat() if day else None)
 
 
 @app.get("/admin/log", dependencies=[Depends(admin)])
@@ -1162,7 +1164,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     # The host of the last run came back to its room (see RoomManager.restore).
                     await manager.broadcast(room_id, _room_info(room_id), exclude=peer.id)
                 # The games under way in the room, and the newcomer's own seat if its save left one.
-                tables.joined(room_id, peer)
+                await tables.joined(room_id, peer)
                 continue
 
             if peer is None or room_id is None:

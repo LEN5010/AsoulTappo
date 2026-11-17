@@ -643,7 +643,7 @@ class Tables:
             if table.turn == seat:
                 self._give_turn(table, seat, AUTO_SEC)
 
-    def joined(self, room_id: str, peer: Peer) -> None:
+    async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
         has one at a table of this room."""
         table = self.by_save.get(peer.token) if peer.token else None
@@ -656,14 +656,19 @@ class Tables:
             s.auto, s.timeouts, s.quit = False, 0, False
         for live in self.by_id.values():
             if live.room == room_id and live.phase in (BID, PLAY, SETTLING):
-                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
+                msg = {"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True}
+                if seat is not None and live is table:
+                    await self.manager.broadcast(room_id, msg)
+                else:
+                    peer.enqueue(msg)
         if seat is None:
             return
+        msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}
         if table.turn == seat:
             cfg = self.bank.cfg()
-            self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
-        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False},
-                   but=seat)
+            msg["turn"] = seat
+            msg["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
+        table.tell(msg, but=seat)
         peer.enqueue(self._state(table, seat))
 
     def _state(self, table: Table, seat: int) -> dict:

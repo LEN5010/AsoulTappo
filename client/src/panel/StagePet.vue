@@ -15,7 +15,7 @@ const BUBBLE = { x: 36, y: 62 };
 <template>
   <PetView
     :character="character" :scale="SCALE"
-    :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
+    :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
     :left-down="pet.left" :right-down="pet.right" :emote="emote" :min-emote="38"
     :max-emote="EMOTE" :bubble-shift="BUBBLE"
   />

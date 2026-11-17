@@ -162,11 +162,12 @@ it("reads a banner's own odds and the tiers its featured items share", () => {
     expect(base.limited).toBe(5);
     expect(Object.values(base).reduce((a, b) => a + b)).toBeCloseTo(100);
     const p = poolOf(heldItems());
+    expect(bannerRates(shared, p, {}).shared).toEqual([{ rarity: "skin", rate: 40 }]);
     // Every standing skin found: the tier stays for the featured ones.
     const owned = Object.fromEntries(p.skin.map((i) => [i.id, 1]));
     const now = bannerRates(shared, p, owned);
     expect(now.featured).toBe(0);
-    expect(now.shared).toEqual(["skin"]);
+    expect(now.shared).toEqual([{ rarity: "skin", rate: 100 }]);
     expect(now.tiers.skin).toBe(3);
     for (const id of SKINS) owned[id] = 1;
     const whole = bannerRates(shared, p, owned);

@@ -45,7 +45,7 @@ const character = (m: string) => manifest.characters.find((c) => c.id === m);
 const nameOf = (m: string) => character(m)?.name ?? m;
 const x = (n: number | undefined) => (n === undefined ? "" : `×${n.toFixed(1)}`);
 
-const feed = useRaceFeed();
+const feed = useRaceFeed({ view: "summary" });
 const { data, loadError, serverNow, race, last, phase } = feed;
 const poll = feed.poll;
 /** The live race has finished, and its result is in. */
@@ -67,12 +67,12 @@ function stopSection() {
 }
 
 // ---------------------------------------------------------------- the countdown
-const countdown = computed<{ label: string; time: string }>(() => {
+const countdown = computed<{ label: string; time: string }>((previous) => {
   const r = race.value;
   const t = serverNow.value / 1000;
-  if (r?.phase === "betting") return { label: "开跑", time: raceClock(r.startsAt - t) };
-  if (r && live.value) return { label: "比赛中", time: "" };
-  return { label: "下一场", time: raceClock((data.value?.nextAt ?? t) - t) };
+  const label = r?.phase === "betting" ? "开跑" : live.value ? "比赛中" : "下一场";
+  const time = label === "比赛中" ? "" : raceClock((r?.phase === "betting" ? r.startsAt : data.value?.nextAt ?? t) - t);
+  return previous?.label === label && previous.time === time ? previous : { label, time };
 });
 /** Winners come newest first. */
 const champion = computed(() => data.value?.winners[0]?.member ?? "");

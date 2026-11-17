@@ -27,14 +27,14 @@ const SHOW_MS = 15_000;
 /** A race seen later than this after its start is not told, ms. */
 const FRESH_MS = 30_000;
 
-const feed = useRaceFeed({ quiet: true });
+const feed = useRaceFeed({ view: "schedule" });
 const on = computed(() => settings.raceRemind && online.value && !noPark.value && !!economy.value?.park?.race);
 watch(on, (is) => (is ? feed.start() : feed.stop()), { immediate: true });
 
 const told = ref(0);
 const up = ref(false);
 let timer: ReturnType<typeof setTimeout> | undefined;
-watch(() => (feed.live.value ? feed.race.value : null), (r) => {
+watch(() => (feed.live.value ? feed.scheduledRace.value : null), (r) => {
   if (!r || r.id === told.value || feed.serverNow.value - r.startsAt * 1000 > FRESH_MS) return;
   told.value = r.id;
   up.value = true;

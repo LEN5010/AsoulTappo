@@ -17,7 +17,6 @@ import DuelBubble from "./pet/DuelBubble.vue";
 import PokeBubble from "./pet/PokeBubble.vue";
 import NudgeBubble from "./pet/NudgeBubble.vue";
 import TodoFrame from "./pet/TodoFrame.vue";
-import RaceFrame from "./pet/RaceFrame.vue";
 import RaceBubble, { RACE_HEIGHT, RACE_WIDTH } from "./pet/RaceBubble.vue";
 import PomodoroChip from "./pet/PomodoroChip.vue";
 import { NUDGE_HEIGHT, NUDGE_WIDTH, noteNudgeInput, nudge, startNudges } from "./stores/nudge";
@@ -41,6 +40,7 @@ import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { remotePetSize } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
+const RaceFrame = defineAsyncComponent(() => import("./pet/RaceFrame.vue"));
 import { PET_BASE, formReach, headAnchor } from "./characters";
 import { starterEmotesOf } from "./items";
 import { getEmote, characterColor } from "./manifest";
@@ -541,7 +541,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @tap="onOwnTap" @pointermove="keepPeek"
     >
       <PetView
-        :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
+        :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :win="localPet.win" :pulse="localPet.pulse" :sip="localPet.sip"
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"

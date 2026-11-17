@@ -259,6 +259,7 @@ export async function initDesktop(): Promise<() => void> {
         case "loadProfile": result = await room.loadProfile(args[0] as string); break;
         case "loadBoard": result = await player.loadBoard(); break;
         case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
+        case "loadEconomy": await player.loadEconomy(args[0] as string); break;
         case "park": result = await parkStore.parkRequest(args[0] as parkStore.ParkMethod, args[1] as string, args[2]); break;
         case "tidyRemotes": tidyRemotes(); break;
         case "beginPomodoro": pomodoroStore.beginPomodoro(); break;

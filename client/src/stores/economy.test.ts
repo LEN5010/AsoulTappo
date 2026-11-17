@@ -46,6 +46,22 @@ describe("economy", () => {
     expect(store.economy.value).toBeNull();
     expect(store.economyDue()).toBe(true);
   });
+
+  it("refreshes the economy at a known banner end even while the cached prices are fresh", async () => {
+    const { store } = await fresh();
+    const at = 1_000_000;
+    const banner = { id: "b", name: "b", start: 999, end: 1010, items: ["char:嘉然然龙"], rate: 3 };
+    const active = { ...exampleEconomy, resonance: { ...exampleEconomy.resonance, banners: [banner], held: banner.items } };
+    store.setEconomy(active, undefined, at);
+    expect(store.economyDue(1_009_999)).toBe(false);
+    expect(store.economyDue(1_010_000)).toBe(true);
+    // A clock ahead of the server can get the same banner back; check again without polling every heartbeat.
+    store.setEconomy(active, undefined, 1_010_000);
+    expect(store.economyDue(1_030_000)).toBe(false);
+    expect(store.economyDue(1_070_000)).toBe(true);
+    store.setEconomy(exampleEconomy, undefined, 1_070_000);
+    expect(store.economyDue(1_090_000)).toBe(false);
+  });
 });
 
 describe("Api.economy", () => {

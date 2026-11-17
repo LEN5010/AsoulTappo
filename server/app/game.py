@@ -8,6 +8,7 @@ import math
 import time
 from datetime import date
 from functools import cached_property
+from threading import Lock
 from typing import Any, Callable, Literal
 
 from . import banners
@@ -46,6 +47,7 @@ CHEER_MIN_TAPS = 10000
 #: Showcase cards on a profile. A client from before 1.2.5 lays out three: a profile is cut to what its asker shows.
 MAX_SHOWCASE = 5
 OLD_SHOWCASE = 3
+SHOWCASE_SINCE = (1, 2, 5)
 # The nickname a save shows on the boards, as long as room nicknames.
 MAX_BOARD_NICK = 24
 # `nick` and `board` (false keeps the save off the boards) are only sent, never applied back by clients.
@@ -107,6 +109,11 @@ def _loadout_json(raw: str) -> dict[str, Any]:
     return out if isinstance(out, dict) else {}
 
 
+def _showcase_head(loadout: dict[str, Any], shown: int) -> set[str]:
+    cards = (loadout.get("showcase") or [])[:loadout.get("showcaseHead", shown)]
+    return {card for card in cards if isinstance(card, str)}
+
+
 log = logging.getLogger(__name__)
 
 
@@ -115,6 +122,11 @@ class GameError(Exception):
         super().__init__(message or code)
         self.code = code
         self.message = message or code
+
+
+def showcase_size(version: str | None) -> int:
+    key = version_key(version)
+    return OLD_SHOWCASE if key is not None and key[:3] < SHOWCASE_SINCE else MAX_SHOWCASE
 
 
 def _nearest_rank(values: list[int], pct: int) -> int:
@@ -159,6 +171,7 @@ class Game:
         self.guard = guard or Guard()
         # Until when each save's input counts as automatic, as of its last report to this process (see auto_input).
         self._auto: dict[str, float] = {}
+        self._auto_lock = Lock()
         self.rng = rng or cardlogic.default_rng()
         self.now = now
         self.collectible_ids = frozenset(manifest.items) - manifest.starter
@@ -289,11 +302,16 @@ class Game:
             if now + span > p["auto_until"]:
                 p["auto_until"] = now + span
                 st.update_player(pid, auto_until=p["auto_until"])
-        if injected is None:
-            # Everything this client sends is what its rooms get: the save's own state, a restart included.
-            self._auto[pid] = p["auto_until"]
-        elif shown > 0:
-            self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
+        if injected is None or shown > 0:
+            with self._auto_lock:
+                if injected is None:
+                    # The whole stream of this client is what its rooms get.
+                    if p["auto_until"] > now:
+                        self._auto[pid] = p["auto_until"]
+                    else:
+                        self._auto.pop(pid, None)
+                else:
+                    self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
         return kept
 
     def auto_input(self, pid: str | None) -> bool:
@@ -301,13 +319,13 @@ class Game:
         report to this process: rooms ask this for every tap and motion, so it never reads the database."""
         if not pid:
             return False
-        until = self._auto.get(pid)
-        if until is None:
+        now = self.now()
+        with self._auto_lock:
+            until = self._auto.get(pid)
+            if until is not None and until > now:
+                return True
+            self._auto.pop(pid, None)
             return False
-        if until <= self.now():
-            del self._auto[pid]
-            return False
-        return True
 
     def cheer_reward(self, pids: list[str], each: int) -> dict[str, int]:
         """Pays a finished cheer round: [each] shards to each save, less what would pass CHEER_DAILY_CAP today.
@@ -380,7 +398,7 @@ class Game:
 
         A drawn card with a holo version the client can show (Manifest.holos_for) is that version at holoChance
         percent: the save gets the holo version and the card. A first holo version pays no shards even when the card
-        is a repeat (and the card's count stays); a repeat one pays as a repeat of the card.
+        is a repeat (and the card's count stays). A repeat holo version uses its configured refund when present.
 
         With [banner_id] the draws are from that limited pool (app/banners.py): the standing pool at the banner's
         odds, with its featured items found in their own tier or in one of their own; a drop names one with
@@ -392,10 +410,15 @@ class Game:
         drops = []
         with self.store.transaction() as st:
             now = self.now()
-            pool = self.manifest.resonance_pool_for(version, now)
             banner = self.manifest.banner(banner_id, version, now) if banner_id else None
             if banner_id and banner is None:
                 raise GameError("no_banner", "这个卡池已经结束了")
+            if banner:
+                rates = banner.tier_rates(cfg["rates"])
+                pool = self.manifest.resonance_pool_for(version, now, tiers=rates)
+            else:
+                rates = cfg["rates"]
+                pool = self.manifest.resonance_pool_for(version, now)
             p = st.get_player(pid, now)
             if p["shards"] < cfg["cost"]:
                 raise GameError("no_shards", "碎片不足")
@@ -410,10 +433,9 @@ class Game:
             common_missing = {kind: [item for item in items if item["id"] not in owned]
                               for kind, items in common.items()}
             # A tier with nothing left to find drops out and its odds go to common, unless it keeps rolling repeats.
-            repeating = set(cfg.get("repeatTiers", ()))
+            repeating = {r for r in cfg.get("repeatTiers", ()) if pool.get(r)}
             featured = [self.manifest.items[i] for i in banner.items if i not in owned] if banner else []
             mine = st.banner_draws(pid).get(banner.id, {"pity": 0, "drawn": 0}) if banner else None
-            rates = banner.tier_rates(cfg["rates"]) if banner else cfg["rates"]
             for _ in range(n):
                 available = {r for r in missing if missing[r]} | repeating
                 if banner and banner.share:
@@ -457,7 +479,7 @@ class Game:
                 if holo is not None and self.rng.random() * 100 >= holo_chance:
                     holo = None
                 holo_fresh = holo is not None and holo not in owned
-                gained = 0 if fresh or holo_fresh else self.duplicate_shards(iid)
+                gained = 0 if fresh or holo_fresh else self.duplicate_shards(iid, holo is not None)
                 refund += gained
                 # A repeat that turns into shards is not kept, nor is the card a first holo version came with.
                 if fresh or not (gained or holo_fresh):
@@ -495,13 +517,19 @@ class Game:
         return {**self.status(token), "drops": drops}
 
     # ------------------------------------------------------------------- craft
-    def duplicate_shards(self, item_id: str) -> int:
-        """Shards a repeat of this item turns into: emotes alike, cards by tier."""
+    def duplicate_shards(self, item_id: str, holo: bool = False) -> int:
+        """Shards a repeat turns into, with optional refunds for holo and dance cards."""
         refunds = self.manifest.resonance["duplicateRefund"]
+        if holo and "holo" in refunds:
+            return int(refunds["holo"])
         if item_id.startswith("emote:"):
             return int(refunds.get("emote", 0))
         card = self.manifest.cards.get(item_id[5:]) if item_id.startswith("card:") else None
-        return int(refunds.get(card["tier"], 0)) if card else 0
+        if not card:
+            return 0
+        if not holo and card["rarity"] == "epic" and card["tier"] == "normal" and "dance" in refunds:
+            return int(refunds["dance"])
+        return int(refunds.get(card["tier"], 0))
 
     def refund_duplicate_cards(self) -> tuple[int, int]:
         """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
@@ -1074,21 +1102,42 @@ class Game:
                 pass
         return out
 
-    def get_loadout(self, token: str) -> dict[str, Any]:
+    def get_loadout(self, token: str, shown: int = MAX_SHOWCASE) -> dict[str, Any]:
         pid = player_id_for(token)
         p = self.store.get_player(pid, self.now())
         owned = self.store.owned(pid)
-        return self._stored_loadout(p, owned)
+        loadout = self._stored_loadout(p, owned)
+        if shown < MAX_SHOWCASE:
+            head = _showcase_head(_loadout_json(p["loadout"]), shown)
+            loadout["showcase"] = [card for card in loadout["showcase"] if card in head]
+        return loadout
 
-    def set_loadout(self, token: str, patch: dict[str, Any]) -> dict[str, Any]:
+    def set_loadout(self, token: str, patch: dict[str, Any], shown: int = MAX_SHOWCASE) -> dict[str, Any]:
         """Update the selected character, favorite emotes, name plate and showcase cards."""
         pid = player_id_for(token)
         with self.store.transaction() as st:
             p = st.get_player(pid, self.now())
             owned = st.owned(pid)
-            loadout = {**self._stored_loadout(p, owned), **self._check_loadout(patch, owned)}
+            loadout = self._stored_loadout(p, owned)
+            changes = self._check_loadout(patch, owned)
+            raw = _loadout_json(p["loadout"])
+            if "showcase" not in changes and "showcaseHead" in raw:
+                head = _showcase_head(raw, shown)
+                loadout["showcaseHead"] = len(head.intersection(loadout["showcase"]))
+            if "showcase" in changes and shown < MAX_SHOWCASE:
+                cards = changes["showcase"]
+                if len(cards) > shown:
+                    raise GameError("bad_item", f"at most {shown} cards")
+                # Older clients send their full showcase on unrelated edits too. Keep the stored tail even
+                # after an earlier edit left fewer than three cards in the visible part.
+                head = _showcase_head(raw, shown)
+                tail = [card for card in loadout["showcase"] if card not in head and card not in cards]
+                changes["showcase"] = cards + tail
+                if tail and len(cards) < shown:
+                    loadout["showcaseHead"] = len(cards)
+            loadout.update(changes)
             st.update_player(pid, loadout=json.dumps(loadout, ensure_ascii=False))
-        return self.get_loadout(token)
+        return self.get_loadout(token, shown)
 
     def collection_progress(self, owned: dict[str, int]) -> dict[str, list[int]]:
         """[owned, total] of cards, emotes and skins, counted as the client's album does: starter emotes count, and so

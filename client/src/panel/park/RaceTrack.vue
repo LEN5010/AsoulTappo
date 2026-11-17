@@ -43,6 +43,9 @@ const props = defineProps<{
   race: Race | null; t: number; track: number; members: string[]; cleared?: boolean; rate?: number;
   /** Replay is paused: freezes in-flight hops, speech bubbles and skill cut-ins in place. */
   paused?: boolean;
+  /** The same board can show another moment of a replay without keeping its previous animations. */
+  seek?: number;
+  scrubbing?: boolean;
   /** Runners the player has coins on in this race, subtly marked on the board. */
   backed?: readonly string[];
   /** The map's name, lettered on the island under the paper. */
@@ -512,18 +515,25 @@ function dropFrames(from: At, to: At, unit: number, ms: number): Keyframe[] {
   ];
 }
 
-watch(hops, (now, before) => {
+watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], [before, previousSeek, wasScrubbing]) => {
+  if (seek !== previousSeek || scrubbing !== wasScrubbing) {
+    for (const node of Object.values(tzEls)) for (const a of node.getAnimations?.() ?? []) a.cancel();
+    was = { ...ats.value };
+    return;
+  }
+  if (scrubbing) return;
   const r = props.race;
   const h = head.value;
   const el = ringEl.value;
   if (ready.value && !reducedMotion.value && r && h && el && before) {
     // The ring has no border or padding: its box is the board in units, the tuanzi's frame of reference.
-    const unit = el.getBoundingClientRect().width / board.value.cols;
+    let unit = 0;
     for (const m of props.members) {
       const key = now[m];
       const from = was[m];
       const node = tzEls[m];
       if (!key || key === before[m] || !from || !node || typeof node.animate !== "function") continue;
+      unit ||= el.getBoundingClientRect().width / board.value.cols;
       const i = Number.parseInt(key, 10);
       const s = moves.value[i];
       if (!s) continue;
@@ -643,15 +653,15 @@ watch(hops, (now, before) => {
           :style="style(m)" :title="spotTitle(m)"
         >
           <div class="body"><TuanziToken :member="m" /></div>
-          <b v-if="ready && roll?.m === m" :key="roll.key" class="roll" :class="{ down: roll.down, side: above[m] || (places[m]?.level ?? 0) >= 2, flip: flipped(m) }" aria-hidden="true">{{ roll.text }}</b>
-          <span v-if="ready && moment?.m === m" :key="moment.key" class="say" :class="[moment.kind, { flip: flipped(m) }]" aria-hidden="true">
+          <b v-if="ready && roll?.m === m" :key="`${roll.key}-${seek}`" class="roll" :class="{ down: roll.down, side: above[m] || (places[m]?.level ?? 0) >= 2, flip: flipped(m) }" aria-hidden="true">{{ roll.text }}</b>
+          <span v-if="ready && moment?.m === m" :key="`${moment.key}-${seek}`" class="say" :class="[moment.kind, { flip: flipped(m) }]" aria-hidden="true">
             {{ moment.text }}
           </span>
           <span v-if="leader === m && !above[m]" class="crown" aria-hidden="true"><Icon name="crown" :size="22" /></span>
         </div>
         <SkillCutIn
-          v-if="ready && cut" :key="cut.key" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
-          :color="cut.color" :ms="cut.ms" :at="cut.at" :paused="paused"
+          v-if="ready && cut" :key="`${cut.key}-${seek}`" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
+          :color="cut.color" :ms="cut.ms" :at="cut.at" :paused="paused || scrubbing"
         />
       </div>
     </div>

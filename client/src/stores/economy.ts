@@ -118,6 +118,7 @@ export type Economy = {
 const KEY = "asoultappo.economy.v1";
 /** Asked again after this long, so a change on the server reaches running clients. */
 export const ECONOMY_MAX_AGE_MS = 30 * 60_000;
+const BANNER_RECHECK_MS = 60_000;
 
 interface Cached { server: string; at: number; data: Economy }
 
@@ -151,7 +152,12 @@ export function setEconomy(data: Economy, from = server(), at = Date.now()): voi
 
 /** Whether it is time to ask the server again. */
 export function economyDue(now = Date.now()): boolean {
-  return !cached || cached.server !== server() || now - cached.at >= ECONOMY_MAX_AGE_MS;
+  const current = cached;
+  if (!current || current.server !== server() || now - current.at >= ECONOMY_MAX_AGE_MS) return true;
+  return !!current.data.resonance.banners?.some((b) => {
+    const end = b.end * 1000;
+    return end <= now && (current.at < end || now - current.at >= BANNER_RECHECK_MS);
+  });
 }
 
 // Another server: its own copy, or nothing until it answers.

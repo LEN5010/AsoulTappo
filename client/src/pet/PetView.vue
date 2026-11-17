@@ -21,6 +21,8 @@ const props = withDefaults(
     scale?: number;
     /** Local pet: keyboard layer pressed state (driven by global key hook). */
     keyDown?: boolean;
+    /** Press edges on this device, including keys pressed while another key stays held. */
+    formPress?: number;
     /** Remote pet: increments on every tap batch -> short keyboard bounce. */
     pulse?: number;
     mouseDx?: number;
@@ -116,8 +118,11 @@ watch(() => assets.value?.form, (has) => {
   form = has ? new SkinForm((on) => (typedForm.value = on)) : undefined;
 }, { immediate: true });
 onBeforeUnmount(() => form?.reset());
-watch([() => props.keyDown, () => props.leftDown, () => props.rightDown, () => props.pulse], (now, was) => {
-  if (form && now.some((v, i) => (i === 3 ? v !== was[i] : v && !was[i]))) form.press(Date.now());
+watch(() => props.formPress, (press) => {
+  if (press !== undefined) form?.press(Date.now());
+});
+watch(() => props.pulse, () => {
+  if (props.formPress === undefined) form?.press(Date.now());
 });
 const sized = (p: { bg: string; bgSmall: string; bgMedium: string }) =>
   (s.value <= 1 ? p.bgSmall : s.value <= 2 ? p.bgMedium : p.bg);

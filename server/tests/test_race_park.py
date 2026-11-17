@@ -752,6 +752,44 @@ def test_http_race_history_and_replay(monkeypatch):
     assert out.status_code == 404 and out.json()["detail"]["code"] == "no_replay"
 
 
+def test_http_race_summary_and_schedule_skip_playback(monkeypatch):
+    g, races, clock, _ = make()
+    monkeypatch.setattr(main, "game", g)
+    monkeypatch.setattr(main, "races", races)
+    client = TestClient(main.app)
+    headers = {"X-Player-Token": TOKEN, "X-Client-Version": "1.2.5"}
+    races.tick()
+    clock.t = T0 + CFG["betting"]
+    races.tick()
+    full = client.get("/api/park/race", headers=headers).json()
+    assert full["race"]["moves"] and full["race"]["replay"]
+    ends = full["race"]["endsAt"]
+    clock.t = ends
+    races.tick()
+    clock.t = T0 + CFG["interval"]
+    races.tick()
+    monkeypatch.setattr(races, "played", lambda _: pytest.fail("decoded a stored replay"))
+    summary = client.get("/api/park/race?view=summary", headers=headers).json()
+    assert summary["race"]["odds"] and summary["race"]["phase"] == "betting"
+    assert summary["last"]["endsAt"] == ends and summary["last"]["ranking"] == full["race"]["ranking"]
+    assert summary["last"]["replay"] and "moves" not in summary["last"]
+    original_stakes = g.store.race_stakes
+    queried = []
+
+    def race_stakes(race_id):
+        queried.append(race_id)
+        return original_stakes(race_id)
+
+    monkeypatch.setattr(g.store, "race_stakes", race_stakes)
+    assert client.get("/api/park/race?view=summary", headers=headers).json() == summary
+    assert queried == [T0 + CFG["interval"]]
+    monkeypatch.setattr(g.store, "race_stakes", lambda _: pytest.fail("read odds for the schedule"))
+    schedule = client.get("/api/park/race?view=schedule", headers=headers).json()
+    assert schedule == {"now": clock.t, "nextAt": T0 + 2 * CFG["interval"],
+                        "race": {"id": T0 + CFG["interval"], "phase": "betting",
+                                 "startsAt": T0 + CFG["interval"] + CFG["betting"]}}
+
+
 OLD_RACE_TABLES = """
 CREATE TABLE park_races (id INTEGER PRIMARY KEY, starts_at REAL NOT NULL, ends_at REAL NOT NULL,
   step_ms INTEGER NOT NULL, seed TEXT NOT NULL, hash TEXT NOT NULL, setup TEXT NOT NULL, odds TEXT NOT NULL,

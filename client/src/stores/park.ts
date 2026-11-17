@@ -65,8 +65,7 @@ function toParkError(e: unknown): ParkError {
   return { status: 0, code: "offline", message: "无法连接服务器", detail: {} };
 }
 
-/** Desk window only (the panel goes through parkTry): sends the request and applies its answer here. */
-export async function parkRequest<T>(method: ParkMethod, path: string, body?: unknown): Promise<ParkReply<T>> {
+async function requestPark<T>(method: ParkMethod, path: string, body?: unknown): Promise<ParkReply<T>> {
   const r = await attempt((api) => api.park<T>(method, path, body));
   if (!r) return { ok: false, error: { status: 0, code: "stale", message: "", detail: {} } };
   if (!r.ok) return { ok: false, error: toParkError(r.error) };
@@ -78,6 +77,21 @@ export async function parkRequest<T>(method: ParkMethod, path: string, body?: un
     await reloadCollection();
   }
   return { ok: true, data: r.value };
+}
+
+const raceReads = new Map<string, Promise<ParkReply<unknown>>>();
+
+/** Desk window only: identical race reads from different windows share the in-flight request. */
+export function parkRequest<T>(method: ParkMethod, path: string, body?: unknown): Promise<ParkReply<T>> {
+  if (method !== "GET" || !/^\/api\/park\/race(?:$|[?/])/.test(path)) return requestPark<T>(method, path, body);
+  let pending = raceReads.get(path);
+  if (!pending) {
+    pending = requestPark(method, path, body).finally(() => {
+      if (raceReads.get(path) === pending) raceReads.delete(path);
+    });
+    raceReads.set(path, pending);
+  }
+  return pending as Promise<ParkReply<T>>;
 }
 
 /**
@@ -129,7 +143,10 @@ export function claimGift(): Promise<number | null> {
 // ---------------------------------------------------------------- the desk keeps the state current
 if (!relayed) {
   // Another save or server: its park is loaded afresh.
-  watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, () => { park.value = null; }, { flush: "sync" });
+  watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, () => {
+    park.value = null;
+    raceReads.clear();
+  }, { flush: "sync" });
   watch(() => status.value?.park?.coins, (coins) => {
     if (status.value && !status.value.park) park.value = null;
     // Coins changed elsewhere (a race refund, another device): the rest of the state may have too.

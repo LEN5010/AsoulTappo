@@ -4,7 +4,7 @@ import { windowLabel, type WindowLabel } from "../composables/tauri";
 export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "claimUpdateRewards" | "loadCheckins" |
   "loadScratch" | "buyScratch" | "revealScratch" | "sendEmote" | "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" |
   "setAccount" | "setRoomPublic" | "setRoomName" | "kickMember" | "loadPublicRooms" | "inviteDuel" | "loadProfile" | "loadBoard" |
-  "loadBoardProfile" | "park" | "beginPomodoro" | "endPomodoro" | "todo" | "todoSync" | "raceSync" | "ddz";
+  "loadBoardProfile" | "loadEconomy" | "park" | "beginPomodoro" | "endPomodoro" | "todo" | "todoSync" | "raceSync" | "ddz";
 
 /** `from`: the window that asks and hears the reply: the panel, the todos' window or the race's. */
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[]; from?: WindowLabel }

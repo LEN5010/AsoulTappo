@@ -3,11 +3,10 @@ import type { InputEvent } from "../composables/tauri";
 import { MouseMotion } from "../MouseMotion";
 
 /**
- * Where a pet's paws are, from the global input events. It counts nothing and reads no other state, so a
- * window that only draws the pet (src/capture.ts) uses it without the player or the room.
+ * Paw pose and press edges from global input. The capture window can use them without the player or the room.
  */
 export class PetPose {
-  readonly pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
+  readonly pet = reactive({ keyDown: false, left: false, right: false, dx: 0, dy: 0, formPress: 0 });
   private keysHeld = 0;
   private motion = new MouseMotion(this.pet);
 
@@ -18,6 +17,7 @@ export class PetPose {
       case "key_down":
         this.keysHeld += 1;
         pet.keyDown = true;
+        pet.formPress += 1;
         break;
       case "key_up":
         this.keysHeld = Math.max(0, this.keysHeld - 1);
@@ -26,6 +26,7 @@ export class PetPose {
       case "mouse_down":
         if (e.button === "left") pet.left = true;
         else if (e.button === "right") pet.right = true;
+        pet.formPress += 1;
         break;
       case "mouse_up":
         if (e.button === "left") pet.left = false;

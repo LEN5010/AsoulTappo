@@ -289,6 +289,18 @@ def test_a_tier_at_zero_in_the_standing_pool_is_found_in_a_banner_that_rates_it(
     assert view["resonance"]["rates"]["limited"] == 0
 
 
+def test_a_banner_can_add_a_tier_missing_from_the_standing_pool():
+    featured = Manifest.load().resonance_pool["limited"][0]["id"]
+    m = manifest(items=[featured], **SHARED)
+    rates = m.resonance["rates"]
+    rates["common"] += rates.pop("limited")
+    g, clock = game(.17, 0, 0, m=m)
+    clock.t += 2 * DAY
+    assert "limited" not in m.resonance_pool_for(NEW, clock.t)
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["item"] == featured and drop["rarity"] == "limited" and drop["featured"]
+
+
 def test_a_banners_common_cards_come_as_holo_versions_too():
     m = manifest()
     m.resonance["holoChance"] = 100

@@ -57,7 +57,7 @@ onBeforeUnmount(() => {
       :style="{ width: px(stage.w), height: px(stage.h), paddingTop: px(ROOM.top), '--bubble-max-width': px(160) }"
     >
       <PetView
-        :character="view.character" :scale="scale" :key-down="pet.keyDown"
+        :character="view.character" :scale="scale" :key-down="pet.keyDown" :form-press="pet.formPress"
         :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
         :emote="view.emote" :combo="view.combo" combo-icon="shard" :win="view.win" :min-emote="56"
       />

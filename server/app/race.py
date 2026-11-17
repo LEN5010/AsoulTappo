@@ -56,6 +56,8 @@ MAX_ODDS_TENTHS = 990
 PLACES = {"win": 1, "top2": 2, "last": 1}
 # The faces of the die rolled for the order (apart from the dice a move rolls).
 ORDER_FACES = 6
+# One outcome should finish well within this many moves, even on a custom track.
+MAX_MOVES = 2_000
 # The special squares a map may hold, and the skills a race may deal.
 SQUARE_KINDS = ("boost", "trip", "portal", "flip", "again", "hook")
 SKILLS = ("steady", "burst", "chase", "porter", "solo", "dash", "shield", "climb")
@@ -326,6 +328,10 @@ def bounce(square: int, track: int) -> int:
     return 2 * track - square if square > track else max(0, square)
 
 
+class UnfinishedRace(ValueError):
+    """No member reached the finish within MAX_MOVES."""
+
+
 def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     """Runs one race. Returns {ranking, start, order, rolls, moves, rest}: ranking first to last; start the lanes on
     the start line, top lane first; order who moves first to last, every round; rolls the order's rounds of dice, each
@@ -364,6 +370,9 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     moves: list[dict[str, Any]] = []
     while True:
         for at, d in enumerate(order):
+            if len(moves) == MAX_MOVES:
+                map_id = (setup.get("map") or {}).get("id", "lap")
+                raise UnfinishedRace(f"race on {map_id} did not finish in {MAX_MOVES} moves")
             faces = dice[d]
             roll = faces[below(len(faces))]
             p = pos[d]

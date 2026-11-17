@@ -37,8 +37,8 @@ const STATS: { rarity: Rarity; label: string; icon: string }[] = [
 // counted or shown here.
 const pool = computed(() => standingPool(heldItems()));
 const all = computed(() => Object.values(pool.value).flat());
-/** The dynamic cards on show. A limited pool has not featured one of them so far; the hand is dealt once. */
-const previews = [...pool.value.legendary, ...pool.value.epic].filter((i) => i.kind === "card");
+/** The dynamic cards the standing pool can deal. */
+const previews = computed(() => [...pool.value.legendary, ...pool.value.epic].filter((i) => i.kind === "card"));
 const skins = computed(() => pool.value.skin.flatMap((item) => {
   const bg = getCharacter(item.ref)?.bg;
   return bg ? [{ item, bg }] : [];
@@ -62,7 +62,7 @@ const totalItems = computed(() => all.value.length + (holoOn.value ? holoCards.l
 const allFill = computed(() => `${totalItems.value ? (collected.value / totalItems.value) * 100 : 0}%`);
 
 /** The card on show, as the hand reports it (CardHand.vue). */
-const active = ref<Item | undefined>(previews[0]);
+const active = ref<Item | undefined>(previews.value[0]);
 const card = computed(() => (active.value?.kind === "card" ? getCard(active.value.ref) : undefined));
 const feature = computed(() => {
   const c = card.value;

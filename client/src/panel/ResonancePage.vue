@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
 import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
 import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, poolOf, effectiveRates, runningBanners, tiersIn } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
-import { collection, resonate, draws, shards, status, online, error } from "../stores/player";
+import { collection, resonate, draws, shards, status, online, error, loadEconomy } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
 import Icon from "../ui/Icon.vue";
@@ -26,6 +27,13 @@ const pool = computed(() => poolOf(heldItems()));
 const now = ref(Date.now());
 const clock = window.setInterval(() => (now.value = Date.now()), 30_000);
 onBeforeUnmount(() => window.clearInterval(clock));
+const pageActive = usePageActive();
+watch(pageActive, (active) => { if (active) now.value = Date.now(); });
+const expired = computed(() => economy.value?.resonance.banners
+  ?.filter((b) => b.end * 1000 <= now.value).map((b) => b.id).join(",") ?? "");
+watch(() => pageActive.value && online.value && expired.value, (ids) => {
+  if (ids) void loadEconomy();
+}, { immediate: true });
 const banners = computed(() => runningBanners(now.value));
 const banner = computed(() => banners.value.find((b) => b.id === ui.pool) ?? null);
 const pools = computed(() => [
@@ -55,7 +63,8 @@ let drawing = "";
 /** Size of the last request, offered again from the result board. */
 const last = ref(0);
 const again = computed(() =>
-  (last.value === 1 || last.value === 10) && online.value && !complete.value && draws.value >= last.value ? last.value : 0);
+  (last.value === 1 || last.value === 10) && online.value && !complete.value && draws.value >= last.value &&
+  (!drawing || banners.value.some((b) => b.id === drawing)) ? last.value : 0);
 const probabilities = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
@@ -209,9 +218,9 @@ async function nextBatch() {
           <td class="num cur">{{ rates.tiers[r] }}%</td>
           <td class="pity-col"><span v-if="r === 'legendary' || r === 'skin'" class="pity-pill">{{ res.pity[r] }} 次</span><template v-else>—</template></td>
         </tr>
-        <tr v-for="r in rates.shared" :key="`shared-${r}`" class="featured-row">
+        <tr v-for="{ rarity, rate } in rates.shared" :key="`shared-${rarity}`" class="featured-row">
           <td><span class="tier-cell"><i class="swatch" aria-hidden="true"></i>{{ featuredWord }}</span></td>
-          <td colspan="2" class="holo-odds">抽到{{ RARITY_LABEL[r] }}时 <b>{{ banner!.share }}%</b></td>
+          <td colspan="2" class="holo-odds">抽到{{ RARITY_LABEL[rarity] }}时 <b>{{ rate }}%</b></td>
           <td class="pity-col"><span v-if="banner!.pity" class="pity-pill">{{ banner!.pity }} 次</span><template v-else>—</template></td>
         </tr>
         <tr v-if="res.holoChance" class="holo-row">

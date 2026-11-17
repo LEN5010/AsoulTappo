@@ -1,4 +1,4 @@
-//! Global shortcuts: the hide key, which hides the pet, the panel, the todos' window and the capture window and shows them again,
+//! Global shortcuts: the hide key hides the pet, panel, todos, race and capture windows and restores them,
 //! the click-through key, which flips click-through, and the emote keys, which play a quick emote each. Registered
 //! with the system, so they need no input permission and do not go through the hook.
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +13,8 @@ static PANEL_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 static CAPTURE_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 /// The same for the todos' window.
 static TODO_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
+/// The same for the race window.
+static RACE_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// What a shortcut does.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -62,6 +64,7 @@ fn toggle(app: &AppHandle) {
     let panel = app.get_webview_window("panel");
     let capture = app.get_webview_window("capture");
     let todo = app.get_webview_window("todo");
+    let race = app.get_webview_window("race");
     if main.is_visible().unwrap_or(true) {
         applog!("hotkey", "hide");
         let shown = panel.as_ref().is_some_and(|p| p.is_visible().unwrap_or(false));
@@ -80,6 +83,11 @@ fn toggle(app: &AppHandle) {
         if let Some(t) = todo.filter(|_| shown) {
             let _ = t.hide();
         }
+        let shown = race.as_ref().is_some_and(|r| r.is_visible().unwrap_or(false));
+        RACE_WAS_SHOWN.store(shown, Ordering::Relaxed);
+        if let Some(r) = race.filter(|_| shown) {
+            let _ = r.hide();
+        }
         let _ = main.hide();
     } else {
         applog!("hotkey", "show");
@@ -93,6 +101,9 @@ fn toggle(app: &AppHandle) {
         }
         if let Some(t) = todo.filter(|_| TODO_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
             let _ = t.show();
+        }
+        if let Some(r) = race.filter(|_| RACE_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
+            let _ = r.show();
         }
     }
 }

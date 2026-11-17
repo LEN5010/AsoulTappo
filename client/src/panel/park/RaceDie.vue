@@ -6,20 +6,31 @@
 // (race.ts airFaces, from [toss.pool]) and lands on [face]. The motion is one Web Animations run on transform and
 // opacity; [toss.at] is how far into the throw it already is (a page opened mid-throw). No throw without motion.
 // A die that gets thrown (toss passed, null between throws) stands on its contact shadow.
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../../stores/theme";
 import { airFaces, TOSS_LAND, TOSS_TOP } from "./race";
 
 /** A throw: [ms] long after [delay]; [height] how high, in % of the die (120 by default). */
 export interface Toss { ms: number; delay?: number; at?: number; pool: readonly number[]; seed?: number; height?: number }
 
-const props = defineProps<{ face: number; toss?: Toss | null; color?: string }>();
+const props = defineProps<{ face: number; toss?: Toss | null; color?: string; paused?: boolean; rate?: number }>();
 
 const air = props.toss && !reducedMotion.value ? airFaces(props.face, props.toss.pool, props.toss.seed ?? 0) : [];
 const cube = ref<HTMLElement | null>(null);
 const shade = ref<HTMLElement | null>(null);
 const faces = ref<HTMLElement[]>([]);
 const final = ref<HTMLElement | null>(null);
+const animations: Animation[] = [];
+watch(() => props.rate, (rate) => {
+  for (const animation of animations) animation.updatePlaybackRate(rate ?? 1);
+});
+watch(() => props.paused, (paused) => {
+  for (const animation of animations) {
+    if (paused && animation.playState !== "finished") animation.pause();
+    else if (!paused && animation.playState === "paused") animation.play();
+  }
+});
+onBeforeUnmount(() => animations.forEach((animation) => animation.cancel()));
 
 // Shares of the throw after landing: squash, first bounce up and down, second bounce up and down.
 const SQUASH = TOSS_LAND + 0.04;
@@ -40,7 +51,10 @@ onMounted(() => {
   if (!t || reducedMotion.value || !el || typeof el.animate !== "function") return;
   const timing: KeyframeAnimationOptions = { duration: t.ms, delay: t.delay ?? 0, fill: "backwards" };
   const start = (a: Animation) => {
+    a.playbackRate = props.rate ?? 1;
     if (t.at) a.currentTime = t.at;
+    if (props.paused) a.pause();
+    animations.push(a);
   };
   // A squash keeps the die on the ground: shrunk to sy about its middle, it is lowered by (1 − sy) / 2 of its height.
   const squash = (sx: number, sy: number) => pose(0, ((1 - sy) / 2) * 100, 720, sx, sy);

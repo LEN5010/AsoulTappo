@@ -46,7 +46,7 @@ function stopRush() {
   rush.value = false;
 }
 function go(step: number) {
-  if (!step || props.busy) return;
+  if (!step || props.busy || props.items.length < 2) return;
   if (reducedMotion.value) {
     window.clearTimeout(stepTimer);
     stepTimer = 0;
@@ -68,7 +68,7 @@ function go(step: number) {
   runStep();
 }
 function runStep() {
-  if (stepTimer || !pending) return;
+  if (stepTimer || !pending || props.items.length < 2) return;
   const dir = Math.sign(pending);
   pending -= dir;
   dealing.value = dir;

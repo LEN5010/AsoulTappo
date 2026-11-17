@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -128,16 +129,22 @@ class Manifest:
         have = key[:3] if key else (0, 0, 0)
         return frozenset(iid for iid, since in self.item_since.items() if since > have)
 
-    def resonance_pool_for(self, version: str | None, now: float | None = None) -> dict[str, list[dict]]:
+    def resonance_pool_for(self, version: str | None, now: float | None = None, *,
+                           tiers: Iterable[str] = ()) -> dict[str, list[dict]]:
         """The standing pool a client of [version] can show: cards and skins from a later release are left out, as
         is every one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
-        None: the whole pool. With [now], the items of banners that have not ended are left out too (app/banners.py)."""
+        None: the whole pool. With [now], the items of banners that have not ended are left out too (app/banners.py).
+        [tiers] can add tiers that only a limited pool rates."""
+        pool = self.resonance_pool
+        extra = set(tiers) - pool.keys()
+        if extra:
+            pool = {**pool, **{tier: self.resonance_catalog.get(tier, []) for tier in extra}}
         held = self.held_for(version)
         if now is not None:
             held |= banner_file.held(self.banners, now)
         if not held:
-            return self.resonance_pool
-        return {r: [i for i in items if i["id"] not in held] for r, items in self.resonance_pool.items()}
+            return pool
+        return {r: [i for i in items if i["id"] not in held] for r, items in pool.items()}
 
     @cached_property
     def banners(self) -> tuple[banner_file.Banner, ...]:
@@ -159,11 +166,15 @@ class Manifest:
     def resonance_pool(self) -> dict[str, list[dict]]:
         """Items by tier. An item whose tier has no rate in the economy (say the limited tier before its rate is set)
         stays out of the pool, as do holo versions, which come from their card's draws."""
-        pool: dict[str, list[dict]] = {r: [] for r in self.resonance["rates"]}
+        return {tier: self.resonance_catalog.get(tier, []) for tier in self.resonance["rates"]}
+
+    @cached_property
+    def resonance_catalog(self) -> dict[str, list[dict]]:
+        pool: dict[str, list[dict]] = {}
         for item in self.items.values():
             if (item["id"] not in self.starter and not item["source"] and item["kind"] != "holo"
-                    and item["rarity"] in pool):
-                pool[item["rarity"]].append(item)
+                    and item["rarity"] is not None):
+                pool.setdefault(item["rarity"], []).append(item)
         return pool
 
     @cached_property

@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS ddz_games (
   burnt INTEGER NOT NULL DEFAULT 0,
   settled REAL NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS ddz_games_state ON ddz_games (state);
+CREATE INDEX IF NOT EXISTS ddz_games_settled ON ddz_games (state, settled);
 CREATE TABLE IF NOT EXISTS ddz_seats (
   game_id INTEGER NOT NULL,
   seat INTEGER NOT NULL,

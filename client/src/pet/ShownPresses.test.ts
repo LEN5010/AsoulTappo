@@ -17,31 +17,41 @@ describe("what a room is shown of the own presses", () => {
     for (let i = 0; i < 20; i++) {
       shown.input({ kind: "mouse_down", button: "left", injected: true });
       expect(shown.state.left).toBe(false);
-      shown.input({ kind: "mouse_up", button: "left" });
+      shown.input({ kind: "mouse_up", button: "left", injected: true });
     }
     shown.input({ kind: "key_down", injected: true });
     expect(shown.state.keyDown).toBe(false);
-    shown.input({ kind: "key_up" });
+    shown.input({ kind: "key_up", injected: true });
     expect(shown.state).toEqual({ keyDown: false, left: false, right: false });
   });
 
-  it("keeps showing the hand while an auto-clicker runs beside it", () => {
+  it("only shows the manual input while keyboard and mouse input overlap", () => {
     const shown = new ShownPresses();
     shown.input({ kind: "key_down", injected: false });
     shown.input({ kind: "key_down", injected: true });
     expect(shown.state.keyDown).toBe(true);
-    // One release for each press, in whichever order: the hand's key stays down until both are up.
-    shown.input({ kind: "key_up" });
-    expect(shown.state.keyDown).toBe(true);
-    shown.input({ kind: "key_up" });
+    shown.input({ kind: "key_up", injected: false });
+    expect(shown.state.keyDown).toBe(false);
+    shown.input({ kind: "key_up", injected: true });
     expect(shown.state.keyDown).toBe(false);
     // A hand's click on the right button while the left one is being clicked for it.
     shown.input({ kind: "mouse_down", button: "left", injected: true });
     shown.input({ kind: "mouse_down", button: "right", injected: false });
     expect(shown.state).toEqual({ keyDown: false, left: false, right: true });
-    shown.input({ kind: "mouse_up", button: "left" });
+    shown.input({ kind: "mouse_up", button: "left", injected: true });
     shown.input({ kind: "mouse_up", button: "right" });
     expect(shown.state).toEqual({ keyDown: false, left: false, right: false });
+  });
+
+  it("keeps showing a physical key and button when simulated ones are released first", () => {
+    const shown = new ShownPresses();
+    shown.input({ kind: "key_down", injected: false });
+    shown.input({ kind: "mouse_down", button: "left", injected: false });
+    shown.input({ kind: "key_down", injected: true });
+    shown.input({ kind: "mouse_down", button: "left", injected: true });
+    shown.input({ kind: "key_up", injected: true });
+    shown.input({ kind: "mouse_up", button: "left", injected: true });
+    expect(shown.state).toEqual({ keyDown: true, left: true, right: false });
   });
 
   it("forgets everything on a stop", () => {

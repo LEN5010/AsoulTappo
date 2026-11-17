@@ -21,16 +21,18 @@ current rules, still gives the ranking and the end it was settled with (played()
 from __future__ import annotations
 
 import json
+import logging
 import math
 import random
 import secrets
-from typing import Any, Callable, Iterable
+from functools import lru_cache
+from typing import Any, Callable, Iterable, Literal
 
 from . import race
 from .notice import version_key
 from .game import Game, GameError, player_id_for
 from .park import Park
-from .store import DAY_OFFSET, day_of
+from .store import DAY_OFFSET, Store, day_of
 
 # Coin ledger sources.
 SPEND = "race"
@@ -80,6 +82,8 @@ SIMS = 20000
 
 # The first client that plays a race run on a map or with skills; older ones get such a race's result only.
 MAPS_SINCE = (1, 2, 5)
+RaceView = Literal["full", "summary", "schedule"]
+log = logging.getLogger(__name__)
 
 
 def plays_maps(version: str | None) -> bool:
@@ -207,6 +211,12 @@ def _hit(kind: str, member: str, ranking: list[str]) -> bool:
     return ranking[-1] == member
 
 
+@lru_cache(maxsize=2)
+def _settled_market(store: Store, race_id: int) -> tuple[dict[str, dict[str, int]], int]:
+    """The settled race's public totals are shared by every viewer."""
+    return store.race_stakes(race_id), store.race_bettors(race_id)
+
+
 class Races:
     def __init__(self, game: Callable[[], Game], park: Park, dealer: Any = None,
                  seeds: Callable[[], bytes] | None = None) -> None:
@@ -215,6 +225,7 @@ class Races:
         self.park = park
         self.dealer = dealer or random.SystemRandom()
         self.seeds = seeds or (lambda: secrets.token_bytes(SEED_BYTES))
+        self._failed_slots: set[int] = set()
 
     @property
     def game(self) -> Game:
@@ -311,12 +322,19 @@ class Races:
         cfg = self.cfg
         interval = int(cfg["interval"])
         current = opened_at(cfg, now)
+        self._failed_slots.intersection_update((current, current + interval))
         targets = [current + interval]
         if now < current + int(cfg["betting"]) - MIN_BETTING:
             targets.insert(0, current)
         for rid in targets:
-            if g.store.race_get(rid) is None:
-                g.store.race_insert(self.prepare(rid))
+            if rid not in self._failed_slots and g.store.race_get(rid) is None:
+                try:
+                    prepared = self.prepare(rid)
+                except race.UnfinishedRace as e:
+                    self._failed_slots.add(rid)
+                    log.error("race %s could not be prepared: %s", rid, e)
+                    continue
+                g.store.race_insert(prepared)
         return wins
 
     def _start(self, race_id: int) -> None:
@@ -406,7 +424,7 @@ class Races:
                 "race": self._race(g.store.race_get(race_id), pid, g.now(), version)}
 
     # ------------------------------------------------------------------ view
-    def view(self, token: str, version: str | None = None) -> dict[str, Any]:
+    def view(self, token: str, version: str | None = None, view: RaceView = "full") -> dict[str, Any]:
         """The race shown now (taking bets, running or the latest finished), the finished race before it, the
         latest winners, and when the next race's bets open. [version] is the client's: one from before maps and
         skills gets the result of a race run with them, without the moves it could not play."""
@@ -416,7 +434,16 @@ class Races:
         st = g.store
         now = g.now()
         interval = int(cfg["interval"])
-        shown = st.race_shown(now)
+        shown = st.race_shown(now, schedule=view == "schedule")
+        next_at = opened_at(cfg, now) + interval
+        if view == "schedule":
+            current = None
+            if shown:
+                phase = self._phase(shown, now)
+                current = {"id": shown["id"], "phase": phase, "startsAt": shown["starts_at"]}
+                if phase in ("running", "done"):
+                    current["endsAt"] = shown["ends_at"]
+            return {"now": now, "nextAt": next_at, "race": current}
         before = shown["id"] if shown else int(now) + 1
         if shown and shown["status"] == "settled":
             before += 1
@@ -424,9 +451,9 @@ class Races:
         last = next((r for r in settled if not shown or r["id"] != shown["id"]), None)
         return {
             "now": now,
-            "nextAt": opened_at(cfg, now) + interval,
-            "race": self._race(shown, pid, now, version) if shown else None,
-            "last": self._race(last, pid, now, version) if last else None,
+            "nextAt": next_at,
+            "race": self._race(shown, pid, now, version, playback=view == "full") if shown else None,
+            "last": self._race(last, pid, now, version, playback=view == "full") if last else None,
             "winners": [{"id": r["id"], "member": json.loads(r["ranking"])[0]} for r in settled],
         }
 
@@ -491,14 +518,21 @@ class Races:
             raise GameError("no_replay", "这一场没有回放")
         return {"race": out}
 
-    def _race(self, row: dict[str, Any], pid: str, now: float, version: str | None = None) -> dict[str, Any]:
+    @staticmethod
+    def _phase(row: dict[str, Any], now: float) -> str:
+        return {"open": "betting" if now < row["starts_at"] else "starting", "running": "running",
+                "settled": "done", "void": "void"}[row["status"]]
+
+    def _race(self, row: dict[str, Any], pid: str, now: float, version: str | None = None,
+              playback: bool = True) -> dict[str, Any]:
         status = row["status"]
-        phase = {"open": "betting" if now < row["starts_at"] else "starting", "running": "running",
-                 "settled": "done", "void": "void"}[status]
         st = self.game.store
         cfg = self.cfg
         members = self.members
-        stakes = st.race_stakes(row["id"])
+        if status == "settled":
+            stakes, bettors = _settled_market(st, row["id"])
+        else:
+            stakes, bettors = st.race_stakes(row["id"]), st.race_bettors(row["id"])
         setup = json.loads(row["setup"])
         odds = race.odds(cfg, members, stakes, setup.get("popularity"), setup.get("chance"))
         bets = st.race_bets(row["id"], pid)
@@ -507,19 +541,18 @@ class Races:
                  **({"prize": b["prize"] / 10} if status == "settled" else {})}
                 for b in bets]
         out: dict[str, Any] = {
-            "id": row["id"], "phase": phase, "opensAt": row["id"], "startsAt": row["starts_at"],
+            "id": row["id"], "phase": self._phase(row, now), "opensAt": row["id"], "startsAt": row["starts_at"],
             "hash": row["hash"], "setup": setup,
             "odds": {kind: {m: t / 10 for m, t in per.items()} for kind, per in odds.items()},
             "pool": {kind: {m: stakes.get(kind, {}).get(m, 0) for m in members} for kind in cfg["kinds"]},
-            "bettors": st.race_bettors(row["id"]), "mine": mine,
+            "bettors": bettors, "mine": mine,
         }
         if status in ("running", "settled"):
             # Public from the start on: the seed and everything it decides.
             out.update(seed=row["seed"], endsAt=row["ends_at"], ranking=json.loads(row["ranking"]))
-            result = self.played(row)
-            if (setup.get("map") or setup.get("skills")) and not plays_maps(version):
-                result = None
-            if result is not None:
+            known = plays_maps(version) or not (setup.get("map") or setup.get("skills"))
+            result = self.played(row) if known and (playback or not row["result"]) else None
+            if playback and result is not None:
                 # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS;
                 # rows from before the rounds' dice have no rest, and played without them (rollMs 0).
                 rolls = result.get("rolls")
@@ -539,7 +572,7 @@ class Races:
                         out["cutMs"] = times["cut"]
                 if rolls:
                     out.update(order=result["order"], rolls=rolls)
-            out["replay"] = result is not None
+            out["replay"] = known and (result is not None or bool(row["result"]))
         if status == "settled" and bets:
             staked = sum(b["coins"] for b in bets)
             won = payout(b["prize"] for b in bets)

@@ -6,6 +6,7 @@ describe("PetPose", () => {
     const pose = new PetPose();
     pose.input({ kind: "key_down" }, null);
     pose.input({ kind: "key_down" }, null);
+    expect(pose.pet.formPress).toBe(2);
     pose.input({ kind: "key_up" }, null);
     expect(pose.pet.keyDown).toBe(true);
     pose.input({ kind: "key_up" }, null);
@@ -15,7 +16,7 @@ describe("PetPose", () => {
     pose.input({ kind: "mouse_down", button: "middle" }, null);
     expect(pose.pet).toMatchObject({ left: false, right: true });
     pose.stop();
-    expect(pose.pet).toEqual({ keyDown: false, left: false, right: false, dx: 0, dy: 0 });
+    expect(pose.pet).toEqual({ keyDown: false, left: false, right: false, dx: 0, dy: 0, formPress: 4 });
   });
   it("leaves the mouse paw alone without a sensitivity", () => {
     const pose = new PetPose();

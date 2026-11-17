@@ -480,7 +480,7 @@ onBeforeUnmount(() => {
         <div class="me">
           <PetView
             :character="settings.character" :scale="0.625" :min-emote="40"
-            :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
+            :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
             :emote="localPet.emote" :win="localPet.win" :pulse="localPet.pulse"
           />
           <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">

@@ -250,9 +250,12 @@ def test_common_prefers_unowned_within_kind_then_refunds_duplicates(kind, roll):
     assert r["drops"][1]["count"] == 1 and g.store.owned(pid)[pool[-1]["id"]] == 1
 
 
-@pytest.mark.parametrize("tier,shards", [("small", 360), ("normal", 20)])
-def test_the_hidden_tier_keeps_rolling_once_complete_and_repeats_pay_by_tier(tier, shards):
+@pytest.mark.parametrize("tier,has_dance_refund,shards", [("small", True, 360), ("normal", True, 360),
+                                                         ("normal", False, 20)])
+def test_the_epic_tier_keeps_rolling_once_complete_and_repeats_pay_by_kind(tier, has_dance_refund, shards):
     g, _ = game(SeqRng(.01, .0))
+    if not has_dance_refund:
+        g.manifest.resonance["duplicateRefund"].pop("dance")
     pid = player_id_for(TOKEN)
     epic = g.manifest.resonance_pool["epic"]
     for item in epic:

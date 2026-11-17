@@ -32,6 +32,14 @@ pub enum InputEvent {
     MouseMove { dx: f64, dy: f64 },
 }
 
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+pub struct HeardInput {
+    #[serde(flatten)]
+    pub event: InputEvent,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub injected: Option<bool>,
+}
+
 /// Minimum spacing between emitted mouse-move events (~60 Hz).
 const MOVE_INTERVAL: Duration = Duration::from_millis(16);
 
@@ -45,7 +53,7 @@ const STUCK_KEY: Duration = Duration::from_millis(1500);
 #[derive(Default)]
 pub struct InputState {
     /// Held keys and when the OS last reported them down (auto-repeat refreshes it).
-    held: HashMap<Key, Instant>,
+    held: HashMap<(Key, Option<bool>), Instant>,
     last_pos: Option<(f64, f64)>,
     acc: (f64, f64),
     last_move_emit: Option<Instant>,
@@ -57,20 +65,26 @@ impl InputState {
     }
 
     /// Filters one raw event into `out`. Any event first releases keys whose key-up was lost.
-    pub fn handle(&mut self, ev: &EventType, now: Instant, out: &mut Vec<InputEvent>) {
-        let before = self.held.len();
-        self.held.retain(|_, seen| now.duration_since(*seen) < STUCK_KEY);
-        out.extend(std::iter::repeat(InputEvent::KeyUp).take(before - self.held.len()));
-        if let Some(e) = self.filter(ev, now) {
-            out.push(e);
+    pub fn handle(
+        &mut self, ev: &EventType, now: Instant, injected: Option<bool>, out: &mut Vec<HeardInput>,
+    ) {
+        self.held.retain(|&(_, origin), seen| {
+            let held = now.duration_since(*seen) < STUCK_KEY;
+            if !held {
+                out.push(HeardInput { event: InputEvent::KeyUp, injected: origin });
+            }
+            held
+        });
+        if let Some(event) = self.filter(ev, now, injected) {
+            out.push(HeardInput { event, injected });
         }
     }
 
-    fn filter(&mut self, ev: &EventType, now: Instant) -> Option<InputEvent> {
+    fn filter(&mut self, ev: &EventType, now: Instant, injected: Option<bool>) -> Option<InputEvent> {
         match ev {
             // OS auto-repeat sends repeated presses: only report the first.
-            EventType::KeyPress(k) => self.held.insert(*k, now).is_none().then_some(InputEvent::KeyDown),
-            EventType::KeyRelease(k) => self.held.remove(k).map(|_| InputEvent::KeyUp),
+            EventType::KeyPress(k) => self.held.insert((*k, injected), now).is_none().then_some(InputEvent::KeyDown),
+            EventType::KeyRelease(k) => self.held.remove(&(*k, injected)).map(|_| InputEvent::KeyUp),
             EventType::ButtonPress(b) => Some(InputEvent::MouseDown { button: map_button(b) }),
             EventType::ButtonRelease(b) => Some(InputEvent::MouseUp { button: map_button(b) }),
             EventType::MouseMove { x, y } => {
@@ -133,9 +147,7 @@ pub fn note_emit_failure() {
 }
 
 /// Spawn the global hook and the thread that filters its events; `emit` is called
-/// for every filtered event. With a key or button press it is also told whether other
-/// software sent it (an auto-clicker, a macro, a remote-control program): `Some` where
-/// the system says (Windows), `None` where it does not and for every other event.
+/// for every filtered event. Key and button edges carry the input origin where the system reports it.
 ///
 /// The OS hook callback only timestamps the event and queues it: Windows silently
 /// removes a low-level hook whose callback runs past `LowLevelHooksTimeout`, which
@@ -147,7 +159,7 @@ pub fn note_emit_failure() {
 /// never unhooks; the OS removes a thread's hooks when the thread exits.
 pub fn spawn_hook<F>(emit: F)
 where
-    F: Fn(InputEvent, Option<bool>) + Send + 'static,
+    F: Fn(HeardInput) + Send + 'static,
 {
     let (tx, rx) = std::sync::mpsc::channel::<(EventType, Instant, Option<bool>)>();
 
@@ -155,9 +167,9 @@ where
         let mut state = InputState::new();
         let mut filtered = Vec::new();
         for (ev, at, injected) in rx {
-            state.handle(&ev, at, &mut filtered);
+            state.handle(&ev, at, injected, &mut filtered);
             for out in filtered.drain(..) {
-                let counter = match out {
+                let counter = match out.event {
                     InputEvent::KeyDown => Some(&KEYS),
                     InputEvent::MouseDown { .. } => Some(&CLICKS),
                     InputEvent::MouseMove { .. } => Some(&MOVES),
@@ -166,8 +178,7 @@ where
                 if let Some(counter) = counter {
                     counter.fetch_add(1, Ordering::Relaxed);
                 }
-                let press = matches!(out, InputEvent::KeyDown | InputEvent::MouseDown { .. });
-                emit(out, if press { injected } else { None });
+                emit(out);
             }
         }
     });
@@ -261,9 +272,8 @@ struct Producer {
 }
 
 impl Producer {
-    /// `injected`: for a press, whether other software sent it, where the hook can tell.
+    /// `injected`: for a key or button edge, whether other software sent it.
     fn push(&mut self, ev: EventType, injected: Option<bool>) {
-        watchdog::heard();
         let now = Instant::now();
         match ev {
             EventType::Wheel { .. } => return,
@@ -335,6 +345,7 @@ mod win_hook {
     }
 
     fn push(ev: EventType, injected: Option<bool>) {
+        super::watchdog::heard();
         PRODUCER.with(|p| {
             if let Ok(mut p) = p.try_borrow_mut() {
                 if let Some(p) = p.as_mut() {
@@ -349,13 +360,13 @@ mod win_hook {
             // The virtual-key code only tells auto-repeat apart from a new press; it never leaves this process.
             let info = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
             let vk = info.vkCode;
+            let injected = info.flags & LLKHF_INJECTED != 0;
             match wparam as u32 {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
-                    let injected = info.flags & LLKHF_INJECTED != 0;
                     super::note_raw_press(injected);
                     push(EventType::KeyPress(Key::Unknown(vk)), Some(injected))
                 }
-                WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk)), None),
+                WM_KEYUP | WM_SYSKEYUP => push(EventType::KeyRelease(Key::Unknown(vk)), Some(injected)),
                 _ => {}
             }
         }
@@ -385,11 +396,12 @@ mod win_hook {
                         // So a pen tap that a tablet driver also sends as a mouse press counts once.
                         crate::tablet::note_mouse_left_down();
                     }
-                    let injected = matches!(ev, EventType::ButtonPress(_)).then(|| info.flags & LLMHF_INJECTED != 0);
-                    if let Some(injected) = injected {
+                    let injected = info.flags & LLMHF_INJECTED != 0;
+                    if matches!(ev, EventType::ButtonPress(_)) {
                         super::note_raw_press(injected);
                     }
-                    push(ev, injected);
+                    let origin = matches!(ev, EventType::ButtonPress(_) | EventType::ButtonRelease(_)).then_some(injected);
+                    push(ev, origin);
                 }
                 // Not forwarded, but the system counts it as input: without this the watchdog
                 // takes a hook that only hears scrolling for a dead one.
@@ -541,7 +553,6 @@ mod watchdog {
 #[cfg(not(target_os = "windows"))]
 mod watchdog {
     pub fn enter() {}
-    pub fn heard() {}
     pub fn take_replaced() -> u32 {
         0
     }
@@ -559,8 +570,8 @@ mod tests {
 
     fn step(s: &mut InputState, ev: EventType, at: Instant) -> Vec<InputEvent> {
         let mut out = Vec::new();
-        s.handle(&ev, at, &mut out);
-        out
+        s.handle(&ev, at, None, &mut out);
+        out.into_iter().map(|e| e.event).collect()
     }
 
     #[test]
@@ -571,6 +582,25 @@ mod tests {
         assert_eq!(step(&mut s, EventType::KeyPress(Key::KeyA), t), []);
         assert_eq!(step(&mut s, EventType::KeyRelease(Key::KeyA), t), [InputEvent::KeyUp]);
         assert_eq!(step(&mut s, EventType::KeyPress(Key::KeyA), t), [InputEvent::KeyDown]);
+    }
+
+    #[test]
+    fn real_and_injected_keys_have_independent_press_and_release_edges() {
+        let mut s = InputState::new();
+        let t = Instant::now();
+        let mut out = Vec::new();
+        let press = EventType::KeyPress(Key::KeyA);
+        s.handle(&press, t, Some(false), &mut out);
+        s.handle(&press, t, Some(true), &mut out);
+        s.handle(&press, t, Some(true), &mut out);
+        s.handle(&EventType::KeyRelease(Key::KeyA), t, Some(false), &mut out);
+        s.handle(&EventType::MouseMove { x: 0.0, y: 0.0 }, t + STUCK_KEY, None, &mut out);
+        assert_eq!(out, [
+            HeardInput { event: InputEvent::KeyDown, injected: Some(false) },
+            HeardInput { event: InputEvent::KeyDown, injected: Some(true) },
+            HeardInput { event: InputEvent::KeyUp, injected: Some(false) },
+            HeardInput { event: InputEvent::KeyUp, injected: Some(true) },
+        ]);
     }
 
     #[test]

@@ -205,10 +205,11 @@ class ParkStore(_StoreState):
                 "SELECT * FROM park_races WHERE status IN ('open', 'running') ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
-    def race_shown(self, now: float) -> dict[str, Any] | None:
+    def race_shown(self, now: float, schedule: bool = False) -> dict[str, Any] | None:
         """The newest race whose bets have opened by [now]."""
+        columns = "id, status, starts_at, ends_at" if schedule else "*"
         with self._lock:
-            row = self._db.execute("SELECT * FROM park_races WHERE id <= ? ORDER BY id DESC LIMIT 1",
+            row = self._db.execute(f"SELECT {columns} FROM park_races WHERE id <= ? ORDER BY id DESC LIMIT 1",
                                    (now,)).fetchone()
         return dict(row) if row else None
 

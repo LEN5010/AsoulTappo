@@ -30,7 +30,7 @@ const vacant = computed(() => {
       <button type="button" class="seat" title="我的主页" aria-label="我的主页" @click="emit('profile', null)">
         <PetView
           :character="settings.character" :scale="SCALE" :min-emote="34"
-          :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
+          :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
           :left-down="pet.left" :right-down="pet.right" :emote="localPet.emote" :win="localPet.win"
         />
         <NamePill :nick="settings.nick.trim() || '我'" :color="characterColor(settings.character)" :width="PILL_WIDTH" />

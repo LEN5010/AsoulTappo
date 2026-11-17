@@ -84,7 +84,7 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
           </li>
         </ul>
         <div class="live-preview">
-          <PetView :character="settings.character" :scale="SCALE" :key-down="pet.keyDown" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" />
+          <PetView :character="settings.character" :scale="SCALE" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" />
           <NamePlate :card="plate.id" :nick="nick" :color="characterColor(settings.character)" :width="size.width" :height="size.height" :font="font" />
           <small>桌宠预览</small>
         </div>

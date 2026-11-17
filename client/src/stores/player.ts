@@ -219,11 +219,23 @@ export async function attempt<T>(fn: (api: Api) => Promise<T>): Promise<{ ok: tr
   }
 }
 
+let economyLoad: { generation: number; pending: Promise<void> } | undefined;
 /** Asks the current server for its economy (src/stores/economy.ts); failures keep what is cached and retry later. */
-async function loadEconomy(): Promise<void> {
-  const base = toHttpBase(settings.serverUrl);
-  const got = await attempt((api) => api.economy());
-  if (got?.ok) setEconomy(got.value, base);
+export async function loadEconomy(base = toHttpBase(settings.serverUrl)): Promise<void> {
+  if (base !== toHttpBase(settings.serverUrl)) return;
+  if (isPanelWindow) return requestDesktop("loadEconomy", base).catch(() => {});
+  if (economyLoad?.generation === generation) return economyLoad.pending;
+  let at = 0;
+  const pending = attempt((api) => {
+    at = Date.now();
+    return api.economy();
+  }).then((got) => {
+    if (got?.ok) setEconomy(got.value, base, at);
+  }).finally(() => {
+    if (economyLoad?.pending === pending) economyLoad = undefined;
+  });
+  economyLoad = { generation, pending };
+  return pending;
 }
 
 export async function refresh(): Promise<void> {
