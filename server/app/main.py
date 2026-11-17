@@ -25,6 +25,7 @@ from . import economy as economy_file
 from .accounts import MainAccounts, http_me
 from .ddz import Bank as DdzBank, Tables
 from .duel import Duels
+from . import guard as guard_file
 from .game import Game, GameError, PlayerId, player_id_for
 from .manifest import Manifest, find_packs_dir
 from . import notice as notices
@@ -119,8 +120,9 @@ PACKS_DIR = find_packs_dir()
 # ASOULTAPPO_ECONOMY: the economy file (app/economy.py); the server does not start without it.
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
 # ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
+# ASOULTAPPO_GUARD: the file with the rules that tell automatic input from a hand (app/guard.py); none judges nothing.
 game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest,
-            economy_file.drop_config(manifest.anti_cheat))
+            economy_file.drop_config(manifest.anti_cheat), guard=guard_file.load())
 # 1.1: repeats turn into shards when drawn; cards kept as repeats before that are paid out once.
 _paid_players, _paid_shards = game.refund_duplicate_cards()
 if _paid_players:
@@ -371,6 +373,8 @@ class ActivityBody(BaseModel):
     sequence: int = Field(ge=1)
     # Seconds left of a cooldown the client's own input guard started.
     cooldown: int = Field(default=0, ge=0, le=3600)
+    # How many of the taps other software sent; left out by a client that cannot tell.
+    injected: int | None = Field(default=None, ge=0)
 
 
 class CraftBody(BaseModel):
@@ -439,7 +443,7 @@ def api_me(who: PlayerId = Depends(player)) -> dict:
 async def api_activity(body: ActivityBody, who: PlayerId = Depends(player)) -> dict:
     """Report the number of taps since the last report (counts only, never content)."""
     out = await run_in_threadpool(_guard, game.report_activity, who, body.taps, body.session, body.sequence,
-                                  body.cooldown)
+                                  body.cooldown, body.injected)
     # The taps that paid shards also fill the cheer bar of the room this save sits in.
     finished = manager.cheer(who, out.pop("cheerTaps", 0))
     if finished:
@@ -1152,10 +1156,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await err("not_joined", "send join first")
                 continue
 
+            if isinstance(msg, (TapMsg, MotionMsg, PoseMsg)):
+                # A save whose input counts as automatic keeps its seat, but the room sees none of its input.
+                await manager.hide(room_id, peer, game.auto_input(peer.token))
+
             if isinstance(msg, LeaveMsg):
                 await _leave(room_id, peer)
                 room_id, peer = None, None
             elif isinstance(msg, TapMsg):
+                if peer.hidden:
+                    continue
                 # Token bucket: an auto-clicker or forged client can't inflate room totals
                 # or flood the room faster than a human tapping rate.
                 now = time.monotonic()

@@ -55,18 +55,19 @@ def test_an_older_client_sees_the_limited_odds_in_common_as_its_draws_have_them(
 def test_anti_cheat_settings_override_the_defaults(tmp_path):
     path = tmp_path / "economy.json"
     raw = json.loads(economy.EXAMPLE.read_text(encoding="utf-8"))
-    raw["antiCheat"] = {"steady_tolerance": 0.05, "fast_taps_per_sec": 25}
+    # The steady_* settings belonged to a rule that moved to the guard: a file that still has them loads.
+    raw["antiCheat"] = {"tap_cooldown_sec": 90.0, "fast_taps_per_sec": 25, "steady_tolerance": 0.05}
     path.write_text(json.dumps(raw), encoding="utf-8")
     m = Manifest.load(economy=path)
     cfg = economy.drop_config(m.anti_cheat)
-    assert (cfg.steady_tolerance, cfg.fast_taps_per_sec) == (0.05, 25)
-    assert cfg.steady_reports == DropConfig().steady_reports
+    assert (cfg.tap_cooldown_sec, cfg.fast_taps_per_sec) == (90.0, 25)
+    assert cfg.fast_streak_sec == DropConfig().fast_streak_sec
     assert m.economy == {k: v for k, v in raw.items() if k != "antiCheat" and not k.startswith("_")}
 
 
 def test_an_unknown_anti_cheat_setting_is_refused():
-    with pytest.raises(ValueError, match="steady_tolerence"):
-        economy.drop_config({**asdict(DropConfig()), "steady_tolerence": 0.1})
+    with pytest.raises(ValueError, match="fast_taps_per_second"):
+        economy.drop_config({**asdict(DropConfig()), "fast_taps_per_second": 12})
 
 
 def test_the_example_names_the_scratch_emote_set():

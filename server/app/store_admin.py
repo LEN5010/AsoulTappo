@@ -58,18 +58,19 @@ class AdminStore(_StoreState):
                  "saved": r["saved"]} for r in rows]
 
     def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0,
-                      steady: int = 0) -> None:
+                      auto: int = 0, injected: int = 0) -> None:
         """Adds to the save's flags of [day]; the caller's transaction, if any, keeps it with the change."""
-        if not (dropped or server or client or steady):
+        if not (dropped or server or client or auto or injected):
             return
         with self._lock:
             self._db.execute(
-                "INSERT INTO tap_flags (day, player_id, dropped, server_cooldowns, client_cooldowns, steady) "
-                "VALUES (?,?,?,?,?,?) "
+                "INSERT INTO tap_flags (day, player_id, dropped, server_cooldowns, client_cooldowns, auto, injected) "
+                "VALUES (?,?,?,?,?,?,?) "
                 "ON CONFLICT(day, player_id) DO UPDATE SET dropped = dropped + excluded.dropped, "
                 "server_cooldowns = server_cooldowns + excluded.server_cooldowns, "
-                "client_cooldowns = client_cooldowns + excluded.client_cooldowns, steady = steady + excluded.steady",
-                (day, pid, dropped, server, client, steady))
+                "client_cooldowns = client_cooldowns + excluded.client_cooldowns, auto = auto + excluded.auto, "
+                "injected = injected + excluded.injected",
+                (day, pid, dropped, server, client, auto, injected))
             self._commit()
 
     def add_admin_log(self, ts: float, actor: str, action: str, pid: str = "", detail: str = "",
@@ -154,15 +155,15 @@ class AdminStore(_StoreState):
         return [dict(r) for r in rows]
 
     def tap_flags_of(self, day: str, limit: int) -> list[dict[str, Any]]:
-        """The day's flagged saves, most steady-rate then fast-input cooldowns first, with their credited taps and
-        tap shards."""
+        """The day's flagged saves, most often judged automatic (or, before the guard, cooled down for a steady rate)
+        then fast-input cooldowns first, with their credited taps and tap shards."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT f.player_id, f.dropped, f.server_cooldowns, f.client_cooldowns, f.steady, "
+                "SELECT f.player_id, f.dropped, f.server_cooldowns, f.client_cooldowns, f.steady, f.auto, f.injected, "
                 "COALESCE(g.count, 0) AS credited, COALESCE(g.amount, 0) AS shards, l.main_user_id "
                 "FROM tap_flags f LEFT JOIN shard_ledger g ON g.day = f.day AND g.player_id = f.player_id "
                 "AND g.source = 'tap' LEFT JOIN account_links l ON l.player_id = f.player_id WHERE f.day = ? "
-                "ORDER BY f.steady DESC, f.server_cooldowns DESC, f.dropped DESC LIMIT ?", (day, limit)).fetchall()
+                "ORDER BY f.auto + f.steady DESC, f.server_cooldowns DESC, f.dropped DESC LIMIT ?", (day, limit)).fetchall()
         return [dict(r) for r in rows]
 
     def top_tappers(self, day: str, limit: int) -> list[dict[str, Any]]:
@@ -171,7 +172,8 @@ class AdminStore(_StoreState):
             rows = self._db.execute(
                 "SELECT g.player_id, g.count AS credited, g.amount AS shards, l.main_user_id, "
                 "COALESCE(f.dropped, 0) AS dropped, COALESCE(f.server_cooldowns, 0) AS server_cooldowns, "
-                "COALESCE(f.client_cooldowns, 0) AS client_cooldowns, COALESCE(f.steady, 0) AS steady FROM shard_ledger g "
+                "COALESCE(f.client_cooldowns, 0) AS client_cooldowns, COALESCE(f.steady, 0) AS steady, "
+                "COALESCE(f.auto, 0) AS auto, COALESCE(f.injected, 0) AS injected FROM shard_ledger g "
                 "LEFT JOIN tap_flags f ON f.day = g.day AND f.player_id = g.player_id "
                 "LEFT JOIN account_links l ON l.player_id = g.player_id "
                 "WHERE g.day = ? AND g.source = 'tap' ORDER BY g.count DESC LIMIT ?", (day, limit)).fetchall()

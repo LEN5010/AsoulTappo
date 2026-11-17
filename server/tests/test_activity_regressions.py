@@ -1,7 +1,12 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+import pytest
+
+from app import guard as guard_file
 from app.game import Game
+from app.guard import Batch, Guard
 from app.store import Store
 from fixtures import Clock, tiny_manifest
 
@@ -190,95 +195,127 @@ def test_sessions_silent_for_thirty_days_are_pruned():
     assert game.store.activity_session(pid, "old")["sequence"] == 1
 
 
-# ------------------------------------------------------------------ steady rate
-def clicker(game, clock, taps, batches, session="clicker", start=1, every=20.0):
-    """Sends [batches] batches every [every] seconds; [taps] is a count or a function of the batch index."""
+# ------------------------------------------------------------------ the guard
+class Streak(Guard):
+    """A stand-in for the private rules: input counts as automatic for `span` seconds once `need` batches in a row
+    were all sent by other software."""
+
+    def __init__(self, need=3, span=1800.0):
+        self.need, self.span = need, span
+        self.seen = []
+
+    def judge(self, batch, notes):
+        self.seen.append(batch)
+        whole = batch.taps > 0 and batch.injected == batch.taps
+        notes["run"] = notes.get("run", 0) + 1 if whole else 0
+        return self.span if notes["run"] >= self.need else 0.0
+
+
+def make_guarded(guard, path=":memory:"):
+    clock = Clock()
+    game = Game(Store(str(path)), tiny_manifest(), now=clock, guard=guard)
+    game.status(TOKEN)
+    return game, clock
+
+
+def send(game, clock, taps, injected, sequence, session="s", every=20.0):
+    clock.t += every
+    return game.report_activity(TOKEN, taps, session, sequence, injected=injected)
+
+
+def test_no_guard_judges_nothing():
+    game, clock = make()
     result = None
-    for i in range(batches):
-        clock.t += every
-        n = taps(i) if callable(taps) else taps
-        result = game.report_activity(TOKEN, n, session, start + i)
-    return result
+    for i in range(1, 40):
+        result = send(game, clock, 160, 160, i)
+    assert result["autoInput"] == 0 and result["tapCooldown"] == 0 and result["credited"] == 160
+    assert not game.auto_input(result["player"])
 
 
-def test_a_steady_rate_for_ten_minutes_sits_out_a_cooldown():
-    game, clock = make()
+def test_the_guard_sees_each_batch_as_sent_and_keeps_notes_per_session():
+    guard = Streak()
+    game, clock = make_guarded(guard)
     pid = game.status(TOKEN)["player"]
-    # 8 taps a second, under the fast-input line, as one auto-clicker on the live server ran. A new session's first
-    # batch only marks the time; the 30 after it are the run, and the last of them is dropped.
-    result = clicker(game, clock, 160, 30)
-    assert result["tapCooldown"] == 0
-    result = clicker(game, clock, 160, 1, start=31)
-    assert result["credited"] == 0 and result["tapCooldown"] == 600
-    assert result["totals"]["taps"] == 160 * 30
+    send(game, clock, 40, None, 1)
+    send(game, clock, 40, 55, 2)       # more than the taps: taken as all of them
+    send(game, clock, 40, 40, 1, "other", every=7.0)
+    assert [(b.taps, b.injected, b.elapsed) for b in guard.seen] == [(40, None, 0.0), (40, 40, 20.0), (40, 40, 0.0)]
+    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"run": 1}
+    assert json.loads(game.store.activity_session(pid, "other")["guard"]) == {"run": 1}
+    # A batch sent again is not judged twice.
+    game.report_activity(TOKEN, 40, "s", 2, injected=40)
+    assert len(guard.seen) == 3
+
+
+def test_input_judged_automatic_is_flagged_and_still_paid():
+    game, clock = make_guarded(Streak())
+    pid = game.status(TOKEN)["player"]
+    assert send(game, clock, 40, 40, 1)["autoInput"] == 0
+    assert send(game, clock, 40, 40, 2)["autoInput"] == 0
+    result = send(game, clock, 40, 40, 3)
+    assert result["autoInput"] == 1800 and result["tapCooldown"] == 0 and result["credited"] == 40
+    assert game.auto_input(pid)
+    # Each further batch judged automatic keeps it going; the day's flags count the start once.
+    assert send(game, clock, 40, 40, 4)["autoInput"] == 1800
     flags = game.store.tap_flags_of(day_of_clock(clock), 10)
-    assert [(r["player_id"], r["steady"], r["server_cooldowns"]) for r in flags] == [(pid, 1, 0)]
-    # Inside the cooldown nothing counts; after it, a hand counts again.
-    clock.t += 300
-    assert game.report_activity(TOKEN, 50, "clicker", 32)["credited"] == 0
-    clock.t += 301
-    assert game.report_activity(TOKEN, 50, "clicker", 33)["credited"] == 50
+    assert [(r["player_id"], r["auto"], r["injected"]) for r in flags] == [(pid, 1, 160)]
+    # A hand again: it runs out half an hour after the last such batch, and a new run counts as a new start.
+    result = send(game, clock, 40, 0, 5)
+    assert result["autoInput"] == 1780
+    clock.t += 1780
+    assert game.status(TOKEN)["autoInput"] == 0 and not game.auto_input(pid)
+    for i in range(6, 9):
+        result = send(game, clock, 40, 40, i)
+    assert result["autoInput"] == 1800
+    assert game.store.tap_flags_of(day_of_clock(clock), 10)[0]["auto"] == 2
 
 
-def test_whole_tap_rounding_of_a_slow_clicker_still_reads_as_steady():
-    game, clock = make()
-    # 28 a minute: 9 or 10 taps per 20-second batch.
-    result = clicker(game, clock, lambda i: 10 if i % 3 == 0 else 9, 31)
-    assert result["tapCooldown"] == 600
-
-
-def test_a_hand_and_slow_input_never_read_as_steady():
-    import random
-    game, clock = make()
-    rng = random.Random(7)
-    # Busy typing whose batches vary by about a fifth either way, for two hours.
-    result = clicker(game, clock, lambda i: round(120 * rng.uniform(0.8, 1.2)), 360, "hand")
-    assert result["tapCooldown"] == 0
-    # Below 0.2 a second a run is not judged, however steady.
-    result = clicker(game, clock, 3, 60, "idle")
-    assert result["tapCooldown"] == 0 and result["credited"] == 3
-
-
-def test_one_odd_batch_is_left_out_and_two_start_the_run_over():
-    game, clock = make()
-    # As one clicker on the live server: 118, 119, then a 97 once.
-    clicker(game, clock, 160, 20)
-    clicker(game, clock, 120, 1, start=21)
-    result = clicker(game, clock, 160, 10, start=22)
-    assert result["tapCooldown"] == 0
-    result = clicker(game, clock, 160, 1, start=32)
-    assert result["tapCooldown"] == 600
-
-    game, clock = make()
-    clicker(game, clock, 160, 20)
-    clicker(game, clock, 120, 2, start=21)
-    result = clicker(game, clock, 160, 29, start=23)
-    assert result["tapCooldown"] == 0
-
-
-def test_the_same_rate_again_that_day_is_caught_sooner_and_sits_out_longer():
-    game, clock = make()
+def test_automatic_input_is_remembered_across_a_restart(tmp_path):
+    path = tmp_path / "game.db"
+    game, clock = make_guarded(Streak(need=1), path)
     pid = game.status(TOKEN)["player"]
-    assert clicker(game, clock, 160, 31)["tapCooldown"] == 600
-    clock.t += 600
-    # A new session (the app restarted) at the rate caught: the first batch only marks the time.
-    result = clicker(game, clock, 160, 6, "again")
-    assert result["tapCooldown"] == 0
-    result = clicker(game, clock, 160, 1, "again", start=7)
-    assert result["tapCooldown"] == 1200
-    assert game.store.tap_flags_of(day_of_clock(clock), 10)[0]["steady"] == 2
-    # Doubling stops at four hours.
-    for n in range(3, 7):
-        clock.t += game.status(TOKEN)["tapCooldown"]
-        result = clicker(game, clock, 160, 7, f"again-{n}")
-    assert result["tapCooldown"] == 14400
-    # A new China day starts at ten minutes and needs the whole run again.
-    clock.t += 86400
-    result = clicker(game, clock, 160, 30, "next-day")
-    assert result["tapCooldown"] == 0
-    result = clicker(game, clock, 160, 1, "next-day", start=31)
-    assert result["tapCooldown"] == 600
-    assert game.store.get_player(pid, clock.t)["steady_hits"] == 1
+    send(game, clock, 40, 40, 1)
+    game.store.close()
+    again = Game(Store(str(path)), tiny_manifest(), now=clock, guard=Streak(need=99))
+    assert again.status(TOKEN)["autoInput"] == 1800
+    # Rooms hear of it with the save's next report.
+    assert not again.auto_input(pid)
+    clock.t += 20
+    again.report_activity(TOKEN, 5, "s", 2, injected=0)
+    assert again.auto_input(pid)
+
+
+def test_a_guard_that_fails_costs_no_taps_and_keeps_its_notes():
+    class Broken(Streak):
+        def judge(self, batch, notes):
+            if batch.taps == 13:
+                notes["half"] = "written"
+                raise RuntimeError("bug")
+            return super().judge(batch, notes)
+
+    game, clock = make_guarded(Broken())
+    pid = game.status(TOKEN)["player"]
+    send(game, clock, 40, 40, 1)
+    result = send(game, clock, 13, 13, 2)
+    assert result["credited"] == 13 and result["autoInput"] == 0
+    assert json.loads(game.store.activity_session(pid, "s")["guard"]) == {"run": 1}
+
+
+def test_the_guard_file_is_loaded_by_path(tmp_path, monkeypatch):
+    rules = tmp_path / "guard.py"
+    rules.write_text("def judge(batch, notes):\n    notes['n'] = notes.get('n', 0) + 1\n"
+                     "    return 60 if batch.taps > 100 else -5\n", encoding="utf-8")
+    loaded = guard_file.load(rules)
+    notes = {}
+    assert loaded.judge(Batch(160, None, 20.0, 0.0), notes) == 60 and notes == {"n": 1}
+    assert loaded.judge(Batch(10, None, 20.0, 0.0), notes) == 0
+    monkeypatch.setenv(guard_file.ENV, str(rules))
+    assert guard_file.load().judge(Batch(160, None, 20.0, 0.0), {}) == 60
+    monkeypatch.delenv(guard_file.ENV)
+    assert type(guard_file.load()) is Guard
+    (tmp_path / "empty.py").write_text("x = 1\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="judge"):
+        guard_file.load(tmp_path / "empty.py")
 
 
 def day_of_clock(clock):

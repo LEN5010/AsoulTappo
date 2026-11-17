@@ -122,6 +122,10 @@ class Peer:
     tap_at: float = 0.0
     motion: dict[str, float | bool] | None = None
     motion_version: int = 1
+    # The room is not shown this member's taps and motion (its save's input counts as automatic, see app/guard.py);
+    # `unseen` is then the pose it last sent, for the day the room sees it again.
+    hidden: bool = False
+    unseen: dict[str, float | bool] | None = None
     # Monotonic time of the last poke sent, and of the last one sent to each member.
     poke_at: float = float("-inf")
     poked: dict[str, float] = field(default_factory=dict)
@@ -403,7 +407,25 @@ class RoomManager:
                 if peer.id != exclude:
                     peer.enqueue(data)
 
+    async def hide(self, room_id: str, peer: Peer, hidden: bool) -> None:
+        """Stops showing the room this member's taps and motion, or shows them again. A hidden member rests in
+        everyone's view; shown again, it takes the pose it holds now."""
+        if hidden == peer.hidden:
+            return
+        if hidden:
+            held = peer.motion
+            if held is not None and held != RESTING:
+                await self.motion(room_id, peer, dict(RESTING))
+            peer.hidden, peer.unseen = True, held
+        else:
+            held, peer.hidden, peer.unseen = peer.unseen, False, None
+            if held is not None and held != peer.motion:
+                await self.motion(room_id, peer, held)
+
     async def motion(self, room_id: str, peer: Peer, pose: dict) -> None:
+        if peer.hidden:
+            peer.unseen = pose
+            return
         room = self.rooms[room_id]
         previous = peer.motion
         peer.motion = pose
@@ -601,7 +623,7 @@ class RoomManager:
             receiver.enqueue({**message, "quiet": True} if receiver is target and target.dnd else message)
 
     async def pose(self, room_id: str, peer: Peer, patch: dict) -> None:
-        pose = dict(peer.motion or RESTING)
+        pose = dict((peer.unseen if peer.hidden else peer.motion) or RESTING)
         if "x" in patch:
             pose["dx"] = patch["x"] / 4
         if "y" in patch:

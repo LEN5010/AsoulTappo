@@ -146,7 +146,7 @@ def test_resonance_migration_converts_once_and_preserves_items_and_pity(tmp_path
         assert p["skin_pity"] == p["last_minute_taps"] == p["shard_remainder"] == 0
         assert p["boost_day"] == "" and p["boost_used"] == p["tap_cooldown_until"] == 0
         assert store.activity_session("old", "session-1") == {"sequence": 5, "last_at": 0, "fast_since": 0,
-                                                              "rate": 0, "steady": 0, "odd": 0, "near": 0}
+                                                              "guard": ""}
         assert store.owned("old") == {"emote:e.02": 2}
         store.close()
 
@@ -235,9 +235,9 @@ def test_databases_from_before_the_shard_ledger_gain_it(tmp_path):
     s.close()
 
 
-def test_tap_flags_and_steady_fields_are_added_to_older_databases(tmp_path):
+def test_tap_flags_and_guard_fields_are_added_to_older_databases(tmp_path):
     from app.store import SCHEMA
-    path = str(tmp_path / "before-steady.db")
+    path = str(tmp_path / "before-the-guard.db")
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
     db.executescript("""
@@ -249,9 +249,11 @@ def test_tap_flags_and_steady_fields_are_added_to_older_databases(tmp_path):
     """)
     db.close()
     store = Store(path)
-    store.add_tap_flags("2026-11-13", "old", steady=1)
-    row = store._db.execute("SELECT dropped, server_cooldowns, steady FROM tap_flags").fetchone()
-    assert tuple(row) == (7, 1, 1)
-    p = store.get_player("old", 0)
-    assert p["steady_day"] == "" and p["steady_hits"] == 0 and p["steady_rate"] == 0
+    store.add_tap_flags("2026-11-13", "old", auto=1, injected=40)
+    row = store._db.execute("SELECT dropped, server_cooldowns, steady, auto, injected FROM tap_flags").fetchone()
+    assert tuple(row) == (7, 1, 0, 1, 40)
+    assert store.get_player("old", 0)["auto_until"] == 0
+    store.save_activity_sequence("old", "s", 3, 100.0, 0.0, '{"n":1}')
+    assert store.activity_session("old", "s") == {"sequence": 3, "last_at": 100.0, "fast_since": 0.0,
+                                                  "guard": '{"n":1}'}
     store.close()

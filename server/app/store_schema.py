@@ -199,8 +199,9 @@ CREATE TABLE IF NOT EXISTS daily_counts (
   PRIMARY KEY (day, key)
 );
 -- Per save and China day: reported taps that were not credited, cooldowns the server started for input too fast
--- for a hand, cooldowns the client's own guard started, and cooldowns the server started for input at one steady
--- rate for too long.
+-- for a hand, cooldowns the client's own guard started, cooldowns for input at one steady rate (a rule the guard
+-- replaced; kept for the days it ran), times the guard began to count the save's input as automatic, and taps
+-- the client said other software sent.
 CREATE TABLE IF NOT EXISTS tap_flags (
   day TEXT NOT NULL,
   player_id TEXT NOT NULL,
@@ -208,6 +209,8 @@ CREATE TABLE IF NOT EXISTS tap_flags (
   server_cooldowns INTEGER NOT NULL DEFAULT 0,
   client_cooldowns INTEGER NOT NULL DEFAULT 0,
   steady INTEGER NOT NULL DEFAULT 0,
+  auto INTEGER NOT NULL DEFAULT 0,
+  injected INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, player_id)
 );
 -- What the operator changed through /admin: who (the main site's admin), on which save, what (JSON) and why.

@@ -65,6 +65,7 @@ Weights are percentages unless said otherwise.
     nobody wins it), the third ``third`` shards each.
 
 - ``antiCheat``: fields of ``cards.DropConfig`` by name; missing ones keep their defaults. Never sent to clients.
+  The rules that tell automatic input from a hand are not here: see ``app/guard.py``.
 """
 from __future__ import annotations
 
@@ -79,6 +80,8 @@ from .cards import DropConfig
 ENV = "ASOULTAPPO_ECONOMY"
 EXAMPLE = Path(__file__).resolve().parent.parent / "economy.example.json"
 SERVER_ONLY = "antiCheat"
+# Settings of rules that moved to the guard (app/guard.py): an economy file that still has them loads as before.
+RETIRED = "steady_"
 
 
 def economy_path() -> Path:
@@ -107,6 +110,7 @@ def check(data: dict[str, Any]) -> None:
 
 def drop_config(anti: dict[str, Any]) -> DropConfig:
     known = {f.name for f in fields(DropConfig)}
+    anti = {k: v for k, v in anti.items() if not k.startswith(RETIRED)}
     unknown = sorted(set(anti) - known)
     if unknown:
         raise ValueError(f"unknown {SERVER_ONLY} settings: {', '.join(unknown)}")

@@ -23,7 +23,7 @@ PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
-    "steady_day steady_hits steady_rate coins gift_day stamps_total"
+    "auto_until coins gift_day stamps_total"
 ).split()
 
 
@@ -119,26 +119,27 @@ class Store(AdminStore, ParkStore, DdzStore):
             # The client version the save last ran ("other" when not a version).
             if "client_version" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN client_version TEXT NOT NULL DEFAULT ''")
-            # The China day of the save's last steady-rate cooldown, how many it had that day, and the rate caught.
-            if "steady_day" not in players:
-                self._db.execute("ALTER TABLE players ADD COLUMN steady_day TEXT NOT NULL DEFAULT ''")
-            for field, kind in (("steady_hits", "INTEGER"), ("steady_rate", "REAL")):
-                if field not in players:
-                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+            # Until when the save's input counts as automatic (app/guard.py). The steady_* columns of older
+            # databases belonged to a rule the guard replaced and are no longer read.
+            if "auto_until" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN auto_until REAL NOT NULL DEFAULT 0")
             # Park coins: held, the day of the last free one, and stamps ever earned.
             for field, kind in (("coins", "INTEGER NOT NULL DEFAULT 0"), ("gift_day", "TEXT NOT NULL DEFAULT ''"),
                                 ("stamps_total", "INTEGER NOT NULL DEFAULT 0")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind}")
-            if "steady" not in self._columns("tap_flags"):
-                self._db.execute("ALTER TABLE tap_flags ADD COLUMN steady INTEGER NOT NULL DEFAULT 0")
+            flags = self._columns("tap_flags")
+            for field in ("steady", "auto", "injected"):
+                if field not in flags:
+                    self._db.execute(f"ALTER TABLE tap_flags ADD COLUMN {field} INTEGER NOT NULL DEFAULT 0")
             sessions = self._columns("activity_sessions")
-            # The session's steady run: its mean rate, its batches, whether its last batch was an odd one left out,
-            # and batches in a row at the rate caught today.
-            for field, kind in (("last_at", "REAL"), ("fast_since", "REAL"), ("rate", "REAL"), ("steady", "INTEGER"),
-                                ("odd", "INTEGER"), ("near", "INTEGER")):
+            for field in ("last_at", "fast_since"):
                 if field not in sessions:
-                    self._db.execute(f"ALTER TABLE activity_sessions ADD COLUMN {field} {kind} NOT NULL DEFAULT 0")
+                    self._db.execute(f"ALTER TABLE activity_sessions ADD COLUMN {field} REAL NOT NULL DEFAULT 0")
+            # The guard's notes on the session, JSON. The rate, steady, odd and near columns of older databases
+            # belonged to a rule the guard replaced and are no longer read.
+            if "guard" not in sessions:
+                self._db.execute("ALTER TABLE activity_sessions ADD COLUMN guard TEXT NOT NULL DEFAULT ''")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(
@@ -195,27 +196,24 @@ class Store(AdminStore, ParkStore, DdzStore):
                 "ON CONFLICT(player_id) DO UPDATE SET balance=excluded.balance", (pid, balance))
             self._commit()
 
-    def activity_session(self, pid: str, session: str) -> dict[str, float]:
-        """The session's last batch: its sequence, when it came, since when it has been too fast, and its steady
-        run (mean rate, batches, whether the last batch was left out, batches in a row at the rate caught today)."""
+    def activity_session(self, pid: str, session: str) -> dict[str, Any]:
+        """The session's last batch: its sequence, when it came, since when it has been too fast, and the guard's
+        notes (JSON, "" for none)."""
         with self._lock:
             row = self._db.execute(
-                "SELECT sequence, last_at, fast_since, rate, steady, odd, near FROM activity_sessions "
+                "SELECT sequence, last_at, fast_since, guard FROM activity_sessions "
                 "WHERE player_id=? AND session=?", (pid, session)).fetchone()
-            return dict(row) if row else {"sequence": 0, "last_at": 0.0, "fast_since": 0.0, "rate": 0.0,
-                                          "steady": 0, "odd": 0, "near": 0}
+            return dict(row) if row else {"sequence": 0, "last_at": 0.0, "fast_since": 0.0, "guard": ""}
 
     def save_activity_sequence(self, pid: str, session: str, sequence: int, last_at: float = 0.0,
-                               fast_since: float = 0.0, rate: float = 0.0, steady: int = 0, odd: int = 0,
-                               near: int = 0) -> None:
+                               fast_since: float = 0.0, guard: str = "") -> None:
         with self._lock:
             self._db.execute(
-                "INSERT INTO activity_sessions "
-                "(player_id, session, sequence, last_at, fast_since, rate, steady, odd, near) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(player_id, session) DO UPDATE SET "
+                "INSERT INTO activity_sessions (player_id, session, sequence, last_at, fast_since, guard) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(player_id, session) DO UPDATE SET "
                 "sequence=excluded.sequence, last_at=excluded.last_at, fast_since=excluded.fast_since, "
-                "rate=excluded.rate, steady=excluded.steady, odd=excluded.odd, near=excluded.near",
-                (pid, session, sequence, last_at, fast_since, rate, steady, odd, near))
+                "guard=excluded.guard",
+                (pid, session, sequence, last_at, fast_since, guard))
             self._commit()
 
     def prune_activity_sessions(self, before: float) -> int:
