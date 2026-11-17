@@ -107,6 +107,8 @@ export interface Settings {
   captureH: number;
   /** Version of the user agreement and privacy policy last agreed to ("" = never); see src/legal. */
   termsAgreed: string;
+  /** App version whose free-of-charge statement was last confirmed ("" = never); asked again by every new version. */
+  statementSeen: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
@@ -185,6 +187,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureW: 560,
   captureH: 412,
   termsAgreed: "",
+  statementSeen: "",
   promoSeen: false,
   skinNotes: {},
 };

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { plateCard, plateSet } from "../pet/plates";
 import { TERMS_VERSION } from "../legal";
+import { APP_VERSION } from "../version";
 import { withEconomy } from "../test/economy";
 
 let player: typeof import("./player") | undefined;
@@ -24,7 +25,7 @@ afterEach(async () => {
 async function setup(server = "http://a", agreed = true) {
   const { settings } = await import("./settings");
   settings.serverUrl = server;
-  if (agreed) settings.termsAgreed = TERMS_VERSION;
+  if (agreed) { settings.termsAgreed = TERMS_VERSION; settings.statementSeen = APP_VERSION; }
   player = await import("./player");
   player.startReporting();
   return { settings, p: player };
@@ -125,6 +126,7 @@ it("sends nothing to the server until the terms are agreed, then starts reportin
   await vi.advanceTimersByTimeAsync(60000);
   expect(urls).toEqual([]);
   settings.termsAgreed = TERMS_VERSION;
+  settings.statementSeen = APP_VERSION;
   await vi.advanceTimersByTimeAsync(0);
   expect(urls.some((u) => u.endsWith("/me"))).toBe(true);
   await vi.advanceTimersByTimeAsync(20000);

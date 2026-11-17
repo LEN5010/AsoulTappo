@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { WsLike } from "../net/RoomClient";
 import { TERMS_VERSION } from "../legal";
+import { APP_VERSION } from "../version";
 import { withEconomy } from "../test/economy";
 
 class Socket implements WsLike {
@@ -20,7 +21,7 @@ class Socket implements WsLike {
 let room: typeof import("./room") | undefined;
 beforeEach(() => {
   vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
-  const agreed = JSON.stringify({ termsAgreed: TERMS_VERSION });
+  const agreed = JSON.stringify({ termsAgreed: TERMS_VERSION, statementSeen: APP_VERSION });
   vi.stubGlobal("localStorage", { getItem: withEconomy((k: string) => (k === "asoultappo.settings.v1" ? agreed : null)), setItem: () => {} });
   vi.stubGlobal("WebSocket", Socket);
 });

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TERMS_VERSION } from "../legal";
+import { APP_VERSION } from "../version";
 
 // The server's answer to the update check also carries its minimum version and announcements.
 describe("minimum version and announcements", () => {
@@ -8,7 +9,7 @@ describe("minimum version and announcements", () => {
   beforeEach(() => {
     vi.resetModules();
     stored.clear();
-    stored.set("asoultappo.settings.v1", JSON.stringify({ termsAgreed: TERMS_VERSION }));
+    stored.set("asoultappo.settings.v1", JSON.stringify({ termsAgreed: TERMS_VERSION, statementSeen: APP_VERSION }));
     vi.stubGlobal("localStorage", { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => stored.set(k, v) });
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => answer })));
   });
@@ -126,6 +127,7 @@ describe("before the terms are agreed", () => {
     await u.lookForUpdate();
     expect(fetch).not.toHaveBeenCalled();
     settings.termsAgreed = TERMS_VERSION;
+    settings.statementSeen = APP_VERSION;
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
     stop();
   });

@@ -1,9 +1,12 @@
 <script setup lang="ts">
-// Asked at start until the current texts are agreed to. It cannot be closed: agreeing lets the app go online,
-// declining quits. Closing the panel window leaves the app offline and asks again next time.
-import { ref } from "vue";
-import { DOC_TITLES, type DocName } from "../legal";
-import { agree, declineAndQuit } from "../legal/consent";
+// Asked at start until the current texts are agreed to and this version's statement that the app is free is
+// confirmed: the first start after installing and after every update. It cannot be closed, and its key works only
+// after the dialog has been in view for HOLD_MS. Agreeing lets the app go online; declining quits. Closing the panel
+// window leaves the app offline and asks again next time.
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { DOC_TITLES, STATEMENT, type DocName } from "../legal";
+import { agree, declineAndQuit, holdLeft, termsCurrent } from "../legal/consent";
+import { ui } from "../stores/ui";
 import Modal from "../ui/Modal.vue";
 import LegalDoc from "./LegalDoc.vue";
 
@@ -16,10 +19,28 @@ function read(doc: DocName | null) {
   // The sheet scrolls; a text opens at its top and the question comes back at its own.
   sheet.value?.closest(".sheet")?.scrollTo({ top: 0 });
 }
+
+// The hold counts only while the panel is on screen, so a dialog waiting behind a closed or minimized panel has not
+// been seen.
+const TICK_MS = 100;
+const shownMs = ref(0);
+const left = computed(() => holdLeft(shownMs.value));
+let timer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  timer = setInterval(() => {
+    if (ui.panelOpen && !ui.panelMinimized && !document.hidden) shownMs.value += TICK_MS;
+    if (!left.value) clearInterval(timer);
+  }, TICK_MS);
+});
+onBeforeUnmount(() => clearInterval(timer));
+
+function confirm() {
+  if (!left.value) agree();
+}
 </script>
 
 <template>
-  <Modal locked heading :wide="!!reading" :title="reading ? DOC_TITLES[reading] : '用户协议和隐私政策'">
+  <Modal locked heading :wide="!!reading" :title="reading ? DOC_TITLES[reading] : '免费声明'">
     <div ref="sheet" class="terms">
       <template v-if="reading">
         <LegalDoc :doc="reading" />
@@ -28,14 +49,21 @@ function read(doc: DocName | null) {
         </div>
       </template>
       <template v-else>
+        <div class="statement">
+          <p v-for="line in STATEMENT" :key="line">{{ line }}</p>
+        </div>
         <p class="lead">
-          使用 AsoulTappo 前，请阅读并同意<button type="button" class="link" @click="read('terms')">《用户协议》</button>和<button
+          <template v-if="termsCurrent">使用 AsoulTappo 受</template><template v-else>使用 AsoulTappo 前，请阅读并同意</template><button
+            type="button" class="link" @click="read('terms')"
+          >《用户协议》</button>和<button
             type="button" class="link" @click="read('privacy')"
-          >《隐私政策》</button>。
+          >《隐私政策》</button><template v-if="termsCurrent">约束。</template><template v-else>。</template>
         </p>
         <div class="actions">
-          <button type="button" class="ui-btn" @click="declineAndQuit">不同意并退出</button>
-          <button type="button" class="ui-btn primary" @click="agree">同意</button>
+          <button v-if="!termsCurrent" type="button" class="ui-btn" @click="declineAndQuit">不同意并退出</button>
+          <button type="button" class="ui-btn primary" :disabled="left > 0" @click="confirm">
+            {{ termsCurrent ? "确认" : "同意" }}<template v-if="left > 0">（{{ left }}）</template>
+          </button>
         </div>
       </template>
     </div>
@@ -43,6 +71,24 @@ function read(doc: DocName | null) {
 </template>
 
 <style scoped>
+/* The statement is the part to read: larger than the line about the texts under it. */
+.statement {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-m);
+  background: var(--c-50);
+}
+.statement p {
+  margin: 0;
+  font: 500 var(--fs-strong)/1.7 var(--font);
+  color: var(--ink);
+}
+.statement p + p {
+  margin-top: 6px;
+}
+.statement p:first-child {
+  font-weight: 800;
+}
 .lead {
   margin: 0 0 20px;
   font: 400 var(--fs-strong)/1.7 var(--font);

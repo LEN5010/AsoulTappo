@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TERMS_VERSION } from "../legal";
+import { APP_VERSION } from "../version";
 import type { ParkState, PlayerStatus } from "../net/api";
 
 const response = (data: unknown, status = 200) =>
@@ -34,6 +35,7 @@ async function load() {
   const { settings } = await import("./settings");
   settings.serverUrl = "http://a";
   settings.termsAgreed = TERMS_VERSION;
+  settings.statementSeen = APP_VERSION;
   return { settings, player: await import("./player"), park: await import("./park") };
 }
 

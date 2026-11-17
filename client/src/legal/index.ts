@@ -9,6 +9,16 @@ import terms from "./terms.md?raw";
  */
 export const TERMS_VERSION = "2026-11-17";
 
+/**
+ * The statement every new version asks the player to confirm (panel/TermsDialog.vue): the app is free and not run
+ * for profit. One paragraph a line.
+ */
+export const STATEMENT = [
+  "AsoulTappo 是 A-SOUL 粉丝制作的非官方作品，免费提供，不以盈利为目的。",
+  "碎片、驼币等游戏内容只能通过游玩获得，不出售。",
+  "如果你是付费获得本软件的，请向卖家要求退款。",
+];
+
 export type DocName = "terms" | "privacy";
 export const DOCS: Record<DocName, string> = { terms, privacy };
 
