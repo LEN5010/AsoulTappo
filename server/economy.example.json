@@ -336,70 +336,163 @@
           ]
         },
         {
-          "id": "sprint",
-          "name": "冲刺短道",
-          "track": 20,
+          "id": "ladder",
+          "name": "蛇梯坡道",
+          "track": 28,
+          "path": {
+            "from": [
+              0,
+              4
+            ],
+            "runs": "R8 U2 L8 U2 R8"
+          },
           "squares": [
             {
-              "at": 4,
+              "at": 2,
               "kind": "boost",
-              "by": 3
-            },
-            {
-              "at": 8,
-              "kind": "hook"
-            },
-            {
-              "at": 12,
-              "kind": "trip",
               "by": 2
             },
             {
-              "at": 15,
-              "kind": "again"
-            },
-            {
-              "at": 17,
-              "kind": "flip"
-            }
-          ]
-        },
-        {
-          "id": "long",
-          "name": "长途远征",
-          "track": 28,
-          "squares": [
-            {
-              "at": 4,
-              "kind": "again"
-            },
-            {
-              "at": 7,
+              "at": 6,
               "kind": "portal",
-              "to": 13
+              "to": 12
             },
             {
-              "at": 10,
+              "at": 9,
+              "kind": "again"
+            },
+            {
+              "at": 14,
               "kind": "hook"
             },
             {
               "at": 16,
+              "kind": "portal",
+              "to": 22
+            },
+            {
+              "at": 19,
+              "kind": "flip"
+            },
+            {
+              "at": 24,
+              "kind": "again"
+            },
+            {
+              "at": 26,
+              "kind": "trip",
+              "by": 3
+            }
+          ]
+        },
+        {
+          "id": "spiral",
+          "name": "回旋塔",
+          "track": 30,
+          "path": {
+            "from": [
+              0,
+              0
+            ],
+            "runs": "R6 D6 L6 U4 R4 D2 L2"
+          },
+          "squares": [
+            {
+              "at": 2,
+              "kind": "again"
+            },
+            {
+              "at": 4,
+              "kind": "portal",
+              "to": 9
+            },
+            {
+              "at": 7,
+              "kind": "boost",
+              "by": 3
+            },
+            {
+              "at": 13,
+              "kind": "hook"
+            },
+            {
+              "at": 15,
+              "kind": "portal",
+              "to": 21
+            },
+            {
+              "at": 18,
+              "kind": "flip"
+            },
+            {
+              "at": 23,
               "kind": "boost",
               "by": 2
             },
             {
-              "at": 19,
+              "at": 26,
               "kind": "trip",
-              "by": 3
+              "by": 2
             },
             {
-              "at": 22,
+              "at": 28,
+              "kind": "trip",
+              "by": 3
+            }
+          ]
+        },
+        {
+          "id": "coaster",
+          "name": "过山车",
+          "track": 34,
+          "path": {
+            "from": [
+              0,
+              4
+            ],
+            "runs": "U4 R2 D4 R2 U4 R2 D4 R2 U4 R2 D4"
+          },
+          "squares": [
+            {
+              "at": 2,
+              "kind": "portal",
+              "to": 8
+            },
+            {
+              "at": 5,
+              "kind": "again"
+            },
+            {
+              "at": 11,
+              "kind": "hook"
+            },
+            {
+              "at": 14,
+              "kind": "portal",
+              "to": 20
+            },
+            {
+              "at": 17,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 23,
               "kind": "flip"
             },
             {
               "at": 25,
+              "kind": "boost",
+              "by": 3
+            },
+            {
+              "at": 28,
+              "kind": "again"
+            },
+            {
+              "at": 33,
               "kind": "trip",
-              "by": 1
+              "by": 3
             }
           ]
         }

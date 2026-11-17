@@ -301,3 +301,47 @@ def test_a_race_with_skills_names_its_close_ups_and_lasts_as_long_as_they_take()
         assert r["endsAt"] == r["startsAt"] + park_race.playback_ms(
             r["leadMs"], len(r["moves"]), r["stepMs"], r["slowMs"], cuts=len(cuts)) / 1000
     assert seen
+
+
+# ---------------------------------------------------------------- a map's route across the board
+def route_map(runs, track, start=(0, 0), **more):
+    return {"id": "t", "track": track, "path": {"from": list(start), "runs": runs}, **more}
+
+
+def test_a_route_gives_every_square_from_the_start_to_the_finish_its_cell():
+    m = race.read_map(route_map("R8 U2 L8 U2 R6", 26, start=(0, 4)))
+    assert len(m["path"]) == 27
+    assert m["path"][0] == [0, 4] and m["path"][8] == [8, 4] and m["path"][10] == [8, 2] and m["path"][-1] == [6, 0]
+    # A lap has no route, and its track is even; a route may be odd.
+    assert "path" not in race.read_map({"id": "t", "track": 24})
+    assert race.read_map(route_map("R15", 15))["track"] == 15
+    with pytest.raises(ValueError):
+        race.read_map({"id": "t", "track": 15})
+
+
+@pytest.mark.parametrize("runs,track,start", [
+    ("R8 U2 L8", 20, (0, 4)),        # two squares short of the track
+    ("R16", 16, (0, 0)),             # off the board's right edge
+    ("L3 D12", 15, (3, 0)),          # off its foot
+    ("R4 D2 L2 U4 R12", 24, (0, 2)), # crosses itself
+    ("R8 D1 L8 D6", 23, (0, 0)),     # two rows side by side: the way cannot be read
+    ("R8 X2 L8", 18, (0, 0)),        # not a run
+    ("R8 U0 R8", 16, (0, 0)),        # a run of no squares
+])
+def test_a_route_the_board_cannot_show_is_refused(runs, track, start):
+    with pytest.raises(ValueError):
+        race.read_map(route_map(runs, track, start))
+
+
+def test_the_manifests_routes_fit_their_tracks_and_change_nothing_of_the_race():
+    routed = [m for m in CFG["maps"] if m.get("path") and m["track"] % 2 == 0]
+    assert routed
+    for raw in routed:
+        on = race.Rules.of({**CFG, "maps": [raw]}, MEMBERS)
+        off = race.Rules.of({**CFG, "maps": [{k: v for k, v in raw.items() if k != "path"}]}, MEMBERS)
+        assert len(on.maps[0]["path"]) == raw["track"] + 1 and "path" not in off.maps[0]
+        for n in range(10):
+            dealt = [{**race.deal(r, d), **(race.deal_skills(r, d) or {})} for r, d in ((on, random.Random(n)), (off, random.Random(n)))]
+            # The setup carries the route, so the board can be drawn from the race alone.
+            assert dealt[0]["map"]["path"] == on.maps[0]["path"]
+            assert race.run(on, dealt[0], race.SimRng(n))["moves"] == race.run(off, dealt[1], race.SimRng(n))["moves"]

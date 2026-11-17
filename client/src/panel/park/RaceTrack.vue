@@ -1,5 +1,8 @@
 <script setup lang="ts">
-// The race's board (protocol/PROTOCOL.md 团子赛跑), drawn like a board game: one thick coral slab with the ring of
+// The race's board (protocol/PROTOCOL.md 团子赛跑), drawn like a board game. On a map with a route (race.ts layoutOf) the
+// squares are stepping stones laid across the slab along it, numbered, the start a faint check and the finish a bold
+// one, each portal's two ends joined by a dashed line on the slab, and a few pictures of the park where no square lies;
+// there is no island and no infield. Otherwise it is the lap: one thick coral slab with the ring of
 // squares inlaid in it (race.ts boardOf, cellOf: all squares the same size), square 0 in the top left corner as start
 // and finish (coral with a coral and white checkered finish line), the boost square a key standing up from the board,
 // the trip square a pit sunk into it, the portal's two ends the same coral ring, the flip square a coral disc with
@@ -25,8 +28,9 @@ import Icon from "../../ui/Icon.vue";
 import alpaca from "../../assets/brand/side-alpaca.webp";
 import { COIN } from "./coin";
 import {
-  boardOf, cellOf, cornersOf, cutOf, HOP_AT, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, spots, SQUARE_AT,
-  SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind, type Race, type Spot,
+  cornersOf, cutOf, HOP_AT, layoutOf, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, sceneryCells, spots,
+  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepLength, stepPath, stepPhases, type MomentKind,
+  type Race, type Spot,
 } from "./race";
 import SkillCutIn from "./SkillCutIn.vue";
 import TuanziToken from "./TuanziToken.vue";
@@ -74,15 +78,29 @@ const HOP_SAMPLES = 10;
 const CATCH_UP_MS = 150;
 const CROWD: readonly [number, number][] = [[0.2, 0.56], [0.5, 0.56], [0.8, 0.56], [0.33, 0.93], [0.67, 0.93]];
 
-const board = computed(() => boardOf(props.track));
-const corners = computed(() => cornersOf(props.track));
-const squares = computed(() => Array.from({ length: props.track }, (_, k) => k));
+const board = computed(() => layoutOf(props.track, props.race?.setup.map?.path));
+const routed = computed(() => board.value.routed);
+const corners = computed(() => (routed.value ? [] : cornersOf(props.track)));
+/** On a route the finish is a square of its own; on the lap it is the start. */
+const squares = computed(() => Array.from({ length: props.track + (routed.value ? 1 : 0) }, (_, k) => k));
+const finish = computed(() => (routed.value ? props.track : 0));
 const cellStyle = (sq: number) => {
-  const c = cellOf(sq, props.track);
+  const c = board.value.cell(sq);
   return { gridColumn: c.col + 1, gridRow: c.row + 1 };
 };
+/** On a route: the pictures where no square lies, and each portal's two ends (their middles, in units). */
+const SCENERY = ["ferris", "alpaca", "crown"] as const;
+const scenery = computed(() =>
+  (routed.value ? sceneryCells(board.value, props.track, SCENERY.length) : []).map((c, k) => ({ ...c, kind: SCENERY[k] })),
+);
+const links = computed(() => {
+  if (!routed.value) return [];
+  const mid = (sq: number) => ({ x: board.value.cell(sq).col + 0.5, y: board.value.cell(sq).row + 0.5 });
+  return (props.race?.setup.map?.squares ?? []).filter((q) => q.kind === "portal" && q.to !== undefined)
+    .map((q) => ({ key: q.at, a: mid(q.at), b: mid(q.to!) }));
+});
 /** The special square on [sq], with the squares a boost or trip there moves. */
-const squareAt = (sq: number) => (sq ? squareOn(props.race?.setup, sq, BOOST, TRIP) : null);
+const squareAt = (sq: number) => (sq && sq < props.track ? squareOn(props.race?.setup, sq, BOOST, TRIP) : null);
 const kindOf = (sq: number) => squareAt(sq)?.kind ?? null;
 /** The corners other than the start, each with a faint picture unless a special square is there. */
 const DECOS = ["ferris", "coin", "alpaca"] as const;
@@ -211,13 +229,14 @@ const tail = computed(() => {
 interface At { x: number; y: number; lvl: number; rise: number }
 /** The middle of [square], at the feet's height, [lvl] up a stack of [n]. */
 function footOf(square: number, lvl: number, n: number): At {
-  const c = cellOf(square, props.track);
+  const c = board.value.cell(square);
   return { x: c.col + 0.5, y: c.row + 1 - FOOT, lvl, rise: lvl * stepOf(n) };
 }
 function atOf(p: Spot | undefined): At {
   if (!p?.square) {
     const [x, y] = CROWD[(p?.lane ?? 0) % CROWD.length];
-    return { x, y, lvl: 0, rise: 0 };
+    const c = board.value.cell(0);
+    return { x: c.col + x, y: c.row + y, lvl: 0, rise: 0 };
   }
   return footOf(p.square, p.level, stacks.value.get(p.square)?.length ?? 1);
 }
@@ -404,14 +423,25 @@ watch(hops, (now, before) => {
 
 <template>
   <div class="track" :class="{ calm: reducedMotion }">
-    <div class="board" :class="{ live: ready && step, cleared }" :style="{ '--w': board.cols, '--h': board.rows }">
+    <div class="board" :class="{ live: ready && step, cleared, routed }" :style="{ '--w': board.cols, '--h': board.rows }">
       <div ref="ringEl" class="ring">
+        <svg v-if="links.length" class="links" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+          <line v-for="l in links" :key="l.key" :x1="l.a.x" :y1="l.a.y" :x2="l.b.x" :y2="l.b.y" />
+        </svg>
+        <span
+          v-for="c in scenery" :key="c.kind" class="scene" :class="c.kind" aria-hidden="true"
+          :style="{ gridColumn: c.col + 1, gridRow: c.row + 1 }"
+        >
+          <Icon v-if="c.kind !== 'alpaca'" :name="c.kind" :size="24" />
+        </span>
         <div
           v-for="sq in squares" :key="sq" class="tile" :data-sq="sq" :style="cellStyle(sq)"
           :class="[cornerClass(sq), kindOf(sq), {
-            start: sq === 0, alt: sq % 2 === 1, flash: tail && sq === 0, acting: acting.includes(sq),
+            start: sq === 0, finish: routed && sq === finish, alt: sq % 2 === 1, flash: tail && sq === finish,
+            acting: acting.includes(sq),
           }]"
         >
+          <i v-if="routed && sq && sq < track && !kindOf(sq)" class="no" aria-hidden="true">{{ sq }}</i>
           <span v-if="kindOf(sq) === 'boost'" class="cap" :title="`+${squareAt(sq)?.by}`">
             <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 10.5V2M2.2 5.6 6 1.8l3.8 3.8" /></svg>+{{ squareAt(sq)?.by }}
           </span>
@@ -432,8 +462,10 @@ watch(hops, (now, before) => {
           <img v-else-if="decoOf(sq) === 'coin'" class="deco coin" :src="COIN" alt="" draggable="false" />
           <img v-else-if="decoOf(sq) === 'alpaca'" class="deco alpaca" :src="alpaca" alt="" draggable="false" />
         </div>
-        <div class="island"><span v-if="caption" class="plate">{{ caption }}</span></div>
-        <div class="infield"><slot /></div>
+        <template v-if="!routed">
+          <div class="island"><span v-if="caption" class="plate">{{ caption }}</span></div>
+          <div v-if="$slots.default" class="infield"><slot /></div>
+        </template>
         <div
           v-for="m in members" :key="m" :ref="(el) => { if (el) tzEls[m] = el as HTMLElement }" class="tz" :data-m="m"
           :class="{
@@ -514,6 +546,84 @@ watch(hops, (now, before) => {
   border-radius: var(--ring-r);
   background: var(--c-300);
 }
+/*
+ * On a route the squares are stepping stones across the slab: no face of its own, a faint print of dots on the coral,
+ * each stone inlaid by itself.
+ */
+.routed .ring {
+  background: none;
+}
+.routed .ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0.14;
+  mask: url("../../assets/patterns/halftone.svg") 0 0 / calc(var(--u) * 3.2) calc(var(--u) * 1.6);
+  pointer-events: none;
+}
+.routed .ring::after {
+  display: none;
+}
+.routed .tile {
+  margin: calc(var(--u) * 0.035);
+  border-radius: calc(var(--u) * 0.14);
+  box-shadow:
+    inset 0 calc(var(--u) * 0.04) calc(var(--u) * 0.06) rgba(var(--c-900-rgb), 0.2),
+    0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 var(--line) rgba(var(--c-900-rgb), 0.1);
+}
+/* A square's number, small in its corner. */
+.no {
+  position: absolute;
+  left: 9%;
+  top: 8%;
+  font: 800 max(9px, calc(var(--u) * 0.17)) / 1 var(--font-latin);
+  font-style: normal;
+  color: var(--c-400);
+}
+/* The finish of a route: the bold check of a flag, a paper ring inside it. */
+.routed .tile.finish {
+  overflow: hidden;
+  background: repeating-conic-gradient(var(--c-500) 0 25%, #fff 0 50%) 0 0 / calc(var(--u) * 0.31) calc(var(--u) * 0.31);
+}
+.routed .tile.start::after {
+  display: none;
+}
+/* A portal's two ends: a dashed line across the slab, under the stones. */
+.links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.links line {
+  stroke: #fff;
+  stroke-opacity: 0.7;
+  stroke-width: 0.07;
+  stroke-linecap: round;
+  stroke-dasharray: 0.02 0.19;
+}
+/* Pictures of the park printed on the slab where no square lies. */
+.scene {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  opacity: 0.42;
+  pointer-events: none;
+}
+.scene svg {
+  width: 62%;
+  height: 62%;
+}
+.scene.alpaca {
+  margin: 10%;
+  background: #fff;
+  mask: url("../../assets/brand/side-alpaca.webp") center / contain no-repeat;
+}
+
 /* Inlaid: the slab's edge shades the squares along it. */
 .ring::after {
   content: "";
@@ -954,6 +1064,20 @@ watch(hops, (now, before) => {
 .calm .tile.acting .gate::after,
 .calm .tile.acting .turn::after {
   animation: none;
+}
+
+/* A small board (the race page's bill): the map alone, its marks without their arrows and the squares' numbers. */
+@container (max-width: 420px) {
+  .no,
+  .plate,
+  .cap svg,
+  .pit svg {
+    display: none;
+  }
+  .cap,
+  .pit {
+    font-size: calc(var(--u) * 0.4);
+  }
 }
 
 /* Small squares: smaller words. */

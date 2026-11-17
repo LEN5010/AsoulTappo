@@ -66,8 +66,11 @@ export type SquareKind = "boost" | "trip" | "portal" | "flip" | "again" | "hook"
 /** A special square of a map: where, what, and its number: the squares a boost or trip moves, a portal's other end. */
 export interface MapSquare { at: number; kind: SquareKind; by?: number; to?: number }
 
-/** A map a race is run on: its own lap and squares. */
-export interface RaceMap { id: string; name: string; track: number; squares: MapSquare[] }
+/**
+ * A map a race is run on: its own lap and squares. With a `path` the squares take a route across the board instead
+ * of the lap: the cell ([column, row] from the top left) of every square from the start (0) to the finish (`track`).
+ */
+export interface RaceMap { id: string; name: string; track: number; squares: MapSquare[]; path?: [number, number][] }
 
 /** A skill as a race deals it: `chance` in percent, `by` in squares, as the skill needs them. */
 export interface RaceSkill { id: string; chance?: number; by?: number }
@@ -426,6 +429,49 @@ export function cellOf(square: number, track: number): Cell {
   if ((p -= cols - 1) < rows) return { col: cols - 1, row: p };
   if ((p -= rows - 1) < cols) return { col: cols - 1 - p, row: rows - 1 };
   return { col: 0, row: rows - 1 - (p - cols + 1) };
+}
+
+/**
+ * How a race's squares lie on the board: `cols` by `rows` squares, and each square's cell. On the lap the start and
+ * the finish are one corner; `routed` boards follow a map's route, where they are two squares.
+ */
+export interface Layout { cols: number; rows: number; routed: boolean; cell: (square: number) => Cell }
+
+/** The board of a [track], along [path] when the map has one of that length. */
+export function layoutOf(track: number, path?: [number, number][]): Layout {
+  if (path?.length !== track + 1) return { ...boardOf(track), routed: false, cell: (sq) => cellOf(sq, track) };
+  const left = Math.min(...path.map((c) => c[0]));
+  const top = Math.min(...path.map((c) => c[1]));
+  return {
+    cols: Math.max(...path.map((c) => c[0])) - left + 1, rows: Math.max(...path.map((c) => c[1])) - top + 1, routed: true,
+    cell: (sq) => {
+      const [col, row] = path[Math.min(track, Math.max(0, sq))];
+      return { col: col - left, row: row - top };
+    },
+  };
+}
+
+/**
+ * Up to [n] cells of a routed board no square lies on, for the scenery: each as far from the route and from those
+ * picked before as the board allows, so they spread over it.
+ */
+export function sceneryCells(board: Layout, track: number, n: number): Cell[] {
+  const taken = new Set<string>();
+  for (let sq = 0; sq <= track; sq++) taken.add(`${board.cell(sq).col},${board.cell(sq).row}`);
+  const free: Cell[] = [];
+  for (let row = 0; row < board.rows; row++) {
+    for (let col = 0; col < board.cols; col++) if (!taken.has(`${col},${row}`)) free.push({ col, row });
+  }
+  const picked: Cell[] = [];
+  const far = (c: Cell) => Math.min(...picked.map((p) => Math.abs(p.col - c.col) + Math.abs(p.row - c.row)), board.cols + board.rows);
+  /** How many of the eight cells around are free too: scenery sits in the open, not in a gap of the route. */
+  const open = (c: Cell) => free.filter((f) => f !== c && Math.abs(f.col - c.col) <= 1 && Math.abs(f.row - c.row) <= 1).length;
+  while (picked.length < n) {
+    const rest = free.filter((c) => !picked.includes(c) && far(c) > 1);
+    if (!rest.length) break;
+    picked.push(rest.reduce((best, c) => (far(c) * 10 + open(c) > far(best) * 10 + open(best) ? c : best)));
+  }
+  return picked;
 }
 
 /** The lap [setup] is run on: its map's, or the config's [track]. */

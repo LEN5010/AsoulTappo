@@ -20,8 +20,9 @@ counted over many simulated races (chances()), and move with the coins staked, n
 odds_tenths(). Races dealt before forms roll the same die for everyone; their odds lean by each member's popularity,
 or are the same for all, and stay under the fair odds of alike members.
 
-With `maps` a race is run on one of them instead, drawn at random: a map names its own `track` and its special
-squares, any number of them, each `{at, kind}`: the four kinds above (boost and trip with `by` squares, a portal with
+With `maps` a race is run on one of them instead, drawn at random: a map names its own `track`, optionally the route
+its squares take across the board (`path`, read_route(): the start and the finish are then two squares, and nothing
+else changes) and its special squares, any number of them, each `{at, kind}`: the four kinds above (boost and trip with `by` squares, a portal with
 its other end `to`), `again` (the mover rolls its die once more and the group walks on by it) and `hook` (the group
 is pulled onto the nearest occupied square ahead; it stays when there is none).
 
@@ -60,6 +61,10 @@ SQUARE_KINDS = ("boost", "trip", "portal", "flip", "again", "hook")
 SKILLS = ("steady", "burst", "chase", "porter", "solo", "dash", "shield", "climb")
 # The shortest lap the board is drawn for.
 MIN_TRACK = 14
+# The largest board a map's route is drawn on: squares across and down.
+MAX_BOARD = (16, 10)
+# A run of a route: one square at a time to the right, the left, up or down the board.
+RUNS = {"R": (1, 0), "L": (-1, 0), "U": (0, -1), "D": (0, 1)}
 
 
 # ---------------------------------------------------------------- randomness
@@ -129,15 +134,48 @@ class Rules:
                    skills=tuple(read_skill(k) for k in cfg.get("skills") or ()))
 
 
+def read_route(mid: str, track: int, raw: dict[str, Any]) -> list[list[int]]:
+    """A map's route, {from: [col, row], runs: "R8 U2 L8"}, as the board cell of every square from the start (0) to
+    the finish (`track`): columns from the left and rows from the top, each run so many squares right, left, up or
+    down. Raises ValueError when the runs do not make `track` squares, leave the board (MAX_BOARD), pass a cell twice,
+    or bring two squares side by side that are not one after the other: the way must be readable off the board."""
+    try:
+        col, row = (int(v) for v in raw["from"])
+        runs = [(RUNS[r[0]], int(r[1:])) for r in str(raw["runs"]).split()]
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(f"race map {mid}: a route is {{from: [col, row], runs: 'R8 U2 ...'}}") from None
+    cells = [(col, row)]
+    for (dc, dr), n in runs:
+        if n < 1:
+            raise ValueError(f"race map {mid}: a run is 1 square or more")
+        for _ in range(n):
+            col, row = col + dc, row + dr
+            cells.append((col, row))
+    if len(cells) != track + 1:
+        raise ValueError(f"race map {mid}: the route has {len(cells) - 1} squares, the track {track}")
+    if any(not (0 <= c < MAX_BOARD[0] and 0 <= r < MAX_BOARD[1]) for c, r in cells):
+        raise ValueError(f"race map {mid}: the route leaves the board of {MAX_BOARD[0]} by {MAX_BOARD[1]}")
+    at = {cell: i for i, cell in enumerate(cells)}
+    if len(at) != len(cells):
+        raise ValueError(f"race map {mid}: the route passes a cell twice")
+    for (c, r), i in at.items():
+        if any(abs(at.get((c + dc, r + dr), i) - i) > 1 for dc, dr in RUNS.values()):
+            raise ValueError(f"race map {mid}: squares that are not one after the other touch at {[c, r]}")
+    return [[c, r] for c, r in cells]
+
+
 def read_map(raw: dict[str, Any]) -> dict[str, Any]:
-    """A map of the manifest as a setup carries it: {id, name, track, squares: [{at, kind, by?, to?}]}. Raises
-    ValueError on one the race could not be run on: an odd or short track, an unknown kind, a square on the start or
-    the finish, two squares on one, a boost or trip without a whole `by` of 1 or more, a portal whose `to` is not
-    past its `at`."""
+    """A map of the manifest as a setup carries it: {id, name, track, squares: [{at, kind, by?, to?}], path?}. Without
+    a `path` the board is the lap, start and finish in one corner, and the track is even; with one (read_route()) the
+    squares lie along it, `path` the cell of each from the start to the finish. Raises ValueError on a map the race
+    could not be run on: a short track (an odd one on the lap), an unknown kind, a square on the start or the finish,
+    two squares on one, a boost or trip without a whole `by` of 1 or more, a portal whose `to` is not past its
+    `at`."""
     mid = str(raw.get("id") or "")
     track = int(raw["track"])
-    if not mid or track < MIN_TRACK or track % 2:
-        raise ValueError(f"race map {mid!r}: needs an id and an even track of {MIN_TRACK} squares or more")
+    route = raw.get("path")
+    if not mid or track < MIN_TRACK or (track % 2 and not route):
+        raise ValueError(f"race map {mid!r}: needs an id and a track of {MIN_TRACK} squares or more, even on the lap")
     squares: list[dict[str, Any]] = []
     taken: set[int] = set()
     for q in raw.get("squares") or ():
@@ -159,7 +197,10 @@ def read_map(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"race map {mid}: square {ends} is off the track or taken")
         taken.update(ends)
         squares.append(out)
-    return {"id": mid, "name": str(raw.get("name") or mid), "track": track, "squares": squares}
+    found: dict[str, Any] = {"id": mid, "name": str(raw.get("name") or mid), "track": track, "squares": squares}
+    if route:
+        found["path"] = read_route(mid, track, route)
+    return found
 
 
 def read_skill(raw: dict[str, Any]) -> dict[str, Any]:

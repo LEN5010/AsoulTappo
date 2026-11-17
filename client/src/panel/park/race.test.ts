@@ -385,7 +385,7 @@ describe("a replay's clock", () => {
 // Races the server ran on its maps with skills dealt (server/app/race.py, the example economy): between them every
 // special square and every skill acts.
 import mapRaces from "./raceMaps.fixture.json";
-import { playStep, skillText, squareOn, trackOf, SKILL_NAMES } from "./race";
+import { layoutOf, playStep, sceneryCells, skillText, squareOn, trackOf, SKILL_NAMES } from "./race";
 
 describe("a race on a map with skills", () => {
   const races = mapRaces as unknown as { setup: RaceSetup; start: string[]; moves: RaceStep[]; ranking: string[] }[];
@@ -457,5 +457,40 @@ describe("a race on a map with skills", () => {
       expect(SKILL_NAMES[id]).toBeTruthy();
       expect(skillText({ id, chance: 25, by: 2 })).toBeTruthy();
     }
+  });
+});
+
+describe("a map's route on the board", () => {
+  // "R3 D2 L3" from [1, 1]: seven squares, the finish under the start.
+  const path: [number, number][] = [[1, 1], [2, 1], [3, 1], [4, 1], [4, 2], [4, 3], [3, 3], [2, 3], [1, 3]];
+
+  it("puts every square on its cell, the board as large as the route, from its top left", () => {
+    const board = layoutOf(8, path);
+    expect(board).toMatchObject({ cols: 4, rows: 3, routed: true });
+    expect(board.cell(0)).toEqual({ col: 0, row: 0 });
+    expect(board.cell(4)).toEqual({ col: 3, row: 1 });
+    // The finish is a square of its own; squares past either end stay on the ends.
+    expect(board.cell(8)).toEqual({ col: 0, row: 2 });
+    expect(board.cell(11)).toEqual({ col: 0, row: 2 });
+    expect(board.cell(-1)).toEqual({ col: 0, row: 0 });
+  });
+
+  it("is the lap without a route, or with one of another length", () => {
+    for (const board of [layoutOf(24), layoutOf(24, path)]) {
+      expect(board).toMatchObject({ ...boardOf(24), routed: false });
+      expect(board.cell(24)).toEqual(cellOf(0, 24));
+      expect(board.cell(5)).toEqual(cellOf(5, 24));
+    }
+  });
+
+  it("finds room for the scenery off the route, apart from each other", () => {
+    const board = layoutOf(8, path);
+    const cells = sceneryCells(board, 8, 3);
+    const taken = new Set(path.map(([c, r]) => `${c - 1},${r - 1}`));
+    expect(cells.length).toBeGreaterThan(0);
+    for (const c of cells) expect(taken.has(`${c.col},${c.row}`)).toBe(false);
+    for (const a of cells) for (const b of cells) if (a !== b) expect(Math.abs(a.col - b.col) + Math.abs(a.row - b.row)).toBeGreaterThan(1);
+    // A board the route fills has none.
+    expect(sceneryCells(layoutOf(2, [[0, 0], [1, 0], [2, 0]]), 2, 3)).toEqual([]);
   });
 });
