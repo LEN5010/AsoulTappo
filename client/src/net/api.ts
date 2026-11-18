@@ -17,8 +17,11 @@ export interface PlayerStatus {
   dailyTaps?: { day: string; count: number };
   resonance: {
     pity: { legendary: number; skin: number }; hardPity: { legendary: number; skin: number }; total: number;
-    /** The save's draws from each limited pool that runs: how many, and how many since its last featured item. */
-    banners?: Record<string, { pity: number; drawn: number }>;
+    /**
+     * The save's draws from each limited pool that runs: how many, and how many since its last featured item.
+     * `guaranteed` (server 1.2.6): the shared tiers whose next draw there gives a featured item.
+     */
+    banners?: Record<string, { pity: number; drawn: number; guaranteed?: Rarity[] }>;
   };
   totals: { taps: number; activeMinutes: number; owned: number; items: number };
   /** Missing on servers without daily check-in. */

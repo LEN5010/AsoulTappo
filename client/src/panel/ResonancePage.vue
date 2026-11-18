@@ -44,8 +44,10 @@ const pools = computed(() => [
 // A pool that ended while it was on show hands the page back to the standing pool.
 watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = ""; });
 const featuredLeft = computed(() => !!banner.value?.items.some((id) => !collection.owned[id]));
+/** The shared tiers whose next draw in the pool on show gives a featured item. */
+const guaranteed = computed(() => (banner.value && status.value?.resonance.banners?.[banner.value.id]?.guaranteed) || []);
 const rates = computed(() => banner.value
-  ? bannerRates(banner.value, pool.value, collection.owned)
+  ? bannerRates(banner.value, pool.value, collection.owned, guaranteed.value)
   : { featured: 0, tiers: effectiveRates(pool.value, collection.owned), shared: [] });
 const base = computed(() => (banner.value ? bannerBaseRates(banner.value) : baseRates()));
 // Everything this pool's odds can reach is owned: a tier it gives no odds (the limited tier in the standing pool) does
@@ -98,7 +100,10 @@ const gauges = computed(() => {
   }
   for (const r of ["legendary", "skin"] as const) {
     if (missingTier(r)) {
-      out.push({ id: r, label: r === "legendary" ? "大隐藏" : "皮肤", icon: r === "legendary" ? "crown" : "shirt",
+      // The pity's skin is a featured one for certain: the gauge says so in its label.
+      const sure = r === "skin" && guaranteed.value.includes(r);
+      out.push({ id: r, label: r === "legendary" ? "大隐藏" : sure ? featuredWord.value : "皮肤",
+        icon: r === "legendary" ? "crown" : sure ? "spark" : "shirt",
         count: status.value?.resonance.pity[r] ?? 0, hard: res.value?.pity[r] ?? null });
     }
   }
