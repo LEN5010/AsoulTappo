@@ -59,11 +59,12 @@ describe("the automatic-input note", () => {
     expect(autoHint.value).toBe(true);
   });
 
-  it("keeps strikes when status clears or autoInput expires while the bubble is still open", () => {
+  it("keeps strikes when status clears or comes from an older server while the bubble is still open", () => {
     noteAutoInput(1800, 1, noon);
     expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
-    noteAutoInput(0, 0, noon + 3_600_000);
+    noteAutoInput(0, 1, noon + 3_600_000);
     noteAutoInput(undefined, undefined, noon + 3_600_000);
+    noteAutoInput(1800, undefined, noon + 3_600_000);
     expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
     closeAutoHint(noon + 3_600_000);
     noteAutoInput(1800, 1, noon + 4_000_000);

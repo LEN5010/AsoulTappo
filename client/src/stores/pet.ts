@@ -28,8 +28,8 @@ export const tapStats = { keys: 0, mouse: 0, counted: 0, blocked: 0 };
 /** When inputs count again after going faster than a hand; in the past while they count. */
 export const tapCooldown = ref(0);
 // A cooldown the server called (another client, or a batch it measured) holds here too.
-watch(status, (s) => {
-  if (s?.tapCooldown) guard.cool(Date.now() + s.tapCooldown * 1000);
+watch(() => status.value?.tapCooldown, (seconds) => {
+  if (seconds) guard.cool(Date.now() + seconds * 1000);
   tapCooldown.value = guard.until;
 });
 
