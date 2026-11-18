@@ -173,8 +173,6 @@ class Game:
         self.guard = guard or Guard()
         # Until when each save's input counts as automatic, as of its last report to this process (see auto_input).
         self._auto: dict[str, float] = {}
-        # The day and how many cooldowns the guard gave each save on it (see auto_strikes).
-        self._strikes: dict[str, tuple[str, int]] = {}
         self._auto_lock = Lock()
         self.rng = rng or cardlogic.default_rng()
         self.now = now
@@ -312,13 +310,14 @@ class Game:
                 st.update_player(pid, auto_until=p["auto_until"])
         if cool > 0:
             # The guard's cooldown: the batch that drew it earns nothing either (report_activity checks next).
+            strikes = (p["auto_strikes"] if p["auto_strike_day"] == today else 0) + 1
+            p["auto_strike_day"], p["auto_strikes"] = today, strikes
+            fields: dict[str, Any] = {"auto_strike_day": today, "auto_strikes": strikes}
             if now + cool > p["tap_cooldown_until"]:
                 p["tap_cooldown_until"] = now + cool
-                st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"])
+                fields["tap_cooldown_until"] = p["tap_cooldown_until"]
+            st.update_player(pid, **fields)
             st.add_tap_flags(today, pid, server=1)
-            with self._auto_lock:
-                day, strikes = self._strikes.get(pid, (today, 0))
-                self._strikes[pid] = (today, strikes + 1 if day == today else 1)
         if injected is None or shown > 0:
             with self._auto_lock:
                 if injected is None:
@@ -330,12 +329,6 @@ class Game:
                 else:
                     self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
         return kept
-
-    def auto_strikes(self, pid: str, day: str) -> int:
-        """How many cooldowns the guard gave the save on [day], as of this process."""
-        with self._auto_lock:
-            at, strikes = self._strikes.get(pid, (day, 0))
-        return strikes if at == day else 0
 
     def auto_input(self, pid: str | None) -> bool:
         """Whether what the save's client sends its rooms counts as automatic now (see _judge), as of its last
@@ -843,7 +836,7 @@ class Game:
             "checkin": {"available": not self.store.checked_in(pid, day)},
             "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
             "autoInput": max(0, math.ceil(p["auto_until"] - now)),
-            "autoStrikes": self.auto_strikes(pid, day),
+            "autoStrikes": p["auto_strikes"] if p["auto_strike_day"] == day else 0,
         }
         if self.manifest.banners:
             # The save's count in each limited pool that runs or is about to: draws there, and since its last featured item.

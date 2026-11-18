@@ -252,7 +252,8 @@ def test_tap_flags_and_guard_fields_are_added_to_older_databases(tmp_path):
     store.add_tap_flags("2026-11-13", "old", auto=1, injected=40)
     row = store._db.execute("SELECT dropped, server_cooldowns, steady, auto, injected FROM tap_flags").fetchone()
     assert tuple(row) == (7, 1, 0, 1, 40)
-    assert store.get_player("old", 0)["auto_until"] == 0
+    p = store.get_player("old", 0)
+    assert p["auto_until"] == 0 and p["auto_strike_day"] == "" and p["auto_strikes"] == 0
     store.save_activity_sequence("old", "s", 3, 100.0, 0.0, '{"n":1}')
     assert store.activity_session("old", "s") == {"sequence": 3, "last_at": 100.0, "fast_since": 0.0,
                                                   "guard": '{"n":1}'}
