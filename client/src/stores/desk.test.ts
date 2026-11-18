@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { watch } from "vue";
 import {
   DOCK_SNAP, FORMATION_GAP, defaultFormation, dockY, formationCells, formationOffset, formationSize, inLastRow,
-  placeFormation,
+  placeFormation, resetOwnPet,
 } from "./desk";
+import { settings } from "./settings";
 
 const vp = { w: 1920, h: 1080 };
 const size = { w: 100, h: 80 };
@@ -77,5 +79,25 @@ describe("defaultFormation", () => {
     const placed = defaultFormation({ x: 1500, y: dockY(1, vp) }, ownSize, true, 7, 5, size, 1, vp);
     expect(placed.docked).toBe(true);
     expect(formationCells(placed.anchor, 7, 5, size)[6].y).toBe(dockY(1, vp));
+  });
+});
+
+describe("resetOwnPet", () => {
+  it("takes a docked own pet off the bottom edge before it gives up its place", () => {
+    const before = { petDocked: settings.petDocked, petX: settings.petX, petY: settings.petY };
+    Object.assign(settings, { petDocked: true, petX: 300, petY: 900 });
+    // In the panel each change reaches the desk as its own patch, in this order.
+    const order: string[] = [];
+    const stops = (["petDocked", "petX", "petY"] as const).map((key) =>
+      watch(() => settings[key], () => order.push(key), { flush: "sync" }));
+    try {
+      resetOwnPet();
+      expect(order).toEqual(["petDocked", "petX", "petY"]);
+      expect({ petDocked: settings.petDocked, petX: settings.petX, petY: settings.petY })
+        .toEqual({ petDocked: false, petX: -1, petY: -1 });
+    } finally {
+      for (const stop of stops) stop();
+      Object.assign(settings, before);
+    }
   });
 });

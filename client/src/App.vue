@@ -57,7 +57,8 @@ import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
 import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
-  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, viewport, type FormationPlace, type Pos, type Size,
+  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, viewport, type FormationPlace, type Pos,
+  type Size,
 } from "./stores/desk";
 import { openPanel, openTodoWindow, raceFrame, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
@@ -154,11 +155,6 @@ function onOwnSize(size: Size) {
   const strip = size.h - Math.round(PET_BASE.height * settings.scale);
   // The plate is lower than the strip; the room kept under the pet stays the strip's, so the pet does not rise.
   if (barShown.value && !plateShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
-}
-function resetPet() {
-  settings.petDocked = false;
-  settings.petX = -1;
-  settings.petY = -1;
 }
 /** Tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
 function toggleFold() {
@@ -447,7 +443,7 @@ onMounted(async () => {
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "open-panel") openPanel();
-    else if (a === "reset-position") resetPet();
+    else if (a === "reset-position") resetOwnPet();
     else if (a === "toggle-capture") settings.captureOpen = !settings.captureOpen;
     else if (a === "toggle-pomodoro") togglePomodoro();
     else settings.clickThrough = !settings.clickThrough;
@@ -616,7 +612,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </PetActor>
 
     <Transition name="panel">
-      <MainPanel v-if="!isTauri && ui.panelOpen" @reset-pet="resetPet" />
+      <MainPanel v-if="!isTauri && ui.panelOpen" @reset-pet="resetOwnPet" />
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
     <RaceFrame v-if="!isTauri && raceFrame.open" />

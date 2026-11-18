@@ -5,8 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import MainPanel from "./panel/MainPanel.vue";
 import { listenInput } from "./composables/tauri";
-import { viewport } from "./stores/desk";
-import { settings } from "./stores/settings";
+import { resetOwnPet, viewport } from "./stores/desk";
 import { onInput, stopPet } from "./stores/pet";
 import { ui, type Page } from "./stores/ui";
 import { windowVisible } from "./stores/activity";
@@ -35,8 +34,6 @@ watch(previewActive, async (active) => {
 async function updateVisibility() {
   ui.panelMinimized = document.hidden || await getCurrentWindow().isMinimized();
 }
-
-function resetPet() { settings.petX = -1; settings.petY = -1; }
 
 onMounted(async () => {
   window.addEventListener("resize", resize);
@@ -70,5 +67,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <KeepAlive><MainPanel v-if="ui.panelOpen && !ui.panelMinimized" @reset-pet="resetPet" /></KeepAlive>
+  <KeepAlive><MainPanel v-if="ui.panelOpen && !ui.panelMinimized" @reset-pet="resetOwnPet" /></KeepAlive>
 </template>
