@@ -896,7 +896,7 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 shown = Some(visible);
                 let _ = window.emit_to("main", "window:visible", visible);
             }
-            let idle = !visible || overlay.hit.lock().map(|st| st.click_through).unwrap_or(false);
+            let idle = !visible || overlay.hit.lock().map(|st| st.inert()).unwrap_or(false);
             if idle {
                 set_ignoring(true);
                 std::thread::sleep(HIT_TEST_IDLE_INTERVAL);

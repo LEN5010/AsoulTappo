@@ -162,6 +162,7 @@ mod tests {
                     y: 50.0,
                     w: 20.0,
                     h: 10.0,
+                    keep: false,
                 }],
                 page_scale: Some(scale),
                 ..Default::default()

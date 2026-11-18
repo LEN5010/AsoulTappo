@@ -1,8 +1,9 @@
 // The overlay window covers the whole work area but must only take the mouse where
 // something is drawn. Elements marked with `data-hit` are collected here and sent to
 // the Rust side, which lets the cursor fall through everywhere else
-// (see src-tauri/src/lib.rs, `spawn_hit_test`).
-export interface HitRect { x: number; y: number; w: number; h: number }
+// (see src-tauri/src/lib.rs, `spawn_hit_test`). With click-through on nothing takes the mouse but the elements marked
+// `data-hit="keep"`: the bubbles with keys (a reminder, an invitation, a todo), which the player still has to answer.
+export interface HitRect { x: number; y: number; w: number; h: number; keep?: true }
 
 export function collectRects(root: ParentNode = document): HitRect[] {
   const out: HitRect[] = [];
@@ -11,13 +12,14 @@ export function collectRects(root: ParentNode = document): HitRect[] {
     if (r.width < 1 || r.height < 1) return;
     const x = Math.floor(r.left);
     const y = Math.floor(r.top);
-    out.push({ x, y, w: Math.ceil(r.right) - x, h: Math.ceil(r.bottom) - y });
+    out.push({ x, y, w: Math.ceil(r.right) - x, h: Math.ceil(r.bottom) - y, ...(el.dataset.hit === "keep" ? { keep: true as const } : {}) });
   });
   return out;
 }
 
 export function sameRects(a: HitRect[], b: HitRect[]): boolean {
-  return a.length === b.length && a.every((r, i) => r.x === b[i].x && r.y === b[i].y && r.w === b[i].w && r.h === b[i].h);
+  return a.length === b.length &&
+    a.every((r, i) => r.x === b[i].x && r.y === b[i].y && r.w === b[i].w && r.h === b[i].h && !r.keep === !b[i].keep);
 }
 
 /**

@@ -25,7 +25,7 @@ async function restart() {
 
 <template>
   <div class="anchor">
-    <div class="admin" data-hit data-no-drag role="alert">
+    <div class="admin" data-hit="keep" data-no-drag role="alert">
       <p>{{ name }} 以管理员身份运行，桌宠收不到按键</p>
       <div class="actions">
         <button v-if="hint.canElevate" type="button" class="ui-btn small primary" :disabled="busy" @click="restart">以管理员身份重启</button>

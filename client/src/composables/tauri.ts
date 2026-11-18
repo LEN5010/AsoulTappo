@@ -163,7 +163,8 @@ export type HotkeySlot = "hide" | "click-through" | `emote-${number}`;
 export const setHotkey = (slot: HotkeySlot, keys: string): Promise<void> =>
   (isTauri ? invoke<void>("set_hotkey", { slot, keys }) : Promise.resolve());
 /**
- * Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through.
+ * Areas of the overlay (CSS px) that take the mouse; everything else lets clicks through. With click-through on only
+ * the ones marked `keep` do.
  * `scale` is the page's device pixel ratio, used to turn CSS px into screen pixels.
  */
 export const setHitRegions = (rects: HitRect[], scale: number) => call("set_hit_regions", { rects, scale });

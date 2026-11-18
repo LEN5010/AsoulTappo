@@ -20,7 +20,7 @@ async function restart() {
 
 <template>
   <div class="anchor">
-    <div class="access" data-hit data-no-drag role="alert">
+    <div class="access" data-hit="keep" data-no-drag role="alert">
       <p>需要输入监控权限</p>
       <small>已开启仍提示：删除条目后重新添加</small>
       <div class="actions">

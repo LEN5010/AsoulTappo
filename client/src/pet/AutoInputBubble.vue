@@ -8,7 +8,7 @@ const emit = defineEmits<{ open: [] }>();
 <template>
   <div class="anchor">
     <Transition name="alert" appear>
-      <div class="auto" data-hit data-no-drag role="alert">
+      <div class="auto" data-hit="keep" data-no-drag role="alert">
         <span class="mark" aria-hidden="true">!</span>
         <p>识别到自动点击</p>
         <button type="button" class="ui-btn small" @click="emit('open')">看看</button>

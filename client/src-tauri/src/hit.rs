@@ -2,7 +2,9 @@
 //!
 //! The overlay window covers the monitor's work area. The frontend reports the
 //! rectangles where something is drawn (pets, counter bars, bubbles); outside of
-//! them the window ignores the cursor so clicks reach the windows below.
+//! them the window ignores the cursor so clicks reach the windows below. With
+//! click-through on only the rectangles marked `keep` take the mouse: the bubbles
+//! with keys, which the player still has to answer.
 
 use serde::Deserialize;
 
@@ -13,6 +15,9 @@ pub struct HitRect {
     pub y: f64,
     pub w: f64,
     pub h: f64,
+    /// Takes the mouse with click-through on too.
+    #[serde(default)]
+    pub keep: bool,
 }
 
 #[derive(Default, Debug)]
@@ -20,7 +25,7 @@ pub struct HitState {
     pub rects: Vec<HitRect>,
     /// Something is being dragged: keep taking the mouse until it is dropped.
     pub dragging: bool,
-    /// User setting: never take the mouse.
+    /// User setting: take the mouse only on the rectangles marked `keep`.
     pub click_through: bool,
     /// The page's device pixel ratio, sent with the rects. On Windows the webview
     /// multiplies the monitor scale by the system text size, so this can differ
@@ -34,10 +39,7 @@ impl HitState {
     /// (physical px, desktop coordinates) and the window scale factor, which is
     /// only used until the page has reported its own scale.
     pub fn interactive(&self, cursor: (f64, f64), origin: (f64, f64), window_scale: f64) -> bool {
-        if self.click_through {
-            return false;
-        }
-        if self.dragging {
+        if self.dragging && !self.click_through {
             return true;
         }
         let scale = self.page_scale.unwrap_or(window_scale);
@@ -46,7 +48,13 @@ impl HitState {
         let y = (cursor.1 - origin.1) / scale;
         self.rects
             .iter()
+            .filter(|r| r.keep || !self.click_through)
             .any(|r| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+    }
+
+    /// Nothing can take the mouse wherever the cursor is.
+    pub fn inert(&self) -> bool {
+        self.click_through && !self.rects.iter().any(|r| r.keep)
     }
 }
 
@@ -60,7 +68,7 @@ mod tests {
 
     #[test]
     fn cursor_inside_a_rect_takes_the_mouse() {
-        let s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0 }]);
+        let s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0, keep: false }]);
         assert!(s.interactive((105.0, 55.0), (0.0, 0.0), 1.0));
         assert!(!s.interactive((99.0, 55.0), (0.0, 0.0), 1.0));
         assert!(!s.interactive((120.0, 55.0), (0.0, 0.0), 1.0));
@@ -68,7 +76,7 @@ mod tests {
 
     #[test]
     fn converts_physical_desktop_coordinates_to_css_pixels() {
-        let s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0 }]);
+        let s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0, keep: false }]);
         // window client area at (1920, 40) on a 150% monitor: css (110, 55) -> physical (2085, 122.5)
         assert!(s.interactive((2085.0, 122.5), (1920.0, 40.0), 1.5));
         assert!(!s.interactive((110.0, 55.0), (1920.0, 40.0), 1.5));
@@ -77,7 +85,7 @@ mod tests {
     #[test]
     fn page_scale_replaces_the_window_scale() {
         // 100% monitor with 125% Windows text size: the page draws css (100, 50) at physical (125, 62.5)
-        let mut s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0 }]);
+        let mut s = state(vec![HitRect { x: 100.0, y: 50.0, w: 20.0, h: 10.0, keep: false }]);
         assert!(!s.interactive((130.0, 65.0), (0.0, 0.0), 1.0));
         s.page_scale = Some(1.25);
         assert!(s.interactive((130.0, 65.0), (0.0, 0.0), 1.0));
@@ -92,5 +100,29 @@ mod tests {
         assert!(s.interactive((1.0, 1.0), (0.0, 0.0), 1.0));
         s.click_through = true;
         assert!(!s.interactive((1.0, 1.0), (0.0, 0.0), 1.0));
+    }
+
+    #[test]
+    fn click_through_leaves_the_kept_rects_taking_the_mouse() {
+        let pet = HitRect { x: 0.0, y: 40.0, w: 100.0, h: 60.0, keep: false };
+        let bubble = HitRect { x: 0.0, y: 0.0, w: 100.0, h: 30.0, keep: true };
+        let mut s = state(vec![pet]);
+        s.click_through = true;
+        assert!(s.inert());
+        s.rects.push(bubble);
+        assert!(!s.inert());
+        assert!(s.interactive((50.0, 10.0), (0.0, 0.0), 1.0));
+        assert!(!s.interactive((50.0, 60.0), (0.0, 0.0), 1.0));
+        s.click_through = false;
+        assert!(!s.inert());
+        assert!(s.interactive((50.0, 60.0), (0.0, 0.0), 1.0));
+    }
+
+    #[test]
+    fn a_rect_from_a_page_that_does_not_say_is_not_kept() {
+        let r: HitRect = serde_json::from_str(r#"{"x":1,"y":2,"w":3,"h":4}"#).unwrap();
+        assert!(!r.keep);
+        let r: HitRect = serde_json::from_str(r#"{"x":1,"y":2,"w":3,"h":4,"keep":true}"#).unwrap();
+        assert!(r.keep);
     }
 }

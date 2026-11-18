@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// A paper bubble over a pet that takes the mouse: the duel and its bets. Centered over the pet with its point at the
+// A paper bubble over a pet that takes the mouse, with click-through on too (src/hit.ts): the duel and its bets, a
+// reminder, an invitation. Centered over the pet with its point at the
 // head; [shift] moves the paper sideways to stay on screen, [below] puts it under the pet when there is no room above.
 withDefaults(defineProps<{ open: boolean; width: number; shift?: number; below?: boolean }>(), { shift: 0, below: false });
 </script>
@@ -7,7 +8,7 @@ withDefaults(defineProps<{ open: boolean; width: number; shift?: number; below?:
 <template>
   <div class="anchor" :class="{ below }">
     <Transition name="pop">
-      <div v-if="open" class="bubble" data-hit data-no-drag :style="{ width: `${width}px`, '--shift': `${shift}px` }">
+      <div v-if="open" class="bubble" data-hit="keep" data-no-drag :style="{ width: `${width}px`, '--shift': `${shift}px` }">
         <slot />
       </div>
     </Transition>

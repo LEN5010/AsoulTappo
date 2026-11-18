@@ -49,4 +49,7 @@ it("sends the page scale and resends when only the scale changes", () => {
 it("compares rectangle lists by value", () => {
   expect(sameRects([{ x: 1, y: 1, w: 1, h: 1 }], [{ x: 1, y: 1, w: 1, h: 1 }])).toBe(true);
   expect(sameRects([{ x: 1, y: 1, w: 1, h: 1 }], [])).toBe(false);
+  // a rectangle that starts or stops taking the mouse under click-through is a change
+  expect(sameRects([{ x: 1, y: 1, w: 1, h: 1, keep: true }], [{ x: 1, y: 1, w: 1, h: 1 }])).toBe(false);
+  expect(sameRects([{ x: 1, y: 1, w: 1, h: 1, keep: true }], [{ x: 1, y: 1, w: 1, h: 1, keep: true }])).toBe(true);
 });
