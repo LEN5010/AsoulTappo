@@ -6,7 +6,7 @@ let keySwitchAt = 0;
 
 <script setup lang="ts">
 // The pools to draw from, where a stage's eyebrow sits: the standing pool first, then each limited pool with what is
-// left of it. Small keys: the picked one is latched in coral, a limited one wears the pearl lip of its material.
+// left of it. Small tab keys: the picked one is latched in coral, a limited one wears the pearl lip of its material.
 import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
@@ -53,7 +53,7 @@ onMounted(() => {
   <div ref="root" class="pool-tabs" :class="{ calm: reducedMotion }" role="tablist" aria-label="卡池" @keydown="onKey">
     <button
       v-for="p in pools" :key="p.id" type="button" role="tab"
-      class="pool-tab" :class="{ on: p.id === modelValue, limited: !!p.left }"
+      class="pool-tab ui-tab small" :class="{ on: p.id === modelValue, limited: !!p.left }"
       :aria-selected="p.id === modelValue"
       :tabindex="p.id === modelValue ? 0 : -1"
       :disabled="disabled"
@@ -72,102 +72,12 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 7px;
 }
-/* Keycap with a separate rounded lip plate (::before) under its face (::after), so gradient pearl lips keep full
- * corner rounding and pressing never moves the bottom edge or reflows layout. */
+/* The tab key at its small size (.ui-tab.small in ui/tokens.css); its lip plate keeps a pearl gradient's corners. */
 .pool-tab {
-  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
-  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --lip: var(--c-200);
-  --key-lip-h: 3px;
-  --key-y: 0px;
-  --lip-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.24);
-  position: relative;
-  isolation: isolate;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 30px;
   margin-bottom: 3px;
-  padding: 0 12px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-key-s);
-  background: none;
-  color: var(--ink-2);
-  font: 800 var(--fs-body)/1 var(--font);
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transform: translateY(var(--key-y));
-  transition:
-    transform var(--dur-release) var(--ease-spring),
-    color var(--dur-fast);
 }
 .pool-tab.limited {
   padding-right: 6px;
-}
-.pool-tab:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-.pool-tab::before,
-.pool-tab::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.pool-tab::before {
-  z-index: -2;
-  background: var(--lip);
-  box-shadow: var(--lip-shadow);
-  transform: translateY(var(--key-lip-h));
-  transition:
-    transform var(--dur-release) var(--ease-spring),
-    box-shadow var(--dur-release) var(--ease-spring);
-}
-.pool-tab::after {
-  z-index: -1;
-  background: var(--face);
-  box-shadow: var(--face-inset);
-}
-.pool-tab:hover:not(:disabled):not(.on) {
-  --face: #fff;
-  --key-y: -1px;
-  color: var(--ink);
-}
-/* Latched: sits partway down on a 1px lip sliver. */
-.pool-tab.on {
-  --face: linear-gradient(180deg, var(--c-400), var(--c-500));
-  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
-  --lip: var(--c-600);
-  --key-y: 2px;
-  --key-lip-h: 1px;
-  --lip-shadow: 0 2px 5px -2px rgba(var(--c-900-rgb), 0.22);
-  color: var(--ink);
-  cursor: default;
-}
-.pool-tab:active:not(:disabled):not(.on) {
-  --key-y: 3px;
-  --key-lip-h: 0px;
-  --lip-shadow: 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
-  transition-duration: var(--dur-press);
-  transition-timing-function: ease-out;
-}
-.pool-tab:active:not(:disabled):not(.on)::before {
-  transition-duration: var(--dur-press);
-  transition-timing-function: ease-out;
-}
-.pool-tab:disabled:not(.on) {
-  --face: var(--c-100);
-  --face-inset: none;
-  --lip: transparent;
-  --key-y: 0px;
-  --key-lip-h: 0px;
-  --lip-shadow: none;
-  color: var(--ink-3);
-  cursor: default;
 }
 /* Countdown capsule inside a limited pool key. */
 .pool-tab small {
@@ -193,9 +103,6 @@ onMounted(() => {
   --face: linear-gradient(180deg, #fff 36%, color-mix(in srgb, var(--holo-lilac) 14%, #fff));
   --lip: var(--grad-pearl);
   color: var(--night);
-}
-.pool-tab.limited:not(.on):not(:disabled):hover {
-  --face: linear-gradient(180deg, #fff 55%, color-mix(in srgb, var(--holo-pink) 14%, #fff));
 }
 .pool-tab.limited:not(.on):not(:disabled)::before {
   background-size: 220% 100%;

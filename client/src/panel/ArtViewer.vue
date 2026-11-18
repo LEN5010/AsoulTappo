@@ -226,7 +226,6 @@ onBeforeUnmount(() => {
   top: 12px;
   right: 14px;
   z-index: 4;
-  height: 32px;
 }
 .controls {
   position: absolute;

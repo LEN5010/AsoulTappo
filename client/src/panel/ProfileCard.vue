@@ -302,6 +302,7 @@ button.art-box:hover .art {
   --key-bottom: rgba(255, 255, 255, 0.86);
   --key-y: 0px;
   --key-lip-h: 0px;
+  --key-lift: 0px;
   position: absolute;
   right: 16px;
   top: 16px;

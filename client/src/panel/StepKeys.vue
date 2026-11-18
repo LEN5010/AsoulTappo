@@ -39,9 +39,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   top: 50%;
   z-index: 4;
   width: 32px;
-  height: 32px;
   padding: 0;
-  margin-top: -16px;
+  margin-top: -14px;
   color: var(--ink);
   backdrop-filter: blur(6px);
 }

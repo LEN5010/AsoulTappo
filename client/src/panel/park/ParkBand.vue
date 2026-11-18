@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The park's coral band, the top edge of its one sheet of paper: the four page keys on the left; on the right the
-// page's timer, a tactile info key, and the host standing behind the sheet with its head over the band's top edge,
+// page's timer, an info key, and the host standing behind the sheet with its head over the band's top edge,
 // as on the check-in calendar.
 import { computed, ref } from "vue";
 import { reducedMotion } from "../../stores/theme";
@@ -57,7 +57,7 @@ function onTabKey(e: KeyboardEvent) {
   <header class="park-band" :class="{ calm: reducedMotion }">
     <div ref="list" class="tabs" role="tablist" aria-label="乐园分页" @keydown="onTabKey">
       <button
-        v-for="t in tabs" :key="t.id" type="button" role="tab" class="tab"
+        v-for="t in tabs" :key="t.id" type="button" role="tab" class="tab ui-tab on-coral"
         :class="{ on: t.id === modelValue }" :aria-selected="t.id === modelValue"
         :tabindex="!disabled && t.id === modelValue ? 0 : -1" :disabled="disabled"
         @click="$emit('update:modelValue', t.id)"
@@ -76,7 +76,7 @@ function onTabKey(e: KeyboardEvent) {
       </template>
     </p>
     <button
-      v-if="info" type="button" class="info" :class="{ alone: !timer }"
+      v-if="info" type="button" class="info ui-tab on-coral" :class="{ alone: !timer }"
       :title="info.label" :aria-label="info.label" @click="info.open"
     >
       <Icon name="info" :size="18" />
@@ -138,9 +138,7 @@ function onTabKey(e: KeyboardEvent) {
   z-index: 1;
 }
 
-/* ---- Two-layer rounded keycaps (as PoolTabs): ::before is the anchored lip plate, ::after is the lit face.
- * Across rest (0 + 3), hover (-1 + 4), latched (2 + 1) and active (3 + 0), --key-y + --key-lip-h stays 3px,
- * so pressing never moves the bottom edge or shifts the band. */
+/* ---- The page keys: the tab key on a coral ground (.ui-tab.on-coral in ui/tokens.css), in the band's larger type. */
 .tabs {
   display: flex;
   gap: 8px;
@@ -148,103 +146,11 @@ function onTabKey(e: KeyboardEvent) {
   margin-bottom: 3px;
 }
 .tab {
-  --face: linear-gradient(180deg, color-mix(in oklab, var(--c-500) 74%, #fff), var(--c-600));
-  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
-  --lip: var(--c-700);
-  --key-lip-h: 3px;
-  --key-y: 0px;
-  --lip-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.28);
-  position: relative;
-  isolation: isolate;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-width: 64px;
-  height: 36px;
-  padding: 0 16px;
-  box-sizing: border-box;
-  border: 0;
-  border-radius: var(--radius-key);
-  background: none;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(var(--c-900-rgb), 0.24);
-  font: 800 var(--fs-number)/1 var(--font);
-  white-space: nowrap;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transform: translateY(var(--key-y));
-  transition:
-    transform var(--dur-release) var(--ease-spring),
-    color var(--dur-fast);
+  font-size: var(--fs-number);
 }
-.tab::before,
-.tab::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.tab::before {
-  z-index: -2;
-  background: var(--lip);
-  box-shadow: var(--lip-shadow);
-  transform: translateY(var(--key-lip-h));
-  transition:
-    transform var(--dur-release) var(--ease-spring),
-    box-shadow var(--dur-release) var(--ease-spring),
-    background var(--dur-fast);
-}
-.tab::after {
-  z-index: -1;
-  background: var(--face);
-  box-shadow: var(--face-inset);
-}
-.tab:hover:not(:disabled):not(.on) {
-  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
-  --face-inset: inset 0 1px 0 #fff;
-  --lip: var(--c-200);
-  --key-y: -1px;
-  --key-lip-h: 4px;
-  color: var(--ink);
-  text-shadow: none;
-}
-.tab:active:not(:disabled):not(.on) {
-  --key-y: 3px;
-  --key-lip-h: 0px;
-  --lip-shadow: 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
-  transition-duration: var(--dur-press);
-  transition-timing-function: ease-out;
-}
-.tab:active:not(:disabled):not(.on)::before {
-  transition-duration: var(--dur-press);
-  transition-timing-function: ease-out;
-}
-/* Latched: white keycap sitting partway down on a 1px lip sliver, coral type. */
-.tab.on:not(:disabled) {
-  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
-  --face-inset: inset 0 1px 0 #fff;
-  --lip: var(--c-300);
-  --key-y: 2px;
-  --key-lip-h: 1px;
-  --lip-shadow: 0 2px 5px -2px rgba(var(--c-900-rgb), 0.24);
-  color: var(--c-700);
-  text-shadow: none;
-  cursor: default;
-}
-/* Locked, or no park on this server: flat tonal label with zero lip. */
-.tab:disabled {
-  --face: rgba(255, 255, 255, 0.16);
-  --face-inset: none;
-  --lip: transparent;
-  --key-y: 0px;
-  --key-lip-h: 0px;
-  --lip-shadow: none;
-  color: rgba(255, 255, 255, 0.72);
-  text-shadow: none;
-  cursor: default;
-}
-.tab:focus-visible {
+.tab:focus-visible,
+.info:focus-visible {
   outline-offset: 3px;
 }
 
@@ -319,68 +225,15 @@ function onTabKey(e: KeyboardEvent) {
   }
 }
 
-/* ---- Info key: tactile round-cornered keycap on the coral band. */
+/* ---- Info key: the same keycap as the page keys, square. */
 .info {
-  --face: linear-gradient(180deg, color-mix(in oklab, var(--c-500) 74%, #fff), var(--c-600));
-  --lip: var(--c-700);
-  --key-lip-h: 2px;
-  --key-y: 0px;
-  position: relative;
-  isolation: isolate;
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  margin-bottom: 2px;
+  width: 36px;
+  margin-bottom: 3px;
   padding: 0;
-  border: 0;
-  border-radius: var(--radius-key-s);
-  background: none;
-  color: #fff;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transform: translateY(var(--key-y));
-  transition: transform var(--dur-release) var(--ease-spring), color var(--dur-fast);
 }
 .info.alone {
   margin-left: auto;
-}
-.info::before,
-.info::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.info::before {
-  z-index: -2;
-  background: var(--lip);
-  box-shadow: 0 3px 6px -2px rgba(var(--c-900-rgb), 0.26);
-  transform: translateY(var(--key-lip-h));
-  transition: transform var(--dur-release) var(--ease-spring), background var(--dur-fast);
-}
-.info::after {
-  z-index: -1;
-  background: var(--face);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
-}
-.info:hover {
-  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
-  --lip: var(--c-200);
-  --key-y: -1px;
-  --key-lip-h: 3px;
-  color: var(--c-700);
-}
-.info:active {
-  --key-y: 2px;
-  --key-lip-h: 0px;
-  transition-duration: var(--dur-press);
-}
-.info:active::before {
-  transition-duration: var(--dur-press);
 }
 
 /* ---- The host: cut off at the waist by the sheet, its head over the band's top edge, breathing gently at rest. */
@@ -442,8 +295,10 @@ function onTabKey(e: KeyboardEvent) {
 
 .calm .tab,
 .calm .tab::before,
+.calm .tab::after,
 .calm .info,
-.calm .info::before {
+.calm .info::before,
+.calm .info::after {
   transition: none;
 }
 .calm .timer.soon,
@@ -499,8 +354,9 @@ function onTabKey(e: KeyboardEvent) {
     display: none;
   }
   .tab {
-    height: 32px;
+    height: 28px;
     padding: 0 10px;
+    border-radius: var(--radius-key-s);
     font-size: var(--fs-strong);
   }
   .timer {
@@ -512,8 +368,9 @@ function onTabKey(e: KeyboardEvent) {
     font-size: 22px;
   }
   .info {
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-key-s);
   }
 }
 </style>

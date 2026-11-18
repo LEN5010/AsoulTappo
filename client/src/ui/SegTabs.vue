@@ -111,7 +111,7 @@ onBeforeUnmount(() => observer.disconnect());
   position: relative;
   flex: 1 0 auto;
   min-width: 64px;
-  height: 32px;
+  height: 36px;
   padding: 0 14px;
   box-sizing: border-box;
   border: 0;

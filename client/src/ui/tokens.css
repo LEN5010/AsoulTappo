@@ -131,6 +131,9 @@
  * Keycap. The face is a vertical gradient (--key-top to --key-bottom); the lip is a hard shadow
  * --key-lip-h tall. Pressing moves the face down by the lip's height while the lip shrinks to
  * nothing, so the bottom edge of the key never moves. Press is quick, release springs back.
+ *
+ * Under the pointer a key rises by --key-lift and its lip grows as much, whatever its lip's height,
+ * and the face brightens in its own colour. A key changes colour only when it is latched.
  */
 .ui-btn,
 .ui-chip {
@@ -139,6 +142,7 @@
   --key-lip: var(--c-200);
   --key-lip-h: 3px;
   --key-y: 0px;
+  --key-lift: 0px;
   --key-glow: 0 0 0 transparent;
   position: relative;
   isolation: isolate;
@@ -147,10 +151,10 @@
   border-radius: var(--radius-key);
   background: linear-gradient(180deg, var(--key-top), var(--key-bottom));
   box-shadow:
-    0 var(--key-lip-h) 0 var(--key-lip),
-    0 calc(var(--key-lip-h) + 1px) calc(var(--key-lip-h) * 2 + 2px) -3px rgba(var(--c-900-rgb), 0.25),
+    0 calc(var(--key-lip-h) + var(--key-lift)) 0 var(--key-lip),
+    0 calc(var(--key-lip-h) + var(--key-lift) + 1px) calc(var(--key-lip-h) * 2 + 2px) -3px rgba(var(--c-900-rgb), 0.25),
     var(--key-glow);
-  transform: translateY(var(--key-y));
+  transform: translateY(calc(var(--key-y) - var(--key-lift)));
   color: var(--ink);
   font: inherit;
   cursor: pointer;
@@ -175,7 +179,7 @@
 .ui-chip:hover {
   --key-top: #FFFFFF;
   --key-bottom: #FFFFFF;
-  --key-y: -1px;
+  --key-lift: 1px;
 }
 /* Latched: selected or expanded. Sits part way down with a sliver of lip left. */
 .ui-btn.on:not(:disabled),
@@ -185,11 +189,13 @@
   --key-bottom: var(--c-100);
   --key-y: 2px;
   --key-lip-h: 1px;
+  --key-lift: 0px;
 }
 .ui-btn:active:not(:disabled),
 .ui-chip:active {
   --key-y: 3px;
   --key-lip-h: 0px;
+  --key-lift: 0px;
   transition-duration: var(--dur-press);
   transition-timing-function: ease-out;
 }
@@ -246,6 +252,7 @@
   --key-bottom: var(--c-100);
   --key-y: 0px;
   --key-lip-h: 0px;
+  --key-lift: 0px;
   color: var(--ink);
 }
 .ui-btn.ghost:active:not(:disabled) {
@@ -298,6 +305,7 @@
   --key-lip: var(--c-600);
   --key-y: 1px;
   --key-lip-h: 1px;
+  --key-lift: 0px;
   color: var(--ink);
 }
 .ui-chip.on:active {
@@ -307,6 +315,143 @@
 .ui-chip > i {
   width: 4px;
   height: 11px;
+}
+
+/*
+ * Tab key: one of a row that picks a page or a pool. Two layers, so a lip can be a gradient and keeps its
+ * corners: ::before is the lip plate, ::after the face. Under the pointer a key rises 1px on a lip 1px taller
+ * and a white wash fades in over its face (--veil), so it brightens in its own colour; only the picked key
+ * changes colour. --key-y + --key-lip-h stays 3px in every state, so the bottom edge never moves.
+ * `.small` is the 28px key; `.on-coral` is the same key on a coral ground, picked in white.
+ */
+.ui-tab {
+  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
+  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --face-veil: rgba(255, 255, 255, 0);
+  --veil: rgba(255, 255, 255, 0.7);
+  --lip: var(--c-200);
+  --lip-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.24);
+  --key-lip-h: 3px;
+  --key-y: 0px;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-key);
+  background: none;
+  color: var(--ink-2);
+  font: 800 var(--fs-body)/1 var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transform: translateY(var(--key-y));
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    color var(--dur-fast);
+}
+.ui-tab::before,
+.ui-tab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.ui-tab::before {
+  z-index: -2;
+  background: var(--lip);
+  box-shadow: var(--lip-shadow);
+  transform: translateY(var(--key-lip-h));
+  transition:
+    transform var(--dur-release) var(--ease-spring),
+    box-shadow var(--dur-release) var(--ease-spring);
+}
+/* The wash is an inset shadow wider than the key, so it fades where a gradient face could only jump. */
+.ui-tab::after {
+  z-index: -1;
+  background: var(--face);
+  box-shadow: var(--face-inset), inset 0 0 0 40px var(--face-veil);
+  transition: box-shadow var(--dur-fast);
+}
+.ui-tab:hover:not(:disabled):not(.on) {
+  --face-veil: var(--veil);
+  --key-y: -1px;
+  --key-lip-h: 4px;
+  color: var(--ink);
+}
+.ui-tab:active:not(:disabled):not(.on) {
+  --key-y: 3px;
+  --key-lip-h: 0px;
+  --lip-shadow: 0 1px 2px -1px rgba(var(--c-900-rgb), 0.2);
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
+}
+.ui-tab:active:not(:disabled):not(.on)::before {
+  transition-duration: var(--dur-press);
+  transition-timing-function: ease-out;
+}
+/* Picked: latched in coral, part way down on a sliver of lip. */
+.ui-tab.on {
+  --face: linear-gradient(180deg, var(--c-400), var(--c-500));
+  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  --lip: var(--c-600);
+  --lip-shadow: 0 2px 5px -2px rgba(var(--c-900-rgb), 0.22);
+  --key-y: 2px;
+  --key-lip-h: 1px;
+  color: var(--ink);
+  cursor: default;
+}
+.ui-tab:disabled:not(.on) {
+  --face: var(--c-100);
+  --face-inset: inset 0 0 0 transparent;
+  --lip: transparent;
+  --lip-shadow: none;
+  --key-y: 0px;
+  --key-lip-h: 0px;
+  color: var(--ink-3);
+  cursor: default;
+}
+.ui-tab.small {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-key-s);
+}
+.ui-tab.on-coral {
+  --face: linear-gradient(180deg, color-mix(in oklab, var(--c-500) 74%, #fff), var(--c-600));
+  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  --veil: rgba(255, 255, 255, 0.22);
+  --lip: var(--c-700);
+  --lip-shadow: 0 4px 8px -3px rgba(var(--c-900-rgb), 0.28);
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(var(--c-900-rgb), 0.24);
+}
+.ui-tab.on-coral:hover:not(:disabled):not(.on) {
+  color: #fff;
+}
+.ui-tab.on-coral.on:not(:disabled) {
+  --face: linear-gradient(180deg, #fff, var(--key-white-shade));
+  --face-inset: inset 0 1px 0 #fff;
+  --lip: var(--c-300);
+  --lip-shadow: 0 2px 5px -2px rgba(var(--c-900-rgb), 0.24);
+  color: var(--c-700);
+  text-shadow: none;
+}
+.ui-tab.on-coral:disabled {
+  --face: rgba(255, 255, 255, 0.16);
+  --face-inset: inset 0 0 0 transparent;
+  --lip: transparent;
+  --lip-shadow: none;
+  --key-y: 0px;
+  --key-lip-h: 0px;
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: none;
+  cursor: default;
 }
 
 .ui-input {

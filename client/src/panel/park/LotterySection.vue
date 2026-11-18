@@ -1480,6 +1480,7 @@ function onPopKey(e: KeyboardEvent) {
 .numkey.down:not(:disabled) {
   --key-y: 4px;
   --key-lip-h: 0px;
+  --key-lift: 0px;
   transition-duration: var(--dur-press);
   transition-timing-function: ease-out;
 }
