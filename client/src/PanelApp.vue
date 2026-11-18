@@ -4,7 +4,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import MainPanel from "./panel/MainPanel.vue";
-import { listenInput } from "./composables/tauri";
+import { listenInput, writeLog } from "./composables/tauri";
+import { watchLostClicks } from "./desktop/lostClicks";
 import { resetOwnPet, viewport } from "./stores/desk";
 import { onInput, stopPet } from "./stores/pet";
 import { ui, type Page } from "./stores/ui";
@@ -17,6 +18,9 @@ let unOpen: (() => void) | undefined;
 let unVisibility: (() => void) | undefined;
 let unFocus: (() => void) | undefined;
 let unResize: (() => void) | undefined;
+// Presses on the panel's buttons that never became clicks go to the log, for clicks that do nothing on macOS.
+const unLost = watchLostClicks((msg) => writeLog("panel", msg),
+  () => `, minimized ${ui.panelMinimized}, open ${ui.panelOpen}`);
 let inputGeneration = 0;
 const previewActive = computed(() => windowVisible.value && ui.panelOpen && !ui.panelMinimized && (ui.page === "emotes" || ui.page === "room"));
 watch(previewActive, async (active) => {
@@ -61,6 +65,7 @@ onBeforeUnmount(() => {
   unVisibility?.();
   unResize?.();
   unFocus?.();
+  unLost();
   document.removeEventListener("visibilitychange", updateVisibility);
   stopPet();
 });
