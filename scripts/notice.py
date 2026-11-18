@@ -12,6 +12,9 @@ Environment:
     ASOULTAPPO_ADMIN_KEY    the server's admin key
 
 A minimum also turns away every client before 1.1.3: those send no version and only show an error.
+
+The official server's announcements come from the main site, which replaces the whole list every minute: there,
+use `min` only.
 """
 from __future__ import annotations
 

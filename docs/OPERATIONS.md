@@ -79,13 +79,17 @@ scripts/deploy-server.sh <主机> economy <私有仓库>/server/config/economy.j
 
 ## 最低版本和公告
 
-在服务器上运行 `scripts/notice.py`，需要环境变量 `ASOULTAPPO_ADMIN_KEY`，值在 `server.env` 里。设置最低版本时，1.1.3 之前的客户端也会一起被挡在外面。
+公告在主站后台的公告页编辑，勾选桌宠渠道后由主站 API 写到这里的 `PUT /admin/notice`：发布后立刻同步，之后每分钟核对一次，把服务端的公告整体换成主站的列表。发版公告也在那里发。
+
+最低版本在主站后台的桌宠运营页改，或者在服务器上运行 `scripts/notice.py min <版本>`，需要环境变量 `ASOULTAPPO_ADMIN_KEY`，值在 `server.env` 里。设置最低版本时，1.1.3 之前的客户端也会一起被挡在外面。
+
+主站依赖 `/admin/notice` 的这些行为：`since` 按 id 沿用，请求里的未知字段被丢弃，GET 返回包括已过期的全部公告，最多 20 条，标题 40 字，正文 2000 字。改动前先看主站仓库的 `docs/cross-project.md`。
 
 ## 发版
 
 1. 改 `client/src-tauri/tauri.conf.json` 的版本号。服务端改动要先部署，再发客户端。
 2. 推 `test-<版本>-rc.<n>` 标签，`debug-build.yml` 会按正式版方式打包。在 Windows 测试机上装一次，确认桌面透明、桌宠和面板正常。只测调试版不够，调试版和正式版走的代码路径不同。
-3. 写 `release.yml` 里的 `releaseBody`：技术中性、一条一句，数值改动写不写由维护者决定。推 `v<版本>` 标签。
+3. 写 `.github/release-notes.md`：技术中性、一条一句，数值改动写不写由维护者决定。推 `v<版本>` 标签。
 4. 两个平台都构建完以后，如果在 GitHub 网页上改过发版说明，要用 `gh release edit --notes-file` 再写一次，同时改 `latest.json` 的 notes。macOS 的任务后跑完，会把网页上改的内容覆盖掉。
 5. 在主站仓库运行 `bun run tappo:release:upload`，把安装包同步到下载页。房间服务端会缓存发版列表 10 分钟。
 6. 带新皮肤的版本：清单里新皮肤的 `since` 写成这个版本号。服务端带着这个清单部署后，更早的客户端抽不到这些皮肤。
