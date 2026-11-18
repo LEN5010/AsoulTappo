@@ -185,7 +185,10 @@ it("reads a banner's own odds and the tiers its featured items share", () => {
     expect(now.featured).toBe(0);
     expect(now.shared).toEqual([{ rarity: "skin", rate: 100 }]);
     expect(now.tiers.skin).toBe(3);
+    // The last skin drawn there was a standing one: the next is featured, whatever is left of the standing ones.
+    expect(bannerRates(shared, p, {}, ["skin"]).shared).toEqual([{ rarity: "skin", rate: 100 }]);
     for (const id of SKINS) owned[id] = 1;
+    expect(bannerRates(shared, p, owned, ["skin"]).shared).toEqual([]);
     const whole = bannerRates(shared, p, owned);
     expect(whole.shared).toEqual([]);
     expect(whole.tiers.skin).toBe(exampleEconomy.resonance.repeatTiers?.includes("skin") ? 3 : 0);
