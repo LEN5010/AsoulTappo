@@ -487,3 +487,31 @@ def test_auto_strikes_persist_across_a_restart_and_roll_at_china_midnight(tmp_pa
         result = send(again, clock, 40, 40, i)
     assert result["autoStrikes"] == 1
     again.store.close()
+
+
+def test_daily_rule_shares_only_accepted_batches_across_sessions_and_restarts(tmp_path):
+    rules = tmp_path / "rules.py"
+    rules.write_text(
+        "def judge(batch, notes):\n    return 60 if batch.injected else 0\n"
+        "def daily_cooldown(batch, judged, notes):\n"
+        "    if judged and not batch.cooling:\n"
+        "        notes['hits'] = notes.get('hits', 0) + 1\n"
+        "        if notes['hits'] % 2 == 0:\n            return 90 * (1 + batch.strikes_today)\n"
+        "    return 0\n"
+    )
+    path = tmp_path / "game.db"
+    game, clock = make_guarded(guard_file.load(rules), path)
+    first = send(game, clock, 30, 8, 1)
+    assert first["credited"] == 30
+    assert send(game, clock, 30, 8, 1)["credited"] == 0  # duplicate
+    game.store.close()
+    game = Game(Store(str(path)), tiny_manifest(), now=clock, guard=guard_file.load(rules))
+    second = send(game, clock, 30, 8, 1, "new")
+    assert (second["tapCooldown"], second["autoStrikes"], second["credited"]) == (90, 1, 0)
+    send(game, clock, 30, 8, 2, "new")
+    assert json.loads(game.store.guard_day(first["player"], day_of_clock(clock))) == {"hits": 2}
+    assert send(game, clock, 30, 0, 3, "new", every=100)["credited"] == 30
+    assert send(game, clock, 30, 8, 4, "new")["credited"] == 30
+    assert send(game, clock, 30, 8, 2)["tapCooldown"] == 180
+    tomorrow = send(game, clock, 30, 8, 3, every=86400)
+    assert (tomorrow["tapCooldown"], tomorrow["autoStrikes"], tomorrow["credited"]) == (0, 0, 30)

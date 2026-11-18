@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS daily_active (
   player_id TEXT NOT NULL,
   PRIMARY KEY (day, player_id)
 );
+CREATE TABLE IF NOT EXISTS guard_days (
+  day TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  notes TEXT NOT NULL,
+  PRIMARY KEY (day, player_id)
+);
 CREATE TABLE IF NOT EXISTS presence_sessions (
   player_id TEXT NOT NULL,
   session TEXT NOT NULL,
