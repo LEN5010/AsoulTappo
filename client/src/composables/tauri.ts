@@ -185,21 +185,35 @@ let logCap = LOG_LINES_PER_MINUTE;
 let logMinute = 0;
 let logLines = 0;
 let lastLogLine = "";
+let logRepeats = 0;
 
-/** Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute (240 in the debug build), repeats skipped. */
+/**
+ * Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute (240 in the debug build).
+ * Consecutive repeats within the same minute are counted instead of written one by one, and reported on the next line.
+ */
 export function writeLog(tag: string, msg: string): void {
   if (!isTauri) return;
-  const line = `${tag}\n${msg}`;
-  if (line === lastLogLine) return;
   const now = Date.now();
-  if (now - logMinute >= 60_000) {
+  const freshMinute = now - logMinute >= 60_000;
+  if (freshMinute) {
     logMinute = now;
     logLines = 0;
   }
+  const line = `${tag}\n${msg}`;
+  if (line === lastLogLine && !freshMinute) {
+    logRepeats += 1;
+    return;
+  }
   if (logLines >= logCap) return;
+  const out = logRepeats === 0
+    ? msg
+    : line === lastLogLine
+      ? `${msg} (${logRepeats} more since the last line)`
+      : `${msg} (previous line repeated ${logRepeats}x)`;
   logLines += 1;
   lastLogLine = line;
-  invoke("write_log", { tag, msg }).catch(() => {});
+  logRepeats = 0;
+  invoke("write_log", { tag, msg: out }).catch(() => {});
 }
 
 /** Whether this is the debug build for testers; there the page logs more and the per-minute cap is higher. */
