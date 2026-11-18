@@ -44,12 +44,14 @@ CREATE TABLE IF NOT EXISTS drops (
   pool TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS drops_player ON drops (player_id, id);
--- A save's draws from one limited pool (app/banners.py): how many, and how many since its last featured item.
+-- A save's draws from one limited pool (app/banners.py): how many, how many since its last featured item, and the
+-- shared tiers whose next draw gives a featured item (comma-separated), as the last draw in them gave a standing one.
 CREATE TABLE IF NOT EXISTS banner_draws (
   player_id TEXT NOT NULL,
   banner TEXT NOT NULL,
   pity INTEGER NOT NULL DEFAULT 0,
   drawn INTEGER NOT NULL DEFAULT 0,
+  guaranteed TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (player_id, banner)
 );
 CREATE TABLE IF NOT EXISTS activity_budget (

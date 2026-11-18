@@ -458,7 +458,9 @@ class Game:
             # A tier with nothing left to find drops out and its odds go to common, unless it keeps rolling repeats.
             repeating = {r for r in cfg.get("repeatTiers", ()) if pool.get(r)}
             featured = [self.manifest.items[i] for i in banner.items if i not in owned] if banner else []
-            mine = st.banner_draws(pid).get(banner.id, {"pity": 0, "drawn": 0}) if banner else None
+            mine = st.banner_draws(pid).get(banner.id, {"pity": 0, "drawn": 0, "guaranteed": []}) if banner else None
+            # Shared tiers whose last draw here gave a standing item: their next draw gives a featured one.
+            sure = set(mine["guaranteed"]) if mine else set()
             for _ in range(n):
                 available = {r for r in missing if missing[r]} | repeating
                 if banner and banner.share:
@@ -479,11 +481,15 @@ class Game:
                     # The tier's standing items are all found and it rolls no repeats: the featured ones are what
                     # kept it in the roll.
                     only = not missing[rarity] and rarity not in repeating
-                    if shared and (only or self.rng.random() * 100 < banner.share):
+                    if shared and (only or rarity in sure or self.rng.random() * 100 < banner.share):
                         up = True
                         item = shared[min(int(self.rng.random() * len(shared)), len(shared) - 1)]
                         featured.remove(item)
                         candidates = [item]
+                    elif shared:
+                        sure.add(rarity)
+                if up:
+                    sure.discard(rarity)
                 if mine is not None:
                     mine["drawn"] += 1
                     # A whole set keeps no count: there is nothing left for it to promise.
@@ -535,7 +541,9 @@ class Game:
             day = day_of(now)
             st.add_ledger(pid, day, "draw", -n * cfg["cost"], n)
             if banner:
-                st.save_banner_draws(pid, banner.id, mine["pity"], mine["drawn"])
+                # A tier whose featured items are all found has nothing left to promise.
+                left = {item["rarity"] for item in featured}
+                st.save_banner_draws(pid, banner.id, mine["pity"], mine["drawn"], sure & left)
             if refund:
                 st.add_ledger(pid, day, "duplicate", refund, sum(1 for d in drops if d["shards"] > 0))
         return {**self.status(token), "drops": drops}
@@ -554,6 +562,18 @@ class Game:
         if not holo and card["rarity"] == "epic" and card["tier"] == "normal" and "dance" in refunds:
             return int(refunds["dance"])
         return int(refunds.get(card["tier"], 0))
+
+    def fill_banner_guarantees(self) -> int:
+        """Once per database: the saves whose last draw in a shared tier of a limited pool gave a standing item before
+        the guarantee was kept get it now. Returns the saves marked."""
+        featured: dict[str, dict[str, frozenset[str]]] = {}
+        for banner in self.manifest.banners:
+            if banner.share:
+                tiers: dict[str, set[str]] = {}
+                for iid in banner.items:
+                    tiers.setdefault(self.manifest.items[iid]["rarity"], set()).add(iid)
+                featured[banner.id] = {t: frozenset(items) for t, items in tiers.items()}
+        return self.store.fill_banner_guarantees("banner-guarantees-1.2.6", featured, self.now())
 
     def refund_duplicate_cards(self) -> tuple[int, int]:
         """Once per database: cards kept as repeats before 1.1 turn into shards. Returns (players, shards)."""
@@ -827,9 +847,12 @@ class Game:
         }
         if self.manifest.banners:
             # The save's count in each limited pool that runs or is about to: draws there, and since its last featured item.
+            # `guaranteed`, when any: the tiers whose next draw there gives a featured item.
             mine = self.store.banner_draws(pid)
             open_now = {b.id for b in self.manifest.banners_for(None, now)}
-            out["resonance"]["banners"] = {bid: v for bid, v in mine.items() if bid in open_now}
+            out["resonance"]["banners"] = {
+                bid: {"pity": v["pity"], "drawn": v["drawn"], **({"guaranteed": g} if (g := v["guaranteed"]) else {})}
+                for bid, v in mine.items() if bid in open_now}
         if self.manifest.scratch:
             out["scratch"] = {"left": self._scratch_left(pid, day), "pity": p["scratch_pity"]}
         if self.manifest.duel:

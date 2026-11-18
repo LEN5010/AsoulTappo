@@ -5,7 +5,7 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Callable, Any
+from typing import Any, Callable, Iterable
 
 from .store_admin import AdminStore
 from .store_ddz import DdzStore
@@ -152,6 +152,9 @@ class Store(AdminStore, ParkStore, DdzStore):
             for field in ("source", "pool"):
                 if field not in self._columns("drops"):
                     self._db.execute(f"ALTER TABLE drops ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
+            # Filled from the drop log once (fill_banner_guarantees), since the game knows the featured items.
+            if "guaranteed" not in self._columns("banner_draws"):
+                self._db.execute("ALTER TABLE banner_draws ADD COLUMN guaranteed TEXT NOT NULL DEFAULT ''")
 
     def _commit(self) -> None:
         if not getattr(self, "_in_tx", False):
@@ -611,19 +614,57 @@ class Store(AdminStore, ParkStore, DdzStore):
                 self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, now))
             return sum(1 for n in paid.values() if n), sum(paid.values())
 
-    def banner_draws(self, pid: str) -> dict[str, dict[str, int]]:
-        """banner id -> {pity, drawn} for every limited pool the save drew from."""
+    def banner_draws(self, pid: str) -> dict[str, dict[str, Any]]:
+        """banner id -> {pity, drawn, guaranteed} for every limited pool the save drew from; `guaranteed` is a sorted
+        list of tiers."""
         with self._lock:
-            rows = self._db.execute("SELECT banner, pity, drawn FROM banner_draws WHERE player_id=?", (pid,)).fetchall()
-        return {r["banner"]: {"pity": r["pity"], "drawn": r["drawn"]} for r in rows}
+            rows = self._db.execute(
+                "SELECT banner, pity, drawn, guaranteed FROM banner_draws WHERE player_id=?", (pid,)).fetchall()
+        return {r["banner"]: {"pity": r["pity"], "drawn": r["drawn"],
+                              "guaranteed": sorted(t for t in r["guaranteed"].split(",") if t)} for r in rows}
 
-    def save_banner_draws(self, pid: str, banner: str, pity: int, drawn: int) -> None:
+    def save_banner_draws(self, pid: str, banner: str, pity: int, drawn: int, guaranteed: Iterable[str] = ()) -> None:
         with self._lock:
             self._db.execute(
-                "INSERT INTO banner_draws (player_id, banner, pity, drawn) VALUES (?,?,?,?) "
-                "ON CONFLICT(player_id, banner) DO UPDATE SET pity=excluded.pity, drawn=excluded.drawn",
-                (pid, banner, pity, drawn))
+                "INSERT INTO banner_draws (player_id, banner, pity, drawn, guaranteed) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(player_id, banner) DO UPDATE SET pity=excluded.pity, drawn=excluded.drawn, "
+                "guaranteed=excluded.guaranteed",
+                (pid, banner, pity, drawn, ",".join(sorted(set(guaranteed)))))
             self._commit()
+
+    def fill_banner_guarantees(self, name: str, featured: dict[str, dict[str, frozenset[str]]], now: float) -> int:
+        """Once per database (recorded as `name`): marks the shared tiers each save's next draw in a limited pool
+        guarantees, for draws made before the guarantee was kept. [featured]: banner id -> tier -> the featured items
+        of that tier. A tier is marked when the save's last drop of it from the pool was not featured and the save
+        still lacks a featured item of it. Returns the saves marked."""
+        with self._lock:
+            if self._db.execute("SELECT 1 FROM migrations WHERE name=?", (name,)).fetchone():
+                return 0
+            marked: dict[tuple[str, str], set[str]] = {}
+            for banner, tiers in featured.items():
+                if not tiers:
+                    continue
+                marks = ",".join("?" * len(tiers))
+                rows = self._db.execute(
+                    f"SELECT d.player_id, d.rarity, d.item_id FROM drops d JOIN (SELECT MAX(id) AS id FROM drops "
+                    f"WHERE pool=? AND rarity IN ({marks}) GROUP BY player_id, rarity) last "
+                    f"ON d.id = last.id", (banner, *tiers)).fetchall()
+                for r in rows:
+                    items = tiers[r["rarity"]]
+                    if r["item_id"] in items:
+                        continue
+                    have = self._db.execute(
+                        f"SELECT COUNT(*) FROM items WHERE player_id=? AND item_id IN ({','.join('?' * len(items))})",
+                        (r["player_id"], *items)).fetchone()[0]
+                    if have < len(items):
+                        marked.setdefault((r["player_id"], banner), set()).add(r["rarity"])
+            with self._db:
+                self._db.executemany(
+                    "INSERT INTO banner_draws (player_id, banner, guaranteed) VALUES (?,?,?) "
+                    "ON CONFLICT(player_id, banner) DO UPDATE SET guaranteed=excluded.guaranteed",
+                    [(pid, banner, ",".join(sorted(t))) for (pid, banner), t in marked.items()])
+                self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, now))
+            return len(marked)
 
     def log_drops(self, pid: str, drops: list[dict], now: float, pool: str = "") -> None:
         """The drops of one draw request, in the order drawn; [pool] is the limited pool they are from."""

@@ -129,6 +129,10 @@ game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manife
 _paid_players, _paid_shards = game.refund_duplicate_cards()
 if _paid_players:
     print(f"refunded duplicate cards: {_paid_shards} shards to {_paid_players} players", flush=True)
+# 1.2.6: a limited pool keeps the guarantee after a standing item in a shared tier; draws before that set it once.
+_marked = game.fill_banner_guarantees()
+if _marked:
+    print(f"limited pool guarantees: {_marked} saves", flush=True)
 _pruned = game.prune_activity_sessions()
 if _pruned:
     print(f"pruned {_pruned} old tap sessions", flush=True)
