@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
 .seat { position: absolute; top: 58px; width: 214px; display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; }
 .seat.left { left: 24px; }
 .seat.right { right: 24px; }
-.seat :deep(.bg), .me :deep(.bg) { filter: var(--contour); }
+.seat :deep(.still), .me :deep(.still) { filter: var(--contour); }
 .seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
 /* The name tag (or plate) right under the pet; the cards left hang beside it on the side of the table's middle, so
    nothing reaches the mat's edge. */

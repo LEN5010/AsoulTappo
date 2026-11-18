@@ -22,9 +22,9 @@ const BUBBLE = { x: 36, y: 62 };
 </template>
 
 <style scoped>
-/* Contour stays on the still background. The paw and keyboard move inside .art, and a filter
-   on .art would redraw the whole pet on every pointer frame. Same split as the room seats. */
-:deep(.bg) {
+/* Contour stays on the still pictures (PetView's .still, with the second form's wings). The paw and keyboard move
+   inside .art, and a filter on .art would redraw the whole pet on every pointer frame. Same split as the room seats. */
+:deep(.still) {
   filter: var(--sticker-lg);
 }
 </style>

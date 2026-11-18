@@ -78,7 +78,7 @@ button.seat {
   color: inherit;
   cursor: pointer;
 }
-.seat :deep(.bg) {
+.seat :deep(.still) {
   filter: var(--contour);
 }
 .vacant i {

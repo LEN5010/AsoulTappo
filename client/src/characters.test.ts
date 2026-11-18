@@ -52,6 +52,15 @@ describe("two-form skins", () => {
   });
   // A loop may reach past the top (贝拉炎头队长's flame) or the right edge (嘉然然龙's open wing) of the picture; the
   // pet draws it outside its box.
+  it("draw the armillary behind the figure and the artist-clipped wings and flame over it", () => {
+    expect(Object.values(characters).filter((c) => c.form?.loop?.behind).map((c) => c.name).sort())
+      .toEqual(["乃琳法师"]);
+  });
+  it("summon only 乃琳法师's armillary; the others fade in", () => {
+    expect(Object.values(characters).filter((c) => c.form?.loop?.entrance).map((c) => [c.name, c.form!.loop!.entrance]))
+      .toEqual([["乃琳法师", "summon"]]);
+  });
+
   it.each(["贝拉炎头队长", "乃琳法师", "嘉然然龙"])("loop the moving part of %s over its second picture", (name) => {
     const loop = characters[name]!.form!.loop!;
     expect(loop.src).toBeTruthy();

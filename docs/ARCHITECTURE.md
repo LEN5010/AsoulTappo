@@ -200,7 +200,7 @@ A skin is one entry in `SKINS` (`scripts/asset_catalog.py`) plus `client/src/ass
 - `since` is the release that ships the picture. The server keeps the skin out of older clients' pools, so the server can be deployed first.
 - The skins sharing the newest `since` are that release's launch spotlight (`stores/spotlight.ts`, `panel/SkinSpotlight.vue`), shown once per device, titled with their series or 新皮肤 when the batch mixes series.
 - A two-form skin adds `formImage.webp` on the same canvas; `build_previews.py` writes its `form-480` and `form-960` too.
-- To move the parts the second picture adds, add the skin to `LOOPS` in `scripts/make_form_loop.py` (a flame that burns, or a glint that sweeps over the part). For a flame, put the second picture with the parts drawn in under `docs/assets/form-loops/`; the script writes `formImage.webp` without them. A glint leaves `formImage.webp` as it is. Both write `formLoop.webp` and `formLoop.json`. Rebuild the previews after it.
+- To move the parts the second picture adds, add the skin to `LOOPS` in `scripts/make_form_loop.py` (a flame that burns, or an armillary that turns behind the head). For a flame, put the second picture with the parts drawn in under `docs/assets/form-loops/`; the script writes `formImage.webp` without them. The armillary is drawn by the script, leaves `formImage.webp` as it is and marks its loop `behind`, so it shows under the second picture, and `entrance: summon`, so it spins up out of a flash of light and folds back into one instead of fading. Both write `formLoop.webp` and `formLoop.json`. Rebuild the previews after it.
 - Tests count skins and cards from the manifest, so they need no change.
 
 ## Performance notes

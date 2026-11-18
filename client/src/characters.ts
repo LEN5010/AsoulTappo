@@ -23,6 +23,11 @@ export interface FormLoopSpec {
   ms: number;
   width: number;
   height: number;
+  /** Drawn behind the second picture instead of over it: wings that grow from the back under the long hair, an instrument floating behind the head. */
+  behind?: boolean;
+  /** How the loop comes and goes with the second form. Without it, a fade; `summon`: it spins up out of a flash of
+   *  light and folds back into one. */
+  entrance?: "summon";
 }
 const loops = import.meta.glob("./assets/characters/*/formLoop.json", { eager: true, import: "default" }) as Record<string, FormLoopSpec>;
 

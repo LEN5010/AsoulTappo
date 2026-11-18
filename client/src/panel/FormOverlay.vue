@@ -13,6 +13,8 @@ const loop = computed(() => {
   const pct = (v: number, of: number) => `${(v / of) * 100}%`;
   return {
     src: l.src,
+    behind: !!l.behind,
+    summon: l.entrance === "summon",
     fit: { "--ar": l.width / l.height },
     box: {
       left: pct(l.x, l.width), top: pct(l.y, l.height), width: pct(l.w, l.width), height: pct(l.h, l.height),
@@ -24,9 +26,12 @@ const loop = computed(() => {
 
 <template>
   <span v-if="form" class="form-overlay" :class="{ on }" aria-hidden="true">
+    <span v-if="loop?.behind" class="fit" :style="loop.fit">
+      <span class="loop" :class="{ summon: loop.summon }" :style="loop.box"><img :src="loop.src" alt="" draggable="false" /></span>
+    </span>
     <img class="second" :src="form.bg" alt="" draggable="false" />
-    <span v-if="loop" class="fit" :style="loop.fit">
-      <span class="loop" :style="loop.box"><img :src="loop.src" alt="" draggable="false" /></span>
+    <span v-if="loop && !loop.behind" class="fit" :style="loop.fit">
+      <span class="loop" :class="{ summon: loop.summon }" :style="loop.box"><img :src="loop.src" alt="" draggable="false" /></span>
     </span>
   </span>
 </template>
@@ -73,5 +78,14 @@ const loop = computed(() => {
 }
 @keyframes loop-steps {
   to { transform: translateX(-100%); }
+}
+/* A summoned loop spins up from a point, overbright, as the second form comes on (PetView.vue). */
+.form-overlay.on .loop.summon {
+  animation: loop-summon 680ms var(--ease-out) both;
+}
+@keyframes loop-summon {
+  0% { opacity: 0; transform: scale(0.15) rotate(-150deg); filter: brightness(2.6); }
+  50% { opacity: 1; transform: scale(1.1) rotate(8deg); filter: brightness(1.6); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); filter: brightness(1); }
 }
 </style>

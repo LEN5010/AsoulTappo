@@ -667,15 +667,15 @@ onBeforeUnmount(() => {
   transition: left var(--dur-stage) var(--ease-out), top var(--dur-stage) var(--ease-out), rotate var(--dur-stage) var(--ease-out),
     translate var(--dur-base) var(--ease-out), opacity var(--dur-base);
 }
-.figure :deep(.bg) {
+.figure :deep(.still) {
   filter: var(--sticker-lg);
 }
 /* Opaque dimming on back stickers so overlapping silhouettes never bleed through one another. */
-.figure:not(.s0) :deep(.bg) {
+.figure:not(.s0) :deep(.still) {
   filter: var(--sticker) brightness(0.93);
   transition: filter var(--dur-base);
 }
-.figure:not(.s0):hover:not(:disabled) :deep(.bg) {
+.figure:not(.s0):hover:not(:disabled) :deep(.still) {
   filter: var(--sticker);
 }
 .pet-sticker {
@@ -951,10 +951,7 @@ h3 {
   width: max-content;
   animation: strip-pass var(--marquee, 80s) linear infinite;
 }
-.hold .strip-track,
-.closet-strip:hover .strip-track {
-  animation-play-state: paused;
-}
+/* It keeps passing under the pointer and while the stage holds; only the keyboard walking it stops it. */
 .keyed .strip-track,
 .calm .strip-track {
   animation: none;

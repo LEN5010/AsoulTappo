@@ -177,11 +177,16 @@ const bubbleAnchor = computed(() => ({
 <template>
   <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
     <div v-if="assets" class="art">
-      <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
-      <img v-if="assets.form" class="layer bg form" :class="{ shown: formOn }" :src="sized(assets.form)" :style="{ width: box.width }" draggable="false" alt="" />
-      <Transition name="loop">
-        <span v-if="loop && formOn && active" class="layer loop" :style="loopStyle"><img :src="loop.src" draggable="false" alt="" /></span>
-      </Transition>
+      <div class="still">
+        <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
+        <Transition :name="loop?.entrance === 'summon' ? 'loop-summon' : 'loop'">
+          <span v-if="loop?.behind && formOn && active" class="layer loop" :style="loopStyle"><img :src="loop.src" draggable="false" alt="" /></span>
+        </Transition>
+        <img v-if="assets.form" class="layer bg form" :class="{ shown: formOn }" :src="sized(assets.form)" :style="{ width: box.width }" draggable="false" alt="" />
+        <Transition :name="loop?.entrance === 'summon' ? 'loop-summon' : 'loop'">
+          <span v-if="loop && !loop.behind && formOn && active" class="layer loop" :style="loopStyle"><img :src="loop.src" draggable="false" alt="" /></span>
+        </Transition>
+      </div>
       <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
       <span v-if="motionId || leftDown" class="layer mouse click" :class="{ 'click-left': motionId }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
@@ -207,6 +212,9 @@ const bubbleAnchor = computed(() => ({
 .pet { position: relative; user-select: none; }
 .art { position: absolute; inset: 0; }
 .layer { position: absolute; pointer-events: none; }
+/* The pictures and the second form's moving part, without the paws: an outline put on the pet goes round this, so it
+   runs round body and wings as one, and the paws moving never redraw it. */
+.still { position: absolute; inset: 0; pointer-events: none; }
 /* Width only, bottom-aligned: a picture taller than the canvas holds headwear above it and draws past the top. */
 .bg { left: 0; bottom: 0; height: auto; }
 /* The second form fades in over the first, which then hides; going back, the first shows before the fade out. */
@@ -222,6 +230,35 @@ const bubbleAnchor = computed(() => ({
 }
 .loop-enter-active, .loop-leave-active { transition: opacity var(--dur-slow) var(--ease-out); }
 .loop-enter-from, .loop-leave-to { opacity: 0; }
+/* A summoned loop spins up from a point, overbright, out of a flash of light, and folds back into one. */
+.loop-summon-enter-active { animation: loop-summon 680ms var(--ease-out) both; }
+.loop-summon-leave-active { animation: loop-dismiss 460ms var(--ease-in) both; }
+.loop-summon-enter-active::after, .loop-summon-leave-active::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 248 226 / 0.95), rgb(255 208 120 / 0.6) 42%, transparent 74%);
+}
+.loop-summon-enter-active::after { animation: loop-flash-in 680ms ease-out both; }
+.loop-summon-leave-active::after { animation: loop-flash-out 460ms ease-in both; }
+@keyframes loop-summon {
+  0% { opacity: 0; transform: scale(0.15) rotate(-150deg); filter: brightness(2.6); }
+  50% { opacity: 1; transform: scale(1.1) rotate(8deg); filter: brightness(1.6); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); filter: brightness(1); }
+}
+@keyframes loop-dismiss {
+  0% { opacity: 1; transform: scale(1) rotate(0deg); filter: brightness(1); }
+  30% { opacity: 1; transform: scale(1.08) rotate(-10deg); filter: brightness(1.7); }
+  100% { opacity: 0; transform: scale(0.12) rotate(140deg); filter: brightness(2.8); }
+}
+@keyframes loop-flash-in {
+  0% { opacity: 0; transform: scale(0.3); }
+  25% { opacity: 1; transform: scale(0.9); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+@keyframes loop-flash-out {
+  0%, 25% { opacity: 0; transform: scale(1); }
+  70% { opacity: 1; transform: scale(0.9); }
+  100% { opacity: 0; transform: scale(0.6); }
+}
 /* The two paws are layers of their own: moving one changes where its layer is put, and nothing is painted
    again. Without this every step of a paw repaints the tiles under the pet. */
 .kb, .mouse { will-change: transform; }
