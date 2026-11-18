@@ -51,6 +51,34 @@ def test_a_batch_reaches_the_guard_with_its_headers_less_credentials_and_address
     assert not {"x-player-token", "x-forwarded-for", "cookie"} & set(got)
 
 
+def test_a_batch_names_its_save_session_and_sequence(client):
+    seen = _Seen()
+    main.game.guard = seen
+    client.post("/api/activity", json={**BATCH, "taps": 3}, headers=H)
+    batch = seen.batches[0]
+    assert (batch.save, batch.session, batch.sequence) == (player_id_for(TOKEN), BATCH["session"], 1)
+
+
+def test_the_guard_is_told_of_every_request_made_for_a_save(client):
+    guard, calls = Guard(), []
+    guard.seen = lambda *call: calls.append(call)
+    main.game.guard = guard
+    client.get("/api/me", headers={**H, "Origin": "tauri://localhost", "X-Forwarded-For": "203.0.113.9"})
+    client.post("/api/presence", json={"session": BATCH["session"]}, headers=H)
+    assert client.get("/api/me").status_code == 401
+    assert [(save, method, path) for save, method, path, _, _ in calls] == [
+        (player_id_for(TOKEN), "GET", "/api/me"), (player_id_for(TOKEN), "POST", "/api/presence")]
+    assert calls[0][3]["origin"] == "tauri://localhost" and not {"x-player-token", "x-forwarded-for"} & set(calls[0][3])
+    assert calls[0][4] == main.game.now()
+
+
+def test_a_rule_failing_on_a_request_does_not_fail_the_request(client):
+    guard = Guard()
+    guard.seen = lambda *call: 1 / 0
+    main.game.guard = guard
+    assert client.get("/api/me", headers=H).status_code == 200
+
+
 def test_activity_resonance_collection_flow(client):
     r = client.post("/api/activity", json={**BATCH, "taps": 25}, headers=H).json()
     assert r["credited"] == r["totals"]["taps"] == 25

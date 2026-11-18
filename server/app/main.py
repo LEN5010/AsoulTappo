@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import logging
 import os
 import secrets
 import signal
@@ -48,6 +49,8 @@ from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
 from .store import Store
+
+log = logging.getLogger(__name__)
 
 SAMPLE_SECONDS = 60
 # Background loops of the park's games (the race's schedule, the lottery's draw), each an async function that runs
@@ -377,22 +380,34 @@ def _who(token: str, authorization: str) -> PlayerId:
     return PlayerId(pid)
 
 
-def player(x_player_token: str = Header(default=""), authorization: str = Header(default=""),
+def _seen(request: Request, who: PlayerId) -> None:
+    """Tells the guard of a request made for a save, where its rules ask for that (app/guard.py)."""
+    rule = game.guard.seen
+    if rule is None:
+        return
+    try:
+        rule(str(who), request.method, request.url.path, _batch_headers(request), game.now())
+    except Exception:  # a broken rule must not cost anyone a request
+        log.exception("the guard failed on a request")
+
+
+def player(request: Request, x_player_token: str = Header(default=""), authorization: str = Header(default=""),
            x_client_version: str = Header(default="")) -> PlayerId:
     if notice.outdated(x_client_version):
         raise HTTPException(426, {"code": "client_outdated", "message": OUTDATED_MESSAGE})
     who = _guard(_who, x_player_token, authorization)
     game.tracker.client(who, x_client_version)
+    _seen(request, who)
     return who
 
 
-def reader(x_player_token: str = Header(default=""), authorization: str = Header(default=""),
+def reader(request: Request, x_player_token: str = Header(default=""), authorization: str = Header(default=""),
            x_client_version: str = Header(default="")) -> PlayerId:
     """`player` for GET /api/me. Other apps of the same account (Asasfans Next) read the save with the main-site
     token and no client version; the minimum version is for this app's clients, so such a request passes it."""
     if authorization and not x_client_version:
         return _guard(_who, "", authorization)
-    return player(x_player_token, authorization, x_client_version)
+    return player(request, x_player_token, authorization, x_client_version)
 
 
 class ActivityBody(BaseModel):

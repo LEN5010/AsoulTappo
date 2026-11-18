@@ -387,10 +387,16 @@ def test_the_guard_file_is_loaded_by_path(tmp_path, monkeypatch):
     notes = {}
     assert loaded.judge(Batch(160, None, 20.0, 0.0), notes) == 60 and notes == {"n": 1}
     assert loaded.judge(Batch(10, None, 20.0, 0.0), notes) == 0
+    assert loaded.seen is None
     monkeypatch.setenv(guard_file.ENV, str(rules))
     assert guard_file.load().judge(Batch(160, None, 20.0, 0.0), {}) == 60
     monkeypatch.delenv(guard_file.ENV)
     assert type(guard_file.load()) is Guard
+    rules.write_text("calls = []\ndef judge(batch, notes):\n    return 0\n"
+                     "def seen(*call):\n    calls.append(call)\n", encoding="utf-8")
+    told = guard_file.load(rules)
+    told.seen("save", "GET", "/api/me", {}, 1.0)
+    assert told.seen.__globals__["calls"] == [("save", "GET", "/api/me", {}, 1.0)]
     (tmp_path / "empty.py").write_text("x = 1\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="judge"):
         guard_file.load(tmp_path / "empty.py")

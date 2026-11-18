@@ -12,7 +12,9 @@ showing the save's taps and motion while that answer holds. From a client that c
 The rules live in a Python file named by ``ASOULTAPPO_GUARD``, next to the economy file on the server. It defines
 ``judge(batch, notes)`` with the meaning of ``Guard.judge`` below, and may define ``cooldown(batch, notes)`` with that
 of ``Guard.cooldown``. A file that defines ``daily_cooldown(batch, judged, notes)`` gets that call in its place,
-with a save's notes shared across sessions for the China day. Without the variable nothing is judged.
+with a save's notes shared across sessions for the China day. One that defines
+``seen(save, method, path, headers, now)`` is told of every request made for a save. Without the variable nothing
+is judged.
 
 AUTOMATED INPUT: section 5 of the user agreement (client/src/legal/terms.md) forbids earning taps or rewards on the
 official server (len5010.top/tappo) with clickers, scripts, macros or a changed client; saves that do lose their
@@ -46,17 +48,25 @@ class Batch:
     headers: Mapping[str, str] = field(default_factory=dict)
     strikes_today: int = 0
     cooling: bool = False
+    # The save, session and sequence number the batch came under; empty and 0 where there was none.
+    save: str = ""
+    session: str = ""
+    sequence: int = 0
 
 
 # Optional alternative to the session cooldown. Called once per accepted batch, with the current
 # judgement and notes shared by all sessions of the save on this China day.
 DailyRule = Callable[[Batch, bool, dict[str, Any]], float]
+# Optional. Called for every request made for a save, before it is served: the save, the method, the path, the
+# headers as a batch carries them, and the time. Runs on the request's thread, outside any transaction.
+SeenRule = Callable[[str, str, str, Mapping[str, str], float], None]
 
 
 class Guard:
     """Judges nothing: every batch is a hand's."""
 
     daily_cooldown: DailyRule | None = None
+    seen: SeenRule | None = None
 
     def judge(self, batch: Batch, notes: dict[str, Any]) -> float:
         """Seconds from ``batch.now`` for which the save's input counts as automatic; 0 for a hand's. ``notes`` is
@@ -74,8 +84,10 @@ Rule = Callable[[Batch, dict[str, Any]], float]
 
 
 class FileGuard(Guard):
-    def __init__(self, judge: Rule, cooldown: Rule | None = None, daily_cooldown: DailyRule | None = None) -> None:
+    def __init__(self, judge: Rule, cooldown: Rule | None = None, daily_cooldown: DailyRule | None = None,
+                 seen: SeenRule | None = None) -> None:
         self.daily_cooldown = daily_cooldown
+        self.seen = seen
         self._judge = judge
         self._cooldown = cooldown
 
@@ -101,4 +113,6 @@ def load(path: Path | str | None = None) -> Guard:
         raise RuntimeError(f"{ENV}: {path} defines no judge(batch, notes)")
     cooldown = getattr(module, "cooldown", None)
     daily = getattr(module, "daily_cooldown", None)
-    return FileGuard(judge, cooldown if callable(cooldown) else None, daily if callable(daily) else None)
+    seen = getattr(module, "seen", None)
+    return FileGuard(judge, cooldown if callable(cooldown) else None, daily if callable(daily) else None,
+                     seen if callable(seen) else None)
