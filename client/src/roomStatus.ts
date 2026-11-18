@@ -13,8 +13,9 @@ export const ROOM_STATUSES: readonly RoomStatus[] = [
   { id: "work", label: "工作", icon: "briefcase" },
   { id: "study", label: "学习", icon: "pencil" },
   { id: "game", label: "打游戏", icon: "gamepad" },
-  { id: "music", label: "听歌", icon: "music" },
   { id: "live", label: "看直播", icon: "tv" },
+  // Chosen, or shown by itself after a while without input (stores/away.ts).
+  { id: "away", label: "离开", icon: "moon" },
 ];
 
 /** The status with this id; null for none or one this client does not know. */

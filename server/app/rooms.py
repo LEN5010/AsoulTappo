@@ -78,8 +78,9 @@ class NeedSave(Exception):
 
 
 # Statuses a member may show in a room, chosen from this list only: slacking off, working, studying, gaming,
-# listening to music, watching a live stream.
-ROOM_STATUSES = ("fish", "work", "study", "game", "music", "live")
+# listening to music (clients from before 1.2.5 only), watching a live stream, away. A client shows `away` by
+# itself too, after a while without input.
+ROOM_STATUSES = ("fish", "work", "study", "game", "music", "live", "away")
 
 
 def room_status(value: str | None) -> str | None:

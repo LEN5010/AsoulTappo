@@ -19,7 +19,7 @@ def join(ws, nick, **extra):
 
 
 def test_only_listed_statuses_show():
-    assert ROOM_STATUSES == ("fish", "work", "study", "game", "music", "live")
+    assert ROOM_STATUSES == ("fish", "work", "study", "game", "music", "live", "away")
     assert [room_status(s) for s in ("game", "", None, "chat", "GAME")] == ["game", None, None, None, None]
 
 

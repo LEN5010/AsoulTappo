@@ -15,6 +15,7 @@ import { faceKey, faceOf } from "../scratch";
 import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlayer";
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
+import { shownStatus } from "./away";
 import { activeAccount, account, collection, token, saveCode, reloadStatus, setAccount, status } from "./player";
 import { Api, authHeaders } from "../net/api";
 import { isPanelWindow, writeLog } from "../composables/tauri";
@@ -723,7 +724,7 @@ export function joinRoom(room: string): void {
     ...(settings.plate ? { plate: settings.plate } : {}),
     ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
     ...(duelDnd() ? { dnd: true } : {}),
-    ...(settings.status ? { status: settings.status } : {}),
+    ...(shownStatus.value ? { status: shownStatus.value } : {}),
     ddz: true,
   });
 }
@@ -820,8 +821,8 @@ watch(() => [saveCode.value, account.value?.token], () => {
 watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });
 watch(() => settings.plate, (plate) => { if (!isPanelWindow) syncProfile({ plate }); }, { flush: "sync" });
-// With the nick, which servers from before statuses need in a state.
-watch(() => settings.status, (status) => { if (!isPanelWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
+// With the nick, which servers from before statuses need in a state. The status is the chosen one, or away by itself.
+watch(shownStatus, (status) => { if (!isPanelWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
 watch(() => settings.batchMs, (ms) => { if (!isPanelWindow) setBatchMs(ms); });
 // Told to the server only when it has duels; the next join carries it either way.
 watch(duelDnd, (on) => { if (!isPanelWindow) client.setDnd(on, duelOn.value); }, { flush: "sync" });
