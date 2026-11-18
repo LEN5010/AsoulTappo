@@ -421,6 +421,8 @@ function scratchTo(e: PointerEvent) {
   const from = last ?? to;
   last = to;
   ctx.globalCompositeOperation = "destination-out";
+  // Opaque, whatever drawCoat() left set: a see-through style would take the foil off only in part.
+  ctx.strokeStyle = ctx.fillStyle = "#000";
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = BRUSH * 2 * w;
