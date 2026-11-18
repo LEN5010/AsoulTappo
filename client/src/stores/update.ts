@@ -3,7 +3,7 @@
 // the Tauri updater; when that fails, the dialog offers the download page on the main site.
 import { computed, ref, watch } from "vue";
 import type { Update } from "@tauri-apps/plugin-updater";
-import { isTauri, openAboutLink } from "../composables/tauri";
+import { isTauri, openAboutLink, writeLog } from "../composables/tauri";
 import { agreed } from "../legal/consent";
 import { Api, type Announcement, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
@@ -244,6 +244,7 @@ type InstallEvent =
  */
 export async function installUpdate(): Promise<void> {
   const want = updateOffer.value?.version;
+  writeLog("update", `install ${want ?? "none"}, busy ${updateBusy.value}, failed ${updateFailed.value}`);
   if (!want || updateBusy.value) return;
   if (updateFailed.value || !isTauri) {
     openAboutLink(DOWNLOAD_PAGE);

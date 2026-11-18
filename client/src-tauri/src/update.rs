@@ -41,6 +41,7 @@ pub async fn install_version(
     version: String,
     on_event: Channel<InstallEvent>,
 ) -> Result<bool, String> {
+    applog!("update", "{version}: install");
     // The dialog shows one line for every failure; the log keeps which one it was.
     let result = install(app, &version, on_event).await;
     match &result {
