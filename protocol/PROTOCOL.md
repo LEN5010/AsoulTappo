@@ -231,7 +231,7 @@ WebSocket 地址为 `/ws`，每帧一个 JSON 对象。不是 JSON 文本或字�
 | GET /admin/notice | minVersion 和 announcements（含已过期的，每条带 since） |
 | PUT /admin/notice | 整体替换。minVersion 为空字符串时取消限制；announcements 最多 20 条，每条 id、title（最多 40 字）、body（最多 2000 字）、until（Unix 秒，0 为不过期）、daily（布尔，缺省 false）。since 由服务端记录：id 已有的沿用原来的，新 id 记保存时间，请求里带的 since 不采用；没有 since 的旧公告在服务端启动时记为启动时间 |
 
-客户端从 1.1.3 起在每个 HTTP 请求里带 `X-Client-Version`，房间连接地址带 `?v=`。设置 minVersion 后，版本更低或没有带版本的请求返回 426 `client_outdated`，加入房间收到 reason 为 `client_outdated` 的最终拒绝；`GET /api/client/release` 不受限制。1.1.3 及以后的客户端读到 minVersion 高于自己时，更新弹窗不能关闭；更早的客户端不带版本，只会看到请求失败。客户端 1.2.4 起把当前公告放在公告板里（面板顶栏的公告键），一条一页，新的在上；有没看过的公告时面板打开就弹出公告板，关掉后列表里的都算看过，已读记录在本机。更早的客户端每条单独弹出一次。`scripts/notice.py` 是这两个接口的命令行包装。
+客户端从 1.1.3 起在每个 HTTP 请求里带 `X-Client-Version`，房间连接地址带 `?v=`。设置 minVersion 后，版本更低或没有带版本的请求返回 426 `client_outdated`，加入房间收到 reason 为 `client_outdated` 的最终拒绝；`GET /api/client/release` 不受限制，带主站令牌、不带版本的 `GET /api/me` 也不受限制（同一账号的其他应用读存档用）。1.1.3 及以后的客户端读到 minVersion 高于自己时，更新弹窗不能关闭；更早的客户端不带版本，只会看到请求失败。客户端 1.2.4 起把当前公告放在公告板里（面板顶栏的公告键），一条一页，新的在上；有没看过的公告时面板打开就弹出公告板，关掉后列表里的都算看过，已读记录在本机。更早的客户端每条单独弹出一次。`scripts/notice.py` 是这两个接口的命令行包装。
 
 ### 更新奖励
 
