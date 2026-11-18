@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// Over the pet while its inputs sit out a cooldown for going faster than a hand: how long is left.
+// Over the pet while its inputs sit out a cooldown, for going faster than a hand or ([auto]) for keeping automatic
+// input on after the note about it: how long is left, in minutes while that is two or more.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
-const props = defineProps<{ until: number }>();
+const props = defineProps<{ until: number; auto?: boolean }>();
 const now = ref(Date.now());
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -18,12 +19,13 @@ watch(() => props.until, (until) => {
 onBeforeUnmount(() => clearInterval(timer));
 
 const left = computed(() => Math.ceil((props.until - now.value) / 1000));
+const wait = computed(() => (left.value >= 120 ? `${Math.ceil(left.value / 60)} 分钟` : `${left.value} 秒`));
 </script>
 
 <template>
   <div class="anchor" role="status">
     <Transition name="cool">
-      <p v-if="left > 0" class="cool">太快啦，歇 {{ left }} 秒</p>
+      <p v-if="left > 0" class="cool">{{ auto ? "自动点击冷却中" : "太快啦" }}，歇 {{ wait }}</p>
     </Transition>
   </div>
 </template>

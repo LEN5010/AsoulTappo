@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { autoHint, autoNote, closeAutoHint, noteAutoInput, openAutoNote } from "./autoHint";
+import { autoHint, autoNote, autoStrikes, closeAutoHint, noteAutoInput, openAutoNote } from "./autoHint";
 
 const DAY = 86_400_000;
 const noon = new Date(2026, 10, 17, 12).getTime();
@@ -13,23 +13,24 @@ describe("the automatic-input note", () => {
     });
     autoHint.value = false;
     autoNote.value = false;
+    autoStrikes.value = 0;
   });
 
   it("goes up when the status says so and stays until closed", () => {
-    noteAutoInput(undefined, noon);
-    noteAutoInput(0, noon);
+    noteAutoInput(undefined, 0, noon);
+    noteAutoInput(0, 0, noon);
     expect(autoHint.value).toBe(false);
-    noteAutoInput(1800, noon);
+    noteAutoInput(1800, 0, noon);
     expect(autoHint.value).toBe(true);
     // The status no longer says so: the note is still there for the player to read.
-    noteAutoInput(0, noon + 3_600_000);
+    noteAutoInput(0, 0, noon + 3_600_000);
     expect(autoHint.value).toBe(true);
   });
 
   it("opens the note behind the bubble, and closing the note puts both away", () => {
     openAutoNote();
     expect(autoNote.value).toBe(false);
-    noteAutoInput(1800, noon);
+    noteAutoInput(1800, 0, noon);
     openAutoNote();
     expect([autoHint.value, autoNote.value]).toEqual([true, true]);
     closeAutoHint(noon);
@@ -37,12 +38,24 @@ describe("the automatic-input note", () => {
   });
 
   it("comes once a day", () => {
-    noteAutoInput(1800, noon);
+    noteAutoInput(1800, 0, noon);
     closeAutoHint(noon);
     expect(autoHint.value).toBe(false);
-    noteAutoInput(1800, noon + 3_600_000);
+    noteAutoInput(1800, 0, noon + 3_600_000);
     expect(autoHint.value).toBe(false);
-    noteAutoInput(1800, noon + DAY);
+    noteAutoInput(1800, 0, noon + DAY);
+    expect(autoHint.value).toBe(true);
+  });
+
+  it("comes again with each new strike of the day", () => {
+    noteAutoInput(1800, 0, noon);
+    closeAutoHint(noon);
+    noteAutoInput(1800, 1, noon + 1_800_000);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
+    closeAutoHint(noon + 1_800_000);
+    noteAutoInput(1800, 1, noon + 2_000_000);
+    expect(autoHint.value).toBe(false);
+    noteAutoInput(1800, 2, noon + 3_600_000);
     expect(autoHint.value).toBe(true);
   });
 });

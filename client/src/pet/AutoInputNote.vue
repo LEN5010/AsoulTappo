@@ -1,24 +1,28 @@
 <script setup lang="ts">
 // The note behind the automatic-input bubble: on paper over the pet, what was found, what it changes and when it ends.
 // Closing it is what puts the bubble away for the day (src/stores/autoHint.ts).
+import { computed } from "vue";
 import { AUTO_NOTE_WIDTH } from "../stores/autoHint";
 import PetBubble from "./PetBubble.vue";
 
-defineProps<{ open: boolean; shift: number; below: boolean }>();
+// [cooling]: the save went on after this note and was given a cooldown for it.
+const props = defineProps<{ open: boolean; cooling?: boolean; shift: number; below: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
-const LINES = [
+const lines = computed(() => [
   "识别到这份存档的敲击由连点器、脚本等软件自动发出。",
-  "在此期间，你的碎片收益和存档不受影响，但联机房间里不显示你的敲击和动作。",
+  props.cooling
+    ? "提示后仍在持续使用，敲击已进入冷却：冷却期间不计碎片，每次时长翻倍。联机房间里不显示你的敲击和动作。"
+    : "在此期间，你的碎片收益和存档不受影响，但联机房间里不显示你的敲击和动作。持续使用会进入不计碎片的冷却。",
   "停用相关软件后，联机动作将在一段时间内自动恢复。",
-];
+]);
 </script>
 
 <template>
   <PetBubble :open="open" :width="AUTO_NOTE_WIDTH" :shift="shift" :below="below">
     <article class="note" role="alert">
       <h2><span class="mark" aria-hidden="true">!</span>自动点击检测说明</h2>
-      <p v-for="line in LINES" :key="line">{{ line }}</p>
+      <p v-for="line in lines" :key="line">{{ line }}</p>
       <button type="button" class="ui-btn small primary" @click="emit('close')">知道了</button>
     </article>
   </PetBubble>

@@ -30,6 +30,8 @@ export interface PlayerStatus {
    * not; missing on older servers. Rooms do not show the save's taps and motion meanwhile.
    */
   autoInput?: number;
+  /** Cooldowns the server gave the save today for going on after that; missing on servers before 1.2.5. */
+  autoStrikes?: number;
   /** Scratch cards left today and cards since the last emote; missing on servers without them. */
   scratch?: { left: number; pity: number };
   /** Rock-paper-scissors: today's net win (prizes minus bets). Missing on servers without duels. */

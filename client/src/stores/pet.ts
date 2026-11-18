@@ -33,7 +33,7 @@ watch(() => status.value?.tapCooldown, (seconds) => {
   tapCooldown.value = guard.until;
 });
 
-watch(() => status.value?.autoInput, (seconds) => noteAutoInput(seconds), { immediate: true });
+watch(() => [status.value?.autoInput, status.value?.autoStrikes], ([seconds, strikes]) => noteAutoInput(seconds, strikes), { immediate: true });
 
 function tap(injected?: boolean): void {
   const was = guard.until;

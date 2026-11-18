@@ -173,6 +173,8 @@ class Game:
         self.guard = guard or Guard()
         # Until when each save's input counts as automatic, as of its last report to this process (see auto_input).
         self._auto: dict[str, float] = {}
+        # The day and how many cooldowns the guard gave each save on it (see auto_strikes).
+        self._strikes: dict[str, tuple[str, int]] = {}
         self._auto_lock = Lock()
         self.rng = rng or cardlogic.default_rng()
         self.now = now
@@ -282,12 +284,14 @@ class Game:
             injected = max(0, min(int(injected), taps))
         elapsed = now - last["last_at"] if 0 < last["last_at"] < now else 0.0
         try:
-            span = self.guard.judge(Batch(taps, injected, elapsed, now), notes)
+            batch = Batch(taps, injected, elapsed, now)
+            span = self.guard.judge(batch, notes)
+            cool = self.guard.cooldown(batch, notes)
             shown = span
             kept = json.dumps({"v": 2, "all": notes, "shown": shown_notes}, separators=(",", ":"))
         except Exception:  # a broken rule must not cost anyone their taps
             log.exception("the guard failed on a batch")
-            span, shown, kept = 0.0, 0.0, last["guard"]
+            span, cool, shown, kept = 0.0, 0.0, 0.0, last["guard"]
         else:
             if injected is not None:
                 try:
@@ -304,6 +308,15 @@ class Game:
             if now + span > p["auto_until"]:
                 p["auto_until"] = now + span
                 st.update_player(pid, auto_until=p["auto_until"])
+        if cool > 0:
+            # The guard's cooldown: the batch that drew it earns nothing either (report_activity checks next).
+            if now + cool > p["tap_cooldown_until"]:
+                p["tap_cooldown_until"] = now + cool
+                st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"])
+            st.add_tap_flags(today, pid, server=1)
+            with self._auto_lock:
+                day, strikes = self._strikes.get(pid, (today, 0))
+                self._strikes[pid] = (today, strikes + 1 if day == today else 1)
         if injected is None or shown > 0:
             with self._auto_lock:
                 if injected is None:
@@ -315,6 +328,12 @@ class Game:
                 else:
                     self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
         return kept
+
+    def auto_strikes(self, pid: str, day: str) -> int:
+        """How many cooldowns the guard gave the save on [day], as of this process."""
+        with self._auto_lock:
+            at, strikes = self._strikes.get(pid, (day, 0))
+        return strikes if at == day else 0
 
     def auto_input(self, pid: str | None) -> bool:
         """Whether what the save's client sends its rooms counts as automatic now (see _judge), as of its last
@@ -802,6 +821,7 @@ class Game:
             "checkin": {"available": not self.store.checked_in(pid, day)},
             "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - now)),
             "autoInput": max(0, math.ceil(p["auto_until"] - now)),
+            "autoStrikes": self.auto_strikes(pid, day),
         }
         if self.manifest.banners:
             # The save's count in each limited pool that runs or is about to: draws there, and since its last featured item.

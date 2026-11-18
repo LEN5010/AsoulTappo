@@ -406,3 +406,49 @@ def test_a_rule_failing_on_what_rooms_were_shown_keeps_its_judgement_of_the_batc
     result = send(game, clock, 120, 90, 1)
     assert result["autoInput"] == 1800 and result["credited"] > 0
     assert not game.auto_input(pid)
+
+
+class Strikes(Streak):
+    """The stand-in, giving a cooldown that doubles each `every` batches judged automatic."""
+
+    def __init__(self, every=3, first=600.0):
+        super().__init__(need=1)
+        self.every, self.first = every, first
+
+    def judge(self, batch, notes):
+        span = super().judge(batch, notes)
+        notes["hot"] = notes.get("hot", 0) + (1 if span else 0)
+        return span
+
+    def cooldown(self, batch, notes):
+        if notes.get("hot", 0) // self.every <= notes.get("strikes", 0):
+            return 0.0
+        notes["strikes"] = notes.get("strikes", 0) + 1
+        return self.first * 2 ** (notes["strikes"] - 1)
+
+
+def test_the_guards_cooldown_stops_income_and_counts_a_strike_each_time():
+    game, clock = make_guarded(Strikes())
+    first = [send(game, clock, 40, 40, i) for i in (1, 2)]
+    assert [r["credited"] for r in first] == [40, 40] and first[-1]["autoStrikes"] == 0
+    # The third batch judged automatic draws the cooldown, and earns nothing itself.
+    struck = send(game, clock, 40, 40, 3)
+    assert (struck["credited"], struck["tapCooldown"], struck["autoStrikes"]) == (0, 600, 1)
+    assert send(game, clock, 40, 0, 4)["credited"] == 0
+    # Kept up through the cooldown: three more such batches, and the next one is twice as long.
+    for i in (5, 6, 7):
+        again = send(game, clock, 40, 40, i)
+    assert (again["credited"], again["tapCooldown"], again["autoStrikes"]) == (0, 1200, 2)
+    clock.t += 1200
+    assert send(game, clock, 40, 0, 8, every=0.0)["credited"] == 40
+
+
+def test_a_rule_file_may_name_a_cooldown(tmp_path):
+    rules = tmp_path / "rules.py"
+    rules.write_text("def judge(batch, notes):\n    return 60\n\ndef cooldown(batch, notes):\n    return -5 if batch.taps < 10 else 90\n")
+    from app.guard import Batch, load
+    guard = load(rules)
+    assert guard.cooldown(Batch(3, None, 0.0, 0.0), {}) == 0.0
+    assert guard.cooldown(Batch(30, None, 0.0, 0.0), {}) == 90.0
+    rules.write_text("def judge(batch, notes):\n    return 60\n")
+    assert load(rules).cooldown(Batch(30, None, 0.0, 0.0), {}) == 0.0

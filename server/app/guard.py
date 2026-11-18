@@ -1,15 +1,17 @@
 """Telling automatic input (an auto-clicker, a macro) from a hand, kept out of the public repository.
 
 The server hands every batch of a session's taps to a guard and takes back how long the save's input counts as
-automatic. While it does, the save's status says so (``autoInput``, see protocol/PROTOCOL.md); nothing is taken from
-its income.
+automatic. While it does, the save's status says so (``autoInput``, see protocol/PROTOCOL.md) and its income goes on.
+A save that keeps at it after being told can be given a cooldown, during which its taps earn nothing: the guard
+names that too (``Guard.cooldown``).
 
 Rooms count hands only. A client that tells which presses other software sent keeps those out of its rooms, so the
 server asks a second time about the rest of each batch (``taps - injected``, with notes of its own) and rooms stop
 showing the save's taps and motion while that answer holds. From a client that cannot tell, the first answer hides it.
 
 The rules live in a Python file named by ``ASOULTAPPO_GUARD``, next to the economy file on the server. It defines
-``judge(batch, notes)`` with the meaning of ``Guard.judge`` below. Without the variable nothing is judged.
+``judge(batch, notes)`` with the meaning of ``Guard.judge`` below, and may define ``cooldown(batch, notes)`` with that
+of ``Guard.cooldown``. Without the variable nothing is judged.
 """
 from __future__ import annotations
 
@@ -41,13 +43,26 @@ class Guard:
         what this session's earlier calls left in it (JSON values only, empty at first) and is kept for the next."""
         return 0.0
 
+    def cooldown(self, batch: Batch, notes: dict[str, Any]) -> float:
+        """Seconds from ``batch.now`` for which the save's taps earn nothing, this batch included; 0 for none. Asked
+        right after ``judge`` of the same batch, with the notes that call left. Each answer above 0 is one more
+        strike of the day in the save's status (``autoStrikes``)."""
+        return 0.0
+
+
+Rule = Callable[[Batch, dict[str, Any]], float]
+
 
 class FileGuard(Guard):
-    def __init__(self, judge: Callable[[Batch, dict[str, Any]], float]) -> None:
+    def __init__(self, judge: Rule, cooldown: Rule | None = None) -> None:
         self._judge = judge
+        self._cooldown = cooldown
 
     def judge(self, batch: Batch, notes: dict[str, Any]) -> float:
         return max(0.0, float(self._judge(batch, notes)))
+
+    def cooldown(self, batch: Batch, notes: dict[str, Any]) -> float:
+        return max(0.0, float(self._cooldown(batch, notes))) if self._cooldown else 0.0
 
 
 def load(path: Path | str | None = None) -> Guard:
@@ -63,4 +78,5 @@ def load(path: Path | str | None = None) -> Guard:
     judge = getattr(module, "judge", None)
     if not callable(judge):
         raise RuntimeError(f"{ENV}: {path} defines no judge(batch, notes)")
-    return FileGuard(judge)
+    cooldown = getattr(module, "cooldown", None)
+    return FileGuard(judge, cooldown if callable(cooldown) else None)

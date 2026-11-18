@@ -35,7 +35,7 @@ import {
 import AccessBubble from "./pet/AccessBubble.vue";
 import AutoInputBubble from "./pet/AutoInputBubble.vue";
 import AutoInputNote from "./pet/AutoInputNote.vue";
-import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, closeAutoHint, openAutoNote } from "./stores/autoHint";
+import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, autoStrikes, closeAutoHint, openAutoNote } from "./stores/autoHint";
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
@@ -411,7 +411,9 @@ let unAccess: (() => void) | undefined;
 const accessHint = ref(false);
 // The note that the save's input counts as automatic waits its turn behind the two above and a cooldown's countdown,
 // which use the same spot.
-const autoShown = computed(() => autoHint.value && !autoNote.value && !adminHint.value && !accessHint.value && !status.value?.tapCooldown);
+// A cooldown for going on after the note is that note's own: the bubble comes first, the countdown once it is read.
+const autoCooling = computed(() => autoStrikes.value > 0 && !!status.value?.autoInput);
+const autoShown = computed(() => autoHint.value && !autoNote.value && !adminHint.value && !accessHint.value && (!status.value?.tapCooldown || autoCooling.value));
 const kick = () => hits?.kick();
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
@@ -551,11 +553,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
-      <CooldownBubble :until="tapCooldown" />
+      <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" />
       <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
-      <AutoInputNote :open="autoNote && !duel && !ddzBubble" v-bind="autoNotePlace" @close="closeAutoHint()" />
+      <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
       <DuelBubble v-bind="duelPlace" />
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
