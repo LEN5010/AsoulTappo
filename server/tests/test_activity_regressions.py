@@ -224,6 +224,16 @@ def send(game, clock, taps, injected, sequence, session="s", every=20.0):
     return game.report_activity(TOKEN, taps, session, sequence, injected=injected)
 
 
+def test_the_guard_gets_the_headers_of_a_batch_but_not_of_what_rooms_see():
+    guard = Streak()
+    game, clock = make_guarded(guard)
+    clock.t += 20
+    game.report_activity(TOKEN, 10, "s", 1, injected=2, headers={"origin": "o"})
+    assert guard.seen[0].headers == {"origin": "o"} and guard.seen[1].headers == {}
+    send(game, clock, 10, None, 2)
+    assert guard.seen[2].headers == {}
+
+
 def test_no_guard_judges_nothing():
     game, clock = make()
     result = None

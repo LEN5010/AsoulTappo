@@ -9,7 +9,7 @@ import time
 from datetime import date
 from functools import cached_property
 from threading import Lock
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, Mapping
 
 from . import banners
 from . import cards as cardlogic
@@ -185,7 +185,8 @@ class Game:
     # AUTOMATED INPUT: tap reports pay shards and are judged for automated input. Automating them, or shaping them to
     # slip past the guard, is forbidden on the official server; see app/guard.py and AGENTS.md.
     def report_activity(self, token: str, taps: int, session: str | None = None,
-                        sequence: int = 0, cooldown: int = 0, injected: int | None = None) -> dict[str, Any]:
+                        sequence: int = 0, cooldown: int = 0, injected: int | None = None,
+                        headers: Mapping[str, str] | None = None) -> dict[str, Any]:
         pid = player_id_for(token)
         taps = max(0, min(int(taps), MAX_REPORT_TAPS))
         cfg = self.cfg
@@ -205,7 +206,7 @@ class Game:
                     st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
                     p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
                     st.add_tap_flags(today, pid, server=1)
-                notes = self._judge(st, p, pid, today, now, last, taps, injected)
+                notes = self._judge(st, p, pid, today, now, last, taps, injected, headers)
                 st.save_activity_sequence(pid, session, sequence, now, fast_since, notes)
             # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
             if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
@@ -270,7 +271,7 @@ class Game:
         return out
 
     def _judge(self, st: Store, p: dict[str, Any], pid: str, today: str, now: float, last: dict[str, Any],
-               taps: int, injected: int | None) -> str:
+               taps: int, injected: int | None, headers: Mapping[str, str] | None = None) -> str:
         """Hands one batch of a session to the guard (app/guard.py) and keeps what it found: how long the save's
         input counts as automatic, and the day's flags. Judged on what the session sent, so a cooldown hides nothing.
 
@@ -284,7 +285,7 @@ class Game:
             injected = max(0, min(int(injected), taps))
         elapsed = now - last["last_at"] if 0 < last["last_at"] < now else 0.0
         try:
-            batch = Batch(taps, injected, elapsed, now)
+            batch = Batch(taps, injected, elapsed, now, dict(headers or {}))
             span = self.guard.judge(batch, notes)
             cool = self.guard.cooldown(batch, notes)
             shown = span

@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 ENV = "ASOULTAPPO_GUARD"
 
@@ -40,6 +40,9 @@ class Batch:
     # Seconds since the session's batch before this one; 0 for its first.
     elapsed: float
     now: float
+    # Headers of the request that carried the batch, names in lower case, without credentials or addresses; empty
+    # where there was none.
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 class Guard:

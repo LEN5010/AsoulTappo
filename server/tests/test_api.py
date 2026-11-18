@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.cards import DropConfig
 from app.game import Game, player_id_for
+from app.guard import Guard
 from app.store import Store
 
 from fixtures import Clock, SeqRng, tiny_manifest
@@ -29,6 +30,25 @@ def test_token_required(client):
     assert client.get("/api/me").status_code == 401
     assert client.post("/api/activity", json={**BATCH, "taps": 1}).status_code == 401
     assert client.get("/api/me", headers={"X-Player-Token": "short"}).status_code == 401
+
+
+class _Seen(Guard):
+    def __init__(self):
+        self.batches = []
+
+    def judge(self, batch, notes):
+        self.batches.append(batch)
+        return 0.0
+
+
+def test_a_batch_reaches_the_guard_with_its_headers_less_credentials_and_addresses(client):
+    seen = _Seen()
+    main.game.guard = seen
+    client.post("/api/activity", json={**BATCH, "taps": 3},
+                headers={**H, "Origin": "tauri://localhost", "X-Forwarded-For": "203.0.113.9", "Cookie": "a=b"})
+    got = seen.batches[0].headers
+    assert got["origin"] == "tauri://localhost"
+    assert not {"x-player-token", "x-forwarded-for", "cookie"} & set(got)
 
 
 def test_activity_resonance_collection_flow(client):
