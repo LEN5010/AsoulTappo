@@ -266,3 +266,15 @@ def test_no_stray_files_outside_manifest():
         for f in root.rglob("*"):
             if f.is_file() and f.name not in ("manifest.json", "index.json"):
                 assert f.resolve() in refs, f
+
+
+def test_a_repeat_dance_card_pays_the_dance_refund_and_falls_back_to_its_tier():
+    from app.game import Game
+    from app.store import Store
+    g = Game(Store(":memory:"), Manifest.load())
+    dance = next(c for c in g.manifest.data["cards"] if c["rarity"] == "epic" and c["tier"] == "normal")
+    small = next(c for c in g.manifest.data["cards"] if c["tier"] == "small")
+    plain = next(c for c in g.manifest.data["cards"] if c["rarity"] == "common")
+    assert [g.duplicate_shards(f"card:{c['id']}") for c in (dance, small, plain)] == [360, 360, 20]
+    g.manifest.resonance["duplicateRefund"].pop("dance")
+    assert g.duplicate_shards(f"card:{dance['id']}") == 20
