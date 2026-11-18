@@ -206,7 +206,7 @@ class Game:
                     st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
                     p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
                     st.add_tap_flags(today, pid, server=1)
-                notes = self._judge(st, p, pid, today, now, last, taps, injected, headers)
+                notes = self._judge(st, p, pid, today, now, last, taps, injected, headers, session, sequence)
                 st.save_activity_sequence(pid, session, sequence, now, fast_since, notes)
             # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
             if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
@@ -271,7 +271,8 @@ class Game:
         return out
 
     def _judge(self, st: Store, p: dict[str, Any], pid: str, today: str, now: float, last: dict[str, Any],
-               taps: int, injected: int | None, headers: Mapping[str, str] | None = None) -> str:
+               taps: int, injected: int | None, headers: Mapping[str, str] | None = None,
+               session: str = "", sequence: int = 0) -> str:
         """Hands one batch of a session to the guard (app/guard.py) and keeps what it found: how long the save's
         input counts as automatic, and the day's flags. Judged on what the session sent, so a cooldown hides nothing.
 
@@ -288,7 +289,8 @@ class Game:
         daily_rule = self.guard.daily_cooldown
         stored_day = st.guard_day(pid, today) if daily_rule else "{}"
         try:
-            batch = Batch(taps, injected, elapsed, now, dict(headers or {}), strikes_today, now < p["tap_cooldown_until"])
+            batch = Batch(taps, injected, elapsed, now, dict(headers or {}), strikes_today,
+                          now < p["tap_cooldown_until"], str(pid), session, sequence)
             span = self.guard.judge(batch, notes)
             if daily_rule:
                 daily_notes = json.loads(stored_day)
