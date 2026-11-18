@@ -124,6 +124,16 @@ export interface Collection {
   owned: Record<string, number>;
   recent: { item: string; rarity: string; new: boolean; ts: number }[];
 }
+/**
+ * A drop of the save's own history. `source` is how it came: "draw", "craft" or "scratch"; `pool` the limited pool of
+ * a draw there and `poolName` its name while the server still lists the pool. Drops from before the server kept
+ * these carry none of them. A holo version is its own item (holo:<card id>).
+ */
+export interface HistoryDrop {
+  id: number; item: string; rarity: string; new: boolean; ts: number; source?: string; pool?: string; poolName?: string;
+}
+/** A page of the history, newest first; `next` asks for the page after it, null at the end. */
+export interface DropHistory { drops: HistoryDrop[]; next: number | null }
 /** `showcase` is missing on servers from before profiles. `nick` and `board` (false keeps the save off the
  *  collection board) are only sent: the local settings stay as they are. */
 export interface Loadout {
@@ -254,6 +264,9 @@ export class Api {
   };
   activity = (batch: ActivityBatch) => this.call<PlayerStatus>("POST", "/api/activity", batch);
   craft = (item: string) => this.call<CraftResult>("POST", "/api/craft", { item });
+  /** A page of the save's own drops; [before] is the `next` of the page before. */
+  history = (before?: number) =>
+    this.call<DropHistory>("GET", `/api/resonance/history${before ? `?before=${before}` : ""}`);
   checkinMonth = () => this.call<CheckinMonth>("GET", "/api/checkin");
   checkin = () => this.call<CheckinResult>("POST", "/api/checkin");
   claimUpdateReward = () => this.call<UpdateRewardResult>("POST", "/api/update-reward");

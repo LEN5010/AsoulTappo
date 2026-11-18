@@ -50,7 +50,7 @@ def test_items_count_and_drop_log():
     assert s.add_item("p1", "card:c1", 2.0) == 2
     assert s.owned("p1") == {"card:c1": 2}
     for i in range(25):
-        s.log_drop("p1", f"card:c{i}", "common", i == 0, float(i))
+        s.log_drop("p1", f"card:c{i}", "common", i == 0, float(i), "craft")
     recent = s.recent_drops("p1", 20)
     assert len(recent) == 20 and recent[0] == {"item": "card:c24", "rarity": "common", "new": False, "ts": 24.0}
 

@@ -232,7 +232,7 @@ class ParkScratch:
         if item:
             known = g.manifest.items.get(item)
             st.add_item(pid, item, now)
-            st.log_drop(pid, item, known["rarity"] if known else "common", True, now)
+            st.log_drop(pid, item, known["rarity"] if known else "common", True, now, "scratch")
         if item and tier in ("skin", "big"):
             self.park.announce(st, "scratch_item", pid, now, card=kind, item=item)
         elif row["shards"] >= cfg["serverAt"][kind]:

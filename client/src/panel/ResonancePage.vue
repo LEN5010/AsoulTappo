@@ -18,6 +18,7 @@ import PoolTabs from "./PoolTabs.vue";
 import RevealScene from "./RevealScene.vue";
 import CardDetail from "./CardDetail.vue";
 import SkinDetail from "./SkinDetail.vue";
+import HistoryDialog from "./HistoryDialog.vue";
 import PlateDetail from "./PlateDetail.vue";
 import type { Plate } from "../pet/plates";
 
@@ -66,6 +67,7 @@ const again = computed(() =>
   (last.value === 1 || last.value === 10) && online.value && !complete.value && draws.value >= last.value &&
   (!drawing || banners.value.some((b) => b.id === drawing)) ? last.value : 0);
 const probabilities = ref(false);
+const history = ref(false);
 const detail = ref<ManifestCard | null>(null);
 const skin = ref<Item | null>(null);
 const plate = ref<Plate | null>(null);
@@ -142,11 +144,11 @@ async function nextBatch() {
     <Transition name="pool" mode="out-in" :css="!reducedMotion">
       <BannerStage
         v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
-        :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
+        :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
       >
         <template #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
       </BannerStage>
-      <PoolStage v-else :busy="revealing" :paused="probabilities || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event">
+      <PoolStage v-else :busy="revealing" :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event">
         <template v-if="banners.length" #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
       </PoolStage>
     </Transition>
@@ -199,9 +201,14 @@ async function nextBatch() {
           <span class="act-label">共鸣十次</span>
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost * 10 }}</small>
         </button>
-        <button type="button" class="ui-btn ghost rates-btn" title="概率说明" aria-label="概率说明" @click="probabilities = true">
-          <Icon name="info" :size="18" />
-        </button>
+        <span class="side-keys">
+          <button type="button" class="ui-btn ghost small side-key" title="概率说明" aria-label="概率说明" @click="probabilities = true">
+            <Icon name="info" :size="16" />
+          </button>
+          <button type="button" class="ui-btn ghost small side-key" title="共鸣记录" aria-label="共鸣记录" :disabled="!online" @click="history = true">
+            <Icon name="clock" :size="16" />
+          </button>
+        </span>
       </div>
     </footer>
     <Modal v-if="probabilities" :title="banner ? `${banner.name}概率` : '共鸣概率'" heading @close="probabilities = false">
@@ -232,6 +239,7 @@ async function nextBatch() {
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
       <p v-if="banner && res" class="rates-note">卡池结束后，{{ featuredWord }}进入此间共鸣。</p>
     </Modal>
+    <HistoryDialog v-if="history" @close="history = false" />
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
     <PlateDetail v-if="plate" :plate="plate" @close="plate = null" />
@@ -532,8 +540,15 @@ async function nextBatch() {
   color: var(--c-800);
   fill: rgba(255, 255, 255, 0.42);
 }
-.rates-btn {
-  width: 36px;
+/* Two small keys in the height of the ten-draw key: the odds, and the save's own record. */
+.side-keys {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.side-keys .side-key {
+  width: 28px;
   padding: 0;
 }
 @container panel (max-width: 920px) {
@@ -599,6 +614,9 @@ async function nextBatch() {
 @container panel (max-height: 600px) {
   .ten {
     height: 52px;
+  }
+  .side-keys {
+    gap: 0;
   }
   .console {
     padding-top: 8px;

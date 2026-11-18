@@ -53,7 +53,9 @@ MAX_BOARD_NICK = 24
 # `nick` and `board` (false keeps the save off the boards) are only sent, never applied back by clients.
 LOADOUT_KEYS = ("character", "favorites", "plate", "showcase", "nick", "board")
 # Rows of the collection board, and how long a worked-out board is served before it is worked out again.
-BOARD_SIZE = 50
+BOARD_SIZE = 100
+#: Drops on one page of a save's own history (drop_history()).
+HISTORY_PAGE = 50
 BOARD_SECONDS = 300
 BOARD_DEFAULT_NICK = "匿名小面包"
 # Park news (park.py) that status carries to every running pet: the newest PARK_NEWS_LIMIT of the last PARK_NEWS_SECONDS.
@@ -505,7 +507,8 @@ class Game:
                 drops.append(drop)
             st.add_items(pid, increments, now)
             # The log keeps what came: a holo draw as its holo version.
-            st.log_drops(pid, [{**d, "item": holos[d["item"]]} if d.get("holo") else d for d in drops], now)
+            st.log_drops(pid, [{**d, "item": holos[d["item"]]} if d.get("holo") else d for d in drops], now,
+                         banner.id if banner else "")
             st.update_player(pid, shards=p["shards"] - n * cfg["cost"] + refund,
                              draw_pity=pity["legendary"], skin_pity=pity["skin"], drawn_total=p["drawn_total"] + n)
             day = day_of(now)
@@ -556,7 +559,7 @@ class Game:
             if p["shards"] < cost:
                 raise GameError("no_shards", "not enough shards")
             st.add_item(pid, item_id, now)
-            st.log_drop(pid, item_id, item["rarity"], True, now)
+            st.log_drop(pid, item_id, item["rarity"], True, now, "craft")
             st.update_player(pid, shards=p["shards"] - cost)
             st.add_ledger(pid, day_of(now), "craft", -cost)
         out = self.status(token)
@@ -687,7 +690,7 @@ class Game:
                 if card["item"]:
                     known = self.manifest.items.get(card["item"])
                     st.add_item(pid, card["item"], now)
-                    st.log_drop(pid, card["item"], known["rarity"] if known else "common", True, now)
+                    st.log_drop(pid, card["item"], known["rarity"] if known else "common", True, now, "scratch")
         return {**self.status(token), "prize": {"shards": card["shards"], "item": card["item"] or None},
                 "announce": first and card["shards"] >= cfg["announce"]}
 
@@ -1012,6 +1015,33 @@ class Game:
             owned = {iid: n for iid, n in owned.items() if iid not in held}
             recent = [d for d in recent if d["item"] not in held]
         return {"owned": owned, "recent": recent}
+
+    def drop_history(self, token: str, before: int | None = None, version: str | None = None) -> dict[str, Any]:
+        """A page of the save's own drops, newest first: {"drops": [{id, item, rarity, new, ts, source?, pool?,
+        poolName?}], "next": the id to ask the page after this one with, None at the end}. `source` is 'draw', 'craft'
+        or 'scratch', and `pool` the limited pool of a draw there, `poolName` its name while the economy still lists
+        it; rows from before these were kept carry neither. A holo version a client of [version] cannot show is left
+        out, as in collection(): a page can come shorter than HISTORY_PAGE, and `next` tells whether more follows."""
+        pid = player_id_for(token)
+        self.store.get_player(pid, self.now())
+        rows = self.store.drops_page(pid, before, HISTORY_PAGE + 1)
+        more = len(rows) > HISTORY_PAGE
+        rows = rows[:HISTORY_PAGE]
+        held = set(self.manifest.holos.values()) - set(self.manifest.holos_for(version).values())
+        names = {b.id: b.name for b in self.manifest.banners}
+        drops = []
+        for r in rows:
+            if r["item"] in held:
+                continue
+            d = {k: r[k] for k in ("id", "item", "rarity", "new", "ts")}
+            if r["source"]:
+                d["source"] = r["source"]
+            if r["pool"]:
+                d["pool"] = r["pool"]
+                if r["pool"] in names:
+                    d["poolName"] = names[r["pool"]]
+            drops.append(d)
+        return {"drops": drops, "next": rows[-1]["id"] if more else None}
 
     # ----------------------------------------------------------------- loadout
     def _owns(self, owned: dict[str, int], item_id: str) -> bool:

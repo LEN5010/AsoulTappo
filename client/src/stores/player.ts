@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type Loadout, type LoadoutPatch, type MainUser,
+  type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type DropHistory, type Loadout, type LoadoutPatch, type MainUser,
   type PlayerStatus, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
 import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "../net/protocol";
@@ -383,6 +383,20 @@ export async function resonate(count = 1, banner?: string): Promise<Drop[] | nul
   }
   await reloadCollection();
   return r.drops;
+}
+
+export type HistoryReply = { ok: true; page: DropHistory } | { ok: false; message: string };
+/** A page of the save's own drops ([before]: the `next` of the page before), or the line saying why it did not come. */
+export async function loadHistory(before?: number): Promise<HistoryReply> {
+  const lost: HistoryReply = { ok: false, message: "无法连接服务器" };
+  if (isPanelWindow) return requestDesktop<HistoryReply>("loadHistory", before).catch(() => lost);
+  const r = await attempt((api) => api.history(before));
+  if (!r) return lost;
+  if (r.ok) return { ok: true, page: { drops: r.value.drops ?? [], next: r.value.next ?? null } };
+  const e = r.error;
+  // A server from before the history has no such path.
+  if (e instanceof ApiError && e.status === 404) return { ok: false, message: "这个服务器不支持共鸣记录" };
+  return e instanceof ApiError && e.status < 500 ? { ok: false, message: e.message } : lost;
 }
 
 export async function craftItem(item: string): Promise<boolean> {

@@ -7,6 +7,8 @@ import * as player from "../stores/player";
 import * as room from "../stores/room";
 import * as parkStore from "../stores/park";
 import * as pomodoroStore from "../stores/pomodoro";
+import * as nudgeStore from "../stores/nudge";
+import type { Reminder } from "../reminders";
 import * as todoStore from "../stores/todo";
 import * as ddzStore from "../stores/ddz";
 import { economy, setEconomy } from "../stores/economy";
@@ -240,6 +242,7 @@ export async function initDesktop(): Promise<() => void> {
         case "sync": result = { settings, page: ui.page, craftTarget: ui.craftTarget, state: groups() }; break;
         case "resonate": result = await player.resonate(args[0] as number, (args[1] as string | null) ?? undefined); break;
         case "craftItem": result = await player.craftItem(args[0] as string); break;
+        case "loadHistory": result = await player.loadHistory((args[0] as number | null) ?? undefined); break;
         case "checkin": result = await player.checkin(); break;
         case "claimUpdateRewards": result = await player.claimUpdateRewards(); break;
         case "loadCheckins": await player.loadCheckins(); break;
@@ -264,6 +267,7 @@ export async function initDesktop(): Promise<() => void> {
         case "tidyRemotes": tidyRemotes(); break;
         case "beginPomodoro": pomodoroStore.beginPomodoro(); break;
         case "endPomodoro": pomodoroStore.endPomodoro(); break;
+        case "tryReminder": nudgeStore.tryReminder(args[0] as Reminder); break;
         case "todo": todoStore.todoRequest(args[0] as todoStore.TodoMethod, args[1]); break;
         case "todoSync": result = { settings, todos: todoStore.todos.value }; break;
         case "raceSync": result = { settings }; break;

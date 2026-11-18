@@ -149,6 +149,9 @@ class Store(AdminStore, ParkStore, DdzStore):
             if "card_id" in self._columns("drops"):
                 self._db.execute("ALTER TABLE drops RENAME COLUMN card_id TO item_id")
                 self._db.execute("UPDATE drops SET item_id = 'card:' || item_id WHERE instr(item_id, ':') = 0")
+            for field in ("source", "pool"):
+                if field not in self._columns("drops"):
+                    self._db.execute(f"ALTER TABLE drops ADD COLUMN {field} TEXT NOT NULL DEFAULT ''")
 
     def _commit(self) -> None:
         if not getattr(self, "_in_tx", False):
@@ -622,19 +625,31 @@ class Store(AdminStore, ParkStore, DdzStore):
                 (pid, banner, pity, drawn))
             self._commit()
 
-    def log_drops(self, pid: str, drops: list[dict], now: float) -> None:
+    def log_drops(self, pid: str, drops: list[dict], now: float, pool: str = "") -> None:
+        """The drops of one draw request, in the order drawn; [pool] is the limited pool they are from."""
         with self._lock:
             self._db.executemany(
-                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts) VALUES (?,?,?,?,?)",
-                [(pid, d["item"], d["rarity"], int(d["new"]), now) for d in drops])
+                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts, source, pool) VALUES (?,?,?,?,?,'draw',?)",
+                [(pid, d["item"], d["rarity"], int(d["new"]), now, pool) for d in drops])
             self._commit()
 
-    def log_drop(self, pid: str, item_id: str, rarity: str, is_new: bool, now: float) -> None:
+    def log_drop(self, pid: str, item_id: str, rarity: str, is_new: bool, now: float, source: str) -> None:
+        """An item that came some other way than a draw: [source] is 'craft' or 'scratch'."""
         with self._lock:
             self._db.execute(
-                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts) VALUES (?,?,?,?,?)",
-                (pid, item_id, rarity, int(is_new), now))
+                "INSERT INTO drops (player_id, item_id, rarity, is_new, ts, source) VALUES (?,?,?,?,?,?)",
+                (pid, item_id, rarity, int(is_new), now, source))
             self._commit()
+
+    def drops_page(self, pid: str, before: int | None, limit: int) -> list[dict]:
+        """A save's drops from the newest back, [limit] of them older than the row [before] (None: from the newest)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, item_id, rarity, is_new, ts, source, pool FROM drops "
+                "WHERE player_id=? AND id < ? ORDER BY id DESC LIMIT ?",
+                (pid, before if before is not None else 1 << 62, limit)).fetchall()
+        return [{"id": r["id"], "item": r["item_id"], "rarity": r["rarity"], "new": bool(r["is_new"]), "ts": r["ts"],
+                 "source": r["source"], "pool": r["pool"]} for r in rows]
 
     def recent_drops(self, pid: str, limit: int = 20) -> list[dict]:
         with self._lock:

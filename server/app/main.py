@@ -479,6 +479,13 @@ def api_resonate(body: ResonanceBody, who: PlayerId = Depends(player),
     return _guard(game.resonate, who, body.count, x_client_version, body.banner)
 
 
+@app.get("/api/resonance/history")
+def api_resonance_history(before: int | None = Query(default=None, ge=1), who: PlayerId = Depends(player),
+                          x_client_version: str = Header(default="")) -> dict:
+    """The save's own drops, newest first, a page at a time: `before` is the `next` of the page before."""
+    return _guard(game.drop_history, who, before, x_client_version)
+
+
 @app.post("/api/craft")
 def api_craft(body: CraftBody, who: PlayerId = Depends(player)) -> dict:
     return _guard(game.craft, who, body.item)

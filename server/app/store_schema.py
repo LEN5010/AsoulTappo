@@ -37,7 +37,11 @@ CREATE TABLE IF NOT EXISTS drops (
   item_id TEXT NOT NULL,
   rarity TEXT NOT NULL,
   is_new INTEGER NOT NULL,
-  ts REAL NOT NULL
+  ts REAL NOT NULL,
+  -- Where it came from: 'draw', 'craft' or 'scratch', and for a draw from a limited pool that pool's id. Both empty
+  -- on rows from before the columns existed.
+  source TEXT NOT NULL DEFAULT '',
+  pool TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS drops_player ON drops (player_id, id);
 -- A save's draws from one limited pool (app/banners.py): how many, and how many since its last featured item.
