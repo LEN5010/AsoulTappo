@@ -46,6 +46,16 @@ export function featuredItems(banner: Banner): Item[] {
   return banner.items.flatMap((id) => getItem(id) ?? []);
 }
 
+/**
+ * Whether the pity of tier [r] still leads to something the save lacks when it draws from [banner] (the standing pool
+ * when null): a standing item of the tier, or, in a banner that shares the tier with its featured items, one of those.
+ * The server keeps such a tier in the roll for the featured items, and the save's pity counter gives one of them.
+ */
+export function pityOpen(r: Rarity, pool: ResonancePool, owned: Record<string, number>, banner: Banner | null = null): boolean {
+  if (pool[r].some((item) => !owned[item.id])) return true;
+  return !!banner?.share && featuredItems(banner).some((item) => item.rarity === r && !owned[item.id]);
+}
+
 /** What is left of a banner at [now] (ms), for its countdown: days and hours, then hours and minutes. */
 export function bannerLeft(banner: Banner, now: number): string {
   const minutes = Math.max(0, Math.ceil((banner.end * 1000 - now) / 60_000));

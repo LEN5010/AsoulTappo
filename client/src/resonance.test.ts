@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { getCard, manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
-import { bannerBaseRates, bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, poolFor, poolOf, runningBanners, standingPool, tiersIn } from "./resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, pityOpen, poolFor, poolOf, runningBanners, standingPool, tiersIn } from "./resonance";
 import { economy, setEconomy } from "./stores/economy";
 import { exampleEconomy } from "./test/economy";
 import { realPoolCounts, realPoolSize } from "./test/pool";
@@ -151,6 +151,22 @@ it("takes a banner's rate from common until the save has every featured item", (
     const whole = bannerRates(BANNER, p, Object.fromEntries(SKINS.map((id) => [id, 1])));
     expect(whole.featured).toBe(0);
     expect(whole.tiers.common).toBeCloseTo(R.common);
+  });
+});
+it("keeps a pity open for featured items the banner shares a tier with", () => {
+  withBanner(() => {
+    const { rate: _rate, pity: _pity, ...plain } = BANNER;
+    const shared = { ...plain, rates: { skin: 0.3 }, share: 50 };
+    const p = poolOf(heldItems());
+    const owned: Record<string, number> = Object.fromEntries(p.skin.map((i) => [i.id, 1]));
+    expect(pityOpen("skin", p, {}, null)).toBe(true);
+    // Every standing skin found: nothing left in the standing pool, the featured ones left in the banner.
+    expect(pityOpen("skin", p, owned, null)).toBe(false);
+    expect(pityOpen("skin", p, owned, shared)).toBe(true);
+    // A banner with a tier of its own (rate) and no share does not keep the skin tier in the roll.
+    expect(pityOpen("skin", p, owned, plain)).toBe(false);
+    for (const id of SKINS) owned[id] = 1;
+    expect(pityOpen("skin", p, owned, shared)).toBe(false);
   });
 });
 it("reads a banner's own odds and the tiers its featured items share", () => {

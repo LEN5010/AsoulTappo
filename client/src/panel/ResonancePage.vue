@@ -5,7 +5,7 @@ import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
 import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
-import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, poolOf, effectiveRates, runningBanners, tiersIn } from "../resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, pityOpen, poolOf, effectiveRates, runningBanners, tiersIn } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, shards, status, online, error, loadEconomy } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
@@ -81,7 +81,8 @@ const canOnce = computed(() => !revealing.value && online.value && !!res.value &
 const canTen = computed(() => !revealing.value && online.value && !!res.value && !complete.value && draws.value >= 10);
 const onceShort = computed(() => (res.value && cost.value > shards.value ? cost.value - shards.value : 0));
 const tenShort = computed(() => (res.value && cost.value * 10 > shards.value ? cost.value * 10 - shards.value : 0));
-const missingTier = (r: "legendary" | "skin") => pool.value[r].some((i) => !collection.owned[i.id]);
+/** A gauge shows while its pity can still bring something new from the pool on show (featured items included). */
+const missingTier = (r: "legendary" | "skin") => pityOpen(r, pool.value, collection.owned, banner.value);
 function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
