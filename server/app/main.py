@@ -371,6 +371,15 @@ def player(x_player_token: str = Header(default=""), authorization: str = Header
     return who
 
 
+def reader(x_player_token: str = Header(default=""), authorization: str = Header(default=""),
+           x_client_version: str = Header(default="")) -> PlayerId:
+    """`player` for GET /api/me. Other apps of the same account (Asasfans Next) read the save with the main-site
+    token and no client version; the minimum version is for this app's clients, so such a request passes it."""
+    if authorization and not x_client_version:
+        return _guard(_who, "", authorization)
+    return player(x_player_token, authorization, x_client_version)
+
+
 class ActivityBody(BaseModel):
     taps: int = Field(ge=0, le=100000)
     session: str = Field(min_length=16, max_length=128)
@@ -447,7 +456,7 @@ def api_economy(x_client_version: str = Header(default="")) -> dict:
 
 
 @app.get("/api/me")
-def api_me(who: PlayerId = Depends(player)) -> dict:
+def api_me(who: PlayerId = Depends(reader)) -> dict:
     return _guard(game.status, who)
 
 

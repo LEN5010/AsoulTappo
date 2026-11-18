@@ -3,7 +3,7 @@ import pytest
 import app.main as main
 from app.notice import Notice, version_key
 
-from test_accounts import GUEST, env  # noqa: F401  (env is a fixture)
+from test_accounts import GUEST, bearer, env  # noqa: F401  (env is a fixture)
 from test_room_host import join
 
 KEY = {"X-Admin-Key": "admin-secret"}
@@ -46,6 +46,22 @@ def test_a_minimum_refuses_older_and_versionless_clients(notice_env):
     assert c.get("/api/client/release").json()["minVersion"] == "1.1.3"
     assert c.put("/admin/notice", json={"minVersion": ""}, headers=KEY).status_code == 200
     assert c.get("/api/me", headers=ME).status_code == 200
+
+
+def test_another_app_reads_the_account_save_whatever_the_minimum(notice_env):
+    c, *_ = notice_env
+    assert c.post("/api/account/link", headers=bearer("tok-alice")).status_code == 200
+    c.put("/admin/notice", json={"minVersion": "1.2.5"}, headers=KEY)
+    # Asasfans Next: the main-site token and no client version.
+    me = c.get("/api/me", headers=bearer("tok-alice"))
+    assert me.status_code == 200 and "shards" in me.json()
+    # Only the read is let through, and only without a version: an old client of this app is still refused.
+    assert c.get("/api/me", headers={**bearer("tok-alice"), "X-Client-Version": "1.2.4"}).status_code == 426
+    activity = c.post("/api/activity", json={"taps": 1, "session": "test-session-0001", "sequence": 1},
+                      headers=bearer("tok-alice"))
+    assert activity.status_code == 426
+    assert c.get("/api/me", headers=ME).status_code == 426
+    assert c.get("/api/me", headers=bearer("tok-nobody")).status_code == 401
 
 
 def test_an_outdated_client_cannot_join_a_room(notice_env):
