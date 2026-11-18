@@ -148,6 +148,70 @@ def test_the_rest_of_the_tiers_draws_are_its_standing_items():
     assert drop["rarity"] == "skin" and "featured" not in drop and drop["item"] not in SKINS
 
 
+def test_a_standing_item_in_a_shared_tier_makes_the_next_draw_of_it_featured():
+    # A skin lost to the share's roll, then a skin with no share's roll at all: .99 would lose it again, and picks
+    # the second featured skin instead.
+    g, clock = game(.002, .4, 0, .002, .99, m=manifest(**SHARED))
+    clock.t += 2 * DAY
+    out = g.resonate(TOKEN, 1, NEW, "forms")
+    assert out["drops"][0]["item"] not in SKINS
+    assert out["resonance"]["banners"] == {"forms": {"pity": 1, "drawn": 1, "guaranteed": ["skin"]}}
+    out = g.resonate(TOKEN, 1, NEW, "forms")
+    assert out["drops"][0] == {"item": SKINS[1], "rarity": "skin", "new": True, "count": 1, "shards": 0, "featured": True}
+    assert out["resonance"]["banners"] == {"forms": {"pity": 0, "drawn": 2}}
+
+
+def test_the_guarantee_holds_inside_one_request():
+    g, clock = game(.002, .4, 0, .002, .99, m=manifest(**SHARED))
+    clock.t += 2 * DAY
+    lost, won = g.resonate(TOKEN, 2, NEW, "forms")["drops"]
+    assert lost["item"] not in SKINS and won["featured"]
+
+
+def test_a_skin_from_the_saves_pity_after_a_standing_one_is_featured():
+    g, clock = game(.002, .4, 0, .9, .99, m=manifest(**SHARED))
+    pid = player_id_for(TOKEN)
+    clock.t += 2 * DAY
+    g.resonate(TOKEN, 1, NEW, "forms")
+    g.store.update_player(pid, skin_pity=g.manifest.resonance["pity"]["skin"] - 1)
+    drop = g.resonate(TOKEN, 1, NEW, "forms")["drops"][0]
+    assert drop["rarity"] == "skin" and drop["featured"]
+
+
+def test_a_guarantee_ends_with_the_last_featured_item_of_its_tier():
+    g, clock = game(.002, 0, 0, m=manifest(**SHARED))
+    pid = player_id_for(TOKEN)
+    g.store.save_banner_draws(pid, "forms", 0, 0, ["skin"])
+    for iid in SKINS:
+        g.store.add_item(pid, iid, 0)
+    clock.t += 2 * DAY
+    out = g.resonate(TOKEN, 1, NEW, "forms")
+    assert "featured" not in out["drops"][0]
+    assert out["resonance"]["banners"] == {"forms": {"pity": 0, "drawn": 1}}
+
+
+def test_draws_before_the_guarantee_was_kept_set_it_once():
+    m = manifest(**SHARED)
+    g, clock = game(0, m=m)
+    clock.t += 2 * DAY
+    standing = next(i["id"] for i in m.resonance_pool_for(NEW, clock.t)["skin"])
+    lost, won, done = "lost-player-token-0001", "won-player-token-00001", "done-player-token-0001"
+    for token, items in ((lost, [SKINS[0], standing]), (won, [standing, SKINS[0]]), (done, [*SKINS, standing])):
+        pid = player_id_for(token)
+        g.status(token)
+        g.store.log_drops(pid, [{"item": i, "rarity": "skin", "new": True} for i in items], clock.t, "forms")
+        g.store.add_items(pid, {i: 1 for i in items}, clock.t)
+        g.store.save_banner_draws(pid, "forms", 0, 50)
+    assert g.fill_banner_guarantees() == 1
+    assert g.status(lost)["resonance"]["banners"] == {"forms": {"pity": 0, "drawn": 50, "guaranteed": ["skin"]}}
+    assert "guaranteed" not in g.status(won)["resonance"]["banners"]["forms"]
+    assert "guaranteed" not in g.status(done)["resonance"]["banners"]["forms"]
+    # Once per database: a later standing skin is the draw's own business.
+    g.store.save_banner_draws(player_id_for(lost), "forms", 0, 50)
+    assert g.fill_banner_guarantees() == 0
+    assert "guaranteed" not in g.status(lost)["resonance"]["banners"]["forms"]
+
+
 @pytest.mark.parametrize("share_roll, featured", [(.39, True), (.4, False)])
 def test_a_skin_from_the_saves_pity_is_a_featured_one_the_same_share_of_the_time(share_roll, featured):
     # .9 is a common draw, but the save's skin pity is due: the skin it gives goes through the share's roll as well.

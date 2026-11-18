@@ -8,7 +8,8 @@ While a banner runs, a draw there is a draw from the standing pool, changed in u
 
 - ``rates`` gives some tiers odds of the banner's own (percent; common takes what is left of 100).
 - ``share``: when the tier rolled is one a featured item the save lacks belongs to, that percent of the time the
-  drop is one of those featured items instead of the tier's standing ones.
+  drop is one of those featured items instead of the tier's standing ones. A standing one there makes the save's next
+  draw of that tier in this banner a featured one for certain (大保底); the guarantee stays with the banner.
 - ``rate`` puts one more tier in front of common: that percent of draws are a featured item the save lacks.
 
 A banner names ``share`` or ``rate`` (or both), or its featured items could not be found. With ``pity`` the draw
