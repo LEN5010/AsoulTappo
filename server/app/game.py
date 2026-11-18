@@ -184,6 +184,8 @@ class Game:
         self.tracker = Tracker(store, lambda: self.now())
 
     # ---------------------------------------------------------------- activity
+    # AUTOMATED INPUT: tap reports pay shards and are judged for automated input. Automating them, or shaping them to
+    # slip past the guard, is forbidden on the official server; see app/guard.py and AGENTS.md.
     def report_activity(self, token: str, taps: int, session: str | None = None,
                         sequence: int = 0, cooldown: int = 0, injected: int | None = None) -> dict[str, Any]:
         pid = player_id_for(token)

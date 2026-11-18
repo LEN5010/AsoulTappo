@@ -35,6 +35,7 @@ watch(() => status.value?.tapCooldown, (seconds) => {
 
 watch(() => [status.value?.autoInput, status.value?.autoStrikes], ([seconds, strikes]) => noteAutoInput(seconds, strikes), { immediate: true });
 
+// Each counted tap is reported with whether other software sent it: see AUTOMATED INPUT in net/api.ts.
 function tap(injected?: boolean): void {
   const was = guard.until;
   if (!guard.allow(Date.now())) {
