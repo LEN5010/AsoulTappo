@@ -26,6 +26,12 @@ export function togglePanel(): void {
   if (ui.panelOpen) ui.panelOpen = false;
   else openPanel();
 }
+/** The desk's key for the panel: brings it to the front on the page it shows, never hides it (the tray toggles it). */
+export function raisePanel(): void {
+  ui.quickOpen = false;
+  if (isTauri && !isPanelWindow) void invoke("open_panel", {});
+  else openPanel();
+}
 export function closePanel(): void {
   ui.panelOpen = false;
   if (isPanelWindow) void invoke("hide_panel");

@@ -60,7 +60,7 @@ import {
   nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, viewport, type FormationPlace, type Pos,
   type Size,
 } from "./stores/desk";
-import { openPanel, openTodoWindow, raceFrame, todoFrame, togglePanel, ui } from "./stores/ui";
+import { openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
@@ -592,7 +592,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="barWidth"
         :quick-open="ui.quickOpen" :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
-        @quick="toggleQuick" @menu="togglePanel" @resonance="openPanel('resonance')"
+        @quick="toggleQuick" @menu="raisePanel" @resonance="openPanel('resonance')"
         :grip="docked ? undefined : barPinned ? 'menu' : 'pin'" :grip-open="gripOpen" @grip="onGrip"
       >
         <GripMenu
