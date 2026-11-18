@@ -332,6 +332,9 @@ async fn open_panel(
         .shadow(false)
         .visible(false)
         .focused(false)
+        // macOS: a click on the window while another one is in front is a click on its page as well, not only a
+        // switch to it (the pet window does the same, tauri.conf.json).
+        .accept_first_mouse(true)
         .build()
         .map_err(|e| {
             applog!("panel", "create failed: {e}");
@@ -403,6 +406,7 @@ async fn open_todo(
         .skip_taskbar(true)
         .visible(false)
         .focused(false)
+        .accept_first_mouse(true)
         .build()
         .map_err(|e| {
             applog!("todo", "create failed: {e}");
@@ -478,6 +482,7 @@ async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), Str
         .shadow(false)
         .visible(false)
         .focused(false)
+        .accept_first_mouse(true)
         .build()
         .map_err(|e| {
             applog!("race", "create failed: {e}");

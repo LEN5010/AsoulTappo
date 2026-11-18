@@ -26,7 +26,8 @@
         "shadow": false,
         "skipTaskbar": true,
         "visible": false,
-        "focus": false
+        "focus": false,
+        "acceptFirstMouse": true
       }
     ],
     "security": {
