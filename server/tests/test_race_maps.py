@@ -88,6 +88,13 @@ def test_a_race_is_run_on_one_of_the_maps_copied_into_its_setup():
     {"squares": [{"at": 3, "kind": "trip"}]},
     {"squares": [{"at": 9, "kind": "portal", "to": 9}]},
     {"squares": [{"at": 9, "kind": "portal", "to": 12}, {"at": 12, "kind": "flip"}]},
+    # A boost or trip that ends on another square, on either end of a portal, or walks back from the finish onto one.
+    {"squares": [{"at": 3, "kind": "boost", "by": 3}, {"at": 6, "kind": "again"}]},
+    {"squares": [{"at": 9, "kind": "trip", "by": 4}, {"at": 5, "kind": "hook"}]},
+    {"squares": [{"at": 9, "kind": "boost", "by": 3}, {"at": 5, "kind": "portal", "to": 12}]},
+    {"squares": [{"at": 9, "kind": "trip", "by": 4}, {"at": 5, "kind": "portal", "to": 12}]},
+    {"squares": [{"at": 6, "kind": "boost", "by": 3}, {"at": 9, "kind": "trip", "by": 3}]},
+    {"squares": [{"at": 22, "kind": "boost", "by": 5}, {"at": 21, "kind": "flip"}]},
     {"id": ""},
 ])
 def test_a_map_the_race_could_not_be_run_on_is_refused(bad):
@@ -181,13 +188,13 @@ def test_a_dash_ends_on_the_finish_it_would_pass():
 
 
 def test_a_shield_is_not_set_back():
-    r = rules([{"at": 2, "kind": "trip", "by": 1}, {"at": 1, "kind": "portal", "to": 3}])
+    r = rules([{"at": 2, "kind": "trip", "by": 2}, {"at": 1, "kind": "portal", "to": 3}])
     su = setup(r, **{J: {"id": "shield"}, N: {"id": "shield"}, X: {"id": "shield"}})
     out = run(r, su, die(2), die(3), die(2), die(1))
     assert out["moves"][0] == {"m": J, "dice": [2], "steps": 2, "from": 0, "to": 2, "skill": "shield"}
     # The far end of the portal would take it back.
     assert out["moves"][1] == {"m": N, "dice": [3], "steps": 3, "from": 0, "to": 3, "skill": "shield"}
-    assert out["moves"][2] == {"m": B, "dice": [2], "steps": 2, "from": 0, "to": 2, "square": "trip", "end": 1}
+    assert out["moves"][2] == {"m": B, "dice": [2], "steps": 2, "from": 0, "to": 2, "square": "trip", "end": 0}
     # The near end takes it on, shield or not.
     assert out["moves"][3] == {"m": X, "dice": [1], "steps": 1, "from": 0, "to": 1, "square": "portal", "end": 3}
 

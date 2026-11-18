@@ -172,7 +172,8 @@ def read_map(raw: dict[str, Any]) -> dict[str, Any]:
     squares lie along it, `path` the cell of each from the start to the finish. Raises ValueError on a map the race
     could not be run on: a short track (an odd one on the lap), an unknown kind, a square on the start or the finish,
     two squares on one, a boost or trip without a whole `by` of 1 or more, a portal whose `to` is not past its
-    `at`."""
+    `at`, a boost or trip that ends on another square or on either end of a portal (a square acts on the die's own
+    landing only, so that one would look broken)."""
     mid = str(raw.get("id") or "")
     track = int(raw["track"])
     route = raw.get("path")
@@ -199,6 +200,12 @@ def read_map(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"race map {mid}: square {ends} is off the track or taken")
         taken.update(ends)
         squares.append(out)
+    for q in squares:
+        if q["kind"] in ("boost", "trip"):
+            end = bounce(q["at"] + (q["by"] if q["kind"] == "boost" else -q["by"]), track)
+            if end in taken:
+                raise ValueError(f"race map {mid}: the {q['kind']} square on {q['at']} ends on square {end}, which "
+                                 "would do nothing there")
     found: dict[str, Any] = {"id": mid, "name": str(raw.get("name") or mid), "track": track, "squares": squares}
     if route:
         found["path"] = read_route(mid, track, route)
