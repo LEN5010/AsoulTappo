@@ -92,7 +92,8 @@ fn toggle(app: &AppHandle) {
     } else {
         applog!("hotkey", "show");
         let _ = main.show();
-        if let Some(p) = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
+        let panel = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed));
+        if let Some(p) = &panel {
             let _ = p.show();
             let _ = app.emit_to("panel", "panel:visible", true);
         }
@@ -104,6 +105,11 @@ fn toggle(app: &AppHandle) {
         }
         if let Some(r) = race.filter(|_| RACE_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
             let _ = r.show();
+        }
+        // The panel is a regular window: shown alone it stays where it was, under the window in front. The key press
+        // lets this process take the foreground, so the panel comes to the front as when it is opened by hand.
+        if let Some(p) = panel {
+            let _ = p.set_focus();
         }
     }
 }
