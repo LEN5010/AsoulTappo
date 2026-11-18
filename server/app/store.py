@@ -23,7 +23,7 @@ PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
-    "auto_until coins gift_day stamps_total"
+    "auto_until auto_strike_day auto_strikes coins gift_day stamps_total"
 ).split()
 
 
@@ -123,6 +123,11 @@ class Store(AdminStore, ParkStore, DdzStore):
             # databases belonged to a rule the guard replaced and are no longer read.
             if "auto_until" not in players:
                 self._db.execute("ALTER TABLE players ADD COLUMN auto_until REAL NOT NULL DEFAULT 0")
+            # Cooldowns the guard gave on one China day for keeping automatic input on.
+            for field, kind in (("auto_strike_day", "TEXT NOT NULL DEFAULT ''"),
+                                ("auto_strikes", "INTEGER NOT NULL DEFAULT 0")):
+                if field not in players:
+                    self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind}")
             # Park coins: held, the day of the last free one, and stamps ever earned.
             for field, kind in (("coins", "INTEGER NOT NULL DEFAULT 0"), ("gift_day", "TEXT NOT NULL DEFAULT ''"),
                                 ("stamps_total", "INTEGER NOT NULL DEFAULT 0")):

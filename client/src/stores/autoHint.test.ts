@@ -58,4 +58,35 @@ describe("the automatic-input note", () => {
     noteAutoInput(1800, 2, noon + 3_600_000);
     expect(autoHint.value).toBe(true);
   });
+
+  it("keeps strikes when status clears or autoInput expires while the bubble is still open", () => {
+    noteAutoInput(1800, 1, noon);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
+    noteAutoInput(0, 0, noon + 3_600_000);
+    noteAutoInput(undefined, undefined, noon + 3_600_000);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
+    closeAutoHint(noon + 3_600_000);
+    noteAutoInput(1800, 1, noon + 4_000_000);
+    expect(autoHint.value).toBe(false);
+    noteAutoInput(1800, 2, noon + 5_000_000);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 2]);
+  });
+
+  it("updates strikes when a new strike arrives while the bubble is already up", () => {
+    noteAutoInput(1800, 0, noon);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 0]);
+    noteAutoInput(1800, 1, noon + 60_000);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
+    closeAutoHint(noon + 60_000);
+    noteAutoInput(1800, 1, noon + 120_000);
+    expect(autoHint.value).toBe(false);
+  });
+
+  it("does not carry yesterday's strikes into today when a leftover bubble is closed after midnight", () => {
+    noteAutoInput(1800, 2, noon);
+    noteAutoInput(0, 0, noon + DAY);
+    closeAutoHint(noon + DAY);
+    noteAutoInput(1800, 1, noon + DAY + 60_000);
+    expect([autoHint.value, autoStrikes.value]).toEqual([true, 1]);
+  });
 });

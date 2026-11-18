@@ -12,6 +12,7 @@ export const autoHint = ref(false);
 export const autoNote = ref(false);
 /** Today's cooldowns for going on, as of the last status. */
 export const autoStrikes = ref(0);
+let strikeDay = "";
 /** The note's paper, for placing it over the pet. */
 export const AUTO_NOTE_WIDTH = 300;
 export const AUTO_NOTE_HEIGHT = 200;
@@ -33,10 +34,13 @@ function seen(): { day: string; strikes: number } {
  * the note was closed today with as many strikes.
  */
 export function noteAutoInput(seconds: number | undefined, strikes = 0, now = Date.now()): void {
-  autoStrikes.value = strikes;
-  if (!seconds || autoHint.value) return;
+  if (!seconds) return;
+  const today = dayOf(now);
+  autoStrikes.value = autoHint.value && strikeDay === today ? Math.max(autoStrikes.value, strikes) : strikes;
+  strikeDay = today;
+  if (autoHint.value) return;
   const was = seen();
-  if (was.day === dayOf(now) && strikes <= was.strikes) return;
+  if (was.day === today && strikes <= was.strikes) return;
   autoHint.value = true;
 }
 
@@ -48,8 +52,10 @@ export function openAutoNote(): void {
 export function closeAutoHint(now = Date.now()): void {
   autoHint.value = false;
   autoNote.value = false;
+  const today = dayOf(now);
+  const strikes = strikeDay === today ? autoStrikes.value : 0;
   try {
-    localStorage.setItem(SEEN_KEY, `${dayOf(now)}|${autoStrikes.value}`);
+    localStorage.setItem(SEEN_KEY, `${today}|${strikes}`);
   } catch {
     // Storage blocked: the bubble comes back with the next status that says so.
   }

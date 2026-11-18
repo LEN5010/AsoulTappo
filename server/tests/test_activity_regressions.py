@@ -137,7 +137,7 @@ def test_input_too_fast_for_a_hand_sits_out_a_cooldown():
     # 15 a second for 40 seconds: the batch is dropped and pays nothing.
     shards = game.status(TOKEN)["shards"]
     result = game.report_activity(TOKEN, 300, "fast", 3)
-    assert result["credited"] == 0 and result["tapCooldown"] == 60
+    assert result["credited"] == 0 and result["tapCooldown"] == 60 and result["autoStrikes"] == 0
     assert result["shards"] == shards
     clock.t += 30
     assert game.report_activity(TOKEN, 10, "other", 1)["credited"] == 0
@@ -452,3 +452,28 @@ def test_a_rule_file_may_name_a_cooldown(tmp_path):
     assert guard.cooldown(Batch(30, None, 0.0, 0.0), {}) == 90.0
     rules.write_text("def judge(batch, notes):\n    return 60\n")
     assert load(rules).cooldown(Batch(30, None, 0.0, 0.0), {}) == 0.0
+
+
+def test_auto_strikes_persist_across_a_restart_and_roll_at_china_midnight(tmp_path):
+    path = tmp_path / "strikes.db"
+    clock = Clock(datetime(2026, 11, 9, 15, 50, 0, tzinfo=timezone.utc).timestamp())
+    game = Game(Store(str(path)), tiny_manifest(), now=clock, guard=Strikes())
+    game.status(TOKEN)
+    for i in (1, 2, 3):
+        result = send(game, clock, 40, 40, i)
+    assert result["autoStrikes"] == 1
+    game.store.close()
+
+    again = Game(Store(str(path)), tiny_manifest(), now=clock, guard=Strikes())
+    assert again.status(TOKEN)["autoStrikes"] == 1
+    for i in (4, 5, 6):
+        result = send(again, clock, 40, 40, i)
+    assert result["autoStrikes"] == 2
+
+    # China midnight (16:00 UTC) starts a fresh day of strikes.
+    clock.t += 600
+    assert again.status(TOKEN)["autoStrikes"] == 0
+    for i in (7, 8, 9):
+        result = send(again, clock, 40, 40, i)
+    assert result["autoStrikes"] == 1
+    again.store.close()
