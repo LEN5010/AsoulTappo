@@ -234,14 +234,15 @@ WARDROBE_SERIES = {
 }
 
 
-# Card names by series, in card order (1.0 suit first). The API names only the suit, so these describe each portrait.
+# Card names by series, in card order (1.0 suit first). The API names only the suit, so each portrait is named here, for
+# its mood rather than for what is in it; 圣嘉然 is what the fans call that one, and 火锅时间 stays as it was.
 WARDROBE_NAMES = {
-    "wardrobe-jiaran": ["毛绒新年", "糖果外套", "背包出发", "唱给你听", "圣嘉然", "泡泡甜点",
-                        "雪地兔耳", "星月时钟", "草莓花园", "小恶魔", "舞会登场", "甜品乐园"],
-    "wardrobe-nailin": ["白狐相伴", "冰晶王座", "蓝玫瑰", "火锅时间", "街口白纱", "海边派对",
-                        "雪夜撑伞", "咖啡午后", "女王权杖", "红裙起舞", "桃花面纱", "黑猫红酒"],
-    "wardrobe-beila": ["海边月夜", "樱花校园", "演唱会", "接力赛跑", "天鹅芭蕾", "星空漫步",
-                       "白貂折扇", "雏菊精灵", "暗夜刀客", "绣球与猫", "兔耳读书", "彩带派对"],
+    "wardrobe-jiaran": ["岁朝欢喜", "糖纸彩虹", "乘风远行", "紫夜心音", "圣嘉然", "浮光甜梦",
+                        "初雪兔语", "星月钟声", "莓果初夏", "心跳恶作剧", "星夜圆舞", "糖霜奇遇"],
+    "wardrobe-nailin": ["霜狐夜话", "凛冬王座", "蓝玫瑰之约", "火锅时间", "枝江月色", "海盐夏日",
+                        "伞下听雪", "浮生半日", "玫瑰加冕", "绯红独舞", "半面桃花", "烛影微醺"],
+    "wardrobe-beila": ["满月潮声", "春日放课后", "安可时刻", "追风一程", "天鹅之梦", "枕星入梦",
+                       "扇底初雪", "雏菊絮语", "赤刃夜行", "绣球花信", "日光书签", "流金舞步"],
 }
 
 
