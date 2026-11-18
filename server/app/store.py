@@ -227,9 +227,21 @@ class Store(AdminStore, ParkStore, DdzStore):
                 (pid, session, sequence, last_at, fast_since, guard))
             self._commit()
 
+    def guard_day(self, pid: str, day: str) -> str:
+        with self._lock:
+            row = self._db.execute("SELECT notes FROM guard_days WHERE day=? AND player_id=?", (day, pid)).fetchone()
+            return row[0] if row else "{}"
+
+    def save_guard_day(self, pid: str, day: str, notes: str) -> None:
+        with self._lock:
+            self._db.execute("INSERT INTO guard_days (day,player_id,notes) VALUES (?,?,?) "
+                             "ON CONFLICT(day,player_id) DO UPDATE SET notes=excluded.notes", (day, pid, notes))
+            self._commit()
+
     def prune_activity_sessions(self, before: float) -> int:
         """Delete sessions last seen before [before]; rows from before last_at existed hold 0 and go too."""
         with self._lock:
+            self._db.execute("DELETE FROM guard_days WHERE day < ?", (day_of(before),))
             cur = self._db.execute("DELETE FROM activity_sessions WHERE last_at < ?", (before,))
             self._commit()
             return cur.rowcount

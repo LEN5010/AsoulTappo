@@ -284,16 +284,26 @@ class Game:
         if injected is not None:
             injected = max(0, min(int(injected), taps))
         elapsed = now - last["last_at"] if 0 < last["last_at"] < now else 0.0
+        strikes_today = p["auto_strikes"] if p["auto_strike_day"] == today else 0
+        daily_rule = self.guard.daily_cooldown
+        stored_day = st.guard_day(pid, today) if daily_rule else "{}"
         try:
-            batch = Batch(taps, injected, elapsed, now, dict(headers or {}))
+            batch = Batch(taps, injected, elapsed, now, dict(headers or {}), strikes_today, now < p["tap_cooldown_until"])
             span = self.guard.judge(batch, notes)
-            cool = self.guard.cooldown(batch, notes)
+            if daily_rule:
+                daily_notes = json.loads(stored_day)
+                cool = max(0.0, float(daily_rule(batch, span > 0, daily_notes)))
+                next_day = json.dumps(daily_notes, separators=(",", ":"))
+            else:
+                cool = self.guard.cooldown(batch, notes)
             shown = span
             kept = json.dumps({"v": 2, "all": notes, "shown": shown_notes}, separators=(",", ":"))
         except Exception:  # a broken rule must not cost anyone their taps
             log.exception("the guard failed on a batch")
             span, cool, shown, kept = 0.0, 0.0, 0.0, last["guard"]
         else:
+            if daily_rule and next_day != stored_day:
+                st.save_guard_day(pid, today, next_day)
             if injected is not None:
                 try:
                     shown = self.guard.judge(Batch(taps - injected, 0, elapsed, now), shown_notes)
@@ -311,7 +321,7 @@ class Game:
                 st.update_player(pid, auto_until=p["auto_until"])
         if cool > 0:
             # The guard's cooldown: the batch that drew it earns nothing either (report_activity checks next).
-            strikes = (p["auto_strikes"] if p["auto_strike_day"] == today else 0) + 1
+            strikes = strikes_today + 1
             p["auto_strike_day"], p["auto_strikes"] = today, strikes
             fields: dict[str, Any] = {"auto_strike_day": today, "auto_strikes": strikes}
             if now + cool > p["tap_cooldown_until"]:
