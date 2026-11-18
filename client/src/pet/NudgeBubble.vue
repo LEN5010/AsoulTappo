@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Over the own pet: a reminder (water, getting up, lunch, hello, bedtime), a bubble of the tomato timer or a todo that
+// Over the own pet: a reminder (the player's own list, lunch, hello, bedtime), a bubble of the tomato timer or a todo that
 // came due (src/stores/nudge.ts, src/stores/pomodoro.ts, src/stores/todo.ts).
 import { NUDGE_WIDTH, answerLunch, closeNudge, drankWater, nudge } from "../stores/nudge";
 import { nextPomodoro } from "../stores/pomodoro";
@@ -15,7 +15,7 @@ function openTodos() {
 }
 
 /** The single key of the kinds that have one. */
-const OK: Partial<Record<string, string>> = { move: "好", greet: "嗨", night: "晚安", rest: "好", back: "好" };
+const OK: Partial<Record<string, string>> = { greet: "嗨", night: "晚安", rest: "好", back: "好" };
 </script>
 
 <template>
@@ -32,7 +32,7 @@ const OK: Partial<Record<string, string>> = { move: "好", greet: "嗨", night: 
           <button type="button" class="ui-btn small primary" @click="finishTodo(nudge.todo)">完成</button>
         </template>
         <button v-else-if="nudge.kind === 'todos'" type="button" class="ui-btn small primary" @click="openTodos">看看</button>
-        <button v-else-if="nudge.kind === 'water'" type="button" class="ui-btn small primary" @click="drankWater">喝了</button>
+        <button v-else-if="nudge.kind === 'tip' && nudge.tip === 'water'" type="button" class="ui-btn small primary" @click="drankWater">喝了</button>
         <template v-else-if="nudge.kind === 'again'">
           <button type="button" class="ui-btn small" @click="closeNudge">不了</button>
           <button type="button" class="ui-btn small primary" @click="nextPomodoro">再来一轮</button>

@@ -1,25 +1,31 @@
-// When the own pet reminds the player to drink water, to get up, asks about lunch, says hello and says to go to bed.
-// Pure timing: the caller ticks it with the clock, reports input, and shows what `due` returns once nothing else holds
-// the spot over the pet.
+// When the own pet reminds the player of something for their health, asks about lunch, says hello and says to go to
+// bed. Pure timing: the caller ticks it with the clock, reports input, and shows what `due` returns once nothing else
+// holds the spot over the pet.
 //
 // - Hello: the first time the player is at the computer each day from 5:00, worded for the time of day.
 // - Bed: once a night, the first time the player is at the computer from 0:30 until 5:00.
-// - Water: after 90 to 150 minutes of use, counted only while the player is at the computer.
-// - Sitting: after 60 minutes of use without a break of 5 minutes or more; a break starts the count again.
 // - Lunch: once a day, at a random minute from 11:30 to 13:00, the first time the player is at the computer from
 //   then until 13:30.
-// Two reminders keep at least 10 minutes apart; one that comes due meanwhile waits.
+// - The player's reminders (reminders.ts: water, getting up and so on): each after its own minutes of use, counted
+//   only while the player is at the computer and a little uneven, so they do not come like clockwork. The ones a
+//   break answers start over after a break of 5 minutes or more.
+// Two reminders keep at least 10 minutes apart; one that comes due meanwhile waits, the most overdue first.
+import { REST_ANSWERS, type Reminder } from "./reminders";
 
-export type NudgeKind = "water" | "move" | "lunch" | "greet" | "night";
+export type NudgeKind = "tip" | "lunch" | "greet" | "night";
+/** A reminder that is due: for `tip`, which of the player's. */
+export interface Due { kind: NudgeKind; tip?: Reminder }
 /** The days the once-a-day reminders were last shown, kept across restarts. */
 export interface NudgeDays { lunch?: string; greet?: string; night?: string }
+/** Which of the once-a-day reminders the player keeps on. */
+export interface DailyOn { lunch: boolean; greet: boolean; night: boolean }
 
 const MIN = 60_000;
 /** No input for this long and the player is away: nothing is counted or shown, and sitting starts over. */
 export const AWAY_MS = 5 * MIN;
-export const WATER_MS: [number, number] = [90 * MIN, 150 * MIN];
-export const MOVE_MS = 60 * MIN;
 export const SPACING_MS = 10 * MIN;
+/** A reminder comes after its minutes times a factor from this range. */
+export const UNEVEN: [number, number] = [0.85, 1.15];
 /** Lunch window as minutes after midnight: asked from a random minute in [from, until), skipped after `last`. */
 export const LUNCH = { from: 11 * 60 + 30, until: 13 * 60, last: 13 * 60 + 30 };
 /** Hellos from this minute of the day on; the night before it is the bedtime window's. */
@@ -27,10 +33,6 @@ export const GREET_FROM = 5 * 60;
 /** The bedtime reminder's window, as minutes after midnight. */
 export const NIGHT = { from: 30, until: 5 * 60 };
 
-export const LINES: Record<"water" | "move", string[]> = {
-  water: ["该喝水啦，去接一杯吧", "喝口水歇一下吧", "好一阵没喝水了哦", "杯子空了吗？续一杯吧", "记得喝水哦"],
-  move: ["坐了快一小时啦，起来走走", "站起来伸个懒腰吧", "该起来活动活动啦", "转转肩膀和脖子吧", "看看远处，歇歇眼睛吧"],
-};
 /** Hellos by the minute of the day each wording starts from, latest last. */
 export const GREETS: [number, string[]][] = [
   [GREET_FROM, ["早上好，今天也加油", "早呀，新的一天开始啦"]],
@@ -57,14 +59,13 @@ export function greetLine(minute: number, rand: () => number): string {
   return pick(lines, rand);
 }
 
+/** How far one reminder has counted: time at the computer since it last came up, and the amount that brings it. */
+interface Count { used: number; every: number; at: number }
+
 export class NudgeClock {
   private lastInput = -Infinity;
   private lastTick: number;
-  /** Time at the computer since the last water reminder, and the amount that brings the next one. */
-  private water = 0;
-  private waterAt: number;
-  /** Start of the current stretch without a break. */
-  private sitSince: number | null = null;
+  private counts = new Map<string, Count>();
   private lastShown = -Infinity;
   /** The day lunch was asked or given up on, and today's minute to ask from. */
   private lunchDay: string;
@@ -74,18 +75,23 @@ export class NudgeClock {
   private greetDay: string;
   private nightDay: string;
 
-  constructor(now: number, private rand: () => number = Math.random, days: NudgeDays = {}) {
+  /** [tips]: the player's reminders as they are now, asked at every tick. [daily]: the once-a-day ones kept on. */
+  constructor(
+    now: number, private rand: () => number = Math.random, days: NudgeDays = {},
+    private tips: () => readonly Reminder[] = () => [],
+    private daily: () => DailyOn = () => ({ lunch: true, greet: true, night: true }),
+  ) {
     this.lastTick = now;
-    this.waterAt = this.nextWater();
     this.lunchDay = days.lunch ?? "";
     this.greetDay = days.greet ?? "";
     this.nightDay = days.night ?? "";
     this.lunchMinute = LUNCH.from;
   }
 
-  private nextWater() {
-    const [lo, hi] = WATER_MS;
-    return lo + this.rand() * (hi - lo);
+  private arm(count: Count, everyMin: number) {
+    const [lo, hi] = UNEVEN;
+    count.every = everyMin;
+    count.at = everyMin * MIN * (lo + this.rand() * (hi - lo));
   }
 
   /** No input for AWAY_MS: the player is away from the computer (also before the first input). */
@@ -93,25 +99,34 @@ export class NudgeClock {
     return now - this.lastInput >= AWAY_MS;
   }
 
-  /** A key, a button or the mouse. */
+  /** A key, a button or the mouse. Coming back from a break starts the reminders a break answers over. */
   input(now: number) {
-    if (this.away(now)) this.sitSince = now;
+    if (this.away(now)) this.rested();
     this.lastInput = now;
+  }
+
+  /** The player took a break (away from the computer, or a rest of the tomato timer). */
+  rested() {
+    for (const [id, count] of this.counts) if (REST_ANSWERS.has(id)) count.used = 0;
   }
 
   /**
    * Advances the counts to `now` and answers the reminder due, if any; nothing is marked shown until `shown` is
    * called, so a reminder held back by something else on screen stays due.
    */
-  due(now: number): NudgeKind | null {
+  due(now: number): Due | null {
     const step = Math.max(0, now - this.lastTick);
     this.lastTick = now;
-    if (this.away(now)) {
-      this.sitSince = null;
-      return null;
+    if (this.away(now)) return null;
+    const tips = this.tips().filter((tip) => tip.on);
+    for (const id of [...this.counts.keys()]) if (!tips.some((tip) => tip.id === id)) this.counts.delete(id);
+    for (const tip of tips) {
+      let count = this.counts.get(tip.id);
+      if (!count) this.counts.set(tip.id, (count = { used: 0, every: 0, at: 0 }));
+      if (count.every !== tip.everyMin) this.arm(count, tip.everyMin);
+      // Only the part of the step after the last input counts as away; the rest is time at the computer.
+      count.used += Math.min(step, AWAY_MS);
     }
-    // Only the part of the step after the last input counts as away; the rest is time at the computer.
-    this.water += Math.min(step, AWAY_MS);
     if (now - this.lastShown < SPACING_MS) return null;
     const day = dayOf(now);
     if (day !== this.lunchFor) {
@@ -119,24 +134,30 @@ export class NudgeClock {
       this.lunchMinute = LUNCH.from + Math.floor(this.rand() * (LUNCH.until - LUNCH.from));
     }
     const minute = minuteOfDay(now);
-    if (this.nightDay !== day && minute >= NIGHT.from && minute < NIGHT.until) return "night";
-    if (this.greetDay !== day && minute >= GREET_FROM) return "greet";
-    if (this.lunchDay !== day && minute >= this.lunchMinute && minute < LUNCH.last) return "lunch";
-    if (this.sitSince != null && now - this.sitSince >= MOVE_MS) return "move";
-    if (this.water >= this.waterAt) return "water";
-    return null;
+    const daily = this.daily();
+    if (daily.night && this.nightDay !== day && minute >= NIGHT.from && minute < NIGHT.until) return { kind: "night" };
+    if (daily.greet && this.greetDay !== day && minute >= GREET_FROM) return { kind: "greet" };
+    if (daily.lunch && this.lunchDay !== day && minute >= this.lunchMinute && minute < LUNCH.last) return { kind: "lunch" };
+    let tip: Reminder | undefined;
+    let most = 1;
+    for (const t of tips) {
+      const count = this.counts.get(t.id)!;
+      const over = count.used / count.at;
+      if (over >= most) [tip, most] = [t, over];
+    }
+    return tip ? { kind: "tip", tip } : null;
   }
 
-  /** The reminder went up. Getting up for one counts for the others: a stretch break also resets water's count. */
-  shown(kind: NudgeKind, now: number) {
+  /** The reminder went up. */
+  shown(due: Due, now: number) {
     this.lastShown = now;
-    if (kind === "lunch") this.lunchDay = dayOf(now);
-    if (kind === "greet") this.greetDay = dayOf(now);
-    if (kind === "night") this.nightDay = dayOf(now);
-    if (kind === "move") this.sitSince = now;
-    if (kind === "water" || kind === "move") {
-      this.water = 0;
-      this.waterAt = this.nextWater();
+    if (due.kind === "lunch") this.lunchDay = dayOf(now);
+    if (due.kind === "greet") this.greetDay = dayOf(now);
+    if (due.kind === "night") this.nightDay = dayOf(now);
+    const count = due.tip && this.counts.get(due.tip.id);
+    if (count) {
+      count.used = 0;
+      this.arm(count, due.tip!.everyMin);
     }
   }
 

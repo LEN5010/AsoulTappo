@@ -25,6 +25,8 @@ export async function syncSettings() {
   }, { target: windowLabel });
   const stop = watch(() => ({
     ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase], skinNotes: { ...settings.skinNotes },
+    // Edited in place, a line at a time.
+    reminders: settings.reminders.map((r) => ({ ...r, lines: [...r.lines] })),
   }), (value, old) => {
     if (receiving) return;
     const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>

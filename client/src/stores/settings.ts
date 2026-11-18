@@ -2,6 +2,7 @@ import { reactive, watch } from "vue";
 import { readRecentRooms, type RecentRoom } from "../recentRooms";
 import { defaultCharacter } from "../characters";
 import { MAX_SHOWCASE } from "../net/protocol";
+import { cleanReminders, type Reminder } from "../reminders";
 import { roomStatus } from "../roomStatus";
 import { isTauri } from "../composables/tauri";
 
@@ -56,8 +57,14 @@ export interface Settings {
   volume: number;
   /** "+N" shards over the own pet while typing. */
   shardPop: boolean;
-  /** The own pet reminds the player to drink water and get up, and asks about lunch (src/nudge.ts). */
+  /** The own pet's reminders as a whole (src/nudge.ts): off, none of the ones below comes up. */
   healthTips: boolean;
+  /** The reminders that come after some time at the computer: the built-in ones and the player's own (src/reminders.ts). */
+  reminders: Reminder[];
+  /** The once-a-day ones: the hello, the lunch question and the bedtime line. */
+  tipGreet: boolean;
+  tipLunch: boolean;
+  tipNight: boolean;
   /** Tomato timer lengths in minutes: the focus (5–120) and the rest (1–60). */
   pomodoroFocus: number;
   pomodoroRest: number;
@@ -167,6 +174,10 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   shardPop: true,
   healthTips: true,
+  reminders: cleanReminders(undefined),
+  tipGreet: true,
+  tipLunch: true,
+  tipNight: true,
   pomodoroFocus: 25,
   pomodoroRest: 5,
   pomodoroLong: true,
@@ -264,6 +275,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
   out.skinNotes = cleanSkinNotes(out.skinNotes);
+  out.reminders = cleanReminders(out.reminders);
   return out;
 }
 

@@ -10,6 +10,7 @@ import { MainAccountApi } from "../net/mainAccount";
 import { toHttpBase } from "../net/protocol";
 import { accountLoginTrusted } from "../net/trust";
 import AccountDialog from "./AccountDialog.vue";
+import ReminderDialog from "./ReminderDialog.vue";
 import Modal from "../ui/Modal.vue";
 import { checkState, lookForUpdate, openUpdateDialog, updateOffer } from "../stores/update";
 import { counter } from "../stores/counter";
@@ -58,6 +59,13 @@ const MAIL = "len5010@qq.com";
 const GROUP = "1106311431";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
+/** The health reminders' own dialog; the row's key says how many are on. */
+const tipsOpen = ref(false);
+const tipsLabel = computed(() => {
+  if (!settings.healthTips) return "已关闭";
+  const on = settings.reminders.filter((r) => r.on).length + [settings.tipGreet, settings.tipLunch, settings.tipNight].filter(Boolean).length;
+  return `开启 ${on} 项`;
+});
 function openPromo() {
   promoOpen.value = true;
   settings.promoSeen = true;
@@ -272,10 +280,10 @@ async function exportLogFile() {
                 <span>显示敲击碎片</span>
                 <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
               </label>
-              <label class="ui-row">
+              <div class="ui-row">
                 <span>健康提醒</span>
-                <input v-model="settings.healthTips" class="ui-switch" type="checkbox" />
-              </label>
+                <button type="button" class="ui-btn small" @click="tipsOpen = true">{{ tipsLabel }}</button>
+              </div>
             </div>
           </section>
 
@@ -437,6 +445,7 @@ async function exportLogFile() {
     <Modal v-if="legalOpen" :title="DOC_TITLES[legalOpen]" heading wide @close="legalOpen = null">
       <LegalDoc :doc="legalOpen" />
     </Modal>
+    <ReminderDialog v-if="tipsOpen" @close="tipsOpen = false" />
     <Modal v-if="promoOpen" title="Asasfans" heading @close="promoOpen = false">
       <AsasfansPromo />
     </Modal>

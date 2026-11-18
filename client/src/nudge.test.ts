@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AWAY_MS, GREETS, LUNCH, MOVE_MS, NIGHT_LINES, NudgeClock, SPACING_MS, WATER_MS, greetLine, pick } from "./nudge";
+import { AWAY_MS, GREETS, LUNCH, NIGHT_LINES, NudgeClock, SPACING_MS, UNEVEN, greetLine, pick } from "./nudge";
+import type { Reminder } from "./reminders";
 
 const MIN = 60_000;
 const at = (h: number, m = 0) => new Date(2026, 10, 16, h, m).getTime();
@@ -7,58 +8,96 @@ const DAY = "2026-11-16";
 /** The hello of the test day already said, so the other reminders show alone. */
 const GREETED = { greet: DAY };
 
+const tip = (id: string, everyMin: number, on = true): Reminder => ({ id, name: id, on, everyMin, showSec: 30, lines: [id] });
+const WATER = tip("water", 120);
+const MOVE = tip("move", 60);
+
 /** Drives the clock in 30-second ticks with input every tick while `busy`, showing whatever comes due. */
 function run(clock: NudgeClock, from: number, minutes: number, busy: (t: number) => boolean = () => true) {
   const shown: { kind: string; at: number }[] = [];
   for (let t = from; t <= from + minutes * MIN; t += 30_000) {
     if (busy(t)) clock.input(t);
-    const kind = clock.due(t);
-    if (kind) { clock.shown(kind, t); shown.push({ kind, at: (t - from) / MIN }); }
+    const due = clock.due(t);
+    if (due) { clock.shown(due, t); shown.push({ kind: due.tip?.id ?? due.kind, at: (t - from) / MIN }); }
   }
   return shown;
 }
+/** A reminder of [everyMin] comes this many minutes in with the earliest draw, give or take a tick. */
+const earliest = (everyMin: number) => everyMin * UNEVEN[0];
 
 describe("NudgeClock", () => {
-  it("asks to get up after an hour without a break", () => {
+  it("brings a reminder up after its minutes at the computer, a little early or late", () => {
     const start = at(8);
-    const clock = new NudgeClock(start, () => 0.999, GREETED);
-    const shown = run(clock, start, 70);
-    expect(shown).toEqual([{ kind: "move", at: MOVE_MS / MIN }]);
+    const early = run(new NudgeClock(start, () => 0, GREETED, () => [MOVE]), start, 55);
+    expect(early).toHaveLength(1);
+    expect(early[0].kind).toBe("move");
+    expect(early[0].at).toBeGreaterThanOrEqual(earliest(60) - 0.5);
+    expect(early[0].at).toBeLessThanOrEqual(earliest(60) + 0.5);
+    const late = run(new NudgeClock(start, () => 0.999, GREETED, () => [MOVE]), start, 75);
+    expect(late).toHaveLength(1);
+    expect(late[0].at).toBeGreaterThan(60 * UNEVEN[1] - 1);
   });
 
-  it("starts the hour again after a break of five minutes", () => {
+  it("starts a reminder a break answers over after a break of five minutes", () => {
     const start = at(8);
-    const clock = new NudgeClock(start, () => 0.999, GREETED);
+    const clock = new NudgeClock(start, () => 0, GREETED, () => [MOVE]);
     // a 6-minute break at minute 40
-    const shown = run(clock, start, 110, (t) => t - start < 40 * MIN || t - start >= 46 * MIN);
-    expect(shown).toEqual([{ kind: "move", at: 46 + MOVE_MS / MIN }]);
+    const shown = run(clock, start, 100, (t) => t - start < 40 * MIN || t - start >= 46 * MIN);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].at).toBeGreaterThanOrEqual(46 + earliest(60) - 0.5);
+    expect(shown[0].at).toBeLessThanOrEqual(46 + earliest(60) + 0.5);
   });
 
-  it("counts water only while the player is there", () => {
+  it("starts those over at a rest of the tomato timer too, and leaves the others counting", () => {
+    const start = at(8);
+    const clock = new NudgeClock(start, () => 0, GREETED, () => [MOVE, tip("my-pills", 60)]);
+    for (let t = start; t < start + 40 * MIN; t += 30_000) { clock.input(t); clock.due(t); }
+    clock.rested();
+    const shown = run(clock, start + 40 * MIN, 30);
+    expect(shown.map((s) => s.kind)).toEqual(["my-pills"]);
+  });
+
+  it("counts only while the player is there, across breaks for the reminders a break does not answer", () => {
     const start = at(15);
-    // move reminders out of the way: a short break every 50 minutes
+    // a 6-minute break every 50 minutes
     const busy = (t: number) => ((t - start) / MIN) % 50 < 44;
-    const clock = new NudgeClock(start, () => 0, GREETED);
-    const shown = run(clock, start, 200, busy);
-    const water = shown.filter((s) => s.kind === "water");
-    expect(water.length).toBeGreaterThan(0);
-    // 90 minutes at the computer take longer than 90 minutes with breaks in between
-    expect(water[0].at).toBeGreaterThan(WATER_MS[0] / MIN);
-    expect(water[0].at).toBeLessThan(WATER_MS[0] / MIN + 3 * 6 + 1);
+    const shown = run(new NudgeClock(start, () => 0, GREETED, () => [WATER]), start, 200, busy);
+    expect(shown.length).toBeGreaterThan(0);
+    // the minutes at the computer take longer than as many minutes with breaks in between
+    expect(shown[0].at).toBeGreaterThan(earliest(120));
+    expect(shown[0].at).toBeLessThan(earliest(120) + 3 * 6 + 1);
   });
 
   it("shows nothing while the player is away", () => {
     const start = at(9);
-    const clock = new NudgeClock(start, () => 0, GREETED);
+    const clock = new NudgeClock(start, () => 0, GREETED, () => [tip("water", 5)]);
     clock.input(start);
     expect(clock.due(start + AWAY_MS + 5 * 60 * MIN)).toBeNull();
+  });
+
+  it("leaves out a reminder that is off, and one taken off the list", () => {
+    const start = at(8);
+    let tips = [tip("water", 10, false), tip("my-a", 10)];
+    const clock = new NudgeClock(start, () => 0, GREETED, () => tips);
+    expect(run(clock, start, 25).map((s) => s.kind)).toEqual(["my-a", "my-a"]);
+    tips = [tip("water", 10, false)];
+    expect(run(clock, start + 25 * MIN, 30)).toEqual([]);
+  });
+
+  it("follows a change of a reminder's minutes", () => {
+    const start = at(8);
+    let tips = [tip("my-a", 240)];
+    const clock = new NudgeClock(start, () => 0, GREETED, () => tips);
+    expect(run(clock, start, 20)).toEqual([]);
+    tips = [tip("my-a", 20)];
+    // 20 minutes are counted already
+    expect(run(clock, start + 20 * MIN + 30_000, 1).map((s) => s.kind)).toEqual(["my-a"]);
   });
 
   it("asks about lunch once, at the drawn minute", () => {
     const start = at(11);
     const clock = new NudgeClock(start, () => 0.5, GREETED);
-    const shown = run(clock, start, 120, (t) => ((t - start) / MIN) % 50 < 44);
-    const lunch = shown.filter((s) => s.kind === "lunch");
+    const lunch = run(clock, start, 120).filter((s) => s.kind === "lunch");
     expect(lunch).toHaveLength(1);
     const minute = LUNCH.from + Math.floor(0.5 * (LUNCH.until - LUNCH.from));
     expect(lunch[0].at).toBe(minute - 11 * 60);
@@ -77,23 +116,34 @@ describe("NudgeClock", () => {
     expect(run(clock, start, 30).filter((s) => s.kind === "lunch")).toEqual([]);
   });
 
-  it("keeps reminders ten minutes apart", () => {
+  it("leaves out the once-a-day reminders the player turned off", () => {
     const start = at(11, 20);
-    // lunch drawn at 11:30, the hour without a break ends at 12:20 as well as water at 90 minutes, all in a row
-    const clock = new NudgeClock(start, () => 0, GREETED);
-    const shown = run(clock, start, 180);
+    const clock = new NudgeClock(start, () => 0, {}, () => [], () => ({ greet: false, lunch: false, night: true }));
+    expect(run(clock, start, 120)).toEqual([]);
+    expect(clock.days.greet).toBe("");
+  });
+
+  it("keeps reminders ten minutes apart, the most overdue first", () => {
+    const start = at(11, 20);
+    // lunch drawn at 11:30 and three reminders that are due all the time
+    const clock = new NudgeClock(start, () => 0, GREETED, () => [tip("my-a", 5), tip("my-b", 5), tip("my-c", 30)]);
+    const shown = run(clock, start, 90);
+    expect(shown.length).toBeGreaterThan(4);
     for (let i = 1; i < shown.length; i++) expect(shown[i].at - shown[i - 1].at).toBeGreaterThanOrEqual(SPACING_MS / MIN);
+    const waited = new NudgeClock(start, () => 0, { ...GREETED, lunch: DAY }, () => [tip("my-c", 30), tip("my-a", 5)]);
+    waited.mark(start + 30 * MIN);
+    expect(run(waited, start, 41).map((s) => s.kind)).toEqual(["my-a"]);
   });
 
   it("holds a due reminder until it is shown", () => {
     const start = at(8);
-    const clock = new NudgeClock(start, () => 0.999, GREETED);
+    const clock = new NudgeClock(start, () => 0, GREETED, () => [MOVE]);
     let t = start;
-    for (; t < start + MOVE_MS; t += 30_000) { clock.input(t); clock.due(t); }
+    for (; t < start + 60 * MIN; t += 30_000) { clock.input(t); clock.due(t); }
     clock.input(t);
-    expect(clock.due(t)).toBe("move");
+    expect(clock.due(t)?.tip?.id).toBe("move");
     clock.input(t + 30_000);
-    expect(clock.due(t + 30_000)).toBe("move");
+    expect(clock.due(t + 30_000)?.tip?.id).toBe("move");
   });
 });
 
@@ -134,7 +184,7 @@ describe("hello and bedtime", () => {
     clock.mark(start);
     expect(clock.due(start)).toBeNull();
     clock.input(start + SPACING_MS);
-    expect(clock.due(start + SPACING_MS)).toBe("greet");
+    expect(clock.due(start + SPACING_MS)).toEqual({ kind: "greet" });
   });
 });
 

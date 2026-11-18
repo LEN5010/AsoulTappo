@@ -1,10 +1,13 @@
-// The bubble over the own pet for reminders (src/nudge.ts has the timing), the tomato timer (stores/pomodoro.ts) and
-// todos (stores/todo.ts): one at a time, gone by itself after a while.
+// The bubble over the own pet for reminders (src/nudge.ts has the timing, src/reminders.ts the player's own list), the
+// tomato timer (stores/pomodoro.ts) and todos (stores/todo.ts): one at a time, gone by itself after a while.
 import { ref } from "vue";
+import { isPanelWindow } from "../composables/tauri";
+import { requestDesktop } from "../desktop/transport";
 import {
-  LINES, LUNCH_ASK, LUNCH_REPLY, NIGHT_LINES, NudgeClock, greetLine, minuteOfDay, pick, type NudgeDays, type NudgeKind,
+  LUNCH_ASK, LUNCH_REPLY, NIGHT_LINES, NudgeClock, greetLine, minuteOfDay, pick, type Due, type NudgeDays, type NudgeKind,
 } from "../nudge";
 import type { PomodoroBubble } from "../pomodoro";
+import { linesOf, type Reminder } from "../reminders";
 import { drank } from "./room";
 import { settings } from "./settings";
 
@@ -18,6 +21,8 @@ export interface Nudge {
   reply?: boolean;
   /** The todo of a `todo` bubble. */
   todo?: string;
+  /** The reminder of a `tip` bubble (a Reminder's id). */
+  tip?: string;
 }
 
 export const nudge = ref<Nudge | null>(null);
@@ -64,16 +69,26 @@ export function drankWater() {
   drank();
 }
 
-function textOf(kind: NudgeKind, now: number): string {
-  if (kind === "lunch") return LUNCH_ASK;
-  if (kind === "greet") return greetLine(minuteOfDay(now), Math.random);
-  if (kind === "night") return pick(NIGHT_LINES, Math.random);
-  return pick(LINES[kind], Math.random);
+function textOf(due: Due, now: number): string {
+  if (due.tip) return pick(linesOf(due.tip), Math.random);
+  if (due.kind === "lunch") return LUNCH_ASK;
+  if (due.kind === "greet") return greetLine(minuteOfDay(now), Math.random);
+  return pick(NIGHT_LINES, Math.random);
 }
 
-function show(kind: NudgeKind, now: number) {
-  nudge.value = { kind, text: textOf(kind, now) };
-  close(SHOW_MS);
+function show(due: Due, now: number) {
+  nudge.value = { kind: due.kind, text: textOf(due, now), tip: due.tip?.id };
+  close(due.tip ? due.tip.showSec * 1000 : SHOW_MS);
+}
+
+/**
+ * Shows [reminder] over the pet now, as it would come up, for trying it out from its settings. Nothing is counted;
+ * it gives way to anything else over the pet.
+ */
+export function tryReminder(reminder: Reminder) {
+  if (isPanelWindow) { void requestDesktop("tryReminder", reminder); return; }
+  if (held() || keepsSpot(nudge.value)) return;
+  show({ kind: "tip", tip: reminder }, Date.now());
 }
 
 /**
@@ -100,7 +115,7 @@ export const playerAway = () => (clock ? clock.away(Date.now()) : true);
 /**
  * A todo's bubble, shown now unless something else holds the spot over the pet, the tomato timer or another todo has
  * the bubble, the lunch question waits for an answer, or the player is away; whether it went up. It takes the place
- * of the other reminders (water, sitting, hello, bedtime).
+ * of the other reminders (the player's own, hello, bedtime).
  */
 export function offerTodo(kind: TodoBubble, text: string, todo?: string): boolean {
   if (held() || keepsSpot(nudge.value) || playerAway()) return false;
@@ -117,9 +132,9 @@ export function sayTodoDone(text: string, id: string) {
   close(REPLY_MS);
 }
 
-/** A rest of the tomato timer began: it is the break the sitting reminder asks for, bubble or not. */
+/** A rest of the tomato timer began: it is the break the reminders to get up ask for, bubble or not. */
 export function notePomodoroRest() {
-  clock?.shown("move", Date.now());
+  clock?.rested();
 }
 
 function loadDays(): NudgeDays {
@@ -139,16 +154,17 @@ function saveDay(kind: keyof NudgeDays, day: string) {
  * bubbles too; [holdReminders] holds the reminders only (the tomato timer's focus).
  */
 export function startNudges(holdAll: () => boolean, holdReminders: () => boolean = () => false): () => void {
-  const c = (clock = new NudgeClock(Date.now(), Math.random, loadDays()));
+  const c = (clock = new NudgeClock(Date.now(), Math.random, loadDays(), () => settings.reminders,
+    () => ({ greet: settings.tipGreet, lunch: settings.tipLunch, night: settings.tipNight })));
   held = holdAll;
   const tick = () => {
     const now = Date.now();
     // Counted while switched off or held back too; only the showing waits.
-    const kind = c.due(now);
-    if (!kind || !settings.healthTips || nudge.value || holdAll() || holdReminders()) return;
-    show(kind, now);
-    c.shown(kind, now);
-    if (kind === "lunch" || kind === "greet" || kind === "night") saveDay(kind, c.days[kind]);
+    const due = c.due(now);
+    if (!due || !settings.healthTips || nudge.value || holdAll() || holdReminders()) return;
+    show(due, now);
+    c.shown(due, now);
+    if (due.kind !== "tip") saveDay(due.kind, c.days[due.kind]);
   };
   const timer = setInterval(tick, TICK_MS);
   const events = ["pointermove", "pointerdown", "keydown"] as const;

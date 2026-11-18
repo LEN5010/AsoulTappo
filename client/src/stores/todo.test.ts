@@ -77,7 +77,7 @@ it("puts the todos missed while the app was closed into one bubble", async () =>
 
 it("takes the place of a water reminder but not of the tomato timer's question", async () => {
   const { nudge, store } = await desk();
-  nudge.nudge.value = { kind: "water", text: "记得喝水哦" };
+  nudge.nudge.value = { kind: "tip", tip: "water", text: "记得喝水哦" };
   store.addTodo({ title: "取快递", at: START + MIN, allDay: false, repeat: "none" });
   await busy(nudge, MIN);
   expect(nudge.nudge.value).toMatchObject({ kind: "todo", text: "取快递" });
