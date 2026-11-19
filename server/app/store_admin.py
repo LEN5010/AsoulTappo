@@ -11,8 +11,17 @@ class _StoreState:
     """What the mixins use of Store; Store sets them in __init__."""
     _db: sqlite3.Connection
     _lock: threading.RLock
+    _counts: dict[str, tuple[frozenset[str], int]]
 
     def _commit(self) -> None: ...
+
+
+# Saves never used: no taps, no activity report, no main-site account, no nick and no loadout. A save made by a script
+# that only spent its starter shards on draws looks like this (see AdminStore.unused_saves).
+_UNUSED = ("created >= ? AND created < ? AND taps_total = 0 AND last_activity = 0 AND room_nick = '' AND loadout = '' "
+           "AND NOT EXISTS (SELECT 1 FROM account_links l WHERE l.player_id = players.id)")
+# A list of save ids passed as one JSON parameter, so its length is not bound by SQLite's parameter limit.
+_IDS = "(SELECT value FROM json_each(?))"
 
 
 class AdminStore(_StoreState):
@@ -95,6 +104,72 @@ class AdminStore(_StoreState):
         with self._lock:
             rows = self._db.execute(f"SELECT * FROM admin_log {where} ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
         return [dict(r) for r in rows]
+
+    # --- admin repairs (Game.admin_reset_save, admin_grant_all, admin_empty_saves); each runs in the caller's
+    # transaction, so the change and its admin log entry land together.
+    def reset_collection(self, pid: str) -> tuple[int, int]:
+        """Deletes the save's items and limited pool draws and zeroes its pity. Returns the rows deleted from items and
+        from banner_draws."""
+        with self._lock:
+            items = self._db.execute("DELETE FROM items WHERE player_id=?", (pid,)).rowcount
+            pools = self._db.execute("DELETE FROM banner_draws WHERE player_id=?", (pid,)).rowcount
+            self._db.execute("UPDATE players SET draw_pity=0, skin_pity=0 WHERE id=?", (pid,))
+            # _Tx drops the caches on a rollback only.
+            self._counts.pop(pid, None)
+            self._commit()
+        return items, pools
+
+    def grant_all(self, day: str, shards: int, exclude: list[str], name: str, ts: float) -> tuple[int, int] | None:
+        """Adds [shards] to every save not in [exclude], each with an 'admin' ledger row of [day], and records [name] in
+        migrations so the same grant is never given twice. None when [name] was given before. Returns the saves given
+        to and how many of [exclude] are existing saves."""
+        excluded = json.dumps(sorted(set(exclude)))
+        with self._lock:
+            if self._db.execute("SELECT 1 FROM migrations WHERE name=?", (name,)).fetchone():
+                return None
+            skipped = self._db.execute(f"SELECT COUNT(*) FROM players WHERE id IN {_IDS}", (excluded,)).fetchone()[0]
+            saves = self._db.execute(f"UPDATE players SET shards = shards + ? WHERE id NOT IN {_IDS}",
+                                     (shards, excluded)).rowcount
+            # The WHERE keeps SQLite from reading ON CONFLICT as part of the SELECT's join.
+            self._db.execute(
+                f"INSERT INTO shard_ledger (day, player_id, source, amount, count) "
+                f"SELECT ?, id, 'admin', ?, 1 FROM players WHERE id NOT IN {_IDS} "
+                f"ON CONFLICT(day, player_id, source) DO UPDATE SET "
+                f"amount = amount + excluded.amount, count = count + excluded.count", (day, shards, excluded))
+            self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, ts))
+            self._commit()
+        return saves, skipped
+
+    def unused_saves(self, created_from: float, created_to: float) -> list[str]:
+        """Saves created in [created_from, created_to) that were never used (see _UNUSED)."""
+        with self._lock:
+            rows = self._db.execute(f"SELECT id FROM players WHERE {_UNUSED} ORDER BY id",
+                                    (created_from, created_to)).fetchall()
+        return [r[0] for r in rows]
+
+    def ledger_totals(self, pids: list[str]) -> dict[str, dict[str, int]]:
+        """The shard ledger of the saves [pids] summed per source: {source: {amount, count}}."""
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT source, SUM(amount), SUM(count) FROM shard_ledger WHERE player_id IN {_IDS} "
+                f"GROUP BY source ORDER BY source", (json.dumps(pids),)).fetchall()
+        return {r[0]: {"amount": r[1], "count": r[2]} for r in rows}
+
+    def empty_saves(self, pids: list[str]) -> dict[str, Any]:
+        """Deletes the items, drops, limited pool draws and ledger rows of the saves [pids] and zeroes their shards and
+        pity. The save rows stay, and so do their update reward claims, so a token cannot claim a reward again.
+        Returns the shards zeroed and the rows deleted per table."""
+        ids = json.dumps(pids)
+        with self._lock:
+            shards = self._db.execute(f"SELECT COALESCE(SUM(shards), 0) FROM players WHERE id IN {_IDS}",
+                                      (ids,)).fetchone()[0]
+            deleted = {key: self._db.execute(f"DELETE FROM {table} WHERE player_id IN {_IDS}", (ids,)).rowcount
+                       for key, table in (("items", "items"), ("drops", "drops"), ("bannerDraws", "banner_draws"),
+                                          ("shardLedger", "shard_ledger"))}
+            self._db.execute(f"UPDATE players SET shards=0, draw_pity=0, skin_pity=0 WHERE id IN {_IDS}", (ids,))
+            self._counts.clear()
+            self._commit()
+        return {"shards": shards, "deleted": deleted}
 
     # --- admin analysis (days are China Standard Time dates)
     def retention(self, since: str, offset_seconds: int, after: tuple[int, ...]) -> list[dict[str, Any]]:

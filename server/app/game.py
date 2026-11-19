@@ -1054,6 +1054,51 @@ class Game:
             raise GameError("account_not_linked", "这个账号没有桌宠存档")
         self.admin_note(actor, "unlink", {"userId": main_user_id}, pid or "", reason)
 
+    def admin_reset_save(self, pid: str, actor: str = "", reason: str = "") -> dict[str, Any]:
+        """Empties a save's collection: its items and limited pool draws go and its pity starts over. Shards, taps,
+        the drop log, the account link and the stored loadout stay; the loadout drops what the save no longer holds
+        when read (_stored_loadout)."""
+        with self.store.transaction() as st:
+            if not st.has_player(pid):
+                raise GameError("no_save", "没有这份存档")
+            now = self.now()
+            p = st.get_player(pid, now)
+            items, pools = st.reset_collection(pid)
+            detail = {"items": items, "bannerDraws": pools,
+                      "pity": {"legendary": p["draw_pity"], "skin": p["skin_pity"]}}
+            st.add_admin_log(now, actor, "reset", pid, json.dumps(detail), reason)
+        return detail
+
+    def admin_grant_all(self, shards: int, key: str, exclude: list[str], actor: str = "",
+                        reason: str = "") -> dict[str, Any]:
+        """Gives [shards] to every save except [exclude] in one transaction. [key] names the grant: a second grant
+        under the same key is refused, so a repeated submit pays no one twice."""
+        with self.store.transaction() as st:
+            now = self.now()
+            given = st.grant_all(day_of(now), shards, exclude, f"grant:{key}", now)
+            if given is None:
+                raise GameError("grant_done", "这个发放已经发过了")
+            detail = {"shards": shards, "saves": given[0], "skipped": given[1], "key": key}
+            st.add_admin_log(now, actor, "grant_all", "", json.dumps(detail, ensure_ascii=False), reason)
+        return detail
+
+    def admin_empty_saves(self, created_from: float, created_to: float, dry_run: bool = True,
+                          expect: int | None = None, actor: str = "", reason: str = "") -> dict[str, Any]:
+        """Empties the saves created in [created_from, created_to) that were never used (Store.unused_saves): what
+        they drew and their shards go, the save rows and their update reward claims stay. [dry_run] only counts them
+        and sums their ledger; a real run needs [expect] to match that count, so it empties what was looked at."""
+        with self.store.transaction() as st:
+            pids = st.unused_saves(created_from, created_to)
+            out: dict[str, Any] = {"saves": len(pids), "createdFrom": created_from, "createdTo": created_to,
+                                   "ledger": st.ledger_totals(pids)}
+            if dry_run:
+                return {**out, "dryRun": True}
+            if expect != len(pids):
+                raise GameError("empty_changed", f"现在选中 {len(pids)} 份存档，和 expect 不一致")
+            out.update(st.empty_saves(pids))
+            st.add_admin_log(self.now(), actor, "cleanup_bulk", "", json.dumps(out, ensure_ascii=False), reason)
+        return {**out, "dryRun": False}
+
     def collection(self, token: str, version: str | None = None) -> dict[str, Any]:
         """What the save holds and its latest drops, without the holo versions a client of [version] cannot show (see
         Manifest.holos_for); None: everything."""

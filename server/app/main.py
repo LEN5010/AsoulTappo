@@ -1099,6 +1099,66 @@ def admin_set_notice(body: NoticeBody, who: str = Depends(actor)) -> dict:
     return admin_notice()
 
 
+# Repairs that used to need the server stopped and the database edited by hand. Their refusals answer 409.
+_REPAIR_STATUS = {"grant_done": 409, "empty_changed": 409}
+
+
+def _repair(fn, *args):
+    try:
+        return fn(*args)
+    except GameError as e:
+        raise HTTPException(status_code=_REPAIR_STATUS.get(e.code, STATUS.get(e.code, 400)),
+                            detail={"code": e.code, "message": e.message})
+
+
+class GrantBody(BaseModel):
+    shards: int = Field(ge=1, le=1_000_000)
+    # Names the grant; the same key is given once.
+    key: str = Field(min_length=1, max_length=64)
+    # Save ids left out, e.g. frozen saves.
+    exclude: list[str] = Field(default_factory=list, max_length=100_000)
+    reason: str = Field(default="", max_length=200)
+
+    @field_validator("key")
+    @classmethod
+    def _key(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("key is empty")
+        return v
+
+
+class EmptySavesBody(BaseModel):
+    # Unix seconds; saves created from createdFrom up to, not including, createdTo.
+    createdFrom: float = Field(ge=0)
+    createdTo: float = Field(gt=0)
+    dryRun: bool = True
+    # The count a dry run gave; a real run is refused unless it still matches.
+    expect: int | None = Field(default=None, ge=0)
+    reason: str = Field(default="", max_length=200)
+
+
+@app.post("/admin/saves/{player}/reset", dependencies=[Depends(admin)])
+def admin_reset_save(player: str, body: ReasonBody | None = None, who: str = Depends(actor)) -> dict:
+    """Empties the save's collection and pity; shards, taps and the drop log stay."""
+    return _repair(game.admin_reset_save, player, who, body.reason.strip() if body else "")
+
+
+@app.post("/admin/grants", dependencies=[Depends(admin)])
+def admin_grant(body: GrantBody, who: str = Depends(actor)) -> dict:
+    """Gives [shards] to every save except [exclude], once per [key]."""
+    return _repair(game.admin_grant_all, body.shards, body.key, body.exclude, who, body.reason.strip())
+
+
+@app.post("/admin/saves/empty", dependencies=[Depends(admin)])
+def admin_empty_saves(body: EmptySavesBody, who: str = Depends(actor)) -> dict:
+    """Empties never used saves created in the range; dryRun (the default) only counts them."""
+    if body.createdTo <= body.createdFrom:
+        raise HTTPException(422, {"code": "bad_range", "message": "createdTo 要晚于 createdFrom"})
+    return _repair(game.admin_empty_saves, body.createdFrom, body.createdTo, body.dryRun, body.expect, who,
+                   body.reason.strip())
+
+
 @app.get("/api/collection")
 def api_collection(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
     return _guard(game.collection, who, x_client_version)
