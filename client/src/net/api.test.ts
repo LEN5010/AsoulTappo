@@ -146,3 +146,24 @@ describe("PARK_PATH", () => {
     expect(PARK_PATH.test("/api/me")).toBe(false);
   });
 });
+
+describe("Api timeouts", () => {
+  it("gives a draw longer than other requests before giving up", async () => {
+    vi.useFakeTimers();
+    try {
+      // Answers after 15 seconds unless the request was given up first.
+      const f = (_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({ drops: [] }) } as Response), 15000);
+      });
+      const api = new Api(() => "http://h", () => "t", f);
+      const me = expect(api.me()).rejects.toThrow("aborted");
+      const draw = api.resonate(10);
+      await vi.advanceTimersByTimeAsync(15000);
+      await me;
+      expect(await draw).toEqual({ drops: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

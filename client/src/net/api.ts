@@ -180,6 +180,11 @@ export const PARK_PATH = /^\/api\/(park|redeem)(\/[\w\-/]*)?(\?[\w=&%.\-]*)?$/;
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** How long a request may take before it counts as lost. */
+export const REQUEST_TIMEOUT_MS = 10000;
+/** A draw request: a busy server can take well over the usual time to draw ten, and the draw goes through anyway. */
+export const RESONANCE_TIMEOUT_MS = 30000;
+
 /** A guest save's token, or a main-site account token for the save linked to that account. */
 export type Credential = string | { bearer: string };
 export function authHeaders(credential: Credential): Record<string, string> {
@@ -225,9 +230,11 @@ export class Api {
     private f: FetchLike = (u, i) => fetch(u, i),
   ) {}
 
-  private async call<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
+  private async call<T>(
+    method: string, path: string, body?: unknown, headers?: Record<string, string>, timeout = REQUEST_TIMEOUT_MS,
+  ): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), timeout);
     try {
       const res = await this.f(`${this.base().replace(/\/+$/, "")}${path}`, {
         method,
@@ -263,7 +270,8 @@ export class Api {
   presence = (session: string) => this.call<PlayerStatus>("POST", "/api/presence", { session });
   /** [banner]: a limited pool's id; without it the standing pool. */
   resonate = (count = 1, banner?: string) =>
-    this.call<ResonanceResult>("POST", "/api/resonance/draw", banner ? { count, banner } : { count });
+    this.call<ResonanceResult>("POST", "/api/resonance/draw", banner ? { count, banner } : { count }, undefined,
+      RESONANCE_TIMEOUT_MS);
   me = () => this.call<PlayerStatus>("GET", "/api/me");
   /** Prices, odds and caps (src/stores/economy.ts); servers from before /api/economy carry them in the manifest. */
   economy = async (): Promise<Economy> => {

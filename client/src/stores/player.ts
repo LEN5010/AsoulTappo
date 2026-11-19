@@ -1,14 +1,14 @@
 import { computed, reactive, ref, watch } from "vue";
 import {
   Api, ActivityReporter, ApiError, newToken,
-  type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type DropHistory, type Loadout, type LoadoutPatch, type MainUser,
-  type PlayerStatus, type ScratchCard, type ScratchRevealResult,
+  type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type DropHistory, type HistoryDrop, type Loadout, type LoadoutPatch, type MainUser,
+  type PlayerStatus, type ResonanceResult, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
 import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
 import { ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
-import { memberOf } from "../manifest";
+import { getCard, memberOf, type Rarity } from "../manifest";
 import { settings } from "./settings";
 import { economy, economyDue, setEconomy } from "./economy";
 import { isPanelWindow } from "../composables/tauri";
@@ -372,9 +372,43 @@ export async function reloadCollection(): Promise<void> {
 }
 
 export async function resonate(count = 1, banner?: string): Promise<Drop[] | null> {
-  if (isPanelWindow) return requestDesktop("resonate", count, banner);
-  const r = await call((api) => api.resonate(count, banner));
-  if (!r) return null;
+  if (isPanelWindow) {
+    // The desk window waits for the draw and its checks (desktop/transport.ts); a reply lost past that closes the reveal.
+    return requestDesktop<Drop[] | null>("resonate", count, banner).catch((e: unknown) => {
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    });
+  }
+  const session = current;
+  const gen = generation;
+  // The save's draws so far: a draw whose answer was lost shows as these having gone up.
+  const before = status.value?.resonance?.total;
+  let r: ResonanceResult;
+  let recovered = false;
+  try {
+    r = await serial(session, () => session.api.resonate(count, banner));
+  } catch (e) {
+    if (session !== current || gen !== generation) return null;
+    // A refusal (4xx) is final. A lost answer (network, timeout, a proxy's 5xx) may hide a draw the server made.
+    const lost = !(e instanceof ApiError) || e.status >= 500;
+    const found = lost && before !== undefined ? await findDraw(session, gen, before, count, banner) : null;
+    if (session !== current || gen !== generation) return null;
+    if (!found?.status) {
+      fail(e);
+      return null;
+    }
+    status.value = found.status;
+    online.value = true;
+    if (!found.drops) {
+      error.value = "共鸣没有完成，请重试";
+      return null;
+    }
+    // Drawn, but the drops could not be read: the history has them.
+    error.value = found.drops.length ? "" : "共鸣已完成，结果在共鸣记录里";
+    r = { ...found.status, drops: found.drops };
+    recovered = true;
+  }
+  if (session !== current || gen !== generation) return null;
   status.value = r;
   for (const d of r.drops) {
     // A holo draw is two items: `new` is the holo version's, `cardNew` the card's.
@@ -382,7 +416,61 @@ export async function resonate(count = 1, banner?: string): Promise<Drop[] | nul
     if (d.holo ? d.cardNew : d.new) freshItems.add(d.item);
   }
   await reloadCollection();
+  // The history keeps no counts: a found draw shows what the save holds now.
+  if (recovered) for (const d of r.drops) d.count = collection.owned[d.item] ?? 1;
   return r.drops;
+}
+
+/** Waits before each read that looks for a draw whose answer was lost: the server may still be drawing. */
+const DRAW_CHECKS_MS = [0, 3000, 6000];
+
+/**
+ * Looks for the draw of [count] made from [before] draws in all. `status` null: the server could not be reached;
+ * `drops` null: the draw did not happen; an empty list: it did, and its drops could not be read.
+ */
+async function findDraw(session: Session, gen: number, before: number, count: number, banner?: string):
+  Promise<{ status: PlayerStatus | null; drops: Drop[] | null }> {
+  let seen: PlayerStatus | null = null;
+  for (const wait of DRAW_CHECKS_MS) {
+    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    if (session !== current || gen !== generation) break;
+    try {
+      seen = await serial(session, () => session.api.me());
+    } catch {
+      continue;
+    }
+    // A draw is all or nothing (one transaction on the server), so the total moves by its whole count.
+    if ((seen.resonance?.total ?? before) - before >= count) {
+      const drops = await serial(session, () => lastDraws(session.api, count, banner)).catch(() => []);
+      return { status: seen, drops };
+    }
+  }
+  return { status: seen, drops: null };
+}
+
+/** The last [count] drops drawn from [banner] (the standing pool without one), in the order drawn. */
+async function lastDraws(api: Api, count: number, banner?: string): Promise<Drop[]> {
+  const rows: HistoryDrop[] = [];
+  let next: number | undefined;
+  for (let page = 0; page < 3 && rows.length < count; page++) {
+    const got = await api.history(next);
+    rows.push(...(got.drops ?? []).filter((d) => d.source === "draw" && (d.pool ?? "") === (banner ?? "")));
+    if (!got.next) break;
+    next = got.next;
+  }
+  const featured = new Set(banner ? economy.value?.resonance.banners?.find((b) => b.id === banner)?.items : []);
+  return rows.slice(0, count).reverse().map((row) => {
+    // The history keeps a holo draw as its holo version, and no shards for repeats.
+    const holo = row.item.startsWith("holo:");
+    const item = holo ? `card:${row.item.slice(5)}` : row.item;
+    const card = item.startsWith("card:") ? getCard(item.slice(5)) : undefined;
+    return {
+      item, rarity: row.rarity as Rarity, new: row.new, count: 1, shards: 0,
+      ...(card ? { tier: card.tier } : {}),
+      ...(holo ? { holo: true, cardNew: false } : {}),
+      ...(featured.has(item) ? { featured: true } : {}),
+    };
+  });
 }
 
 export type HistoryReply = { ok: true; page: DropHistory } | { ok: false; message: string };

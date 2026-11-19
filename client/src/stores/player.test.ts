@@ -501,3 +501,71 @@ it("offers the update rewards this version reaches and claims them in one reques
   expect(p.status.value?.shards).toBe(1900);
   expect(p.updateRewards.value).toEqual([]);
 });
+
+// ---------------------------------------------------------------- draws whose answer was lost
+/** A server that holds [total] draws; the draw request's answer never comes back (`lose`). */
+function drawServer(opts: { draws: boolean; lose: "network" | "refused" }) {
+  let total = 5;
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const path = new URL(url).pathname;
+    asked.push(`${init?.method ?? "GET"} ${path}`);
+    if (path.endsWith("/resonance/draw")) {
+      if (opts.lose === "refused") {
+        return { ok: false, status: 409, json: async () => ({ detail: { code: "no_shards", message: "碎片不足" } }) } as Response;
+      }
+      if (opts.draws) total += 2;
+      throw new TypeError("Failed to fetch");
+    }
+    if (path.endsWith("/resonance/history")) {
+      // Newest first: the two drawn, then older rows that are not this draw.
+      return response({ next: null, drops: [
+        { id: 9, item: "holo:c1781070981002", rarity: "common", new: true, ts: 2, source: "draw" },
+        { id: 8, item: "card:c1762331462002", rarity: "legendary", new: false, ts: 2, source: "draw" },
+        { id: 7, item: "emote:x", rarity: "rare", new: true, ts: 1, source: "craft" },
+        { id: 6, item: "card:c1781070981009", rarity: "legendary", new: true, ts: 1, source: "draw" },
+      ] });
+    }
+    if (path.endsWith("/collection")) return response({ owned: { "card:c1762331462002": 2 }, recent: [] });
+    return response({ player: "p1", shards: 800, resonance: { total, pity: { legendary: 0, skin: 0 }, hardPity: { legendary: 90, skin: 60 } } });
+  });
+  return asked;
+}
+
+it("shows a draw the server made when its answer was lost", async () => {
+  drawServer({ draws: true, lose: "network" });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  const draw = p.resonate(2);
+  await vi.advanceTimersByTimeAsync(0);
+  const drops = await draw;
+  expect(drops?.map((d) => d.item)).toEqual(["card:c1762331462002", "card:c1781070981002"]);
+  expect(drops?.[0]).toMatchObject({ new: false, count: 2, tier: "big" });
+  expect(drops?.[1]).toMatchObject({ holo: true, new: true });
+  expect(p.status.value?.resonance.total).toBe(7);
+  expect(p.online.value).toBe(true);
+  expect(p.error.value).toBe("");
+});
+
+it("says a draw did not happen when the save's draws stay the same", async () => {
+  const asked = drawServer({ draws: false, lose: "network" });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  const draw = p.resonate(2);
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(await draw).toBeNull();
+  expect(asked.filter((a) => a === "GET /api/me").length).toBeGreaterThan(1);
+  expect(asked).not.toContain("GET /api/resonance/history");
+  expect(p.online.value).toBe(true);
+  expect(p.error.value).toBe("共鸣没有完成，请重试");
+});
+
+it("looks for nothing after a draw the server refused", async () => {
+  const asked = drawServer({ draws: false, lose: "refused" });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  const before = asked.length;
+  expect(await p.resonate(2)).toBeNull();
+  expect(asked.slice(before)).toEqual(["POST /api/resonance/draw"]);
+  expect(p.error.value).toBe("碎片不足");
+});

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { DESKTOP_REQUEST_TIMEOUT_MS, requestDesktop } from "./transport";
+import { DESKTOP_ACTION_TIMEOUT_MS, DESKTOP_REQUEST_TIMEOUT_MS, requestDesktop } from "./transport";
 
 const mock = vi.hoisted(() => ({ stop: vi.fn(), handler: undefined as ((event: { payload: unknown }) => void) | undefined }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(), emitTo: vi.fn() }));
@@ -25,7 +25,7 @@ it("cleans up after a successful reply", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 it("rejects a lost reply and does not resend a mutation", async () => {
-  const result = requestDesktop("resonate", 10);
+  const result = requestDesktop("craftItem", "card");
   const rejected = expect(result).rejects.toThrow("响应超时");
   await vi.advanceTimersByTimeAsync(DESKTOP_REQUEST_TIMEOUT_MS);
   await rejected;
@@ -33,6 +33,13 @@ it("rejects a lost reply and does not resend a mutation", async () => {
   expect(emitTo).toHaveBeenCalledTimes(1);
   mock.handler!({ payload: { result: [] } });
   expect(mock.stop).toHaveBeenCalledTimes(1);
+});
+it("waits longer for a draw, which checks a lost answer before it replies", async () => {
+  const result = requestDesktop<unknown[]>("resonate", 10);
+  await vi.advanceTimersByTimeAsync(DESKTOP_REQUEST_TIMEOUT_MS);
+  mock.handler!({ payload: { result: [] } });
+  expect(await result).toEqual([]);
+  expect(DESKTOP_ACTION_TIMEOUT_MS.resonate).toBeGreaterThan(DESKTOP_REQUEST_TIMEOUT_MS);
 });
 it("cleans up when sending fails", async () => {
   vi.mocked(emitTo).mockRejectedValueOnce(new Error("closed"));

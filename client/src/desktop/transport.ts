@@ -11,6 +11,11 @@ export interface DesktopRequest { id: string; action: DesktopAction; args: unkno
 interface DesktopReply<T> { result: T; error?: string }
 
 export const DESKTOP_REQUEST_TIMEOUT_MS = 30000;
+/**
+ * Actions that may run longer. A draw waits for its own longer request and, when that answer is lost, for the reads
+ * that find out whether it went through (stores/player.ts): the reply must not time out before those are done.
+ */
+export const DESKTOP_ACTION_TIMEOUT_MS: Partial<Record<DesktopAction, number>> = { resonate: 120000 };
 
 /** The other windows' actions run in the desk window. Never retry a mutation after a lost reply. */
 export async function requestDesktop<T = void>(action: DesktopAction, ...args: unknown[]): Promise<T> {
@@ -28,7 +33,7 @@ export async function requestDesktop<T = void>(action: DesktopAction, ...args: u
       else resolve(reply!.result);
     };
     const timer = setTimeout(() => finish(undefined,
-      new Error("桌宠窗口响应超时，请先确认操作结果，勿重复提交")), DESKTOP_REQUEST_TIMEOUT_MS);
+      new Error("桌宠窗口响应超时，请先确认操作结果，勿重复提交")), DESKTOP_ACTION_TIMEOUT_MS[action] ?? DESKTOP_REQUEST_TIMEOUT_MS);
     void (async () => {
       const stop = await listen<DesktopReply<T>>(`desktop:reply:${id}`, ({ payload }) => finish(payload), { target: windowLabel });
       // Registration itself may finish after the timeout or an immediate reply.
