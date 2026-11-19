@@ -220,6 +220,35 @@ it("plays a game from the deal to the result", async () => {
   expect(frame.open).toBe(false); // the table is put away: its window goes too
 });
 
+it("leaves the table's window shut for a deal while the pet is hidden, and opens it with the next deal once shown", async () => {
+  const { socket, d, frame } = await setup();
+  const { windowVisible } = await import("./activity");
+  const deal = (n: number) => socket.recv({
+    type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: n, turn: 1, sec: 15, dealSec: 0,
+  });
+  windowVisible.value = false; // the hide key
+  deal(1);
+  expect(frame.open).toBe(false);
+  windowVisible.value = true;
+  expect(frame.open).toBe(false); // shown again: the table stays shut, as if closed
+  expect(d.ddzBubble.value).toBe("turn");
+  socket.recv({ type: "ddz_bid", table: "t", seat: 1, bid: 3, turn: 2, sec: 15 });
+  expect(frame.open).toBe(false);
+  expect(d.ddzBubble.value).toBe("table");
+  socket.recv({
+    type: "ddz_result", table: "t", winner: "farmers", landlord: 1, bid: 3, bombs: 0, spring: 0, mult: 3, base: 100,
+    deltas: [300, -600, 300], hands: [[0], [], []], sec: 30,
+  });
+  deal(2);
+  expect(frame.open).toBe(true);
+  // The player's own key opens it whenever.
+  frame.open = false;
+  d.noteDdzWindowClosed();
+  const { openDdzWindow } = await import("./ui");
+  await openDdzWindow();
+  expect(frame.open).toBe(true);
+});
+
 it("keeps the table's window closed for the deal it was closed during, and opens it with the next deal", async () => {
   const { socket, d, frame } = await setup();
   const deal = (n: number) => socket.recv({

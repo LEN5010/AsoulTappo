@@ -80,15 +80,19 @@ export function openRaceWindow(replay = 0): void {
 export const ddzFrame = reactive({ open: false });
 /**
  * The dou dizhu table's own window, from the desk or the panel: opened, or shown and focused when it is open already.
- * The browser preview floats the table in a frame of the window's size over the desk page.
+ * The browser preview floats the table in a frame of the window's size over the desk page. [auto]: opened by a deal;
+ * the app then leaves it shut while the pet is hidden. Resolves to whether it was opened.
  */
-export function openDdzWindow(): void {
-  ui.quickOpen = false;
+export async function openDdzWindow(auto = false): Promise<boolean> {
+  if (!auto) ui.quickOpen = false;
   if (isTauri) {
-    void invoke("open_ddz").catch((e: unknown) => console.warn("open_ddz failed", e));
-    return;
+    return invoke<boolean>("open_ddz", { auto }).catch((e: unknown) => {
+      console.warn("open_ddz failed", e);
+      return false;
+    });
   }
   ddzFrame.open = true;
+  return true;
 }
 /** Closes the table's window; the game goes on without it. */
 export function closeDdzWindow(): void {

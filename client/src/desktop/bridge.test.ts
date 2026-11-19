@@ -417,7 +417,7 @@ it("mirrors the table into its own window beside the panel, runs its moves in th
     type: "ddz_deal", table: "t", seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
   });
   // The desk opens the table's window with the deal; the panel is not asked to show anything.
-  expect(invoke).toHaveBeenCalledWith("open_ddz");
+  expect(invoke).toHaveBeenCalledWith("open_ddz", { auto: true });
   expect(invoke).not.toHaveBeenCalledWith("open_panel", expect.anything());
   const table = await context("ddz");
   await vi.advanceTimersByTimeAsync(50);

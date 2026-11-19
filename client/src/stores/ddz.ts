@@ -7,6 +7,7 @@ import { isBomb, playable, sortHand } from "../ddz/rules";
 import type { DdzMessage, Member } from "../net/protocol";
 import { isMirrorWindow, isTauri } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
+import { windowVisible } from "./activity";
 import { economy } from "./economy";
 import { reloadStatus, status } from "./player";
 import { ddzHooks, duelBusy, inRoom, me, members, sendDdz, showWin, shownNick, youId } from "./room";
@@ -378,7 +379,8 @@ if (!isMirrorWindow) {
     else close();
   }, { flush: "sync" });
   // The table's window comes up with each deal, the first and every one after 再来一局, and goes once the table is
-  // put away. Closed during a deal, it stays closed until the next one.
+  // put away. Closed during a deal, it stays closed until the next one. A deal while the hide key has the pet hidden
+  // counts as closed: the pet's bubble leads back to it once the pet is shown again.
   watch(dealKey, (key) => {
     if (!key) {
       opened = "";
@@ -386,8 +388,13 @@ if (!isMirrorWindow) {
       return;
     }
     if (key === opened || key === dismissed) return;
+    if (!windowVisible.value) {
+      dismissed = key;
+      return;
+    }
     opened = key;
-    openDdzWindow();
+    // The app checks again: the page hears of the pet being hidden a moment late.
+    void openDdzWindow(true).then((shown) => { if (!shown && dealKey.value === key) dismissed = key; });
   }, { flush: "sync" });
 }
 

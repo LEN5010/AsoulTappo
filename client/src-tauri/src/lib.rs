@@ -543,11 +543,16 @@ fn close_race(app: tauri::AppHandle) -> Result<(), String> {
 /// The dou dizhu table's own window: frameless, a regular window in the taskbar, as large as `DDZ_SIZE` or the work
 /// area allows, in the middle of its monitor. The desk opens it with each deal; a window already open is brought to
 /// the front. The page shows it once it has drawn (`show_ddz`). Closing it closes it (the desk hears `ddz:closed`)
-/// and leaves the game going: the next call makes it again.
+/// and leaves the game going: the next call makes it again. `auto`: opened by a deal, not by the player; then it
+/// stays shut while the hide key has the pet hidden, and the answer is false.
 #[tauri::command]
-async fn open_ddz(app: tauri::AppHandle) -> Result<(), String> {
+async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, String> {
+    if auto.unwrap_or(false) && !main_window(&app).is_some_and(|w| w.is_visible().unwrap_or(true)) {
+        applog!("ddz", "not opened: the pet is hidden");
+        return Ok(false);
+    }
     if let Some(window) = app.get_webview_window("ddz") {
-        return show_window(&window);
+        return show_window(&window).map(|_| true);
     }
     let window = WebviewWindowBuilder::new(&app, "ddz", WebviewUrl::App("index.html?window=ddz".into()))
         .title("斗地主")
@@ -576,7 +581,8 @@ async fn open_ddz(app: tauri::AppHandle) -> Result<(), String> {
             (DDZ_SIZE.1 * scale).min(area.size.height as f64 - 20.0) as u32,
         )).map_err(|e| e.to_string())?;
     }
-    window.center().map_err(|e| e.to_string())
+    window.center().map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -1144,7 +1150,8 @@ pub fn run() {
             if window.label() == "ddz" {
                 if let tauri::WindowEvent::Destroyed = event {
                     applog!("ddz", "closed");
-                    let _ = window.emit_to("main", "ddz:closed", ());
+                    // From the app: the window's own handle is going away.
+                    let _ = window.app_handle().emit_to("main", "ddz:closed", ());
                 }
             }
             if window.label() == "capture" {
