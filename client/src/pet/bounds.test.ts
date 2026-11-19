@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { remotePetSize } from "./bounds";
+import { PLATE_GRIP, STRIP_WIDTH, ownDeskWidth, remotePetSize, stripFit } from "./bounds";
 import { PET_BASE } from "../characters";
+
+describe("the strip under the own pet", () => {
+  it("shrinks as a whole to the width of a pet narrower than it", () => {
+    for (const scale of [0.5, 0.6, 0.8]) {
+      const fit = stripFit(scale);
+      expect(fit.layout).toBe(STRIP_WIDTH);
+      expect(fit.width).toBeCloseTo(PET_BASE.width * scale);
+      expect(fit.zoom).toBeCloseTo((PET_BASE.width * scale) / STRIP_WIDTH);
+      expect(fit.zoom).toBeLessThan(1);
+    }
+  });
+
+  it("is as wide as the pet and drawn at full size from the pet's width up, as before", () => {
+    const before = (scale: number) => Math.max(STRIP_WIDTH, PET_BASE.width * scale);
+    for (const scale of [STRIP_WIDTH / PET_BASE.width, 0.9, 1, 1.5, 2, 3]) {
+      expect(stripFit(scale)).toEqual({ layout: before(scale), zoom: 1, width: before(scale) });
+    }
+  });
+
+  it("leaves the own pet's width to the plate handles, so a small pet reaches as close to the edge as a large one", () => {
+    const before = (scale: number) =>
+      Math.max(Math.max(STRIP_WIDTH, PET_BASE.width * scale), Math.round(PET_BASE.width * scale) + PLATE_GRIP * 2);
+    for (const scale of [0.9, 1, 1.3, 2, 3]) expect(ownDeskWidth(scale)).toBe(before(scale));
+    expect(ownDeskWidth(0.5)).toBe(120 + PLATE_GRIP * 2);
+    expect(before(0.5)).toBe(STRIP_WIDTH);
+    for (const scale of [0.5, 0.6, 0.7, 0.8]) {
+      expect(ownDeskWidth(scale) - PET_BASE.width * scale).toBeCloseTo(PLATE_GRIP * 2, 0);
+    }
+  });
+});
 
 it.each([[false, 16], [true, 17]])("keeps names within a small partner, plates=%s", (plates, band) => {
   const size = remotePetSize(0.4, true, plates);

@@ -132,7 +132,7 @@ function onWheel(e: WheelEvent) {
   position: absolute;
   left: 50%;
   top: calc(100% + 10px);
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--shift, 0px)));
   z-index: 20;
   display: inline-flex;
   align-items: center;
@@ -233,13 +233,13 @@ function onWheel(e: WheelEvent) {
 @keyframes drop-in {
   from {
     opacity: 0;
-    transform: translate(calc(-50% - 10px), -8px);
+    transform: translate(calc(-50% + var(--shift, 0px) - 10px), -8px);
   }
 }
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translate(calc(-50% + var(--shift, 0px)), 8px);
   }
 }
 </style>

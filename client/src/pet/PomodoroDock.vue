@@ -3,7 +3,7 @@
 // runs a ring with the time left and a stop key; under either, switches for the tune, the system notice, going on by
 // itself and the long rest. Hung under the strip or the own name plate like the status keys; where the screen ends below it,
 // it opens upwards above `ceiling`. The settings are the same as on the settings page.
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { LONG_EVERY, clockText } from "../pomodoro";
 import { pomodoroTune, wakeAudio } from "../audio/sfx";
 import { beginPomodoro, endPomodoro, pomodoro, pomodoroLeft, pomodoroProgress } from "../stores/pomodoro";
@@ -15,16 +15,8 @@ const props = defineProps<{ ceiling?: number }>();
 const emit = defineEmits<{ done: [] }>();
 
 const root = ref<HTMLElement>();
+// Wider than the strip it hangs from: next to a screen edge it moves sideways to stay on screen (`--shift`).
 const { up, style: lift } = useLift(root, () => props.ceiling);
-// Wider than the strip it hangs from: next to a screen edge it moves sideways to stay on screen.
-const EDGE = 4;
-const shift = ref(0);
-onMounted(() => {
-  const r = root.value?.getBoundingClientRect();
-  if (!r) return;
-  if (r.right > window.innerWidth - EDGE) shift.value = Math.round(window.innerWidth - EDGE - r.right);
-  else if (r.left < EDGE) shift.value = Math.round(EDGE - r.left);
-});
 
 interface Dial { key: "pomodoroFocus" | "pomodoroRest"; label: string; min: number; max: number; step: number }
 const DIALS: Dial[] = [
@@ -86,7 +78,7 @@ function stop() {
 
 <template>
   <div
-    ref="root" class="pomo-dock" :class="{ up }" :style="[lift, { '--shift': `${shift}px` }]"
+    ref="root" class="pomo-dock" :class="{ up }" :style="lift"
     role="group" aria-label="番茄钟" data-hit data-no-drag
   >
     <div v-if="!pomodoro" class="top">

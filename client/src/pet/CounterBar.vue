@@ -1,16 +1,18 @@
 <script setup lang="ts">
 // The paper strip under the pet: the tap count, the draw key while draws are available, the quick
 // emote key and the panel key. Each thousand taps the number pops and throws a few sparks.
-import { nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
 // `grip` draws the handle on the strip's left end: "menu" opens the strip's menu (`gripOpen` while it is open),
 // "pin" keeps a strip that a click brought out.
-const props = defineProps<{
+// The strip is laid out `width` px wide and drawn `zoom` times as large (stripFit in bounds.ts); what the slot holds
+// hangs from the drawn strip at its own size.
+const props = withDefaults(defineProps<{
   count: number; view: "today" | "total"; width: number; quickOpen: boolean; draws: number; grip?: "menu" | "pin";
-  gripOpen?: boolean;
-}>();
+  gripOpen?: boolean; zoom?: number;
+}>(), { zoom: 1 });
 defineEmits<{ toggleView: []; quick: []; menu: []; resonance: []; grip: [] }>();
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -37,6 +39,20 @@ watch(
   () => nextTick(fitFigure),
 );
 
+/** The strip's own height: the slot hangs from its bottom and the pet's desk covers its top 4px. */
+const HEIGHT = 40;
+const TUCK = 4;
+const boxStyle = computed(() => {
+  const k = props.zoom;
+  return {
+    width: `${props.width * k}px`, height: `${HEIGHT * k}px`, marginTop: `${-TUCK * k}px`,
+    // Scales the slide of App.vue's strip transition along with the strip.
+    "--bar-zoom": `${k}`,
+  };
+});
+// No transform at full size: it would make the strip a stacking context and a containing block it is not now.
+const faceStyle = computed(() => ({ width: `${props.width}px`, ...(props.zoom < 1 ? { transform: `scale(${props.zoom})` } : {}) }));
+
 const MILESTONE = 1000;
 /** A larger jump is a reload or a sync, not taps crossing the line. */
 const MAX_STEP = 200;
@@ -54,59 +70,65 @@ watch(
 </script>
 
 <template>
-  <div class="bar" :style="{ width: `${width}px` }">
-    <button
-      type="button" class="count"
-      :title="view === 'today' ? '今日敲击' : '累计敲击'"
-      @click="$emit('toggleView')"
-    >
-      <span ref="figure" class="figure">
-        <b :key="burst" :class="{ pop: burst > 0 }" :style="{ fontSize: `${figurePx}px` }">{{ fmt(count) }}</b>
-        <span v-if="burst" :key="burst" class="burst" aria-hidden="true">
-          <i v-for="n in SPARKS" :key="n" :style="{ '--a': `${(n - 1) * (360 / SPARKS) + 30}deg` }"></i>
+  <div class="bar-box" :style="boxStyle">
+    <div class="bar" :style="faceStyle">
+      <button
+        type="button" class="count"
+        :title="view === 'today' ? '今日敲击' : '累计敲击'"
+        @click="$emit('toggleView')"
+      >
+        <span ref="figure" class="figure">
+          <b :key="burst" :class="{ pop: burst > 0 }" :style="{ fontSize: `${figurePx}px` }">{{ fmt(count) }}</b>
+          <span v-if="burst" :key="burst" class="burst" aria-hidden="true">
+            <i v-for="n in SPARKS" :key="n" :style="{ '--a': `${(n - 1) * (360 / SPARKS) + 30}deg` }"></i>
+          </span>
         </span>
-      </span>
-      <small>{{ view === "today" ? "今日" : "累计" }}</small>
-    </button>
-    <button
-      v-if="draws > 0" type="button" class="draw ui-btn small primary"
-      :title="`共鸣 ${draws}`" :aria-label="`共鸣，可共鸣 ${draws} 次`" @click="$emit('resonance')"
-    >
-      <Icon class="draw-icon" name="card-spark" :size="15" />
-      <span class="draw-word">共鸣</span>
-      <b>{{ draws }}</b>
-    </button>
+        <small>{{ view === "today" ? "今日" : "累计" }}</small>
+      </button>
+      <button
+        v-if="draws > 0" type="button" class="draw ui-btn small primary"
+        :title="`共鸣 ${draws}`" :aria-label="`共鸣，可共鸣 ${draws} 次`" @click="$emit('resonance')"
+      >
+        <Icon class="draw-icon" name="card-spark" :size="15" />
+        <span class="draw-word">共鸣</span>
+        <b>{{ draws }}</b>
+      </button>
+      <button
+        type="button" class="key spark ui-btn small" :aria-expanded="quickOpen"
+        title="发表情" aria-label="发表情" @click="$emit('quick')"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.5l2.5 7L21.5 12l-7 2.5L12 21.5l-2.5-7L2.5 12l7-2.5z" fill="currentColor" />
+        </svg>
+      </button>
+      <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
+        <Icon name="menu" :size="15" />
+      </button>
+      <button
+        v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : undefined"
+        :aria-label="grip === 'pin' ? '固定' : '任务栏'" :aria-expanded="grip === 'menu' ? !!gripOpen : undefined"
+        @click="$emit('grip')"
+      ></button>
+    </div>
     <slot />
-    <button
-      type="button" class="key spark ui-btn small" :aria-expanded="quickOpen"
-      title="发表情" aria-label="发表情" @click="$emit('quick')"
-    >
-      <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 2.5l2.5 7L21.5 12l-7 2.5L12 21.5l-2.5-7L2.5 12l7-2.5z" fill="currentColor" />
-      </svg>
-    </button>
-    <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
-      <Icon name="menu" :size="15" />
-    </button>
-    <button
-      v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : undefined"
-      :aria-label="grip === 'pin' ? '固定' : '任务栏'" :aria-expanded="grip === 'menu' ? !!gripOpen : undefined"
-      @click="$emit('grip')"
-    ></button>
   </div>
 </template>
 
 <style scoped>
+/* The strip as drawn: what the slot holds is placed against this box. */
+.bar-box {
+  position: relative;
+}
 /* Floats over any wallpaper, so its shadow is crisper than paper on the page. */
 .bar {
   position: relative;
+  transform-origin: 0 0;
   container: bar / inline-size;
   --gap: 6px;
   display: flex;
   align-items: center;
   gap: var(--gap);
   height: 40px;
-  margin-top: -4px;
   padding: 0 var(--gap);
   box-sizing: border-box;
   border-radius: 12px;

@@ -23,7 +23,7 @@ const { up, style: lift } = useLift(root, () => props.ceiling);
   position: absolute;
   left: 50%;
   top: calc(100% + 10px);
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--shift, 0px)));
   z-index: 20;
   padding: 6px;
   border-radius: 14px;
@@ -41,13 +41,13 @@ const { up, style: lift } = useLift(root, () => props.ceiling);
 @keyframes drop-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -8px);
+    transform: translate(calc(-50% + var(--shift, 0px)), -8px);
   }
 }
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translate(calc(-50% + var(--shift, 0px)), 8px);
   }
 }
 </style>

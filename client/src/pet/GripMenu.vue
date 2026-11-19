@@ -4,6 +4,7 @@
 // where the screen ends above it.
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";
+import { edgeShift } from "./lift";
 
 /** `plate`: the own name plate stands in the strip's place. */
 defineProps<{ plate: boolean; shardPop: boolean }>();
@@ -11,15 +12,24 @@ defineEmits<{ fold: []; swap: []; shardPop: []; pomodoro: []; todo: [] }>();
 
 const root = ref<HTMLElement>();
 const down = ref(false);
+/** Sideways from the handle when the strip is narrower than the menu and stands at the screen's right edge. */
+const shift = ref(0);
 // Measured before the first paint, so the menu never shows cut off first.
 onMounted(() => {
-  const r = root.value?.getBoundingClientRect();
+  const el = root.value;
+  const r = el?.getBoundingClientRect();
   if (r && r.top < 4) down.value = true;
+  // The menu starts at the left of what it hangs from; its opening animation only moves it up and down.
+  const parent = (el?.offsetParent as HTMLElement | null)?.getBoundingClientRect();
+  if (el && parent) shift.value = edgeShift(parent.left, el.offsetWidth, window.innerWidth);
 });
 </script>
 
 <template>
-  <div ref="root" class="grip-menu" :class="{ down }" role="menu" aria-label="任务栏" data-hit data-no-drag>
+  <div
+    ref="root" class="grip-menu" :class="{ down }" :style="shift ? { left: `${shift}px` } : undefined" role="menu"
+    aria-label="任务栏" data-hit data-no-drag
+  >
     <button type="button" role="menuitem" @click="$emit('fold')">
       <Icon name="fold" :size="16" /><span>收起任务栏</span>
     </button>

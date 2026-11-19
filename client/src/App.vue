@@ -39,7 +39,7 @@ import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, autoStrikes, clo
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
-import { remotePetSize } from "./pet/bounds";
+import { STRIP_HEIGHT, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
 const RaceFrame = defineAsyncComponent(() => import("./pet/RaceFrame.vue"));
 import { PET_BASE, formReach, headAnchor } from "./characters";
@@ -75,16 +75,10 @@ const onResize = () => (viewport.value = { w: window.innerWidth, h: window.inner
 onResize();
 
 // ---- own pet
-const barWidth = computed(() => Math.max(212, PET_BASE.width * settings.scale));
-/** Room on each side of the own name plate for its handle (`.own-plate` padding). */
-const PLATE_GRIP = 14;
-/**
- * The own pet's width, the same whether the strip, the name plate or nothing is under it. The pet stands centred in
- * it and the actor is placed by its left edge, so a width that followed what is under the pet would move the pet
- * when the strip folds, click-through hides it, or the handle swaps in the plate.
- */
-const ownWidth = computed(() =>
-  Math.max(barWidth.value, Math.round(PET_BASE.width * settings.scale) + PLATE_GRIP * 2));
+/** The strip under the own pet: on a pet narrower than its keys need it shrinks to the pet's width as a whole. */
+const bar = computed(() => stripFit(settings.scale));
+/** The own pet's width: room for the plate's handles beside the pet, wider than the strip (see ownDeskWidth). */
+const ownWidth = computed(() => ownDeskWidth(settings.scale));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
 /**
  * Room kept free on the right of a pet for what its second form draws past the picture (an open wing), so the screen
@@ -97,11 +91,12 @@ const ownReach = computed(() => {
 });
 const remoteReach = (m: RemoteMember) => Math.ceil(formReach(m.character) * settings.remoteScale);
 const reaching = (size: Size, reach: number): Size => ({ w: size.w + reach, h: size.h });
-/** Height of the strip under the pet, measured while it shows. */
-const stripHeight = ref(36);
+/** Height of the strip under the pet at full size, measured while it shows; drawn smaller with a shrunken strip. */
+const stripNatural = ref(STRIP_HEIGHT);
+const stripHeight = computed(() => stripNatural.value * bar.value.zoom);
 /** The own pet's size with the strip under it, which a docked or folded pet does not have. */
 const fullSize = computed<Size>(() => ({
-  w: Math.max(ownSize.value.w, barWidth.value),
+  w: Math.max(ownSize.value.w, bar.value.width),
   h: Math.round(PET_BASE.height * settings.scale) + stripHeight.value,
 }));
 /** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
@@ -152,9 +147,9 @@ function onOwnMoved(p: Pos) {
 }
 function onOwnSize(size: Size) {
   ownSize.value = size;
-  const strip = size.h - Math.round(PET_BASE.height * settings.scale);
+  const strip = (size.h - Math.round(PET_BASE.height * settings.scale)) / bar.value.zoom;
   // The plate is lower than the strip; the room kept under the pet stays the strip's, so the pet does not rise.
-  if (barShown.value && !plateShown.value && strip > 0 && strip < 80) stripHeight.value = strip;
+  if (barShown.value && !plateShown.value && strip > 0 && strip < 80) stripNatural.value = strip;
 }
 /** Tucks a pinned strip away, pins one a click brought out. A docked pet cannot pin it. */
 function toggleFold() {
@@ -589,7 +584,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         <StatusDock v-else-if="statusOpen && inRoom" :model-value="settings.status" :ceiling="plateCeiling" @update:model-value="pickStatus" />
       </div>
       <CounterBar
-        v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="barWidth"
+        v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="bar.layout" :zoom="bar.zoom"
         :quick-open="ui.quickOpen" :draws="draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="toggleQuick" @menu="raisePanel" @resonance="openPanel('resonance')"
@@ -635,7 +630,8 @@ html.browser-preview body {
 /* The strip comes out from under the desk and goes back there. It keeps its place in the layout while leaving. */
 .strip-enter-active { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--ease-spring); }
 .strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }
-.strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 -14px; }
+/* A shrunken strip (CounterBar's --bar-zoom) slides by as much less. */
+.strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 calc(-14px * var(--bar-zoom, 1)); }
 .desk > :deep(*) { pointer-events: auto; }
 /* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
  * on any wallpaper. The side padding keeps the plate centred under the pet. */

@@ -77,5 +77,5 @@ html, body, #app { height: 100%; margin: 0; overflow: hidden; }
 .capture { height: 100%; display: grid; place-items: center; user-select: none; }
 .stage { box-sizing: border-box; pointer-events: none; }
 /* A soft shadow on the flat colour is left behind as a dark fringe when the colour is keyed out. */
-.strip { box-shadow: none; }
+.strip :deep(.bar) { box-shadow: none; }
 </style>
