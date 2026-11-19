@@ -95,7 +95,8 @@ class Bank:
             if taps is None or taps < cfg["minTaps"]:
                 raise GameError(f"ddz{other}_locked", "")
             if self.require_account and not st.account_for_player(pid):
-                raise GameError(f"ddz{other}_account", "有人还没有绑定主站账号" if other else "绑定主站账号后才能斗地主")
+                raise GameError(f"ddz{other}_account",
+                                "有人还没有登录 Asasfans 账号" if other else "登录 Asasfans 账号后才能斗地主")
             if st.get_player(pid, now)["shards"] < deposit:
                 raise GameError(f"ddz{other}_poor" if other else "no_shards", "")
             if st.ddz_net(pid, day) >= cfg["dailyWinCap"]:

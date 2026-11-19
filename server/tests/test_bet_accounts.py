@@ -97,9 +97,9 @@ def test_every_seat_needs_a_linked_save_where_accounts_are_on():
     pids = [ddz_save(w.g, n) for n in "abc"]
     assert Bank(w.g).check(pids, BASE)
     bank = Bank(w.g, require_account=True)
-    assert raises("ddz_account", bank.check, pids, BASE).message
+    assert raises("ddz_account", bank.check, pids, BASE).message == "登录 Asasfans 账号后才能斗地主"
     w.g.store.link_account("u-a", pids[0], w.clock.t)
-    assert raises("ddz_target_account", bank.check, pids, BASE).message
+    assert raises("ddz_target_account", bank.check, pids, BASE).message == "有人还没有登录 Asasfans 账号"
     w.g.store.link_account("u-b", pids[1], w.clock.t)
     raises("ddz_target_account", bank.check, pids, BASE)
     raises("ddz_target_account", bank.start, pids, BASE)
@@ -168,8 +168,8 @@ def test_the_main_server_tells_a_guest_save_to_link_an_account(api):
         jh = joined(h, "h", token="guest-duel-token-0001")
         a.receive_json(), b.receive_json()
         a.send_json({"type": "duel_invite", "id": jh["you"], "bet": 150})
-        assert a.receive_json() == {"type": "error", "code": "duel_target_account", "message": "对方还没有绑定主站账号"}
+        assert a.receive_json() == {"type": "error", "code": "duel_target_account", "message": "对方还没有登录 Asasfans 账号"}
         h.send_json({"type": "duel_invite", "id": ja["you"], "bet": 150})
-        assert h.receive_json() == {"type": "error", "code": "duel_account", "message": "绑定主站账号后才能猜拳"}
+        assert h.receive_json() == {"type": "error", "code": "duel_account", "message": "登录 Asasfans 账号后才能猜拳"}
         a.send_json({"type": "duel_invite", "id": jb["you"], "bet": 150})
         assert a.receive_json()["type"] == "duel_invite" and b.receive_json()["type"] == "duel_invite"

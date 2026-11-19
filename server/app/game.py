@@ -768,7 +768,8 @@ class Game:
         if taps is None or taps < self.duel_cfg()["minTaps"]:
             raise GameError(f"duel{side}_locked", "")
         if require_account and not st.account_for_player(pid):
-            raise GameError(f"duel{side}_account", "对方还没有绑定主站账号" if target else "绑定主站账号后才能猜拳")
+            raise GameError(f"duel{side}_account",
+                            "对方还没有登录 Asasfans 账号" if target else "登录 Asasfans 账号后才能猜拳")
 
     def _duel_net_ok(self, st: Store, pids: tuple[str, ...], stake: dict[str, int], day: str) -> None:
         """A win of this tier may not take either side's net win of [day] past the daily cap."""
