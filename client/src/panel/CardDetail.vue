@@ -181,7 +181,7 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
         <h3>{{ label.title }}</h3>
         <p class="who"><i :style="{ background: characterColor(card.characters[0] ?? '') }" aria-hidden="true"></i>{{ label.who }}</p>
         <dl>
-          <div><dt>卡池</dt><dd>{{ pool }}</dd></div>
+          <div><dt>{{ STANDALONE ? "系列" : "卡池" }}</dt><dd>{{ pool }}</dd></div>
           <div v-if="!STANDALONE"><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
           <div v-if="card.video"><dt>卡面</dt><dd>{{ card.still ? "有声" : "动态" }}</dd></div>
           <div v-if="card.holo && !preview"><dt>镭射款</dt><dd :class="{ missing: !hasHolo }">{{ hasHolo ? "已拥有" : "未拥有" }}</dd></div>

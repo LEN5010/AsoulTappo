@@ -20,6 +20,7 @@ import CardDetail from "./CardDetail.vue";
 import CraftAction from "../ui/CraftAction.vue";
 import SkinAlbum from "./SkinAlbum.vue";
 import { rise } from "../ui/motion";
+import { STANDALONE } from "../edition";
 
 type OwnFilter = "all" | "owned" | "missing";
 const OWN_FILTERS = [
@@ -170,7 +171,8 @@ watch(() => ui.dexFilter, (filter) => {
 }, { immediate: true });
 const CARD_FILTERS = [
   { id: "all", label: "全部" }, { id: "hidden", label: "隐藏款" }, { id: "holo", label: "镭射" },
-  { id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" },
+  // The standalone edition owns everything: these would only show all or nothing.
+  ...(STANDALONE ? [] : [{ id: "owned", label: "已拥有" }, { id: "missing", label: "未拥有" }]),
 ];
 const cards = computed(() => manifest.cards.filter((c) => selectedSeries.value === "all" || c.series === selectedSeries.value));
 /** Holo versions count as cards of their own, as in the collection progress. */
@@ -220,7 +222,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
         <button type="button" class="ui-btn small" @click="albumId = ''"><Icon name="back" :size="13" />全部专辑</button>
         <h3 class="album-title">{{ album.name }}</h3>
       </template>
-      <FilterChips v-model="ownFilter" :options="OWN_FILTERS" label="持有筛选" />
+      <FilterChips v-if="!STANDALONE" v-model="ownFilter" :options="OWN_FILTERS" label="持有筛选" />
     </div>
 
     <div ref="wall" class="wall ui-scroll">
