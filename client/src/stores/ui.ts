@@ -9,8 +9,6 @@ export const ui = reactive({
   dexFilter: "" as "" | "holo",
   /** The pool on show on the resonance page: a limited pool's id, or "" for the standing pool. */
   pool: "",
-  /** Desk window only: the panel is up on the room page, as it last reported (desktop/bridge.ts). */
-  roomSeen: false,
   /** Desk window only: the dou dizhu table's window is open and not minimized, as it last reported (desktop/bridge.ts). */
   ddzSeen: false,
 });

@@ -233,8 +233,7 @@ export async function initDesktop(): Promise<() => void> {
     const opening = payload.visible && !subs.get(from)?.visible;
     const live = payload.visible && payload.live;
     subs.set(from, { visible: payload.visible, live, motionIds: live ? payload.motionIds ?? [...room.members.keys()] : [] });
-    if (from === "panel") ui.roomSeen = live;
-    else ui.ddzSeen = payload.visible && !!payload.seen;
+    if (from === "ddz") ui.ddzSeen = payload.visible && !!payload.seen;
     const before = interested;
     interested = new Set([...subs.values()].flatMap((sub) => sub.motionIds));
     // The room socket subscribes for the mirror windows' pets as well as the desk's own.

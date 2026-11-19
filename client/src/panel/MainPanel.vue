@@ -43,7 +43,6 @@ const ParkPage = defineAsyncComponent(PAGES.park);
 const OnlinePage = defineAsyncComponent(PAGES.room);
 const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
-/** The dou dizhu table, over the room page while a game is on; loaded with the first game. */
 /** The park's coins and jackpot in the top bar, in the park's chunk. */
 const ParkChips = defineAsyncComponent(() => import("./park/ParkChips.vue"));
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
