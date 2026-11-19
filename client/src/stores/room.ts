@@ -316,6 +316,10 @@ function errorText(code: string, message: string): string {
       return "你还不能猜拳";
     case "duel_target_locked":
       return "对方还不能猜拳";
+    case "duel_account":
+      return "登录账号后才能猜拳";
+    case "duel_target_account":
+      return "对方登录账号后才能猜拳";
     case "duel_busy":
       return "你正在猜拳";
     case "duel_target_busy":
@@ -334,6 +338,10 @@ function errorText(code: string, message: string): string {
       return "你还不能斗地主";
     case "ddz_target_locked":
       return "有人还不能斗地主";
+    case "ddz_account":
+      return "登录账号后才能斗地主";
+    case "ddz_target_account":
+      return "三位都登录账号后才能斗地主";
     case "ddz_busy":
       return "你已经在牌桌上";
     case "ddz_target_busy":
@@ -548,6 +556,14 @@ export const duelOn = computed(() => inRoom.value && !!duelConfig.value && !!sta
 export const duelBusy = computed(() => duel.value?.phase === "invite" || duel.value?.phase === "throw");
 /** Invites are turned down: by the setting, and while the pet lets clicks through, as it could not answer them. */
 const duelDnd = () => settings.duelDnd || settings.clickThrough;
+
+/**
+ * A server with main-site accounts takes bets (rock-paper-scissors, dou dizhu) only from saves linked to one, on every
+ * side: without an account signed in, the keys say so before anything is sent. [accountLogin]: GET /api/info.
+ */
+export function betsNeedAccount(accountLogin: boolean | undefined): boolean {
+  return !!accountLogin && !activeAccount();
+}
 
 /** Whether this save looks able to invite [m]: the server checks again, the other save's taps included. */
 export function canDuel(m: Member): boolean {

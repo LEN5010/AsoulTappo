@@ -569,3 +569,47 @@ it("looks for nothing after a draw the server refused", async () => {
   expect(asked.slice(before)).toEqual(["POST /api/resonance/draw"]);
   expect(p.error.value).toBe("碎片不足");
 });
+
+// ---------------------------------------------------------------- a new save the server will not start yet
+it("shows why a new save is refused and loads it once the server starts it", async () => {
+  const storage = memoryStorage();
+  vi.stubGlobal("localStorage", storage);
+  let full = true;
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (full && !url.endsWith("/economy")) {
+      return { ok: false, status: 429, json: async () => ({ detail: { code: "too_many_saves", message: "这个网络新建的存档太多，请一小时后再试" } }) } as Response;
+    }
+    return response(url.endsWith("/collection") ? { owned: { "emote:x": 1 }, recent: [] } : { player: "p1", shards: 1600 });
+  });
+  const { p } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(p.error.value).toBe("这个网络新建的存档太多，请一小时后再试");
+  expect(p.status.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(p.error.value).toBe("这个网络新建的存档太多，请一小时后再试");
+  full = false;
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(p.error.value).toBe("");
+  expect(p.status.value?.player).toBe("p1");
+  expect(p.collection.owned).toEqual({ "emote:x": 1 });
+  expect(storage.saved.get(OWNER)).toBe("http://a|p1");
+});
+
+it("retries a failed refresh after heartbeats without flashing its message each time", async () => {
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (url.endsWith("/collection")) return { ok: false, status: 400, json: async () => ({ detail: { code: "bad", message: "坏了" } }) } as Response;
+    return response({ player: "p1", shards: 1600 });
+  });
+  const { watch } = await import("vue");
+  const { settings } = await import("./settings");
+  settings.serverUrl = "http://a";
+  settings.termsAgreed = TERMS_VERSION;
+  settings.statementSeen = APP_VERSION;
+  const p = player = await import("./player");
+  const errors: string[] = [];
+  watch(p.error, (e) => errors.push(e), { flush: "sync" });
+  p.startReporting();
+  await vi.advanceTimersByTimeAsync(60000);
+  // Set by the first refresh, cleared by the first heartbeat; the retries after each heartbeat leave it alone.
+  expect(errors).toEqual(["坏了", ""]);
+});

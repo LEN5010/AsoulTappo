@@ -123,9 +123,9 @@ export async function heartbeat(): Promise<void> {
       status.value = result;
       online.value = true;
       error.value = "";
-      if (loadoutPending) {
+      if (loadoutPending || refreshPending) {
         loadoutPending = false;
-        void refresh();
+        void refresh(true);
       }
       if (economyDue()) void loadEconomy();
     }
@@ -180,10 +180,11 @@ function sessionFor(base: string): Session {
 
 let current = sessionFor(toHttpBase(settings.serverUrl));
 
-function fail(e: unknown): void {
+/** [quiet]: the message stays as it is (a retry nobody asked for). */
+function fail(e: unknown, quiet = false): void {
   // A rejected request (4xx) means the server is reachable; only network / 5xx errors are "offline".
   if (!(e instanceof ApiError) || e.status >= 500) online.value = false;
-  error.value = e instanceof ApiError ? e.message : "无法连接服务器";
+  if (!quiet) error.value = e instanceof ApiError ? e.message : "无法连接服务器";
   if (e instanceof ApiError && e.code === "account_expired") void setAccount(null);
 }
 
@@ -238,7 +239,8 @@ export async function loadEconomy(base = toHttpBase(settings.serverUrl)): Promis
   return pending;
 }
 
-export async function refresh(): Promise<void> {
+/** [retry]: a heartbeat got through after this failed before; failing again leaves the message alone. */
+export async function refresh(retry = false): Promise<void> {
   const session = current;
   const gen = generation;
   let player: string;
@@ -246,13 +248,18 @@ export async function refresh(): Promise<void> {
     const [s, c] = await serial(session, () => Promise.all([session.api.me(), session.api.collection()]));
     if (session !== current || gen !== generation) return;
     player = s.player;
+    refreshPending = false;
     status.value = s;
     collection.owned = c.owned;
     collection.recent = c.recent;
     online.value = true;
     error.value = "";
   } catch (e) {
-    if (session === current && gen === generation) fail(e);
+    if (session === current && gen === generation) {
+      // A heartbeat cleared the message just before: setting it again on every retry would flash it each time.
+      fail(e, retry);
+      refreshPending = true;
+    }
     return;
   }
   void loadEconomy();
@@ -304,6 +311,7 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   error.value = "";
   lastPushed = "";
   loadoutPending = false;
+  refreshPending = false;
   // Each reporter keeps its original server and batch identity, including retries.
   void flush(previous);
   if (timer) { void refresh(); void heartbeat(); }
@@ -625,6 +633,11 @@ let loadoutOwner = loadLoadoutOwner();
 let lastPushed = "";
 /** The current save's stored loadout could not be loaded yet. */
 let loadoutPending = false;
+/**
+ * The status and collection could not be loaded yet (a refusal such as too_many_saves, or no connection). The next
+ * heartbeat that gets through loads them, so a save the server starts later is not left without its collection.
+ */
+let refreshPending = false;
 
 function setLoadoutOwner(save: string): void {
   loadoutOwner = save;

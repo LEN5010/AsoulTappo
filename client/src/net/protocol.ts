@@ -107,7 +107,10 @@ export type DdzMessage =
   /** Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. */
   | { type: "ddz_invite"; table: string; from: string; ids: string[]; base: number; deposit: number; sec: number }
   | { type: "ddz_answer"; table: string; id: string }
-  /** Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, error); deposits went back. */
+  /**
+   * Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, ddz_account: a seat's save
+   * is not linked to a main-site account, error); deposits went back.
+   */
   | { type: "ddz_over"; table: string; reason: string; by?: string }
   /** A deal: the own hand, and the seat that bids first once the cards are dealt out (`dealSec`). */
   | {

@@ -6,7 +6,7 @@ import { accountLoginTrusted } from "../net/trust";
 import { partnerNames, setPartnerNames, settings, type PartnerNames } from "../stores/settings";
 import { activeAccount, saveCode, status } from "../stores/player";
 import {
-  canDuel, cheer, cheerDone, cheerOn, conn, createRoom, duelConfig, duelOn, inRoom, inviteDuel, isHost, joinRoom, kickMember,
+  betsNeedAccount, canDuel, cheer, cheerDone, cheerOn, conn, createRoom, duelConfig, duelOn, inRoom, inviteDuel, isHost, joinRoom, kickMember,
   lastError, leaveRoom, loadPublicRooms, members, nameOn, publicRooms, roomId, roomInfo, setRoomName, setRoomPublic, shownNick,
   youId,
 } from "../stores/room";
@@ -145,6 +145,8 @@ const mainApi = computed(() => {
   const i = info.value;
   return i?.accountLogin && i.mainApi && accountLoginTrusted(toHttpBase(settings.serverUrl), i.mainApi) ? i.mainApi : null;
 });
+/** Bets need an account here and none is signed in: the duel and dou dizhu keys say so. */
+const needAccount = computed(() => betsNeedAccount(info.value?.accountLogin));
 // A host without an account who took over a listed room still sees the switch, to take the room off the list.
 const canPublish = computed(() => isHost.value && (!info.value?.accountLogin || !!activeAccount() || !!roomInfo.value?.public));
 const signingIn = ref(false);
@@ -335,7 +337,7 @@ async function copy() {
         </div>
       </section>
       <p v-if="lastError || notice" class="ui-error err" role="alert">{{ lastError || notice }}</p>
-      <DdzBanner v-if="ddzOn" />
+      <DdzBanner v-if="ddzOn" :need-account="needAccount" />
     </div>
 
     <section v-if="conn === 'idle' && settings.recentRooms.length" data-rise>
@@ -505,7 +507,8 @@ async function copy() {
       </div>
     </Modal>
     <Modal v-if="picking && duelConfig" :title="`猜拳 ${shownNick(picking)}`" heading @close="picking = null">
-      <StakeKeys class="picker" :disabled="!canDuel(picking)" @pick="invite" />
+      <p v-if="needAccount" class="picker picker-note">登录账号后才能猜拳</p>
+      <StakeKeys v-else class="picker" :disabled="!canDuel(picking)" @pick="invite" />
     </Modal>
   </div>
 </template>
@@ -860,5 +863,16 @@ async function copy() {
 .picker {
   max-width: 260px;
   margin: 0 auto;
+}
+/* In place of the bets while they need an account: as the dou dizhu sheet says what holds a game up. */
+.picker-note {
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-key);
+  background: var(--c-50);
+  font: 800 var(--fs-body)/1.3 var(--font);
+  color: var(--ink-2);
+  text-align: center;
 }
 </style>

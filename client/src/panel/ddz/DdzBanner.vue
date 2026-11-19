@@ -11,6 +11,8 @@ import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
 import DdzSeats from "./DdzSeats.vue";
 
+/** Bets need an account here and none is signed in (the room page knows the server's info). */
+defineProps<{ needAccount?: boolean }>();
 const starting = ref(false);
 const t = computed(() => (ddz.value?.phase === "invite" || ddz.value?.phase === "over" ? ddz.value : null));
 const invite = computed(() => (t.value?.phase === "invite" ? t.value : null));
@@ -61,7 +63,7 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
         </button>
       </div>
     </template>
-    <DdzInvite v-if="starting" @close="starting = false" />
+    <DdzInvite v-if="starting" :need-account="needAccount" @close="starting = false" />
   </section>
 </template>
 

@@ -12,6 +12,8 @@ import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import DdzSeats from "./DdzSeats.vue";
 
+/** Bets need an account here and none is signed in. */
+const props = defineProps<{ needAccount?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const stakes = computed(() => ddzConfig.value?.stakes ?? []);
@@ -39,6 +41,7 @@ const blocked = computed(() => {
   const cfg = ddzConfig.value;
   const s = status.value;
   if (!cfg || !s?.ddz) return "";
+  if (props.needAccount) return "登录账号后才能斗地主";
   if (s.totals.taps < cfg.minTaps) {
     const need = cfg.minTaps % 10000 === 0 ? `${cfg.minTaps / 10000} 万` : cfg.minTaps.toLocaleString("en-US");
     return `累计敲击满 ${need} 下后可以斗地主`;

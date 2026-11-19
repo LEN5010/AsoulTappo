@@ -402,3 +402,29 @@ it("tells the server about do-not-disturb, counting click-through, only when it 
   expect(r.canDuel(r.members.get("friend")!)).toBe(false);
   expect(next.sent).toHaveLength(sent);
 });
+
+it("names the side without an account when a server takes bets only from saves linked to one", async () => {
+  const { socket, r } = await setup();
+  const texts: Record<string, string> = {};
+  for (const code of ["duel_account", "duel_target_account", "ddz_account", "ddz_target_account"]) {
+    socket.recv({ type: "error", code, message: "" });
+    texts[code] = r.lastError.value;
+  }
+  expect(texts).toEqual({
+    duel_account: "登录账号后才能猜拳", duel_target_account: "对方登录账号后才能猜拳",
+    ddz_account: "登录账号后才能斗地主", ddz_target_account: "三位都登录账号后才能斗地主",
+  });
+  expect(r.inRoom.value).toBe(true);
+});
+
+it("tells before any invite that bets need an account, only on a server with accounts", async () => {
+  const { settings, r } = await setup();
+  expect(r.betsNeedAccount(true)).toBe(true);
+  expect(r.betsNeedAccount(false)).toBe(false);
+  expect(r.betsNeedAccount(undefined)).toBe(false);
+  // Account sessions count on trusted servers only; tests run as a dev build, which trusts localhost.
+  settings.serverUrl = "http://localhost:1";
+  const player = await import("./player");
+  await player.setAccount({ server: "http://localhost:1", token: "acct", user: { id: "u", username: "a", email: "a@x" } });
+  expect(r.betsNeedAccount(true)).toBe(false);
+});
