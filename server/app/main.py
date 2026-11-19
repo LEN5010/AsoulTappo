@@ -308,6 +308,12 @@ async def healthz() -> dict:
     return {"status": "ok", "rooms": len(manager.rooms)}
 
 
+@app.get("/healthz/store")
+def healthz_store() -> dict:
+    """Run sync in the threadpool like player requests so /healthz stays fast during store stalls."""
+    return {"status": "ok", "waited": game.store.probe()}
+
+
 @app.post("/rooms")
 async def create_room() -> dict:
     """Create a room and return its random long ID."""

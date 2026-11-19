@@ -194,6 +194,13 @@ class Store(AdminStore, ParkStore, DdzStore):
     def lock(self) -> threading.RLock:
         return self._lock
 
+    def probe(self) -> float:
+        """Time the lock wait and a quick read to detect stalls in player requests."""
+        started = time.monotonic()
+        with self._lock:
+            self._db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+        return round(time.monotonic() - started, 3)
+
     def transaction(self):
         """Context manager: holds the lock and commits/rolls back."""
         return _Tx(self)

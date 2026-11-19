@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS players (
   shards INTEGER NOT NULL DEFAULT 0,
   loadout TEXT NOT NULL DEFAULT ''
 );
+CREATE INDEX IF NOT EXISTS players_created ON players (created);
 CREATE TABLE IF NOT EXISTS items (
   player_id TEXT NOT NULL,
   item_id TEXT NOT NULL,
