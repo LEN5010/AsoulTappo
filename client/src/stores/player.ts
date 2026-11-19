@@ -6,7 +6,7 @@ import {
 } from "../net/api";
 import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
-import { ownsCharacter, ownsEmote } from "../items";
+import { everyItem, ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
 import { getCard, memberOf, type Rarity } from "../manifest";
 import { settings } from "./settings";
@@ -106,7 +106,8 @@ function credential(base: string): Credential {
 }
 
 export const status = ref<PlayerStatus | null>(null);
-export const collection = reactive<Collection>({ owned: {}, recent: [] });
+/** The standalone edition owns everything from the start and never asks for the collection. */
+export const collection = reactive<Collection>({ owned: STANDALONE ? everyItem() : {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
 export const draws = computed(() => {
@@ -314,7 +315,7 @@ async function flush(session: Session): Promise<boolean> {
 }
 
 watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, ([url, code]) => {
-  if (isPanelWindow) return;
+  if (isPanelWindow || STANDALONE) return;
   const previous = current;
   token = code;
   const next = sessionFor(toHttpBase(url));
