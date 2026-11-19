@@ -11,9 +11,15 @@ name = "asoultappo_client_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
+default = ["updater"]
 # Debug build for testers: more detailed log lines and a larger log file (src/applog.rs).
 # Built by .github/workflows/debug-build.yml, never by the release workflow.
 debug-log = []
+# The online edition's updater (src/update.rs). It is the only dependency with an HTTP client.
+updater = ["dep:tauri-plugin-updater"]
+# The standalone edition: no updater, no race window, its own names (src/edition.rs). Built with
+# `--no-default-features --features standalone` and tauri.standalone.conf.json (scripts/check_standalone.sh).
+standalone = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -21,7 +27,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico", "macos-private-api"] }
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", optional = true }
 # The hide key (src/hotkey.rs).
 tauri-plugin-global-shortcut = "2"
 # Copying from the panel (copyText in src/composables/tauri.ts): WebKit refuses the web clipboard on the click

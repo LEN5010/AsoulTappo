@@ -18,7 +18,15 @@ mod tablet;
 mod overlay_macos;
 #[cfg(target_os = "windows")]
 mod tool_window;
+#[cfg(feature = "updater")]
 mod update;
+
+// Exactly one edition: the updater would let the standalone edition reach the network, and an online
+// build without it could never update.
+#[cfg(all(feature = "standalone", feature = "updater"))]
+compile_error!("the standalone edition is built with `--no-default-features --features standalone`");
+#[cfg(not(any(feature = "standalone", feature = "updater")))]
+compile_error!("the online edition needs the default feature `updater`; the standalone one needs `--features standalone`");
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -386,6 +394,7 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 /// The todos' window, in logical pixels: a card with its own title bar on a transparent window.
 const TODO_SIZE: (f64, f64) = (320.0, 460.0);
 /// The race's window, in logical pixels (the browser preview's frame is the same size: src/pet/RaceFrame.vue).
+#[cfg(not(feature = "standalone"))]
 const RACE_SIZE: (f64, f64) = (1180.0, 740.0);
 /// Its distance from the corner of the work area the first time it opens, in logical pixels.
 const TODO_MARGIN: f64 = 24.0;
@@ -480,6 +489,8 @@ fn place_todo(app: &tauri::AppHandle, window: &WebviewWindow) -> Result<(), Stri
 /// large as `RACE_SIZE` or the work area allows, in the middle of its monitor. `replay` is the finished race it
 /// plays, none for the live one: a window already open is told (`race:open`) and brought to the front. The page
 /// shows it once it has drawn (`show_race`). Closing it closes it: the next call makes it again.
+/// The race needs the server, so the standalone edition has no race window.
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("race") {
@@ -520,6 +531,7 @@ async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), Str
     window.center().map_err(|e| e.to_string())
 }
 
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 fn show_race(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("race") {
@@ -528,6 +540,7 @@ fn show_race(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 fn close_race(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("race") {
@@ -1020,9 +1033,10 @@ pub fn run() {
     // WebKit needs byte ranges to play the bundled card videos (src/media.rs).
     #[cfg(target_os = "macos")]
     let builder = builder.register_asynchronous_uri_scheme_protocol("tauri", media::serve);
+    let builder = builder.plugin(tauri_plugin_process::init());
+    #[cfg(feature = "updater")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     builder
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
@@ -1036,8 +1050,11 @@ pub fn run() {
             toggle_panel,
             show_panel,
             hide_panel,
+            #[cfg(not(feature = "standalone"))]
             open_race,
+            #[cfg(not(feature = "standalone"))]
             show_race,
+            #[cfg(not(feature = "standalone"))]
             close_race,
             open_todo,
             show_todo,
@@ -1056,6 +1073,7 @@ pub fn run() {
             access::input_access_missing,
             access::open_input_settings,
             hotkey::set_hotkey,
+            #[cfg(feature = "updater")]
             update::install_version
         ])
         .on_window_event(|window, event| {
