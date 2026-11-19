@@ -2,13 +2,14 @@
 // and keeps the returned Bearer token; the room server only receives that token to find the linked save.
 import type { MainUser } from "./api";
 import type { FetchLike } from "./api";
+import { serverFetch } from "../edition";
 
 export interface MainSession { token: string; user: MainUser }
 
 const CLIENT_ID = "asoultappo";
 
 export class MainAccountApi {
-  constructor(private base: string, private f: FetchLike = (u, i) => fetch(u, i)) {}
+  constructor(private base: string, private f: FetchLike = (u, i) => serverFetch(u, i)) {}
 
   private async call<T>(path: string, body?: Record<string, unknown>, token?: string): Promise<T> {
     let res: Response;

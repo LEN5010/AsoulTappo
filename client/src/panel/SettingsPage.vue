@@ -20,6 +20,7 @@ import PetBust from "./PetBust.vue";
 import AsasfansPromo from "./AsasfansPromo.vue";
 import LegalDoc from "./LegalDoc.vue";
 import { DOC_TITLES, type DocName } from "../legal";
+import { STANDALONE } from "../edition";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
@@ -36,8 +37,9 @@ async function loadInfo() {
     info.value = accountLoginTrusted(server, result.mainApi) ? result : { ...result, accountLogin: false, mainApi: null };
   } catch { /* offline: sign-in shows once the server answers */ }
 }
-onMounted(() => { void loadInfo(); void refreshAccount(); });
-watch(() => settings.serverUrl, loadInfo);
+// The standalone edition has no account row and no server to ask.
+onMounted(() => { if (!STANDALONE) { void loadInfo(); void refreshAccount(); } });
+watch(() => settings.serverUrl, () => { if (!STANDALONE) void loadInfo(); });
 const signedIn = computed(() => activeAccount());
 const dialog = ref<"login" | "register" | null>(null);
 function accountDone(message: string) {

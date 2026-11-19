@@ -13,6 +13,7 @@ import { settings } from "./settings";
 import { popShards } from "./shardPop";
 import { noteActivity, windowVisible } from "./activity";
 import { noteAutoInput } from "./autoHint";
+import { STANDALONE } from "../edition";
 
 const pose = new PetPose();
 export const pet = pose.pet;
@@ -37,6 +38,12 @@ watch(() => [status.value?.autoInput, status.value?.autoStrikes], ([seconds, str
 
 // Each counted tap is reported with whether other software sent it: see AUTOMATED INPUT in net/api.ts.
 function tap(injected?: boolean): void {
+  // The standalone edition counts every tap on this device only: no guard, no server, no room, no shards.
+  if (STANDALONE) {
+    tapStats.counted += 1;
+    bumpCounter();
+    return;
+  }
   const was = guard.until;
   if (!guard.allow(Date.now())) {
     tapStats.blocked += 1;

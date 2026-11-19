@@ -11,6 +11,7 @@ import { isNewer } from "../semver";
 import { dayKey } from "./counter";
 import { settings } from "./settings";
 import { APP_VERSION } from "../version";
+import { STANDALONE } from "../edition";
 
 const DISMISS_KEY = "asoultappo.update.dismissed";
 /** Every installer, mirrored on the main site. Also listed in ABOUT_LINKS (src-tauri/src/lib.rs). */
@@ -123,7 +124,7 @@ let looked = false;
 
 /** The Tauri updater's answer from GitHub, asked once and shared; asked again after a failure. */
 function askGithub(again = false): Promise<GithubAnswer> {
-  if (!isTauri) return Promise.resolve({ ok: false });
+  if (!isTauri || STANDALONE) return Promise.resolve({ ok: false });
   if (!github || again) {
     github = import("@tauri-apps/plugin-updater")
       .then(({ check }) => check({ timeout: GITHUB_TIMEOUT_MS }))
@@ -162,6 +163,8 @@ function offer(found: ReleaseInfo, manual: boolean): void {
  * or again on the release watch ([again]). The server's answer also carries its minimum version and announcements.
  */
 export async function lookForUpdate(manual = false, again = false): Promise<void> {
+  // The standalone edition is updated by installing a newer one: nothing is asked.
+  if (STANDALONE) return;
   if (checkState.value === "checking" || updateBusy.value) return;
   if (!manual && !agreed.value) return;
   if (!manual) {
@@ -194,6 +197,7 @@ export async function lookForUpdate(manual = false, again = false): Promise<void
 const WATCH_MS = 30 * 60 * 1000;
 /** Asks again now and every half hour, so a minimum version or an announcement set later still arrives. */
 export function watchRelease(): () => void {
+  if (STANDALONE) return () => {};
   let timer: ReturnType<typeof setInterval> | undefined;
   // Nothing is asked before the player agrees to the terms (src/legal); agreeing starts the watch.
   const stop = watch(agreed, (ok) => {

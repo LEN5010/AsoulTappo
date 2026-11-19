@@ -9,6 +9,7 @@ import { requestDesktop } from "../desktop/transport";
 import { rememberNews, unseenNews } from "../parkNews";
 import { account, attempt, freshItems, reloadCollection, saveCode, status } from "./player";
 import { settings } from "./settings";
+import { STANDALONE } from "../edition";
 
 export type ParkMethod = "GET" | "POST";
 
@@ -119,7 +120,7 @@ export async function parkCall<T>(method: ParkMethod, path: string, body?: unkno
 
 /** Loads the save's park; a server whose status has no park is not asked. */
 export async function loadPark(): Promise<ParkState | null> {
-  if (noPark.value) {
+  if (noPark.value || STANDALONE) {
     park.value = null;
     return null;
   }
