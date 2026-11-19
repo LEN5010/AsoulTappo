@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // A profile as others see it, one namecard: the plate's artwork across the right fading into paper, the pet's bust
-// framed on the upper edge, the name and collection counts on the paper, and up to five showcase cards pinned
-// over the lower right corner, held as a fanned hand once there are more than three. The own card on the 排行 page is
-// the same card made editable: a key swaps the plate, the empty slot after the pinned cards picks the next one, a
-// pinned card's corner key takes it down. The owner opens the pickers and the cards.
+// framed on the upper edge with the collection counts in a column under it, the name on the paper beside it, and up
+// to five showcase cards pinned over the lower right corner, held as a fanned hand once there are more than three.
+// The own card on the 排行 page is the same card made editable: a key swaps the plate, the empty slot after the
+// pinned cards picks the next one, a pinned card's corner key takes it down. The owner opens the pickers and the cards.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { cardFrame } from "../cards";
@@ -75,6 +75,30 @@ const fanned = computed(() => pinned.value.length > 3);
 const TILTS = [-6, 2, 7];
 const FAN_STEP = 5;
 const tilt = (i: number) => (fanned.value ? (i - (pinned.value.length - 1) / 2) * FAN_STEP : TILTS[i] ?? 0);
+/** The showcase's geometry as the style sets it: card widths, the gap between slots, a fanned card's overlap, and
+ * its distance from the card's right edge. */
+const PIN_WIDTH = 76;
+const FAN_WIDTH = 72;
+const PIN_GAP = 10;
+const FAN_OVERLAP = 18;
+const SHOWCASE_RIGHT = 22;
+/** Where the counts' column ends, with some air; the hand stays right of it. */
+const STATS_END = 136;
+/** The least of each card that stays in sight past the next one. */
+const MIN_STEP = 30;
+/** How much further each pinned card slides over the one before it so the hand clears the counts on a narrow card
+ * (the own card at a small panel size); 0 wherever the hand fits as it is. The outermost card's lean is counted. */
+const squeeze = computed(() => {
+  const n = pinned.value.length;
+  if (n < 2 || !width.value) return 0;
+  const w = fanned.value ? FAN_WIDTH : PIN_WIDTH;
+  const step = fanned.value ? w - FAN_OVERLAP + PIN_GAP : w + PIN_GAP;
+  const lean = Math.abs(tilt(0)) * Math.PI / 180;
+  const swing = (fanned.value ? 1.2 : 0.5) * 1.5 * w * Math.sin(lean) + (w / 2) * (1 - Math.cos(lean));
+  const hand = w + (n - 1) * step + (slots.value.length > n ? PIN_GAP + w : 0) + swing;
+  const room = width.value - SHOWCASE_RIGHT - STATS_END;
+  return Math.min(step - MIN_STEP, Math.max(0, Math.ceil((hand - room) / (n - 1))));
+});
 const stats = computed(() => (["cards", "emotes", "skins"] as const).map((kind, i) => ({
   label: ["卡片", "表情", "皮肤"][i],
   count: props.progress?.[kind] ?? null,
@@ -114,7 +138,7 @@ const px = (n: number) => `${n}px`;
     <button v-if="editable && swappable" type="button" class="ui-btn small swap" @click="emit('swap')">
       {{ plate ? "换铭牌" : "戴铭牌" }}
     </button>
-    <ul v-if="slots.length && !failed" class="showcase" :class="{ fanned }" aria-label="展示卡">
+    <ul v-if="slots.length && !failed" class="showcase" :class="{ fanned }" :style="{ '--squeeze': px(squeeze) }" aria-label="展示卡">
       <li v-for="(card, i) in slots" :key="card?.id ?? `empty-${i}`" :class="{ spare: !card }" :style="{ '--tilt': card ? `${tilt(i)}deg` : '0deg' }">
         <template v-if="card">
           <button type="button" class="pin" :class="[cardFrame(card), { framed: !!cardFrame(card) }]" :title="card.name" @click="emit('open', card)">
@@ -247,46 +271,40 @@ button.art-box:hover .art {
   color: var(--c-700);
   text-shadow: none;
 }
-/* Collection counts as large numbers over small labels, split by short rules. */
+/* Collection counts in a column under the bust, one kind per line: the label, then the number and its total. */
 .stats {
   position: absolute;
   left: 24px;
-  bottom: 20px;
+  top: 74px;
   margin: 0;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
   pointer-events: none;
 }
 .stats > div {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 18px;
-}
-.stats > div:first-child {
-  padding-left: 0;
-}
-.stats > div + div {
-  border-left: 2px solid var(--c-100);
+  align-items: baseline;
+  gap: 8px;
 }
 .stats dt {
-  order: 2;
   font-size: var(--fs-label);
   font-weight: 700;
   color: var(--ink-3);
 }
 .stats dd {
   margin: 0;
+  line-height: 1;
   white-space: nowrap;
   text-shadow: 0 0 8px var(--surface);
 }
 .stats dd b {
-  font: 800 34px/1 var(--font-latin);
+  font: 800 24px/1 var(--font-latin);
   color: var(--ink);
 }
 .stats dd small {
-  margin-left: 2px;
-  font: 800 var(--fs-number)/1 var(--font-latin);
+  margin-left: 1px;
+  font: 800 var(--fs-strong)/1 var(--font-latin);
   color: var(--ink-3);
 }
 .stats.failed {
@@ -335,6 +353,10 @@ button.art-box:hover .art {
   z-index: 2;
   transform: translateY(-6px) rotate(0deg);
 }
+/* On a narrow card the cards close up over one another by --squeeze (see the script) to stay clear of the counts. */
+.showcase li + li {
+  margin-left: calc(-1 * var(--squeeze, 0px));
+}
 /* A hand of four or five: each card lies over the one before it, pivoting low so the fan opens at the top. The
  * empty slot stands clear of the hand. */
 .fanned li {
@@ -342,9 +364,9 @@ button.art-box:hover .art {
   transform-origin: 50% 120%;
 }
 .fanned li + li {
-  margin-left: -18px;
+  margin-left: calc(-18px - var(--squeeze, 0px));
 }
-.fanned li.spare {
+.showcase li.spare {
   margin-left: 0;
 }
 .pin {
