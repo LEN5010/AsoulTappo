@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "build:standalone": "vue-tsc --noEmit && vite build --mode standalone",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:standalone": "vitest run --config vitest.standalone.config.ts",
     "tauri": "tauri"
   },
   "dependencies": {
