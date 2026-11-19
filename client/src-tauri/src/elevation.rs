@@ -16,9 +16,15 @@ use std::time::Duration;
 /// Where the "start as administrator" choice is kept. It is read before Tauri starts, so it
 /// lives in a plain file under the app config dir (`%APPDATA%\<identifier>`), not in the page.
 fn flag_path() -> Option<PathBuf> {
-    // Same folder as `app_config_dir()`; must match `identifier` in tauri.conf.json.
-    const IDENTIFIER: &str = "io.github.len5010.asoultappo";
-    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER).join("run-as-admin"))
+    // Same folder as `app_config_dir()`, which follows `identifier` in the edition's Tauri configuration.
+    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(crate::edition::IDENTIFIER).join("run-as-admin"))
+}
+
+/// Held by the running instance. `Local\` is the session's namespace, which elevated and normal processes of the
+/// same session share; other sessions (other users) have their own. One per edition, so both can run.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn instance_mutex() -> String {
+    format!("Local\\{}.instance", crate::edition::IDENTIFIER)
 }
 
 /// Whether the player chose to start as administrator.
@@ -92,9 +98,6 @@ mod imp {
 
     /// How long a new elevated instance waits for the one that started it to exit.
     const WAIT_FOR_OLD: u32 = 10_000;
-    /// Held by the running instance. `Local\` is the session's namespace, which elevated and
-    /// normal processes of the same session share; other sessions (other users) have their own.
-    const INSTANCE_MUTEX: &str = "Local\\io.github.len5010.asoultappo.instance";
     /// How long a new start keeps trying while another instance holds the mutex: `relaunch`
     /// starts the new process before the old one has exited.
     const CLAIM_WAIT: Duration = Duration::from_secs(3);
@@ -191,7 +194,7 @@ mod imp {
 
     /// Take the instance mutex, or exit when another instance still holds it after `CLAIM_WAIT`.
     fn claim_instance() -> Instance {
-        let name = wide(INSTANCE_MUTEX);
+        let name = wide(&super::instance_mutex());
         let started = Instant::now();
         let mut first = true;
         loop {
@@ -301,4 +304,15 @@ mod stub {
         (Instance::Only, Startup::Normal)
     }
     pub fn spawn_watch(_app: tauri::AppHandle) {}
+}
+
+#[cfg(test)]
+mod tests {
+    /// The online edition's mutex is the one installed copies hold: a new name would let an old and a new
+    /// instance run at once during an update.
+    #[cfg(not(feature = "standalone"))]
+    #[test]
+    fn online_instance_mutex_stays_as_installed() {
+        assert_eq!(super::instance_mutex(), "Local\\io.github.len5010.asoultappo.instance");
+    }
 }

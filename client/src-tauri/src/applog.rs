@@ -96,7 +96,11 @@ pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
             out.extend(bytes);
         }
     }
-    let path = to_dir.join(format!("AsoulTappo-log-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+    let path = to_dir.join(format!(
+        "{}-log-{}.txt",
+        crate::edition::PRODUCT_NAME,
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
     std::fs::write(&path, out)?;
     Ok(path)
 }

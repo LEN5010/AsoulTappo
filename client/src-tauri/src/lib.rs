@@ -2,6 +2,7 @@
 mod applog;
 mod access;
 mod diag;
+mod edition;
 mod elevation;
 mod gamepad;
 mod hotkey;
@@ -350,7 +351,7 @@ async fn open_panel(
         return show_panel(app);
     }
     let window = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("index.html?window=panel".into()))
-        .title("AsoulTappo")
+        .title(edition::DISPLAY_NAME)
         .inner_size(1000.0, 720.0)
         .min_inner_size(640.0, 480.0)
         .transparent(true)
@@ -622,7 +623,7 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
     }
     let (width, height) = (width.clamp(160.0, 1600.0), height.clamp(160.0, 1600.0));
     let window = WebviewWindowBuilder::new(&app, "capture", WebviewUrl::App("capture.html".into()))
-        .title("AsoulTappo 采集窗口")
+        .title(format!("{} 采集窗口", edition::DISPLAY_NAME))
         // The size it was last dragged to (settings.captureW, captureH), reported from the window's own
         // resize events below: the same measure as this one, which the page's viewport is not on macOS
         // (shorter by the title bar).
@@ -646,20 +647,10 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
     Ok(())
 }
 
-/// Links the About section may open in the system browser or mail app.
-const ABOUT_LINKS: [&str; 7] = [
-    "https://github.com/LEN5010/AsoulTappo",
-    "https://space.bilibili.com/107261543",
-    "mailto:len5010@qq.com",
-    "https://len5010.top/dynamics/download?app=tappo",
-    "https://len5010.top",
-    "https://len5010.top/download",
-    "https://len5010.me/sponsor/",
-];
-
+/// Opens one of the edition's About links (src/edition.rs) in the system browser or mail app.
 #[tauri::command]
 fn open_about_link(url: String) -> Result<(), String> {
-    if !ABOUT_LINKS.contains(&url.as_str()) {
+    if !edition::ABOUT_LINKS.contains(&url.as_str()) {
         return Err("unknown link".into());
     }
     // Started from an elevated process the browser would run elevated too; explorer hands the
@@ -1147,7 +1138,7 @@ pub fn run() {
             } else {
                 String::new()
             };
-            applog!("app", "AsoulTappo {} on {}, {admin}{build}", app.package_info().version, diag::os_version());
+            applog!("app", "{} {} on {}, {admin}{build}", edition::PRODUCT_NAME, app.package_info().version, diag::os_version());
             match &startup {
                 elevation::Startup::Normal if elevation::run_as_admin() => applog!("app", "start as administrator is on"),
                 elevation::Startup::Normal => {}
@@ -1236,7 +1227,7 @@ pub fn run() {
 
             let tray_overlay = overlay.clone();
             let mut tray = TrayIconBuilder::new()
-                .tooltip("AsoulTappo")
+                .tooltip(edition::DISPLAY_NAME)
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "toggle_visible" => {

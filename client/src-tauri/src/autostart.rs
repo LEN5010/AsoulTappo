@@ -3,8 +3,8 @@
 //!
 //! - macOS 13 and later: `SMAppService.mainAppService`, listed under Open at Login in System Settings.
 //! - macOS 10.15 to 12: a LaunchAgent plist in `~/Library/LaunchAgents`.
-//! - Windows: the `AsoulTappo` value under HKCU `...\CurrentVersion\Run`, the value the NSIS uninstaller removes
-//!   (outside an update). A start turned off in Task Manager is kept under `StartupApproved\Run`; turning it on here
+//! - Windows: the value named after `productName` (src/edition.rs) under HKCU `...\CurrentVersion\Run`, the value
+//!   the NSIS uninstaller removes (outside an update). A start turned off in Task Manager is kept under `StartupApproved\Run`; turning it on here
 //!   deletes that record.
 //!
 //! A macOS copy started from a disk image or from a quarantined download runs from a path that is gone at the next
@@ -43,7 +43,8 @@ mod imp {
     const ENABLED: isize = 1;
     const REQUIRES_APPROVAL: isize = 2;
 
-    const LABEL: &str = "io.github.len5010.asoultappo";
+    /// The LaunchAgent of macOS 10.15 to 12, one per edition.
+    const LABEL: &str = crate::edition::IDENTIFIER;
 
     fn class() -> Option<&'static AnyClass> {
         AnyClass::get(c"SMAppService")
@@ -156,8 +157,8 @@ mod imp {
 
     const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
     const APPROVED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
-    /// `${PRODUCTNAME}`, the value Tauri's uninstaller deletes.
-    const NAME: &str = "AsoulTappo";
+    /// `${PRODUCTNAME}`, the value Tauri's uninstaller deletes: each edition's uninstaller removes only its own.
+    const NAME: &str = crate::edition::PRODUCT_NAME;
 
     fn wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
