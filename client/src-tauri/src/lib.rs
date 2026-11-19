@@ -68,12 +68,32 @@ struct Overlay {
     monitor: Mutex<usize>,
     /// The overlay currently lets clicks through, so a mouse press lands on another window.
     passing: AtomicBool,
-    /// The overlay was moved outside the hit test (tray: next monitor): its cached origin and scale are stale.
+    /// The overlay was moved outside the hit test (tray or hotkey: next monitor): its cached origin and scale are stale.
     moved: AtomicBool,
 }
 
 fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
+}
+
+/// Moves the pet to the next monitor and remembers it for the next start, from the tray or the hotkey (logged under
+/// `from`). With [only_if_several] a single monitor is left alone; the tray still fits the overlay to it again.
+fn move_to_next_monitor(app: &tauri::AppHandle, overlay: &Overlay, from: &str, only_if_several: bool) {
+    let Some(w) = main_window(app) else { return };
+    let count = monitor_count(&w).unwrap_or(1).max(1);
+    if only_if_several && count < 2 {
+        applog!(from, "next monitor: only one monitor");
+        return;
+    }
+    if let Ok(mut m) = overlay.monitor.lock() {
+        *m = (*m + 1) % count;
+        fit_and_log(&w, *m, &format!("{from} next monitor, {count} monitor(s)"));
+        overlay.moved.store(true, Ordering::Relaxed);
+        let key = monitor_keys(&w).ok().and_then(|keys| keys.get(*m).cloned());
+        if let Some(Err(e)) = key.map(|k| monitor_pref::save(app, &k)) {
+            applog!(from, "remember monitor failed: {e}");
+        }
+    }
 }
 
 /// macOS gives a full-screen app a Space of its own. Without these flags the pet stays on the Space it
@@ -1239,20 +1259,7 @@ pub fn run() {
                         }
                         let _ = app.emit_to("main", "tray", "reset-position");
                     }
-                    "next_monitor" => {
-                        if let Some(w) = main_window(app) {
-                            let count = monitor_count(&w).unwrap_or(1).max(1);
-                            if let Ok(mut m) = tray_overlay.monitor.lock() {
-                                *m = (*m + 1) % count;
-                                fit_and_log(&w, *m, &format!("tray next monitor, {count} monitor(s)"));
-                                tray_overlay.moved.store(true, Ordering::Relaxed);
-                                let key = monitor_keys(&w).ok().and_then(|keys| keys.get(*m).cloned());
-                                if let Some(Err(e)) = key.map(|k| monitor_pref::save(app, &k)) {
-                                    applog!("tray", "remember monitor failed: {e}");
-                                }
-                            }
-                        }
-                    }
+                    "next_monitor" => move_to_next_monitor(app, &tray_overlay, "tray", false),
                     // Here too: when the pet window blocks clicks the panel may be unreachable.
                     "export_log" => {
                         log_state(&tray_overlay, "export from the tray");

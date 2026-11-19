@@ -1,8 +1,9 @@
 //! Global shortcuts: the hide key hides the pet, panel, todos, race and capture windows and restores them,
-//! the click-through key, which flips click-through, and the emote keys, which play a quick emote each. Registered
-//! with the system, so they need no input permission and do not go through the hook.
+//! the click-through key, which flips click-through, the monitor key, which moves the pet to the next monitor as the
+//! tray does, and the emote keys, which play a quick emote each. Registered with the system, so they need no input
+//! permission and do not go through the hook.
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -21,19 +22,21 @@ static RACE_WAS_SHOWN: AtomicBool = AtomicBool::new(false);
 enum Slot {
     Hide,
     ClickThrough,
+    NextMonitor,
     /// The quick emote at this place, from 1.
     Emote(u8),
 }
 
 /// How many quick emotes have a key of their own.
 const EMOTES: u8 = 8;
-const SLOTS: usize = 2 + EMOTES as usize;
+const SLOTS: usize = 3 + EMOTES as usize;
 
 impl Slot {
     fn parse(name: &str) -> Result<Self, String> {
         match name {
             "hide" => Ok(Self::Hide),
             "click-through" => Ok(Self::ClickThrough),
+            "next-monitor" => Ok(Self::NextMonitor),
             _ => match name.strip_prefix("emote-").and_then(|n| n.parse::<u8>().ok()) {
                 Some(n) if (1..=EMOTES).contains(&n) => Ok(Self::Emote(n)),
                 _ => Err(format!("unknown hotkey {name}")),
@@ -44,13 +47,15 @@ impl Slot {
         match self {
             Self::Hide => 0,
             Self::ClickThrough => 1,
-            Self::Emote(n) => 1 + n as usize,
+            Self::NextMonitor => 2,
+            Self::Emote(n) => 2 + n as usize,
         }
     }
     fn label(self) -> String {
         match self {
             Self::Hide => "hide".into(),
             Self::ClickThrough => "click-through".into(),
+            Self::NextMonitor => "next-monitor".into(),
             Self::Emote(n) => format!("emote-{n}"),
         }
     }
@@ -122,6 +127,14 @@ fn press(app: &AppHandle, slot: Slot) {
             applog!("hotkey", "toggle click-through");
             let _ = app.emit_to("main", "tray", "toggle-click-through");
         }
+        // Run on the main thread, as the tray's entry is: the shortcut's callback may come on another one.
+        Slot::NextMonitor => {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                let overlay = handle.state::<Arc<crate::Overlay>>();
+                crate::move_to_next_monitor(&handle, &overlay, "hotkey", true);
+            });
+        }
         // The desk knows which emotes its strip holds.
         Slot::Emote(n) => {
             let _ = app.emit_to("main", "emote-key", n);
@@ -129,8 +142,8 @@ fn press(app: &AppHandle, slot: Slot) {
     }
 }
 
-/// Replaces the shortcut of [slot] ("hide", "click-through", "emote-1" to "emote-8") with [keys] (`Control+Alt+KeyH`);
-/// empty removes it. The error is the system's refusal, usually because another program holds the shortcut, or
+/// Replaces the shortcut of [slot] ("hide", "click-through", "next-monitor", "emote-1" to "emote-8") with [keys]
+/// (`Control+Alt+KeyH`); empty removes it. The error is the system's refusal, usually because another program holds the shortcut, or
 /// "taken" when another slot already uses it. On an error the slot keeps no shortcut.
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, slot: String, keys: String) -> Result<(), String> {

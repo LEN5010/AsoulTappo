@@ -84,11 +84,13 @@ const version = __APP_VERSION__;
 const checkNote = computed(() => (checkState.value === "latest" ? "已是最新" : checkState.value === "failed" ? "检查失败" : ""));
 const portrait = computed(() => getCharacter(settings.character)?.bg);
 
-// The hide key and the click-through key: a key waits for the next shortcut pressed; Escape leaves it as it was.
+// The hide key, the click-through key and the monitor key: a key waits for the next shortcut pressed; Escape leaves it
+// as it was.
 const IS_MAC = /Mac/i.test(navigator.userAgent);
-const HOTKEYS: { slot: HotkeySlot; label: string; key: "bossKey" | "clickThroughKey" }[] = [
+const HOTKEYS: { slot: HotkeySlot; label: string; key: "bossKey" | "clickThroughKey" | "monitorKey" }[] = [
   { slot: "click-through", label: "点击穿透热键", key: "clickThroughKey" },
   { slot: "hide", label: "隐藏热键", key: "bossKey" },
+  { slot: "next-monitor", label: "切换屏幕热键", key: "monitorKey" },
 ];
 // The emote keys are one row: a press on any digit gives their modifiers, and 1 to 8 follow.
 const recording = ref<HotkeySlot | "emotes" | null>(null);

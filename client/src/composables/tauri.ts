@@ -157,8 +157,11 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
-/** What a global shortcut does: hide the pet and the panel, flip click-through, or play the quick emote at a place. */
-export type HotkeySlot = "hide" | "click-through" | `emote-${number}`;
+/**
+ * What a global shortcut does: hide the pet and the panel, flip click-through, move the pet to the next monitor, or
+ * play the quick emote at a place.
+ */
+export type HotkeySlot = "hide" | "click-through" | "next-monitor" | `emote-${number}`;
 /** Registers [keys] for [slot] ("" removes it); rejects with the system's refusal, or "taken" by another slot. */
 export const setHotkey = (slot: HotkeySlot, keys: string): Promise<void> =>
   (isTauri ? invoke<void>("set_hotkey", { slot, keys }) : Promise.resolve());

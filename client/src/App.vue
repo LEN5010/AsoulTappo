@@ -517,6 +517,7 @@ watch(() => settings.alwaysOnTop, (v) => setAlwaysOnTop(v), { immediate: true })
 // The settings page reports a refused shortcut when it is recorded; at startup it is only in the log.
 watch(() => settings.bossKey, (v) => void setHotkey("hide", v).catch(() => {}), { immediate: true });
 watch(() => settings.clickThroughKey, (v) => void setHotkey("click-through", v).catch(() => {}), { immediate: true });
+watch(() => settings.monitorKey, (v) => void setHotkey("next-monitor", v).catch(() => {}), { immediate: true });
 watch(() => settings.emoteKey, (v) => void setEmoteKeys(v, setHotkey).catch(() => {}), { immediate: true });
 // While click-through is on the overlay can't receive clicks, so close what needs them.
 watch(() => settings.clickThrough, (v) => {
