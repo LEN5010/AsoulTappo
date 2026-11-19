@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { watch } from "vue";
 import {
   DOCK_SNAP, FORMATION_GAP, defaultFormation, dockY, formationCells, formationOffset, formationSize, inLastRow,
-  placeFormation, resetOwnPet,
+  placeFormation, resetOwnPet, rowCols, tidyRemotes,
 } from "./desk";
 import { settings } from "./settings";
 
@@ -79,6 +79,50 @@ describe("defaultFormation", () => {
     const placed = defaultFormation({ x: 1500, y: dockY(1, vp) }, ownSize, true, 7, 5, size, 1, vp);
     expect(placed.docked).toBe(true);
     expect(formationCells(placed.anchor, 7, 5, size)[6].y).toBe(dockY(1, vp));
+  });
+});
+
+describe("partners in a row on the bottom edge", () => {
+  it("stand side by side while the screen is wide enough", () => {
+    expect(rowCols(19, size, vp)).toBe(16);
+    expect(rowCols(7, size, vp)).toBe(7);
+    expect(rowCols(0, size, vp)).toBe(1);
+    // Exactly as wide as the screen less its margins.
+    const just = { w: 8 * 2 + 5 * size.w + 4 * FORMATION_GAP, h: 600 };
+    expect(rowCols(9, size, just)).toBe(5);
+    expect(rowCols(9, size, { ...just, w: just.w - 1 })).toBe(4);
+    expect(rowCols(3, size, { w: 50, h: 600 })).toBe(1);
+  });
+  it("fold into rows above when there are more than fit, the last on the edge", () => {
+    const narrow = { w: 500, h: 1080 };
+    const cols = rowCols(9, size, narrow);
+    expect(cols).toBe(4);
+    const placed = defaultFormation({ x: 300, y: 500 }, { w: 240, h: 170 }, true, 9, cols, size, 0.5, narrow);
+    const cells = formationCells(placed.anchor, 9, cols, size);
+    expect(placed.docked).toBe(true);
+    expect(cells.at(-1)!.y).toBe(dockY(0.5, narrow));
+    expect(cells[0].y).toBe(dockY(0.5, narrow) - 2 * pitch.y);
+    expect(Math.max(...cells.map((c) => c.x)) + size.w).toBeLessThanOrEqual(narrow.w - 8);
+  });
+  it("stand next to the own pet on the edge, also when it floats higher up", () => {
+    const own = { x: 1500, y: 300 };
+    const placed = defaultFormation(own, { w: 240, h: 170 }, true, 4, rowCols(4, size, vp), size, 1, vp);
+    expect(placed).toEqual({ anchor: { x: own.x - FORMATION_GAP - formationSize(4, 4, size).w, y: dockY(1, vp) }, docked: true });
+  });
+  it("only move sideways when dragged", () => {
+    const placed = placeFormation({ x: 300, y: 100 }, 4, 4, size, 1, vp, true);
+    expect(placed).toEqual({ anchor: { x: 300, y: dockY(1, vp) }, docked: true });
+  });
+  it("go back next to the own pet on tidying, keeping the formation's place", () => {
+    const before = { partnerLayout: settings.partnerLayout, partnerRowX: settings.partnerRowX, formationX: settings.formationX };
+    try {
+      Object.assign(settings, { partnerLayout: "row", partnerRowX: 300, formationX: 40 });
+      tidyRemotes();
+      expect(settings.partnerRowX).toBe(-1);
+      expect(settings.formationX).toBe(40);
+    } finally {
+      Object.assign(settings, before);
+    }
   });
 });
 

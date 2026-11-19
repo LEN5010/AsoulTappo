@@ -57,7 +57,7 @@ import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
 import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
-  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, viewport, type FormationPlace, type Pos,
+  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, rowCols, viewport, type FormationPlace, type Pos,
   type Size,
 } from "./stores/desk";
 import { openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
@@ -293,35 +293,50 @@ watch(
   },
   { immediate: true },
 );
-// Formation mode: partners stand in rows in the order of `others` (join order), and a drag on any of them moves all.
-const inFormation = computed(() => settings.partnerLayout === "formation");
+// Formation and row mode: partners stand in rows in the order of `others` (join order), and a drag on any of them
+// moves all. A row is a formation as wide as the screen holds that always stands on the bottom edge, so a drag only
+// moves it sideways.
+const inFormation = computed(() => settings.partnerLayout !== "free");
+const inRow = computed(() => settings.partnerLayout === "row");
 /** The formation while one of its pets ([by], a member id) is dragged; saved to the settings on release. */
 const liveFormation = ref<(FormationPlace & { by: string }) | null>(null);
 const formationIndex = computed(() => new Map(shownOthers.value.map((m, i) => [m.id, i])));
+const formationCols = computed(() =>
+  (inRow.value ? rowCols(shownOthers.value.length, remoteSize.value, viewport.value) : settings.formationCols));
+/** Where the formation was left, or null for next to the own pet. */
+function savedFormation(n: number, cols: number, size: Size): FormationPlace | null {
+  if (inRow.value) {
+    if (settings.partnerRowX < 0) return null;
+    return placeFormation({ x: settings.partnerRowX, y: 0 }, n, cols, size, settings.remoteScale, viewport.value, true);
+  }
+  if (settings.formationX < 0) return null;
+  return placeFormation(
+    { x: settings.formationX, y: settings.formationY }, n, cols, size, settings.remoteScale, viewport.value,
+    settings.formationDocked,
+  );
+}
 const formation = computed(() => {
   const n = shownOthers.value.length;
-  const cols = settings.formationCols;
+  const cols = formationCols.value;
   const size = remoteSize.value;
   // The room kept under the own pet for its strip, as ownPos keeps it, so the default place does not jump with it.
   const own = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
-  const place = liveFormation.value ?? (settings.formationX < 0
-    ? defaultFormation(ownPos.value, own, settings.petDocked, n, cols, size, settings.remoteScale)
-    : placeFormation(
-      { x: settings.formationX, y: settings.formationY }, n, cols, size, settings.remoteScale, viewport.value,
-      settings.formationDocked,
-    ));
+  const place = liveFormation.value ?? savedFormation(n, cols, size) ??
+    defaultFormation(ownPos.value, own, inRow.value || settings.petDocked, n, cols, size, settings.remoteScale);
   return { ...place, n, cells: formationCells(place.anchor, n, cols, size) };
 });
-// A pet that leaves during its drag never reports the release; the formation then stays where it was saved.
-watch([formationIndex, inFormation], ([index, on]) => {
-  if (liveFormation.value && (!on || !index.has(liveFormation.value.by))) liveFormation.value = null;
+// A pet that leaves during its drag never reports the release; the formation then stays where it was saved. A drag
+// in one layout is no place in another.
+watch([formationIndex, () => settings.partnerLayout], ([index], [, was]) => {
+  const live = liveFormation.value;
+  if (live && (settings.partnerLayout !== was || !index.has(live.by))) liveFormation.value = null;
 });
 function dragFormation(m: RemoteMember, p: Pos): Pos {
   const i = formationIndex.value.get(m.id) ?? 0;
-  const off = formationOffset(i, settings.formationCols, remoteSize.value);
+  const off = formationOffset(i, formationCols.value, remoteSize.value);
   const placed = placeFormation(
-    { x: p.x - off.x, y: p.y - off.y }, shownOthers.value.length, settings.formationCols, remoteSize.value,
-    settings.remoteScale,
+    { x: p.x - off.x, y: p.y - off.y }, shownOthers.value.length, formationCols.value, remoteSize.value,
+    settings.remoteScale, viewport.value, inRow.value || undefined,
   );
   liveFormation.value = { ...placed, by: m.id };
   return { x: placed.anchor.x + off.x, y: placed.anchor.y + off.y };
@@ -329,15 +344,19 @@ function dragFormation(m: RemoteMember, p: Pos): Pos {
 function saveFormation() {
   const placed = liveFormation.value;
   if (!placed) return;
-  settings.formationX = placed.anchor.x;
-  settings.formationY = placed.anchor.y;
-  settings.formationDocked = placed.docked;
+  if (inRow.value) {
+    settings.partnerRowX = placed.anchor.x;
+  } else {
+    settings.formationX = placed.anchor.x;
+    settings.formationY = placed.anchor.y;
+    settings.formationDocked = placed.docked;
+  }
   liveFormation.value = null;
 }
 const remoteDocked = (m: RemoteMember) => {
   if (!inFormation.value) return !!remotePos.get(memberKey(m))?.docked;
   const f = formation.value;
-  return f.docked && inLastRow(formationIndex.value.get(m.id) ?? 0, f.n, settings.formationCols);
+  return f.docked && inLastRow(formationIndex.value.get(m.id) ?? 0, f.n, formationCols.value);
 };
 const remoteAt = (m: RemoteMember): Pos => {
   if (inFormation.value) return formation.value.cells[formationIndex.value.get(m.id) ?? 0] ?? ownPos.value;
@@ -345,7 +364,7 @@ const remoteAt = (m: RemoteMember): Pos => {
   const at = clamp(p, reaching(remoteSize.value, remoteReach(m)));
   return remoteDocked(m) ? { x: at.x, y: dockY(settings.remoteScale) } : at;
 };
-/** A partner docks on the bottom edge like the own pet; in formation mode the last row does. */
+/** A partner docks on the bottom edge like the own pet; in formation and row mode the last row does. */
 const placeRemoteDrag = (m: RemoteMember, p: Pos) =>
   inFormation.value ? dragFormation(m, p) : placePet(p, reaching(remoteSize.value, remoteReach(m)), settings.remoteScale).pos;
 function onRemoteMoved(m: RemoteMember, p: Pos) {

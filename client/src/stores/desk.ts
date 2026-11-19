@@ -2,7 +2,8 @@ import { PET_BASE } from "../characters";
 // Where pets stand on the desktop overlay. Own pet and panel positions live in settings;
 // other members' pets are remembered per room (by member key) in localStorage, so a
 // friend you dragged next to your pet stays there next time. In formation mode partners stand in rows instead,
-// placed by one anchor kept in settings.
+// placed by one anchor kept in settings; in row mode they stand side by side on the bottom edge, a formation as wide
+// as the screen allows.
 import { reactive, ref } from "vue";
 import { isPanelWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
@@ -190,6 +191,15 @@ export function placeFormation(
 }
 
 /**
+ * Pets per row in row mode: all [n] side by side, or as many as the screen's width holds, the rest in rows above.
+ */
+export function rowCols(n: number, size: Size, vp: Size = viewport.value, gap = FORMATION_GAP): number {
+  const margin = 8;
+  const fit = Math.floor((vp.w - 2 * margin + gap) / (size.w + gap));
+  return Math.max(1, Math.min(n, fit));
+}
+
+/**
  * The formation's place before it is dragged: bottom-aligned with the own pet and to its left, on the right when the
  * left has no room, clamped when neither has. Next to a docked own pet the formation docks too.
  */
@@ -220,13 +230,17 @@ export function placeRemote(key: string, p: Spot): void {
 }
 
 /**
- * Forget remembered positions in this room so everyone lines up next to the own pet again. In formation mode the
- * formation goes back next to the own pet instead; free positions are kept for switching back.
+ * Forget remembered positions in this room so everyone lines up next to the own pet again. In formation or row mode
+ * that goes back next to the own pet instead; free positions are kept for switching back.
  */
 export function tidyRemotes(): void {
   if (settings.partnerLayout === "formation") {
     settings.formationX = settings.formationY = -1;
     settings.formationDocked = false;
+    return;
+  }
+  if (settings.partnerLayout === "row") {
+    settings.partnerRowX = -1;
     return;
   }
   if (isPanelWindow) { void requestDesktop("tidyRemotes"); return; }

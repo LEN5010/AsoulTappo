@@ -64,6 +64,13 @@ describe("loadSettings", () => {
       formationCols: 1, formationX: -1, formationY: 12,
     });
   });
+  it("keeps the row on the bottom edge as a layout, its place a whole pixel or -1", () => {
+    expect(loadSettings(store(JSON.stringify({ partnerLayout: "row", partnerRowX: 300.6 })))).toMatchObject({
+      partnerLayout: "row", partnerRowX: 301,
+    });
+    expect(loadSettings(store(JSON.stringify({ partnerRowX: -40 }))).partnerRowX).toBe(-1);
+    expect(loadSettings(store("{}")).partnerRowX).toBe(-1);
+  });
   it("keeps a capture background only as a six-digit hex colour and the capture size within limits", () => {
     expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
     expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");

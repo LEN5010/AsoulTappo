@@ -148,7 +148,9 @@ const mainApi = computed(() => {
 // A host without an account who took over a listed room still sees the switch, to take the room off the list.
 const canPublish = computed(() => isHost.value && (!info.value?.accountLogin || !!activeAccount() || !!roomInfo.value?.public));
 const signingIn = ref(false);
-const LAYOUTS = [{ id: "free" as const, label: "自由" }, { id: "formation" as const, label: "方阵" }];
+const LAYOUTS = [
+  { id: "free" as const, label: "自由" }, { id: "row" as const, label: "一排" }, { id: "formation" as const, label: "方阵" },
+];
 const NAMES: { id: PartnerNames; label: string }[] = [{ id: "nick", label: "昵称" }, { id: "member", label: "成员名" }, { id: "off", label: "不显示" }];
 const names = computed({ get: () => partnerNames(settings), set: (v: PartnerNames) => setPartnerNames(settings, v) });
 const listed = computed(() => (Array.isArray(publicRooms.value) ? publicRooms.value : null));

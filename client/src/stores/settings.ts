@@ -92,8 +92,11 @@ export interface Settings {
   todoH: number;
   /** Partners' pets on the desk; off leaves only the own pet. */
   showPartners: boolean;
-  /** How partners stand: each where it was dragged ("free"), or together in rows that move as one ("formation"). */
-  partnerLayout: "free" | "formation";
+  /**
+   * How partners stand: each where it was dragged ("free"), side by side on the bottom edge ("row"), or together in
+   * rows that move as one ("formation").
+   */
+  partnerLayout: PartnerLayout;
   /** Pets per row of the formation (1–10). */
   formationCols: number;
   /** Top-left of the formation (CSS px, -1 = next to the own pet). */
@@ -101,6 +104,8 @@ export interface Settings {
   formationY: number;
   /** The formation's last row stands on the bottom edge of the screen. */
   formationDocked: boolean;
+  /** Left of the row of partners on the bottom edge (CSS px, -1 = next to the own pet). */
+  partnerRowX: number;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
   barFolded: boolean;
   /** The own name plate stands where the strip would (swapped from the strip's menu). */
@@ -133,6 +138,9 @@ export interface Settings {
 const KEY = "asoultappo.settings.v1";
 
 /** How partners are named: their nickname, their pet's member name (for streaming), or no name tag on the desk. */
+/** The partner layouts in the order the online page lists them. */
+export const PARTNER_LAYOUTS = ["free", "row", "formation"] as const;
+export type PartnerLayout = (typeof PARTNER_LAYOUTS)[number];
 export type PartnerNames = "nick" | "member" | "off";
 export const partnerNames = (s: Pick<Settings, "showNames" | "hideNicks">): PartnerNames =>
   !s.showNames ? "off" : s.hideNicks ? "member" : "nick";
@@ -207,6 +215,7 @@ export const DEFAULT_SETTINGS: Settings = {
   formationX: -1,
   formationY: -1,
   formationDocked: false,
+  partnerRowX: -1,
   barFolded: false,
   barPlate: false,
   petDocked: false,
@@ -270,12 +279,13 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     ? [...new Set(out.showcase.filter((k): k is string => typeof k === "string"))].slice(0, MAX_SHOWCASE)
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
-  if (out.partnerLayout !== "free" && out.partnerLayout !== "formation") out.partnerLayout = "free";
+  if (!PARTNER_LAYOUTS.includes(out.partnerLayout)) out.partnerLayout = "free";
   // Up to 1.2.5 both switches could be on with the nicknames switch out of sight; no names wins.
   if (!out.showNames) out.hideNicks = false;
   out.formationCols = Math.min(10, Math.max(1, Math.round(out.formationCols)));
   out.formationX = Math.max(-1, Math.round(out.formationX));
   out.formationY = Math.max(-1, Math.round(out.formationY));
+  out.partnerRowX = Math.max(-1, Math.round(out.partnerRowX));
   // Screen pixels may be negative left of or above the main monitor.
   out.todoX = Math.round(out.todoX);
   out.todoY = Math.round(out.todoY);
