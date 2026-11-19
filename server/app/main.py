@@ -147,13 +147,14 @@ if _pruned:
 _refunded = game.refund_open_duels()
 if _refunded:
     print(f"refunded {_refunded} unfinished duels", flush=True)
-# Rock-paper-scissors in rooms; a member leaving in any way loses the duel it plays.
-duels = Duels(lambda: game, lambda: manager)
+# Rock-paper-scissors in rooms; a member leaving in any way loses the duel it plays. With main-site accounts
+# (`accounts`, set below) both sides bet from saves linked to one, as do the three seats of dou dizhu.
+duels = Duels(lambda: game, lambda: manager, require_account=lambda: accounts is not None)
 # Dou dizhu in rooms: the deposits of games the last run left open go back as well.
 _refunded = DdzBank(game).refund_open()
 if _refunded:
     print(f"refunded {_refunded} unfinished dou dizhu games", flush=True)
-tables = Tables(lambda: game, lambda: manager)
+tables = Tables(lambda: game, lambda: manager, require_account=lambda: accounts is not None)
 # The park's coins; its games take and give them through it. Nicks in its news are masked like room nicks.
 park = Park(lambda: game, lambda nick: blocklist.mask(nick))
 _pruned = park.prune_news()

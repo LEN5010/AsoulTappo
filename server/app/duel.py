@@ -77,10 +77,13 @@ class Duels:
     """Every duel on the server, one at a time per save (invites included), across all rooms."""
 
     def __init__(self, game: Callable[[], Game], manager: Callable[[], RoomManager], timers: Any = None,
-                 clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None,
+                 require_account: Callable[[], bool] = lambda: False) -> None:
         # Read on every use: tests replace the module's game and room manager.
         self._game = game
         self._manager = manager
+        # Whether the server has main-site accounts; then both sides need a save linked to one (Game._duel_ready).
+        self.require_account = require_account
         self.timers = timers or Timers()
         self.clock = clock
         self.rng = rng or random.Random()
@@ -131,7 +134,7 @@ class Duels:
         if target is peer or (peer.token and target.token == peer.token):
             raise GameError("duel_self", "")
         self._check_free(peer, target)
-        await run_in_threadpool(game.duel_check, peer.token, target.token, bet)
+        await run_in_threadpool(game.duel_check, peer.token, target.token, bet, self.require_account())
         # Either side may have left, or started another duel, while the database was read.
         room = self.manager.rooms.get(room_id)
         if (room is None or not peer.active or not target.active or room.peers.get(peer.id) is not peer
@@ -171,7 +174,8 @@ class Duels:
         duel.phase = "starting"
         self._cancel_timer(duel)
         try:
-            duel.row = await run_in_threadpool(self.game.duel_start, duel.a.token, duel.b.token, duel.bet)
+            duel.row = await run_in_threadpool(self.game.duel_start, duel.a.token, duel.b.token, duel.bet,
+                                               self.require_account())
         except GameError as e:
             self._end(duel, e.code)
             return

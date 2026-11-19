@@ -759,11 +759,16 @@ class Game:
                 return stake
         raise GameError("bad_message", "unknown bet")
 
-    def _duel_ready(self, st: Store, pid: str | None, code: str) -> None:
-        """Both sides need a save with enough taps; [code] says which side failed. Never creates a save."""
+    def _duel_ready(self, st: Store, pid: str | None, target: bool, require_account: bool) -> None:
+        """Both sides need a save with enough taps and, with [require_account] (a server with main-site accounts),
+        a save linked to an account: guest saves cost a script nothing to make, and a bet lost on purpose moves
+        shards from one save to another. [target] tells the invited side's failures apart. Never creates a save."""
+        side = "_target" if target else ""
         taps = st.player_taps(pid) if pid else None
         if taps is None or taps < self.duel_cfg()["minTaps"]:
-            raise GameError(code, "")
+            raise GameError(f"duel{side}_locked", "")
+        if require_account and not st.account_for_player(pid):
+            raise GameError(f"duel{side}_account", "对方还没有绑定主站账号" if target else "绑定主站账号后才能猜拳")
 
     def _duel_net_ok(self, st: Store, pids: tuple[str, ...], stake: dict[str, int], day: str) -> None:
         """A win of this tier may not take either side's net win of [day] past the daily cap."""
@@ -771,25 +776,25 @@ class Game:
         if any(st.duel_net(pid, day) + stake["prize"] - stake["bet"] > cap for pid in pids):
             raise GameError("duel_cap", "")
 
-    def duel_check(self, a: str | None, b: str | None, bet: int) -> dict[str, int]:
+    def duel_check(self, a: str | None, b: str | None, bet: int, require_account: bool = False) -> dict[str, int]:
         """Whether save [a] may invite save [b] at [bet]; returns the stake. The bets are taken by duel_start."""
         stake = self.duel_stake(bet)
         with self.store.transaction() as st:
-            self._duel_ready(st, a, "duel_locked")
-            self._duel_ready(st, b, "duel_target_locked")
+            self._duel_ready(st, a, False, require_account)
+            self._duel_ready(st, b, True, require_account)
             if st.get_player(a, self.now())["shards"] < bet:
                 raise GameError("no_shards", "")
             self._duel_net_ok(st, (a, b), stake, day_of(self.now()))
         return stake
 
-    def duel_start(self, a: str, b: str, bet: int) -> int:
+    def duel_start(self, a: str, b: str, bet: int, require_account: bool = False) -> int:
         """Takes both bets in one transaction and records the duel; returns its id. When either side is short of
         shards nothing is taken (no_shards)."""
         stake = self.duel_stake(bet)
         with self.store.transaction() as st:
             now = self.now()
-            self._duel_ready(st, a, "duel_locked")
-            self._duel_ready(st, b, "duel_target_locked")
+            self._duel_ready(st, a, False, require_account)
+            self._duel_ready(st, b, True, require_account)
             day = day_of(now)
             self._duel_net_ok(st, (a, b), stake, day)
             pa, pb = st.get_player(a, now), st.get_player(b, now)

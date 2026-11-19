@@ -14,7 +14,8 @@ Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in tu
 - ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`.
 - ``ddz_answer`` {id}: member `id` accepted.
 - ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
-  member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | error. Deposits taken went back.
+  member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
+  linked to a main-site account, on a server with accounts) | error. Deposits taken went back.
 - ``ddz_deal`` {seats: [{id, nick, character, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec}: a deal;
   the clients deal the cards out over `dealSec` seconds, then `turn` bids first with `sec` seconds.
 - ``ddz_bid`` {seat, bid, turn?, sec?}: a bid (0 passes); `turn` bids next when the bidding goes on.
@@ -65,8 +66,10 @@ INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid",
 class Bank:
     """The shards of a game: who may sit down, the deposits and the payment. Every method is one transaction."""
 
-    def __init__(self, game: Game) -> None:
+    def __init__(self, game: Game, require_account: bool = False) -> None:
         self.game = game
+        # A server with main-site accounts seats saves linked to one only (_ready).
+        self.require_account = require_account
 
     def cfg(self) -> dict[str, Any]:
         cfg = self.game.manifest.ddz
@@ -81,14 +84,18 @@ class Bank:
         return base * cfg["capMult"] * 2
 
     def _ready(self, st: Any, pids: list[str | None], deposit: int, day: str, now: float) -> None:
-        """Every seat needs a save with the taps, the deposit, and room under the day's cap; the first seat is the
-        one asking, so its own shortfalls are told apart from the others'."""
+        """Every seat needs a save with the taps, the deposit, and room under the day's cap, and with
+        require_account a save linked to a main-site account: guest saves cost a script nothing to make, and a game
+        lost on purpose moves shards between saves. The first seat is the one asking, so its own shortfalls are told
+        apart from the others'."""
         cfg = self.cfg()
         for i, pid in enumerate(pids):
             other = "_target" if i else ""
             taps = st.player_taps(pid) if pid else None
             if taps is None or taps < cfg["minTaps"]:
                 raise GameError(f"ddz{other}_locked", "")
+            if self.require_account and not st.account_for_player(pid):
+                raise GameError(f"ddz{other}_account", "有人还没有绑定主站账号" if other else "绑定主站账号后才能斗地主")
             if st.get_player(pid, now)["shards"] < deposit:
                 raise GameError(f"ddz{other}_poor" if other else "no_shards", "")
             if st.ddz_net(pid, day) >= cfg["dailyWinCap"]:
@@ -231,10 +238,13 @@ class Tables:
     """Every table on the server: one at a time per save (invites included), across all rooms."""
 
     def __init__(self, game: Callable[[], Game], manager: Callable[[], RoomManager], timers: Any = None,
-                 clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None) -> None:
+                 clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None,
+                 require_account: Callable[[], bool] = lambda: False) -> None:
         # Read on every use: tests replace the module's game and room manager.
         self._game = game
         self._manager = manager
+        # Whether the server has main-site accounts (Bank._ready).
+        self.require_account = require_account
         self.timers = timers or Timers()
         self.clock = clock
         self.rng = rng or random.SystemRandom()
@@ -245,7 +255,7 @@ class Tables:
 
     @property
     def bank(self) -> Bank:
-        return Bank(self._game())
+        return Bank(self._game(), self.require_account())
 
     @property
     def manager(self) -> RoomManager:
@@ -357,7 +367,7 @@ class Tables:
             table.row = await run_in_threadpool(self.bank.start, [s.token for s in table.seats], table.base)
         except GameError as e:
             code = {"ddz_target_poor": "no_shards", "ddz_target_cap": "ddz_cap",
-                    "ddz_target_locked": "ddz_locked"}.get(e.code, e.code)
+                    "ddz_target_locked": "ddz_locked", "ddz_target_account": "ddz_account"}.get(e.code, e.code)
             self._end(table, code)
             return
         except BaseException:
@@ -588,7 +598,7 @@ class Tables:
             table.row = await run_in_threadpool(self.bank.start, [x.token for x in table.seats], table.base)
         except GameError as e:
             code = {"ddz_target_poor": "no_shards", "ddz_target_cap": "ddz_cap",
-                    "ddz_target_locked": "ddz_locked"}.get(e.code, e.code)
+                    "ddz_target_locked": "ddz_locked", "ddz_target_account": "ddz_account"}.get(e.code, e.code)
             self._end(table, code)
             return
         except BaseException:
