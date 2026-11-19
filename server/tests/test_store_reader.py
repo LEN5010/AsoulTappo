@@ -21,6 +21,7 @@ def calls(g):
         "daily_counts": ("",), "duels_by_day": (0, DAY_OFFSET), "ledger_by_day": ("2000-01-01", "tap"),
         "tap_flags_of": (today, 50), "top_tappers": (today, 50), "ledger_day": (today,),
         "ddz_winnings": (0, g.now() + 86400), "coin_ledger_by_day": ("2000-01-01",),
+        "held_items": (False,), "held_items_linked": (True,),
     }
 
 
@@ -54,7 +55,7 @@ def game(tmp_path):
 
 
 def everything(g):
-    out = {name: getattr(g.store, name)(*args) for name, args in calls(g).items()}
+    out = {name: getattr(g.store, name.removesuffix("_linked"))(*args) for name, args in calls(g).items()}
     out["admin_stats"] = g.admin_stats(7)
     out["admin_economy"] = g.admin_economy(7)
     out["insights"] = analytics.insights(g, 7)
@@ -69,9 +70,14 @@ def test_the_statistics_read_the_same_as_on_the_main_connection(game):
     # the rows made above all show up
     assert mine["totals"] == {"saves": 4, "linked": 1, "activeToday": mine["totals"]["activeToday"]}
     assert [name for name in calls(game) if not mine[name]] == []
+    # the board's rows come from held_items; it also reads the asking save on the main connection
+    board = game.board("reader-token-0000", True, "score")
+    assert board["cards"]
     reader, game.store._reader = game.store._reader, None
     try:
         assert everything(game) == mine
+        game._board = None  # worked out afresh
+        assert game.board("reader-token-0000", True, "score") == board
     finally:
         game.store._reader = reader
 
