@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { MAX_ROOM_SIZE, ROOM_NAME_MAX, toHttpBase, type Member, type PublicRoom } from "../net/protocol";
 import { Api, type ServerInfo } from "../net/api";
 import { accountLoginTrusted } from "../net/trust";
-import { settings } from "../stores/settings";
+import { partnerNames, setPartnerNames, settings, type PartnerNames } from "../stores/settings";
 import { activeAccount, saveCode, status } from "../stores/player";
 import {
   canDuel, cheer, cheerDone, cheerOn, conn, createRoom, duelConfig, duelOn, inRoom, inviteDuel, isHost, joinRoom, kickMember,
@@ -149,6 +149,8 @@ const mainApi = computed(() => {
 const canPublish = computed(() => isHost.value && (!info.value?.accountLogin || !!activeAccount() || !!roomInfo.value?.public));
 const signingIn = ref(false);
 const LAYOUTS = [{ id: "free" as const, label: "自由" }, { id: "formation" as const, label: "方阵" }];
+const NAMES: { id: PartnerNames; label: string }[] = [{ id: "nick", label: "昵称" }, { id: "member", label: "成员名" }, { id: "off", label: "不显示" }];
+const names = computed({ get: () => partnerNames(settings), set: (v: PartnerNames) => setPartnerNames(settings, v) });
 const listed = computed(() => (Array.isArray(publicRooms.value) ? publicRooms.value : null));
 
 function joinListed(id: string) {
@@ -394,10 +396,10 @@ async function copy() {
             <b class="ui-val">{{ settings.formationCols }}</b>
           </span>
         </label>
-        <label class="ui-row">
-          <span>显示伙伴昵称</span>
-          <input v-model="settings.showNames" class="ui-switch" type="checkbox" />
-        </label>
+        <div class="ui-row">
+          <span>伙伴名字</span>
+          <SegTabs v-model="names" :tabs="NAMES" label="伙伴名字" />
+        </div>
       </div>
     </section>
 

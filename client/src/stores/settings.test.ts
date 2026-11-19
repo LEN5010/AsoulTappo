@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, loadSettings } from "./settings";
+import { DEFAULT_SETTINGS, loadSettings, partnerNames, setPartnerNames } from "./settings";
 
 const store = (v: string | null) => ({ getItem: () => v });
 
@@ -32,6 +32,22 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ gripPlate: false, barPlate: true }))).barPlate).toBe(false);
     expect(loadSettings(store(JSON.stringify({ barPlate: true }))).barPlate).toBe(true);
     expect("gripPlate" in loadSettings(store(JSON.stringify({ gripPlate: true })))).toBe(false);
+  });
+  it("reads partner names as nickname, member name or none, and no names wins over member names", () => {
+    expect(partnerNames(loadSettings(store(null)))).toBe("nick");
+    expect(partnerNames(loadSettings(store(JSON.stringify({ hideNicks: true }))))).toBe("member");
+    const off = loadSettings(store(JSON.stringify({ showNames: false, hideNicks: true })));
+    expect(partnerNames(off)).toBe("off");
+    expect(off.hideNicks).toBe(false);
+  });
+  it("sets partner names through both switches", () => {
+    const s = loadSettings(store(null));
+    setPartnerNames(s, "member");
+    expect(s).toMatchObject({ showNames: true, hideNicks: true });
+    setPartnerNames(s, "off");
+    expect(s).toMatchObject({ showNames: false, hideNicks: false });
+    setPartnerNames(s, "nick");
+    expect(s).toMatchObject({ showNames: true, hideNicks: false });
   });
   it("keeps a room status only when it is one of the list", () => {
     expect(loadSettings(store(JSON.stringify({ status: "fish" }))).status).toBe("fish");

@@ -131,6 +131,15 @@ export interface Settings {
 }
 
 const KEY = "asoultappo.settings.v1";
+
+/** How partners are named: their nickname, their pet's member name (for streaming), or no name tag on the desk. */
+export type PartnerNames = "nick" | "member" | "off";
+export const partnerNames = (s: Pick<Settings, "showNames" | "hideNicks">): PartnerNames =>
+  !s.showNames ? "off" : s.hideNicks ? "member" : "nick";
+export function setPartnerNames(s: Pick<Settings, "showNames" | "hideNicks">, v: PartnerNames) {
+  s.showNames = v !== "off";
+  s.hideNicks = v === "member";
+}
 /** Longest skin note, in characters. */
 export const SKIN_NOTE_MAX = 10;
 const LEGACY_SERVER_URL = "http://121.36.224.230:8000";
@@ -262,6 +271,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     : [];
   if (out.tapView !== "today" && out.tapView !== "total") out.tapView = "today";
   if (out.partnerLayout !== "free" && out.partnerLayout !== "formation") out.partnerLayout = "free";
+  // Up to 1.2.5 both switches could be on with the nicknames switch out of sight; no names wins.
+  if (!out.showNames) out.hideNicks = false;
   out.formationCols = Math.min(10, Math.max(1, Math.round(out.formationCols)));
   out.formationX = Math.max(-1, Math.round(out.formationX));
   out.formationY = Math.max(-1, Math.round(out.formationY));

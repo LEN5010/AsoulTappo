@@ -354,7 +354,7 @@ async function exportLogFile() {
           <section v-else-if="group === 'online'" data-rise>
             <h4 class="ui-label"><span>联机</span></h4>
             <div class="ui-group ui-frame">
-              <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页关闭了伙伴昵称，铭牌随昵称一起隐藏'">
+              <label class="ui-row" :class="{ off: !settings.showNames }" :title="settings.showNames ? undefined : '联机页的伙伴名字设为不显示，铭牌一起隐藏'">
                 <span>显示伙伴铭牌</span>
                 <input v-model="settings.showPlates" class="ui-switch" type="checkbox" :disabled="!settings.showNames" />
               </label>
