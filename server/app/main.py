@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import ipaddress
 import logging
 import os
 import secrets
@@ -391,11 +392,54 @@ def _seen(request: Request, who: PlayerId) -> None:
         log.exception("the guard failed on a request")
 
 
+# ASOULTAPPO_NEW_SAVES_PER_HOUR: saves one address may start within an hour, 0 for no limit. Every save starts with
+# shards, so a script that makes saves in bulk is held here. An IPv6 address counts as its /64; requests from this
+# machine itself (a local server and its tools) are not counted.
+NEW_SAVES_PER_HOUR = int(os.environ.get("ASOULTAPPO_NEW_SAVES_PER_HOUR", "20"))
+NEW_SAVE_SECONDS = 3600.0
+NEW_SAVE_ADDRESSES = 50000
+_new_saves: dict[str, dict[str, float]] = {}
+_new_saves_lock = threading.Lock()
+
+
+def _address(request: Request) -> str | None:
+    """Where a request came from, as counted for new saves; None for this machine itself or no readable address."""
+    try:
+        ip = ipaddress.ip_address(request.client.host if request.client else "")
+    except ValueError:
+        return None
+    if ip.is_loopback:
+        return None
+    return str(ipaddress.ip_network((ip, 64), strict=False)) if ip.version == 6 else str(ip)
+
+
+def _may_start_save(request: Request, who: PlayerId) -> None:
+    """Refuses a request that would start a save once its address has started NEW_SAVES_PER_HOUR within the hour."""
+    if NEW_SAVES_PER_HOUR <= 0:
+        return
+    address = _address(request)
+    if address is None or game.store.has_player(who):
+        return
+    now = game.now()
+    with _new_saves_lock:
+        if len(_new_saves) > NEW_SAVE_ADDRESSES:
+            _new_saves.clear()
+        started = _new_saves.setdefault(address, {})
+        for pid in [pid for pid, at in started.items() if now - at >= NEW_SAVE_SECONDS]:
+            del started[pid]
+        if who in started:  # the same token again before its first request made the save
+            return
+        if len(started) >= NEW_SAVES_PER_HOUR:
+            raise HTTPException(429, {"code": "too_many_saves", "message": "这个网络新建的存档太多，请一小时后再试"})
+        started[str(who)] = now
+
+
 def player(request: Request, x_player_token: str = Header(default=""), authorization: str = Header(default=""),
            x_client_version: str = Header(default="")) -> PlayerId:
     if notice.outdated(x_client_version):
         raise HTTPException(426, {"code": "client_outdated", "message": OUTDATED_MESSAGE})
     who = _guard(_who, x_player_token, authorization)
+    _may_start_save(request, who)
     game.tracker.client(who, x_client_version)
     _seen(request, who)
     return who

@@ -1267,7 +1267,8 @@ class Game:
         if cached and now - cached["at"] < BOARD_SECONDS and cached["require_account"] == require_account:
             return cached
         saves: dict[str, dict[str, Any]] = {}
-        for pid, iid, ts in self.store.held_items():
+        # A board that asks for an account lists linked saves only, so only their items are read.
+        for pid, iid, ts in self.store.held_items(require_account):
             if iid not in self.board_points:
                 continue
             counts = saves.get(pid)

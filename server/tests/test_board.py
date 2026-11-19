@@ -237,3 +237,15 @@ def test_the_board_by_score_over_http(monkeypatch):
         assert c.get("/api/board?order=score", headers=h).json()["cards"][0]["score"] == 300
         assert c.get("/api/board", headers=h).json()["cards"][0]["cards"] == 1
         assert c.get("/api/board?order=other", headers=h).status_code == 422
+
+
+def test_a_board_that_asks_for_an_account_reads_only_the_items_of_linked_saves():
+    g = game()
+    _, linked = save(g, 1, NORMAL[:2])
+    _, guest = save(g, 2, NORMAL[:5])
+    g.store.link_account("user-1", linked, NOW)
+    assert {pid for pid, _, _ in g.store.held_items()} == {linked, guest}
+    assert {pid for pid, _, _ in g.store.held_items(True)} == {linked}
+    assert [row["cards"] for row in g.board(tok(2), True)["cards"]] == [2]
+    assert g.board(tok(2), True)["me"] == {"rank": None, "cards": 5, "big": 0, "skins": 0,
+                                           "score": 5 * BOARD_POINTS["card"], "off": "account"}
