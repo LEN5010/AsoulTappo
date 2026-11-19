@@ -6,8 +6,8 @@
 #   scripts/deploy-server.sh <host> economy <file> [--apply]       show the change to the economy file; --apply installs it
 #   scripts/deploy-server.sh <host> prune [--apply]                list old backups and builds in /root; --apply deletes them
 #
-# trial never touches the running container. switch needs the image and build directory trial made. prune keeps the
-# newest 5 of each kind and anything from the last 7 days.
+# trial never touches the running container. switch needs the image and build directory trial made. prune deletes only
+# names this script makes, and keeps the newest 5 of each kind and anything from the last 7 days.
 # A change to server/requirements.txt or the asset packs other than the manifest needs a full image build, which
 # this script does not do.
 set -euo pipefail
@@ -161,22 +161,32 @@ EOF
 prune)
   # What switch and economy back up, and the build directories trial makes. Each kind keeps its newest KEEP; of the
   # rest, what is older than DAYS days goes. The patterns do not overlap, so an entry is counted in one kind only.
+  # Only names this script makes count: /root also holds copies made by hand (asoultappo-<time>-before-cleanup.db
+  # and the like), which can be the only record of what they were made before. Those are listed and never deleted.
   # Age is the inode change time: cp -a keeps the copied directory's or file's own modification time, which can be
   # much older than the backup.
   KEEP=5 DAYS=7
   CUTOFF=$(( $(date +%s) - DAYS * 86400 ))
+  TIME='[0-9]{8}T[0-9]{6}Z' HEX='[0-9a-f]{7,40}'
   verb="would delete"
   [ "$FLAG" != --apply ] || verb=deleted
   for kind in db app build economy; do
     case $kind in
-      db) args=(-type f -name 'asoultappo-*-before-*.db' ! -name 'asoultappo-app-*' ! -name 'asoultappo-build-*') ;;
-      app) args=(-type d -name 'asoultappo-app-*') ;;
-      build) args=(-type d -name 'asoultappo-build-*') ;;
-      economy) args=(-type f -name 'economy-*-before.json') ;;
+      db) args=(-type f -name 'asoultappo-*-before-*.db' ! -name 'asoultappo-app-*' ! -name 'asoultappo-build-*')
+          ours="^asoultappo-$TIME-before-($HEX|economy)\.db\$" ;;
+      app) args=(-type d -name 'asoultappo-app-*') ours="^asoultappo-app-$TIME-$HEX\$" ;;
+      build) args=(-type d -name 'asoultappo-build-*') ours="^asoultappo-build-$HEX\$" ;;
+      economy) args=(-type f -name 'economy-*-before.json') ours="^economy-$TIME-before\.json\$" ;;
     esac
-    find /root -mindepth 1 -maxdepth 1 "${args[@]}" -printf '%C@ %p\n' | sort -rn | tail -n +$((KEEP + 1)) |
+    n=0
+    find /root -mindepth 1 -maxdepth 1 "${args[@]}" -printf '%C@ %p\n' | sort -rn |
       while read -r made path; do
-        [ "${made%.*}" -lt "$CUTOFF" ] || continue
+        if ! [[ ${path##*/} =~ $ours ]]; then
+          echo "kept (not made by this script) $kind $path"
+          continue
+        fi
+        n=$((n + 1))
+        [ "$n" -gt "$KEEP" ] && [ "${made%.*}" -lt "$CUTOFF" ] || continue
         echo "$verb $kind $(du -sh -- "$path" | cut -f1) $path"
         [ "$FLAG" = --apply ] || continue
         # A database copy may have its WAL files next to it.
