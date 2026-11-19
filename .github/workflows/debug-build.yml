@@ -8,6 +8,8 @@ name: Debug build
 #   build takes other code paths, so check this one on the test machine before tagging v*.
 # <version> becomes the app version. A pre-release version sorts below the next real release,
 # so testers are offered that update.
+# test-* tags also build the standalone edition (client/src-tauri/tauri.standalone.conf.json) for
+# both platforms, as artifacts named AsoulTappoOffline-<tag>.
 on:
   push:
     tags:
@@ -116,4 +118,87 @@ jobs:
         with:
           name: AsoulTappo-${{ github.ref_name }}-macos
           path: client/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  standalone:
+    name: Standalone ${{ matrix.name }} (tester build)
+    if: startsWith(github.ref_name, 'test-')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows NSIS
+            os: windows-latest
+            args: --bundles nsis
+            files: client/src-tauri/target/release/bundle/nsis/AsoulTappoOffline_*-setup.exe
+            artifact: AsoulTappoOffline-${{ github.ref_name }}
+          - name: macOS DMG
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles app,dmg
+            files: client/src-tauri/target/universal-apple-darwin/release/bundle/dmg/AsoulTappoOffline_*.dmg
+            artifact: AsoulTappoOffline-${{ github.ref_name }}-macos
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Windows'
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'macOS'
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+          key: standalone
+
+      - name: install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: import the signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: scripts/macos_signing.sh import
+
+      - name: build
+        working-directory: client
+        shell: bash
+        env:
+          ASOULTAPPO_BUILD: ${{ github.ref_name }} ${{ github.sha }}
+        # Arguments after the second -- go to cargo: the standalone edition leaves out the default updater feature.
+        # The overlay already turns off the updater files.
+        run: |
+          version="${GITHUB_REF_NAME#test-}"
+          export ASOULTAPPO_VERSION="$version"
+          if [ "$RUNNER_OS" = macOS ]; then
+            export APPLE_SIGNING_IDENTITY="AsoulTappo Signing"
+            export CARGO_PROFILE_RELEASE_PANIC=unwind
+          fi
+          for attempt in 1 2 3; do
+            npm run tauri build -- ${{ matrix.args }} --features standalone \
+              --config src-tauri/tauri.standalone.conf.json --config "{\"version\":\"$version\"}" \
+              -- --no-default-features && exit 0
+            echo "build attempt $attempt failed"
+            sleep 30
+          done
+          exit 1
+
+      - name: check the signature
+        if: runner.os == 'macOS'
+        run: scripts/macos_signing.sh verify client/src-tauri/target/universal-apple-darwin/release/bundle/macos/AsoulTappoOffline.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.files }}
           if-no-files-found: error

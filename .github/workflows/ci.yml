@@ -36,6 +36,7 @@ jobs:
           cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm test
+      - run: npm run test:standalone
       - run: npm run build # vue-tsc --noEmit && vite build
 
   client-tauri-windows:
@@ -64,6 +65,9 @@ jobs:
       - name: cargo test (input state machine)
         working-directory: client/src-tauri
         run: cargo test --lib --locked
+      - name: cargo check, tests and dependency tree (standalone edition)
+        shell: bash
+        run: bash ../scripts/check_standalone.sh
 
   client-tauri-macos:
     name: client (Tauri / cargo check on macOS)
@@ -91,3 +95,6 @@ jobs:
       - name: cargo test (input state machine)
         working-directory: client/src-tauri
         run: cargo test --lib --locked
+      - name: cargo check, tests and dependency tree (standalone edition)
+        shell: bash
+        run: bash ../scripts/check_standalone.sh

@@ -147,3 +147,111 @@ jobs:
       - run: python3 scripts/fix_updater_urls.py "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 单机版：同一个标签另打一份不联网的安装包（client/src-tauri/tauri.standalone.conf.json），文件名带 Offline。
+  # 不带更新器、不写 latest.json；联机版的任务都不依赖它，它失败或变慢都不影响联机版发布。
+  standalone:
+    name: Standalone ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows NSIS
+            os: windows-latest
+            args: --bundles nsis
+            files: client/src-tauri/target/release/bundle/nsis/AsoulTappoOffline_*-setup.exe
+          - name: macOS DMG
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles app,dmg
+            files: client/src-tauri/target/universal-apple-darwin/release/bundle/dmg/AsoulTappoOffline_*.dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Windows'
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'macOS'
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+          key: standalone
+
+      - name: install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: import the signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: scripts/macos_signing.sh import
+
+      # 第二个 -- 之后的参数交给 cargo：关掉默认的 updater feature。打包时要从 GitHub 下载 NSIS 工具，偶尔 504，重试只重新打包。
+      - name: build
+        working-directory: client
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            export APPLE_SIGNING_IDENTITY="AsoulTappo Signing"
+            # 同联机版：panic = "abort" 下 wry 里的 Objective-C 异常会直接终止程序。
+            export CARGO_PROFILE_RELEASE_PANIC=unwind
+          fi
+          for attempt in 1 2 3; do
+            npm run tauri build -- ${{ matrix.args }} --features standalone \
+              --config src-tauri/tauri.standalone.conf.json -- --no-default-features && exit 0
+            echo "build attempt $attempt failed"
+            sleep 30
+          done
+          exit 1
+
+      - name: check the signature
+        if: runner.os == 'macOS'
+        run: scripts/macos_signing.sh verify client/src-tauri/target/universal-apple-darwin/release/bundle/macos/AsoulTappoOffline.app
+
+      # 单机版不能带更新器的产物。
+      - name: check that no updater files were made
+        shell: bash
+        run: |
+          found="$(find client/src-tauri/target -path '*/bundle/*' \( -name '*.sig' -o -name 'latest.json' -o -name '*.tar.gz' -o -name '*.nsis.zip' \) -print)"
+          if [ -n "$found" ]; then echo "$found"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: standalone-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  # 两个平台都打好、联机版的 Windows 任务建好 Release 之后才上传，Release 上不会只有半套单机版；它从不新建 Release。
+  standalone-upload:
+    name: Standalone upload
+    needs: [windows-nsis, standalone]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: standalone-*
+          path: standalone
+          merge-multiple: true
+
+      - name: upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -l standalone
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber standalone/AsoulTappoOffline_*
