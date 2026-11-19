@@ -65,12 +65,14 @@ export async function setAccount(session: AccountSession | null, retireGuest = f
   }
   if (session) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(session));
   else localStorage.removeItem(ACCOUNT_KEY);
+  // The account first: the new guest token below then never becomes the save requests go to while signing in, so
+  // signing in makes no empty guest save on the server (each would count against the address's new saves).
+  account.value = session;
   if (retireGuest) {
     const fresh = newToken();
     localStorage.setItem(TOKEN_KEY, fresh);
     saveCode.value = fresh;
   }
-  account.value = session;
   return session;
 }
 
@@ -299,8 +301,11 @@ watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const,
   if (isPanelWindow) return;
   const previous = current;
   token = code;
+  const next = sessionFor(toHttpBase(url));
+  // Requests still go to the same save (a new guest token while an account is signed in): nothing to switch.
+  if (next === current) return;
   generation++;
-  current = sessionFor(toHttpBase(url));
+  current = next;
   status.value = null;
   collection.owned = {};
   collection.recent = [];

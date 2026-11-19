@@ -613,3 +613,28 @@ it("retries a failed refresh after heartbeats without flashing its message each 
   // Set by the first refresh, cleared by the first heartbeat; the retries after each heartbeat leave it alone.
   expect(errors).toEqual(["坏了", ""]);
 });
+
+// ---------------------------------------------------------------- signing in and out
+it("sends nothing with the new guest token while signing in", async () => {
+  const sent: { path: string; credential: string }[] = [];
+  vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const headers = init!.headers as Record<string, string>;
+    sent.push({ path: new URL(url).pathname, credential: headers.Authorization ?? headers["X-Player-Token"] ?? "" });
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: headers.Authorization ? "acc" : "g", shards: 0 });
+  });
+  const { p, settings } = await setup("http://localhost:1");
+  await vi.advanceTimersByTimeAsync(0);
+  const before = sent.length;
+  await p.setAccount({ server: settings.serverUrl, token: "acct", user: { id: "u", username: "alice", email: "a@example.com" } }, true);
+  await vi.advanceTimersByTimeAsync(21000);
+  const during = sent.slice(before);
+  expect(during.length).toBeGreaterThan(0);
+  expect(during.filter((r) => r.credential === p.token)).toEqual([]);
+  expect(during.every((r) => r.credential === "Bearer acct" || r.path === "/api/economy" || r.path === "/api/manifest")).toBe(true);
+  // Signing out goes back to the new guest token in one step.
+  const signedIn = sent.length;
+  await p.setAccount(null);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sent.slice(signedIn).map((r) => r.credential)).toContain(p.token);
+});
