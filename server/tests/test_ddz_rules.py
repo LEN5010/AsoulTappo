@@ -189,10 +189,16 @@ def pick(hand, last=None, **kw):
     # solo: a single, not one off a pair or a trio
     ([3, 5, 5, 7, 9, 9, 9, 12], [4], [7]),
     ([6, 6, 9], [5], [9]),
+    ([4, 4, 6, 6, 10, 15], [3], [10]),
+    # a 2 or a lone joker costs as much as a split pair: the lower card goes
+    ([3, 5, 7, 9, 12, 12, BIG_JOKER], [11], [12]),
+    ([3, 5, 7, 9, 15], [11], [15]),
     # pair: not off a trio while a pair will do
     ([5, 5, 9, 9, 9, 12, 12], [4, 4], [5, 5]),
     ([5, 5, 9, 9, 9, 12, 12], [6, 6], [12, 12]),
     ([5, 5, 9, 9, 9, 13], [6, 6], [9, 9]),
+    ([6, 6, 7, 7, 7, 9, 15, 15], [5, 5], [6, 6]),
+    ([7, 7, 7, 9, 15, 15], [5, 5], [7, 7]),
     # trio: not out of a bomb while a trio will do
     ([5, 5, 5, 8, 8, 8, 8, 10, 10, 10], [6, 6, 6], [10, 10, 10]),
     # trio1, trio2: the lowest trio with the cheapest kicker, never of its own rank

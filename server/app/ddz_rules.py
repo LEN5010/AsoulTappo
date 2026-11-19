@@ -156,9 +156,10 @@ class _Hold:
         return sorted(c for r, n in taken.items() for c in self.cards[r][:n])
 
     def cost(self, taken: dict[int, int]) -> tuple[int, int]:
-        """Ranks kept whole that [taken] spends, and other groups it splits."""
+        """Ranks kept whole that [taken] spends, and other ranks it splits or plays 2s or a joker from (each counts
+        once), so a low pair is split before a 2 or a lone joker goes."""
         spent = sum(1 for r in taken if r in self.kept)
-        split = sum(1 for r, n in taken.items() if r not in self.kept and n < self.count[r])
+        split = sum(1 for r, n in taken.items() if r not in self.kept and (n < self.count[r] or r >= TWO))
         return spent, split
 
     def kickers(self, taken: dict[int, int], n: int, width: int) -> dict[int, int] | None:
