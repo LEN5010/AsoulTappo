@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AsoulTappoOffline",
+  "identifier": "io.github.len5010.asoultappo.offline",
+  "build": {
+    "beforeBuildCommand": "npm run build:standalone"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AsoulTappo 单机版",
+        "width": 960,
+        "height": 640,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "maximizable": false,
+        "shadow": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "acceptFirstMouse": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:", "blob:"],
+        "media-src": ["'self'", "data:", "blob:"],
+        "font-src": ["'self'", "data:"],
+        "connect-src": ["'self'", "ipc:", "http://ipc.localhost", "data:"],
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      },
+      "capabilities": ["default", "capture"]
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": null
+  }
+}

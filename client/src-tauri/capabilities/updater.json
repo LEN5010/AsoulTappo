@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Online edition only: checking for and installing updates. The standalone edition has no updater plugin and selects the other capabilities by name (tauri.standalone.conf.json).",
+  "windows": [
+    "main",
+    "panel",
+    "todo",
+    "race"
+  ],
+  "permissions": [
+    "updater:default"
+  ]
+}
