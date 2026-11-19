@@ -139,10 +139,10 @@ export interface Settings {
 
 const KEY = "asoultappo.settings.v1";
 
-/** How partners are named: their nickname, their pet's member name (for streaming), or no name tag on the desk. */
 /** The partner layouts in the order the online page lists them. */
 export const PARTNER_LAYOUTS = ["free", "row", "formation"] as const;
 export type PartnerLayout = (typeof PARTNER_LAYOUTS)[number];
+/** How partners are named: their nickname, their pet's member name (for streaming), or no name tag on the desk. */
 export type PartnerNames = "nick" | "member" | "off";
 export const partnerNames = (s: Pick<Settings, "showNames" | "hideNicks">): PartnerNames =>
   !s.showNames ? "off" : s.hideNicks ? "member" : "nick";
