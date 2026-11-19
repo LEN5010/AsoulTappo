@@ -62,6 +62,7 @@ import {
 } from "./stores/desk";
 import { openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
+import { STANDALONE } from "./edition";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
@@ -564,16 +565,21 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
-      <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" />
-      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge" />
+      <!-- The standalone edition has no cooldown, no server notes and no room: only the local bubbles. -->
+      <template v-if="!STANDALONE">
+        <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" />
+        <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge" />
+      </template>
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
-      <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
-      <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
-      <DuelBubble v-bind="duelPlace" />
-      <DdzBubble v-if="!duel" v-bind="ddzPlace" />
-      <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
+      <template v-if="!STANDALONE">
+        <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
+        <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
+        <DuelBubble v-bind="duelPlace" />
+        <DdzBubble v-if="!duel" v-bind="ddzPlace" />
+        <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
+      </template>
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
-      <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote" />
+      <RaceBubble v-if="!STANDALONE" v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote" />
       <AccessBubble v-if="accessHint" @close="accessHint = false" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">
@@ -605,7 +611,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       </div>
       <CounterBar
         v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="bar.layout" :zoom="bar.zoom"
-        :quick-open="ui.quickOpen" :draws="draws"
+        :quick-open="ui.quickOpen" :draws="STANDALONE ? 0 : draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="toggleQuick" @menu="raisePanel" @resonance="openPanel('resonance')"
         :grip="docked ? undefined : barPinned ? 'menu' : 'pin'" :grip-open="gripOpen" @grip="onGrip"

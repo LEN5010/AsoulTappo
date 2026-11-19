@@ -8,7 +8,8 @@ import { inRoom, members } from "../stores/room";
 import { ddzAtTable } from "../stores/ddz";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
-import { closePanel, ui, type Page } from "../stores/ui";
+import { STANDALONE_PAGES, closePanel, ui, type Page } from "../stores/ui";
+import { STANDALONE } from "../edition";
 import { isPanelWindow, setDragging } from "../composables/tauri";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
@@ -53,7 +54,8 @@ const loadPage = (page: Page) => PAGES[page]().catch(() => {});
 const WARM_STEP_MS = 400;
 let warming: ReturnType<typeof setTimeout> | undefined;
 function warmPages() {
-  const rest = (Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
+  // The standalone edition never loads the pages it does not show.
+  const rest = (STANDALONE ? [...STANDALONE_PAGES] : Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
   const next = () => {
     const page = rest.shift();
     if (!page) { warming = undefined; return; }
@@ -75,7 +77,9 @@ const ALL_NAV: { id: Page; label: string; en: string; icon: string }[] = [
   { id: "settings", label: "设置", en: "SETTINGS", icon: "gear" },
 ];
 /** The park leaves the nav on a server without one, once another page is open. */
-const NAV = computed(() => ALL_NAV.filter((n) => n.id !== "park" || !noPark.value || ui.page === "park"));
+const NAV = computed(() => STANDALONE
+  ? ALL_NAV.filter((n) => STANDALONE_PAGES.includes(n.id))
+  : ALL_NAV.filter((n) => n.id !== "park" || !noPark.value || ui.page === "park"));
 /**
  * `dwell` keeps the covered shutter up so its title can be read; a slow mount eats into it.
  * `rise` starts the new page once the bands are on their way out.
@@ -273,13 +277,13 @@ function badgeOf(id: Page): number {
     <div class="face">
       <div class="main">
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
-          <span v-if="!online" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
-          <ParkChips v-if="agreed && shown === 'park' && status && !noPark" />
-          <button v-if="agreed && notices.length" type="button" class="win notice-key ui-btn ghost" title="公告" aria-label="公告" @click="openNoticeBoard">
+          <span v-if="!online && !STANDALONE" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
+          <ParkChips v-if="!STANDALONE && agreed && shown === 'park' && status && !noPark" />
+          <button v-if="!STANDALONE && agreed && notices.length" type="button" class="win notice-key ui-btn ghost" title="公告" aria-label="公告" @click="openNoticeBoard">
             <Icon name="megaphone" :size="17" />
             <i v-if="dueNotices.length" class="notice-dot" aria-hidden="true"></i>
           </button>
-          <span class="wallet" :title="walletTip">
+          <span v-if="!STANDALONE" class="wallet" :title="walletTip">
             <Icon name="shard" :size="16" />
             <b :key="flash" :class="{ gain: flash > 0 }">{{ shownShards.toLocaleString("en-US") }}</b>
           </span>
@@ -304,7 +308,7 @@ function badgeOf(id: Page): number {
           </KeepAlive>
         </main>
         <Transition name="table">
-          <DdzTable v-if="agreed && shown === 'room' && ddzAtTable" />
+          <DdzTable v-if="!STANDALONE && agreed && shown === 'room' && ddzAtTable" />
         </Transition>
       </div>
 
@@ -334,10 +338,12 @@ function badgeOf(id: Page): number {
         <AlpacaEasterEgg ref="deco" class="side-deco" />
       </aside>
 
-      <UpdateDialog />
-      <NoticeBoard v-if="noticeBoardShown" />
-      <SkinSpotlight v-if="agreed" />
-      <UpdateRewardDialog v-if="agreed" />
+      <template v-if="!STANDALONE">
+        <UpdateDialog />
+        <NoticeBoard v-if="noticeBoardShown" />
+        <SkinSpotlight v-if="agreed" />
+        <UpdateRewardDialog v-if="agreed" />
+      </template>
       <TermsDialog v-if="!agreed" />
       <div class="panel-overlay"></div>
     </div>
