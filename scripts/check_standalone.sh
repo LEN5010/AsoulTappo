@@ -41,7 +41,7 @@ if (strip(base.app.windows) !== strip(overlay.app.windows)) {
   console.error("tauri.standalone.conf.json: app.windows differs from tauri.conf.json in more than the title");
   process.exit(1);
 }
-process.stdout.write(JSON.stringify(overlay).replace(/[\u0080-￿]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")));
+process.stdout.write(JSON.stringify(overlay).replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")));
 ')"
 export TAURI_CONFIG
 standalone=(--locked --no-default-features --features standalone)
