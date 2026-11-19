@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import AbstractContextManager
 from typing import Any
 
 
@@ -14,6 +15,8 @@ class _StoreState:
     _counts: dict[str, tuple[frozenset[str], int]]
 
     def _commit(self) -> None: ...
+
+    def _reading(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
 
 # Saves never used: no taps, no activity report, no main-site account, no nick and no loadout. A save made by a script
@@ -178,8 +181,8 @@ class AdminStore(_StoreState):
         back = ", ".join(
             f"SUM(EXISTS(SELECT 1 FROM daily_active a WHERE a.day = date(c.d, '+{n} day') AND a.player_id = c.id)) AS d{n}"
             for n in after)
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 f"WITH c AS (SELECT id, date(created, 'unixepoch', ?) AS d FROM players) "
                 f"SELECT d AS day, COUNT(*) AS size{', ' + back if back else ''} FROM c WHERE d >= ? GROUP BY d ORDER BY d",
                 (shift, since)).fetchall()
@@ -187,34 +190,34 @@ class AdminStore(_StoreState):
 
     def active_saves(self, since: str) -> list[dict[str, Any]]:
         """Saves active on a day from [since] on, with their client version."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT id, client_version FROM players "
                 "WHERE id IN (SELECT DISTINCT player_id FROM daily_active WHERE day >= ?)", (since,)).fetchall()
         return [dict(r) for r in rows]
 
     def drops_by_day(self, since_ts: float, offset_seconds: int) -> list[dict[str, Any]]:
         """Per day and rarity: items drawn and how many of them were new."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT date(ts, 'unixepoch', ?) AS day, rarity, COUNT(*) AS count, SUM(is_new) AS new FROM drops "
                 "WHERE ts >= ? GROUP BY day, rarity", (f"{offset_seconds} seconds", since_ts)).fetchall()
         return [dict(r) for r in rows]
 
     def room_samples(self, since_ts: int) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._db.execute("SELECT * FROM room_samples WHERE ts >= ? ORDER BY ts", (since_ts,)).fetchall()
+        with self._reading() as db:
+            rows = db.execute("SELECT * FROM room_samples WHERE ts >= ? ORDER BY ts", (since_ts,)).fetchall()
         return [dict(r) for r in rows]
 
     def daily_counts(self, since: str) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._db.execute("SELECT day, key, count FROM daily_counts WHERE day >= ?", (since,)).fetchall()
+        with self._reading() as db:
+            rows = db.execute("SELECT day, key, count FROM daily_counts WHERE day >= ?", (since,)).fetchall()
         return [dict(r) for r in rows]
 
     def duels_by_day(self, since_ts: float, offset_seconds: int) -> list[dict[str, Any]]:
         """Duels closed from [since_ts], per day they closed, bet and outcome ('won', 'refunded'): how many."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 # Aliased apart from the duels.day column (the day it opened), which GROUP BY would pick first.
                 "SELECT date(settled, 'unixepoch', ?) AS ended, bet, state, COUNT(*) AS count FROM duels "
                 "WHERE state != 'open' AND settled >= ? GROUP BY ended, bet, state",
@@ -223,8 +226,8 @@ class AdminStore(_StoreState):
 
     def ledger_by_day(self, since: str, source: str) -> list[dict[str, Any]]:
         """Per day from [since]: the amount from [source] and how many saves it went to."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT day, SUM(amount) AS amount, SUM(count) AS count, COUNT(*) AS saves FROM shard_ledger "
                 "WHERE day >= ? AND source = ? GROUP BY day", (since, source)).fetchall()
         return [dict(r) for r in rows]
@@ -232,8 +235,8 @@ class AdminStore(_StoreState):
     def tap_flags_of(self, day: str, limit: int) -> list[dict[str, Any]]:
         """The day's flagged saves, most often judged automatic (or, before the guard, cooled down for a steady rate)
         then fast-input cooldowns first, with their credited taps and tap shards."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT f.player_id, f.dropped, f.server_cooldowns, f.client_cooldowns, f.steady, f.auto, f.injected, "
                 "COALESCE(g.count, 0) AS credited, COALESCE(g.amount, 0) AS shards, l.main_user_id "
                 "FROM tap_flags f LEFT JOIN shard_ledger g ON g.day = f.day AND g.player_id = f.player_id "
@@ -243,8 +246,8 @@ class AdminStore(_StoreState):
 
     def top_tappers(self, day: str, limit: int) -> list[dict[str, Any]]:
         """The day's saves with the most credited taps, with their flags and tap shards."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT g.player_id, g.count AS credited, g.amount AS shards, l.main_user_id, "
                 "COALESCE(f.dropped, 0) AS dropped, COALESCE(f.server_cooldowns, 0) AS server_cooldowns, "
                 "COALESCE(f.client_cooldowns, 0) AS client_cooldowns, COALESCE(f.steady, 0) AS steady, "
@@ -256,8 +259,8 @@ class AdminStore(_StoreState):
 
     def ledger_day(self, day: str) -> list[dict[str, Any]]:
         """Every ledger row of [day], with the save's linked main-site user (None for a guest save)."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT g.player_id, g.source, g.amount, g.count, l.main_user_id FROM shard_ledger g "
                 "LEFT JOIN account_links l ON l.player_id = g.player_id WHERE g.day = ?", (day,)).fetchall()
         return [dict(r) for r in rows]

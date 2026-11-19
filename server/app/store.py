@@ -5,7 +5,8 @@ import os
 import sqlite3
 import threading
 import time
-from typing import Any, Callable, Iterable
+from contextlib import contextmanager
+from typing import Any, Callable, Iterable, Iterator
 
 from .store_admin import AdminStore
 from .store_ddz import DdzStore
@@ -59,6 +60,30 @@ class Store(AdminStore, ParkStore, DdzStore):
             self._drop_old_races()
             self._db.executescript(SCHEMA)
             self._migrate()
+        # The admin pages' whole-table reads run on a connection of their own: in WAL mode a reader neither waits
+        # for the writer nor holds it up, so a slow statistic no longer stalls every player request behind _lock.
+        # It sees committed data only. ":memory:" databases are private to their connection and keep using _db.
+        self._reader: sqlite3.Connection | None = None
+        self._read_lock = threading.Lock()
+        if path != ":memory:":
+            self._reader = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+            self._reader.row_factory = sqlite3.Row
+            self._reader.execute("PRAGMA query_only=ON")
+
+    @contextmanager
+    def _reading(self) -> Iterator[sqlite3.Connection]:
+        """The connection for the admin pages' statistics. Each use is one read transaction, so a method that runs
+        several queries reads one snapshot, as it did under _lock."""
+        if self._reader is None:
+            with self._lock:
+                yield self._db
+            return
+        with self._read_lock:
+            self._reader.execute("BEGIN")
+            try:
+                yield self._reader
+            finally:
+                self._reader.execute("COMMIT")
 
     def _columns(self, table: str) -> set[str]:
         return {r[1] for r in self._db.execute(f"PRAGMA table_info({table})")}
@@ -438,8 +463,8 @@ class Store(AdminStore, ParkStore, DdzStore):
             self._active.add(pid)
 
     def totals(self, today: str) -> dict[str, int]:
-        with self._lock:
-            one = lambda sql, *a: self._db.execute(sql, a).fetchone()[0]  # noqa: E731
+        with self._reading() as db:
+            one = lambda sql, *a: db.execute(sql, a).fetchone()[0]  # noqa: E731
             return {"saves": one("SELECT COUNT(*) FROM players"),
                     "linked": one("SELECT COUNT(*) FROM account_links"),
                     "activeToday": one("SELECT COUNT(*) FROM daily_active WHERE day=?", today)}
@@ -448,14 +473,14 @@ class Store(AdminStore, ParkStore, DdzStore):
         """Per day since [since]: active saves, new saves and items obtained."""
         shift = f"{offset_seconds} seconds"
         out: dict[str, dict[str, int]] = {}
-        with self._lock:
+        with self._reading() as db:
             queries = {
                 "active": ("SELECT day, COUNT(*) FROM daily_active WHERE day >= ? GROUP BY day", (since,)),
                 "newSaves": ("SELECT date(created, 'unixepoch', ?) d, COUNT(*) FROM players GROUP BY d HAVING d >= ?", (shift, since)),
                 "items": ("SELECT date(ts, 'unixepoch', ?) d, COUNT(*) FROM drops GROUP BY d HAVING d >= ?", (shift, since)),
             }
             for key, (sql, args) in queries.items():
-                for day, n in self._db.execute(sql, args).fetchall():
+                for day, n in db.execute(sql, args).fetchall():
                     out.setdefault(day, {})[key] = n
         return out
 
@@ -477,8 +502,8 @@ class Store(AdminStore, ParkStore, DdzStore):
             return []
         marks = ",".join("?" * len(cards))
         big_marks = ",".join("?" * len(big)) or "''"
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 f"SELECT player_id, COUNT(*) AS cards, SUM(item_id IN ({big_marks})) AS big, MAX(first_ts) AS last "
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
@@ -532,8 +557,8 @@ class Store(AdminStore, ParkStore, DdzStore):
 
     def ledger_since(self, since: str) -> list[dict[str, Any]]:
         """Every ledger row from [since] on, with the save's creation time (None when the save is gone)."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT g.day, g.player_id, g.source, g.amount, g.count, p.created FROM shard_ledger g "
                 "LEFT JOIN players p ON p.id = g.player_id WHERE g.day >= ?", (since,)).fetchall()
         return [dict(r) for r in rows]
@@ -762,6 +787,9 @@ class Store(AdminStore, ParkStore, DdzStore):
     def close(self) -> None:
         with self._lock:
             self._db.close()
+        if self._reader is not None:
+            with self._read_lock:
+                self._reader.close()
 
 
 class _Tx:

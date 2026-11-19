@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import AbstractContextManager
 from typing import Any
 
 
@@ -12,6 +13,8 @@ class _StoreState:
     _lock: threading.RLock
 
     def _commit(self) -> None: ...
+
+    def _reading(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
 
 class DdzStore(_StoreState):
@@ -61,8 +64,8 @@ class DdzStore(_StoreState):
 
     def ddz_winnings(self, starts_at: float, ends_at: float) -> list[dict[str, Any]]:
         """Each save's winnings from games settled in the period, after rake."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT s.player_id, l.main_user_id, SUM(s.delta) AS amount, 'ddz_win' AS source "
                 "FROM ddz_games g JOIN ddz_seats s ON s.game_id = g.id "
                 "LEFT JOIN account_links l ON l.player_id = s.player_id "

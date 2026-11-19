@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import AbstractContextManager
 from typing import Any
 
 
@@ -13,6 +14,8 @@ class _StoreState:
     _lock: threading.RLock
 
     def _commit(self) -> None: ...
+
+    def _reading(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
 
 class ParkStore(_StoreState):
@@ -29,8 +32,8 @@ class ParkStore(_StoreState):
 
     def coin_ledger_by_day(self, since: str) -> list[dict[str, Any]]:
         """Coins per China day and source since [since], over every save."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT day, source, SUM(amount) AS amount, SUM(count) AS count, COUNT(*) AS saves FROM coin_ledger "
                 "WHERE day >= ? GROUP BY day, source ORDER BY day, source", (since,)).fetchall()
         return [dict(r) for r in rows]
