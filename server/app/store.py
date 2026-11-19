@@ -307,12 +307,14 @@ class Store(AdminStore, ParkStore, DdzStore):
 
     # --- update rewards
     def open_update_rewards(self, pid: str) -> list[dict[str, Any]]:
-        """Rewards not ended that [pid] has not claimed, oldest first."""
+        """Rewards not ended that [pid] has not claimed, oldest first. A reward is for the saves that were there
+        when it opened; a save made later has no earlier version to update from and is offered none."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, version, shards FROM update_rewards r WHERE ended IS NULL AND NOT EXISTS "
+                "SELECT id, version, shards FROM update_rewards r WHERE ended IS NULL "
+                "AND created >= (SELECT created FROM players WHERE id = ?) AND NOT EXISTS "
                 "(SELECT 1 FROM update_reward_claims c WHERE c.reward_id = r.id AND c.player_id = ?) ORDER BY id",
-                (pid,)).fetchall()
+                (pid, pid)).fetchall()
         return [dict(r) for r in rows]
 
     def add_update_claim(self, reward_id: int, pid: str, ts: float) -> None:
@@ -481,10 +483,12 @@ class Store(AdminStore, ParkStore, DdzStore):
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
 
-    def held_items(self) -> list[tuple[str, str, float]]:
-        """(player id, item id, when it first came) of every item a save holds."""
+    def held_items(self, linked: bool = False) -> list[tuple[str, str, float]]:
+        """(player id, item id, when it first came) of every item a save holds; with [linked], only of the saves
+        bound to a main-site account, so the read does not grow with saves that are never listed."""
+        only = " AND player_id IN (SELECT player_id FROM account_links)" if linked else ""
         with self._lock:
-            rows = self._db.execute("SELECT player_id, item_id, first_ts FROM items WHERE count > 0").fetchall()
+            rows = self._db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}").fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
 
     def set_room_nick(self, pid: str, nick: str) -> None:

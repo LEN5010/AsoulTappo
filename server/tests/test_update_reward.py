@@ -112,3 +112,17 @@ def test_a_linked_account_claims_for_its_save(reward_env):
     before = c.get("/api/me", headers=bearer("tok-alice")).json()["shards"]
     r = c.post("/api/update-reward", headers={**bearer("tok-alice"), "X-Client-Version": "1.2.0"}).json()
     assert r["shards"] == before + 500
+
+
+def test_a_save_made_after_the_reward_opened_is_offered_none(reward_env):
+    c, g, *_ = reward_env
+    c.get("/api/me", headers=ME)
+    reward = open_reward(c, "1.2.0", 500)
+    g.now.t += 60
+    assert c.get("/api/me", headers=OTHER).json()["updateRewards"] == []
+    late = c.post("/api/update-reward", headers=on("1.2.0", OTHER))
+    assert late.status_code == 409 and late.json()["detail"]["code"] == "no_reward"
+    # the save that was there keeps its reward, and a reward opened later is for both
+    assert c.post("/api/update-reward", headers=on("1.2.0")).json()["reward"] == {"shards": 500, "ids": [reward["id"]]}
+    second = open_reward(c, "1.3.0", 100)
+    assert c.post("/api/update-reward", headers=on("1.3.0", OTHER)).json()["reward"] == {"shards": 100, "ids": [second["id"]]}
