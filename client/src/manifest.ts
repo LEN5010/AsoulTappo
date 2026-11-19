@@ -1,8 +1,10 @@
 // Typed access to the generated asset manifest (scripts/build_assets.py -> src/data/manifest.json)
 // plus the resolver for its two asset reference schemes:
 //   bundle:<path>  shipped inside the client (public/assets/<path>)
-//   pack:<path>    downloaded on demand from the room server (<server>/packs/<path>)
+//   pack:<path>    downloaded on demand from the room server (<server>/packs/<path>); the standalone edition ships
+//                  them inside the client instead (<app>/packs/<path>, copied by standalone-packs.js)
 import raw from "./data/manifest.json";
+import { STANDALONE } from "./edition";
 
 /** `limited` is the 衣橱 cards' tier: static portraits in a tier of their own, with no pity. */
 export type Rarity = "common" | "uncommon" | "rare" | "limited" | "epic" | "skin" | "legendary";
@@ -147,6 +149,7 @@ export function resolveAsset(ref: string | null | undefined, serverBase: string,
   const scheme = ref.slice(0, i);
   const path = ref.slice(i + 1);
   if (scheme === "bundle") return `${appBase.replace(/\/?$/, "/")}assets/${path}`;
+  if (scheme === "pack" && STANDALONE) return `${appBase.replace(/\/?$/, "/")}packs/${path}`;
   // No server to ask yet (see asset.ts): nothing, rather than a path the app itself cannot serve.
   if (scheme === "pack") return serverBase ? `${serverBase.replace(/\/+$/, "")}/packs/${path}` : "";
   return ref;
