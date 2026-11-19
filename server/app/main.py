@@ -950,6 +950,21 @@ def admin_save_shards(player: str, body: ShardsBody, who: str = Depends(actor)) 
     return _guard(game.admin_adjust_save_shards, player, body.delta, who, body.reason.strip())
 
 
+@app.post("/admin/saves/{player}/hold", dependencies=[Depends(admin)])
+def admin_save_hold(player: str, body: ReasonBody, who: str = Depends(actor)) -> dict:
+    return _guard(game.admin_set_tap_hold, player, True, who, body.reason.strip())
+
+
+@app.post("/admin/saves/{player}/release", dependencies=[Depends(admin)])
+def admin_save_release(player: str, body: ReasonBody | None = None, who: str = Depends(actor)) -> dict:
+    return _guard(game.admin_set_tap_hold, player, False, who, body.reason.strip() if body else "")
+
+
+@app.get("/admin/holds", dependencies=[Depends(admin)])
+def admin_holds() -> dict:
+    return {"holds": game.store.tap_holds()}
+
+
 @app.get("/admin/insights", dependencies=[Depends(admin)])
 def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
     """New saves and returns, clients and collections of active saves, draws by rarity."""

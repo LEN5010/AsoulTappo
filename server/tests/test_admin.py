@@ -219,7 +219,7 @@ def test_economy_defaults_to_fourteen_days(admin_env):
 
 # ------------------------------------------------------------------ saves
 SAVE_KEYS = {"player", "userId", "created", "lastActive", "shards", "owned", "taps", "drawn", "tapCooldown",
-             "clientVersion"}
+             "clientVersion", "held"}
 
 
 def test_saves_search_by_player_id_prefix_and_by_main_user_id(admin_env):

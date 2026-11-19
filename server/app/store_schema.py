@@ -233,6 +233,13 @@ CREATE TABLE IF NOT EXISTS tap_flags (
   injected INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, player_id)
 );
+-- Saves whose taps earn nothing until the operator releases them, with who held them and why.
+CREATE TABLE IF NOT EXISTS tap_holds (
+  player_id TEXT PRIMARY KEY,
+  since REAL NOT NULL,
+  actor TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT ''
+);
 -- What the operator changed through /admin: who (the main site's admin), on which save, what (JSON) and why.
 CREATE TABLE IF NOT EXISTS admin_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

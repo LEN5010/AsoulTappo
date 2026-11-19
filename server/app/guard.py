@@ -12,7 +12,7 @@ showing the save's taps and motion while that answer holds. From a client that c
 The rules live in a Python file named by ``ASOULTAPPO_GUARD``, next to the economy file on the server. It defines
 ``judge(batch, notes)`` with the meaning of ``Guard.judge`` below, and may define ``cooldown(batch, notes)`` with that
 of ``Guard.cooldown``. A file that defines ``daily_cooldown(batch, judged, notes)`` gets that call in its place,
-with a save's notes shared across sessions for the China day. One that defines
+with a save's notes shared across sessions for the China day, and can return a ``Verdict``. One that defines
 ``seen(save, method, path, headers, now)`` is told of every request made for a save. Without the variable nothing
 is judged.
 
@@ -54,9 +54,17 @@ class Batch:
     sequence: int = 0
 
 
+@dataclass(frozen=True)
+class Verdict:
+    """The daily rule's cooldown, quiet withholding, and reversal of earlier tap income for the day."""
+    cooldown: float = 0.0
+    withhold: bool = False
+    void_day: bool = False
+
+
 # Optional alternative to the session cooldown. Called once per accepted batch, with the current
 # judgement and notes shared by all sessions of the save on this China day.
-DailyRule = Callable[[Batch, bool, dict[str, Any]], float]
+DailyRule = Callable[[Batch, bool, dict[str, Any]], float | Verdict]
 # Optional. Called for every request made for a save, before it is served: the save, the method, the path, the
 # headers as a batch carries them, and the time. Runs on the request's thread, outside any transaction.
 SeenRule = Callable[[str, str, str, Mapping[str, str], float], None]

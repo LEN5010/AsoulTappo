@@ -15,7 +15,7 @@ from . import banners
 from . import cards as cardlogic
 from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
-from .guard import Batch, Guard
+from .guard import Batch, Guard, Verdict
 from .manifest import Manifest
 from .notice import version_key
 from .store import DAY_OFFSET, Store, day_of
@@ -194,6 +194,7 @@ class Game:
             now = self.now()
             p = st.get_player(pid, now)
             today = day_of(now)
+            verdict = Verdict()
             if session is not None:
                 last = st.activity_session(pid, session)
                 if sequence <= last["sequence"]:
@@ -206,8 +207,16 @@ class Game:
                     st.update_player(pid, tap_cooldown_until=now + cfg.tap_cooldown_sec)
                     p["tap_cooldown_until"], fast_since = now + cfg.tap_cooldown_sec, 0.0
                     st.add_tap_flags(today, pid, server=1)
-                notes = self._judge(st, p, pid, today, now, last, taps, injected, headers, session, sequence)
+                notes, verdict = self._judge(st, p, pid, today, now, last, taps, injected, headers, session, sequence)
                 st.save_activity_sequence(pid, session, sequence, now, fast_since, notes)
+                if verdict.void_day:
+                    # Reverse earlier income before this batch can earn shards.
+                    remaining = st.ledger_amount(pid, today, "tap") + st.ledger_amount(pid, today, "tap_void")
+                    taken = max(0, min(remaining, p["shards"]))
+                    if taken:
+                        p["shards"] -= taken
+                        st.update_player(pid, shards=p["shards"])
+                        st.add_ledger(pid, today, "tap_void", -taken)
             # A cooldown the client's guard started: it only costs the player, so it is taken as sent.
             if cooldown and now + min(cooldown, cfg.tap_cooldown_sec) > p["tap_cooldown_until"]:
                 # The client names the seconds left on every report of its cooldown; only a new one is counted.
@@ -216,7 +225,7 @@ class Game:
                 st.update_player(pid, tap_cooldown_until=p["tap_cooldown_until"])
                 if started:
                     st.add_tap_flags(today, pid, client=1)
-            if now < p["tap_cooldown_until"]:
+            if now < p["tap_cooldown_until"] or verdict.withhold or st.has_tap_hold(pid):
                 st.add_tap_flags(today, pid, dropped=taps)
                 return {**self.status(token), "credited": 0}
             previous = p["last_activity"] or p["created"]
@@ -272,7 +281,7 @@ class Game:
 
     def _judge(self, st: Store, p: dict[str, Any], pid: str, today: str, now: float, last: dict[str, Any],
                taps: int, injected: int | None, headers: Mapping[str, str] | None = None,
-               session: str = "", sequence: int = 0) -> str:
+               session: str = "", sequence: int = 0) -> tuple[str, Verdict]:
         """Hands one batch of a session to the guard (app/guard.py) and keeps what it found: how long the save's
         input counts as automatic, and the day's flags. Judged on what the session sent, so a cooldown hides nothing.
 
@@ -280,7 +289,7 @@ class Game:
         shown the rest: that rest is judged as a stream of its own (the same batches without the injected presses,
         with notes of its own), and rooms hide the save while it counts as automatic. From a client that cannot tell,
         the rooms get everything, and the one judgement stands for both.
-        Returns the session's notes for its next batch."""
+        Returns the session's notes for its next batch and the daily verdict."""
         notes, shown_notes = _guard_notes(last["guard"])
         if injected is not None:
             injected = max(0, min(int(injected), taps))
@@ -288,13 +297,16 @@ class Game:
         strikes_today = p["auto_strikes"] if p["auto_strike_day"] == today else 0
         daily_rule = self.guard.daily_cooldown
         stored_day = st.guard_day(pid, today) if daily_rule else "{}"
+        verdict = Verdict()
         try:
             batch = Batch(taps, injected, elapsed, now, dict(headers or {}), strikes_today,
                           now < p["tap_cooldown_until"], str(pid), session, sequence)
             span = self.guard.judge(batch, notes)
             if daily_rule:
                 daily_notes = json.loads(stored_day)
-                cool = max(0.0, float(daily_rule(batch, span > 0, daily_notes)))
+                answer = daily_rule(batch, span > 0, daily_notes)
+                verdict = answer if isinstance(answer, Verdict) else Verdict(cooldown=answer)
+                cool = max(0.0, float(verdict.cooldown))
                 next_day = json.dumps(daily_notes, separators=(",", ":"))
             else:
                 cool = self.guard.cooldown(batch, notes)
@@ -303,6 +315,7 @@ class Game:
         except Exception:  # a broken rule must not cost anyone their taps
             log.exception("the guard failed on a batch")
             span, cool, shown, kept = 0.0, 0.0, 0.0, last["guard"]
+            verdict = Verdict()
         else:
             if daily_rule and next_day != stored_day:
                 st.save_guard_day(pid, today, next_day)
@@ -341,7 +354,7 @@ class Game:
                         self._auto.pop(pid, None)
                 else:
                     self._auto[pid] = max(self._auto.get(pid, 0.0), now + shown)
-        return kept
+        return kept, verdict
 
     def auto_input(self, pid: str | None) -> bool:
         """Whether what the save's client sends its rooms counts as automatic now (see _judge), as of its last
@@ -943,6 +956,19 @@ class Game:
                 st.add_admin_log(now, actor, "shards", pid, json.dumps({"delta": delta, "shards": shards}), reason)
         return {"shards": shards}
 
+    def admin_set_tap_hold(self, pid: str, held: bool, actor: str = "", reason: str = "") -> dict[str, Any]:
+        with self.store.transaction() as st:
+            if not st.has_player(pid):
+                raise GameError("no_save", "没有这份存档")
+            now = self.now()
+            if held:
+                changed = st.set_tap_hold(pid, now, actor, reason)
+            else:
+                changed = st.remove_tap_hold(pid)
+            if changed:
+                st.add_admin_log(now, actor, "hold" if held else "release", pid, reason=reason)
+        return {"held": held}
+
     def admin_note(self, actor: str, action: str, detail: dict[str, Any], pid: str = "", reason: str = "") -> None:
         """An admin log entry for a change made outside the game's own admin methods."""
         self.store.add_admin_log(self.now(), actor, action, pid, json.dumps(detail, ensure_ascii=False), reason)
@@ -985,7 +1011,7 @@ class Game:
                 "lastActive": p["last_activity"] or p["created"], "shards": p["shards"],
                 "owned": self.store.count_items(p["id"], self.collectible_ids), "taps": p["taps_total"],
                 "drawn": p["drawn_total"], "tapCooldown": max(0, math.ceil(p["tap_cooldown_until"] - self.now())),
-                "clientVersion": p["client_version"] or None}
+                "clientVersion": p["client_version"] or None, "held": self.store.has_tap_hold(p["id"])}
 
     def admin_saves(self, q: str, limit: int) -> dict[str, Any]:
         """Saves linked to main-site user id [q], and, when [q] is 4-16 hex characters, saves whose player id

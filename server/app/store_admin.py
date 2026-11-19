@@ -85,6 +85,31 @@ class AdminStore(_StoreState):
                 (day, pid, dropped, server, client, auto, injected))
             self._commit()
 
+    def has_tap_hold(self, pid: str) -> bool:
+        with self._lock:
+            return self._db.execute("SELECT 1 FROM tap_holds WHERE player_id=?", (pid,)).fetchone() is not None
+
+    def set_tap_hold(self, pid: str, since: float, actor: str, reason: str) -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO tap_holds (player_id, since, actor, reason) VALUES (?,?,?,?) "
+                "ON CONFLICT(player_id) DO NOTHING", (pid, since, actor, reason))
+            self._commit()
+            return cur.rowcount > 0
+
+    def remove_tap_hold(self, pid: str) -> bool:
+        with self._lock:
+            cur = self._db.execute("DELETE FROM tap_holds WHERE player_id=?", (pid,))
+            self._commit()
+            return cur.rowcount > 0
+
+    def tap_holds(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT player_id AS player, since, actor, reason FROM tap_holds ORDER BY since DESC, player_id"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def add_admin_log(self, ts: float, actor: str, action: str, pid: str = "", detail: str = "",
                       reason: str = "") -> None:
         """The caller's transaction, if any, keeps the entry with the change."""
