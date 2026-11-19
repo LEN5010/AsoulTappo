@@ -9,9 +9,11 @@ import Icon from "./Icon.vue";
 // `locked` leaves no way to close it: no close key, and the backdrop and Escape do nothing.
 // `covered` hides the sheet while the `front` slot fills the face (a full-panel art viewer).
 // `flush` lets the content start at the sheet's top edge, under the close key, with no padding of the sheet's own.
-const props = defineProps<{
+// `to`: where it is drawn, the panel's overlay unless another face has one of its own (the dou dizhu table's).
+const props = withDefaults(defineProps<{
   title?: string; wide?: boolean; still?: boolean; heading?: boolean; locked?: boolean; covered?: boolean; flush?: boolean;
-}>();
+  to?: string;
+}>(), { to: ".panel-overlay" });
 const emit = defineEmits<{ close: [] }>();
 
 const sheet = ref<HTMLElement>();
@@ -58,7 +60,7 @@ onDeactivated(() => emit("close"));
 </script>
 
 <template>
-  <Teleport defer to=".panel-overlay">
+  <Teleport defer :to="to">
     <div class="backdrop" :class="{ closing }" data-overlay @click.self="close">
       <slot name="behind" />
       <div ref="sheet" class="sheet ui-scroll" :class="{ wide, still, covered, flush }" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">

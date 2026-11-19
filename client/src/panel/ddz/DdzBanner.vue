@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Dou dizhu on the room page: a strip of the table's mat. At rest it carries the key that starts a game (and the
 // faces of members playing one); while an invite is out it seats the three with a tick on those who accepted, the
-// stake, and the keys to answer.
+// stake, and the keys to answer. While this save sits at a table the key brings up the table's window.
 import { computed, ref } from "vue";
 import { members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
-import { answerDdz, ddz, ddzBusy, ddzLive, ddzPlaying, ddzReason, leaveDdz } from "../../stores/ddz";
+import { answerDdz, ddz, ddzAtTable, ddzBusy, ddzLive, ddzPlaying, ddzReason, leaveDdz } from "../../stores/ddz";
+import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
 import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
@@ -58,7 +59,8 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
         <span class="ui-tag light">牌局中</span>
       </div>
       <div class="acts">
-        <button type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = true">
+        <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
+        <button v-else type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = true">
           <Icon name="plus" :size="15" />发起
         </button>
       </div>

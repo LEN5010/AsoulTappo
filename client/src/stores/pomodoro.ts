@@ -2,7 +2,7 @@
 // up over the own pet through stores/nudge.ts. The panel shows it from the desk window's copy and starts or stops it
 // there (desktop/bridge.ts).
 import { computed, ref, watch } from "vue";
-import { isPanelWindow, notify } from "../composables/tauri";
+import { isMirrorWindow, notify } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { pomodoroDone, pomodoroLine, pomodoroNotice, readPomodoro, startPomodoro, stepPomodoro, type Pomodoro, type PomodoroBubble, type PomodoroPlan } from "../pomodoro";
 import { pomodoroTune, wakeAudio } from "../audio/sfx";
@@ -59,7 +59,7 @@ function start(round: number) {
 
 /** A new run from the first round: the strip's menu, the tray, the settings page. */
 export function beginPomodoro() {
-  if (isPanelWindow) { void requestDesktop("beginPomodoro"); return; }
+  if (isMirrorWindow) { void requestDesktop("beginPomodoro"); return; }
   start(1);
 }
 
@@ -70,7 +70,7 @@ export function nextPomodoro() {
 }
 
 export function endPomodoro() {
-  if (isPanelWindow) { void requestDesktop("endPomodoro"); return; }
+  if (isMirrorWindow) { void requestDesktop("endPomodoro"); return; }
   waiting = null;
   lastRound = 0;
   if (ownBubble()) closeNudge();

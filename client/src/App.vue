@@ -28,7 +28,7 @@ import { isOverdue } from "./todo";
 import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
-import { ddzBubble } from "./stores/ddz";
+import { ddzAtTable, ddzBubble } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
 } from "./pet/duelPick";
@@ -42,6 +42,7 @@ import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { STRIP_HEIGHT, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
 const RaceFrame = defineAsyncComponent(() => import("./pet/RaceFrame.vue"));
+const DdzFrame = defineAsyncComponent(() => import("./pet/DdzFrame.vue"));
 import { PET_BASE, formReach, headAnchor } from "./characters";
 import { starterEmotesOf } from "./items";
 import { getEmote, characterColor } from "./manifest";
@@ -60,7 +61,7 @@ import {
   nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, rowCols, viewport, type FormationPlace, type Pos,
   type Size,
 } from "./stores/desk";
-import { openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
+import { ddzFrame, openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
 import { agreed } from "./legal/consent";
 import { updateBusy, updateDialogOpen, updateForced, updateOffer, updatePercent, watchRelease } from "./stores/update";
 import { skinVars } from "./stores/theme";
@@ -631,6 +632,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
     <RaceFrame v-if="!isTauri && raceFrame.open" />
+    <DdzFrame v-if="!isTauri && ddzFrame.open && ddzAtTable" />
   </div>
 </template>
 

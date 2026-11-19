@@ -45,7 +45,7 @@ async function setup(over: Record<string, unknown> = {}) {
   room = await import("./room");
   const d = await import("./ddz");
   const player = await import("./player");
-  const ui = (await import("./ui")).ui;
+  const { ui, ddzFrame: frame } = await import("./ui");
   player.status.value = playerStatus(over) as typeof player.status.value;
   const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => playerStatus(over) }));
   vi.stubGlobal("fetch", fetchMock);
@@ -53,7 +53,7 @@ async function setup(over: Record<string, unknown> = {}) {
   const socket = Socket.all[0]!;
   socket.open();
   socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B, OLD] });
-  return { settings, socket, r: room, d, player, fetchMock, ui };
+  return { settings, socket, r: room, d, player, fetchMock, ui, frame };
 }
 
 const SEATS = [A, ME, B].map(({ id, nick, character }) => ({ id, nick, character, auto: false, away: false }));
@@ -124,7 +124,7 @@ it("answers an invite, and a refusal closes it at once", async () => {
 });
 
 it("plays a game from the deal to the result", async () => {
-  const { socket, d, r, fetchMock, ui } = await setup();
+  const { socket, d, r, fetchMock, ui, frame } = await setup();
   socket.recv({ type: "ddz_invite", table: "t", from: "a", ids: ["a", "me", "b"], base: 100, deposit: 4800, sec: 15 });
   d.answerDdz(true);
   socket.recv({ type: "ddz_live", table: "t", ids: ["a", "me", "b"], on: true });
@@ -137,7 +137,8 @@ it("plays a game from the deal to the result", async () => {
   expect(t().hand[0]).toBe(52); // held highest first
   expect(t().seats.map((s) => s.left)).toEqual([17, 17, 17]);
   expect(d.ddzAtTable.value).toBe(true);
-  expect(ui.panelOpen && ui.page === "room").toBe(true); // the table comes up
+  expect(frame.open).toBe(true); // the table's window comes up (here the browser preview's frame)
+  expect(ui.panelOpen).toBe(false); // the panel stays as it was
   await vi.advanceTimersByTimeAsync(0);
   expect(fetchMock).toHaveBeenCalled(); // the deposit is paid
 
@@ -212,9 +213,40 @@ it("plays a game from the deal to the result", async () => {
   socket.recv({ type: "ddz_closed", table: "t" });
   expect(t()).toMatchObject({ phase: "result", closed: true }); // the receipt stays
   expect(d.ddzBusy.value).toBe(false);
+  expect(frame.open).toBe(true);
   d.leaveDdz();
   expect(socket.sent).toHaveLength(end + 1); // nothing left to leave
   expect(d.ddz.value).toBeNull();
+  expect(frame.open).toBe(false); // the table is put away: its window goes too
+});
+
+it("keeps the table's window closed for the deal it was closed during, and opens it with the next deal", async () => {
+  const { socket, d, frame } = await setup();
+  const deal = (n: number) => socket.recv({
+    type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: n, turn: 0, sec: 15, dealSec: 1.8,
+  });
+  deal(1);
+  expect(frame.open).toBe(true);
+  expect(d.ddzBubble.value).toBeNull(); // the table is in sight
+  frame.open = false;
+  d.noteDdzWindowClosed();
+  expect(d.ddzBubble.value).toBe("table"); // the pet's bubble brings it back
+  socket.recv({ type: "ddz_bid", table: "t", seat: 0, bid: 1, turn: 1, sec: 15 });
+  expect(frame.open).toBe(false);
+  expect(d.ddzBubble.value).toBe("turn");
+  socket.recv({
+    type: "ddz_state", table: "t", phase: "bid", you: 1, hand: HAND, seats: SEATS.map((s) => ({ ...s, left: 17, bid: null })),
+    base: 100, cap: 24, deal: 1, bid: 1, landlord: null, bottom: [], mult: 1, bombs: 0, turn: 1, lead: false,
+    trick: [null, null, null], sec: 10, of: 15,
+  });
+  expect(frame.open).toBe(false); // the same deal, taken again: still closed
+  socket.recv({
+    type: "ddz_result", table: "t", winner: "farmers", landlord: 0, bid: 1, bombs: 0, spring: 0, mult: 1, base: 100,
+    deltas: [-200, 100, 100], hands: [[0], [], []], sec: 30,
+  });
+  expect(frame.open).toBe(false);
+  deal(2); // 再来一局
+  expect(frame.open).toBe(true);
 });
 
 it("takes its seat again from the whole state, and walks away from a game", async () => {

@@ -4,7 +4,7 @@
 import { computed, ref, watch } from "vue";
 import { ApiError, type ParkState, type ParkStatus, type PlayerStatus } from "../net/api";
 import { toHttpBase } from "../net/protocol";
-import { isPanelWindow, isRaceWindow } from "../composables/tauri";
+import { isMirrorWindow, isRaceWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { rememberNews, unseenNews } from "../parkNews";
 import { account, attempt, freshItems, reloadCollection, saveCode, status } from "./player";
@@ -17,7 +17,7 @@ export interface ParkError { status: number; code: string; message: string; deta
 export type ParkReply<T> = { ok: true; data: T } | { ok: false; error: ParkError };
 
 /** The panel and the race's window hold no connection of their own: their requests run in the desk window. */
-const relayed = isPanelWindow || isRaceWindow;
+const relayed = isMirrorWindow || isRaceWindow;
 
 /** The save's park, once loaded (loadPark); null before that, after a save or server switch, and without a park. */
 export const park = ref<ParkState | null>(null);

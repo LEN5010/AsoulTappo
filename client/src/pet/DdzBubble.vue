@@ -6,7 +6,7 @@ import { computed } from "vue";
 import { answerDdz, ddz, ddzBubble, ddzReason, leaveDdz } from "../stores/ddz";
 import { shownNick, youId } from "../stores/room";
 import { settings } from "../stores/settings";
-import { openPanel } from "../stores/ui";
+import { openDdzWindow } from "../stores/ui";
 import DdzSeats from "../panel/ddz/DdzSeats.vue";
 import Icon from "../ui/Icon.vue";
 import PetBubble from "./PetBubble.vue";
@@ -26,7 +26,7 @@ const drain = () => ({ animationDuration: `${Math.max(0, (t.value?.until ?? 0) -
 <template>
   <PetBubble :open="!!ddzBubble" :width="ddzBubble === 'turn' || ddzBubble === 'table' ? 148 : DDZ_WIDTH" :shift="shift" :below="below">
     <div v-if="t && ddzBubble" :key="`${t.id}-${ddzBubble === 'invite' || ddzBubble === 'over' ? 'ask' : 'game'}`" class="ddz" role="dialog" aria-label="斗地主">
-      <button v-if="ddzBubble === 'turn' || ddzBubble === 'table'" type="button" class="ui-btn back" :class="{ primary: ddzBubble === 'turn' }" @click="openPanel('room')">
+      <button v-if="ddzBubble === 'turn' || ddzBubble === 'table'" type="button" class="ui-btn back" :class="{ primary: ddzBubble === 'turn' }" @click="openDdzWindow()">
         {{ ddzBubble === "turn" ? "轮到你了" : "回到牌桌" }}
       </button>
       <template v-else>

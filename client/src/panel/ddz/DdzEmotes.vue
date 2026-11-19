@@ -29,10 +29,10 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", away, true));
 <template>
   <div v-if="list.length" ref="root" class="emotes">
     <button type="button" class="ui-btn small ghost" title="表情" aria-label="表情" :aria-expanded="open" @click="open = !open">
-      <Icon name="heart" :size="15" />
+      <Icon name="heart" :size="18" />
     </button>
     <Transition name="tray">
-      <div v-if="open" class="tray" role="menu" aria-label="表情" :style="{ gridTemplateColumns: `repeat(${Math.min(5, list.length)}, 48px)` }">
+      <div v-if="open" class="tray" role="menu" aria-label="表情" :style="{ gridTemplateColumns: `repeat(${Math.min(5, list.length)}, 56px)` }">
         <button v-for="x in list" :key="x.key" type="button" class="ui-btn emo" role="menuitem" :title="x.e!.name" @click="pick(x.key)">
           <img :src="assetUrl(x.e!.thumb ?? x.e!.img)" :alt="x.e!.name" draggable="false" />
         </button>
@@ -43,21 +43,21 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", away, true));
 
 <style scoped>
 .emotes { position: relative; pointer-events: auto; }
-.emotes > .ui-btn { width: 34px; height: 30px; padding: 0; }
+.emotes > .ui-btn { width: 40px; height: 36px; padding: 0; }
 /* A sheet of paper under the key, at most five emotes to a row. */
 .tray {
   position: absolute;
   right: 0;
-  top: 36px;
+  top: 42px;
   display: grid;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 14px;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 16px;
   background: var(--surface);
   box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4);
 }
-.emo { width: 48px; height: 48px; padding: 0; }
-.emo img { width: 38px; height: 38px; object-fit: contain; pointer-events: none; }
+.emo { width: 56px; height: 56px; padding: 0; }
+.emo img { width: 46px; height: 46px; object-fit: contain; pointer-events: none; }
 .tray-enter-active { transition: opacity var(--dur-fast), scale var(--dur-fast) var(--ease-pop); transform-origin: 100% 0; }
 .tray-enter-from { opacity: 0; scale: 0.85; }
 .tray-leave-active { transition: opacity var(--dur-fast) var(--ease-in); }

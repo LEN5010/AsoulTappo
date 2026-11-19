@@ -1,16 +1,16 @@
 import { createApp } from "vue";
 import "./ui/tokens.css";
-import { isPanelWindow, isRaceWindow, isTodoWindow, prepareWindow } from "./composables/tauri";
+import { isDdzWindow, isPanelWindow, isRaceWindow, isTodoWindow, prepareWindow } from "./composables/tauri";
 import { startActivity } from "./stores/activity";
 
-const kind = isPanelWindow ? "panel" : isTodoWindow ? "todo" : isRaceWindow ? "race" : "desk";
+const kind = isPanelWindow ? "panel" : isTodoWindow ? "todo" : isRaceWindow ? "race" : isDdzWindow ? "ddz" : "desk";
 prepareWindow(kind);
 
 // One function per import. As the two arms of one conditional, the minifier folds them into a single
 // preload call and the build gives both windows the desk's style sheets: the panel then has no frame.
 const roots = {
   panel: () => import("./PanelApp.vue"), todo: () => import("./TodoApp.vue"), race: () => import("./RaceApp.vue"),
-  desk: () => import("./App.vue"),
+  ddz: () => import("./DdzApp.vue"), desk: () => import("./App.vue"),
 };
 
 async function main() {
@@ -32,6 +32,8 @@ async function main() {
     createApp((await root).default).mount("#app");
     return;
   }
+  // The desk, and the windows that mirror it (the panel, the dou dizhu table's): the table is drawn once the desk's
+  // state is in.
   const { initDesktop } = await import("./desktop/bridge");
   const stopActivity = await startActivity();
   const stop = await initDesktop();

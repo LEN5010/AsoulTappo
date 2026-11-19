@@ -18,7 +18,7 @@ import { settings } from "./settings";
 import { shownStatus } from "./away";
 import { activeAccount, account, collection, token, saveCode, reloadStatus, setAccount, status } from "./player";
 import { Api, authHeaders } from "../net/api";
-import { isPanelWindow, writeLog } from "../composables/tauri";
+import { isMirrorWindow, writeLog } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { economy } from "./economy";
 
@@ -375,7 +375,7 @@ function subscribeMotion() {
     client.subscribeMotion([...remoteMotion.ids(), ...panelMotionIds]);
   });
 }
-if (!isPanelWindow) remoteMotion.onInterest(subscribeMotion);
+if (!isMirrorWindow) remoteMotion.onInterest(subscribeMotion);
 export function setPanelMotionInterest(ids: string[]): void {
   panelMotionIds = ids;
   subscribeMotion();
@@ -433,7 +433,7 @@ function endPokes(): void {
 
 /** Whether the pet of [m] offers a poke: another member, on a server that takes them, and not click-through. */
 export function canPoke(m: Member): boolean {
-  return pokeOn.value && !isPanelWindow && !settings.clickThrough && !!youId.value && m.id !== youId.value && members.has(m.id);
+  return pokeOn.value && !isMirrorWindow && !settings.clickThrough && !!youId.value && m.id !== youId.value && members.has(m.id);
 }
 
 /** How long until a poke to [id] is allowed; 0 or less when it is now. */
@@ -467,7 +467,7 @@ let drankAt = -Infinity;
 /** The player drank water after a reminder: a cup beside the own pet, and beside it on partners' desks. */
 export function drank(now = Date.now()): void {
   localPet.sip += 1;
-  if (isPanelWindow || !drinkOn.value || !inRoom.value || now - drankAt < DRINK_MS) return;
+  if (isMirrorWindow || !drinkOn.value || !inRoom.value || now - drankAt < DRINK_MS) return;
   drankAt = now;
   client.sendDrink();
 }
@@ -478,7 +478,7 @@ export const nameOn = ref(false);
 
 /** Host only: names the room, "" for none; the server trims and cuts it, and masks blocked words. */
 export function setRoomName(name: string): void {
-  if (isPanelWindow) { void requestDesktop("setRoomName", name); return; }
+  if (isMirrorWindow) { void requestDesktop("setRoomName", name); return; }
   if (isHost.value && nameOn.value) client.sendRoomName(name.trim().slice(0, ROOM_NAME_MAX));
 }
 
@@ -512,7 +512,7 @@ export function canProfile(m: Member): boolean {
 
 /** Panel or desk: member [id]'s showcase and progress; null when the server does not answer in time. */
 export function loadProfile(id: string): Promise<MemberProfile | null> {
-  if (isPanelWindow) return requestDesktop<MemberProfile | null>("loadProfile", id).catch(() => null);
+  if (isMirrorWindow) return requestDesktop<MemberProfile | null>("loadProfile", id).catch(() => null);
   const m = members.get(id);
   if (!m || !canProfile(m)) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -642,7 +642,7 @@ function onDuelMessage(msg: DuelMessage): void {
 
 /** Panel or desk: invite member [id] at [bet]. */
 export function inviteDuel(id: string, bet: number): void {
-  if (isPanelWindow) { void requestDesktop("inviteDuel", id, bet); return; }
+  if (isMirrorWindow) { void requestDesktop("inviteDuel", id, bet); return; }
   const m = members.get(id);
   if (m && canDuel(m) && stakeOpen(bet)) {
     lastError.value = "";
@@ -692,12 +692,12 @@ export function registerTap(): void {
 }
 
 export function syncMotion(pose: PetMotion): void {
-  if (!isPanelWindow && inRoom.value) motionSender.update(pose);
+  if (!isMirrorWindow && inRoom.value) motionSender.update(pose);
 }
 
 /** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
 export function sendEmote(name: string, now = Date.now()): boolean {
-  if (isPanelWindow) {
+  if (isMirrorWindow) {
     void requestDesktop("sendEmote", name, now);
     return true;
   }
@@ -715,7 +715,7 @@ export function setBatchMs(ms: number): void {
 }
 
 export async function createRoom(): Promise<string> {
-  if (isPanelWindow) return requestDesktop("createRoom");
+  if (isMirrorWindow) return requestDesktop("createRoom");
   const base = settings.serverUrl;
   const res = await fetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
   if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
@@ -725,7 +725,7 @@ export async function createRoom(): Promise<string> {
 }
 
 export function joinRoom(room: string): void {
-  if (isPanelWindow) { void requestDesktop("joinRoom", room); return; }
+  if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
   if (!id) return;
   lastError.value = "";
@@ -746,7 +746,7 @@ export function joinRoom(room: string): void {
 }
 
 export function leaveRoom(): void {
-  if (isPanelWindow) { void requestDesktop("leaveRoom"); return; }
+  if (isMirrorWindow) { void requestDesktop("leaveRoom"); return; }
   batcher.clear();
   motionSender.clear();
   client.leave();
@@ -755,13 +755,13 @@ export function leaveRoom(): void {
 
 /** Host only: list the room publicly or take it off the list. */
 export function setRoomPublic(isPublic: boolean): void {
-  if (isPanelWindow) { void requestDesktop("setRoomPublic", isPublic); return; }
+  if (isMirrorWindow) { void requestDesktop("setRoomPublic", isPublic); return; }
   if (isHost.value) client.sendSetPublic(isPublic);
 }
 
 /** Host only: remove a member; their save cannot come back until the room closes. */
 export function kickMember(id: string): void {
-  if (isPanelWindow) { void requestDesktop("kickMember", id); return; }
+  if (isMirrorWindow) { void requestDesktop("kickMember", id); return; }
   if (isHost.value && id !== youId.value && members.has(id)) client.sendKick(id);
 }
 
@@ -780,7 +780,7 @@ function isPublicRoom(r: unknown): r is PublicRoom {
  * account token goes only to the server it was signed in on. A 401 counts as signed out.
  */
 export async function loadPublicRooms(): Promise<void> {
-  if (isPanelWindow) return requestDesktop("loadPublicRooms").catch(() => {});
+  if (isMirrorWindow) return requestDesktop("loadPublicRooms").catch(() => {});
   const base = settings.serverUrl;
   const http = toHttpBase(base);
   const session = activeAccount();
@@ -821,24 +821,24 @@ export function syncProfile(patch: ProfilePatch): void {
 }
 
 watch(() => settings.serverUrl, () => {
-  if (isPanelWindow) return;
+  if (isMirrorWindow) return;
   leaveRoom();
   lastError.value = "";
   publicRooms.value = null;
 }, { flush: "sync" });
 // Rooms listed for one account are not shown after it signs out; the page asks again.
-watch(() => account.value?.token, () => { if (!isPanelWindow) publicRooms.value = null; }, { flush: "sync" });
+watch(() => account.value?.token, () => { if (!isMirrorWindow) publicRooms.value = null; }, { flush: "sync" });
 watch(() => [saveCode.value, account.value?.token], () => {
-  if (isPanelWindow) return;
+  if (isMirrorWindow) return;
   const previous = roomId.value;
   leaveRoom();
   if (previous) joinRoom(previous);
 }, { flush: "sync" });
-watch(() => settings.character, (character) => { if (!isPanelWindow) syncProfile({ character }); }, { flush: "sync" });
-watch(() => settings.nick, (nick) => { if (!isPanelWindow) syncProfile({ nick }); }, { flush: "sync" });
-watch(() => settings.plate, (plate) => { if (!isPanelWindow) syncProfile({ plate }); }, { flush: "sync" });
+watch(() => settings.character, (character) => { if (!isMirrorWindow) syncProfile({ character }); }, { flush: "sync" });
+watch(() => settings.nick, (nick) => { if (!isMirrorWindow) syncProfile({ nick }); }, { flush: "sync" });
+watch(() => settings.plate, (plate) => { if (!isMirrorWindow) syncProfile({ plate }); }, { flush: "sync" });
 // With the nick, which servers from before statuses need in a state. The status is the chosen one, or away by itself.
-watch(shownStatus, (status) => { if (!isPanelWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
-watch(() => settings.batchMs, (ms) => { if (!isPanelWindow) setBatchMs(ms); });
+watch(shownStatus, (status) => { if (!isMirrorWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
+watch(() => settings.batchMs, (ms) => { if (!isMirrorWindow) setBatchMs(ms); });
 // Told to the server only when it has duels; the next join carries it either way.
-watch(duelDnd, (on) => { if (!isPanelWindow) client.setDnd(on, duelOn.value); }, { flush: "sync" });
+watch(duelDnd, (on) => { if (!isMirrorWindow) client.setDnd(on, duelOn.value); }, { flush: "sync" });

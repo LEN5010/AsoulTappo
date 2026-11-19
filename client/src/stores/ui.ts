@@ -11,6 +11,8 @@ export const ui = reactive({
   pool: "",
   /** Desk window only: the panel is up on the room page, as it last reported (desktop/bridge.ts). */
   roomSeen: false,
+  /** Desk window only: the dou dizhu table's window is open and not minimized, as it last reported (desktop/bridge.ts). */
+  ddzSeen: false,
 });
 // The scratch page became part of the park: a page named the old way (from the other window, say) opens the park.
 watch(() => ui.page as string, (page) => { if (page === "scratch") ui.page = "park"; }, { flush: "sync", immediate: true });
@@ -74,4 +76,27 @@ export function openRaceWindow(replay = 0): void {
   raceFrame.replay = replay;
   raceFrame.n++;
   raceFrame.open = true;
+}
+
+/** The browser preview's dou dizhu window: a frame over the desk page (pet/DdzFrame.vue). */
+export const ddzFrame = reactive({ open: false });
+/**
+ * The dou dizhu table's own window, from the desk or the panel: opened, or shown and focused when it is open already.
+ * The browser preview floats the table in a frame of the window's size over the desk page.
+ */
+export function openDdzWindow(): void {
+  ui.quickOpen = false;
+  if (isTauri) {
+    void invoke("open_ddz").catch((e: unknown) => console.warn("open_ddz failed", e));
+    return;
+  }
+  ddzFrame.open = true;
+}
+/** Closes the table's window; the game goes on without it. */
+export function closeDdzWindow(): void {
+  if (isTauri) {
+    void invoke("close_ddz").catch((e: unknown) => console.warn("close_ddz failed", e));
+    return;
+  }
+  ddzFrame.open = false;
 }

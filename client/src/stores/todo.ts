@@ -5,7 +5,7 @@
 //
 // No import of the nudge or room stores here: the todos' window loads this module, and those start desk work.
 import { ref } from "vue";
-import { isPanelWindow, isTauri, isTodoWindow } from "../composables/tauri";
+import { isMirrorWindow, isTauri, isTodoWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import {
   MAX_TODOS, completeTodo, newTodo, readTodos, renameTodo, reopenTodo, retimeTodo, snoozeTodo, type Todo, type TodoWhen,
@@ -23,7 +23,7 @@ function load(): Todo[] {
 }
 
 /** The list lives in another window: the panel and the todos' window of the app ask the desk for each change. */
-const remote = isPanelWindow || (isTauri && isTodoWindow);
+const remote = isMirrorWindow || (isTauri && isTodoWindow);
 
 export const todos = ref<Todo[]>(remote ? [] : load());
 /** The clock the lists are drawn from: the desk's ticks move it, the todos' window has its own (TodoApp.vue). */

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// The dou dizhu table, over the room page while a game is on: a light wall, a coral mat with the multiplier in its
-// middle, the two other seats' live pets behind it and the own pet beside the hand. Cards are picked by click, by
-// dragging across them, or by their rank on the keyboard; the keys under the hand carry the key that presses them.
-// Drawn on a stage of at least 748×600 that is scaled as one piece to the room the panel has.
+// The dou dizhu table, the face of its own window (DdzApp.vue; the browser preview floats it over the desk page,
+// pet/DdzFrame.vue): a light wall, a coral mat with the multiplier in its middle, the two other seats' live pets
+// behind its far edge on either side of the bottom cards, and the own pet beside the hand. Cards are picked by click,
+// by dragging across them, or by their rank on the keyboard; the keys under the hand carry the key that presses them.
+// Drawn on a stage of at least 960×600 that is scaled as one piece to the window. The wall moves the window; the
+// close key closes it and leaves the seat playing (离桌 leaves the table).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { hints, playable } from "../../ddz/rules";
 import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey } from "../../ddz/table";
@@ -22,6 +24,8 @@ import DdzCard from "./DdzCard.vue";
 import DdzEmotes from "./DdzEmotes.vue";
 import DdzReceipt from "./DdzReceipt.vue";
 
+const emit = defineEmits<{ close: []; drag: [e: PointerEvent] }>();
+
 const t = computed(() => ddz.value!);
 const you = computed(() => t.value.you);
 /** The seat that plays after the own one sits on the right, the one before it on the left. */
@@ -37,7 +41,7 @@ const memberOf = (seat: number) => {
 };
 const nickOf = (seat: number) => (seat === you.value ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
 /** The name plate a seat shows in place of its name tag: the own one when worn, a partner's unless plates are off. */
-const PLATE = { w: 168, h: 24 };
+const PLATE = { w: 210, h: 30 };
 const plateOf = (seat: number): string | undefined => {
   if (seat === you.value) return getPlate(settings.plate)?.id;
   const m = memberOf(seat);
@@ -45,7 +49,7 @@ const plateOf = (seat: number): string | undefined => {
 };
 
 // ---- the stage: at least BASE, scaled as one piece
-const BASE = { w: 748, h: 600 };
+const BASE = { w: 960, h: 600 };
 const root = ref<HTMLElement>();
 const box = ref({ w: BASE.w, h: BASE.h });
 let observer: ResizeObserver | undefined;
@@ -53,12 +57,20 @@ const unit = computed(() => Math.max(0.5, Math.min(box.value.w / BASE.w, box.val
 const stage = computed(() => ({ w: box.value.w / unit.value, h: box.value.h / unit.value }));
 
 // ---- the hand
-const CARD = 64;
-const HAND_LEFT = 172;
-const HAND_RIGHT = 16;
-const LIFT = 18;
+const CARD = 84;
+const HAND_LEFT = 228;
+const HAND_RIGHT = 20;
+const LIFT = 20;
+/** The hand's row: its foot above the stage's foot, and its height (a card and its lift). */
+const HAND_BOTTOM = 70;
+const HAND_H = Math.ceil(CARD * 1.42) + LIFT;
+/** The bottom cards over the mat, and how far down the stage their middle is. */
+const BOTTOM_CARD = 52;
+const BOTTOMS_MID = 14 + (BOTTOM_CARD * 1.42) / 2;
+/** The card backs beside each other seat's name. */
+const BACK_CARD = 34;
 const handRoom = computed(() => stage.value.w - HAND_LEFT - HAND_RIGHT);
-const handFan = computed(() => fan(t.value.hand.length, handRoom.value, CARD, 38));
+const handFan = computed(() => fan(t.value.hand.length, handRoom.value, CARD, 50));
 const handX = computed(() => (handRoom.value - handFan.value.width) / 2);
 const selected = ref(new Set<number>());
 /** The landlord's three new cards stand up for a moment before they settle into the hand. */
@@ -105,8 +117,8 @@ const leftOf = (seat: number) => {
 /** Where card [i] of the hand flies in from: the bottom cards at the top of the stage, as an offset from its place. */
 function dealFrom(i: number): Record<string, string> {
   const x = HAND_LEFT + handX.value + i * handFan.value.step + CARD / 2;
-  const y = stage.value.h - 166 + (CARD * 1.42) / 2;
-  return { "--fx": `${stage.value.w / 2 - x}px`, "--fy": `${46 - y}px` };
+  const y = stage.value.h - HAND_BOTTOM - HAND_H + (CARD * 1.42) / 2;
+  return { "--fx": `${stage.value.w / 2 - x}px`, "--fy": `${BOTTOMS_MID - y}px` };
 }
 
 watch(() => t.value.hand, (hand) => {
@@ -191,7 +203,7 @@ function leave() {
 
 function onKey(e: KeyboardEvent) {
   if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
-  if (document.querySelector(".panel-overlay [data-overlay]")) return;
+  if (document.querySelector(".ddz-overlay [data-overlay]")) return;
   if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
   const key = e.key;
   let used = true;
@@ -299,14 +311,17 @@ function zone(seat: number): { key: string; cards: number[]; said: string; small
   if (!cards) return { key: "none", cards: [], said: "", small: false };
   return { key: cards.join(",") || "pass", cards: arrange(cards), said: cards.length ? "" : "不出", small: false };
 }
-/** The three zones as drawn. Cards on the table are 54 wide (40 for what is left at the end) and close up when a play is long. */
+/**
+ * The three zones as drawn. Cards on the table are 70 wide (52 for what is left at the end) and close up when a play
+ * is long. The other seats' reach from the mat's side to the multiplier, the own one spans the mat under it.
+ */
 const zones = computed(() => [
   { seat: leftSeat.value, side: "left" }, { seat: rightSeat.value, side: "right" }, { seat: you.value, side: "own" },
 ].map(({ seat, side }) => {
   const z = zone(seat);
-  const w = z.small ? 40 : 54;
-  const room = side === "own" ? stage.value.w - 300 : stage.value.w / 2 - 130;
-  return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 17 : 30).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
+  const w = z.small ? 52 : 70;
+  const room = side === "own" ? stage.value.w - 380 : stage.value.w / 2 - 150;
+  return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 22 : 39).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
 }));
 
 const boom = ref<{ seq: number; seat: number } | null>(null);
@@ -354,6 +369,12 @@ watch(() => t.value.log.at(-1)?.seq, () => {
 // The table opens with its first deal, which is already in the log: deal it out before the hand is first drawn.
 startDeal();
 
+/** A press on the wall: drops the picked cards, and moves the window. */
+function wallDown(e: PointerEvent) {
+  clearPicked();
+  if (e.button === 0) emit("drag", e);
+}
+
 onMounted(() => {
   window.addEventListener("keydown", onKey);
   observer = new ResizeObserver(([entry]) => {
@@ -377,10 +398,10 @@ onBeforeUnmount(() => {
     <div ref="root" class="fit">
       <div
         class="stage" :class="`phase-${t.phase}`"
-        :style="{ width: `${stage.w}px`, height: `${stage.h}px`, transform: `scale(${unit})` }" @pointerdown.self="clearPicked"
+        :style="{ width: `${stage.w}px`, height: `${stage.h}px`, transform: `scale(${unit})` }" @pointerdown.self="wallDown"
       >
         <div class="top">
-          <button type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="14" />离桌</button>
+          <button type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
           <span class="corner">
             <button
               v-if="playing" type="button" class="ui-btn small ghost" :aria-pressed="mine.auto" @click="autoDdz(!mine.auto)"
@@ -388,20 +409,23 @@ onBeforeUnmount(() => {
               托管
             </button>
             <DdzEmotes />
+            <button type="button" class="ui-btn small ghost shut-key" title="关闭" aria-label="关闭" @click="emit('close')">
+              <Icon name="close" :size="18" />
+            </button>
           </span>
         </div>
 
         <!-- The three cards for the landlord: face down while the seats bid, turned over once there is one. -->
         <div class="bottoms" :class="{ open: t.landlord !== null }" aria-label="底牌">
           <span v-for="i in 3" :key="i" class="flipper">
-            <DdzCard class="side-back" :card="null" :width="40" />
-            <DdzCard v-if="t.bottom[i - 1] !== undefined" class="side-face" :card="t.bottom[i - 1]!" :width="40" />
+            <DdzCard class="side-back" :card="null" :width="BOTTOM_CARD" />
+            <DdzCard v-if="t.bottom[i - 1] !== undefined" class="side-face" :card="t.bottom[i - 1]!" :width="BOTTOM_CARD" />
           </span>
         </div>
 
         <div ref="matEl" class="mat" @pointerdown.self="clearPicked">
           <div class="mult">
-            <small>底分<Icon name="shard" :size="12" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
+            <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
             <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
             <span ref="factorsEl" class="factors">
               <span v-for="f in factors" :key="f.key" class="factor" :data-key="f.key">
@@ -423,17 +447,19 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: !memberOf(p.seat) }]">
+          <!-- The emotes open on the side away from the bottom cards, beside the head: over it is the stage's edge. -->
           <PetView
-            v-if="memberOf(p.seat)" :character="memberOf(p.seat)!.character" :scale="0.85" :min-emote="40"
+            v-if="memberOf(p.seat)" :character="memberOf(p.seat)!.character" :scale="0.95" :min-emote="52"
             :pulse="memberOf(p.seat)!.pulse" :emote="memberOf(p.seat)!.emote" :combo="memberOf(p.seat)!.combo"
-            :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'right'"
+            :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'left'"
+            :bubble-shift="{ x: 0, y: 54 }"
           />
-          <PetView v-else :character="t.seats[p.seat]!.character" :scale="0.85" />
+          <PetView v-else :character="t.seats[p.seat]!.character" :scale="0.95" />
           <div class="under">
             <span v-if="plateOf(p.seat)" class="worn" :class="{ turn: t.turn === p.seat && !dealing }">
               <NamePlate
                 :card="plateOf(p.seat)!" :nick="nickOf(p.seat)" :color="characterColor(t.seats[p.seat]!.character)"
-                :width="PLATE.w" :height="PLATE.h" :font="12"
+                :width="PLATE.w" :height="PLATE.h" :font="15"
               />
               <span class="badges">
                 <em v-if="t.landlord === p.seat" class="ui-tag dark">地主</em>
@@ -448,14 +474,14 @@ onBeforeUnmount(() => {
               <em v-else-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
             </div>
             <div v-if="playing" class="count" :class="{ few: t.phase === 'play' && t.seats[p.seat]!.left <= 2 }">
-              <span class="stack"><DdzCard v-for="n in Math.min(3, leftOf(p.seat))" :key="n" :card="null" :width="26" /></span>
+              <span class="stack"><DdzCard v-for="n in Math.min(3, leftOf(p.seat))" :key="n" :card="null" :width="BACK_CARD" /></span>
               <b>{{ leftOf(p.seat) }}</b>
             </div>
           </div>
           <span v-if="playing && t.turn === p.seat && !dealing" :key="t.until" class="clock"><i :style="drain()"></i></span>
         </div>
 
-        <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }">
+        <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px`, bottom: `${HAND_BOTTOM}px`, height: `${HAND_H}px` }">
           <div
             ref="handEl" class="hand" :class="{ idle: !playing || dealing }"
             @pointerdown="handDown" @pointermove="handMove" @pointerup="handUp" @pointercancel="handUp"
@@ -475,18 +501,20 @@ onBeforeUnmount(() => {
             </span>
           </div>
         </div>
-        <span v-if="myTurn && !dealing" :key="t.until" class="clock wide"><i :style="drain()"></i></span>
+        <span v-if="myTurn && !dealing" :key="t.until" class="clock wide" :style="{ left: `calc(50% + ${(HAND_LEFT - HAND_RIGHT) / 2}px)` }">
+          <i :style="drain()"></i>
+        </span>
 
         <div class="me">
           <PetView
-            :character="settings.character" :scale="0.625" :min-emote="40"
+            :character="settings.character" :scale="0.8" :min-emote="52"
             :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
             :emote="localPet.emote" :win="localPet.win" :pulse="localPet.pulse"
           />
           <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">
             <NamePlate
               :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(settings.character)"
-              :width="PLATE.w" :height="PLATE.h" :font="12"
+              :width="PLATE.w" :height="PLATE.h" :font="15"
             />
             <span class="badges"><em v-if="t.landlord === you" class="ui-tag dark">地主</em></span>
           </span>
@@ -528,7 +556,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <Modal v-if="leaving" title="离开牌桌？" heading @close="leaving = false">
+    <div class="ddz-overlay"></div>
+    <Modal v-if="leaving" to=".ddz-overlay" title="离开牌桌？" heading @close="leaving = false">
       <p class="leave-note">这一局会由托管打完，输赢照常结算。</p>
       <div class="confirm">
         <button type="button" class="ui-btn" @click="leaving = false">留下</button>
@@ -539,17 +568,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Over the page area of the panel: beside the sidebar, under the top bar. */
-.ddz {
-  position: absolute;
-  inset: 46px 0 0 var(--side-w);
-  /* Above everything of the page under it, its pets' bubbles included. */
-  z-index: 30;
-  padding: 4px 16px 16px 12px;
-  box-sizing: border-box;
-  background: var(--c-50);
-}
+/* The whole face of its window (or of the preview's frame), the corners rounded on a see-through window. */
+.ddz { position: absolute; inset: 0; }
 .fit { width: 100%; height: 100%; overflow: hidden; border-radius: var(--radius-l); }
+/* The leave dialog is drawn here, over the table. */
+.ddz-overlay { position: absolute; inset: 0; z-index: 10; overflow: hidden; border-radius: var(--radius-l); pointer-events: none; }
+.ddz-overlay > :deep(*) { pointer-events: auto; }
 /* The same light wall as the room's stage. */
 .stage {
   position: relative;
@@ -561,19 +585,20 @@ onBeforeUnmount(() => {
 }
 
 .top { position: absolute; left: 14px; right: 14px; top: 12px; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; }
-.top > .ui-btn, .corner > .ui-btn { height: 30px; padding: 0 12px; gap: 5px; pointer-events: auto; }
-.corner { display: flex; align-items: center; gap: 4px; }
+.top .ui-btn { height: 36px; padding: 0 14px; gap: 6px; font-size: var(--fs-body); pointer-events: auto; }
+.corner { display: flex; align-items: center; gap: 6px; }
+.top .shut-key { width: 40px; padding: 0; }
 
 /* The bottom cards turn over like the cards of a draw. */
-.bottoms { position: absolute; left: 50%; top: 18px; translate: -50% 0; display: flex; gap: 6px; perspective: 600px; z-index: 1; }
-.flipper { position: relative; display: block; width: 40px; height: 57px; transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
+.bottoms { position: absolute; left: 50%; top: 14px; translate: -50% 0; display: flex; gap: 8px; perspective: 780px; z-index: 1; }
+.flipper { position: relative; display: block; width: 52px; height: 74px; transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
 .flipper:nth-child(2) { transition-delay: 70ms; }
 .flipper:nth-child(3) { transition-delay: 140ms; }
 .flipper > * { position: absolute; inset: 0; backface-visibility: hidden; }
 .side-face { transform: rotateY(180deg); }
 .bottoms.open .flipper { transform: rotateY(180deg); }
-.bottoms.open .flipper:nth-child(1) { rotate: -5deg; translate: 0 2px; }
-.bottoms.open .flipper:nth-child(3) { rotate: 5deg; translate: 0 2px; }
+.bottoms.open .flipper:nth-child(1) { rotate: -5deg; translate: 0 3px; }
+.bottoms.open .flipper:nth-child(3) { rotate: 5deg; translate: 0 3px; }
 
 /* The mat: one coral block with a white line inside its edge and sparse dots in the corner, as on the park's
    banners. The white cards land on it. */
@@ -581,17 +606,17 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 20px;
   right: 20px;
-  top: 168px;
-  bottom: 178px;
-  border-radius: 22px;
+  top: 132px;
+  bottom: 200px;
+  border-radius: 26px;
   background: var(--grad-sky);
-  box-shadow: 0 10px 24px -14px rgba(var(--c-900-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: 0 12px 28px -16px rgba(var(--c-900-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 .mat::before {
   content: "";
   position: absolute;
-  inset: 9px;
-  border-radius: 14px;
+  inset: 11px;
+  border-radius: 17px;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5);
   pointer-events: none;
 }
@@ -603,14 +628,14 @@ onBeforeUnmount(() => {
   background: #fff;
   opacity: 0.3;
   pointer-events: none;
-  mask: radial-gradient(circle, #000 1.1px, transparent 1.5px) 0 0 / 14px 14px, radial-gradient(120% 100% at 100% 0, #000 10%, transparent 55%);
+  mask: radial-gradient(circle, #000 1.3px, transparent 1.8px) 0 0 / 18px 18px, radial-gradient(120% 100% at 100% 0, #000 10%, transparent 55%);
   mask-composite: intersect;
   -webkit-mask-composite: source-in;
 }
-/* The multiplier is the one big number of the table. */
+/* The multiplier is the one big number of the table. At the mat's lowest (268) the block (small 24, number 88,
+   factors 28) ends 9 above the own cards on the table; a taller mat gives the extra room above and below it. */
 .mult {
-  /* At the mat's lowest (254) the block (small 20, number 82, factors 24) ends 17 above the own cards on the table. */
-  --at: max(22px, calc((100% - 195px) * 0.35));
+  --at: max(12px, calc((100% - 268px) * 0.4 + 12px));
   position: absolute;
   left: 50%;
   top: var(--at);
@@ -625,72 +650,73 @@ onBeforeUnmount(() => {
 .mult small {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 10px;
-  border-radius: 10px;
+  gap: 5px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.24);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 800;
 }
-.mult small b { font: 800 15px/1 var(--font-latin); letter-spacing: 0.3px; }
+.mult small b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.3px; }
 .mult .x {
-  font: 800 92px/82px var(--font-latin);
+  font: 800 106px/88px var(--font-latin);
   letter-spacing: -2px;
-  text-shadow: 0 3px 0 var(--c-600), 0 10px 18px rgba(var(--c-900-rgb), 0.28);
+  text-shadow: 0 4px 0 var(--c-600), 0 12px 22px rgba(var(--c-900-rgb), 0.28);
 }
-/* The smaller × keeps out of the line's height, which stays the number's 82. */
-.mult .x i { font-style: normal; font-size: 52px; line-height: 0; margin-right: 2px; opacity: 0.9; }
+/* The smaller × keeps out of the line's height, which stays the number's 88. */
+.mult .x i { font-style: normal; font-size: 60px; line-height: 0; margin-right: 2px; opacity: 0.9; }
 /* What the big number is made of, as on the receipt: the bid, then ×2 for each bomb. Always takes its room, so the
    number does not move when the first factor comes. */
-.factors { display: flex; gap: 6px; height: 22px; margin-top: 2px; }
+.factors { display: flex; gap: 7px; height: 26px; margin-top: 2px; }
 .factor {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 11px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 13px;
   background: rgba(255, 255, 255, 0.24);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   white-space: nowrap;
   animation: pop 260ms var(--ease-pop) backwards;
 }
-.factor b { font: 800 15px/1 var(--font-latin); letter-spacing: 0.2px; }
+.factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
 
-/* What each seat has in front of it. Cards on the table lie a little askew; the ones in the hand do not. */
+/* What each seat has in front of it. Cards on the table lie a little askew; the ones in the hand do not. The other
+   seats' sit under their names, on either side of the multiplier; the own one along the mat's near edge. */
 .zone { position: absolute; display: flex; align-items: center; z-index: 2; pointer-events: none; }
-.zone.left { left: 44px; top: max(92px, calc((100% - 195px) * 0.35 + 62px)); rotate: -3deg; }
-.zone.right { right: 44px; top: max(92px, calc((100% - 195px) * 0.35 + 62px)); rotate: 3deg; justify-content: flex-end; }
-.zone.own { left: 50%; bottom: 12px; translate: -50% 0; }
+.zone.left { left: 44px; top: max(58px, calc((100% - 268px) * 0.4 + 58px)); rotate: -3deg; }
+.zone.right { right: 44px; top: max(58px, calc((100% - 268px) * 0.4 + 58px)); rotate: 3deg; justify-content: flex-end; }
+.zone.own { left: 50%; bottom: 8px; translate: -50% 0; }
 .cards { display: flex; align-items: center; }
 .cards > * { animation: land 300ms var(--ease-out) backwards; }
-.zone.left .cards > * { --from: -90px -70px; }
-.zone.right .cards > * { --from: 90px -70px; }
-.zone.own .cards > * { --from: 0 120px; }
+.zone.left .cards > * { --from: -110px -80px; }
+.zone.right .cards > * { --from: 110px -80px; }
+.zone.own .cards > * { --from: 0 150px; }
 .cards.small > * { animation: none; }
 @keyframes land {
   from { opacity: 0; translate: var(--from); scale: 0.72; }
 }
 .said {
-  height: 32px;
-  padding: 0 15px;
-  border-radius: 16px;
+  height: 40px;
+  padding: 0 19px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.26);
   display: grid;
   place-items: center;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 800;
   color: #fff;
   white-space: nowrap;
   animation: pop 260ms var(--ease-pop) backwards;
 }
-.zone.left .said { margin: 22px 0 0 30px; }
-.zone.right .said { margin: 22px 30px 0 0; }
-.zone.own .said { margin-bottom: 22px; }
-.said.bid { background: #fff; color: var(--c-700); font: 800 20px/1 var(--font-latin); box-shadow: 0 3px 0 var(--c-600); }
+.zone.left .said { margin: 26px 0 0 38px; }
+.zone.right .said { margin: 26px 38px 0 0; }
+.zone.own .said { margin-bottom: 28px; }
+.said.bid { background: #fff; color: var(--c-700); font: 800 25px/1 var(--font-latin); box-shadow: 0 4px 0 var(--c-600); }
 @keyframes pop {
   from { opacity: 0; scale: 0.6; }
 }
@@ -699,11 +725,11 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 120px;
-  height: 120px;
-  margin: -60px 0 0 -60px;
+  width: 156px;
+  height: 156px;
+  margin: -78px 0 0 -78px;
   border-radius: 50%;
-  box-shadow: 0 0 0 6px #fff, 0 0 30px 10px rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 8px #fff, 0 0 38px 13px rgba(255, 255, 255, 0.7);
   opacity: 0;
   animation: boom 520ms var(--ease-out);
 }
@@ -712,64 +738,63 @@ onBeforeUnmount(() => {
   to { opacity: 0; scale: 2.6; }
 }
 
-/* The two other seats sit at the far edge of the mat, their name tags on it. */
-.seat { position: absolute; top: 58px; width: 214px; display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; }
-.seat.left { left: 24px; }
-.seat.right { right: 24px; }
+/* The two other seats stand at the far edge of the mat, one on either side of the bottom cards, their name tags on
+   it; the cards left hang beside the tag on the side away from the middle, under the stage's top corners. */
+.seat { position: absolute; top: 9px; width: 228px; translate: -50% 0; display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; }
+.seat.left { left: 29%; }
+.seat.right { left: 71%; }
 .seat :deep(.still), .me :deep(.still) { filter: var(--contour); }
 .seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
-/* The name tag (or plate) right under the pet; the cards left hang beside it on the side of the table's middle, so
-   nothing reaches the mat's edge. */
 .under { position: relative; display: flex; align-items: center; margin-top: 2px; }
 /* A name plate in place of the tag: whose move it is rings it, and its tags sit on its top right corner like stickers. */
-.worn { position: relative; flex: none; display: block; border-radius: 7px; transition: box-shadow var(--dur-base); }
-.worn.turn { box-shadow: 0 0 0 2.5px var(--c-600); }
-.me .worn.turn { box-shadow: 0 0 0 2.5px var(--c-500); }
-.worn .badges { position: absolute; right: -6px; top: -9px; display: flex; gap: 3px; pointer-events: none; }
+.worn { position: relative; flex: none; display: block; border-radius: 9px; transition: box-shadow var(--dur-base); }
+.worn.turn { box-shadow: 0 0 0 3px var(--c-600); }
+.me .worn.turn { box-shadow: 0 0 0 3px var(--c-500); }
+.worn .badges { position: absolute; right: -7px; top: -11px; display: flex; gap: 4px; pointer-events: none; }
 .worn .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
 .pill {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  max-width: 150px;
-  height: 24px;
-  padding: 0 11px;
+  max-width: 196px;
+  height: 30px;
+  padding: 0 14px;
   box-sizing: border-box;
-  border-radius: 12px;
+  border-radius: 15px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 4px 10px -4px rgba(var(--c-900-rgb), 0.45);
-  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45);
+  font-size: 15px;
   font-weight: 800;
   white-space: nowrap;
   transition: box-shadow var(--dur-base);
 }
 /* Whose move it is: a coral ring round the name. */
-.pill.turn { box-shadow: 0 0 0 2.5px var(--c-600), 0 4px 10px -4px rgba(var(--c-900-rgb), 0.45); }
-.pill > i { flex: none; width: 4px; height: 11px; border-radius: 1px; }
+.pill.turn { box-shadow: 0 0 0 3px var(--c-600), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45); }
+.pill > i { flex: none; width: 5px; height: 14px; border-radius: 1px; }
 .pill .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pill .ui-tag { flex: none; margin: 0 -5px 0 2px; }
+.pill .ui-tag { flex: none; margin: 0 -6px 0 2px; }
 .pill .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
-.count { position: absolute; top: 50%; translate: 0 -50%; display: flex; align-items: center; gap: 5px; font: 800 26px/1 var(--font-latin); color: #fff; text-shadow: 0 2px 0 var(--c-600); white-space: nowrap; }
-.seat.left .count { left: 100%; margin-left: 10px; }
-.seat.right .count { right: 100%; margin-right: 10px; }
+.count { position: absolute; top: 50%; translate: 0 -50%; display: flex; align-items: center; gap: 6px; font: 800 34px/1 var(--font-latin); color: #fff; text-shadow: 0 3px 0 var(--c-600); white-space: nowrap; }
+.seat.left .count { right: 100%; margin-right: 12px; flex-direction: row-reverse; }
+.seat.right .count { left: 100%; margin-left: 12px; }
 .count .stack { display: flex; }
-.count .stack > * + * { margin-left: -19px; }
+.count .stack > * + * { margin-left: -25px; }
 /* Nearly out: the number goes onto a white disc, in deep coral. */
 .count.few b {
   display: grid;
   place-items: center;
-  min-width: 30px;
-  height: 30px;
-  border-radius: 15px;
+  min-width: 38px;
+  height: 38px;
+  border-radius: 19px;
   background: #fff;
   color: var(--c-700);
   text-shadow: none;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.35);
   animation: pop 260ms var(--ease-pop);
 }
 /* The time a move has left: a bar that empties. */
-.clock { display: block; width: 120px; height: 5px; margin-top: 7px; border-radius: 3px; background: rgba(255, 255, 255, 0.45); overflow: hidden; }
+.clock { display: block; width: 156px; height: 6px; margin-top: 8px; border-radius: 3px; background: rgba(255, 255, 255, 0.45); overflow: hidden; }
 .clock i {
   display: block;
   height: 100%;
@@ -779,26 +804,26 @@ onBeforeUnmount(() => {
   animation: drain linear forwards;
 }
 /* The own move's bar lies between the hand and the keys. */
-.clock.wide { position: absolute; left: calc(50% + 78px); bottom: 62px; width: 348px; margin: 0 0 0 -174px; background: var(--c-200); z-index: 4; }
+.clock.wide { position: absolute; bottom: 60px; width: 452px; margin: 0 0 0 -226px; background: var(--c-200); z-index: 4; }
 .clock.wide i { background: linear-gradient(90deg, var(--c-400), var(--c-600)); }
 @keyframes drain {
   from { transform: scaleX(var(--from)); }
   to { transform: scaleX(0); }
 }
 
-.hand-wrap { position: absolute; bottom: 74px; height: 110px; z-index: 4; pointer-events: none; }
-.hand { position: relative; height: 110px; pointer-events: auto; touch-action: none; }
+.hand-wrap { position: absolute; z-index: 4; pointer-events: none; }
+.hand { position: relative; height: 100%; pointer-events: auto; touch-action: none; }
 .hand.idle { pointer-events: none; }
 /* A card of the hand: the outer box flies it in and moves it, the inner one turns it over. */
 .held {
   --fx: 0px;
-  --fy: -90px;
+  --fy: -120px;
   position: absolute;
   left: 0;
   top: 0;
-  width: 64px;
-  height: calc(64px * 1.42);
-  perspective: 600px;
+  width: 84px;
+  height: calc(84px * 1.42);
+  perspective: 780px;
   transition: translate 150ms var(--ease-out);
   animation: deal 320ms var(--ease-out) backwards;
 }
@@ -824,34 +849,34 @@ onBeforeUnmount(() => {
 .held.turning .sides { animation: turn-over 440ms linear calc(var(--i) * 36ms) both; }
 @keyframes turn-over {
   from { transform: translateY(0) rotateY(180deg) scale(1); animation-timing-function: cubic-bezier(0.45, 0, 0.8, 0.6); }
-  50% { transform: translateY(-10px) rotateY(90deg) scale(1.08); animation-timing-function: cubic-bezier(0.2, 0.4, 0.3, 1); }
+  50% { transform: translateY(-13px) rotateY(90deg) scale(1.08); animation-timing-function: cubic-bezier(0.2, 0.4, 0.3, 1); }
   to { transform: translateY(0) rotateY(0deg) scale(1); }
 }
 .held .face { transition: box-shadow 150ms; }
 /* A picked card stands up: a coral line along its top and coral light under it. */
 .held.up .face, .held.fresh .face {
-  box-shadow: 0 0 0 1px rgba(var(--c-900-rgb), 0.12), 0 -3px 0 var(--c-500), 0 10px 16px -4px rgba(var(--c-500-rgb), 0.95),
+  box-shadow: 0 0 0 1px rgba(var(--c-900-rgb), 0.12), 0 -4px 0 var(--c-500), 0 13px 20px -5px rgba(var(--c-500-rgb), 0.95),
     -3px 3px 6px -2px rgba(var(--c-900-rgb), 0.3);
 }
 .phase-result .held { filter: saturate(0.6); opacity: 0.75; }
 
 /* The own pet sits beside the hand, live like the two others. */
-.me { position: absolute; left: 8px; bottom: 16px; width: 160px; display: flex; flex-direction: column; align-items: center; gap: 2px; z-index: 4; pointer-events: none; }
-.me .pill { box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 4px 10px -4px rgba(var(--shadow-rgb), 0.3); }
-.me .pill.turn { box-shadow: 0 0 0 2.5px var(--c-500), 0 4px 10px -4px rgba(var(--shadow-rgb), 0.3); }
+.me { position: absolute; left: 8px; bottom: 12px; width: 212px; display: flex; flex-direction: column; align-items: center; gap: 2px; z-index: 4; pointer-events: none; }
+.me .pill { box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
+.me .pill.turn { box-shadow: 0 0 0 3px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
 
-.keys { position: absolute; left: 0; right: 0; bottom: 16px; height: 40px; display: flex; justify-content: center; gap: 12px; z-index: 5; }
-.keys .ui-btn { height: 40px; min-width: 108px; font-size: 14px; }
-.keys .ui-btn.bid { min-width: 84px; }
+.keys { position: absolute; left: 0; right: 0; bottom: 10px; height: 48px; display: flex; justify-content: center; gap: 14px; z-index: 5; }
+.keys .ui-btn { height: 48px; min-width: 136px; padding: 0 20px; font-size: 17px; }
+.keys .ui-btn.bid { min-width: 106px; }
 /* The corner of a keycap says which key of the keyboard it is. */
 .keys kbd {
-  height: 16px;
-  margin-left: 3px;
-  padding: 0 5px;
-  border-radius: 4px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
   background: var(--c-100);
-  font: 800 10px/16px var(--font-latin);
-  letter-spacing: 0.4px;
+  font: 800 12px/20px var(--font-latin);
+  letter-spacing: 0.5px;
   color: var(--c-700);
 }
 .keys .primary kbd { background: rgba(255, 255, 255, 0.45); color: var(--c-900); }

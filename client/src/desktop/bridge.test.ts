@@ -41,11 +41,14 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function context(panel: boolean) {
+/** The desk (false), the panel (true) or the dou dizhu table's window ("ddz"). */
+async function context(panel: boolean | "ddz") {
   vi.resetModules();
-  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: panel ? "?window=panel" : "" } });
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: panel === "ddz" ? "?window=ddz" : panel ? "?window=panel" : "" } });
   const uiStore = await import("../stores/ui");
-  if (panel) uiStore.ui.panelOpen = true;
+  if (panel === true) uiStore.ui.panelOpen = true;
+  // The table's window says it is on screen (DdzApp.vue) once it has drawn.
+  if (panel === "ddz") uiStore.ui.ddzSeen = true;
   const bridge = await import("./bridge");
   stops.push(await bridge.initDesktop());
   return {
@@ -400,6 +403,54 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   expect(panel.ddz.ddz.value).toBeNull();
   expect(panel.ddz.ddzPlaying.value.size).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("mirrors the table into its own window beside the panel, runs its moves in the desk, and stops when it closes", async () => {
+  const desk = await context(false);
+  const { invoke } = await import("@tauri-apps/api/core");
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  desk.counter.total = 7;
+  desk.room.youId.value = "me";
+  const seats = ["a", "me", "b"].map((id) => ({ id, nick: id, character: "乃琳", auto: false, away: false }));
+  desk.ddz.onDdzMessage({
+    type: "ddz_deal", table: "t", seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  // The desk opens the table's window with the deal; the panel is not asked to show anything.
+  expect(invoke).toHaveBeenCalledWith("open_ddz");
+  expect(invoke).not.toHaveBeenCalledWith("open_panel", expect.anything());
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  // It gets the whole state when it comes up, though the panel was up already.
+  expect(table.counter.total).toBe(7);
+  expect(table.ddz.ddz.value).toMatchObject({ id: "t", phase: "bid", you: 1, hand: [52, 0, 1] });
+  expect(table.ddz.ddzAtTable.value).toBe(true);
+  expect(desk.ui.ui.ddzSeen).toBe(true);
+  expect(desk.ddz.ddzBubble.value).toBeNull();
+  desk.ddz.onDdzMessage({ type: "ddz_bid", table: "t", seat: 0, bid: 1, turn: 1, sec: 15 });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddz.value!.seats[0]!.bid).toBe(1);
+  expect(panel.ddz.ddz.value!.seats[0]!.bid).toBe(1);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  table.ddz.bidDdz(3);
+  table.ddz.autoDdz(true);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["bid", 3], ["auto", true]]);
+  // Minimized, the window still follows the game, and the pet's bubble says whose move it is.
+  table.ui.ui.ddzSeen = false;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddzBubble.value).toBe("turn");
+  table.ui.ui.ddzSeen = true;
+  await vi.advanceTimersByTimeAsync(50);
+  // Closed: nothing more goes to it, and the game goes on.
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await emitTo("main", "ddz:closed", null);
+  expect(desk.ui.ui.ddzSeen).toBe(false);
+  expect(desk.ddz.ddzBubble.value).toBe("turn");
+  desk.ddz.onDdzMessage({ type: "ddz_bid", table: "t", seat: 1, bid: 2, turn: 2, sec: 15 });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddz.value!.seats[1]!.bid).toBeNull();
+  expect(panel.ddz.ddz.value!.seats[1]!.bid).toBe(2);
 });
 
 it("keeps a pet's pose that reaches the panel before the member and applies it once the member arrives", async () => {

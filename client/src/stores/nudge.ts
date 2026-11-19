@@ -1,7 +1,7 @@
 // The bubble over the own pet for reminders (src/nudge.ts has the timing, src/reminders.ts the player's own list), the
 // tomato timer (stores/pomodoro.ts) and todos (stores/todo.ts): one at a time, gone by itself after a while.
 import { ref } from "vue";
-import { isPanelWindow } from "../composables/tauri";
+import { isMirrorWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import {
   LUNCH_ASK, LUNCH_REPLY, NIGHT_LINES, NudgeClock, greetLine, minuteOfDay, pick, type Due, type NudgeDays, type NudgeKind,
@@ -86,7 +86,7 @@ function show(due: Due, now: number) {
  * it gives way to anything else over the pet.
  */
 export function tryReminder(reminder: Reminder) {
-  if (isPanelWindow) { void requestDesktop("tryReminder", reminder); return; }
+  if (isMirrorWindow) { void requestDesktop("tryReminder", reminder); return; }
   if (held() || keepsSpot(nudge.value)) return;
   show({ kind: "tip", tip: reminder }, Date.now());
 }

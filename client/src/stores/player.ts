@@ -11,7 +11,7 @@ import { plateUnlocked } from "../pet/plates";
 import { getCard, memberOf, type Rarity } from "../manifest";
 import { settings } from "./settings";
 import { economy, economyDue, setEconomy } from "./economy";
-import { isPanelWindow } from "../composables/tauri";
+import { isMirrorWindow } from "../composables/tauri";
 import { agreed } from "../legal/consent";
 import { requestDesktop } from "../desktop/transport";
 import { compareVersions } from "../semver";
@@ -58,7 +58,7 @@ export function activeAccount(): AccountSession | null {
 
 /** Signs this device into [session] (null signs out). A guest save that now belongs to the account gets replaced. */
 export async function setAccount(session: AccountSession | null, retireGuest = false): Promise<AccountSession | null> {
-  if (isPanelWindow) {
+  if (isMirrorWindow) {
     account.value = await requestDesktop<AccountSession | null>("setAccount", session, retireGuest);
     if (retireGuest) saveCode.value = loadToken();
     return account.value;
@@ -77,7 +77,7 @@ export async function setAccount(session: AccountSession | null, retireGuest = f
 }
 
 // The panel window follows sign-ins and sign-outs made by the desk window (same origin, shared storage).
-if (isPanelWindow) {
+if (isMirrorWindow) {
   window.addEventListener?.("storage", (e) => {
     if (e.key === ACCOUNT_KEY) account.value = loadAccount();
     if (e.key === TOKEN_KEY) saveCode.value = loadToken();
@@ -238,7 +238,7 @@ let economyLoad: { generation: number; pending: Promise<void> } | undefined;
 /** Asks the current server for its economy (src/stores/economy.ts); failures keep what is cached and retry later. */
 export async function loadEconomy(base = toHttpBase(settings.serverUrl)): Promise<void> {
   if (base !== toHttpBase(settings.serverUrl)) return;
-  if (isPanelWindow) return requestDesktop("loadEconomy", base).catch(() => {});
+  if (isMirrorWindow) return requestDesktop("loadEconomy", base).catch(() => {});
   if (economyLoad?.generation === generation) return economyLoad.pending;
   let at = 0;
   const pending = attempt((api) => {
@@ -310,7 +310,7 @@ async function flush(session: Session): Promise<boolean> {
 }
 
 watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, ([url, code]) => {
-  if (isPanelWindow) return;
+  if (isMirrorWindow) return;
   const previous = current;
   token = code;
   const next = sessionFor(toHttpBase(url));
@@ -382,7 +382,7 @@ export function stopReporting(): void {
  * on their way, so an older answer cannot put the previous balance back afterwards.
  */
 export async function reloadStatus(): Promise<void> {
-  if (isPanelWindow) return;
+  if (isMirrorWindow) return;
   const s = await call((api) => api.me());
   if (s) status.value = s;
 }
@@ -397,7 +397,7 @@ export async function reloadCollection(): Promise<void> {
 }
 
 export async function resonate(count = 1, banner?: string): Promise<Drop[] | null> {
-  if (isPanelWindow) {
+  if (isMirrorWindow) {
     // The desk window waits for the draw and its checks (desktop/transport.ts); a reply lost past that closes the reveal.
     return requestDesktop<Drop[] | null>("resonate", count, banner).catch((e: unknown) => {
       error.value = e instanceof Error ? e.message : String(e);
@@ -502,7 +502,7 @@ export type HistoryReply = { ok: true; page: DropHistory } | { ok: false; messag
 /** A page of the save's own drops ([before]: the `next` of the page before), or the line saying why it did not come. */
 export async function loadHistory(before?: number): Promise<HistoryReply> {
   const lost: HistoryReply = { ok: false, message: "无法连接服务器" };
-  if (isPanelWindow) return requestDesktop<HistoryReply>("loadHistory", before).catch(() => lost);
+  if (isMirrorWindow) return requestDesktop<HistoryReply>("loadHistory", before).catch(() => lost);
   const r = await attempt((api) => api.history(before));
   if (!r) return lost;
   if (r.ok) return { ok: true, page: { drops: r.value.drops ?? [], next: r.value.next ?? null } };
@@ -513,7 +513,7 @@ export async function loadHistory(before?: number): Promise<HistoryReply> {
 }
 
 export async function craftItem(item: string): Promise<boolean> {
-  if (isPanelWindow) return requestDesktop("craftItem", item);
+  if (isMirrorWindow) return requestDesktop("craftItem", item);
   const r = await call((api) => api.craft(item));
   if (!r) return false;
   status.value = r;
@@ -527,7 +527,7 @@ export async function craftItem(item: string): Promise<boolean> {
 export const checkins = ref<CheckinMonth | null>(null);
 
 export async function loadCheckins(): Promise<void> {
-  if (isPanelWindow) return requestDesktop("loadCheckins");
+  if (isMirrorWindow) return requestDesktop("loadCheckins");
   const month = await call((api) => api.checkinMonth());
   if (month) checkins.value = month;
 }
@@ -536,7 +536,7 @@ let checkingIn = false;
 
 /** Checks in for today. null when the request failed or today was taken on another device; the month reloads then. */
 export async function checkin(): Promise<CheckinResult | null> {
-  if (isPanelWindow) return requestDesktop("checkin");
+  if (isMirrorWindow) return requestDesktop("checkin");
   if (checkingIn) return null;
   checkingIn = true;
   try {
@@ -569,7 +569,7 @@ let claiming = false;
 
 /** Claims every reward in updateRewards at once; the shards paid, or null when nothing was (the status reloads). */
 export async function claimUpdateRewards(): Promise<number | null> {
-  if (isPanelWindow) return requestDesktop("claimUpdateRewards");
+  if (isMirrorWindow) return requestDesktop("claimUpdateRewards");
   if (claiming) return null;
   claiming = true;
   try {
@@ -592,7 +592,7 @@ export const scratchCard = ref<ScratchCard | null>(null);
 export async function loadScratch(): Promise<void> {
   // A server without scratch cards says so in its status; asking it anyway would only raise an error.
   if (!status.value?.scratch) return;
-  if (isPanelWindow) return requestDesktop("loadScratch");
+  if (isMirrorWindow) return requestDesktop("loadScratch");
   const state = await call((api) => api.scratchState());
   if (state) scratchCard.value = state.card;
 }
@@ -601,7 +601,7 @@ let buyingScratch = false;
 
 /** Buys a card, or picks up the one still on the table. null when the server refused or could not be reached. */
 export async function buyScratch(): Promise<ScratchCard | null> {
-  if (isPanelWindow) return requestDesktop("buyScratch");
+  if (isMirrorWindow) return requestDesktop("buyScratch");
   if (buyingScratch) return null;
   buyingScratch = true;
   try {
@@ -618,7 +618,7 @@ export async function buyScratch(): Promise<ScratchCard | null> {
 
 /** Collects a card's prize. null when the request failed: the card stays on the table and can be revealed again. */
 export async function revealScratch(card: number): Promise<ScratchRevealResult["prize"] | null> {
-  if (isPanelWindow) return requestDesktop("revealScratch", card);
+  if (isMirrorWindow) return requestDesktop("revealScratch", card);
   const r = await call((api) => api.scratchReveal(card));
   if (!r) return null;
   const { prize, ...rest } = r;
@@ -710,7 +710,7 @@ let pushTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
   () => [settings.character, settings.favorites.join(","), settings.plate, settings.showcase.join(","), settings.nick, settings.onBoard],
   () => {
-    if (isPanelWindow) return;
+    if (isMirrorWindow) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => { if (JSON.stringify(localLoadout()) !== lastPushed) void pushLoadout(); }, 400);
   },
@@ -720,14 +720,14 @@ watch(
 // Read-only and never fatal: a server from before the board answers 404, which must not show as an error.
 /** The collection board; null when the server has none or does not answer. */
 export async function loadBoard(): Promise<Board | null> {
-  if (isPanelWindow) return requestDesktop<Board | null>("loadBoard").catch(() => null);
+  if (isMirrorWindow) return requestDesktop<Board | null>("loadBoard").catch(() => null);
   const session = current;
   return serial(session, () => session.api.board()).catch(() => null);
 }
 
 /** The profile of a save on the collection board; null when it is no longer on it or the server does not answer. */
 export async function loadBoardProfile(id: string): Promise<MemberProfile | null> {
-  if (isPanelWindow) return requestDesktop<MemberProfile | null>("loadBoardProfile", id).catch(() => null);
+  if (isMirrorWindow) return requestDesktop<MemberProfile | null>("loadBoardProfile", id).catch(() => null);
   const session = current;
   return serial(session, () => session.api.boardProfile(id)).catch(() => null);
 }

@@ -5,7 +5,7 @@
 import { computed, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { isPanelWindow, isTauri } from "../composables/tauri";
+import { isMirrorWindow, isTauri } from "../composables/tauri";
 
 /** The window is on screen. */
 export const windowVisible = ref(true);
@@ -13,7 +13,7 @@ const idle = ref(false);
 /** On screen, and something happened lately: looping decoration may run. */
 export const renderActive = computed(() => windowVisible.value && !idle.value);
 export const IDLE_MS = 30_000;
-const idles = isTauri && !isPanelWindow;
+const idles = isTauri && !isMirrorWindow;
 let lastActivity = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 

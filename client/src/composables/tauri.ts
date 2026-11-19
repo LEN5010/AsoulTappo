@@ -9,8 +9,15 @@ export const isPanelWindow = isTauri && windowParam === "panel";
 export const isTodoWindow = windowParam === "todo";
 /** The race's own window (`?window=race`), in the app only: the browser preview shows it over the desk page (pet/RaceFrame.vue). */
 export const isRaceWindow = isTauri && windowParam === "race";
+/** The dou dizhu table's own window (`?window=ddz`), in the app only: the browser preview shows it over the desk page (pet/DdzFrame.vue). */
+export const isDdzWindow = isTauri && windowParam === "ddz";
+/**
+ * A window that mirrors the desk's state and sends its actions there (desktop/bridge.ts): the panel and the table's
+ * window. Only the desk talks to the servers.
+ */
+export const isMirrorWindow = isPanelWindow || isDdzWindow;
 /** This window's label in the app: the desk overlay is "main". */
-export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "todo" : isRaceWindow ? "race" : "main";
+export const windowLabel = isPanelWindow ? "panel" : isTauri && isTodoWindow ? "todo" : isRaceWindow ? "race" : isDdzWindow ? "ddz" : "main";
 export type WindowLabel = typeof windowLabel;
 
 export type MouseButton = "left" | "right" | "middle" | "other";

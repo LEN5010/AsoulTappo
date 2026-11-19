@@ -1,6 +1,6 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { markRaw, ref, watch } from "vue";
-import { isPanelWindow, isTauri } from "../composables/tauri";
+import { isMirrorWindow, isPanelWindow, isTauri, windowLabel } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
 import { syncSettings } from "./settingsSync";
 import * as player from "../stores/player";
@@ -127,42 +127,61 @@ function applyRuntime(updates: Runtime[], local: LocalPet) {
   room.localPet.win = local.win;
 }
 
-/** The desk owns network state; the visible panel subscribes to independent slices. */
+/** The windows that mirror the desk: the panel and the dou dizhu table's window. */
+type MirrorLabel = "panel" | "ddz";
+/**
+ * What a mirror window wants from the desk. `visible`: the state, `live`: its pets' movement (only of `motionIds`).
+ * `seen`: the table's window is on screen, not minimized (it gets the state while minimized: the game goes on).
+ */
+interface Interest { from?: MirrorLabel; visible: boolean; live: boolean; motionIds?: string[]; seen?: boolean }
+
+/** The desk owns network state; the mirror windows subscribe to independent slices while they are up. */
 export async function initDesktop(): Promise<() => void> {
   if (!isTauri) return () => {};
-  if (isPanelWindow) {
-    const unState = await listen<Partial<Groups>>("desktop:state", ({ payload }) => applyGroups(payload), { target: "panel" });
+  if (isMirrorWindow) {
+    const target = windowLabel as MirrorLabel;
+    const unState = await listen<Partial<Groups>>("desktop:state", ({ payload }) => applyGroups(payload), { target });
     const unMotion = await listen<{ members: Runtime[]; local: LocalPet }>("desktop:motion",
-      ({ payload }) => applyRuntime(payload.members, payload.local), { target: "panel" });
+      ({ payload }) => applyRuntime(payload.members, payload.local), { target });
     const syncedSettings = await syncSettings();
     const initial = await requestDesktop<{ settings: Settings; page: typeof ui.page; craftTarget: string; state: Groups }>("sync");
     syncedSettings.apply(initial.settings);
     applyGroups(initial.state);
-    ui.page = initial.page;
-    ui.craftTarget = initial.craftTarget;
+    if (isPanelWindow) {
+      ui.page = initial.page;
+      ui.craftTarget = initial.craftTarget;
+    }
     const motionIds = ref<string[]>([]);
     const stopInterest = remoteMotion.onInterest((ids) => { motionIds.value = ids; });
-    // The pets the room page is drawing: the desk subscribes to their movement and passes it on.
-    const stop = watch(() => [ui.panelOpen && !ui.panelMinimized && windowVisible.value, ui.page === "room", motionIds.value] as const,
-      ([visible, live, ids]) => { void emitTo("main", "desktop:interest", { visible, live, motionIds: visible ? ids : [] }); }, { immediate: true });
+    // The pets the room page (or the table) is drawing: the desk subscribes to their movement and passes it on.
+    const interest = (): Interest => {
+      if (target === "ddz") {
+        const seen = ui.ddzSeen && windowVisible.value;
+        return { from: target, visible: true, live: seen, seen, motionIds: seen ? motionIds.value : [] };
+      }
+      const visible = ui.panelOpen && !ui.panelMinimized && windowVisible.value;
+      return { from: target, visible, live: ui.page === "room", motionIds: visible ? motionIds.value : [] };
+    };
+    const stop = watch(interest, (payload) => { void emitTo("main", "desktop:interest", payload); }, { immediate: true, deep: true });
     return () => { unState(); unMotion(); stop(); stopInterest(); syncedSettings.stop(); };
   }
 
+  /** Each mirror window's interest; a window not listed (or closed) wants nothing. */
+  const subs = new Map<MirrorLabel, { visible: boolean; live: boolean; motionIds: string[] }>();
   const visibleRef = ref(false);
   const liveRef = ref(false);
   let interested = new Set<string>();
-  let visible = false;
-  let live = false;
   let pending: Partial<Groups> = {};
   const dirty = new Map<string, Runtime>();
   let motionTimer: ReturnType<typeof setTimeout> | undefined;
   let stateTimer: ReturnType<typeof setTimeout> | undefined;
+  const targets = (key: "visible" | "live") => [...subs].filter(([, sub]) => sub[key]).map(([label]) => label);
   const publish = async () => {
     clearTimeout(stateTimer);
     stateTimer = undefined;
     const patch = pending;
     pending = {};
-    if (Object.keys(patch).length) await emitTo("panel", "desktop:state", patch);
+    if (Object.keys(patch).length) await Promise.all(targets("visible").map((to) => emitTo(to, "desktop:state", patch)));
   };
   const stops = (Object.keys(groups()) as (keyof Groups)[]).map((key) => watch(
     () => visibleRef.value ? groupsFor(key) : undefined,
@@ -175,11 +194,12 @@ export async function initDesktop(): Promise<() => void> {
   function sendMotion() {
     clearTimeout(motionTimer);
     motionTimer = undefined;
-    if (!visible || !live) return;
+    const to = targets("live");
+    if (!to.length) return;
     const updates = [...dirty.values()];
     dirty.clear();
-    void emitTo("panel", "desktop:motion", { members: updates,
-      local: { emote: room.localPet.emote, win: room.localPet.win } });
+    const message = { members: updates, local: { emote: room.localPet.emote, win: room.localPet.win } };
+    for (const label of to) void emitTo(label, "desktop:motion", message);
   }
   /** Changes to one member merge until the next message; one frame's worth goes out together. */
   const queue = (update: Runtime) => {
@@ -201,7 +221,7 @@ export async function initDesktop(): Promise<() => void> {
   }, { flush: "sync" });
   // Poses stay out of the reactive graph (net/MotionFrames.ts), so they are forwarded as they arrive.
   const stopMotion = remoteMotion.onUpdate((id, pose, edge) => {
-    if (!live || !interested.has(id)) return;
+    if (!liveRef.value || !interested.has(id)) return;
     queue({ id, motion: pose });
     // Every press and release reaches the panel's 70ms hold, including both edges within one frame.
     if (edge) sendMotion();
@@ -209,29 +229,36 @@ export async function initDesktop(): Promise<() => void> {
   const stopEmote = watch(() => liveRef.value ? [room.localPet.emote, room.localPet.win] : null, () => {
     if (liveRef.value) motionTimer ??= setTimeout(sendMotion, 50);
   }, { deep: true });
-  const unInterest = await listen<{ visible: boolean; live: boolean; motionIds?: string[] }>("desktop:interest", async ({ payload }) => {
-    const opening = payload.visible && !visible;
-    visible = payload.visible;
-    live = visible && payload.live;
-    ui.roomSeen = live;
+  async function setInterest({ from = "panel", ...payload }: Interest) {
+    const opening = payload.visible && !subs.get(from)?.visible;
+    const live = payload.visible && payload.live;
+    subs.set(from, { visible: payload.visible, live, motionIds: live ? payload.motionIds ?? [...room.members.keys()] : [] });
+    if (from === "panel") ui.roomSeen = live;
+    else ui.ddzSeen = payload.visible && !!payload.seen;
     const before = interested;
-    interested = new Set(live ? payload.motionIds ?? room.members.keys() : []);
-    // The room socket subscribes for the panel's pets as well as the desk's own.
+    interested = new Set([...subs.values()].flatMap((sub) => sub.motionIds));
+    // The room socket subscribes for the mirror windows' pets as well as the desk's own.
     room.setPanelMotionInterest([...interested]);
-    visibleRef.value = visible;
-    liveRef.value = live;
-    // A pet the panel starts drawing begins from the pose held now, whenever the next update comes.
+    visibleRef.value = [...subs.values()].some((sub) => sub.visible);
+    liveRef.value = [...subs.values()].some((sub) => sub.live);
+    // A pet a window starts drawing begins from the pose held now, whenever the next update comes.
     for (const id of interested) {
       const member = before.has(id) ? undefined : room.members.get(id);
       if (member) queue({ id, motion: { ...member.motion } });
     }
-    if (!visible) {
+    if (!visibleRef.value) {
       pending = {}; dirty.clear(); clearTimeout(stateTimer); clearTimeout(motionTimer);
       stateTimer = motionTimer = undefined;
     } else if (opening) {
-      pending = groups();
-      await publish();
+      // The window that just came up gets everything; the others only what changes.
+      await emitTo(from, "desktop:state", groups());
     }
+  }
+  const unInterest = await listen<Interest>("desktop:interest", ({ payload }) => setInterest(payload), { target: "main" });
+  // The table's window closed (src-tauri/src/lib.rs): it wants nothing more, and the game goes on without it.
+  const unDdzClosed = await listen("ddz:closed", () => {
+    void setInterest({ from: "ddz", visible: false, live: false });
+    ddzStore.noteDdzWindowClosed();
   }, { target: "main" });
   // The todos' window (desktop/todoBridge.ts) gets the list on every change, also while it is hidden: it is small.
   const stopTodos = watch(() => todoStore.todos.value, (list) => { void emitTo("todo", "desktop:todos", list); }, { flush: "sync" });
@@ -281,7 +308,7 @@ export async function initDesktop(): Promise<() => void> {
   }, { target: "main" });
   const syncedSettings = await syncSettings();
   return () => {
-    unlisten(); unInterest(); stops.forEach((stop) => stop()); stopMembers(); stopEmote(); stopMotion(); stopTodos();
+    unlisten(); unInterest(); unDdzClosed(); stops.forEach((stop) => stop()); stopMembers(); stopEmote(); stopMotion(); stopTodos();
     room.setPanelMotionInterest([]);
     memberStops.forEach((stop) => stop()); clearTimeout(motionTimer); clearTimeout(stateTimer); syncedSettings.stop();
   };

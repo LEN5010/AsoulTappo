@@ -5,7 +5,7 @@ import { PET_BASE } from "../characters";
 // placed by one anchor kept in settings; in row mode they stand side by side on the bottom edge, a formation as wide
 // as the screen allows.
 import { reactive, ref } from "vue";
-import { isPanelWindow } from "../composables/tauri";
+import { isMirrorWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { settings } from "./settings";
 
@@ -243,7 +243,7 @@ export function tidyRemotes(): void {
     settings.partnerRowX = -1;
     return;
   }
-  if (isPanelWindow) { void requestDesktop("tidyRemotes"); return; }
+  if (isMirrorWindow) { void requestDesktop("tidyRemotes"); return; }
   remotePos.clear();
   if (currentRoom) {
     delete saved[currentRoom];

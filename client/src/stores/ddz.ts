@@ -1,15 +1,16 @@
 // Dou dizhu (斗地主) at a table of the room: the invite, the game as this seat sees it, and how it ended. The desk
-// window hears the server and keeps the state; the panel mirrors it (desktop/bridge.ts) and draws the table. The
-// server decides everything (server/app/ddz.py); the rules here (src/ddz/rules.ts) only light the keys.
+// window hears the server and keeps the state; the panel and the table's own window mirror it (desktop/bridge.ts),
+// the panel for the invite, the table's window (DdzApp.vue) for the game. The server decides everything
+// (server/app/ddz.py); the rules here (src/ddz/rules.ts) only light the keys.
 import { computed, ref, watch } from "vue";
 import { isBomb, playable, sortHand } from "../ddz/rules";
 import type { DdzMessage, Member } from "../net/protocol";
-import { isPanelWindow, isTauri } from "../composables/tauri";
+import { isMirrorWindow, isTauri } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { economy } from "./economy";
 import { reloadStatus, status } from "./player";
 import { ddzHooks, duelBusy, inRoom, me, members, sendDdz, showWin, shownNick, youId } from "./room";
-import { openPanel, ui } from "./ui";
+import { closeDdzWindow, ddzFrame, openDdzWindow, ui } from "./ui";
 
 export interface DdzSeat {
   /** Member id, kept while the member is away. */
@@ -165,8 +166,8 @@ const REASONS: Record<string, string> = {
 export const ddzReason = (t: DdzState): string =>
   (t.reason === "declined" ? `${t.by || "有人"}没有接受` : REASONS[t.reason] ?? "已取消");
 
-/** The panel shows the room page, where the table is drawn (the desk window is told by the panel). */
-export const ddzTableSeen = computed(() => (isTauri && !isPanelWindow ? ui.roomSeen : ui.panelOpen && ui.page === "room"));
+/** The table is on screen: its window is open and not minimized (the desk is told by that window), or the browser preview's frame is up. */
+export const ddzTableSeen = computed(() => (isTauri ? ui.ddzSeen : ddzFrame.open));
 
 /**
  * What the bubble over the own pet shows: an invite, how one ended, or that a game goes on while the table is out
@@ -183,6 +184,18 @@ export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | null>((
 // ------------------------------------------------------------------ messages (desk window)
 let endTimer: ReturnType<typeof setTimeout> | undefined;
 let seq = 0;
+
+/** The deal at the table as "table:deal"; "" while the table is not up. */
+const dealKey = computed(() => (ddzAtTable.value && ddz.value ? `${ddz.value.id}:${ddz.value.deal}` : ""));
+/** The deal the table's window was opened for, and the one it was closed during. */
+let opened = "";
+let dismissed = "";
+
+/** Desk window: the table's window was closed (by the player, or because the table was put away). */
+export function noteDdzWindowClosed(): void {
+  ui.ddzSeen = false;
+  if (dealKey.value) dismissed = dealKey.value;
+}
 
 const countdown = (sec: number) => ({ sec, until: Date.now() + sec * 1000 });
 
@@ -273,11 +286,8 @@ export function onDdzMessage(msg: DdzMessage): void {
       note(t, { kind: "deal" });
     }
     ddz.value = t;
-    // The deposit is paid with a table's first deal; the table opens on the panel's room page.
-    if (msg.type === "ddz_state" || msg.deal === 1) {
-      void reloadStatus();
-      openPanel("room");
-    }
+    // The deposit is paid with a table's first deal. The table's window opens with each deal (watch below).
+    if (msg.type === "ddz_state" || msg.deal === 1) void reloadStatus();
     return;
   }
   const t = ddz.value;
@@ -354,7 +364,7 @@ export function onDdzMessage(msg: DdzMessage): void {
   }
 }
 
-if (!isPanelWindow) {
+if (!isMirrorWindow) {
   ddzHooks.message = onDdzMessage;
   // A move the server would not take: the keys come back.
   ddzHooks.refused = () => { if (ddz.value) ddz.value.acted = false; };
@@ -367,12 +377,24 @@ if (!isPanelWindow) {
     if (t?.phase === "result") t.closed = true;
     else close();
   }, { flush: "sync" });
+  // The table's window comes up with each deal, the first and every one after 再来一局, and goes once the table is
+  // put away. Closed during a deal, it stays closed until the next one.
+  watch(dealKey, (key) => {
+    if (!key) {
+      opened = "";
+      closeDdzWindow();
+      return;
+    }
+    if (key === opened || key === dismissed) return;
+    opened = key;
+    openDdzWindow();
+  }, { flush: "sync" });
 }
 
 // ------------------------------------------------------------------ actions (panel or desk)
 export type DdzOp = "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave";
 
-/** The panel's actions run in the desk window, which holds the room connection. */
+/** The panel's and the table window's actions run in the desk window, which holds the room connection. */
 export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
   switch (op) {
     case "invite": inviteDdz(args[0] as string[], args[1] as number); break;
@@ -385,8 +407,8 @@ export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
   }
 }
 const viaDesk = (op: DdzOp, ...args: unknown[]): boolean => {
-  if (isPanelWindow) void requestDesktop("ddz", op, ...args).catch(() => {});
-  return isPanelWindow;
+  if (isMirrorWindow) void requestDesktop("ddz", op, ...args).catch(() => {});
+  return isMirrorWindow;
 };
 
 /** Invite the two members [ids] to a game at [base]. */

@@ -387,6 +387,10 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 const TODO_SIZE: (f64, f64) = (320.0, 460.0);
 /// The race's window, in logical pixels (the browser preview's frame is the same size: src/pet/RaceFrame.vue).
 const RACE_SIZE: (f64, f64) = (1180.0, 740.0);
+/// The dou dizhu table's window, in logical pixels (the browser preview's frame is the same size: src/pet/DdzFrame.vue).
+const DDZ_SIZE: (f64, f64) = (1180.0, 740.0);
+/// The smallest it gets: the table's stage (src/panel/ddz/DdzTable.vue, BASE) at its own size.
+const DDZ_MIN_SIZE: (f64, f64) = (960.0, 640.0);
 /// Its distance from the corner of the work area the first time it opens, in logical pixels.
 const TODO_MARGIN: f64 = 24.0;
 
@@ -531,6 +535,61 @@ fn show_race(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn close_race(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("race") {
+        Some(window) => window.close().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
+}
+
+/// The dou dizhu table's own window: frameless, a regular window in the taskbar, as large as `DDZ_SIZE` or the work
+/// area allows, in the middle of its monitor. The desk opens it with each deal; a window already open is brought to
+/// the front. The page shows it once it has drawn (`show_ddz`). Closing it closes it (the desk hears `ddz:closed`)
+/// and leaves the game going: the next call makes it again.
+#[tauri::command]
+async fn open_ddz(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("ddz") {
+        return show_window(&window);
+    }
+    let window = WebviewWindowBuilder::new(&app, "ddz", WebviewUrl::App("index.html?window=ddz".into()))
+        .title("斗地主")
+        .inner_size(DDZ_SIZE.0, DDZ_SIZE.1)
+        .min_inner_size(DDZ_MIN_SIZE.0, DDZ_MIN_SIZE.1)
+        .maximizable(false)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .shadow(false)
+        .visible(false)
+        .focused(false)
+        .accept_first_mouse(true)
+        .build()
+        .map_err(|e| {
+            applog!("ddz", "create failed: {e}");
+            e.to_string()
+        })?;
+    applog!("ddz", "created");
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let area = monitor.work_area();
+        let scale = monitor.scale_factor();
+        window.set_size(PhysicalSize::new(
+            (DDZ_SIZE.0 * scale).min(area.size.width as f64 - 20.0) as u32,
+            (DDZ_SIZE.1 * scale).min(area.size.height as f64 - 20.0) as u32,
+        )).map_err(|e| e.to_string())?;
+    }
+    window.center().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn show_ddz(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("ddz") {
+        Some(window) => show_window(&window),
+        None => Ok(()),
+    }
+}
+
+#[tauri::command]
+fn close_ddz(app: tauri::AppHandle) -> Result<(), String> {
+    match app.get_webview_window("ddz") {
         Some(window) => window.close().map_err(|e| e.to_string()),
         None => Ok(()),
     }
@@ -1039,6 +1098,9 @@ pub fn run() {
             open_race,
             show_race,
             close_race,
+            open_ddz,
+            show_ddz,
+            close_ddz,
             open_todo,
             show_todo,
             hide_todo,
@@ -1076,6 +1138,13 @@ pub fn run() {
                         let _ = window.emit_to("main", "todo:moved", (pos.x, pos.y));
                     }
                     _ => {}
+                }
+            }
+            // However the table's window went (its close key, the desk, the system), the desk stops sending to it.
+            if window.label() == "ddz" {
+                if let tauri::WindowEvent::Destroyed = event {
+                    applog!("ddz", "closed");
+                    let _ = window.emit_to("main", "ddz:closed", ());
                 }
             }
             if window.label() == "capture" {

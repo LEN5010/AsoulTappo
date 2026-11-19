@@ -6,7 +6,7 @@ export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "cla
   "setAccount" | "setRoomPublic" | "setRoomName" | "kickMember" | "loadPublicRooms" | "inviteDuel" | "loadProfile" | "loadBoard" |
   "loadBoardProfile" | "loadEconomy" | "loadHistory" | "park" | "beginPomodoro" | "endPomodoro" | "tryReminder" | "todo" | "todoSync" | "raceSync" | "ddz";
 
-/** `from`: the window that asks and hears the reply: the panel, the todos' window or the race's. */
+/** `from`: the window that asks and hears the reply: the panel, the todos' window, the race's or the dou dizhu table's. */
 export interface DesktopRequest { id: string; action: DesktopAction; args: unknown[]; from?: WindowLabel }
 interface DesktopReply<T> { result: T; error?: string }
 

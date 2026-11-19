@@ -1,5 +1,5 @@
 // Settings travel between the app's windows as patches, so activity updates preserve edits in another window. The
-// panel, the todos' window and the race's send theirs to the desk; the desk sends its own to all of them and passes
+// panel, the todos' window, the race's and the dou dizhu table's send theirs to the desk; the desk sends its own to all of them and passes
 // each side window's on to the others.
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { watch } from "vue";
@@ -7,7 +7,7 @@ import { windowLabel, type WindowLabel } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
 
 interface SettingsMessage { from: WindowLabel; patch: Partial<Settings> }
-const SIDE_WINDOWS: WindowLabel[] = ["panel", "todo", "race"];
+const SIDE_WINDOWS: WindowLabel[] = ["panel", "todo", "race", "ddz"];
 
 export async function syncSettings() {
   let receiving = false;

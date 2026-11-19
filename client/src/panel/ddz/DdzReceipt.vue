@@ -65,9 +65,9 @@ const amount = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).
       </div>
       <div class="rows">
         <div v-for="(row, i) in rows" :key="row.seat" class="row" :class="{ lose: row.delta < 0 }" :style="{ animationDelay: `${200 + i * 90}ms` }">
-          <span class="face" :class="{ again: row.again }"><CharacterAvatar :character="row.character" :size="38" /></span>
+          <span class="face" :class="{ again: row.again }"><CharacterAvatar :character="row.character" :size="48" /></span>
           <span class="nick"><span>{{ row.nick }}</span><em v-if="row.landlord" class="ui-tag dark">地主</em></span>
-          <span class="amount"><Icon name="shard" :size="18" />{{ amount(shown[i]!) }}</span>
+          <span class="amount"><Icon name="shard" :size="22" />{{ amount(shown[i]!) }}</span>
         </div>
       </div>
       <span v-if="!table.closed" :key="table.until" class="wait" aria-hidden="true">
@@ -83,12 +83,12 @@ const amount = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).
 .receipt {
   position: absolute;
   left: 50%;
-  top: max(120px, calc(50% - 190px));
-  width: 372px;
+  top: max(96px, calc(50% - 232px));
+  width: 468px;
   translate: -50% 0;
   rotate: -1.2deg;
   z-index: 6;
-  filter: drop-shadow(0 14px 18px rgba(var(--c-900-rgb), 0.35));
+  filter: drop-shadow(0 18px 22px rgba(var(--c-900-rgb), 0.35));
   animation: drop 420ms var(--ease-spring) backwards;
 }
 @keyframes drop {
@@ -96,34 +96,34 @@ const amount = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).
 }
 .paper {
   position: relative;
-  border-radius: 16px 16px 0 0;
+  border-radius: 20px 20px 0 0;
   background: var(--surface);
-  padding-bottom: 22px;
-  mask: linear-gradient(#000, #000) top / 100% calc(100% - 8px) no-repeat,
-    radial-gradient(circle at 8px 0, #000 7.5px, transparent 8px) bottom left / 16px 8px repeat-x;
+  padding-bottom: 28px;
+  mask: linear-gradient(#000, #000) top / 100% calc(100% - 10px) no-repeat,
+    radial-gradient(circle at 10px 0, #000 9.5px, transparent 10px) bottom left / 20px 10px repeat-x;
 }
 /* White paper all the way up: who won in ink, the multiplier in deep coral, a perforation under them. */
 .head {
-  height: 78px;
-  margin: 0 20px;
+  height: 96px;
+  margin: 0 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 2px dashed var(--c-200);
 }
-.head h3 { margin: 0; font: 800 26px/1 var(--font); letter-spacing: 1px; color: var(--ink); }
-.head .x { font: 800 56px/1 var(--font-latin); letter-spacing: -1px; color: var(--c-700); }
-.head .x i { font-style: normal; font-size: 30px; margin-right: 2px; opacity: 0.9; }
-.why { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 20px 2px; }
-.why .ui-tag { --tag-bg: var(--c-100); --tag-fg: var(--c-700); line-height: 22px; padding: 0 10px; font-size: 12px; }
-.why .ui-tag b { font: 800 14px/1 var(--font-latin); margin-left: 4px; }
-.rows { display: flex; flex-direction: column; gap: 6px; padding: 10px 16px 0; }
+.head h3 { margin: 0; font: 800 32px/1 var(--font); letter-spacing: 1px; color: var(--ink); }
+.head .x { font: 800 70px/1 var(--font-latin); letter-spacing: -1px; color: var(--c-700); }
+.head .x i { font-style: normal; font-size: 38px; margin-right: 2px; opacity: 0.9; }
+.why { display: flex; flex-wrap: wrap; gap: 8px; padding: 15px 26px 2px; }
+.why .ui-tag { --tag-bg: var(--c-100); --tag-fg: var(--c-700); line-height: 28px; padding: 0 12px; font-size: 15px; }
+.why .ui-tag b { font: 800 18px/1 var(--font-latin); margin-left: 5px; }
+.rows { display: flex; flex-direction: column; gap: 8px; padding: 13px 20px 0; }
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 52px;
-  padding: 0 16px 0 8px;
+  gap: 12px;
+  height: 64px;
+  padding: 0 20px 0 10px;
   border-radius: var(--radius-m);
   background: var(--c-100);
   animation: row 300ms var(--ease-out) backwards;
@@ -141,23 +141,23 @@ const amount = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).
   position: absolute;
   right: -3px;
   bottom: -3px;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 10px no-repeat;
+  background: var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 12px no-repeat;
   box-shadow: 0 0 0 2px var(--c-100);
   animation: tick 240ms var(--ease-pop);
 }
 @keyframes tick {
   from { scale: 0; }
 }
-.nick { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.nick { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 16px; font-weight: 800; white-space: nowrap; }
 .nick > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .nick .ui-tag { flex: none; }
-.amount { margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; font: 800 24px/1 var(--font-latin); color: var(--c-700); }
+.amount { margin-left: auto; flex: none; display: flex; align-items: center; gap: 5px; font: 800 30px/1 var(--font-latin); color: var(--c-700); }
 .row.lose .amount { color: var(--ink-2); }
 /* The time left to ask for another game, along the foot of the paper. */
-.wait { display: block; height: 4px; margin: 14px 16px 0; border-radius: 2px; background: var(--c-100); overflow: hidden; }
+.wait { display: block; height: 5px; margin: 18px 20px 0; border-radius: 2px; background: var(--c-100); overflow: hidden; }
 .wait i { display: block; height: 100%; border-radius: 2px; background: var(--c-300); transform-origin: 0 50%; animation: wait linear forwards; }
 @keyframes wait {
   to { transform: scaleX(0); }
@@ -165,22 +165,22 @@ const amount = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).
 /* A spring: stamped in the corner, askew. */
 .seal {
   position: absolute;
-  right: 104px;
-  top: 10px;
-  width: 60px;
-  height: 60px;
+  right: 132px;
+  top: 12px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   rotate: -14deg;
-  box-shadow: inset 0 0 0 2.5px var(--c-600);
+  box-shadow: inset 0 0 0 3px var(--c-600);
   color: var(--c-600);
   opacity: 0.9;
-  font: 800 17px/1 var(--font);
+  font: 800 21px/1 var(--font);
   letter-spacing: 1px;
   animation: stamp 320ms 620ms var(--ease-out) backwards;
 }
-.seal::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; border: 1.5px solid var(--c-600); opacity: 0.6; }
+.seal::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; border: 2px solid var(--c-600); opacity: 0.6; }
 @keyframes stamp {
   from { opacity: 0; scale: 2.4; }
   60% { opacity: 0.9; scale: 0.92; }
