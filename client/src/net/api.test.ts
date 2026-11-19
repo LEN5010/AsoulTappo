@@ -167,3 +167,19 @@ describe("Api timeouts", () => {
     }
   });
 });
+
+describe("ActivityReporter.drop", () => {
+  it("forgets the batch on its way and what comes after", async () => {
+    const send = vi.fn(() => Promise.reject(new Error("refused")));
+    const r = new ActivityReporter(send);
+    r.add(3);
+    const first = r.flush();
+    r.drop();
+    expect(await first).toBe(false);
+    r.add(2);
+    expect(r.size).toBe(0);
+    expect(r.due()).toBe(false);
+    expect(await r.flush()).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+});

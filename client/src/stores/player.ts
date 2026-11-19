@@ -169,7 +169,19 @@ function sessionFor(base: string): Session {
   const api = new Api(() => base, () => auth);
   const session: Session = { api, tail: Promise.resolve(), reporter: new ActivityReporter(async (batch) => {
     const gen = generation;
-    const result = await serial(session, () => api.activity(batch));
+    let result: PlayerStatus;
+    try {
+      result = await serial(session, () => api.activity(batch));
+    } catch (e) {
+      // A session left behind (signed out, another save) whose account token the server no longer takes: its taps
+      // can never be credited, so they are dropped instead of being sent again every 20 seconds. The current
+      // session keeps its batch for the next try, as before.
+      if (e instanceof ApiError && e.code === "account_expired" && session !== current) {
+        session.reporter.drop();
+        sessions.delete(key);
+      }
+      throw e;
+    }
     if (current === session && gen === generation) {
       status.value = result;
       online.value = true;

@@ -330,8 +330,12 @@ export class ActivityReporter {
   private coolUntil = 0;
   constructor(private send: (batch: ActivityBatch) => Promise<unknown>, private session = newToken()) {}
 
+  /** Set by drop(): nothing is counted or sent any more. */
+  private dropped = false;
+
   /** Counts taps; `injected` is what the hook said of them, undefined where it cannot tell. */
   add(n = 1, injected?: boolean): void {
+    if (this.dropped) return;
     this.pending = Math.min(this.pending + n, 5000 - (this.batch?.taps ?? 0));
     if (injected !== undefined) this.tells = true;
     if (injected) this.pendingInjected = Math.min(this.pendingInjected + n, this.pending);
@@ -347,9 +351,19 @@ export class ActivityReporter {
   due(now = Date.now()): boolean {
     return this.size > 0 || this.coolUntil > now;
   }
+  /**
+   * Forgets what is held, including the batch on its way, and stops: for taps that can never be credited, such as
+   * those of an account whose token was revoked.
+   */
+  drop(): void {
+    this.dropped = true;
+    this.pending = this.pendingInjected = this.coolUntil = 0;
+    this.batch = null;
+  }
   /** Send what we have; on failure the count is kept for the next try. */
   flush(now = Date.now()): Promise<boolean> {
     if (this.busy) return this.busy;
+    if (this.dropped) return Promise.resolve(true);
     if (!this.batch && !this.due(now)) return Promise.resolve(true);
     if (!this.batch) {
       this.batch = { taps: this.pending, session: this.session, sequence: ++this.sequence };

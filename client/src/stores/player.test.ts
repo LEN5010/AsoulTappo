@@ -638,3 +638,33 @@ it("sends nothing with the new guest token while signing in", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(sent.slice(signedIn).map((r) => r.credential)).toContain(p.token);
 });
+
+it("drops the taps of a signed-out account once the server refuses its token, and keeps the current session's", async () => {
+  const activities: string[] = [];
+  let revoked = false;
+  vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    const headers = init!.headers as Record<string, string>;
+    const credential = headers.Authorization ?? headers["X-Player-Token"] ?? "";
+    if (url.endsWith("/activity")) activities.push(credential);
+    // Only taps are refused, so the session signed in again below stays the current one.
+    if (credential === "Bearer acct" && revoked && url.endsWith("/activity")) {
+      return { ok: false, status: 401, json: async () => ({ detail: { code: "account_expired", message: "主站登录已过期，请重新登录" } }) } as Response;
+    }
+    return response(url.endsWith("/collection") ? { owned: {}, recent: [] } : { player: "p", shards: 0 });
+  });
+  const { p, settings } = await setup("http://localhost:1");
+  await vi.advanceTimersByTimeAsync(0);
+  await p.setAccount({ server: settings.serverUrl, token: "acct", user: { id: "u", username: "alice", email: "a@example.com" } });
+  await vi.advanceTimersByTimeAsync(0);
+  p.countInput();
+  revoked = true;
+  await p.setAccount(null);
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(activities.filter((c) => c === "Bearer acct")).toHaveLength(1);
+  // Signed in again with a token the server refuses, the current session keeps trying.
+  await p.setAccount({ server: settings.serverUrl, token: "acct", user: { id: "u", username: "alice", email: "a@example.com" } });
+  p.countInput();
+  await vi.advanceTimersByTimeAsync(40000);
+  expect(activities.filter((c) => c === "Bearer acct").length).toBeGreaterThan(2);
+});
