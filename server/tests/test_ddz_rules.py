@@ -1,12 +1,15 @@
-"""Dou dizhu hands: classify() against every hand listed out the way onestraw/doudizhu lists them, and the fixture
-the client's copy of the rules is checked against."""
+"""Dou dizhu hands: classify() against every hand listed out the way onestraw/doudizhu lists them, the fixture
+the client's copy of the rules is checked against, and choose(), which plays for a seat."""
 import itertools
 import json
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from app.ddz_rules import ACE, BIG_JOKER, SMALL_JOKER, Hand, beats, bombs, classify, hand_beats, rank, ranks
+import pytest
+
+from app.ddz_rules import (ACE, BIG_JOKER, SMALL_JOKER, Hand, beats, bombs, choose, classify, hand_beats, rank,
+                           ranks)
 
 FIXTURE = Path(__file__).resolve().parents[2] / "client/src/ddz/rules.fixture.json"
 PLAIN = list(range(3, 16))  # 3..2
@@ -174,3 +177,139 @@ def write_fixture():
 def test_hand_beats_needs_the_same_kind_and_size():
     assert not hand_beats(Hand("plane1", 2, 9), Hand("plane1", 3, 5))
     assert not hand_beats(Hand("pairs", 3, 9), Hand("straight", 3, 5))
+
+
+# ------------------------------------------------------------- playing for a seat
+def pick(hand, last=None, **kw):
+    """The ranks choose() plays from the ranks [hand] on the ranks [last]."""
+    return ranks(choose(cards_of(hand), None if last is None else cards_of(last), **kw))
+
+
+@pytest.mark.parametrize("hand, last, want", [
+    # solo: a single, not one off a pair or a trio
+    ([3, 5, 5, 7, 9, 9, 9, 12], [4], [7]),
+    ([6, 6, 9], [5], [9]),
+    # pair: not off a trio while a pair will do
+    ([5, 5, 9, 9, 9, 12, 12], [4, 4], [5, 5]),
+    ([5, 5, 9, 9, 9, 12, 12], [6, 6], [12, 12]),
+    ([5, 5, 9, 9, 9, 13], [6, 6], [9, 9]),
+    # trio: not out of a bomb while a trio will do
+    ([5, 5, 5, 8, 8, 8, 8, 10, 10, 10], [6, 6, 6], [10, 10, 10]),
+    # trio1, trio2: the lowest trio with the cheapest kicker, never of its own rank
+    ([3, 6, 6, 6, 7, 7, 9, 9, 9], [4, 4, 4, 5], [3, 6, 6, 6]),
+    ([6, 6, 6, 7, 7, 15], [4, 4, 4, 5], [6, 6, 6, 7]),
+    ([3, 6, 6, 6, 7, 7, 9, 9, 9, 10, 10], [4, 4, 4, 5, 5], [6, 6, 6, 7, 7]),
+    ([6, 6, 6, 7, 7, 7, 13], [4, 4, 4, 5, 5], [6, 6, 6, 7, 7]),
+    # straight: the same length; one that splits nothing over a lower one that splits a pair
+    ([3, 4, 5, 6, 7, 8, 9, 9, 10, 11], [3, 4, 5, 6, 7], [4, 5, 6, 7, 8]),
+    ([4, 4, 5, 6, 7, 8, 9], [3, 4, 5, 6, 7], [5, 6, 7, 8, 9]),
+    ([4, 5, 6, 7, 8, 9, 10], [3, 4, 5, 6, 7, 8], [4, 5, 6, 7, 8, 9]),
+    ([10, 11, 12, 13, 14, 15], [6, 7, 8, 9, 10], [10, 11, 12, 13, 14]),
+    # pairs, plane
+    ([5, 5, 6, 6, 7, 7, 8, 8, 13], [3, 3, 4, 4, 5, 5], [5, 5, 6, 6, 7, 7]),
+    ([3, 7, 7, 7, 8, 8, 8], [5, 5, 5, 6, 6, 6], [7, 7, 7, 8, 8, 8]),
+    # plane1, plane2: wings from outside the run, singles before split pairs before 2s
+    ([3, 5, 5, 7, 7, 7, 8, 8, 8, 15], [4, 4, 4, 5, 5, 5, 9, 10], [3, 5, 7, 7, 7, 8, 8, 8]),
+    ([3, 3, 7, 7, 7, 8, 8, 8, 10, 10, 10, 12, 12], [4, 4, 4, 5, 5, 5, 9, 9, 11, 11],
+     [3, 3, 7, 7, 7, 8, 8, 8, 12, 12]),
+    # four2, four22: a four is kept whole, so only when the play leaves one play behind
+    ([9, 9, 9, 9, 3, 5, 12, 13], [6, 6, 6, 6, 4, 8], []),
+    ([9, 9, 9, 9, 3, 5, 13], [6, 6, 6, 6, 4, 8], [3, 5, 9, 9, 9, 9]),
+    ([9, 9, 9, 9, 3, 3, 5, 5, 13], [6, 6, 6, 6, 4, 4, 8, 8], [3, 3, 5, 5, 9, 9, 9, 9]),
+    # bomb: only a higher bomb or the rocket, and only when it may spend one
+    ([9, 9, 9, 9, 3, 5, 12], [6, 6, 6, 6], []),
+    ([3, 3, 3, 3, 9, 9, 9, 9, 4, 5, 7], [6, 6, 6, 6], []),
+    # rocket: nothing beats it
+    ([3, 3, 3, 3, 9, 9, 9, 9], [SMALL_JOKER, BIG_JOKER], []),
+    # nothing of the kind beats it, and no bomb to spend
+    ([3, 4, 5, 13, 13], [14, 14], []),
+])
+def test_choose_follows_with_the_cheapest_play_of_the_kind(hand, last, want):
+    assert pick(hand, last) == want
+
+
+@pytest.mark.parametrize("hand, last, want", [
+    ([9, 9, 9, 9, 3, 5, 12], [6, 6, 6, 6], [9, 9, 9, 9]),
+    ([3, 3, 3, 3, 9, 9, 9, 9, 4, 5, 7], [6, 6, 6, 6], [9, 9, 9, 9]),
+    ([3, 3, 3, 3, 9, 9, 9, 9, 5], [SMALL_JOKER, BIG_JOKER], []),
+    # A whole bomb before one broken up for a play of the kind.
+    ([8, 8, 8, 8, 3, 12, 13], [5, 5], [8, 8, 8, 8]),
+    ([4, 4, 4, 4, 9, 9, 9, 9, 3], [6, 6, 6, 6, 3, 3, 8, 8], [4, 4, 4, 4]),
+    ([3, 8, SMALL_JOKER, BIG_JOKER], [15], [SMALL_JOKER, BIG_JOKER]),
+    ([3, 8, SMALL_JOKER, BIG_JOKER], [9, 9, 9, 9], [SMALL_JOKER, BIG_JOKER]),
+])
+def test_choose_spends_bombs_when_an_opponent_is_close_to_out(hand, last, want):
+    assert pick(hand, last, danger=True) == want
+
+
+def test_choose_keeps_bombs_and_the_rocket_whole():
+    # A card off a pair before one off a bomb; a split pair before a joker off the rocket.
+    assert pick([4, 4, 4, 4, 6, 6], [5]) == [6]
+    assert pick([8, 8, 8, 8, 3, 12, 13], [5, 5]) == []
+    assert pick([3, 8, SMALL_JOKER, BIG_JOKER], [15]) == []
+    assert pick([3, 9, 9, SMALL_JOKER, BIG_JOKER], [5]) == [9]
+    # A lone joker is a single like any other.
+    assert pick([3, 8, BIG_JOKER], [15]) == [BIG_JOKER]
+    # Unless the play ends the hand or leaves it one play: the rocket on a 2, leaving a 3.
+    assert pick([3, SMALL_JOKER, BIG_JOKER], [15]) == [SMALL_JOKER, BIG_JOKER]
+    assert pick([4, 4, 4, 4, 8, 8, 8, 8], [5]) == [4, 4, 4, 4]
+    assert pick([4, 4, 4, 4], [15, 15]) == [4, 4, 4, 4]
+
+
+def test_choose_lets_the_partners_play_stand():
+    assert pick([3, 5, 9], [4], partner_led=True) == []
+    assert pick([9, 9, 9, 9, 3], [4], partner_led=True, danger=True) == []
+    # Unless the whole hand beats it: the game is the farmers' either way.
+    assert pick([9], [4], partner_led=True) == [9]
+    assert pick([7, 7, 7, 3], [4, 4, 4, 5], partner_led=True) == [3, 7, 7, 7]
+
+
+@pytest.mark.parametrize("hand, want", [
+    # The whole hand when it is one play.
+    ([3, 3, 3, 5], [3, 3, 3, 5]),
+    ([9, 9, 9, 9, 3, 5], [3, 5, 9, 9, 9, 9]),
+    ([SMALL_JOKER, BIG_JOKER], [SMALL_JOKER, BIG_JOKER]),
+    ([4, 5, 6, 7, 8, 9], [4, 5, 6, 7, 8, 9]),
+    # The longest run of singles from the lowest card, stopping before a pair.
+    ([3, 4, 5, 6, 7, 8, 8, 10], [3, 4, 5, 6, 7]),
+    ([3, 4, 5, 6, 7, 8, 9, 13, 13], [3, 4, 5, 6, 7, 8, 9]),
+    ([3, 4, 4, 5, 6, 7, 9], [3]),
+    ([10, 11, 12, 13, 15, 15], [10]),
+    # Else the lowest rank's whole group.
+    ([5, 5, 7, 9, 9, 9], [5, 5]),
+    ([3, 3, 3, 5, 7, 7, 13, 15], [3, 3, 3, 5]),
+    ([3, 3, 3, 7, 7, 13, 13, 15], [3, 3, 3, 7, 7]),
+    ([3, 3, 3, 15, 15, SMALL_JOKER], [3, 3, 3]),
+    # Never a bomb or the rocket while anything else is left.
+    ([3, 3, 3, 3, 5, 9, 11], [5]),
+    ([3, 3, 3, 3, 9, SMALL_JOKER, BIG_JOKER, 15], [9]),
+    ([3, 3, 3, 3, 9, 9, 9, 9, SMALL_JOKER, BIG_JOKER], [3, 3, 3, 3]),
+    ([3, 3, 3, 3, SMALL_JOKER, BIG_JOKER, 5, 5, 6], [5, 5]),
+])
+def test_choose_leads(hand, want):
+    assert pick(hand) == want
+
+
+def test_choose_plays_only_what_may_be_played():
+    rng = random.Random(20261119)
+    keys = list(TABLE)
+    followed = 0
+    for _ in range(3000):
+        deck = list(range(54))
+        rng.shuffle(deck)
+        hand, rest = sorted(deck[:rng.randint(1, 20)]), deck[20:]
+        flags = {"partner_led": rng.random() < .2, "danger": rng.random() < .3}
+        led = choose(hand, None, **flags)
+        assert led and set(led) <= set(hand) and len(set(led)) == len(led) and classify(led), (hand, led)
+        if rng.random() < .3:
+            last = choose(rest[:rng.randint(1, 20)], None)
+        else:
+            have = Counter(rank(c) for c in rest)
+            rs = next(k for k in iter(lambda: rng.choice(keys), None) if not Counter(k) - have)
+            pool = {r: [c for c in rest if rank(c) == r] for r in set(rs)}
+            last = [pool[r].pop() for r in rs]
+        out = choose(hand, last, **flags)
+        if out:
+            followed += 1
+            assert set(out) <= set(hand) and len(set(out)) == len(out) and beats(out, last), (hand, last, out)
+    assert followed > 300

@@ -1,4 +1,4 @@
-"""Dou dizhu (斗地主) hands: what a set of cards is and whether it beats another.
+"""Dou dizhu (斗地主) hands: what a set of cards is, whether it beats another, and what to play for a seat.
 
 The client has the same rules in client/src/ddz/rules.ts; both are checked against one fixture
 (client/src/ddz/rules.fixture.json), so a play the client lets through is one the server takes.
@@ -25,7 +25,7 @@ from collections import Counter
 from typing import Iterable, NamedTuple
 
 SMALL_JOKER, BIG_JOKER = 16, 17
-ACE = 14
+ACE, TWO = 14, 15
 DECK = tuple(range(54))
 
 
@@ -124,3 +124,136 @@ def beats(cards: Iterable[int], last: Iterable[int]) -> bool:
 def bombs(cards: Iterable[int]) -> int:
     """1 for a bomb or the rocket, which double the stake; else 0."""
     return int(any(h.kind in ("bomb", "rocket") for h in classify(cards)))
+
+
+# ------------------------------------------------------------- playing for a seat
+# A seat on autopilot, or whose member is away or let the time run out, is played for by choose(): plain rules, no
+# look-ahead. Four of a rank and the rocket are kept whole: played, with what goes along, or broken up only when an
+# opponent is down to DANGER cards or fewer, or when the play ends the hand or leaves it one play from the end.
+DANGER = 5
+# Per kind: the cards taken from each rank of its run, the kickers that go along per rank of the run, and whether
+# those are single cards (1) or pairs (2).
+_SHAPES = {
+    "solo": (1, 0, 0), "pair": (2, 0, 0), "trio": (3, 0, 0), "trio1": (3, 1, 1), "trio2": (3, 1, 2),
+    "straight": (1, 0, 0), "pairs": (2, 0, 0), "plane": (3, 0, 0), "plane1": (3, 1, 1), "plane2": (3, 1, 2),
+    "four2": (4, 2, 1), "four22": (4, 2, 2),
+}
+
+
+class _Hold:
+    """The cards of a hand by rank, and which ranks are kept whole: four of a rank, and both jokers."""
+
+    def __init__(self, hand: Iterable[int]) -> None:
+        self.cards: dict[int, list[int]] = {}
+        for c in sorted(hand):
+            self.cards.setdefault(rank(c), []).append(c)
+        self.count = {r: len(cs) for r, cs in self.cards.items()}
+        self.kept = {r for r, n in self.count.items() if n == 4}
+        if SMALL_JOKER in self.count and BIG_JOKER in self.count:
+            self.kept |= {SMALL_JOKER, BIG_JOKER}
+
+    def take(self, taken: dict[int, int]) -> list[int]:
+        return sorted(c for r, n in taken.items() for c in self.cards[r][:n])
+
+    def cost(self, taken: dict[int, int]) -> tuple[int, int]:
+        """Ranks kept whole that [taken] spends, and other groups it splits."""
+        spent = sum(1 for r in taken if r in self.kept)
+        split = sum(1 for r, n in taken.items() if r not in self.kept and n < self.count[r])
+        return spent, split
+
+    def kickers(self, taken: dict[int, int], n: int, width: int) -> dict[int, int] | None:
+        """[taken] with the [n] cheapest singles (width 1) or pairs (width 2) added from other ranks; None when the
+        hand has too few."""
+        units = []
+        for r, have in self.count.items():
+            if r in taken or (width == 2 and r >= SMALL_JOKER):
+                continue
+            units += [r] * (have // width)
+        # Ranks kept whole come last, then 2s and jokers, then ranks the kicker would split; low ranks first.
+        units.sort(key=lambda r: (r in self.kept, r >= TWO, self.count[r] > width, r))
+        if len(units) < n:
+            return None
+        out = dict(taken)
+        for r in units[:n]:
+            out[r] = out.get(r, 0) + width
+        return out
+
+
+def _follows(hold: _Hold, last: Hand) -> list[tuple[tuple[int, int, int], list[int]]]:
+    """Plays of [last]'s kind and size from [hold] that rank above it, with their costs; bombs and the rocket not
+    included."""
+    if last.kind not in _SHAPES:
+        return []
+    per, kick, width = _SHAPES[last.kind]
+    length = last.size
+    out = []
+    for top in range(last.main + 1, BIG_JOKER + 1):
+        run = range(top - length + 1, top + 1)
+        if length > 1 and top > ACE or any(hold.count.get(r, 0) < per for r in run):
+            continue
+        taken = {r: per for r in run}
+        if kick:
+            taken = hold.kickers(taken, kick * length, width)
+            if taken is None:
+                continue
+        out.append((hold.cost(taken) + (top,), hold.take(taken)))
+    return out
+
+
+def choose(hand: Iterable[int], last: Iterable[int] | None, *, partner_led: bool = False,
+           danger: bool = False) -> list[int]:
+    """The cards to play from [hand] on [last] (None to lead); [] passes. [partner_led]: [last] is the other farmer's.
+    [danger]: an opponent has DANGER cards or fewer."""
+    hand = sorted(hand)
+    whole = bool(classify(hand))
+    if last is None:
+        return hand if whole else _lead(_Hold(hand))
+    last = sorted(last)
+    if whole and beats(hand, last):
+        return hand
+    if partner_led:
+        return []
+    hold = _Hold(hand)
+    plays = sorted((p for h in classify(last) for p in _follows(hold, h)), key=lambda p: p[0])
+    plays = [(cost, cards) for cost, cards in plays if beats(cards, last)]
+    for cost, cards in plays:
+        if cost[0] == 0:
+            return cards
+    # What is left spends a bomb, a four or the rocket: the lowest bomb, the rocket, then plays that break one up.
+    spend = [hold.cards[r] for r in sorted(r for r, n in hold.count.items() if n == 4)]
+    if hold.kept >= {SMALL_JOKER, BIG_JOKER}:
+        spend.append(hold.cards[SMALL_JOKER] + hold.cards[BIG_JOKER])
+    spend += [cards for _, cards in plays]
+    for cards in spend:
+        if not beats(cards, last):
+            continue
+        gone = set(cards)
+        if danger or classify([c for c in hand if c not in gone]) or len(gone) == len(hand):
+            return sorted(cards)
+    return []
+
+
+def _lead(hold: _Hold) -> list[int]:
+    """A lead for a hand that is not one play: the lowest rank not kept whole, as a run of singles when one starts
+    there, else with the rest of its rank."""
+    free = sorted(r for r in hold.count if r not in hold.kept)
+    if not free:
+        # Only bombs and the rocket: the lowest bomb, else the rocket.
+        fours = sorted(r for r, n in hold.count.items() if n == 4)
+        return hold.cards[fours[0]] if fours else hold.cards[SMALL_JOKER] + hold.cards[BIG_JOKER]
+    low = free[0]
+    top = low
+    while top + 1 <= ACE and hold.count.get(top + 1) == 1:
+        top += 1
+    if hold.count[low] == 1 and top <= ACE and top - low + 1 >= 5:
+        return hold.take({r: 1 for r in range(low, top + 1)})
+    taken = {low: hold.count[low]}
+    if hold.count[low] == 3:
+        # A trio takes the lowest single below the 2s along, else the lowest such pair, else goes alone.
+        for width in (1, 2):
+            spare = sorted(r for r, n in hold.count.items()
+                           if n == width and r != low and r < TWO and r not in hold.kept)
+            if spare:
+                taken[spare[0]] = width
+                break
+    return hold.take(taken)

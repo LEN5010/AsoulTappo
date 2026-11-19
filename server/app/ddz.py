@@ -5,9 +5,9 @@ the cards are dealt and the three bid for the landlord's seat, play, and are pai
 live in memory; the deposits and the outcome live in the database (ddz_games), which pays every game at most once
 and hands the deposits of games a restart cut short back at startup.
 
-A seat belongs to a save, not to a connection: a member who leaves the room mid-game is played for (pass when it
-can, else its lowest card) and takes the seat again by joining the room with the same save. Two turns in a row left
-to run out put a seat on the same autopilot until its member turns it off.
+A seat belongs to a save, not to a connection: a member who leaves the room mid-game is played for (by
+ddz_rules.choose) and takes the seat again by joining the room with the same save. Two turns in a row left to run out
+put a seat on the same autopilot until its member turns it off; a turn played for bids nothing.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter:
 
@@ -34,6 +34,7 @@ shards the winners won, by member id.
 """
 from __future__ import annotations
 
+import logging
 import random
 import secrets
 import time
@@ -46,6 +47,8 @@ from . import ddz_rules as rules
 from .duel import Timers
 from .game import Game, GameError, day_of
 from .rooms import Peer, RoomManager
+
+log = logging.getLogger(__name__)
 
 # After a refusal or an unanswered invite, the inviter waits this long before inviting the same save again.
 RETRY_SEC = 30.0
@@ -421,8 +424,30 @@ class Tables:
         if table.phase == BID:
             await self._bid(table, table.turn, 0)
         else:
-            # Played for: pass when it may, else the lowest card.
-            await self._play(table, table.turn, [] if table.last is not None else [s.hand[0]])
+            await self._play(table, table.turn, self._choose(table, table.turn))
+
+    def _choose(self, table: Table, seat: int) -> list[int]:
+        """The cards played for [seat] (see ddz_rules.choose). Should the chooser fail or pick cards that may not be
+        played, the seat passes, or leads its lowest card, so the table never waits."""
+        s = table.seats[seat]
+        last = table.last[1] if table.last is not None else None
+        lord = table.landlord
+        partner_led = table.last is not None and lord not in (seat, table.last[0])
+        danger = any(len(x.hand) <= rules.DANGER for i, x in enumerate(table.seats)
+                     if i != seat and (seat == lord or i == lord))
+        try:
+            cards = rules.choose(s.hand, last, partner_led=partner_led, danger=danger)
+            if cards:
+                ok = (len(set(cards)) == len(cards) and set(cards) <= set(s.hand) and bool(rules.classify(cards))
+                      and (last is None or rules.beats(cards, last)))
+            else:
+                ok = last is not None
+            if ok:
+                return sorted(cards)
+            log.error("ddz: chose %s for hand %s on %s", cards, s.hand, last)
+        except Exception:
+            log.exception("ddz: choosing a play failed for hand %s on %s", s.hand, last)
+        return [] if last is not None else [s.hand[0]]
 
     def _set_auto(self, table: Table, seat: int, on: bool) -> None:
         s = table.seats[seat]

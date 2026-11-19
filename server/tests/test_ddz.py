@@ -557,27 +557,80 @@ def test_the_multiplier_stops_at_the_cap():
 # ------------------------------------------------------------------ autopilot
 def test_a_turn_left_to_run_out_is_played_for_and_the_second_turns_the_autopilot_on():
     async def go():
-        w = World(rng=Stacked(first=0))
+        w = World(rng=Stacked(deck_of([4, 4, 4, 6, 8, 8, 10, 10, 11, 12, 12, 13, 13, 14, 14, 15, 15], [3], []),
+                              first=0))
         tid = await w.dealt()
         t = w.t.by_id[tid]
         await w.timers.fire()  # seat 0 lets its bid run out: a pass
         assert w.last("ddz_bid")["seat"] == 0 and w.last("ddz_bid")["bid"] == 0 and not t.seats[0].auto
         await w.t.bid(w.peers[1], tid, 1)
         await w.t.bid(w.peers[2], tid, 0)
-        await w.t.play(w.peers[1], tid, [t.seats[1].hand[0]])
+        await w.t.play(w.peers[1], tid, [t.seats[1].hand[0]])  # the landlord leads a 3
         await w.t.play(w.peers[2], tid, [])
         assert [h.delay for h in w.timers.live()] == [CFG["playSec"]]
         await w.timers.fire()  # seat 0 again
         assert w.last("ddz_seat") == {"type": "ddz_seat", "table": tid, "seat": 0, "id": w.peers[0].id, "away": False,
                                       "auto": True}
-        assert w.last("ddz_play")["seat"] == 0 and w.last("ddz_play")["cards"] == []
         assert AUTO_AFTER == 2
-        # From now on its turns take a moment, and leading it plays its lowest card.
-        await w.t.play(w.peers[1], tid, [t.seats[1].hand[0]])
+        # Played for, it beats the 3 with its lowest single, keeping its pairs and its trio whole.
+        assert w.last("ddz_play")["seat"] == 0 and rules.ranks(w.last("ddz_play")["cards"]) == [6]
+        assert t.last == (0, w.last("ddz_play")["cards"])
+        # From now on its turns take a moment; leading, it plays its lowest trio with its lowest single along.
+        await w.t.play(w.peers[1], tid, [])
         await w.t.play(w.peers[2], tid, [])
         assert [h.delay for h in w.timers.live()] == [AUTO_SEC]
         await w.timers.fire()
+        assert w.last("ddz_play")["seat"] == 0 and rules.ranks(w.last("ddz_play")["cards"]) == [4, 4, 4, 11]
+        assert len(t.seats[0].hand) == 12
+    run(go())
+
+
+def test_a_seat_played_for_leads_a_run_and_passes_on_its_partner():
+    async def go():
+        w = World(rng=Stacked(deck_of([3, 4, 5, 6, 7, 8, 10, 10, 12, 13, 13, 14, 14, 14, 15, 15, 17], [11], [11, 11]),
+                              first=0))
+        tid = await w.playing(bids=(0, 3))
+        a, b, c = w.peers
+        t = w.t.by_id[tid]
+        assert t.landlord == 1
+        w.t.auto(a, tid, True)
+
+        def of(seat, r, n=1):
+            return [x for x in t.seats[seat].hand if rules.rank(x) == r][:n]
+
+        await w.t.play(b, tid, of(1, 11))
+        await w.t.play(c, tid, [])
+        await w.timers.fire()
+        # On the landlord's J: its one Q, not the big joker nor a card off a pair.
+        assert rules.ranks(w.last("ddz_play")["cards"]) == [12]
+        await w.t.play(b, tid, [])
+        await w.t.play(c, tid, [])
+        await w.timers.fire()
+        # Leading: the longest run of singles its lowest card starts, then its lowest pair.
+        assert rules.ranks(w.last("ddz_play")["cards"]) == [3, 4, 5, 6, 7, 8]
+        await w.t.play(b, tid, [])
+        await w.t.play(c, tid, [])
+        await w.timers.fire()
+        assert rules.ranks(w.last("ddz_play")["cards"]) == [10, 10]
+        await w.t.play(b, tid, [])
+        await w.t.play(c, tid, of(2, 11, 2))
+        await w.timers.fire()
+        # The other farmer's pair of Js stands, though its Ks would beat it.
         assert w.last("ddz_play")["seat"] == 0 and w.last("ddz_play")["cards"] == []
+    run(go())
+
+
+@pytest.mark.parametrize("broken", [lambda *a, **kw: 1 / 0, lambda hand, last, **kw: [99], lambda *a, **kw: []])
+def test_a_play_chosen_wrong_falls_back_and_the_table_goes_on(monkeypatch, broken):
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        t = w.t.by_id[tid]
+        w.t.auto(w.peers[0], tid, True)
+        monkeypatch.setattr(rules, "choose", broken)
+        low = t.seats[0].hand[0]
+        await w.timers.fire()
+        assert w.last("ddz_play")["seat"] == 0 and w.last("ddz_play")["cards"] == [low] and t.turn == 1
     run(go())
 
 
@@ -603,11 +656,12 @@ def test_the_member_takes_the_seat_back_with_its_full_time():
 
 def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat():
     async def go():
-        w = World(rng=Stacked(first=0))
+        w = World(rng=Stacked(deck_of([rules.BIG_JOKER], [], []), first=0))
         tid = await w.playing()
         a, b, c = w.peers
         t = w.t.by_id[tid]
-        await w.t.play(a, tid, [t.seats[0].hand[0]])
+        # The big joker: nothing but a bomb beats it, and the seat played for keeps its bombs.
+        await w.t.play(a, tid, [rules.BIG_JOKER + 36])
         await w.m.depart("r", b.id)
         await settle()
         assert w.last("ddz_seat") == {"type": "ddz_seat", "table": tid, "seat": 1, "id": b.id, "away": True,
