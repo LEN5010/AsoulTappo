@@ -411,8 +411,8 @@ it("names the side without an account when a server takes bets only from saves l
     texts[code] = r.lastError.value;
   }
   expect(texts).toEqual({
-    duel_account: "登录账号后才能猜拳", duel_target_account: "对方登录账号后才能猜拳",
-    ddz_account: "登录账号后才能斗地主", ddz_target_account: "三位都登录账号后才能斗地主",
+    duel_account: "登录 Asasfans 账号后才能猜拳", duel_target_account: "对方还没有登录 Asasfans 账号",
+    ddz_account: "登录 Asasfans 账号后才能斗地主", ddz_target_account: "有人还没有登录 Asasfans 账号",
   });
   expect(r.inRoom.value).toBe(true);
 });

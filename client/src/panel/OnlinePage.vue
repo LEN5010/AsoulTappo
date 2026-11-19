@@ -507,7 +507,7 @@ async function copy() {
       </div>
     </Modal>
     <Modal v-if="picking && duelConfig" :title="`猜拳 ${shownNick(picking)}`" heading @close="picking = null">
-      <p v-if="needAccount" class="picker picker-note">登录账号后才能猜拳</p>
+      <p v-if="needAccount" class="picker picker-note">登录 Asasfans 账号后才能猜拳</p>
       <StakeKeys v-else class="picker" :disabled="!canDuel(picking)" @pick="invite" />
     </Modal>
   </div>

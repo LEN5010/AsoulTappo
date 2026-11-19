@@ -257,5 +257,5 @@ it("drops the table with the room connection", async () => {
 
 it("says a game ended because a seat's save has no account", async () => {
   const { ddzReason } = await import("./ddz");
-  expect(ddzReason({ reason: "ddz_account" } as Parameters<typeof ddzReason>[0])).toBe("三位都登录账号后才能斗地主");
+  expect(ddzReason({ reason: "ddz_account" } as Parameters<typeof ddzReason>[0])).toBe("有人还没有登录 Asasfans 账号");
 });

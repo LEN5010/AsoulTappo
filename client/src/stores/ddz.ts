@@ -158,7 +158,7 @@ export function ddzLast(t: DdzState): { seat: number; cards: number[] } | null {
 
 const REASONS: Record<string, string> = {
   timeout: "没有等到回应", gone: "有人离开了", nobid: "三次都没人叫分，押金已退还", no_shards: "有人的碎片不够押金",
-  ddz_cap: "有人今天赢到上限了", ddz_locked: "有人还不能斗地主", ddz_account: "三位都登录账号后才能斗地主",
+  ddz_cap: "有人今天赢到上限了", ddz_locked: "有人还不能斗地主", ddz_account: "有人还没有登录 Asasfans 账号",
   error: "没能开局",
 };
 /** Why a table ended with nothing won, in words. */

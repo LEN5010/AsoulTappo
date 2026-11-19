@@ -317,9 +317,9 @@ function errorText(code: string, message: string): string {
     case "duel_target_locked":
       return "对方还不能猜拳";
     case "duel_account":
-      return "登录账号后才能猜拳";
+      return "登录 Asasfans 账号后才能猜拳";
     case "duel_target_account":
-      return "对方登录账号后才能猜拳";
+      return "对方还没有登录 Asasfans 账号";
     case "duel_busy":
       return "你正在猜拳";
     case "duel_target_busy":
@@ -339,9 +339,9 @@ function errorText(code: string, message: string): string {
     case "ddz_target_locked":
       return "有人还不能斗地主";
     case "ddz_account":
-      return "登录账号后才能斗地主";
+      return "登录 Asasfans 账号后才能斗地主";
     case "ddz_target_account":
-      return "三位都登录账号后才能斗地主";
+      return "有人还没有登录 Asasfans 账号";
     case "ddz_busy":
       return "你已经在牌桌上";
     case "ddz_target_busy":
