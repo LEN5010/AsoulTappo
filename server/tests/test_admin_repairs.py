@@ -76,12 +76,14 @@ def test_a_grant_goes_to_every_save_but_the_excluded_once_per_key(admin_env):
     body = {"shards": 6400, "key": "2026-11-19-40draws", "exclude": [ids[2], "0" * 16], "reason": "补发"}
     r = c.post("/admin/grants", json=body, headers=KEY)
     assert r.status_code == 200
-    assert r.json() == {"shards": 6400, "saves": 2, "skipped": 1, "key": "2026-11-19-40draws"}
+    assert r.json() == {"shards": 6400, "saves": 2, "skipped": 1, "key": "2026-11-19-40draws", "minTaps": 1,
+                        "dryRun": False}
     assert [g.store.get_player(pid, g.now())["shards"] - shards[pid] for pid in ids] == [6400, 6400, 0]
     assert ledger(g, ids[0])["admin"] == (6405, 2) and ledger(g, ids[1])["admin"] == (6400, 1)
     assert "admin" not in ledger(g, ids[2])
     entry = log_entries(c, "grant_all")[0]
-    assert entry["detail"] == r.json() and entry["reason"] == "补发" and entry["player"] is None
+    assert entry["detail"] == {k: v for k, v in r.json().items() if k != "dryRun"}
+    assert entry["reason"] == "补发" and entry["player"] is None
 
     # the same key again, even with other numbers, gives nothing
     r = c.post("/admin/grants", json={**body, "shards": 1, "exclude": []}, headers=KEY)
@@ -92,6 +94,39 @@ def test_a_grant_goes_to_every_save_but_the_excluded_once_per_key(admin_env):
     assert c.post("/admin/grants", json={**body, "key": " 2026-11-19-40draws "}, headers=KEY).status_code == 409
 
     assert c.post("/admin/grants", json={"shards": 10, "key": "another"}, headers=KEY).json()["saves"] == 3
+
+
+def test_a_grant_leaves_out_saves_below_min_taps_and_a_dry_run_only_counts(admin_env):
+    c, g, *_ = admin_env
+    for n in range(2):
+        play(c, guest(n))  # 30 taps each
+    # made and never played, like a save a script made in bulk
+    c.get("/api/me", headers=guest(9))
+    ids = [pid_of(guest(n)) for n in (0, 1, 9)]
+    shards = {pid: g.store.get_player(pid, g.now())["shards"] for pid in ids}
+
+    def gained():
+        return [g.store.get_player(pid, g.now())["shards"] - shards[pid] for pid in ids]
+
+    # a dry run counts, writes nothing and leaves the key unused
+    for min_taps, saves in ((None, 2), (0, 3), (30, 2), (31, 0)):
+        body = {"shards": 100, "key": "k", "dryRun": True, **({"minTaps": min_taps} if min_taps is not None else {})}
+        out = c.post("/admin/grants", json=body, headers=KEY).json()
+        assert out == {"shards": 100, "saves": saves, "skipped": 0, "key": "k",
+                       "minTaps": 1 if min_taps is None else min_taps, "dryRun": True}
+    assert gained() == [0, 0, 0] and log_entries(c, "grant_all") == []
+    assert all("admin" not in ledger(g, pid) for pid in ids)
+
+    # by default the save never played gets nothing
+    out = c.post("/admin/grants", json={"shards": 100, "key": "k"}, headers=KEY).json()
+    assert out["saves"] == 2 and out["minTaps"] == 1 and gained() == [100, 100, 0]
+    assert log_entries(c, "grant_all")[0]["detail"]["minTaps"] == 1
+    # a used key is refused in a dry run as well
+    r = c.post("/admin/grants", json={"shards": 100, "key": "k", "dryRun": True}, headers=KEY)
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "grant_done"
+    out = c.post("/admin/grants", json={"shards": 7, "key": "all", "minTaps": 0}, headers=KEY).json()
+    assert out["saves"] == 3 and gained() == [107, 107, 7]
+    assert c.post("/admin/grants", json={"shards": 7, "key": "x", "minTaps": -1}, headers=KEY).status_code == 422
 
 
 def test_a_grant_takes_positive_shards_only_and_hides_without_the_key(admin_env):

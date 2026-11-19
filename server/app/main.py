@@ -1118,6 +1118,10 @@ class GrantBody(BaseModel):
     key: str = Field(min_length=1, max_length=64)
     # Save ids left out, e.g. frozen saves.
     exclude: list[str] = Field(default_factory=list, max_length=100_000)
+    # Only saves with at least this many taps are given to; the default leaves out saves never played.
+    minTaps: int = Field(default=1, ge=0)
+    # Counts the saves it would give to, writes nothing and leaves the key unused.
+    dryRun: bool = False
     reason: str = Field(default="", max_length=200)
 
     @field_validator("key")
@@ -1147,8 +1151,9 @@ def admin_reset_save(player: str, body: ReasonBody | None = None, who: str = Dep
 
 @app.post("/admin/grants", dependencies=[Depends(admin)])
 def admin_grant(body: GrantBody, who: str = Depends(actor)) -> dict:
-    """Gives [shards] to every save except [exclude], once per [key]."""
-    return _repair(game.admin_grant_all, body.shards, body.key, body.exclude, who, body.reason.strip())
+    """Gives [shards] to every save with [minTaps] taps or more except [exclude], once per [key]."""
+    return _repair(game.admin_grant_all, body.shards, body.key, body.exclude, who, body.reason.strip(), body.minTaps,
+                   body.dryRun)
 
 
 @app.post("/admin/saves/empty", dependencies=[Depends(admin)])

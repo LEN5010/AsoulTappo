@@ -1074,18 +1074,22 @@ class Game:
             st.add_admin_log(now, actor, "reset", pid, json.dumps(detail), reason)
         return detail
 
-    def admin_grant_all(self, shards: int, key: str, exclude: list[str], actor: str = "",
-                        reason: str = "") -> dict[str, Any]:
-        """Gives [shards] to every save except [exclude] in one transaction. [key] names the grant: a second grant
-        under the same key is refused, so a repeated submit pays no one twice."""
+    def admin_grant_all(self, shards: int, key: str, exclude: list[str], actor: str = "", reason: str = "",
+                        min_taps: int = 1, dry_run: bool = False) -> dict[str, Any]:
+        """Gives [shards] to every save with at least [min_taps] taps except [exclude] in one transaction. The default
+        of one tap leaves out saves never played, such as those a script made in bulk and admin_empty_saves emptied:
+        their tokens would turn a grant straight into draws. [key] names the grant: a second grant under the same key
+        is refused, so a repeated submit pays no one twice. [dry_run] counts and writes nothing; a used key is refused
+        there too, so the count is of a grant that can still be given."""
         with self.store.transaction() as st:
             now = self.now()
-            given = st.grant_all(day_of(now), shards, exclude, f"grant:{key}", now)
+            given = st.grant_all(day_of(now), shards, exclude, min_taps, f"grant:{key}", now, dry_run)
             if given is None:
                 raise GameError("grant_done", "这个发放已经发过了")
-            detail = {"shards": shards, "saves": given[0], "skipped": given[1], "key": key}
-            st.add_admin_log(now, actor, "grant_all", "", json.dumps(detail, ensure_ascii=False), reason)
-        return detail
+            detail = {"shards": shards, "saves": given[0], "skipped": given[1], "key": key, "minTaps": min_taps}
+            if not dry_run:
+                st.add_admin_log(now, actor, "grant_all", "", json.dumps(detail, ensure_ascii=False), reason)
+        return {**detail, "dryRun": dry_run}
 
     def admin_empty_saves(self, created_from: float, created_to: float, dry_run: bool = True,
                           expect: int | None = None, actor: str = "", reason: str = "") -> dict[str, Any]:

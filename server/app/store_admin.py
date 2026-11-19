@@ -122,23 +122,30 @@ class AdminStore(_StoreState):
             self._commit()
         return items, pools
 
-    def grant_all(self, day: str, shards: int, exclude: list[str], name: str, ts: float) -> tuple[int, int] | None:
-        """Adds [shards] to every save not in [exclude], each with an 'admin' ledger row of [day], and records [name] in
-        migrations so the same grant is never given twice. None when [name] was given before. Returns the saves given
-        to and how many of [exclude] are existing saves."""
+    def grant_all(self, day: str, shards: int, exclude: list[str], min_taps: int, name: str, ts: float,
+                  dry_run: bool = False) -> tuple[int, int] | None:
+        """Adds [shards] to every save with at least [min_taps] taps that is not in [exclude], each with an 'admin'
+        ledger row of [day], and records [name] in migrations so the same grant is never given twice. None when [name]
+        was given before. Returns the saves given to and how many of [exclude] are existing saves; [dry_run] counts
+        them and writes nothing, [name] included."""
         excluded = json.dumps(sorted(set(exclude)))
+        given = f"id NOT IN {_IDS} AND taps_total >= ?"
         with self._lock:
             if self._db.execute("SELECT 1 FROM migrations WHERE name=?", (name,)).fetchone():
                 return None
             skipped = self._db.execute(f"SELECT COUNT(*) FROM players WHERE id IN {_IDS}", (excluded,)).fetchone()[0]
-            saves = self._db.execute(f"UPDATE players SET shards = shards + ? WHERE id NOT IN {_IDS}",
-                                     (shards, excluded)).rowcount
+            if dry_run:
+                saves = self._db.execute(f"SELECT COUNT(*) FROM players WHERE {given}",
+                                         (excluded, min_taps)).fetchone()[0]
+                return saves, skipped
+            saves = self._db.execute(f"UPDATE players SET shards = shards + ? WHERE {given}",
+                                     (shards, excluded, min_taps)).rowcount
             # The WHERE keeps SQLite from reading ON CONFLICT as part of the SELECT's join.
             self._db.execute(
                 f"INSERT INTO shard_ledger (day, player_id, source, amount, count) "
-                f"SELECT ?, id, 'admin', ?, 1 FROM players WHERE id NOT IN {_IDS} "
+                f"SELECT ?, id, 'admin', ?, 1 FROM players WHERE {given} "
                 f"ON CONFLICT(day, player_id, source) DO UPDATE SET "
-                f"amount = amount + excluded.amount, count = count + excluded.count", (day, shards, excluded))
+                f"amount = amount + excluded.amount, count = count + excluded.count", (day, shards, excluded, min_taps))
             self._db.execute("INSERT INTO migrations (name, at) VALUES (?, ?)", (name, ts))
             self._commit()
         return saves, skipped
