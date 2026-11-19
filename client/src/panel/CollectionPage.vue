@@ -300,7 +300,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
         <p class="detail-sub">{{ selectedItem.group }}</p>
         <small v-if="actionNote" class="note">{{ actionNote }}</small>
         <template v-if="selectedItemOwned">
-          <p class="held">已拥有<template v-if="selectedItemCount > 1"> ×{{ selectedItemCount }}</template></p>
+          <p v-if="!STANDALONE" class="held">已拥有<template v-if="selectedItemCount > 1"> ×{{ selectedItemCount }}</template></p>
           <div v-if="selectedItem.kind === 'emote'" class="buttons">
             <button type="button" class="ui-btn" @click="toggleFav(selectedItem)">
               {{ settings.favorites.includes(selectedItem.ref) ? "移出快捷表情" : "装入快捷表情" }}

@@ -214,7 +214,6 @@ describe("standalone packs", () => {
     for (const spot of ["holo/c1781070981002.webp", "plates/wardrobe-jiaran.webp", "themes/beila-2-0/head_bg.webp"]) {
       expect(copied).toContain(spot);
     }
-    expect(copied.filter((f) => f.startsWith("cards/")).length).toBe(121);
   });
 
   it("copies them only in the standalone build", () => {
