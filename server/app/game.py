@@ -1092,16 +1092,19 @@ class Game:
         return {**detail, "dryRun": dry_run}
 
     def admin_empty_saves(self, created_from: float, created_to: float, dry_run: bool = True,
-                          expect: int | None = None, actor: str = "", reason: str = "") -> dict[str, Any]:
-        """Empties the saves created in [created_from, created_to) that were never used (Store.unused_saves): what
-        they drew and their shards go, the save rows and their update reward claims stay. [dry_run] only counts them
-        and sums their ledger; a real run needs [expect] to match that count, so it empties what was looked at."""
+                          expect: int | None = None, actor: str = "", reason: str = "", shards: int | None = None,
+                          drawn: int | None = None) -> dict[str, Any]:
+        """Empties the saves created in [created_from, created_to) that were never used (Store.unused_saves), narrowed
+        to exactly [shards] held and [drawn] draws made where given: what they drew and their shards go, the save rows
+        and their update reward claims stay. [dry_run] only counts them, sums their ledger and lists the most common
+        (shards, drawn) pairs among them; a real run needs [expect] to match that count, so it empties what was looked
+        at."""
         with self.store.transaction() as st:
-            pids = st.unused_saves(created_from, created_to)
+            pids = st.unused_saves(created_from, created_to, shards, drawn)
             out: dict[str, Any] = {"saves": len(pids), "createdFrom": created_from, "createdTo": created_to,
-                                   "ledger": st.ledger_totals(pids)}
+                                   "shards": shards, "drawn": drawn, "ledger": st.ledger_totals(pids)}
             if dry_run:
-                return {**out, "dryRun": True}
+                return {**out, "groups": st.unused_groups(created_from, created_to, shards, drawn), "dryRun": True}
             if expect != len(pids):
                 raise GameError("empty_changed", f"现在选中 {len(pids)} 份存档，和 expect 不一致")
             out.update(st.empty_saves(pids))

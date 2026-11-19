@@ -150,12 +150,36 @@ class AdminStore(_StoreState):
             self._commit()
         return saves, skipped
 
-    def unused_saves(self, created_from: float, created_to: float) -> list[str]:
-        """Saves created in [created_from, created_to) that were never used (see _UNUSED)."""
+    @staticmethod
+    def _unused_where(created_from: float, created_to: float, shards: int | None,
+                      drawn: int | None) -> tuple[str, tuple[Any, ...]]:
+        """_UNUSED narrowed to exactly [shards] held and [drawn] draws made, where given."""
+        where, args = _UNUSED, (created_from, created_to)
+        if shards is not None:
+            where, args = f"{where} AND shards = ?", (*args, shards)
+        if drawn is not None:
+            where, args = f"{where} AND drawn_total = ?", (*args, drawn)
+        return where, args
+
+    def unused_saves(self, created_from: float, created_to: float, shards: int | None = None,
+                     drawn: int | None = None) -> list[str]:
+        """Saves created in [created_from, created_to) that were never used (see _UNUSED), holding exactly [shards]
+        and having drawn exactly [drawn] times where those are given."""
+        where, args = self._unused_where(created_from, created_to, shards, drawn)
         with self._lock:
-            rows = self._db.execute(f"SELECT id FROM players WHERE {_UNUSED} ORDER BY id",
-                                    (created_from, created_to)).fetchall()
+            rows = self._db.execute(f"SELECT id FROM players WHERE {where} ORDER BY id", args).fetchall()
         return [r[0] for r in rows]
+
+    def unused_groups(self, created_from: float, created_to: float, shards: int | None = None,
+                      drawn: int | None = None, limit: int = 10) -> list[dict[str, int]]:
+        """The most common (shards, draws made) pairs among the saves unused_saves picks, with how many saves each:
+        one batch made by a script shows as one large group, real players as many small ones."""
+        where, args = self._unused_where(created_from, created_to, shards, drawn)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT shards, drawn_total, COUNT(*) AS n FROM players WHERE {where} "
+                f"GROUP BY shards, drawn_total ORDER BY n DESC, shards, drawn_total LIMIT ?", (*args, limit)).fetchall()
+        return [{"shards": r[0], "drawn": r[1], "saves": r[2]} for r in rows]
 
     def ledger_totals(self, pids: list[str]) -> dict[str, dict[str, int]]:
         """The shard ledger of the saves [pids] summed per source: {source: {amount, count}}."""
@@ -168,7 +192,7 @@ class AdminStore(_StoreState):
     def empty_saves(self, pids: list[str]) -> dict[str, Any]:
         """Deletes the items, drops, limited pool draws and ledger rows of the saves [pids] and zeroes their shards and
         pity. The save rows stay, and so do their update reward claims, so a token cannot claim a reward again.
-        Returns the shards zeroed and the rows deleted per table."""
+        Returns the shards zeroed (shardsZeroed) and the rows deleted per table."""
         ids = json.dumps(pids)
         with self._lock:
             shards = self._db.execute(f"SELECT COALESCE(SUM(shards), 0) FROM players WHERE id IN {_IDS}",
@@ -179,7 +203,7 @@ class AdminStore(_StoreState):
             self._db.execute(f"UPDATE players SET shards=0, draw_pity=0, skin_pity=0 WHERE id IN {_IDS}", (ids,))
             self._counts.clear()
             self._commit()
-        return {"shards": shards, "deleted": deleted}
+        return {"shardsZeroed": shards, "deleted": deleted}
 
     # --- admin analysis (days are China Standard Time dates)
     def retention(self, since: str, offset_seconds: int, after: tuple[int, ...]) -> list[dict[str, Any]]:

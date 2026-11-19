@@ -1140,6 +1140,9 @@ class EmptySavesBody(BaseModel):
     dryRun: bool = True
     # The count a dry run gave; a real run is refused unless it still matches.
     expect: int | None = Field(default=None, ge=0)
+    # Narrow to saves holding exactly this many shards and having drawn exactly this many times.
+    shards: int | None = Field(default=None, ge=0)
+    drawn: int | None = Field(default=None, ge=0)
     reason: str = Field(default="", max_length=200)
 
 
@@ -1162,7 +1165,7 @@ def admin_empty_saves(body: EmptySavesBody, who: str = Depends(actor)) -> dict:
     if body.createdTo <= body.createdFrom:
         raise HTTPException(422, {"code": "bad_range", "message": "createdTo 要晚于 createdFrom"})
     return _repair(game.admin_empty_saves, body.createdFrom, body.createdTo, body.dryRun, body.expect, who,
-                   body.reason.strip())
+                   body.reason.strip(), body.shards, body.drawn)
 
 
 @app.get("/api/collection")

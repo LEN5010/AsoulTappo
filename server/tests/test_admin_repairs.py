@@ -182,8 +182,15 @@ def test_emptying_unused_saves_counts_first_then_needs_the_count(admin_env):
     before = {pid: g.store.get_player(pid, g.now()) for pid in map(pid_of, kept + [late])}
     held = {pid: g.store.owned(pid) for pid in before}
 
+    pairs = {}
+    for pid in ids:
+        p = g.store.get_player(pid, g.now())
+        pairs[(p["shards"], p["drawn_total"])] = pairs.get((p["shards"], p["drawn_total"]), 0) + 1
+    groups = [{"shards": sh, "drawn": dr, "saves": n}
+              for (sh, dr), n in sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0]))]
     dry = c.post("/admin/saves/empty", json=rng, headers=KEY).json()
-    assert dry == {"saves": 3, "createdFrom": start - 1, "createdTo": start + 60, "ledger": totals, "dryRun": True}
+    assert dry == {"saves": 3, "createdFrom": start - 1, "createdTo": start + 60, "shards": None, "drawn": None,
+                   "ledger": totals, "groups": groups, "dryRun": True}
     assert totals["starter"] == {"amount": 4800, "count": 3} and totals["draw"]["count"] == 6
     assert all(g.store.owned(pid) for pid in ids) and log_entries(c, "cleanup_bulk") == []
 
@@ -199,7 +206,7 @@ def test_emptying_unused_saves_counts_first_then_needs_the_count(admin_env):
     r = c.post("/admin/saves/empty", json={**rng, "dryRun": False, "expect": 3, "reason": "bulk"}, headers=KEY)
     assert r.status_code == 200
     out = r.json()
-    assert out["saves"] == 3 and out["dryRun"] is False and out["ledger"] == totals and out["shards"] == shards
+    assert out["saves"] == 3 and out["dryRun"] is False and out["ledger"] == totals and out["shardsZeroed"] == shards
     assert out["deleted"] == {"items": items, "drops": drops, "bannerDraws": 1, "shardLedger": rows}
 
     for pid in ids:
@@ -216,7 +223,48 @@ def test_emptying_unused_saves_counts_first_then_needs_the_count(admin_env):
     assert entry["reason"] == "bulk" and entry["detail"] == {k: v for k, v in out.items() if k != "dryRun"}
     # the emptied saves still match, with nothing left to take
     again = c.post("/admin/saves/empty", json={**rng, "dryRun": False, "expect": 3}, headers=KEY).json()
-    assert again["ledger"] == {} and again["shards"] == 0 and set(again["deleted"].values()) == {0}
+    assert again["ledger"] == {} and again["shardsZeroed"] == 0 and set(again["deleted"].values()) == {0}
+
+
+def test_emptying_narrows_to_exact_shards_and_draws_and_groups_the_selection(admin_env):
+    c, g, *_ = admin_env
+    start = g.now()
+
+    def made(n, shards, drawn):
+        pid = pid_of(guest(n))
+        g.store.get_player(pid, start)
+        g.store.update_player(pid, shards=shards, drawn_total=drawn)
+        return pid
+
+    batch = [made(n, 142, 47) for n in range(3)]
+    other = [made(10, 142, 10), made(11, 500, 47)]
+    rng = {"createdFrom": start - 1, "createdTo": start + 1}
+    dry = c.post("/admin/saves/empty", json=rng, headers=KEY).json()
+    assert dry["saves"] == 5 and dry["groups"] == [{"shards": 142, "drawn": 47, "saves": 3},
+                                                   {"shards": 142, "drawn": 10, "saves": 1},
+                                                   {"shards": 500, "drawn": 47, "saves": 1}]
+    assert c.post("/admin/saves/empty", json={**rng, "shards": 142}, headers=KEY).json()["saves"] == 4
+    assert c.post("/admin/saves/empty", json={**rng, "drawn": 47}, headers=KEY).json()["saves"] == 4
+    exact = {**rng, "shards": 142, "drawn": 47}
+    dry = c.post("/admin/saves/empty", json=exact, headers=KEY).json()
+    assert (dry["saves"], dry["shards"], dry["drawn"]) == (3, 142, 47)
+    assert dry["groups"] == [{"shards": 142, "drawn": 47, "saves": 3}]
+    assert c.post("/admin/saves/empty", json={**exact, "dryRun": False, "expect": 5}, headers=KEY).status_code == 409
+
+    out = c.post("/admin/saves/empty", json={**exact, "dryRun": False, "expect": 3}, headers=KEY).json()
+    assert (out["saves"], out["shards"], out["drawn"], out["shardsZeroed"]) == (3, 142, 47, 3 * 142)
+    assert "groups" not in out
+    assert [g.store.get_player(pid, start)["shards"] for pid in batch] == [0, 0, 0]
+    assert [g.store.get_player(pid, start)["shards"] for pid in other] == [142, 500]
+    detail = log_entries(c, "cleanup_bulk")[0]["detail"]
+    assert (detail["shards"], detail["drawn"], detail["saves"]) == (142, 47, 3)
+
+    # at most ten groups, the largest first
+    for n in range(20, 32):
+        made(n, 1000 + n, 1)
+    groups = c.post("/admin/saves/empty", json=rng, headers=KEY).json()["groups"]
+    assert len(groups) == 10 and groups[0] == {"shards": 0, "drawn": 47, "saves": 3}
+    assert c.post("/admin/saves/empty", json={**rng, "drawn": -1}, headers=KEY).status_code == 422
 
 
 def test_emptying_needs_a_range_and_the_key(admin_env):
