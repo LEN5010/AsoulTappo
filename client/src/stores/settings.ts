@@ -132,6 +132,11 @@ export interface Settings {
   termsAgreed: string;
   /** App version whose free-of-charge statement was last confirmed ("" = never); asked again by every new version. */
   statementSeen: string;
+  /**
+   * The standalone edition's own: app version whose standalone statement was last confirmed ("" = never). Kept apart
+   * from statementSeen, so the two editions never confirm for each other.
+   */
+  standaloneStatementSeen: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
@@ -233,6 +238,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureH: 412,
   termsAgreed: "",
   statementSeen: "",
+  standaloneStatementSeen: "",
   promoSeen: false,
   skinNotes: {},
 };

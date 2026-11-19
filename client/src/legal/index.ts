@@ -19,6 +19,13 @@ export const STATEMENT = [
   "如果你是付费获得本软件的，请向卖家要求退款。",
 ];
 
+/**
+ * The standalone edition's statement (src/edition.ts), confirmed once per app version in place of the texts and the
+ * statement above, which are about the server. A draft: replace the text here.
+ */
+export const STANDALONE_STATEMENT =
+  "AsoulTappo 单机版是非官方的免费软件，不连接任何服务器，数据只保存在本机。A-SOUL 的标志、角色形象和视频版权归 A-SOUL 所有。";
+
 export type DocName = "terms" | "privacy";
 export const DOCS: Record<DocName, string> = { terms, privacy };
 
