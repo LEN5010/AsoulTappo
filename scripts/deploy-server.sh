@@ -4,16 +4,23 @@
 #   scripts/deploy-server.sh <host> trial   <commit> [--manifest]  upload, build the image, try it on port 8011
 #   scripts/deploy-server.sh <host> switch  <commit>               back up, swap the container, check
 #   scripts/deploy-server.sh <host> economy <file> [--apply]       show the change to the economy file; --apply installs it
+#   scripts/deploy-server.sh <host> prune [--apply]                list old backups and builds in /root; --apply deletes them
 #
-# trial never touches the running container. switch needs the image and build directory trial made.
+# trial never touches the running container. switch needs the image and build directory trial made. prune keeps the
+# newest 5 of each kind and anything from the last 7 days.
 # A change to server/requirements.txt or the asset packs other than the manifest needs a full image build, which
 # this script does not do.
 set -euo pipefail
 
-usage() { sed -n 4,6p "$0" | sed 's/^# //'; exit 2; }
-[ $# -ge 3 ] || usage
-HOST=$1 MODE=$2 ARG=$3
-shift 3
+usage() { sed -n 4,7p "$0" | sed 's/^# //'; exit 2; }
+[ $# -ge 2 ] || usage
+HOST=$1 MODE=$2 ARG=
+shift 2
+if [ "$MODE" != prune ]; then
+  [ $# -ge 1 ] || usage
+  ARG=$1
+  shift
+fi
 FLAG=${1:-}
 
 case $MODE in
@@ -31,6 +38,10 @@ case $MODE in
     SHA=$(date -u +%Y%m%dT%H%M%SZ)
     scp -q "$ARG" "$HOST:/root/economy-$SHA-new.json"
     ;;
+  prune)
+    [ -z "$FLAG" ] || [ "$FLAG" = --apply ] || usage
+    SHA=none
+    ;;
   *) usage ;;
 esac
 
@@ -41,6 +52,24 @@ BASE=/opt/asoultappo DB=/opt/asoultappo/data/asoultappo.db CFG=/opt/asoultappo/c
 D=/root/asoultappo-build-$SHA TS=$(date -u +%Y%m%dT%H%M%SZ)
 sq() { sqlite3 -cmd ".timeout 30000" "$@"; }
 code() { curl -s -m 5 -o /dev/null -w '%{http_code}' "$1"; }
+
+# A copy of the live database. sqlite3's .backup copies a few pages at a time and starts over whenever the server
+# writes in between, which under load kept a 354 MB copy going for minutes. Connection.backup() with its default
+# pages=-1 copies every page in one step from one read snapshot; in WAL mode the server's writes go on meanwhile and
+# cannot restart it. A failure exits nonzero, which stops this script.
+backup_db() { # source target
+  python3 - "$1" "$2" <<'PY'
+import os, sqlite3, sys
+# connect() would make an empty database at a wrong path and copy that.
+if not os.path.isfile(sys.argv[1]):
+    sys.exit(f"no database at {sys.argv[1]}")
+src = sqlite3.connect(sys.argv[1], timeout=30)
+dst = sqlite3.connect(sys.argv[2])
+src.backup(dst)
+dst.close()
+src.close()
+PY
+}
 
 # The server reaches the main site at https://len5010.top/...; this host's own public address is slow to reach from
 # itself, so the name resolves to the local nginx instead (same certificate, milliseconds instead of seconds).
@@ -75,7 +104,7 @@ trial)
   fi
   T=/root/asoultappo-trial-$SHA
   rm -rf $T && mkdir -p $T/data
-  sq $DB ".backup $T/data/asoultappo.db"
+  backup_db $DB $T/data/asoultappo.db
   chown -R www:www $T
   run_server asoultappo-trial 8011 $T/data $D/server/app $CFG "$SHA"
   sleep 6
@@ -90,7 +119,7 @@ switch)
   docker image inspect "asoultappo-server:$SHA" >/dev/null && [ -d $D/server/app ] || { echo "run trial for $SHA first" >&2; exit 1; }
   [ "$LIVE" != "$SHA" ] || { echo "already running $SHA" >&2; exit 1; }
   BAK=/root/asoultappo-$TS-before-$SHA.db APPBAK=/root/asoultappo-app-$TS-$LIVE
-  sq $DB ".backup $BAK"
+  backup_db $DB $BAK
   echo "players $(sqlite3 $BAK 'select count(*) from players')"
   cp -a $BASE/app $APPBAK
   docker stop -t 30 asoultappo >/dev/null && docker rename asoultappo "asoultappo-$LIVE"
@@ -122,12 +151,39 @@ walk(json.load(open(sys.argv[1])), json.load(open(sys.argv[2])))
 EOF
   if [ "$FLAG" != --apply ]; then echo "not applied; rerun with --apply"; rm -f $NEW; exit 0; fi
   cp -a $CFG/economy.json /root/economy-$SHA-before.json
-  sq $DB ".backup /root/asoultappo-$SHA-before-economy.db"
+  backup_db $DB /root/asoultappo-$SHA-before-economy.db
   install -o www -g www -m 644 $NEW $CFG/economy.json && rm -f $NEW
   echo "backups /root/economy-$SHA-before.json /root/asoultappo-$SHA-before-economy.db"
   docker restart -t 30 asoultappo >/dev/null
   sleep 6
   check 8000 asoultappo
+  ;;
+prune)
+  # What switch and economy back up, and the build directories trial makes. Each kind keeps its newest KEEP; of the
+  # rest, what is older than DAYS days goes. The patterns do not overlap, so an entry is counted in one kind only.
+  # Age is the inode change time: cp -a keeps the copied directory's or file's own modification time, which can be
+  # much older than the backup.
+  KEEP=5 DAYS=7
+  CUTOFF=$(( $(date +%s) - DAYS * 86400 ))
+  verb="would delete"
+  [ "$FLAG" != --apply ] || verb=deleted
+  for kind in db app build economy; do
+    case $kind in
+      db) args=(-type f -name 'asoultappo-*-before-*.db' ! -name 'asoultappo-app-*' ! -name 'asoultappo-build-*') ;;
+      app) args=(-type d -name 'asoultappo-app-*') ;;
+      build) args=(-type d -name 'asoultappo-build-*') ;;
+      economy) args=(-type f -name 'economy-*-before.json') ;;
+    esac
+    find /root -mindepth 1 -maxdepth 1 "${args[@]}" -printf '%C@ %p\n' | sort -rn | tail -n +$((KEEP + 1)) |
+      while read -r made path; do
+        [ "${made%.*}" -lt "$CUTOFF" ] || continue
+        echo "$verb $kind $(du -sh -- "$path" | cut -f1) $path"
+        [ "$FLAG" = --apply ] || continue
+        # A database copy may have its WAL files next to it.
+        rm -rf -- "$path" "$path-wal" "$path-shm"
+      done
+  done
+  [ "$FLAG" = --apply ] || echo "nothing deleted; rerun with --apply"
   ;;
 esac
 REMOTE
