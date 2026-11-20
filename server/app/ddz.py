@@ -27,7 +27,8 @@ the save that waited longest in the queue at the table's stake, one seat at a ti
 made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
 the start: one that leaves the table while the deposits are being taken, or leaves the room and is not back once they
-are, gives them back and stands up (the opener puts the table away), as decided once they are taken. After a game, those who ask for another keep their seats; when the opener did and someone did
+are, gives them back and stands up (the opener puts the table away), as decided once they are taken; its save sits
+nowhere else (ddz_busy) until they are back. After a game, those who ask for another keep their seats; when the opener did and someone did
 not (or left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited
 one does.
 
@@ -932,9 +933,10 @@ class Tables:
     async def _take(self, table: Table) -> None:
         """Takes the deposits of an open table in one transaction (Bank.try_start) and deals. A member that stood up,
         or left the room and is not back, by the time the transaction is done stood up before the start: what was
-        taken goes back and the table waits again without it (_let_go). Who that is is settled then, once; one back
-        later finds its seat given up. Should this task be cancelled, the table goes and the transaction, which runs
-        on, hands back what it took (_Start)."""
+        taken goes back and the table waits again without it (_let_go). Who that is is settled then, once (_here);
+        one back later finds its seat given up, and its save is held until what was taken is back. Should this task be
+        cancelled, the table goes and the transaction, which runs on, hands back what it took (_Start); what a stop
+        of the server leaves taken, its next start hands back (Bank.refund_open)."""
         start = _Start(self.bank, [s.token for s in table.seats], table.base)
         loop = asyncio.get_running_loop()
         try:
@@ -954,7 +956,7 @@ class Tables:
             if row is not None:
                 await self._refund(row)
             return
-        gone = [i for i, s in enumerate(table.seats) if s.peer is None or s.quit]
+        gone = [i for i, s in enumerate(table.seats) if not self._here(table, s)]
         if row is not None and not gone:
             table.row = row
             for s in table.seats:
@@ -973,12 +975,23 @@ class Tables:
                 raise
         self._let_go(table, codes if row is None else [None, None, None])
 
+    def _here(self, table: Table, s: Seat) -> bool:
+        """Whether the member of seat [s] of an open table is there for its start: it did not stand up, and its
+        connection is still in the room (any room for a seat of the queue). A connection that left is out of the room
+        before the tables hear of it (departed), which may be later."""
+        p = s.peer
+        if p is None or s.quit or not p.active:
+            return False
+        if s.roam:
+            return True
+        room = self.manager.rooms.get(table.room or "")
+        return room is not None and room.peers.get(p.id) is p
+
     def _give_up(self, table: Table, seat: int) -> None:
-        """Seat [seat] of an open table being started is given up: its save is free at once, and its member, back in
-        the room, does not take it again."""
+        """Seat [seat] of an open table being started is given up: its member is off it and, back in the room, does
+        not take it again (joined). The save stays held (by_save) until what may have been taken from it is back; the
+        table lets it go then (_let_go)."""
         s = table.seats[seat]
-        if self.by_save.get(s.token) is table:
-            del self.by_save[s.token]
         s.peer, s.quit = None, True
 
     async def _refund(self, row: int) -> None:
@@ -1430,7 +1443,9 @@ class Tables:
         if table is not None and table.phase in (OPEN, STARTING, BID, PLAY):
             # A seat of the queue is taken again from any room, on a client that queues; any other in the table's room,
             # on a client that opens tables when the table is an open one.
-            mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked and (
+            # A seat given up while the deposits are taken stays given up.
+            mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked
+                    and not (s.quit and table.phase == STARTING) and (
                 peer.ddz_match if table.match or s.roam
                 else (peer.ddz_match if table.open else peer.ddz) and table.room == room_id)]
             seat = next((i for i in mine if table.seats[i].peer is None), None)

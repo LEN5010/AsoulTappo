@@ -854,6 +854,13 @@ def test_coming_back_while_the_deposits_go_back_finds_the_seat_given_up(monkeypa
         await until(lambda: refund.calls == 1)
         b2, sb2 = w.member("b")
         await w.t.joined("r", b2)
+        # Its deposit is not back yet: the save sits nowhere else meanwhile.
+        x, _ = w.member("x")
+        await w.t.open("r", x, BASE)
+        w.mono += QUEUE_INTERVAL
+        with pytest.raises(Exception) as e:
+            await w.t.sit("r", b2, w.t.by_save[w.who["x"]].id)
+        assert e.value.code == "ddz_busy" and w.t.by_save[w.who["b"]].id == tid
         giving.set()
         await task
         await w.settled()
@@ -866,6 +873,93 @@ def test_coming_back_while_the_deposits_go_back_finds_the_seat_given_up(monkeypa
         await w.settled()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sd, sc)] == [0, 1, 2]
         assert [w.shards(w.who[n]) for n in "acd"] == [SHARDS - DEPOSIT] * 3
+    run(go())
+
+
+def test_a_member_standing_up_while_the_deposits_are_taken_sits_nowhere_else_until_they_are_back(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        x, _ = w.member("x")
+        await w.t.open("r", x, BASE)
+        other = w.t.by_save[w.who["x"]].id
+        start = Gate(monkeypatch, "try_start")
+        taking, = start.hold(1)
+        refund = Gate(monkeypatch, "refund")
+        giving, = refund.hold(1)
+        c, sc = w.member("c")
+        await w.t.sit("r", c, tid)
+        await until(lambda: start.calls == 1)
+        await w.t.leave(b, tid)
+        assert sb.of("ddz_closed") == [{"type": "ddz_closed", "table": tid}]
+        # Its deposit may be being taken, then handed back: until it is, the save is held.
+        for attempt in (lambda: w.t.sit("r", b, other), lambda: w.t.queue(b, BASE)):
+            w.mono += QUEUE_INTERVAL
+            with pytest.raises(Exception) as e:
+                await attempt()
+            assert e.value.code == "ddz_busy"
+        taking.set()
+        await until(lambda: refund.calls == 1)
+        w.mono += QUEUE_INTERVAL
+        with pytest.raises(Exception) as e:
+            await w.t.sit("r", b, other)
+        assert e.value.code == "ddz_busy"
+        giving.set()
+        await w.settled()
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3 and w.who["b"] not in w.t.by_save
+        # Back, it is free: it sits down at the other table.
+        w.mono += QUEUE_INTERVAL
+        await w.t.sit("r", b, other)
+        assert w.t.by_save[w.who["b"]].id == other
+    run(go())
+
+
+def test_a_member_whose_connection_left_the_room_before_the_tables_hear_of_it_does_not_play(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        await w.t.sit("r", c, tid)
+        await until(lambda: gate.calls == 1)
+        # c's connection is out of the room, but the tables hear of it only after the duels, which take a while.
+        w.m.leave("r", c.id)
+        held.set()
+        await w.settled()
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+        assert all(s.of("ddz_deal") == [] for s in (sa, sb, sc))
+        assert last_open(sa)["seats"] == [seat(a), seat(b), None] and w.who["c"] not in w.t.by_save
+        # Told late: nothing more happens.
+        await w.t.departed("r", c)
+        assert last_open(sa)["seats"] == [seat(a), seat(b), None] and w.t.by_id[tid].phase == "open"
+    run(go())
+
+
+def test_a_start_cut_off_by_the_server_stopping_is_handed_back_when_it_starts_again(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        refunds = []
+        # The process ends before anything hands the deposits back.
+        monkeypatch.setattr(Bank, "refund", lambda bank, game_id: refunds.append(game_id) or False)
+        c, sc = w.member("c")
+        await w.t.sit("r", c, tid)
+        await until(lambda: gate.calls == 1)
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
+        held.set()
+        await until(lambda: len(refunds) == 1)
+        # The game stays open, its deposits taken: nothing marked it handed back without handing them back.
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
+        assert w.g.store.open_ddz_games() == refunds
+        monkeypatch.undo()
+        # Starting again, the server hands back what open games hold.
+        assert Bank(w.g).refund_open() == 1
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3 and w.g.store.open_ddz_games() == []
     run(go())
 
 
