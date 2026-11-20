@@ -623,3 +623,14 @@ def test_a_newcomer_hears_the_counts_everyone_has_and_every_correction_after():
         assert sa.of("ddz_waiting")[-1]["counts"] == [[BASE, 1]]
         assert s_late.of("ddz_waiting")[-1]["counts"] == [[BASE, 1]]
     run(go())
+
+
+def test_a_client_that_did_not_say_it_queues_hears_nothing_of_the_queue(api):
+    c, g, timers = api
+    save(g, "old")
+    with c.websocket_connect("/ws") as o:
+        matched(o, "old", "r1", match=False)
+        for base in (0, BASE):
+            o.send_json({"type": "ddz_queue", "base": base})
+            reply = o.receive_json()
+            assert reply["type"] == "error" and reply["code"] == "bad_message"

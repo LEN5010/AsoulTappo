@@ -1487,6 +1487,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                                   DdzLeaveMsg, DdzQueueMsg)):
                 try:
                     if isinstance(msg, DdzQueueMsg):
+                        # The queue is for clients that said they queue when joining; others hear nothing of it.
+                        if not peer.ddz_match:
+                            raise GameError("bad_message", "join with ddzMatch to queue")
                         if msg.base:
                             await tables.queue(peer, msg.base)
                         else:
