@@ -669,8 +669,8 @@ onBeforeUnmount(() => {
    as on the park's banners. The white cards land on it. */
 .mat {
   position: absolute;
-  left: 20px;
-  right: 20px;
+  left: 56px;
+  right: 56px;
   top: 132px;
   bottom: 200px;
   border-radius: 26px;
