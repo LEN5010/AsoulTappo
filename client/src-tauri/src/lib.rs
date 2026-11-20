@@ -373,6 +373,12 @@ async fn open_panel(
     Ok(())
 }
 
+/// The desk listens to the tray now: a second start of the program (Windows) can raise the panel from here on.
+#[tauri::command]
+fn watch_second_start(app: tauri::AppHandle) {
+    elevation::spawn_show_listener(app);
+}
+
 #[tauri::command]
 async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("panel") {
@@ -1098,6 +1104,7 @@ pub fn run() {
             set_hit_regions,
             set_dragging,
             open_panel,
+            watch_second_start,
             toggle_panel,
             show_panel,
             hide_panel,

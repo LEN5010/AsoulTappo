@@ -79,7 +79,10 @@ export type TrayAction = "toggle-panel" | "open-panel" | "raise-panel" | "toggle
 
 export async function listenTray(cb: (a: TrayAction) => void): Promise<UnlistenFn> {
   if (!isTauri) return () => {};
-  return listen<TrayAction>("tray", (ev) => cb(ev.payload));
+  const unlisten = await listen<TrayAction>("tray", (ev) => cb(ev.payload));
+  // A second start of the program (Windows) is passed on only from here, once someone hears it.
+  void invoke("watch_second_start").catch((e: unknown) => console.warn("watch_second_start failed", e));
+  return unlisten;
 }
 
 /** An emote key was pressed: the place of the quick emote it stands for, from 1. */
