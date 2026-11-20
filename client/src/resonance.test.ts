@@ -245,3 +245,33 @@ it("keeps a tier in the roll while one of its cards lacks its holo version", () 
   expect(effectiveRates(pool, owned).limited).toBe(0);
   expect(pityOpen("limited", pool, owned)).toBe(false);
 });
+it("counts common once a pool without odds of its own there gets a finished tier's", () => {
+  // Every tier but the limited one at 0: common's odds come from the limited tier once its cards are all owned.
+  const { rate: _rate, pity: _pity, ...plain } = BANNER;
+  const banner = { ...plain, rates: { legendary: 0, skin: 0, epic: 0, rare: 0, uncommon: 0, limited: 100 }, share: 50 };
+  withBanner(() => {
+    const p = poolOf(heldItems());
+    expect(bannerBaseRates(banner).common).toBe(0);
+    const owned = { ...wholeSave(p, HOLO_CARD.id), ...Object.fromEntries(SKINS.map((id) => [id, 1])) };
+    expect(bannerRates(banner, p, owned).tiers.common).toBe(100);
+    expect(poolDone(p, owned, bannerBaseRates(banner))).toBe(false);
+    owned[`holo:${HOLO_CARD.id}`] = 1;
+    expect(poolDone(p, owned, bannerBaseRates(banner))).toBe(true);
+  });
+});
+it("keeps a shared tier at the banner's share while one of its cards lacks its holo version", () => {
+  const card = `card:${manifest.cards.find((c) => c.rarity === "common" && !c.holo)!.id}`;
+  const banner = { id: "plain", name: "普通", start: T0 / 1000, end: T0 / 1000 + 86400, items: [card], share: 40 };
+  setEconomy({ ...exampleEconomy, resonance: { ...exampleEconomy.resonance, banners: [banner], held: [card] } });
+  try {
+    const p = poolOf(heldItems());
+    const owned = wholeSave(p, HOLO_CARD.id);
+    expect(owned[card]).toBeUndefined();
+    expect(bannerRates(banner, p, owned).shared).toEqual([{ rarity: "common", rate: 40 }]);
+    // Only the featured card is left: a common draw is featured for certain.
+    owned[`holo:${HOLO_CARD.id}`] = 1;
+    expect(bannerRates(banner, p, owned).shared).toEqual([{ rarity: "common", rate: 100 }]);
+  } finally {
+    setEconomy(exampleEconomy);
+  }
+});

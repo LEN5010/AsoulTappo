@@ -91,11 +91,12 @@ export function tiersIn(rates: Record<Rarity, number>): Rarity[] {
 }
 
 /**
- * Whether a draw at [rates] from [pool] has nothing left to find (see leftToFind). A tier it gives no odds (the
- * limited tier in the standing pool) does not count.
+ * Whether a draw from [pool] at [from] (the standing pool's odds unless given) has nothing left to find (see
+ * leftToFind) in the tiers it rolls once the finished ones gave their odds to common (effectiveRates): a tier with no
+ * odds (the limited tier in the standing pool) does not count, common does once it has another tier's.
  */
-export function poolDone(pool: ResonancePool, owned: Record<string, number>, rates: Record<Rarity, number>): boolean {
-  return tiersIn(rates).every((r) => !pool[r].some((item) => leftToFind(item, owned)));
+export function poolDone(pool: ResonancePool, owned: Record<string, number>, from?: Record<Rarity, number>): boolean {
+  return tiersIn(effectiveRates(pool, owned, from)).every((r) => !pool[r].some((item) => leftToFind(item, owned)));
 }
 
 /**
@@ -159,9 +160,9 @@ export function bannerRates(
   const repeats = economy.value.resonance.repeatTiers;
   const shared = [...sharedTiers].map((rarity) => ({
     rarity,
-    // Certain after a standing item there, or once only the featured items are left to find.
-    rate: !guaranteed.includes(rarity) && (repeats?.includes(rarity) || pool[rarity].some((item) => !owned[item.id]))
-      ? share : 100,
+    // Certain after a standing item there, or once only the featured items are left to find (see leftToFind).
+    rate: !guaranteed.includes(rarity) &&
+      (repeats?.includes(rarity) || pool[rarity].some((item) => leftToFind(item, owned))) ? share : 100,
   }));
   const featured = Math.min(banner.rate ?? 0, tiers.common);
   tiers.common = +(tiers.common - featured).toFixed(6);
