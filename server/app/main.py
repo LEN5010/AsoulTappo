@@ -35,7 +35,8 @@ from .manifest import Manifest, find_packs_dir
 from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
-    DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzInviteMsg, DdzLeaveMsg, DdzPlayMsg, DdzQueueMsg,
+    DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzInviteMsg, DdzLeaveMsg, DdzOpenMsg, DdzPlayMsg, DdzQueueMsg,
+    DdzSitMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -1484,12 +1485,17 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 duels.set_dnd(peer, msg.dnd)
                 tables.set_dnd(peer, msg.dnd)
             elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
-                                  DdzLeaveMsg, DdzQueueMsg)):
+                                  DdzLeaveMsg, DdzQueueMsg, DdzOpenMsg, DdzSitMsg)):
                 try:
-                    if isinstance(msg, DdzQueueMsg):
-                        # The queue is for clients that said they queue when joining; others hear nothing of it.
-                        if not peer.ddz_match:
-                            raise GameError("bad_message", "join with ddzMatch to queue")
+                    # The queue and open tables are for clients that said so when joining; others hear nothing of
+                    # them.
+                    if isinstance(msg, (DdzQueueMsg, DdzOpenMsg, DdzSitMsg)) and not peer.ddz_match:
+                        raise GameError("bad_message", "join with ddzMatch to queue or open tables")
+                    if isinstance(msg, DdzOpenMsg):
+                        await tables.open(room_id, peer, msg.base)
+                    elif isinstance(msg, DdzSitMsg):
+                        await tables.sit(room_id, peer, msg.table, msg.seat)
+                    elif isinstance(msg, DdzQueueMsg):
                         if msg.base:
                             await tables.queue(peer, msg.base)
                         else:

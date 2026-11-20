@@ -232,10 +232,26 @@ class DdzQueueMsg(_Msg):
     base: int = Field(ge=0, le=10**9)
 
 
+class DdzOpenMsg(_Msg):
+    """Open a table in the room at one of the economy's base stakes, taking its first seat."""
+
+    type: Literal["ddz_open"] = "ddz_open"
+    base: int = Field(ge=1, le=10**9)
+
+
+class DdzSitMsg(_Msg):
+    """Sit down at an open table of the room: at [seat] when it is empty, else at the first empty one."""
+
+    type: Literal["ddz_sit"] = "ddz_sit"
+    table: str = Field(min_length=1, max_length=32)
+    seat: Optional[int] = Field(default=None, ge=0, le=2)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
-          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg],
+          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
+          DdzOpenMsg, DdzSitMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
