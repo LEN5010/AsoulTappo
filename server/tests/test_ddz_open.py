@@ -584,3 +584,116 @@ def test_three_asking_again_play_on_and_one_that_cannot_pay_is_let_go():
         await w.timers.fire()
         assert w.t.by_id[tid].phase == "open"
     run(go())
+
+
+# ------------------------------------------------------------------ races
+class Gate:
+    """Holds a Bank method in its thread until the test lets it go; [n] calls are held, each by its own event."""
+
+    def __init__(self, monkeypatch, name):
+        import threading
+
+        self.events, self.calls = [], 0
+        real = getattr(Bank, name)
+        self._threading = threading
+
+        def held(bank, *a):
+            i = self.calls
+            self.calls += 1
+            ev = self.events[i] if i < len(self.events) else None
+            if ev is not None:
+                ev.wait(5)
+            return real(bank, *a)
+
+        monkeypatch.setattr(Bank, name, held)
+
+    def hold(self, n):
+        self.events = [self._threading.Event() for _ in range(n)]
+        self.calls = 0
+        return self.events
+
+
+async def until(cond):
+    for _ in range(400):
+        if cond():
+            return
+        await asyncio.sleep(0.005)
+    raise AssertionError("never happened")
+
+
+def test_two_sitting_down_at_the_last_seat_at_once(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "check")
+        first, second = gate.hold(2)
+        c, sc = w.member("c")
+        d, sd = w.member("d")
+        tc = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: gate.calls == 1)
+        td = asyncio.create_task(w.t.sit("r", d, tid))
+        await until(lambda: gate.calls == 2)
+        second.set()
+        await td
+        first.set()
+        with pytest.raises(Exception) as e:
+            await tc
+        assert e.value.code == "ddz_gone"
+        await settle()
+        assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sd)] == [0, 1, 2] and sc.of("ddz_deal") == []
+        assert w.shards(w.who["c"]) == SHARDS and w.who["c"] not in w.t.by_save
+    run(go())
+
+
+@pytest.mark.parametrize("who", ["member", "opener"])
+def test_sitting_down_while_someone_leaves(monkeypatch, who):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "check")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        task = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: gate.calls == 1)
+        await w.m.depart("r", (b if who == "member" else a).id)
+        held.set()
+        if who == "member":
+            await task
+            assert last_open(sa)["seats"] == [seat(a), seat(c), None] and w.t.by_id[tid].phase == "open"
+        else:
+            with pytest.raises(Exception) as e:
+                await task
+            assert e.value.code == "ddz_gone" and w.t.by_save == {} and w.t.by_id == {}
+    run(go())
+
+
+@pytest.mark.parametrize("who, back", [("opener", False), ("member", False), ("member", True)])
+def test_leaving_the_room_while_the_deposits_are_taken(monkeypatch, who, back):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        task = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: gate.calls == 1)
+        leaver = a if who == "opener" else b
+        await w.m.depart("r", leaver.id)
+        if back:
+            b2, sb2 = w.member("b")
+            await w.t.joined("r", b2)
+        held.set()
+        await task
+        await settle()
+        if back:
+            # Back before the deposits went: it plays, as at an invited table.
+            assert sb2.of("ddz_deal")[0]["you"] == 1 and [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
+            return
+        # Gone before the start: what was taken goes back.
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3 and sc.of("ddz_deal") == []
+        if who == "opener":
+            assert sc.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": "disband", "by": a.id}]
+            assert w.t.by_id == {} and w.t.by_save == {}
+        else:
+            assert last_open(sa)["seats"] == [seat(a), None, seat(c)] and w.who["b"] not in w.t.by_save
+    run(go())

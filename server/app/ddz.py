@@ -26,9 +26,10 @@ the table away, as does OPEN_SEC without the three seats taken. An empty seat th
 the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
 made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
-the start. After a game, those who ask for another keep their seats; when the opener did and someone did not (or
-left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited one
-does.
+the start: one whose member leaves the room while the deposits are being taken, and is not back once they are, gives
+them back and stands up. After a game, those who ask for another keep their seats; when the opener did and someone did
+not (or left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited
+one does.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made, the opener of an open table):
@@ -885,7 +886,8 @@ class Tables:
 
     async def _begin(self, table: Table) -> None:
         """The three seats of an open table are taken: the deposits go in one transaction (Bank.try_start) and the
-        cards are dealt. The members may leave while the database works: they are played for."""
+        cards are dealt. A member that leaves the room while the database works and is not back once it is done
+        stood up before the start: the deposits go back and the table waits again without it."""
         table.phase = STARTING
         self._cancel_timer(table)
         self._tables_changed(table.room)
@@ -897,19 +899,21 @@ class Tables:
         if row is None:
             self._let_go(table, codes)
             return
-        table.row = row
-        if all(s.peer is None for s in table.seats):
-            await self._abort(table, "gone")
+        if any(s.peer is None for s in table.seats):
+            await run_in_threadpool(self.bank.refund, row)
+            self._let_go(table, [None, None, None])
             return
+        table.row = row
         for s in table.seats:
-            s.auto, s.timeouts = s.peer is None, 0
+            s.auto, s.timeouts = False, 0
         table.deal = 0
         await self._live(table, True)
         self._deal(table)
 
     def _let_go(self, table: Table, codes: list[str | None]) -> None:
-        """After a start that fell short: a seat whose save may no longer play hears why and is emptied, as is one
-        whose member left meanwhile, and the table waits again; when the opener's is one of them, it goes."""
+        """After a start that fell short or was taken back: a seat whose save may no longer play hears why and is
+        emptied, as is one whose member left meanwhile, and the table waits again; when the opener's is one of them,
+        it goes."""
         gone = {i for i, (s, code) in enumerate(zip(table.seats, codes)) if code or s.peer is None}
         for i in gone:
             s = table.seats[i]
