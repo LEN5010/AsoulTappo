@@ -152,9 +152,10 @@ export type DdzMessage =
   /**
    * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
    * null when it does not, with `reason` when the server took it out (ddz_locked, ddz_account, no_shards, ddz_cap,
-   * ddz_dnd, error).
+   * ddz_dnd, error), or ddz_match_cooldown with `retry`: the save declined a table of the queue or let it lapse, and
+   * may queue again in that many seconds.
    */
-  | { type: "ddz_queue"; base: number | null; waited?: number; reason?: string }
+  | { type: "ddz_queue"; base: number | null; waited?: number; reason?: string; retry?: number }
   /** How many saves wait at each stake, as [base, saves]; stakes nobody waits at are left out. */
   | { type: "ddz_waiting"; counts: [number, number][] };
 

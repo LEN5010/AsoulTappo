@@ -8,7 +8,7 @@ import { status } from "../../stores/player";
 import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  ddzCanInvite, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzOthersWaiting, ddzStakeOpen, inviteDdz, queueDdz,
+  ddzCanInvite, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzOthersWaiting, ddzRetry, ddzStakeOpen, inviteDdz, queueDdz,
 } from "../../stores/ddz";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
@@ -55,7 +55,7 @@ const blocked = computed(() => {
   }
   if (s.ddz.net >= cfg.dailyWinCap) return "今天赢到上限了，明天再来";
   if (!cfg.stakes.some(ddzStakeOpen)) return "碎片不够押金";
-  if (props.match) return duelDnd() ? "免打扰时不能匹配" : "";
+  if (props.match) return duelDnd() ? "免打扰时不能匹配" : ddzRetry.value ? "稍后再匹配" : "";
   if (others.value.filter(ddzCanInvite).length < 2) return "房间里要有两位能上桌的伙伴";
   return "";
 });

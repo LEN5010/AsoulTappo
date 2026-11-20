@@ -362,6 +362,8 @@ function errorText(code: string, message: string): string {
       return "有人今天赢到上限了";
     case "ddz_dnd":
       return "免打扰时不能匹配";
+    case "ddz_match_cooldown":
+      return "稍后再匹配";
     default:
       return message || code;
   }

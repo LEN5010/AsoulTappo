@@ -9,7 +9,7 @@ import { members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
   answerDdz, ddz, ddzAtTable, ddzBusy, ddzConfig, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying, ddzQueue, ddzReason,
-  leaveDdz, unqueueDdz,
+  ddzRetry, leaveDdz, unqueueDdz,
 } from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
@@ -79,6 +79,7 @@ const waited = computed(() => {
         <h4>斗地主</h4>
         <p v-if="t" class="note" role="status">{{ ddzReason(t) }}</p>
         <p v-else-if="queued" class="note waiting" role="status">匹配中<b>{{ waited }}</b></p>
+        <p v-else-if="ddzMatchable && ddzRetry" class="note" role="status">稍后再匹配</p>
         <p v-else-if="othersWaiting" class="note">{{ othersWaiting }} 人匹配中</p>
       </div>
       <span v-if="queued" class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ queued.base.toLocaleString("en-US") }}</b></span>
@@ -90,7 +91,7 @@ const waited = computed(() => {
         <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
         <button v-else-if="queued" type="button" class="ui-btn" @click="unqueueDdz">取消</button>
         <template v-else>
-          <button v-if="ddzMatchable" type="button" class="ui-btn" :disabled="ddzBusy || seated" @click="starting = 'match'">匹配</button>
+          <button v-if="ddzMatchable" type="button" class="ui-btn" :disabled="ddzBusy || seated || ddzRetry" @click="starting = 'match'">匹配</button>
           <button type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = 'invite'">
             <Icon name="plus" :size="15" />发起
           </button>

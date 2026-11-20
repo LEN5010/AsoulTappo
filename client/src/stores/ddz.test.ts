@@ -419,3 +419,24 @@ it("answers only the invite the player saw: an answer for another table is dropp
   d.answerDdz(true, "m2");
   expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_answer", table: "m2", accept: true }]);
 });
+
+it("holds the queue back as long as the server says after a table of the queue was declined or let lapse", async () => {
+  const { socket, d, r } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  expect(d.ddzCanQueue.value).toBe(true);
+  socket.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 3 });
+  expect(d.ddzRetry.value).toBe(true);
+  expect(d.ddzCanQueue.value).toBe(false);
+  expect(r.lastError.value).toBe(""); // the banner says it
+  const sent = socket.sent.length;
+  d.queueDdz(50);
+  expect(socket.sent).toHaveLength(sent);
+  await vi.advanceTimersByTimeAsync(2900);
+  expect(d.ddzRetry.value).toBe(true);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(d.ddzRetry.value).toBe(false);
+  expect(d.ddzCanQueue.value).toBe(true);
+  // Refused for it all the same (another device declined): the words show where the room's errors do.
+  socket.recv({ type: "error", code: "ddz_match_cooldown", message: "" });
+  expect(r.lastError.value).toBe("稍后再匹配");
+});

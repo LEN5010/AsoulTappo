@@ -35,7 +35,7 @@ const groupSources = {
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
   ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, queue: ddzStore.ddzQueue.value,
-    waiting: ddzStore.ddzWaiting.value }),
+    waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz }) =>
     ({ id, uid, nick, character, plate, ddz })),
 };
@@ -74,6 +74,7 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddzLive.value = s.ddz.live;
     ddzStore.ddzQueue.value = s.ddz.queue;
     ddzStore.ddzWaiting.value = s.ddz.waiting;
+    ddzStore.ddzRetry.value = s.ddz.retry;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {

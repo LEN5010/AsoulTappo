@@ -122,6 +122,8 @@ export const ddzLive = ref<Record<string, string[]>>({});
 export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 /** How many saves wait at each stake, this one included, as the server last counted. */
 export const ddzWaiting = ref<Record<number, number>>({});
+/** The save declined a table of the queue or let it lapse: the server keeps it out of the queue for a while. */
+export const ddzRetry = ref(false);
 
 /** The server has the game (its status says so) and this client is in a room. */
 export const ddzOn = computed(() => inRoom.value && !!ddzConfig.value && !!status.value?.ddz);
@@ -154,7 +156,7 @@ export const ddzCanStart = computed(() => {
 export const ddzMatchable = computed(() => ddzOn.value && ddzMatchOn.value);
 
 /** Whether this save looks able to wait for a table: as for starting a game, and not turning invites down. */
-export const ddzCanQueue = computed(() => ddzMatchable.value && ddzCanStart.value && !duelDnd());
+export const ddzCanQueue = computed(() => ddzMatchable.value && ddzCanStart.value && !duelDnd() && !ddzRetry.value);
 
 /** Saves other than this one waiting at [base]. */
 export function ddzOthersWaiting(base: number): number {
@@ -204,6 +206,7 @@ export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | null>((
 
 // ------------------------------------------------------------------ messages (desk window)
 let endTimer: ReturnType<typeof setTimeout> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let seq = 0;
 
 /** The deal at the table as "table:deal"; "" while the table is not up. */
@@ -268,7 +271,14 @@ export function onDdzMessage(msg: DdzMessage): void {
     ddzQueue.value = msg.base ? { base: msg.base, since: Date.now() - (msg.waited ?? 0) * 1000 } : null;
     // Back in the line after a table of the queue fell through: the wait takes the ending's place at once.
     if (msg.base && ddz.value?.match && ddz.value.phase === "over") close();
-    if (msg.reason && msg.reason !== "error") showRoomError(msg.reason);
+    if (msg.reason === "ddz_match_cooldown") {
+      // Said on the banner while it lasts.
+      ddzRetry.value = true;
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => { ddzRetry.value = false; }, (msg.retry ?? 0) * 1000);
+    } else if (msg.reason && msg.reason !== "error") {
+      showRoomError(msg.reason);
+    }
     return;
   }
   if (msg.type === "ddz_waiting") {
