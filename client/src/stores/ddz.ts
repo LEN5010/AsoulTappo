@@ -21,7 +21,7 @@ import {
   clearRoomError, ddzEmoteOn, ddzHooks, ddzMatchOn, duelBusy, duelDnd, helloInfo, inRoom, me, members, sendDdz, sendEmote,
   showRoomError, showWin, shownNick, youId,
 } from "./room";
-import { ddzFrame, openDdzWindow, ui } from "./ui";
+import { closeDdzWindow, ddzFrame, openDdzWindow, ui } from "./ui";
 
 export interface DdzSeat {
   /** Member id, kept while the member is away. */
@@ -834,12 +834,13 @@ if (!isMirrorWindow) {
     clearTimeout(probeTimer);
     probeTimer = setTimeout(probe, delay);
   };
-  // The table's window comes up with each deal, the first and every one after 再来一局, and shows the lobby once the
-  // table is put away. Closed during a deal, it stays closed until the next one. A deal while the hide key has the pet
+  // The table's window comes up with each deal, the first and every one after 再来一局, and goes once the table is
+  // put away. Closed during a deal, it stays closed until the next one. A deal while the hide key has the pet
   // hidden counts as closed: the pet's bubble leads back to it once the pet is shown again.
   watch(dealKey, (key) => {
     if (!key) {
       opened = "";
+      closeDdzWindow();
       return;
     }
     if (key === opened || key === dismissed) return;

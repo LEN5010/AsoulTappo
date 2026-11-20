@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Dou dizhu on the online page, in a room or not: a strip of the table's mat. At rest it carries the key that brings
-// up the lobby (the table's window, where the queue is) and, in a room, the key that opens a table (on a server without
+// Dou dizhu on the online page, in a room or not: a strip of the table's mat. At rest it carries the key that waits
+// in the queue (DdzInvite.vue, a stake to pick) and, in a room, the key that opens a table (on a server without
 // open tables, the key that invites), and the faces of members playing a game, or how many wait in the queue; while
 // this save waits it shows the stake, the time waited and the key that stops; while an invite is out it seats the three
 // with a tick on those who accepted, the stake, and the keys to answer; at an open table it seats who sits there with
@@ -25,8 +25,8 @@ import { useWaited } from "./waited";
 
 /** Bets need an account here and none is signed in (the room page knows the server's info). */
 defineProps<{ needAccount?: boolean }>();
-/** The sheet that starts a game in the room: by invite, by opening a table; or calls someone to the open table. */
-const sheet = ref<"invite" | "open" | "call" | null>(null);
+/** The sheet that starts a game: from the queue, by invite, by opening a table; or calls someone to the open table. */
+const sheet = ref<"match" | "invite" | "open" | "call" | null>(null);
 const t = computed(() => (ddz.value?.phase === "invite" || ddz.value?.phase === "over" ? ddz.value : null));
 const invite = computed(() => (t.value?.phase === "invite" ? t.value : null));
 /** The open table this save sits at. */
@@ -120,7 +120,7 @@ const waited = useWaited(() => queued.value?.since);
           <button v-else-if="inRoom" type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="sheet = 'invite'">
             <Icon name="plus" :size="15" />发起
           </button>
-          <button v-if="ddzQueueOn" type="button" class="ui-btn white" @click="openDdzWindow()">匹配</button>
+          <button v-if="ddzQueueOn" type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="sheet = 'match'">匹配</button>
         </template>
       </div>
     </template>

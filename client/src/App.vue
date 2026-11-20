@@ -30,7 +30,7 @@ import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
 import DdzQueueSign from "./pet/DdzQueueSign.vue";
 import DdzSign from "./pet/DdzSign.vue";
-import { ddzBubble, ddzMatchable, ddzQueue, ddzTables } from "./stores/ddz";
+import { ddzAtTable, ddzBubble, ddzMatchable, ddzQueue, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
   picking,
@@ -660,7 +660,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
     <RaceFrame v-if="!isTauri && raceFrame.open" />
-    <DdzFrame v-if="!isTauri && ddzFrame.open" />
+    <DdzFrame v-if="!isTauri && ddzFrame.open && ddzAtTable" />
   </div>
 </template>
 

@@ -1,15 +1,17 @@
 <script setup lang="ts">
-// Starting a dou dizhu game in the room: the three seats on a strip of the mat, the base stake as three keys in a
-// tray, and the key that goes. [mode] picks how: "invite" picks two members of the room (the members as keys, those
-// who cannot be asked greyed); "open" opens a table in the room, the two other seats left empty. "call" asks one
-// member to the open table this save opened, at its stake: no tray, the members as keys. (The queue is the lobby's,
-// DdzLobby.vue.)
-import { computed, ref, watch } from "vue";
-import { status } from "../../stores/player";
+// Starting a dou dizhu game: the three seats on a strip of the mat, the base stake as three keys in a tray, and the
+// key that goes. [mode] picks how: "match" waits in the server's queue, in a room or not (each stake shows how many
+// others wait at it); "invite" picks two members of the room (the members as keys, those who cannot be asked greyed);
+// "open" opens a table in the room, the two other seats left empty. "call" asks one member to the open table this
+// save opened, at its stake: no tray, the members as keys.
+import { computed, onBeforeUnmount, ref, watch } from "vue";
+import type { DdzLobby } from "../../net/protocol";
+import { loadDdzLobby, status } from "../../stores/player";
 import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  callDdz, ddz, ddzCanCall, ddzCanInvite, ddzCanOpen, ddzCanStart, ddzConfig, ddzDeposit, ddzStakeOpen, inviteDdz, openDdz,
+  callDdz, ddz, ddzCanCall, ddzCanInvite, ddzCanOpen, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzLink,
+  ddzOthersWaiting, ddzQueue, ddzRetry, ddzStakeOpen, inviteDdz, openDdz, queueDdz,
 } from "../../stores/ddz";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
@@ -17,12 +19,41 @@ import Modal from "../../ui/Modal.vue";
 import DdzSeats from "./DdzSeats.vue";
 
 /** Bets need an account here and none is signed in; [to]: where the sheet is drawn (Modal), when not on the panel. */
-const props = defineProps<{ needAccount?: boolean; mode: "invite" | "open" | "call"; to?: string }>();
+const props = defineProps<{ needAccount?: boolean; mode: "match" | "invite" | "open" | "call"; to?: string }>();
 const emit = defineEmits<{ close: [] }>();
 
+/** For the queue: what the server says of it (GET /api/ddz/lobby), read every few seconds while the sheet is up. */
+const POLL_MS = 4000;
+const lobby = ref<DdzLobby | null>(null);
+let poll: ReturnType<typeof setTimeout> | undefined;
+let alive = true;
+async function read() {
+  clearTimeout(poll);
+  const got = await loadDdzLobby();
+  if (!alive) return;
+  if (got && got !== "off") lobby.value = got;
+  poll = setTimeout(read, POLL_MS);
+}
+if (props.mode === "match") void read();
+onBeforeUnmount(() => { alive = false; clearTimeout(poll); });
+/** Others waiting at [base]: the dou dizhu connection's counts while it is up, else the server's last answer. */
+function waitingAt(base: number): number {
+  if (ddzLink.value === "open") return ddzOthersWaiting(base);
+  const n = lobby.value?.tiers.find((x) => x.base === base)?.waiting ?? 0;
+  return Math.max(0, n - (ddzQueue.value?.base === base ? 1 : 0));
+}
+/** A stake this save can pay: as its shards say, and as the server last said. */
+const affords = (s: number) => ddzStakeOpen(s) && (lobby.value?.tiers.find((x) => x.base === s)?.afford ?? true);
+
 const stakes = computed(() => ddzConfig.value?.stakes ?? []);
-const base = ref(stakes.value.find(ddzStakeOpen) ?? 0);
-watch(stakes, (list) => { if (!list.includes(base.value) || !ddzStakeOpen(base.value)) base.value = list.find(ddzStakeOpen) ?? 0; });
+/** In the queue, the open stake most others wait at comes first. */
+const first = () => (props.mode === "match"
+  ? [...stakes.value].filter(affords).sort((a, b) => waitingAt(b) - waitingAt(a))[0]
+  : stakes.value.find(ddzStakeOpen));
+const base = ref(first() ?? 0);
+watch(stakes, (list) => { if (!list.includes(base.value) || !affords(base.value)) base.value = first() ?? 0; });
+// The first answer of the server may say a stake cannot be paid, or where others wait.
+watch(lobby, (now, before) => { if (!before && now) base.value = first() ?? base.value; });
 
 /** The open table being called to ("call"). */
 const table = computed(() => (props.mode === "call" && ddz.value?.phase === "open" ? ddz.value : null));
@@ -69,13 +100,14 @@ const blocked = computed(() => {
   const s = status.value;
   if (!cfg || !s?.ddz) return "";
   if (props.mode === "call") return "";
-  if (props.needAccount) return "登录 Asasfans 账号后才能斗地主";
-  if (s.totals.taps < cfg.minTaps) {
+  if (props.needAccount || (lobby.value && !lobby.value.account)) return "登录 Asasfans 账号后才能斗地主";
+  if ((lobby.value?.taps ?? s.totals.taps) < cfg.minTaps) {
     const need = cfg.minTaps % 10000 === 0 ? `${cfg.minTaps / 10000} 万` : cfg.minTaps.toLocaleString("en-US");
     return `累计敲击满 ${need} 下后可以斗地主`;
   }
   if (s.ddz.net >= cfg.dailyWinCap) return "今天赢到上限了，明天再来";
-  if (!cfg.stakes.some(ddzStakeOpen)) return "碎片不够押金";
+  if (!cfg.stakes.some(affords)) return "碎片不够押金";
+  if (props.mode === "match") return duelDnd() ? "免打扰时不能匹配" : ddzRetry.value ? "稍后再匹配" : "";
   if (props.mode === "open") return duelDnd() ? "免打扰时不能开桌" : "";
   if (others.value.filter(ddzCanInvite).length < 2) return "房间里要有两位能上桌的伙伴";
   return "";
@@ -83,14 +115,16 @@ const blocked = computed(() => {
 const ready = computed(() => {
   switch (props.mode) {
     case "call": return !!table.value && picked.value.length === 1;
+    case "match": return affords(base.value) && ddzCanQueue.value;
     case "open": return ddzStakeOpen(base.value) && ddzCanOpen.value;
     default: return ddzStakeOpen(base.value) && ddzCanStart.value && picked.value.length === 2;
   }
 });
-const go = { invite: "邀请", open: "开桌", call: "邀请" };
+const go = { match: "匹配", invite: "邀请", open: "开桌", call: "邀请" };
 function send() {
   if (!ready.value) return;
   if (props.mode === "call") callDdz(picked.value[0]!, table.value!.id);
+  else if (props.mode === "match") queueDdz(base.value);
   else if (props.mode === "open") openDdz(base.value);
   else inviteDdz([...picked.value], base.value);
   emit("close");
@@ -113,10 +147,11 @@ function send() {
         <div class="stakes">
           <button
             v-for="s in stakes" :key="s" type="button" class="ui-btn stake" :class="{ primary: base === s }"
-            :aria-pressed="base === s" :disabled="!ddzStakeOpen(s)"
-            :title="ddzStakeOpen(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
+            :aria-pressed="base === s" :disabled="!affords(s)"
+            :title="affords(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
           >
             <Icon name="shard" :size="14" />{{ s.toLocaleString("en-US") }}
+            <em v-if="mode === 'match' && waitingAt(s)" class="waiting"><Icon name="users" :size="11" />{{ waitingAt(s) }}</em>
           </button>
         </div>
       </div>
@@ -193,6 +228,22 @@ function send() {
 .stake.primary:not(:disabled) { color: #fff; text-shadow: 0 1px 0 var(--c-600); }
 .stake.primary:not(:disabled) .icon { color: #fff; }
 .stake:disabled, .stake:disabled .icon { color: var(--ink-3); }
+/* Others waiting at a stake: a small count in the key's corner. */
+.stake { position: relative; }
+.stake .waiting {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: 800 11px/1 var(--font-latin);
+  font-style: normal;
+  color: var(--c-600);
+}
+.stake .waiting .icon { color: inherit; }
+.stake.primary:not(:disabled) .waiting { color: #fff; }
+.stake:disabled .waiting { color: var(--ink-3); }
 
 /* The room's members: a key each, with a face. A picked one stays down with a tick. */
 .members { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 164px; overflow: auto; padding: 2px 2px 5px; margin: -2px -2px -5px; }

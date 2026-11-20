@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Over the own pet while this save waits in the dou dizhu queue: a small paper sign, as over the pet of a member who
 // opened a table (DdzSign.vue), with the time waited and a key that stops waiting. Pressing the sign itself brings up
-// the lobby (the table's window).
+// the online page, where the queue's banner is.
 import { ddzQueue, unqueueDdz } from "../stores/ddz";
-import { openDdzWindow } from "../stores/ui";
+import { openPanel } from "../stores/ui";
 import { useWaited } from "../panel/ddz/waited";
 import Icon from "../ui/Icon.vue";
 
@@ -12,7 +12,7 @@ const waited = useWaited(() => ddzQueue.value?.since);
 
 <template>
   <div class="sign" data-hit role="status">
-    <button type="button" class="open" aria-label="斗地主" @click="openDdzWindow()">
+    <button type="button" class="open" aria-label="斗地主" @click="openPanel('room')">
       <i class="dot" aria-hidden="true"></i>匹配中<b>{{ waited }}</b>
     </button>
     <button type="button" class="stop" title="取消" aria-label="取消" @click="unqueueDdz"><Icon name="close" :size="12" /></button>

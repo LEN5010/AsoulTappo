@@ -1,16 +1,14 @@
 <script setup lang="ts">
 // The dou dizhu table's own window (`?window=ddz`; src-tauri/src/lib.rs, open_ddz): the table
-// (panel/ddz/DdzTable.vue) on a transparent window, shown once it has drawn, or the lobby (panel/ddz/DdzLobby.vue)
-// while this save sits at no table. It mirrors the desk's state (desktop/bridge.ts) and sends the moves there; it
-// talks to no server. The desk opens it with each deal, the online page's 匹配 key opens it on the lobby; once the
-// table is put away it shows the lobby. Closing it leaves the seat playing (the server's autopilot moves when the time
-// runs out) and the queue waiting.
+// (panel/ddz/DdzTable.vue) on a transparent window, shown once it has drawn. It mirrors the desk's state
+// (desktop/bridge.ts) and sends the moves there; it talks to no server. The desk opens it with each deal and closes it
+// once the table is put away. Closing it leaves the seat playing (the server's autopilot moves when the time runs
+// out).
 import { onBeforeUnmount, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { wakeAudio } from "./audio/sfx";
 import { listenInput } from "./composables/tauri";
-import DdzLobby from "./panel/ddz/DdzLobby.vue";
 import DdzTable from "./panel/ddz/DdzTable.vue";
 import { ddzAtTable } from "./stores/ddz";
 import { onInput, stopPet } from "./stores/pet";
@@ -19,10 +17,7 @@ import { ui } from "./stores/ui";
 
 const close = () => { void invoke("close_ddz").catch(() => {}); };
 
-/**
- * Tells the desk whether the window is in sight: while it is not, the pet's bubble says whose move it is, and the
- * lobby stops reading its numbers.
- */
+/** Tells the desk whether the window is in sight: while it is not, the pet's bubble says whose move it is. */
 async function updateSeen() {
   ui.ddzSeen = !document.hidden && !(await getCurrentWindow().isMinimized().catch(() => false));
 }
@@ -53,7 +48,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="ddz-app" :style="skinVars">
     <DdzTable v-if="ddzAtTable" @close="close" @drag="getCurrentWindow().startDragging()" />
-    <DdzLobby v-else @close="close" @drag="getCurrentWindow().startDragging()" />
   </div>
 </template>
 

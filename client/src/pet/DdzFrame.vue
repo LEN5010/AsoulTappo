@@ -1,11 +1,9 @@
 <script setup lang="ts">
-// The browser preview's dou dizhu window: the table (panel/ddz/DdzTable.vue), or the lobby (panel/ddz/DdzLobby.vue)
-// while this save sits at no table, in a frame of the window's size over the desk page, which its wall moves. The app
-// opens a window of its own instead (stores/ui.ts, openDdzWindow).
+// The browser preview's dou dizhu window: the table (panel/ddz/DdzTable.vue) in a frame of the window's size over the
+// desk page, which its wall moves. The app opens a window of its own instead (stores/ui.ts, openDdzWindow).
 import { onBeforeUnmount, reactive } from "vue";
-import DdzLobby from "../panel/ddz/DdzLobby.vue";
 import DdzTable from "../panel/ddz/DdzTable.vue";
-import { ddzAtTable, noteDdzWindowClosed } from "../stores/ddz";
+import { noteDdzWindowClosed } from "../stores/ddz";
 import { ddzFrame } from "../stores/ui";
 
 /** The window's size in the app (src-tauri/src/lib.rs, DDZ_SIZE). */
@@ -42,8 +40,7 @@ onBeforeUnmount(onUp);
     class="ddz-frame" data-hit data-no-drag
     :style="{ '--w': `${W}px`, '--h': `${H}px`, translate: `calc(-50% + ${at.x}px) calc(-50% + ${at.y}px)` }"
   >
-    <DdzTable v-if="ddzAtTable" @close="close" @drag="drag" />
-    <DdzLobby v-else @close="close" @drag="drag" />
+    <DdzTable @close="close" @drag="drag" />
   </div>
 </template>
 

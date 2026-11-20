@@ -222,7 +222,7 @@ it("plays a game from the deal to the result", async () => {
   d.leaveDdz();
   expect(socket.sent).toHaveLength(end + 1); // nothing left to leave
   expect(d.ddz.value).toBeNull();
-  expect(frame.open).toBe(true); // the table is put away: its window stays, on the lobby
+  expect(frame.open).toBe(false); // the table is put away: its window goes too
 });
 
 it("leaves the table's window shut for a deal while the pet is hidden, and opens it with the next deal once shown", async () => {
