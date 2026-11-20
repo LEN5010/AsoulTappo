@@ -111,6 +111,8 @@ export interface DdzState {
   lead: boolean;
   /** Each seat's last move on the table: cards, [] for a pass, null for none. A lead clears the others. */
   trick: (number[] | null)[];
+  /** Every card played this deal, in order; null when the server did not say (a seat taken again on an old server). */
+  played: number[] | null;
   /** The current countdown: its length and its end in local ms. */
   sec: number;
   until: number;
@@ -425,7 +427,7 @@ function blank(id: string, via: DdzState["via"]): DdzState {
   return {
     id, via, phase: "invite", match: false, starting: false, you: 0, seats: [], sent: false, answered: false, accepted: [], base: 0, deposit: 0, cap: 0, deal: 0,
     hand: [], bid: 0, landlord: null, bottom: [], mult: 1, bombs: 0, boosts: [], dealUntil: 0, turn: null, lead: false,
-    trick: [null, null, null],
+    trick: [null, null, null], played: [],
     sec: 0, until: 0, acted: false, result: null, closed: false, reason: "", by: "", log: [],
   };
 }
@@ -589,6 +591,7 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
         bid: msg.bid, landlord: msg.landlord, bottom: msg.bottom, mult: msg.mult, bombs: msg.bombs, turn: msg.turn,
         lead: msg.lead, trick: msg.trick, sec: msg.of, until: Date.now() + msg.sec * 1000,
         boosts: Array<"bomb">(msg.bombs).fill("bomb"),
+        played: msg.played ? [...msg.played] : null,
       });
       note(t, { kind: "sync" });
     } else {
@@ -644,6 +647,7 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
       t.trick[msg.seat] = msg.cards;
       t.seats[msg.seat]!.left = msg.left;
       if (msg.seat === t.you && msg.cards.length) t.hand = t.hand.filter((c) => !msg.cards.includes(c));
+      t.played?.push(...msg.cards);
       t.mult = msg.mult;
       t.bombs = msg.bombs;
       if (isBomb(msg.cards)) t.boosts.push(msg.cards.length === 2 ? "rocket" : "bomb");

@@ -428,6 +428,8 @@ class Table:
     # What each seat did since the last lead: its cards, [] for a pass, None for nothing yet.
     trick: list[list[int] | None] = field(default_factory=lambda: [None, None, None])
     bombs: int = 0
+    # Every card played this deal, in order: the clients' count of the cards still out.
+    played: list[int] = field(default_factory=list)
     timer: Any = None
     # Counts every turn given out, so a timer that fires late knows its turn is over.
     step: int = 0
@@ -1173,6 +1175,7 @@ class Tables:
         table.bottom = sorted(deck[51:])
         table.bid, table.bidder, table.bids_made, table.landlord = 0, None, 0, None
         table.last, table.trick, table.bombs = None, [None, None, None], 0
+        table.played = []
         for i, s in enumerate(table.seats):
             s.hand = sorted(deck[i * 17:(i + 1) * 17])
             s.bid, s.plays, s.again = None, 0, False
@@ -1304,6 +1307,7 @@ class Tables:
             gone = set(cards)
             s.hand = [c for c in s.hand if c not in gone]
             s.plays += 1
+            table.played.extend(cards)
             table.bombs += rules.bombs(cards)
             table.last = (seat, cards)
         table.trick[seat] = cards
@@ -1704,6 +1708,7 @@ class Tables:
             "mult": table.mult(cfg["capMult"]), "bombs": table.bombs, "turn": table.turn,
             "lead": table.phase == PLAY and table.last is None, "trick": table.trick,
             "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
+            "played": table.played,
         }
 
     def _rooms(self, table: Table) -> set[str]:
