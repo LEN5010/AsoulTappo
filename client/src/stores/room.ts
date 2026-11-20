@@ -364,6 +364,8 @@ function errorText(code: string, message: string): string {
       return "免打扰时不能匹配";
     case "ddz_match_cooldown":
       return "稍后再匹配";
+    case "ddz_queued":
+      return "已在别处匹配";
     default:
       return message || code;
   }

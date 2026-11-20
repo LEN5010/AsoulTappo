@@ -439,4 +439,7 @@ it("holds the queue back as long as the server says after a table of the queue w
   // Refused for it all the same (another device declined): the words show where the room's errors do.
   socket.recv({ type: "error", code: "ddz_match_cooldown", message: "" });
   expect(r.lastError.value).toBe("稍后再匹配");
+  // The same save waits on another device.
+  socket.recv({ type: "error", code: "ddz_queued", message: "" });
+  expect(r.lastError.value).toBe("已在别处匹配");
 });
