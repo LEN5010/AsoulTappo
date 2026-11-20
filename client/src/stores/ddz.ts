@@ -11,6 +11,7 @@ import { requestDesktop } from "../desktop/transport";
 import { windowVisible } from "./activity";
 import { economy } from "./economy";
 import { reloadStatus, status } from "./player";
+import { settings } from "./settings";
 import {
   ddzHooks, ddzMatchOn, duelBusy, duelDnd, inRoom, me, members, sendDdz, showRoomError, showWin, shownNick, youId,
 } from "./room";
@@ -122,7 +123,7 @@ export const ddzLive = ref<Record<string, string[]>>({});
 export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 /** How many saves wait at each stake, this one included, as the server last counted. */
 export const ddzWaiting = ref<Record<number, number>>({});
-/** The save declined a table of the queue or let it lapse: the server keeps it out of the queue for a while. */
+/** The save declined a table of the queue, left it or let it lapse: the server keeps it out of the queue for a while. */
 export const ddzRetry = ref(false);
 
 /** The server has the game (its status says so) and this client is in a room. */
@@ -474,6 +475,23 @@ if (!isMirrorWindow) {
     const t = ddz.value;
     if (t?.phase === "result") t.closed = true;
     else close();
+  }, { flush: "sync" });
+  // The hold on the queue (ddzRetry) is the save's on one server: it lasts through a new connection, and goes with
+  // another save or server, as does anything of the queue.
+  const forgetQueue = () => {
+    clearTimeout(retryTimer);
+    ddzRetry.value = false;
+    dropQueueJoin();
+    queueSentAt = -Infinity;
+    ddzQueue.value = null;
+    ddzWaiting.value = {};
+  };
+  watch(() => settings.serverUrl, forgetQueue, { flush: "sync" });
+  let player = status.value?.player;
+  watch(() => status.value?.player, (now) => {
+    if (!now) return;
+    if (player && now !== player) forgetQueue();
+    player = now;
   }, { flush: "sync" });
   // The table's window comes up with each deal, the first and every one after 再来一局, and goes once the table is
   // put away. Closed during a deal, it stays closed until the next one. A deal while the hide key has the pet hidden

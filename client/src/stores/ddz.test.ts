@@ -496,3 +496,25 @@ it("takes a rate_limited answer for the queue only while a join waits for its an
   expect(d.ddz.value!.acted).toBe(true); // the bid on its way keeps its keys down
   expect(socket.sent.filter((m) => m.type === "ddz_queue")).toEqual([]);
 });
+
+it("keeps the hold on the queue through a new connection, and drops it with another save or server", async () => {
+  const { socket, d, player, settings } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 30 });
+  player.status.value = playerStatus() as typeof player.status.value; // the same save, read again
+  socket.close();
+  expect(d.ddzRetry.value).toBe(true);
+  player.status.value = playerStatus({ player: "q" }) as typeof player.status.value;
+  expect(d.ddzRetry.value).toBe(false);
+  // Another server: the hold, the wait and the counts go.
+  room!.joinRoom("r");
+  const again = Socket.all.at(-1)!;
+  again.open();
+  again.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  again.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 30 });
+  again.recv({ type: "ddz_waiting", counts: [[50, 2]] });
+  settings.serverUrl = "https://other.example";
+  expect([d.ddzRetry.value, d.ddzQueue.value, d.ddzWaiting.value]).toEqual([false, null, {}]);
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(d.ddzRetry.value).toBe(false);
+});
