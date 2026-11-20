@@ -205,7 +205,7 @@ def test_three_waiting_get_a_table_all_three_accept_and_play_it_across_rooms_to_
     run(go())
 
 
-def test_a_decline_puts_the_others_back_at_the_front_and_the_line_goes_on():
+def test_a_decline_puts_the_others_back_ahead_of_later_saves_and_the_line_goes_on():
     async def go():
         w = MatchWorld()
         (a, sa), (b, sb), (c, sc), (d, sd) = await w.queued("a", "b", "c", "d")
@@ -587,4 +587,22 @@ def test_joining_or_moving_in_the_queue_reads_the_save_at_most_once_a_second_per
         w.mono += QUEUE_INTERVAL
         await w.t.queue(a, 50)
         assert checks == [BASE, 50, 50] and queue_msgs(sa)[-1] == {"base": 50, "waited": 0.0}
+    run(go())
+
+
+def test_saves_put_back_from_two_tables_keep_the_order_they_came_in():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, _), (c, _) = await w.queued("a", "b", "c")
+        w.mono += 5
+        (d, sd), (e, _), (f, _) = await w.queued("d", "e", "f")
+        await w.t.answer(a, sa.of("ddz_invite")[0]["table"], True)
+        await w.t.answer(d, sd.of("ddz_invite")[0]["table"], True)
+        # Both lapse, the older table first: a has waited longer than d and stays ahead of it.
+        await w.timers.fire()
+        await w.t.idle()
+        assert [x.peer for x in w.t.lines[BASE]] == [a, d]
+        g, sg = w.member("g")
+        await w.t.queue(g, BASE)
+        assert sg.of("ddz_invite")[0]["ids"] == [a.id, d.id, g.id]
     run(go())

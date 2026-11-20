@@ -13,8 +13,9 @@ The queue: a member of any room, on a client that said `ddzMatch` when joining, 
 instead of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit
 down together, they get a table that belongs to no room, through the same invite, which all three have to accept.
 A save that declines, leaves or lets the time run out is out of the queue (one that declined or let the time run
-out may queue again only after MATCH_RETRY_SEC); the others go back to the front of the line. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by
-joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one
+out may queue again only after MATCH_RETRY_SEC); the others go back into the line where their wait puts them, ahead
+of anyone who came after them. Once all three accept, the game goes on as an invited one; a seat's member who leaves
+takes the seat again by joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one
 takes a save out of the queue.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
@@ -990,8 +991,8 @@ class Tables:
 
     async def _match(self, base: int) -> None:
         """Makes tables from the line of [base] while three saves in it may sit down together: the oldest three that
-        hold no invite. One that may no longer sit down leaves the queue, told why; the others of its three go back to
-        the front of the line, in order. One line is matched at a time."""
+        hold no invite. One that may no longer sit down leaves the queue, told why; the others of its three go back
+        into the line (_merge). One line is matched at a time."""
         if base in self._matching:
             return
         self._matching.add(base)
@@ -1028,7 +1029,7 @@ class Tables:
                 if len(ready) == 3:
                     self._form(base, ready)
                 elif back:
-                    self.lines.setdefault(base, [])[0:0] = back
+                    self._merge(base, back)
         finally:
             self._matching.discard(base)
 
@@ -1049,9 +1050,26 @@ class Tables:
                     "seats": [{"id": s.id, "nick": s.nick, "character": s.character} for s in table.seats]})
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
+    def _merge(self, base: int, entries: list[Waiting]) -> None:
+        """Puts [entries] into the line of [base] by when each started waiting, so the line stays oldest first:
+        saves back from tables that fell through, in whatever order those did, stay ahead of those who came later. On
+        a tie the one coming back goes first: it was ahead before."""
+        line = self.lines.setdefault(base, [])
+        back = sorted(entries, key=lambda x: x.since)
+        merged: list[Waiting] = []
+        i = j = 0
+        while i < len(back) and j < len(line):
+            if back[i].since <= line[j].since:
+                merged.append(back[i])
+                i += 1
+            else:
+                merged.append(line[j])
+                j += 1
+        line[:] = merged + back[i:] + line[j:]
+
     def _requeue(self, base: int, seats: list[Seat]) -> None:
-        """Puts the saves of [seats] back at the front of the line of [base], in order, each with the time it waited
-        before; one whose member left, sits elsewhere, waits again already or turns invites down is not."""
+        """Puts the saves of [seats] back into the line of [base] (_merge), each waiting since it first did; one
+        whose member left, sits elsewhere, waits again already or turns invites down is not."""
         cfg = self._game().manifest.ddz
         if not cfg or base not in cfg["stakes"]:
             return
@@ -1066,7 +1084,7 @@ class Tables:
             back.append(w)
         if not back:
             return
-        self.lines.setdefault(base, [])[0:0] = back
+        self._merge(base, back)
         for w in back:
             self._tell_queue(w)
         self._counts_changed()
@@ -1152,8 +1170,8 @@ class Tables:
 
     def _end_match(self, table: Table, reason: str, by: Peer | None = None) -> None:
         """Ends the invite of a table the queue made: the seat that declined or left ([by]), or every seat that let
-        the time run out, is out of the queue; the others go back to the front of the line, in seat order. One that
-        declined or let the time run out may queue again only after MATCH_RETRY_SEC."""
+        the time run out, is out of the queue; the others go back into the line (_requeue). One that declined or let
+        the time run out may queue again only after MATCH_RETRY_SEC."""
         if table.phase == DONE:
             return
         if reason == "timeout":
