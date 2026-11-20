@@ -8,7 +8,7 @@
 // close key closes it and leaves the seat playing (离桌 leaves the table).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { hints, playable } from "../../ddz/rules";
-import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey, stampOf } from "../../ddz/table";
+import { arrange, cardAt, cardsOut, fan, pickJokers, pickRank, rankOfKey, stampOf } from "../../ddz/table";
 import { cardSlide, flip } from "../../audio/sfx";
 import { characterColor } from "../../manifest";
 import { pet } from "../../stores/pet";
@@ -232,14 +232,32 @@ function onKey(e: KeyboardEvent) {
   if (used) e.preventDefault();
 }
 
-// ---- countdown bars: drawn by the stylesheet from where the turn stands when it is drawn
-function drain() {
-  const left = Math.max(0, t.value.until - Date.now());
-  const all = Math.max(1, t.value.sec * 1000);
-  return { "--from": Math.min(1, left / all), animationDuration: `${left}ms` };
+// ---- the countdown: a round key with the whole seconds left, where the seat to move lays its cards
+/** The seat whose countdown shows: the seat to move once the cards are dealt out; the own seat not while played for. */
+const clockSeat = computed(() => {
+  const x = t.value;
+  if (!playing.value || dealing.value || x.turn === null) return null;
+  return x.turn === you.value && !myTurn.value ? null : x.turn;
+});
+/** Turns coral from here down. */
+const HURRY_SEC = 5;
+const now = ref(Date.now());
+const secLeft = computed(() => Math.max(0, Math.ceil((t.value.until - now.value) / 1000)));
+let tickTimer: ReturnType<typeof setTimeout> | undefined;
+/** Moves `now` on at each whole second of the countdown, only while one shows and the window is seen. */
+function tick() {
+  clearTimeout(tickTimer);
+  now.value = Date.now();
+  if (clockSeat.value === null || document.hidden) return;
+  const left = t.value.until - now.value;
+  if (left <= 0) return;
+  tickTimer = setTimeout(tick, (left % 1000 || 1000) + 10);
 }
+watch([clockSeat, () => t.value.until], tick, { immediate: true });
 
 // ---- what is on the table
+/** The card counter: what the other two seats still hold by rank; hidden when the server does not list the plays. */
+const out = computed(() => (playing.value && t.value.played ? cardsOut(t.value.hand, t.value.played) : null));
 const shownMult = ref(1);
 const multEl = ref<HTMLElement>();
 const matEl = ref<HTMLElement>();
@@ -408,6 +426,7 @@ function wallDown(e: PointerEvent) {
 
 onMounted(() => {
   window.addEventListener("keydown", onKey);
+  document.addEventListener("visibilitychange", tick);
   observer = new ResizeObserver(([entry]) => {
     const r = entry?.contentRect;
     if (r && r.width > 0 && r.height > 0) box.value = { w: r.width, h: r.height };
@@ -416,6 +435,8 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKey);
+  document.removeEventListener("visibilitychange", tick);
+  clearTimeout(tickTimer);
   observer?.disconnect();
   clearTimeout(freshTimer);
   clearTimeout(countTimer);
@@ -456,7 +477,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div ref="matEl" class="mat" @pointerdown.self="clearPicked">
-          <b class="crest-word" aria-hidden="true"><i></i>斗地主<i></i></b>
+          <b class="crest-word" :class="{ off: clockSeat === you }" aria-hidden="true"><i></i>斗地主<i></i></b>
           <div class="mult">
             <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
             <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
@@ -477,6 +498,15 @@ onBeforeUnmount(() => {
             </span>
             <i v-if="boom?.seat === z.seat" :key="boom.seq" class="boom" aria-hidden="true"></i>
             <span v-if="stamp?.seat === z.seat" :key="`s-${stamp.seq}`" class="stamp" :class="{ calm: reducedMotion }">{{ stamp.word }}</span>
+            <span
+              v-if="clockSeat === z.seat" class="timer" :class="{ hurry: secLeft <= HURRY_SEC, alone: !z.said && !z.cards.length }"
+              role="timer"
+            >
+              {{ secLeft }}
+            </span>
+          </div>
+          <div v-if="out" class="tally">
+            <span v-for="c in out" :key="c.label" :class="{ none: !c.n }"><i>{{ c.label }}</i><b>{{ c.n }}</b></span>
           </div>
         </div>
 
@@ -512,7 +542,6 @@ onBeforeUnmount(() => {
               <b :key="bumps[p.seat]" :class="{ bump: bumps[p.seat] && !reducedMotion }">{{ leftOf(p.seat) }}</b>
             </div>
           </div>
-          <span v-if="playing && t.turn === p.seat && !dealing" :key="t.until" class="clock"><i :style="drain()"></i></span>
         </div>
 
         <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px`, bottom: `${HAND_BOTTOM}px`, height: `${HAND_H}px` }">
@@ -535,9 +564,6 @@ onBeforeUnmount(() => {
             </span>
           </div>
         </div>
-        <span v-if="myTurn && !dealing" :key="t.until" class="clock wide" :style="{ left: `calc(50% + ${(HAND_LEFT - HAND_RIGHT) / 2}px)` }">
-          <i :style="drain()"></i>
-        </span>
 
         <div class="me">
           <PetView
@@ -743,6 +769,25 @@ onBeforeUnmount(() => {
 }
 .factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
+/* The card counter: a paper strip in the mat's near left corner, each rank over how many the other two still hold;
+   a rank all gone fades. */
+.tally {
+  position: absolute;
+  left: 24px;
+  bottom: 18px;
+  display: flex;
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 10px -5px rgba(var(--c-900-rgb), 0.45);
+  pointer-events: none;
+}
+.tally span { width: 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tally i { font: 800 13px/1 var(--font-latin); font-style: normal; color: var(--ink-3); letter-spacing: -0.5px; }
+/* The jokers' 小 and 大 are characters: smaller to sit on the numerals' line. */
+.tally span:nth-last-child(-n + 2) i { font: 800 10px/13px var(--font); }
+.tally b { font: 800 15px/1 var(--font-latin); color: var(--c-700); }
+.tally .none { opacity: 0.3; }
 /* The game's name printed faint in the felt in a band, right where the own seat's word lands (an own pass or bid
    covers it). Played cards lie over it. */
 .crest-word {
@@ -760,7 +805,10 @@ onBeforeUnmount(() => {
   font: 800 18px/1 var(--font);
   letter-spacing: 0.2em;
   white-space: nowrap;
+  transition: opacity var(--dur-base);
 }
+/* Put away while the own countdown stands on it. */
+.crest-word.off { opacity: 0; }
 .crest-word i { width: 34px; height: 2px; background: #fff; opacity: 0.75; }
 /* Past the spacing after the last character, so the word sits in the middle. */
 .crest-word i:last-child { margin-left: -0.2em; }
@@ -926,23 +974,38 @@ onBeforeUnmount(() => {
   75% { scale: 1.08; }
   100% { scale: 1; }
 }
-/* The time a move has left: a bar that empties. */
-.clock { display: block; width: 156px; height: 6px; margin-top: 8px; border-radius: 3px; background: rgba(255, 255, 255, 0.45); overflow: hidden; }
-.clock i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: #fff;
-  transform-origin: 0 50%;
-  animation: drain linear forwards;
+/* The time a move has left: a round white key with the seconds, beside what the seat last laid down (on the inner
+   side for the other seats, to the right for the own one, whose cards keep their place), alone where there is
+   nothing. Coral for the last seconds. Stands upright on the askew zones. */
+.timer {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  margin-left: 14px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, #fff, var(--key-white-shade));
+  box-shadow: 0 3px 0 var(--c-200), 0 7px 10px -4px rgba(var(--c-900-rgb), 0.4);
+  color: var(--ink);
+  font: 800 28px/1 var(--font-latin);
+  letter-spacing: -0.5px;
 }
-/* The own move's bar lies between the hand and the keys. */
-.clock.wide { position: absolute; bottom: 60px; width: 452px; margin: 0 0 0 -226px; background: var(--c-200); z-index: 4; }
-.clock.wide i { background: linear-gradient(90deg, var(--c-400), var(--c-600)); }
-@keyframes drain {
-  from { transform: scaleX(var(--from)); }
-  to { transform: scaleX(0); }
+/* The coral key keeps a white edge, as the landlord's tag does, so it stands off the coral mat. */
+.timer.hurry {
+  background: var(--c-600);
+  box-shadow: inset 0 0 0 2px #fff, 0 3px 0 var(--c-700), 0 7px 10px -4px rgba(var(--c-900-rgb), 0.45);
+  color: #fff;
 }
+.zone.left .timer { rotate: 3deg; }
+.zone.right .timer { order: -1; margin: 0 14px 0 0; rotate: -3deg; }
+.zone.own .timer { margin: 0 -66px 0 14px; }
+.zone .timer.alone { margin: 0; }
+/* Alone, the own one stands where the own seat's word would, centred 56 above the mat's foot. */
+.zone.own .timer.alone { margin-bottom: 22px; }
+.zone.left .said + .timer { margin-top: 26px; }
+.zone.right .said ~ .timer { margin-top: 26px; }
+.zone.own .said + .timer { margin-bottom: 28px; }
 
 .hand-wrap { position: absolute; z-index: 4; pointer-events: none; }
 .hand { position: relative; height: 100%; pointer-events: auto; touch-action: none; }

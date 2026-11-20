@@ -167,6 +167,8 @@ export type DdzMessage =
     seats: (DdzSeatInfo & { left: number; bid: number | null })[]; base: number; cap: number; deal: number; bid: number;
     landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number; lead: boolean;
     trick: (number[] | null)[]; sec: number; of: number;
+    /** Every card played this deal, in order; left out by servers before the card counter. */
+    played?: number[];
   }
   /**
    * To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. A

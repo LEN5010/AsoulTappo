@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rank } from "./rules";
-import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey, stampOf } from "./table";
+import { arrange, cardAt, cardsOut, fan, pickJokers, pickRank, rankOfKey, stampOf } from "./table";
 
 describe("ddz table", () => {
   it("fans a hand into the room it has", () => {
@@ -66,5 +66,17 @@ describe("ddz table", () => {
     expect(stampOf([0, 1, 2, 4])).toBeNull(); // a trio with one
     expect(stampOf([20, 21, 22, 23, 0, 4])).toBeNull(); // four with two
     expect(stampOf([])).toBeNull();
+  });
+
+  it("counts the cards still out with the other two seats", () => {
+    const all = cardsOut([], []);
+    expect(all.map((c) => c.label)).toEqual(["3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A", "2", "小", "大"]);
+    expect(all.map((c) => c.n)).toEqual([4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1]);
+    // Held: 3 3 and the big joker; played: 3 3, an ace and the small joker.
+    const out = cardsOut([0, 1, 53], [2, 3, 44, 52]);
+    expect(out[0]).toEqual({ label: "3", n: 0 });
+    expect(out[11]).toEqual({ label: "A", n: 3 });
+    expect(out.slice(13).map((c) => c.n)).toEqual([0, 0]);
+    expect(out.reduce((n, c) => n + c.n, 0)).toBe(54 - 7);
   });
 });
