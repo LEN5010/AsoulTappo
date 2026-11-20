@@ -13,7 +13,7 @@ import { characterColor } from "../../manifest";
 import { pet } from "../../stores/pet";
 import { localPet, members, shownNick } from "../../stores/room";
 import { settings } from "../../stores/settings";
-import { autoDdz, againDdz, bidDdz, ddz, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
+import { autoDdz, againDdz, bidDdz, ddz, ddzEmotes, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
 import NamePlate from "../../pet/NamePlate.vue";
 import { getPlate } from "../../pet/plates";
 import PetView from "../../pet/PetView.vue";
@@ -35,20 +35,21 @@ const sides = computed(() => [{ seat: leftSeat.value, side: "left" }, { seat: ri
 const mine = computed(() => t.value.seats[you.value]!);
 const playing = computed(() => t.value.phase === "bid" || t.value.phase === "play");
 /**
- * The room member in a seat, for its live pet and plate; null once it left the room, and for a member of a table the
- * queue made who sits in another room (the seat's own nick and character stand in).
+ * The room member in a seat, for its live pet's taps; null once it left the room, and at a table of the dou dizhu
+ * connection, whose ids are not the room's (the seat's own face stands in).
  */
 const memberOf = (seat: number) => {
   const s = t.value.seats[seat]!;
-  return s.away ? null : members.get(s.id) ?? null;
+  return s.away || t.value.via === "link" ? null : members.get(s.id) ?? null;
 };
+/** The emote over a seat's pet: sent to the table, or by a 1.2.5 tablemate to the room. */
+const emoteOf = (seat: number) => ddzEmotes.value[seat] ?? memberOf(seat)?.emote ?? null;
 const nickOf = (seat: number) => (seat === you.value ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
 /** The name plate a seat shows in place of its name tag: the own one when worn, a partner's unless plates are off. */
 const PLATE = { w: 210, h: 30 };
 const plateOf = (seat: number): string | undefined => {
   if (seat === you.value) return getPlate(settings.plate)?.id;
-  const m = memberOf(seat);
-  return settings.showPlates && m ? getPlate(m.plate)?.id : undefined;
+  return settings.showPlates ? getPlate(t.value.seats[seat]!.plate ?? memberOf(seat)?.plate)?.id : undefined;
 };
 
 // ---- the stage: at least BASE, scaled as one piece
@@ -452,12 +453,15 @@ onBeforeUnmount(() => {
         <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]">
           <!-- The emotes open on the side away from the bottom cards, beside the head: over it is the stage's edge. -->
           <PetView
-            v-if="memberOf(p.seat)" :character="memberOf(p.seat)!.character" :scale="0.95" :min-emote="52"
-            :pulse="memberOf(p.seat)!.pulse" :emote="memberOf(p.seat)!.emote" :combo="memberOf(p.seat)!.combo"
+            v-if="memberOf(p.seat)" :character="t.seats[p.seat]!.character" :scale="0.95" :min-emote="52"
+            :pulse="memberOf(p.seat)!.pulse" :emote="emoteOf(p.seat)" :combo="memberOf(p.seat)!.combo"
             :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'left'"
             :bubble-shift="{ x: 0, y: 54 }"
           />
-          <PetView v-else :character="t.seats[p.seat]!.character" :scale="0.95" />
+          <PetView
+            v-else :character="t.seats[p.seat]!.character" :scale="0.95" :min-emote="52" :emote="emoteOf(p.seat)"
+            :flip-bubble="p.side === 'left'" :bubble-shift="{ x: 0, y: 54 }"
+          />
           <div class="under">
             <span v-if="plateOf(p.seat)" class="worn" :class="{ turn: t.turn === p.seat && !dealing }">
               <NamePlate

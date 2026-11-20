@@ -30,7 +30,7 @@ import PublicRoomList from "./PublicRoomList.vue";
 import RecentRoomList from "./RecentRoomList.vue";
 import { dropRoom } from "../recentRooms";
 import SegTabs from "../ui/SegTabs.vue";
-import { ddzOn, ddzPlaying } from "../stores/ddz";
+import { ddzOn, ddzPlaying, ddzQueueOn } from "../stores/ddz";
 import DdzBanner from "./ddz/DdzBanner.vue";
 
 const input = ref(settings.lastRoom);
@@ -337,7 +337,7 @@ async function copy() {
         </div>
       </section>
       <p v-if="lastError || notice" class="ui-error err" role="alert">{{ lastError || notice }}</p>
-      <DdzBanner v-if="ddzOn" :need-account="needAccount" />
+      <DdzBanner v-if="ddzOn || ddzQueueOn" :need-account="needAccount" />
     </div>
 
     <section v-if="conn === 'idle' && settings.recentRooms.length" data-rise>

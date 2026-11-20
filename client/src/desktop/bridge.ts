@@ -36,7 +36,8 @@ const groupSources = {
   todos: () => todoStore.todos.value,
   ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, queue: ddzStore.ddzQueue.value,
     waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value, tables: ddzStore.ddzTables.value,
-    call: ddzStore.ddzCall.value }),
+    call: ddzStore.ddzCall.value, link: ddzStore.ddzLink.value, linkOff: ddzStore.ddzLinkOff.value,
+    emotes: ddzStore.ddzEmotes.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz, ddzMatch }) =>
     ({ id, uid, nick, character, plate, ddz, ddzMatch })),
 };
@@ -78,6 +79,9 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddzRetry.value = s.ddz.retry;
     ddzStore.ddzTables.value = s.ddz.tables;
     ddzStore.ddzCall.value = s.ddz.call;
+    ddzStore.ddzLink.value = s.ddz.link;
+    ddzStore.ddzLinkOff.value = s.ddz.linkOff;
+    ddzStore.ddzEmotes.value = s.ddz.emotes;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
@@ -284,7 +288,7 @@ export async function initDesktop(): Promise<() => void> {
         case "buyScratch": result = await player.buyScratch(); break;
         case "revealScratch": result = await player.revealScratch(args[0] as number); break;
         case "setAccount": result = await player.setAccount(args[0] as player.AccountSession | null, args[1] as boolean); break;
-        case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number); break;
+        case "sendEmote": result = room.sendEmote(args[0] as string, args[1] as number, (args[2] as boolean | null) ?? true); break;
         case "createRoom": result = await room.createRoom(); break;
         case "joinRoom": room.joinRoom(args[0] as string); break;
         case "leaveRoom": room.leaveRoom(); break;
@@ -295,6 +299,7 @@ export async function initDesktop(): Promise<() => void> {
         case "inviteDuel": room.inviteDuel(args[0] as string, args[1] as number); break;
         case "loadProfile": result = await room.loadProfile(args[0] as string); break;
         case "loadBoard": result = await player.loadBoard(); break;
+        case "loadDdzLobby": result = await player.loadDdzLobby(); break;
         case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
         case "loadEconomy": await player.loadEconomy(args[0] as string); break;
         case "park": result = await parkStore.parkRequest(args[0] as parkStore.ParkMethod, args[1] as string, args[2]); break;

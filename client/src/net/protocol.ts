@@ -98,8 +98,11 @@ export type DuelMessage =
   /** To both sides: ended without a winner (declined, timeout, gone, no_shards, duel_cap; idle and draws refund). */
   | { type: "duel_over"; duel: string; reason: string };
 
-/** A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for. */
-export interface DdzSeatInfo { id: string; nick: string; character: string; auto: boolean; away: boolean }
+/**
+ * A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for;
+ * `plate` the name plate its member wears, when one is.
+ */
+export interface DdzSeatInfo { id: string; nick: string; character: string; plate?: string | null; auto: boolean; away: boolean }
 
 /** A seat of an open table: its member, one offered to a save of the queue (who stays unsaid), or null for empty. */
 export type DdzOpenSeat = { id: string; nick: string; character: string } | { pending: true } | null;
@@ -119,7 +122,7 @@ export type DdzMessage =
    */
   | {
     type: "ddz_invite"; table: string; from?: string; ids: string[]; base: number; deposit: number; sec: number;
-    match?: boolean; seats?: ({ id: string; nick: string; character: string } | null)[]; accepted?: string[];
+    match?: boolean; seats?: ({ id: string; nick: string; character: string; plate?: string | null } | null)[]; accepted?: string[];
   }
   /**
    * The open table this save sits at, whenever it changes: `you` is the own seat, `sec` the time until it is put away;
@@ -152,8 +155,16 @@ export type DdzMessage =
     type: "ddz_play"; table: string; seat: number; cards: number[]; left: number; mult: number; bombs: number;
     turn?: number; sec?: number; lead?: boolean;
   }
-  /** A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. */
-  | { type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number }
+  /**
+   * A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. A member back on a
+   * connection with another nick, pet or plate brings them along.
+   */
+  | {
+    type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number;
+    nick?: string; character?: string; plate?: string | null;
+  }
+  /** Seat `seat` of the own table showed emote `emote`, in whatever room. */
+  | { type: "ddz_emote"; table: string; seat: number; emote: string }
   | {
     type: "ddz_result"; table: string; winner: "landlord" | "farmers"; landlord: number; bid: number; bombs: number;
     /** 0 none, 1 spring, 2 counter-spring. */
@@ -198,7 +209,39 @@ export type DdzClientMessage =
   /** Open tables, to the same servers: open one at `base`, sit down at one (at `seat` when empty), call a member. */
   | { type: "ddz_open"; base: number }
   | { type: "ddz_sit"; table: string; seat?: number }
-  | { type: "ddz_call"; table: string; id: string };
+  | { type: "ddz_call"; table: string; id: string }
+  /** An emote to the other seats of the own table. */
+  | { type: "ddz_emote"; table: string; emote: string };
+
+/** Who a dou dizhu connection is: the same as a room join's. */
+export interface DdzHello {
+  nick: string; character: string; token?: string; accountToken?: string; plate?: string; dnd?: boolean;
+}
+
+/** What a dou dizhu connection hears beyond the table's messages. */
+export type DdzLinkMessage =
+  | DdzMessage
+  /**
+   * The hello went through: its member id; the stake the save waits at, taken over from an older connection (null
+   * when it does not); the table whose seat it took back (null for none: whatever it held before is gone).
+   */
+  | { type: "ddz_ready"; you: string; base: number | null; waited?: number; table: string | null }
+  | { type: "error"; code: string; message: string; reason?: string }
+  | { type: "pong" };
+
+/** GET /api/ddz/lobby: what the lobby shows the save. */
+export interface DdzLobby {
+  /** The stakes: the deposit, whether the save can pay it, how many saves wait there (it included). */
+  tiers: { base: number; deposit: number; afford: boolean; waiting: number }[];
+  /** Today's net win, the cap and what is left under it. */
+  net: number; cap: number; left: number;
+  /** The taps the save has and needs. */
+  taps: number; minTaps: number;
+  /** Whether the save meets the account rule of the server. */
+  account: boolean;
+  /** The save holds a seat a dou dizhu connection takes back. */
+  seated: boolean;
+}
 
 export type ClientMessage =
   | {
@@ -236,6 +279,8 @@ export type ClientMessage =
   | { type: "duel_invite"; id: string; bet: number }
   | { type: "duel_answer"; duel: string; accept: boolean }
   | { type: "duel_throw"; duel: string; hand: Hand }
+  /** Opens a dou dizhu connection, in no room. */
+  | ({ type: "ddz_hello" } & DdzHello)
   | DdzClientMessage;
 
 export type ServerMessage =

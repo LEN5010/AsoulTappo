@@ -13,7 +13,12 @@ class Socket implements WsLike {
   onclose: WsLike["onclose"] = null;
   onerror: WsLike["onerror"] = null;
   constructor(public url: string) { Socket.all.push(this); }
-  send(data: string) { this.sent.push(JSON.parse(data)); }
+  send(data: string) {
+    const msg = JSON.parse(data);
+    this.sent.push(msg);
+    // The server's keepalive answer.
+    if (msg.type === "ping") queueMicrotask(() => this.recv({ type: "pong" }));
+  }
   open() { this.readyState = 1; this.onopen?.({}); }
   close() { this.readyState = 3; this.onclose?.({}); }
   recv(data: unknown) { this.onmessage?.({ data: JSON.stringify(data) }); }
@@ -217,7 +222,7 @@ it("plays a game from the deal to the result", async () => {
   d.leaveDdz();
   expect(socket.sent).toHaveLength(end + 1); // nothing left to leave
   expect(d.ddz.value).toBeNull();
-  expect(frame.open).toBe(false); // the table is put away: its window goes too
+  expect(frame.open).toBe(true); // the table is put away: its window stays, on the lobby
 });
 
 it("leaves the table's window shut for a deal while the pet is hidden, and opens it with the next deal once shown", async () => {
@@ -325,155 +330,335 @@ it("says a game ended because a seat's save has no account", async () => {
 const X = { id: "x", nick: "远方", character: "贝拉" };
 const Y = { id: "y", nick: "天边", character: "乃琳" };
 
-it("offers the queue only where the server has it, and waits as the server says", async () => {
-  const { socket, d, settings } = await setup();
+/** The dou dizhu connection the store opened last: opens it and answers its hello as [ready]. */
+function linkUp(ready: Record<string, unknown> = {}) {
+  const lk = Socket.all.at(-1)!;
+  lk.open();
+  lk.recv({ type: "ddz_ready", you: "L", base: null, table: null, ...ready });
+  return lk;
+}
+const sentOf = (s: Socket, type: string) => s.sent.filter((m) => m.type === type);
+
+it("queues on a dou dizhu connection of its own, in a room or not, and closes it once nothing needs it", async () => {
+  const { socket, d, r, settings } = await setup();
   expect(socket.sent[0]).toMatchObject({ type: "join", ddz: true, ddzMatch: true });
-  expect(d.ddzMatchable.value).toBe(false); // the server did not list the queue
-  d.queueDdz(50);
-  expect(socket.sent.filter((m) => m.type === "ddz_queue")).toEqual([]);
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  expect(d.ddzCanQueue.value).toBe(true);
-  const sent = socket.sent.length;
+  room!.leaveRoom(); // out of any room
+  expect(r.inRoom.value).toBe(false);
+  expect([d.ddzServerOn.value, d.ddzQueueOn.value, d.ddzCanQueue.value]).toEqual([true, true, true]);
+  const before = Socket.all.length;
   d.queueDdz(500); // cannot pay the deposit
   d.queueDdz(100); // not a stake
+  expect(Socket.all).toHaveLength(before);
   d.queueDdz(250);
-  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_queue", base: 250 }]);
+  // The connection comes up for it and says hello as the room would join; the join goes once it is ready.
+  expect(Socket.all).toHaveLength(before + 1);
+  const lk = Socket.all.at(-1)!;
+  expect(lk.url).toContain("/ws?v=");
+  lk.open();
+  expect(lk.sent).toEqual([{ type: "ddz_hello", nick: settings.nick.trim() || "匿名小面包", character: settings.character, token: expect.any(String) }]);
+  lk.recv({ type: "ddz_ready", you: "L", base: null, table: null });
+  expect(d.ddzLink.value).toBe("open");
+  expect(sentOf(lk, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 250 }]);
   expect(d.ddzQueue.value).toBeNull(); // waiting once the server says so
-  socket.recv({ type: "ddz_queue", base: 250, waited: 3 });
+  lk.recv({ type: "ddz_queue", base: 250, waited: 3 });
   expect(d.ddzQueue.value).toEqual({ base: 250, since: Date.now() - 3000 });
   d.queueDdz(250); // waiting there already
-  expect(socket.sent).toHaveLength(sent + 1);
-  socket.recv({ type: "ddz_waiting", counts: [[50, 1], [250, 3]] });
+  expect(sentOf(lk, "ddz_queue")).toHaveLength(1);
+  lk.recv({ type: "ddz_waiting", counts: [[50, 1], [250, 3]] });
   expect([50, 250, 500].map(d.ddzOthersWaiting)).toEqual([1, 2, 0]);
+  // Joining a room and leaving it changes nothing of the wait.
+  room!.joinRoom("r");
+  const again = Socket.all.at(-1)!;
+  again.open();
+  again.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  room!.leaveRoom();
+  expect(d.ddzQueue.value).toEqual({ base: 250, since: Date.now() - 3000 });
+  // Turning invites down tells the connection.
+  settings.duelDnd = true;
+  expect(lk.sent.at(-1)).toEqual({ type: "dnd", dnd: true });
+  settings.duelDnd = false;
   d.unqueueDdz();
-  expect(socket.sent.at(-1)).toEqual({ type: "ddz_queue", base: 0 });
-  socket.recv({ type: "ddz_queue", base: null });
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_queue", base: 0 });
+  lk.recv({ type: "ddz_queue", base: null });
   expect(d.ddzQueue.value).toBeNull();
   d.unqueueDdz(); // not waiting
-  expect(socket.sent).toHaveLength(sent + 2);
-  settings.duelDnd = true; // turning invites down keeps the save out of the queue
+  expect(sentOf(lk, "ddz_queue")).toHaveLength(2);
+  // Nothing needs it: it goes after a while, saying leave.
+  await vi.advanceTimersByTimeAsync(d.LINK_GRACE_MS - 1);
+  expect(lk.readyState).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(lk.readyState).toBe(3);
+  expect(lk.sent.at(-1)).toEqual({ type: "leave" });
+  expect(d.ddzLink.value).toBe("idle");
+  // Turning invites down keeps the save out of the queue.
+  settings.duelDnd = true;
   expect(d.ddzCanQueue.value).toBe(false);
+  const sockets = Socket.all.length;
   d.queueDdz(50);
-  expect(socket.sent.slice(sent).filter((m) => m.type === "ddz_queue")).toHaveLength(2);
+  expect(Socket.all).toHaveLength(sockets);
 });
 
-it("takes a table of the queue whose members are in other rooms, and goes back in line when it falls through", async () => {
+it("takes a table of the queue on the connection, plays it there, and keeps the connection up for another game", async () => {
   const { socket, d, r } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A], features: ["ddz_match"] });
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
   await vi.advanceTimersByTimeAsync(20000);
-  socket.recv({ type: "ddz_queue", base: null });
-  socket.recv({
-    type: "ddz_invite", table: "m1", ids: ["x", "me", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME }, Y],
-  });
+  lk.recv({ type: "ddz_queue", base: null });
+  // The connection names this save by its own member id, L.
+  lk.recv({ type: "ddz_invite", table: "m1", ids: ["x", "L", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME, id: "L" }, Y] });
   expect(d.ddzQueue.value).toBeNull();
-  expect(d.ddz.value).toMatchObject({ id: "m1", match: true, you: 1, sent: false, accepted: [], base: 50 });
+  expect(d.ddz.value).toMatchObject({ id: "m1", via: "link", match: true, you: 1, sent: false, accepted: [], base: 50 });
   expect(d.ddz.value!.seats.map((s) => [s.nick, s.character])).toEqual([["远方", "贝拉"], ["我", "嘉然"], ["天边", "乃琳"]]);
   expect(d.ddzBubble.value).toBe("invite");
+  // An invite of the room for another save means nothing here.
+  socket.recv({ type: "ddz_invite", table: "z", from: "a", ids: ["a", "L", "b"], base: 50, deposit: 2400, sec: 15 });
+  expect(d.ddz.value!.id).toBe("m1");
+  const roomSent = socket.sent.length;
   d.answerDdz(true);
-  expect(socket.sent.at(-1)).toEqual({ type: "ddz_answer", table: "m1", accept: true });
-  socket.recv({ type: "ddz_answer", table: "m1", id: "me" });
-  socket.recv({ type: "ddz_over", table: "m1", reason: "declined", by: "y" });
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_answer", table: "m1", accept: true });
+  expect(socket.sent).toHaveLength(roomSent); // not on the room's connection
+  lk.recv({ type: "ddz_answer", table: "m1", id: "L" });
+  lk.recv({ type: "ddz_over", table: "m1", reason: "declined", by: "y" });
   expect(d.ddz.value).toMatchObject({ phase: "over", by: "天边" });
   // Put back at the front of the line, still counting from when it started waiting.
-  socket.recv({ type: "ddz_queue", base: 50, waited: 20 });
+  lk.recv({ type: "ddz_queue", base: 50, waited: 20 });
   expect(d.ddz.value).toBeNull();
   expect(d.ddzQueue.value).toEqual({ base: 50, since: Date.now() - 20000 });
-  // Matched again; the game shows the members of other rooms as the server names them.
-  socket.recv({ type: "ddz_queue", base: null });
-  socket.recv({ type: "ddz_invite", table: "m2", ids: ["me", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME }, X, Y] });
+  // Matched again and dealt: the moves go on the connection; a room's refusal does not touch its keys.
+  lk.recv({ type: "ddz_queue", base: null });
+  lk.recv({ type: "ddz_invite", table: "m2", ids: ["L", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME, id: "L" }, X, Y] });
   d.answerDdz(true);
-  socket.recv({ type: "ddz_live", table: "m2", ids: ["me", "x", "y"], on: true });
-  expect([...d.ddzPlaying.value]).toEqual(["me", "x", "y"]);
-  const seats = [ME, X, Y].map(({ id, nick, character }) => ({ id, nick, character, auto: false, away: false }));
-  socket.recv({ type: "ddz_deal", table: "m2", seats, you: 0, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
-  expect(d.ddz.value).toMatchObject({ phase: "bid", you: 0, match: false });
+  const seats = [{ ...ME, id: "L", plate: "achao" }, X, Y].map((s) => ({ auto: false, away: false, ...s }));
+  lk.recv({ type: "ddz_deal", table: "m2", seats, you: 0, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  expect(d.ddz.value).toMatchObject({ phase: "bid", via: "link", you: 0 });
+  expect(d.ddz.value!.seats[0]!.plate).toBe("achao");
   expect(d.ddz.value!.seats[2]).toMatchObject({ nick: "天边", away: false });
   expect(r.members.has("y")).toBe(false);
+  d.bidDdz(3);
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_bid", table: "m2", bid: 3 });
+  socket.recv({ type: "error", code: "ddz_bad", message: "" });
+  expect(d.ddz.value!.acted).toBe(true);
+  lk.recv({ type: "error", code: "ddz_bad", message: "" });
+  expect(d.ddz.value!.acted).toBe(false);
+  // Leaving the room leaves the game alone.
+  room!.leaveRoom();
+  expect(d.ddz.value).toMatchObject({ id: "m2", phase: "bid" });
+  // Another seat comes back with another nick; the result keeps the connection up for 再来一局.
+  lk.recv({ type: "ddz_seat", table: "m2", seat: 2, id: "y2", away: false, auto: false, nick: "新名字", character: "思诺", plate: null });
+  expect(d.ddz.value!.seats[2]).toMatchObject({ id: "y2", nick: "新名字", character: "思诺" });
+  lk.recv({
+    type: "ddz_result", table: "m2", winner: "landlord", landlord: 0, bid: 3, bombs: 0, spring: 0, mult: 3, base: 50,
+    deltas: [270, -150, -150], hands: [[], [1], [2]], sec: 30,
+  });
+  expect(r.localPet.win).toMatchObject({ count: 270 }); // out of any room, the own pet shows it from the result
+  await vi.advanceTimersByTimeAsync(d.LINK_GRACE_MS * 2);
+  expect(lk.readyState).toBe(1);
+  d.againDdz();
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_again", table: "m2" });
+  // The receipt put away: the connection goes after a while.
+  lk.recv({ type: "ddz_closed", table: "m2" });
+  d.leaveDdz();
+  await vi.advanceTimersByTimeAsync(d.LINK_GRACE_MS);
+  expect(lk.readyState).toBe(3);
 });
 
-it("says why the server took the save out of the queue, and forgets the queue with the room", async () => {
-  const { socket, d, r } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
-  socket.recv({ type: "ddz_queue", base: null, reason: "no_shards" });
+it("shows the table's emotes over each seat, and sends its own over the table's connection", async () => {
+  const { socket, d, r, player } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  socket.recv({ type: "ddz_emote", table: "t", seat: 2, emote: "thumbup" });
+  socket.recv({ type: "ddz_emote", table: "other", seat: 0, emote: "thumbup" });
+  expect(d.ddzEmotes.value.map((f) => f?.key ?? null)).toEqual([null, null, "thumbup"]);
+  player.collection.owned = { "emote:thumbup": 1 } as typeof player.collection.owned;
+  const sent = socket.sent.length;
+  d.emoteDdz("thumbup");
+  // On the own pet, and to the table only: the room hears no emote of it.
+  expect(r.localPet.emote).toMatchObject({ key: "thumbup" });
+  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_emote", table: "t", emote: "thumbup" }]);
+  d.emoteDdz("thumbup"); // too soon after the last
+  expect(socket.sent).toHaveLength(sent + 1);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(d.ddzEmotes.value).toEqual([null, null, null]);
+  // Another table starts without them.
+  socket.recv({ type: "ddz_emote", table: "t", seat: 0, emote: "thumbup" });
+  socket.recv({ type: "ddz_deal", table: "t2", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  expect(d.ddzEmotes.value).toEqual([null, null, null]);
+});
+
+it("comes back on a new connection: the wait and the seat the server kept, or none", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  // Dropped: it keeps showing the wait and reconnects; the new connection took the place over.
+  lk.close();
+  expect(d.ddzLink.value).toBe("reconnecting");
+  expect(d.ddzQueue.value).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(1000);
+  const lk2 = linkUp({ base: 50, waited: 4 });
+  expect(lk2).not.toBe(lk);
+  expect(d.ddzQueue.value).toEqual({ base: 50, since: Date.now() - 4000 });
+  expect(sentOf(lk2, "ddz_queue")).toEqual([]);
+  // Dropped again, and the server lost the wait meanwhile: joined again.
+  lk2.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  const lk3 = linkUp();
+  expect(sentOf(lk3, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 50 }]);
+  lk3.recv({ type: "ddz_queue", base: null });
+  lk3.recv({ type: "ddz_invite", table: "m1", ids: ["L", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME, id: "L" }, X, Y] });
+  const seats = [{ ...ME, id: "L" }, X, Y].map((s) => ({ auto: false, away: false, ...s }));
+  lk3.recv({ type: "ddz_deal", table: "m1", seats, you: 0, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  // Back with the seat: the game stays and its state follows; back without it, the game is gone.
+  lk3.close();
+  await vi.advanceTimersByTimeAsync(4000);
+  linkUp({ you: "L2", table: "m1" });
+  expect(d.ddz.value).toMatchObject({ id: "m1", phase: "bid" });
+  Socket.all.at(-1)!.close();
+  await vi.advanceTimersByTimeAsync(8000);
+  linkUp({ you: "L3" });
+  expect(d.ddz.value).toBeNull();
+});
+
+it("takes back a seat the server kept after a restart, and stops on a server without the connection", async () => {
+  const { d, fetchMock } = await setup();
+  const lobbyCalls = () => fetchMock.mock.calls.filter((c) => String((c as unknown[])[0]).endsWith("/api/ddz/lobby"));
+  // The desk asked once whether the save holds a seat of the queue's; this one does not.
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lobbyCalls()).toHaveLength(1);
+  expect(d.ddzLink.value).toBe("idle");
+  // Another save that does: the connection comes up and takes it back.
+  const player = await import("./player");
+  fetchMock.mockImplementation((async (url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? { ok: true, status: 200, json: async () => ({ tiers: [], seated: true }) }
+    : { ok: true, status: 200, json: async () => playerStatus({ player: "q" }) })) as never);
+  player.status.value = playerStatus({ player: "q" }) as typeof player.status.value;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lobbyCalls()).toHaveLength(2);
+  expect(d.ddzLink.value).toBe("connecting");
+  const lk = linkUp({ table: "m9" });
+  const seats = [{ ...ME, id: "L" }, X, Y].map((s) => ({ auto: false, away: false, ...s }));
+  lk.recv({
+    type: "ddz_state", table: "m9", phase: "play", you: 0, hand: HAND, seats: seats.map((s) => ({ ...s, left: 17, bid: null })),
+    base: 50, cap: 24, deal: 1, bid: 3, landlord: 0, bottom: [], mult: 3, bombs: 0, turn: 0, lead: true,
+    trick: [null, null, null], sec: 10, of: 30,
+  });
+  expect(d.ddz.value).toMatchObject({ id: "m9", via: "link", phase: "play" });
+  // Another server: the connection goes.
+  const s2 = await import("./settings");
+  s2.settings.serverUrl = "https://old.example";
+  expect([d.ddzLink.value, lk.readyState, d.ddz.value]).toEqual(["idle", 3, null]);
+});
+
+it("stops on a server that does not know the connection, or whose lobby is not there", async () => {
+  const { d } = await setup();
+  // It answers the hello as a bad message: no queue there, and nothing is tried again.
+  d.queueDdz(50);
+  const old = Socket.all.at(-1)!;
+  old.open();
+  old.recv({ type: "error", code: "bad_message", message: "invalid message" });
+  expect([d.ddzLinkOff.value, d.ddzQueueOn.value, d.ddzCanQueue.value, d.ddzQueue.value]).toEqual([true, false, false, null]);
+  expect(old.readyState).toBe(3);
+  const sockets = Socket.all.length;
+  await vi.advanceTimersByTimeAsync(30_000);
+  d.queueDdz(50);
+  expect(Socket.all).toHaveLength(sockets);
+});
+
+it("turns the queue off on a server whose lobby answers 404", async () => {
+  const { d, fetchMock, player } = await setup();
+  fetchMock.mockImplementation((async (url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? { ok: false, status: 404, json: async () => ({ detail: { code: "no_ddz", message: "" } }) }
+    : { ok: true, status: 200, json: async () => playerStatus({ player: "q" }) })) as never);
+  player.status.value = playerStatus({ player: "q" }) as typeof player.status.value;
+  await vi.advanceTimersByTimeAsync(0);
+  expect([d.ddzLinkOff.value, d.ddzQueueOn.value]).toEqual([true, false]);
+  expect(await player.loadDdzLobby()).toBe("off");
+});
+
+it("says why the server took the save out of the queue or refused it", async () => {
+  const { d, r } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  lk.recv({ type: "ddz_queue", base: null, reason: "no_shards" });
   expect(d.ddzQueue.value).toBeNull();
   expect(r.lastError.value).toBe("碎片不足");
-  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
-  socket.recv({ type: "ddz_waiting", counts: [[50, 1]] });
-  socket.close();
-  expect(d.ddzQueue.value).toBeNull();
-  expect(d.ddzWaiting.value).toEqual({});
-  expect(r.ddzMatchOn.value).toBe(false);
+  // The same save waits on another device.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.queueDdz(50);
+  lk.recv({ type: "error", code: "ddz_queued", message: "" });
+  expect(r.lastError.value).toBe("已在别处匹配");
 });
 
 it("answers only the invite the player saw: an answer for another table is dropped", async () => {
-  const { socket, d } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  socket.recv({ type: "ddz_invite", table: "m2", ids: ["x", "me", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME }, Y] });
-  const sent = socket.sent.length;
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_invite", table: "m2", ids: ["x", "L", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME, id: "L" }, Y] });
+  const sent = lk.sent.length;
   d.answerDdz(true, "m1"); // clicked while m1 was on screen; m2 took its place before the click arrived
   d.answerDdz(false, "m1");
-  expect(socket.sent).toHaveLength(sent);
+  expect(lk.sent).toHaveLength(sent);
   expect(d.ddz.value).toMatchObject({ id: "m2", answered: false });
   d.answerDdz(true, "m2");
-  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_answer", table: "m2", accept: true }]);
+  expect(lk.sent.slice(sent)).toEqual([{ type: "ddz_answer", table: "m2", accept: true }]);
 });
 
 it("holds the queue back as long as the server says after a table of the queue was declined or let lapse", async () => {
-  const { socket, d, r } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  const { d, r } = await setup();
   expect(d.ddzCanQueue.value).toBe(true);
-  socket.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 3 });
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 3 });
   expect(d.ddzRetry.value).toBe(true);
   expect(d.ddzCanQueue.value).toBe(false);
-  expect(r.lastError.value).toBe(""); // the banner says it
-  const sent = socket.sent.length;
+  expect(r.lastError.value).toBe(""); // the lobby says it
+  const sent = lk.sent.length;
   d.queueDdz(50);
-  expect(socket.sent).toHaveLength(sent);
+  expect(lk.sent).toHaveLength(sent);
   await vi.advanceTimersByTimeAsync(2900);
   expect(d.ddzRetry.value).toBe(true);
   await vi.advanceTimersByTimeAsync(100);
   expect(d.ddzRetry.value).toBe(false);
   expect(d.ddzCanQueue.value).toBe(true);
   // Refused for it all the same (another device declined): the words show where the room's errors do.
-  socket.recv({ type: "error", code: "ddz_match_cooldown", message: "" });
+  d.queueDdz(50);
+  lk.recv({ type: "error", code: "ddz_match_cooldown", message: "" });
   expect(r.lastError.value).toBe("稍后再匹配");
-  // The same save waits on another device.
-  socket.recv({ type: "error", code: "ddz_queued", message: "" });
-  expect(r.lastError.value).toBe("已在别处匹配");
 });
 
 it("keeps queue requests a server interval apart, and sends a join the server held back once more", async () => {
-  const { socket, d, settings } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  const queue = () => socket.sent.filter((m) => m.type === "ddz_queue");
+  const { d, settings } = await setup();
   d.queueDdz(50);
-  expect(queue()).toEqual([{ type: "ddz_queue", base: 50 }]); // the first goes at once
-  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  const lk = linkUp();
+  const queue = () => sentOf(lk, "ddz_queue");
+  expect(queue()).toEqual([{ type: "ddz_queue", base: 50 }]); // the first goes once the connection is ready
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
   d.unqueueDdz(); // stopping is never held back
   expect(queue()).toHaveLength(2);
-  socket.recv({ type: "ddz_queue", base: null });
+  lk.recv({ type: "ddz_queue", base: null });
   d.queueDdz(250);
   d.queueDdz(50); // the latest stake picked is the one sent
   expect(queue()).toHaveLength(2);
   await vi.advanceTimersByTimeAsync(1100);
   expect(queue().slice(2)).toEqual([{ type: "ddz_queue", base: 50 }]);
   // Held back by the server all the same (another device of the save): sent once more after the interval.
-  socket.recv({ type: "error", code: "rate_limited", message: "" });
+  lk.recv({ type: "error", code: "rate_limited", message: "" });
   expect(queue()).toHaveLength(3);
   await vi.advanceTimersByTimeAsync(1100);
   expect(queue().slice(3)).toEqual([{ type: "ddz_queue", base: 50 }]);
-  socket.recv({ type: "error", code: "rate_limited", message: "" });
+  lk.recv({ type: "error", code: "rate_limited", message: "" });
   await vi.advanceTimersByTimeAsync(3000);
   expect(queue()).toHaveLength(4); // only once
   // A join waiting for its time is checked again when it goes, and stopping drops it.
   d.queueDdz(250); // the interval has passed: at once
   expect(queue()).toHaveLength(5);
-  socket.recv({ type: "ddz_queue", base: 250, waited: 0 });
+  lk.recv({ type: "ddz_queue", base: 250, waited: 0 });
   d.queueDdz(50);
   d.unqueueDdz();
-  socket.recv({ type: "ddz_queue", base: null });
+  lk.recv({ type: "ddz_queue", base: null });
   d.queueDdz(50);
   settings.duelDnd = true;
   await vi.advanceTimersByTimeAsync(1100);
@@ -485,36 +670,38 @@ it("keeps queue requests a server interval apart, and sends a join the server he
   expect(queue().slice(6)).toEqual([{ type: "ddz_queue", base: 250 }, { type: "ddz_queue", base: 0 }]);
 });
 
-it("takes a rate_limited answer for the queue only while a join waits for its answer", async () => {
+it("takes a rate_limited answer of the room as nothing of the queue", async () => {
   const { socket, d } = await setup();
   socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match"] });
+  d.queueDdz(50);
+  const lk = linkUp();
   socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 1, sec: 15, dealSec: 0 });
   d.bidDdz(1);
   expect(d.ddz.value!.acted).toBe(true);
   socket.recv({ type: "error", code: "rate_limited", message: "" }); // taps, say
   await vi.advanceTimersByTimeAsync(1100);
   expect(d.ddz.value!.acted).toBe(true); // the bid on its way keeps its keys down
-  expect(socket.sent.filter((m) => m.type === "ddz_queue")).toEqual([]);
+  expect(sentOf(lk, "ddz_queue")).toHaveLength(1);
 });
 
 it("keeps the hold on the queue through a new connection, and drops it with another save or server", async () => {
-  const { socket, d, player, settings } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  socket.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 30 });
+  const { d, player, settings } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 30 });
   player.status.value = playerStatus() as typeof player.status.value; // the same save, read again
-  socket.close();
+  lk.close();
   expect(d.ddzRetry.value).toBe(true);
   player.status.value = playerStatus({ player: "q" }) as typeof player.status.value;
   expect(d.ddzRetry.value).toBe(false);
-  // Another server: the hold, the wait and the counts go.
-  room!.joinRoom("r");
-  const again = Socket.all.at(-1)!;
-  again.open();
-  again.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  expect(lk.readyState).toBe(3);
+  // Another server: the hold, the wait, the counts and the connection go.
+  d.queueDdz(50);
+  const again = linkUp();
   again.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 30 });
   again.recv({ type: "ddz_waiting", counts: [[50, 2]] });
   settings.serverUrl = "https://other.example";
-  expect([d.ddzRetry.value, d.ddzQueue.value, d.ddzWaiting.value]).toEqual([false, null, {}]);
+  expect([d.ddzRetry.value, d.ddzQueue.value, d.ddzWaiting.value, again.readyState]).toEqual([false, null, {}, 3]);
   await vi.advanceTimersByTimeAsync(30000);
   expect(d.ddzRetry.value).toBe(false);
 });
@@ -627,17 +814,20 @@ it("sits down at an open table of the room or at one it was called to, and forge
   expect([d.ddzTables.value, d.ddzCall.value]).toEqual([[], null]);
 });
 
-it("answers the seat of an open table offered from the queue", async () => {
-  const { socket, d } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
-  socket.recv({
-    type: "ddz_invite", table: "o1", ids: ["x", "", "me"], base: 50, deposit: 2400, sec: 15, match: true,
-    seats: [X, null, { ...ME }], accepted: ["x"],
+it("answers the seat of an open table offered from the queue, and sits there on the connection", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({
+    type: "ddz_invite", table: "o1", ids: ["x", "", "L"], base: 50, deposit: 2400, sec: 15, match: true,
+    seats: [X, null, { ...ME, id: "L" }], accepted: ["x"],
   });
-  expect(d.ddz.value).toMatchObject({ id: "o1", phase: "invite", you: 2, match: true, accepted: ["x"] });
-  expect(d.ddz.value!.seats.map((s) => [s.id, s.nick])).toEqual([["x", "远方"], ["", ""], ["me", "我"]]);
+  expect(d.ddz.value).toMatchObject({ id: "o1", via: "link", phase: "invite", you: 2, match: true, accepted: ["x"] });
+  expect(d.ddz.value!.seats.map((s) => [s.id, s.nick])).toEqual([["x", "远方"], ["", ""], ["L", "我"]]);
   d.answerDdz(true);
-  expect(socket.sent.at(-1)).toEqual({ type: "ddz_answer", table: "o1", accept: true });
-  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 2, seats: [X, null, seatOf(ME)], sec: 540 });
-  expect(d.ddz.value).toMatchObject({ phase: "open", you: 2 });
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_answer", table: "o1", accept: true });
+  lk.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 2, seats: [X, null, seatOf({ ...ME, id: "L" })], sec: 540 });
+  expect(d.ddz.value).toMatchObject({ phase: "open", via: "link", you: 2 });
+  d.leaveDdz("o1", "open");
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_leave", table: "o1" });
 });

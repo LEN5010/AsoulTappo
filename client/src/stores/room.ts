@@ -7,7 +7,7 @@ import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
   restingMotion, toHttpBase, ROOM_NAME_MAX, type CheerState, type DdzClientMessage, type DdzMessage, type DuelMessage, type Hand,
-  type Member, type MemberProfile, type PetMotion, type ProfilePatch, type PublicRoom, type RoomInfo,
+  type DdzHello, type Member, type MemberProfile, type PetMotion, type ProfilePatch, type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote, memberOf } from "../manifest";
@@ -692,6 +692,20 @@ export const ddzMatchOn = ref(false);
 export function showRoomError(code: string): void {
   lastError.value = errorText(code, "");
 }
+export function clearRoomError(): void {
+  lastError.value = "";
+}
+
+/** Who this client is to the server, for a room join and for the dou dizhu connection's hello alike. */
+export function helloInfo(): DdzHello {
+  return {
+    nick: settings.nick.trim() || "匿名小面包",
+    character: settings.character,
+    ...(settings.plate ? { plate: settings.plate } : {}),
+    ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
+    ...(duelDnd() ? { dnd: true } : {}),
+  };
+}
 
 /** Desk only. */
 export function sendDdz(msg: DdzClientMessage): void {
@@ -714,17 +728,20 @@ export function syncMotion(pose: PetMotion): void {
   if (!isMirrorWindow && inRoom.value) motionSender.update(pose);
 }
 
-/** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
-export function sendEmote(name: string, now = Date.now()): boolean {
+/**
+ * Play an emote on the local pet and send it to the room ([toRoom]; a dou dizhu table sends its own). Only owned
+ * emotes can be sent.
+ */
+export function sendEmote(name: string, now = Date.now(), toRoom = true): boolean {
   if (isMirrorWindow) {
-    void requestDesktop("sendEmote", name, now);
+    void requestDesktop("sendEmote", name, now, toRoom);
     return true;
   }
   if (!ownsEmote(name, collection.owned)) return false;
   if (now - lastSent < SEND_INTERVAL_MS) return false;
   lastSent = now;
   localPlayer.play(name);
-  if (inRoom.value) client.sendEmote(name);
+  if (inRoom.value && toRoom) client.sendEmote(name);
   return true;
 }
 
@@ -754,11 +771,7 @@ export function joinRoom(room: string): void {
   roomId.value = id;
   client.join(settings.serverUrl, {
     room: id,
-    nick: settings.nick.trim() || "匿名小面包",
-    character: settings.character,
-    ...(settings.plate ? { plate: settings.plate } : {}),
-    ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
-    ...(duelDnd() ? { dnd: true } : {}),
+    ...helloInfo(),
     ...(shownStatus.value ? { status: shownStatus.value } : {}),
     ddz: true,
     ddzMatch: true,

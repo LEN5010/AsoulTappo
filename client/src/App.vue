@@ -28,8 +28,9 @@ import { isOverdue } from "./todo";
 import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
+import DdzQueueSign from "./pet/DdzQueueSign.vue";
 import DdzSign from "./pet/DdzSign.vue";
-import { ddzAtTable, ddzBubble, ddzMatchable, ddzTables } from "./stores/ddz";
+import { ddzBubble, ddzMatchable, ddzQueue, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
   picking,
@@ -595,6 +596,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
       <DuelBubble v-bind="duelPlace" />
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
+      <!-- While the save waits in the dou dizhu queue: a sign over the head, out of the way of the bubbles. -->
+      <div v-if="ddzQueue && !duel && !ddzBubble && !localPet.emote && !localPet.win" class="queue-at">
+        <DdzQueueSign />
+      </div>
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
       <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote" />
@@ -655,7 +660,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
     <RaceFrame v-if="!isTauri && raceFrame.open" />
-    <DdzFrame v-if="!isTauri && ddzFrame.open && ddzAtTable" />
+    <DdzFrame v-if="!isTauri && ddzFrame.open" />
   </div>
 </template>
 
@@ -680,6 +685,7 @@ html.browser-preview body {
 .desk > :deep(*) { pointer-events: auto; }
 /* A layer of no size of its own; each sign stands on the top edge of its pet's box. */
 .signs, .sign-at { position: absolute; left: 0; top: 0; height: 0; }
+.queue-at { position: absolute; left: 0; right: 0; top: 0; height: 0; z-index: 2; }
 .signs { width: 0; }
 /* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
  * on any wallpaper. The side padding keeps the plate centred under the pet. */

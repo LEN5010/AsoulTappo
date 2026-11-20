@@ -4,7 +4,7 @@ import {
   type Board, type CheckinMonth, type CheckinResult, type Collection, type Credential, type Drop, type DropHistory, type HistoryDrop, type Loadout, type LoadoutPatch, type MainUser,
   type PlayerStatus, type ResonanceResult, type ScratchCard, type ScratchRevealResult,
 } from "../net/api";
-import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type MemberProfile } from "../net/protocol";
+import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type DdzLobby, type MemberProfile } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
 import { ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
@@ -723,6 +723,15 @@ export async function loadBoard(): Promise<Board | null> {
   if (isMirrorWindow) return requestDesktop<Board | null>("loadBoard").catch(() => null);
   const session = current;
   return serial(session, () => session.api.board()).catch(() => null);
+}
+
+/** The dou dizhu lobby (GET /api/ddz/lobby); "off" on a server without it, null when the server does not answer. */
+export async function loadDdzLobby(): Promise<DdzLobby | "off" | null> {
+  if (isMirrorWindow) return requestDesktop<DdzLobby | "off" | null>("loadDdzLobby").catch(() => null);
+  const session = current;
+  return serial(session, () => session.api.ddzLobby())
+    .then((lobby) => (lobby && Array.isArray(lobby.tiers) ? lobby : null))
+    .catch((e: unknown) => (e instanceof ApiError && e.status === 404 ? "off" as const : null));
 }
 
 /** The profile of a save on the collection board; null when it is no longer on it or the server does not answer. */

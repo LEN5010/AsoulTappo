@@ -2,7 +2,7 @@
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
 import { APP_VERSION } from "../version";
 import type { Rarity } from "../manifest";
-import { MAX_SHOWCASE, type MemberProfile } from "./protocol";
+import { MAX_SHOWCASE, type DdzLobby, type MemberProfile } from "./protocol";
 import type { Economy } from "../stores/economy";
 
 export interface PlayerStatus {
@@ -273,6 +273,8 @@ export class Api {
     this.call<ResonanceResult>("POST", "/api/resonance/draw", banner ? { count, banner } : { count }, undefined,
       RESONANCE_TIMEOUT_MS);
   me = () => this.call<PlayerStatus>("GET", "/api/me");
+  /** The dou dizhu lobby; 404 on a server without the game or the lobby. */
+  ddzLobby = () => this.call<DdzLobby>("GET", "/api/ddz/lobby");
   /** Prices, odds and caps (src/stores/economy.ts); servers from before /api/economy carry them in the manifest. */
   economy = async (): Promise<Economy> => {
     try {

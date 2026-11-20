@@ -430,6 +430,39 @@ it("mirrors the dou dizhu queue into the panel and runs the panel's queueing in 
   expect(panel.ddz.ddzQueue.value).toBeNull();
 });
 
+it("mirrors the dou dizhu connection and the table's emotes, and runs the table window's emotes and lobby reads in the desk", async () => {
+  const desk = await context(false);
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.ddz.ddzLink.value = "reconnecting";
+  const seats = ["a", "me", "b"].map((id) => ({ id, nick: id, character: "乃琳", auto: false, away: false }));
+  desk.ddz.onDdzMessage({
+    type: "ddz_deal", table: "t", seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  desk.ddz.onDdzMessage({ type: "ddz_emote", table: "t", seat: 2, emote: "thumbup" });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddzLink.value).toBe("reconnecting");
+  expect(table.ddz.ddzEmotes.value.map((f) => f?.key ?? null)).toEqual([null, null, "thumbup"]);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  table.ddz.emoteDdz("thumbup");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["emote", "thumbup"]]);
+  // The lobby is read by the desk, which holds the save's credentials; the window gets the answer.
+  const lobby = {
+    tiers: [{ base: 50, deposit: 2400, afford: true, waiting: 2 }], net: 0, cap: 50000, left: 50000, taps: 10000,
+    minTaps: 10000, account: true, seated: false,
+  };
+  const read = vi.spyOn(desk.player, "loadDdzLobby").mockResolvedValue(lobby);
+  expect(await table.player.loadDdzLobby()).toEqual(lobby);
+  read.mockResolvedValue("off");
+  expect(await table.player.loadDdzLobby()).toBe("off");
+  expect(read).toHaveBeenCalledTimes(2);
+  desk.ddz.ddzLinkOff.value = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddzLinkOff.value).toBe(true);
+});
+
 it("mirrors the table into its own window beside the panel, runs its moves in the desk, and stops when it closes", async () => {
   const desk = await context(false);
   const { invoke } = await import("@tauri-apps/api/core");

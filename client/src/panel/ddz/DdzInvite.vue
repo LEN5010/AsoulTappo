@@ -1,32 +1,27 @@
 <script setup lang="ts">
-// Starting a dou dizhu game: the three seats on a strip of the mat, the base stake as three keys in a tray, and the
-// key that goes. [mode] picks how: "invite" picks two members of the room (the members as keys, those who cannot be
-// asked greyed); "match" waits in the server's queue (each stake shows how many others wait at it); "open" opens a
-// table in the room, the two other seats left empty. "call" asks one member to the open table this save opened, at
-// its stake: no tray, the members as keys.
+// Starting a dou dizhu game in the room: the three seats on a strip of the mat, the base stake as three keys in a
+// tray, and the key that goes. [mode] picks how: "invite" picks two members of the room (the members as keys, those
+// who cannot be asked greyed); "open" opens a table in the room, the two other seats left empty. "call" asks one
+// member to the open table this save opened, at its stake: no tray, the members as keys. (The queue is the lobby's,
+// DdzLobby.vue.)
 import { computed, ref, watch } from "vue";
 import { status } from "../../stores/player";
 import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  callDdz, ddz, ddzCanCall, ddzCanInvite, ddzCanOpen, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzOthersWaiting,
-  ddzRetry, ddzStakeOpen, inviteDdz, openDdz, queueDdz,
+  callDdz, ddz, ddzCanCall, ddzCanInvite, ddzCanOpen, ddzCanStart, ddzConfig, ddzDeposit, ddzStakeOpen, inviteDdz, openDdz,
 } from "../../stores/ddz";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import DdzSeats from "./DdzSeats.vue";
 
-/** Bets need an account here and none is signed in. */
-const props = defineProps<{ needAccount?: boolean; mode: "invite" | "match" | "open" | "call" }>();
+/** Bets need an account here and none is signed in; [to]: where the sheet is drawn (Modal), when not on the panel. */
+const props = defineProps<{ needAccount?: boolean; mode: "invite" | "open" | "call"; to?: string }>();
 const emit = defineEmits<{ close: [] }>();
 
 const stakes = computed(() => ddzConfig.value?.stakes ?? []);
-/** In the queue, the open stake most others wait at comes first. */
-const first = () => (props.mode === "match"
-  ? [...stakes.value].filter(ddzStakeOpen).sort((a, b) => ddzOthersWaiting(b) - ddzOthersWaiting(a))[0]
-  : stakes.value.find(ddzStakeOpen));
-const base = ref(first() ?? 0);
+const base = ref(stakes.value.find(ddzStakeOpen) ?? 0);
 watch(stakes, (list) => { if (!list.includes(base.value) || !ddzStakeOpen(base.value)) base.value = list.find(ddzStakeOpen) ?? 0; });
 
 /** The open table being called to ("call"). */
@@ -81,7 +76,6 @@ const blocked = computed(() => {
   }
   if (s.ddz.net >= cfg.dailyWinCap) return "今天赢到上限了，明天再来";
   if (!cfg.stakes.some(ddzStakeOpen)) return "碎片不够押金";
-  if (props.mode === "match") return duelDnd() ? "免打扰时不能匹配" : ddzRetry.value ? "稍后再匹配" : "";
   if (props.mode === "open") return duelDnd() ? "免打扰时不能开桌" : "";
   if (others.value.filter(ddzCanInvite).length < 2) return "房间里要有两位能上桌的伙伴";
   return "";
@@ -89,16 +83,14 @@ const blocked = computed(() => {
 const ready = computed(() => {
   switch (props.mode) {
     case "call": return !!table.value && picked.value.length === 1;
-    case "match": return ddzStakeOpen(base.value) && ddzCanQueue.value;
     case "open": return ddzStakeOpen(base.value) && ddzCanOpen.value;
     default: return ddzStakeOpen(base.value) && ddzCanStart.value && picked.value.length === 2;
   }
 });
-const go = { invite: "邀请", match: "匹配", open: "开桌", call: "邀请" };
+const go = { invite: "邀请", open: "开桌", call: "邀请" };
 function send() {
   if (!ready.value) return;
   if (props.mode === "call") callDdz(picked.value[0]!, table.value!.id);
-  else if (props.mode === "match") queueDdz(base.value);
   else if (props.mode === "open") openDdz(base.value);
   else inviteDdz([...picked.value], base.value);
   emit("close");
@@ -106,7 +98,7 @@ function send() {
 </script>
 
 <template>
-  <Modal title="斗地主" flush @close="emit('close')">
+  <Modal title="斗地主" flush :to="to" @close="emit('close')">
     <div class="strip">
       <h3>斗地主</h3>
       <DdzSeats :seats="seats" />
@@ -125,7 +117,6 @@ function send() {
             :title="ddzStakeOpen(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
           >
             <Icon name="shard" :size="14" />{{ s.toLocaleString("en-US") }}
-            <em v-if="mode === 'match' && ddzOthersWaiting(s)" class="waiting"><Icon name="users" :size="11" />{{ ddzOthersWaiting(s) }}</em>
           </button>
         </div>
       </div>
@@ -202,22 +193,6 @@ function send() {
 .stake.primary:not(:disabled) { color: #fff; text-shadow: 0 1px 0 var(--c-600); }
 .stake.primary:not(:disabled) .icon { color: #fff; }
 .stake:disabled, .stake:disabled .icon { color: var(--ink-3); }
-/* Others waiting at a stake: a small count in the key's corner. */
-.stake { position: relative; }
-.stake .waiting {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font: 800 11px/1 var(--font-latin);
-  font-style: normal;
-  color: var(--c-600);
-}
-.stake .waiting .icon { color: inherit; }
-.stake.primary:not(:disabled) .waiting { color: #fff; }
-.stake:disabled .waiting { color: var(--ink-3); }
 
 /* The room's members: a key each, with a face. A picked one stays down with a tick. */
 .members { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 164px; overflow: auto; padding: 2px 2px 5px; margin: -2px -2px -5px; }

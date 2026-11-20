@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Emotes at the dou dizhu table: a key in the corner opens the player's favourite emotes (the starter ones without
-// any), and a pick plays it on the own pet for the whole room. The table has no other way to talk.
+// any), and a pick plays it on the own pet for the other seats of the table. The table has no other way to talk.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { assetUrl } from "../../asset";
 import { starterEmotesOf } from "../../items";
 import { getEmote } from "../../manifest";
-import { sendEmote } from "../../stores/room";
+import { emoteDdz } from "../../stores/ddz";
 import { settings } from "../../stores/settings";
 import Icon from "../../ui/Icon.vue";
 
@@ -16,7 +16,7 @@ const list = computed(() => (settings.favorites.length ? settings.favorites : st
   .map((key) => ({ key, e: getEmote(key) })).filter((x) => x.e).slice(0, MAX));
 function pick(key: string) {
   open.value = false;
-  sendEmote(key);
+  emoteDdz(key);
 }
 // A press anywhere else puts the tray away.
 function away(e: PointerEvent) {

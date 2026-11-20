@@ -8,7 +8,7 @@ import { computed } from "vue";
 import {
   answerDdz, ddz, ddzBubble, ddzCall, ddzCanSit, ddzReason, ddzReopened, dismissDdzCall, leaveDdz, sitDdz,
 } from "../stores/ddz";
-import { shownNick, youId } from "../stores/room";
+import { shownNick } from "../stores/room";
 import { settings } from "../stores/settings";
 import { openDdzWindow } from "../stores/ui";
 import DdzSeats from "../panel/ddz/DdzSeats.vue";
@@ -23,9 +23,10 @@ const t = computed(() => ddz.value);
 const call = computed(() => (ddzBubble.value === "call" ? ddzCall.value : null));
 const seats = computed(() => {
   if (call.value) return call.value.seats.map((s) => (!s ? null : "id" in s ? { character: s.character, nick: shownNick(s) } : "pending" as const));
-  return (t.value?.seats ?? []).map((s) => (s.pending ? "pending" as const : !s.id ? null : {
-    character: s.id === youId.value ? settings.character : s.character,
-    nick: s.id === youId.value ? "我" : shownNick(s),
+  // The own seat by its index: a table of the queue's names this save by another id than the room's.
+  return (t.value?.seats ?? []).map((s, i) => (s.pending ? "pending" as const : !s.id && i !== t.value!.you ? null : {
+    character: i === t.value!.you ? settings.character : s.character,
+    nick: i === t.value!.you ? "我" : shownNick(s),
     ticked: t.value!.accepted.includes(s.id),
   }));
 });
