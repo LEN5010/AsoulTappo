@@ -617,6 +617,24 @@ def test_a_new_connection_of_the_save_does_not_get_round_the_queue_interval(monk
     run(go())
 
 
+def test_a_save_put_back_stays_behind_one_that_queued_before_it_at_the_same_time():
+    async def go():
+        w = MatchWorld()
+        # g queues first, then an invite from its room holds it; a, b and c, queued at the same time, sit down.
+        g, sg = w.member("g", room="r")
+        await w.t.queue(g, BASE)
+        x, _ = w.member("x", room="r")
+        y, _ = w.member("y", room="r")
+        await w.t.invite("r", x, [g.id, y.id], BASE)
+        (a, sa), (b, _), (c, _) = await w.queued("a", "b", "c")
+        await w.t.answer(g, sg.of("ddz_invite")[0]["table"], False)
+        await w.t.answer(a, sa.of("ddz_invite")[0]["table"], True)
+        await w.timers.fire()
+        await w.t.idle()
+        assert [q.peer for q in w.t.lines[BASE]] == [g, a]
+    run(go())
+
+
 def test_saves_put_back_from_two_tables_keep_the_order_they_came_in():
     async def go():
         w = MatchWorld()

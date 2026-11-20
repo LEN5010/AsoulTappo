@@ -245,8 +245,10 @@ class Seat:
     again: bool = False
     # Left the table for good while the game went on: played for to the end, and hears nothing more of it.
     quit: bool = False
-    # At a table the queue made: when the save started waiting (Waiting.since), kept should it go back to the line.
+    # At a table the queue made: when the save started waiting (Waiting.since, Waiting.seq), kept should it go back
+    # to the line.
     since: float | None = None
+    seq: int = 0
 
 
 @dataclass(eq=False)
@@ -255,6 +257,8 @@ class Waiting:
     peer: Peer
     base: int
     since: float
+    # Order of joining the queue, among saves with the same `since`.
+    seq: int = 0
     # Out of the line while a table is being made with it (Tables._match).
     checking: bool = False
 
@@ -340,10 +344,13 @@ class Tables:
         self._matching: set[int] = set()
         # Matching started where nothing awaits it (_spawn).
         self._tasks: set[asyncio.Task] = set()
-        # Save -> clock time from which it may queue again, after declining a table of the queue or letting it lapse.
+        # Save -> clock time from which it may queue again, after declining a table of the queue, leaving it or letting
+        # it lapse.
         self.match_refused: dict[str, float] = {}
         # Save -> clock time it last joined the queue or moved in it (QUEUE_INTERVAL).
         self._queue_at: dict[str, float] = {}
+        # Last Waiting.seq given out.
+        self._seq = 0
         # The waiting counts last sent, when, and the timer of the next send.
         self._counts_sent: dict[int, int] = {}
         self._counts_at = float("-inf")
@@ -943,7 +950,8 @@ class Tables:
             return
         if held is not None:
             self._dequeue(held, tell=False)
-        w = Waiting(peer, base, self.clock())
+        self._seq += 1
+        w = Waiting(peer, base, self.clock(), self._seq)
         self.waiting[w.token] = w
         self.lines.setdefault(base, []).append(w)
         self._tell_queue(w)
@@ -1049,7 +1057,8 @@ class Tables:
         cfg = self.bank.cfg()
         deposit = self.bank.deposit(base)
         table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, seats=[
-            Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character, since=w.since)
+            Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character, since=w.since,
+                 seq=w.seq)
             for w in three])
         for w in three:
             self._dequeue(w)
@@ -1063,14 +1072,14 @@ class Tables:
 
     def _merge(self, base: int, entries: list[Waiting]) -> None:
         """Puts [entries] into the line of [base] by when each started waiting, so the line stays oldest first:
-        saves back from tables that fell through, in whatever order those did, stay ahead of those who came later. On
-        a tie the one coming back goes first: it was ahead before."""
+        saves back from tables that fell through, in whatever order those did, stay ahead of those who came later.
+        Saves that started waiting at the same time keep the order they joined in (Waiting.seq)."""
         line = self.lines.setdefault(base, [])
-        back = sorted(entries, key=lambda x: x.since)
+        back = sorted(entries, key=lambda x: (x.since, x.seq))
         merged: list[Waiting] = []
         i = j = 0
         while i < len(back) and j < len(line):
-            if back[i].since <= line[j].since:
+            if (back[i].since, back[i].seq) <= (line[j].since, line[j].seq):
                 merged.append(back[i])
                 i += 1
             else:
@@ -1090,7 +1099,11 @@ class Tables:
             if (p is None or not p.active or not p.ddz_match or p.dnd or not p.token or p.token in self.by_save
                     or p.token in self.waiting):
                 continue
-            w = Waiting(p, base, s.since if s.since is not None else self.clock())
+            if s.since is not None:
+                w = Waiting(p, base, s.since, s.seq)
+            else:
+                self._seq += 1
+                w = Waiting(p, base, self.clock(), self._seq)
             self.waiting[w.token] = w
             back.append(w)
         if not back:
