@@ -683,14 +683,19 @@ class Tables:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
         has one at a table of this room. Back while the deposits are being taken, it takes the seat and hears the
         deal like the others."""
+        room = self.manager.rooms.get(room_id)
+        if room is None or room.peers.get(peer.id) is not peer:
+            return  # gone again before it got through joining
         table = self.by_save.get(peer.token) if peer.token else None
         seat = None
         if table is not None and table.room == room_id and table.phase in (STARTING, BID, PLAY) and peer.ddz:
             seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is None), None)
             if seat is None:
                 # An older connection of the save still holds the seat: its leaving is not seen yet (a client back
-                # on a new connection), or it is another device. The newest connection takes the seat.
-                seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is not peer),
+                # on a new connection), or it is another device. The newest connection takes the seat; joins finish
+                # in any order, so one that finishes late leaves a newer one there, unless that one is gone.
+                seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is not None
+                             and s.peer is not peer and (s.peer.join_seq < peer.join_seq or not s.peer.active)),
                             None)
         if seat is not None:
             s = table.seats[seat]

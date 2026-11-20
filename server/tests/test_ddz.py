@@ -956,3 +956,31 @@ def test_a_member_back_in_the_room_while_the_deposits_are_taken_gets_the_deal(mo
             # The seat is taken again in the table's room only; meanwhile it is played for.
             assert t.seats[1].peer is None and sb2.of("ddz_deal") == []
     run(go())
+
+
+def test_a_connection_that_finishes_joining_late_does_not_take_the_seat_from_a_newer_one():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        t = w.t.by_id[tid]
+        pid = w.pids[1]
+        # Two new connections of b's save; the newer one gets through joining first.
+        old, s_old = w.join("b", pid)
+        new, s_new = w.join("b", pid)
+        assert old.join_seq < new.join_seq
+        await w.t.joined("r", new)
+        await w.t.joined("r", old)
+        assert t.seats[1].peer is new and s_new.of("ddz_closed") == [] and s_old.of("ddz_state") == []
+        # A newer occupant already gone from the room, its leaving not handled yet, gives way to an older one.
+        w.m.leave("r", new.id)
+        await w.t.joined("r", old)
+        assert t.seats[1].peer is old and s_old.of("ddz_state")[-1]["you"] == 1
+        await w.t.departed("r", new)
+        assert t.seats[1].peer is old
+        # A connection gone from the room before it got through joining takes no seat.
+        await w.m.depart("r", old.id)
+        late, s_late = w.join("b", pid)
+        w.m.leave("r", late.id)
+        await w.t.joined("r", late)
+        assert t.seats[1].peer is None and s_late.of("ddz_state") == []
+    run(go())
