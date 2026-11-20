@@ -497,3 +497,19 @@ def test_a_member_back_while_the_deposits_are_taken_gets_the_deal(monkeypatch, m
         assert len(deal) == 1 and deal[0]["you"] == 1 and len(deal[0]["hand"]) == 17
         assert deal[0]["seats"][1] == {"id": b2.id, "nick": "b2", "character": "嘉然", "auto": False, "away": False}
     run(go())
+
+
+def test_an_answer_for_a_table_that_fell_through_does_not_touch_the_next_one():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, _), (c, _), (d, _) = await w.queued("a", "b", "c", "d")
+        first = sa.of("ddz_invite")[0]["table"]
+        await w.t.answer(b, first, False)
+        await w.t.idle()
+        second = sa.of("ddz_invite")[-1]["table"]
+        assert second != first
+        with pytest.raises(Exception) as e:
+            await w.t.answer(a, first, True)
+        assert e.value.code == "ddz_gone"
+        assert not w.t.by_id[second].seats[0].accepted and [w.shards(w.who[n]) for n in "acd"] == [SHARDS] * 3
+    run(go())
