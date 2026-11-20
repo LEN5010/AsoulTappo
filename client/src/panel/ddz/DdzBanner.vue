@@ -16,6 +16,7 @@ import Icon from "../../ui/Icon.vue";
 import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
 import DdzSeats from "./DdzSeats.vue";
+import { useInviteKeys } from "./inviteKeys";
 
 /** Bets need an account here and none is signed in (the room page knows the server's info). */
 defineProps<{ needAccount?: boolean }>();
@@ -34,6 +35,7 @@ const tables = computed(() => Object.values(ddzLive.value).map((ids) =>
 /** This save sits at a table it walked away from, which is still being played. */
 const seated = computed(() => !ddz.value && ddzPlaying.value.has(youId.value));
 const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ?? 0) - Date.now())}ms` });
+const keys = useInviteKeys(() => invite.value?.id, answerDdz);
 
 /** Waiting in the queue (an invite or a table on screen comes first). */
 const queued = computed(() => (t.value || ddzAtTable.value ? null : ddzQueue.value));
@@ -62,10 +64,10 @@ const waited = computed(() => {
       <div class="deal">
         <span class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ invite.base.toLocaleString("en-US") }}</b></span>
       </div>
-      <div class="acts">
+      <div :key="invite.id" class="acts">
         <template v-if="!invite.sent && !invite.answered">
-          <button type="button" class="ui-btn" @click="answerDdz(false, invite.id)">拒绝</button>
-          <button type="button" class="ui-btn white" @click="answerDdz(true, invite.id)">接受</button>
+          <button type="button" class="ui-btn" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
+          <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
         </template>
         <button v-else-if="invite.sent" type="button" class="ui-btn" @click="leaveDdz">取消</button>
       </div>
