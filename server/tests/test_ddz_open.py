@@ -26,6 +26,11 @@ class OpenWorld(MatchWorld):
             await self.t.sit("r", peer, tid)
         return out, tid
 
+    async def settled(self):
+        """Waits for the work the tables run on their own (a start taking the deposits, matching) to be done."""
+        await self.t.idle()
+        await settle()
+
 
 def run(coro):
     return asyncio.run(coro)
@@ -57,7 +62,7 @@ def test_opening_a_table_seats_the_opener_and_the_third_to_sit_starts_the_game()
         # Sitting is consent: the third takes the last seat, the three deposits go and the cards are dealt.
         c, sc = w.member("c")
         await w.t.sit("r", c, tid, 2)
-        await settle()
+        await w.settled()
         assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sc)] == [0, 1, 2]
         assert [m.get("starting") for m in sc.of("ddz_open")] == [True] and sa.of("ddz_live")[-1]["on"] is True
@@ -71,7 +76,7 @@ def test_a_seat_picked_that_is_taken_gives_the_next_empty_one():
         ((_, sa), (_, sb)), tid = await w.opened("a", "b")
         c, sc = w.member("c")
         await w.t.sit("r", c, tid, 1)
-        await settle()
+        await w.settled()
         assert sb.of("ddz_deal")[0]["you"] == 1 and sc.of("ddz_deal")[0]["you"] == 2
     run(go())
 
@@ -122,7 +127,7 @@ def test_who_may_not_sit(how, code):
             for n in "cd":
                 p, _ = w.member(n)
                 await w.t.sit("r", p, tid)
-            await settle()
+            await w.settled()
         if how == "twice":
             await w.t.sit("r", peer, tid)
             w.mono += QUEUE_INTERVAL
@@ -207,7 +212,7 @@ def test_the_third_seat_takes_the_deposits_in_one_go_and_lets_go_of_a_seat_that_
                             lambda self, pids, base: starts.append(list(pids)) or real(self, pids, base))
         c, sc = w.member("c")
         await w.t.sit("r", c, tid)
-        await settle()
+        await w.settled()
         assert len(starts) == 1
         assert sb.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": "no_shards"}]
         assert last_open(sa)["seats"] == [seat(a), None, seat(c)] and last_open(sc)["you"] == 2
@@ -215,7 +220,7 @@ def test_the_third_seat_takes_the_deposits_in_one_go_and_lets_go_of_a_seat_that_
         assert [w.shards(w.who[n]) for n in "ac"] == [SHARDS] * 2 and w.shards(w.who["b"]) == DEPOSIT - 1
         d, sd = w.member("d")
         await w.t.sit("r", d, tid)
-        await settle()
+        await w.settled()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sd, sc)] == [0, 1, 2]
         assert [w.shards(w.who[n]) for n in "acd"] == [SHARDS - DEPOSIT] * 3
     run(go())
@@ -228,7 +233,7 @@ def test_the_opener_that_cannot_pay_at_the_start_puts_the_table_away():
         w.g.store.update_player(w.who["a"], shards=0)
         c, sc = w.member("c")
         await w.t.sit("r", c, tid)
-        await settle()
+        await w.settled()
         assert sa.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": "no_shards"}]
         for s in (sb, sc):
             assert s.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": "disband", "by": a.id}]
@@ -286,7 +291,7 @@ def test_the_room_hears_its_open_tables_at_most_once_a_second():
         # The game starting takes the table off; the room hears an empty list once.
         c, _ = w.member("c")
         await w.t.sit("r", c, tid)
-        await settle()
+        await w.settled()
         w.mono += 1
         await w.counts.fire()
         assert s_watch.of("ddz_tables")[-1] == {"type": "ddz_tables", "tables": []} and w.t._tables_sent == {}
@@ -338,7 +343,7 @@ def test_an_empty_seat_waiting_a_minute_goes_to_the_save_that_waited_longest_in_
         assert w.t._room_tables("r")[0]["seats"][2] == {"pending": True}
         # Accepting seats it from its own room; the seats taken do not answer again.
         await w.t.answer(q, tid, True)
-        await settle()
+        await w.settled()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sq)] == [0, 1, 2]
         assert sq.of("ddz_live")[-1]["on"] is True and [m.get("starting") for m in sq.of("ddz_open")] == [True]
         # The seat of the queue is taken again from any room.
@@ -445,7 +450,7 @@ def test_the_opener_calls_members_of_the_room_to_the_table():
         w.t.call("r", a, tid, d.id)
         assert sd.of("ddz_call") == []
         await w.t.sit("r", c, tid)
-        await settle()
+        await w.settled()
         assert sc.of("ddz_deal")[0]["you"] == 2
     run(go())
 
@@ -494,7 +499,7 @@ def test_members_carry_whether_their_client_opens_tables(api):
 async def played(w, *names):
     """[names] at an open table of room r, a game played out to its result; returns the members and the table id."""
     out, tid = await w.opened(*names)
-    await settle()
+    await w.settled()
     w.peers = [p for p, _ in out]
     await w.t.bid(w.peers[0], tid, 3)
     await play_out(w, tid)
@@ -523,7 +528,7 @@ def test_those_who_ask_for_another_game_keep_their_seats_and_the_table_opens_aga
         # The same rules as before: anyone of the room sits down, the queue fills a seat after a minute.
         d, sd = w.member("d")
         await w.t.sit("r", d, tid)
-        await settle()
+        await w.settled()
         assert [s.of("ddz_deal")[-1]["you"] for s in (sa, sb, sd)] == [0, 1, 2] and sa.of("ddz_deal")[-1]["deal"] == 1
         assert [w.shards(w.who[n]) for n in "abd"] == [after[0] - DEPOSIT, after[1] - DEPOSIT, SHARDS - DEPOSIT]
     run(go())
@@ -561,7 +566,7 @@ def test_without_the_opener_asking_the_table_closes_as_before(how):
             await w.t.leave(a, tid)
         else:
             await w.m.depart("r", a.id)
-        await settle()
+        await w.settled()
         for s in (sb, sc):
             assert s.of("ddz_closed")[-1] == {"type": "ddz_closed", "table": tid}
         assert w.t.by_id == {} and w.t.by_save == {}
@@ -576,7 +581,7 @@ def test_three_asking_again_play_on_and_one_that_cannot_pay_is_let_go():
         w.g.store.update_player(w.who["c"], shards=0)
         for p in (a, b, c):
             await w.t.again(p, tid)
-        await settle()
+        await w.settled()
         assert sc.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "no_shards"}
         assert last_open(sa)["seats"] == [seat(a), seat(b), None] and w.t.by_id[tid].phase == "open"
         # Waiting again as long as a table just opened, however long the first wait and the game took.
@@ -588,12 +593,13 @@ def test_three_asking_again_play_on_and_one_that_cannot_pay_is_let_go():
 
 # ------------------------------------------------------------------ races
 class Gate:
-    """Holds a Bank method in its thread until the test lets it go; [n] calls are held, each by its own event."""
+    """Holds a Bank method in its thread until the test lets it go; [n] calls are held, each by its own event. Counts
+    the calls made and those done."""
 
     def __init__(self, monkeypatch, name):
         import threading
 
-        self.events, self.calls = [], 0
+        self.events, self.calls, self.done = [], 0, 0
         real = getattr(Bank, name)
         self._threading = threading
 
@@ -603,7 +609,10 @@ class Gate:
             ev = self.events[i] if i < len(self.events) else None
             if ev is not None:
                 ev.wait(5)
-            return real(bank, *a)
+            try:
+                return real(bank, *a)
+            finally:
+                self.done += 1
 
         monkeypatch.setattr(Bank, name, held)
 
@@ -639,7 +648,7 @@ def test_two_sitting_down_at_the_last_seat_at_once(monkeypatch):
         with pytest.raises(Exception) as e:
             await tc
         assert e.value.code == "ddz_gone"
-        await settle()
+        await w.settled()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sd)] == [0, 1, 2] and sc.of("ddz_deal") == []
         assert w.shards(w.who["c"]) == SHARDS and w.who["c"] not in w.t.by_save
     run(go())
@@ -684,7 +693,7 @@ def test_leaving_the_room_while_the_deposits_are_taken(monkeypatch, who, back):
             await w.t.joined("r", b2)
         held.set()
         await task
-        await settle()
+        await w.settled()
         if back:
             # Back before the deposits went: it plays, as at an invited table.
             assert sb2.of("ddz_deal")[0]["you"] == 1 and [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
@@ -696,6 +705,99 @@ def test_leaving_the_room_while_the_deposits_are_taken(monkeypatch, who, back):
             assert w.t.by_id == {} and w.t.by_save == {}
         else:
             assert last_open(sa)["seats"] == [seat(a), None, seat(c)] and w.who["b"] not in w.t.by_save
+    run(go())
+
+
+@pytest.mark.parametrize("how", ["third_departs", "member_stands", "opener_disbands"])
+def test_the_last_to_sit_does_not_wait_for_the_deposits_and_standing_up_meanwhile_counts(monkeypatch, how):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        # The sitter's connection is not held up while the database works: what it sends next (leaving the room) is
+        # read before the cards could be dealt.
+        await asyncio.wait_for(w.t.sit("r", c, tid), 1)
+        await until(lambda: gate.calls == 1)
+        if how == "third_departs":
+            await w.m.depart("r", c.id)
+        elif how == "member_stands":
+            await w.t.leave(b, tid)
+            assert sb.of("ddz_closed") == [{"type": "ddz_closed", "table": tid}]
+        else:
+            await w.t.leave(a, tid)
+            assert sa.of("ddz_closed") == [{"type": "ddz_closed", "table": tid}]
+        held.set()
+        await w.settled()
+        # Nobody pays for a game that never started.
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+        assert all(s.of("ddz_deal") == [] for s in (sa, sb, sc))
+        if how == "opener_disbands":
+            for s in (sb, sc):
+                assert s.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "disband", "by": a.id}
+            assert w.t.by_id == {} and w.t.by_save == {}
+            return
+        left, seats = ("c", [seat(a), seat(b), None]) if how == "third_departs" else ("b", [seat(a), None, seat(c)])
+        assert last_open(sa)["seats"] == seats and w.t.by_id[tid].phase == "open"
+        assert w.who[left] not in w.t.by_save
+    run(go())
+
+
+def test_coming_back_while_the_deposits_go_back_finds_the_seat_given_up(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        start = Gate(monkeypatch, "try_start")
+        taking, = start.hold(1)
+        refund = Gate(monkeypatch, "refund")
+        giving, = refund.hold(1)
+        c, sc = w.member("c")
+        task = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: start.calls == 1)
+        await w.m.depart("r", b.id)
+        taking.set()
+        # Gone when the deposits were taken: decided then, so coming back while they go back changes nothing.
+        await until(lambda: refund.calls == 1)
+        b2, sb2 = w.member("b")
+        await w.t.joined("r", b2)
+        giving.set()
+        await task
+        await w.settled()
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+        assert w.t.by_id[tid].phase == "open" and last_open(sa)["seats"] == [seat(a), None, seat(c)]
+        assert w.who["b"] not in w.t.by_save and sb2.of("ddz_open") == []
+        # The table waits as it should: the next to sit starts it.
+        d, sd = w.member("d")
+        await w.t.sit("r", d, tid)
+        await w.settled()
+        assert [s.of("ddz_deal")[0]["you"] for s in (sa, sd, sc)] == [0, 1, 2]
+        assert [w.shards(w.who[n]) for n in "acd"] == [SHARDS - DEPOSIT] * 3
+    run(go())
+
+
+def test_a_start_cancelled_while_the_deposits_are_taken_hands_them_back(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        task = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: gate.calls == 1)
+        table = w.t.by_id[tid]
+        # Whatever awaits the start is cancelled (a connection's handler, the server stopping): the table goes, and
+        # the transaction, which cannot be stopped half way, finishes in its thread.
+        for t in asyncio.all_tasks():
+            if t is not asyncio.current_task():
+                t.cancel()
+        await settle()
+        assert table.phase == "done" and w.t.by_save == {}
+        held.set()
+        await until(lambda: gate.done == 1 and [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3)
+        await w.settled()
+        assert all(s.of("ddz_deal") == [] for s in (sa, sb, sc))
+        assert task.cancelled() or task.done()
     run(go())
 
 
@@ -717,7 +819,7 @@ def test_invites_of_old_clients_go_on_beside_open_tables():
         assert invite["from"] == old.id and "match" not in invite
         await w.t.answer(new, invite["table"], True)
         await w.t.answer(old2, invite["table"], True)
-        await settle()
+        await w.settled()
         assert s_new.of("ddz_deal")[0]["you"] == 1 and s_old.of("ddz_tables") == []
         assert w.t.by_id[tid].phase == "open"
     run(go())
@@ -738,6 +840,6 @@ def test_the_seats_see_the_full_table_while_the_deposits_are_taken(monkeypatch):
                                     "starting": True}
         held.set()
         await task
-        await settle()
+        await w.settled()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sc)] == [0, 1, 2]
     run(go())

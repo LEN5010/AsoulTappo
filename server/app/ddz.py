@@ -26,8 +26,8 @@ the table away, as does OPEN_SEC without the three seats taken. An empty seat th
 the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
 made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
-the start: one whose member leaves the room while the deposits are being taken, and is not back once they are, gives
-them back and stands up. After a game, those who ask for another keep their seats; when the opener did and someone did
+the start: one that leaves the table while the deposits are being taken, or leaves the room and is not back once they
+are, gives them back and stands up (the opener puts the table away), as decided once they are taken. After a game, those who ask for another keep their seats; when the opener did and someone did
 not (or left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited
 one does.
 
@@ -85,7 +85,9 @@ Open tables, with members whose client said `ddzMatch` only:
 - ``ddz_sit`` {table, seat?} from the member: sit down at the open table `table` of the room, at `seat` when it is
   empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when the table is not open in the
   room or no seat is empty.
-- ``ddz_leave`` {table} from a seat of an open table: stand up; the opener's puts the table away.
+- ``ddz_leave`` {table} from a seat of an open table: stand up; the opener's puts the table away. While the
+  deposits are being taken (after ``ddz_open`` with `starting`) it is answered with ``ddz_closed`` at once and holds
+  once they are.
 - ``ddz_call`` {table, id} from the opener: call member `id` of the room to the table. Refused with ddz_gone (not
   the opener, or no seat empty) | no_member | ddz_target_locked | ddz_self | ddz_target_old (its client does not
   open tables) | ddz_target_busy | ddz_cooldown (called within RETRY_SEC). A member turning invites down is not
@@ -106,6 +108,7 @@ import asyncio
 import logging
 import random
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -404,6 +407,33 @@ class Table:
         return min(max(self.bid, 1) * 2 ** self.bombs * (2 if spring else 1), cap)
 
 
+class _Start:
+    """The transaction that starts the game of an open table (Bank.try_start), run in a thread. Given up before it is
+    done (Tables._take cancelled), it hands back what it took itself; given up after, drop returns the game to hand
+    back."""
+
+    def __init__(self, bank: Bank, pids: list[str], base: int) -> None:
+        self.bank, self.pids, self.base = bank, pids, base
+        self._lock = threading.Lock()
+        self._dropped = False
+        self._row: int | None = None
+
+    def run(self) -> tuple[int | None, list[str | None]]:
+        row, codes = self.bank.try_start(self.pids, self.base)
+        with self._lock:
+            self._row, dropped = row, self._dropped
+        if dropped and row is not None:
+            self.bank.refund(row)
+        return row, codes
+
+    def drop(self) -> int | None:
+        """Gives the start up; returns the game whose deposits were taken already, None while the transaction runs
+        (it then hands them back itself) or when it took nothing."""
+        with self._lock:
+            self._dropped = True
+            return self._row
+
+
 class Tables:
     """Every table on the server: one at a time per save (invites included), across all rooms; and the queue."""
 
@@ -662,7 +692,7 @@ class Tables:
         self.by_save[peer.token or ""] = table
         self._leave_queue(peer, save=True)
         if all(not s.empty and s.accepted for s in table.seats):
-            await self._begin(table)
+            self._begin(table)
         else:
             self._open_changed(table)
 
@@ -791,7 +821,7 @@ class Tables:
         s = table.seats[seat]
         s.accepted, s.until = True, 0.0
         if all(not x.empty and x.accepted for x in table.seats):
-            await self._begin(table)
+            self._begin(table)
         else:
             self._open_changed(table)
 
@@ -888,39 +918,77 @@ class Tables:
         if told:
             self._tables_at = self.clock()
 
-    async def _begin(self, table: Table) -> None:
-        """The three seats of an open table are taken: the deposits go in one transaction (Bank.try_start) and the
-        cards are dealt. A member that leaves the room while the database works and is not back once it is done
-        stood up before the start: the deposits go back and the table waits again without it."""
+    def _begin(self, table: Table) -> None:
+        """The three seats of an open table are taken: the deposits are taken and the cards dealt (_take) on a task of
+        the table's own, so the connection of the last to sit goes on being read meanwhile."""
         table.phase = STARTING
         self._cancel_timer(table)
         self._tables_changed(table.room)
         # The full table, while the deposits are taken.
         self._tell_open(table, starting=True)
+        self._spawn(self._take(table))
+
+    async def _take(self, table: Table) -> None:
+        """Takes the deposits of an open table in one transaction (Bank.try_start) and deals. A member that stood up,
+        or left the room and is not back, by the time the transaction is done stood up before the start: what was
+        taken goes back and the table waits again without it (_let_go). Who that is is settled then, once; one back
+        later finds its seat given up. Should this task be cancelled, the table goes and the transaction, which runs
+        on, hands back what it took (_Start)."""
+        start = _Start(self.bank, [s.token for s in table.seats], table.base)
+        loop = asyncio.get_running_loop()
         try:
-            row, codes = await run_in_threadpool(self.bank.try_start, [s.token for s in table.seats], table.base)
-        except BaseException:
+            row, codes = await loop.run_in_executor(None, start.run)
+        except asyncio.CancelledError:
+            taken = start.drop()
+            if taken is not None:
+                loop.run_in_executor(None, self.bank.refund, taken)
             self._disband(table, "error")
             raise
-        if row is None:
-            self._let_go(table, codes)
+        except Exception:
+            # The transaction rolled back: nothing was taken.
+            log.exception("ddz: taking the deposits at %s failed", table.id)
+            self._disband(table, "error")
             return
-        if any(s.peer is None for s in table.seats):
-            await run_in_threadpool(self.bank.refund, row)
-            self._let_go(table, [None, None, None])
+        if table.phase != STARTING or self.by_id.get(table.id) is not table:
+            if row is not None:
+                await self._refund(row)
             return
-        table.row = row
-        for s in table.seats:
-            s.auto, s.timeouts = False, 0
-        table.deal = 0
-        await self._live(table, True)
-        self._deal(table)
+        gone = [i for i, s in enumerate(table.seats) if s.peer is None or s.quit]
+        if row is not None and not gone:
+            table.row = row
+            for s in table.seats:
+                s.auto, s.timeouts = False, 0
+            table.deal = 0
+            await self._live(table, True)
+            self._deal(table)
+            return
+        for i in gone:
+            self._give_up(table, i)
+        if row is not None:
+            try:
+                await self._refund(row)
+            except asyncio.CancelledError:
+                self._disband(table, "error")
+                raise
+        self._let_go(table, codes if row is None else [None, None, None])
+
+    def _give_up(self, table: Table, seat: int) -> None:
+        """Seat [seat] of an open table being started is given up: its save is free at once, and its member, back in
+        the room, does not take it again."""
+        s = table.seats[seat]
+        if self.by_save.get(s.token) is table:
+            del self.by_save[s.token]
+        s.peer, s.quit = None, True
+
+    async def _refund(self, row: int) -> None:
+        """Hands the deposits of game [row] back, in a thread that goes on should the task awaiting it be cancelled."""
+        await asyncio.get_running_loop().run_in_executor(None, self.bank.refund, row)
 
     def _let_go(self, table: Table, codes: list[str | None]) -> None:
         """After a start that fell short or was taken back: a seat whose save may no longer play hears why and is
         emptied, as is one whose member left meanwhile, and the table waits again; when the opener's is one of them,
         it goes."""
-        gone = {i for i, (s, code) in enumerate(zip(table.seats, codes)) if code or s.peer is None}
+        gone = {i for i, (s, code) in enumerate(zip(table.seats, codes)) if code or s.peer is None or s.quit}
         for i in gone:
             s = table.seats[i]
             if codes[i] and s.peer is not None:
@@ -1241,7 +1309,7 @@ class Tables:
             # As at the first start: one that may no longer play is let go and the table waits again, for as long
             # as a table just opened.
             table.opened_at = self.clock()
-            await self._begin(table)
+            self._begin(table)
             return
         table.phase = STARTING
         self._cancel_timer(table)
@@ -1267,8 +1335,14 @@ class Tables:
 
     async def leave(self, peer: Peer, table_id: str) -> None:
         """A member walks away from the table but stays in the room."""
-        table, seat = self._table(peer, table_id, OPEN, INVITE, BID, PLAY, OVER)
-        if table.phase == OPEN:
+        table, seat = self._table(peer, table_id, OPEN, STARTING, INVITE, BID, PLAY, OVER)
+        if table.phase == STARTING and not table.open:
+            raise GameError("ddz_gone", "")
+        if table.phase == STARTING:
+            # Standing up, or putting the table away, while the deposits are taken: it holds once they are (_take).
+            peer.enqueue({"type": "ddz_closed", "table": table.id})
+            self._give_up(table, seat)
+        elif table.phase == OPEN:
             # The opener puts the table away; anyone else stands up, or declines the seat it was offered.
             if seat == 0:
                 self._disband(table, "disband", by=table.seats[0])
@@ -1538,16 +1612,21 @@ class Tables:
         for w in [w for w in self.waiting.values() if w.base not in stakes]:
             self._dequeue(w)
 
-    def _spawn(self, work: Any) -> None:
-        """Runs [work] (matching) on the loop without awaiting it."""
+    def _spawn(self, work: Any) -> asyncio.Task:
+        """Runs [work] (matching, the start of an open table and its transactions) on the loop without awaiting it."""
         task = asyncio.get_running_loop().create_task(work)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        return task
 
     async def idle(self) -> None:
-        """Waits until no matching started by _spawn runs (tests)."""
+        """Waits until nothing started by _spawn runs (tests); the first error of one, cancelling aside, is raised."""
         while self._tasks:
-            await asyncio.gather(*list(self._tasks))
+            done = await asyncio.gather(*list(self._tasks), return_exceptions=True)
+            error = next((e for e in done if isinstance(e, BaseException) and not isinstance(e, asyncio.CancelledError)),
+                         None)
+            if error is not None:
+                raise error
 
     async def _match(self, base: int) -> None:
         """Makes tables from the line of [base] while three saves in it may sit down together: the oldest three that
