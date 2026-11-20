@@ -193,6 +193,12 @@ export function exportLog(): Promise<ExportedLog> {
   return invoke<ExportedLog>("export_log");
 }
 
+/** The latest part of the log, for a feedback sent with it; "" outside the desktop app. */
+export function logTail(): Promise<string> {
+  if (!isTauri) return Promise.resolve("");
+  return invoke<string>("log_tail");
+}
+
 const LOG_LINES_PER_MINUTE = 30;
 let logCap = LOG_LINES_PER_MINUTE;
 let logMinute = 0;

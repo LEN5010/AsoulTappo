@@ -18,6 +18,7 @@ import RangeInput from "../ui/RangeInput.vue";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 import AsasfansPromo from "./AsasfansPromo.vue";
+import FeedbackDialog from "./FeedbackDialog.vue";
 import LegalDoc from "./LegalDoc.vue";
 import { DOC_TITLES, type DocName } from "../legal";
 
@@ -183,6 +184,14 @@ async function toggleAdmin(e: Event) {
   } finally {
     adminBusy.value = false;
   }
+}
+
+/** The feedback dialog, and the row's word once one was sent. */
+const feedbackOpen = ref(false);
+const feedbackNote = ref("");
+function feedbackSent() {
+  feedbackOpen.value = false;
+  feedbackNote.value = "已发送";
 }
 
 const logNote = ref("");
@@ -415,6 +424,13 @@ async function exportLogFile() {
                 </span>
               </div>
               <div class="ui-row">
+                <span>意见反馈</span>
+                <span class="version-side">
+                  <small v-if="feedbackNote" role="status" class="check-note">{{ feedbackNote }}</small>
+                  <button type="button" class="ui-btn small" @click="feedbackNote = ''; feedbackOpen = true">写反馈</button>
+                </span>
+              </div>
+              <div class="ui-row">
                 <span>项目主页</span>
                 <button type="button" class="ui-btn small" @click="openAboutLink(REPO)">GitHub</button>
               </div>
@@ -448,6 +464,7 @@ async function exportLogFile() {
       <LegalDoc :doc="legalOpen" />
     </Modal>
     <ReminderDialog v-if="tipsOpen" @close="tipsOpen = false" />
+    <FeedbackDialog v-if="feedbackOpen" @close="feedbackOpen = false" @sent="feedbackSent" />
     <Modal v-if="promoOpen" title="Asasfans" heading @close="promoOpen = false">
       <AsasfansPromo />
     </Modal>

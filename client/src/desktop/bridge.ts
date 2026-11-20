@@ -19,6 +19,7 @@ import { counter } from "../stores/counter";
 import { tidyRemotes } from "../stores/desk";
 import { ui } from "../stores/ui";
 import { guideLink } from "../stores/guide";
+import * as feedbackStore from "../stores/feedback";
 import { requestDesktop, type DesktopRequest } from "./transport";
 
 const groupSources = {
@@ -309,6 +310,7 @@ export async function initDesktop(): Promise<() => void> {
         case "todoSync": result = { settings, todos: todoStore.todos.value }; break;
         case "raceSync": result = { settings }; break;
         case "ddz": ddzStore.ddzRequest(args[0] as ddzStore.DdzOp, ...args.slice(1)); break;
+        case "feedback": result = await feedbackStore.sendFeedback(args[0] as feedbackStore.FeedbackDraft); break;
       }
       await publish();
       await emitTo(from, `desktop:reply:${id}`, { result });

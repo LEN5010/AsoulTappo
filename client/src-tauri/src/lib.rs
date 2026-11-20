@@ -159,6 +159,16 @@ fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) ->
     export_log_files(&app)
 }
 
+/// How much of the log goes with a feedback: within what the server takes (server/app/feedback.py LOG_MAX).
+const FEEDBACK_LOG_BYTES: usize = 120 * 1024;
+
+/// The latest part of the log, for a feedback the player sends with it from the settings page.
+#[tauri::command]
+fn log_tail(overlay: tauri::State<'_, Arc<Overlay>>) -> String {
+    log_state(&overlay, "feedback sent with the log");
+    applog::tail(FEEDBACK_LOG_BYTES)
+}
+
 /// Whether this is the debug build (`--features debug-log`), which logs more from the page too.
 #[tauri::command]
 fn debug_log() -> bool {
@@ -1212,6 +1222,7 @@ pub fn run() {
             set_capture_window,
             open_about_link,
             export_log,
+            log_tail,
             debug_log,
             admin_status,
             set_run_as_admin,

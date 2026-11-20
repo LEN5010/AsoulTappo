@@ -170,6 +170,27 @@ it("relays park requests from the panel to the desk, with the park state and the
   void panel;
 });
 
+it("sends a feedback from the panel through the desk, which reads the log itself", async () => {
+  const desk = await context(false);
+  const { TERMS_VERSION } = await import("../legal");
+  const { APP_VERSION } = await import("../version");
+  desk.settings.termsAgreed = TERMS_VERSION;
+  desk.settings.statementSeen = APP_VERSION;
+  await context(true);
+  const { invoke } = await import("@tauri-apps/api/core");
+  vi.mocked(invoke).mockImplementation(async (cmd: string) => (cmd === "log_tail" ? "the log\n" : undefined));
+  const posted: unknown[] = [];
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (String(url).endsWith("/api/feedback")) posted.push(JSON.parse(init!.body as string));
+    return { ok: true, status: 200, json: async () => ({ id: 1, left: 4 }) } as Response;
+  });
+  const feedback = await import("../stores/feedback");
+  expect(await feedback.sendFeedback({ text: "抖", contact: "", log: true })).toEqual({ ok: true, left: 4 });
+  expect(posted).toEqual([expect.objectContaining({ text: "抖", log: "the log\n" })]);
+  expect(await feedback.sendFeedback({ text: "抖", contact: "", log: false })).toEqual({ ok: true, left: 4 });
+  expect(posted[1]).toMatchObject({ log: "" });
+});
+
 it("mirrors remote pet animation poses into the panel without another room socket", async () => {
   const desk = await context(false);
   const panel = await context(true);

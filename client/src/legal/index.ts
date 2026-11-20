@@ -7,7 +7,7 @@ import terms from "./terms.md?raw";
  * The texts' version. Change it whenever either text changes in substance: every player is asked again at the
  * next start, and nothing reaches the server until they agree.
  */
-export const TERMS_VERSION = "2026-11-19";
+export const TERMS_VERSION = "2026-11-20";
 
 /**
  * The statement every new version asks the player to confirm (panel/TermsDialog.vue): the app is free and not run

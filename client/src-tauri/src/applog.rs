@@ -78,8 +78,8 @@ pub fn write_now(tag: &str, msg: &str) {
     }
 }
 
-/// Copy the older and the current file, in that order, into one `.txt` in `to_dir`.
-pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
+/// The older and the current file, in that order, after flushing what is written.
+fn read_all() -> std::io::Result<Vec<u8>> {
     let dir = {
         let mut log = LOG.lock().unwrap_or_else(|e| e.into_inner());
         let Some(log) = log.as_mut() else {
@@ -96,9 +96,32 @@ pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
             out.extend(bytes);
         }
     }
+    Ok(out)
+}
+
+/// Copy the older and the current file, in that order, into one `.txt` in `to_dir`.
+pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
+    let out = read_all()?;
     let path = to_dir.join(format!("AsoulTappo-log-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
     std::fs::write(&path, out)?;
     Ok(path)
+}
+
+/// The latest part of the log, at most `max` bytes, for a feedback the player sends it with; "" before the log started.
+pub fn tail(max: usize) -> String {
+    read_all().map(|bytes| tail_of(bytes, max)).unwrap_or_default()
+}
+
+/// The last `max` bytes of `bytes`, from the first whole line on when cut.
+fn tail_of(mut bytes: Vec<u8>, max: usize) -> String {
+    if bytes.len() > max {
+        bytes.drain(..bytes.len() - max);
+        match bytes.iter().position(|&b| b == b'\n') {
+            Some(end) => drop(bytes.drain(..=end)),
+            None => bytes.clear(),
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// `debuglog!("tag", "format {}", args)`: like `applog!`, only in the debug build.
@@ -117,4 +140,23 @@ macro_rules! applog {
     ($tag:expr, $($arg:tt)*) => {
         $crate::applog::write($tag, &format!($($arg)*))
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tail_of;
+
+    #[test]
+    fn tail_keeps_whole_lines_within_the_limit() {
+        let log = b"first line\nsecond line\nthird\n".to_vec();
+        assert_eq!(tail_of(log.clone(), 100), "first line\nsecond line\nthird\n");
+        assert_eq!(tail_of(log.clone(), 14), "third\n");
+        assert_eq!(tail_of(log, 3), "");
+    }
+
+    #[test]
+    fn tail_never_splits_a_character() {
+        let log = "开始\n桌宠\n".as_bytes().to_vec();
+        assert_eq!(tail_of(log, 8), "桌宠\n");
+    }
 }

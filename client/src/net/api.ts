@@ -165,6 +165,9 @@ export interface Board {
 }
 export type LoadoutPatch = Partial<Loadout>;
 
+/** A feedback from the settings page (server/app/feedback.py). */
+export interface FeedbackBody { text: string; contact: string; system: string; log: string }
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public detail: Record<string, unknown> = {}) {
     super(message);
@@ -311,6 +314,8 @@ export class Api {
     if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是乐园的接口"));
     return this.call<T>(method, path, body);
   };
+  /** Sends a feedback: its id and how many more the save may send today. */
+  feedback = (body: FeedbackBody) => this.call<{ id: number; left: number }>("POST", "/api/feedback", body);
   /** Binds the account to this device's guest save (when given) or to a new save. */
   link = (accountToken: string, guestToken?: string) => this.call<LinkResult>("POST", "/api/account/link", {},
     { Authorization: `Bearer ${accountToken}`, ...(guestToken ? { "X-Player-Token": guestToken } : {}) });
