@@ -81,10 +81,10 @@ const waited = computed(() => {
       </div>
       <div :key="invite.id" class="acts">
         <template v-if="!invite.sent && !invite.answered">
-          <button type="button" class="ui-btn" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
+          <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
           <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
         </template>
-        <button v-else-if="invite.sent" type="button" class="ui-btn" @click="leaveDdz(invite.id, 'invite')">取消</button>
+        <button v-else-if="invite.sent" type="button" class="ui-btn white" @click="leaveDdz(invite.id, 'invite')">取消</button>
       </div>
       <span :key="invite.until" class="clock" aria-hidden="true"><i :style="drain()"></i></span>
     </template>
@@ -95,10 +95,10 @@ const waited = computed(() => {
       </div>
       <div v-if="!mine.starting" class="acts">
         <template v-if="mine.you === 0">
-          <button type="button" class="ui-btn" @click="leaveDdz(mine.id, 'open')">散桌</button>
+          <button type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">散桌</button>
           <button type="button" class="ui-btn white" :disabled="!callable" @click="sheet = 'call'">邀请</button>
         </template>
-        <button v-else type="button" class="ui-btn" @click="leaveDdz(mine.id, 'open')">起身</button>
+        <button v-else type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">起身</button>
       </div>
     </template>
     <template v-else>
@@ -119,7 +119,7 @@ const waited = computed(() => {
       </div>
       <div class="acts">
         <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
-        <button v-else-if="queued" type="button" class="ui-btn" @click="unqueueDdz">取消</button>
+        <button v-else-if="queued" type="button" class="ui-btn white" @click="unqueueDdz">取消</button>
         <template v-else-if="ddzMatchable">
           <button type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="sheet = 'open'">
             <Icon name="plus" :size="15" />开桌
@@ -197,9 +197,8 @@ const waited = computed(() => {
 .live { flex: none; display: flex; align-items: center; gap: 10px; }
 .acts { flex: none; margin-left: auto; display: flex; gap: 8px; }
 .acts .ui-btn { height: 38px; min-width: 76px; padding: 0 16px; }
-/* A white key on coral: the one to press. */
+/* Every key on coral is white (the button spec: a change of colour only means selected). */
 .ui-btn.white { --key-lip: var(--c-700); color: var(--c-800); }
-.acts .ui-btn:not(.white):not(:disabled) { --key-top: var(--c-300); --key-bottom: var(--c-300); --key-lip: var(--c-600); color: #fff; }
 .acts .ui-btn:disabled { --key-top: rgba(255, 255, 255, 0.35); --key-bottom: rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.9); }
 .who { flex: none; padding: 14px 0 12px; }
 .deal { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
