@@ -26,7 +26,9 @@ the table away, as does OPEN_SEC without the three seats taken. An empty seat th
 the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
 made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
-the start.
+the start. After a game, those who ask for another keep their seats; when the opener did and someone did not (or
+left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited one
+does.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made, the opener of an open table):
@@ -51,7 +53,8 @@ that waited longest at a table the queue made, the opener of an open table):
   autopilot changed; with `turn` the seat's turn starts over with `sec` seconds.
 - ``ddz_result`` {winner: landlord | farmers, landlord, bid, bombs, spring: 0 | 1 spring | 2 counter-spring, mult,
   base, deltas, hands, sec}: paid; `hands` are the cards left in each seat, `sec` the time to ask for another game.
-- ``ddz_again`` {seat}: `seat` asks for another game; when the three have, the next ``ddz_deal`` follows.
+- ``ddz_again`` {seat}: `seat` asks for another game; when the three have, the next ``ddz_deal`` follows (at an open
+  table, ``ddz_open`` when it opens again instead).
 - ``ddz_closed`` {}: the table is gone (the time ran out, or someone left it); at an open table, to the seat that
   stood up or put it away.
 - ``ddz_state`` {...}: the whole game for a seat that came back (see Tables._state).
@@ -916,9 +919,13 @@ class Tables:
             self._disband(table, "disband", by=table.seats[0], quiet=gone)
             return
         table.phase = OPEN
-        for i in gone:
-            if self.by_save.get(table.seats[i].token) is table:
-                del self.by_save[table.seats[i].token]
+        table.row, table.deal, table.live_rooms = None, 0, set()
+        for i, s in enumerate(table.seats):
+            if i not in gone:
+                s.again, s.hand, s.bid, s.plays, s.auto, s.timeouts = False, [], None, 0, False, 0
+                continue
+            if self.by_save.get(s.token) is table:
+                del self.by_save[s.token]
             table.seats[i] = self._empty_seat()
         self._open_changed(table)
 
@@ -1130,14 +1137,57 @@ class Tables:
                     "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
                     "sec": cfg["againSec"]}, quit=True)
         await self._live(table, False, gains={s.id: d for s, d in zip(table.seats, deltas) if d > 0})
-        if any(s.peer is None or s.quit for s in table.seats):
+        if table.open and not self._gone(table.seats[0]):
+            # An open table goes on without those who left: they are free now, and their seats empty on reopening.
+            for s in table.seats:
+                if self._gone(s):
+                    self._let_seat_go(table, s)
+        elif any(self._gone(s) for s in table.seats):
             self._close(table)
             return
         table.timer = self.timers.later(cfg["againSec"], lambda: self._again_expired(table))
 
     async def _again_expired(self, table: Table) -> None:
-        if table.phase == OVER:
+        if table.phase != OVER:
+            return
+        if table.open and table.seats[0].again:
+            self._reopen(table)
+        else:
             self._close(table)
+
+    @staticmethod
+    def _gone(s: Seat) -> bool:
+        return s.peer is None or s.quit
+
+    def _let_seat_go(self, table: Table, s: Seat) -> None:
+        """After a game at an open table: the save of seat [s] is free again; the seat empties on reopening."""
+        if self.by_save.get(s.token) is table:
+            del self.by_save[s.token]
+        s.quit, s.again = True, False
+
+    def _reopen(self, table: Table) -> None:
+        """After a game at an open table whose opener asked for another: those who asked keep their seats and the
+        table is open again, with the same stake and rules; anyone else hears the table is gone."""
+        self._cancel_timer(table)
+        table.phase = OPEN
+        table.row, table.deal, table.live_rooms, table.opened_at = None, 0, set(), self.clock()
+        for i, s in enumerate(table.seats):
+            if not self._gone(s) and s.again:
+                s.again, s.hand, s.bid, s.plays, s.auto, s.timeouts = False, [], None, 0, False, 0
+                continue
+            if self.by_save.get(s.token) is table:
+                del self.by_save[s.token]
+            if not self._gone(s) and s.peer is not None:
+                s.peer.enqueue({"type": "ddz_closed", "table": table.id})
+            table.seats[i] = self._empty_seat()
+        self._open_changed(table)
+
+    def _reopen_due(self, table: Table) -> bool:
+        """After a game at an open table: whether the opener and everyone still at the table asked for another,
+        someone having left (all three asking start the next game instead)."""
+        return (table.open and table.phase == OVER and table.seats[0].again
+                and all(s.again for s in table.seats if not self._gone(s))
+                and any(self._gone(s) for s in table.seats))
 
     async def _abort(self, table: Table, reason: str) -> None:
         """Ends a game whose deposits are taken with nothing won: they go back."""
@@ -1172,7 +1222,16 @@ class Tables:
             return
         s.again = True
         table.tell({"type": "ddz_again", "table": table.id, "seat": seat})
+        if self._reopen_due(table):
+            self._reopen(table)
+            return
         if not all(x.again for x in table.seats):
+            return
+        if table.open:
+            # As at the first start: one that may no longer play is let go and the table waits again, for as long
+            # as a table just opened.
+            table.opened_at = self.clock()
+            await self._begin(table)
             return
         table.phase = STARTING
         self._cancel_timer(table)
@@ -1211,10 +1270,22 @@ class Tables:
             self._end_match(table, "declined", by=peer)
         elif table.phase == INVITE:
             self._end(table, "gone" if seat == 0 else "declined", by=peer, refused=[peer] if seat else [])
+        elif table.phase == OVER and table.open and seat:
+            peer.enqueue({"type": "ddz_closed", "table": table.id})
+            self._leave_over(table, seat)
         elif table.phase == OVER:
             self._close(table)
         else:
             self._quit(table, seat)
+
+    def _leave_over(self, table: Table, seat: int) -> None:
+        """After a game at an open table, seat [seat] (not the opener's) leaves: its save is free, and the table
+        opens again once everyone still there asked for another."""
+        s = table.seats[seat]
+        self._let_seat_go(table, s)
+        s.peer = None
+        if self._reopen_due(table):
+            self._reopen(table)
 
     def _quit(self, table: Table, seat: int) -> None:
         s = table.seats[seat]
@@ -1245,6 +1316,8 @@ class Tables:
         elif table.phase == INVITE:
             # An inviter leaving waits as after a refusal, so leaving and coming back cannot repeat the invite.
             self._end(table, "gone", by=peer, refused=[x.peer for x in table.seats[1:] if x.peer] if seat == 0 else [])
+        elif table.phase == OVER and table.open and seat:
+            self._leave_over(table, seat)
         elif table.phase == OVER:
             self._close(table)
         elif table.phase in (STARTING, SETTLING):

@@ -4,7 +4,7 @@ import asyncio
 import pytest
 
 from app.ddz import FILL_SEC, MATCH_RETRY_SEC, OPEN_SEC, QUEUE_INTERVAL, RETRY_SEC, Bank
-from test_ddz import BASE, DEPOSIT, SHARDS, api, save  # noqa: F401
+from test_ddz import BASE, DEPOSIT, SHARDS, api, play_out, save  # noqa: F401
 from test_ddz_match import MatchWorld, matched, queue_msgs, receive  # noqa: F401
 from test_duel import settle
 
@@ -488,3 +488,99 @@ def test_members_carry_whether_their_client_opens_tables(api):
         assert receive(a, "error")["code"] == "ddz_target_old"
         o.send_json({"type": "ddz_call", "table": tid, "id": jo["you"]})
         assert receive(o, "error")["code"] == "bad_message"
+
+
+# ------------------------------------------------------------------ after a game
+async def played(w, *names):
+    """[names] at an open table of room r, a game played out to its result; returns the members and the table id."""
+    out, tid = await w.opened(*names)
+    await settle()
+    w.peers = [p for p, _ in out]
+    await w.t.bid(w.peers[0], tid, 3)
+    await play_out(w, tid)
+    assert w.t.by_id[tid].phase == "over"
+    return out, tid
+
+
+def test_those_who_ask_for_another_game_keep_their_seats_and_the_table_opens_again():
+    async def go():
+        w = OpenWorld()
+        _, s_watch = w.member("watch")
+        ((a, sa), (b, sb), (c, sc)), tid = await played(w, "a", "b", "c")
+        after = [w.shards(w.who[n]) for n in "abc"]
+        await w.t.again(a, tid)
+        await w.t.again(b, tid)
+        await w.t.leave(c, tid)
+        assert sc.of("ddz_closed")[-1] == {"type": "ddz_closed", "table": tid} and w.who["c"] not in w.t.by_save
+        assert last_open(sa) == {"table": tid, "base": BASE, "deposit": DEPOSIT, "you": 0,
+                                 "seats": [seat(a), seat(b), None], "sec": OPEN_SEC}
+        assert last_open(sb)["you"] == 1 and w.t.by_id[tid].phase == "open"
+        w.mono += 1
+        await w.counts.fire()
+        assert s_watch.of("ddz_tables")[-1]["tables"] == [{"table": tid, "base": BASE,
+                                                          "seats": [seat(a), seat(b), None]}]
+        assert [w.shards(w.who[n]) for n in "abc"] == after
+        # The same rules as before: anyone of the room sits down, the queue fills a seat after a minute.
+        d, sd = w.member("d")
+        await w.t.sit("r", d, tid)
+        await settle()
+        assert [s.of("ddz_deal")[-1]["you"] for s in (sa, sb, sd)] == [0, 1, 2] and sa.of("ddz_deal")[-1]["deal"] == 1
+        assert [w.shards(w.who[n]) for n in "abd"] == [after[0] - DEPOSIT, after[1] - DEPOSIT, SHARDS - DEPOSIT]
+    run(go())
+
+
+def test_when_the_time_to_ask_runs_out_the_table_opens_again_with_those_who_asked():
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb), (c, sc)), tid = await played(w, "a", "b", "c")
+        await w.t.again(a, tid)
+        w.mono += 30
+        await w.timers.fire()
+        assert last_open(sa)["seats"] == [seat(a), None, None]
+        for s in (sb, sc):
+            assert s.of("ddz_closed")[-1] == {"type": "ddz_closed", "table": tid}
+        assert set(w.t.by_save) == {w.who["a"]}
+        w.mono += FILL_SEC
+        q, sq = w.member("q", room="r-q")
+        await w.t.queue(q, BASE)
+        assert sq.of("ddz_invite")[0]["ids"] == [a.id, q.id, ""]
+    run(go())
+
+
+@pytest.mark.parametrize("how", ["opener_silent", "opener_leaves", "opener_departs"])
+def test_without_the_opener_asking_the_table_closes_as_before(how):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb), (c, sc)), tid = await played(w, "a", "b", "c")
+        await w.t.again(b, tid)
+        if how == "opener_silent":
+            await w.t.again(c, tid)
+            w.mono += 30
+            await w.timers.fire()
+        elif how == "opener_leaves":
+            await w.t.leave(a, tid)
+        else:
+            await w.m.depart("r", a.id)
+        await settle()
+        for s in (sb, sc):
+            assert s.of("ddz_closed")[-1] == {"type": "ddz_closed", "table": tid}
+        assert w.t.by_id == {} and w.t.by_save == {}
+    run(go())
+
+
+def test_three_asking_again_play_on_and_one_that_cannot_pay_is_let_go():
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb), (c, sc)), tid = await played(w, "a", "b", "c")
+        w.mono += OPEN_SEC
+        w.g.store.update_player(w.who["c"], shards=0)
+        for p in (a, b, c):
+            await w.t.again(p, tid)
+        await settle()
+        assert sc.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "no_shards"}
+        assert last_open(sa)["seats"] == [seat(a), seat(b), None] and w.t.by_id[tid].phase == "open"
+        # Waiting again as long as a table just opened, however long the first wait and the game took.
+        w.mono += OPEN_SEC - 1
+        await w.timers.fire()
+        assert w.t.by_id[tid].phase == "open"
+    run(go())
