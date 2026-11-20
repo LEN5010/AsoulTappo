@@ -1046,3 +1046,95 @@ def test_another_game_nobody_stayed_for_gives_the_deposits_back(monkeypatch):
         assert w.t.by_id == {} and w.t.by_save == {} and w.timers.live() == []
         assert [w.shards(p) for p in w.pids] == before
     run(go())
+
+
+@pytest.mark.parametrize("again", [False, True])
+def test_a_cancelled_handler_while_the_deposits_are_taken_leaves_the_start_to_the_table(monkeypatch, again):
+    """The last to accept (or to ask for another game) has its connection handler cancelled while the database takes
+    the deposits: the start goes on on the table's own task and deals."""
+    async def go():
+        import threading
+
+        w = World(rng=Stacked(first=0))
+        if again:
+            tid = await w.playing()
+            await play_out(w, tid)
+        else:
+            tid = await w.invited()
+        a, b, c = w.peers
+        gate = threading.Event()
+        real = Bank.start
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            return real(self, pids, base)
+
+        monkeypatch.setattr(Bank, "start", slow)
+        if again:
+            await w.t.again(a, tid)
+            await w.t.again(b, tid)
+            task = asyncio.create_task(w.t.again(c, tid))
+        else:
+            await w.t.answer(b, tid, True)
+            task = asyncio.create_task(w.t.answer(c, tid, True))
+        t = w.t.by_id[tid]
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        assert t.phase == "starting"
+        task.cancel()
+        await asyncio.sleep(0.01)
+        gate.set()
+        await w.t.idle()
+        await settle()
+        assert t.phase == "bid" and t.row is not None and w.t.by_id.get(tid) is t
+        assert all(len(s.of("ddz_deal")) == (2 if again else 1) for s in w.socks)
+        assert [w.shards(p) for p in w.pids][0] < SHARDS
+    run(go())
+
+
+def test_the_start_task_cancelled_while_the_deposits_are_taken_hands_them_back(monkeypatch):
+    """The table's own start task is cancelled (the server stops) while the database takes the deposits: the table
+    ends, the saves are free, and the transaction, done after, hands back what it took."""
+    async def go():
+        import threading
+
+        w = World(rng=Stacked(first=0))
+        tid = await w.invited()
+        a, b, c = w.peers
+        before = [w.shards(p) for p in w.pids]
+        gate = threading.Event()
+        real = Bank.start
+        done = threading.Event()
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            try:
+                return real(self, pids, base)
+            finally:
+                done.set()
+
+        monkeypatch.setattr(Bank, "start", slow)
+        await w.t.answer(b, tid, True)
+        handler = asyncio.create_task(w.t.answer(c, tid, True))
+        t = w.t.by_id[tid]
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        assert t.phase == "starting"
+        for task in list(w.t._tasks):
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await handler
+        assert w.t.by_id == {} and w.t.by_save == {}
+        assert all(s.of("ddz_over")[-1]["reason"] == "error" for s in w.socks)
+        gate.set()
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if done.is_set() and [w.shards(p) for p in w.pids] == before:
+                break
+        assert [w.shards(p) for p in w.pids] == before
+        assert w.g.store.open_ddz_games() == []
+    run(go())

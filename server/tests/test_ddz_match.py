@@ -317,27 +317,71 @@ def test_a_save_never_sits_with_itself_and_one_holding_an_invite_is_skipped():
         with pytest.raises(Exception) as e:
             await w.t.queue(twin, BASE)
         assert e.value.code == "ddz_queued"
-        # b waits; an invite in a room it is in on its room connection holds it, so a, c and d sit down without it.
+        # b waits; an invite in a room it is in, on its room connection, takes it out of the line while it is out,
+        # so a, c and d sit down without it.
         b, sb = w.member("b")
         await w.t.queue(b, BASE)
         b_room, sb_room = w.member("b", room="r")
         x, _ = w.member("x", room="r")
         y, _ = w.member("y", room="r")
         await w.t.invite("r", x, [b_room.id, y.id], BASE)
+        assert queue_msgs(sb)[-1] == {"base": None} and w.t.counts() == {BASE: 1}
         (c, sc), = await w.queued("c")
-        assert w.t.by_save[w.who["b"]].room == "r" and [q.peer for q in w.t.lines[BASE]] == [a, b, c]
+        assert w.t.by_save[w.who["b"]].room == "r" and [q.peer for q in w.t.lines[BASE]] == [a, c]
         (d, sd), = await w.queued("d")
-        assert sd.of("ddz_invite")[0]["ids"] == [a.id, c.id, d.id] and [q.peer for q in w.t.lines[BASE]] == [b]
-        # Turned down, b's invite lets it be matched again; accepting one takes it out of the queue.
+        assert sd.of("ddz_invite")[0]["ids"] == [a.id, c.id, d.id] and w.t.lines == {}
+        # Turned down by b itself: it waits again, in its place; inviting it again waits for the invite cooldown.
         invite = sb_room.of("ddz_invite")[0]["table"]
         await w.t.answer(b_room, invite, False)
         await w.t.idle()
-        assert [q.peer for q in w.t.lines[BASE]] == [b]
-        w.t.refused.clear()
+        assert [q.peer for q in w.t.lines[BASE]] == [b] and queue_msgs(sb)[-1]["base"] == BASE
+        with pytest.raises(Exception) as e:
+            await w.t.invite("r", x, [b_room.id, y.id], BASE)
+        assert e.value.code == "ddz_cooldown"
+        # Turning invites down on any connection of the save gives no place back.
         await w.t.invite("r", y, [b_room.id, x.id], BASE)
-        await w.t.answer(b_room, sb_room.of("ddz_invite")[-1]["table"], True)
-        assert queue_msgs(sb)[-1] == {"base": None} and w.t.lines == {}
+        assert w.t.waiting == {}
+        b_room.dnd = True
+        w.t.set_dnd(b_room, True)
+        await w.t.idle()
+        assert w.t.waiting == {}
     run(go())
+
+
+@pytest.mark.parametrize("how", ["other_declines", "expires", "cancelled", "start_fails"])
+def test_an_invite_that_comes_to_nothing_gives_the_invited_their_places_back(how):
+    async def go():
+        w = MatchWorld()
+        (e, se), (b, sb) = await w.queued("e", "b")
+        w.mono += 5
+        (f, sf), = await w.queued("f", base=50)
+        held = w.t.waiting[w.who["b"]]
+        b_room, sb_room = w.member("b", room="r")
+        x, sx = w.member("x", room="r")
+        y, sy = w.member("y", room="r")
+        await w.t.invite("r", x, [b_room.id, y.id], BASE)
+        if how == "start_fails":
+            w.g.store.update_player(w.who["y"], shards=0)
+        tid = sx.of("ddz_invite")[0]["table"]
+        assert [q.peer for q in w.t.lines[BASE]] == [e] and queue_msgs(sb)[-1] == {"base": None}
+        await w.t.answer(b_room, tid, True)
+        if how == "other_declines":
+            await w.t.answer(y, tid, False)
+        elif how == "expires":
+            await w.timers.fire()
+        elif how == "cancelled":
+            await w.t.leave(x, tid)
+        else:
+            await w.t.answer(y, tid, True)
+        await w.t.idle()
+        assert tid not in w.t.by_id
+        # Back where it was: behind e, which queued with it, its time waited kept.
+        assert [q.peer for q in w.t.lines[BASE]] == [e, b]
+        back = w.t.waiting[w.who["b"]]
+        assert (back.since, back.seq) == (held.since, held.seq)
+        assert queue_msgs(sb)[-1] == {"base": BASE, "waited": 5.0}
+    run(go())
+
 
 
 def test_inviting_in_a_room_takes_the_save_out_of_the_queue():
@@ -541,11 +585,13 @@ def test_hello_checks_the_save_the_nick_the_pet_and_the_plate_as_join_does(api, 
         a.send_json({"type": "ping"})
         receive(a, "pong")
         assert ready["you"] not in main.tables.lobby and not peer.active
-    # A guest token without a save of its own (one linked to an account) says hello, and cannot queue.
+    # A connection without a save (a guest token of none, one linked to an account) is refused, for good.
     with c.websocket_connect("/ws") as x:
-        hello(x, "nobody", token="")
+        x.send_json({"type": "ddz_hello", "nick": "nobody", "token": ""})
+        assert receive(x, "error") == {"type": "error", "code": "room_full", "message": "", "reason": "ddz_locked"}
+        assert main.tables.lobby == {}
         x.send_json({"type": "ddz_queue", "base": BASE})
-        assert receive(x, "error")["code"] == "ddz_locked"
+        assert receive(x, "error")["code"] == "not_joined"
     assert main.tables.lobby == {}
 
 
@@ -948,4 +994,158 @@ def test_a_new_dou_dizhu_connection_takes_over_the_place_in_the_line():
         e2, se2 = w3.member("e")
         await w3.t.hello(e2)
         assert se2.got[0] == {"type": "ddz_ready", "you": e2.id, "base": None, "table": None} and w3.t.waiting == {}
+    run(go())
+
+
+def lobby_closed(name=None):
+    """Waits for the dou dizhu connections to be let go (the endpoint's thread runs on its own)."""
+    for _ in range(200):
+        if name is None and not main.tables.lobby or name is not None and len(
+                [p for p in main.tables.lobby.values() if p.nick == name]) <= 1:
+            return
+        time.sleep(0.01)
+
+
+def test_a_newer_hello_of_the_save_takes_over_and_the_older_connection_is_told_and_closed(api):
+    c, g, timers = api
+    save(g, "a")
+    with c.websocket_connect("/ws") as a1, c.websocket_connect("/ws") as a2:
+        hello(a1, "a")
+        a1.send_json({"type": "ddz_queue", "base": BASE})
+        assert receive(a1, "ddz_queue")["base"] == BASE
+        r2 = hello(a2, "a")
+        assert r2["base"] == BASE
+        assert receive(a1, "error") == {"type": "error", "code": "room_full", "message": "", "reason": "ddz_queued"}
+        lobby_closed("a")
+        assert list(main.tables.lobby) == [r2["you"]]
+        assert main.tables.waiting[player_id_for(tok("a"))].peer.id == r2["you"]
+
+
+def test_dou_dizhu_connections_are_capped(api, monkeypatch):
+    c, g, timers = api
+    for name in "ab":
+        save(g, name)
+    monkeypatch.setattr(main, "LOBBY_MAX", 1)
+    with c.websocket_connect("/ws") as a1, c.websocket_connect("/ws") as b, c.websocket_connect("/ws") as a2:
+        hello(a1, "a")
+        b.send_json({"type": "ddz_hello", "nick": "b", "token": tok("b")})
+        assert receive(b, "error")["reason"] == "ddz_full"
+        # Over the cap, a newer connection of a save already in takes the place of the older one.
+        hello(a2, "a")
+        assert receive(a1, "error")["reason"] == "ddz_queued"
+        lobby_closed("a")
+        assert len(main.tables.lobby) == 1
+
+
+def test_a_hello_that_came_first_but_got_through_last_gives_way_to_the_newer_one(api, monkeypatch):
+    import threading
+
+    c, g, timers = api
+    save(g, "a")
+    real = main._room_identity
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def slow(token, account_token):
+        calls.append(token)
+        if len(calls) == 1:
+            entered.set()
+            release.wait(5)
+        return real(token, account_token)
+
+    monkeypatch.setattr(main, "_room_identity", slow)
+    with c.websocket_connect("/ws") as first, c.websocket_connect("/ws") as second:
+        first.send_json({"type": "ddz_hello", "nick": "a", "token": tok("a")})
+        assert entered.wait(5)
+        r2 = hello(second, "a")
+        release.set()
+        # The first hello is the older one: it is refused and the newer connection keeps the save.
+        assert receive(first, "error")["reason"] == "ddz_queued"
+        assert list(main.tables.lobby) == [r2["you"]]
+        second.send_json({"type": "ddz_queue", "base": BASE})
+        assert receive(second, "ddz_queue")["base"] == BASE
+
+
+def test_turning_invites_down_on_any_connection_of_the_save_keeps_it_out_of_the_queue():
+    async def go():
+        w = MatchWorld()
+        a, sa = w.member("a")
+        a_room, _ = w.member("a", room="r")
+        # Its room connection turns invites down (as joining with dnd does): the save does not queue.
+        a_room.dnd = True
+        with pytest.raises(Exception) as e:
+            await w.t.queue(a, BASE)
+        assert e.value.code == "ddz_dnd"
+        a_room.dnd = False
+        await w.t.queue(a, BASE)
+        (b, sb), = await w.queued("b")
+        # Turned on while it waits: the save is dropped when a table would be made with it.
+        a_room.dnd = True
+        (c, sc), = await w.queued("c")
+        assert queue_msgs(sa)[-1] == {"base": None, "reason": "ddz_dnd"}
+        assert [q.peer for q in w.t.lines[BASE]] == [b, c] and sb.of("ddz_invite") == []
+    run(go())
+
+
+def test_a_save_of_a_table_the_queue_made_put_back_after_a_decline_stays_out_when_it_turns_invites_down():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        b_room, _ = w.member("b", room="r")
+        b_room.dnd = True
+        await w.t.answer(c, tid, False)
+        await w.t.idle()
+        # a goes back; b, turning invites down on its room connection, does not.
+        assert [q.peer for q in w.t.lines[BASE]] == [a] and w.who["b"] not in w.t.waiting
+    run(go())
+
+
+def test_a_member_of_a_room_playing_at_a_table_of_the_queue_is_shown_playing_to_the_whole_room():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        for p in (a, b, c):
+            await w.t.answer(p, tid, True)
+        await settle()
+        x, sx = w.member("x", room="r")
+        # a, playing from no room, joins r: x hears a is playing, by a's member id in r.
+        a_room, sa_room = w.member("a", room="r")
+        await w.t.joined("r", a_room)
+        assert sx.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": [a_room.id, b.id, c.id], "on": True}
+        # Back on a new room connection, with a new member id: told again.
+        await w.m.depart("r", a_room.id)
+        a2, _ = w.member("a", room="r")
+        await w.t.joined("r", a2)
+        assert sx.of("ddz_live")[-1]["ids"] == [a2.id, b.id, c.id]
+    run(go())
+
+
+def test_a_nick_masked_again_or_changed_shows_at_the_table(monkeypatch):
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        for p in (a, b, c):
+            await w.t.answer(p, tid, True)
+        await settle()
+        t = w.t.by_id[tid]
+        monkeypatch.setattr(main, "tables", w.t)
+        monkeypatch.setattr(main, "manager", w.m)
+        monkeypatch.setattr(main.blocklist, "mask", lambda s: s.replace("坏", "*"))
+        monkeypatch.setitem(main.raw_nicks, a.id, "坏a")
+        await main._remask()
+        assert a.nick == "*a" and t.seats[0].nick == "*a"
+        told = {"type": "ddz_seat", "table": tid, "seat": 0, "id": a.id, "away": False, "auto": False, "nick": "*a",
+                "character": "嘉然", "plate": None}
+        assert sb.of("ddz_seat")[-1] == told and sc.of("ddz_seat")[-1] == told
+        # Masking again with nothing new tells nothing.
+        n = len(sb.of("ddz_seat"))
+        await main._remask()
+        assert len(sb.of("ddz_seat")) == n
+        # Its own new pet shows the same way.
+        b.character = "贝拉"
+        w.t.restyle(b)
+        assert t.seats[1].character == "贝拉" and sa.of("ddz_seat")[-1]["character"] == "贝拉"
     run(go())
