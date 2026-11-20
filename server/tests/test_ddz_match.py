@@ -447,3 +447,53 @@ def test_a_game_the_queue_made_over_the_socket(api):
         assert receive(d, "ddz_live")["on"] is False
     me = c.get("/api/me", headers={"X-Player-Token": tok("a")}).json()
     assert me["shards"] == SHARDS + 2700
+
+
+@pytest.mark.parametrize("match", [True, False])
+def test_a_member_back_while_the_deposits_are_taken_gets_the_deal(monkeypatch, match):
+    async def go():
+        import threading
+
+        gate = threading.Event()
+        real = Bank.start
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            return real(self, pids, base)
+
+        monkeypatch.setattr(Bank, "start", slow)
+        if match:
+            w = MatchWorld()
+            (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+            tid = sa.of("ddz_invite")[0]["table"]
+            await w.t.answer(a, tid, True)
+            await w.t.answer(b, tid, True)
+            back_room, room = "r-y", "r-b"
+        else:
+            w = MatchWorld()
+            w.three()
+            a, b, c = w.peers
+            sa = w.socks[0]
+            await w.t.invite("r", a, [b.id, c.id], BASE)
+            tid = sa.of("ddz_invite")[0]["table"]
+            await w.t.answer(b, tid, True)
+            back_room, room = "r", "r"
+        t = w.t.by_id[tid]
+        task = asyncio.create_task(w.t.answer(c, tid, True))
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        assert t.phase == "starting"
+        await w.m.depart(room, b.id)
+        b2, sb2 = w.join("b2", w.who["b"] if match else w.pids[1], room=back_room)
+        b2.ddz_match = True
+        await w.t.joined(back_room, b2)
+        gate.set()
+        await task
+        await settle()
+        assert t.seats[1].peer is b2 and not t.seats[1].auto
+        deal = sb2.of("ddz_deal")
+        assert len(deal) == 1 and deal[0]["you"] == 1 and len(deal[0]["hand"]) == 17
+        assert deal[0]["seats"][1] == {"id": b2.id, "nick": "b2", "character": "嘉然", "auto": False, "away": False}
+    run(go())
