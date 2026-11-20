@@ -640,7 +640,7 @@ class Tables:
         self._leave_queue(peer, save=True)
         invited = {"type": "ddz_invite", "table": table.id, "from": peer.id, "ids": [p.id for p in peers],
                    "base": base, "deposit": deposit, "sec": cfg["inviteSec"]}
-        quiet = [p for p in peers[1:] if p.dnd]
+        quiet = [p for p in peers[1:] if p.dnd or self._quiet(p.token)]
         if quiet:
             # Turned down for the member, who never sees it; the inviter hears a plain refusal.
             peer.enqueue(invited)
@@ -717,7 +717,7 @@ class Tables:
             raise GameError("ddz_gone", "")
         if peer.token in self.by_save:
             raise GameError("ddz_busy", "")
-        if peer.dnd:
+        if peer.dnd or self._quiet(peer.token):
             raise GameError("ddz_dnd", "")
 
     def _open_table(self, room_id: str, table_id: str) -> Table:
@@ -800,7 +800,7 @@ class Tables:
             raise GameError("ddz_cooldown", "")
         self.refused = {k: t for k, t in self.refused.items() if t > now}
         self.refused[key] = now + RETRY_SEC
-        if target.dnd:
+        if target.dnd or self._quiet(target.token):
             return
         target.enqueue({"type": "ddz_call", "table": table.id, "from": peer.id, "base": table.base,
                         "deposit": table.deposit, "sec": self.bank.cfg()["inviteSec"],
@@ -2075,9 +2075,11 @@ class Tables:
         quiet = self._quiet_saves()
         back: dict[int, list[Waiting]] = {}
         for old in held:
-            p = old.peer
-            if (not p.active or self.lobby.get(p.id) is not p or old.base not in stakes or old.token in self.by_save
-                    or old.token in self.waiting or old.token in quiet):
+            # The save's dou dizhu connection now: the one it waited on, or a newer one that took over meanwhile.
+            p = max((x for x in self.lobby.values() if x.token == old.token and x.active), key=lambda x: x.join_seq,
+                    default=None)
+            if (p is None or old.base not in stakes or old.token in self.by_save or old.token in self.waiting
+                    or old.token in quiet):
                 continue
             # A new entry: a match that was reading the old one finds it gone and leaves it be.
             w = Waiting(p, old.base, old.since, old.seq)

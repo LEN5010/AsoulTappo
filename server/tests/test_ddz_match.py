@@ -563,6 +563,7 @@ def test_a_game_the_queue_made_over_the_socket(api):
 def test_hello_checks_the_save_the_nick_the_pet_and_the_plate_as_join_does(api, monkeypatch):
     c, g, timers = api
     save(g, "a")
+    save(g, "坏a")
     monkeypatch.setattr(main.blocklist, "mask", lambda s: s.replace("坏", "*"))
     skin = next(iter(g.manifest.skins))
     with c.websocket_connect("/ws") as a:
@@ -1149,4 +1150,50 @@ def test_a_nick_masked_again_or_changed_shows_at_the_table(monkeypatch):
         b.character = "贝拉"
         w.t.restyle(b)
         assert t.seats[1].character == "贝拉" and sa.of("ddz_seat")[-1]["character"] == "贝拉"
+    run(go())
+
+
+def test_an_invited_save_back_on_a_new_dou_dizhu_connection_gets_its_place_there():
+    async def go():
+        w = MatchWorld()
+        (e, se), (b, sb) = await w.queued("e", "b")
+        held = w.t.waiting[w.who["b"]]
+        b_room, _ = w.member("b", room="r")
+        x, sx = w.member("x", room="r")
+        y, _ = w.member("y", room="r")
+        await w.t.invite("r", x, [b_room.id, y.id], BASE)
+        tid = sx.of("ddz_invite")[0]["table"]
+        # Its dou dizhu connection goes and a new one says hello while the invite is out.
+        await w.bye(b)
+        b2, sb2 = w.member("b")
+        await w.t.hello(b2)
+        await w.t.answer(y, tid, False)
+        await w.t.idle()
+        assert [q.peer for q in w.t.lines[BASE]] == [e, b2] and w.t.waiting[w.who["b"]].seq == held.seq
+        assert queue_msgs(sb2)[-1]["base"] == BASE
+    run(go())
+
+
+def test_hello_with_a_token_of_no_save_is_refused_and_makes_none(api):
+    c, g, timers = api
+    pid = player_id_for(tok("never"))
+    with c.websocket_connect("/ws") as x:
+        x.send_json({"type": "ddz_hello", "nick": "never", "token": tok("never")})
+        assert receive(x, "error")["reason"] == "ddz_locked"
+    assert main.tables.lobby == {} and not g.store.has_player(pid)
+
+
+def test_turning_invites_down_on_any_connection_keeps_the_save_from_being_invited_or_opening_a_table():
+    async def go():
+        w = MatchWorld()
+        a, sa = w.member("a", room="r")
+        b, sb = w.member("b", room="r")
+        c, _ = w.member("c", room="r")
+        b_lobby, _ = w.member("b")
+        b_lobby.dnd = True
+        await w.t.invite("r", a, [b.id, c.id], BASE)
+        assert sa.of("ddz_over")[-1]["reason"] == "declined" and sb.of("ddz_invite") == []
+        with pytest.raises(Exception) as e:
+            await w.t.open("r", b, BASE)
+        assert e.value.code == "ddz_dnd"
     run(go())

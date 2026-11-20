@@ -1380,8 +1380,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await err("no_ddz", "这个服务器没有斗地主")
                     continue
                 who, _ = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
-                if who is None:
-                    # Only a save plays: a connection without one would only take room on the server.
+                if who is None or not await run_in_threadpool(game.store.has_player, who):
+                    # Only a save that is there plays (a token of none derives an id all the same, and the hello does
+                    # not make one): a connection without one would only take room on the server.
                     await send(_final("ddz_locked", ""))
                     continue
                 plate = await run_in_threadpool(game.room_plate, who, msg.plate)
