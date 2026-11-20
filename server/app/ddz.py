@@ -1672,6 +1672,8 @@ class Tables:
                     self._form(base, ready)
                 elif back:
                     self._merge(base, back)
+                    # Back in the line: a seat of an open table that came due while they were read goes to them.
+                    self._fill_line(base)
         finally:
             self._matching.discard(base)
 
@@ -1812,8 +1814,10 @@ class Tables:
                 p.enqueue(over)
         else:
             table.tell(over)
-        # Invited saves that kept waiting in the queue may be matched again.
+        # Invited saves that kept waiting in the queue may take a seat of an open table waiting for one, or be matched
+        # again.
         for base in {w.base for s in table.seats if (w := self.waiting.get(s.token)) is not None}:
+            self._fill_line(base)
             self._spawn(self._match(base))
 
     def _end_match(self, table: Table, reason: str, by: Peer | None = None) -> None:

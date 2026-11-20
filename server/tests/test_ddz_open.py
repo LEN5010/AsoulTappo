@@ -450,6 +450,52 @@ def test_a_table_put_away_while_a_save_of_the_queue_is_asked_puts_it_back_in_its
     run(go())
 
 
+def test_a_save_of_the_queue_freed_by_an_invite_ending_takes_a_seat_waiting_for_it():
+    async def go():
+        w = OpenWorld()
+        ((a, sa),), tid = await w.opened("a")
+        # q waits in the queue and is invited to a game meanwhile: no seat goes to it while the invite is out.
+        q, sq = w.member("q")
+        await w.t.queue(q, BASE)
+        x, _ = w.member("x", match=False)
+        y, _ = w.member("y", match=False)
+        await w.t.invite("r", x, [q.id, y.id], BASE)
+        w.mono += FILL_SEC
+        w.t._open_changed(w.t.by_id[tid])
+        assert sq.of("ddz_invite")[-1].get("match") is None and w.t.by_id[tid].seats[1].empty
+        # Turned down: still waiting, it is asked to the seat at once.
+        await w.t.answer(q, sq.of("ddz_invite")[-1]["table"], False)
+        await w.t.idle()
+        assert sq.of("ddz_invite")[-1] == {"type": "ddz_invite", "table": tid, "ids": [a.id, q.id, ""],
+                                           "base": BASE, "deposit": DEPOSIT, "sec": INVITE_SEC, "match": True,
+                                           "seats": [seat(a), seat(q), None], "accepted": [a.id]}
+    run(go())
+
+
+def test_saves_of_the_queue_back_from_a_three_that_fell_through_take_a_seat_waiting_for_them(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa),), tid = await w.opened("a")
+        (q1, s1), (q2, _) = w.member("q1", room="r-1"), w.member("q2", room="r-2")
+        for q in (q1, q2):
+            await w.t.queue(q, BASE)
+        # A third joins: the three are read while the seats come due, and the third may not play after all.
+        gate = Gate(monkeypatch, "refusals")
+        held, = gate.hold(1)
+        q3, _ = w.member("q3", room="r-3")
+        task = asyncio.create_task(w.t.queue(q3, BASE))
+        await until(lambda: gate.calls == 1)
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        assert w.t.by_id[tid].seats[1].empty
+        w.g.store.update_player(w.who["q3"], shards=0)
+        held.set()
+        await task
+        await w.t.idle()
+        assert s1.of("ddz_invite")[-1]["table"] == tid and w.t.by_id[tid].seats[1].token == w.who["q1"]
+    run(go())
+
+
 # ------------------------------------------------------------------ calling members to the table
 def test_the_opener_calls_members_of_the_room_to_the_table():
     async def go():
