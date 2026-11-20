@@ -7,8 +7,11 @@ export const ui = reactive({
   panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
   /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
   dexFilter: "" as "" | "holo",
-  /** The pool on show on the resonance page: a limited pool's id, or "" for the standing pool. */
-  pool: "",
+  /**
+   * The pool picked on the resonance page: a limited pool's id, or "" for the standing pool. null until one is picked:
+   * the page then shows the first running limited pool, else the standing one.
+   */
+  pool: null as string | null,
   /** Desk window only: the dou dizhu table's window is open and not minimized, as it last reported (desktop/bridge.ts). */
   ddzSeen: false,
 });

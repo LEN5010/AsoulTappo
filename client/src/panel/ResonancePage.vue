@@ -37,13 +37,15 @@ watch(() => pageActive.value && online.value && expired.value, (ids) => {
   if (ids) void loadEconomy();
 }, { immediate: true });
 const banners = computed(() => runningBanners(now.value));
-const banner = computed(() => banners.value.find((b) => b.id === ui.pool) ?? null);
+/** The pool on show: the one picked, else a running limited pool, else the standing pool. */
+const poolId = computed(() => ui.pool ?? banners.value[0]?.id ?? "");
+const banner = computed(() => banners.value.find((b) => b.id === poolId.value) ?? null);
 const pools = computed(() => [
   { id: "", name: "此间共鸣" },
   ...banners.value.map((b) => ({ id: b.id, name: b.name, left: bannerLeft(b, now.value) })),
 ]);
-// A pool that ended while it was on show hands the page back to the standing pool.
-watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = ""; });
+// A picked pool that ended while it was on show hands the page back to the default.
+watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = null; });
 const featuredLeft = computed(() => !!banner.value?.items.some((id) => !collection.owned[id]));
 /** The shared tiers whose next draw in the pool on show gives a featured item. */
 const guaranteed = computed(() => (banner.value && status.value?.resonance.banners?.[banner.value.id]?.guaranteed) || []);
@@ -155,10 +157,10 @@ async function nextBatch() {
         v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
         :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
       >
-        <template #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
+        <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" /></template>
       </BannerStage>
       <PoolStage v-else :busy="revealing" :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event">
-        <template v-if="banners.length" #switch><PoolTabs v-model="ui.pool" :pools="pools" :disabled="revealing" /></template>
+        <template v-if="banners.length" #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" /></template>
       </PoolStage>
     </Transition>
     <footer class="console" :class="{ 'state-empty': !complete && draws < 1, 'state-once': !complete && draws >= 1 && draws < 10, 'state-ten': !complete && draws >= 10 }">
