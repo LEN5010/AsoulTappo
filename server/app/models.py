@@ -276,11 +276,18 @@ class DdzEmoteMsg(_Msg):
     emote: str = Field(min_length=1, max_length=32)
 
 
+class DdzCounterMsg(_Msg):
+    """Turn the card counter on for the own seat, buying its games when the save has none left."""
+
+    type: Literal["ddz_counter"] = "ddz_counter"
+    table: str = Field(min_length=1, max_length=32)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
           DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
-          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg],
+          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg, DdzCounterMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)

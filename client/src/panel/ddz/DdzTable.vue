@@ -18,12 +18,15 @@ import { pet } from "../../stores/pet";
 import { localPet, members, shownNick } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import { reducedMotion } from "../../stores/theme";
-import { autoDdz, againDdz, bidDdz, ddz, ddzEmotes, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
+import { autoDdz, againDdz, bidDdz, counterDdz, ddz, ddzConfig, ddzEmotes, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
+import { economy } from "../../stores/economy";
+import { status } from "../../stores/player";
 import NamePlate from "../../pet/NamePlate.vue";
 import { getPlate } from "../../pet/plates";
 import PetView from "../../pet/PetView.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
+import { COIN_SMALL } from "../park/coin";
 import { countTo } from "../park/countTo";
 import DdzCard from "./DdzCard.vue";
 import DdzEmotes from "./DdzEmotes.vue";
@@ -290,6 +293,21 @@ watch([clockSeat, () => t.value.until], tick, { immediate: true });
  * until the own hand is turned over (it would give the hand away).
  */
 const out = computed(() => (playing.value && !dealing.value && t.value.played ? cardsOut(t.value.hand, t.value.played) : null));
+/**
+ * Where the counter is sold it counts only once it is on for the game (while the seats bid, when the save has a game
+ * of it left, used once the landlord is known); else it lies grey, a key that turns it on.
+ */
+const counting = computed(() => {
+  const c = t.value.counter;
+  return !c || c.on || (t.value.phase === "bid" && c.left > 0);
+});
+/** What turning it on costs a save with no game left: its coins when the save holds them, else the shards that buy them. */
+const counterPrice = computed(() => {
+  const cfg = ddzConfig.value?.counter;
+  if (!cfg) return null;
+  const short = Math.max(0, cfg.coins - (status.value?.park?.coins ?? 0));
+  return { games: cfg.games, coins: short ? 0 : cfg.coins, shards: short * (economy.value?.park?.coin.price ?? 0) };
+});
 const shownMult = ref(1);
 const multEl = ref<HTMLElement>();
 const matEl = ref<HTMLElement>();
@@ -549,10 +567,29 @@ onBeforeUnmount(() => {
                 {{ secLeft }}
               </span>
             </div>
-            <div v-if="out" class="tally">
+            <div v-if="out && counting" class="tally">
               <span v-for="c in out" :key="c.label" :class="{ none: !c.n }"><i>{{ c.label }}</i><b>{{ c.n }}</b></span>
-              <span class="blank"></span>
+              <!-- The cell left over: the games of the counter the save has after this one. -->
+              <span v-if="t.counter" class="games" :class="{ none: !t.counter.left }"><i>余</i><b>{{ t.counter.left }}</b></span>
+              <span v-else class="blank"></span>
             </div>
+            <button
+              v-else-if="out" type="button" class="tally locked" aria-label="开启记牌器" :disabled="t.counterAsked"
+              @click="counterDdz"
+            >
+              <span v-for="c in out" :key="c.label"><i>{{ c.label }}</i><b></b></span>
+              <span class="blank"></span>
+              <em class="price" :class="{ wrong: !!t.counterError }">
+                <template v-if="t.counterError">{{ t.counterError === "no_shards" ? "碎片不足" : "稍后再试" }}</template>
+                <template v-else-if="t.counter!.left > 0 || !counterPrice">开启</template>
+                <template v-else>
+                  <img v-if="counterPrice.coins" :src="COIN_SMALL" alt="驼币" draggable="false" />
+                  <Icon v-else name="shard" :size="13" />
+                  <b>{{ (counterPrice.coins || counterPrice.shards).toLocaleString("en-US") }}</b>
+                  <i></i>{{ counterPrice.games }} 局
+                </template>
+              </em>
+            </button>
           </div>
 
           <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]">
@@ -848,6 +885,50 @@ onBeforeUnmount(() => {
 .tally .none b { color: var(--c-300); }
 .tally .none i { opacity: 0.5; }
 .tally .blank { background: var(--c-50); }
+/* The games left: a character over a number in ink, apart from the ranks. */
+.tally .games i { font: 800 10px/1 var(--font); letter-spacing: 0; }
+.tally .games b { color: var(--ink-2); }
+/* Not on: the slip in opaque grey without its counts, a key that lifts under the pointer; across it a white pill
+   with what turning it on costs and the games that buys. */
+.tally.locked {
+  --grey: color-mix(in srgb, var(--ink-3) 30%, #fff);
+  border: 0;
+  font: inherit;
+  background: var(--grey);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: translate var(--dur-fast) var(--ease-out);
+}
+.tally.locked span { background: color-mix(in srgb, var(--ink-3) 9%, #fff); }
+.tally.locked span i { background: color-mix(in srgb, var(--ink-3) 18%, #fff); color: color-mix(in srgb, var(--ink-3) 55%, #fff); }
+.tally.locked .blank { background: color-mix(in srgb, var(--ink-3) 18%, #fff); }
+.tally.locked:hover:not(:disabled) { translate: 0 -2px; }
+.tally.locked:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.tally.locked:disabled { cursor: default; }
+.tally.locked:disabled .price { opacity: 0.6; }
+.price {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff, var(--key-white-shade));
+  box-shadow: 0 2px 0 var(--c-200), 0 6px 12px -5px rgba(var(--c-900-rgb), 0.5);
+  font: 800 13px/1 var(--font);
+  font-style: normal;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.price img { width: 17px; height: 17px; }
+.price :deep(svg) { color: var(--c-600); }
+.price b { font: 800 17px/1 var(--font-latin); color: var(--c-700); letter-spacing: 0.2px; }
+.price > i { width: 1.5px; height: 12px; margin: 0 2px; border-radius: 1px; background: var(--c-200); }
+.price.wrong { color: var(--c-700); }
 
 /* What each seat has in front of it. Cards on the table lie a little askew, turned about the end their seat is at;
    the ones in the hand do not. The other seats' lie under their names, on either side of the multiplier; the own one

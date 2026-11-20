@@ -48,9 +48,10 @@ that waited longest at a table the queue made, the opener of an open table):
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
   linked to a main-site account, on a server with accounts) | error; at an open table also disband (`by` the
   opener) | expired, and a seat let go at the start hears why its save may not play. Deposits taken went back.
-- ``ddz_deal`` {seats: [{id, nick, character, plate?, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec}: a
-  deal (`plate` when one is worn, in every seat list); the clients deal the cards out over `dealSec` seconds, then
-  `turn` bids first with `sec` seconds.
+- ``ddz_deal`` {seats: [{id, nick, character, plate?, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec,
+  counter?}: a deal (`plate` when one is worn, in every seat list); the clients deal the cards out over `dealSec`
+  seconds, then `turn` bids first with `sec` seconds. `counter` {on, left}, where the card counter is sold: whether
+  the seat's is on for this game and the games of it its save has left.
 - ``ddz_bid`` {seat, bid, turn?, sec?}: a bid (0 passes); `turn` bids next when the bidding goes on.
 - ``ddz_landlord`` {seat, bid, bottom, mult, turn, sec}: `seat` is the landlord, takes `bottom` and leads.
 - ``ddz_play`` {seat, cards, left, mult, bombs, turn?, sec?, lead?}: a play ([] passes); `turn` plays next and leads
@@ -68,6 +69,16 @@ that waited longest at a table the queue made, the opener of an open table):
 - ``ddz_emote`` {seat, emote} (to the other seats, in any room): `seat` shows emote `emote` (``ddz_emote`` {table,
   emote} from the seat, owned and rate-limited as a room emote). A seat whose client does not say `ddzMatch` (1.2.5)
   hears it as the room's ``emote`` {id, emote} instead, sent to it alone, when both sit in the table's room.
+
+The card counter (the client's count of the cards the other two seats still hold), where the economy sells it
+(`doudizhu.counter`; elsewhere it is free and none of this is sent): a save holds games of it, and a seat's counter is
+on for a game once one of them was used on it. That happens when the landlord is known, for every seat whose member is
+at the table and whose save has a game left, and when a member with a game left comes back to its seat later.
+
+- ``ddz_counter`` {table} from a seat, while the seats bid or play: turn the counter on. A save with no game left buys
+  `games` of them for `coins` park coins first, a coin it lacks being bought with shards at the park's price.
+- ``ddz_counter`` {table, on, left, error?} to that seat alone: its counter now, also sent unasked when it is turned
+  on; `error` no_shards when the save could not pay, error when the purchase failed.
 
 To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
 shards the winners won, by member id. The ids are the room's: a seat whose save is in the room on another connection
@@ -137,6 +148,7 @@ from starlette.concurrency import run_in_threadpool
 from . import ddz_rules as rules
 from .duel import Timers
 from .game import Game, GameError, day_of
+from .park import COIN_BUY, Park
 from .rooms import Peer, RoomManager
 
 log = logging.getLogger(__name__)
@@ -169,6 +181,8 @@ REFUND_RETRY_SEC = (0.5, 2.0)
 
 OPEN, INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = (
     "open", "invite", "starting", "bid", "play", "settling", "over", "done")
+# Coin ledger source of the coins the card counter costs.
+COUNTER = "ddz_counter"
 
 
 # ------------------------------------------------------------------ the bank
@@ -318,6 +332,42 @@ class Bank:
     def net(self, pid: str) -> int:
         return self.game.store.ddz_net(pid, day_of(self.game.now()))
 
+    def counter(self) -> dict[str, Any] | None:
+        """What the card counter costs: {coins, games}. None where it is free."""
+        return self.cfg().get("counter")
+
+    def counters(self, pids: list[str]) -> list[int]:
+        """The games of the card counter each save has left."""
+        return self.game.store.ddz_counters(pids)
+
+    def use_counter(self, pid: str) -> None:
+        self.game.store.use_ddz_counter(pid)
+
+    def buy_counter(self, pid: str) -> int:
+        """Buys the card counter's games for its coins, spent as any coin of the park is (a stamp each, and the
+        lottery's pool is fed). A coin the save lacks is bought with shards at the park's price first; no_shards when
+        it cannot pay that. Returns the games the save has then."""
+        c = self.counter()
+        if not c:
+            raise GameError("bad_message", "the card counter is not sold here")
+        park = Park(lambda: self.game)
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            day = day_of(now)
+            p = st.get_player(pid, now)
+            short = c["coins"] - p["coins"]
+            if short > 0:
+                cost = short * park.coin["price"]
+                if p["shards"] < cost:
+                    raise GameError("no_shards", "碎片不足")
+                st.update_player(pid, shards=p["shards"] - cost, coins=p["coins"] + short)
+                st.add_ledger(pid, day, COIN_BUY, -cost, short)
+                st.add_coin_ledger(pid, day, "buy", short, short)
+            park.spend(st, pid, c["coins"], COUNTER, now)
+            left = st.get_player(pid, now)["ddz_counter"] + c["games"]
+            st.update_player(pid, ddz_counter=left)
+        return left
+
     def lobby(self, pid: str) -> dict[str, Any]:
         """What the lobby shows save [pid], in one transaction: each stake, its deposit and whether the save can pay
         it; today's net win, the cap and what is left of it; the taps it has and needs; whether it meets the account
@@ -372,6 +422,11 @@ class Seat:
     restyled: bool = False
     # The nick as its member's client sent it (Peer.raw_nick), masked again into `nick` when the blocklist changes.
     raw: str = ""
+    # The card counter, where it is sold: on for this game, the games of it the save has left (read when the game
+    # starts, kept here while it sits), and whether a purchase is under way.
+    counter: bool = False
+    counter_left: int = 0
+    buying: bool = False
 
     @property
     def empty(self) -> bool:
@@ -475,6 +530,8 @@ class _Start:
         self._lock = threading.Lock()
         self._dropped = False
         self._row: int | None = None
+        # The games of the card counter each save has left, read once the deposits are taken.
+        self.lefts = [0] * len(pids)
 
     def run(self) -> tuple[int | None, list[str | None]]:
         if self.strict:
@@ -485,6 +542,12 @@ class _Start:
             self._row, dropped = row, self._dropped
         if dropped and row is not None:
             self.bank.refund(row)
+        elif row is not None and self.bank.counter():
+            try:
+                self.lefts = self.bank.counters(self.pids)
+            except Exception:
+                # The game starts all the same, the counters off.
+                log.exception("ddz: reading the card counters failed")
         return row, codes
 
     def drop(self) -> int | None:
@@ -1053,8 +1116,9 @@ class Tables:
         gone = [i for i, s in enumerate(table.seats) if not self._here(table, s)]
         if row is not None and not gone:
             table.row = row
-            for s in table.seats:
+            for s, left in zip(table.seats, start.lefts):
                 s.auto, s.timeouts = False, 0
+                s.counter, s.counter_left = False, left
             table.deal = 0
             await self._live(table, True)
             self._deal(table)
@@ -1193,6 +1257,8 @@ class Tables:
         if again:
             for x in table.seats:
                 x.auto, x.timeouts = x.peer is None, 0
+        for x, left in zip(table.seats, start.lefts):
+            x.counter, x.counter_left = False, left
         table.deal = 0
         await self._live(table, True)
         self._deal(table)
@@ -1217,7 +1283,59 @@ class Tables:
             if s.peer is not None and not s.quit:
                 s.peer.enqueue({"type": "ddz_deal", "table": table.id, "seats": seats, "you": i, "hand": s.hand,
                                 "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "turn": first,
-                                "sec": sec, "dealSec": DEAL_SEC})
+                                "sec": sec, "dealSec": DEAL_SEC, **self._counter(s)})
+
+    def _counter(self, s: Seat) -> dict:
+        """A seat's card counter as its own messages carry it; nothing where the counter is free."""
+        return {"counter": {"on": s.counter, "left": s.counter_left}} if self.bank.counter() else {}
+
+    def _counter_on(self, table: Table, s: Seat) -> bool:
+        """Turns the card counter of seat [s] on for the game being played, using one of its save's games: only
+        for a member at the table, and once a game. The seat is told; the game used is written down on a task of its
+        own, the table not waiting for it."""
+        if (s.counter or s.counter_left < 1 or s.peer is None or s.quit or table.phase != PLAY
+                or not self.bank.counter()):
+            return False
+        s.counter, s.counter_left = True, s.counter_left - 1
+        self._spawn(self._use_counter(s.token))
+        s.peer.enqueue({"type": "ddz_counter", "table": table.id, **self._counter(s)["counter"]})
+        return True
+
+    async def _use_counter(self, pid: str) -> None:
+        try:
+            await run_in_threadpool(self.bank.use_counter, pid)
+        except Exception:
+            log.exception("ddz: writing down a game of the card counter failed")
+
+    async def counter(self, peer: Peer, table_id: str) -> None:
+        """A member turns its seat's card counter on. A save with no game of it left buys its games first
+        (Bank.buy_counter); while the seats still bid, the game is used once the landlord is known. Answered with
+        ``ddz_counter``, with `error` when nothing was bought."""
+        table, seat = self._table(peer, table_id, BID, PLAY)
+        bank = self.bank
+        if not bank.counter():
+            raise GameError("bad_message", "the card counter is not sold here")
+        s = table.seats[seat]
+        if s.buying:
+            return
+        error = None
+        if not s.counter and s.counter_left < 1:
+            s.buying = True
+            try:
+                s.counter_left = await run_in_threadpool(bank.buy_counter, s.token)
+            except GameError as e:
+                error = e.code
+            except Exception:
+                log.exception("ddz: buying the card counter at %s failed", table.id)
+                error = "error"
+            finally:
+                s.buying = False
+            if self.by_id.get(table.id) is not table or table.seats[seat] is not s:
+                # The table went meanwhile: the games bought are the save's for its next one.
+                return
+        if not self._counter_on(table, s) and s.peer is not None:
+            s.peer.enqueue({"type": "ddz_counter", "table": table.id, **self._counter(s)["counter"],
+                            **({"error": error} if error else {})})
 
     def _give_turn(self, table: Table, seat: int, sec: float, wait: float = 0.0) -> float:
         """Hands the move to [seat] for [sec] seconds, starting [wait] seconds from now (a seat played for moves at
@@ -1313,6 +1431,9 @@ class Tables:
         table.phase = PLAY
         table.seats[lord].hand = sorted(table.seats[lord].hand + table.bottom)
         sec = self._give_turn(table, lord, cfg["playSec"])
+        # Before the landlord is told: the counter is on by the time the client shows the play.
+        for x in table.seats:
+            self._counter_on(table, x)
         table.tell({"type": "ddz_landlord", "table": table.id, "seat": lord, "bid": table.bid, "bottom": table.bottom,
                     "mult": table.mult(cfg["capMult"]), "turn": lord, "sec": sec})
 
@@ -1661,6 +1782,8 @@ class Tables:
             else:
                 msg["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
         table.tell(msg, but=seat)
+        # A game of the counter the save has left is used now, should the landlord have been found without it.
+        self._counter_on(table, s)
         peer.enqueue(self._state(table, seat))
 
     # ------------------------------------------------------- dou dizhu connections
@@ -1817,6 +1940,7 @@ class Tables:
             "trick": [None if x is None else list(x) for x in table.trick],
             "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
             "played": list(table.played),
+            **self._counter(table.seats[seat]),
         }
 
     def _rooms(self, table: Table) -> set[str]:

@@ -26,7 +26,8 @@ DEPOSIT = BASE * CFG["capMult"] * 2
 
 def test_the_example_numbers():
     assert CFG == {"stakes": [50, 250, 500], "capMult": 24, "rake": 10, "inviteSec": 15, "bidSec": 15,
-                   "playSec": 30, "againSec": 30, "dailyWinCap": 50000, "minTaps": 10000}
+                   "playSec": 30, "againSec": 30, "dailyWinCap": 50000, "minTaps": 10000,
+                   "counter": {"coins": 1, "games": 10}}
 
 
 # ------------------------------------------------------------------ helpers

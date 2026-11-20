@@ -113,6 +113,14 @@ export interface DdzState {
   trick: (number[] | null)[];
   /** Every card played this deal, in order; null when the server did not say (a seat taken again on an old server). */
   played: number[] | null;
+  /**
+   * The own card counter where it is sold: on for this game, and the games of it the save has left. null where it is
+   * free. `counterAsked`: turning it on was asked for and not answered yet; `counterError`: why the last asking bought
+   * nothing.
+   */
+  counter: { on: boolean; left: number } | null;
+  counterAsked: boolean;
+  counterError: string;
   /** The current countdown: its length and its end in local ms. */
   sec: number;
   until: number;
@@ -375,7 +383,7 @@ const link = new DdzLink({
       return;
     }
     if (code === "ddz_gone" || code === "ddz_turn" || code === "ddz_bad") {
-      if (ddz.value?.via === "link") ddz.value.acted = false;
+      if (ddz.value?.via === "link") Object.assign(ddz.value, { acted: false, counterAsked: false });
       return;
     }
     queueAsked.value = null;
@@ -438,7 +446,7 @@ function blank(id: string, via: DdzState["via"]): DdzState {
   return {
     id, via, phase: "invite", match: false, starting: false, you: 0, seats: [], sent: false, answered: false, accepted: [], base: 0, deposit: 0, cap: 0, deal: 0,
     hand: [], bid: 0, landlord: null, bottom: [], mult: 1, bombs: 0, boosts: [], dealUntil: 0, turn: null, lead: false,
-    trick: [null, null, null], played: [],
+    trick: [null, null, null], played: [], counter: null, counterAsked: false, counterError: "",
     sec: 0, until: 0, acted: false, result: null, closed: false, reason: "", by: "", log: [],
   };
 }
@@ -597,7 +605,7 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     const t: DdzState = {
       ...blank(msg.table, via), log: before?.log ?? [], deposit: before?.deposit ?? ddzDeposit(msg.base),
       phase: msg.type === "ddz_state" ? msg.phase : "bid", you: msg.you, base: msg.base, cap: msg.cap, deal: msg.deal,
-      hand: sortHand(msg.hand),
+      hand: sortHand(msg.hand), counter: msg.counter ? { on: msg.counter.on, left: msg.counter.left } : null,
       seats: msg.seats.map((s) => ({
         id: s.id, nick: s.nick, character: s.character, auto: s.auto, away: s.away, again: false,
         left: "left" in s ? s.left : 17, bid: "bid" in s ? s.bid : null, ...(s.plate ? { plate: s.plate } : {}),
@@ -707,6 +715,11 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     case "ddz_again":
       t.seats[msg.seat]!.again = true;
       return;
+    case "ddz_counter":
+      Object.assign(t, { counter: { on: msg.on, left: msg.left }, counterAsked: false, counterError: msg.error ?? "" });
+      // Bought: the coins and shards changed.
+      if (!msg.error) void reloadStatus();
+      return;
     case "ddz_emote":
       if (msg.seat !== t.you) seatEmotes[msg.seat]?.play(msg.emote);
       return;
@@ -730,7 +743,7 @@ if (!isMirrorWindow) {
   // A move the server would not take: the keys come back. Requests held back are of anything (taps, emotes); the
   // queue's are the dou dizhu connection's (link.onError).
   ddzHooks.refused = (code) => {
-    if (code !== "rate_limited" && ddz.value?.via === "room") ddz.value.acted = false;
+    if (code !== "rate_limited" && ddz.value?.via === "room") Object.assign(ddz.value, { acted: false, counterAsked: false });
   };
   // A new table starts without the last one's emotes.
   watch(() => ddz.value?.id, () => seatEmotes.forEach((p) => p.clear()), { flush: "sync" });
@@ -857,7 +870,7 @@ if (!isMirrorWindow) {
 // ------------------------------------------------------------------ actions (panel or desk)
 export type DdzOp =
   | "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave" | "queue" | "unqueue" | "open" | "sit" | "call"
-  | "dismiss" | "emote";
+  | "dismiss" | "emote" | "counter";
 
 /**
  * The panel's and the table window's actions run in the desk window, which holds the connections. An argument left
@@ -880,6 +893,7 @@ export function ddzRequest(op: DdzOp, ...sent: unknown[]): void {
     case "call": callDdz(args[0] as string, args[1] as string); break;
     case "dismiss": dismissDdzCall(); break;
     case "emote": emoteDdz(args[0] as string); break;
+    case "counter": counterDdz(); break;
   }
 }
 const viaDesk = (op: DdzOp, ...args: unknown[]): boolean => {
@@ -938,6 +952,19 @@ export function autoDdz(on: boolean): void {
   if (viaDesk("auto", on)) return;
   const t = ddz.value;
   if (t && (t.phase === "bid" || t.phase === "play")) sendTable({ type: "ddz_auto", table: t.id, on });
+}
+
+/**
+ * Turn the own card counter on where it is sold: a save with no game of it left buys its games first (the server
+ * answers with what it has then, or why it bought nothing).
+ */
+export function counterDdz(): void {
+  if (viaDesk("counter")) return;
+  const t = ddz.value;
+  if (!t?.counter || t.counter.on || t.counterAsked || (t.phase !== "bid" && t.phase !== "play")) return;
+  t.counterAsked = true;
+  t.counterError = "";
+  sendTable({ type: "ddz_counter", table: t.id });
 }
 
 /** After a result: ask for another game with the same two. */

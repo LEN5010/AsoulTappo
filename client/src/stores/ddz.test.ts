@@ -310,6 +310,59 @@ it("takes its seat again from the whole state, and walks away from a game", asyn
   expect(fetchMock.mock.calls.length).toBe(reads + 1);
 });
 
+it("asks for the card counter where it is sold, one asking at a time, and leaves it free elsewhere", async () => {
+  const { socket, d, fetchMock } = await setup();
+  const deal = { type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, turn: 1, sec: 15, dealSec: 0 };
+  socket.recv({ ...deal, deal: 1 });
+  const t = () => d.ddz.value!;
+  // A server that does not sell it says nothing of it: the counter is free, and there is nothing to ask for.
+  expect(t().counter).toBeNull();
+  const sent = socket.sent.length;
+  d.counterDdz();
+  expect(socket.sent).toHaveLength(sent);
+
+  socket.recv({ ...deal, deal: 2, counter: { on: false, left: 0 } });
+  expect(t()).toMatchObject({ counter: { on: false, left: 0 }, counterAsked: false, counterError: "" });
+  d.counterDdz();
+  d.counterDdz();
+  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_counter", table: "t" }]);
+  expect(t().counterAsked).toBe(true);
+  await vi.advanceTimersByTimeAsync(0);
+  const reads = fetchMock.mock.calls.length;
+  // Nothing bought: the reason shows, the balance is not read again, and asking again clears it.
+  socket.recv({ type: "ddz_counter", table: "t", on: false, left: 0, error: "no_shards" });
+  expect(t()).toMatchObject({ counter: { on: false, left: 0 }, counterAsked: false, counterError: "no_shards" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchMock.mock.calls.length).toBe(reads);
+  d.counterDdz();
+  expect(t()).toMatchObject({ counterAsked: true, counterError: "" });
+  socket.recv({ type: "ddz_counter", table: "t", on: false, left: 10 });
+  expect(t()).toMatchObject({ counter: { on: false, left: 10 }, counterAsked: false });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchMock.mock.calls.length).toBe(reads + 1); // the coins and shards changed
+
+  // The landlord is known: the server says a game of it was used, before the play shows.
+  socket.recv({ type: "ddz_bid", table: "t", seat: 1, bid: 3 });
+  socket.recv({ type: "ddz_counter", table: "t", on: true, left: 9 });
+  socket.recv({ type: "ddz_landlord", table: "t", seat: 1, bid: 3, bottom: [5, 9, 53], mult: 3, turn: 1, sec: 30 });
+  expect(t()).toMatchObject({ phase: "play", counter: { on: true, left: 9 } });
+  const before = socket.sent.length;
+  d.counterDdz(); // on already
+  expect(socket.sent).toHaveLength(before);
+
+  // A seat taken again hears it with the whole state; a move the server refuses gives the key back.
+  socket.recv({
+    type: "ddz_state", table: "t", phase: "play", you: 1, hand: [0, 4, 53],
+    seats: SEATS.map((x) => ({ ...x, left: 5, bid: 0 })), base: 100, cap: 24, deal: 2, bid: 3, landlord: 1, bottom: [1, 2, 3], mult: 3,
+    bombs: 0, turn: 1, lead: true, trick: [null, null, null], sec: 20, of: 30, played: [], counter: { on: false, left: 0 },
+  });
+  expect(t().counter).toEqual({ on: false, left: 0 });
+  d.counterDdz();
+  expect(t().counterAsked).toBe(true);
+  socket.recv({ type: "error", code: "ddz_gone", message: "" });
+  expect(t().counterAsked).toBe(false);
+});
+
 it("drops the table with the room connection", async () => {
   const { socket, d } = await setup();
   socket.recv({ type: "ddz_live", table: "x", ids: ["a", "b", "old"], on: true });

@@ -146,6 +146,8 @@ export type DdzMessage =
   | {
     type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; you: number; hand: number[]; base: number; cap: number; deal: number;
     turn: number; sec: number; dealSec?: number;
+    /** The own seat's card counter where it is sold: on for this game, and the games of it the save has left. */
+    counter?: DdzCounter;
   }
   /** A bid (0 passes); `turn` bids next while the bidding goes on. */
   | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number }
@@ -180,7 +182,10 @@ export type DdzMessage =
     trick: (number[] | null)[]; sec: number; of: number;
     /** Every card played this deal, in order; left out by servers before the card counter. */
     played?: number[];
+    counter?: DdzCounter;
   }
+  /** The own seat's card counter now: the answer to asking for it, and sent when a game of it is used. */
+  | { type: "ddz_counter"; table: string; on: boolean; left: number; error?: string }
   /**
    * To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. A
    * room none of them is in by the end hears only that it ended.
@@ -197,6 +202,9 @@ export type DdzMessage =
   /** How many saves wait at each stake, as [base, saves]; stakes nobody waits at are left out. */
   | { type: "ddz_waiting"; counts: [number, number][] };
 
+/** A seat's card counter where the economy sells it (`doudizhu.counter`). */
+export interface DdzCounter { on: boolean; left: number }
+
 /** Dou dizhu messages to the server; only to servers whose economy has `doudizhu`. */
 export type DdzClientMessage =
   | { type: "ddz_invite"; ids: string[]; base: number }
@@ -204,6 +212,8 @@ export type DdzClientMessage =
   | { type: "ddz_bid"; table: string; bid: number }
   | { type: "ddz_play"; table: string; cards: number[] }
   | { type: "ddz_auto"; table: string; on: boolean }
+  /** Turn the own seat's card counter on, buying its games when the save has none left; where it is sold only. */
+  | { type: "ddz_counter"; table: string }
   | { type: "ddz_again"; table: string }
   | { type: "ddz_leave"; table: string }
   /** Wait for a table at stake `base`, 0 to stop; only to servers that list "ddz_match" in `joined.features`. */

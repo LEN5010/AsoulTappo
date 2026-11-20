@@ -36,7 +36,7 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzCallMsg, DdzInviteMsg, DdzLeaveMsg, DdzOpenMsg, DdzPlayMsg,
-    DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg,
+    DdzCounterMsg, DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -1290,7 +1290,7 @@ LOBBY_MAX = 2000
 
 # What a dou dizhu connection (ddz_hello) may send: its queue, the tables it plays at, and its own state.
 LOBBY_MESSAGES = (LeaveMsg, DndMsg, StateMsg, DdzQueueMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg,
-                  DdzAgainMsg, DdzLeaveMsg, DdzEmoteMsg)
+                  DdzAgainMsg, DdzLeaveMsg, DdzEmoteMsg, DdzCounterMsg)
 
 
 def _final(reason: str, message: str) -> dict:
@@ -1637,6 +1637,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 peer.last_emote = now
                 game.tracker.count("emote")
+            elif isinstance(msg, DdzCounterMsg):
+                try:
+                    await tables.counter(peer, msg.table)
+                except GameError as e:
+                    await err(e.code, "")
             elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
                                   DdzLeaveMsg, DdzQueueMsg, DdzOpenMsg, DdzSitMsg, DdzCallMsg)):
                 try:

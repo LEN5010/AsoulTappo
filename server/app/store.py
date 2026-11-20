@@ -24,7 +24,7 @@ PLAYER_FIELDS = (
     "id created taps_total active_minutes last_activity minute_bucket minute_taps minute_counted frame badge "
     "shards loadout draw_pity drawn_total presence_last skin_pity last_minute_taps shard_remainder "
     "boost_day boost_used tap_cooldown_until tap_day day_taps day_taps_total scratch_pity "
-    "auto_until auto_strike_day auto_strikes coins gift_day stamps_total"
+    "auto_until auto_strike_day auto_strikes coins gift_day stamps_total ddz_counter"
 ).split()
 
 
@@ -158,6 +158,9 @@ class Store(AdminStore, ParkStore, DdzStore):
                                 ("stamps_total", "INTEGER NOT NULL DEFAULT 0")):
                 if field not in players:
                     self._db.execute(f"ALTER TABLE players ADD COLUMN {field} {kind}")
+            # Dou dizhu: games of the card counter the save has left.
+            if "ddz_counter" not in players:
+                self._db.execute("ALTER TABLE players ADD COLUMN ddz_counter INTEGER NOT NULL DEFAULT 0")
             flags = self._columns("tap_flags")
             for field in ("steady", "auto", "injected"):
                 if field not in flags:

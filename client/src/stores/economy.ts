@@ -73,7 +73,8 @@ export type Economy = {
    * Dou dizhu in rooms: `stakes` are the base stakes, each seat deposits base × capMult × 2 (the most a landlord
    * loses) and the multiplier stops at `capMult`. `rake` percent of what the winners win is burnt. A save whose net
    * win of a China day reached `dailyWinCap` starts no more games that day; the three saves need `minTaps` taps in
-   * all. Missing on servers without the game.
+   * all. With `counter` the card counter is sold: `coins` park coins buy `games` games of it. Missing on servers
+   * without the game.
    */
   doudizhu?: {
     stakes: number[];
@@ -85,6 +86,7 @@ export type Economy = {
     againSec: number;
     dailyWinCap: number;
     minTaps: number;
+    counter?: { coins: number; games: number };
   };
   /** The park (server/app/economy.py explains every field). Missing on servers without one. */
   park?: {

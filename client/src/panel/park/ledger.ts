@@ -21,6 +21,7 @@ const SOURCES: Record<string, string> = {
   scratch: "刮刮乐",
   race: "赛跑",
   lottery: "夺宝",
+  ddz_counter: "记牌器",
 };
 
 /** A source's words; a source newer than this client gets a generic one. */

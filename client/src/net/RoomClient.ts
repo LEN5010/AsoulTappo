@@ -384,6 +384,7 @@ export class RoomClient {
       case "ddz_tables":
       case "ddz_call":
       case "ddz_emote":
+      case "ddz_counter":
         this.events.onDdz?.(msg);
         break;
       case "error":

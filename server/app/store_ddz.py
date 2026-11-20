@@ -55,6 +55,22 @@ class DdzStore(_StoreState):
             rows = self._db.execute("SELECT id FROM ddz_games WHERE state='open' ORDER BY id").fetchall()
         return [r["id"] for r in rows]
 
+    def ddz_counters(self, pids: list[str]) -> list[int]:
+        """The games of the card counter each save of [pids] has left, 0 for one that is not a save."""
+        if not pids:
+            return []
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT id, ddz_counter FROM players WHERE id IN ({', '.join('?' * len(pids))})", pids).fetchall()
+        left = {r["id"]: r["ddz_counter"] for r in rows}
+        return [left.get(pid, 0) for pid in pids]
+
+    def use_ddz_counter(self, pid: str) -> None:
+        """One game of the save's card counter is used; nothing when it has none."""
+        with self._lock:
+            self._db.execute("UPDATE players SET ddz_counter = ddz_counter - 1 WHERE id=? AND ddz_counter > 0", (pid,))
+            self._commit()
+
     def ddz_net(self, pid: str, day: str) -> int:
         """What the save won minus what it lost in the games settled with a winner that started on [day]; open and
         refunded games count nothing (their seats' deltas stay 0)."""

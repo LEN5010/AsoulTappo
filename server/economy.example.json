@@ -154,7 +154,11 @@
     "playSec": 30,
     "againSec": 30,
     "dailyWinCap": 50000,
-    "minTaps": 10000
+    "minTaps": 10000,
+    "counter": {
+      "coins": 1,
+      "games": 10
+    }
   },
   "park": {
     "coin": {
