@@ -409,9 +409,9 @@ async function exportLogFile() {
                 <span class="version-side">
                   <small v-if="checkNote" role="status" class="check-note">{{ checkNote }}</small>
                   <b class="version">{{ version }}</b>
-                  <button v-if="updateOffer" type="button" class="ui-btn small primary" @click="openUpdateDialog">更新</button>
+                  <button v-if="updateOffer" type="button" class="ui-btn small about-key primary" @click="openUpdateDialog">更新</button>
                   <button
-                    v-else type="button" class="ui-btn small" :disabled="checkState === 'checking'"
+                    v-else type="button" class="ui-btn small about-key" :disabled="checkState === 'checking'"
                     @click="lookForUpdate(true)"
                   >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
                 </span>
@@ -420,35 +420,35 @@ async function exportLogFile() {
                 <span>运行日志</span>
                 <span class="version-side">
                   <small v-if="logNote" role="status" class="check-note">{{ logNote }}</small>
-                  <button type="button" class="ui-btn small" :disabled="exporting" @click="exportLogFile">导出</button>
+                  <button type="button" class="ui-btn small about-key" :disabled="exporting" @click="exportLogFile">导出</button>
                 </span>
               </div>
               <div class="ui-row">
                 <span>意见反馈</span>
                 <span class="version-side">
                   <small v-if="feedbackNote" role="status" class="check-note">{{ feedbackNote }}</small>
-                  <button type="button" class="ui-btn small" @click="feedbackNote = ''; feedbackOpen = true">写反馈</button>
+                  <button type="button" class="ui-btn small about-key" @click="feedbackNote = ''; feedbackOpen = true">写反馈</button>
                 </span>
               </div>
               <div class="ui-row">
                 <span>项目主页</span>
-                <button type="button" class="ui-btn small" @click="openAboutLink(REPO)">GitHub</button>
+                <button type="button" class="ui-btn small about-key" @click="openAboutLink(REPO)">GitHub</button>
               </div>
               <div class="ui-row">
                 <span>协议与隐私</span>
                 <span class="version-side">
-                  <button type="button" class="ui-btn small" @click="legalOpen = 'terms'">用户协议</button>
-                  <button type="button" class="ui-btn small" @click="legalOpen = 'privacy'">隐私政策</button>
+                  <button type="button" class="ui-btn small about-key" @click="legalOpen = 'terms'">用户协议</button>
+                  <button type="button" class="ui-btn small about-key" @click="legalOpen = 'privacy'">隐私政策</button>
                 </span>
               </div>
               <div class="ui-row">
                 <span>作者</span>
-                <button type="button" class="ui-btn small" @click="copied = ''; contactOpen = true">联系作者</button>
+                <button type="button" class="ui-btn small about-key" @click="copied = ''; contactOpen = true">联系作者</button>
               </div>
               <div class="ui-row promo-row">
                 <span>神秘按钮</span>
                 <button
-                  type="button" class="ui-btn small primary promo-key" :class="{ wiggle: !settings.promoSeen }"
+                  type="button" class="ui-btn small about-key primary promo-key" :class="{ wiggle: !settings.promoSeen }"
                   @click="openPromo"
                 >
                   <Icon name="spark" :size="15" /><span>点我试试</span>
@@ -539,6 +539,10 @@ async function exportLogFile() {
   3% { scale: 1.35; rotate: 45deg; }
   6% { scale: 0.85; rotate: 80deg; }
   8% { scale: 1.05; rotate: 90deg; }
+}
+/* Every key in 关于 is as wide as the mystery key (its sparkle and four characters), so their left edges line up. */
+.about-key {
+  min-width: calc(4em + 45px);
 }
 .version-side {
   flex: none;
