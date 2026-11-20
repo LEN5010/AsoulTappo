@@ -255,11 +255,32 @@ class DdzSitMsg(_Msg):
     seat: Optional[int] = Field(default=None, ge=0, le=2)
 
 
+class DdzHelloMsg(_Msg):
+    """Opens a dou dizhu connection, in no room: the same identity as `join` (the save, the nick, the pet and the
+    plate, checked the same way). It queues for tables (``ddz_queue``) and plays at the tables the queue makes."""
+
+    type: Literal["ddz_hello"] = "ddz_hello"
+    nick: str = Field(min_length=1, max_length=MAX_NICK_LEN)
+    character: str = Field(default="default", max_length=32)
+    token: Optional[str] = Field(default=None, max_length=128)
+    accountToken: Optional[str] = Field(default=None, max_length=512)
+    plate: Optional[str] = Field(default=None, max_length=64)
+    dnd: bool = False
+
+
+class DdzEmoteMsg(_Msg):
+    """Show an emote to the other seats of the own table, in any room."""
+
+    type: Literal["ddz_emote"] = "ddz_emote"
+    table: str = Field(min_length=1, max_length=32)
+    emote: str = Field(min_length=1, max_length=32)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
           DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
-          DdzOpenMsg, DdzSitMsg, DdzCallMsg],
+          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)

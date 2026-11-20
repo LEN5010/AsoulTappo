@@ -119,8 +119,10 @@ class Peer:
     ddz: bool = False
     # the client also queues for dou dizhu tables across rooms (app/ddz.py, the queue)
     ddz_match: bool = False
-    # the room this connection joined
+    # the room this connection joined; "" for a dou dizhu connection (`lobby`)
     room: str = ""
+    # a dou dizhu connection, in no room: it queues and plays at the tables the queue makes (app/ddz.py)
+    lobby: bool = False
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     tap_budget: float = 0.0
@@ -324,8 +326,7 @@ class RoomManager:
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, room=room_id, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
-        self._joins += 1
-        peer.join_seq = self._joins
+        peer.join_seq = self.next_seq()
         if token:
             room.cheer_gone.pop(token, None)
         room.peers[peer.id] = peer
@@ -338,6 +339,11 @@ class RoomManager:
                 room.public = True
             del self.restoring[room_id]
         return peer
+
+    def next_seq(self) -> int:
+        """The next Peer.join_seq, shared by room joins and dou dizhu connections."""
+        self._joins += 1
+        return self._joins
 
     async def _failed(self, room_id: str, peer: Peer) -> None:
         if not await self.depart(room_id, peer.id):

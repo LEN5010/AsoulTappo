@@ -36,7 +36,7 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzCallMsg, DdzInviteMsg, DdzLeaveMsg, DdzOpenMsg, DdzPlayMsg,
-    DdzQueueMsg, DdzSitMsg,
+    DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -535,6 +535,22 @@ def api_economy(x_client_version: str = Header(default="")) -> dict:
         holo=bool(manifest.holos_for(x_client_version)),
         banners=[b.view() for b in manifest.banners_for(x_client_version, now)],
         held=sorted(banner_file.held(manifest.banners, now)))
+
+
+@app.get("/api/ddz/lobby")
+async def api_ddz_lobby(who: PlayerId = Depends(player)) -> dict:
+    """The dou dizhu lobby for the save: the stakes (deposit, whether it can pay it, how many saves wait there),
+    today's net win and what is left under the cap, the taps it has and needs, whether it meets the account rule, and
+    whether it holds a seat a dou dizhu connection takes again (`seated`: the client opens one to get it back)."""
+    if not game.manifest.ddz:
+        raise HTTPException(404, {"code": "no_ddz", "message": "这个服务器没有斗地主"})
+    out = await run_in_threadpool(_guard, tables.bank.lobby, who)
+    # Read on the loop, where the queue changes.
+    counts = tables.counts()
+    for tier in out["tiers"]:
+        tier["waiting"] = counts.get(tier["base"], 0)
+    out["seated"] = tables.holds(who)
+    return out
 
 
 @app.get("/api/me")
@@ -1045,6 +1061,9 @@ async def _remask() -> None:
             if nick != peer.nick:
                 peer.nick = nick
                 changed.append((room_id, peer))
+    for peer in list(tables.lobby.values()):
+        online.add(peer.id)
+        peer.nick = blocklist.mask(raw_nicks.get(peer.id, peer.nick))
     for gone in raw_nicks.keys() - online:
         del raw_nicks[gone]
     for room_id, peer in changed:
@@ -1202,8 +1221,34 @@ if Path(PACKS_DIR).is_dir():
 
 # ----------------------------------------------------------------- WebSocket
 async def _leave(room_id: str | None, peer: Peer | None) -> None:
-    if room_id and peer:
+    if peer is not None and peer.lobby:
+        await _lobby_leave(peer)
+    elif room_id and peer:
         await manager.depart(room_id, peer.id)
+
+
+async def _lobby_leave(peer: Peer) -> None:
+    """A dou dizhu connection is done (it said leave, closed, or its writer failed): the tables let go of it."""
+    if not peer.active:
+        return
+    peer.active = False
+    if peer.writer and peer.writer is not asyncio.current_task():
+        peer.writer.cancel()
+    raw_nicks.pop(peer.id, None)
+    await tables.bye(peer)
+
+
+async def _lobby_failed(peer: Peer) -> None:
+    await _lobby_leave(peer)
+    try:
+        await asyncio.wait_for(peer.ws.close(code=1013), manager.send_timeout)
+    except (asyncio.TimeoutError, RuntimeError, OSError):
+        pass
+
+
+# What a dou dizhu connection (ddz_hello) may send: its queue, the tables it plays at, and its own state.
+LOBBY_MESSAGES = (LeaveMsg, DndMsg, StateMsg, DdzQueueMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg,
+                  DdzAgainMsg, DdzLeaveMsg, DdzEmoteMsg)
 
 
 def _final(reason: str, message: str) -> dict:
@@ -1293,6 +1338,31 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await send(PongMsg().model_dump())
                 continue
 
+            if isinstance(msg, DdzHelloMsg):
+                if peer is not None:
+                    await err("already_joined")
+                    continue
+                if notice.outdated(client_version):
+                    await send(_final("client_outdated", OUTDATED_MESSAGE))
+                    continue
+                if not game.manifest.ddz:
+                    await err("no_ddz", "这个服务器没有斗地主")
+                    continue
+                who, _ = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
+                plate = await run_in_threadpool(game.room_plate, who, msg.plate)
+                character = msg.character
+                if (character not in game.manifest.character_names
+                        and not await run_in_threadpool(game.owns_character, who, character)):
+                    character = game.base_character(character)
+                peer = Peer(id=secrets.token_hex(4), nick=blocklist.mask(msg.nick), character=character, ws=ws,
+                            token=who, plate=plate, send_timeout=manager.send_timeout, lobby=True, ddz=True,
+                            ddz_match=True, dnd=msg.dnd)
+                peer.join_seq = manager.next_seq()
+                peer.on_failure = functools.partial(_lobby_failed, peer)
+                raw_nicks[peer.id] = msg.nick
+                await tables.hello(peer)
+                continue
+
             if isinstance(msg, JoinMsg):
                 if peer is not None:
                     await err("already_joined")
@@ -1354,8 +1424,11 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await tables.joined(room_id, peer)
                 continue
 
-            if peer is None or room_id is None:
+            if peer is None or (room_id is None and not peer.lobby):
                 await err("not_joined", "send join first")
+                continue
+            if peer.lobby and not isinstance(msg, LOBBY_MESSAGES):
+                await err("not_joined", "join a room first")
                 continue
 
             if isinstance(msg, (TapMsg, MotionMsg, PoseMsg)):
@@ -1484,6 +1557,24 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, DndMsg):
                 duels.set_dnd(peer, msg.dnd)
                 tables.set_dnd(peer, msg.dnd)
+            elif isinstance(msg, DdzEmoteMsg):
+                # As a room emote: owned, and one per EMOTE_INTERVAL of the connection.
+                now = time.monotonic()
+                if now - peer.last_emote < EMOTE_INTERVAL:
+                    await err("rate_limited", "too many emotes")
+                    continue
+                if msg.emote not in peer.emotes:
+                    if not await run_in_threadpool(game.owns_emote, peer.token, msg.emote):
+                        await err("locked", "emote not owned")
+                        continue
+                    peer.emotes.add(msg.emote)
+                try:
+                    tables.emote(peer, msg.table, msg.emote)
+                except GameError as e:
+                    await err(e.code, "")
+                    continue
+                peer.last_emote = now
+                game.tracker.count("emote")
             elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
                                   DdzLeaveMsg, DdzQueueMsg, DdzOpenMsg, DdzSitMsg, DdzCallMsg)):
                 try:
@@ -1491,6 +1582,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     # them.
                     if isinstance(msg, (DdzQueueMsg, DdzOpenMsg, DdzSitMsg, DdzCallMsg)) and not peer.ddz_match:
                         raise GameError("bad_message", "join with ddzMatch to queue or open tables")
+                    if isinstance(msg, DdzQueueMsg) and not peer.lobby:
+                        raise GameError("bad_message", "queue on a dou dizhu connection (ddz_hello)")
                     if isinstance(msg, DdzOpenMsg):
                         await tables.open(room_id, peer, msg.base)
                     elif isinstance(msg, DdzSitMsg):

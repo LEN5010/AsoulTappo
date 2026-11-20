@@ -9,14 +9,16 @@ A seat belongs to a save, not to a connection: a member who leaves the room mid-
 ddz_rules.choose) and takes the seat again by joining the room with the same save. Two turns in a row left to run out
 put a seat on the same autopilot until its member turns it off; a turn played for bids nothing.
 
-The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake instead
-of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit down
-together, they get a table that belongs to no room, through the same invite, which all three have to accept. A save
-that declines, leaves or lets the time run out is out of the queue, and may queue again only after MATCH_RETRY_SEC;
-the others go back into the line where their wait puts them, ahead of anyone who came after them. Once all three
-accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by joining any room with
-the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one takes a save out of
-the queue.
+The queue: a save waits for a table at one stake on a dou dizhu connection of its own (``ddz_hello``, Peer.lobby),
+which is in no room, whether or not the save is in a room on another connection. The saves waiting at a stake form
+one line, oldest first, kept in memory; when three in it may sit down together, they get a table that belongs to no
+room, through the same invite, which all three have to accept. A save that declines, closes the connection or lets
+the time run out is out of the queue, and may queue again only after MATCH_RETRY_SEC; the others go back into the line
+where their wait puts them, ahead of anyone who came after them. Once all three accept, the game goes on as an invited
+one; a seat whose connection closes is played for, and a new dou dizhu connection of the save takes it again (hello),
+as it takes over the save's place in the line from an older one. Closing the connection, turning invites down (dnd,
+on any connection of the save), starting an invite, accepting one, or opening or sitting down at an open table takes
+a save out of the queue.
 
 Open tables: a member on a client that said `ddzMatch` opens a table at a stake in its room and takes seat 0; members
 of the room sit down at its empty seats, and sitting is consent. The third to sit starts the game: the three deposits
@@ -24,7 +26,8 @@ go in one transaction, and a seat whose save may no longer play is let go, told 
 opener's puts it away). Before the start a member stands up by leaving the table or the room; the opener doing so puts
 the table away, as does OPEN_SEC without the three seats taken. An empty seat that has waited FILL_SEC is offered to
 the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
-made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
+made (the seats taken do not answer again), plays on its dou dizhu connection and takes the seat again on a new one,
+and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
 the start: one that leaves the table while the deposits are being taken, or leaves the room and is not back once they
 are, gives them back and stands up (the opener puts the table away), as decided once they are taken; its save sits
@@ -45,14 +48,16 @@ that waited longest at a table the queue made, the opener of an open table):
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
   linked to a main-site account, on a server with accounts) | error; at an open table also disband (`by` the
   opener) | expired, and a seat let go at the start hears why its save may not play. Deposits taken went back.
-- ``ddz_deal`` {seats: [{id, nick, character, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec}: a deal;
-  the clients deal the cards out over `dealSec` seconds, then `turn` bids first with `sec` seconds.
+- ``ddz_deal`` {seats: [{id, nick, character, plate?, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec}: a
+  deal (`plate` when one is worn, in every seat list); the clients deal the cards out over `dealSec` seconds, then
+  `turn` bids first with `sec` seconds.
 - ``ddz_bid`` {seat, bid, turn?, sec?}: a bid (0 passes); `turn` bids next when the bidding goes on.
 - ``ddz_landlord`` {seat, bid, bottom, mult, turn, sec}: `seat` is the landlord, takes `bottom` and leads.
 - ``ddz_play`` {seat, cards, left, mult, bombs, turn?, sec?, lead?}: a play ([] passes); `turn` plays next and leads
   when `lead`.
-- ``ddz_seat`` {seat, id, away, auto, turn?, sec?}: a seat's member left or came back (with a new member id), or its
-  autopilot changed; with `turn` the seat's turn starts over with `sec` seconds.
+- ``ddz_seat`` {seat, id, away, auto, turn?, sec?, nick?, character?, plate?}: a seat's member left or came back
+  (with a new member id, and its nick, pet and plate when the new connection shows others), or its autopilot changed;
+  with `turn` the seat's turn starts over with `sec` seconds.
 - ``ddz_result`` {winner: landlord | farmers, landlord, bid, bombs, spring: 0 | 1 spring | 2 counter-spring, mult,
   base, deltas, hands, sec}: paid; `hands` are the cards left in each seat, `sec` the time to ask for another game.
 - ``ddz_again`` {seat}: `seat` asks for another game; when the three have, the next ``ddz_deal`` follows (at an open
@@ -60,14 +65,26 @@ that waited longest at a table the queue made, the opener of an open table):
 - ``ddz_closed`` {}: the table is gone (the time ran out, or someone left it); at an open table, to the seat that
   stood up or put it away.
 - ``ddz_state`` {...}: the whole game for a seat that came back (see Tables._state).
+- ``ddz_emote`` {seat, emote} (to the other seats, in any room): `seat` shows emote `emote` (``ddz_emote`` {table,
+  emote} from the seat, owned and rate-limited as a room emote). A seat whose client does not say `ddzMatch` (1.2.5)
+  hears it as the room's ``emote`` {id, emote} instead, sent to it alone, when both sit in the table's room.
 
 To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
-shards the winners won, by member id. A table the queue made tells every room its members are in. A room told of the
-start that none of the members is in by the end hears only {table, on: false}.
+shards the winners won, by member id. The ids are the room's: a seat whose save is in the room on another connection
+(a dou dizhu one) goes by that connection's member id. A table the queue made tells every room its seats' saves are
+in. A room told of the start that none of the saves is in by the end hears only {table, on: false}.
 
-The queue, with members whose client said `ddzMatch` only (`joined.features` then lists "ddz_match"):
+The dou dizhu connection: ``ddz_hello`` {nick, character, token?, accountToken?, plate?, dnd?} as its first message,
+checked as ``join`` is (refused with no_ddz on a server without the game); it may then send ``ddz_queue``, the moves
+of its table, ``ddz_emote``, ``dnd``, ``state`` and ``leave``, anything else answered with not_joined.
 
-- ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
+- ``ddz_ready`` {you, base, waited?, table} to it: its member id; the stake its save waits at (taken over from an
+  older connection of the save, `waited` seconds so far), null when it does not; the table whose seat it takes again,
+  null for none (what it held there before is gone), the seat following (``ddz_state``, or ``ddz_open``).
+
+The queue, on dou dizhu connections only (a room connection's ``ddz_queue`` is a bad_message):
+
+- ``ddz_queue`` {base} from the connection: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_queued (the save waits on another
   connection) | ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time the save joined
   or moved, on any of its connections) | bad_message (not a stake).
@@ -76,8 +93,8 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
   queue again (it declined a table of the queue, left it or let its time run out).
 - ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
-  to every member that queues, at most every COUNTS_SEC; on joining a room, the counts last sent, unless nobody
-  waited then.
+  to every room member on a client that queues and every dou dizhu connection, at most every COUNTS_SEC; on joining
+  a room or saying hello, the counts last sent, unless nobody waited then.
 
 Open tables, with members whose client said `ddzMatch` only:
 
@@ -301,6 +318,23 @@ class Bank:
     def net(self, pid: str) -> int:
         return self.game.store.ddz_net(pid, day_of(self.game.now()))
 
+    def lobby(self, pid: str) -> dict[str, Any]:
+        """What the lobby shows save [pid], in one transaction: each stake, its deposit and whether the save can pay
+        it; today's net win, the cap and what is left of it; the taps it has and needs; whether it meets the account
+        rule (require_account)."""
+        cfg = self.cfg()
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            taps = st.player_taps(pid) or 0
+            shards = st.get_player(pid, now)["shards"]
+            net = st.ddz_net(pid, day_of(now))
+            account = not self.require_account or bool(st.account_for_player(pid))
+        cap = cfg["dailyWinCap"]
+        return {"tiers": [{"base": b, "deposit": self.deposit(b), "afford": shards >= self.deposit(b)}
+                          for b in cfg["stakes"]],
+                "net": net, "cap": cap, "left": max(0, cap - net), "taps": taps, "minTaps": cfg["minTaps"],
+                "account": account}
+
 
 # ------------------------------------------------------------------ the table
 @dataclass(eq=False)
@@ -313,6 +347,8 @@ class Seat:
     nick: str
     character: str
     accepted: bool = False
+    # The name plate its member wears (Peer.plate), shown at the table.
+    plate: str | None = None
     hand: list[int] = field(default_factory=list)
     bid: int | None = None
     # Hands played this game, passes not counted (a spring is told by them).
@@ -332,6 +368,8 @@ class Seat:
     empty_since: float = 0.0
     # A seat of an open table offered to a save of the queue, not accepted yet: until when it may answer.
     until: float = 0.0
+    # Taken again (Tables._retake) by a connection with another nick, pet or plate.
+    restyled: bool = False
 
     @property
     def empty(self) -> bool:
@@ -341,6 +379,14 @@ class Seat:
     def asked(self) -> bool:
         """Offered to a save of the queue that has not accepted yet (open tables)."""
         return bool(self.token) and not self.accepted
+
+
+def _face(s: Seat) -> dict:
+    """Who sits in seat [s], as the seats see it: the plate only when one is worn."""
+    out = {"id": s.id, "nick": s.nick, "character": s.character}
+    if s.plate:
+        out["plate"] = s.plate
+    return out
 
 
 @dataclass(eq=False)
@@ -457,6 +503,8 @@ class Tables:
         self.rng = rng or random.SystemRandom()
         self.by_save: dict[str, Table] = {}
         self.by_id: dict[str, Table] = {}
+        # The dou dizhu connections (Peer.lobby), by member id: they queue, and hear the waiting counts.
+        self.lobby: dict[str, Peer] = {}
         # (inviter save, invited save) -> monotonic time from which a new invite is allowed
         self.refused: dict[tuple[str, str], float] = {}
         # The queue: each stake's line, oldest first, and every save waiting (in a line or being matched) by save.
@@ -496,6 +544,7 @@ class Tables:
         for table in list(self.by_id.values()):
             self._drop(table)
         self.refused.clear()
+        self.lobby.clear()
         self.lines.clear()
         self.waiting.clear()
         self.match_refused.clear()
@@ -566,7 +615,7 @@ class Tables:
         peers = self._peers(room_id, peer, ids)
         self._check_free(peers)
         table = Table(id=secrets.token_hex(4), room=room_id, base=base, deposit=deposit, seats=[
-            Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, accepted=p is peer)
+            Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, plate=p.plate, accepted=p is peer)
             for p in peers])
         self.by_id[table.id] = table
         for p in peers:
@@ -598,7 +647,8 @@ class Tables:
         queue."""
         if not on:
             return
-        self._leave_queue(peer, reason="ddz_dnd")
+        # Any connection of the save turning invites down takes the save out of the queue.
+        self._leave_queue(peer, reason="ddz_dnd", save=True)
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
         if table is not None and seat is not None and table.phase == OPEN and table.seats[seat].asked:
@@ -658,6 +708,7 @@ class Tables:
 
     def _seat_for(self, peer: Peer, **kw: Any) -> Seat:
         return Seat(token=peer.token or "", peer=peer, id=peer.id, nick=peer.nick, character=peer.character,
+                    plate=peer.plate,
                     **{"accepted": True, **kw})
 
     def _empty_seat(self) -> Seat:
@@ -803,8 +854,7 @@ class Tables:
         self.by_save[w.token] = table
         w.peer.enqueue({"type": "ddz_invite", "table": table.id, "ids": [s.id for s in table.seats],
                         "base": table.base, "deposit": table.deposit, "sec": sec, "match": True,
-                        "seats": [None if s.empty else {"id": s.id, "nick": s.nick, "character": s.character}
-                                  for s in table.seats],
+                        "seats": [None if s.empty else _face(s) for s in table.seats],
                         "accepted": [s.id for s in table.seats if not s.empty and s.accepted]})
         self._open_changed(table)
         return True
@@ -1078,8 +1128,7 @@ class Tables:
             s.bid, s.plays, s.again = None, 0, False
         first = self.rng.randrange(3)
         sec = self._give_turn(table, first, self.bank.cfg()["bidSec"], wait=DEAL_SEC)
-        seats = [{"id": s.id, "nick": s.nick, "character": s.character, "auto": s.auto,
-                  "away": s.peer is None or s.quit} for s in table.seats]
+        seats = [{**_face(s), "auto": s.auto, "away": s.peer is None or s.quit} for s in table.seats]
         cfg = self.bank.cfg()
         for i, s in enumerate(table.seats):
             if s.peer is not None and not s.quit:
@@ -1248,7 +1297,7 @@ class Tables:
                     "landlord": lord, "bid": table.bid, "bombs": table.bombs, "spring": spring, "mult": mult,
                     "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
                     "sec": cfg["againSec"]}, quit=True)
-        await self._live(table, False, gains={s.id: d for s, d in zip(table.seats, deltas) if d > 0})
+        await self._live(table, False, deltas=deltas)
         if table.open and not self._gone(table.seats[0]):
             # An open table goes on without those who left: they are free now, and their seats empty on reopening.
             for s in table.seats:
@@ -1452,40 +1501,17 @@ class Tables:
 
     async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
-        has one at a table of this room (an open table's on a client that opens tables), or at a table the queue made
-        (from any room, on a client that queues). Back while the deposits are being taken, it takes the seat and hears
-        the deal like the others."""
+        has one at an invited or open table of this room (an open table's on a client that opens tables). A seat of a
+        table the queue made, or one an open table took from the queue, is taken again on a dou dizhu connection
+        instead (hello). Back while the deposits are being taken, it takes the seat and hears the deal like the
+        others."""
         room = self.manager.rooms.get(room_id)
         if room is None or room.peers.get(peer.id) is not peer:
             return  # gone again before it got through joining
         table = self.by_save.get(peer.token) if peer.token else None
-        seat = None
-        if table is not None and table.phase in (OPEN, STARTING, BID, PLAY):
-            # A seat of the queue is taken again from any room, on a client that queues; any other in the table's room,
-            # on a client that opens tables when the table is an open one.
-            # A seat given up while the deposits are taken stays given up.
-            mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked
-                    and not (s.quit and table.phase == STARTING) and (
-                peer.ddz_match if table.match or s.roam
-                else (peer.ddz_match if table.open else peer.ddz) and table.room == room_id)]
-            seat = next((i for i in mine if table.seats[i].peer is None), None)
-            if seat is None:
-                # An older connection of the save still holds the seat: its leaving is not seen yet (a client back
-                # on a new connection), or it is another device. The newest connection takes the seat; joins finish
-                # in any order, so one that finishes late leaves a newer one there, unless that one is gone.
-                seat = next((i for i in mine if (o := table.seats[i].peer) is not None and o is not peer
-                             and (o.join_seq < peer.join_seq or not o.active)), None)
-        # Taken from a connection that played the seat itself: the seat goes on as it was, its turn included.
-        handoff = False
-        if seat is not None:
-            s = table.seats[seat]
-            handoff = s.peer is not None and not s.auto
-            if s.peer is not None and s.peer is not peer:
-                # The old connection lets go of the table; its leaving, seen later, finds no seat of its own.
-                s.peer.enqueue({"type": "ddz_closed", "table": table.id})
-            s.peer, s.id, s.nick, s.character = peer, peer.id, peer.nick, peer.character
-            if not handoff:
-                s.auto, s.timeouts, s.quit = False, 0, False
+        seat = self._mine(table, peer, lambda t, s: not (t.match or s.roam) and t.room == room_id and (
+            peer.ddz_match if t.open else peer.ddz))
+        handoff = self._retake(table, seat, peer) if table is not None and seat is not None else False
         for live in list(self.by_id.values()):
             if live.phase not in (BID, PLAY, SETTLING):
                 continue
@@ -1494,7 +1520,7 @@ class Tables:
                 await self._live(live, True)
             elif room_id in self._rooms(live):
                 live.live_rooms.add(room_id)
-                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
+                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": self._ids_in(room, live), "on": True})
         # The counts the others were sent last: a change since then is on its way to everyone (_counts_changed), the
         # newcomer included, which a send of the counts as they are now could leave behind.
         if peer.ddz_match and self._counts_sent:
@@ -1502,11 +1528,51 @@ class Tables:
         # The same for the room's open tables.
         if peer.ddz_match and room_id in self._tables_sent:
             peer.enqueue({"type": "ddz_tables", "tables": self._tables_sent[room_id]})
-        if seat is not None and table.phase == OPEN:
+        if table is not None and seat is not None:
+            self._back(table, seat, peer, handoff)
+
+    def _mine(self, table: Table | None, peer: Peer, fits: Callable[[Table, Seat], bool]) -> int | None:
+        """The seat of [table] that [peer] takes again: one of its save's that [fits], free, or held by an older
+        connection of the save (or one that is gone). A seat given up while the deposits are taken stays given up."""
+        if table is None or table.phase not in (OPEN, STARTING, BID, PLAY):
+            return None
+        mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked
+                and not (s.quit and table.phase == STARTING) and fits(table, s)]
+        seat = next((i for i in mine if table.seats[i].peer is None), None)
+        if seat is None:
+            # An older connection of the save still holds the seat: its leaving is not seen yet (a client back on a
+            # new connection), or it is another device. The newest connection takes the seat; joins finish in any
+            # order, so one that finishes late leaves a newer one there, unless that one is gone.
+            seat = next((i for i in mine if (o := table.seats[i].peer) is not None and o is not peer
+                         and (o.join_seq < peer.join_seq or not o.active)), None)
+        return seat
+
+    def _retake(self, table: Table, seat: int, peer: Peer) -> bool:
+        """[peer] takes seat [seat] of [table]; returns whether it took it from a connection that played the seat
+        itself, the seat then going on as it was, its turn included."""
+        s = table.seats[seat]
+        handoff = s.peer is not None and not s.auto
+        if s.peer is not None and s.peer is not peer:
+            # The old connection lets go of the table; its leaving, seen later, finds no seat of its own.
+            s.peer.enqueue({"type": "ddz_closed", "table": table.id})
+        face = (s.nick, s.character, s.plate)
+        s.peer, s.id, s.nick, s.character, s.plate = peer, peer.id, peer.nick, peer.character, peer.plate
+        # The others hear the seat's new face with its new member id (_back).
+        s.restyled = face != (s.nick, s.character, s.plate)
+        if not handoff:
+            s.auto, s.timeouts, s.quit = False, 0, False
+        return handoff
+
+    def _back(self, table: Table, seat: int, peer: Peer, handoff: bool) -> None:
+        """Tells the table, and [peer] itself, that [peer] took seat [seat] again (_retake)."""
+        if table.phase == OPEN:
             self._open_changed(table)
-        if seat is None or table.phase in (OPEN, STARTING):
+        if table.phase in (OPEN, STARTING):
             return
+        s = table.seats[seat]
         msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}
+        if s.restyled:
+            msg.update({"nick": s.nick, "character": s.character, "plate": s.plate})
         if table.turn == seat:
             cfg = self.bank.cfg()
             msg["turn"] = seat
@@ -1518,13 +1584,72 @@ class Tables:
         table.tell(msg, but=seat)
         peer.enqueue(self._state(table, seat))
 
+    # ------------------------------------------------------- dou dizhu connections
+    async def hello(self, peer: Peer) -> None:
+        """A dou dizhu connection (Peer.lobby) said hello: it hears ``ddz_ready``, takes over the save's place in the
+        queue from an older connection of the save, takes its seat again at a table the queue made or at the seat an
+        open table took from the queue, and hears the waiting counts."""
+        self.lobby[peer.id] = peer
+        held = self.waiting.get(peer.token) if peer.token else None
+        if held is not None and held.peer is not peer and held.peer.lobby and (
+                held.peer.join_seq < peer.join_seq or not held.peer.active):
+            if peer.dnd:
+                self._dequeue(held)
+                held = None
+            else:
+                old, held.peer = held.peer, peer
+                old.enqueue({"type": "ddz_queue", "base": None})
+        elif held is not None and held.peer is not peer:
+            held = None
+        table = self.by_save.get(peer.token) if peer.token else None
+        seat = self._mine(table, peer, lambda t, s: t.match or s.roam)
+        ready: dict[str, Any] = {"type": "ddz_ready", "you": peer.id, "base": held.base if held else None,
+                                 "table": table.id if table is not None and seat is not None else None}
+        if held is not None:
+            ready["waited"] = round(max(0.0, self.clock() - held.since), 1)
+        peer.enqueue(ready)
+        if self._counts_sent:
+            peer.enqueue(self._counts_msg(self._counts_sent))
+        if table is None or seat is None:
+            return
+        handoff = self._retake(table, seat, peer)
+        self._back(table, seat, peer, handoff)
+
+    async def bye(self, peer: Peer) -> None:
+        """A dou dizhu connection closed: as a member leaving its room (departed)."""
+        if self.lobby.get(peer.id) is peer:
+            del self.lobby[peer.id]
+        await self.departed("", peer)
+
+    def holds(self, pid: str) -> bool:
+        """Whether save [pid] holds a seat that a dou dizhu connection takes again (hello): at a table the queue
+        made, or one an open table took from the queue, before its game is paid."""
+        table = self.by_save.get(pid)
+        return table is not None and table.phase in (OPEN, STARTING, BID, PLAY) and any(
+            s.token == pid and (table.match or s.roam) and not s.asked and not (s.quit and table.phase == STARTING)
+            for s in table.seats)
+
+    def emote(self, peer: Peer, table_id: str, emote: str) -> None:
+        """[peer] shows emote [emote] at its table, to the other seats in any room (``ddz_emote``). A seat whose
+        client knows only room emotes (1.2.5, at an invited table of the same room) hears it as the room's own
+        ``emote`` from the sender's member id, sent to it alone."""
+        table, seat = self._table(peer, table_id, BID, PLAY, SETTLING, OVER)
+        for i, s in enumerate(table.seats):
+            p = s.peer
+            if i == seat or p is None or s.quit or not p.active:
+                continue
+            if p.ddz_match:
+                p.enqueue({"type": "ddz_emote", "table": table.id, "seat": seat, "emote": emote})
+            elif table.room is not None and p.room == table.room == peer.room:
+                p.enqueue({"type": "emote", "id": peer.id, "emote": emote})
+
     def _state(self, table: Table, seat: int) -> dict:
         """The whole game as [seat] may see it."""
         cfg = self.bank.cfg()
         return {
             "type": "ddz_state", "table": table.id, "phase": table.phase, "you": seat, "hand": table.seats[seat].hand,
-            "seats": [{"id": s.id, "nick": s.nick, "character": s.character, "left": len(s.hand), "bid": s.bid,
-                       "auto": s.auto, "away": s.peer is None or s.quit} for s in table.seats],
+            "seats": [{**_face(s), "left": len(s.hand), "bid": s.bid, "auto": s.auto, "away": s.peer is None or s.quit}
+                      for s in table.seats],
             "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "bid": table.bid,
             "landlord": table.landlord, "bottom": table.bottom if table.landlord is not None else [],
             "mult": table.mult(cfg["capMult"]), "bombs": table.bombs, "turn": table.turn,
@@ -1533,31 +1658,59 @@ class Tables:
         }
 
     def _rooms(self, table: Table) -> set[str]:
-        """The rooms that see the table: its own room (an invited or open table's), and the rooms the members of
-        its seats of the queue are in now (one that walked away from the table included)."""
+        """The rooms that see the table: its own room (an invited or open table's), and the rooms the saves of its
+        seats of the queue are in now, on any of their connections (one that walked away from the table included)."""
         rooms = {table.room} if table.room is not None else set()
-        return rooms | {s.peer.room for s in table.seats
-                        if s.peer is not None and s.peer.active and (table.match or s.roam)}
+        saves = {s.token for s in table.seats if s.token and (table.match or s.roam)}
+        if saves:
+            rooms |= {rid for rid, room in self.manager.rooms.items()
+                      if any(p.token in saves for p in room.peers.values())}
+        return rooms
 
-    async def _live(self, table: Table, on: bool, gains: dict[str, int] | None = None) -> None:
-        """Tells the table's rooms (_rooms) that its game started (on) or ended; the end also goes to every room
-        told of the start, so one its members all left does not keep showing the game. A room none of the seats'
-        members is in now hears only that it ended, not who played or won."""
-        msg: dict[str, Any] = {"type": "ddz_live", "table": table.id, "ids": [s.id for s in table.seats], "on": on}
-        if gains is not None:
-            msg["gains"] = gains
+    @staticmethod
+    def _ids_in(room: Any, table: Table) -> list[str]:
+        """The seats of [table] by the member ids [room] knows them by: a seat's own member when it is in the room,
+        else the newest connection of its save there; the seat's own id when its save is not in the room."""
+        out = []
+        for s in table.seats:
+            p = s.peer
+            if p is not None and p.active and room.peers.get(p.id) is p:
+                out.append(p.id)
+                continue
+            there = max((x for x in room.peers.values() if s.token and x.token == s.token),
+                        key=lambda x: x.join_seq, default=None)
+            out.append(there.id if there is not None else s.id)
+        return out
+
+    async def _live(self, table: Table, on: bool, deltas: list[int] | None = None) -> None:
+        """Tells the table's rooms (_rooms) that its game started (on) or ended, each with the seats' member ids
+        there (_ids_in); the end also goes to every room told of the start, so one its members all left does not keep
+        showing the game. `gains` are the shards the winners won ([deltas] above 0). A room none of the seats' saves
+        is in now hears only that it ended, not who played or won."""
         rooms = self._rooms(table)
         if on:
             table.live_rooms |= rooms
             for room_id in sorted(rooms):
-                await self.manager.broadcast(room_id, msg)
+                room = self.manager.rooms.get(room_id)
+                if room is not None:
+                    await self.manager.broadcast(room_id, {"type": "ddz_live", "table": table.id,
+                                                           "ids": self._ids_in(room, table), "on": True})
             return
-        seated = {s.peer.room for s in table.seats if s.peer is not None and s.peer.active}
+        saves = {s.token for s in table.seats if s.token}
         rooms |= table.live_rooms
         table.live_rooms = set()
         for room_id in sorted(rooms):
-            await self.manager.broadcast(
-                room_id, msg if room_id in seated else {"type": "ddz_live", "table": table.id, "on": False})
+            room = self.manager.rooms.get(room_id)
+            if room is None:
+                continue
+            if not any(p.token in saves for p in room.peers.values()):
+                await self.manager.broadcast(room_id, {"type": "ddz_live", "table": table.id, "on": False})
+                continue
+            ids = self._ids_in(room, table)
+            msg: dict[str, Any] = {"type": "ddz_live", "table": table.id, "ids": ids, "on": False}
+            if deltas is not None:
+                msg["gains"] = {i: d for i, d in zip(ids, deltas) if d > 0}
+            await self.manager.broadcast(room_id, msg)
 
     # -------------------------------------------------------------------- queue
     def _check_queue(self, peer: Peer) -> None:
@@ -1579,8 +1732,8 @@ class Tables:
     async def queue(self, peer: Peer, base: int) -> None:
         """[peer] waits for a table at stake [base]; waiting at another stake already, it moves to the end of this
         one's line. Then a table is made if three in the line may sit down together."""
-        if not peer.ddz_match:
-            raise GameError("bad_message", "join with ddzMatch to queue")
+        if not peer.lobby or not peer.ddz_match:
+            raise GameError("bad_message", "queue on a dou dizhu connection (ddz_hello)")
         bank = self.bank
         if base not in bank.cfg()["stakes"]:
             raise GameError("bad_message", "unknown stake")
@@ -1723,8 +1876,8 @@ class Tables:
         cfg = self.bank.cfg()
         deposit = self.bank.deposit(base)
         table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, seats=[
-            Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character, since=w.since,
-                 seq=w.seq)
+            Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character,
+                 plate=w.peer.plate, since=w.since, seq=w.seq)
             for w in three])
         for w in three:
             self._dequeue(w)
@@ -1733,7 +1886,7 @@ class Tables:
             self.by_save[s.token] = table
         table.tell({"type": "ddz_invite", "table": table.id, "ids": [s.id for s in table.seats], "base": base,
                     "deposit": deposit, "sec": cfg["inviteSec"], "match": True,
-                    "seats": [{"id": s.id, "nick": s.nick, "character": s.character} for s in table.seats]})
+                    "seats": [_face(s) for s in table.seats]})
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
     def _merge(self, base: int, entries: list[Waiting]) -> None:
@@ -1807,7 +1960,8 @@ class Tables:
         self._send_counts()
 
     def _send_counts(self) -> None:
-        """Tells every member that queues, in every room, the counts, when they changed since the last time."""
+        """Tells every member that queues, in every room, and every dou dizhu connection the counts, when they changed
+        since the last time."""
         counts = self.counts()
         if counts == self._counts_sent:
             return
@@ -1818,6 +1972,8 @@ class Tables:
             for p in list(room.peers.values()):
                 if p.ddz_match:
                     p.enqueue(msg)
+        for p in list(self.lobby.values()):
+            p.enqueue(msg)
 
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
