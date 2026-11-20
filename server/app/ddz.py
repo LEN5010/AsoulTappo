@@ -12,8 +12,8 @@ put a seat on the same autopilot until its member turns it off; a turn played fo
 The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake
 instead of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit
 down together, they get a table that belongs to no room, through the same invite, which all three have to accept.
-A save that declines, leaves or lets the time run out is out of the queue; the others go back to the front of the
-line. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by
+A save that declines, leaves or lets the time run out is out of the queue (one that declined or let the time run
+out may queue again only after MATCH_RETRY_SEC); the others go back to the front of the line. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by
 joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one
 takes a save out of the queue.
 
@@ -48,10 +48,11 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
 
 - ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite, or the save waits on another connection) |
-  ddz_dnd | bad_message (not a stake).
-- ``ddz_queue`` {base, waited?, reason?} to the member: it waits at `base`, for `waited` seconds so far; `base` null
-  when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked | ddz_account |
-  no_shards | ddz_cap | ddz_dnd | error.
+  ddz_dnd | ddz_match_cooldown | bad_message (not a stake).
+- ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
+  `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
+  ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
+  queue again (it declined a table of the queue or let its time run out).
 - ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
   to every member that queues, at most every COUNTS_SEC and on joining a room while anyone waits.
 """
@@ -86,6 +87,8 @@ MAX_DEALS = 3
 DEAL_SEC = 2.2
 # The queue's waiting counts go out at most this often.
 COUNTS_SEC = 1.0
+# A save that declined a table of the queue, or let its time run out, waits this long before it may queue again.
+MATCH_RETRY_SEC = 60.0
 
 INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
 
@@ -330,6 +333,8 @@ class Tables:
         self._matching: set[int] = set()
         # Matching started where nothing awaits it (_spawn).
         self._tasks: set[asyncio.Task] = set()
+        # Save -> clock time from which it may queue again, after declining a table of the queue or letting it lapse.
+        self.match_refused: dict[str, float] = {}
         # The waiting counts last sent, when, and the timer of the next send.
         self._counts_sent: dict[int, int] = {}
         self._counts_at = float("-inf")
@@ -349,6 +354,7 @@ class Tables:
         self.refused.clear()
         self.lines.clear()
         self.waiting.clear()
+        self.match_refused.clear()
         self._matching.clear()
         if self._counts_timer is not None:
             self._counts_timer.cancel()
@@ -893,6 +899,8 @@ class Tables:
             raise GameError("ddz_busy", "")
         if peer.dnd:
             raise GameError("ddz_dnd", "")
+        if self.clock() < self.match_refused.get(peer.token, float("-inf")):
+            raise GameError("ddz_match_cooldown", "")
 
     async def queue(self, peer: Peer, base: int) -> None:
         """[peer] waits for a table at stake [base]; waiting at another stake already, it moves to the end of this
@@ -1136,14 +1144,24 @@ class Tables:
 
     def _end_match(self, table: Table, reason: str, by: Peer | None = None) -> None:
         """Ends the invite of a table the queue made: the seat that declined or left ([by]), or every seat that let
-        the time run out, is out of the queue; the others go back to the front of the line, in seat order."""
+        the time run out, is out of the queue; the others go back to the front of the line, in seat order. One that
+        declined or let the time run out may queue again only after MATCH_RETRY_SEC."""
         if table.phase == DONE:
             return
         if reason == "timeout":
             back = [s for s in table.seats if s.accepted]
+            out = [s for s in table.seats if not s.accepted]
         else:
             back = [s for s in table.seats if s.peer is not by]
+            out = [s for s in table.seats if s.peer is by] if reason == "declined" else []
         self._end(table, reason, by=by)
+        now = self.clock()
+        self.match_refused = {k: t for k, t in self.match_refused.items() if t > now}
+        for s in out:
+            self.match_refused[s.token] = now + MATCH_RETRY_SEC
+            if s.peer is not None:
+                s.peer.enqueue({"type": "ddz_queue", "base": None, "reason": "ddz_match_cooldown",
+                                "retry": MATCH_RETRY_SEC})
         self._requeue(table.base, back)
 
     def _close(self, table: Table, tell: bool = True) -> None:

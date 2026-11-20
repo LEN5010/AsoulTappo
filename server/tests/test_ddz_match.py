@@ -219,7 +219,7 @@ def test_a_decline_puts_the_others_back_at_the_front_and_the_line_goes_on():
         assert sa.of("ddz_over") == [over] and sc.of("ddz_over") == [over]
         # The one who declined is out; the one who accepted and the one who had not answered yet go back ahead of d,
         # keeping how long they waited, and the three of them get the next table at once.
-        assert queue_msgs(sb)[-1] == {"base": None}
+        assert queue_msgs(sb)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": 60.0}
         assert queue_msgs(sa)[-2] == {"base": BASE, "waited": 5.0} and queue_msgs(sc)[-2] == {"base": BASE, "waited": 5.0}
         nxt = sd.of("ddz_invite")[0]
         assert nxt["ids"] == [a.id, c.id, d.id] and sa.of("ddz_invite")[-1] == nxt and sb.of("ddz_invite") == [sa.of("ddz_invite")[0]]
@@ -237,7 +237,7 @@ def test_the_time_running_out_drops_who_did_not_answer():
         await w.t.idle()
         assert sa.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": "timeout"}]
         assert w.t.by_id == {} and [x.peer for x in w.t.lines[BASE]] == [b]
-        assert queue_msgs(sa)[-1] == {"base": None} and queue_msgs(sb)[-1]["base"] == BASE
+        assert queue_msgs(sa)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": 60.0} and queue_msgs(sb)[-1]["base"] == BASE
         (d, sd), (e, se) = await w.queued("d", "e")
         assert sd.of("ddz_invite")[0]["ids"] == [b.id, d.id, e.id]
     run(go())
@@ -512,4 +512,51 @@ def test_an_answer_for_a_table_that_fell_through_does_not_touch_the_next_one():
             await w.t.answer(a, first, True)
         assert e.value.code == "ddz_gone"
         assert not w.t.by_id[second].seats[0].accepted and [w.shards(w.who[n]) for n in "acd"] == [SHARDS] * 3
+    run(go())
+
+
+def test_a_save_that_declines_or_lets_the_time_run_out_waits_before_queueing_again():
+    async def go():
+        from app.ddz import MATCH_RETRY_SEC
+
+        assert MATCH_RETRY_SEC == 60
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        await w.t.answer(a, tid, True)
+        await w.t.answer(b, tid, False)
+        await w.t.idle()
+        # The one who declined hears how long it waits; the others are back in line as before.
+        assert queue_msgs(sb)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": MATCH_RETRY_SEC}
+        assert [x.peer for x in w.t.lines[BASE]] == [a, c]
+        with pytest.raises(Exception) as e:
+            await w.t.queue(b, BASE)
+        assert e.value.code == "ddz_match_cooldown"
+        # Inviting is not held up, and the wait ends.
+        w.mono += MATCH_RETRY_SEC
+        await w.t.queue(b, BASE)
+        tid = sb.of("ddz_invite")[-1]["table"]
+        assert sb.of("ddz_invite")[-1]["ids"] == [a.id, c.id, b.id]
+        # Letting the time run out counts the same, for every seat that did not accept.
+        await w.t.answer(a, tid, True)
+        await w.timers.fire()
+        await w.t.idle()
+        for s in (sb, sc):
+            assert queue_msgs(s)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": MATCH_RETRY_SEC}
+        assert queue_msgs(sa)[-1]["base"] == BASE
+        for p in (b, c):
+            with pytest.raises(Exception) as e:
+                await w.t.queue(p, BASE)
+            assert e.value.code == "ddz_match_cooldown"
+    run(go())
+
+
+def test_leaving_the_room_during_a_table_of_the_queue_holds_nobody_up():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        await w.m.depart("r-c", c.id)
+        c2, sc2 = w.member("c", room="r-c2")
+        await w.t.queue(c2, BASE)
+        assert queue_msgs(sc2)[0] == {"base": BASE, "waited": 0.0} and sc2.of("ddz_invite")[0]["ids"] == [a.id, b.id, c2.id]
     run(go())
