@@ -572,9 +572,19 @@ it("stands up or puts the open table away, and says why it went", async () => {
   expect(d.ddzBubble.value).toBe("over");
   // After a game the table opens again for those who asked for another.
   socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
+  expect(d.ddzBubble.value).toBeNull(); // sat down just now: nothing to say
   Object.assign(d.ddz.value!, { phase: "result" });
   socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), null], sec: 600 });
   expect(d.ddz.value).toMatchObject({ id: "o3", phase: "open" });
+  // Back from the game, the pet shows the table waiting again for a moment.
+  expect(d.ddzBubble.value).toBe("open");
+  expect(d.ddzReopened.value).toEqual({ table: "o3", until: Date.now() + d.REOPEN_CUE_MS });
+  socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), seatOf(B)], sec: 590, starting: true });
+  expect(d.ddzBubble.value).toBeNull();
+  socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), null], sec: 590 });
+  expect(d.ddzBubble.value).toBe("open");
+  await vi.advanceTimersByTimeAsync(d.REOPEN_CUE_MS);
+  expect(d.ddzBubble.value).toBeNull();
 });
 
 it("sits down at an open table of the room or at one it was called to, and forgets both with the room", async () => {

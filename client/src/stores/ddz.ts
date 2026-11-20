@@ -136,6 +136,10 @@ export const ddzTables = ref<DdzOpenTable[]>([]);
 /** The opener of an open table called this save to it: shown over the own pet until `until` (local ms). */
 export interface DdzCall { table: string; from: string; base: number; deposit: number; seats: DdzOpenSeat[]; until: number }
 export const ddzCall = ref<DdzCall | null>(null);
+/** How long an open table that opens again after a game shows over the own pet. */
+export const REOPEN_CUE_MS = 8000;
+/** The open table this save sits at opened again after a game: shown over the own pet until `until` (local ms). */
+export const ddzReopened = ref<{ table: string; until: number } | null>(null);
 
 /** The server has the game (its status says so) and this client is in a room. */
 export const ddzOn = computed(() => inRoom.value && !!ddzConfig.value && !!status.value?.ddz);
@@ -218,12 +222,14 @@ export const ddzReason = (t: DdzState): string =>
 export const ddzTableSeen = computed(() => (isTauri ? ui.ddzSeen : ddzFrame.open));
 
 /**
- * What the bubble over the own pet shows: an invite, how one ended, or that a game goes on while the table is out
- * of sight ("turn" when it waits for this seat); null for nothing.
+ * What the bubble over the own pet shows: an invite, how one ended, that a game goes on while the table is out of
+ * sight ("turn" when it waits for this seat), a call to an open table, or for a moment the open table this save sits
+ * at once it opened again after a game; null for nothing.
  */
-export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | "call" | null>(() => {
+export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | "call" | "open" | null>(() => {
   const t = ddz.value;
   if (!t) return ddzCall.value ? "call" : null;
+  if (t.phase === "open") return !t.starting && ddzReopened.value?.table === t.id ? "open" : null;
   if (t.phase === "invite" || t.phase === "over") return t.phase;
   if ((t.phase === "bid" || t.phase === "play") && !ddzTableSeen.value) return t.turn === t.you && !t.seats[t.you]?.auto ? "turn" : "table";
   return null;
@@ -233,6 +239,7 @@ export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | "call" 
 let endTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let callTimer: ReturnType<typeof setTimeout> | undefined;
+let reopenTimer: ReturnType<typeof setTimeout> | undefined;
 let seq = 0;
 
 /** The server takes a join of the queue, or a move in it, once a second at most (QUEUE_INTERVAL); joins go this far apart. */
@@ -382,6 +389,13 @@ export function onDdzMessage(msg: DdzMessage): void {
       starting: !!msg.starting, seats: msg.seats.map(openSeat), ...countdown(msg.sec),
     };
     if (ddzCall.value) ddzCall.value = null;
+    // Back from a game: the table window goes, and the pet says for a moment that the table waits again.
+    if (before && (before.phase === "result" || before.phase === "bid" || before.phase === "play")) {
+      const table = msg.table;
+      ddzReopened.value = { table, until: Date.now() + REOPEN_CUE_MS };
+      clearTimeout(reopenTimer);
+      reopenTimer = setTimeout(() => { if (ddzReopened.value?.table === table) ddzReopened.value = null; }, REOPEN_CUE_MS);
+    }
     return;
   }
   if (msg.type === "ddz_invite") {

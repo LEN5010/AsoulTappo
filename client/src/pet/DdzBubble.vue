@@ -1,10 +1,13 @@
 <script setup lang="ts">
 // Over the own pet for dou dizhu: an invite to answer (or the own invite waiting), with the three faces and a tick
-// on those who accepted; a call to an open table of the room, with who sits there and the key that sits down; how an
-// invite ended; and, while a game goes on with the table out of sight, a key that brings the table up. The server
-// keeps the time; the bar only shows it.
+// on those who accepted; a call to an open table of the room, with who sits there and the key that sits down; for a
+// moment after a game, the open table this save sits at waiting again, with the key that stands up (puts it away, for
+// the opener); how an invite ended; and, while a game goes on with the table out of sight, a key that brings the table
+// up. The server keeps the time; the bar only shows it.
 import { computed } from "vue";
-import { answerDdz, ddz, ddzBubble, ddzCall, ddzCanSit, ddzReason, dismissDdzCall, leaveDdz, sitDdz } from "../stores/ddz";
+import {
+  answerDdz, ddz, ddzBubble, ddzCall, ddzCanSit, ddzReason, ddzReopened, dismissDdzCall, leaveDdz, sitDdz,
+} from "../stores/ddz";
 import { shownNick, youId } from "../stores/room";
 import { settings } from "../stores/settings";
 import { openDdzWindow } from "../stores/ui";
@@ -20,14 +23,16 @@ const t = computed(() => ddz.value);
 const call = computed(() => (ddzBubble.value === "call" ? ddzCall.value : null));
 const seats = computed(() => {
   if (call.value) return call.value.seats.map((s) => (!s ? null : "id" in s ? { character: s.character, nick: shownNick(s) } : "pending" as const));
-  return (t.value?.seats ?? []).map((s) => (!s.id ? null : {
+  return (t.value?.seats ?? []).map((s) => (s.pending ? "pending" as const : !s.id ? null : {
     character: s.id === youId.value ? settings.character : s.character,
     nick: s.id === youId.value ? "我" : shownNick(s),
     ticked: t.value!.accepted.includes(s.id),
   }));
 });
 const base = computed(() => call.value?.base ?? t.value?.base ?? 0);
-const drain = () => ({ animationDuration: `${Math.max(0, (call.value?.until ?? t.value?.until ?? 0) - Date.now())}ms` });
+/** Until when the bubble shows (local ms). */
+const until = () => call.value?.until ?? (ddzBubble.value === "open" ? ddzReopened.value?.until : t.value?.until) ?? 0;
+const drain = () => ({ animationDuration: `${Math.max(0, until() - Date.now())}ms` });
 const keys = useInviteKeys(() => (ddzBubble.value === "invite" ? t.value?.id : undefined), answerDdz);
 // Sitting down at the table called to is consent, as accepting is: the same guard.
 const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? sitDdz(table) : dismissDdzCall()));
@@ -58,7 +63,10 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
           <span class="stake"><Icon name="shard" :size="13" />{{ base.toLocaleString("en-US") }}</span>
         </header>
         <div class="body" :class="{ tall: ddzBubble === 'over' }">
-          <p v-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
+          <div v-if="ddzBubble === 'open'" class="keys solo">
+            <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'open')">{{ t.you === 0 ? "散桌" : "起身" }}</button>
+          </div>
+          <p v-else-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
           <div v-else-if="!t.sent" class="keys">
             <button type="button" class="ui-btn primary" :disabled="t.answered" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
             <button type="button" class="ui-btn" :disabled="t.answered" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
@@ -68,7 +76,7 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
             <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'invite')">取消</button>
           </div>
         </div>
-        <div v-if="ddzBubble === 'invite'" :key="t.until" class="ui-bar" aria-hidden="true"><i :style="drain()" /></div>
+        <div v-if="ddzBubble === 'invite' || ddzBubble === 'open'" :key="until()" class="ui-bar" aria-hidden="true"><i :style="drain()" /></div>
       </template>
     </div>
   </PetBubble>
@@ -85,6 +93,7 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
 .body.tall { height: 58px; }
 .keys { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 6px; width: 100%; }
 .keys .ui-btn { min-width: 0; height: 40px; padding: 0; }
+.keys.solo .ui-btn { grid-column: 1 / -1; }
 .line { margin: 0; font: 800 var(--fs-label)/1.35 var(--font); color: var(--ink-2); text-align: center; }
 .back { width: 100%; height: 40px; padding: 0; }
 /* The bar empties as the time runs out. */
