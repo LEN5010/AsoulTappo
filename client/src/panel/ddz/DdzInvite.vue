@@ -97,7 +97,7 @@ const ready = computed(() => {
 const go = { invite: "邀请", match: "匹配", open: "开桌", call: "邀请" };
 function send() {
   if (!ready.value) return;
-  if (props.mode === "call") callDdz(picked.value[0]!);
+  if (props.mode === "call") callDdz(picked.value[0]!, table.value!.id);
   else if (props.mode === "match") queueDdz(base.value);
   else if (props.mode === "open") openDdz(base.value);
   else inviteDdz([...picked.value], base.value);

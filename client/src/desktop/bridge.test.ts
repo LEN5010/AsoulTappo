@@ -641,8 +641,10 @@ it("mirrors open tables and a call into the panel and runs the panel's sitting a
   const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
   panel.ddz.openDdz(50);
   panel.ddz.sitDdz("o1", 2);
-  panel.ddz.callDdz("a");
+  panel.ddz.callDdz("a", "o1");
+  panel.ddz.leaveDdz("o1", "open");
   panel.ddz.dismissDdzCall();
   await vi.advanceTimersByTimeAsync(50);
-  expect(request.mock.calls).toEqual([["open", 50], ["sit", "o1", 2], ["call", "a"], ["dismiss"]]);
+  // The table the key was pressed for goes with the request, for the desk to check against its own.
+  expect(request.mock.calls).toEqual([["open", 50], ["sit", "o1", 2], ["call", "a", "o1"], ["leave", "o1", "open"], ["dismiss"]]);
 });

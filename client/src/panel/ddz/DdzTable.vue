@@ -197,11 +197,11 @@ function bid(n: number) {
 const leaving = ref(false);
 function askLeave() {
   if (playing.value) leaving.value = true;
-  else leaveDdz();
+  else leaveDdz(t.value.id);
 }
 function leave() {
   leaving.value = false;
-  leaveDdz();
+  leaveDdz(t.value.id);
 }
 
 function onKey(e: KeyboardEvent) {
@@ -212,7 +212,7 @@ function onKey(e: KeyboardEvent) {
   let used = true;
   if (t.value.phase === "result") {
     if (key === " " && !t.value.closed) againDdz();
-    else if (key === "Escape") leaveDdz();
+    else if (key === "Escape") leaveDdz(t.value.id);
     else used = false;
   } else if (t.value.phase === "bid") {
     if (key === "Escape") bid(0);
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
 
         <div class="keys" :style="t.phase === 'result' ? undefined : { left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }">
           <template v-if="t.phase === 'result'">
-            <button type="button" class="ui-btn" @click="leaveDdz">离桌<kbd>ESC</kbd></button>
+            <button type="button" class="ui-btn" @click="leaveDdz(t.id)">离桌<kbd>ESC</kbd></button>
             <button v-if="!t.closed" type="button" class="ui-btn primary" :disabled="mine.again" @click="againDdz">
               再来一局<kbd>SPACE</kbd>
             </button>

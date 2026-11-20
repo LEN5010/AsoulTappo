@@ -581,12 +581,12 @@ export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
     case "play": playDdz(args[0] as number[]); break;
     case "auto": autoDdz(args[0] as boolean); break;
     case "again": againDdz(); break;
-    case "leave": leaveDdz(); break;
+    case "leave": leaveDdz(args[0] as string | undefined, args[1] as DdzState["phase"] | undefined); break;
     case "queue": queueDdz(args[0] as number); break;
     case "unqueue": unqueueDdz(); break;
     case "open": openDdz(args[0] as number); break;
     case "sit": sitDdz(args[0] as string, args[1] as number | undefined); break;
-    case "call": callDdz(args[0] as string); break;
+    case "call": callDdz(args[0] as string, args[1] as string); break;
     case "dismiss": dismissDdzCall(); break;
   }
 }
@@ -656,13 +656,14 @@ export function againDdz(): void {
 }
 
 /**
- * Leave the table: drops an invite, puts the receipt away, and walks out of a game under way, which the server
- * then plays to its end for this seat.
+ * Leave the table: drops an invite, puts the receipt away, stands up from an open table (the opener puts it away), and
+ * walks out of a game under way, which the server then plays to its end for this seat. With [table] (and [phase]) it
+ * is for the table shown where the key was pressed: the desk drops it when its table is another by then.
  */
-export function leaveDdz(): void {
-  if (viaDesk("leave")) return;
+export function leaveDdz(table?: string, phase?: DdzState["phase"]): void {
+  if (viaDesk("leave", table, phase)) return;
   const t = ddz.value;
-  if (!t) return;
+  if (!t || (table !== undefined && (t.id !== table || (phase !== undefined && t.phase !== phase)))) return;
   if (t.phase !== "over" && !t.closed) sendDdz({ type: "ddz_leave", table: t.id });
   close();
 }
@@ -701,12 +702,12 @@ export function sitDdz(table: string, seat?: number): void {
   sendDdz(seat === undefined ? { type: "ddz_sit", table } : { type: "ddz_sit", table, seat });
 }
 
-/** The opener calls member [id] to its open table. */
-export function callDdz(id: string): void {
-  if (viaDesk("call", id)) return;
+/** The opener calls member [id] to its open table [table]; the desk drops it when its table is another by then. */
+export function callDdz(id: string, table: string): void {
+  if (viaDesk("call", id, table)) return;
   const t = ddz.value;
   const m = members.get(id);
-  if (t && m && ddzCanCall(m)) sendDdz({ type: "ddz_call", table: t.id, id });
+  if (t && t.id === table && t.phase === "open" && t.you === 0 && m && ddzCanCall(m)) sendDdz({ type: "ddz_call", table, id });
 }
 
 /** Put the call over the own pet away. */

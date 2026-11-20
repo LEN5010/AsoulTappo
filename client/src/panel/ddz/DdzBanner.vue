@@ -84,7 +84,7 @@ const waited = computed(() => {
           <button type="button" class="ui-btn" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
           <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
         </template>
-        <button v-else-if="invite.sent" type="button" class="ui-btn" @click="leaveDdz">取消</button>
+        <button v-else-if="invite.sent" type="button" class="ui-btn" @click="leaveDdz(invite.id, 'invite')">取消</button>
       </div>
       <span :key="invite.until" class="clock" aria-hidden="true"><i :style="drain()"></i></span>
     </template>
@@ -95,10 +95,10 @@ const waited = computed(() => {
       </div>
       <div v-if="!mine.starting" class="acts">
         <template v-if="mine.you === 0">
-          <button type="button" class="ui-btn" @click="leaveDdz">散桌</button>
+          <button type="button" class="ui-btn" @click="leaveDdz(mine.id, 'open')">散桌</button>
           <button type="button" class="ui-btn white" :disabled="!callable" @click="sheet = 'call'">邀请</button>
         </template>
-        <button v-else type="button" class="ui-btn" @click="leaveDdz">起身</button>
+        <button v-else type="button" class="ui-btn" @click="leaveDdz(mine.id, 'open')">起身</button>
       </div>
     </template>
     <template v-else>

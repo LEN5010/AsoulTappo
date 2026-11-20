@@ -539,8 +539,9 @@ it("opens a table only where the server has open tables, and shows it as the ser
   expect([d.ddzBusy.value, d.ddzCanQueue.value, d.ddzCanOpen.value, d.ddzBubble.value]).toEqual([true, false, false, null]);
   // Members on clients with open tables are called; others stay greyed.
   expect([NEW_A, B, OLD].map((m) => d.ddzCanCall(r.members.get(m.id)!))).toEqual([true, false, false]);
-  d.callDdz("b");
-  d.callDdz("a");
+  d.callDdz("b", "o1");
+  d.callDdz("a", "o0"); // pressed for a table that is gone
+  d.callDdz("a", "o1");
   expect(socket.sent.filter((m) => m.type === "ddz_call")).toEqual([{ type: "ddz_call", table: "o1", id: "a" }]);
   socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), { pending: true }], sec: 590 });
   expect(d.ddz.value!.seats.map((s) => [s.id, !!s.pending])).toEqual([["me", false], ["a", false], ["", true]]);
@@ -555,7 +556,13 @@ it("stands up or puts the open table away, and says why it went", async () => {
   const { socket, d } = await setup();
   socket.recv({ type: "joined", room: "r", you: "me", members: [ME, NEW_A], features: ["ddz_match"] });
   socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 1, seats: [seatOf(NEW_A), seatOf(ME), null], sec: 600 });
-  d.leaveDdz();
+  // A key pressed for another table, or for the table as it was, leaves nothing.
+  const sent = socket.sent.length;
+  d.leaveDdz("o0", "open");
+  d.leaveDdz("o1", "invite");
+  expect(socket.sent.length).toBe(sent);
+  expect(d.ddz.value).toMatchObject({ id: "o1", phase: "open" });
+  d.leaveDdz("o1", "open");
   expect(socket.sent.at(-1)).toEqual({ type: "ddz_leave", table: "o1" });
   expect(d.ddz.value).toBeNull();
   socket.recv({ type: "ddz_open", table: "o2", base: 50, deposit: 2400, you: 1, seats: [seatOf(NEW_A), seatOf(ME), null], sec: 600 });

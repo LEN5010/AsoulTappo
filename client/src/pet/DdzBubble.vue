@@ -65,7 +65,7 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
           </div>
           <div v-else class="keys one">
             <p class="line">等待回应</p>
-            <button type="button" class="ui-btn" @click="leaveDdz">取消</button>
+            <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'invite')">取消</button>
           </div>
         </div>
         <div v-if="ddzBubble === 'invite'" :key="t.until" class="ui-bar" aria-hidden="true"><i :style="drain()" /></div>
