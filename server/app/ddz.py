@@ -56,7 +56,8 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
   queue again (it declined a table of the queue or let its time run out).
 - ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
-  to every member that queues, at most every COUNTS_SEC and on joining a room while anyone waits.
+  to every member that queues, at most every COUNTS_SEC; on joining a room, the counts last sent, unless nobody
+  waited then.
 """
 from __future__ import annotations
 
@@ -839,9 +840,10 @@ class Tables:
             elif room_id in self._rooms(live):
                 live.live_rooms.add(room_id)
                 peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
-        counts = self.counts()
-        if peer.ddz_match and counts:
-            peer.enqueue(self._counts_msg(counts))
+        # The counts the others were sent last: a change since then is on its way to everyone (_counts_changed), the
+        # newcomer included, which a send of the counts as they are now could leave behind.
+        if peer.ddz_match and self._counts_sent:
+            peer.enqueue(self._counts_msg(self._counts_sent))
         if seat is None or table.phase == STARTING:
             return
         msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}

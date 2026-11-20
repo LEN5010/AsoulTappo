@@ -606,3 +606,20 @@ def test_saves_put_back_from_two_tables_keep_the_order_they_came_in():
         await w.t.queue(g, BASE)
         assert sg.of("ddz_invite")[0]["ids"] == [a.id, d.id, g.id]
     run(go())
+
+
+def test_a_newcomer_hears_the_counts_everyone_has_and_every_correction_after():
+    async def go():
+        w = MatchWorld()
+        a, sa = w.member("a")
+        await w.t.queue(a, BASE)
+        b, _ = w.member("b")
+        await w.t.queue(b, 50)  # within the second: the others hear it with the next send
+        late, s_late = w.member("late", room="r-new")
+        await w.t.joined("r-new", late)
+        w.t.unqueue(b)  # back to what the others have
+        w.mono += COUNTS_SEC
+        await w.counts.fire()
+        assert sa.of("ddz_waiting")[-1]["counts"] == [[BASE, 1]]
+        assert s_late.of("ddz_waiting")[-1]["counts"] == [[BASE, 1]]
+    run(go())
