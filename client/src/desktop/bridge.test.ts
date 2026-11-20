@@ -478,6 +478,32 @@ it("mirrors the table into its own window beside the panel, runs its moves in th
   expect(panel.ddz.ddz.value!.seats[1]!.bid).toBe(2);
 });
 
+it("runs the table window's leave in the desk, in a game and on the result, and not for a table gone", async () => {
+  const desk = await context(false);
+  desk.room.youId.value = "me";
+  const seats = ["a", "me", "b"].map((id) => ({ id, nick: id, character: "乃琳", auto: false, away: false }));
+  const deal = (table: string) => desk.ddz.onDdzMessage({
+    type: "ddz_deal", table, seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  deal("t");
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  // The window names its table and no phase: the phase left out reaches the desk as null over the bridge.
+  table.ddz.leaveDdz("old");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toMatchObject({ id: "t", phase: "bid" });
+  table.ddz.leaveDdz("t");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toBeNull();
+  deal("t2");
+  desk.ddz.ddz.value!.phase = "result";
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddz.value).toMatchObject({ id: "t2", phase: "result" });
+  table.ddz.leaveDdz("t2");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toBeNull();
+});
+
 it("keeps a pet's pose that reaches the panel before the member and applies it once the member arrives", async () => {
   const desk = await context(false);
   const panel = await context(true);

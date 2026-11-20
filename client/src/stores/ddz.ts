@@ -589,8 +589,12 @@ export type DdzOp =
   | "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave" | "queue" | "unqueue" | "open" | "sit" | "call"
   | "dismiss";
 
-/** The panel's and the table window's actions run in the desk window, which holds the room connection. */
-export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
+/**
+ * The panel's and the table window's actions run in the desk window, which holds the room connection. An argument
+ * left out comes over the bridge as null (JSON), and is taken as left out.
+ */
+export function ddzRequest(op: DdzOp, ...sent: unknown[]): void {
+  const args = sent.map((x) => x ?? undefined);
   switch (op) {
     case "invite": inviteDdz(args[0] as string[], args[1] as number); break;
     case "answer": answerDdz(args[0] as boolean, args[1] as string | undefined); break;
