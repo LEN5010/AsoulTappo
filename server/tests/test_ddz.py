@@ -690,6 +690,24 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
     run(go())
 
 
+def test_the_state_lists_every_card_played_this_deal():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        a, b, c = w.peers
+        t = w.t.by_id[tid]
+        assert w.t._state(t, 1)["played"] == []
+        first = [t.seats[0].hand[0]]
+        await w.t.play(a, tid, first)
+        await w.t.play(b, tid, [])
+        second = [next(x for x in t.seats[2].hand if rules.rank(x) > rules.rank(first[0]))]
+        await w.t.play(c, tid, second)
+        assert w.t._state(t, 1)["played"] == first + second
+        w.t._deal(t)
+        assert w.t._state(t, 1)["played"] == []
+    run(go())
+
+
 def test_rejoining_on_turn_updates_observers_and_other_seats():
     async def go():
         w = World(rng=Stacked(first=0))
