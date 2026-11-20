@@ -19,6 +19,11 @@ const endRow = computed(() => Math.min(rows.value, Math.max(startRow.value + 1,
 const start = computed(() => startRow.value * columns.value);
 const end = computed(() => endRow.value * columns.value);
 const visible = computed(() => props.items.slice(start.value, end.value));
+/**
+ * The nearest `.ui-scroll` ancestor. The row height follows the width and the content height follows the rows, so
+ * that scroller needs `scrollbar-gutter: stable`: where the scrollbar takes room, its showing and hiding would
+ * otherwise change the width, the height, and so the scrollbar again, once per frame.
+ */
 let scroller: HTMLElement | null = null;
 let resize: ResizeObserver | undefined;
 let frame = 0;

@@ -383,11 +383,13 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   font-size: var(--fs-label);
 }
 
+/* The gutter stays for scrollbars that take room (Windows), so the sticker grid keeps its width (ui/VirtualGrid.vue). */
 .wall {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .album-groups {

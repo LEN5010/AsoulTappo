@@ -577,7 +577,9 @@ function fireEmote(key: string) {
   font-size: var(--fs-label);
 }
 
-/* Bleeds past the page gutters so a tile's lift is not cut at the edge. */
+/* Bleeds past the page gutters so a tile's lift is not cut at the edge.
+ * The gutter is kept for scrollbars that take room (Windows): the sticker grid sizes its rows from its width, so a
+ * bar that came and went would change the height that decides whether the bar shows (see ui/VirtualGrid.vue). */
 .scroller {
   flex: 1;
   min-height: 0;
@@ -585,6 +587,7 @@ function fireEmote(key: string) {
   padding: 4px 14px 14px 8px;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 .shelves {
   display: flex;
