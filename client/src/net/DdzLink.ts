@@ -105,7 +105,6 @@ export class DdzLink {
     this.isReady = false;
     ws.onopen = () => {
       if (this.ws !== ws || !this.hello) return;
-      this.attempt = 0;
       this.gotPong = true;
       ws.send(JSON.stringify({ type: "ddz_hello", ...this.hello } satisfies ClientMessage));
       this.helloPending = true;
@@ -137,6 +136,9 @@ export class DdzLink {
   private dispatch(msg: DdzLinkMessage): void {
     switch (msg.type) {
       case "ddz_ready":
+        // Backing off starts over once a hello went through, not when a socket merely opened: a server that takes
+        // the socket and then refuses or drops it is not hit at the shortest delay again and again.
+        this.attempt = 0;
         this.helloPending = false;
         this.isReady = true;
         this.events.onState("open");

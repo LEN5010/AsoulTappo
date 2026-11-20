@@ -18,7 +18,7 @@ import { economy } from "./economy";
 import { account, loadDdzLobby, reloadStatus, saveCode, status } from "./player";
 import { settings } from "./settings";
 import {
-  clearRoomError, ddzHooks, ddzMatchOn, duelBusy, duelDnd, helloInfo, inRoom, me, members, sendDdz, sendEmote,
+  clearRoomError, ddzEmoteOn, ddzHooks, ddzMatchOn, duelBusy, duelDnd, helloInfo, inRoom, me, members, sendDdz, sendEmote,
   showRoomError, showWin, shownNick, youId,
 } from "./room";
 import { ddzFrame, openDdzWindow, ui } from "./ui";
@@ -272,6 +272,11 @@ let queueSentAt = -Infinity;
 /** The stake of a join waiting for its time (or for the dou dizhu connection) to be sent, and its timer. */
 const queueNext = ref<number | null>(null);
 let queueTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Waiting was stopped while the dou dizhu connection was down: a hello that took the wait over (ddz_ready `base`)
+ * stops it on the server too. Kept until the server says the save waits no more.
+ */
+let unqueueLater = false;
 /** The stake of a join sent and not answered yet; whether it was sent once more after the server held it back. */
 const queueAsked = ref<number | null>(null);
 let queueRetried = false;
@@ -322,6 +327,8 @@ let linkYou = "";
 const reclaim = ref(false);
 /** How long the connection stays up after nothing needs it, so a game asked for again or a quick new join reuse it. */
 export const LINK_GRACE_MS = 10_000;
+/** How long the desk waits to ask again whether the save holds a seat of the queue's, after the asking failed. */
+export const PROBE_RETRY_MS = 30_000;
 let linkTimer: ReturnType<typeof setTimeout> | undefined;
 
 const link = new DdzLink({
@@ -332,12 +339,15 @@ const link = new DdzLink({
     linkYou = you;
     reclaim.value = false;
     // A table of this connection that the server did not give back is gone (its invite, its open seat, its game).
+    if (shelf?.via === "link" && shelf.id !== table) shelf = null;
     const t = ddz.value;
     if (t?.via === "link" && t.id !== table) {
       if (t.phase === "result") t.closed = true;
       else close();
     }
-    if (base) {
+    if (base && unqueueLater) {
+      link.send({ type: "ddz_queue", base: 0 });
+    } else if (base) {
       ddzQueue.value = { base, since: Date.now() - waited * 1000 };
     } else if (ddzQueue.value || queueAsked.value !== null) {
       // The wait went with the last connection: joined again, at the back of the line.
@@ -345,6 +355,7 @@ const link = new DdzLink({
       queueAsked.value = null;
       ddzQueue.value = null;
     }
+    if (!base) unqueueLater = false;
     sendQueueJoin();
   },
   onDdz(msg) {
@@ -362,11 +373,14 @@ const link = new DdzLink({
     }
     queueAsked.value = null;
     if (!link.active) {
-      // A server without the connection, or a client it no longer takes: no queue here.
-      ddzLinkOff.value = true;
+      // Refused for good. A server without the connection, or a client it no longer takes: no queue here. A save it
+      // does not know, a newer connection of the save (another device), or a full server: this one stops, and the
+      // next join tries again.
+      if (code === "no_ddz" || code === "client_outdated" || code === "bad_message") ddzLinkOff.value = true;
       dropQueueJoin();
       ddzQueue.value = null;
       reclaim.value = false;
+      unqueueLater = false;
     }
     showRoomError(code);
   },
@@ -424,16 +438,43 @@ function note(t: DdzState, event: DdzEventBody): void {
   if (t.log.length > LOG_MAX) t.log.splice(0, t.log.length - LOG_MAX);
 }
 
+/**
+ * A table of the other connection (room or dou dizhu) still going, put aside when a table of this one came up. The
+ * server holds one table per save, so one of the two is out of date, its ending still on the way: whichever ends
+ * first, the other comes back on screen.
+ */
+let shelf: DdzState | null = null;
+const going = (t: DdzState) => t.phase !== "over" && !(t.phase === "result" && t.closed);
+
+/** Table [id] of connection [via] comes up: one of the other connection still going on screen is put aside. */
+function shelve(id: string, via: DdzState["via"]): void {
+  const t = ddz.value;
+  if (t && t.id !== id && t.via !== via && going(t)) shelf = t;
+  else if (shelf?.id === id) shelf = null;
+}
+
+/** The table put aside, if it still goes on, taken off the shelf. */
+function unshelve(): DdzState | null {
+  const t = shelf;
+  shelf = null;
+  return t && going(t) ? t : null;
+}
+
+/** Drops the table put aside when it is of connection [via]. */
+function dropShelf(via: DdzState["via"]): void {
+  if (shelf?.via === via) shelf = null;
+}
+
 function close(): void {
   clearTimeout(endTimer);
-  ddz.value = null;
+  ddz.value = unshelve();
 }
 
 /** Leaves the ending up for a moment, then clears it (unless another table took its place). */
 function closeLater(): void {
   clearTimeout(endTimer);
   const shown = ddz.value;
-  endTimer = setTimeout(() => { if (ddz.value?.id === shown?.id) ddz.value = null; }, DDZ_END_MS);
+  endTimer = setTimeout(() => { if (ddz.value?.id === shown?.id) ddz.value = unshelve(); }, DDZ_END_MS);
 }
 
 function setTurn(t: DdzState, turn: number | undefined, sec: number | undefined): void {
@@ -459,6 +500,7 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     return;
   }
   if (msg.type === "ddz_queue") {
+    if (via === "link" && !msg.base) unqueueLater = false;
     queueAsked.value = null;
     ddzQueue.value = msg.base ? { base: msg.base, since: Date.now() - (msg.waited ?? 0) * 1000 } : null;
     // Back in the line after a table of the queue fell through: the wait takes the ending's place at once.
@@ -486,6 +528,9 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     ddzCall.value = { table: msg.table, from: msg.from, base: msg.base, deposit: msg.deposit, seats: msg.seats, until: Date.now() + msg.sec * 1000 };
     callTimer = setTimeout(() => { if (ddzCall.value?.table === msg.table) ddzCall.value = null; }, msg.sec * 1000);
     return;
+  }
+  if (msg.type === "ddz_open" || msg.type === "ddz_invite" || msg.type === "ddz_deal" || msg.type === "ddz_state") {
+    shelve(msg.table, via);
   }
   if (msg.type === "ddz_open") {
     // Seated at an open table (after a game too, when it opens again): the call to it is answered.
@@ -558,6 +603,8 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
   }
   const t = ddz.value;
   if (t?.id !== msg.table) {
+    // The table put aside ended: the one on screen was the right one.
+    if (shelf?.id === msg.table && (msg.type === "ddz_over" || msg.type === "ddz_closed")) shelf = null;
     // A game this client walked away from was played to its end: the shards changed.
     if (msg.type === "ddz_result" || msg.type === "ddz_over") void reloadStatus();
     return;
@@ -569,8 +616,10 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     case "ddz_over": {
       const by = msg.by ? t.seats.find((s) => s.id === msg.by) : undefined;
       Object.assign(t, { phase: "over", reason: msg.reason, by: by ? shownNick(by) : "", turn: null });
-      closeLater();
       void reloadStatus(); // deposits taken went back
+      // A table put aside goes on: it was the right one, and comes back at once.
+      if (shelf && going(shelf)) close();
+      else closeLater();
       return;
     }
     case "ddz_bid":
@@ -660,6 +709,7 @@ if (!isMirrorWindow) {
     ddzTables.value = [];
     clearTimeout(callTimer);
     ddzCall.value = null;
+    dropShelf("room");
     const t = ddz.value;
     if (t?.via !== "room") return;
     if (t.phase === "result") t.closed = true;
@@ -679,6 +729,7 @@ if (!isMirrorWindow) {
     if (state !== "idle") return;
     linkYou = "";
     if (ddzQueue.value && !link.active) ddzQueue.value = null;
+    if (!link.active) dropShelf("link");
     const t = ddz.value;
     if (t?.via === "link" && !link.active) {
       if (t.phase === "result") t.closed = true;
@@ -707,6 +758,7 @@ if (!isMirrorWindow) {
     reclaim.value = false;
     link.close();
     ddzLinkOff.value = false;
+    dropShelf("link");
     if (ddz.value?.via === "link") close();
   };
   watch(() => settings.serverUrl, forgetQueue, { flush: "sync" });
@@ -720,16 +772,30 @@ if (!isMirrorWindow) {
   watch(() => [saveCode.value, account.value?.token], () => { if (link.active) forgetQueue(); }, { flush: "sync" });
   // Once per server and save, the desk asks whether the save holds a seat of the queue's (a restart in the middle of a
   // game): the connection then comes up and takes it back.
+  // A read that failed is tried again after PROBE_RETRY_MS; an answer for another server or save than the current one is
+  // dropped.
   let checked = "";
-  watch(() => [settings.serverUrl, status.value?.player, ddzServerOn.value] as const, ([url, pid, on]) => {
-    if (!pid || !on || checked === `${url}|${pid}`) return;
-    checked = `${url}|${pid}`;
+  let probing = "";
+  let probeTimer: ReturnType<typeof setTimeout> | undefined;
+  const probeKey = () => (status.value?.player && ddzServerOn.value ? `${settings.serverUrl}|${status.value.player}` : "");
+  const probe = () => {
+    clearTimeout(probeTimer);
+    const key = probeKey();
+    if (!key || checked === key || probing === key) return;
+    probing = key;
     void loadDdzLobby().then((lobby) => {
-      if (checked !== `${settings.serverUrl}|${status.value?.player}`) return;
+      if (probing === key) probing = "";
+      if (key !== probeKey()) return;
+      if (lobby === null) {
+        probeTimer = setTimeout(probe, PROBE_RETRY_MS);
+        return;
+      }
+      checked = key;
       if (lobby === "off") ddzLinkOff.value = true;
-      else if (lobby?.seated && !link.active) reclaim.value = true;
+      else if (lobby.seated && !link.active) reclaim.value = true;
     });
-  }, { immediate: true });
+  };
+  watch(probeKey, probe, { immediate: true });
   // The table's window comes up with each deal, the first and every one after 再来一局, and shows the lobby once the
   // table is put away. Closed during a deal, it stays closed until the next one. A deal while the hide key has the pet
   // hidden counts as closed: the pet's bubble leads back to it once the pet is shown again.
@@ -865,6 +931,7 @@ export function queueDdz(base: number): void {
   if (!ddzCanQueue.value || !ddzStakeOpen(base) || (ddzQueue.value?.base === base && queueNext.value === null)) return;
   queueNext.value = base;
   queueRetried = false;
+  unqueueLater = false;
   sendQueueJoin();
 }
 
@@ -874,9 +941,14 @@ export function unqueueDdz(): void {
   const asked = queueAsked.value !== null;
   dropQueueJoin();
   if (!ddzQueue.value && !asked) return;
-  if (link.ready) link.send({ type: "ddz_queue", base: 0 });
-  // Not connected: the server dropped the wait with the connection.
-  else ddzQueue.value = null;
+  if (link.ready) {
+    link.send({ type: "ddz_queue", base: 0 });
+    return;
+  }
+  // Not connected: the server drops the wait with the connection, unless a new hello takes it over first; that one
+  // then stops it (onReady).
+  ddzQueue.value = null;
+  unqueueLater = link.active;
 }
 
 /** Show emote [name] to the other seats of the table (and on the own pet); the server keeps it to the table. */
@@ -884,6 +956,11 @@ export function emoteDdz(name: string): void {
   if (viaDesk("emote", name)) return;
   const t = ddz.value;
   if (!t || (t.phase !== "bid" && t.phase !== "play" && t.phase !== "result")) return;
+  // A room's server without table emotes: the emote goes to the room, as before them.
+  if (t.via === "room" && !ddzEmoteOn.value) {
+    sendEmote(name);
+    return;
+  }
   if (sendEmote(name, Date.now(), false)) sendTable({ type: "ddz_emote", table: t.id, emote: name });
 }
 

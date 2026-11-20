@@ -466,7 +466,7 @@ it("takes a table of the queue on the connection, plays it there, and keeps the 
 
 it("shows the table's emotes over each seat, and sends its own over the table's connection", async () => {
   const { socket, d, r, player } = await setup();
-  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match"] });
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match", "ddz_emote"] });
   socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
   socket.recv({ type: "ddz_emote", table: "t", seat: 2, emote: "thumbup" });
   socket.recv({ type: "ddz_emote", table: "other", seat: 0, emote: "thumbup" });
@@ -830,4 +830,139 @@ it("answers the seat of an open table offered from the queue, and sits there on 
   expect(d.ddz.value).toMatchObject({ phase: "open", via: "link", you: 2 });
   d.leaveDdz("o1", "open");
   expect(lk.sent.at(-1)).toEqual({ type: "ddz_leave", table: "o1" });
+});
+
+it("sends a table emote to the room on a server without table emotes", async () => {
+  const { socket, d, r, player } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  player.collection.owned = { "emote:thumbup": 1 } as typeof player.collection.owned;
+  const sent = socket.sent.length;
+  d.emoteDdz("thumbup");
+  expect(r.localPet.emote).toMatchObject({ key: "thumbup" });
+  expect(socket.sent.slice(sent)).toEqual([{ type: "emote", emote: "thumbup" }]);
+});
+
+it("stops the wait on the server when it was stopped while the connection was down", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  lk.close();
+  expect(d.ddzLink.value).toBe("reconnecting");
+  d.unqueueDdz();
+  expect(d.ddzQueue.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(1000);
+  // The new hello took the wait over: it is stopped there, and not shown.
+  const lk2 = linkUp({ base: 50, waited: 3 });
+  expect(sentOf(lk2, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 0 }]);
+  expect(d.ddzQueue.value).toBeNull();
+  // Dropped before the server said so: the next hello stops it again.
+  lk2.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  const lk3 = linkUp({ base: 50, waited: 4 });
+  expect(sentOf(lk3, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 0 }]);
+  lk3.recv({ type: "ddz_queue", base: null });
+  // Said: a later hello that still finds a wait (another device's) shows it.
+  lk3.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  const lk4 = linkUp({ base: 50, waited: 1 });
+  expect(sentOf(lk4, "ddz_queue")).toEqual([]);
+  expect(d.ddzQueue.value).toMatchObject({ base: 50 });
+});
+
+it("asks again for a seat the server kept after a failed read, and drops an answer for another save", async () => {
+  const { d, fetchMock, player } = await setup();
+  const lobbyCalls = () => fetchMock.mock.calls.filter((c) => String((c as unknown[])[0]).endsWith("/api/ddz/lobby"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lobbyCalls()).toHaveLength(1);
+  // Another save whose read fails: asked again later.
+  let answer: (v: unknown) => void = () => {};
+  fetchMock.mockImplementation((async (url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? { ok: false, status: 500, json: async () => ({ error: { code: "x", message: "" } }) }
+    : { ok: true, status: 200, json: async () => playerStatus({ player: "q" }) })) as never);
+  player.status.value = playerStatus({ player: "q" }) as typeof player.status.value;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lobbyCalls()).toHaveLength(2);
+  fetchMock.mockImplementation((async (url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? { ok: true, status: 200, json: async () => ({ tiers: [], seated: true }) }
+    : { ok: true, status: 200, json: async () => playerStatus({ player: "q" }) })) as never);
+  await vi.advanceTimersByTimeAsync(d.PROBE_RETRY_MS);
+  expect(lobbyCalls()).toHaveLength(3);
+  expect(d.ddzLink.value).toBe("connecting");
+  // A save whose answer comes late, after another save took its place: the answer is dropped.
+  fetchMock.mockImplementation(((url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? new Promise((resolve) => { answer = resolve; })
+    : Promise.resolve({ ok: true, status: 200, json: async () => playerStatus({ player: "s" }) }))) as never);
+  player.status.value = playerStatus({ player: "s" }) as typeof player.status.value;
+  await vi.advanceTimersByTimeAsync(0);
+  player.status.value = playerStatus({ player: "t" }) as typeof player.status.value;
+  await vi.advanceTimersByTimeAsync(0);
+  answer({ ok: false, status: 404, json: async () => ({ error: { code: "no_ddz", message: "" } }) });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(d.ddzLinkOff.value).toBe(false);
+});
+
+it("keeps a table of one connection when a late message of the other names an older one", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match", "ddz_emote"] });
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  // A table of the queue comes up on the dou dizhu connection.
+  lk.recv({ type: "ddz_invite", table: "m1", ids: ["L", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME, id: "L" }, X, Y] });
+  expect(d.ddz.value).toMatchObject({ id: "m1", via: "link" });
+  // The room's invite of before, and its ending, arrive late: the table of the queue comes back.
+  socket.recv({ type: "ddz_invite", table: "r1", from: "a", ids: ["a", "me", "b"], base: 50, deposit: 2400, sec: 15 });
+  expect(d.ddz.value).toMatchObject({ id: "r1", via: "room" });
+  socket.recv({ type: "ddz_over", table: "r1", reason: "declined", by: "b" });
+  expect(d.ddz.value).toMatchObject({ id: "m1", via: "link", phase: "invite" });
+  // An ending of a table not on screen ends nothing else.
+  socket.recv({ type: "ddz_over", table: "r0", reason: "timeout" });
+  expect(d.ddz.value).toMatchObject({ id: "m1", phase: "invite" });
+  // The other way round: the table put aside ends first, the one on screen stays.
+  socket.recv({ type: "ddz_invite", table: "r2", from: "a", ids: ["a", "me", "b"], base: 50, deposit: 2400, sec: 15 });
+  lk.recv({ type: "ddz_over", table: "m1", reason: "timeout" });
+  expect(d.ddz.value).toMatchObject({ id: "r2", via: "room" });
+  socket.recv({ type: "ddz_over", table: "r2", reason: "declined", by: "b" });
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  expect(d.ddz.value).toBeNull();
+});
+
+it("backs off a server that takes the socket and drops it before the hello goes through", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const delays: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const lk = Socket.all.at(-1)!;
+    lk.open();
+    lk.close();
+    const before = Socket.all.length;
+    let waited = 0;
+    while (Socket.all.length === before && waited < 60_000) {
+      await vi.advanceTimersByTimeAsync(100);
+      waited += 100;
+    }
+    delays.push(waited);
+  }
+  // Longer each time (500 ms doubling, plus up to 250 ms of jitter), not 500 ms over and over.
+  expect(delays[3]).toBeGreaterThanOrEqual(4000);
+});
+
+it("stops without turning the queue off when another device took over, and joins again when asked", async () => {
+  const { d, r } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  lk.recv({ type: "error", code: "room_full", message: "", reason: "ddz_queued" });
+  expect([d.ddzLinkOff.value, d.ddzQueue.value, d.ddzLink.value, r.lastError.value]).toEqual([false, null, "idle", "已在别处匹配"]);
+  const sockets = Socket.all.length;
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(Socket.all).toHaveLength(sockets);
+  await vi.advanceTimersByTimeAsync(2000);
+  d.queueDdz(50);
+  expect(Socket.all).toHaveLength(sockets + 1);
+  const lk2 = linkUp();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sentOf(lk2, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 50 }]);
 });

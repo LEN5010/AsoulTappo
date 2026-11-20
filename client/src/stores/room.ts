@@ -139,6 +139,7 @@ const events: RoomEvents = {
       endProfiles();
       endCheer();
       ddzMatchOn.value = false;
+      ddzEmoteOn.value = false;
     }
   },
   onJoined(room, you, list, features) {
@@ -151,6 +152,7 @@ const events: RoomEvents = {
     endCheer();
     cheerOn.value = features.includes("cheer");
     ddzMatchOn.value = features.includes("ddz_match");
+    ddzEmoteOn.value = features.includes("ddz_emote");
     lastError.value = "";
     clearMembers();
     list.forEach(add);
@@ -365,6 +367,7 @@ function errorText(code: string, message: string): string {
     case "ddz_dnd":
       return "免打扰时不能匹配";
     case "ddz_match_cooldown":
+    case "ddz_full":
       return "稍后再匹配";
     case "ddz_queued":
       return "已在别处匹配";
@@ -688,6 +691,8 @@ export function throwHand(hand: Hand): void {
 export const ddzHooks: { message(msg: DdzMessage): void; refused(code: string): void } = { message() {}, refused() {} };
 /** The server queues for dou dizhu tables across rooms (it lists "ddz_match" in `joined.features`). */
 export const ddzMatchOn = ref(false);
+/** The room's server takes emotes through a table (it lists "ddz_emote" in `joined.features`); older ones do not. */
+export const ddzEmoteOn = ref(false);
 /** Shows the words for refusal [code] where the room's errors show. */
 export function showRoomError(code: string): void {
   lastError.value = errorText(code, "");

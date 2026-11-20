@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The dou dizhu lobby, the face of the table's window while this save sits at no table (DdzApp.vue; the browser
-// preview floats it over the desk page, pet/DdzFrame.vue): on a coral mat the three stakes as big keys, each with how
-// many wait there; pressing one waits in the queue there, and that key shows the time waited and the key that stops.
-// A table the queue made, or an invite, comes up on the mat to answer; an open table this save sits at, with the key
-// that stands up. Under the mat, today's net win and what is left under the cap; in a room, the room's open tables
-// and the key that opens one. The numbers come from GET /api/ddz/lobby, read every few seconds while it is in sight.
+// preview floats it over the desk page, pet/DdzFrame.vue). On the table's light wall the three stakes stand as small
+// table mats, each with how many wait there; pressing one waits in the queue there, and that mat shows the time waited
+// and the key that stops. A table the queue made, or an invite, comes up on a mat of its own to answer; an open table
+// this save sits at, with the key that stands up. Under them, today's net win against the cap; in a room, the room's
+// open tables and the key that opens one. The numbers come from GET /api/ddz/lobby, read every few seconds while it
+// is in sight.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { DdzLobby } from "../../net/protocol";
 import { loadDdzLobby, status } from "../../stores/player";
@@ -87,7 +88,8 @@ const blocked = computed(() => {
 });
 
 const net = computed(() => lobby.value?.net ?? status.value?.ddz?.net ?? 0);
-const left = computed(() => lobby.value?.left ?? Math.max(0, (ddzConfig.value?.dailyWinCap ?? 0) - net.value));
+/** Today's net win is held against this cap (the last game may cross it). */
+const cap = computed(() => lobby.value?.cap ?? ddzConfig.value?.dailyWinCap ?? 0);
 const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toLocaleString("en-US")}`;
 
 /** The room's open tables, while this save is free to sit down at one. */
@@ -99,7 +101,7 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
 
 <template>
   <div class="lobby" data-overlay>
-    <div class="wall" @pointerdown.self="(e) => e.button === 0 && emit('drag', e)">
+    <div class="wall" :class="{ roomy: ddzMatchable }" @pointerdown.self="(e) => e.button === 0 && emit('drag', e)">
       <header class="top" @pointerdown.self="(e) => e.button === 0 && emit('drag', e)">
         <h2>斗地主</h2>
         <button type="button" class="ui-btn small ghost shut-key" title="关闭" aria-label="关闭" @click="emit('close')">
@@ -107,9 +109,9 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
         </button>
       </header>
 
-      <section class="mat">
-        <!-- A table to answer: its seats, the stake, the keys, and the time left. -->
-        <div v-if="asked" :key="asked.id" class="ask">
+      <section class="stage" @pointerdown.self="(e) => e.button === 0 && emit('drag', e)">
+        <!-- A table to answer: its seats, the stake, the keys, and the time left, on a mat of its own. -->
+        <div v-if="asked" :key="asked.id" class="mat ask">
           <DdzSeats :seats="faces(asked, true)" :size="64" />
           <span class="stake"><small>底分</small><Icon name="shard" :size="18" /><b>{{ asked.base.toLocaleString("en-US") }}</b></span>
           <p v-if="asked.phase === 'over'" class="line">{{ ddzReason(asked) }}</p>
@@ -120,9 +122,10 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
           <div v-else class="acts">
             <button type="button" class="ui-btn white large" @click="leaveDdz(asked.id, 'invite')">取消</button>
           </div>
+          <span v-if="asked.phase === 'invite'" :key="asked.until" class="clock" aria-hidden="true"><i :style="drain(asked.until)"></i></span>
         </div>
         <!-- The open table this save sits at. -->
-        <div v-else-if="mine" :key="mine.id" class="ask">
+        <div v-else-if="mine" :key="mine.id" class="mat ask">
           <DdzSeats :seats="faces(mine, false)" :size="64" />
           <span class="stake"><small>底分</small><Icon name="shard" :size="18" /><b>{{ mine.base.toLocaleString("en-US") }}</b></span>
           <div v-if="!mine.starting" class="acts">
@@ -133,32 +136,30 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
             <button v-else type="button" class="ui-btn white large" @click="leaveDdz(mine.id, 'open')">起身</button>
           </div>
         </div>
-        <!-- The stakes: a key each; the one waited at shows the time and the key that stops. -->
+        <!-- The stakes: a small mat each; the one waited at shows the time and the key that stops. -->
         <template v-else>
           <div class="tiers">
             <template v-for="s in stakes" :key="s">
-              <div v-if="ddzQueue?.base === s" class="tier waiting" role="status">
-                <span class="base"><Icon name="shard" :size="26" />{{ s.toLocaleString("en-US") }}</span>
+              <div v-if="ddzQueue?.base === s" class="mat tier waiting" role="status">
+                <span class="base"><Icon name="shard" :size="22" />{{ s.toLocaleString("en-US") }}</span>
                 <span class="time">匹配中<b>{{ waited }}</b></span>
                 <button type="button" class="ui-btn white" @click="unqueueDdz">取消</button>
               </div>
               <button
-                v-else type="button" class="ui-btn white tier" :disabled="!!blocked || !affords(s)"
+                v-else type="button" class="mat tier" :disabled="!!blocked || !affords(s)"
                 :title="affords(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="queueDdz(s)"
               >
-                <span class="base"><Icon name="shard" :size="26" />{{ s.toLocaleString("en-US") }}</span>
+                <span class="base"><Icon name="shard" :size="30" />{{ s.toLocaleString("en-US") }}</span>
                 <span class="count"><Icon name="users" :size="13" />{{ waitingAt(s) }}</span>
               </button>
             </template>
           </div>
-          <p v-if="blocked" class="line">{{ blocked }}</p>
+          <p v-if="blocked" class="note">{{ blocked }}</p>
         </template>
-        <span v-if="asked?.phase === 'invite'" :key="asked.until" class="clock" aria-hidden="true"><i :style="drain(asked.until)"></i></span>
       </section>
 
       <footer class="today">
-        <span>今日<b :class="{ up: net > 0, down: net < 0 }">{{ signed(net) }}</b></span>
-        <span>还可赢<b>{{ left.toLocaleString("en-US") }}</b></span>
+        今日<b :class="{ up: net > 0, down: net < 0 }">{{ signed(net) }}</b><span>/ {{ cap.toLocaleString("en-US") }}</span>
       </footer>
 
       <section v-if="ddzMatchable" class="room">
@@ -177,61 +178,82 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
 </template>
 
 <style scoped>
-.lobby { position: absolute; inset: 0; overflow: hidden; border-radius: var(--radius-l); }
+/* The table window's light wall, with faint halftone dots rising toward its top and its foot (as the table's stage). */
+.lobby { position: absolute; inset: 0; overflow: hidden; border-radius: var(--radius-l); background: var(--c-100); isolation: isolate; }
+.lobby::before,
+.lobby::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  height: 140px;
+  background: var(--c-300);
+  opacity: 0.4;
+  pointer-events: none;
+  -webkit-mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
+  mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
+}
+.lobby::before { top: 0; scale: 1 -1; }
+.lobby::after { bottom: 0; }
 .lobby-overlay { position: absolute; inset: 0; z-index: 10; overflow: hidden; border-radius: var(--radius-l); pointer-events: none; }
 .lobby-overlay > :deep(*) { pointer-events: auto; }
-/* The same light wall as the table's. */
 .wall {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 12px 20px 20px;
+  padding: 12px 24px 24px;
   box-sizing: border-box;
-  background: var(--c-100);
   font-family: var(--font);
   color: var(--ink);
   user-select: none;
   overflow: auto;
 }
-.top { display: flex; align-items: center; justify-content: space-between; height: 36px; }
+.top { flex: none; display: flex; align-items: center; justify-content: space-between; height: 36px; }
 .top h2 { margin: 0 0 0 6px; font: 800 var(--fs-heading)/1 var(--font); color: var(--c-700); pointer-events: none; }
 .shut-key { width: 40px; height: 36px; padding: 0; }
 
-/* The mat: as the table's, a coral block with a white line inside its edge and sparse dots in the corner. */
+/* What is played here: the stakes, or a table to answer. Alone on the wall it stands in the middle of it; with the
+   room's tables under it, it takes only its own height. */
+.stage { flex: 1 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.roomy .stage { flex: none; padding-top: 8px; }
+
+/* A table mat, as the table's: coral felt, a deeper rim lit along its outer edge with a white line where it meets the
+   felt, sparse dots in the corner, and its shadow on the wall. */
 .mat {
   position: relative;
-  flex: 1;
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  padding: 36px 32px;
-  border-radius: 26px;
+  border-radius: 22px;
   background: var(--grad-sky);
-  box-shadow: 0 12px 28px -16px rgba(var(--c-900-rgb), 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.45);
   color: #fff;
+  box-shadow:
+    0 2px 3px rgba(var(--c-900-rgb), 0.22),
+    0 14px 22px -12px rgba(var(--c-900-rgb), 0.5),
+    0 30px 44px -26px rgba(var(--c-900-rgb), 0.38);
 }
 .mat::before {
   content: "";
   position: absolute;
-  inset: 11px;
-  border-radius: 17px;
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.5);
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 0 rgba(var(--c-900-rgb), 0.16),
+    inset 0 0 0 var(--rim, 9px) var(--c-600),
+    inset 0 0 0 calc(var(--rim, 9px) + 1.5px) rgba(255, 255, 255, 0.55),
+    inset 0 6px 10px var(--rim, 9px) rgba(var(--c-900-rgb), 0.2);
   pointer-events: none;
 }
 .mat::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  inset: var(--rim, 9px);
+  border-radius: 12px;
   background: #fff;
   opacity: 0.3;
   pointer-events: none;
-  mask: radial-gradient(circle, #000 1.3px, transparent 1.8px) 0 0 / 18px 18px, radial-gradient(120% 100% at 100% 0, #000 10%, transparent 55%);
+  mask: radial-gradient(circle, #000 1.3px, transparent 1.8px) 0 0 / 16px 16px, radial-gradient(120% 100% at 100% 0, #000 10%, transparent 55%);
   mask-composite: intersect;
   -webkit-mask-composite: source-in;
 }
@@ -241,70 +263,80 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
 .ui-btn.white { --key-lip: var(--c-700); color: var(--c-800); }
 .mat .ui-btn:disabled { --key-top: rgba(255, 255, 255, 0.35); --key-bottom: rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.9); }
 
-/* The stakes: three big keys, the stake in the middle and how many wait there in the corner. */
-.tiers { width: 100%; max-width: 820px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+/* The stakes: three small mats, the stake big in the middle and how many wait there in the corner. */
+.tiers { width: 100%; max-width: 840px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
 .tier {
-  position: relative;
-  height: 168px;
+  height: 150px;
   padding: 0;
+  border: 0;
+  display: flex;
   flex-direction: column;
-  gap: 10px;
-  border-radius: 20px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  color: #fff;
+  cursor: pointer;
+  transition: translate 160ms var(--ease-out), opacity 160ms var(--ease-out);
 }
-.tier .base { display: flex; align-items: center; gap: 4px; font: 800 52px/1 var(--font-latin); letter-spacing: -1px; }
-.tier .base .icon { color: var(--c-500); }
-.tier:disabled .base .icon { color: inherit; }
+button.tier:not(:disabled):hover { translate: 0 -3px; }
+button.tier:focus-visible { outline: 2.5px solid var(--c-700); outline-offset: 3px; }
+button.tier:disabled { opacity: 0.45; cursor: default; }
+.tier .base { display: flex; align-items: center; gap: 6px; font: 800 56px/1 var(--font-latin); letter-spacing: -1px; text-shadow: 0 2px 0 var(--c-700); }
+.tier .base .icon { filter: drop-shadow(0 2px 0 var(--c-700)); }
 .tier .count {
   position: absolute;
-  top: 12px;
-  right: 14px;
+  top: 18px;
+  right: 20px;
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font: 800 var(--fs-strong)/1 var(--font-latin);
-  color: var(--c-600);
+  font: 800 var(--fs-label)/1 var(--font-latin);
+  opacity: 0.9;
 }
-.tier:disabled .count { color: inherit; }
-/* The stake waited at: the key turned over, white on the mat, with the time and the key that stops. */
-.tier.waiting {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-}
-.tier.waiting .base { font-size: 40px; }
-.tier.waiting .base .icon { color: #fff; }
+/* The stake waited at: the time waited and the key that stops, under a smaller stake. */
+.tier.waiting { cursor: default; gap: 8px; }
+.tier.waiting .base { font-size: 34px; }
 .tier.waiting .time { display: flex; align-items: baseline; gap: 6px; font: 800 var(--fs-strong)/1 var(--font); }
 .tier.waiting .time b { font: 800 var(--fs-section)/1 var(--font-latin); font-variant-numeric: tabular-nums; }
 .tier.waiting .ui-btn { height: 28px; padding: 0 14px; font-size: var(--fs-label); }
 
-.line { margin: 0; font: 800 var(--fs-strong)/1.4 var(--font); text-align: center; opacity: 0.95; }
+/* Why the stakes are shut, on the wall under them. */
+.note { margin: 0; font: 800 var(--fs-body)/1.4 var(--font); color: var(--ink-2); text-align: center; }
 
 /* A table to answer, or the open table this save sits at. */
-.ask { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-width: 520px; }
+.ask {
+  --rim: 12px;
+  width: 100%;
+  max-width: 640px;
+  box-sizing: border-box;
+  padding: 36px 32px 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
 .ask :deep(.tag) { color: var(--ink); }
+.line { margin: 0; font: 800 var(--fs-strong)/1.4 var(--font); text-align: center; opacity: 0.95; }
 .stake { display: flex; align-items: center; gap: 5px; font: 800 28px/1 var(--font-latin); }
 .stake small { font: 800 var(--fs-label)/1 var(--font); opacity: 0.9; margin-right: 2px; }
 .acts { display: flex; gap: 12px; }
 .acts .ui-btn { min-width: 120px; }
-/* The time left to answer, along the foot of the mat. */
-.mat > .clock { position: absolute; left: 32px; right: 32px; bottom: 22px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.35); overflow: hidden; }
+/* The time left to answer, along the foot of the felt. */
+.mat > .clock { position: absolute; left: 30px; right: 30px; bottom: 22px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.35); overflow: hidden; }
 .clock i { display: block; height: 100%; border-radius: 3px; background: #fff; transform-origin: 0 50%; animation: drain linear forwards; }
 @keyframes drain {
   to { transform: scaleX(0); }
 }
 
-/* Today: the net win and what is left under the cap, as two figures on the wall. */
-.today { display: flex; justify-content: center; gap: 28px; font: 800 var(--fs-body)/1 var(--font); color: var(--ink-2); }
-.today span { display: flex; align-items: baseline; gap: 6px; }
+/* Today: the net win against the cap, one short line on the wall. */
+.today { flex: none; display: flex; justify-content: center; align-items: baseline; gap: 8px; font: 800 var(--fs-body)/1 var(--font); color: var(--ink-2); }
 .today b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--ink); font-variant-numeric: tabular-nums; }
 .today b.up { color: var(--c-600); }
+.today span { font: 800 var(--fs-body)/1 var(--font-latin); font-variant-numeric: tabular-nums; }
 
 /* The room's open tables, on a strip of the mat each, and the key that opens one. */
-.room { display: flex; flex-direction: column; gap: 10px; }
+.room { flex: none; display: flex; flex-direction: column; gap: 10px; }
 .room header { display: flex; align-items: center; justify-content: space-between; }
 .room h3 { margin: 0 0 0 6px; font: 800 var(--fs-strong)/1 var(--font); color: var(--ink-2); }
 .rows {
@@ -315,5 +347,8 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
   border-radius: var(--radius-l);
   background: var(--grad-sky);
   color: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tier { transition: none; }
 }
 </style>
