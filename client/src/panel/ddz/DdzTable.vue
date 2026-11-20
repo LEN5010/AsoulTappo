@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // The dou dizhu table, the face of its own window (DdzApp.vue; the browser preview floats it over the desk page,
-// pet/DdzFrame.vue): a light wall and on it a coral table that holds nothing but the cards played. The bottom cards
-// hang over its far edge with the stake under them, the two other seats' live pets sit at its ends, the own pet beside
-// the hand, the card counter in the right margin. Cards are picked by click, by dragging across them, or by their
-// rank on the keyboard; the keys over the hand carry the key that presses them.
-// Sized as a desktop card table is (measured on the PC client of 欢乐斗地主): the hand's cards a fifth of the height
-// and closed up to the middle, a play two thirds of that, the bottom cards half, the margins left empty.
+// pet/DdzFrame.vue): a light wall, a coral table with a rim and the multiplier in its middle, the two other seats' live
+// pets behind its far edge on either side of the bottom cards, and the own pet beside the hand with the emotes' key
+// under it. Cards are picked by click, by dragging across them, or by their rank on the keyboard; the keys under the
+// hand carry the key that presses them.
+// The cards are sized as on a desktop card table (measured on the PC client of 欢乐斗地主): the hand's a fifth of the
+// height, a play two thirds of that, the bottom cards half.
 // Drawn on a stage of at least 960×600 that is scaled as one piece to the window, in a board of at most 1040×680 in
 // its middle. The wall moves the window; the close key closes it and leaves the seat playing (离桌 leaves the table).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -50,9 +50,10 @@ const memberOf = (seat: number) => {
 const emoteOf = (seat: number) => ddzEmotes.value[seat] ?? memberOf(seat)?.emote ?? null;
 const nickOf = (seat: number) => (seat === you.value ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
 /** The name plate a seat shows in place of its name tag: the own one when worn, a partner's unless plates are off. */
-const PLATE = { w: 161, h: 23 };
-/** The three pets are drawn at one size. */
-const PET = 0.68;
+const PLATE = { w: 196, h: 28 };
+/** The other seats' pets, and the own one beside the hand. */
+const PET = 0.85;
+const OWN_PET = 0.8;
 const plateOf = (seat: number): string | undefined => {
   if (seat === you.value) return getPlate(settings.plate)?.id;
   return settings.showPlates ? getPlate(t.value.seats[seat]!.plate ?? memberOf(seat)?.plate)?.id : undefined;
@@ -68,25 +69,25 @@ const stage = computed(() => ({ w: box.value.w / unit.value, h: box.value.h / un
 /** The board everything but the window's own keys is laid out in: the stage's middle, so a large window gains margins. */
 const BOARD_MAX = { w: 1040, h: 680 };
 const board = computed(() => ({ w: Math.min(stage.value.w, BOARD_MAX.w), h: Math.min(stage.value.h, BOARD_MAX.h) }));
-/** The margin on either side of the table, where the other seats sit; the table's top, and its foot above the board's. */
-const SIDE = 170;
-const TABLE_TOP = 112;
-const TABLE_FOOT = 216;
+/** The margin on either side of the table; the table's top, under the other seats' pets, and its foot above the board's. */
+const SIDE = 60;
+const TABLE_TOP = 124;
+const TABLE_FOOT = 212;
 const tableW = computed(() => board.value.w - SIDE * 2);
 
 // ---- the hand
 const CARD = 84;
 /** The hand starts clear of the own pet. */
-const HAND_LEFT = 176;
-const HAND_RIGHT = 24;
+const HAND_LEFT = 212;
+const HAND_RIGHT = 28;
 const LIFT = 18;
-/** A card of the hand shows this much of itself under the next: the rank and suit in its corner, no more. */
-const HAND_STEP = 35;
-/** The hand's row: its foot above the board's foot, and its height (a card and its lift). */
-const HAND_BOTTOM = 20;
+/** A card of the hand shows at most this much of itself under the next: half of it. */
+const HAND_STEP = 42;
+/** The hand's row: its foot above the board's foot (the time bar and the keys stand under it), and its height (a card and its lift). */
+const HAND_BOTTOM = 68;
 const HAND_H = Math.ceil(CARD * 1.42) + LIFT;
 /** The bottom cards over the table, and how far down the board their middle is. */
-const BOTTOM_CARD = 44;
+const BOTTOM_CARD = 48;
 const BOTTOMS_TOP = 12;
 const BOTTOMS_MID = BOTTOMS_TOP + (BOTTOM_CARD * 1.42) / 2;
 /** A card played onto the table, one left in a hand at the end, and the back that carries a seat's count. */
@@ -95,8 +96,7 @@ const LEFT_CARD = 40;
 const BACK_CARD = 30;
 const handRoom = computed(() => board.value.w - HAND_LEFT - HAND_RIGHT);
 const handFan = computed(() => fan(t.value.hand.length, handRoom.value, CARD, HAND_STEP));
-/** The hand lies in the board's middle, as the table does, while that keeps it clear of the own pet. */
-const handX = computed(() => Math.max(0, Math.min((board.value.w - handFan.value.width) / 2 - HAND_LEFT, handRoom.value - handFan.value.width)));
+const handX = computed(() => (handRoom.value - handFan.value.width) / 2);
 const selected = ref(new Set<number>());
 /** The landlord's three new cards stand up for a moment before they settle into the hand. */
 const fresh = ref(new Set<number>());
@@ -252,7 +252,14 @@ function onKey(e: KeyboardEvent) {
   if (used) e.preventDefault();
 }
 
-// ---- the countdown: a round key with the whole seconds left, where the seat to move lays its cards
+// ---- the countdown: a bar that empties, under the name of the seat to move and under the own hand, drawn by the
+// stylesheet from where the turn stands when it is drawn; and a round key with the whole seconds left, where that
+// seat lays its cards
+function drain() {
+  const left = Math.max(0, t.value.until - Date.now());
+  const all = Math.max(1, t.value.sec * 1000);
+  return { "--from": Math.min(1, left / all), animationDuration: `${left}ms` };
+}
 /** The seat whose countdown shows: the seat to move once the cards are dealt out; the own seat not while played for. */
 const clockSeat = computed(() => {
   const x = t.value;
@@ -286,7 +293,7 @@ const multEl = ref<HTMLElement>();
 const matEl = ref<HTMLElement>();
 const factorsEl = ref<HTMLElement>();
 const mult = computed(() => (t.value.phase === "bid" ? Math.max(1, t.value.bid) : t.value.mult));
-/** A bomb's ×2 flies from its cards into the row of factors first; the multiplier goes up when it lands. */
+/** A bomb's ×2 flies from its cards into the row of factors first; the big number goes up when it lands. */
 const FLY_DELAY_MS = 180;
 const FLY_MS = 480;
 let stopCount: (() => void) | undefined;
@@ -359,14 +366,15 @@ function zone(seat: number): { key: string; cards: number[]; said: string; small
 }
 /**
  * The three zones as drawn. Cards on the table show their corner and close up further when a play is long. The other
- * seats' reach from their end of the table to its middle, the own one spans the table along its near edge.
+ * seats' reach from the table's side to the multiplier, the own one lies under it between the counter and its match
+ * on the right.
  */
 const zones = computed(() => [
   { seat: leftSeat.value, side: "left" }, { seat: rightSeat.value, side: "right" }, { seat: you.value, side: "own" },
 ].map(({ seat, side }) => {
   const z = zone(seat);
   const w = z.small ? LEFT_CARD : PLAYED_CARD;
-  const room = side === "own" ? tableW.value - 96 : tableW.value / 2 - 34;
+  const room = side === "own" ? tableW.value - 380 : tableW.value / 2 - 122;
   return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 16 : 23).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
 }));
 
@@ -484,7 +492,6 @@ onBeforeUnmount(() => {
             >
               托管
             </button>
-            <DdzEmotes />
             <button type="button" class="ui-btn small ghost shut-key" title="关闭" aria-label="关闭" @click="emit('close')">
               <Icon name="close" :size="18" />
             </button>
@@ -499,21 +506,21 @@ onBeforeUnmount(() => {
               <DdzCard v-if="t.bottom[i - 1] !== undefined" class="side-face" :card="t.bottom[i - 1]!" :width="BOTTOM_CARD" />
             </span>
           </div>
-          <!-- What the game is played for, under the bottom cards: the base, the multiplier, and what made it. -->
-          <div class="stake">
-            <span class="side"><small class="chip">底分<Icon name="shard" :size="13" /><b>{{ t.base.toLocaleString("en-US") }}</b></small></span>
-            <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
-            <span ref="factorsEl" class="side">
-              <span v-for="f in factors" :key="f.key" class="chip factor" :data-key="f.key">
-                {{ f.label }}<b v-if="f.value">{{ f.value }}</b>
-              </span>
-            </span>
-          </div>
 
           <div
             ref="matEl" class="mat" :style="{ left: `${SIDE}px`, right: `${SIDE}px`, top: `${TABLE_TOP}px`, bottom: `${TABLE_FOOT}px` }"
             @pointerdown.self="clearPicked"
           >
+            <div class="mult">
+              <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
+              <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
+              <span ref="factorsEl" class="factors">
+                <span v-for="f in factors" :key="f.key" class="factor" :data-key="f.key">
+                  {{ f.label }}<b v-if="f.value">{{ f.value }}</b>
+                </span>
+              </span>
+            </div>
+
             <div v-for="z in zones" :key="z.side" class="zone" :class="z.side" :data-seat="z.seat">
               <span v-if="z.said" :key="z.key" class="said" :class="{ bid: z.bid }">{{ z.said }}</span>
               <span v-else-if="z.cards.length" :key="`c-${z.key}`" class="cards" :class="{ small: z.small }">
@@ -531,53 +538,48 @@ onBeforeUnmount(() => {
                 {{ secLeft }}
               </span>
             </div>
-            <!-- The cards each other seat still holds: one back at its end of the table, the count on it. -->
-            <template v-if="playing">
-              <div
-                v-for="p in sides" v-show="leftOf(p.seat) > 0" :key="p.side" class="count"
-                :class="[p.side, { few: t.phase === 'play' && t.seats[p.seat]!.left <= 2 }]"
-              >
-                <DdzCard :card="null" :width="BACK_CARD" />
-                <b :key="bumps[p.seat]" :class="{ bump: bumps[p.seat] && !reducedMotion }">{{ leftOf(p.seat) }}</b>
-              </div>
-            </template>
-          </div>
-
-          <div
-            v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]"
-            :style="{ top: `${TABLE_TOP + 16}px` }"
-          >
-            <PetView
-              v-if="memberOf(p.seat)" :character="t.seats[p.seat]!.character" :scale="PET" :min-emote="48"
-              :pulse="memberOf(p.seat)!.pulse" :emote="emoteOf(p.seat)" :combo="memberOf(p.seat)!.combo"
-              :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'right'"
-            />
-            <PetView
-              v-else :character="t.seats[p.seat]!.character" :scale="PET" :min-emote="48" :emote="emoteOf(p.seat)"
-              :flip-bubble="p.side === 'right'"
-            />
-            <span v-if="plateOf(p.seat)" class="worn" :class="{ turn: t.turn === p.seat && !dealing }">
-              <NamePlate
-                :card="plateOf(p.seat)!" :nick="nickOf(p.seat)" :color="characterColor(t.seats[p.seat]!.character)"
-                :width="PLATE.w" :height="PLATE.h" :font="12.5"
-              />
-              <span class="badges">
-                <em v-if="t.landlord === p.seat" class="ui-tag lord">地主</em>
-                <em v-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
-              </span>
-            </span>
-            <div v-else class="pill" :class="{ turn: t.turn === p.seat && !dealing, lord: t.landlord === p.seat }">
-              <i :style="{ background: characterColor(t.seats[p.seat]!.character) }" aria-hidden="true"></i>
-              <span class="nick">{{ nickOf(p.seat) }}</span>
-              <em v-if="t.landlord === p.seat" class="ui-tag light">地主</em>
-              <em v-if="t.seats[p.seat]!.away" class="ui-tag soft">离开</em>
-              <em v-else-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
+            <div v-if="out" class="tally">
+              <span v-for="c in out" :key="c.label" :class="{ none: !c.n }"><i>{{ c.label }}</i><b>{{ c.n }}</b></span>
             </div>
           </div>
 
-          <!-- The card counter, in the margin under the seat on the right: each rank over how many are still out. -->
-          <div v-if="out" class="tally" :style="{ bottom: `${TABLE_FOOT}px` }">
-            <span v-for="c in out" :key="c.label" :class="{ none: !c.n }"><i>{{ c.label }}</i><b>{{ c.n }}</b></span>
+          <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]">
+            <!-- The emotes open on the side away from the bottom cards, beside the head: over it is the stage's edge. -->
+            <PetView
+              v-if="memberOf(p.seat)" :character="t.seats[p.seat]!.character" :scale="PET" :min-emote="52"
+              :pulse="memberOf(p.seat)!.pulse" :emote="emoteOf(p.seat)" :combo="memberOf(p.seat)!.combo"
+              :win="memberOf(p.seat)!.win" :motion-id="memberOf(p.seat)!.id" :flip-bubble="p.side === 'left'"
+              :bubble-shift="{ x: 0, y: 50 }"
+            />
+            <PetView
+              v-else :character="t.seats[p.seat]!.character" :scale="PET" :min-emote="52" :emote="emoteOf(p.seat)"
+              :flip-bubble="p.side === 'left'" :bubble-shift="{ x: 0, y: 50 }"
+            />
+            <div class="under">
+              <span v-if="plateOf(p.seat)" class="worn" :class="{ turn: t.turn === p.seat && !dealing }">
+                <NamePlate
+                  :card="plateOf(p.seat)!" :nick="nickOf(p.seat)" :color="characterColor(t.seats[p.seat]!.character)"
+                  :width="PLATE.w" :height="PLATE.h" :font="14"
+                />
+                <span class="badges">
+                  <em v-if="t.landlord === p.seat" class="ui-tag lord">地主</em>
+                  <em v-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
+                </span>
+              </span>
+              <div v-else class="pill" :class="{ turn: t.turn === p.seat && !dealing, lord: t.landlord === p.seat }">
+                <i :style="{ background: characterColor(t.seats[p.seat]!.character) }" aria-hidden="true"></i>
+                <span class="nick">{{ nickOf(p.seat) }}</span>
+                <em v-if="t.landlord === p.seat" class="ui-tag light">地主</em>
+                <em v-if="t.seats[p.seat]!.away" class="ui-tag soft">离开</em>
+                <em v-else-if="t.seats[p.seat]!.auto" class="ui-tag soft">托管</em>
+              </div>
+              <!-- The cards the seat still holds: one back beside its name, the count on it. -->
+              <div v-if="playing" v-show="leftOf(p.seat) > 0" class="count" :class="{ few: t.phase === 'play' && t.seats[p.seat]!.left <= 2 }">
+                <DdzCard :card="null" :width="BACK_CARD" />
+                <b :key="bumps[p.seat]" :class="{ bump: bumps[p.seat] && !reducedMotion }">{{ leftOf(p.seat) }}</b>
+              </div>
+            </div>
+            <span v-if="playing && t.turn === p.seat && !dealing" :key="t.until" class="clock"><i :style="drain()"></i></span>
           </div>
 
           <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px`, bottom: `${HAND_BOTTOM}px`, height: `${HAND_H}px` }">
@@ -601,28 +603,37 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <span
+            v-if="myTurn && !dealing" :key="t.until" class="clock wide"
+            :style="{ left: `${HAND_LEFT + handRoom / 2}px`, bottom: `${HAND_BOTTOM - 10}px` }"
+          >
+            <i :style="drain()"></i>
+          </span>
+
           <div class="me">
             <PetView
-              :character="settings.character" :scale="PET" :min-emote="48"
+              :character="settings.character" :scale="OWN_PET" :min-emote="52"
               :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
               :emote="localPet.emote" :win="localPet.win" :pulse="localPet.pulse"
             />
-            <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">
-              <NamePlate
-                :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(settings.character)"
-                :width="PLATE.w" :height="PLATE.h" :font="12.5"
-              />
-              <span class="badges"><em v-if="t.landlord === you" class="ui-tag lord">地主</em></span>
-            </span>
-            <div v-else class="pill" :class="{ turn: t.turn === you && !dealing, lord: t.landlord === you }">
-              <i :style="{ background: characterColor(settings.character) }" aria-hidden="true"></i>
-              <span class="nick">{{ nickOf(you) }}</span>
-              <em v-if="t.landlord === you" class="ui-tag light">地主</em>
+            <div class="mine">
+              <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">
+                <NamePlate
+                  :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(settings.character)"
+                  :width="PLATE.w - 44" :height="PLATE.h" :font="14"
+                />
+                <span class="badges"><em v-if="t.landlord === you" class="ui-tag lord">地主</em></span>
+              </span>
+              <div v-else class="pill" :class="{ turn: t.turn === you && !dealing, lord: t.landlord === you }">
+                <i :style="{ background: characterColor(settings.character) }" aria-hidden="true"></i>
+                <span class="nick">{{ nickOf(you) }}</span>
+                <em v-if="t.landlord === you" class="ui-tag light">地主</em>
+              </div>
+              <DdzEmotes up />
             </div>
           </div>
 
-          <!-- The keys stand between the table and the hand; at the end, under the receipt. -->
-          <div class="keys" :style="t.phase === 'result' ? undefined : { bottom: `${HAND_BOTTOM + HAND_H + 6}px` }">
+          <div class="keys" :style="t.phase === 'result' ? undefined : { left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }">
             <template v-if="t.phase === 'result'">
               <button type="button" class="ui-btn" @click="leaveDdz(t.id)">离桌<kbd>ESC</kbd></button>
               <button v-if="!t.closed" type="button" class="ui-btn primary" :disabled="mine.again" @click="againDdz">
@@ -690,67 +701,18 @@ onBeforeUnmount(() => {
 
 /* The bottom cards turn over like the cards of a draw. */
 .bottoms { position: absolute; left: 50%; translate: -50% 0; display: flex; gap: 6px; perspective: 780px; z-index: 1; pointer-events: none; }
-.flipper { position: relative; display: block; width: 44px; height: calc(44px * 1.42); transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
+.flipper { position: relative; display: block; width: 48px; height: calc(48px * 1.42); transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
 .flipper:nth-child(2) { transition-delay: 70ms; }
 .flipper:nth-child(3) { transition-delay: 140ms; }
 .flipper > * { position: absolute; inset: 0; backface-visibility: hidden; }
 .side-face { transform: rotateY(180deg); }
 .bottoms.open .flipper { transform: rotateY(180deg); }
-
-/* The stake, a row of tags between the bottom cards and the table: the multiplier in the middle on coral and holding
-   its place, the base before it, what made it after it (the bid, then ×2 for each bomb, as on the receipt). */
-.stake {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 80px;
-  height: 28px;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  column-gap: 8px;
-  z-index: 1;
-  pointer-events: none;
-}
-.stake .side { display: flex; gap: 6px; min-width: 0; }
-.stake .side:first-child { justify-content: flex-end; }
-.chip {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.1), 0 4px 9px -5px rgba(var(--c-900-rgb), 0.4);
-  font-size: 12.5px;
-  font-weight: 800;
-  color: var(--ink-2);
-  white-space: nowrap;
-}
-.chip b { font: 800 16px/1 var(--font-latin); letter-spacing: 0.2px; color: var(--c-700); }
-.chip :deep(svg) { color: var(--c-600); }
-.factor { animation: pop 260ms var(--ease-pop) backwards; }
-.stake .x {
-  display: block;
-  min-width: 32px;
-  height: 28px;
-  padding: 0 13px;
-  border-radius: 14px;
-  background: var(--c-600);
-  box-shadow: 0 2px 0 var(--c-700), 0 6px 10px -5px rgba(var(--c-900-rgb), 0.5);
-  color: #fff;
-  font: 800 23px/28px var(--font-latin);
-  letter-spacing: 0.2px;
-  text-align: center;
-}
-.stake .x i { font-style: normal; font-size: 17px; margin-right: 2px; }
-.phase-result .stake { opacity: 0; }
+.bottoms.open .flipper:nth-child(1) { rotate: -5deg; translate: 0 3px; }
+.bottoms.open .flipper:nth-child(3) { rotate: 5deg; translate: 0 3px; }
 
 /* The table: a coral top with a deeper rim, lit along its outer edge, a white line where the rim meets the felt and
    the felt sunk a little under it; it throws its shadow on the wall. Sparse dots in the corner, as on the park's
-   banners. Only cards lie on it. */
+   banners. The white cards land on it. */
 .mat {
   position: absolute;
   border-radius: 28px;
@@ -786,16 +748,94 @@ onBeforeUnmount(() => {
   -webkit-mask-composite: source-in;
 }
 
+/* The multiplier is the one big number of the table. At the table's lowest (264) the block (small 24, number 88,
+   factors 28) ends 22 above the own cards on the table; a taller table gives the extra room above and below it. */
+.mult {
+  --at: max(12px, calc((100% - 264px) * 0.4 + 12px));
+  position: absolute;
+  left: 50%;
+  top: var(--at);
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #fff;
+  z-index: 1;
+  pointer-events: none;
+}
+.mult small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.24);
+  font-size: 13px;
+  font-weight: 800;
+}
+.mult small b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.3px; }
+.mult .x {
+  font: 800 106px/88px var(--font-latin);
+  letter-spacing: -2px;
+  text-shadow: 0 4px 0 var(--c-600), 0 12px 22px rgba(var(--c-900-rgb), 0.28);
+}
+/* The smaller × keeps out of the line's height, which stays the number's 88. */
+.mult .x i { font-style: normal; font-size: 60px; line-height: 0; margin-right: 2px; opacity: 0.9; }
+/* What the big number is made of, as on the receipt: the bid, then ×2 for each bomb. Always takes its room, so the
+   number does not move when the first factor comes. */
+.factors { display: flex; gap: 7px; height: 26px; margin-top: 2px; }
+.factor {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.24);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+  animation: pop 260ms var(--ease-pop) backwards;
+}
+.factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
+.phase-result .mult { opacity: 0; }
+/* The card counter: a paper slip in the table's near left corner, each rank over how many the other two still hold,
+   in two rows; a rank all gone fades. */
+.tally {
+  position: absolute;
+  left: 24px;
+  bottom: 20px;
+  width: 152px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  row-gap: 6px;
+  padding: 7px 4px 6px;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 4px 10px -5px rgba(var(--c-900-rgb), 0.45);
+  z-index: 2;
+  pointer-events: none;
+}
+.tally span { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tally i { font: 800 13px/1 var(--font-latin); font-style: normal; color: var(--ink-3); letter-spacing: -0.5px; }
+/* The jokers' 小 and 大 are characters: smaller to sit on the numerals' line. */
+.tally span:nth-last-child(-n + 2) i { font: 800 10px/13px var(--font); }
+.tally b { font: 800 15px/1 var(--font-latin); color: var(--c-700); }
+.tally .none { opacity: 0.3; }
+
 /* What each seat has in front of it. Cards on the table lie a little askew, turned about the end their seat is at;
-   the ones in the hand do not. The other seats' start at their end of the table, the own one lies along its near edge. */
+   the ones in the hand do not. The other seats' lie under their names, on either side of the multiplier; the own one
+   along the table's near edge. */
 .zone { position: absolute; display: flex; align-items: center; z-index: 2; pointer-events: none; }
-.zone.left { left: 24px; top: 30px; rotate: -2deg; transform-origin: 0 50%; }
-.zone.right { right: 24px; top: 30px; rotate: 2deg; transform-origin: 100% 50%; justify-content: flex-end; }
-.zone.own { left: 50%; bottom: 18px; translate: -50% 0; }
+.zone.left { left: 36px; top: 56px; rotate: -2deg; transform-origin: 0 50%; }
+.zone.right { right: 36px; top: 56px; rotate: 2deg; transform-origin: 100% 50%; justify-content: flex-end; }
+.zone.own { left: 50%; bottom: 12px; translate: -50% 0; }
 .cards { display: flex; align-items: center; }
 .cards > * { animation: land 300ms var(--ease-out) backwards; }
-.zone.left .cards > * { --from: -90px -30px; }
-.zone.right .cards > * { --from: 90px -30px; }
+.zone.left .cards > * { --from: -70px -80px; }
+.zone.right .cards > * { --from: 70px -80px; }
 .zone.own .cards > * { --from: 0 120px; }
 .cards.small > * { animation: none; }
 @keyframes land {
@@ -839,8 +879,8 @@ onBeforeUnmount(() => {
   from { opacity: 0.95; scale: 0.3; }
   to { opacity: 0; scale: 2.6; }
 }
-/* A long play or a bomb: its name stamped askew on a white disc, as the receipt's spring seal, on the corner of the
-   cards away from their seat (the lower inner one, the upper right one for the own seat), then gone. */
+/* A long play or a bomb: its name stamped askew on a white disc, as the receipt's spring seal, on the lower inner
+   corner of the cards (beside them for the own seat), then gone. */
 .stamp {
   position: absolute;
   width: 64px;
@@ -860,7 +900,7 @@ onBeforeUnmount(() => {
 .stamp::before { content: ""; position: absolute; inset: 6px; border-radius: 50%; border: 1.5px solid var(--c-600); opacity: 0.6; }
 .zone.left .stamp { right: -22px; top: 100%; margin-top: -22px; }
 .zone.right .stamp { left: -22px; top: 100%; margin-top: -22px; rotate: 12deg; }
-.zone.own .stamp { right: -22px; top: -34px; }
+.zone.own .stamp { left: 100%; top: 50%; margin: -32px 0 0 14px; }
 .stamp.calm { animation-name: press-calm; }
 @keyframes press {
   0% { opacity: 0; scale: 2.4; }
@@ -873,10 +913,10 @@ onBeforeUnmount(() => {
   0%, 100% { opacity: 0; }
   10%, 84% { opacity: 1; }
 }
-/* The cards a seat still holds: one back lying at its end of the table, under where it plays, the count on it. */
-.count { position: absolute; top: 126px; width: 30px; height: calc(30px * 1.42); z-index: 2; pointer-events: none; }
-.count.left { left: 24px; rotate: -5deg; }
-.count.right { right: 24px; rotate: 5deg; }
+/* The cards a seat still holds: one back beside its name, on the side away from the middle, the count on it. */
+.count { position: absolute; top: 50%; translate: 0 -50%; width: 30px; height: calc(30px * 1.42); pointer-events: none; }
+.seat.left .count { right: 100%; margin-right: 10px; rotate: -5deg; }
+.seat.right .count { left: 100%; margin-left: 10px; rotate: 5deg; }
 .count b {
   position: absolute;
   inset: 0;
@@ -936,69 +976,70 @@ onBeforeUnmount(() => {
 /* Alone, it stands where the middle of the seat's cards would be. */
 .zone .timer.alone { margin: 18px 0; }
 
-/* The two other seats sit at the ends of the table, in the margins: the pet, the name under it. */
-.seat { position: absolute; width: 164px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 3; pointer-events: none; }
-.seat.left { left: 3px; }
-.seat.right { right: 3px; }
+/* The two other seats stand at the far edge of the table, one on either side of the bottom cards, their name tags on
+   it; the cards left lie beside the tag on the side away from the middle, and the time to move runs out under it. */
+.seat { position: absolute; top: 10px; width: 204px; translate: -50% 0; display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; }
+.seat.left { left: 28%; }
+.seat.right { left: 72%; }
 .seat :deep(.still), .me :deep(.still) { filter: var(--contour); }
 .seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
+.under { position: relative; display: flex; align-items: center; margin-top: 2px; }
 /* A name plate in place of the tag: whose move it is rings it, and its tags sit on its top right corner like stickers. */
-.worn { position: relative; flex: none; display: block; border-radius: 7px; transition: box-shadow var(--dur-base); }
-.worn.turn { box-shadow: 0 0 0 3px var(--c-500); }
-.worn .badges { position: absolute; right: -6px; top: -11px; display: flex; gap: 4px; pointer-events: none; }
+.worn { position: relative; flex: none; display: block; border-radius: 8px; transition: box-shadow var(--dur-base); }
+.worn.turn { box-shadow: 0 0 0 3px var(--c-600); }
+.me .worn.turn { box-shadow: 0 0 0 3px var(--c-500); }
+.worn .badges { position: absolute; right: -7px; top: -11px; display: flex; gap: 4px; pointer-events: none; }
 .worn .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
 .worn .ui-tag.lord { --tag-bg: var(--c-600); --tag-fg: #fff; box-shadow: 0 0 0 2px #fff; }
 .pill {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   min-width: 0;
-  max-width: 100%;
-  height: 26px;
-  padding: 0 11px;
+  max-width: 190px;
+  height: 28px;
+  padding: 0 13px;
   box-sizing: border-box;
-  border-radius: 13px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3);
-  font-size: 13.5px;
+  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45);
+  font-size: 14.5px;
   font-weight: 800;
   white-space: nowrap;
   transition: box-shadow var(--dur-base);
 }
 /* Whose move it is: a coral ring round the name. */
-.pill.turn { box-shadow: 0 0 0 3px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
-.pill > i { flex: none; width: 4px; height: 12px; border-radius: 1px; }
+.pill.turn { box-shadow: 0 0 0 3px var(--c-600), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45); }
+.pill > i { flex: none; width: 5px; height: 13px; border-radius: 1px; }
 .pill .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.pill .ui-tag { flex: none; margin: 0 -5px 0 1px; }
+.pill .ui-tag { flex: none; margin: 0 -6px 0 2px; }
 .pill .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
-/* The landlord's tag turns coral; its ring of the move stands outside a white edge. */
-.pill.lord { background: var(--c-600); color: #fff; }
-.pill.lord.turn { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
-.pill.lord > i { box-shadow: 0 0 0 1.5px #fff; }
-
-/* The card counter: a paper slip in the right margin, its foot level with the table's, each rank over how many the
-   other two still hold, in two rows; a rank all gone fades. */
-.tally {
-  position: absolute;
-  right: 9px;
-  width: 152px;
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  row-gap: 6px;
-  padding: 7px 4px 6px;
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.1), 0 6px 14px -7px rgba(var(--c-900-rgb), 0.4);
-  z-index: 3;
-  pointer-events: none;
+/* The landlord's tag turns coral, a white edge keeping it off the table; its ring of the move stands outside that
+   edge, in deep coral, as the table's coral would swallow the usual one. */
+.pill.lord {
+  background: var(--c-600);
+  color: #fff;
+  box-shadow: 0 0 0 2px #fff, 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45);
 }
-.tally span { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.tally i { font: 800 13px/1 var(--font-latin); font-style: normal; color: var(--ink-3); letter-spacing: -0.5px; }
-/* The jokers' 小 and 大 are characters: smaller to sit on the numerals' line. */
-.tally span:nth-last-child(-n + 2) i { font: 800 10px/13px var(--font); }
-.tally b { font: 800 15px/1 var(--font-latin); color: var(--c-700); }
-.tally .none { opacity: 0.3; }
+.pill.lord.turn { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--c-700), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45); }
+.pill.lord > i { box-shadow: 0 0 0 1.5px #fff; }
+/* The time a move has left: a bar that empties. */
+.clock { display: block; width: 156px; height: 6px; margin-top: 8px; border-radius: 3px; background: rgba(255, 255, 255, 0.45); overflow: hidden; }
+.clock i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #fff;
+  transform-origin: 0 50%;
+  animation: drain linear forwards;
+}
+/* The own move's bar lies between the hand and the keys. */
+.clock.wide { position: absolute; width: 452px; margin: 0 0 0 -226px; background: var(--c-200); z-index: 4; pointer-events: none; }
+.clock.wide i { background: linear-gradient(90deg, var(--c-400), var(--c-600)); }
+@keyframes drain {
+  from { transform: scaleX(var(--from)); }
+  to { transform: scaleX(0); }
+}
 
 .hand-wrap { position: absolute; z-index: 4; pointer-events: none; }
 .hand { position: relative; height: 100%; pointer-events: auto; touch-action: none; }
@@ -1047,23 +1088,27 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 1px rgba(var(--c-900-rgb), 0.12), 0 -4px 0 var(--c-500), 0 13px 20px -5px rgba(var(--c-500-rgb), 0.95),
     -3px 3px 6px -2px rgba(var(--c-900-rgb), 0.3);
 }
-/* Put away at the end: the receipt and its keys stand there. */
-.phase-result .hand-wrap { opacity: 0; transition: opacity var(--dur-base); }
+.phase-result .held { filter: saturate(0.6); opacity: 0.75; }
 
-/* The own pet sits beside the hand, live like the two others. */
-.me { position: absolute; left: 6px; bottom: 14px; width: 164px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 4; pointer-events: none; }
+/* The own pet sits beside the hand, live like the two others; under it the own name and the emotes' key. */
+.me { position: absolute; left: 8px; bottom: 10px; width: 196px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 6; pointer-events: none; }
+.mine { display: flex; align-items: center; gap: 7px; max-width: 100%; }
+.me .pill { max-width: 148px; box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
+.me .pill.turn { box-shadow: 0 0 0 3px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
+.me .pill.lord { box-shadow: 0 0 0 2px #fff, 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
+.me .pill.lord.turn { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
 
-.keys { position: absolute; left: 0; right: 0; height: 36px; display: flex; justify-content: center; gap: 10px; z-index: 5; pointer-events: none; }
-.keys .ui-btn { height: 36px; min-width: 100px; padding: 0 14px; font-size: 15px; pointer-events: auto; }
-.keys .ui-btn.bid { min-width: 82px; }
+.keys { position: absolute; left: 0; right: 0; bottom: 10px; height: 42px; display: flex; justify-content: center; gap: 12px; z-index: 5; pointer-events: none; }
+.keys .ui-btn { height: 42px; min-width: 118px; padding: 0 16px; font-size: 16px; pointer-events: auto; }
+.keys .ui-btn.bid { min-width: 92px; }
 /* The corner of a keycap says which key of the keyboard it is. */
 .keys kbd {
-  height: 18px;
-  margin-left: 3px;
-  padding: 0 5px;
-  border-radius: 4px;
+  height: 19px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
   background: var(--c-100);
-  font: 800 11px/18px var(--font-latin);
+  font: 800 11.5px/19px var(--font-latin);
   letter-spacing: 0.5px;
   color: var(--c-700);
 }
@@ -1071,9 +1116,6 @@ onBeforeUnmount(() => {
 /* A key that cannot be pressed stays a key: flat paper with an outline, since the wall is the disabled colour. */
 .keys .ui-btn:disabled { --key-top: var(--c-50); --key-bottom: var(--c-50); box-shadow: inset 0 0 0 1.5px var(--c-200); }
 .keys .ui-btn:disabled kbd { background: transparent; color: var(--ink-3); }
-/* At the end the two keys stand under the receipt, over what is left of the hand, a size larger. */
-.phase-result .keys { bottom: 30px; height: 44px; }
-.phase-result .keys .ui-btn { height: 44px; min-width: 128px; padding: 0 18px; font-size: 16px; }
 
 .leave-note { margin: 0 0 18px; font-size: var(--fs-body); line-height: 1.6; color: var(--ink-2); }
 .confirm { display: flex; justify-content: flex-end; gap: 10px; }
