@@ -456,7 +456,6 @@ onBeforeUnmount(() => {
         </div>
 
         <div ref="matEl" class="mat" @pointerdown.self="clearPicked">
-          <span class="crest" aria-hidden="true"><i></i></span>
           <b class="crest-word" aria-hidden="true"><i></i>斗地主<i></i></b>
           <div class="mult">
             <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
@@ -744,10 +743,8 @@ onBeforeUnmount(() => {
 }
 .factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
-/* The card back's ring and diamond printed large and faint in the felt, a little above its middle, and the game's
-   name under them in a band, right where the own seat's word lands (an own pass or bid covers it). Played cards and
-   the multiplier lie over them. */
-.crest,
+/* The game's name printed faint in the felt in a band, right where the own seat's word lands (an own pass or bid
+   covers it). Played cards lie over it. */
 .crest-word {
   position: absolute;
   left: 50%;
@@ -755,26 +752,7 @@ onBeforeUnmount(() => {
   color: #fff;
   opacity: 0.3;
   pointer-events: none;
-}
-.crest {
-  top: calc(50% - 30px);
-  width: 176px;
-  height: 176px;
-  margin-top: -88px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, transparent 68%);
-  box-shadow: inset 0 0 0 2px #fff, 0 0 0 8px transparent, 0 0 0 10px rgba(255, 255, 255, 0.4);
-}
-.crest i {
-  position: absolute;
-  inset: 26px;
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 2px #fff;
-  rotate: 45deg;
-  opacity: 0.65;
-}
-/* Centred 56 above the mat's foot, as the own seat's word is (the zone's 8 and the word's 28 under its 40). */
-.crest-word {
+  /* Centred 56 above the mat's foot, as the own seat's word is (the zone's 8 and the word's 28 under its 40). */
   bottom: 47px;
   display: flex;
   align-items: center;
@@ -802,7 +780,7 @@ onBeforeUnmount(() => {
 @keyframes land {
   from { opacity: 0; translate: var(--from); scale: 0.72; }
 }
-/* The felt seen through a quarter of white, made opaque so the crest's word under the own seat's does not show. */
+/* The felt seen through a quarter of white, made opaque so the mat's word under the own seat's does not show. */
 .said {
   height: 40px;
   padding: 0 19px;

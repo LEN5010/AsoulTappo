@@ -17,7 +17,7 @@ const SUITS = [
   "M7.600 7a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM2.200 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM13 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM12 11c.2 5 .9 8 2.600 10H9.400c1.700-2 2.400-5 2.600-10z",
   "M12 2l7.500 10L12 22 4.500 12z",
 ];
-/** Narrower backs (the other seats' stacks) keep the rim, the rules and the emblem only. */
+/** Narrower backs (the other seats' stacks) keep the edge, the silk, the dots and the rule only. */
 const FULL_BACK = 48;
 const SPARK = "M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z";
 const face = computed(() => (props.card === null || props.card >= 52 ? null : {
@@ -30,7 +30,6 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
     <i class="silk"></i>
     <i class="dots"></i>
     <i class="rule"></i>
-    <span class="emblem"><i class="ring"></i><i class="diamond"></i></span>
     <template v-if="width >= FULL_BACK">
       <svg class="star tr" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
       <svg class="star bl" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
@@ -117,8 +116,8 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
 }
 .joker.small img { filter: grayscale(1); opacity: 0.8; }
 /* The back: the draw's sealed back on a playing card. Coral stock lit from the top left, a white edge, silk and a rise
-   of halftone dots, a rule inside the edge and the ring and diamond in the middle; the sparkles and the word band
-   only where there is room for them. Still: it lies on a table. */
+   of halftone dots and a rule inside the edge; the sparkles and the word band across the middle only where there is
+   room for them. Still: it lies on a table. */
 .back {
   --edge: max(2px, calc(var(--px) * 0.07));
   background:
@@ -162,38 +161,14 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
   opacity: 0.42;
 }
-.emblem {
-  left: 50%;
-  top: 50%;
-  width: 56%;
-  aspect-ratio: 1;
-  translate: -50% -50%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 68%);
-}
-.full .emblem { top: 44%; }
-.emblem .ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 3px transparent, 0 0 0 4px rgba(255, 255, 255, 0.18);
-  opacity: 0.72;
-}
-.emblem .diamond {
-  position: absolute;
-  inset: 15%;
-  border-radius: calc(var(--px) * 0.04);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
-  rotate: 45deg;
-  opacity: 0.46;
-}
 .star { width: max(6px, calc(var(--px) * 0.11)); height: auto; fill: currentColor; }
 .star.tr { right: calc(var(--px) * 0.17); top: calc(var(--px) * 0.17); opacity: 0.92; }
 .star.bl { left: calc(var(--px) * 0.17); bottom: calc(var(--px) * 0.16); width: max(5px, calc(var(--px) * 0.085)); opacity: 0.68; }
 .band {
   left: 14%;
   right: 14%;
-  bottom: 19%;
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
   align-items: center;
   justify-content: center;
