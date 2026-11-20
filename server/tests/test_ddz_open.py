@@ -254,3 +254,60 @@ def test_open_tables_over_the_socket(api):
         assert receive(b, "ddz_open")["you"] == 2
         b.send_json({"type": "ddz_leave", "table": tid})
         assert receive(b, "ddz_closed")["table"] == tid
+
+
+# ------------------------------------------------------------------ the room
+def test_the_room_hears_its_open_tables_at_most_once_a_second():
+    async def go():
+        w = OpenWorld()
+        _, s_watch = w.member("watch")
+        _, s_old = w.member("old", match=False)
+        _, s_far = w.member("far", room="r2")
+        ((a, sa),), tid = await w.opened("a")
+        shown = [{"table": tid, "base": BASE, "seats": [seat(a), None, None]}]
+        assert s_watch.of("ddz_tables") == [{"type": "ddz_tables", "tables": shown}]
+        assert sa.of("ddz_tables")[-1]["tables"] == shown
+        # Old clients and other rooms hear nothing of it.
+        assert s_old.of("ddz_tables") == [] and s_far.of("ddz_tables") == []
+        b, _ = w.member("b")
+        await w.t.sit("r", b, tid)
+        assert len(s_watch.of("ddz_tables")) == 1
+        w.mono += 1
+        await w.counts.fire()
+        shown = [{"table": tid, "base": BASE, "seats": [seat(a), seat(b), None]}]
+        assert s_watch.of("ddz_tables")[-1]["tables"] == shown
+        # Someone coming in hears what the room was told last.
+        n, sn = w.member("n")
+        await w.t.joined("r", n)
+        assert sn.of("ddz_tables") == [{"type": "ddz_tables", "tables": shown}]
+        old2, s_old2 = w.member("old2", match=False)
+        await w.t.joined("r", old2)
+        assert s_old2.of("ddz_tables") == []
+        # The game starting takes the table off; the room hears an empty list once.
+        c, _ = w.member("c")
+        await w.t.sit("r", c, tid)
+        await settle()
+        w.mono += 1
+        await w.counts.fire()
+        assert s_watch.of("ddz_tables")[-1] == {"type": "ddz_tables", "tables": []} and w.t._tables_sent == {}
+        n2, sn2 = w.member("n2")
+        await w.t.joined("r", n2)
+        assert sn2.of("ddz_tables") == []
+    run(go())
+
+
+def test_a_table_put_away_leaves_the_room_list():
+    async def go():
+        w = OpenWorld()
+        _, s_watch = w.member("watch")
+        ((a, _),), tid = await w.opened("a")
+        x, _ = w.member("x")
+        w.mono += 1
+        await w.t.open("r", x, 50)
+        await w.counts.fire()
+        assert [t["table"] for t in s_watch.of("ddz_tables")[-1]["tables"]] == [tid, w.t.by_save[w.who["x"]].id]
+        await w.m.depart("r", a.id)
+        w.mono += 1
+        await w.counts.fire()
+        assert [t["base"] for t in s_watch.of("ddz_tables")[-1]["tables"]] == [50]
+    run(go())

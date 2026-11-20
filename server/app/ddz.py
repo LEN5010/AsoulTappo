@@ -78,6 +78,9 @@ Open tables, with members whose client said `ddzMatch` only:
 - ``ddz_leave`` {table} from a seat of an open table: stand up; the opener's puts the table away.
 - ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | null, ...], sec} to each seat of an open
   table whenever it changes: `you` is the seat, null an empty seat, `sec` the time until it is put away.
+- ``ddz_tables`` {tables: [{table, base, seats}, ...]}: the open tables of the room, oldest first, seats as in
+  ``ddz_open``; to its members whenever they change, at most every COUNTS_SEC, an empty list once the last goes; on
+  joining the room, the list it was told last, unless it was told of none.
 """
 from __future__ import annotations
 
@@ -414,6 +417,12 @@ class Tables:
         self._counts_sent: dict[int, int] = {}
         self._counts_at = float("-inf")
         self._counts_timer: Any = None
+        # The open tables each room was told of last (rooms told of none left out), the rooms whose tables changed
+        # since, when the rooms were last told, and the timer of the next telling (_tables_changed).
+        self._tables_sent: dict[str, list[dict]] = {}
+        self._tables_dirty: set[str] = set()
+        self._tables_at = float("-inf")
+        self._tables_timer: Any = None
 
     @property
     def bank(self) -> Bank:
@@ -437,6 +446,12 @@ class Tables:
             self._counts_timer = None
         self._counts_sent = {}
         self._counts_at = float("-inf")
+        if self._tables_timer is not None:
+            self._tables_timer.cancel()
+            self._tables_timer = None
+        self._tables_sent = {}
+        self._tables_dirty = set()
+        self._tables_at = float("-inf")
 
     def in_game(self, peer: Peer) -> bool:
         """Whether the connection sits at a table whose deposits are taken (or being taken)."""
@@ -631,6 +646,7 @@ class Tables:
             if s.peer is not None and s.accepted:
                 s.peer.enqueue({"type": "ddz_open", "table": table.id, "base": table.base, "deposit": table.deposit,
                                 "you": i, "seats": seats, "sec": sec})
+        self._tables_changed(table.room)
         self._schedule_open(table)
 
     def _schedule_open(self, table: Table) -> None:
@@ -666,6 +682,7 @@ class Tables:
             return
         table.phase = DONE
         self._drop(table)
+        self._tables_changed(table.room)
         over: dict[str, Any] = {"type": "ddz_over", "table": table.id, "reason": reason}
         if by is not None:
             over["by"] = by.id
@@ -673,11 +690,60 @@ class Tables:
             if s.peer is not None and i not in quiet:
                 s.peer.enqueue({"type": "ddz_closed", "table": table.id} if s is by else over)
 
+    def _room_tables(self, room_id: str) -> list[dict]:
+        """The open tables of room [room_id] as its members see them, oldest first."""
+        tables = sorted((t for t in self.by_id.values() if t.open and t.phase == OPEN and t.room == room_id),
+                        key=lambda t: (t.opened_at, t.id))
+        return [{"table": t.id, "base": t.base, "seats": self._shown_seats(t)} for t in tables]
+
+    def _tables_changed(self, room_id: str | None) -> None:
+        """The open tables of room [room_id] changed: its members hear them now, or COUNTS_SEC after the rooms were
+        last told."""
+        if room_id is None:
+            return
+        self._tables_dirty.add(room_id)
+        if self._tables_timer is not None:
+            return
+        wait = self._tables_at + COUNTS_SEC - self.clock()
+        if wait > 0:
+            self._tables_timer = self.count_timers.later(wait, self._tables_due)
+        else:
+            self._send_tables()
+
+    async def _tables_due(self) -> None:
+        self._tables_timer = None
+        self._send_tables()
+
+    def _send_tables(self) -> None:
+        """Tells the members of each room whose open tables changed, on clients that know of them, the room's open
+        tables (``ddz_tables``), when they differ from what the room was told last; an empty list once the last goes."""
+        dirty, self._tables_dirty = self._tables_dirty, set()
+        told = False
+        for room_id in sorted(dirty):
+            room = self.manager.rooms.get(room_id)
+            shown = self._room_tables(room_id) if room is not None else []
+            if shown == self._tables_sent.get(room_id, []):
+                continue
+            if shown:
+                self._tables_sent[room_id] = shown
+            else:
+                self._tables_sent.pop(room_id, None)
+            if room is None:
+                continue
+            told = True
+            msg = {"type": "ddz_tables", "tables": shown}
+            for p in list(room.peers.values()):
+                if p.ddz_match:
+                    p.enqueue(msg)
+        if told:
+            self._tables_at = self.clock()
+
     async def _begin(self, table: Table) -> None:
         """The three seats of an open table are taken: the deposits go in one transaction (Bank.try_start) and the
         cards are dealt. The members may leave while the database works: they are played for."""
         table.phase = STARTING
         self._cancel_timer(table)
+        self._tables_changed(table.room)
         try:
             row, codes = await run_in_threadpool(self.bank.try_start, [s.token for s in table.seats], table.base)
         except BaseException:
@@ -1090,6 +1156,9 @@ class Tables:
         # newcomer included, which a send of the counts as they are now could leave behind.
         if peer.ddz_match and self._counts_sent:
             peer.enqueue(self._counts_msg(self._counts_sent))
+        # The same for the room's open tables.
+        if peer.ddz_match and room_id in self._tables_sent:
+            peer.enqueue({"type": "ddz_tables", "tables": self._tables_sent[room_id]})
         if seat is not None and table.phase == OPEN:
             self._open_changed(table)
         if seat is None or table.phase in (OPEN, STARTING):
