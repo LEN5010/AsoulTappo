@@ -658,6 +658,32 @@ def test_three_asking_again_play_on_and_one_that_cannot_pay_is_let_go():
     run(go())
 
 
+def test_a_room_no_seat_is_in_any_more_hears_only_that_the_game_ended():
+    async def go():
+        w = OpenWorld()
+        q, sq = w.member("q", room="r-q")
+        _, s_left = w.member("watch-q", room="r-q")
+        _, s_here = w.member("watch-r")
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        w.mono += FILL_SEC
+        await w.t.queue(q, BASE)
+        await w.t.answer(q, tid, True)
+        await w.settled()
+        assert s_left.of("ddz_live")[-1]["on"] is True
+        # The seat of the queue moves to another room during the game.
+        await w.m.depart("r-q", q.id)
+        q2, s_q2 = w.member("q", room="r-z")
+        await w.t.joined("r-z", q2)
+        w.peers = [a, b, q2]
+        await w.t.bid(a, tid, 3)
+        await play_out(w, tid)
+        assert s_left.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "on": False}
+        for s in (s_here, s_q2):
+            end = s.of("ddz_live")[-1]
+            assert end["on"] is False and end["ids"] == [a.id, b.id, q2.id] and end["gains"]
+    run(go())
+
+
 # ------------------------------------------------------------------ races
 class Gate:
     """Holds a Bank method in its thread until the test lets it go; [n] calls are held, each by its own event. Counts

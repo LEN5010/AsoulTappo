@@ -61,7 +61,8 @@ that waited longest at a table the queue made, the opener of an open table):
 - ``ddz_state`` {...}: the whole game for a seat that came back (see Tables._state).
 
 To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
-shards the winners won, by member id. A table the queue made tells every room its members are in.
+shards the winners won, by member id. A table the queue made tells every room its members are in. A room told of the
+start that none of the members is in by the end hears only {table, on: false}.
 
 The queue, with members whose client said `ddzMatch` only (`joined.features` then lists "ddz_match"):
 
@@ -1505,18 +1506,23 @@ class Tables:
 
     async def _live(self, table: Table, on: bool, gains: dict[str, int] | None = None) -> None:
         """Tells the table's rooms (_rooms) that its game started (on) or ended; the end also goes to every room
-        told of the start, so one its members all left does not keep showing the game."""
+        told of the start, so one its members all left does not keep showing the game. A room none of the seats'
+        members is in now hears only that it ended, not who played or won."""
         msg: dict[str, Any] = {"type": "ddz_live", "table": table.id, "ids": [s.id for s in table.seats], "on": on}
         if gains is not None:
             msg["gains"] = gains
         rooms = self._rooms(table)
         if on:
             table.live_rooms |= rooms
-        else:
-            rooms |= table.live_rooms
-            table.live_rooms = set()
+            for room_id in sorted(rooms):
+                await self.manager.broadcast(room_id, msg)
+            return
+        seated = {s.peer.room for s in table.seats if s.peer is not None and s.peer.active}
+        rooms |= table.live_rooms
+        table.live_rooms = set()
         for room_id in sorted(rooms):
-            await self.manager.broadcast(room_id, msg)
+            await self.manager.broadcast(
+                room_id, msg if room_id in seated else {"type": "ddz_live", "table": table.id, "on": False})
 
     # -------------------------------------------------------------------- queue
     def _check_queue(self, peer: Peer) -> None:

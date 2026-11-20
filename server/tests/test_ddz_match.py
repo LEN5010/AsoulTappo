@@ -341,12 +341,12 @@ def test_a_member_comes_back_to_its_seat_from_another_room():
         live = {"type": "ddz_live", "table": tid, "ids": [a.id, b2.id, c.id], "on": True}
         assert s_watch.of("ddz_live") == [live] and sa.of("ddz_live")[-1] == live
         assert t.live_rooms == {"r-a", "r-b", "r-c", "r-y"}
-        # The game is called off: the room b left hears it ended as well.
+        # The game is called off: the room b left hears it ended as well, and only that.
         for p, room in ((a, "r-a"), (b2, "r-y"), (c, "r-c")):
             await w.m.depart(room, p.id)
         await settle()
         assert w.t.by_id == {} and [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
-        assert t.live_rooms == set() and s_left.of("ddz_live")[-1] == {**live, "on": False}
+        assert t.live_rooms == set() and s_left.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "on": False}
     run(go())
 
 

@@ -341,7 +341,7 @@ export function onDdzMessage(msg: DdzMessage): void {
     else delete live[msg.table];
     ddzLive.value = live;
     // The whole room sees the winners' shards go up over their pets.
-    for (const [id, gain] of Object.entries(msg.gains ?? {})) showWin(id, gain);
+    if (!msg.on) for (const [id, gain] of Object.entries(msg.gains ?? {})) showWin(id, gain);
     return;
   }
   if (msg.type === "ddz_queue") {

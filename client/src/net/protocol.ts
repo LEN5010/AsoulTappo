@@ -168,8 +168,12 @@ export type DdzMessage =
     landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number; lead: boolean;
     trick: (number[] | null)[]; sec: number; of: number;
   }
-  /** To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. */
-  | { type: "ddz_live"; table: string; ids: string[]; on: boolean; gains?: Record<string, number> }
+  /**
+   * To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. A
+   * room none of them is in by the end hears only that it ended.
+   */
+  | { type: "ddz_live"; table: string; ids: string[]; on: true }
+  | { type: "ddz_live"; table: string; ids?: string[]; on: false; gains?: Record<string, number> }
   /**
    * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
    * null when it does not, with `reason` when the server took it out (ddz_locked, ddz_account, no_shards, ddz_cap,
