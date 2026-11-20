@@ -34,7 +34,10 @@ const leftSeat = computed(() => (you.value + 2) % 3);
 const sides = computed(() => [{ seat: leftSeat.value, side: "left" }, { seat: rightSeat.value, side: "right" }] as const);
 const mine = computed(() => t.value.seats[you.value]!);
 const playing = computed(() => t.value.phase === "bid" || t.value.phase === "play");
-/** The room member in a seat, for its live pet; null once it left the room. */
+/**
+ * The room member in a seat, for its live pet and plate; null once it left the room, and for a member of a table the
+ * queue made who sits in another room (the seat's own nick and character stand in).
+ */
 const memberOf = (seat: number) => {
   const s = t.value.seats[seat]!;
   return s.away ? null : members.get(s.id) ?? null;
@@ -446,7 +449,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: !memberOf(p.seat) }]">
+        <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]">
           <!-- The emotes open on the side away from the bottom cards, beside the head: over it is the stage's edge. -->
           <PetView
             v-if="memberOf(p.seat)" :character="memberOf(p.seat)!.character" :scale="0.95" :min-emote="52"

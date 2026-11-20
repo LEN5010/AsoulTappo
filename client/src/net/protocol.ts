@@ -104,8 +104,14 @@ export interface DdzSeatInfo { id: string; nick: string; character: string; auto
  * numbered 0 to 2 in turn order; cards are 0..53 (src/ddz/rules.ts).
  */
 export type DdzMessage =
-  /** Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. */
-  | { type: "ddz_invite"; table: string; from: string; ids: string[]; base: number; deposit: number; sec: number }
+  /**
+   * Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. A
+   * table the queue made has no `from`, all three answer, and `seats` names its members, who may be in other rooms.
+   */
+  | {
+    type: "ddz_invite"; table: string; from?: string; ids: string[]; base: number; deposit: number; sec: number;
+    match?: boolean; seats?: { id: string; nick: string; character: string }[];
+  }
   | { type: "ddz_answer"; table: string; id: string }
   /**
    * Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, ddz_account: a seat's save
@@ -142,7 +148,15 @@ export type DdzMessage =
     trick: (number[] | null)[]; sec: number; of: number;
   }
   /** To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. */
-  | { type: "ddz_live"; table: string; ids: string[]; on: boolean; gains?: Record<string, number> };
+  | { type: "ddz_live"; table: string; ids: string[]; on: boolean; gains?: Record<string, number> }
+  /**
+   * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
+   * null when it does not, with `reason` when the server took it out (ddz_locked, ddz_account, no_shards, ddz_cap,
+   * ddz_dnd, error).
+   */
+  | { type: "ddz_queue"; base: number | null; waited?: number; reason?: string }
+  /** How many saves wait at each stake, as [base, saves]; stakes nobody waits at are left out. */
+  | { type: "ddz_waiting"; counts: [number, number][] };
 
 /** Dou dizhu messages to the server; only to servers whose economy has `doudizhu`. */
 export type DdzClientMessage =
@@ -152,7 +166,9 @@ export type DdzClientMessage =
   | { type: "ddz_play"; table: string; cards: number[] }
   | { type: "ddz_auto"; table: string; on: boolean }
   | { type: "ddz_again"; table: string }
-  | { type: "ddz_leave"; table: string };
+  | { type: "ddz_leave"; table: string }
+  /** Wait for a table at stake `base`, 0 to stop; only to servers that list "ddz_match" in `joined.features`. */
+  | { type: "ddz_queue"; base: number };
 
 export type ClientMessage =
   | {
@@ -163,6 +179,8 @@ export type ClientMessage =
     status?: string;
     /** This client plays dou dizhu; servers without it ignore it. */
     ddz?: boolean;
+    /** This client also queues for dou dizhu tables across rooms; servers without the queue ignore it. */
+    ddzMatch?: boolean;
     motionVersion?: number;
   }
   | { type: "leave" }

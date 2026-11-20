@@ -405,6 +405,30 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("mirrors the dou dizhu queue into the panel and runs the panel's queueing in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.room.ddzMatchOn.value = true;
+  desk.ddz.onDdzMessage({ type: "ddz_queue", base: 50, waited: 4 });
+  desk.ddz.onDdzMessage({ type: "ddz_waiting", counts: [[50, 2]] });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.ddzMatchOn.value).toBe(true);
+  expect(panel.ddz.ddzQueue.value).toEqual(desk.ddz.ddzQueue.value);
+  expect(panel.ddz.ddzQueue.value!.base).toBe(50);
+  expect(panel.ddz.ddzOthersWaiting(50)).toBe(1);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.unqueueDdz();
+  panel.ddz.queueDdz(250);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["unqueue"], ["queue", 250]]);
+  desk.ddz.onDdzMessage({ type: "ddz_queue", base: null });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddzQueue.value).toBeNull();
+});
+
 it("mirrors the table into its own window beside the panel, runs its moves in the desk, and stops when it closes", async () => {
   const desk = await context(false);
   const { invoke } = await import("@tauri-apps/api/core");

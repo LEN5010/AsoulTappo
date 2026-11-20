@@ -53,6 +53,8 @@ export interface JoinInfo {
   status?: string;
   /** This client plays dou dizhu. */
   ddz?: boolean;
+  /** This client also queues for dou dizhu tables across rooms. */
+  ddzMatch?: boolean;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -376,6 +378,8 @@ export class RoomClient {
       case "ddz_closed":
       case "ddz_state":
       case "ddz_live":
+      case "ddz_queue":
+      case "ddz_waiting":
         this.events.onDdz?.(msg);
         break;
       case "error":

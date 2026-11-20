@@ -30,11 +30,12 @@ const groupSources = {
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
     info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value, nameOn: room.nameOn.value,
-    cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value }),
+    cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value, ddzMatchOn: room.ddzMatchOn.value }),
   publicRooms: () => room.publicRooms.value,
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
-  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value }),
+  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, queue: ddzStore.ddzQueue.value,
+    waiting: ddzStore.ddzWaiting.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz }) =>
     ({ id, uid, nick, character, plate, ddz })),
 };
@@ -71,6 +72,8 @@ function applyGroups(s: Partial<Groups>) {
   if (s.ddz) {
     ddzStore.ddz.value = s.ddz.table;
     ddzStore.ddzLive.value = s.ddz.live;
+    ddzStore.ddzQueue.value = s.ddz.queue;
+    ddzStore.ddzWaiting.value = s.ddz.waiting;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
@@ -90,6 +93,7 @@ function applyGroups(s: Partial<Groups>) {
     room.cheerOn.value = s.room.cheerOn;
     room.cheer.value = s.room.cheer;
     room.cheerDone.value = s.room.cheerDone;
+    room.ddzMatchOn.value = s.room.ddzMatchOn;
   }
   if (s.publicRooms !== undefined) room.publicRooms.value = s.publicRooms;
   if (s.members) {

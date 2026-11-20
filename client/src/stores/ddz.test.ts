@@ -320,3 +320,89 @@ it("says a game ended because a seat's save has no account", async () => {
   const { ddzReason } = await import("./ddz");
   expect(ddzReason({ reason: "ddz_account" } as Parameters<typeof ddzReason>[0])).toBe("有人还没有登录 Asasfans 账号");
 });
+
+// ------------------------------------------------------------------ the queue
+const X = { id: "x", nick: "远方", character: "贝拉" };
+const Y = { id: "y", nick: "天边", character: "乃琳" };
+
+it("offers the queue only where the server has it, and waits as the server says", async () => {
+  const { socket, d, settings } = await setup();
+  expect(socket.sent[0]).toMatchObject({ type: "join", ddz: true, ddzMatch: true });
+  expect(d.ddzMatchable.value).toBe(false); // the server did not list the queue
+  d.queueDdz(50);
+  expect(socket.sent.filter((m) => m.type === "ddz_queue")).toEqual([]);
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  expect(d.ddzCanQueue.value).toBe(true);
+  const sent = socket.sent.length;
+  d.queueDdz(500); // cannot pay the deposit
+  d.queueDdz(100); // not a stake
+  d.queueDdz(250);
+  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_queue", base: 250 }]);
+  expect(d.ddzQueue.value).toBeNull(); // waiting once the server says so
+  socket.recv({ type: "ddz_queue", base: 250, waited: 3 });
+  expect(d.ddzQueue.value).toEqual({ base: 250, since: Date.now() - 3000 });
+  d.queueDdz(250); // waiting there already
+  expect(socket.sent).toHaveLength(sent + 1);
+  socket.recv({ type: "ddz_waiting", counts: [[50, 1], [250, 3]] });
+  expect([50, 250, 500].map(d.ddzOthersWaiting)).toEqual([1, 2, 0]);
+  d.unqueueDdz();
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_queue", base: 0 });
+  socket.recv({ type: "ddz_queue", base: null });
+  expect(d.ddzQueue.value).toBeNull();
+  d.unqueueDdz(); // not waiting
+  expect(socket.sent).toHaveLength(sent + 2);
+  settings.duelDnd = true; // turning invites down keeps the save out of the queue
+  expect(d.ddzCanQueue.value).toBe(false);
+  d.queueDdz(50);
+  expect(socket.sent.slice(sent).filter((m) => m.type === "ddz_queue")).toHaveLength(2);
+});
+
+it("takes a table of the queue whose members are in other rooms, and goes back in line when it falls through", async () => {
+  const { socket, d, r } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  await vi.advanceTimersByTimeAsync(20000);
+  socket.recv({ type: "ddz_queue", base: null });
+  socket.recv({
+    type: "ddz_invite", table: "m1", ids: ["x", "me", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME }, Y],
+  });
+  expect(d.ddzQueue.value).toBeNull();
+  expect(d.ddz.value).toMatchObject({ id: "m1", match: true, you: 1, sent: false, accepted: [], base: 50 });
+  expect(d.ddz.value!.seats.map((s) => [s.nick, s.character])).toEqual([["远方", "贝拉"], ["我", "嘉然"], ["天边", "乃琳"]]);
+  expect(d.ddzBubble.value).toBe("invite");
+  d.answerDdz(true);
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_answer", table: "m1", accept: true });
+  socket.recv({ type: "ddz_answer", table: "m1", id: "me" });
+  socket.recv({ type: "ddz_over", table: "m1", reason: "declined", by: "y" });
+  expect(d.ddz.value).toMatchObject({ phase: "over", by: "天边" });
+  // Put back at the front of the line, still counting from when it started waiting.
+  socket.recv({ type: "ddz_queue", base: 50, waited: 20 });
+  expect(d.ddz.value).toBeNull();
+  expect(d.ddzQueue.value).toEqual({ base: 50, since: Date.now() - 20000 });
+  // Matched again; the game shows the members of other rooms as the server names them.
+  socket.recv({ type: "ddz_queue", base: null });
+  socket.recv({ type: "ddz_invite", table: "m2", ids: ["me", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME }, X, Y] });
+  d.answerDdz(true);
+  socket.recv({ type: "ddz_live", table: "m2", ids: ["me", "x", "y"], on: true });
+  expect([...d.ddzPlaying.value]).toEqual(["me", "x", "y"]);
+  const seats = [ME, X, Y].map(({ id, nick, character }) => ({ id, nick, character, auto: false, away: false }));
+  socket.recv({ type: "ddz_deal", table: "m2", seats, you: 0, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  expect(d.ddz.value).toMatchObject({ phase: "bid", you: 0, match: false });
+  expect(d.ddz.value!.seats[2]).toMatchObject({ nick: "天边", away: false });
+  expect(r.members.has("y")).toBe(false);
+});
+
+it("says why the server took the save out of the queue, and forgets the queue with the room", async () => {
+  const { socket, d, r } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  socket.recv({ type: "ddz_queue", base: null, reason: "no_shards" });
+  expect(d.ddzQueue.value).toBeNull();
+  expect(r.lastError.value).toBe("碎片不足");
+  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  socket.recv({ type: "ddz_waiting", counts: [[50, 1]] });
+  socket.close();
+  expect(d.ddzQueue.value).toBeNull();
+  expect(d.ddzWaiting.value).toEqual({});
+  expect(r.ddzMatchOn.value).toBe(false);
+});
