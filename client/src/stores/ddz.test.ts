@@ -518,3 +518,104 @@ it("keeps the hold on the queue through a new connection, and drops it with anot
   await vi.advanceTimersByTimeAsync(30000);
   expect(d.ddzRetry.value).toBe(false);
 });
+
+// ------------------------------------------------------------------ open tables
+const NEW_A = { ...A, ddzMatch: true };
+const seatOf = ({ id, nick, character }: { id: string; nick: string; character: string }) => ({ id, nick, character });
+
+it("opens a table only where the server has open tables, and shows it as the server says", async () => {
+  const { socket, d, r } = await setup();
+  d.openDdz(50);
+  expect(socket.sent.filter((m) => m.type === "ddz_open")).toEqual([]); // the server did not list them
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, NEW_A, B, OLD], features: ["ddz_match"] });
+  expect(d.ddzCanOpen.value).toBe(true);
+  d.openDdz(500); // cannot pay the deposit
+  d.openDdz(50);
+  expect(socket.sent.filter((m) => m.type === "ddz_open")).toEqual([{ type: "ddz_open", base: 50 }]);
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
+  expect(d.ddz.value).toMatchObject({ id: "o1", phase: "open", you: 0, base: 50, deposit: 2400, starting: false });
+  expect(d.ddz.value!.seats.map((s) => [s.id, !!s.pending])).toEqual([["me", false], ["", false], ["", false]]);
+  expect(d.ddz.value!.until).toBe(Date.now() + 600_000);
+  expect([d.ddzBusy.value, d.ddzCanQueue.value, d.ddzCanOpen.value, d.ddzBubble.value]).toEqual([true, false, false, null]);
+  // Members on clients with open tables are called; others stay greyed.
+  expect([NEW_A, B, OLD].map((m) => d.ddzCanCall(r.members.get(m.id)!))).toEqual([true, false, false]);
+  d.callDdz("b");
+  d.callDdz("a");
+  expect(socket.sent.filter((m) => m.type === "ddz_call")).toEqual([{ type: "ddz_call", table: "o1", id: "a" }]);
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), { pending: true }], sec: 590 });
+  expect(d.ddz.value!.seats.map((s) => [s.id, !!s.pending])).toEqual([["me", false], ["a", false], ["", true]]);
+  expect(d.ddzCanCall(r.members.get("a")!)).toBe(false); // no seat empty, and a sits here
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), seatOf(B)], sec: 580, starting: true });
+  expect(d.ddz.value!.starting).toBe(true);
+  socket.recv({ type: "ddz_deal", table: "o1", seats: SEATS, you: 1, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0 });
+  expect(d.ddz.value).toMatchObject({ phase: "bid", starting: false, deposit: 2400 });
+});
+
+it("stands up or puts the open table away, and says why it went", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, NEW_A], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 1, seats: [seatOf(NEW_A), seatOf(ME), null], sec: 600 });
+  d.leaveDdz();
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_leave", table: "o1" });
+  expect(d.ddz.value).toBeNull();
+  socket.recv({ type: "ddz_open", table: "o2", base: 50, deposit: 2400, you: 1, seats: [seatOf(NEW_A), seatOf(ME), null], sec: 600 });
+  socket.recv({ type: "ddz_over", table: "o2", reason: "disband", by: "a" });
+  expect(d.ddz.value).toMatchObject({ phase: "over", reason: "disband" });
+  expect(d.ddzReason(d.ddz.value!)).toBe("已散桌");
+  expect(d.ddzBubble.value).toBe("over");
+  // After a game the table opens again for those who asked for another.
+  socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
+  Object.assign(d.ddz.value!, { phase: "result" });
+  socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), null], sec: 600 });
+  expect(d.ddz.value).toMatchObject({ id: "o3", phase: "open" });
+});
+
+it("sits down at an open table of the room or at one it was called to, and forgets both with the room", async () => {
+  const { socket, d, settings } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, NEW_A], features: ["ddz_match"] });
+  const tables = [{ table: "o1", base: 50, seats: [seatOf(NEW_A), null, { pending: true as const }] }, { table: "o2", base: 500, seats: [seatOf(B), null, null] }];
+  socket.recv({ type: "ddz_tables", tables });
+  expect(d.ddzTables.value).toEqual(tables);
+  d.sitDdz("o2"); // cannot pay its deposit
+  d.sitDdz("nope");
+  d.sitDdz("o1", 1);
+  expect(socket.sent.filter((m) => m.type === "ddz_sit")).toEqual([{ type: "ddz_sit", table: "o1", seat: 1 }]);
+  // Called over the pet: the bubble shows until the time is up.
+  socket.recv({ type: "ddz_call", table: "o9", from: "a", base: 50, deposit: 2400, sec: 15, seats: [seatOf(NEW_A), null, null] });
+  expect(d.ddzCall.value).toMatchObject({ table: "o9", from: "a", base: 50, until: Date.now() + 15_000 });
+  expect(d.ddzBubble.value).toBe("call");
+  d.sitDdz("o9");
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_sit", table: "o9" });
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(d.ddzCall.value).toBeNull();
+  socket.recv({ type: "ddz_call", table: "o9", from: "a", base: 50, deposit: 2400, sec: 15, seats: [seatOf(NEW_A), null, null] });
+  d.dismissDdzCall();
+  expect(d.ddzBubble.value).toBeNull();
+  socket.recv({ type: "ddz_call", table: "o9", from: "a", base: 50, deposit: 2400, sec: 15, seats: [seatOf(NEW_A), null, null] });
+  socket.recv({ type: "ddz_open", table: "o9", base: 50, deposit: 2400, you: 1, seats: [seatOf(NEW_A), seatOf(ME), null], sec: 600 });
+  expect(d.ddzCall.value).toBeNull();
+  d.leaveDdz();
+  // Turning invites down keeps the save from sitting down.
+  settings.duelDnd = true;
+  const sent = socket.sent.length;
+  d.sitDdz("o1");
+  expect(socket.sent.slice(sent).filter((m) => m.type === "ddz_sit")).toEqual([]);
+  socket.recv({ type: "ddz_call", table: "o9", from: "a", base: 50, deposit: 2400, sec: 15, seats: [seatOf(NEW_A), null, null] });
+  socket.close();
+  expect([d.ddzTables.value, d.ddzCall.value]).toEqual([[], null]);
+});
+
+it("answers the seat of an open table offered from the queue", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  socket.recv({
+    type: "ddz_invite", table: "o1", ids: ["x", "", "me"], base: 50, deposit: 2400, sec: 15, match: true,
+    seats: [X, null, { ...ME }], accepted: ["x"],
+  });
+  expect(d.ddz.value).toMatchObject({ id: "o1", phase: "invite", you: 2, match: true, accepted: ["x"] });
+  expect(d.ddz.value!.seats.map((s) => [s.id, s.nick])).toEqual([["x", "远方"], ["", ""], ["me", "我"]]);
+  d.answerDdz(true);
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_answer", table: "o1", accept: true });
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 2, seats: [X, null, seatOf(ME)], sec: 540 });
+  expect(d.ddz.value).toMatchObject({ phase: "open", you: 2 });
+});

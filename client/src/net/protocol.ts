@@ -41,6 +41,8 @@ export interface Member {
   status?: string | null;
   /** The member's client plays dou dizhu and the server has it; servers before it send none. */
   ddz?: boolean;
+  /** The member's client queues for dou dizhu and opens tables; servers before it send none. */
+  ddzMatch?: boolean;
 }
 
 /** Profile fields a member can change with `state` ("" takes off the plate). */
@@ -99,6 +101,11 @@ export type DuelMessage =
 /** A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for. */
 export interface DdzSeatInfo { id: string; nick: string; character: string; auto: boolean; away: boolean }
 
+/** A seat of an open table: its member, one offered to a save of the queue (who stays unsaid), or null for empty. */
+export type DdzOpenSeat = { id: string; nick: string; character: string } | { pending: true } | null;
+/** An open table of the room, as `ddz_tables` lists it. */
+export interface DdzOpenTable { table: string; base: number; seats: DdzOpenSeat[] }
+
 /**
  * Dou dizhu messages from the server (server/app/ddz.py); all but `ddz_live` go to the three seats only. Seats are
  * numbered 0 to 2 in turn order; cards are 0..53 (src/ddz/rules.ts).
@@ -107,11 +114,25 @@ export type DdzMessage =
   /**
    * Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. A
    * table the queue made has no `from`, all three answer, and `seats` names its members, who may be in other rooms.
+   * The seat of an open table offered to this save from the queue comes the same way, with `accepted` the seats taken
+   * and an empty seat as "" in `ids` and null in `seats`.
    */
   | {
     type: "ddz_invite"; table: string; from?: string; ids: string[]; base: number; deposit: number; sec: number;
-    match?: boolean; seats?: { id: string; nick: string; character: string }[];
+    match?: boolean; seats?: ({ id: string; nick: string; character: string } | null)[]; accepted?: string[];
   }
+  /**
+   * The open table this save sits at, whenever it changes: `you` is the own seat, `sec` the time until it is put away;
+   * `starting` while the three deposits are taken (the deal, or the table waiting again, follows).
+   */
+  | {
+    type: "ddz_open"; table: string; base: number; deposit: number; you: number; seats: DdzOpenSeat[]; sec: number;
+    starting?: boolean;
+  }
+  /** The open tables of the room, oldest first; an empty list once the last goes. */
+  | { type: "ddz_tables"; tables: DdzOpenTable[] }
+  /** The opener of an open table calls this member to it; shown for `sec` seconds. */
+  | { type: "ddz_call"; table: string; from: string; base: number; deposit: number; sec: number; seats: DdzOpenSeat[] }
   | { type: "ddz_answer"; table: string; id: string }
   /**
    * Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, ddz_account: a seat's save
@@ -169,7 +190,11 @@ export type DdzClientMessage =
   | { type: "ddz_again"; table: string }
   | { type: "ddz_leave"; table: string }
   /** Wait for a table at stake `base`, 0 to stop; only to servers that list "ddz_match" in `joined.features`. */
-  | { type: "ddz_queue"; base: number };
+  | { type: "ddz_queue"; base: number }
+  /** Open tables, to the same servers: open one at `base`, sit down at one (at `seat` when empty), call a member. */
+  | { type: "ddz_open"; base: number }
+  | { type: "ddz_sit"; table: string; seat?: number }
+  | { type: "ddz_call"; table: string; id: string };
 
 export type ClientMessage =
   | {

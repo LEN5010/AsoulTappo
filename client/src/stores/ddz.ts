@@ -1,11 +1,12 @@
-// Dou dizhu (斗地主) at a table of the room: the invite, the game as this seat sees it, and how it ended; and the
-// server's queue, where a save waits at one stake for two others from any room. The desk window hears the server and
+// Dou dizhu (斗地主) at a table of the room: the invite, the game as this seat sees it, and how it ended; the
+// server's queue, where a save waits at one stake for two others from any room; and open tables, opened in the room
+// for its members to sit down at. The desk window hears the server and
 // keeps the state; the panel and the table's own window mirror it (desktop/bridge.ts), the panel for the invite and
 // the queue, the table's window (DdzApp.vue) for the game. The server decides everything (server/app/ddz.py); the
 // rules here (src/ddz/rules.ts) only light the keys.
 import { computed, ref, watch } from "vue";
 import { isBomb, playable, sortHand } from "../ddz/rules";
-import type { DdzMessage, Member } from "../net/protocol";
+import type { DdzMessage, DdzOpenSeat, DdzOpenTable, Member } from "../net/protocol";
 import { isMirrorWindow, isTauri } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { windowVisible } from "./activity";
@@ -32,6 +33,8 @@ export interface DdzSeat {
   away: boolean;
   /** Asked for another game. */
   again: boolean;
+  /** At an open table: offered to a save of the queue, not taken yet (`id` is ""; an empty seat is "" without it). */
+  pending?: boolean;
 }
 
 /** What just happened at the table, for the panel to animate; `seq` only grows. */
@@ -62,9 +65,12 @@ export interface DdzResult {
 
 export interface DdzState {
   id: string;
-  phase: "invite" | "bid" | "play" | "result" | "over";
+  /** "open": seated at an open table that waits for its seats; `until` is when it is put away. */
+  phase: "open" | "invite" | "bid" | "play" | "result" | "over";
   /** The queue made the table: nobody invited, all three answer, the others may be in other rooms. */
   match: boolean;
+  /** An open table with its three seats taken, while the deposits are taken. */
+  starting: boolean;
   /** The own seat. */
   you: number;
   seats: DdzSeat[];
@@ -125,6 +131,11 @@ export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 export const ddzWaiting = ref<Record<number, number>>({});
 /** The save declined a table of the queue, left it or let it lapse: the server keeps it out of the queue for a while. */
 export const ddzRetry = ref(false);
+/** The open tables of the room, oldest first, as the server last listed them. */
+export const ddzTables = ref<DdzOpenTable[]>([]);
+/** The opener of an open table called this save to it: shown over the own pet until `until` (local ms). */
+export interface DdzCall { table: string; from: string; base: number; deposit: number; seats: DdzOpenSeat[]; until: number }
+export const ddzCall = ref<DdzCall | null>(null);
 
 /** The server has the game (its status says so) and this client is in a room. */
 export const ddzOn = computed(() => inRoom.value && !!ddzConfig.value && !!status.value?.ddz);
@@ -159,6 +170,19 @@ export const ddzMatchable = computed(() => ddzOn.value && ddzMatchOn.value);
 /** Whether this save looks able to wait for a table: as for starting a game, and not turning invites down. */
 export const ddzCanQueue = computed(() => ddzMatchable.value && ddzCanStart.value && !duelDnd() && !ddzRetry.value);
 
+/** Whether this save looks able to open a table, or sit down at one at [base]: as for waiting in the queue. */
+export const ddzCanOpen = computed(() => ddzMatchable.value && ddzCanStart.value && !duelDnd());
+export const ddzCanSit = (base: number): boolean => ddzCanOpen.value && ddzStakeOpen(base);
+
+/** Whether the opener can call member [m] to its table: another save in the room, on a client with open tables, free. */
+export function ddzCanCall(m: Member): boolean {
+  const t = ddz.value;
+  const mine = me.value;
+  return !!t && t.phase === "open" && t.you === 0 && !t.starting && t.seats.some((s) => !s.id && !s.pending) &&
+    !!mine && m.id !== mine.id && !!m.ddzMatch && !!m.uid && m.uid !== mine.uid && !ddzPlaying.value.has(m.id) &&
+    !t.seats.some((s) => s.id === m.id) && !ddzTables.value.some((x) => x.seats.some((s) => !!s && "id" in s && s.id === m.id));
+}
+
 /** Saves other than this one waiting at [base]. */
 export function ddzOthersWaiting(base: number): number {
   return Math.max(0, (ddzWaiting.value[base] ?? 0) - (ddzQueue.value?.base === base ? 1 : 0));
@@ -182,7 +206,7 @@ export function ddzLast(t: DdzState): { seat: number; cards: number[] } | null {
 }
 
 const REASONS: Record<string, string> = {
-  timeout: "没有等到回应", gone: "有人离开了", nobid: "三次都没人叫分，押金已退还", no_shards: "有人的碎片不够押金",
+  timeout: "没有等到回应", gone: "有人离开了", disband: "已散桌", expired: "已散桌", nobid: "三次都没人叫分，押金已退还", no_shards: "有人的碎片不够押金",
   ddz_cap: "有人今天赢到上限了", ddz_locked: "有人还不能斗地主", ddz_account: "有人还没有登录 Asasfans 账号",
   error: "没能开局",
 };
@@ -197,9 +221,9 @@ export const ddzTableSeen = computed(() => (isTauri ? ui.ddzSeen : ddzFrame.open
  * What the bubble over the own pet shows: an invite, how one ended, or that a game goes on while the table is out
  * of sight ("turn" when it waits for this seat); null for nothing.
  */
-export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | null>(() => {
+export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | "call" | null>(() => {
   const t = ddz.value;
-  if (!t) return null;
+  if (!t) return ddzCall.value ? "call" : null;
   if (t.phase === "invite" || t.phase === "over") return t.phase;
   if ((t.phase === "bid" || t.phase === "play") && !ddzTableSeen.value) return t.turn === t.you && !t.seats[t.you]?.auto ? "turn" : "table";
   return null;
@@ -208,6 +232,7 @@ export const ddzBubble = computed<"invite" | "over" | "turn" | "table" | null>((
 // ------------------------------------------------------------------ messages (desk window)
 let endTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let callTimer: ReturnType<typeof setTimeout> | undefined;
 let seq = 0;
 
 /** The server takes a join of the queue, or a move in it, once a second at most (QUEUE_INTERVAL); joins go this far apart. */
@@ -271,12 +296,18 @@ const countdown = (sec: number) => ({ sec, until: Date.now() + sec * 1000 });
 
 function blank(id: string): DdzState {
   return {
-    id, phase: "invite", match: false, you: 0, seats: [], sent: false, answered: false, accepted: [], base: 0, deposit: 0, cap: 0, deal: 0,
+    id, phase: "invite", match: false, starting: false, you: 0, seats: [], sent: false, answered: false, accepted: [], base: 0, deposit: 0, cap: 0, deal: 0,
     hand: [], bid: 0, landlord: null, bottom: [], mult: 1, bombs: 0, boosts: [], dealUntil: 0, turn: null, lead: false,
     trick: [null, null, null],
     sec: 0, until: 0, acted: false, result: null, closed: false, reason: "", by: "", log: [],
   };
 }
+
+const seatOf = (s: { id: string; nick: string; character: string } | null | undefined, pending = false): DdzSeat => ({
+  id: s?.id ?? "", nick: s?.nick ?? "", character: s?.character ?? "", left: 0, bid: null, auto: false, away: false,
+  again: false, ...(pending ? { pending } : {}),
+});
+const openSeat = (s: DdzOpenSeat): DdzSeat => (s && "id" in s ? seatOf(s) : seatOf(null, !!s));
 
 function note(t: DdzState, event: DdzEventBody): void {
   t.log.push({ ...event, seq: ++seq });
@@ -332,20 +363,40 @@ export function onDdzMessage(msg: DdzMessage): void {
     ddzWaiting.value = Object.fromEntries(msg.counts);
     return;
   }
+  if (msg.type === "ddz_tables") {
+    ddzTables.value = msg.tables;
+    return;
+  }
+  if (msg.type === "ddz_call") {
+    clearTimeout(callTimer);
+    ddzCall.value = { table: msg.table, from: msg.from, base: msg.base, deposit: msg.deposit, seats: msg.seats, until: Date.now() + msg.sec * 1000 };
+    callTimer = setTimeout(() => { if (ddzCall.value?.table === msg.table) ddzCall.value = null; }, msg.sec * 1000);
+    return;
+  }
+  if (msg.type === "ddz_open") {
+    // Seated at an open table (after a game too, when it opens again): the call to it is answered.
+    clearTimeout(endTimer);
+    const before = ddz.value?.id === msg.table ? ddz.value : null;
+    ddz.value = {
+      ...blank(msg.table), log: before?.log ?? [], phase: "open", you: msg.you, base: msg.base, deposit: msg.deposit,
+      starting: !!msg.starting, seats: msg.seats.map(openSeat), ...countdown(msg.sec),
+    };
+    if (ddzCall.value) ddzCall.value = null;
+    return;
+  }
   if (msg.type === "ddz_invite") {
     const at = msg.ids.indexOf(you);
     if (at < 0) return;
     clearTimeout(endTimer);
     ddz.value = {
       ...blank(msg.table), you: at, match: !!msg.match, sent: !!msg.from && msg.from === you,
-      accepted: msg.from ? [msg.from] : [], base: msg.base, deposit: msg.deposit,
-      // A table of the queue names its members, who may be in other rooms; an invite's are in this one.
-      seats: msg.ids.map((id) => {
-        const m = msg.seats?.find((s) => s.id === id) ?? members.get(id);
-        return { id, nick: m?.nick ?? "", character: m?.character ?? "", left: 0, bid: null, auto: false, away: false, again: false };
-      }),
+      accepted: msg.accepted ?? (msg.from ? [msg.from] : []), base: msg.base, deposit: msg.deposit,
+      // A table of the queue names its members, who may be in other rooms; an invite's are in this one. An open
+      // table's empty seat has no id.
+      seats: msg.ids.map((id) => (id ? seatOf(msg.seats?.find((s) => s?.id === id) ?? members.get(id) ?? { id, nick: "", character: "" }) : seatOf(null))),
       ...countdown(msg.sec),
     };
+    if (ddzCall.value) ddzCall.value = null;
     return;
   }
   if (msg.type === "ddz_deal" || msg.type === "ddz_state") {
@@ -468,10 +519,13 @@ if (!isMirrorWindow) {
   watch(inRoom, (on) => {
     if (on) return;
     ddzLive.value = {};
-    // The server takes a connection that left out of its queue.
+    // The server takes a connection that left out of its queue, and off its open table.
     dropQueueJoin();
     ddzQueue.value = null;
     ddzWaiting.value = {};
+    ddzTables.value = [];
+    clearTimeout(callTimer);
+    ddzCall.value = null;
     const t = ddz.value;
     if (t?.phase === "result") t.closed = true;
     else close();
@@ -514,7 +568,9 @@ if (!isMirrorWindow) {
 }
 
 // ------------------------------------------------------------------ actions (panel or desk)
-export type DdzOp = "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave" | "queue" | "unqueue";
+export type DdzOp =
+  | "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave" | "queue" | "unqueue" | "open" | "sit" | "call"
+  | "dismiss";
 
 /** The panel's and the table window's actions run in the desk window, which holds the room connection. */
 export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
@@ -528,6 +584,10 @@ export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
     case "leave": leaveDdz(); break;
     case "queue": queueDdz(args[0] as number); break;
     case "unqueue": unqueueDdz(); break;
+    case "open": openDdz(args[0] as number); break;
+    case "sit": sitDdz(args[0] as string, args[1] as number | undefined); break;
+    case "call": callDdz(args[0] as string); break;
+    case "dismiss": dismissDdzCall(); break;
   }
 }
 const viaDesk = (op: DdzOp, ...args: unknown[]): boolean => {
@@ -625,4 +685,33 @@ export function unqueueDdz(): void {
   const asked = queueAsked !== null;
   dropQueueJoin();
   if (ddzQueue.value || asked) sendDdz({ type: "ddz_queue", base: 0 });
+}
+
+/** Open a table at [base] in the room, taking its first seat. */
+export function openDdz(base: number): void {
+  if (viaDesk("open", base)) return;
+  if (ddzCanOpen.value && ddzStakeOpen(base)) sendDdz({ type: "ddz_open", base });
+}
+
+/** Sit down at the open table [table] of the room (or the one this save was called to), at [seat] when it is empty. */
+export function sitDdz(table: string, seat?: number): void {
+  if (viaDesk("sit", table, seat)) return;
+  const t = ddzTables.value.find((x) => x.table === table) ?? (ddzCall.value?.table === table ? ddzCall.value : null);
+  if (!t || !ddzCanSit(t.base) || !t.seats.some((s) => !s)) return;
+  sendDdz(seat === undefined ? { type: "ddz_sit", table } : { type: "ddz_sit", table, seat });
+}
+
+/** The opener calls member [id] to its open table. */
+export function callDdz(id: string): void {
+  if (viaDesk("call", id)) return;
+  const t = ddz.value;
+  const m = members.get(id);
+  if (t && m && ddzCanCall(m)) sendDdz({ type: "ddz_call", table: t.id, id });
+}
+
+/** Put the call over the own pet away. */
+export function dismissDdzCall(): void {
+  if (viaDesk("dismiss")) return;
+  clearTimeout(callTimer);
+  ddzCall.value = null;
 }

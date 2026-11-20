@@ -35,9 +35,10 @@ const groupSources = {
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
   ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, queue: ddzStore.ddzQueue.value,
-    waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value }),
-  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz }) =>
-    ({ id, uid, nick, character, plate, ddz })),
+    waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value, tables: ddzStore.ddzTables.value,
+    call: ddzStore.ddzCall.value }),
+  members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz, ddzMatch }) =>
+    ({ id, uid, nick, character, plate, ddz, ddzMatch })),
 };
 function groups() {
   return { player: groupSources.player(), collection: groupSources.collection(), checkins: groupSources.checkins(),
@@ -75,6 +76,8 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddzQueue.value = s.ddz.queue;
     ddzStore.ddzWaiting.value = s.ddz.waiting;
     ddzStore.ddzRetry.value = s.ddz.retry;
+    ddzStore.ddzTables.value = s.ddz.tables;
+    ddzStore.ddzCall.value = s.ddz.call;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {

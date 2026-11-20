@@ -380,6 +380,9 @@ export class RoomClient {
       case "ddz_live":
       case "ddz_queue":
       case "ddz_waiting":
+      case "ddz_open":
+      case "ddz_tables":
+      case "ddz_call":
         this.events.onDdz?.(msg);
         break;
       case "error":
