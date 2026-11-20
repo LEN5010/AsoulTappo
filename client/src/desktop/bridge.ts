@@ -18,6 +18,7 @@ import { windowVisible } from "../stores/activity";
 import { counter } from "../stores/counter";
 import { tidyRemotes } from "../stores/desk";
 import { ui } from "../stores/ui";
+import { guideLink } from "../stores/guide";
 import { requestDesktop, type DesktopRequest } from "./transport";
 
 const groupSources = {
@@ -132,8 +133,12 @@ type MirrorLabel = "panel" | "ddz";
 /**
  * What a mirror window wants from the desk. `visible`: the state, `live`: its pets' movement (only of `motionIds`).
  * `seen`: the table's window is on screen, not minimized (it gets the state while minimized: the game goes on).
+ * `guide`: the panel's opening queue is still going (stores/guide.ts).
  */
-interface Interest { from?: MirrorLabel; visible: boolean; live: boolean; motionIds?: string[]; seen?: boolean }
+interface Interest {
+  from?: MirrorLabel; visible: boolean; live: boolean; motionIds?: string[]; seen?: boolean;
+  guide?: { busy: boolean };
+}
 
 /** The desk owns network state; the mirror windows subscribe to independent slices while they are up. */
 export async function initDesktop(): Promise<() => void> {
@@ -160,7 +165,8 @@ export async function initDesktop(): Promise<() => void> {
         return { from: target, visible: true, live: seen, seen, motionIds: seen ? motionIds.value : [] };
       }
       const visible = ui.panelOpen && !ui.panelMinimized && windowVisible.value;
-      return { from: target, visible, live: ui.page === "room", motionIds: visible ? motionIds.value : [] };
+      return { from: target, visible, live: ui.page === "room", motionIds: visible ? motionIds.value : [],
+        guide: { busy: guideLink.panelBusy } };
     };
     const stop = watch(interest, (payload) => { void emitTo("main", "desktop:interest", payload); }, { immediate: true, deep: true });
     return () => { unState(); unMotion(); stop(); stopInterest(); syncedSettings.stop(); };
@@ -234,6 +240,11 @@ export async function initDesktop(): Promise<() => void> {
     const live = payload.visible && payload.live;
     subs.set(from, { visible: payload.visible, live, motionIds: live ? payload.motionIds ?? [...room.members.keys()] : [] });
     if (from === "ddz") ui.ddzSeen = payload.visible && !!payload.seen;
+    // The panel's queue counts while it is hidden too: what is left of it comes up with the panel.
+    if (from === "panel") {
+      guideLink.panelVisible = payload.visible;
+      guideLink.panelBusy = !!payload.guide?.busy;
+    }
     const before = interested;
     interested = new Set([...subs.values()].flatMap((sub) => sub.motionIds));
     // The room socket subscribes for the mirror windows' pets as well as the desk's own.

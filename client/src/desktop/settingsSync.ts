@@ -5,6 +5,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { watch } from "vue";
 import { windowLabel, type WindowLabel } from "../composables/tauri";
 import { settings, type Settings } from "../stores/settings";
+import { cleanGuide, mergeGuide } from "../guide";
 
 interface SettingsMessage { from: WindowLabel; patch: Partial<Settings> }
 const SIDE_WINDOWS: WindowLabel[] = ["panel", "todo", "race", "ddz"];
@@ -13,7 +14,9 @@ export async function syncSettings() {
   let receiving = false;
   const apply = (patch: Partial<Settings>) => {
     receiving = true;
-    Object.assign(settings, patch);
+    // The guide's progress meets the local one rather than replacing it: a patch sent before a change made here (a
+    // card answered) must not undo it.
+    Object.assign(settings, patch.guide ? { ...patch, guide: mergeGuide(settings.guide, cleanGuide(patch.guide)) } : patch);
     receiving = false;
   };
   const unlisten = await listen<SettingsMessage>("desktop:settings", ({ payload }) => {
@@ -27,6 +30,7 @@ export async function syncSettings() {
     ...settings, favorites: [...settings.favorites], showcase: [...settings.showcase], skinNotes: { ...settings.skinNotes },
     // Edited in place, a line at a time.
     reminders: settings.reminders.map((r) => ({ ...r, lines: [...r.lines] })),
+    guide: { ...settings.guide, done: [...settings.guide.done] },
   }), (value, old) => {
     if (receiving) return;
     const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>

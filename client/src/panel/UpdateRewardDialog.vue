@@ -1,18 +1,22 @@
 <script setup lang="ts">
 // Update rewards for this version, offered after the update dialog, the announcements and the launch spotlight. Closing it without
 // claiming puts it away until the panel window opens again.
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Modal from "../ui/Modal.vue";
 import Icon from "../ui/Icon.vue";
 import { claimUpdateRewards, updateRewards } from "../stores/player";
 import { noticeBoardShown, updateDialogOpen } from "../stores/update";
 import { spotlightUnread } from "../stores/spotlight";
+import { panelQueue } from "../stores/guide";
 
 const total = computed(() => updateRewards.value.reduce((n, r) => n + r.shards, 0));
 const key = computed(() => updateRewards.value.map((r) => r.id).join(","));
 const putAway = ref("");
 const busy = ref(false);
 const shown = computed(() => total.value > 0 && !updateDialogOpen.value && !noticeBoardShown.value && !spotlightUnread.value && putAway.value !== key.value);
+// The guide waits for it (stores/guide.ts).
+watch(shown, (up) => { panelQueue.reward = up; }, { immediate: true });
+onBeforeUnmount(() => { panelQueue.reward = false; });
 
 async function claim() {
   busy.value = true;

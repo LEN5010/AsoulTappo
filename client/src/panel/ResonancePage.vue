@@ -10,6 +10,7 @@ import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, shards, status, online, error, loadEconomy } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
 import { ui } from "../stores/ui";
+import { panelQueue } from "../stores/guide";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
 import PoolStage from "./PoolStage.vue";
@@ -126,6 +127,9 @@ function onRevealClose() {
   revealClosedAt = performance.now();
   revealing.value = false;
 }
+// The guide's cards on the desk wait for the reveal (stores/guide.ts).
+watch(revealing, (up) => { panelQueue.reveal = up; });
+onBeforeUnmount(() => { panelQueue.reveal = false; });
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
   pending.value = count;

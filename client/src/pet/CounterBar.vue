@@ -73,7 +73,7 @@ watch(
   <div class="bar-box" :style="boxStyle">
     <div class="bar" :style="faceStyle">
       <button
-        type="button" class="count"
+        type="button" class="count" data-guide="count"
         :title="view === 'today' ? '今日敲击' : '累计敲击'"
         @click="$emit('toggleView')"
       >
@@ -86,7 +86,7 @@ watch(
         <small>{{ view === "today" ? "今日" : "累计" }}</small>
       </button>
       <button
-        v-if="draws > 0" type="button" class="draw ui-btn small primary"
+        v-if="draws > 0" type="button" class="draw ui-btn small primary" data-guide="draw"
         :title="`共鸣 ${draws}`" :aria-label="`共鸣，可共鸣 ${draws} 次`" @click="$emit('resonance')"
       >
         <Icon class="draw-icon" name="card-spark" :size="15" />
@@ -101,11 +101,12 @@ watch(
           <path d="M12 2.5l2.5 7L21.5 12l-7 2.5L12 21.5l-2.5-7L2.5 12l7-2.5z" fill="currentColor" />
         </svg>
       </button>
-      <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" @click="$emit('menu')">
+      <button type="button" class="key ui-btn small" title="打开面板" aria-label="打开面板" data-guide="menu" @click="$emit('menu')">
         <Icon name="menu" :size="15" />
       </button>
       <button
-        v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : undefined"
+        v-if="grip" type="button" class="grip" :class="grip" :title="grip === 'pin' ? '固定' : '更多'"
+        :data-guide="grip === 'menu' ? 'grip' : undefined"
         :aria-label="grip === 'pin' ? '固定' : '任务栏'" :aria-expanded="grip === 'menu' ? !!gripOpen : undefined"
         @click="$emit('grip')"
       ></button>

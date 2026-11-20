@@ -6,6 +6,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { DOC_TITLES, STATEMENT, type DocName } from "../legal";
 import { HOLD_MS, agree, declineAndQuit, holdLeft, termsCurrent } from "../legal/consent";
+import { settings } from "../stores/settings";
+import { quietFirstRun } from "../stores/guide";
 import { ui } from "../stores/ui";
 import Modal from "../ui/Modal.vue";
 import LegalDoc from "./LegalDoc.vue";
@@ -37,7 +39,10 @@ onMounted(() => {
 onBeforeUnmount(() => clearInterval(timer));
 
 function confirm() {
-  if (!left.value) agree();
+  if (left.value) return;
+  // Never agreed before: a fresh install, which starts without the backlog of announcements and new skins.
+  if (!settings.termsAgreed) quietFirstRun();
+  agree();
 }
 </script>
 

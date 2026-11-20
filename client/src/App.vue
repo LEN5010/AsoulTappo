@@ -40,6 +40,10 @@ import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { STRIP_HEIGHT, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
+import DeskGuide from "./pet/DeskGuide.vue";
+import GuideMark from "./ui/GuideMark.vue";
+import { beginGuide, deskCardShown, guideRun } from "./stores/guide";
+import { guideLeft } from "./guide";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
 const RaceFrame = defineAsyncComponent(() => import("./pet/RaceFrame.vue"));
 const DdzFrame = defineAsyncComponent(() => import("./pet/DdzFrame.vue"));
@@ -261,6 +265,8 @@ function toggleStatus() {
 function closeQuick(e: Event) {
   notePomodoroPress();
   const t = e.target as HTMLElement | null;
+  // A guide card leaves what it points at as it is.
+  if (t?.closest?.("[data-guide-card]")) return;
   if (!t?.closest?.(".dock, .spark, .status-dock, .pomo-dock, .pomo")) ui.quickOpen = false;
   if (!t?.closest?.(".status-dock, .own-tag, .dock, .spark")) statusOpen.value = false;
   if (!t?.closest?.(".pomo-dock, .pomo, .dock, .spark, .grip-menu")) pomodoroOpen.value = false;
@@ -384,6 +390,9 @@ const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, {
 const racePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: RACE_WIDTH, h: RACE_HEIGHT }, viewport.value));
 const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
 const autoNotePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT }, viewport.value));
+/** A guide card at its widest (ui/GuideCard.vue). */
+const GUIDE_CARD = { w: 250, h: 72 };
+const guidePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, GUIDE_CARD, viewport.value));
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 /**
  * Viewport y a plate opened upwards from the own strip stays above: the pet's top, or the top of the emote bubble
@@ -425,7 +434,18 @@ const accessHint = ref(false);
 // A cooldown for going on after the note is that note's own: the bubble comes first, the countdown once it is read.
 const autoCooling = computed(() => autoStrikes.value > 0 && !!status.value?.autoInput);
 const autoShown = computed(() => autoHint.value && !autoNote.value && !adminHint.value && !accessHint.value && (!status.value?.tapCooldown || autoCooling.value));
-const kick = () => hits?.kick();
+/** Counts the moves the guide's marks follow (ui/GuideMark.vue): a drag, a strip opened or closed. */
+const guideTick = ref(0);
+const kick = () => {
+  hits?.kick();
+  guideTick.value++;
+};
+const deskEl = ref<HTMLElement | null>(null);
+/** The guide has cards left: nothing of it runs once every card is answered. */
+const guideOn = computed(() => guideLeft(settings.guide));
+/** The guide's card waits while another bubble holds the spot over the pet or the pet is hidden. */
+const guideHeld = computed(() => !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value
+  || accessHint.value || autoShown.value || autoNote.value || !!nudge.value);
 /** A click on another window closes the quick emotes: blur where the overlay takes focus, outside-click on Windows where it never does. */
 const closeQuickAway = () => {
   ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = false;
@@ -440,18 +460,25 @@ onMounted(async () => {
   window.addEventListener("keydown", closeOnEscape);
   // Reporting and the release watch wait for the terms; the panel holds the dialog that asks for them.
   startReporting();
+  beginGuide();
   if (!agreed.value) openPanel();
   stopDay = watchDay();
   if (isTauri) stopRelease = watchRelease();
-  // Reminders wait while the pet is hidden or another bubble holds the spot over it, during a tomato timer's focus
-  // and while a todo waits to go up.
+  // Reminders wait while the pet is hidden or another bubble (a guide card too) holds the spot over it, during a
+  // tomato timer's focus and while a todo waits to go up.
   stopNudges = startNudges(() =>
-    !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value || accessHint.value || autoShown.value || autoNote.value || tapCooldown.value > Date.now(),
+    !windowVisible.value || !!duel.value || !!ddzBubble.value || !!poked.value || !!adminHint.value || accessHint.value || autoShown.value || autoNote.value || tapCooldown.value > Date.now()
+      || !!deskCardShown.value,
   () => focusing.value || todosWaiting());
   stopPomodoro = startPomodoroClock();
   stopTodos = startTodoClock();
   stopAway = startAway();
-  unInput = await listenInput((e) => { onInput(e); noteNudgeInput(); noteAwayInput(e); });
+  unInput = await listenInput((e) => {
+    onInput(e);
+    noteNudgeInput();
+    noteAwayInput(e);
+    if (agreed.value && (e.kind === "key_down" || e.kind === "mouse_down")) guideRun.tapped = true;
+  });
   unOutside = await listenOutsideClick(closeQuickAway);
   unTodoMoved = await listenTodoMoved(keepTodoSpot);
   unEmoteKey = await listenEmoteKey(pickQuickAt);
@@ -531,7 +558,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
 </script>
 
 <template>
-  <div class="desk" :style="skinVars" @dragstart.prevent>
+  <div ref="deskEl" class="desk" :style="skinVars" @dragstart.prevent>
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
       :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
@@ -567,7 +594,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" />
-      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge" />
+      <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge || !!deskCardShown" />
       <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
       <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
       <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
@@ -575,8 +602,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
-      <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote" />
-      <AccessBubble v-if="accessHint" @close="accessHint = false" />
+      <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote || !!deskCardShown" />
+      <!-- macOS: the first run of the guide keeps it up, with a loop on the count that stands still meanwhile. -->
+      <AccessBubble v-if="accessHint" :closable="!guideRun.started" @close="accessHint = false" />
+      <GuideMark v-if="accessHint" target="count" :scope="deskEl" :tick="guideTick" />
+      <DeskGuide v-if="guideOn" :held="guideHeld" :cooldown="tapCooldown" v-bind="guidePlace" :scope="deskEl" :tick="guideTick" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">
         <!-- In a room the tag opens the status keys. -->
@@ -595,7 +625,9 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
           />
         </component>
         <button
-          type="button" class="plate-grip" aria-label="任务栏" :aria-expanded="barPinned ? gripOpen : undefined" @click="onGrip"
+          type="button" class="plate-grip" aria-label="任务栏" :title="barPinned ? '更多' : '固定'"
+          :data-guide="barPinned ? 'grip' : undefined"
+          :aria-expanded="barPinned ? gripOpen : undefined" @click="onGrip"
         ></button>
         <GripMenu
           v-if="gripOpen" plate :shard-pop="settings.shardPop"

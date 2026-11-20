@@ -3,7 +3,7 @@
 // the Tauri updater; when that fails, the dialog offers the download page on the main site.
 import { computed, ref, watch } from "vue";
 import type { Update } from "@tauri-apps/plugin-updater";
-import { isTauri, openAboutLink, writeLog } from "../composables/tauri";
+import { isPanelWindow, isTauri, openAboutLink, writeLog } from "../composables/tauri";
 import { agreed } from "../legal/consent";
 import { Api, type Announcement, type ReleaseInfo } from "../net/api";
 import { toHttpBase } from "../net/protocol";
@@ -93,6 +93,23 @@ function closeNotice(notice: Announcement): void {
     localStorage.setItem(DAILY_KEY, JSON.stringify(dailyClosed.value));
   } catch { /* private mode */ }
 }
+// A fresh install starts with the backlog put away: every announcement listed when the first list arrives counts as
+// read, the newest one aside. Kept until that list arrives, also over a restart (consent comes before the network).
+const QUIET_KEY = "asoultappo.notices.quiet";
+let quiet = (() => {
+  try { return localStorage.getItem(QUIET_KEY) === "1"; } catch { return false; }
+})();
+/** Called on the first consent of this device: the announcements listed when the next list arrives are put away. */
+export function quietBacklog(): void {
+  quiet = true;
+  try { localStorage.setItem(QUIET_KEY, "1"); } catch { /* private mode */ }
+}
+function putBacklogAway(): void {
+  quiet = false;
+  try { localStorage.removeItem(QUIET_KEY); } catch { /* private mode */ }
+  for (const notice of notices.value.slice(1)) closeNotice(notice);
+}
+
 /** Whether this device has closed the announcement [id] for good; the launch spotlight keeps its id in the same list. */
 export const noticeSeen = (id: string) => seen.value.includes(id);
 /** Closes the announcement [id] for good: a daily one stops coming back. */
@@ -157,6 +174,19 @@ function offer(found: ReleaseInfo, manual: boolean): void {
   updateDialogOpen.value = manual || dismissed !== found.version;
 }
 
+/** The first check of this window has an answer, or has none to come: what the panel opens with is known. */
+export const releaseChecked = ref(false);
+
+/** Asks again when the panel comes back up: until the answer is in, what it opens with is not known again. */
+export async function recheckRelease(): Promise<void> {
+  releaseChecked.value = false;
+  try {
+    await lookForUpdate(false, true);
+  } finally {
+    releaseChecked.value = true;
+  }
+}
+
 /**
  * Looks for a newer version: once by itself when the panel opens, again from the settings page ([manual]),
  * or again on the release watch ([again]). The server's answer also carries its minimum version and announcements.
@@ -170,9 +200,19 @@ export async function lookForUpdate(manual = false, again = false): Promise<void
   } else {
     checkState.value = "checking";
   }
+  try {
+    await check(manual);
+  } finally {
+    releaseChecked.value = true;
+  }
+}
+
+async function check(manual: boolean): Promise<void> {
   const latest = await askServer();
   if (latest) {
     announcements.value = latest.announcements ?? [];
+    // The board is the panel's (the desk window of the app reads the list too, for the minimum version).
+    if (quiet && (isPanelWindow || !isTauri)) putBacklogAway();
     const must = !!latest.minVersion && isNewer(latest.minVersion, APP_VERSION);
     updateForced.value = must;
     if (isNewer(latest.version, APP_VERSION)) offer(latest, manual || must);

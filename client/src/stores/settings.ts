@@ -5,6 +5,7 @@ import { MAX_SHOWCASE } from "../net/protocol";
 import { cleanReminders, type Reminder } from "../reminders";
 import { roomStatus } from "../roomStatus";
 import { isTauri } from "../composables/tauri";
+import { cleanGuide, mergeGuide, type Guide } from "../guide";
 
 export interface Settings {
   serverUrl: string;
@@ -135,6 +136,8 @@ export interface Settings {
   promoSeen: boolean;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
   skinNotes: Record<string, string>;
+  /** The first-run guide's progress (src/guide.ts); replaced as a whole, never changed in place. */
+  guide: Guide;
 }
 
 const KEY = "asoultappo.settings.v1";
@@ -233,6 +236,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statementSeen: "",
   promoSeen: false,
   skinNotes: {},
+  guide: cleanGuide(undefined),
 };
 
 /** A note as it is kept: trimmed and at most SKIN_NOTE_MAX characters. */
@@ -300,6 +304,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
   out.skinNotes = cleanSkinNotes(out.skinNotes);
   out.reminders = cleanReminders(out.reminders);
+  // Missing up to 1.2.5: the guide then starts.
+  out.guide = cleanGuide(out.guide);
   return out;
 }
 
@@ -321,6 +327,8 @@ watch(
 // other one writes. The app's windows pass theirs through the desk instead (desktop/settingsSync.ts).
 if (!isTauri && typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("storage", (e) => {
-    if (e.key === KEY && e.newValue) Object.assign(settings, loadSettings());
+    if (e.key !== KEY || !e.newValue) return;
+    const loaded = loadSettings();
+    Object.assign(settings, { ...loaded, guide: mergeGuide(settings.guide, loaded.guide) });
   });
 }

@@ -598,3 +598,59 @@ it("passes setting edits between the desk, the panel and the todos' window", asy
   expect(win.settings.todoSound).toBe(false);
   expect(panel.settings.todoSound).toBe(false);
 });
+
+it("passes the panel's opening queue to the desk for the first-run guide", async () => {
+  const desk = await context(false);
+  const deskStore = await import("../stores/guide");
+  const deskGuide = deskStore.guideLink;
+  const panel = await context(true);
+  const panelGuide = (await import("../stores/guide")).guideLink;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide.panelVisible).toBe(true);
+  panelGuide.panelBusy = true;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide).toMatchObject({ panelVisible: true, panelBusy: true });
+  // Hidden or minimized: what it opens with still counts until it is through, also when it changes while hidden.
+  panel.ui.ui.panelOpen = false;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide).toMatchObject({ panelVisible: false, panelBusy: true });
+  panelGuide.panelBusy = false;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide.panelBusy).toBe(false);
+  panelGuide.panelBusy = true;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide.panelBusy).toBe(true);
+  panel.ui.ui.panelOpen = true;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(deskGuide).toMatchObject({ panelVisible: true, panelBusy: true });
+  // Answered in one window, answered in both: the progress is replaced as a whole, so the patch carries it.
+  deskStore.finishCard("panel");
+  expect(desk.settings.guide.done).toEqual(["panel"]);
+  expect(panel.settings.guide.done).toEqual(["panel"]);
+});
+
+it("keeps the guide's progress from both windows when their changes cross", async () => {
+  const desk = await context(false);
+  const deskStore = await import("../stores/guide");
+  const panel = await context(true);
+  const panelStore = await import("../stores/guide");
+  desk.settings.guide = { v: 1, done: [] };
+  expect(panel.settings.guide.v).toBe(1);
+  // The bridge delivers each window's patch before the other's own edit has gone out: a replace would lose one.
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  const deliver = async (target: string, event: string, payload: unknown) => {
+    const copy = JSON.parse(JSON.stringify(payload));
+    await Promise.all([...bus.listeners.get(`${target}:${event}`) ?? []].map((cb) => cb({ payload: copy })));
+  };
+  const held: [string, string, unknown][] = [];
+  send.mockImplementation(async (target, event, payload) => { held.push([target as string, event, payload]); });
+  deskStore.finishCard("tap");
+  panelStore.finishCard("grip");
+  panelStore.finishCard("draw");
+  send.mockImplementation((target, event, payload) => deliver(target as string, event, payload));
+  for (const [target, event, payload] of held) await deliver(target, event, payload);
+  for (const s of [desk.settings, panel.settings]) {
+    expect(s.guide.done.sort()).toEqual(["draw", "grip", "tap"]);
+  }
+});

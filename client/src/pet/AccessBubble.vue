@@ -2,10 +2,11 @@
 // macOS: over the pet while the hook has neither Input Monitoring nor Accessibility, so it cannot
 // hear other apps. A grant only counts after a restart, so the key turns into one once the settings were opened.
 // A grant made for a build signed differently shows as on in the settings and does not count: the entry has to be
-// removed and added again.
+// removed and added again. [closable] false: it stays (the run the first-run guide starts in).
 import { ref } from "vue";
 import { openInputSettings } from "../composables/tauri";
 
+withDefaults(defineProps<{ closable?: boolean }>(), { closable: true });
 const emit = defineEmits<{ close: [] }>();
 const opened = ref(false);
 function open() {
@@ -26,7 +27,7 @@ async function restart() {
       <div class="actions">
         <button v-if="opened" type="button" class="ui-btn small primary" @click="restart">重启</button>
         <button type="button" class="ui-btn small" :class="{ primary: !opened }" @click="open">打开设置</button>
-        <button type="button" class="ui-btn small ghost" aria-label="关闭" title="关闭" @click="emit('close')">×</button>
+        <button v-if="closable" type="button" class="ui-btn small ghost" aria-label="关闭" title="关闭" @click="emit('close')">×</button>
       </div>
     </div>
   </div>

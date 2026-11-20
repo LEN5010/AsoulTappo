@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { settings } from "../stores/settings";
 import { draws, online, shards, status } from "../stores/player";
 import { noPark } from "../stores/park";
@@ -20,8 +20,9 @@ import NoticeBoard from "./NoticeBoard.vue";
 import UpdateRewardDialog from "./UpdateRewardDialog.vue";
 import SkinSpotlight from "./SkinSpotlight.vue";
 import TermsDialog from "./TermsDialog.vue";
+import { guideLink, reportPanelQueue } from "../stores/guide";
 import { agreed } from "../legal/consent";
-import { dueNotices, lookForUpdate, noticeBoardShown, notices, openNoticeBoard, watchRelease } from "../stores/update";
+import { dueNotices, noticeBoardShown, notices, openNoticeBoard, recheckRelease, watchRelease } from "../stores/update";
 
 // Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
 // behind the shutter, and the rest are fetched one by one once the first page is up (see warmPages).
@@ -197,10 +198,21 @@ onActivated(() => {
   if (activations++ === 0) return;
   lightUp();
   // A minimum version or an announcement may have been set while the panel was closed.
-  void lookForUpdate(false, true);
+  void recheckRelease();
 });
 let stopRelease: (() => void) | undefined;
 onBeforeUnmount(() => stopRelease?.());
+// The panel tells the desk whether it is still on what it opens with, also while hidden (stores/guide.ts), and
+// whether it is up.
+const shownNow = () => {
+  reportPanelQueue();
+  guideLink.panelVisible = true;
+};
+const hiddenNow = () => { guideLink.panelVisible = false; };
+onMounted(shownNow);
+onActivated(shownNow);
+onDeactivated(hiddenNow);
+onBeforeUnmount(hiddenNow);
 
 onMounted(async () => {
   window.addEventListener("keydown", onKey);
