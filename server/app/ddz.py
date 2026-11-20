@@ -82,6 +82,12 @@ Open tables, with members whose client said `ddzMatch` only:
   empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when the table is not open in the
   room or no seat is empty.
 - ``ddz_leave`` {table} from a seat of an open table: stand up; the opener's puts the table away.
+- ``ddz_call`` {table, id} from the opener: call member `id` of the room to the table. Refused with ddz_gone (not
+  the opener, or no seat empty) | no_member | ddz_target_locked | ddz_self | ddz_target_old (its client does not
+  open tables) | ddz_target_busy | ddz_cooldown (called within RETRY_SEC). A member turning invites down is not
+  called, and the opener is not told.
+- ``ddz_call`` {table, from, base, deposit, sec, seats} to the member called: it may sit down (``ddz_sit``); `sec` is
+  how long to show the call.
 - ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | {pending} | null, ...], sec} to each seat of
   an open table whenever it changes: `you` is the seat, null an empty seat, {pending: true} one offered to a save of
   the queue, `sec` the time until it is put away.
@@ -654,6 +660,38 @@ class Tables:
             await self._begin(table)
         else:
             self._open_changed(table)
+
+    def call(self, room_id: str, peer: Peer, table_id: str, target_id: str) -> None:
+        """The opener of the open table [table_id] calls member [target_id] of the room to it (``ddz_call``); the
+        member sits down with ``ddz_sit``. A member turning invites down is not called, and the opener is not told.
+        The same save is called again only after RETRY_SEC."""
+        table = self.by_id.get(table_id)
+        if (table is None or not table.open or table.phase != OPEN or table.room != room_id
+                or table.seat_of(peer) != 0 or not any(s.empty for s in table.seats)):
+            raise GameError("ddz_gone", "")
+        room = self.manager.rooms.get(room_id)
+        target = room.peers.get(target_id) if room else None
+        if target is None or not target.active:
+            raise GameError("no_member", "no such member")
+        if not target.token:
+            raise GameError("ddz_target_locked", "")
+        if target.token == peer.token:
+            raise GameError("ddz_self", "")
+        if not target.ddz_match:
+            raise GameError("ddz_target_old", "")
+        if target.token in self.by_save:
+            raise GameError("ddz_target_busy", "")
+        now = self.clock()
+        key = (peer.token or "", target.token)
+        if now < self.refused.get(key, 0.0):
+            raise GameError("ddz_cooldown", "")
+        self.refused = {k: t for k, t in self.refused.items() if t > now}
+        self.refused[key] = now + RETRY_SEC
+        if target.dnd:
+            return
+        target.enqueue({"type": "ddz_call", "table": table.id, "from": peer.id, "base": table.base,
+                        "deposit": table.deposit, "sec": self.bank.cfg()["inviteSec"],
+                        "seats": self._shown_seats(table)})
 
     def _shown_seats(self, table: Table) -> list[dict | None]:
         """The seats of an open table as its members see them: None for an empty one, {pending} for one offered to

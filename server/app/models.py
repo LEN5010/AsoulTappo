@@ -239,6 +239,14 @@ class DdzOpenMsg(_Msg):
     base: int = Field(ge=1, le=10**9)
 
 
+class DdzCallMsg(_Msg):
+    """The opener of an open table calls a member of the room to it."""
+
+    type: Literal["ddz_call"] = "ddz_call"
+    table: str = Field(min_length=1, max_length=32)
+    id: str = Field(min_length=1, max_length=32)
+
+
 class DdzSitMsg(_Msg):
     """Sit down at an open table of the room: at [seat] when it is empty, else at the first empty one."""
 
@@ -251,7 +259,7 @@ ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
           DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
-          DdzOpenMsg, DdzSitMsg],
+          DdzOpenMsg, DdzSitMsg, DdzCallMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -272,6 +280,8 @@ class Member(BaseModel):
     status: Optional[str] = None
     # the member's client can play dou dizhu; clients before it never read it
     ddz: bool = False
+    # the member's client queues for dou dizhu and opens tables (app/ddz.py); clients before it never read it
+    ddzMatch: bool = False
 
 
 class RoomInfo(BaseModel):

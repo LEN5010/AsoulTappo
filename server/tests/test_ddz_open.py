@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from app.ddz import FILL_SEC, MATCH_RETRY_SEC, OPEN_SEC, QUEUE_INTERVAL, Bank
+from app.ddz import FILL_SEC, MATCH_RETRY_SEC, OPEN_SEC, QUEUE_INTERVAL, RETRY_SEC, Bank
 from test_ddz import BASE, DEPOSIT, SHARDS, api, save  # noqa: F401
 from test_ddz_match import MatchWorld, matched, queue_msgs, receive  # noqa: F401
 from test_duel import settle
@@ -422,3 +422,69 @@ def test_a_table_put_away_while_a_save_of_the_queue_is_asked_puts_it_back_in_its
         assert sq.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "disband", "by": a.id}
         assert [x.peer for x in w.t.lines[BASE]] == [q, q2] and queue_msgs(sq)[-1] == {"base": BASE, "waited": 65.0}
     run(go())
+
+
+# ------------------------------------------------------------------ calling members to the table
+def test_the_opener_calls_members_of_the_room_to_the_table():
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        c, sc = w.member("c")
+        w.t.call("r", a, tid, c.id)
+        assert sc.of("ddz_call") == [{"type": "ddz_call", "table": tid, "from": a.id, "base": BASE,
+                                      "deposit": DEPOSIT, "sec": INVITE_SEC, "seats": [seat(a), seat(b), None]}]
+        with pytest.raises(Exception) as e:
+            w.t.call("r", a, tid, c.id)
+        assert e.value.code == "ddz_cooldown"
+        w.mono += RETRY_SEC
+        w.t.call("r", a, tid, c.id)
+        assert len(sc.of("ddz_call")) == 2
+        # Turning invites down: never called, and the opener is not told.
+        d, sd = w.member("d")
+        d.dnd = True
+        w.t.call("r", a, tid, d.id)
+        assert sd.of("ddz_call") == []
+        await w.t.sit("r", c, tid)
+        await settle()
+        assert sc.of("ddz_deal")[0]["you"] == 2
+    run(go())
+
+
+@pytest.mark.parametrize("how, code", [
+    ("seated", "ddz_gone"), ("old", "ddz_target_old"), ("busy", "ddz_target_busy"), ("nobody", "no_member"),
+    ("elsewhere", "no_member"), ("self", "ddz_self"), ("guest", "ddz_target_locked"),
+])
+def test_who_may_not_be_called(how, code):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        caller = b if how == "seated" else a
+        if how == "guest":
+            target, _ = w.join("guest", None, room="r")
+            target.ddz_match = True
+        elif how == "self":
+            target, _ = w.member("a")
+        else:
+            target, _ = w.member("t", room="r2" if how == "elsewhere" else "r", match=how != "old")
+        if how == "busy":
+            await w.t.open("r", target, 50)
+        with pytest.raises(Exception) as e:
+            w.t.call("r", caller, tid, "nobody" if how == "nobody" else target.id)
+        assert getattr(e.value, "code", None) == code
+    run(go())
+
+
+def test_members_carry_whether_their_client_opens_tables(api):
+    c, g, timers = api
+    for name in ("a", "old"):
+        save(g, name)
+    with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as o:
+        matched(a, "a", "r1")
+        jo = matched(o, "old", "r1", match=False)
+        assert [m["ddzMatch"] for m in jo["members"]] == [True, False]
+        a.send_json({"type": "ddz_open", "base": BASE})
+        tid = receive(a, "ddz_open")["table"]
+        a.send_json({"type": "ddz_call", "table": tid, "id": jo["you"]})
+        assert receive(a, "error")["code"] == "ddz_target_old"
+        o.send_json({"type": "ddz_call", "table": tid, "id": jo["you"]})
+        assert receive(o, "error")["code"] == "bad_message"
