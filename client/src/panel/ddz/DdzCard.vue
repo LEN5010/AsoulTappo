@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // A playing card of the dou dizhu table: white paper, the rank in Barlow with its suit under it, hearts and diamonds
-// in deep coral. The jokers are 阿草, grey on the small one. `card` null draws the back. Everything is sized from
-// `width` (px), so one card serves the hand, the table and the receipt.
+// in deep coral. The jokers are 阿草, grey on the small one. `card` null draws the back, the draw's sealed back
+// (CardBack.vue) held still and worded ASOUL. Everything is sized from `width` (px), so one card serves the hand, the
+// table and the receipt.
 import { computed } from "vue";
 import { isRed, rank, rankLabel, suit } from "../../ddz/rules";
 import alpaca from "../../assets/brand/side-alpaca.webp";
@@ -16,13 +17,24 @@ const SUITS = [
   "M7.600 7a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM2.200 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM13 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM12 11c.2 5 .9 8 2.600 10H9.400c1.700-2 2.400-5 2.600-10z",
   "M12 2l7.500 10L12 22 4.500 12z",
 ];
+/** Narrower backs (the other seats' stacks) keep the edge, the silk, the dots and the rule only. */
+const FULL_BACK = 48;
+const SPARK = "M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z";
 const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   label: rankLabel(rank(props.card)), path: SUITS[suit(props.card)]!, red: isRed(props.card),
 }));
 </script>
 
 <template>
-  <span v-if="card === null" class="ddz-card back" :style="{ '--w': width }"></span>
+  <span v-if="card === null" class="ddz-card back" :class="{ full: width >= FULL_BACK }" :style="{ '--w': width }">
+    <i class="silk"></i>
+    <i class="rule"></i>
+    <template v-if="width >= FULL_BACK">
+      <svg class="star tr" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
+      <svg class="star bl" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
+      <b class="band"><i></i>ASOUL<i></i></b>
+    </template>
+  </span>
   <span v-else-if="!face" class="ddz-card joker" :class="{ small: card === 52 }" :style="{ '--w': width }">
     <span class="word"><i v-for="c in 'JOKER'" :key="c">{{ c }}</i></span>
     <img :src="alpaca" alt="" draggable="false" />
@@ -102,16 +114,57 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   pointer-events: none;
 }
 .joker.small img { filter: grayscale(1); opacity: 0.8; }
-/* The back: coral, a white edge, a line inside it. */
+/* The back: the draw's sealed back on a playing card. Coral stock lit from the top left, a white edge, silk and a rule
+   inside the edge; the sparkles and the word band across the middle only where there is
+   room for them. Still: it lies on a table. */
 .back {
-  background: var(--grad-sky);
-  box-shadow: inset 0 0 0 calc(var(--px) * 0.09) #fff, 0 1px 3px rgba(var(--c-900-rgb), 0.35);
+  --edge: max(2px, calc(var(--px) * 0.07));
+  background:
+    linear-gradient(162deg, rgba(255, 255, 255, 0.24) 0%, transparent 40%, rgba(var(--c-900-rgb), 0.16) 100%),
+    var(--c-500);
+  color: #fff;
+  box-shadow:
+    inset 0 0 0 var(--edge) #fff,
+    inset 0 0 calc(var(--px) * 0.16) calc(var(--edge) + 1px) rgba(255, 255, 255, 0.22),
+    inset 0 calc(var(--px) * -0.1) calc(var(--px) * 0.2) calc(var(--px) * -0.12) rgba(var(--c-900-rgb), 0.28),
+    0 1px 3px rgba(var(--c-900-rgb), 0.35);
 }
-.back::after {
-  content: "";
-  position: absolute;
-  inset: calc(var(--px) * 0.19);
+.back > * { position: absolute; display: block; pointer-events: none; }
+.silk {
+  inset: var(--edge);
+  border-radius: calc(var(--px) * 0.125 - var(--edge));
+  background: repeating-linear-gradient(-45deg, currentColor 0 1px, transparent 1px 6px);
+  opacity: 0.075;
+}
+.rule {
+  inset: max(4px, calc(var(--px) * 0.12));
   border-radius: calc(var(--px) * 0.06);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
 }
+.full .rule::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: calc(var(--px) * 0.06 - 2px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+  opacity: 0.42;
+}
+.star { width: max(6px, calc(var(--px) * 0.11)); height: auto; fill: currentColor; }
+.star.tr { right: calc(var(--px) * 0.17); top: calc(var(--px) * 0.17); opacity: 0.92; }
+.star.bl { left: calc(var(--px) * 0.17); bottom: calc(var(--px) * 0.16); width: max(5px, calc(var(--px) * 0.085)); opacity: 0.68; }
+.band {
+  left: 14%;
+  right: 14%;
+  top: 50%;
+  translate: 0 -50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--px) * 0.04);
+  font: 800 max(7px, calc(var(--px) * 0.15)) / 1 var(--font-latin);
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+.band i { flex: 1; max-width: calc(var(--px) * 0.1); height: 1px; background: rgba(255, 255, 255, 0.55); }
 </style>
