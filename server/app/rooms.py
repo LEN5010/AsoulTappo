@@ -113,6 +113,8 @@ class Peer:
     status: str | None = None
     # turns rock-paper-scissors invites down; never shown to the room
     dnd: bool = False
+    # the nick as the client sent it, before the blocklist masked it into `nick` (seats re-mask it, app/ddz.py)
+    raw_nick: str = ""
     # joined with a valid main-site account token: may make the room public on a server with accounts
     account: bool = False
     # the client can play dou dizhu (it said so when joining)

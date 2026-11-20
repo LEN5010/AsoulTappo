@@ -370,6 +370,8 @@ class Seat:
     until: float = 0.0
     # Taken again (Tables._retake) by a connection with another nick, pet or plate.
     restyled: bool = False
+    # The nick as its member's client sent it (Peer.raw_nick), masked again into `nick` when the blocklist changes.
+    raw: str = ""
 
     @property
     def empty(self) -> bool:
@@ -633,7 +635,8 @@ class Tables:
         peers = self._peers(room_id, peer, ids)
         self._check_free(peers)
         table = Table(id=secrets.token_hex(4), room=room_id, base=base, deposit=deposit, seats=[
-            Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, plate=p.plate, accepted=p is peer)
+            Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, plate=p.plate, accepted=p is peer,
+                 raw=p.raw_nick)
             for p in peers])
         self.by_id[table.id] = table
         for p in peers:
@@ -671,19 +674,32 @@ class Tables:
         queue."""
         if not on:
             return
-        # Any connection of the save turning invites down takes the save out of the queue.
+        # Any connection of the save turning invites down takes the save out of the queue, a place an invite holds for
+        # it too, and turns down what waits for the save's answer, on whichever connection it was asked.
         self._leave_queue(peer, reason="ddz_dnd", save=True)
-        table = self.by_save.get(peer.token) if peer.token else None
-        seat = table.seat_of(peer) if table else None
-        if table is not None and seat is not None and table.phase == OPEN and table.seats[seat].asked:
+        if not peer.token:
+            return
+        self._drop_held(peer.token)
+        table = self.by_save.get(peer.token)
+        seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token), None) if table else None
+        if table is None or seat is None:
+            return
+        s = table.seats[seat]
+        if table.phase == OPEN and s.asked:
             self._unseat_asked(table, seat, "declined")
             return
-        if table is None or seat is None or table.phase != INVITE or table.seats[seat].accepted:
+        if table.phase != INVITE or s.accepted or s.peer is None:
             return
         if table.match:
-            self._end_match(table, "declined", by=peer)
+            self._end_match(table, "declined", by=s.peer)
         elif seat:
-            self._end(table, "declined", by=peer, refused=[peer])
+            self._end(table, "declined", by=s.peer, refused=[s.peer])
+
+    def _drop_held(self, token: str) -> None:
+        """The place in the queue an invite holds for save [token] (Table.held) is given up."""
+        table = self.by_save.get(token)
+        if table is not None and table.held:
+            table.held = [w for w in table.held if w.token != token]
 
     async def answer(self, peer: Peer, table_id: str, accept: bool) -> None:
         open_table = self.by_id.get(table_id)
@@ -732,7 +748,7 @@ class Tables:
 
     def _seat_for(self, peer: Peer, **kw: Any) -> Seat:
         return Seat(token=peer.token or "", peer=peer, id=peer.id, nick=peer.nick, character=peer.character,
-                    plate=peer.plate,
+                    plate=peer.plate, raw=peer.raw_nick,
                     **{"accepted": True, **kw})
 
     def _empty_seat(self) -> Seat:
@@ -1123,7 +1139,20 @@ class Tables:
         or to ask for another game) cannot leave deposits taken with nobody dealing; the handler waits for it."""
         table.phase = STARTING
         self._cancel_timer(table)
-        await asyncio.shield(self._spawn(self._open_game(table, again)))
+        task = self._spawn(self._open_game(table, again))
+        task.add_done_callback(lambda t: self._start_stopped(table) if t.cancelled() else None)
+        await asyncio.shield(task)
+
+    def _start_stopped(self, table: Table) -> None:
+        """_open_game's task was cancelled where it does not settle the table itself (before it ran, or while it told
+        the rooms of the game): a table still starting ends, its deposits handed back when they were taken."""
+        if table.phase != STARTING or self.by_id.get(table.id) is not table:
+            return
+        if table.row is None:
+            self._end(table, "error")
+            return
+        table.phase = SETTLING
+        self._spawn(self._settle_abort(table, "error"))
 
     async def _open_game(self, table: Table, again: bool) -> None:
         """_start's task. The members may leave while the database works: they are played for. Should the task be
@@ -1154,12 +1183,13 @@ class Tables:
                 await self._refund(row)
             return
         table.row = row
-        # A game came of the invite: the invited saves' places in the queue are gone.
-        table.held = []
         if all(s.peer is None for s in table.seats):
-            # All three left while the deposits were taken: nobody to play for.
+            # All three left while the deposits were taken: nobody to play for. The invited saves get their places in
+            # the queue back once the deposits are (_settle_abort).
             await self._abort(table, "gone")
             return
+        # A game comes of the invite: the invited saves' places in the queue are gone.
+        table.held = []
         if again:
             for x in table.seats:
                 x.auto, x.timeouts = x.peer is None, 0
@@ -1405,14 +1435,27 @@ class Tables:
                 and any(self._gone(s) for s in table.seats))
 
     async def _abort(self, table: Table, reason: str) -> None:
-        """Ends a game whose deposits are taken with nothing won: they go back."""
+        """Ends a game whose deposits are taken with nothing won: they go back. That runs on a task of its own
+        (_settle_abort), which the caller's cancellation does not stop; the caller waits for it."""
         table.phase = SETTLING
         self._cancel_timer(table)
-        await run_in_threadpool(self.bank.refund, table.row)
-        table.phase = DONE
-        self._drop(table)
-        table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
-        await self._live(table, False)
+        await asyncio.shield(self._spawn(self._settle_abort(table, reason)))
+
+    async def _settle_abort(self, table: Table, reason: str) -> None:
+        """_abort's task: hands the deposits back (_refund, tried again on failure), then lets the three saves go and
+        tells the seats and the rooms. When every try failed, or the task is cancelled, the saves are let go all the
+        same and the game stays open in the database: the next start of the server hands its deposits back
+        (Bank.refund_open)."""
+        try:
+            if table.row is not None and not await self._refund(table.row):
+                log.error("ddz: game %s keeps its deposits until the next start", table.row)
+        finally:
+            table.phase = DONE
+            self._drop(table)
+            table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
+            held, table.held = table.held, []
+            self._restore(held)
+            self._spawn(self._live(table, False))
 
     # ------------------------------------------------------------ around a game
     def auto(self, peer: Peer, table_id: str, on: bool) -> None:
@@ -1592,6 +1635,7 @@ class Tables:
             s.peer.enqueue({"type": "ddz_closed", "table": table.id})
         face = (s.nick, s.character, s.plate)
         s.peer, s.id, s.nick, s.character, s.plate = peer, peer.id, peer.nick, peer.character, peer.plate
+        s.raw = peer.raw_nick
         # The others hear the seat's new face with its new member id (_back).
         s.restyled = face != (s.nick, s.character, s.plate)
         if not handoff:
@@ -1637,7 +1681,8 @@ class Tables:
         elif held is not None and held.peer is not peer:
             held = None
         table = self.by_save.get(peer.token) if peer.token else None
-        seat = self._mine(table, peer, lambda t, s: t.match or s.roam)
+        asked = self._asked_of(table, peer)
+        seat = asked if asked is not None else self._mine(table, peer, lambda t, s: t.match or s.roam)
         ready: dict[str, Any] = {"type": "ddz_ready", "you": peer.id, "base": held.base if held else None,
                                  "table": table.id if table is not None and seat is not None else None}
         if held is not None:
@@ -1647,8 +1692,49 @@ class Tables:
             peer.enqueue(self._counts_msg(self._counts_sent))
         if table is None or seat is None:
             return
+        if asked is not None:
+            self._hand_over_asked(table, seat, peer)
+            return
         handoff = self._retake(table, seat, peer)
         self._back(table, seat, peer, handoff)
+
+    def _asked_of(self, table: Table | None, peer: Peer) -> int | None:
+        """The seat [peer]'s save is still being asked to take, on an older dou dizhu connection: at a table the
+        queue made that waits for its answers, or the seat of an open table offered to it from the queue."""
+        if table is None:
+            return None
+        for i, s in enumerate(table.seats):
+            o = s.peer
+            if s.token != peer.token or o is None or o is peer or not o.lobby or not (
+                    o.join_seq < peer.join_seq or not o.active):
+                continue
+            if (table.phase == INVITE and table.match) or (table.phase == OPEN and s.asked):
+                return i
+        return None
+
+    def _hand_over_asked(self, table: Table, seat: int, peer: Peer) -> None:
+        """A new connection of the save takes over the asking of seat [seat] (_asked_of) as it stands: its answer
+        if it gave one, and the time left to answer. The old connection's leaving, seen later, finds no seat of its
+        own and declines nothing. The new one hears the ask again; the others hear the seat's new member id."""
+        s = table.seats[seat]
+        s.peer, s.id = peer, peer.id
+        s.nick, s.character, s.plate, s.raw = peer.nick, peer.character, peer.plate, peer.raw_nick
+        if table.phase == OPEN:
+            sec = max(0.0, round(s.until - self.clock(), 1))
+            peer.enqueue({"type": "ddz_invite", "table": table.id, "ids": [x.id for x in table.seats],
+                          "base": table.base, "deposit": table.deposit, "sec": sec, "match": True,
+                          "seats": [None if x.empty else _face(x) for x in table.seats],
+                          "accepted": [x.id for x in table.seats if not x.empty and x.accepted]})
+            self._open_changed(table)
+            return
+        sec = max(0.0, round(table.deadline - self.clock(), 1))
+        peer.enqueue({"type": "ddz_invite", "table": table.id, "ids": [x.id for x in table.seats],
+                      "base": table.base, "deposit": table.deposit, "sec": sec, "match": True,
+                      "seats": [_face(x) for x in table.seats],
+                      "accepted": [x.id for x in table.seats if x.accepted]})
+        self._tell_face(table, seat)
+        if s.accepted:
+            table.tell({"type": "ddz_answer", "table": table.id, "id": s.id}, but=seat)
 
     def restyle(self, peer: Peer) -> None:
         """[peer]'s nick, pet or plate changed (its own state, or the blocklist masking its nick again): the seat it
@@ -1660,13 +1746,32 @@ class Tables:
         s = table.seats[seat]
         if (s.nick, s.character, s.plate) == (peer.nick, peer.character, peer.plate):
             return
-        s.nick, s.character, s.plate = peer.nick, peer.character, peer.plate
+        s.nick, s.character, s.plate, s.raw = peer.nick, peer.character, peer.plate, peer.raw_nick
+        self._tell_face(table, seat)
+
+    def _tell_face(self, table: Table, seat: int) -> None:
+        """Tells whoever holds [table] (its invite, its open seats or its game) the face seat [seat] shows now."""
+        s = table.seats[seat]
         if table.phase == OPEN:
             self._open_changed(table)
-        elif table.phase in (STARTING, BID, PLAY, SETTLING, OVER):
-            table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": s.quit,
-                        "auto": s.auto, "nick": s.nick, "character": s.character, "plate": s.plate})
-        # An invite shows the new face at the deal.
+        elif table.phase in (INVITE, STARTING, BID, PLAY, SETTLING, OVER):
+            table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id,
+                        "away": s.quit or (table.phase != INVITE and s.peer is None), "auto": s.auto,
+                        "nick": s.nick, "character": s.character, "plate": s.plate})
+
+    def remask(self, mask: Callable[[str], str]) -> None:
+        """The blocklist changed: every seat shown at a table, its member there or away, shows its nick masked again
+        (from Seat.raw), and the table hears of each that changed."""
+        for table in list(self.by_id.values()):
+            for i, s in enumerate(table.seats):
+                if s.empty:
+                    continue
+                if s.peer is not None and s.peer.raw_nick:
+                    s.raw = s.peer.raw_nick
+                nick = mask(s.raw or s.nick)
+                if nick != s.nick:
+                    s.nick = nick
+                    self._tell_face(table, i)
 
     async def bye(self, peer: Peer) -> None:
         """A dou dizhu connection closed: as a member leaving its room (departed)."""
@@ -1700,15 +1805,18 @@ class Tables:
         """The whole game as [seat] may see it."""
         cfg = self.bank.cfg()
         return {
-            "type": "ddz_state", "table": table.id, "phase": table.phase, "you": seat, "hand": table.seats[seat].hand,
+            "type": "ddz_state", "table": table.id, "phase": table.phase, "you": seat,
+            "hand": list(table.seats[seat].hand),
             "seats": [{**_face(s), "left": len(s.hand), "bid": s.bid, "auto": s.auto, "away": s.peer is None or s.quit}
                       for s in table.seats],
             "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "bid": table.bid,
             "landlord": table.landlord, "bottom": table.bottom if table.landlord is not None else [],
             "mult": table.mult(cfg["capMult"]), "bombs": table.bombs, "turn": table.turn,
-            "lead": table.phase == PLAY and table.last is None, "trick": table.trick,
+            "lead": table.phase == PLAY and table.last is None,
+            # Copies: the message waits in the send queue while the table goes on changing these lists.
+            "trick": [None if x is None else list(x) for x in table.trick],
             "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
-            "played": table.played,
+            "played": list(table.played),
         }
 
     def _rooms(self, table: Table) -> set[str]:
@@ -1826,6 +1934,9 @@ class Tables:
 
     def unqueue(self, peer: Peer) -> None:
         """[peer] stops waiting. It hears that it waits no more even when it did not, so the client keeps in step."""
+        # A place an invite holds for the save goes too: the invite coming to nothing does not give it back.
+        if peer.token:
+            self._drop_held(peer.token)
         if not self._leave_queue(peer):
             peer.enqueue({"type": "ddz_queue", "base": None})
 
@@ -1932,7 +2043,7 @@ class Tables:
         deposit = self.bank.deposit(base)
         table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, seats=[
             Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character,
-                 plate=w.peer.plate, since=w.since, seq=w.seq)
+                 plate=w.peer.plate, since=w.since, seq=w.seq, raw=w.peer.raw_nick)
             for w in three])
         for w in three:
             self._dequeue(w)
@@ -1942,6 +2053,7 @@ class Tables:
         table.tell({"type": "ddz_invite", "table": table.id, "ids": [s.id for s in table.seats], "base": base,
                     "deposit": deposit, "sec": cfg["inviteSec"], "match": True,
                     "seats": [_face(s) for s in table.seats]})
+        table.deadline = self.clock() + cfg["inviteSec"]
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
     def _merge(self, base: int, entries: list[Waiting]) -> None:

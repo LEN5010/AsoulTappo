@@ -5,6 +5,7 @@ import secrets
 import time
 
 import pytest
+from starlette.websockets import WebSocketDisconnect
 
 import app.main as main
 from app.ddz import COUNTS_SEC, Bank, Tables
@@ -592,8 +593,9 @@ def test_hello_checks_the_save_the_nick_the_pet_and_the_plate_as_join_does(api, 
         x.send_json({"type": "ddz_hello", "nick": "nobody", "token": ""})
         assert receive(x, "error") == {"type": "error", "code": "room_full", "message": "", "reason": "ddz_locked"}
         assert main.tables.lobby == {}
-        x.send_json({"type": "ddz_queue", "base": BASE})
-        assert receive(x, "error")["code"] == "not_joined"
+        # The server closed the connection.
+        with pytest.raises(WebSocketDisconnect):
+            x.receive_json()
     assert main.tables.lobby == {}
 
 
@@ -1032,9 +1034,13 @@ def test_dou_dizhu_connections_are_capped(api, monkeypatch):
         hello(a1, "a")
         b.send_json({"type": "ddz_hello", "nick": "b", "token": tok("b")})
         assert receive(b, "error")["reason"] == "ddz_full"
+        with pytest.raises(WebSocketDisconnect):
+            b.receive_json()
         # Over the cap, a newer connection of a save already in takes the place of the older one.
         hello(a2, "a")
         assert receive(a1, "error")["reason"] == "ddz_queued"
+        with pytest.raises(WebSocketDisconnect):
+            a1.receive_json()
         lobby_closed("a")
         assert len(main.tables.lobby) == 1
 
@@ -1137,6 +1143,7 @@ def test_a_nick_masked_again_or_changed_shows_at_the_table(monkeypatch):
         monkeypatch.setattr(main, "manager", w.m)
         monkeypatch.setattr(main.blocklist, "mask", lambda s: s.replace("坏", "*"))
         monkeypatch.setitem(main.raw_nicks, a.id, "坏a")
+        a.raw_nick = "坏a"  # as its hello said
         await main._remask()
         assert a.nick == "*a" and t.seats[0].nick == "*a"
         told = {"type": "ddz_seat", "table": tid, "seat": 0, "id": a.id, "away": False, "auto": False, "nick": "*a",
@@ -1196,4 +1203,240 @@ def test_turning_invites_down_on_any_connection_keeps_the_save_from_being_invite
         with pytest.raises(Exception) as e:
             await w.t.open("r", b, BASE)
         assert e.value.code == "ddz_dnd"
+    run(go())
+
+
+def test_a_nick_masked_again_reaches_an_invite_and_a_seat_whose_member_is_away(monkeypatch):
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        for p in (a, b, c):
+            p.raw_nick = "坏" + p.nick
+        mask = lambda s: s.replace("坏", "*")  # noqa: E731
+        # While the invite is out: everyone holding it hears the seats' new nicks.
+        w.t.remask(mask)
+        assert [m["nick"] for m in sb.of("ddz_seat")] == ["*a", "*b", "*c"]
+        assert [s.nick for s in w.t.by_id[tid].seats] == ["*a", "*b", "*c"]
+        for p in (a, b, c):
+            await w.t.answer(p, tid, True)
+        await settle()
+        # a's connection goes; its seat, played for, is masked again all the same.
+        await w.bye(a)
+        n = len(sb.of("ddz_seat"))
+        w.t.remask(lambda s: s.replace("坏", "#"))
+        t = w.t.by_id[tid]
+        assert t.seats[0].nick == "#a" and t.seats[0].peer is None
+        told = sb.of("ddz_seat")[n:]
+        assert {m["seat"]: m["nick"] for m in told} == {0: "#a", 1: "#b", 2: "#c"} and told[0]["away"] is True
+        assert w.t._state(t, 1)["seats"][0]["nick"] == "#a"
+    run(go())
+
+
+def gate_start(monkeypatch):
+    """Bank.start held until the returned event is set."""
+    import threading
+
+    gate = threading.Event()
+    real = Bank.start
+
+    def slow(self, pids, base):
+        gate.wait(5)
+        return real(self, pids, base)
+
+    monkeypatch.setattr(Bank, "start", slow)
+    return gate
+
+
+async def starting(t):
+    for _ in range(200):
+        await asyncio.sleep(0.005)
+        if t.phase == "starting":
+            return
+    raise AssertionError("never started")
+
+
+def room_invite_of_a_queued_save(w):
+    """b waits in the queue (on its dou dizhu connection) and is invited in room r by x with y."""
+    async def go():
+        (e, se), (b, sb) = await w.queued("e", "b")
+        b_room, sb_room = w.member("b", room="r")
+        x, sx = w.member("x", room="r")
+        y, sy = w.member("y", room="r")
+        await w.t.invite("r", x, [b_room.id, y.id], BASE)
+        return e, (b, sb), (b_room, sb_room), (x, sx), (y, sy), sx.of("ddz_invite")[0]["table"]
+    return go()
+
+
+@pytest.mark.parametrize("how", ["fails", "cancelled"])
+def test_a_refund_on_abort_that_fails_or_is_cancelled_lets_the_saves_go(monkeypatch, how):
+    async def go():
+        import threading
+
+        import app.ddz as ddz
+        monkeypatch.setattr(ddz, "REFUND_RETRY_SEC", (0.0,))
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        gate = gate_start(monkeypatch)
+        refund_gate = threading.Event()
+        real_refund = Bank.refund
+
+        def refund(self, row):
+            if how == "fails":
+                raise RuntimeError("database down")
+            refund_gate.wait(5)
+            return real_refund(self, row)
+
+        monkeypatch.setattr(Bank, "refund", refund)
+        await w.t.answer(a, tid, True)
+        await w.t.answer(b, tid, True)
+        handler = asyncio.create_task(w.t.answer(c, tid, True))
+        t = w.t.by_id[tid]
+        await starting(t)
+        for p in (a, b, c):
+            await w.bye(p)
+        gate.set()
+        if how == "fails":
+            await handler
+            await w.t.idle()
+        else:
+            for _ in range(200):
+                await asyncio.sleep(0.005)
+                if t.phase == "settling":
+                    break
+            assert t.phase == "settling"
+            for task in list(w.t._tasks):
+                task.cancel()
+            await asyncio.sleep(0.01)
+        # The saves are free either way.
+        assert w.t.by_id == {} and w.t.by_save == {}
+        if how == "fails":
+            # The game stays open: the next start of the server hands its deposits back.
+            assert w.g.store.open_ddz_games() == [t.row]
+        else:
+            refund_gate.set()
+            for _ in range(200):
+                await asyncio.sleep(0.005)
+                if not w.g.store.open_ddz_games():
+                    break
+            assert w.g.store.open_ddz_games() == []
+            handler.cancel()
+    run(go())
+
+
+def test_a_start_task_cancelled_before_it_ran_ends_the_invite_and_gives_places_back():
+    async def go():
+        w = MatchWorld()
+        e, (b, sb), (b_room, sb_room), (x, sx), (y, sy), tid = await room_invite_of_a_queued_save(w)
+        await w.t.answer(b_room, tid, True)
+        handler = asyncio.create_task(w.t.answer(y, tid, True))
+        await asyncio.sleep(0)
+        t = w.t.by_id[tid]
+        assert t.phase == "starting"
+        for task in list(w.t._tasks):
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await handler
+        await w.t.idle()
+        assert w.t.by_id == {} and sx.of("ddz_over")[-1]["reason"] == "error"
+        assert [q.peer for q in w.t.lines[BASE]] == [e, b] and w.g.store.open_ddz_games() == []
+    run(go())
+
+
+def test_stopping_the_wait_during_a_room_invite_gives_up_the_place_it_holds():
+    async def go():
+        w = MatchWorld()
+        e, (b, sb), (b_room, sb_room), (x, sx), (y, sy), tid = await room_invite_of_a_queued_save(w)
+        w.t.unqueue(b)
+        assert queue_msgs(sb)[-1] == {"base": None}
+        await w.t.answer(y, tid, False)
+        await w.t.idle()
+        assert w.who["b"] not in w.t.waiting and [q.peer for q in w.t.lines[BASE]] == [e]
+    run(go())
+
+
+def test_everyone_leaving_while_the_deposits_are_taken_gives_the_invited_their_places_back(monkeypatch):
+    async def go():
+        w = MatchWorld()
+        e, (b, sb), (b_room, sb_room), (x, sx), (y, sy), tid = await room_invite_of_a_queued_save(w)
+        gate = gate_start(monkeypatch)
+        await w.t.answer(b_room, tid, True)
+        handler = asyncio.create_task(w.t.answer(y, tid, True))
+        t = w.t.by_id[tid]
+        await starting(t)
+        for p in (x, b_room, y):
+            await w.m.depart("r", p.id)
+        gate.set()
+        await handler
+        await w.t.idle()
+        assert w.t.by_id == {} and w.g.store.open_ddz_games() == []
+        assert [q.peer for q in w.t.lines[BASE]] == [e, b]
+    run(go())
+
+
+@pytest.mark.parametrize("kind", ["room", "match"])
+def test_turning_invites_down_on_another_connection_declines_what_waits_for_the_save(kind):
+    async def go():
+        w = MatchWorld()
+        if kind == "room":
+            e, (b, sb), (b_room, sb_room), (x, sx), (y, sy), tid = await room_invite_of_a_queued_save(w)
+            b.dnd = True
+            w.t.set_dnd(b, True)
+            assert sx.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "declined", "by": b_room.id}
+            await w.t.idle()
+            assert w.who["b"] not in w.t.waiting
+        else:
+            (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+            tid = sa.of("ddz_invite")[0]["table"]
+            b_room, _ = w.member("b", room="r")
+            b_room.dnd = True
+            w.t.set_dnd(b_room, True)
+            assert sa.of("ddz_over")[-1]["by"] == b.id and tid not in w.t.by_id
+            assert w.who["b"] in w.t.match_refused and [q.peer for q in w.t.lines[BASE]] == [a, c]
+    run(go())
+
+
+def test_a_state_sent_is_a_snapshot_of_the_table():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        for p in (a, b, c):
+            await w.t.answer(p, tid, True)
+        await settle()
+        t = w.t.by_id[tid]
+        t.played.append(5)
+        t.trick[1] = [9]
+        st = w.t._state(t, 0)
+        t.played.append(6)
+        t.trick[1].append(10)
+        t.trick[2] = [11]
+        t.seats[0].hand.append(12)
+        assert st["played"] == [5] and st["trick"] == [None, [9], None] and 12 not in st["hand"]
+    run(go())
+
+
+def test_a_new_connection_during_the_invite_of_a_table_of_the_queue_takes_the_ask_over():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        t = w.t.by_id[tid]
+        await w.t.answer(a, tid, True)
+        await w.t.answer(b, tid, True)
+        w.mono += 4
+        b2, sb2 = w.member("b")
+        await w.t.hello(b2)
+        assert sb2.got[0]["table"] == tid
+        again = sb2.of("ddz_invite")[-1]
+        assert again["ids"] == [a.id, b2.id, c.id] and again["accepted"] == [a.id, b2.id]
+        assert again["sec"] == CFG["inviteSec"] - 4
+        assert sa.of("ddz_seat")[-1]["id"] == b2.id and sa.of("ddz_answer")[-1]["id"] == b2.id
+        # The old connection closing declines nothing.
+        await w.bye(b)
+        assert t.phase == "invite" and w.who["b"] not in w.t.match_refused
+        await w.t.answer(c, tid, True)
+        await settle()
+        assert t.phase == "bid" and sb2.of("ddz_deal") and sb.of("ddz_deal") == []
     run(go())

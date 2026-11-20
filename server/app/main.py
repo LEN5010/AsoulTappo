@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
-from typing import Literal
+from typing import Awaitable, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
@@ -1063,15 +1063,12 @@ async def _remask() -> None:
                 changed.append((room_id, peer))
     for peer in list(tables.lobby.values()):
         online.add(peer.id)
-        nick = blocklist.mask(raw_nicks.get(peer.id, peer.nick))
-        if nick != peer.nick:
-            peer.nick = nick
-            tables.restyle(peer)
+        peer.nick = blocklist.mask(raw_nicks.get(peer.id, peer.nick))
     for gone in raw_nicks.keys() - online:
         del raw_nicks[gone]
+    # Every seat shown at a table, its member there or away, shows the nick masked again.
+    tables.remask(blocklist.mask)
     for room_id, peer in changed:
-        # The seat it plays shows the masked nick too.
-        tables.restyle(peer)
         await manager.broadcast(room_id, _state(peer))
     for room in manager.remask_names():
         await manager.broadcast(room.id, _room_info(room.id))
@@ -1253,15 +1250,31 @@ async def _lobby_replaced(peer: Peer) -> None:
     await _lobby_leave(peer)
 
     async def tell() -> None:
+        # Closed even when the notice cannot be sent (a dead connection is gone all the same).
         try:
             await asyncio.wait_for(peer.ws.send_json(_final("ddz_queued", "")), manager.send_timeout)
+        except Exception:
+            pass
+        try:
             await asyncio.wait_for(peer.ws.close(code=1000), manager.send_timeout)
-        except Exception:  # a dead connection is gone all the same
+        except Exception:
             pass
 
     task = asyncio.create_task(tell())
     _closing.add(task)
     task.add_done_callback(_closing.discard)
+
+
+async def _refuse_hello(ws: WebSocket, send: Callable[[dict], Awaitable[None]], reason: str) -> None:
+    """A hello refused for good: the connection hears why and is closed (its handler stops reading)."""
+    try:
+        await send(_final(reason, ""))
+    except Exception:
+        pass
+    try:
+        await asyncio.wait_for(ws.close(code=1000), manager.send_timeout)
+    except Exception:
+        pass
 
 
 async def _lobby_failed(peer: Peer) -> None:
@@ -1383,8 +1396,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if who is None or not await run_in_threadpool(game.store.has_player, who):
                     # Only a save that is there plays (a token of none derives an id all the same, and the hello does
                     # not make one): a connection without one would only take room on the server.
-                    await send(_final("ddz_locked", ""))
-                    continue
+                    await _refuse_hello(ws, send, "ddz_locked")
+                    break
                 plate = await run_in_threadpool(game.room_plate, who, msg.plate)
                 character = msg.character
                 if (character not in game.manifest.character_names
@@ -1393,18 +1406,18 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 mine = [p for p in tables.lobby.values() if p.token == who and p.active]
                 if any(p.join_seq > seq for p in mine):
                     # A newer connection of the save got through first: it keeps the save's place.
-                    await send(_final("ddz_queued", ""))
-                    continue
+                    await _refuse_hello(ws, send, "ddz_queued")
+                    break
                 # Over the cap, only a save already in comes in (in place of its older connection).
                 if not mine and len(tables.lobby) >= LOBBY_MAX:
-                    await send(_final("ddz_full", ""))
-                    continue
+                    await _refuse_hello(ws, send, "ddz_full")
+                    break
                 peer = Peer(id=secrets.token_hex(4), nick=blocklist.mask(msg.nick), character=character, ws=ws,
                             token=who, plate=plate, send_timeout=manager.send_timeout, lobby=True, ddz=True,
                             ddz_match=True, dnd=msg.dnd)
                 peer.join_seq = seq
                 peer.on_failure = functools.partial(_lobby_failed, peer)
-                raw_nicks[peer.id] = msg.nick
+                raw_nicks[peer.id] = peer.raw_nick = msg.nick
                 await tables.hello(peer)
                 # The older connections of the save gave their place and seat to this one: they are told and closed.
                 for old in mine:
@@ -1431,7 +1444,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 try:
                     peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
                                         may_list=not accounts or signed_in, **profile)
-                    raw_nicks[peer.id] = msg.nick
+                    raw_nicks[peer.id] = peer.raw_nick = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
                     continue
@@ -1679,7 +1692,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if msg.status is not None:
                     peer.status = room_status(msg.status)
                 if msg.nick is not None:
-                    raw_nicks[peer.id] = msg.nick
+                    raw_nicks[peer.id] = peer.raw_nick = msg.nick
                     peer.nick = blocklist.mask(msg.nick)
                     await run_in_threadpool(game.note_room_nick, peer.token, msg.nick)
                 tables.restyle(peer)
