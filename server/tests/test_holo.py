@@ -197,13 +197,13 @@ def test_a_holo_chance_outside_0_to_100_is_refused(tmp_path, chance):
 # ---- a save that owns the whole pool but not every holo version
 DAY = 86400.0
 BANNER_VERSION = "9.9.9"
-BANNER_SKINS = ["char:嘉然然龙", "char:乃琳法师"]
+BANNER = {"id": "forms", "name": "双形态", "items": ["char:嘉然然龙", "char:乃琳法师"], "rate": 5, "pity": 4}
 
 
-def whole_save(*rolls, lacking=(HOLO,), chance=25, banner=False, holos=None):
-    """A save holding every item of the pool it draws from and every holo version but [lacking]. With [banner] the
-    pool is a running limited pool (its featured skins held too) and the client is BANNER_VERSION; [holos] replaces
-    the manifest's card -> holo version table."""
+def whole_save(*rolls, lacking=(HOLO,), chance=25, banner=None, featured=True, holos=None):
+    """A save holding every item of the pool it draws from and every holo version but [lacking]. With [banner] (fields
+    over BANNER's) the pool is a running limited pool and the client is BANNER_VERSION; the save holds the banner's
+    featured items too unless [featured] is false. [holos] replaces the manifest's card -> holo version table."""
     m = Manifest.load()
     if chance is None:
         m.resonance.pop("holoChance", None)
@@ -211,9 +211,8 @@ def whole_save(*rolls, lacking=(HOLO,), chance=25, banner=False, holos=None):
         m.resonance["holoChance"] = chance
     clock = Clock()
     version = NEW
-    if banner:
-        m.resonance["banners"] = [{"id": "forms", "name": "双形态", "start": clock.t + DAY, "end": clock.t + 8 * DAY,
-                                   "items": BANNER_SKINS, "rate": 5, "pity": 4}]
+    if banner is not None:
+        m.resonance["banners"] = [{**BANNER, "start": clock.t + DAY, "end": clock.t + 8 * DAY, **banner}]
         m.__dict__.pop("banners", None)
         clock.t += 2 * DAY
         version = BANNER_VERSION
@@ -222,9 +221,10 @@ def whole_save(*rolls, lacking=(HOLO,), chance=25, banner=False, holos=None):
     g = Game(Store(":memory:"), m, rng=SeqRng(*rolls), now=clock)
     g.status(TOKEN)
     pid = player_id_for(TOKEN)
-    rates = m.banner("forms", version, clock.t).tier_rates(m.resonance["rates"]) if banner else ()
-    pool = m.resonance_pool_for(version, clock.t, tiers=rates)
-    for iid in [i["id"] for items in pool.values() for i in items] + (BANNER_SKINS if banner else []):
+    running = m.banner("forms", version, clock.t) if banner is not None else None
+    pool = m.resonance_pool_for(version, clock.t, tiers=running.tier_rates(m.resonance["rates"]) if running else ())
+    held = list(running.items) if running and featured else []
+    for iid in [i["id"] for items in pool.values() for i in items] + held:
         g.store.add_item(pid, iid, 0)
     for holo in m.holos_for(version).values():
         if holo not in lacking:
@@ -322,9 +322,39 @@ def test_a_tier_with_a_missing_holo_version_stays_in_the_roll():
 
 def test_a_limited_pool_draw_finds_the_missing_holo_version_too():
     # The tier roll stays under the featured range at the top of the roll.
-    g, pid, version, pool = whole_save(COMMON, PICK, 0, banner=True)
+    g, pid, version, pool = whole_save(COMMON, PICK, 0, banner={})
     assert picked_from_all(pool) != CARD
     r = g.resonate(TOKEN, 1, version, "forms")
     drop = r["drops"][0]
     assert drop["item"] == CARD and drop["holo"] is True and drop["new"] is True and "featured" not in drop
     assert g.store.owned(pid)[HOLO] == 1
+
+
+def test_a_limited_pool_without_common_odds_still_deals_the_missing_holo_version():
+    # Every tier but the limited one at 0, so common has no odds of its own: once the limited cards are all owned,
+    # their odds go to common, which still holds CARD's missing holo version.
+    limited = [i["id"] for i in M.resonance_pool["limited"]][:2]
+    rates = {**{tier: 0 for tier in ("legendary", "skin", "epic", "rare", "uncommon")}, "limited": 100}
+    over = {"items": limited, "rate": 0, "pity": None, "share": 50, "rates": rates}
+    g, pid, version, _ = whole_save(COMMON, PICK, 0, banner=over)
+    assert g.manifest.banner("forms", version, g.now()).tier_rates(M.resonance["rates"])["common"] == 0
+    drop = g.resonate(TOKEN, 1, version, "forms")["drops"][0]
+    assert drop["rarity"] == "common" and drop["item"] == CARD and drop["holo"] is True and drop["new"] is True
+    assert g.store.owned(pid)[HOLO] == 1
+
+
+def test_a_shared_tier_with_a_missing_holo_version_keeps_the_banner_share():
+    # A banner sharing the common tier with a featured card the save lacks. Its standing common cards are all owned
+    # but CARD's holo version is missing, so a common draw is featured at `share` percent, not for certain.
+    plain = next(f"card:{c['id']}" for c in M.data["cards"] if c["rarity"] == "common" and not c.get("holo")
+                 and f"card:{c['id']}" not in M.starter)
+    over = {"items": [plain], "rate": 0, "pity": None, "share": 50}
+    # common, the share roll (over 50: a standing card), the pick, the holo roll; then common, now featured for
+    # certain (the last common draw here gave a standing card), and the pick among the featured.
+    g, pid, version, _ = whole_save(COMMON, .99, PICK, 0, COMMON, 0, banner=over, featured=False)
+    first = g.resonate(TOKEN, 1, version, "forms")
+    drop = first["drops"][0]
+    assert drop["item"] == CARD and drop["holo"] is True and "featured" not in drop
+    assert first["resonance"]["banners"]["forms"]["guaranteed"] == ["common"]
+    drop = g.resonate(TOKEN, 1, version, "forms")["drops"][0]
+    assert drop["item"] == plain and drop["featured"] is True

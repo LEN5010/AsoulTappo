@@ -504,9 +504,9 @@ class Game:
                     rarity = cardlogic.roll_tier(rates, available, pity, cfg["pity"], self.rng, x)
                     candidates = missing[rarity] or shine[rarity] or pool[rarity]
                     shared = [item for item in featured if item["rarity"] == rarity] if banner and banner.share else []
-                    # The tier's standing items are all found and it rolls no repeats: the featured ones are what
-                    # kept it in the roll.
-                    only = not missing[rarity] and rarity not in repeating
+                    # The tier's standing items are all found (holo versions included) and it rolls no repeats: the
+                    # featured ones are what kept it in the roll.
+                    only = not missing[rarity] and not shine[rarity] and rarity not in repeating
                     if shared and (only or rarity in sure or self.rng.random() * 100 < banner.share):
                         up = True
                         item = shared[min(int(self.rng.random() * len(shared)), len(shared) - 1)]
