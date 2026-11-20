@@ -1007,3 +1007,42 @@ def test_a_new_connection_taking_the_seat_on_its_turn_keeps_the_time_of_the_turn
         await w.t.joined("r", b3)
         assert w.last("ddz_seat", 0)["sec"] == CFG["bidSec"] and t.deadline == w.mono + CFG["bidSec"]
     run(go())
+
+
+def test_another_game_nobody_stayed_for_gives_the_deposits_back(monkeypatch):
+    async def go():
+        import threading
+
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        await play_out(w, tid)
+        a, b, c = w.peers
+        before = [w.shards(p) for p in w.pids]
+        gate = threading.Event()
+        real = Bank.start
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            return real(self, pids, base)
+
+        monkeypatch.setattr(Bank, "start", slow)
+        await w.t.again(a, tid)
+        await w.t.again(b, tid)
+        t = w.t.by_id[tid]
+        task = asyncio.create_task(w.t.again(c, tid))
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        try:
+            assert t.phase == "starting"
+            # All three leave while the database takes the deposits.
+            for p in (a, b, c):
+                await w.m.depart("r", p.id)
+        finally:
+            gate.set()
+        await task
+        await settle()
+        assert w.t.by_id == {} and w.t.by_save == {} and w.timers.live() == []
+        assert [w.shards(p) for p in w.pids] == before
+    run(go())

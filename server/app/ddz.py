@@ -630,6 +630,10 @@ class Tables:
         except BaseException:
             self._end(table, "error")
             raise
+        if all(x.peer is None for x in table.seats):
+            # All three left while the deposits were taken: nobody to play for.
+            await self._abort(table, "gone")
+            return
         for x in table.seats:
             x.auto, x.timeouts = x.peer is None, 0
         table.deal = 0
