@@ -889,3 +889,26 @@ def test_a_server_without_the_game_answers_no_ddz(api, monkeypatch):
         assert "ddz" not in c.get("/api/me", headers={"X-Player-Token": tok("a")}).json()
         a.send_json({"type": "ddz_invite", "ids": [jb["you"], jd["you"]], "base": BASE})
         assert a.receive_json()["code"] == "no_ddz"
+
+
+def test_a_new_connection_of_the_save_takes_the_seat_before_the_old_one_is_seen_to_go():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        t = w.t.by_id[tid]
+        a, b, c = w.peers
+        # b's client is back on a new connection; the server has not yet seen the old one go.
+        b2, sock = w.join("b", w.pids[1])
+        await w.t.joined("r", b2)
+        assert t.seats[1].peer is b2 and sock.of("ddz_state")[0]["you"] == 1
+        assert w.socks[1].of("ddz_closed") == [{"type": "ddz_closed", "table": tid}]
+        assert w.last("ddz_seat", 0) == {"type": "ddz_seat", "table": tid, "seat": 1, "id": b2.id, "away": False,
+                                         "auto": False}
+        # The old connection's leaving, seen late, leaves the seat to the new one.
+        await w.m.depart("r", b.id)
+        await settle()
+        assert t.seats[1].peer is b2 and not t.seats[1].auto and w.last("ddz_seat", 0)["id"] == b2.id
+        w.peers[1], w.socks[1] = b2, sock
+        await play_out(w, tid)
+        assert w.last("ddz_result", 1)["winner"] == "landlord"
+    run(go())

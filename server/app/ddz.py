@@ -686,8 +686,16 @@ class Tables:
         seat = None
         if table is not None and table.room == room_id and table.phase in (BID, PLAY) and peer.ddz:
             seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is None), None)
+            if seat is None:
+                # An older connection of the save still holds the seat: its leaving is not seen yet (a client back
+                # on a new connection), or it is another device. The newest connection takes the seat.
+                seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is not peer),
+                            None)
         if seat is not None:
             s = table.seats[seat]
+            if s.peer is not None and s.peer is not peer:
+                # The old connection lets go of the table; its leaving, seen later, finds no seat of its own.
+                s.peer.enqueue({"type": "ddz_closed", "table": table.id})
             s.peer, s.id, s.nick, s.character = peer, peer.id, peer.nick, peer.character
             s.auto, s.timeouts, s.quit = False, 0, False
         for live in self.by_id.values():
