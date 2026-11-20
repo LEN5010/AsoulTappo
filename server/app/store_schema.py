@@ -392,4 +392,19 @@ CREATE TABLE IF NOT EXISTS redeem_locks (
   locks INTEGER NOT NULL DEFAULT 0,
   last REAL NOT NULL
 );
+-- Feedback from the settings page (feedback.py): the text, an optional contact, the client's version and system, and
+-- the latest part of its log when the player ticked it ('' without). [day] is the China day it came on.
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL,
+  ts REAL NOT NULL,
+  day TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '',
+  system TEXT NOT NULL DEFAULT '',
+  text TEXT NOT NULL,
+  contact TEXT NOT NULL DEFAULT '',
+  log TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS feedback_player ON feedback (player_id, day);
+CREATE INDEX IF NOT EXISTS feedback_day ON feedback (day);
 """

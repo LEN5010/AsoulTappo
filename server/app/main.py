@@ -28,6 +28,7 @@ from . import banners as banner_file
 from . import economy as economy_file
 from .accounts import MainAccounts, http_me
 from .ddz import Bank as DdzBank, Tables
+from . import feedback
 from .duel import Duels
 from . import guard as guard_file
 from .game import Game, GameError, PlayerId, player_id_for, showcase_size
@@ -344,7 +345,9 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "bad_number": 400, "bad_code": 409, "code_expired": 409, "code_used_up": 409, "already_redeemed": 409,
           "login_required": 401, "too_many_tries": 429, "no_code": 409,
           # A limited pool that is not running (banners.py).
-          "no_banner": 409}
+          "no_banner": 409,
+          # Feedback (feedback.py).
+          "bad_feedback": 400, "feedback_limit": 429, "feedback_full": 429}
 
 
 def _guard(fn, *args):
@@ -593,6 +596,23 @@ def api_checkin_month(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/checkin")
 def api_checkin(who: PlayerId = Depends(player)) -> dict:
     return _guard(game.checkin, who)
+
+
+class FeedbackBody(BaseModel):
+    text: str = Field(min_length=1, max_length=feedback.TEXT_MAX)
+    contact: str = Field(default="", max_length=feedback.CONTACT_MAX)
+    # The client's system as its web view tells it (the user agent).
+    system: str = Field(default="", max_length=feedback.SYSTEM_MAX * 2)
+    # The latest part of the client's log; "" when the player left it out.
+    log: str = Field(default="", max_length=feedback.LOG_MAX)
+
+
+@app.post("/api/feedback")
+def api_feedback(body: FeedbackBody, request: Request, who: PlayerId = Depends(player),
+                 x_client_version: str = Header(default="")) -> dict:
+    """Keeps a feedback from the settings page (feedback.py): its id and how many more the save may send today."""
+    return _guard(feedback.send, game.store, game.now(), who, _address(request), x_client_version, body.system,
+                  body.text, body.contact, body.log)
 
 
 @app.post("/api/update-reward")
@@ -954,6 +974,30 @@ def admin_save(player: str) -> dict:
 @app.post("/admin/saves/{player}/shards", dependencies=[Depends(admin)])
 def admin_save_shards(player: str, body: ShardsBody, who: str = Depends(actor)) -> dict:
     return _guard(game.admin_adjust_save_shards, player, body.delta, who, body.reason.strip())
+
+
+@app.get("/admin/feedback", dependencies=[Depends(admin)])
+def admin_feedback(before: int | None = Query(default=None, ge=1), limit: int = Query(default=50, ge=1, le=100)) -> dict:
+    """Feedback newest first without the logs (logSize says how long each is); [before]: the last id of the page
+    before. `next` is the id to pass for the next page, null at the end."""
+    rows = [feedback.admin_view(r) for r in game.store.feedback_page(before, limit)]
+    return {"feedback": rows, "next": rows[-1]["id"] if len(rows) == limit else None}
+
+
+@app.get("/admin/feedback/{fid}", dependencies=[Depends(admin)])
+def admin_feedback_one(fid: int) -> dict:
+    row = game.store.feedback_one(fid)
+    if row is None:
+        raise HTTPException(409, {"code": "no_feedback", "message": "没有这条反馈"})
+    return feedback.admin_view(row)
+
+
+@app.delete("/admin/feedback/{fid}", dependencies=[Depends(admin)])
+def admin_feedback_delete(fid: int) -> dict:
+    """Deletes one feedback, for a player who asks for it to be removed."""
+    if not game.store.delete_feedback(fid):
+        raise HTTPException(409, {"code": "no_feedback", "message": "没有这条反馈"})
+    return {"ok": True}
 
 
 @app.post("/admin/saves/{player}/hold", dependencies=[Depends(admin)])

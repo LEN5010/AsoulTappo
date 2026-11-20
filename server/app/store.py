@@ -10,6 +10,7 @@ from typing import Any, Callable, Iterable, Iterator
 
 from .store_admin import AdminStore
 from .store_ddz import DdzStore
+from .store_feedback import FeedbackStore
 from .store_park import ParkStore
 
 from .store_schema import SCHEMA  # noqa: F401 (tests import it from here)
@@ -32,7 +33,7 @@ def day_of(ts: float) -> str:
     return time.strftime("%Y-%m-%d", time.gmtime(ts + DAY_OFFSET))
 
 
-class Store(AdminStore, ParkStore, DdzStore):
+class Store(AdminStore, ParkStore, DdzStore, FeedbackStore):
     """Thread-safe wrapper around one sqlite3 connection (":memory:" for tests)."""
 
     def __init__(self, path: str = ":memory:") -> None:
