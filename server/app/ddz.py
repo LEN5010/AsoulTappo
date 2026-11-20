@@ -697,13 +697,17 @@ class Tables:
                 seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is not None
                              and s.peer is not peer and (s.peer.join_seq < peer.join_seq or not s.peer.active)),
                             None)
+        # Taken from a connection that played the seat itself: the seat goes on as it was, its turn included.
+        handoff = False
         if seat is not None:
             s = table.seats[seat]
+            handoff = s.peer is not None and not s.auto
             if s.peer is not None and s.peer is not peer:
                 # The old connection lets go of the table; its leaving, seen later, finds no seat of its own.
                 s.peer.enqueue({"type": "ddz_closed", "table": table.id})
             s.peer, s.id, s.nick, s.character = peer, peer.id, peer.nick, peer.character
-            s.auto, s.timeouts, s.quit = False, 0, False
+            if not handoff:
+                s.auto, s.timeouts, s.quit = False, 0, False
         for live in self.by_id.values():
             if live.room == room_id and live.phase in (BID, PLAY, SETTLING):
                 msg = {"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True}
@@ -717,7 +721,11 @@ class Tables:
         if table.turn == seat:
             cfg = self.bank.cfg()
             msg["turn"] = seat
-            msg["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
+            if handoff:
+                # A fresh time on each handoff would let two devices hold the other two up for good.
+                msg["sec"] = max(0.0, round(table.deadline - self.clock(), 1))
+            else:
+                msg["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
         table.tell(msg, but=seat)
         peer.enqueue(self._state(table, seat))
 

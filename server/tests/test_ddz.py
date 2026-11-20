@@ -984,3 +984,26 @@ def test_a_connection_that_finishes_joining_late_does_not_take_the_seat_from_a_n
         await w.t.joined("r", late)
         assert t.seats[1].peer is None and s_late.of("ddz_state") == []
     run(go())
+
+
+def test_a_new_connection_taking_the_seat_on_its_turn_keeps_the_time_of_the_turn():
+    async def go():
+        w = World(rng=Stacked(first=1))
+        tid = await w.dealt()
+        t = w.t.by_id[tid]
+        deadline, step = t.deadline, t.step
+        t.seats[1].timeouts = 1
+        w.mono += 5
+        left = round(deadline - w.mono, 1)
+        # Handing the seat from one connection to another, over and over, does not give the turn its time again.
+        b2, s2 = w.join("b", w.pids[1])
+        await w.t.joined("r", b2)
+        assert (t.deadline, t.step, t.seats[1].timeouts) == (deadline, step, 1)
+        assert [h.delay for h in w.timers.live()] == [DEAL_SEC + CFG["bidSec"]]
+        assert w.last("ddz_seat", 0)["sec"] == left and s2.of("ddz_state")[0]["sec"] == left
+        # Back to a seat played for while it was away, the turn starts again with its full time, as before.
+        await w.m.depart("r", b2.id)
+        b3, _ = w.join("b", w.pids[1])
+        await w.t.joined("r", b3)
+        assert w.last("ddz_seat", 0)["sec"] == CFG["bidSec"] and t.deadline == w.mono + CFG["bidSec"]
+    run(go())
