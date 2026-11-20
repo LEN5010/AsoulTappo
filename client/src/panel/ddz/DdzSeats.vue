@@ -1,25 +1,34 @@
 <script setup lang="ts">
 // Three seats in a row, each a round face with a name tag: who is at a table, or about to be. An empty seat is a
-// dashed ring; a seat that accepted an invite gets a tick.
+// dashed ring (a key when [pick] is listened to); a seat offered to someone from the queue turns its ring slowly; a
+// seat that accepted an invite gets a tick.
 import { characterColor } from "../../manifest";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 
 defineProps<{
-  /** null for a seat nobody has yet. */
-  seats: ({ character: string; nick: string; ticked?: boolean } | null)[];
+  /** null for a seat nobody has yet, "pending" for one offered to someone from the queue. */
+  seats: ({ character: string; nick: string; ticked?: boolean } | null | "pending")[];
   /** Diameter of a face, px. */
   size?: number;
   /** Faces only. */
   bare?: boolean;
+  /** Empty seats are keys (emitting pick). */
+  pickable?: boolean;
 }>();
+const emit = defineEmits<{ pick: [seat: number, event: MouseEvent]; press: [] }>();
+const face = (s: unknown) => (s && s !== "pending" ? (s as { character: string; nick: string; ticked?: boolean }) : null);
 </script>
 
 <template>
   <div class="seats" :class="{ bare }" :style="{ '--d': `${size ?? 56}px` }">
-    <div v-for="(s, i) in seats" :key="i" class="seat" :class="{ empty: !s, ticked: s?.ticked }">
-      <span class="face"><CharacterAvatar v-if="s" :character="s.character" :size="size ?? 56" /></span>
-      <div v-if="s && !bare" class="tag">
-        <i :style="{ background: characterColor(s.character) }" aria-hidden="true"></i><span>{{ s.nick }}</span>
+    <div v-for="(s, i) in seats" :key="i" class="seat" :class="{ empty: !face(s), pending: s === 'pending', ticked: face(s)?.ticked }">
+      <button
+        v-if="pickable && !s" type="button" class="face" aria-label="入座"
+        @pointerdown="emit('press')" @click="emit('pick', i, $event)"
+      ></button>
+      <span v-else class="face"><CharacterAvatar v-if="face(s)" :character="face(s)!.character" :size="size ?? 56" /></span>
+      <div v-if="face(s) && !bare" class="tag">
+        <i :style="{ background: characterColor(face(s)!.character) }" aria-hidden="true"></i><span>{{ face(s)!.nick }}</span>
       </div>
     </div>
   </div>
@@ -35,6 +44,7 @@ defineProps<{
   display: block;
   width: var(--d);
   height: var(--d);
+  padding: 0;
   border-radius: 50%;
   box-shadow: 0 0 0 3px #fff, 0 4px 10px -3px rgba(var(--c-900-rgb), 0.5);
 }
@@ -43,6 +53,18 @@ defineProps<{
 .face { background: #fff; }
 .face > * { border-radius: 50%; }
 .empty .face { background: none; box-shadow: none; border: 2px dashed rgba(255, 255, 255, 0.75); box-sizing: border-box; }
+/* An empty seat to sit at: the ring fills a little under the pointer and lifts, as a key does. */
+button.face { cursor: pointer; transition: translate var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out); }
+button.face:hover { translate: 0 -2px; background: rgba(255, 255, 255, 0.18); }
+button.face:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Offered to someone from the queue: the ring turns while it waits for the answer. */
+.pending .face { border-color: rgba(255, 255, 255, 0.55); animation: wait 6s linear infinite; }
+@keyframes wait {
+  to { rotate: 1turn; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending .face { animation: none; }
+}
 /* Accepted: a tick on the face. */
 .ticked .face::after {
   content: "";
