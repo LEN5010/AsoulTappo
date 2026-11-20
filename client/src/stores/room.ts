@@ -270,6 +270,8 @@ const events: RoomEvents = {
     }
     if (code === "rate_limited") {
       rateLimited += 1;
+      // It may be a join of the dou dizhu queue, which the store sends once more.
+      ddzHooks.refused(code);
       return;
     }
     writeLog("room", `error ${code}${rateLimited ? ` (${rateLimited} rate_limited before)` : ""}`);

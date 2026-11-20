@@ -443,3 +443,56 @@ it("holds the queue back as long as the server says after a table of the queue w
   socket.recv({ type: "error", code: "ddz_queued", message: "" });
   expect(r.lastError.value).toBe("已在别处匹配");
 });
+
+it("keeps queue requests a server interval apart, and sends a join the server held back once more", async () => {
+  const { socket, d, settings } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  const queue = () => socket.sent.filter((m) => m.type === "ddz_queue");
+  d.queueDdz(50);
+  expect(queue()).toEqual([{ type: "ddz_queue", base: 50 }]); // the first goes at once
+  socket.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  d.unqueueDdz(); // stopping is never held back
+  expect(queue()).toHaveLength(2);
+  socket.recv({ type: "ddz_queue", base: null });
+  d.queueDdz(250);
+  d.queueDdz(50); // the latest stake picked is the one sent
+  expect(queue()).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(queue().slice(2)).toEqual([{ type: "ddz_queue", base: 50 }]);
+  // Held back by the server all the same (another device of the save): sent once more after the interval.
+  socket.recv({ type: "error", code: "rate_limited", message: "" });
+  expect(queue()).toHaveLength(3);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(queue().slice(3)).toEqual([{ type: "ddz_queue", base: 50 }]);
+  socket.recv({ type: "error", code: "rate_limited", message: "" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(queue()).toHaveLength(4); // only once
+  // A join waiting for its time is checked again when it goes, and stopping drops it.
+  d.queueDdz(250); // the interval has passed: at once
+  expect(queue()).toHaveLength(5);
+  socket.recv({ type: "ddz_queue", base: 250, waited: 0 });
+  d.queueDdz(50);
+  d.unqueueDdz();
+  socket.recv({ type: "ddz_queue", base: null });
+  d.queueDdz(50);
+  settings.duelDnd = true;
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(queue().slice(5)).toEqual([{ type: "ddz_queue", base: 0 }]);
+  // Stopping before the server answered a join takes it back.
+  settings.duelDnd = false;
+  d.queueDdz(250);
+  d.unqueueDdz();
+  expect(queue().slice(6)).toEqual([{ type: "ddz_queue", base: 250 }, { type: "ddz_queue", base: 0 }]);
+});
+
+it("takes a rate_limited answer for the queue only while a join waits for its answer", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_deal", table: "t", seats: SEATS, you: 1, hand: HAND, base: 100, cap: 24, deal: 1, turn: 1, sec: 15, dealSec: 0 });
+  d.bidDdz(1);
+  expect(d.ddz.value!.acted).toBe(true);
+  socket.recv({ type: "error", code: "rate_limited", message: "" }); // taps, say
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(d.ddz.value!.acted).toBe(true); // the bid on its way keeps its keys down
+  expect(socket.sent.filter((m) => m.type === "ddz_queue")).toEqual([]);
+});

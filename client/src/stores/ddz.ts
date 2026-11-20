@@ -209,6 +209,51 @@ let endTimer: ReturnType<typeof setTimeout> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let seq = 0;
 
+/** The server takes a join of the queue, or a move in it, once a second at most (QUEUE_INTERVAL); joins go this far apart. */
+const QUEUE_GAP_MS = 1100;
+let queueSentAt = -Infinity;
+/** The stake of a join waiting for its time to be sent, and its timer. */
+let queueNext: number | null = null;
+let queueTimer: ReturnType<typeof setTimeout> | undefined;
+/** The stake of a join sent and not answered yet; whether it was sent once more after the server held it back. */
+let queueAsked: number | null = null;
+let queueRetried = false;
+
+function dropQueueJoin(): void {
+  clearTimeout(queueTimer);
+  queueTimer = undefined;
+  queueNext = null;
+  queueAsked = null;
+}
+
+/** Sends the join waiting for its time once the gap since the last one has passed, if the save can still wait there. */
+function sendQueueJoin(): void {
+  clearTimeout(queueTimer);
+  queueTimer = undefined;
+  const base = queueNext;
+  if (base === null) return;
+  const wait = queueSentAt + QUEUE_GAP_MS - Date.now();
+  if (wait > 0) {
+    queueTimer = setTimeout(sendQueueJoin, wait);
+    return;
+  }
+  queueNext = null;
+  if (!ddzCanQueue.value || !ddzStakeOpen(base) || ddzQueue.value?.base === base) return;
+  queueSentAt = Date.now();
+  queueAsked = base;
+  sendDdz({ type: "ddz_queue", base });
+}
+
+/** `rate_limited` from the server: when a join waits for its answer it may be the one held back, sent once more. */
+function queueHeldBack(): void {
+  if (queueAsked === null || queueRetried) return;
+  queueRetried = true;
+  queueNext = queueAsked;
+  queueAsked = null;
+  queueSentAt = Date.now();
+  sendQueueJoin();
+}
+
 /** The deal at the table as "table:deal"; "" while the table is not up. */
 const dealKey = computed(() => (ddzAtTable.value && ddz.value ? `${ddz.value.id}:${ddz.value.deal}` : ""));
 /** The deal the table's window was opened for, and the one it was closed during. */
@@ -268,6 +313,7 @@ export function onDdzMessage(msg: DdzMessage): void {
     return;
   }
   if (msg.type === "ddz_queue") {
+    queueAsked = null;
     ddzQueue.value = msg.base ? { base: msg.base, since: Date.now() - (msg.waited ?? 0) * 1000 } : null;
     // Back in the line after a table of the queue fell through: the wait takes the ending's place at once.
     if (msg.base && ddz.value?.match && ddz.value.phase === "over") close();
@@ -410,14 +456,19 @@ export function onDdzMessage(msg: DdzMessage): void {
 
 if (!isMirrorWindow) {
   ddzHooks.message = onDdzMessage;
-  // A move the server would not take: the keys come back.
-  ddzHooks.refused = () => { if (ddz.value) ddz.value.acted = false; };
+  // A move the server would not take: the keys come back. Requests held back are of anything (taps, emotes); only a
+  // join of the queue is sent again.
+  ddzHooks.refused = (code) => {
+    if (code === "rate_limited") queueHeldBack();
+    else if (ddz.value) ddz.value.acted = false;
+  };
   // The room connection carries the table: without it nothing of the game is known here any more. The seat is kept
   // by the server and comes back, whole, with the room (ddz_state).
   watch(inRoom, (on) => {
     if (on) return;
     ddzLive.value = {};
     // The server takes a connection that left out of its queue.
+    dropQueueJoin();
     ddzQueue.value = null;
     ddzWaiting.value = {};
     const t = ddz.value;
@@ -538,14 +589,22 @@ export function leaveDdz(): void {
   close();
 }
 
-/** Wait in the server's queue for a table at [base] with two saves of any room; at another stake, move there. */
+/**
+ * Wait in the server's queue for a table at [base] with two saves of any room; at another stake, move there. Within
+ * QUEUE_GAP_MS of the last join it goes when the gap has passed, the stake picked last.
+ */
 export function queueDdz(base: number): void {
   if (viaDesk("queue", base)) return;
-  if (ddzCanQueue.value && ddzStakeOpen(base) && ddzQueue.value?.base !== base) sendDdz({ type: "ddz_queue", base });
+  if (!ddzCanQueue.value || !ddzStakeOpen(base) || (ddzQueue.value?.base === base && queueNext === null)) return;
+  queueNext = base;
+  queueRetried = false;
+  sendQueueJoin();
 }
 
-/** Stop waiting in the queue. */
+/** Stop waiting in the queue, or drop a join not sent or not answered yet. */
 export function unqueueDdz(): void {
   if (viaDesk("unqueue")) return;
-  if (ddzQueue.value) sendDdz({ type: "ddz_queue", base: 0 });
+  const asked = queueAsked !== null;
+  dropQueueJoin();
+  if (ddzQueue.value || asked) sendDdz({ type: "ddz_queue", base: 0 });
 }
