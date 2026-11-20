@@ -1,23 +1,30 @@
 <script setup lang="ts">
 // Starting a dou dizhu game: the three seats on a strip of the mat (the own one and the two members picked), the
 // base stake as three keys in a tray, the room's members as keys to pick two of, and the key that sends the invite.
-// Members who cannot be asked are greyed.
+// Members who cannot be asked are greyed. With [match] it waits in the server's queue instead: no members to pick,
+// the two other seats stay empty, and each stake shows how many others wait at it.
 import { computed, ref, watch } from "vue";
 import { status } from "../../stores/player";
-import { members, shownNick, youId } from "../../stores/room";
+import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
-import { ddzCanInvite, ddzCanStart, ddzConfig, ddzDeposit, ddzStakeOpen, inviteDdz } from "../../stores/ddz";
+import {
+  ddzCanInvite, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzOthersWaiting, ddzStakeOpen, inviteDdz, queueDdz,
+} from "../../stores/ddz";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
 import DdzSeats from "./DdzSeats.vue";
 
-/** Bets need an account here and none is signed in. */
-const props = defineProps<{ needAccount?: boolean }>();
+/** Bets need an account here and none is signed in; [match]: wait in the queue rather than invite. */
+const props = defineProps<{ needAccount?: boolean; match?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const stakes = computed(() => ddzConfig.value?.stakes ?? []);
-const base = ref(stakes.value.find(ddzStakeOpen) ?? 0);
+/** In the queue, the open stake most others wait at comes first. */
+const first = () => (props.match
+  ? [...stakes.value].filter(ddzStakeOpen).sort((a, b) => ddzOthersWaiting(b) - ddzOthersWaiting(a))[0]
+  : stakes.value.find(ddzStakeOpen));
+const base = ref(first() ?? 0);
 watch(stakes, (list) => { if (!list.includes(base.value) || !ddzStakeOpen(base.value)) base.value = list.find(ddzStakeOpen) ?? 0; });
 
 const others = computed(() => [...members.values()].filter((m) => m.id !== youId.value));
@@ -28,9 +35,9 @@ watch(() => picked.value.filter((id) => { const m = members.get(id); return m &&
 function toggle(id: string) {
   picked.value = picked.value.includes(id) ? picked.value.filter((x) => x !== id) : picked.value.length < 2 ? [...picked.value, id] : picked.value;
 }
-const seats = computed(() => [
+const seats = computed(() => (props.match ? [undefined, youId.value, undefined] : [
   picked.value[0], youId.value, picked.value[1],
-].map((id) => {
+]).map((id) => {
   if (id === youId.value) return { character: settings.character, nick: settings.nick.trim() || "我" };
   const m = id ? members.get(id) : undefined;
   return m ? { character: m.character, nick: shownNick(m) } : null;
@@ -48,13 +55,16 @@ const blocked = computed(() => {
   }
   if (s.ddz.net >= cfg.dailyWinCap) return "今天赢到上限了，明天再来";
   if (!cfg.stakes.some(ddzStakeOpen)) return "碎片不够押金";
+  if (props.match) return duelDnd() ? "免打扰时不能匹配" : "";
   if (others.value.filter(ddzCanInvite).length < 2) return "房间里要有两位能上桌的伙伴";
   return "";
 });
-const ready = computed(() => ddzCanStart.value && picked.value.length === 2 && ddzStakeOpen(base.value));
+const ready = computed(() => ddzStakeOpen(base.value) &&
+  (props.match ? ddzCanQueue.value : ddzCanStart.value && picked.value.length === 2));
 function send() {
   if (!ready.value) return;
-  inviteDdz([...picked.value], base.value);
+  if (props.match) queueDdz(base.value);
+  else inviteDdz([...picked.value], base.value);
   emit("close");
 }
 </script>
@@ -75,10 +85,11 @@ function send() {
             :title="ddzStakeOpen(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
           >
             <Icon name="shard" :size="14" />{{ s.toLocaleString("en-US") }}
+            <em v-if="match && ddzOthersWaiting(s)" class="waiting"><Icon name="users" :size="11" />{{ ddzOthersWaiting(s) }}</em>
           </button>
         </div>
       </div>
-      <div>
+      <div v-if="!match">
         <p class="label">邀请</p>
         <div v-if="others.length" class="members">
           <button
@@ -94,7 +105,7 @@ function send() {
         <p v-else class="ui-empty">房间里还没有别人</p>
       </div>
       <p v-if="blocked" class="blocked">{{ blocked }}</p>
-      <button v-else type="button" class="ui-btn primary go" :disabled="!ready" @click="send">邀请</button>
+      <button v-else type="button" class="ui-btn primary go" :disabled="!ready" @click="send">{{ match ? "匹配" : "邀请" }}</button>
     </div>
   </Modal>
 </template>
@@ -151,6 +162,22 @@ function send() {
 .stake.primary:not(:disabled) { color: #fff; text-shadow: 0 1px 0 var(--c-600); }
 .stake.primary:not(:disabled) .icon { color: #fff; }
 .stake:disabled, .stake:disabled .icon { color: var(--ink-3); }
+/* Others waiting at a stake: a small count in the key's corner. */
+.stake { position: relative; }
+.stake .waiting {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font: 800 11px/1 var(--font-latin);
+  font-style: normal;
+  color: var(--c-600);
+}
+.stake .waiting .icon { color: inherit; }
+.stake.primary:not(:disabled) .waiting { color: #fff; }
+.stake:disabled .waiting { color: var(--ink-3); }
 
 /* The room's members: a key each, with a face. A picked one stays down with a tick. */
 .members { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 164px; overflow: auto; padding: 2px 2px 5px; margin: -2px -2px -5px; }

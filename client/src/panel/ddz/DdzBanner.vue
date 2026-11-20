@@ -1,11 +1,16 @@
 <script setup lang="ts">
-// Dou dizhu on the room page: a strip of the table's mat. At rest it carries the key that starts a game (and the
-// faces of members playing one); while an invite is out it seats the three with a tick on those who accepted, the
-// stake, and the keys to answer. While this save sits at a table the key brings up the table's window.
-import { computed, ref } from "vue";
+// Dou dizhu on the room page: a strip of the table's mat. At rest it carries the keys that wait in the server's queue
+// and start a game (and the faces of members playing one, or how many wait in the queue); while this save waits it
+// shows the stake, the time waited and the key that stops; while an invite is out it seats the three with a tick on
+// those who accepted, the stake, and the keys to answer. While this save sits at a table the key brings up the
+// table's window.
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
-import { answerDdz, ddz, ddzAtTable, ddzBusy, ddzLive, ddzPlaying, ddzReason, leaveDdz } from "../../stores/ddz";
+import {
+  answerDdz, ddz, ddzAtTable, ddzBusy, ddzConfig, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying, ddzQueue, ddzReason,
+  leaveDdz, unqueueDdz,
+} from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
 import DdzCard from "./DdzCard.vue";
@@ -14,7 +19,8 @@ import DdzSeats from "./DdzSeats.vue";
 
 /** Bets need an account here and none is signed in (the room page knows the server's info). */
 defineProps<{ needAccount?: boolean }>();
-const starting = ref(false);
+/** The sheet that starts a game: by invite, or in the queue. */
+const starting = ref<"invite" | "match" | null>(null);
 const t = computed(() => (ddz.value?.phase === "invite" || ddz.value?.phase === "over" ? ddz.value : null));
 const invite = computed(() => (t.value?.phase === "invite" ? t.value : null));
 const seats = computed(() => (invite.value?.seats ?? []).map((s) => ({
@@ -28,6 +34,25 @@ const tables = computed(() => Object.values(ddzLive.value).map((ids) =>
 /** This save sits at a table it walked away from, which is still being played. */
 const seated = computed(() => !ddz.value && ddzPlaying.value.has(youId.value));
 const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ?? 0) - Date.now())}ms` });
+
+/** Waiting in the queue (an invite or a table on screen comes first). */
+const queued = computed(() => (t.value || ddzAtTable.value ? null : ddzQueue.value));
+/** Others waiting at any stake, while this save does not wait. */
+const othersWaiting = computed(() => (ddzMatchable.value && !ddzQueue.value
+  ? (ddzConfig.value?.stakes ?? []).reduce((n, s) => n + ddzOthersWaiting(s), 0) : 0));
+const now = ref(Date.now());
+let ticker: ReturnType<typeof setInterval> | undefined;
+watch(queued, (q) => {
+  clearInterval(ticker);
+  now.value = Date.now();
+  if (q) ticker = setInterval(() => { now.value = Date.now(); }, 1000);
+}, { immediate: true });
+onBeforeUnmount(() => clearInterval(ticker));
+/** The time waited, as m:ss. */
+const waited = computed(() => {
+  const sec = Math.max(0, Math.floor((now.value - (queued.value?.since ?? now.value)) / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+});
 </script>
 
 <template>
@@ -53,19 +78,26 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
       <div class="title">
         <h4>斗地主</h4>
         <p v-if="t" class="note" role="status">{{ ddzReason(t) }}</p>
+        <p v-else-if="queued" class="note waiting" role="status">匹配中<b>{{ waited }}</b></p>
+        <p v-else-if="othersWaiting" class="note">{{ othersWaiting }} 人匹配中</p>
       </div>
-      <div v-if="tables.length" class="live">
+      <span v-if="queued" class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ queued.base.toLocaleString("en-US") }}</b></span>
+      <div v-else-if="tables.length" class="live">
         <DdzSeats v-for="(faces, i) in tables" :key="i" :seats="faces" :size="26" bare />
         <span class="ui-tag light">牌局中</span>
       </div>
       <div class="acts">
         <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
-        <button v-else type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = true">
-          <Icon name="plus" :size="15" />发起
-        </button>
+        <button v-else-if="queued" type="button" class="ui-btn" @click="unqueueDdz">取消</button>
+        <template v-else>
+          <button v-if="ddzMatchable" type="button" class="ui-btn" :disabled="ddzBusy || seated" @click="starting = 'match'">匹配</button>
+          <button type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = 'invite'">
+            <Icon name="plus" :size="15" />发起
+          </button>
+        </template>
       </div>
     </template>
-    <DdzInvite v-if="starting" :need-account="needAccount" @close="starting = false" />
+    <DdzInvite v-if="starting" :match="starting === 'match'" :need-account="needAccount" @close="starting = null" />
   </section>
 </template>
 
@@ -119,6 +151,9 @@ const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ??
 .title { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .title h4 { margin: 0; font: 800 22px/1 var(--font); letter-spacing: 1px; text-shadow: 0 2px 0 var(--c-600); }
 .note { margin: 0; font: 800 var(--fs-label)/1.2 var(--font); opacity: 0.95; }
+/* The time waited ticks in figures of one width, so the line does not jitter. */
+.note.waiting { display: flex; align-items: baseline; gap: 6px; }
+.note.waiting b { font: 800 var(--fs-label)/1.2 var(--font-latin); font-variant-numeric: tabular-nums; }
 .live { flex: none; display: flex; align-items: center; gap: 10px; }
 .acts { flex: none; margin-left: auto; display: flex; gap: 8px; }
 .acts .ui-btn { height: 38px; min-width: 76px; padding: 0 16px; }
