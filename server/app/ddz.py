@@ -681,10 +681,11 @@ class Tables:
 
     async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
-        has one at a table of this room."""
+        has one at a table of this room. Back while the deposits are being taken, it takes the seat and hears the
+        deal like the others."""
         table = self.by_save.get(peer.token) if peer.token else None
         seat = None
-        if table is not None and table.room == room_id and table.phase in (BID, PLAY) and peer.ddz:
+        if table is not None and table.room == room_id and table.phase in (STARTING, BID, PLAY) and peer.ddz:
             seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is None), None)
             if seat is None:
                 # An older connection of the save still holds the seat: its leaving is not seen yet (a client back
@@ -705,7 +706,7 @@ class Tables:
                     await self.manager.broadcast(room_id, msg)
                 else:
                     peer.enqueue(msg)
-        if seat is None:
+        if seat is None or table.phase == STARTING:
             return
         msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}
         if table.turn == seat:

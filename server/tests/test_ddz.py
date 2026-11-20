@@ -912,3 +912,47 @@ def test_a_new_connection_of_the_save_takes_the_seat_before_the_old_one_is_seen_
         await play_out(w, tid)
         assert w.last("ddz_result", 1)["winner"] == "landlord"
     run(go())
+
+
+@pytest.mark.parametrize("room", ["r", "r2"])
+def test_a_member_back_in_the_room_while_the_deposits_are_taken_gets_the_deal(monkeypatch, room):
+    async def go():
+        import threading
+
+        gate = threading.Event()
+        real = Bank.start
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            return real(self, pids, base)
+
+        monkeypatch.setattr(Bank, "start", slow)
+        w = World()
+        tid = await w.invited()
+        a, b, c = w.peers
+        await w.t.answer(b, tid, True)
+        t = w.t.by_id[tid]
+        task = asyncio.create_task(w.t.answer(c, tid, True))
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        try:
+            assert t.phase == "starting"
+            # b leaves and comes back while the database takes the deposits.
+            await w.m.depart("r", b.id)
+            b2, sb2 = w.join("b2", w.pids[1], room=room)
+            await w.t.joined(room, b2)
+        finally:
+            gate.set()
+        await task
+        await settle()
+        if room == "r":
+            assert t.seats[1].peer is b2 and not t.seats[1].auto
+            deal = sb2.of("ddz_deal")
+            assert len(deal) == 1 and deal[0]["you"] == 1 and len(deal[0]["hand"]) == 17
+            assert deal[0]["seats"][1] == {"id": b2.id, "nick": "b2", "character": "嘉然", "auto": False, "away": False}
+        else:
+            # The seat is taken again in the table's room only; meanwhile it is played for.
+            assert t.seats[1].peer is None and sb2.of("ddz_deal") == []
+    run(go())
