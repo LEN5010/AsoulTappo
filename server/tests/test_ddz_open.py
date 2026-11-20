@@ -60,7 +60,7 @@ def test_opening_a_table_seats_the_opener_and_the_third_to_sit_starts_the_game()
         await settle()
         assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sc)] == [0, 1, 2]
-        assert sc.of("ddz_open") == [] and sa.of("ddz_live")[-1]["on"] is True
+        assert [m.get("starting") for m in sc.of("ddz_open")] == [True] and sa.of("ddz_live")[-1]["on"] is True
         assert w.t.by_id[tid].phase == "bid"
     run(go())
 
@@ -340,7 +340,7 @@ def test_an_empty_seat_waiting_a_minute_goes_to_the_save_that_waited_longest_in_
         await w.t.answer(q, tid, True)
         await settle()
         assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sq)] == [0, 1, 2]
-        assert sq.of("ddz_live")[-1]["on"] is True and sq.of("ddz_open") == []
+        assert sq.of("ddz_live")[-1]["on"] is True and [m.get("starting") for m in sq.of("ddz_open")] == [True]
         # The seat of the queue is taken again from any room.
         await w.m.depart("r-q", q.id)
         q3, sq3 = w.member("q", room="r-z")
@@ -720,4 +720,24 @@ def test_invites_of_old_clients_go_on_beside_open_tables():
         await settle()
         assert s_new.of("ddz_deal")[0]["you"] == 1 and s_old.of("ddz_tables") == []
         assert w.t.by_id[tid].phase == "open"
+    run(go())
+
+
+def test_the_seats_see_the_full_table_while_the_deposits_are_taken(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        c, sc = w.member("c")
+        task = asyncio.create_task(w.t.sit("r", c, tid))
+        await until(lambda: gate.calls == 1)
+        for i, s in enumerate((sa, sb, sc)):
+            assert last_open(s) == {"table": tid, "base": BASE, "deposit": DEPOSIT, "you": i,
+                                    "seats": [seat(a), seat(b), seat(c)], "sec": OPEN_SEC - QUEUE_INTERVAL,
+                                    "starting": True}
+        held.set()
+        await task
+        await settle()
+        assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sc)] == [0, 1, 2]
     run(go())

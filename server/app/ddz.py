@@ -92,9 +92,10 @@ Open tables, with members whose client said `ddzMatch` only:
   called, and the opener is not told.
 - ``ddz_call`` {table, from, base, deposit, sec, seats} to the member called: it may sit down (``ddz_sit``); `sec` is
   how long to show the call.
-- ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | {pending} | null, ...], sec} to each seat of
-  an open table whenever it changes: `you` is the seat, null an empty seat, {pending: true} one offered to a save of
-  the queue, `sec` the time until it is put away.
+- ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | {pending} | null, ...], sec, starting?} to
+  each seat of an open table whenever it changes: `you` is the seat, null an empty seat, {pending: true} one offered
+  to a save of the queue, `sec` the time until it is put away; with `starting` the three seats are taken and the
+  deposits are being taken (the deal, or the table waiting again, follows).
 - ``ddz_tables`` {tables: [{table, base, seats}, ...]}: the open tables of the room, oldest first, seats as in
   ``ddz_open``; to its members whenever they change, at most every COUNTS_SEC, an empty list once the last goes; on
   joining the room, the list it was told last, unless it was told of none.
@@ -709,14 +710,17 @@ class Tables:
         seat due for the queue is offered (_fill)."""
         if self._fill(table):
             return  # told by _fill
+        self._tell_open(table)
+        self._tables_changed(table.room)
+        self._schedule_open(table)
+
+    def _tell_open(self, table: Table, **extra: Any) -> None:
         seats = self._shown_seats(table)
         sec = max(0.0, round(table.opened_at + OPEN_SEC - self.clock(), 1))
         for i, s in enumerate(table.seats):
             if s.peer is not None and s.accepted:
                 s.peer.enqueue({"type": "ddz_open", "table": table.id, "base": table.base, "deposit": table.deposit,
-                                "you": i, "seats": seats, "sec": sec})
-        self._tables_changed(table.room)
-        self._schedule_open(table)
+                                "you": i, "seats": seats, "sec": sec, **extra})
 
     def _schedule_open(self, table: Table) -> None:
         """One timer for whatever comes first: the table's time running out, an offered seat's answer, or an empty
@@ -891,6 +895,8 @@ class Tables:
         table.phase = STARTING
         self._cancel_timer(table)
         self._tables_changed(table.room)
+        # The full table, while the deposits are taken.
+        self._tell_open(table, starting=True)
         try:
             row, codes = await run_in_threadpool(self.bank.try_start, [s.token for s in table.seats], table.base)
         except BaseException:
