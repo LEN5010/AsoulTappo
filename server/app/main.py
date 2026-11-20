@@ -1457,8 +1457,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 # Only a client that asked for packed motion hears which version it gets; older ones keep the 1.1 shape.
                 if peer.motion_version >= 2:
                     joined["motionVersion"] = peer.motion_version
-                    # A client that queues for dou dizhu hears that this server has the queue.
-                    joined["features"] = [*FEATURES, "ddz_match"] if peer.ddz_match else list(FEATURES)
+                    # A client that queues for dou dizhu hears that this server has the queue, and emotes that go
+                    # through the table (ddz_emote).
+                    joined["features"] = [*FEATURES, "ddz_match", "ddz_emote"] if peer.ddz_match else list(FEATURES)
                     # The newcomer's cheer bar starts as the room's stands.
                     joined["cheer"] = {k: v for k, v in manager.cheer_state(manager.rooms[room_id]).items() if k != "type"}
                 await send(joined)

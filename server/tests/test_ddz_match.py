@@ -511,7 +511,8 @@ def test_a_game_the_queue_made_over_the_socket(api):
         # An old client in r1, and a's room connection there.
         jo = matched(o, "old", "r1", match=False)
         jar = matched(ar, "a", "r1")
-        assert "ddz_match" in jar["features"] and "ddz_match" not in jo["features"]
+        assert {"ddz_match", "ddz_emote"} <= set(jar["features"]) and "ddz_match" not in jo["features"]
+        assert "ddz_emote" not in jo["features"]
         # Room connections do not queue, whatever their client.
         for ws in (o, ar):
             ws.send_json({"type": "ddz_queue", "base": BASE})
