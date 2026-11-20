@@ -3,9 +3,9 @@
 // in the queue (DdzInvite.vue, a stake to pick) and, in a room, the key that opens a table (on a server without
 // open tables, the key that invites), and the faces of members playing a game, or how many wait in the queue; while
 // this save waits it shows the stake, the time waited and the key that stops; while an invite is out it seats the three
-// with a tick on those who accepted, the stake, and the keys to answer; at an open table it seats who sits there with
-// the empty seats as dashed rings, the stake, and the keys to call someone and to put the table away (the opener's) or
-// to stand up. While this save sits at a table the key brings up the table's window. Under it, the room's other open
+// with a tick on those who accepted, the stake as a chip after them, and the keys to answer over the time left; at an
+// open table it seats who sits there with the empty seats as dashed rings, the stake, and the keys to call someone and
+// to put the table away (the opener's) or to leave. While this save sits at a table the key brings up the table's window. Under it, the room's other open
 // tables, each on its own strip, while this save is free to sit down.
 import { computed, ref } from "vue";
 import { inRoom, members, shownNick, youId } from "../../stores/room";
@@ -67,30 +67,26 @@ const waited = useWaited(() => queued.value?.since);
 <template>
   <section class="banner" :class="{ inviting: !!invite || !!mine }" data-rise>
     <template v-if="invite">
-      <DdzSeats class="who" :seats="seats" :size="44" />
-      <div class="deal">
-        <span class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ invite.base.toLocaleString("en-US") }}</b></span>
+      <DdzSeats class="who" :seats="seats" :size="44" :stake="invite.base" />
+      <div :key="invite.id" class="acts answer">
+        <div class="row">
+          <template v-if="!invite.sent && !invite.answered">
+            <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
+            <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
+          </template>
+          <button v-else-if="invite.sent" type="button" class="ui-btn white" @click="leaveDdz(invite.id, 'invite')">取消</button>
+        </div>
+        <span :key="invite.until" class="clock" aria-hidden="true"><i :style="drain()"></i></span>
       </div>
-      <div :key="invite.id" class="acts">
-        <template v-if="!invite.sent && !invite.answered">
-          <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
-          <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
-        </template>
-        <button v-else-if="invite.sent" type="button" class="ui-btn white" @click="leaveDdz(invite.id, 'invite')">取消</button>
-      </div>
-      <span :key="invite.until" class="clock" aria-hidden="true"><i :style="drain()"></i></span>
     </template>
     <template v-else-if="mine">
-      <DdzSeats class="who" :seats="mineSeats" :size="44" />
-      <div class="deal">
-        <span class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ mine.base.toLocaleString("en-US") }}</b></span>
-      </div>
+      <DdzSeats class="who" :seats="mineSeats" :size="44" :stake="mine.base" />
       <div v-if="!mine.starting" class="acts">
         <template v-if="mine.you === 0">
           <button type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">散桌</button>
           <button type="button" class="ui-btn white" :disabled="!callable" @click="sheet = 'call'">邀请</button>
         </template>
-        <button v-else type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">起身</button>
+        <button v-else type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">离开</button>
       </div>
     </template>
     <template v-else>
@@ -192,12 +188,13 @@ const waited = useWaited(() => queued.value?.since);
 /* Every key on coral is white (the button spec: a change of colour only means selected). */
 .ui-btn.white { --key-lip: var(--c-700); color: var(--c-800); }
 .acts .ui-btn:disabled { --key-top: rgba(255, 255, 255, 0.35); --key-bottom: rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.9); }
-.who { flex: none; padding: 14px 0 12px; }
-.deal { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.who { flex: 0 1 auto; min-width: 0; padding: 16px 0 14px; margin-left: -4px; }
+/* The keys that answer an invite stand over the time left to do it. */
+.acts.answer { flex-direction: column; align-items: stretch; gap: 9px; min-width: 160px; }
+.acts .row { display: flex; justify-content: flex-end; gap: 8px; }
 .stake { display: flex; align-items: center; gap: 4px; font: 800 20px/1 var(--font-latin); }
 .stake small { width: 30px; font: 800 var(--fs-caption)/1 var(--font); opacity: 0.9; }
-/* The time left to answer, along the foot of the strip. */
-.clock { position: absolute; left: 20px; right: 20px; bottom: 12px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.35); overflow: hidden; }
+.clock { display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.35); overflow: hidden; }
 .clock i { display: block; height: 100%; border-radius: 2px; background: #fff; transform-origin: 0 50%; animation: drain linear forwards; }
 @keyframes drain {
   to { transform: scaleX(0); }

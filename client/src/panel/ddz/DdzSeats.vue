@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // Three seats in a row, each a round face with a name tag: who is at a table, or about to be. An empty seat is a
-// dashed ring (a key when [pick] is listened to); a seat offered to someone from the queue turns its ring slowly; a
-// seat that accepted an invite gets a tick.
+// dashed ring (a key when [pick] is listened to) over a blank tag; a seat offered to someone from the queue turns its
+// ring slowly; a seat that accepted an invite gets a tick. With [stake], the table's base follows them past a rule,
+// as a chip the size of a face.
 import { characterColor } from "../../manifest";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
+import Icon from "../../ui/Icon.vue";
 
 defineProps<{
   /** null for a seat nobody has yet, "pending" for one offered to someone from the queue. */
@@ -14,6 +16,8 @@ defineProps<{
   bare?: boolean;
   /** Empty seats are keys (emitting pick). */
   pickable?: boolean;
+  /** The table's base, shown after the seats. */
+  stake?: number;
 }>();
 const emit = defineEmits<{ pick: [seat: number, event: MouseEvent]; press: [] }>();
 const face = (s: unknown) => (s && s !== "pending" ? (s as { character: string; nick: string; ticked?: boolean }) : null);
@@ -30,15 +34,25 @@ const face = (s: unknown) => (s && s !== "pending" ? (s as { character: string; 
       <div v-if="face(s) && !bare" class="tag">
         <i :style="{ background: characterColor(face(s)!.character) }" aria-hidden="true"></i><span>{{ face(s)!.nick }}</span>
       </div>
+      <div v-else-if="!bare" class="tag blank" aria-hidden="true"></div>
     </div>
+    <template v-if="stake !== undefined">
+      <i class="rule" aria-hidden="true"></i>
+      <div class="seat of-stake">
+        <span class="chip" :class="{ long: stake >= 1000 }">{{ stake.toLocaleString("en-US") }}</span>
+        <div v-if="!bare" class="tag"><Icon name="shard" :size="11" /><span>底分</span></div>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.seats { display: flex; align-items: flex-start; justify-content: center; gap: 8px; }
-.seat { position: relative; width: calc(var(--d) + 48px); display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.seats { display: flex; align-items: flex-start; justify-content: center; gap: 4px; min-width: 0; }
+/* A seat is as wide as a name of five or six characters, and gives way to a shorter one where the row is narrow. */
+.seat { position: relative; flex: 0 1 auto; width: calc(var(--d) + 56px); min-width: calc(var(--d) + 16px); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.seat.of-stake { flex: none; width: max(calc(var(--d) + 14px), 62px); min-width: 0; }
 .bare { gap: 6px; }
-.bare .seat { width: auto; }
+.bare .seat { flex: none; width: auto; min-width: 0; }
 .face {
   position: relative;
   display: block;
@@ -98,5 +112,26 @@ button.face:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   white-space: nowrap;
 }
 .tag i { flex: none; width: 4px; height: 10px; border-radius: 1px; }
+.tag :deep(svg) { flex: none; color: var(--c-600); }
+/* An empty seat: the room of a name, see-through. */
+.tag.blank { width: var(--d); background: rgba(255, 255, 255, 0.26); box-shadow: none; }
+/* The stake: past a rule as tall as a face, a chip of the table (white, a dashed coral ring inside its edge). */
+.rule { flex: none; width: 2px; height: calc(var(--d) * 0.72); margin: calc(var(--d) * 0.14) 6px 0; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
+.chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--d);
+  height: var(--d);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 3px #fff, 0 4px 10px -3px rgba(var(--c-900-rgb), 0.5);
+  color: var(--c-700);
+  font: 800 calc(var(--d) * 0.4) / 1 var(--font-latin);
+  letter-spacing: -0.3px;
+}
+.chip.long { font-size: calc(var(--d) * 0.3); }
+.chip::before { content: ""; position: absolute; inset: 1px; border-radius: 50%; border: 2px dashed var(--c-300); }
+.bare .chip { box-shadow: 0 0 0 2px #fff; }
 .tag span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 </style>
