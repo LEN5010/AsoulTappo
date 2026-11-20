@@ -456,7 +456,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div ref="matEl" class="mat" @pointerdown.self="clearPicked">
-          <span class="crest" aria-hidden="true"><i class="ring"></i><i class="diamond"></i><b><i></i>斗地主<i></i></b></span>
+          <span class="crest" aria-hidden="true"><i></i></span>
+          <b class="crest-word" aria-hidden="true"><i></i>斗地主<i></i></b>
           <div class="mult">
             <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
             <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
@@ -743,45 +744,48 @@ onBeforeUnmount(() => {
 }
 .factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
-/* The card back's ring and diamond printed large and faint in the felt, the game's name under them. Played cards and
-   the multiplier lie over it. */
-.crest {
+/* The card back's ring and diamond printed large and faint in the felt, a little above its middle, and the game's
+   name under them in a band, right where the own seat's word lands (an own pass or bid covers it). Played cards and
+   the multiplier lie over them. */
+.crest,
+.crest-word {
   position: absolute;
   left: 50%;
-  top: 50%;
-  translate: -50% -50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+  translate: -50% 0;
   color: #fff;
   opacity: 0.3;
   pointer-events: none;
 }
-.crest .ring {
-  position: relative;
+.crest {
+  top: calc(50% - 30px);
   width: 176px;
   height: 176px;
+  margin-top: -88px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.28) 0%, transparent 68%);
   box-shadow: inset 0 0 0 2px #fff, 0 0 0 8px transparent, 0 0 0 10px rgba(255, 255, 255, 0.4);
 }
-.crest .diamond {
+.crest i {
   position: absolute;
-  top: 26px;
-  left: 50%;
-  width: 124px;
-  height: 124px;
-  margin-left: -62px;
+  inset: 26px;
   border-radius: 8px;
   box-shadow: inset 0 0 0 2px #fff;
   rotate: 45deg;
   opacity: 0.65;
 }
-.crest b { display: flex; align-items: center; gap: 12px; font: 800 20px/1 var(--font); letter-spacing: 0.4em; }
-.crest b i { width: 34px; height: 2px; background: #fff; opacity: 0.75; }
+/* Centred 56 above the mat's foot, as the own seat's word is (the zone's 8 and the word's 28 under its 40). */
+.crest-word {
+  bottom: 47px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 800 18px/1 var(--font);
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+}
+.crest-word i { width: 34px; height: 2px; background: #fff; opacity: 0.75; }
 /* Past the spacing after the last character, so the word sits in the middle. */
-.crest b i:last-child { margin-left: -0.4em; }
+.crest-word i:last-child { margin-left: -0.2em; }
 
 /* What each seat has in front of it. Cards on the table lie a little askew; the ones in the hand do not. The other
    seats' sit under their names, on either side of the multiplier; the own one along the mat's near edge. */
@@ -798,7 +802,7 @@ onBeforeUnmount(() => {
 @keyframes land {
   from { opacity: 0; translate: var(--from); scale: 0.72; }
 }
-/* The felt seen through a quarter of white, made opaque so the crest's word does not show through it. */
+/* The felt seen through a quarter of white, made opaque so the crest's word under the own seat's does not show. */
 .said {
   height: 40px;
   padding: 0 19px;
@@ -910,13 +914,14 @@ onBeforeUnmount(() => {
 .pill .nick { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pill .ui-tag { flex: none; margin: 0 -6px 0 2px; }
 .pill .ui-tag.soft { --tag-bg: var(--c-100); --tag-fg: var(--c-700); }
-/* The landlord's tag turns coral, a white edge keeping it off the mat; its ring of the move stands outside that edge. */
+/* The landlord's tag turns coral, a white edge keeping it off the mat; its ring of the move stands outside that edge,
+   in deep coral, as the mat's coral would swallow the usual one. */
 .pill.lord {
   background: var(--c-600);
   color: #fff;
   box-shadow: 0 0 0 2px #fff, 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45);
 }
-.pill.lord.turn { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--c-600), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45); }
+.pill.lord.turn { box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--c-700), 0 5px 12px -5px rgba(var(--c-900-rgb), 0.45); }
 .pill.lord > i { box-shadow: 0 0 0 1.5px #fff; }
 .count { position: absolute; top: 50%; translate: 0 -50%; display: flex; align-items: center; gap: 6px; font: 800 34px/1 var(--font-latin); color: #fff; text-shadow: 0 3px 0 var(--c-600); white-space: nowrap; }
 .seat.left .count { right: 100%; margin-right: 12px; flex-direction: row-reverse; }
