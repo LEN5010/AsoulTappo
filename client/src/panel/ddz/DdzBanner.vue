@@ -91,7 +91,7 @@ const waited = computed(() => {
         <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
         <button v-else-if="queued" type="button" class="ui-btn" @click="unqueueDdz">取消</button>
         <template v-else>
-          <button v-if="ddzMatchable" type="button" class="ui-btn" :disabled="ddzBusy || seated || ddzRetry" @click="starting = 'match'">匹配</button>
+          <button v-if="ddzMatchable" type="button" class="ui-btn white" :disabled="ddzBusy || seated || ddzRetry" @click="starting = 'match'">匹配</button>
           <button type="button" class="ui-btn white" :disabled="ddzBusy || seated" @click="starting = 'invite'">
             <Icon name="plus" :size="15" />发起
           </button>
