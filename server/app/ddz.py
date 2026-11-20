@@ -22,14 +22,20 @@ Open tables: a member on a client that said `ddzMatch` opens a table at a stake 
 of the room sit down at its empty seats, and sitting is consent. The third to sit starts the game: the three deposits
 go in one transaction, and a seat whose save may no longer play is let go, told why, while the table waits again (the
 opener's puts it away). Before the start a member stands up by leaving the table or the room; the opener doing so puts
-the table away, as does OPEN_SEC without the three seats taken. Nothing is taken before the start.
+the table away, as does OPEN_SEC without the three seats taken. An empty seat that has waited FILL_SEC is offered to
+the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
+made (the seats taken do not answer again) and its seat is taken again from any room, and one that declines, leaves or
+lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
+the start.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made, the opener of an open table):
 
 - ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`. A table the
   queue made has no `from`, and has `match` true and `seats` [{id, nick, character}] (the members may be in other
-  rooms).
+  rooms). The seat of an open table offered to a save of the queue comes the same way to that save alone, with
+  `accepted` the ids of the seats taken, an empty seat as "" in `ids` and null in `seats`; it answers with
+  ``ddz_answer``.
 - ``ddz_answer`` {id}: member `id` accepted.
 - ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
@@ -76,8 +82,9 @@ Open tables, with members whose client said `ddzMatch` only:
   empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when the table is not open in the
   room or no seat is empty.
 - ``ddz_leave`` {table} from a seat of an open table: stand up; the opener's puts the table away.
-- ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | null, ...], sec} to each seat of an open
-  table whenever it changes: `you` is the seat, null an empty seat, `sec` the time until it is put away.
+- ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | {pending} | null, ...], sec} to each seat of
+  an open table whenever it changes: `you` is the seat, null an empty seat, {pending: true} one offered to a save of
+  the queue, `sec` the time until it is put away.
 - ``ddz_tables`` {tables: [{table, base, seats}, ...]}: the open tables of the room, oldest first, seats as in
   ``ddz_open``; to its members whenever they change, at most every COUNTS_SEC, an empty list once the last goes; on
   joining the room, the list it was told last, unless it was told of none.
@@ -304,10 +311,17 @@ class Seat:
     roam: bool = False
     # An empty seat of an open table (no save): since when it is empty.
     empty_since: float = 0.0
+    # A seat of an open table offered to a save of the queue, not accepted yet: until when it may answer.
+    until: float = 0.0
 
     @property
     def empty(self) -> bool:
         return not self.token
+
+    @property
+    def asked(self) -> bool:
+        """Offered to a save of the queue that has not accepted yet (open tables)."""
+        return bool(self.token) and not self.accepted
 
 
 @dataclass(eq=False)
@@ -541,6 +555,9 @@ class Tables:
         self._leave_queue(peer, reason="ddz_dnd")
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
+        if table is not None and seat is not None and table.phase == OPEN and table.seats[seat].asked:
+            self._unseat_asked(table, seat, "declined")
+            return
         if table is None or seat is None or table.phase != INVITE or table.seats[seat].accepted:
             return
         if table.match:
@@ -549,6 +566,10 @@ class Tables:
             self._end(table, "declined", by=peer, refused=[peer])
 
     async def answer(self, peer: Peer, table_id: str, accept: bool) -> None:
+        open_table = self.by_id.get(table_id)
+        if open_table is not None and open_table.open and open_table.phase == OPEN:
+            await self._answer_seat(open_table, peer, accept)
+            return
         table, seat = self._table(peer, table_id, INVITE)
         if (seat == 0 and not table.match) or table.seats[seat].accepted:
             raise GameError("ddz_gone", "")
@@ -591,7 +612,7 @@ class Tables:
 
     def _seat_for(self, peer: Peer, **kw: Any) -> Seat:
         return Seat(token=peer.token or "", peer=peer, id=peer.id, nick=peer.nick, character=peer.character,
-                    accepted=True, **kw)
+                    **{"accepted": True, **kw})
 
     def _empty_seat(self) -> Seat:
         return Seat(token="", peer=None, id="", nick="", character="", empty_since=self.clock())
@@ -635,11 +656,17 @@ class Tables:
             self._open_changed(table)
 
     def _shown_seats(self, table: Table) -> list[dict | None]:
-        """The seats of an open table as its members see them: None for an empty one."""
-        return [None if s.empty else {"id": s.id, "nick": s.nick, "character": s.character} for s in table.seats]
+        """The seats of an open table as its members see them: None for an empty one, {pending} for one offered to
+        a save of the queue (who it is stays unsaid until it accepts)."""
+        return [None if s.empty else {"pending": True} if s.asked else {"id": s.id, "nick": s.nick,
+                                                                          "character": s.character}
+                for s in table.seats]
 
     def _open_changed(self, table: Table) -> None:
-        """Tells the seats of an open table how it stands, and times what comes next (_open_due)."""
+        """Tells the seats of an open table how it stands, and times what comes next (_open_due); first, an empty
+        seat due for the queue is offered (_fill)."""
+        if self._fill(table):
+            return  # told by _fill
         seats = self._shown_seats(table)
         sec = max(0.0, round(table.opened_at + OPEN_SEC - self.clock(), 1))
         for i, s in enumerate(table.seats):
@@ -650,19 +677,94 @@ class Tables:
         self._schedule_open(table)
 
     def _schedule_open(self, table: Table) -> None:
+        """One timer for whatever comes first: the table's time running out, an offered seat's answer, or an empty
+        seat becoming due for the queue (one already due waits for someone to queue)."""
         self._cancel_timer(table)
         table.step += 1
         step = table.step
-        due = table.opened_at + OPEN_SEC
-        table.timer = self.timers.later(max(0.0, due - self.clock()), lambda: self._open_due(table, step))
+        now = self.clock()
+        times = [table.opened_at + OPEN_SEC] + [s.until for s in table.seats if s.asked]
+        if not any(s.asked for s in table.seats):
+            times += [t for s in table.seats if s.empty and (t := s.empty_since + FILL_SEC) > now]
+        table.timer = self.timers.later(max(0.0, min(times) - now), lambda: self._open_due(table, step))
 
     async def _open_due(self, table: Table, step: int) -> None:
         if table.step != step or table.phase != OPEN:
             return
-        if self.clock() >= table.opened_at + OPEN_SEC:
+        now = self.clock()
+        if now >= table.opened_at + OPEN_SEC:
             self._disband(table, "expired")
             return
-        self._schedule_open(table)
+        lapsed = next((i for i, s in enumerate(table.seats) if s.asked and now >= s.until), None)
+        if lapsed is not None:
+            self._unseat_asked(table, lapsed, "timeout")
+        else:
+            self._open_changed(table)
+
+    def _fill(self, table: Table) -> bool:
+        """Offers an empty seat of an open table that has waited FILL_SEC to the save that waited longest in the
+        queue at the table's stake, one seat at a time: it leaves the queue and is asked as at a table the queue
+        made (``ddz_invite``); the seats taken do not answer again. Returns whether it did (and told the table)."""
+        if table.phase != OPEN or any(s.asked for s in table.seats):
+            return False
+        now = self.clock()
+        at = next((i for i, s in enumerate(table.seats) if s.empty and now >= s.empty_since + FILL_SEC), None)
+        if at is None:
+            return False
+        w = next((w for w in self.lines.get(table.base, [])
+                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd), None)
+        if w is None:
+            return False
+        sec = self.bank.cfg()["inviteSec"]
+        self._dequeue(w)
+        table.seats[at] = self._seat_for(w.peer, accepted=False, roam=True, since=w.since, seq=w.seq,
+                                         until=now + sec)
+        self.by_save[w.token] = table
+        w.peer.enqueue({"type": "ddz_invite", "table": table.id, "ids": [s.id for s in table.seats],
+                        "base": table.base, "deposit": table.deposit, "sec": sec, "match": True,
+                        "seats": [None if s.empty else {"id": s.id, "nick": s.nick, "character": s.character}
+                                  for s in table.seats],
+                        "accepted": [s.id for s in table.seats if not s.empty and s.accepted]})
+        self._open_changed(table)
+        return True
+
+    def _fill_line(self, base: int) -> None:
+        """The line of [base] grew: open tables at that stake with a seat due take from it, oldest table first."""
+        for t in sorted((t for t in self.by_id.values() if t.open and t.phase == OPEN and t.base == base),
+                        key=lambda t: (t.opened_at, t.id)):
+            self._fill(t)
+
+    async def _answer_seat(self, table: Table, peer: Peer, accept: bool) -> None:
+        """A save of the queue answers the seat of an open table offered to it."""
+        seat = table.seat_of(peer)
+        if seat is None or not table.seats[seat].asked:
+            raise GameError("ddz_gone", "")
+        if not accept:
+            self._unseat_asked(table, seat, "declined")
+            return
+        s = table.seats[seat]
+        s.accepted, s.until = True, 0.0
+        if all(not x.empty and x.accepted for x in table.seats):
+            await self._begin(table)
+        else:
+            self._open_changed(table)
+
+    def _unseat_asked(self, table: Table, seat: int, reason: str) -> None:
+        """The save asked to take seat [seat] declined it, let the time run out or left: as at a table the queue
+        made, it may queue again only after MATCH_RETRY_SEC. The seat is offered to the next at once."""
+        s = table.seats[seat]
+        if self.by_save.get(s.token) is table:
+            del self.by_save[s.token]
+        now = self.clock()
+        self.match_refused = {k: t for k, t in self.match_refused.items() if t > now}
+        self.match_refused[s.token] = now + MATCH_RETRY_SEC
+        if s.peer is not None:
+            s.peer.enqueue({"type": "ddz_over", "table": table.id, "reason": reason})
+            s.peer.enqueue({"type": "ddz_queue", "base": None, "reason": "ddz_match_cooldown",
+                            "retry": MATCH_RETRY_SEC})
+        table.seats[seat] = self._empty_seat()
+        table.seats[seat].empty_since = now - FILL_SEC
+        self._open_changed(table)
 
     def _stand(self, table: Table, seat: int) -> None:
         """Seat [seat] of an open table stands up: it is empty again, and its member hears the table is gone."""
@@ -689,6 +791,8 @@ class Tables:
         for i, s in enumerate(table.seats):
             if s.peer is not None and i not in quiet:
                 s.peer.enqueue({"type": "ddz_closed", "table": table.id} if s is by else over)
+        # A save of the queue asked to sit down goes back to its place in the line.
+        self._requeue(table.base, [s for s in table.seats if s.asked])
 
     def _room_tables(self, room_id: str) -> list[dict]:
         """The open tables of room [room_id] as its members see them, oldest first."""
@@ -1058,9 +1162,11 @@ class Tables:
         """A member walks away from the table but stays in the room."""
         table, seat = self._table(peer, table_id, OPEN, INVITE, BID, PLAY, OVER)
         if table.phase == OPEN:
-            # The opener puts the table away; anyone else stands up.
+            # The opener puts the table away; anyone else stands up, or declines the seat it was offered.
             if seat == 0:
                 self._disband(table, "disband", by=table.seats[0])
+            elif table.seats[seat].asked:
+                self._unseat_asked(table, seat, "declined")
             else:
                 self._stand(table, seat)
         elif table.phase == INVITE and table.match:
@@ -1091,6 +1197,9 @@ class Tables:
         if table.phase == OPEN:
             if seat == 0:
                 self._disband(table, "disband", by=s)
+            elif s.asked:
+                # Leaving counts as declining, as at a table the queue made.
+                self._unseat_asked(table, seat, "gone")
             else:
                 self._stand(table, seat)
         elif table.phase == INVITE and table.match:
@@ -1123,7 +1232,7 @@ class Tables:
         seat = None
         if table is not None and table.phase in (OPEN, STARTING, BID, PLAY):
             # A seat of the queue is taken again from any room, on a client that queues; any other in the table's room.
-            mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and (
+            mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked and (
                 peer.ddz_match if table.match or s.roam else peer.ddz and table.room == room_id)]
             seat = next((i for i in mine if table.seats[i].peer is None), None)
             if seat is None:
@@ -1256,6 +1365,7 @@ class Tables:
         self.lines.setdefault(base, []).append(w)
         self._tell_queue(w)
         self._counts_changed()
+        self._fill_line(base)
         await self._match(base)
 
     def _limit(self, peer: Peer) -> None:
@@ -1422,6 +1532,7 @@ class Tables:
         for w in back:
             self._tell_queue(w)
         self._counts_changed()
+        self._fill_line(base)
         self._spawn(self._match(base))
 
     def counts(self) -> dict[int, int]:

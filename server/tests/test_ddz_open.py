@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from app.ddz import OPEN_SEC, QUEUE_INTERVAL, Bank
+from app.ddz import FILL_SEC, MATCH_RETRY_SEC, OPEN_SEC, QUEUE_INTERVAL, Bank
 from test_ddz import BASE, DEPOSIT, SHARDS, api, save  # noqa: F401
 from test_ddz_match import MatchWorld, matched, queue_msgs, receive  # noqa: F401
 from test_duel import settle
@@ -310,4 +310,115 @@ def test_a_table_put_away_leaves_the_room_list():
         w.mono += 1
         await w.counts.fire()
         assert [t["base"] for t in s_watch.of("ddz_tables")[-1]["tables"]] == [50]
+    run(go())
+
+
+# ------------------------------------------------------------------ filled from the queue
+INVITE_SEC = 15
+
+
+def test_an_empty_seat_waiting_a_minute_goes_to_the_save_that_waited_longest_in_the_queue():
+    async def go():
+        w = OpenWorld()
+        q, sq = w.member("q", room="r-q")
+        await w.t.queue(q, BASE)
+        q2, _ = w.member("q2", room="r-q2")
+        await w.t.queue(q2, BASE)
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        w.mono += FILL_SEC - 2
+        await w.timers.fire()
+        assert w.t.by_id[tid].seats[2].empty
+        w.mono += 1
+        await w.timers.fire()
+        assert queue_msgs(sq)[-1] == {"base": None} and [x.peer for x in w.t.lines[BASE]] == [q2]
+        assert sq.of("ddz_invite") == [{"type": "ddz_invite", "table": tid, "ids": [a.id, b.id, q.id], "base": BASE,
+                                        "deposit": DEPOSIT, "sec": INVITE_SEC, "match": True,
+                                        "seats": [seat(a), seat(b), seat(q)], "accepted": [a.id, b.id]}]
+        assert last_open(sa)["seats"] == [seat(a), seat(b), {"pending": True}]
+        assert w.t._room_tables("r")[0]["seats"][2] == {"pending": True}
+        # Accepting seats it from its own room; the seats taken do not answer again.
+        await w.t.answer(q, tid, True)
+        await settle()
+        assert [s.of("ddz_deal")[0]["you"] for s in (sa, sb, sq)] == [0, 1, 2]
+        assert sq.of("ddz_live")[-1]["on"] is True and sq.of("ddz_open") == []
+        # The seat of the queue is taken again from any room.
+        await w.m.depart("r-q", q.id)
+        q3, sq3 = w.member("q", room="r-z")
+        await w.t.joined("r-z", q3)
+        assert w.t.by_id[tid].seats[2].peer is q3 and sq3.of("ddz_state")[0]["you"] == 2
+    run(go())
+
+
+def test_a_save_queueing_for_a_seat_waiting_that_long_already_is_asked_at_once_one_seat_at_a_time():
+    async def go():
+        w = OpenWorld()
+        ((a, sa),), tid = await w.opened("a")
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        q, sq = w.member("q", room="r-q")
+        await w.t.queue(q, BASE)
+        q2, sq2 = w.member("q2", room="r-q2")
+        await w.t.queue(q2, BASE)
+        await w.t.idle()
+        assert sq.of("ddz_invite")[0]["ids"] == [a.id, q.id, ""] and sq.of("ddz_invite")[0]["seats"][2] is None
+        assert sq2.of("ddz_invite") == [] and [x.peer for x in w.t.lines[BASE]] == [q2]
+        await w.t.answer(q, tid, True)
+        assert sq2.of("ddz_invite")[0]["accepted"] == [a.id, q.id]
+        assert last_open(sq) == {"table": tid, "base": BASE, "deposit": DEPOSIT, "you": 1,
+                                 "seats": [seat(a), seat(q), {"pending": True}], "sec": OPEN_SEC - FILL_SEC}
+    run(go())
+
+
+@pytest.mark.parametrize("how", ["declined", "timeout", "gone", "dnd"])
+def test_a_save_of_the_queue_that_does_not_take_the_seat_waits_and_the_next_is_asked(how):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        q, sq = w.member("q", room="r-q")
+        await w.t.queue(q, BASE)
+        q2, sq2 = w.member("q2", room="r-q2")
+        await w.t.queue(q2, BASE)
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        assert sq.of("ddz_invite")
+        if how == "declined":
+            await w.t.answer(q, tid, False)
+        elif how == "timeout":
+            w.mono += INVITE_SEC
+            await w.timers.fire()
+        elif how == "gone":
+            await w.m.depart("r-q", q.id)
+        else:
+            w.t.set_dnd(q, True)
+        if how != "gone":
+            assert sq.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": how if how != "dnd" else
+                                          "declined"}]
+            assert queue_msgs(sq)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": MATCH_RETRY_SEC}
+        q_again, _ = w.member("q", room="r-q9")
+        w.mono += QUEUE_INTERVAL
+        with pytest.raises(Exception) as e:
+            await w.t.queue(q_again, BASE)
+        assert e.value.code == "ddz_match_cooldown"
+        # The seat is open again and goes to the next at once; the two seated stay as they were.
+        assert sq2.of("ddz_invite")[0]["ids"] == [a.id, b.id, q2.id]
+        assert last_open(sa)["seats"] == [seat(a), seat(b), {"pending": True}] and w.who["q"] not in w.t.by_save
+    run(go())
+
+
+def test_a_table_put_away_while_a_save_of_the_queue_is_asked_puts_it_back_in_its_place():
+    async def go():
+        w = OpenWorld()
+        q, sq = w.member("q", room="r-q")
+        await w.t.queue(q, BASE)
+        w.mono += 5
+        q2, _ = w.member("q2", room="r-q2")
+        await w.t.queue(q2, BASE)
+        ((a, _),), tid = await w.opened("a")
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        assert w.t.by_id[tid].seats[1].token == w.who["q"]
+        await w.t.leave(a, tid)
+        await w.t.idle()
+        assert sq.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "disband", "by": a.id}
+        assert [x.peer for x in w.t.lines[BASE]] == [q, q2] and queue_msgs(sq)[-1] == {"base": BASE, "waited": 65.0}
     run(go())
