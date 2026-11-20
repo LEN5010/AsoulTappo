@@ -9,14 +9,14 @@ A seat belongs to a save, not to a connection: a member who leaves the room mid-
 ddz_rules.choose) and takes the seat again by joining the room with the same save. Two turns in a row left to run out
 put a seat on the same autopilot until its member turns it off; a turn played for bids nothing.
 
-The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake
-instead of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit
-down together, they get a table that belongs to no room, through the same invite, which all three have to accept.
-A save that declines, leaves or lets the time run out is out of the queue (one that declined or let the time run
-out may queue again only after MATCH_RETRY_SEC); the others go back into the line where their wait puts them, ahead
-of anyone who came after them. Once all three accept, the game goes on as an invited one; a seat's member who leaves
-takes the seat again by joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one
-takes a save out of the queue.
+The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake instead
+of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit down
+together, they get a table that belongs to no room, through the same invite, which all three have to accept. A save
+that declines, leaves or lets the time run out is out of the queue (one that declined or let the time run out may
+queue again only after MATCH_RETRY_SEC); the others go back into the line where their wait puts them, ahead of anyone
+who came after them. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the
+seat again by joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or
+accepting one takes a save out of the queue.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made):
