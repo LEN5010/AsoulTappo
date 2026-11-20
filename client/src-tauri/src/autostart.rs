@@ -19,6 +19,11 @@ pub struct Status {
     pub needs_move: bool,
 }
 
+/// The argument of the Windows start at login (`elevation::startup`): with an instance already running, that start
+/// exits without raising its panel, which the player did not ask for.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub const WINDOWS_ARG: &str = "--autostart";
+
 /// A path the app will not be found at after a restart.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn transient(exe: &str) -> bool {
@@ -146,7 +151,7 @@ mod imp {
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use super::Status;
+    use super::{Status, WINDOWS_ARG};
     use std::ffi::c_void;
     use std::ptr::null_mut;
     use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
@@ -164,7 +169,7 @@ mod imp {
     }
 
     fn command() -> Option<String> {
-        std::env::current_exe().ok().map(|p| format!("\"{}\"", p.display()))
+        std::env::current_exe().ok().map(|p| format!("\"{}\" {WINDOWS_ARG}", p.display()))
     }
 
     fn read_run() -> Option<String> {
@@ -260,12 +265,13 @@ mod imp {
         delete(APPROVED)
     }
 
-    /// The entry follows the install folder if the app was installed somewhere else since.
+    /// The entry follows the install folder if the app was installed somewhere else since, and gains `WINDOWS_ARG`
+    /// when it was written without it.
     pub fn refresh() {
         let (Some(saved), Some(now)) = (read_run(), command()) else { return };
         if !saved.eq_ignore_ascii_case(&now) {
             match write_run(&now) {
-                Ok(()) => crate::applog!("app", "start at login moved to the current install folder"),
+                Ok(()) => crate::applog!("app", "start at login brought up to date"),
                 Err(e) => crate::applog!("app", "start at login update failed: {e}"),
             }
         }

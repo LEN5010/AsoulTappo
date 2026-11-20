@@ -181,8 +181,9 @@ mod imp {
     /// when the elevated one started.
     pub fn startup() -> (Instance, Startup) {
         let args: Vec<String> = std::env::args().collect();
-        // Started by `restart_elevated` to replace the running instance, not by the player.
-        let restarting = args.iter().any(|a| a == "--wait-for");
+        // Started by `restart_elevated` to replace the running instance, or at login: either way not by the player,
+        // so a running instance is not asked to raise its panel.
+        let quiet = args.iter().any(|a| a == "--wait-for" || a == crate::autostart::WINDOWS_ARG);
         if let Some(pid) = args.windows(2).find(|w| w[0] == "--wait-for").and_then(|w| w[1].parse::<u32>().ok()) {
             unsafe {
                 let old = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
@@ -194,7 +195,7 @@ mod imp {
         }
         // After the wait, so an elevated restart takes over from the instance it replaces; before
         // the UAC decision, so a second start never asks for it.
-        let instance = claim_instance(restarting);
+        let instance = claim_instance(quiet);
         if !super::run_as_admin() || is_elevated() {
             return (instance, Startup::Normal);
         }
@@ -208,9 +209,9 @@ mod imp {
     }
 
     /// Take the instance mutex, or exit when another instance still holds it after `CLAIM_WAIT`. Meanwhile a start
-    /// by the player (not `restarting`) asks the running instance to show its panel; it keeps waiting after that, so
-    /// an instance that was on its way out is still replaced.
-    fn claim_instance(restarting: bool) -> Instance {
+    /// by the player (not `quiet`) asks the running instance to show its panel; it keeps waiting after that, so an
+    /// instance that was on its way out is still replaced.
+    fn claim_instance(quiet: bool) -> Instance {
         let name = wide(INSTANCE_MUTEX);
         let started = Instant::now();
         let mut first = true;
@@ -235,7 +236,7 @@ mod imp {
                 unsafe { CloseHandle(mutex) };
             }
             // Until it works: the running instance creates the event a moment after it takes the mutex.
-            if !restarting && !asked && started.elapsed() >= ASK_AFTER {
+            if !quiet && !asked && started.elapsed() >= ASK_AFTER {
                 asked = ask_to_show();
             }
             if started.elapsed() >= CLAIM_WAIT {
