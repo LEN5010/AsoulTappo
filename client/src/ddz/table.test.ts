@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rank } from "./rules";
-import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey } from "./table";
+import { arrange, cardAt, fan, pickJokers, pickRank, rankOfKey, stampOf } from "./table";
 
 describe("ddz table", () => {
   it("fans a hand into the room it has", () => {
@@ -51,5 +51,20 @@ describe("ddz table", () => {
     expect(arrange(plane).map(rank)).toEqual([4, 4, 4, 3, 3, 3, 15, 14]);
     expect(arrange([0, 4, 8, 12, 16]).map(rank)).toEqual([7, 6, 5, 4, 3]);
     expect(arrange([20, 53, 21, 22, 23, 52]).map(rank)).toEqual([8, 8, 8, 8, 17, 16]);
+  });
+
+  it("stamps the long plays and the bombs", () => {
+    expect(stampOf([52, 53])).toBe("王炸");
+    expect(stampOf([20, 21, 22, 23])).toBe("炸弹");
+    expect(stampOf([0, 4, 8, 12, 16])).toBe("顺子");
+    expect(stampOf([0, 1, 4, 5, 8, 9])).toBe("连对");
+    expect(stampOf([0, 1, 2, 4, 5, 6])).toBe("飞机");
+    expect(stampOf([0, 1, 2, 4, 5, 6, 44, 48])).toBe("飞机"); // with wings
+    expect(stampOf([0, 1, 2, 4, 5, 6, 40, 41, 44, 45])).toBe("飞机"); // with pairs
+    expect(stampOf([0])).toBeNull();
+    expect(stampOf([0, 1])).toBeNull();
+    expect(stampOf([0, 1, 2, 4])).toBeNull(); // a trio with one
+    expect(stampOf([20, 21, 22, 23, 0, 4])).toBeNull(); // four with two
+    expect(stampOf([])).toBeNull();
   });
 });

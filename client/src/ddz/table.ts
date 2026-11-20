@@ -1,6 +1,7 @@
 // What the dou dizhu table works out for itself: where the cards of a hand lie, which card a pointer is on, what a
-// rank key picks, and the order a play is laid out in. No state: panel/ddz/DdzTable.vue holds it.
-import { rank } from "./rules";
+// rank key picks, the order a play is laid out in, and the name a play is stamped with. No state: panel/ddz/DdzTable.vue
+// holds it.
+import { classify, rank, type HandKind } from "./rules";
 
 /** A row of [n] overlapping cards [w] wide in [avail] px: the step between cards and the row's width. */
 export function fan(n: number, avail: number, w: number, maxStep: number): { step: number; width: number } {
@@ -56,4 +57,13 @@ export function arrange(cards: readonly number[]): number[] {
   const count = new Map<number, number>();
   for (const c of cards) count.set(rank(c), (count.get(rank(c)) ?? 0) + 1);
   return [...cards].sort((a, b) => count.get(rank(b))! - count.get(rank(a))! || rank(b) - rank(a) || a - b);
+}
+
+/** The stamp a play gets on the table, by the first kind it reads as; the plainer plays get none. */
+const STAMPS: [HandKind[], string][] = [
+  [["rocket"], "王炸"], [["bomb"], "炸弹"], [["plane", "plane1", "plane2"], "飞机"], [["pairs"], "连对"], [["straight"], "顺子"],
+];
+export function stampOf(cards: readonly number[]): string | null {
+  const kinds = new Set(classify(cards).map((h) => h.kind));
+  return STAMPS.find(([of]) => of.some((k) => kinds.has(k)))?.[1] ?? null;
 }
