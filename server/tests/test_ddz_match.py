@@ -551,14 +551,20 @@ def test_a_save_that_declines_or_lets_the_time_run_out_waits_before_queueing_aga
     run(go())
 
 
-def test_leaving_the_room_during_a_table_of_the_queue_holds_nobody_up():
+def test_leaving_the_room_during_a_table_of_the_queue_counts_as_declining():
     async def go():
         w = MatchWorld()
         (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        await w.t.answer(c, sa.of("ddz_invite")[0]["table"], True)
+        # Accepted or not, leaving before all three did holds the save back: leaving and coming back cannot
+        # rematch the same two at once.
         await w.m.depart("r-c", c.id)
+        await w.t.idle()
         c2, sc2 = w.member("c", room="r-c2")
-        await w.t.queue(c2, BASE)
-        assert queue_msgs(sc2)[0] == {"base": BASE, "waited": 0.0} and sc2.of("ddz_invite")[0]["ids"] == [a.id, b.id, c2.id]
+        with pytest.raises(Exception) as e:
+            await w.t.queue(c2, BASE)
+        assert e.value.code == "ddz_match_cooldown"
+        assert [x.peer for x in w.t.lines[BASE]] == [a, b]
     run(go())
 
 

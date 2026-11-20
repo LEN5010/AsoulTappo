@@ -12,11 +12,11 @@ put a seat on the same autopilot until its member turns it off; a turn played fo
 The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake instead
 of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit down
 together, they get a table that belongs to no room, through the same invite, which all three have to accept. A save
-that declines, leaves or lets the time run out is out of the queue (one that declined or let the time run out may
-queue again only after MATCH_RETRY_SEC); the others go back into the line where their wait puts them, ahead of anyone
-who came after them. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the
-seat again by joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or
-accepting one takes a save out of the queue.
+that declines, leaves or lets the time run out is out of the queue, and may queue again only after MATCH_RETRY_SEC;
+the others go back into the line where their wait puts them, ahead of anyone who came after them. Once all three
+accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by joining any room with
+the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one takes a save out of
+the queue.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made):
@@ -54,7 +54,7 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
 - ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
   `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
-  queue again (it declined a table of the queue or let its time run out).
+  queue again (it declined a table of the queue, left it or let its time run out).
 - ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
   to every member that queues, at most every COUNTS_SEC; on joining a room, the counts last sent, unless nobody
   waited then.
@@ -90,7 +90,8 @@ MAX_DEALS = 3
 DEAL_SEC = 2.2
 # The queue's waiting counts go out at most this often.
 COUNTS_SEC = 1.0
-# A save that declined a table of the queue, or let its time run out, waits this long before it may queue again.
+# A save that declined a table of the queue, left it or let its time run out waits this long before it may queue
+# again.
 MATCH_RETRY_SEC = 60.0
 # A connection joins the queue or moves to another stake at most this often (each time reads the save); stopping is
 # never held up.
@@ -1174,8 +1175,8 @@ class Tables:
 
     def _end_match(self, table: Table, reason: str, by: Peer | None = None) -> None:
         """Ends the invite of a table the queue made: the seat that declined or left ([by]), or every seat that let
-        the time run out, is out of the queue; the others go back into the line (_requeue). One that declined or let
-        the time run out may queue again only after MATCH_RETRY_SEC."""
+        the time run out, is out of the queue, and may queue again only after MATCH_RETRY_SEC; the others go back
+        into the line (_requeue)."""
         if table.phase == DONE:
             return
         if reason == "timeout":
@@ -1183,7 +1184,8 @@ class Tables:
             out = [s for s in table.seats if not s.accepted]
         else:
             back = [s for s in table.seats if s.peer is not by]
-            out = [s for s in table.seats if s.peer is by] if reason == "declined" else []
+            # Leaving the room counts as declining: leaving and coming back would rematch the same two at once.
+            out = [s for s in table.seats if s.peer is by]
         self._end(table, reason, by=by)
         now = self.clock()
         self.match_refused = {k: t for k, t in self.match_refused.items() if t > now}
