@@ -117,6 +117,10 @@ class Peer:
     account: bool = False
     # the client can play dou dizhu (it said so when joining)
     ddz: bool = False
+    # the client also queues for dou dizhu tables across rooms (app/ddz.py, the queue)
+    ddz_match: bool = False
+    # the room this connection joined
+    room: str = ""
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     tap_budget: float = 0.0
@@ -318,7 +322,7 @@ class RoomManager:
                 room.banned |= pending.banned
                 self.rename(room, pending.name)
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
-                    token=token, send_timeout=self.send_timeout, **profile)
+                    token=token, send_timeout=self.send_timeout, room=room_id, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
         self._joins += 1
         peer.join_seq = self._joins

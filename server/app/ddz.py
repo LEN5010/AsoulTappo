@@ -199,7 +199,8 @@ class Seat:
 @dataclass(eq=False)
 class Table:
     id: str
-    room: str
+    # The room of an invited table; None for a table the queue made, whose members may sit in different rooms.
+    room: str | None
     seats: list[Seat]
     base: int
     deposit: int
@@ -223,6 +224,13 @@ class Table:
     step: int = 0
     deadline: float = 0.0
     turn_sec: float = 0.0
+    # Rooms told the game is on, told again when it ends (Tables._live).
+    live_rooms: set[str] = field(default_factory=set)
+
+    @property
+    def match(self) -> bool:
+        """The queue made this table: no seat invited the others."""
+        return self.room is None
 
     def seat_of(self, peer: Peer) -> int | None:
         return next((i for i, s in enumerate(self.seats) if s.peer is peer), None)
@@ -383,8 +391,7 @@ class Tables:
             await self._abort(table, "gone")
             return
         table.deal = 0
-        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
-                                                  "ids": [s.id for s in table.seats], "on": True})
+        await self._live(table, True)
         self._deal(table)
 
     def _deal(self, table: Table) -> None:
@@ -570,9 +577,7 @@ class Tables:
                     "landlord": lord, "bid": table.bid, "bombs": table.bombs, "spring": spring, "mult": mult,
                     "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
                     "sec": cfg["againSec"]}, quit=True)
-        await self.manager.broadcast(table.room, {
-            "type": "ddz_live", "table": table.id, "ids": [s.id for s in table.seats], "on": False,
-            "gains": {s.id: d for s, d in zip(table.seats, deltas) if d > 0}})
+        await self._live(table, False, gains={s.id: d for s, d in zip(table.seats, deltas) if d > 0})
         if any(s.peer is None or s.quit for s in table.seats):
             self._close(table)
             return
@@ -590,8 +595,7 @@ class Tables:
         table.phase = DONE
         self._drop(table)
         table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
-        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
-                                                  "ids": [s.id for s in table.seats], "on": False})
+        await self._live(table, False)
 
     # ------------------------------------------------------------ around a game
     def auto(self, peer: Peer, table_id: str, on: bool) -> None:
@@ -637,8 +641,7 @@ class Tables:
         for x in table.seats:
             x.auto, x.timeouts = x.peer is None, 0
         table.deal = 0
-        await self.manager.broadcast(table.room, {"type": "ddz_live", "table": table.id,
-                                                  "ids": [x.id for x in table.seats], "on": True})
+        await self._live(table, True)
         self._deal(table)
 
     async def leave(self, peer: Peer, table_id: str) -> None:
@@ -685,14 +688,15 @@ class Tables:
 
     async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
-        has one at a table of this room. Back while the deposits are being taken, it takes the seat and hears the
-        deal like the others."""
+        has one at a table of this room, or at a table the queue made (from any room, on a client that queues). Back
+        while the deposits are being taken, it takes the seat and hears the deal like the others."""
         room = self.manager.rooms.get(room_id)
         if room is None or room.peers.get(peer.id) is not peer:
             return  # gone again before it got through joining
         table = self.by_save.get(peer.token) if peer.token else None
         seat = None
-        if table is not None and table.room == room_id and table.phase in (STARTING, BID, PLAY) and peer.ddz:
+        if table is not None and table.phase in (STARTING, BID, PLAY) and (
+                peer.ddz_match if table.match else peer.ddz and table.room == room_id):
             seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token and s.peer is None), None)
             if seat is None:
                 # An older connection of the save still holds the seat: its leaving is not seen yet (a client back
@@ -712,13 +716,15 @@ class Tables:
             s.peer, s.id, s.nick, s.character = peer, peer.id, peer.nick, peer.character
             if not handoff:
                 s.auto, s.timeouts, s.quit = False, 0, False
-        for live in self.by_id.values():
-            if live.room == room_id and live.phase in (BID, PLAY, SETTLING):
-                msg = {"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True}
-                if seat is not None and live is table:
-                    await self.manager.broadcast(room_id, msg)
-                else:
-                    peer.enqueue(msg)
+        for live in list(self.by_id.values()):
+            if live.phase not in (BID, PLAY, SETTLING):
+                continue
+            if seat is not None and live is table:
+                # Every room of the table hears the seat's new member id.
+                await self._live(live, True)
+            elif room_id in self._rooms(live):
+                live.live_rooms.add(room_id)
+                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
         if seat is None or table.phase == STARTING:
             return
         msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}
@@ -746,6 +752,28 @@ class Tables:
             "lead": table.phase == PLAY and table.last is None, "trick": table.trick,
             "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
         }
+
+    def _rooms(self, table: Table) -> set[str]:
+        """The rooms that see the table: an invited table's own room; for a table the queue made, the rooms its
+        seats' members are in now (one that walked away from the table included)."""
+        if table.room is not None:
+            return {table.room}
+        return {s.peer.room for s in table.seats if s.peer is not None and s.peer.active}
+
+    async def _live(self, table: Table, on: bool, gains: dict[str, int] | None = None) -> None:
+        """Tells the table's rooms (_rooms) that its game started (on) or ended; the end also goes to every room
+        told of the start, so one its members all left does not keep showing the game."""
+        msg: dict[str, Any] = {"type": "ddz_live", "table": table.id, "ids": [s.id for s in table.seats], "on": on}
+        if gains is not None:
+            msg["gains"] = gains
+        rooms = self._rooms(table)
+        if on:
+            table.live_rooms |= rooms
+        else:
+            rooms |= table.live_rooms
+            table.live_rooms = set()
+        for room_id in sorted(rooms):
+            await self.manager.broadcast(room_id, msg)
 
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
