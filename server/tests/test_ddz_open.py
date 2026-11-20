@@ -936,6 +936,51 @@ def test_a_member_whose_connection_left_the_room_before_the_tables_hear_of_it_do
     run(go())
 
 
+@pytest.mark.parametrize("fails", [1, "always"])
+def test_handing_the_deposits_back_is_tried_again_and_left_to_the_next_start_when_it_keeps_failing(monkeypatch, fails):
+    async def go():
+        import sqlite3
+
+        import app.ddz as ddz_module
+        monkeypatch.setattr(ddz_module, "REFUND_RETRY_SEC", (0.0, 0.0))
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        gate = Gate(monkeypatch, "try_start")
+        held, = gate.hold(1)
+        real = Bank.refund
+        tries = []
+
+        def refund(bank, game_id):
+            tries.append(game_id)
+            if fails == "always" or len(tries) <= fails:
+                raise sqlite3.OperationalError("database is locked")
+            return real(bank, game_id)
+
+        monkeypatch.setattr(Bank, "refund", refund)
+        c, sc = w.member("c")
+        await w.t.sit("r", c, tid)
+        await until(lambda: gate.calls == 1)
+        await w.t.leave(b, tid)
+        held.set()
+        await w.settled()
+        if fails == 1:
+            # The second try goes through: the table waits again as it would have.
+            assert len(tries) == 2 and [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+            assert last_open(sa)["seats"] == [seat(a), None, seat(c)] and w.t.by_id[tid].phase == "open"
+            assert w.who["b"] not in w.t.by_save and w.g.store.open_ddz_games() == []
+            return
+        # Every try failed: the table goes and the saves are free; the game stays open, its deposits taken, for the
+        # next start of the server to hand back.
+        assert len(tries) == 3 and w.t.by_id == {} and w.t.by_save == {}
+        assert [s.of("ddz_over")[-1] for s in (sa, sc)] == [{"type": "ddz_over", "table": tid, "reason": "error"}] * 2
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
+        assert w.g.store.open_ddz_games() == tries[:1]
+        monkeypatch.setattr(Bank, "refund", real)
+        assert Bank(w.g).refund_open() == 1
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+    run(go())
+
+
 def test_a_start_cut_off_by_the_server_stopping_is_handed_back_when_it_starts_again(monkeypatch):
     async def go():
         w = OpenWorld()

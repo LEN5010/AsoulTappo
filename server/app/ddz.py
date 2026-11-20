@@ -146,6 +146,9 @@ QUEUE_INTERVAL = 1.0
 OPEN_SEC = 600.0
 # An empty seat of an open table that has waited this long is offered to the queue at the table's stake.
 FILL_SEC = 60.0
+# Handing the deposits of an open table's start back failed (the database busy): tried again after each of these
+# waits, in seconds; after the last the game is left open for the next start of the server (Bank.refund_open).
+REFUND_RETRY_SEC = (0.5, 2.0)
 
 OPEN, INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = (
     "open", "invite", "starting", "bid", "play", "settling", "over", "done")
@@ -969,10 +972,15 @@ class Tables:
             self._give_up(table, i)
         if row is not None:
             try:
-                await self._refund(row)
+                back = await self._refund(row)
             except asyncio.CancelledError:
                 self._disband(table, "error")
                 raise
+            if not back:
+                # The game stays open with the deposits taken: the next start of the server hands them back. The
+                # table goes, and the saves are free.
+                self._disband(table, "error")
+                return
         self._let_go(table, codes if row is None else [None, None, None])
 
     def _here(self, table: Table, s: Seat) -> bool:
@@ -994,9 +1002,21 @@ class Tables:
         s = table.seats[seat]
         s.peer, s.quit = None, True
 
-    async def _refund(self, row: int) -> None:
-        """Hands the deposits of game [row] back, in a thread that goes on should the task awaiting it be cancelled."""
-        await asyncio.get_running_loop().run_in_executor(None, self.bank.refund, row)
+    async def _refund(self, row: int) -> bool:
+        """Hands the deposits of game [row] back, in a thread that goes on should the task awaiting it be cancelled.
+        A failure is tried again after each of REFUND_RETRY_SEC; returns False when the last try failed too, the game
+        then still open with its deposits taken (Bank.refund moves them and closes the game in one transaction)."""
+        loop = asyncio.get_running_loop()
+        for wait in (*REFUND_RETRY_SEC, None):
+            try:
+                await loop.run_in_executor(None, self.bank.refund, row)
+                return True
+            except Exception:
+                log.exception("ddz: handing back the deposits of game %s failed", row)
+                if wait is None:
+                    return False
+                await asyncio.sleep(wait)
+        return False
 
     def _let_go(self, table: Table, codes: list[str | None]) -> None:
         """After a start that fell short or was taken back: a seat whose save may no longer play hears why and is
