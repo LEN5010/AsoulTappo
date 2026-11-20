@@ -48,9 +48,9 @@ shards the winners won, by member id. A table the queue made tells every room it
 The queue, with members whose client said `ddzMatch` only (`joined.features` then lists "ddz_match"):
 
 - ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
-  ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite, or the save waits on another connection) |
-  ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time it joined or moved) |
-  bad_message (not a stake).
+  ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_queued (the save waits on another
+  connection) | ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time it joined or
+  moved) | bad_message (not a stake).
 - ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
   `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
@@ -901,9 +901,11 @@ class Tables:
             raise GameError("ddz_locked", "")
         if not peer.active:
             raise GameError("ddz_gone", "")
-        held = self.waiting.get(peer.token)
-        if peer.token in self.by_save or (held is not None and held.peer is not peer):
+        if peer.token in self.by_save:
             raise GameError("ddz_busy", "")
+        held = self.waiting.get(peer.token)
+        if held is not None and held.peer is not peer:
+            raise GameError("ddz_queued", "")
         if peer.dnd:
             raise GameError("ddz_dnd", "")
         if self.clock() < self.match_refused.get(peer.token, float("-inf")):

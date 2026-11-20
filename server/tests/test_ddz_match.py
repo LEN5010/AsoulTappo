@@ -76,7 +76,7 @@ def test_waiting_moving_and_cancelling():
 @pytest.mark.parametrize("how, code", [
     ("guest", "ddz_locked"), ("taps", "ddz_locked"), ("poor", "no_shards"), ("cap", "ddz_cap"),
     ("account", "ddz_account"), ("dnd", "ddz_dnd"), ("stake", "bad_message"), ("old", "bad_message"),
-    ("twin", "ddz_busy"), ("seated", "ddz_busy"),
+    ("twin", "ddz_queued"), ("seated", "ddz_busy"),
 ])
 def test_who_may_not_wait(how, code):
     async def go():
@@ -283,7 +283,7 @@ def test_a_save_never_sits_with_itself_and_one_holding_an_invite_is_skipped():
         twin, s_twin = w.member("a", room="r-twin")
         with pytest.raises(Exception) as e:
             await w.t.queue(twin, BASE)
-        assert e.value.code == "ddz_busy"
+        assert e.value.code == "ddz_queued"
         # b waits; an invite from its own room holds it, so a, c and d sit down without it.
         b, sb = w.member("b", room="r")
         await w.t.queue(b, BASE)
