@@ -36,6 +36,8 @@ class JoinMsg(_Msg):
     motionVersion: int = Field(default=1, ge=1)
     # The client can play dou dizhu: only such members can be invited to a table.
     ddz: bool = False
+    # The client also queues for dou dizhu tables across rooms (with ddz); servers without the queue ignore it.
+    ddzMatch: bool = False
 
 
 class LeaveMsg(_Msg):
@@ -223,10 +225,17 @@ class DdzLeaveMsg(_Msg):
     table: str = Field(min_length=1, max_length=32)
 
 
+class DdzQueueMsg(_Msg):
+    """Wait for a table with two saves of any room at one of the economy's base stakes; 0 stops waiting."""
+
+    type: Literal["ddz_queue"] = "ddz_queue"
+    base: int = Field(ge=0, le=10**9)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
-          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg],
+          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)

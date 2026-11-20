@@ -9,9 +9,20 @@ A seat belongs to a save, not to a connection: a member who leaves the room mid-
 ddz_rules.choose) and takes the seat again by joining the room with the same save. Two turns in a row left to run out
 put a seat on the same autopilot until its member turns it off; a turn played for bids nothing.
 
-Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter:
+The queue: a member of any room, on a client that said `ddzMatch` when joining, waits for a table at one stake
+instead of inviting. The saves waiting at a stake form one line, oldest first, kept in memory; when three in it may sit
+down together, they get a table that belongs to no room, through the same invite, which all three have to accept.
+A save that declines, leaves or lets the time run out is out of the queue; the others go back to the front of the
+line. Once all three accept, the game goes on as an invited one; a seat's member who leaves takes the seat again by
+joining any room with the same save. Leaving the room, turning invites down (dnd), starting an invite or accepting one
+takes a save out of the queue.
 
-- ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`.
+Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
+that waited longest at a table the queue made):
+
+- ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`. A table the
+  queue made has no `from`, and has `match` true and `seats` [{id, nick, character}] (the members may be in other
+  rooms).
 - ``ddz_answer`` {id}: member `id` accepted.
 - ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
@@ -31,10 +42,22 @@ Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in tu
 - ``ddz_state`` {...}: the whole game for a seat that came back (see Tables._state).
 
 To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
-shards the winners won, by member id.
+shards the winners won, by member id. A table the queue made tells every room its members are in.
+
+The queue, with members whose client said `ddzMatch` only (`joined.features` then lists "ddz_match"):
+
+- ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
+  ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite, or the save waits on another connection) |
+  ddz_dnd | bad_message (not a stake).
+- ``ddz_queue`` {base, waited?, reason?} to the member: it waits at `base`, for `waited` seconds so far; `base` null
+  when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked | ddz_account |
+  no_shards | ddz_cap | ddz_dnd | error.
+- ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
+  to every member that queues, at most every COUNTS_SEC and on joining a room while anyone waits.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import secrets
@@ -61,6 +84,8 @@ AUTO_AFTER = 2
 MAX_DEALS = 3
 # The clients deal the cards out face down and turn them over in this long; the first bid's time starts after it.
 DEAL_SEC = 2.2
+# The queue's waiting counts go out at most this often.
+COUNTS_SEC = 1.0
 
 INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
 
@@ -112,6 +137,22 @@ class Bank:
             now = self.game.now()
             self._ready(st, pids, deposit, day_of(now), now)
         return deposit
+
+    def refusals(self, pids: list[str], base: int) -> list[str | None]:
+        """Why each save of [pids] may not sit down at [base], as its own asking would be told (ddz_locked,
+        ddz_account, no_shards, ddz_cap), None where it may. One transaction; takes nothing."""
+        deposit = self.deposit(base)
+        out: list[str | None] = []
+        with self.game.store.transaction() as st:
+            now = self.game.now()
+            day = day_of(now)
+            for pid in pids:
+                try:
+                    self._ready(st, [pid], deposit, day, now)
+                    out.append(None)
+                except GameError as e:
+                    out.append(e.code)
+        return out
 
     def start(self, pids: list[str], base: int) -> int:
         """Takes the three deposits in one transaction and records the game; returns its id. When a seat falls
@@ -194,6 +235,22 @@ class Seat:
     again: bool = False
     # Left the table for good while the game went on: played for to the end, and hears nothing more of it.
     quit: bool = False
+    # At a table the queue made: when the save started waiting (Waiting.since), kept should it go back to the line.
+    since: float | None = None
+
+
+@dataclass(eq=False)
+class Waiting:
+    """A save in the queue: the connection it waits on, at which stake, and since when (the clock of Tables)."""
+    peer: Peer
+    base: int
+    since: float
+    # Out of the line while a table is being made with it (Tables._match).
+    checking: bool = False
+
+    @property
+    def token(self) -> str:
+        return self.peer.token or ""
 
 
 @dataclass(eq=False)
@@ -247,23 +304,36 @@ class Table:
 
 
 class Tables:
-    """Every table on the server: one at a time per save (invites included), across all rooms."""
+    """Every table on the server: one at a time per save (invites included), across all rooms; and the queue."""
 
     def __init__(self, game: Callable[[], Game], manager: Callable[[], RoomManager], timers: Any = None,
                  clock: Callable[[], float] = time.monotonic, rng: random.Random | None = None,
-                 require_account: Callable[[], bool] = lambda: False) -> None:
+                 require_account: Callable[[], bool] = lambda: False, count_timers: Any = None) -> None:
         # Read on every use: tests replace the module's game and room manager.
         self._game = game
         self._manager = manager
         # Whether the server has main-site accounts (Bank._ready).
         self.require_account = require_account
         self.timers = timers or Timers()
+        # For the waiting counts' next send; tests keep it apart from the tables' timers.
+        self.count_timers = count_timers or self.timers
         self.clock = clock
         self.rng = rng or random.SystemRandom()
         self.by_save: dict[str, Table] = {}
         self.by_id: dict[str, Table] = {}
         # (inviter save, invited save) -> monotonic time from which a new invite is allowed
         self.refused: dict[tuple[str, str], float] = {}
+        # The queue: each stake's line, oldest first, and every save waiting (in a line or being matched) by save.
+        self.lines: dict[int, list[Waiting]] = {}
+        self.waiting: dict[str, Waiting] = {}
+        # Stakes whose line is being matched now (_match).
+        self._matching: set[int] = set()
+        # Matching started where nothing awaits it (_spawn).
+        self._tasks: set[asyncio.Task] = set()
+        # The waiting counts last sent, when, and the timer of the next send.
+        self._counts_sent: dict[int, int] = {}
+        self._counts_at = float("-inf")
+        self._counts_timer: Any = None
 
     @property
     def bank(self) -> Bank:
@@ -277,6 +347,14 @@ class Tables:
         for table in list(self.by_id.values()):
             self._drop(table)
         self.refused.clear()
+        self.lines.clear()
+        self.waiting.clear()
+        self._matching.clear()
+        if self._counts_timer is not None:
+            self._counts_timer.cancel()
+            self._counts_timer = None
+        self._counts_sent = {}
+        self._counts_at = float("-inf")
 
     def in_game(self, peer: Peer) -> bool:
         """Whether the connection sits at a table whose deposits are taken (or being taken)."""
@@ -336,6 +414,9 @@ class Tables:
         self.by_id[table.id] = table
         for p in peers:
             self.by_save[p.token] = table
+        # Inviting takes the inviter out of the queue; the two invited keep waiting (skipped while the invite is out)
+        # until one of them accepts.
+        self._leave_queue(peer, save=True)
         invited = {"type": "ddz_invite", "table": table.id, "from": peer.id, "ids": [p.id for p in peers],
                    "base": base, "deposit": deposit, "sec": cfg["inviteSec"]}
         quiet = [p for p in peers[1:] if p.dnd]
@@ -348,23 +429,40 @@ class Tables:
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
     async def _invite_expired(self, table: Table) -> None:
-        if table.phase == INVITE:
+        if table.phase != INVITE:
+            return
+        if table.match:
+            self._end_match(table, "timeout")
+        else:
             self._end(table, "timeout", refused=[s.peer for s in table.seats[1:] if not s.accepted and s.peer])
 
     def set_dnd(self, peer: Peer, on: bool) -> None:
-        """Called with the duels' own: an invite waiting for this member is turned down."""
+        """Called with the duels' own: an invite waiting for this member is turned down, and it stops waiting in the
+        queue."""
+        if not on:
+            return
+        self._leave_queue(peer, reason="ddz_dnd")
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
-        if on and table is not None and seat and table.phase == INVITE and not table.seats[seat].accepted:
+        if table is None or seat is None or table.phase != INVITE or table.seats[seat].accepted:
+            return
+        if table.match:
+            self._end_match(table, "declined", by=peer)
+        elif seat:
             self._end(table, "declined", by=peer, refused=[peer])
 
     async def answer(self, peer: Peer, table_id: str, accept: bool) -> None:
         table, seat = self._table(peer, table_id, INVITE)
-        if seat == 0 or table.seats[seat].accepted:
+        if (seat == 0 and not table.match) or table.seats[seat].accepted:
             raise GameError("ddz_gone", "")
         if not accept:
-            self._end(table, "declined", by=peer, refused=[peer])
+            if table.match:
+                self._end_match(table, "declined", by=peer)
+            else:
+                self._end(table, "declined", by=peer, refused=[peer])
             return
+        # Accepting an invite takes the save out of the queue.
+        self._leave_queue(peer, save=True)
         table.seats[seat].accepted = True
         table.tell({"type": "ddz_answer", "table": table.id, "id": peer.id})
         if all(s.accepted for s in table.seats):
@@ -647,7 +745,9 @@ class Tables:
     async def leave(self, peer: Peer, table_id: str) -> None:
         """A member walks away from the table but stays in the room."""
         table, seat = self._table(peer, table_id, INVITE, BID, PLAY, OVER)
-        if table.phase == INVITE:
+        if table.phase == INVITE and table.match:
+            self._end_match(table, "declined", by=peer)
+        elif table.phase == INVITE:
             self._end(table, "gone" if seat == 0 else "declined", by=peer, refused=[peer] if seat else [])
         elif table.phase == OVER:
             self._close(table)
@@ -662,14 +762,17 @@ class Tables:
             self._give_turn(table, seat, AUTO_SEC)
 
     async def departed(self, room_id: str, peer: Peer) -> None:
-        """A member left the room (leave, kick, lost connection): an invite is dropped, a seat in a game is played
-        for until its save comes back."""
+        """A member left the room (leave, kick, lost connection): it stops waiting in the queue, an invite is dropped,
+        a seat in a game is played for until its save comes back."""
+        self._leave_queue(peer, tell=False)
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
         if table is None or seat is None:
             return
         s = table.seats[seat]
-        if table.phase == INVITE:
+        if table.phase == INVITE and table.match:
+            self._end_match(table, "gone", by=peer)
+        elif table.phase == INVITE:
             # An inviter leaving waits as after a refusal, so leaving and coming back cannot repeat the invite.
             self._end(table, "gone", by=peer, refused=[x.peer for x in table.seats[1:] if x.peer] if seat == 0 else [])
         elif table.phase == OVER:
@@ -725,6 +828,9 @@ class Tables:
             elif room_id in self._rooms(live):
                 live.live_rooms.add(room_id)
                 peer.enqueue({"type": "ddz_live", "table": live.id, "ids": [s.id for s in live.seats], "on": True})
+        counts = self.counts()
+        if peer.ddz_match and counts:
+            peer.enqueue(self._counts_msg(counts))
         if seat is None or table.phase == STARTING:
             return
         msg = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": False, "auto": False}
@@ -775,6 +881,219 @@ class Tables:
         for room_id in sorted(rooms):
             await self.manager.broadcast(room_id, msg)
 
+    # -------------------------------------------------------------------- queue
+    def _check_queue(self, peer: Peer) -> None:
+        """What keeps [peer] out of the queue, its own save's shards and taps aside (Bank.check)."""
+        if not peer.token:
+            raise GameError("ddz_locked", "")
+        if not peer.active:
+            raise GameError("ddz_gone", "")
+        held = self.waiting.get(peer.token)
+        if peer.token in self.by_save or (held is not None and held.peer is not peer):
+            raise GameError("ddz_busy", "")
+        if peer.dnd:
+            raise GameError("ddz_dnd", "")
+
+    async def queue(self, peer: Peer, base: int) -> None:
+        """[peer] waits for a table at stake [base]; waiting at another stake already, it moves to the end of this
+        one's line. Then a table is made if three in the line may sit down together."""
+        if not peer.ddz_match:
+            raise GameError("bad_message", "join with ddzMatch to queue")
+        bank = self.bank
+        if base not in bank.cfg()["stakes"]:
+            raise GameError("bad_message", "unknown stake")
+        self._prune()
+        self._check_queue(peer)
+        held = self.waiting.get(peer.token)
+        if held is None or held.base != base:
+            await run_in_threadpool(bank.check, [peer.token], base)
+            # It may have left, sat down or queued elsewhere while the database was read.
+            self._check_queue(peer)
+            held = self.waiting.get(peer.token)
+        if held is not None and held.base == base:
+            self._tell_queue(held)
+            return
+        if held is not None:
+            self._dequeue(held, tell=False)
+        w = Waiting(peer, base, self.clock())
+        self.waiting[w.token] = w
+        self.lines.setdefault(base, []).append(w)
+        self._tell_queue(w)
+        self._counts_changed()
+        await self._match(base)
+
+    def unqueue(self, peer: Peer) -> None:
+        """[peer] stops waiting. It hears that it waits no more even when it did not, so the client keeps in step."""
+        if not self._leave_queue(peer):
+            peer.enqueue({"type": "ddz_queue", "base": None})
+
+    def _leave_queue(self, peer: Peer, reason: str | None = None, tell: bool = True, save: bool = False) -> bool:
+        """Takes [peer] out of the queue when it waits there; with [save] also its save waiting on another
+        connection."""
+        held = self.waiting.get(peer.token) if peer.token else None
+        if held is None or (held.peer is not peer and not save):
+            return False
+        self._dequeue(held, reason=reason, tell=tell)
+        return True
+
+    def _dequeue(self, w: Waiting, reason: str | None = None, tell: bool = True) -> None:
+        if self.waiting.get(w.token) is w:
+            del self.waiting[w.token]
+        line = self.lines.get(w.base)
+        if line is not None and w in line:
+            line.remove(w)
+            if not line:
+                del self.lines[w.base]
+        if tell:
+            msg: dict[str, Any] = {"type": "ddz_queue", "base": None}
+            if reason:
+                msg["reason"] = reason
+            w.peer.enqueue(msg)
+        self._counts_changed()
+
+    def _tell_queue(self, w: Waiting) -> None:
+        w.peer.enqueue({"type": "ddz_queue", "base": w.base, "waited": round(max(0.0, self.clock() - w.since), 1)})
+
+    def _prune(self) -> None:
+        """Drops the saves waiting at a stake the economy no longer has."""
+        cfg = self._game().manifest.ddz
+        stakes = set(cfg["stakes"]) if cfg else set()
+        for w in [w for w in self.waiting.values() if w.base not in stakes]:
+            self._dequeue(w)
+
+    def _spawn(self, work: Any) -> None:
+        """Runs [work] (matching) on the loop without awaiting it."""
+        task = asyncio.get_running_loop().create_task(work)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def idle(self) -> None:
+        """Waits until no matching started by _spawn runs (tests)."""
+        while self._tasks:
+            await asyncio.gather(*list(self._tasks))
+
+    async def _match(self, base: int) -> None:
+        """Makes tables from the line of [base] while three saves in it may sit down together: the oldest three that
+        hold no invite. One that may no longer sit down leaves the queue, told why; the others of its three go back to
+        the front of the line, in order. One line is matched at a time."""
+        if base in self._matching:
+            return
+        self._matching.add(base)
+        try:
+            while True:
+                self._prune()
+                line = self.lines.get(base, [])
+                three = [w for w in line if w.token not in self.by_save][:3]
+                if len(three) < 3:
+                    return
+                for w in three:
+                    line.remove(w)
+                    w.checking = True
+                if not line:
+                    self.lines.pop(base, None)
+                try:
+                    codes = await run_in_threadpool(self.bank.refusals, [w.token for w in three], base)
+                except Exception:
+                    log.exception("ddz: matching at %s failed", base)
+                    codes = ["error"] * 3
+                ready, back = [], []
+                for w, code in zip(three, codes):
+                    w.checking = False
+                    if self.waiting.get(w.token) is not w:
+                        continue  # cancelled, left or turned invites down meanwhile
+                    code = code or ("ddz_dnd" if w.peer.dnd else None)
+                    if code:
+                        self._dequeue(w, reason=code)
+                    elif w.token in self.by_save:
+                        back.append(w)  # invited meanwhile: keeps waiting
+                    else:
+                        ready.append(w)
+                        back.append(w)
+                if len(ready) == 3:
+                    self._form(base, ready)
+                elif back:
+                    self.lines.setdefault(base, [])[0:0] = back
+        finally:
+            self._matching.discard(base)
+
+    def _form(self, base: int, three: list[Waiting]) -> None:
+        """Seats [three] at a new table of no room and asks all three, as an invite does."""
+        cfg = self.bank.cfg()
+        deposit = self.bank.deposit(base)
+        table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, seats=[
+            Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character, since=w.since)
+            for w in three])
+        for w in three:
+            self._dequeue(w)
+        self.by_id[table.id] = table
+        for s in table.seats:
+            self.by_save[s.token] = table
+        table.tell({"type": "ddz_invite", "table": table.id, "ids": [s.id for s in table.seats], "base": base,
+                    "deposit": deposit, "sec": cfg["inviteSec"], "match": True,
+                    "seats": [{"id": s.id, "nick": s.nick, "character": s.character} for s in table.seats]})
+        table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
+
+    def _requeue(self, base: int, seats: list[Seat]) -> None:
+        """Puts the saves of [seats] back at the front of the line of [base], in order, each with the time it waited
+        before; one whose member left, sits elsewhere, waits again already or turns invites down is not."""
+        cfg = self._game().manifest.ddz
+        if not cfg or base not in cfg["stakes"]:
+            return
+        back = []
+        for s in seats:
+            p = s.peer
+            if (p is None or not p.active or not p.ddz_match or p.dnd or not p.token or p.token in self.by_save
+                    or p.token in self.waiting):
+                continue
+            w = Waiting(p, base, s.since if s.since is not None else self.clock())
+            self.waiting[w.token] = w
+            back.append(w)
+        if not back:
+            return
+        self.lines.setdefault(base, [])[0:0] = back
+        for w in back:
+            self._tell_queue(w)
+        self._counts_changed()
+        self._spawn(self._match(base))
+
+    def counts(self) -> dict[int, int]:
+        """How many saves wait at each stake (being matched included)."""
+        out: dict[int, int] = {}
+        for w in self.waiting.values():
+            out[w.base] = out.get(w.base, 0) + 1
+        return out
+
+    @staticmethod
+    def _counts_msg(counts: dict[int, int]) -> dict:
+        return {"type": "ddz_waiting", "counts": [[base, n] for base, n in sorted(counts.items())]}
+
+    def _counts_changed(self) -> None:
+        """The counts go out now, or COUNTS_SEC after the last time they did."""
+        if self._counts_timer is not None:
+            return
+        wait = self._counts_at + COUNTS_SEC - self.clock()
+        if wait > 0:
+            self._counts_timer = self.count_timers.later(wait, self._counts_due)
+        else:
+            self._send_counts()
+
+    async def _counts_due(self) -> None:
+        self._counts_timer = None
+        self._send_counts()
+
+    def _send_counts(self) -> None:
+        """Tells every member that queues, in every room, the counts, when they changed since the last time."""
+        counts = self.counts()
+        if counts == self._counts_sent:
+            return
+        self._counts_sent = counts
+        self._counts_at = self.clock()
+        msg = self._counts_msg(counts)
+        for room in list(self.manager.rooms.values()):
+            for p in list(room.peers.values()):
+                if p.ddz_match:
+                    p.enqueue(msg)
+
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
         if table.timer is not None:
@@ -811,6 +1130,21 @@ class Tables:
                 p.enqueue(over)
         else:
             table.tell(over)
+        # Invited saves that kept waiting in the queue may be matched again.
+        for base in {w.base for s in table.seats if (w := self.waiting.get(s.token)) is not None}:
+            self._spawn(self._match(base))
+
+    def _end_match(self, table: Table, reason: str, by: Peer | None = None) -> None:
+        """Ends the invite of a table the queue made: the seat that declined or left ([by]), or every seat that let
+        the time run out, is out of the queue; the others go back to the front of the line, in seat order."""
+        if table.phase == DONE:
+            return
+        if reason == "timeout":
+            back = [s for s in table.seats if s.accepted]
+        else:
+            back = [s for s in table.seats if s.peer is not by]
+        self._end(table, reason, by=by)
+        self._requeue(table.base, back)
 
     def _close(self, table: Table, tell: bool = True) -> None:
         """Clears a table whose game is paid."""

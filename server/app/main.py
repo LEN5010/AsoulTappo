@@ -35,7 +35,7 @@ from .manifest import Manifest, find_packs_dir
 from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
-    DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzInviteMsg, DdzLeaveMsg, DdzPlayMsg,
+    DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzInviteMsg, DdzLeaveMsg, DdzPlayMsg, DdzQueueMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -1326,6 +1326,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 game.tracker.count("room_join")
                 peer.dnd = msg.dnd
                 peer.ddz = msg.ddz and bool(game.manifest.ddz)
+                peer.ddz_match = peer.ddz and msg.ddzMatch
                 peer.status = room_status(msg.status)
                 await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
@@ -1338,7 +1339,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 # Only a client that asked for packed motion hears which version it gets; older ones keep the 1.1 shape.
                 if peer.motion_version >= 2:
                     joined["motionVersion"] = peer.motion_version
-                    joined["features"] = list(FEATURES)
+                    # A client that queues for dou dizhu hears that this server has the queue.
+                    joined["features"] = [*FEATURES, "ddz_match"] if peer.ddz_match else list(FEATURES)
                     # The newcomer's cheer bar starts as the room's stands.
                     joined["cheer"] = {k: v for k, v in manager.cheer_state(manager.rooms[room_id]).items() if k != "type"}
                 await send(joined)
@@ -1482,9 +1484,14 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 duels.set_dnd(peer, msg.dnd)
                 tables.set_dnd(peer, msg.dnd)
             elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
-                                  DdzLeaveMsg)):
+                                  DdzLeaveMsg, DdzQueueMsg)):
                 try:
-                    if isinstance(msg, DdzInviteMsg):
+                    if isinstance(msg, DdzQueueMsg):
+                        if msg.base:
+                            await tables.queue(peer, msg.base)
+                        else:
+                            tables.unqueue(peer)
+                    elif isinstance(msg, DdzInviteMsg):
                         await tables.invite(room_id, peer, msg.ids, msg.base)
                     elif isinstance(msg, DdzAnswerMsg):
                         await tables.answer(peer, msg.table, msg.accept)
