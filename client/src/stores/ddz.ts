@@ -391,7 +391,10 @@ const linkWanted = computed(() => {
   if (ddzLinkOff.value) return false;
   const t = ddz.value;
   return queueNext.value !== null || queueAsked.value !== null || !!ddzQueue.value || reclaim.value ||
-    (t?.via === "link" && t.phase !== "over" && !(t.phase === "result" && t.closed));
+    (t?.via === "link" && t.phase !== "over" && !(t.phase === "result" && t.closed)) ||
+    // A room's invite to this save took it out of the queue for as long as it is out: the connection stays up to get
+    // the place back should no game come of it.
+    (t?.via === "room" && t.phase === "invite" && !t.sent && ddzLink.value !== "idle");
 });
 
 /** Desk: sends [msg] for the table on the connection it is on. */

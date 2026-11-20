@@ -966,3 +966,22 @@ it("stops without turning the queue off when another device took over, and joins
   await vi.advanceTimersByTimeAsync(0);
   expect(sentOf(lk2, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 50 }]);
 });
+
+it("keeps the dou dizhu connection up while a room's invite holds the save, and gets the place back", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B], features: ["ddz_match", "ddz_emote"] });
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  // Invited in the room: the server takes the save out of the line while the invite is out.
+  socket.recv({ type: "ddz_invite", table: "r1", from: "a", ids: ["a", "me", "b"], base: 50, deposit: 2400, sec: 15 });
+  lk.recv({ type: "ddz_queue", base: null });
+  expect(d.ddzQueue.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(16_000);
+  expect([lk.readyState, d.ddzLink.value]).toEqual([1, "open"]);
+  // The invite came to nothing: the place comes back on the same connection.
+  socket.recv({ type: "ddz_over", table: "r1", reason: "timeout" });
+  lk.recv({ type: "ddz_queue", base: 50, waited: 16 });
+  expect(d.ddzQueue.value).toMatchObject({ base: 50 });
+  expect(lk.readyState).toBe(1);
+});
