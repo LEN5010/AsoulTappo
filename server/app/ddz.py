@@ -49,8 +49,8 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
 
 - ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_queued (the save waits on another
-  connection) | ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time it joined or
-  moved) | bad_message (not a stake).
+  connection) | ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time the save joined
+  or moved, on any of its connections) | bad_message (not a stake).
 - ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
   `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
