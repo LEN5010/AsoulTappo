@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Over the pet of a member who opened a dou dizhu table in the room: a small paper sign with the stake and how many
-// sit there. Pressing it sits this save down; as on the banner, a press that began on another table, or a click right
-// after this one came up, sits nobody (inviteKeys).
+// sit there. It stands in a layer of its own over every partner's pet (App.vue), positioned on the pet's box. Pressing
+// it sits this save down; as on the banner, a press that began on another table, or a click right after this one came
+// up, sits nobody (inviteKeys).
 import { computed, watch } from "vue";
 import type { DdzOpenTable } from "../net/protocol";
 import { inviteKeys } from "../panel/ddz/inviteKeys";
@@ -21,7 +22,7 @@ function sit(e: MouseEvent) {
 
 <template>
   <button
-    type="button" class="sign" data-hit data-no-drag :disabled="!open" aria-label="入座"
+    type="button" class="sign" data-hit :disabled="!open" aria-label="入座"
     @pointerdown="keys.press()" @click="sit"
   >
     <Icon name="shard" :size="12" /><b>{{ table.base.toLocaleString("en-US") }}</b><i>{{ taken }}/3</i>

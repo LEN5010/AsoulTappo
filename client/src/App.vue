@@ -32,6 +32,7 @@ import DdzSign from "./pet/DdzSign.vue";
 import { ddzAtTable, ddzBubble, ddzMatchable, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
+  picking,
 } from "./pet/duelPick";
 import AccessBubble from "./pet/AccessBubble.vue";
 import AutoInputBubble from "./pet/AutoInputBubble.vue";
@@ -382,6 +383,15 @@ const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.v
 /** The open dou dizhu table member [m] opened in the room, shown as a sign over its pet. */
 const signOf = (m: RemoteMember) => (ddzMatchable.value
   ? ddzTables.value.find((t) => { const s = t.seats[0]; return !!s && "id" in s && s.id === m.id; }) : undefined);
+/** The partner being dragged: its sign, drawn apart from the pet, comes back where it is let go. */
+const draggedRemote = ref<string | null>(null);
+/** Whether the sign over [m]'s pet shows: not while the pet is dragged, or says something in a bubble of its own. */
+const signShown = (m: RemoteMember) => !!signOf(m) && draggedRemote.value !== m.id && !m.emote && !m.win && picking.value !== m.id;
+/** The box of [m]'s pet, for the sign to stand on its top edge. */
+const signAt = (m: RemoteMember) => {
+  const at = remoteAt(m);
+  return { transform: `translate(${at.x}px, ${at.y}px)`, width: `${remoteSize.value.w}px` };
+};
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
@@ -537,7 +547,8 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
   <div class="desk" :style="skinVars" @dragstart.prevent>
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
-      :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
+      :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => { draggedRemote = null; onRemoteMoved(m, p); }"
+      @dragging="draggedRemote = m.id; kick()" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
@@ -556,8 +567,15 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         />
       </template>
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
-      <DdzSign v-if="signOf(m)" :key="signOf(m)!.table" :table="signOf(m)!" />
     </PetActor>
+    <!-- The signs of open tables, over every partner's pet and under the own pet and its bubbles. -->
+    <div class="signs">
+      <template v-for="m in shownOthers" :key="m.id">
+        <div v-if="signShown(m)" class="sign-at" :style="signAt(m)">
+          <DdzSign :key="signOf(m)!.table" :table="signOf(m)!" />
+        </div>
+      </template>
+    </div>
 
     <PetActor
       :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :style="{ width: `${ownWidth}px` }"
@@ -660,6 +678,9 @@ html.browser-preview body {
 /* A shrunken strip (CounterBar's --bar-zoom) slides by as much less. */
 .strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 calc(-14px * var(--bar-zoom, 1)); }
 .desk > :deep(*) { pointer-events: auto; }
+/* A layer of no size of its own; each sign stands on the top edge of its pet's box. */
+.signs, .sign-at { position: absolute; left: 0; top: 0; height: 0; }
+.signs { width: 0; }
 /* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
  * on any wallpaper. The side padding keeps the plate centred under the pet. */
 .own-plate {
