@@ -441,7 +441,7 @@ export type DdzOp = "invite" | "answer" | "bid" | "play" | "auto" | "again" | "l
 export function ddzRequest(op: DdzOp, ...args: unknown[]): void {
   switch (op) {
     case "invite": inviteDdz(args[0] as string[], args[1] as number); break;
-    case "answer": answerDdz(args[0] as boolean); break;
+    case "answer": answerDdz(args[0] as boolean, args[1] as string | undefined); break;
     case "bid": bidDdz(args[0] as number); break;
     case "play": playDdz(args[0] as number[]); break;
     case "auto": autoDdz(args[0] as boolean); break;
@@ -465,11 +465,15 @@ export function inviteDdz(ids: string[], base: number): void {
   }
 }
 
-/** Answer the invite on screen. Turning it down closes it at once. */
-export function answerDdz(accept: boolean): void {
-  if (viaDesk("answer", accept)) return;
+/**
+ * Answer the invite on screen, table [table] (the one shown where the key was pressed). Turning it down closes it at
+ * once. The desk drops an answer for another table: one of the queue may have taken its place meanwhile, and accepting
+ * it would pay its deposit.
+ */
+export function answerDdz(accept: boolean, table = ddz.value?.id): void {
+  if (viaDesk("answer", accept, table)) return;
   const t = ddz.value;
-  if (!t || t.phase !== "invite" || t.sent || t.answered) return;
+  if (!t || t.id !== table || t.phase !== "invite" || t.sent || t.answered) return;
   sendDdz({ type: "ddz_answer", table: t.id, accept });
   if (accept) t.answered = true;
   else close();

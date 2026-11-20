@@ -64,8 +64,8 @@ const waited = computed(() => {
       </div>
       <div class="acts">
         <template v-if="!invite.sent && !invite.answered">
-          <button type="button" class="ui-btn" @click="answerDdz(false)">拒绝</button>
-          <button type="button" class="ui-btn white" @click="answerDdz(true)">接受</button>
+          <button type="button" class="ui-btn" @click="answerDdz(false, invite.id)">拒绝</button>
+          <button type="button" class="ui-btn white" @click="answerDdz(true, invite.id)">接受</button>
         </template>
         <button v-else-if="invite.sent" type="button" class="ui-btn" @click="leaveDdz">取消</button>
       </div>

@@ -37,8 +37,8 @@ const drain = () => ({ animationDuration: `${Math.max(0, (t.value?.until ?? 0) -
         <div class="body" :class="{ tall: ddzBubble === 'over' }">
           <p v-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
           <div v-else-if="!t.sent" class="keys">
-            <button type="button" class="ui-btn primary" :disabled="t.answered" @click="answerDdz(true)">接受</button>
-            <button type="button" class="ui-btn" :disabled="t.answered" @click="answerDdz(false)">拒绝</button>
+            <button type="button" class="ui-btn primary" :disabled="t.answered" @click="answerDdz(true, t.id)">接受</button>
+            <button type="button" class="ui-btn" :disabled="t.answered" @click="answerDdz(false, t.id)">拒绝</button>
           </div>
           <div v-else class="keys one">
             <p class="line">等待回应</p>

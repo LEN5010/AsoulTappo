@@ -406,3 +406,16 @@ it("says why the server took the save out of the queue, and forgets the queue wi
   expect(d.ddzWaiting.value).toEqual({});
   expect(r.ddzMatchOn.value).toBe(false);
 });
+
+it("answers only the invite the player saw: an answer for another table is dropped", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME], features: ["ddz_match"] });
+  socket.recv({ type: "ddz_invite", table: "m2", ids: ["x", "me", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [X, { ...ME }, Y] });
+  const sent = socket.sent.length;
+  d.answerDdz(true, "m1"); // clicked while m1 was on screen; m2 took its place before the click arrived
+  d.answerDdz(false, "m1");
+  expect(socket.sent).toHaveLength(sent);
+  expect(d.ddz.value).toMatchObject({ id: "m2", answered: false });
+  d.answerDdz(true, "m2");
+  expect(socket.sent.slice(sent)).toEqual([{ type: "ddz_answer", table: "m2", accept: true }]);
+});

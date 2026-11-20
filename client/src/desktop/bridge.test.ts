@@ -396,7 +396,8 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   panel.ddz.answerDdz(true);
   panel.ddz.playDdz([0, 1]);
   await vi.advanceTimersByTimeAsync(50);
-  expect(request.mock.calls).toEqual([["answer", true], ["play", [0, 1]]]);
+  // The answer names the table the panel showed, so the desk cannot apply it to another one.
+  expect(request.mock.calls).toEqual([["answer", true, "t1"], ["play", [0, 1]]]);
   desk.ddz.ddz.value = null;
   desk.ddz.onDdzMessage({ type: "ddz_live", table: "t2", ids: ["x", "y", "z"], on: false });
   await vi.advanceTimersByTimeAsync(50);
