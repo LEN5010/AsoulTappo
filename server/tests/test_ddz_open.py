@@ -697,3 +697,27 @@ def test_leaving_the_room_while_the_deposits_are_taken(monkeypatch, who, back):
         else:
             assert last_open(sa)["seats"] == [seat(a), None, seat(c)] and w.who["b"] not in w.t.by_save
     run(go())
+
+
+# ------------------------------------------------------------------ alongside invites
+def test_invites_of_old_clients_go_on_beside_open_tables():
+    async def go():
+        w = OpenWorld()
+        ((a, sa),), tid = await w.opened("a")
+        old, s_old = w.member("old", match=False)
+        old2, _ = w.member("old2", match=False)
+        new, s_new = w.member("new")
+        # Seated at an open table: busy for an invite.
+        with pytest.raises(Exception) as e:
+            await w.t.invite("r", old, [a.id, new.id], BASE)
+        assert e.value.code == "ddz_target_busy"
+        # An old client invites a new one and another old one; the new one answers as before.
+        await w.t.invite("r", old, [new.id, old2.id], BASE)
+        invite = s_new.of("ddz_invite")[0]
+        assert invite["from"] == old.id and "match" not in invite
+        await w.t.answer(new, invite["table"], True)
+        await w.t.answer(old2, invite["table"], True)
+        await settle()
+        assert s_new.of("ddz_deal")[0]["you"] == 1 and s_old.of("ddz_tables") == []
+        assert w.t.by_id[tid].phase == "open"
+    run(go())
