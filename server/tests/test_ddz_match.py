@@ -568,7 +568,7 @@ def test_leaving_the_room_during_a_table_of_the_queue_counts_as_declining():
     run(go())
 
 
-def test_joining_or_moving_in_the_queue_reads_the_save_at_most_once_a_second_per_connection(monkeypatch):
+def test_joining_or_moving_in_the_queue_reads_the_save_at_most_once_a_second_per_save(monkeypatch):
     async def go():
         from app.ddz import QUEUE_INTERVAL
 
@@ -589,10 +589,31 @@ def test_joining_or_moving_in_the_queue_reads_the_save_at_most_once_a_second_per
             await w.t.queue(a, BASE)
         assert e.value.code == "rate_limited"
         b, _ = w.member("b")
-        await w.t.queue(b, 50)  # another connection is not held up
+        await w.t.queue(b, 50)  # another save is not held up
         w.mono += QUEUE_INTERVAL
         await w.t.queue(a, 50)
         assert checks == [BASE, 50, 50] and queue_msgs(sa)[-1] == {"base": 50, "waited": 0.0}
+    run(go())
+
+
+def test_a_new_connection_of_the_save_does_not_get_round_the_queue_interval(monkeypatch):
+    async def go():
+        checks = []
+        real = Bank.check
+        monkeypatch.setattr(Bank, "check", lambda self, pids, base: checks.append(base) or real(self, pids, base))
+        w = MatchWorld()
+        a, _ = w.member("a")
+        await w.t.queue(a, BASE)
+        await w.m.depart("r-a", a.id)
+        a2, _ = w.member("a", room="r-a2")
+        with pytest.raises(Exception) as e:
+            await w.t.queue(a2, BASE)
+        assert e.value.code == "rate_limited"
+        # Two connections of one save asking at once: the second is held up before the save is read again.
+        w.mono += 1
+        a3, _ = w.member("a", room="r-a3")
+        await asyncio.gather(w.t.queue(a2, 50), w.t.queue(a3, 50), return_exceptions=True)
+        assert checks == [BASE, 50]
     run(go())
 
 

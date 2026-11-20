@@ -93,8 +93,8 @@ COUNTS_SEC = 1.0
 # A save that declined a table of the queue, left it or let its time run out waits this long before it may queue
 # again.
 MATCH_RETRY_SEC = 60.0
-# A connection joins the queue or moves to another stake at most this often (each time reads the save); stopping is
-# never held up.
+# A save joins the queue or moves to another stake at most this often, over all its connections (each time reads the
+# save); stopping is never held up.
 QUEUE_INTERVAL = 1.0
 
 INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
@@ -342,6 +342,8 @@ class Tables:
         self._tasks: set[asyncio.Task] = set()
         # Save -> clock time from which it may queue again, after declining a table of the queue or letting it lapse.
         self.match_refused: dict[str, float] = {}
+        # Save -> clock time it last joined the queue or moved in it (QUEUE_INTERVAL).
+        self._queue_at: dict[str, float] = {}
         # The waiting counts last sent, when, and the timer of the next send.
         self._counts_sent: dict[int, int] = {}
         self._counts_at = float("-inf")
@@ -362,6 +364,7 @@ class Tables:
         self.lines.clear()
         self.waiting.clear()
         self.match_refused.clear()
+        self._queue_at.clear()
         self._matching.clear()
         if self._counts_timer is not None:
             self._counts_timer.cancel()
@@ -925,9 +928,12 @@ class Tables:
         held = self.waiting.get(peer.token)
         if held is None or held.base != base:
             now = self.clock()
-            if now - peer.ddz_queue_at < QUEUE_INTERVAL:
+            # By save, set before the database is read: a new connection of the save, or a second one asking at the
+            # same time, is held up too.
+            if now - self._queue_at.get(peer.token, float("-inf")) < QUEUE_INTERVAL:
                 raise GameError("rate_limited", "too many queue requests")
-            peer.ddz_queue_at = now
+            self._queue_at = {k: t for k, t in self._queue_at.items() if now - t < QUEUE_INTERVAL}
+            self._queue_at[peer.token] = now
             await run_in_threadpool(bank.check, [peer.token], base)
             # It may have left, sat down or queued elsewhere while the database was read.
             self._check_queue(peer)
