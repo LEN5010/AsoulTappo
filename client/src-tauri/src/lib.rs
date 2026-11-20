@@ -33,7 +33,7 @@ use overlay_macos::{
 };
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 
@@ -1347,6 +1347,17 @@ pub fn run() {
                     }
                     _ => {}
                 });
+            // Windows: a left click opens the panel the way the Dock icon does on macOS, a right click pops the menu.
+            // A runtime check rather than #[cfg], so the handler is type-checked on every platform.
+            if cfg!(target_os = "windows") {
+                tray = tray.show_menu_on_left_click(false).on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        applog!("tray", "left click: raise panel");
+                        // On the page it shows, like the desk's menu key.
+                        let _ = tray.app_handle().emit_to("main", "tray", "raise-panel");
+                    }
+                });
+            }
             if let Some(icon) = app.default_window_icon() {
                 tray = tray.icon(icon.clone());
             }
@@ -1397,11 +1408,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running AsoulTappo")
         .run(|_app, _event| {
-            // macOS: a click on the Dock icon opens the panel, the pet window itself has nothing to show.
+            // macOS: a click on the Dock icon, or opening the app again, brings up the panel on the page it shows; the
+            // pet window itself has nothing to show.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = _event {
-                applog!("tray", "dock icon: open panel");
-                let _ = _app.emit_to("main", "tray", "open-panel");
+                applog!("tray", "dock icon: raise panel");
+                let _ = _app.emit_to("main", "tray", "raise-panel");
             }
         });
 }

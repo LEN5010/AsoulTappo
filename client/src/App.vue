@@ -458,6 +458,7 @@ onMounted(async () => {
   unTray = await listenTray((a) => {
     if (a === "toggle-panel") togglePanel();
     else if (a === "open-panel") openPanel();
+    else if (a === "raise-panel") raisePanel();
     else if (a === "reset-position") resetOwnPet();
     else if (a === "toggle-capture") settings.captureOpen = !settings.captureOpen;
     else if (a === "toggle-pomodoro") togglePomodoro();
