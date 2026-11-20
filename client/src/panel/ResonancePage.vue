@@ -5,7 +5,7 @@ import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
 import { economy } from "../stores/economy";
 import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
-import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, pityOpen, poolOf, effectiveRates, runningBanners, tiersIn } from "../resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, pityOpen, poolDone, poolOf, effectiveRates, runningBanners } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, shards, status, online, error, loadEconomy } from "../stores/player";
 import { reducedMotion } from "../stores/theme";
@@ -50,9 +50,8 @@ const rates = computed(() => banner.value
   ? bannerRates(banner.value, pool.value, collection.owned, guaranteed.value)
   : { featured: 0, tiers: effectiveRates(pool.value, collection.owned), shared: [] });
 const base = computed(() => (banner.value ? bannerBaseRates(banner.value) : baseRates()));
-// Everything this pool's odds can reach is owned: a tier it gives no odds (the limited tier in the standing pool) does
-// not keep it open.
-const standingDone = computed(() => tiersIn(base.value).every((r) => pool.value[r].every((i) => collection.owned[i.id])));
+// Everything this pool's odds can reach is owned, the holo versions the server deals included.
+const standingDone = computed(() => poolDone(pool.value, collection.owned, base.value));
 const complete = computed(() => !!economy.value && standingDone.value && !featuredLeft.value);
 /** What a limited pool's featured items are called: skins when they all are. */
 const featuredWord = computed(() =>

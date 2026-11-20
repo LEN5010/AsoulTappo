@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { getCard, manifest } from "./manifest";
 import { craftCost, getItem, ownsCharacter } from "./items";
-import { bannerBaseRates, bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, pityOpen, poolFor, poolOf, runningBanners, standingPool, tiersIn } from "./resonance";
+import { bannerBaseRates, bannerLeft, bannerRates, baseRates, commonKindRates, effectiveRates, featuredItems, heldItems, isHeld, leftToFind, pityOpen, poolDone, poolFor, poolOf, runningBanners, standingPool, tiersIn, type ResonancePool } from "./resonance";
 import { economy, setEconomy } from "./stores/economy";
 import { exampleEconomy } from "./test/economy";
 import { realPoolCounts, realPoolSize } from "./test/pool";
@@ -193,4 +193,55 @@ it("reads a banner's own odds and the tiers its featured items share", () => {
     expect(whole.shared).toEqual([]);
     expect(whole.tiers.skin).toBe(exampleEconomy.resonance.repeatTiers?.includes("skin") ? 3 : 0);
   });
+});
+
+// ---- holo versions
+const HOLO_CARDS = manifest.cards.filter((c) => c.holo);
+const HOLO_CARD = HOLO_CARDS[0]!;
+/** Every item of [pool] and every holo version but those of the cards [lacking] names. */
+function wholeSave(pool: ResonancePool, ...lacking: string[]): Record<string, number> {
+  const owned: Record<string, number> = Object.fromEntries(Object.values(pool).flat().map((i) => [i.id, 1]));
+  for (const c of HOLO_CARDS) if (!lacking.includes(c.id)) owned[`holo:${c.id}`] = 1;
+  return owned;
+}
+it("keeps the pool open while the save lacks a holo version the server deals", () => {
+  expect(exampleEconomy.resonance.holoChance).toBeGreaterThan(0);
+  const p = standingPool();
+  const item = getItem(`card:${HOLO_CARD.id}`)!;
+  expect(poolDone(p, wholeSave(p), baseRates())).toBe(true);
+  expect(leftToFind(item, wholeSave(p))).toBe(false);
+  const lacking = wholeSave(p, HOLO_CARD.id);
+  expect(poolDone(p, lacking, baseRates())).toBe(false);
+  expect(leftToFind(item, lacking)).toBe(true);
+  // The tiers keep their odds as they were: the holo cards are common ones.
+  expect(effectiveRates(p, lacking)).toEqual(effectiveRates(p, wholeSave(p)));
+  // A server that sends no holo chance (none in its economy, or a client too old for them): nothing is left.
+  const { holoChance: _chance, ...rest } = exampleEconomy.resonance;
+  setEconomy({ ...exampleEconomy, resonance: rest });
+  try {
+    expect(poolDone(p, lacking, baseRates())).toBe(true);
+    expect(leftToFind(item, lacking)).toBe(false);
+  } finally {
+    setEconomy(exampleEconomy);
+  }
+});
+it("keeps a limited pool open while the save lacks a holo version", () => {
+  withBanner(() => {
+    const p = poolOf(heldItems());
+    const owned = { ...wholeSave(p, HOLO_CARD.id), ...Object.fromEntries(SKINS.map((id) => [id, 1])) };
+    expect(poolDone(p, owned, bannerBaseRates(BANNER))).toBe(false);
+    owned[`holo:${HOLO_CARD.id}`] = 1;
+    expect(poolDone(p, owned, bannerBaseRates(BANNER))).toBe(true);
+  });
+});
+it("keeps a tier in the roll while one of its cards lacks its holo version", () => {
+  // A card with a holo version put in a tier that rolls no repeats.
+  const p = poolOf();
+  const pool = { ...p, limited: [...p.limited, getItem(`card:${HOLO_CARD.id}`)!] };
+  const owned = wholeSave(pool, HOLO_CARD.id);
+  expect(effectiveRates(pool, owned).limited).toBe(R.limited);
+  expect(pityOpen("limited", pool, owned)).toBe(true);
+  owned[`holo:${HOLO_CARD.id}`] = 1;
+  expect(effectiveRates(pool, owned).limited).toBe(0);
+  expect(pityOpen("limited", pool, owned)).toBe(false);
 });

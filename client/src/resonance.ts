@@ -1,7 +1,8 @@
 // One standing pool for every member, and the limited pools the server runs beside it (server/app/banners.py).
 // Shared cards keep a single collectible id.
+import { ownsHolo } from "./cards";
 import { collectible, getItem, type Item } from "./items";
-import type { Rarity } from "./manifest";
+import { getCard, type Rarity } from "./manifest";
 import { economy, type Banner } from "./stores/economy";
 
 export type ResonancePool = Record<Rarity, Item[]>;
@@ -47,12 +48,24 @@ export function featuredItems(banner: Banner): Item[] {
 }
 
 /**
+ * Whether the save still has something to find in [item]: the item itself, or, where the server deals holo versions
+ * (holoChance), the holo version of its card. The server keeps a tier in the roll while one of its items does.
+ */
+export function leftToFind(item: Item, owned: Record<string, number>): boolean {
+  if (!owned[item.id]) return true;
+  if (item.kind !== "card" || !economy.value?.resonance.holoChance) return false;
+  const card = getCard(item.ref);
+  return !!card?.holo && !ownsHolo(card, owned);
+}
+
+/**
  * Whether the pity of tier [r] still leads to something the save lacks when it draws from [banner] (the standing pool
- * when null): a standing item of the tier, or, in a banner that shares the tier with its featured items, one of those.
- * The server keeps such a tier in the roll for the featured items, and the save's pity counter gives one of them.
+ * when null): a standing item of the tier (see leftToFind), or, in a banner that shares the tier with its featured
+ * items, one of those. The server keeps such a tier in the roll for the featured items, and the save's pity counter
+ * gives one of them.
  */
 export function pityOpen(r: Rarity, pool: ResonancePool, owned: Record<string, number>, banner: Banner | null = null): boolean {
-  if (pool[r].some((item) => !owned[item.id])) return true;
+  if (pool[r].some((item) => leftToFind(item, owned))) return true;
   return !!banner?.share && featuredItems(banner).some((item) => item.rarity === r && !owned[item.id]);
 }
 
@@ -78,6 +91,14 @@ export function tiersIn(rates: Record<Rarity, number>): Rarity[] {
 }
 
 /**
+ * Whether a draw at [rates] from [pool] has nothing left to find (see leftToFind). A tier it gives no odds (the
+ * limited tier in the standing pool) does not count.
+ */
+export function poolDone(pool: ResonancePool, owned: Record<string, number>, rates: Record<Rarity, number>): boolean {
+  return tiersIn(rates).every((r) => !pool[r].some((item) => leftToFind(item, owned)));
+}
+
+/**
  * The standing pool as its page counts it: without [held], and without the tiers the server gives no odds there.
  * Before the server's economy is known nothing is left out.
  */
@@ -90,9 +111,9 @@ export function standingPool(held?: ReadonlySet<string>): ResonancePool {
 }
 
 /**
- * A tier with nothing left to find gives its odds to common, unless it keeps rolling repeats or is one of [kept]
- * (the server does the same). [from] are the odds before that, the standing pool's unless given. All zero until the
- * server's economy is known.
+ * A tier with nothing left to find (see leftToFind) gives its odds to common, unless it keeps rolling repeats or is
+ * one of [kept] (the server does the same). [from] are the odds before that, the standing pool's unless given. All
+ * zero until the server's economy is known.
  */
 export function effectiveRates(
   pool: ResonancePool, owned: Record<string, number>, from?: Record<Rarity, number>, kept?: ReadonlySet<Rarity>,
@@ -102,7 +123,7 @@ export function effectiveRates(
   const rates = { ...(from ?? baseRates()) };
   const repeating = new Set(res.repeatTiers ?? []);
   for (const rarity of ["legendary", "skin", "epic", "limited", "rare", "uncommon"] as const) {
-    if (!repeating.has(rarity) && !kept?.has(rarity) && !pool[rarity].some((item) => !owned[item.id])) {
+    if (!repeating.has(rarity) && !kept?.has(rarity) && !pool[rarity].some((item) => leftToFind(item, owned))) {
       rates.common += rates[rarity];
       rates[rarity] = 0;
     }
