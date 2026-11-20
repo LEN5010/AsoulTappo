@@ -4,8 +4,9 @@
 // pets behind its far edge on either side of the bottom cards, and the own pet beside the hand with the emotes' key
 // under it. Cards are picked by click, by dragging across them, or by their rank on the keyboard; the keys under the
 // hand carry the key that presses them.
-// The cards are sized as on a desktop card table (measured on the PC client of 欢乐斗地主): the hand's a fifth of the
-// height, a play two thirds of that, the bottom cards half.
+// The cards are sized as on a desktop card table (measured on the PC client of 欢乐斗地主), a little under it: the
+// hand's a fifth of the height, a play two thirds of that, the bottom cards half. Large suits are printed faintly on
+// the wall's upper corners and on the felt's two ends.
 // Drawn on a stage of at least 960×600 that is scaled as one piece to the window, in a board of at most 1040×680 in
 // its middle. The wall moves the window; the close key closes it and leaves the seat playing (离桌 leaves the table).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -27,6 +28,7 @@ import { countTo } from "../park/countTo";
 import DdzCard from "./DdzCard.vue";
 import DdzEmotes from "./DdzEmotes.vue";
 import DdzReceipt from "./DdzReceipt.vue";
+import { SUITS } from "./suits";
 
 const emit = defineEmits<{ close: []; drag: [e: PointerEvent] }>();
 
@@ -70,29 +72,29 @@ const stage = computed(() => ({ w: box.value.w / unit.value, h: box.value.h / un
 const BOARD_MAX = { w: 1040, h: 680 };
 const board = computed(() => ({ w: Math.min(stage.value.w, BOARD_MAX.w), h: Math.min(stage.value.h, BOARD_MAX.h) }));
 /** The margin on either side of the table; the table's top, under the other seats' pets, and its foot above the board's. */
-const SIDE = 60;
+const SIDE = 48;
 const TABLE_TOP = 124;
-const TABLE_FOOT = 212;
+const TABLE_FOOT = 206;
 const tableW = computed(() => board.value.w - SIDE * 2);
 
 // ---- the hand
-const CARD = 84;
+const CARD = 80;
 /** The hand starts clear of the own pet. */
 const HAND_LEFT = 212;
 const HAND_RIGHT = 28;
 const LIFT = 18;
 /** A card of the hand shows at most this much of itself under the next: half of it. */
-const HAND_STEP = 42;
+const HAND_STEP = 40;
 /** The hand's row: its foot above the board's foot (the time bar and the keys stand under it), and its height (a card and its lift). */
 const HAND_BOTTOM = 68;
 const HAND_H = Math.ceil(CARD * 1.42) + LIFT;
 /** The bottom cards over the table, and how far down the board their middle is. */
-const BOTTOM_CARD = 48;
+const BOTTOM_CARD = 46;
 const BOTTOMS_TOP = 12;
 const BOTTOMS_MID = BOTTOMS_TOP + (BOTTOM_CARD * 1.42) / 2;
 /** A card played onto the table, one left in a hand at the end, and the back that carries a seat's count. */
-const PLAYED_CARD = 56;
-const LEFT_CARD = 40;
+const PLAYED_CARD = 53;
+const LEFT_CARD = 38;
 const BACK_CARD = 30;
 const handRoom = computed(() => board.value.w - HAND_LEFT - HAND_RIGHT);
 const handFan = computed(() => fan(t.value.hand.length, handRoom.value, CARD, HAND_STEP));
@@ -374,8 +376,8 @@ const zones = computed(() => [
 ].map(({ seat, side }) => {
   const z = zone(seat);
   const w = z.small ? LEFT_CARD : PLAYED_CARD;
-  const room = side === "own" ? tableW.value - 380 : tableW.value / 2 - 122;
-  return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 16 : 23).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
+  const room = side === "own" ? tableW.value - 404 : tableW.value / 2 - 122;
+  return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 15 : 22).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
 }));
 
 const boom = ref<{ seq: number; seat: number } | null>(null);
@@ -484,6 +486,8 @@ onBeforeUnmount(() => {
         class="stage" :class="`phase-${t.phase}`"
         :style="{ width: `${stage.w}px`, height: `${stage.h}px`, transform: `scale(${unit})` }" @pointerdown.self="wallDown"
       >
+        <svg class="wall-suit left" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[2]" /></svg>
+        <svg class="wall-suit right" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[3]" /></svg>
         <div class="top">
           <button type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
           <span class="corner">
@@ -498,7 +502,10 @@ onBeforeUnmount(() => {
           </span>
         </div>
 
-        <div class="board" :style="{ width: `${board.w}px`, height: `${board.h}px` }" @pointerdown.self="wallDown">
+        <div
+          class="board" :style="{ width: `${board.w}px`, height: `${board.h}px`, '--card': `${CARD}px`, '--bottom-card': `${BOTTOM_CARD}px` }"
+          @pointerdown.self="wallDown"
+        >
           <!-- The three cards for the landlord: face down while the seats bid, turned over once there is one. -->
           <div class="bottoms" :class="{ open: t.landlord !== null }" :style="{ top: `${BOTTOMS_TOP}px` }" aria-label="底牌">
             <span v-for="i in 3" :key="i" class="flipper">
@@ -511,6 +518,10 @@ onBeforeUnmount(() => {
             ref="matEl" class="mat" :style="{ left: `${SIDE}px`, right: `${SIDE}px`, top: `${TABLE_TOP}px`, bottom: `${TABLE_FOOT}px` }"
             @pointerdown.self="clearPicked"
           >
+            <span class="print" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path :d="SUITS[0]" /></svg>
+              <svg viewBox="0 0 24 24"><path :d="SUITS[1]" /></svg>
+            </span>
             <div class="mult">
               <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
               <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
@@ -540,6 +551,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="out" class="tally">
               <span v-for="c in out" :key="c.label" :class="{ none: !c.n }"><i>{{ c.label }}</i><b>{{ c.n }}</b></span>
+              <span class="blank"></span>
             </div>
           </div>
 
@@ -693,6 +705,10 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 .board { position: absolute; left: 50%; top: 50%; translate: -50% -50%; }
+/* On the wall: a suit in each upper corner, paler than the wall's own shade, the table over their feet. */
+.wall-suit { position: absolute; top: 44px; width: 92px; height: 92px; fill: var(--c-200); opacity: 0.7; pointer-events: none; }
+.wall-suit.left { left: 34px; rotate: -12deg; }
+.wall-suit.right { right: 34px; rotate: 12deg; }
 
 .top { position: absolute; left: 14px; right: 14px; top: 12px; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; }
 .top .ui-btn { height: 36px; padding: 0 14px; gap: 6px; font-size: var(--fs-body); pointer-events: auto; }
@@ -701,7 +717,7 @@ onBeforeUnmount(() => {
 
 /* The bottom cards turn over like the cards of a draw. */
 .bottoms { position: absolute; left: 50%; translate: -50% 0; display: flex; gap: 6px; perspective: 780px; z-index: 1; pointer-events: none; }
-.flipper { position: relative; display: block; width: 48px; height: calc(48px * 1.42); transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
+.flipper { position: relative; display: block; width: var(--bottom-card); height: calc(var(--bottom-card) * 1.42); transform-style: preserve-3d; transition: transform 420ms var(--ease-out); }
 .flipper:nth-child(2) { transition-delay: 70ms; }
 .flipper:nth-child(3) { transition-delay: 140ms; }
 .flipper > * { position: absolute; inset: 0; backface-visibility: hidden; }
@@ -747,6 +763,12 @@ onBeforeUnmount(() => {
   mask-composite: intersect;
   -webkit-mask-composite: source-in;
 }
+
+/* Printed on the felt: a large suit at either end, a little past the felt's edge. The cards lie over them. */
+.print { position: absolute; inset: 10px; border-radius: 18px; overflow: hidden; pointer-events: none; }
+.print svg { position: absolute; top: 50%; width: 168px; height: 168px; margin-top: -96px; fill: #fff; opacity: 0.12; }
+.print svg:nth-child(1) { left: -22px; rotate: -12deg; }
+.print svg:nth-child(2) { right: -22px; rotate: 12deg; }
 
 /* The multiplier is the one big number of the table. At the table's lowest (264) the block (small 24, number 88,
    factors 28) ends 22 above the own cards on the table; a taller table gives the extra room above and below it. */
@@ -800,30 +822,32 @@ onBeforeUnmount(() => {
 }
 .factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
 .phase-result .mult { opacity: 0; }
-/* The card counter: a paper slip in the table's near left corner, each rank over how many the other two still hold,
-   in two rows; a rank all gone fades. */
+/* The card counter: a ruled paper slip in the table's near left corner, each rank on a tinted line over how many the
+   other two still hold, in two rows; a rank all gone fades. The rules are the slip's own colour showing in the gaps. */
 .tally {
   position: absolute;
   left: 24px;
   bottom: 20px;
-  width: 152px;
-  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  row-gap: 6px;
-  padding: 7px 4px 6px;
-  border-radius: 10px;
-  background: var(--surface);
+  grid-template-columns: repeat(8, 20px);
+  gap: 1px;
+  padding: 1px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--c-200);
   box-shadow: 0 4px 10px -5px rgba(var(--c-900-rgb), 0.45);
   z-index: 2;
   pointer-events: none;
 }
-.tally span { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.tally i { font: 800 13px/1 var(--font-latin); font-style: normal; color: var(--ink-3); letter-spacing: -0.5px; }
+.tally span { display: flex; flex-direction: column; background: var(--surface); }
+.tally i, .tally b { display: grid; place-items: center; }
+.tally i { height: 16px; background: var(--c-50); font: 800 13px/1 var(--font-latin); font-style: normal; color: var(--ink-3); letter-spacing: -0.5px; }
 /* The jokers' 小 and 大 are characters: smaller to sit on the numerals' line. */
-.tally span:nth-last-child(-n + 2) i { font: 800 10px/13px var(--font); }
-.tally b { font: 800 15px/1 var(--font-latin); color: var(--c-700); }
-.tally .none { opacity: 0.3; }
+.tally span:nth-last-child(-n + 3) i { font: 800 10px/1 var(--font); letter-spacing: 0; }
+.tally b { height: 19px; font: 800 15px/1 var(--font-latin); color: var(--c-700); }
+.tally .none b { color: var(--c-300); }
+.tally .none i { opacity: 0.5; }
+.tally .blank { background: var(--c-50); }
 
 /* What each seat has in front of it. Cards on the table lie a little askew, turned about the end their seat is at;
    the ones in the hand do not. The other seats' lie under their names, on either side of the multiplier; the own one
@@ -855,9 +879,9 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   animation: pop 260ms var(--ease-pop) backwards;
 }
-.zone.left .said { margin: 23px 0 23px 4px; }
-.zone.right .said { margin: 23px 4px 23px 0; }
-.zone.own .said { margin: 23px 0; }
+.zone.left .said { margin: 21px 0 21px 4px; }
+.zone.right .said { margin: 21px 4px 21px 0; }
+.zone.own .said { margin: 21px 0; }
 .said.bid { background: #fff; color: var(--c-700); font: 800 21px/1 var(--font-latin); box-shadow: 0 3px 0 var(--c-600); }
 @keyframes pop {
   from { opacity: 0; scale: 0.6; }
@@ -974,13 +998,13 @@ onBeforeUnmount(() => {
 .zone.right .timer { order: -1; margin: 0 12px 0 0; rotate: -2deg; }
 .zone.own .timer { margin: 0 -56px 0 12px; }
 /* Alone, it stands where the middle of the seat's cards would be. */
-.zone .timer.alone { margin: 18px 0; }
+.zone .timer.alone { margin: 16px 0; }
 
 /* The two other seats stand at the far edge of the table, one on either side of the bottom cards, their name tags on
    it; the cards left lie beside the tag on the side away from the middle, and the time to move runs out under it. */
 .seat { position: absolute; top: 10px; width: 204px; translate: -50% 0; display: flex; flex-direction: column; align-items: center; z-index: 3; pointer-events: none; }
-.seat.left { left: 28%; }
-.seat.right { left: 72%; }
+.seat.left { left: 25%; }
+.seat.right { left: 75%; }
 .seat :deep(.still), .me :deep(.still) { filter: var(--contour); }
 .seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
 .under { position: relative; display: flex; align-items: center; margin-top: 2px; }
@@ -1051,8 +1075,8 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0;
   top: 0;
-  width: 84px;
-  height: calc(84px * 1.42);
+  width: var(--card);
+  height: calc(var(--card) * 1.42);
   perspective: 780px;
   transition: translate 150ms var(--ease-out);
   animation: deal 320ms var(--ease-out) backwards;
