@@ -382,8 +382,11 @@ export function onDdzMessage(msg: DdzMessage): void {
   }
   if (msg.type === "ddz_open") {
     // Seated at an open table (after a game too, when it opens again): the call to it is answered.
-    clearTimeout(endTimer);
     const before = ddz.value?.id === msg.table ? ddz.value : null;
+    // All three asked for another game and the deposits are being taken: the result stays on the table (and the table
+    // up) until the deal, or until the table waits again.
+    if (msg.starting && before?.phase === "result") return;
+    clearTimeout(endTimer);
     ddz.value = {
       ...blank(msg.table), log: before?.log ?? [], phase: "open", you: msg.you, base: msg.base, deposit: msg.deposit,
       starting: !!msg.starting, seats: msg.seats.map(openSeat), ...countdown(msg.sec),

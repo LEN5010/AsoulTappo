@@ -574,6 +574,11 @@ it("stands up or puts the open table away, and says why it went", async () => {
   socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
   expect(d.ddzBubble.value).toBeNull(); // sat down just now: nothing to say
   Object.assign(d.ddz.value!, { phase: "result" });
+  // All three asked for another: while the deposits are taken the result stays on the table, which stays up.
+  socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), seatOf(B)], sec: 600, starting: true });
+  expect(d.ddz.value).toMatchObject({ id: "o3", phase: "result" });
+  expect(d.ddzAtTable.value).toBe(true);
+  // One of them could not pay: the table waits again without it.
   socket.recv({ type: "ddz_open", table: "o3", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), seatOf(NEW_A), null], sec: 600 });
   expect(d.ddz.value).toMatchObject({ id: "o3", phase: "open" });
   // Back from the game, the pet shows the table waiting again for a moment.
