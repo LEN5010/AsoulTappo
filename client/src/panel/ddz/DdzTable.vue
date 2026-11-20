@@ -638,7 +638,7 @@ onBeforeUnmount(() => {
 /* The leave dialog is drawn here, over the table. */
 .ddz-overlay { position: absolute; inset: 0; z-index: 10; overflow: hidden; border-radius: var(--radius-l); pointer-events: none; }
 .ddz-overlay > :deep(*) { pointer-events: auto; }
-/* The same light wall as the room's stage, with faint halftone dots rising toward its top and its foot. */
+/* The same light wall as the room's stage. */
 .stage {
   position: relative;
   transform-origin: 0 0;
@@ -647,22 +647,6 @@ onBeforeUnmount(() => {
   color: var(--ink);
   user-select: none;
 }
-.stage::before,
-.stage::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: -1;
-  height: 140px;
-  background: var(--c-300);
-  opacity: 0.4;
-  pointer-events: none;
-  -webkit-mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
-  mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
-}
-.stage::before { top: 0; scale: 1 -1; }
-.stage::after { bottom: 0; }
 
 .top { position: absolute; left: 14px; right: 14px; top: 12px; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; }
 .top .ui-btn { height: 36px; padding: 0 14px; gap: 6px; font-size: var(--fs-body); pointer-events: auto; }

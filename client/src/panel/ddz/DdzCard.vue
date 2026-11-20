@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A playing card of the dou dizhu table: white paper, the rank in Barlow with its suit under it, hearts and diamonds
 // in deep coral. The jokers are 阿草, grey on the small one. `card` null draws the back, the draw's sealed back
-// (CardBack.vue) held still and worded 斗地主. Everything is sized from `width` (px), so one card serves the hand, the
+// (CardBack.vue) held still and worded ASOUL. Everything is sized from `width` (px), so one card serves the hand, the
 // table and the receipt.
 import { computed } from "vue";
 import { isRed, rank, rankLabel, suit } from "../../ddz/rules";
@@ -28,12 +28,11 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
 <template>
   <span v-if="card === null" class="ddz-card back" :class="{ full: width >= FULL_BACK }" :style="{ '--w': width }">
     <i class="silk"></i>
-    <i class="dots"></i>
     <i class="rule"></i>
     <template v-if="width >= FULL_BACK">
       <svg class="star tr" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
       <svg class="star bl" viewBox="0 0 24 24" aria-hidden="true"><path :d="SPARK" /></svg>
-      <b class="band"><i></i>斗地主<i></i></b>
+      <b class="band"><i></i>ASOUL<i></i></b>
     </template>
   </span>
   <span v-else-if="!face" class="ddz-card joker" :class="{ small: card === 52 }" :style="{ '--w': width }">
@@ -115,8 +114,8 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   pointer-events: none;
 }
 .joker.small img { filter: grayscale(1); opacity: 0.8; }
-/* The back: the draw's sealed back on a playing card. Coral stock lit from the top left, a white edge, silk and a rise
-   of halftone dots and a rule inside the edge; the sparkles and the word band across the middle only where there is
+/* The back: the draw's sealed back on a playing card. Coral stock lit from the top left, a white edge, silk and a rule
+   inside the edge; the sparkles and the word band across the middle only where there is
    room for them. Still: it lies on a table. */
 .back {
   --edge: max(2px, calc(var(--px) * 0.07));
@@ -136,17 +135,6 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   border-radius: calc(var(--px) * 0.125 - var(--edge));
   background: repeating-linear-gradient(-45deg, currentColor 0 1px, transparent 1px 6px);
   opacity: 0.075;
-}
-.dots {
-  left: var(--edge);
-  right: var(--edge);
-  bottom: var(--edge);
-  height: 48%;
-  border-radius: 0 0 calc(var(--px) * 0.125 - var(--edge)) calc(var(--px) * 0.125 - var(--edge));
-  background: currentColor;
-  opacity: 0.14;
-  -webkit-mask: url("../../assets/patterns/halftone.svg") center bottom / 120% auto no-repeat;
-  mask: url("../../assets/patterns/halftone.svg") center bottom / 120% auto no-repeat;
 }
 .rule {
   inset: max(4px, calc(var(--px) * 0.12));
@@ -173,8 +161,8 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   align-items: center;
   justify-content: center;
   gap: calc(var(--px) * 0.04);
-  font: 800 max(7px, calc(var(--px) * 0.15)) / 1 var(--font);
-  letter-spacing: 0.08em;
+  font: 800 max(7px, calc(var(--px) * 0.15)) / 1 var(--font-latin);
+  letter-spacing: 0.16em;
   white-space: nowrap;
   opacity: 0.9;
 }

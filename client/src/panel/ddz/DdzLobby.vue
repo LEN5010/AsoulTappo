@@ -178,24 +178,8 @@ const callable = computed(() => [...members.values()].some(ddzCanCall));
 </template>
 
 <style scoped>
-/* The table window's light wall, with faint halftone dots rising toward its top and its foot (as the table's stage). */
+/* The table window's light wall, as the table's stage. */
 .lobby { position: absolute; inset: 0; overflow: hidden; border-radius: var(--radius-l); background: var(--c-100); isolation: isolate; }
-.lobby::before,
-.lobby::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: -1;
-  height: 140px;
-  background: var(--c-300);
-  opacity: 0.4;
-  pointer-events: none;
-  -webkit-mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
-  mask: url("../../assets/patterns/halftone.svg") 0 0 / 280px 140px repeat-x;
-}
-.lobby::before { top: 0; scale: 1 -1; }
-.lobby::after { bottom: 0; }
 .lobby-overlay { position: absolute; inset: 0; z-index: 10; overflow: hidden; border-radius: var(--radius-l); pointer-events: none; }
 .lobby-overlay > :deep(*) { pointer-events: auto; }
 .wall {
