@@ -560,3 +560,31 @@ def test_leaving_the_room_during_a_table_of_the_queue_holds_nobody_up():
         await w.t.queue(c2, BASE)
         assert queue_msgs(sc2)[0] == {"base": BASE, "waited": 0.0} and sc2.of("ddz_invite")[0]["ids"] == [a.id, b.id, c2.id]
     run(go())
+
+
+def test_joining_or_moving_in_the_queue_reads_the_save_at_most_once_a_second_per_connection(monkeypatch):
+    async def go():
+        from app.ddz import QUEUE_INTERVAL
+
+        assert QUEUE_INTERVAL == 1
+        checks = []
+        real = Bank.check
+        monkeypatch.setattr(Bank, "check", lambda self, pids, base: checks.append(base) or real(self, pids, base))
+        w = MatchWorld()
+        a, sa = w.member("a")
+        await w.t.queue(a, BASE)
+        with pytest.raises(Exception) as e:
+            await w.t.queue(a, 50)
+        assert e.value.code == "rate_limited"
+        await w.t.queue(a, BASE)  # the stake it waits at: answered without reading the save
+        w.t.unqueue(a)  # stopping is never held up
+        assert queue_msgs(sa)[-1] == {"base": None}
+        with pytest.raises(Exception) as e:
+            await w.t.queue(a, BASE)
+        assert e.value.code == "rate_limited"
+        b, _ = w.member("b")
+        await w.t.queue(b, 50)  # another connection is not held up
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(a, 50)
+        assert checks == [BASE, 50, 50] and queue_msgs(sa)[-1] == {"base": 50, "waited": 0.0}
+    run(go())

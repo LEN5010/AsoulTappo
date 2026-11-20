@@ -119,6 +119,8 @@ class Peer:
     ddz: bool = False
     # the client also queues for dou dizhu tables across rooms (app/ddz.py, the queue)
     ddz_match: bool = False
+    # Monotonic time this connection last joined the dou dizhu queue or moved in it (app/ddz.py, QUEUE_INTERVAL).
+    ddz_queue_at: float = float("-inf")
     # the room this connection joined
     room: str = ""
     emotes: set[str] = field(default_factory=set)

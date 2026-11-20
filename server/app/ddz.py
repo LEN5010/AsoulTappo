@@ -48,7 +48,8 @@ The queue, with members whose client said `ddzMatch` only (`joined.features` the
 
 - ``ddz_queue`` {base} from the member: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite, or the save waits on another connection) |
-  ddz_dnd | ddz_match_cooldown | bad_message (not a stake).
+  ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time it joined or moved) |
+  bad_message (not a stake).
 - ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
   `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
@@ -89,6 +90,9 @@ DEAL_SEC = 2.2
 COUNTS_SEC = 1.0
 # A save that declined a table of the queue, or let its time run out, waits this long before it may queue again.
 MATCH_RETRY_SEC = 60.0
+# A connection joins the queue or moves to another stake at most this often (each time reads the save); stopping is
+# never held up.
+QUEUE_INTERVAL = 1.0
 
 INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = "invite", "starting", "bid", "play", "settling", "over", "done"
 
@@ -914,6 +918,10 @@ class Tables:
         self._check_queue(peer)
         held = self.waiting.get(peer.token)
         if held is None or held.base != base:
+            now = self.clock()
+            if now - peer.ddz_queue_at < QUEUE_INTERVAL:
+                raise GameError("rate_limited", "too many queue requests")
+            peer.ddz_queue_at = now
             await run_in_threadpool(bank.check, [peer.token], base)
             # It may have left, sat down or queued elsewhere while the database was read.
             self._check_queue(peer)
