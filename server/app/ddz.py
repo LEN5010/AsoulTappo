@@ -1418,17 +1418,20 @@ class Tables:
 
     async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
-        has one at a table of this room, or at a table the queue made (from any room, on a client that queues). Back
-        while the deposits are being taken, it takes the seat and hears the deal like the others."""
+        has one at a table of this room (an open table's on a client that opens tables), or at a table the queue made
+        (from any room, on a client that queues). Back while the deposits are being taken, it takes the seat and hears
+        the deal like the others."""
         room = self.manager.rooms.get(room_id)
         if room is None or room.peers.get(peer.id) is not peer:
             return  # gone again before it got through joining
         table = self.by_save.get(peer.token) if peer.token else None
         seat = None
         if table is not None and table.phase in (OPEN, STARTING, BID, PLAY):
-            # A seat of the queue is taken again from any room, on a client that queues; any other in the table's room.
+            # A seat of the queue is taken again from any room, on a client that queues; any other in the table's room,
+            # on a client that opens tables when the table is an open one.
             mine = [i for i, s in enumerate(table.seats) if s.token == peer.token and not s.asked and (
-                peer.ddz_match if table.match or s.roam else peer.ddz and table.room == room_id)]
+                peer.ddz_match if table.match or s.roam
+                else (peer.ddz_match if table.open else peer.ddz) and table.room == room_id)]
             seat = next((i for i in mine if table.seats[i].peer is None), None)
             if seat is None:
                 # An older connection of the save still holds the seat: its leaving is not seen yet (a client back

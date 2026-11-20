@@ -199,6 +199,27 @@ def test_a_member_leaving_the_room_stands_up_and_the_opener_leaving_puts_the_tab
     run(go())
 
 
+@pytest.mark.parametrize("how", ["sat", "from_the_queue"])
+def test_a_newer_connection_of_the_save_on_a_client_without_open_tables_leaves_the_seat_where_it_is(how):
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        name, room, at = "b", "r", 1
+        if how == "from_the_queue":
+            name, room, at = "q", "r-q", 2
+            q, sq = w.member("q", room="r-q")
+            w.mono += FILL_SEC
+            await w.t.queue(q, BASE)
+            await w.t.answer(q, tid, True)
+        held = w.t.by_id[tid].seats[at].peer
+        # The same save on a 1.2.5 client: it has no keys for the table, so the seat stays with the one that has.
+        old, s_old = w.member(name, room=room, match=False)
+        await w.t.joined(room, old)
+        assert w.t.by_id[tid].seats[at].peer is held and s_old.of("ddz_open") == []
+        assert held.ddz_match and w.m.rooms[room].peers[held.id] is held
+    run(go())
+
+
 # ------------------------------------------------------------------ the start
 def test_the_third_seat_takes_the_deposits_in_one_go_and_lets_go_of_a_seat_that_cannot_pay(monkeypatch):
     async def go():
