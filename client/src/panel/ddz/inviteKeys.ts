@@ -1,11 +1,14 @@
 // Guards the keys that answer a dou dizhu invite (the room page's banner, the pet's bubble) against an invite that
 // takes the place of the one on screen under the pointer: the panel hears of a new invite up to 50 ms late
-// (desktop/bridge.ts), and accepting a table of the queue pays its deposit. A click answers only the invite its key
-// went down on, and an accept counts only INVITE_SETTLE_MS after the invite on screen changed.
+// (desktop/bridge.ts), and accepting a table of the queue pays its deposit. A click whose key went down on another
+// invite, or while the invite on screen changed, is dropped; one whose key going down was not seen (a window in the
+// background may swallow it) counts. An accept counts only INVITE_SETTLE_MS after the invite on screen changed.
 import { watch } from "vue";
 
 /** An accept this soon after the invite on screen changed (one coming up from none included) is dropped. */
 export const INVITE_SETTLE_MS = 400;
+/** A key that was down when the invite on screen changed. */
+const STALE = Symbol("stale");
 
 export interface InviteKeys {
   /** The invite on screen is now table [table]; undefined for none. */
@@ -19,13 +22,14 @@ export interface InviteKeys {
 export function inviteKeys(now: () => number = Date.now): InviteKeys {
   let shown: string | undefined;
   let since = -Infinity;
-  let pressed: string | undefined;
+  // The invite a key went down on, STALE, or undefined when no key went down since the last click.
+  let pressed: string | undefined | typeof STALE;
   return {
     show(table) {
       if (table === shown) return;
       shown = table;
       since = now();
-      pressed = undefined;
+      if (pressed !== undefined) pressed = STALE;
     },
     press() {
       pressed = shown;
@@ -33,7 +37,7 @@ export function inviteKeys(now: () => number = Date.now): InviteKeys {
     pick(accept, pointer) {
       const down = pressed;
       pressed = undefined;
-      if (!shown || (pointer && down !== shown)) return null;
+      if (!shown || (pointer && down !== undefined && down !== shown)) return null;
       if (accept && now() - since < INVITE_SETTLE_MS) return null;
       return shown;
     },

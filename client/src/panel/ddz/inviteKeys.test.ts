@@ -32,7 +32,20 @@ it("drops a click whose key went down on an invite that another took the place o
   keys.show("b");
   pass(INVITE_SETTLE_MS);
   expect(keys.pick(false, true)).toBeNull(); // turning down an unseen table of the queue holds the save back too
-  expect(keys.pick(true, true)).toBeNull(); // a click with no key down on this invite
+});
+
+it("answers a click whose key going down was not seen (a window in the background may swallow it)", () => {
+  const { keys, pass } = clocked();
+  keys.show("a");
+  pass(INVITE_SETTLE_MS - 1);
+  expect(keys.pick(true, true)).toBeNull(); // still the moment after it came up
+  pass(1);
+  expect(keys.pick(true, true)).toBe("a");
+  // A press dropped with the invite it was on leaves the next click free.
+  keys.press();
+  keys.show("b");
+  expect(keys.pick(false, true)).toBeNull();
+  expect(keys.pick(false, true)).toBe("b");
 });
 
 it("takes no accept for a moment after the invite on screen changed, one coming up from none included", () => {
