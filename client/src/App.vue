@@ -28,7 +28,8 @@ import { isOverdue } from "./todo";
 import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
-import { ddzAtTable, ddzBubble } from "./stores/ddz";
+import DdzSign from "./pet/DdzSign.vue";
+import { ddzAtTable, ddzBubble, ddzMatchable, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
 } from "./pet/duelPick";
@@ -378,6 +379,9 @@ const nameOnDesk = (m: RemoteMember) =>
   remoteDocked(m) ? { position: "absolute" as const, bottom: `${Math.round(DESK_GAP * settings.remoteScale) + 4}px` } : undefined;
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
+/** The open dou dizhu table member [m] opened in the room, shown as a sign over its pet. */
+const signOf = (m: RemoteMember) => (ddzMatchable.value
+  ? ddzTables.value.find((t) => { const s = t.seats[0]; return !!s && "id" in s && s.id === m.id; }) : undefined);
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
@@ -552,6 +556,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         />
       </template>
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
+      <DdzSign v-if="signOf(m)" :key="signOf(m)!.table" :table="signOf(m)!" />
     </PetActor>
 
     <PetActor
