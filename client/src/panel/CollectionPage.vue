@@ -391,6 +391,12 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   padding-right: 6px;
   scrollbar-gutter: stable;
 }
+/* WebKit before Safari 18.2 (older macOS) has no scrollbar-gutter: a bar that always shows keeps the width fixed. */
+@supports not (scrollbar-gutter: stable) {
+  .wall {
+    overflow-y: scroll;
+  }
+}
 
 .album-groups {
   display: flex;

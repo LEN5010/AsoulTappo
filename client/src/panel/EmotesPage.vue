@@ -589,6 +589,12 @@ function fireEmote(key: string) {
   overflow-x: hidden;
   scrollbar-gutter: stable;
 }
+/* WebKit before Safari 18.2 (older macOS) has no scrollbar-gutter: a bar that always shows keeps the width fixed. */
+@supports not (scrollbar-gutter: stable) {
+  .scroller {
+    overflow-y: scroll;
+  }
+}
 .shelves {
   display: flex;
   flex-direction: column;
