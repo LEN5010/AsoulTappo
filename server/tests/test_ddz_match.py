@@ -634,3 +634,21 @@ def test_a_client_that_did_not_say_it_queues_hears_nothing_of_the_queue(api):
             o.send_json({"type": "ddz_queue", "base": base})
             reply = o.receive_json()
             assert reply["type"] == "error" and reply["code"] == "bad_message"
+
+
+def test_a_new_connection_in_another_room_takes_the_seat_before_the_old_one_is_seen_to_go():
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        for p in (a, b, c):
+            await w.t.answer(p, tid, True)
+        await settle()
+        t = w.t.by_id[tid]
+        b2, sb2 = w.member("b", room="r-y")
+        await w.t.joined("r-y", b2)
+        assert t.seats[1].peer is b2 and sb.of("ddz_closed") == [{"type": "ddz_closed", "table": tid}]
+        await w.m.depart("r-b", b.id)
+        await settle()
+        assert t.seats[1].peer is b2 and sb2.of("ddz_state")[0]["you"] == 1 and "r-y" in t.live_rooms
+    run(go())
