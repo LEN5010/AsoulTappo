@@ -279,7 +279,7 @@ it("keeps the table's window closed for the deal it was closed during, and opens
     deltas: [-200, 100, 100], hands: [[0], [], []], sec: 30,
   });
   expect(frame.open).toBe(false);
-  deal(2); // 再来一局
+  deal(1); // 再来一局: the server counts each game's deals from 1 again
   expect(frame.open).toBe(true);
 });
 

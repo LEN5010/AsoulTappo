@@ -473,8 +473,11 @@ function sendTable(msg: DdzClientMessage): void {
   }
 }
 
+/** Deals this client was given: the server counts a table's deals from 1 again in each game, so a game after
+ * 再来一局 would repeat the key of the one before. */
+const deals = ref(0);
 /** The deal at the table as "table:deal"; "" while the table is not up. */
-const dealKey = computed(() => (ddzAtTable.value && ddz.value ? `${ddz.value.id}:${ddz.value.deal}` : ""));
+const dealKey = computed(() => (ddzAtTable.value && ddz.value ? `${ddz.value.id}:${deals.value}` : ""));
 /** The deal the table's window was opened for, and the one it was closed during. */
 let opened = "";
 let dismissed = "";
@@ -949,6 +952,7 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
   if (msg.type === "ddz_deal" || msg.type === "ddz_state") {
     // A deal of a table this client holds no invite of: the seat was taken again after the client restarted.
     clearTimeout(endTimer);
+    if (msg.type === "ddz_deal") deals.value++;
     const before = ddz.value?.id === msg.table ? ddz.value : prior;
     const t: DdzState = {
       ...blank(msg.table, via), log: before?.log ?? [], deposit: before?.deposit ?? ddzDeposit(msg.base),

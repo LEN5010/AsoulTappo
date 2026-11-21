@@ -52,8 +52,16 @@ const first = () => (props.mode === "match"
   : stakes.value.find(ddzStakeOpen));
 const base = ref(first() ?? 0);
 watch(stakes, (list) => { if (!list.includes(base.value) || !affords(base.value)) base.value = first() ?? 0; });
+/** The player picked the stake: the lobby's first answer leaves it, unless it cannot be paid. */
+const stakePicked = ref(false);
+function pickStake(s: number) {
+  base.value = s;
+  stakePicked.value = true;
+}
 // The first answer of the server may say a stake cannot be paid, or where others wait.
-watch(lobby, (now, before) => { if (!before && now) base.value = first() ?? base.value; });
+watch(lobby, (now, before) => {
+  if (!before && now && (!stakePicked.value || !affords(base.value))) base.value = first() ?? base.value;
+});
 
 /** The open table being called to ("call"). */
 const table = computed(() => (props.mode === "call" && ddz.value?.phase === "open" ? ddz.value : null));
@@ -148,7 +156,7 @@ function send() {
           <button
             v-for="s in stakes" :key="s" type="button" class="ui-btn stake" :class="{ primary: base === s }"
             :aria-pressed="base === s" :disabled="!affords(s)"
-            :title="affords(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="base = s"
+            :title="affords(s) ? undefined : `碎片不够押金 ${ddzDeposit(s).toLocaleString('en-US')}`" @click="pickStake(s)"
           >
             <Icon name="shard" :size="14" />{{ s.toLocaleString("en-US") }}
             <em v-if="mode === 'match' && waitingAt(s)" class="waiting"><Icon name="users" :size="11" />{{ waitingAt(s) }}</em>
