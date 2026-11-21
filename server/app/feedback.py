@@ -43,10 +43,13 @@ def send(store: Any, now: float, pid: str, address: str | None, version: str, sy
     if not store.has_player(pid):
         raise GameError("no_save", "存档还没有建好，请稍后再试")
     day = day_of(now)
-    sent = store.feedback_count(day, pid)
-    if sent >= PER_SAVE:
+    if store.feedback_count(day, pid) >= PER_SAVE:
         raise GameError("feedback_limit", "今天的反馈次数用完了，明天再来吧")
     with _addresses_lock:
+        # Counted again under the lock: two feedbacks of a save sent at once both saw the count before either was kept.
+        sent = store.feedback_count(day, pid)
+        if sent >= PER_SAVE:
+            raise GameError("feedback_limit", "今天的反馈次数用完了，明天再来吧")
         if _addresses_day != day or len(_addresses) > ADDRESSES_MAX:
             _addresses.clear()
             _addresses_day = day
