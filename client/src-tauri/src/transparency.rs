@@ -67,7 +67,7 @@ pub fn restore(window: &WebviewWindow, why: &str) {
             return;
         }
     };
-    let why = why.to_string();
+    let cause = why.to_string();
     let sent = window.with_webview(move |webview| {
         // SAFETY: Tauri runs this on the main thread with the overlay's live window and web view.
         let blur = unsafe { blur_behind(hwnd as HWND) };
@@ -77,7 +77,7 @@ pub fn restore(window: &WebviewWindow, why: &str) {
         }
         applog!(
             "overlay",
-            "transparency restored ({why}, window {}): blur behind {}, web view background {}",
+            "transparency restored ({cause}, window {}): blur behind {}, web view background {}",
             if shown { "shown" } else { "hidden" },
             outcome(&blur),
             outcome(&background)
