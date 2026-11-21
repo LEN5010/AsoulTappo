@@ -619,6 +619,8 @@ let watchNext: { table: string; seat: number } | null = null;
 let watchAsked: { table: string; seat: number } | null = null;
 let watchRetried = false;
 let watchTimer: ReturnType<typeof setTimeout> | undefined;
+/** The seat watched from before another was picked, as the server last sent it: back on screen if the server turns the new one down. */
+let watchPrev: { seat: number; hand: number[]; shown: boolean } | null = null;
 let watchEndTimer: ReturnType<typeof setTimeout> | undefined;
 
 function sendWatch(): void {
@@ -655,6 +657,7 @@ function dropWatch(): void {
   watchTimer = undefined;
   watchNext = null;
   watchAsked = null;
+  watchPrev = null;
   ddzWatch.value = null;
 }
 
@@ -681,9 +684,14 @@ function watchRefused(code: string): boolean {
   }
   if (code !== "ddz_gone" && code !== "ddz_busy" && code !== "ddz_watch_full") return false;
   watchAsked = null;
-  // Turned down while another seat was picked: the seat stays, its cards face down.
+  // Watching goes on (only ddz_watch_end ends it). Another seat turned down (between two games, say): the server
+  // still shows the one before, which comes back as it was.
   const w = ddzWatch.value;
-  if (w?.id === asked.table) w.switching = false;
+  if (w?.id === asked.table && w.switching && !watchNext) {
+    const prev = watchPrev;
+    watchPrev = null;
+    Object.assign(w, { switching: false, ...(prev ? { you: prev.seat, hand: prev.hand, shown: prev.shown } : { shown: false, hand: [] }) });
+  }
   return true;
 }
 
@@ -718,6 +726,7 @@ function takeSnapshot(msg: Extract<DdzMessage, { type: "ddz_watch" }>): void {
   if (watchAsked?.table !== msg.table && watchNext?.table !== msg.table && !(before && !before.ended)) return;
   if (watchAsked?.table === msg.table) watchAsked = null;
   clearTimeout(watchEndTimer);
+  watchPrev = null;
   const picked = before?.switching ? before.you : msg.seat;
   const waiting = picked !== msg.seat;
   const phase = msg.phase === "over" ? "result" : msg.phase === "settling" ? "play" : msg.phase;
@@ -803,6 +812,14 @@ function setWatchers(table: string, faces: DdzWatchFace[]): void {
   if (faces.length) next[table] = faces;
   else delete next[table];
   ddzWatchers.value = next;
+  // The server no longer shows the watcher the hand of its seat (that seat's member went to an old client, or left
+  // the watcher's room) and sends no new state for it: the cards turn face down. The watcher is known by its name and
+  // pet, as the list carries nothing else.
+  const w = ddzWatch.value;
+  if (w?.id !== table || !w.shown || w.switching || w.phase === "result" || w.ended) return;
+  const hello = helloInfo();
+  const own = faces.filter((f) => f.nick === hello.nick && f.character === hello.character);
+  if (own.length && own.every((f) => f.seat === null)) Object.assign(w, { shown: false, hand: [] });
 }
 
 /**
@@ -1371,6 +1388,7 @@ export function viewDdz(seat: number): void {
   if (viaDesk("view", seat)) return;
   const w = ddzWatch.value;
   if (!w || w.ended || w.you === seat || seat < 0 || seat > 2) return;
+  if (!w.switching) watchPrev = { seat: w.you, hand: w.hand, shown: w.shown };
   // At the result every hand is open already.
   const left = w.phase === "result" ? w.result?.hands[seat] : undefined;
   Object.assign(w, { you: seat, hand: left ? sortHand(left) : [], shown: !!left, switching: true });
