@@ -165,10 +165,11 @@ def test_another_seat_brings_its_hand_and_asks_are_held_to_one_a_second():
         assert [m["seat"] for m in sv.of("ddz_watch")] == [0, 2]
         assert sv.of("ddz_watch")[-1]["hand"] == t.seats[2].hand and t.watchers[v.id][1] == 2
         assert len(t.watchers) == 1
-        # Stopping is never held up, and is told nothing.
+        # Stopping is never held up, and is told nothing of its own (the room, v in it, hears how many watch now).
         n = len(sv.got)
         w.t.watch(v, "", 0)
-        assert v.watching is None and t.watchers == {} and [m["type"] for m in since(sv, n)] == []
+        assert v.watching is None and t.watchers == {}
+        assert [m["type"] for m in since(sv, n) if m["type"] != "ddz_live_state"] == []
     run(go())
 
 
@@ -644,3 +645,76 @@ def test_watching_over_the_socket(api):  # noqa: F811
         v.send_json({"type": "ping"})
         while (m := v.receive_json())["type"] != "pong":
             assert m["type"] not in ("error", "ddz_watch", "ddz_watch_end")
+
+
+# ------------------------------------------------------------------ how a game stands, for the room
+def lefts(*n):
+    return [{"left": x} for x in n]
+
+
+def test_the_room_hears_how_a_game_stands_at_most_once_a_second():
+    async def go():
+        w = WatchWorld()
+        v, sv = w.member("v")
+        _, so = w.member("o", watch=False)
+        out, t = await w.game("a", "b", "c")
+        states = lambda: sv.of("ddz_live_state")  # noqa: E731
+        # Dealt: the room hears it at once, a client that does not watch nothing.
+        assert states() == [{"type": "ddz_live_state", "table": t.id, "landlord": None, "seats": lefts(17, 17, 17),
+                             "mult": 1, "watching": 0}]
+        assert so.of("ddz_live_state") == []
+        # The landlord known within the second: told once the second is up.
+        lord = t.turn
+        await w.bid(t)
+        assert len(states()) == 1
+        w.mono += COUNTS_SEC
+        await w.counts.fire()
+        left = [20 if i == lord else 17 for i in range(3)]
+        assert states()[-1] == {"type": "ddz_live_state", "table": t.id, "landlord": lord, "seats": lefts(*left),
+                                "mult": 3, "watching": 0}
+        # A lead a second later goes out at once.
+        w.mono += COUNTS_SEC
+        await w.t.play(t.seats[lord].peer, t.id, [t.seats[lord].hand[0]])
+        left[lord] -= 1
+        assert states()[-1]["seats"] == lefts(*left) and len(states()) == 3
+        # A pass changes nothing: nothing more is told.
+        w.mono += COUNTS_SEC
+        await w.t.play(t.seats[t.turn].peer, t.id, [])
+        await w.counts.fire()
+        assert len(states()) == 3
+        # A member joining hears the game and how it stands; one starting to watch makes it one watching.
+        n, sn = w.member("n")
+        await w.t.joined("r", n)
+        assert sn.of("ddz_live_state") == [states()[-1]]
+        w.watch(v, t, 0)
+        await w.counts.fire()
+        assert states()[-1]["watching"] == 1 and sn.of("ddz_live_state")[-1]["watching"] == 1
+        # The room without a client that watches: nothing is told, and no timer runs for it.
+        await w.bye(v)
+        await w.bye(n)
+        told = len(sn.of("ddz_live_state"))
+        w.mono += COUNTS_SEC
+        await w.t.play(t.seats[t.turn].peer, t.id, [])
+        await w.counts.fire()
+        assert len(sn.of("ddz_live_state")) == told and t.live_timer is None
+        # Over: nothing more, and no timer left behind.
+        await w.play_out(t)
+        assert t.live_timer is None and t.live_sent is None
+    run(go())
+
+
+def test_a_new_game_at_the_table_is_told_afresh():
+    async def go():
+        w = WatchWorld()
+        v, sv = w.member("v")
+        out, t = await w.game("a", "b", "c")
+        await w.play_out(t)
+        told = len(sv.of("ddz_live_state"))
+        for peer, _ in out:
+            await w.t.again(peer, t.id)
+        await w.settled()
+        assert t.phase == "bid"
+        # Told at once, as a game of its own: not held back by the second of the last game, not taken for its last.
+        assert sv.of("ddz_live_state")[told:] == [{"type": "ddz_live_state", "table": t.id, "landlord": None,
+                                                   "seats": lefts(17, 17, 17), "mult": 1, "watching": 0}]
+    run(go())

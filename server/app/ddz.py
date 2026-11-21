@@ -85,6 +85,11 @@ is the stake, with on only (clients before watching read table, ids, on and gain
 winners won, by member id. The ids are the room's: a seat whose save is in the room on another connection
 (a dou dizhu one) goes by that connection's member id. A table the queue made tells every room its seats' saves are
 in. A room told of the start that none of the saves is in by the end hears only {table, on: false}.
+``ddz_live_state`` {table, landlord, seats: [{left}], mult, watching} to the room's members whose client watches
+(``join``'s ddzWatch), while a game it was told of is on: the landlord's seat (null while the seats bid), the cards
+each seat has left, in the order of ``ddz_live``'s ids, the multiplier so far and how many watch it. Sent when the game is dealt and as bids and plays
+change it, at most once every COUNTS_SEC, while such a member is in one of its rooms, and to such a member when it
+joins.
 
 The dou dizhu connection: ``ddz_hello`` {nick, character, token?, accountToken?, plate?, dnd?} as its first message,
 checked as ``join`` is (refused with no_ddz on a server without the game); it may then send ``ddz_queue``, the moves
@@ -225,6 +230,8 @@ WATCH_MAX = 20
 WATCH_INTERVAL = 1.0
 # The messages of a game its watchers hear as the seats do (Tables._show); anything else is never copied to them.
 SHOWN = frozenset({"ddz_bid", "ddz_landlord", "ddz_play", "ddz_seat", "ddz_result", "ddz_again", "ddz_emote"})
+# Of those, the ones that change the game as its rooms see it (``ddz_live_state``).
+LIVE_CHANGES = frozenset({"ddz_bid", "ddz_landlord", "ddz_play"})
 
 
 # ------------------------------------------------------------------ the bank
@@ -555,6 +562,11 @@ class Table:
     watch_at: float = float("-inf")
     watch_timer: Any = None
     watch_owed: set[str] = field(default_factory=set)
+    # The game as its rooms were told it last (``ddz_live_state``), when, and the timer of the next telling
+    # (Tables._live_changed).
+    live_sent: dict | None = None
+    live_at: float = float("-inf")
+    live_timer: Any = None
 
     @property
     def match(self) -> bool:
@@ -1352,6 +1364,7 @@ class Tables:
                           "seats": [{**x, "id": i} for x, i in zip(seats, ids)],
                           "hand": self._hand_for(table, at, peer), "base": table.base, "cap": cfg["capMult"],
                           "deal": table.deal, "turn": first, "sec": sec, "dealSec": DEAL_SEC, "watch": True})
+        self._live_changed(table)
 
     def _counter(self, s: Seat) -> dict:
         """A seat's card counter as its own messages carry it; nothing where the counter is free."""
@@ -1811,6 +1824,8 @@ class Tables:
                 live.live_rooms.add(room_id)
                 peer.enqueue({"type": "ddz_live", "table": live.id, "ids": self._ids_in(room, live), "on": True,
                               "base": live.base})
+                if peer.ddz_watch and live.phase in (BID, PLAY):
+                    peer.enqueue(self._live_state_msg(live))
         # The counts the others were sent last: a change since then is on its way to everyone (_counts_changed), the
         # newcomer included, which a send of the counts as they are now could leave behind.
         if peer.ddz_match and self._counts_sent:
@@ -2083,6 +2098,7 @@ class Tables:
         is in now hears only that it ended, not who played or won."""
         rooms = self._rooms(table)
         if on:
+            new = rooms - table.live_rooms
             table.live_rooms |= rooms
             for room_id in sorted(rooms):
                 room = self.manager.rooms.get(room_id)
@@ -2090,7 +2106,13 @@ class Tables:
                     await self.manager.broadcast(room_id, {"type": "ddz_live", "table": table.id,
                                                            "ids": self._ids_in(room, table), "on": True,
                                                            "base": table.base})
+            if new and table.phase in (BID, PLAY):
+                # A room told of the game only now hears how it stands.
+                msg = self._live_state_msg(table)
+                for room_id in sorted(new):
+                    self._tell_live_state(room_id, msg)
             return
+        self._stop_live_state(table)
         saves = {s.token for s in table.seats if s.token}
         rooms |= table.live_rooms
         table.live_rooms = set()
@@ -2477,7 +2499,10 @@ class Tables:
     def _show(self, table: Table, data: dict) -> None:
         """Copies a message every seat may hear (one of SHOWN) to the watchers of [table], with `watch` true; a
         ``ddz_seat``'s member id as the watcher's room knows it. Only messages passed here reach watchers, so what is
-        added to the seats' messages (Table.tell) stays theirs."""
+        added to the seats' messages (Table.tell) stays theirs. A bid or a play also changes what the rooms are told
+        of the game (_live_changed)."""
+        if data["type"] in LIVE_CHANGES:
+            self._live_changed(table)
         if not table.watchers:
             return
         if data["type"] not in SHOWN:
@@ -2520,7 +2545,8 @@ class Tables:
 
     def _watchers_changed(self, table: Table) -> None:
         """The watchers of [table], or what they see, may have changed: the table hears them now, or COUNTS_SEC after
-        it was last told."""
+        it was last told; its rooms hear how many watch (_live_changed)."""
+        self._live_changed(table)
         if table.phase == DONE or self.by_id.get(table.id) is not table or table.watch_timer is not None:
             return
         wait = table.watch_at + COUNTS_SEC - self.clock()
@@ -2557,6 +2583,63 @@ class Tables:
         for i, peer in watchers:
             peer.enqueue({**msg, "you": i})
 
+    def _live_state_msg(self, table: Table) -> dict:
+        return {"type": "ddz_live_state", "table": table.id, "landlord": table.landlord,
+                "seats": [{"left": len(s.hand)} for s in table.seats], "mult": table.mult(self.bank.cfg()["capMult"]),
+                "watching": len(table.watchers)}
+
+    def _tell_live_state(self, room_id: str, msg: dict) -> None:
+        """[msg] to the members of [room_id] whose client watches games (the others do not know the message)."""
+        room = self.manager.rooms.get(room_id)
+        if room is None:
+            return
+        for p in list(room.peers.values()):
+            if p.ddz_watch:
+                p.enqueue(msg)
+
+    def _watching_rooms(self, table: Table) -> bool:
+        """Whether a member of a room told of [table]'s game is on a client that watches."""
+        return any(p.ddz_watch for rid in table.live_rooms if (room := self.manager.rooms.get(rid)) is not None
+                   for p in room.peers.values())
+
+    def _live_changed(self, table: Table) -> None:
+        """How the game of [table] stands may have changed: its rooms hear it now, or COUNTS_SEC after they were last
+        told; nothing while none of their members is on a client that watches (one joining hears it then)."""
+        if (table.phase not in (BID, PLAY) or self.by_id.get(table.id) is not table or table.live_timer is not None
+                or not self._watching_rooms(table)):
+            return
+        wait = table.live_at + COUNTS_SEC - self.clock()
+        if wait > 0:
+            table.live_timer = self.count_timers.later(wait, lambda: self._live_due(table))
+        else:
+            self._send_live_state(table)
+
+    async def _live_due(self, table: Table) -> None:
+        table.live_timer = None
+        self._send_live_state(table)
+
+    def _send_live_state(self, table: Table) -> None:
+        """Tells the rooms of [table]'s game (``ddz_live_state``) how it stands, when that differs from what they were
+        told last."""
+        if table.phase not in (BID, PLAY) or self.by_id.get(table.id) is not table:
+            return
+        msg = self._live_state_msg(table)
+        if msg == table.live_sent:
+            return
+        table.live_sent = msg
+        table.live_at = self.clock()
+        for room_id in sorted(table.live_rooms):
+            self._tell_live_state(room_id, msg)
+
+    @staticmethod
+    def _stop_live_state(table: Table) -> None:
+        """The game of [table] is over or gone: nothing more is told of it, and a next game starts afresh."""
+        if table.live_timer is not None:
+            table.live_timer.cancel()
+            table.live_timer = None
+        table.live_sent = None
+        table.live_at = float("-inf")
+
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
         if table.timer is not None:
@@ -2570,6 +2653,7 @@ class Tables:
         if table.watch_timer is not None:
             table.watch_timer.cancel()
             table.watch_timer = None
+        self._stop_live_state(table)
         for s in table.seats:
             if self.by_save.get(s.token) is table:
                 del self.by_save[s.token]
