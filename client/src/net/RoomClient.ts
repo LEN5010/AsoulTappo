@@ -4,6 +4,7 @@ import type {
 } from "./protocol";
 import { MAX_SHOWCASE, MOTION_VERSION, packMotion, unpackMotion, toWsUrl } from "./protocol";
 import { APP_VERSION } from "../version";
+import { refuseServer } from "../edition";
 
 export type ConnState = "idle" | "connecting" | "open" | "reconnecting";
 
@@ -114,7 +115,7 @@ export class RoomClient {
     opts: RoomClientOptions = {},
   ) {
     this.opts = {
-      createSocket: opts.createSocket ?? ((url) => new WebSocket(url) as unknown as WsLike),
+      createSocket: opts.createSocket ?? ((url) => { refuseServer(url); return new WebSocket(url) as unknown as WsLike; }),
       pingMs: opts.pingMs ?? 20000,
       baseDelayMs: opts.baseDelayMs ?? 500,
       maxDelayMs: opts.maxDelayMs ?? 15000,

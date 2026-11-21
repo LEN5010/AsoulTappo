@@ -9,6 +9,7 @@ import FilterChips from "../ui/FilterChips.vue";
 import Icon from "../ui/Icon.vue";
 import SkinArt from "./SkinArt.vue";
 import SkinDetail from "./SkinDetail.vue";
+import { STANDALONE } from "../edition";
 const filter = ref('all');
 const selected = ref('');
 const owned = (name: string) => ownsCharacter(name, collection.owned);
@@ -19,10 +20,11 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
 
 <template>
   <div class="skin-album">
-    <header><FilterChips v-model="filter" :options="FILTERS" label="皮肤筛选" /><span>已解锁 <b>{{ unlocked }}</b> / {{ manifest.skins.length }}</span></header>
+    <!-- The standalone edition owns every skin: no ownership filter or tag, only the one in use is marked. -->
+    <header><FilterChips v-if="!STANDALONE" v-model="filter" :options="FILTERS" label="皮肤筛选" /><span>已解锁 <b>{{ unlocked }}</b> / {{ manifest.skins.length }}</span></header>
     <div class="wall ui-scroll"><div class="skin-grid">
-      <button v-for="skin in skins" :key="skin.name" type="button" class="skin-card ui-tile" :aria-label="`${shownSkinName(skin.name)}，${owned(skin.name) ? '已拥有' : '未解锁'}，查看详情`" @click="selected = skin.name">
-        <span class="cover"><SkinArt :name="skin.name" :owned="owned(skin.name)" /><span class="state ui-tag" :class="{ dark: owned(skin.name) }"><Icon :name="settings.character === skin.name ? 'check' : owned(skin.name) ? 'shirt' : 'lock'" :size="11" />{{ settings.character === skin.name ? '已装备' : owned(skin.name) ? '已拥有' : '未解锁' }}</span></span>
+      <button v-for="skin in skins" :key="skin.name" type="button" class="skin-card ui-tile" :aria-label="STANDALONE ? `${shownSkinName(skin.name)}，查看详情` : `${shownSkinName(skin.name)}，${owned(skin.name) ? '已拥有' : '未解锁'}，查看详情`" @click="selected = skin.name">
+        <span class="cover"><SkinArt :name="skin.name" :owned="owned(skin.name)" /><span v-if="!STANDALONE || settings.character === skin.name" class="state ui-tag" :class="{ dark: owned(skin.name) }"><Icon :name="settings.character === skin.name ? 'check' : owned(skin.name) ? 'shirt' : 'lock'" :size="11" />{{ settings.character === skin.name ? '已装备' : owned(skin.name) ? '已拥有' : '未解锁' }}</span></span>
         <span class="meta"><b>{{ shownSkinName(skin.name) }}</b><small><i :style="{ background: characterColor(skin.member) }"></i>{{ skin.member }}<span>查看详情 <Icon name="back" :size="11" /></span></small></span>
       </button>
     </div><p v-if="!skins.length" class="ui-empty">当前筛选下没有皮肤</p></div>
@@ -33,7 +35,7 @@ const FILTERS = [{ id: 'all', label: '全部' }, { id: 'owned', label: '已拥�
 <style scoped>
 .skin-album { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 2px 0 12px; }
-header > span { font-size: var(--fs-label); color: var(--ink-2); white-space: nowrap; }
+header > span { margin-left: auto; font-size: var(--fs-label); color: var(--ink-2); white-space: nowrap; }
 header b { font: 800 var(--fs-section)/1 var(--font-latin); color: var(--c-700); }
 .wall { flex: 1; min-height: 0; overflow: auto; padding: 3px 6px 12px 2px; }
 .skin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 24px 18px; }

@@ -1,6 +1,7 @@
 // HTTP client for the progression API (see protocol/PROTOCOL.md). A guest save is identified by a random
 // token kept in localStorage (the server only stores its hash); a linked save by a main-site account token.
 import { APP_VERSION } from "../version";
+import { serverFetch } from "../edition";
 import type { Rarity } from "../manifest";
 import { MAX_SHOWCASE, type DdzLobby, type MemberProfile } from "./protocol";
 import type { Economy } from "../stores/economy";
@@ -230,7 +231,7 @@ export class Api {
   constructor(
     private base: () => string,
     private credential: () => Credential,
-    private f: FetchLike = (u, i) => fetch(u, i),
+    private f: FetchLike = (u, i) => serverFetch(u, i),
   ) {}
 
   private async call<T>(

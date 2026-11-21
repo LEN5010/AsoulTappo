@@ -2,9 +2,11 @@
 // Asked at start until the current texts are agreed to and this version's statement that the app is free is
 // confirmed: the first start after installing and after every update. It cannot be closed, and its key works only
 // after the dialog has been in view for HOLD_MS. Agreeing lets the app go online; declining quits. Closing the panel
-// window leaves the app offline and asks again next time.
+// window leaves the app offline and asks again next time. The standalone edition shows its own statement here instead,
+// with the same hold and no texts to agree to.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { DOC_TITLES, STATEMENT, type DocName } from "../legal";
+import { DOC_TITLES, STANDALONE_STATEMENT, STATEMENT, type DocName } from "../legal";
+import { STANDALONE } from "../edition";
 import { HOLD_MS, agree, declineAndQuit, holdLeft, termsCurrent } from "../legal/consent";
 import { settings } from "../stores/settings";
 import { quietFirstRun } from "../stores/guide";
@@ -55,6 +57,22 @@ function confirm() {
           <button type="button" class="ui-btn" @click="read(null)">返回</button>
         </div>
       </template>
+      <template v-else-if="STANDALONE">
+        <div class="statement single">
+          <p>{{ STANDALONE_STATEMENT }}</p>
+          <div
+            class="hold" :class="{ done: left === 0 }" role="progressbar" aria-label="阅读进度"
+            aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(held * 100)"
+          >
+            <i :style="{ width: `${held * 100}%` }"></i>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="ui-btn primary" :disabled="left > 0" @click="confirm">
+            确认<template v-if="left > 0">（{{ left }}）</template>
+          </button>
+        </div>
+      </template>
       <template v-else>
         <div class="statement">
           <p v-for="line in STATEMENT" :key="line">{{ line }}</p>
@@ -101,6 +119,10 @@ function confirm() {
 }
 .statement p:first-child {
   font-weight: 800;
+}
+/* One paragraph: read as body text rather than as a heading. */
+.statement.single p {
+  font-weight: 500;
 }
 /* The hold as a bar: it fills while the statement is in view, and the key under it unlocks when it is full. */
 .hold {

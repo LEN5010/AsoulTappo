@@ -2,6 +2,7 @@
 mod applog;
 mod access;
 mod diag;
+mod edition;
 mod elevation;
 mod gamepad;
 mod hotkey;
@@ -21,7 +22,15 @@ mod overlay_macos;
 mod tool_window;
 #[cfg(target_os = "windows")]
 mod transparency;
+#[cfg(feature = "updater")]
 mod update;
+
+// Exactly one edition: the updater would let the standalone edition reach the network, and an online
+// build without it could never update.
+#[cfg(all(feature = "standalone", feature = "updater"))]
+compile_error!("the standalone edition is built with `--no-default-features --features standalone`");
+#[cfg(not(any(feature = "standalone", feature = "updater")))]
+compile_error!("the online edition needs the default feature `updater`; the standalone one needs `--features standalone`");
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -447,7 +456,7 @@ async fn open_panel(
         return show_panel(app);
     }
     let window = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("index.html?window=panel".into()))
-        .title("AsoulTappo")
+        .title(edition::DISPLAY_NAME)
         .inner_size(1000.0, 720.0)
         .min_inner_size(640.0, 480.0)
         .transparent(true)
@@ -495,6 +504,7 @@ async fn toggle_panel(app: tauri::AppHandle) -> Result<(), String> {
 /// The todos' window, in logical pixels: a card with its own title bar on a transparent window.
 const TODO_SIZE: (f64, f64) = (320.0, 460.0);
 /// The race's window, in logical pixels (the browser preview's frame is the same size: src/pet/RaceFrame.vue).
+#[cfg(not(feature = "standalone"))]
 const RACE_SIZE: (f64, f64) = (1180.0, 740.0);
 /// The dou dizhu table's window, in logical pixels (the browser preview's frame is the same size: src/pet/DdzFrame.vue).
 const DDZ_SIZE: (f64, f64) = (1180.0, 740.0);
@@ -593,6 +603,8 @@ fn place_todo(app: &tauri::AppHandle, window: &WebviewWindow) -> Result<(), Stri
 /// large as `RACE_SIZE` or the work area allows, in the middle of its monitor. `replay` is the finished race it
 /// plays, none for the live one: a window already open is told (`race:open`) and brought to the front. The page
 /// shows it once it has drawn (`show_race`). Closing it closes it: the next call makes it again.
+/// The race needs the server, so the standalone edition has no race window.
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("race") {
@@ -633,6 +645,7 @@ async fn open_race(app: tauri::AppHandle, replay: Option<i64>) -> Result<(), Str
     window.center().map_err(|e| e.to_string())
 }
 
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 fn show_race(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("race") {
@@ -641,6 +654,7 @@ fn show_race(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+#[cfg(not(feature = "standalone"))]
 #[tauri::command]
 fn close_race(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("race") {
@@ -783,7 +797,7 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
     }
     let (width, height) = (width.clamp(160.0, 1600.0), height.clamp(160.0, 1600.0));
     let window = WebviewWindowBuilder::new(&app, "capture", WebviewUrl::App("capture.html".into()))
-        .title("AsoulTappo 采集窗口")
+        .title(format!("{} 采集窗口", edition::DISPLAY_NAME))
         // The size it was last dragged to (settings.captureW, captureH), reported from the window's own
         // resize events below: the same measure as this one, which the page's viewport is not on macOS
         // (shorter by the title bar).
@@ -807,20 +821,10 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
     Ok(())
 }
 
-/// Links the About section may open in the system browser or mail app.
-const ABOUT_LINKS: [&str; 7] = [
-    "https://github.com/LEN5010/AsoulTappo",
-    "https://space.bilibili.com/107261543",
-    "mailto:len5010@qq.com",
-    "https://len5010.top/dynamics/download?app=tappo",
-    "https://len5010.top",
-    "https://len5010.top/download",
-    "https://len5010.me/sponsor/",
-];
-
+/// Opens one of the edition's About links (src/edition.rs) in the system browser or mail app.
 #[tauri::command]
 fn open_about_link(url: String) -> Result<(), String> {
-    if !ABOUT_LINKS.contains(&url.as_str()) {
+    if !edition::ABOUT_LINKS.contains(&url.as_str()) {
         return Err("unknown link".into());
     }
     // Started from an elevated process the browser would run elevated too; explorer hands the
@@ -1202,9 +1206,10 @@ pub fn run() {
     // WebKit needs byte ranges to play the bundled card videos (src/media.rs).
     #[cfg(target_os = "macos")]
     let builder = builder.register_asynchronous_uri_scheme_protocol("tauri", media::serve);
+    let builder = builder.plugin(tauri_plugin_process::init());
+    #[cfg(feature = "updater")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     builder
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
@@ -1219,8 +1224,11 @@ pub fn run() {
             toggle_panel,
             show_panel,
             hide_panel,
+            #[cfg(not(feature = "standalone"))]
             open_race,
+            #[cfg(not(feature = "standalone"))]
             show_race,
+            #[cfg(not(feature = "standalone"))]
             close_race,
             open_ddz,
             show_ddz,
@@ -1243,6 +1251,7 @@ pub fn run() {
             access::input_access_missing,
             access::open_input_settings,
             hotkey::set_hotkey,
+            #[cfg(feature = "updater")]
             update::install_version
         ])
         .on_window_event(|window, event| {
@@ -1324,7 +1333,7 @@ pub fn run() {
             } else {
                 String::new()
             };
-            applog!("app", "AsoulTappo {} on {}, {admin}{build}", app.package_info().version, diag::os_version());
+            applog!("app", "{} {} on {}, {admin}{build}", edition::PRODUCT_NAME, app.package_info().version, diag::os_version());
             match &startup {
                 elevation::Startup::Normal if elevation::run_as_admin() => applog!("app", "start as administrator is on"),
                 elevation::Startup::Normal => {}
@@ -1417,7 +1426,7 @@ pub fn run() {
 
             let tray_overlay = overlay.clone();
             let mut tray = TrayIconBuilder::new()
-                .tooltip("AsoulTappo")
+                .tooltip(edition::DISPLAY_NAME)
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "toggle_visible" => {

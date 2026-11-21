@@ -2,6 +2,9 @@
 // Until both, the desk stays offline and the panel shows only the consent dialog; confirming in either window reaches
 // the other through the settings sync.
 //
+// The standalone edition (src/edition.ts) asks for neither: it shows its own statement once per app version, kept in
+// a settings field of its own.
+//
 // The texts are agreed to once per TERMS_VERSION. The statement is confirmed once per app version: the first start
 // after every update (and after installing) opens the dialog, whose key stays locked for HOLD_MS.
 import { computed } from "vue";
@@ -9,15 +12,22 @@ import { isTauri } from "../composables/tauri";
 import { settings } from "../stores/settings";
 import { APP_VERSION } from "../version";
 import { TERMS_VERSION } from ".";
+import { STANDALONE } from "../edition";
 
 /** How long the dialog must have been in view before its key works. */
 export const HOLD_MS = 3000;
 
 /** The current texts were agreed to; the dialog then only asks to confirm the statement. */
 export const termsCurrent = computed(() => settings.termsAgreed === TERMS_VERSION);
-export const agreed = computed(() => termsCurrent.value && settings.statementSeen === APP_VERSION);
+export const agreed = computed(() => STANDALONE
+  ? settings.standaloneStatementSeen === APP_VERSION
+  : termsCurrent.value && settings.statementSeen === APP_VERSION);
 
 export function agree(): void {
+  if (STANDALONE) {
+    settings.standaloneStatementSeen = APP_VERSION;
+    return;
+  }
   settings.termsAgreed = TERMS_VERSION;
   settings.statementSeen = APP_VERSION;
 }

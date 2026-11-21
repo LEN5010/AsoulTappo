@@ -21,6 +21,7 @@ import AsasfansPromo from "./AsasfansPromo.vue";
 import FeedbackDialog from "./FeedbackDialog.vue";
 import LegalDoc from "./LegalDoc.vue";
 import { DOC_TITLES, type DocName } from "../legal";
+import { STANDALONE } from "../edition";
 
 const emit = defineEmits<{ resetPet: [] }>();
 const notice = ref("");
@@ -37,8 +38,9 @@ async function loadInfo() {
     info.value = accountLoginTrusted(server, result.mainApi) ? result : { ...result, accountLogin: false, mainApi: null };
   } catch { /* offline: sign-in shows once the server answers */ }
 }
-onMounted(() => { void loadInfo(); void refreshAccount(); });
-watch(() => settings.serverUrl, loadInfo);
+// The standalone edition has no account row and no server to ask.
+onMounted(() => { if (!STANDALONE) { void loadInfo(); void refreshAccount(); } });
+watch(() => settings.serverUrl, () => { if (!STANDALONE) void loadInfo(); });
 const signedIn = computed(() => activeAccount());
 const dialog = ref<"login" | "register" | null>(null);
 function accountDone(message: string) {
@@ -58,6 +60,8 @@ const REPO = "https://github.com/LEN5010/AsoulTappo";
 const SPACE = "https://space.bilibili.com/107261543";
 const MAIL = "len5010@qq.com";
 const GROUP = "1106311431";
+/** The standalone edition's sponsor row; the online edition has it in the promo dialog (AsasfansPromo.vue). Listed in ABOUT_LINKS. */
+const SPONSOR = "https://len5010.me/sponsor/";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
 /** The health reminders' own dialog; the row's key says how many are on. */
@@ -144,7 +148,8 @@ watch(recording, (slot) => {
 // line. A setting that only matters with a switch on sits in that switch's row. The columns end where their rows do:
 // the right one a few rows sooner. The tomato timer's lengths and switches live on its own page.
 type Group = "pet" | "window" | "online" | "sound" | "about";
-const COLUMNS: Group[][] = [["pet", "window"], ["online", "sound", "about"]];
+// The standalone edition has no online group.
+const COLUMNS: Group[][] = STANDALONE ? [["pet", "window"], ["sound", "about"]] : [["pet", "window"], ["online", "sound", "about"]];
 onBeforeUnmount(() => window.removeEventListener("keydown", onRecordKey, true));
 
 // Start at login. The system holds the state; a failed change shows what the system says now.
@@ -219,13 +224,17 @@ async function exportLogFile() {
       </label>
       <div class="stats">
         <span><b>{{ counter.total.toLocaleString("en-US") }}</b>累计敲击</span>
-        <span><b>{{ status?.totals.activeMinutes ?? "-" }}</b>活跃分钟</span>
-        <span><b>{{ status?.resonance.total ?? "-" }}</b>已共鸣</span>
-        <span><b>{{ status ? `${status.totals.owned}/${status.totals.items}` : "-" }}</b>收集进度</span>
+        <!-- The standalone edition counts taps on this device only; the rest is the server's. -->
+        <span v-if="STANDALONE"><b>{{ counter.today.toLocaleString("en-US") }}</b>今日敲击</span>
+        <template v-else>
+          <span><b>{{ status?.totals.activeMinutes ?? "-" }}</b>活跃分钟</span>
+          <span><b>{{ status?.resonance.total ?? "-" }}</b>已共鸣</span>
+          <span><b>{{ status ? `${status.totals.owned}/${status.totals.items}` : "-" }}</b>收集进度</span>
+        </template>
       </div>
     </section>
 
-    <section data-rise>
+    <section v-if="!STANDALONE" data-rise>
       <h4 class="ui-label"><span>账号</span></h4>
       <div class="ui-group ui-frame">
         <div class="ui-row">
@@ -287,7 +296,7 @@ async function exportLogFile() {
                 <span>收起任务栏</span>
                 <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
               </label>
-              <label class="ui-row">
+              <label v-if="!STANDALONE" class="ui-row">
                 <span>显示敲击碎片</span>
                 <input v-model="settings.shardPop" class="ui-switch" type="checkbox" />
               </label>
@@ -407,13 +416,15 @@ async function exportLogFile() {
               <div class="ui-row">
                 <span>版本</span>
                 <span class="version-side">
-                  <small v-if="checkNote" role="status" class="check-note">{{ checkNote }}</small>
-                  <b class="version">{{ version }}</b>
-                  <button v-if="updateOffer" type="button" class="ui-btn small about-key primary" @click="openUpdateDialog">更新</button>
-                  <button
-                    v-else type="button" class="ui-btn small about-key" :disabled="checkState === 'checking'"
-                    @click="lookForUpdate(true)"
-                  >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
+                  <small v-if="checkNote && !STANDALONE" role="status" class="check-note">{{ checkNote }}</small>
+                  <b class="version">{{ version }}<template v-if="STANDALONE"> 单机版</template></b>
+                  <template v-if="!STANDALONE">
+                    <button v-if="updateOffer" type="button" class="ui-btn small about-key primary" @click="openUpdateDialog">更新</button>
+                    <button
+                      v-else type="button" class="ui-btn small about-key" :disabled="checkState === 'checking'"
+                      @click="lookForUpdate(true)"
+                    >{{ checkState === "checking" ? "检查中" : "检查更新" }}</button>
+                  </template>
                 </span>
               </div>
               <div v-if="isTauri" class="ui-row">
@@ -423,7 +434,7 @@ async function exportLogFile() {
                   <button type="button" class="ui-btn small about-key" :disabled="exporting" @click="exportLogFile">导出</button>
                 </span>
               </div>
-              <div class="ui-row">
+              <div v-if="!STANDALONE" class="ui-row">
                 <span>意见反馈</span>
                 <span class="version-side">
                   <small v-if="feedbackNote" role="status" class="check-note">{{ feedbackNote }}</small>
@@ -434,7 +445,7 @@ async function exportLogFile() {
                 <span>项目主页</span>
                 <button type="button" class="ui-btn small about-key" @click="openAboutLink(REPO)">GitHub</button>
               </div>
-              <div class="ui-row">
+              <div v-if="!STANDALONE" class="ui-row">
                 <span>协议与隐私</span>
                 <span class="version-side">
                   <button type="button" class="ui-btn small about-key" @click="legalOpen = 'terms'">用户协议</button>
@@ -445,7 +456,11 @@ async function exportLogFile() {
                 <span>作者</span>
                 <button type="button" class="ui-btn small about-key" @click="copied = ''; contactOpen = true">联系作者</button>
               </div>
-              <div class="ui-row promo-row">
+              <div v-if="STANDALONE" class="ui-row">
+                <span>赞助</span>
+                <button type="button" class="ui-btn small" @click="openAboutLink(SPONSOR)">支持</button>
+              </div>
+              <div v-else class="ui-row promo-row">
                 <span>神秘按钮</span>
                 <button
                   type="button" class="ui-btn small about-key primary promo-key" :class="{ wiggle: !settings.promoSeen }"

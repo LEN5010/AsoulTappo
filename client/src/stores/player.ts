@@ -6,7 +6,7 @@ import {
 } from "../net/api";
 import { MAX_BOARD_NICK, MAX_SHOWCASE, toHttpBase, type DdzLobby, type MemberProfile } from "../net/protocol";
 import { trustedOrigin } from "../net/trust";
-import { ownsCharacter, ownsEmote } from "../items";
+import { everyItem, ownsCharacter, ownsEmote } from "../items";
 import { plateUnlocked } from "../pet/plates";
 import { getCard, memberOf, type Rarity } from "../manifest";
 import { settings } from "./settings";
@@ -16,6 +16,7 @@ import { agreed } from "../legal/consent";
 import { requestDesktop } from "../desktop/transport";
 import { compareVersions } from "../semver";
 import { APP_VERSION } from "../version";
+import { STANDALONE, StandaloneRefused } from "../edition";
 
 const TOKEN_KEY = "asoultappo.token.v1";
 
@@ -86,6 +87,7 @@ if (isMirrorWindow) {
 
 /** Picks up a username or email changed on the website. */
 export async function refreshAccount(): Promise<void> {
+  if (STANDALONE) return;
   const a = activeAccount();
   if (!a) return;
   try {
@@ -104,7 +106,8 @@ function credential(base: string): Credential {
 }
 
 export const status = ref<PlayerStatus | null>(null);
-export const collection = reactive<Collection>({ owned: {}, recent: [] });
+/** The standalone edition owns everything from the start and never asks for the collection. */
+export const collection = reactive<Collection>({ owned: STANDALONE ? everyItem() : {}, recent: [] });
 export const online = ref(false);
 export const error = ref("");
 export const draws = computed(() => {
@@ -151,6 +154,8 @@ interface Session { api: Api; reporter: ActivityReporter; tail: Promise<unknown>
  */
 function serial<T>(session: Session, fn: () => Promise<T>): Promise<T> {
   const next = session.tail.then(() => {
+    // The standalone edition starts nothing that gets here; anything that still does is refused unsent.
+    if (STANDALONE) throw new StandaloneRefused(toHttpBase(settings.serverUrl));
     if (!agreed.value) throw new Error("terms not agreed");
     return fn();
   });
@@ -310,7 +315,7 @@ async function flush(session: Session): Promise<boolean> {
 }
 
 watch(() => [settings.serverUrl, saveCode.value, account.value?.token] as const, ([url, code]) => {
-  if (isMirrorWindow) return;
+  if (isMirrorWindow || STANDALONE) return;
   const previous = current;
   token = code;
   const next = sessionFor(toHttpBase(url));
@@ -349,7 +354,8 @@ export function reportCooldown(until: number): void {
 let waiting: (() => void) | undefined;
 
 export function startReporting(everyMs = 20000): void {
-  if (timer || waiting) return;
+  // The standalone edition has no server: taps are counted on this device only (stores/pet.ts).
+  if (STANDALONE || timer || waiting) return;
   if (!agreed.value) {
     // Nothing reaches the server before the player agrees to the terms (src/legal); agreeing starts it.
     waiting = watch(agreed, (ok) => {

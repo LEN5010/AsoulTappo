@@ -2,7 +2,10 @@ import { reactive, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { isPanelWindow, isTauri } from "../composables/tauri";
 import { settings } from "./settings";
+import { STANDALONE } from "../edition";
 export type Page = "emotes" | "resonance" | "dex" | "checkin" | "park" | "room" | "cheer" | "settings";
+/** The standalone edition's pages (src/edition.ts), in nav order: the backpack, the album and the settings. */
+export const STANDALONE_PAGES: readonly Page[] = ["emotes", "dex", "settings"];
 export const ui = reactive({
   panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
   /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
@@ -17,6 +20,11 @@ export const ui = reactive({
 });
 // The scratch page became part of the park: a page named the old way (from the other window, say) opens the park.
 watch(() => ui.page as string, (page) => { if (page === "scratch") ui.page = "park"; }, { flush: "sync", immediate: true });
+// The standalone edition: a key or a message that asks for any other page (the strip's draw key, a detail's way to
+// resonance, the panel window opened on a page) opens the backpack instead.
+if (STANDALONE) {
+  watch(() => ui.page, (page) => { if (!STANDALONE_PAGES.includes(page)) ui.page = "emotes"; }, { flush: "sync", immediate: true });
+}
 export function openPanel(page?: Page, opts: { craftTarget?: string } = {}): void {
   if (page) ui.page = page;
   if (opts.craftTarget !== undefined || (isTauri && !isPanelWindow)) ui.craftTarget = opts.craftTarget ?? "";

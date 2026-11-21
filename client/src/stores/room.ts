@@ -21,6 +21,7 @@ import { Api, authHeaders } from "../net/api";
 import { isMirrorWindow, writeLog } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
 import { economy } from "./economy";
+import { STANDALONE, serverFetch } from "../edition";
 
 export interface RemoteMember extends Member {
   /** increments on every tap batch -> short keyboard bounce */
@@ -765,8 +766,9 @@ export function setBatchMs(ms: number): void {
 
 export async function createRoom(): Promise<string> {
   if (isMirrorWindow) return requestDesktop("createRoom");
+  if (STANDALONE) throw new Error("单机版不能联机");
   const base = settings.serverUrl;
-  const res = await fetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
+  const res = await serverFetch(`${toHttpBase(base)}/rooms`, { method: "POST" });
   if (!res.ok) throw new Error(`服务器返回 ${res.status}`);
   const data = (await res.json()) as { room: string };
   if (base !== settings.serverUrl) throw new Error("服务器已切换，请重新创建房间");
@@ -776,7 +778,7 @@ export async function createRoom(): Promise<string> {
 export function joinRoom(room: string): void {
   if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
-  if (!id) return;
+  if (!id || STANDALONE) return;
   lastError.value = "";
   batcher.clear();
   motionSender.clear();
@@ -828,6 +830,7 @@ function isPublicRoom(r: unknown): r is PublicRoom {
  */
 export async function loadPublicRooms(): Promise<void> {
   if (isMirrorWindow) return requestDesktop("loadPublicRooms").catch(() => {});
+  if (STANDALONE) return;
   const base = settings.serverUrl;
   const http = toHttpBase(base);
   const session = activeAccount();
@@ -838,7 +841,7 @@ export async function loadPublicRooms(): Promise<void> {
   try {
     if (!session && (await new Api(() => http, () => token).info().catch(() => null))?.accountLogin) list = "signin";
     else {
-      const res = await fetch(`${http}/rooms`, session ? { headers: authHeaders({ bearer: session.token }) } : undefined);
+      const res = await serverFetch(`${http}/rooms`, session ? { headers: authHeaders({ bearer: session.token }) } : undefined);
       if (res.status === 404 || res.status === 405) list = null;
       else if (res.status === 401) {
         list = "signin";

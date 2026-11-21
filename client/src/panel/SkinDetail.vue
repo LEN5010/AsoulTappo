@@ -18,6 +18,7 @@ import SkinArt from "./SkinArt.vue";
 import { stepIndex } from "./album";
 import ArtViewer from "./ArtViewer.vue";
 import StepKeys from "./StepKeys.vue";
+import { STANDALONE } from "../edition";
 /** `names` is the album as the grid shows it; without it there is nothing to step to. */
 const props = defineProps<{ name: string; names?: readonly string[] }>();
 const emit = defineEmits<{ close: []; step: [name: string] }>();
@@ -86,7 +87,7 @@ watch(() => props.name, () => (formPin.value = null));
           </button>
         </div>
         <p class="member"><i :style="{ background: characterColor(memberOf(name)) }"></i>{{ memberOf(name) }}</p>
-        <dl><div v-if="skinNote(name)"><dt>原名</dt><dd>{{ skinTitle(name) }}</dd></div><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
+        <dl><div v-if="skinNote(name)"><dt>原名</dt><dd>{{ skinTitle(name) }}</dd></div><div><dt>系列</dt><dd>{{ skinSeries(name) }}</dd></div><div v-if="!STANDALONE"><dt>持有</dt><dd>{{ owned ? '已拥有' : '未解锁' }}</dd></div></dl>
         <div class="live-preview">
           <PetView :character="name" :scale="0.82" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right" :form="formPin" />
           <div v-if="twoForm" class="form-keys" role="group" aria-label="形态">

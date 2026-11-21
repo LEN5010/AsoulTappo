@@ -4,6 +4,7 @@ import { resolveAsset } from "./manifest";
 import { toHttpBase } from "./net/protocol";
 import { settings } from "./stores/settings";
 import { agreed } from "./legal/consent";
+import { localFetch } from "./edition";
 
 /** Empty until the player agrees to the terms (src/legal): files from the server wait for that too. */
 export const serverBase = computed(() => (agreed.value ? toHttpBase(settings.serverUrl) : ""));
@@ -20,7 +21,7 @@ const blobs = new Map<string, Promise<Blob | null>>();
  */
 export async function freshAnimationUrl(url: string): Promise<{ url: string; release(): void }> {
   if (!blobs.has(url)) {
-    blobs.set(url, fetch(url).then((r) => (r.ok ? r.blob() : null), () => null));
+    blobs.set(url, localFetch(url).then((r) => (r.ok ? r.blob() : null), () => null));
   }
   const blob = await blobs.get(url)!;
   if (!blob) {
@@ -42,5 +43,5 @@ export function warmVideo(url: string): void {
   warmed.add(url);
   // The app keeps only a few videos; let a later hover warm this one again.
   setTimeout(() => warmed.delete(url), 30_000);
-  void fetch(url, { headers: { Range: "bytes=0-0" } }).catch(() => {});
+  void localFetch(url, { headers: { Range: "bytes=0-0" } }).catch(() => {});
 }

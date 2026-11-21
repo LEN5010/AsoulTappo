@@ -16,6 +16,7 @@ import Icon from "../ui/Icon.vue";
 import PetView from "../pet/PetView.vue";
 import NamePlate from "../pet/NamePlate.vue";
 import { nameBand, plateCards, plateMembers, plateNeeds, plateSize, type Plate } from "../pet/plates";
+import { STANDALONE } from "../edition";
 
 const props = defineProps<{ plate: Plate }>();
 const emit = defineEmits<{ close: [] }>();
@@ -68,7 +69,7 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
         <p v-if="members.length" class="member"><i :style="{ background: characterColor(members[0]!) }"></i>{{ members.join(" / ") }}</p>
         <dl>
           <div v-if="pool"><dt>系列</dt><dd>{{ pool }}</dd></div>
-          <div><dt>解锁</dt><dd>{{ unlocked ? '已解锁' : `${collected} / ${needs.length}` }}</dd></div>
+          <div v-if="!STANDALONE"><dt>解锁</dt><dd>{{ unlocked ? '已解锁' : `${collected} / ${needs.length}` }}</dd></div>
         </dl>
         <ul v-if="set.length" class="set" :style="{ '--n': set.length }" aria-label="解锁需要的卡片">
           <li

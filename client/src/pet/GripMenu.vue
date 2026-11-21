@@ -5,6 +5,7 @@
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";
 import { edgeShift } from "./lift";
+import { STANDALONE } from "../edition";
 
 /** `plate`: the own name plate stands in the strip's place. */
 defineProps<{ plate: boolean; shardPop: boolean }>();
@@ -36,7 +37,7 @@ onMounted(() => {
     <button type="button" role="menuitem" @click="$emit('swap')">
       <Icon name="swap" :size="16" /><span>{{ plate ? "换回任务栏" : "换成铭牌" }}</span>
     </button>
-    <button type="button" role="menuitemcheckbox" :aria-checked="shardPop" @click="$emit('shardPop')">
+    <button v-if="!STANDALONE" type="button" role="menuitemcheckbox" :aria-checked="shardPop" @click="$emit('shardPop')">
       <Icon name="shard" :size="16" /><span>显示敲击碎片</span>
       <Icon class="tick" :class="{ on: shardPop }" name="check" :size="14" />
     </button>

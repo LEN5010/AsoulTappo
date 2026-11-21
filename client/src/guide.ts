@@ -1,7 +1,9 @@
 // The first-run guide: four steps on the desk, each circling one place on the strip under the pet with a line of
 // text. Progress lives in the settings (`guide`), shared by the desk and the panel window; this file decides which
 // card is due from that progress and from what the desk reports now. Each card shows once and has no skip: the player
-// answers every one.
+// answers every one. The standalone edition has no resonance, so its guide has no draw card.
+
+import { STANDALONE } from "./edition";
 
 /** Raised when the guide is to be shown to everyone again. 1: from 1.2.6, to new and old players alike. */
 export const GUIDE_V = 1;
@@ -15,6 +17,8 @@ export interface Guide {
 
 export const CARDS = ["tap", "draw", "panel", "grip"] as const;
 export type Card = (typeof CARDS)[number];
+/** The cards of this edition. */
+const STEPS: readonly Card[] = STANDALONE ? CARDS.filter((c) => c !== "draw") : CARDS;
 
 /** The line on each card: one line, twelve characters at most. */
 export const GUIDE_TEXT: Record<Card, string> = {
@@ -47,7 +51,7 @@ export const startGuide = (): Guide => ({ v: GUIDE_V, done: [] });
 export const withDone = (g: Guide, card: Card): Guide =>
   (g.done.includes(card) ? g : { ...g, done: [...g.done, card] });
 /** Some cards are not answered yet. */
-export const guideLeft = (g: Guide): boolean => CARDS.some((c) => !g.done.includes(c));
+export const guideLeft = (g: Guide): boolean => STEPS.some((c) => !g.done.includes(c));
 
 /**
  * The progress after [incoming] from another window meets [local]: what either window answered stays answered, so a
@@ -86,7 +90,7 @@ export function deskCard(g: Guide, f: DeskFacts): Card | null {
   // lets the later ones go ahead.
   const tapSettled = done("tap") || (f.tapped && !has("count"));
   if (!done("tap") && f.tapped && has("count")) return "tap";
-  if (!done("draw") && tapSettled && has("draw")) return "draw";
+  if (!STANDALONE && !done("draw") && tapSettled && has("draw")) return "draw";
   // Where the panel comes back from, once it is closed; the statement keeps it open on the first run, and the first
   // step goes before this one.
   const panelSettled = done("panel") || (tapSettled && !has("menu"));

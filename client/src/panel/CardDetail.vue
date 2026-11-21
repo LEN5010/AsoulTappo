@@ -24,6 +24,7 @@ import { flyFrom } from "../ui/motion";
 import { stepIndex } from "./album";
 import ArtViewer from "./ArtViewer.vue";
 import StepKeys from "./StepKeys.vue";
+import { STANDALONE } from "../edition";
 
 /** `cards` is the album as the grid shows it; without it there is nothing to step to. */
 const props = defineProps<{ card: ManifestCard; cards?: readonly ManifestCard[]; from?: DOMRect; preview?: boolean }>();
@@ -180,14 +181,14 @@ const vReleaseVideo: ObjectDirective<HTMLVideoElement> = {
         <h3>{{ label.title }}</h3>
         <p class="who"><i :style="{ background: characterColor(card.characters[0] ?? '') }" aria-hidden="true"></i>{{ label.who }}</p>
         <dl>
-          <div><dt>卡池</dt><dd>{{ pool }}</dd></div>
-          <div><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
+          <div><dt>{{ STANDALONE ? "系列" : "卡池" }}</dt><dd>{{ pool }}</dd></div>
+          <div v-if="!STANDALONE"><dt>持有</dt><dd :class="{ missing: !count }">{{ count ? `×${count}` : "未拥有" }}</dd></div>
           <div v-if="card.video"><dt>卡面</dt><dd>{{ card.still ? "有声" : "动态" }}</dd></div>
-          <div v-if="card.holo && !preview"><dt>镭射款</dt><dd :class="{ missing: !hasHolo }">{{ hasHolo ? "已拥有" : "未拥有" }}</dd></div>
+          <div v-if="!STANDALONE && card.holo && !preview"><dt>镭射款</dt><dd :class="{ missing: !hasHolo }">{{ hasHolo ? "已拥有" : "未拥有" }}</dd></div>
         </dl>
         <CraftAction :key="item.id" :item="item" />
         <button
-          v-if="count && !preview" type="button" class="ui-btn showcase" :disabled="showcaseFull"
+          v-if="!STANDALONE && count && !preview" type="button" class="ui-btn showcase" :disabled="showcaseFull"
           :title="showcaseFull ? `主页最多展示 ${MAX_SHOWCASE} 张，先取下一张` : undefined" :aria-pressed="shown" @click="toggleShowcase"
         >
           <Icon :name="shown ? 'check' : 'plus'" :size="15" />{{ shown ? "取消展示" : showcaseFull ? "展示位已满" : "展示到主页" }}

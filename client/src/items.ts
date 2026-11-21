@@ -2,7 +2,9 @@
 // Ids match the server: card:<id>, emote:<key>, char:<skin name>. A card's holo version (holo:<card id>) is not an
 // item here: it is never in a pool or crafted, and shows as its card (see cards.ts).
 // Original characters are always owned; skins use char:<name> and drop from resonance.
-import { cardProgress } from "./cards";
+import { cardProgress, holoId } from "./cards";
+import { characterNames } from "./characters";
+import { STANDALONE } from "./edition";
 import { manifest, memberOf, RARITY_ORDER, skinTitle, type Rarity } from "./manifest";
 import type { CollectionProgress } from "./net/protocol";
 import { economy } from "./stores/economy";
@@ -94,9 +96,26 @@ export function collectionProgress(owned: Record<string, number>): CollectionPro
 
 /** Shards to craft [item]; null for what is never crafted, and for what a limited pool keeps to itself for now. */
 export function craftCost(item: Item): number | null {
+  if (STANDALONE) return null;
   return (item.kind === "emote" || item.kind === "card") && item.rarity && !item.starter && !item.source
     && !economy.value?.resonance.held?.includes(item.id)
     ? economy.value?.craftCost[item.rarity] ?? null : null;
+}
+
+/**
+ * Every item of the bundled manifest, once each: what the standalone edition (src/edition.ts) owns from the start.
+ * Skins (both forms are one skin), every emote including 阿草's, every card including the hidden and 衣橱 ones, and
+ * every holo version. Name plates follow from these (pet/plates.ts plateUnlocked).
+ */
+export function everyItem(): Record<string, number> {
+  const owned: Record<string, number> = {};
+  for (const name of [...characterNames, ...manifest.skins.map((s) => s.name)]) owned[`char:${name}`] = 1;
+  for (const set of manifest.emoteSets) for (const e of set.emotes) owned[`emote:${e.key}`] = 1;
+  for (const card of manifest.cards) {
+    owned[`card:${card.id}`] = 1;
+    if (card.holo) owned[holoId(card)] = 1;
+  }
+  return owned;
 }
 
 /** Starter emotes of one character (the default quick emotes). */

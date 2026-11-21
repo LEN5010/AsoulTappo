@@ -5,6 +5,7 @@ import { MAX_SHOWCASE } from "../net/protocol";
 import { cleanReminders, type Reminder } from "../reminders";
 import { roomStatus } from "../roomStatus";
 import { isTauri } from "../composables/tauri";
+import { STANDALONE } from "../edition";
 import { cleanGuide, mergeGuide, type Guide } from "../guide";
 
 export interface Settings {
@@ -132,6 +133,11 @@ export interface Settings {
   termsAgreed: string;
   /** App version whose free-of-charge statement was last confirmed ("" = never); asked again by every new version. */
   statementSeen: string;
+  /**
+   * The standalone edition's own: app version whose standalone statement was last confirmed ("" = never). Kept apart
+   * from statementSeen, so the two editions never confirm for each other.
+   */
+  standaloneStatementSeen: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
@@ -164,7 +170,8 @@ export const todoSize = (v: number, side: "w" | "h") =>
   Math.round(Math.min(TODO_MAX[side], Math.max(TODO_MIN[side], Number.isFinite(v) ? v : TODO_MIN[side])));
 
 export const DEFAULT_SETTINGS: Settings = {
-  serverUrl: "https://len5010.top/tappo",
+  // The standalone edition has no server (src/edition.ts).
+  serverUrl: STANDALONE ? "" : "https://len5010.top/tappo",
   nick: "",
   character: defaultCharacter,
   scale: 1,
@@ -234,6 +241,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureH: 412,
   termsAgreed: "",
   statementSeen: "",
+  standaloneStatementSeen: "",
   promoSeen: false,
   skinNotes: {},
   guide: cleanGuide(undefined),
@@ -270,7 +278,8 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
     /* corrupted -> defaults */
   }
   // The server moved behind len5010.top; devices still on the old address follow it.
-  if (out.serverUrl === LEGACY_SERVER_URL) out.serverUrl = DEFAULT_SETTINGS.serverUrl;
+  if (STANDALONE) out.serverUrl = "";
+  else if (out.serverUrl === LEGACY_SERVER_URL) out.serverUrl = DEFAULT_SETTINGS.serverUrl;
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));

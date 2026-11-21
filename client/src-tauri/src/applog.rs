@@ -102,7 +102,11 @@ fn read_all() -> std::io::Result<Vec<u8>> {
 /// Copy the older and the current file, in that order, into one `.txt` in `to_dir`.
 pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
     let out = read_all()?;
-    let path = to_dir.join(format!("AsoulTappo-log-{}.txt", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+    let path = to_dir.join(format!(
+        "{}-log-{}.txt",
+        crate::edition::PRODUCT_NAME,
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
     std::fs::write(&path, out)?;
     Ok(path)
 }

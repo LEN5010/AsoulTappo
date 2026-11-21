@@ -17,9 +17,22 @@ use std::time::Duration;
 /// Where the "start as administrator" choice is kept. It is read before Tauri starts, so it
 /// lives in a plain file under the app config dir (`%APPDATA%\<identifier>`), not in the page.
 fn flag_path() -> Option<PathBuf> {
-    // Same folder as `app_config_dir()`; must match `identifier` in tauri.conf.json.
-    const IDENTIFIER: &str = "io.github.len5010.asoultappo";
-    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(IDENTIFIER).join("run-as-admin"))
+    // Same folder as `app_config_dir()`, which follows `identifier` in the edition's Tauri configuration.
+    std::env::var_os("APPDATA").map(|dir| PathBuf::from(dir).join(crate::edition::IDENTIFIER).join("run-as-admin"))
+}
+
+/// Held by the running instance. `Local\` is the session's namespace, which elevated and normal processes of the
+/// same session share; other sessions (other users) have their own. One per edition, so both can run.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn instance_mutex() -> String {
+    format!("Local\\{}.instance", crate::edition::IDENTIFIER)
+}
+
+/// Set by a second start to bring the running instance's panel up (`win::ask_to_show`). One per edition, like the
+/// mutex: a start of one edition does not raise the other's panel.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn show_event() -> String {
+    format!("Local\\{}.show", crate::edition::IDENTIFIER)
 }
 
 /// Whether the player chose to start as administrator.
@@ -96,15 +109,10 @@ mod imp {
 
     /// How long a new elevated instance waits for the one that started it to exit.
     const WAIT_FOR_OLD: u32 = 10_000;
-    /// Held by the running instance. `Local\` is the session's namespace, which elevated and
-    /// normal processes of the same session share; other sessions (other users) have their own.
-    const INSTANCE_MUTEX: &str = "Local\\io.github.len5010.asoultappo.instance";
     /// How long a new start keeps trying while another instance holds the mutex: `relaunch`
     /// starts the new process before the old one has exited.
     const CLAIM_WAIT: Duration = Duration::from_secs(3);
     const CLAIM_EVERY: Duration = Duration::from_millis(100);
-    /// Set by a second start, waited on by the running instance, which then shows its panel. Auto-reset.
-    const SHOW_EVENT: &str = "Local\\io.github.len5010.asoultappo.show";
     /// How long a second start waits before asking the running instance to show its panel: a restart through
     /// `relaunch` starts the new process a moment before the old one exits, and that old one should not be asked.
     const ASK_AFTER: Duration = Duration::from_millis(500);
@@ -116,7 +124,7 @@ mod imp {
     const TELL_AFTER: Duration = Duration::from_secs(10);
 
     static BLOCKED: AtomicBool = AtomicBool::new(false);
-    /// The show event's handle (`SHOW_EVENT`), 0 when this instance has none.
+    /// The show event's handle (`show_event`), 0 when this instance has none.
     static SHOW: AtomicUsize = AtomicUsize::new(0);
     /// A thread waits on `SHOW` already (`spawn_show_listener`).
     static LISTENING: AtomicBool = AtomicBool::new(false);
@@ -212,7 +220,7 @@ mod imp {
     /// by the player (not `quiet`) asks the running instance to show its panel; it keeps waiting after that, so an
     /// instance that was on its way out is still replaced.
     fn claim_instance(quiet: bool) -> Instance {
-        let name = wide(INSTANCE_MUTEX);
+        let name = wide(&super::instance_mutex());
         let started = Instant::now();
         let mut first = true;
         let mut asked = false;
@@ -247,11 +255,11 @@ mod imp {
         }
     }
 
-    /// The running instance's side of `SHOW_EVENT`. Its handle is never closed, like the mutex's. It asks only for
+    /// The running instance's side of the show event (`show_event`), auto-reset. Its handle is never closed, like the mutex's. It asks only for
     /// SYNCHRONIZE, all the wait needs: when the event outlives the instance this one replaces (a second start still
     /// holds it), this opens it, and the DACL above would refuse full access.
     fn create_show_event() {
-        let name = wide(SHOW_EVENT);
+        let name = wide(&super::show_event());
         let event =
             signalable_by_session(|sa| unsafe { CreateEventExW(sa, name.as_ptr(), 0, SYNCHRONIZATION_SYNCHRONIZE) });
         if !event.is_null() {
@@ -259,10 +267,10 @@ mod imp {
         }
     }
 
-    /// Set the running instance's `SHOW_EVENT`. This start came from the player, so it may pass the foreground on:
+    /// Set the running instance's show event. This start came from the player, so it may pass the foreground on:
     /// the panel then comes to the front instead of flashing in the taskbar.
     fn ask_to_show() -> bool {
-        let name = wide(SHOW_EVENT);
+        let name = wide(&super::show_event());
         unsafe {
             let event = OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr());
             if event.is_null() {
@@ -321,7 +329,7 @@ mod imp {
         create(std::ptr::null())
     }
 
-    /// Wait for a second start's `SHOW_EVENT` and raise the panel the way the tray does. Started by the desk page once
+    /// Wait for a second start's show event and raise the panel the way the tray does. Started by the desk page once
     /// it listens to the tray (`watch_second_start`), so no request is sent before anyone hears it: one set earlier
     /// stays in the event until the wait begins. Only once per run; a reload of the page does not start another.
     pub fn spawn_show_listener(app: tauri::AppHandle) {
@@ -424,4 +432,16 @@ mod stub {
     pub fn spawn_watch(_app: tauri::AppHandle) {}
     /// macOS sends a second open of the app to the running one as a reopen event (lib.rs, `RunEvent::Reopen`).
     pub fn spawn_show_listener(_app: tauri::AppHandle) {}
+}
+
+#[cfg(test)]
+mod tests {
+    /// The online edition's mutex is the one installed copies hold: a new name would let an old and a new
+    /// instance run at once during an update.
+    #[cfg(not(feature = "standalone"))]
+    #[test]
+    fn online_instance_mutex_stays_as_installed() {
+        assert_eq!(super::instance_mutex(), "Local\\io.github.len5010.asoultappo.instance");
+        assert_eq!(super::show_event(), "Local\\io.github.len5010.asoultappo.show");
+    }
 }

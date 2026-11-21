@@ -6,6 +6,7 @@ import { ref, watch } from "vue";
 import type { Rarity } from "../manifest";
 import { toHttpBase } from "../net/protocol";
 import { settings } from "./settings";
+import { STANDALONE } from "../edition";
 
 /** The client's own input guard (src/pet/TapGuard.ts): a fast second, a streak of them, and the cooldown that follows. */
 export interface TapGuardRules { fastPerSecond: number; fastStreakSec: number; cooldownSec: number }
@@ -134,7 +135,8 @@ function read(server: string): Cached | null {
 }
 
 const server = () => toHttpBase(settings.serverUrl);
-let cached = read(server());
+// The standalone edition has no economy: nothing is priced and nothing shows odds.
+let cached = STANDALONE ? null : read(server());
 export const economy = ref<Economy | null>(cached?.data ?? null);
 
 /** Enough of an economy to show prices and odds: anything else (an error page, an unrelated answer) is ignored. */
@@ -146,7 +148,7 @@ export function isEconomy(data: unknown): data is Economy {
 
 /** The server's answer (or the desk's, relayed to the panel). */
 export function setEconomy(data: Economy, from = server(), at = Date.now()): void {
-  if (from !== server() || !isEconomy(data)) return;
+  if (STANDALONE || from !== server() || !isEconomy(data)) return;
   cached = { server: from, at, data };
   economy.value = data;
   try { localStorage.setItem(KEY, JSON.stringify(cached)); } catch { /* storage unavailable */ }
@@ -164,6 +166,7 @@ export function economyDue(now = Date.now()): boolean {
 
 // Another server: its own copy, or nothing until it answers.
 watch(() => settings.serverUrl, () => {
+  if (STANDALONE) return;
   cached = read(server());
   economy.value = cached?.data ?? null;
 }, { flush: "sync" });
