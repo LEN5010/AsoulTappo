@@ -144,6 +144,8 @@ export const ddzConfig = computed(() => economy.value?.doudizhu ?? null);
 export const ddz = ref<DdzState | null>(null);
 /** Games under way in the room: the three member ids by table. */
 export const ddzLive = ref<Record<string, string[]>>({});
+/** The base stake of each game under way in the room, where the server says (ddz_live `base`). */
+export const ddzLiveBase = ref<Record<string, number>>({});
 /** This connection waits in the server's queue: at which stake, and since when (local ms); null when it does not. */
 export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 /** How many saves wait at each stake, this one included, as the server last counted. */
@@ -179,9 +181,10 @@ export interface DdzWatch extends DdzState {
   switching: boolean;
   /**
    * How watching ended, "" while it goes on: the table opened again for seats after the game (reopen) or closed after
-   * it (closed), the result staying up; or its game ended with nothing won (gone), shown for a moment.
+   * it (closed), the result staying up; its game ended with nothing won (gone), shown for a moment; or the save's own
+   * game starts (playing), kept up until its deal takes the window.
    */
-  ended: "" | "reopen" | "closed" | "gone";
+  ended: "" | "reopen" | "closed" | "gone" | "playing";
 }
 export const ddzWatch = ref<DdzWatch | null>(null);
 /** Who watches the own table and the one watched, by table id, as the server last listed them; none listed for none. */
@@ -611,10 +614,10 @@ function applyMove(t: DdzState, msg: PublicMove, hand: boolean): void {
 }
 
 // ------------------------------------------------------------------ watching (desk window)
-/** The server takes `ddz_watch` once a second at most; requests go this far apart, the latest seat picked winning. */
+/** The server takes `ddz_watch` once a second at most (a stop aside); requests go this far apart, the latest seat picked winning. */
 const WATCH_GAP_MS = 1100;
 let watchSentAt = -Infinity;
-/** The request waiting for its time ("" stops), the one sent and not answered yet, and whether that was sent again. */
+/** The request waiting for its time, the one sent and not answered yet, and whether that was sent again. */
 let watchNext: { table: string; seat: number } | null = null;
 let watchAsked: { table: string; seat: number } | null = null;
 let watchRetried = false;
@@ -622,6 +625,8 @@ let watchTimer: ReturnType<typeof setTimeout> | undefined;
 /** The seat watched from before another was picked, as the server last sent it: back on screen if the server turns the new one down. */
 let watchPrev: { seat: number; hand: number[]; shown: boolean } | null = null;
 let watchEndTimer: ReturnType<typeof setTimeout> | undefined;
+/** How long the game watched stays up for the save's own deal after the server said the save starts playing. */
+export const PLAYING_WAIT_MS = 3000;
 
 function sendWatch(): void {
   clearTimeout(watchTimer);
@@ -635,11 +640,6 @@ function sendWatch(): void {
   }
   watchNext = null;
   watchSentAt = Date.now();
-  if (!next.table) {
-    // A stop always goes through, unanswered.
-    sendDdz({ type: "ddz_watch", table: "" });
-    return;
-  }
   watchAsked = next;
   watchRetried = false;
   sendDdz({ type: "ddz_watch", table: next.table, seat: next.seat });
@@ -663,9 +663,10 @@ function dropWatch(): void {
 
 /** The server said watching goes on no more, or the save went to a game of its own: tells it, unless it knows. */
 function stopWatch(): void {
-  const live = (!!ddzWatch.value && !ddzWatch.value.ended) || !!watchAsked || !!watchNext?.table;
+  const live = (!!ddzWatch.value && !ddzWatch.value.ended) || !!watchAsked || !!watchNext;
   dropWatch();
-  if (live) askWatch("", 0);
+  // A stop goes at once: the server takes it any time, unanswered, and the next request's time does not count it.
+  if (live) sendDdz({ type: "ddz_watch", table: "" });
 }
 
 /** A refusal of the room's: when a watch request waits for its answer it is that one's. Says whether it was. */
@@ -765,13 +766,16 @@ function onWatchMessage(msg: WatchMessage): void {
   switch (msg.type) {
     case "ddz_watch_end":
       if (msg.reason === "playing") {
-        // The save's own game comes next and takes the window.
-        dropWatch();
+        // The save's own game comes next (on either connection, in either order) and takes the window; the game
+        // watched stays up until then, so the window does not close and open again. Dropped if no deal comes.
+        Object.assign(w, { ended: "playing", turn: null });
+        clearTimeout(watchEndTimer);
+        watchEndTimer = setTimeout(() => { if (ddzWatch.value === w) dropWatch(); }, PLAYING_WAIT_MS);
       } else if (w.phase === "result" && msg.reason !== "gone") {
         // The result stays until the watcher puts it away; at an open table that waits again it may sit down.
         Object.assign(w, { ended: msg.reason, closed: true, turn: null });
       } else {
-        Object.assign(w, { ended: "gone", phase: "over", reason: "", turn: null });
+        Object.assign(w, { ended: "gone", phase: "over", reason: msg.over ?? "", turn: null });
         clearTimeout(watchEndTimer);
         watchEndTimer = setTimeout(() => { if (ddzWatch.value === w) dropWatch(); }, DDZ_END_MS);
       }
@@ -807,19 +811,17 @@ function onWatchMessage(msg: WatchMessage): void {
 }
 
 /** Who watches table [table], as the server listed them. */
-function setWatchers(table: string, faces: DdzWatchFace[]): void {
+function setWatchers(table: string, faces: DdzWatchFace[], you?: number): void {
   const next = { ...ddzWatchers.value };
   if (faces.length) next[table] = faces;
   else delete next[table];
   ddzWatchers.value = next;
   // The server no longer shows the watcher the hand of its seat (that seat's member went to an old client, or left
-  // the watcher's room) and sends no new state for it: the cards turn face down. The watcher is known by its name and
-  // pet, as the list carries nothing else.
+  // the watcher's room) and sends no new state for it: the cards turn face down. The watcher finds itself by its
+  // place in the list (`you`); the seats' copy has none.
   const w = ddzWatch.value;
-  if (w?.id !== table || !w.shown || w.switching || w.phase === "result" || w.ended) return;
-  const hello = helloInfo();
-  const own = faces.filter((f) => f.nick === hello.nick && f.character === hello.character);
-  if (own.length && own.every((f) => f.seat === null)) Object.assign(w, { shown: false, hand: [] });
+  if (w?.id !== table || !w.shown || w.switching || w.phase === "result" || w.ended || you === undefined) return;
+  if (faces[you]?.seat === null) Object.assign(w, { shown: false, hand: [] });
 }
 
 /**
@@ -829,7 +831,7 @@ function setWatchers(table: string, faces: DdzWatchFace[]): void {
 export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): void {
   const you = via === "link" ? linkYou : youId.value;
   if (msg.type === "ddz_watchers") {
-    setWatchers(msg.table, msg.faces);
+    setWatchers(msg.table, msg.faces, msg.you);
     return;
   }
   // Watching has its own state: none of it reaches the save's table.
@@ -839,9 +841,13 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
   }
   if (msg.type === "ddz_live") {
     const live = { ...ddzLive.value };
+    const bases = { ...ddzLiveBase.value };
     if (msg.on) live[msg.table] = [...msg.ids];
     else delete live[msg.table];
+    if (msg.on && msg.base !== undefined) bases[msg.table] = msg.base;
+    else delete bases[msg.table];
     ddzLive.value = live;
+    ddzLiveBase.value = bases;
     // The whole room sees the winners' shards go up over their pets.
     if (!msg.on) for (const [id, gain] of Object.entries(msg.gains ?? {})) showWin(id, gain);
     return;
@@ -1046,6 +1052,7 @@ if (!isMirrorWindow) {
   watch(inRoom, (on) => {
     if (on) return;
     ddzLive.value = {};
+    ddzLiveBase.value = {};
     ddzTables.value = [];
     clearTimeout(callTimer);
     ddzCall.value = null;

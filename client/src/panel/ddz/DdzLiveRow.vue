@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // A game under way in the room, on a strip of the mat as the open tables are: its three seats (a seat whose member is
-// not in the room shows as a ring) and the key that watches it. The stake is not known before watching (ddz_live
-// does not carry it).
+// not in the room shows as a ring), its stake as a chip after them where the server says it (ddz_live `base`), and the
+// key that watches it.
 import { computed } from "vue";
 import { members, shownNick } from "../../stores/room";
-import { ddzWatch, watchDdz } from "../../stores/ddz";
+import { ddzLiveBase, ddzWatch, watchDdz } from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
 import DdzSeats from "./DdzSeats.vue";
 
@@ -22,7 +22,7 @@ const seats = computed(() => props.ids.map((id) => {
 
 <template>
   <div class="row">
-    <DdzSeats :seats="seats" :size="36" />
+    <DdzSeats :seats="seats" :size="36" :stake="ddzLiveBase[table]" />
     <button type="button" class="ui-btn white" @click="watch">观战</button>
   </div>
 </template>

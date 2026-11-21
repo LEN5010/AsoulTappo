@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Who watches a dou dizhu table: an eye, the faces of up to three watchers over one another, and how many there are.
-// In the table's top bar it is a key that opens a white slip listing the watchers under the seat whose hand each one
-// sees (those who see none last); [mini], beside a seat's name, it only shows the faces. The count gives a little
+// In the table's top bar it is a key that opens a white slip listing the watchers by the seat whose hand each one sees,
+// each seat headed by its name (those who see no hand last, unheaded); [mini], beside a seat's name, it only shows the faces. The count gives a little
 // bounce when it changes, as a seat's cards left do.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { DdzWatchFace } from "../../net/protocol";
@@ -16,8 +16,6 @@ const props = defineProps<{
   mini?: boolean;
   /** The name of seat [seat], heading its watchers on the slip. */
   seatNick?: (seat: number) => string;
-  /** The slip opens from the key's right edge (a key on the right of the bar). */
-  right?: boolean;
 }>();
 
 /** Faces shown over one another; more than that are counted. */
@@ -56,7 +54,7 @@ watch(() => props.faces.length, (n, before) => { if (n !== before) bump.value +=
     </span>
     <b v-if="faces.length > SHOWN" :key="bump" :class="{ bump: bump && !reducedMotion }">+{{ faces.length - SHOWN }}</b>
   </span>
-  <span v-else ref="root" class="watchers" :class="{ right }">
+  <span v-else ref="root" class="watchers">
     <button
       type="button" class="ui-btn small ghost" :aria-expanded="open" :aria-label="`${faces.length}`"
       @click="open = !open"
@@ -126,7 +124,6 @@ b.bump { animation: bump 520ms var(--ease-out); }
   box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.08), 0 16px 32px -14px rgba(var(--c-900-rgb), 0.45);
   animation: open 160ms var(--ease-out);
 }
-.right .slip { left: auto; right: 0; }
 @keyframes open {
   from { opacity: 0; translate: 0 -6px; }
 }

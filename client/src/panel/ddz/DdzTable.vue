@@ -440,6 +440,8 @@ const zones = computed(() => [
 
 /** Who watches this table, and of them who sees the own hand. */
 const watchers = computed(() => ddzWatchers.value[t.value.id] ?? []);
+/** The heading of the watchers of seat [seat] on their list: 我 for the own seat. */
+const groupNick = (seat: number) => (self(seat) ? "我" : nickOf(seat));
 const ownWatchers = computed(() => (watching.value ? [] : watchers.value.filter((f) => f.seat === you.value)));
 /** Watched, at an open table that waits for seats again after the game: a seat this save can take. */
 const canSit = computed(() => {
@@ -558,13 +560,12 @@ onBeforeUnmount(() => {
         <svg class="wall-suit left" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[2]" /></svg>
         <svg class="wall-suit right" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[3]" /></svg>
         <div class="top">
-          <span v-if="watching" class="corner">
-            <em class="ui-tag watch-tag">观战</em>
-            <DdzWatchers v-if="watchers.length" :faces="watchers" :seat-nick="nickOf" />
-          </span>
-          <button v-else type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
           <span class="corner">
-            <DdzWatchers v-if="!watching && watchers.length" :faces="watchers" :seat-nick="nickOf" right />
+            <em v-if="watching" class="ui-tag watch-tag">观战</em>
+            <button v-else type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
+            <DdzWatchers v-if="watchers.length" :faces="watchers" :seat-nick="groupNick" />
+          </span>
+          <span class="corner">
             <button
               v-if="playing && !watching" type="button" class="ui-btn small ghost" :aria-pressed="mine.auto" @click="autoDdz(!mine.auto)"
             >

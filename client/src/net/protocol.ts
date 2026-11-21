@@ -202,7 +202,7 @@ export type DdzMessage =
    * To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. A
    * room none of them is in by the end hears only that it ended.
    */
-  | { type: "ddz_live"; table: string; ids: string[]; on: true }
+  | { type: "ddz_live"; table: string; ids: string[]; on: true; base?: number }
   | { type: "ddz_live"; table: string; ids?: string[]; on: false; gains?: Record<string, number> }
   /**
    * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
@@ -226,14 +226,15 @@ export type DdzMessage =
   }
   /**
    * Watching table `table` ended: it closed, it opened again for seats after a game (reopen), its game ended with
-   * nothing won (gone), or the own save started a game (playing). Not sent when the watcher stopped or left.
+   * nothing won (gone, with `over` the reason ddz_over gives), or the own save started a game (playing). Not sent when
+   * the watcher stopped or left.
    */
-  | { type: "ddz_watch_end"; table: string; reason: "closed" | "reopen" | "gone" | "playing" }
+  | { type: "ddz_watch_end"; table: string; reason: "closed" | "reopen" | "gone" | "playing"; over?: string }
   /**
    * Who watches table `table`, to its seats and its watchers: each one's nick, pet and the seat whose hand it sees
-   * (null for none).
+   * (null for none). To a watcher, `you` is its own place in `faces`.
    */
-  | { type: "ddz_watchers"; table: string; faces: DdzWatchFace[] };
+  | { type: "ddz_watchers"; table: string; faces: DdzWatchFace[]; you?: number };
 
 /** A watcher of a dou dizhu table, as `ddz_watchers` lists it. */
 export interface DdzWatchFace { nick: string; character: string; seat: number | null }
