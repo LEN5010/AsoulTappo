@@ -27,7 +27,8 @@
         "skipTaskbar": true,
         "visible": false,
         "focus": false,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "noRedirectionBitmap": true
       }
     ],
     "security": {
