@@ -9,12 +9,16 @@
 //! tao rewrites the whole extended style whenever one of its window flags changes (cursor
 //! pass-through, focusable, visible), so a subclass puts the bit back into every new extended style.
 //! tao also sets WS_EX_APPWINDOW on top-level windows, which keeps the overlay in Alt+Tab as before.
+//!
+//! The same subclass hears display mode and composition changes, after which the overlay's transparency is set
+//! again (src/transparency.rs).
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, STYLESTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_STYLECHANGING, WS_EX_TOOLWINDOW,
+    GetWindowLongW, IsWindowVisible, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, STYLESTRUCT, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED, WM_STYLECHANGING,
+    WS_EX_TOOLWINDOW,
 };
 
 const SUBCLASS_ID: usize = 0x7461_7070;
@@ -31,6 +35,17 @@ unsafe extern "system" fn keep_tool_window(
     if msg == WM_STYLECHANGING && wparam as i32 == GWL_EXSTYLE && lparam != 0 {
         let styles = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
         styles.styleNew |= WS_EX_TOOLWINDOW;
+    }
+    // Sent to every top-level window, hidden ones too. Only queued here: the restore runs off this handler.
+    if msg == WM_DISPLAYCHANGE || msg == WM_DWMCOMPOSITIONCHANGED {
+        let shown = if unsafe { IsWindowVisible(hwnd) } != 0 { "shown" } else { "hidden" };
+        let why = if msg == WM_DISPLAYCHANGE {
+            // wParam: bits per pixel; lParam: the new width and height.
+            format!("display mode {}x{} at {} bpp, window {shown}", lparam & 0xffff, (lparam >> 16) & 0xffff, wparam)
+        } else {
+            format!("composition changed, window {shown}")
+        };
+        crate::transparency::request(&why);
     }
     unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) }
 }

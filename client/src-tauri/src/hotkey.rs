@@ -105,6 +105,8 @@ fn toggle(app: &AppHandle) {
     } else {
         applog!("hotkey", "show");
         let _ = main.show();
+        #[cfg(target_os = "windows")]
+        crate::transparency::request("shown by the hide hotkey");
         let panel = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed));
         if let Some(p) = &panel {
             let _ = p.show();

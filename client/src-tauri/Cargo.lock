@@ -90,6 +90,8 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "url",
+ "webview2-com",
+ "windows-core",
  "windows-sys 0.61.2",
 ]
 

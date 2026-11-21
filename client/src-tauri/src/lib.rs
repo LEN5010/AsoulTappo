@@ -19,6 +19,8 @@ mod tablet;
 mod overlay_macos;
 #[cfg(target_os = "windows")]
 mod tool_window;
+#[cfg(target_os = "windows")]
+mod transparency;
 mod update;
 
 use std::cell::Cell;
@@ -1003,7 +1005,8 @@ fn primary_button_down() -> bool {
 }
 
 /// Let the cursor fall through the overlay everywhere except on drawn parts.
-/// Polls slowly while nothing can be hit, and keeps the overlay fitted to its monitor.
+/// Polls slowly while nothing can be hit, keeps the shown overlay fitted to its monitor and, on Windows, runs the
+/// queued transparency restores (src/transparency.rs).
 fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
     std::thread::spawn(move || {
         let mut ignoring: Option<bool> = None;
@@ -1060,7 +1063,26 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     style_mismatch_logged = false;
                 }
             }
-            if last_refit.elapsed() >= REFIT_INTERVAL {
+            if last_summary.elapsed() >= HIT_SUMMARY_INTERVAL {
+                last_summary = Instant::now();
+                let n = took.replace(0);
+                if n > 0 {
+                    applog!("overlay", "took the mouse {n} times in the last minute");
+                }
+            }
+            if visible_at.is_none_or(|at| at.elapsed() >= HIT_VISIBLE_INTERVAL) {
+                visible = window.is_visible().unwrap_or(true);
+                visible_at = Some(Instant::now());
+            }
+            let came_back = shown == Some(false) && visible;
+            // The page stops drawing and drops its room subscriptions while the pet is hidden (stores/activity.ts).
+            if shown != Some(visible) {
+                shown = Some(visible);
+                let _ = window.emit_to("main", "window:visible", visible);
+            }
+            // A hidden overlay keeps its place until it is shown again, and is fitted at once then: a full-screen
+            // game flips the work area and scale while it runs, and each resize gives the window a new surface.
+            if visible && (came_back || last_refit.elapsed() >= REFIT_INTERVAL) {
                 last_refit = Instant::now();
                 let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
                 if needs_refit(&window, index) {
@@ -1077,21 +1099,9 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     }
                 }
             }
-            if last_summary.elapsed() >= HIT_SUMMARY_INTERVAL {
-                last_summary = Instant::now();
-                let n = took.replace(0);
-                if n > 0 {
-                    applog!("overlay", "took the mouse {n} times in the last minute");
-                }
-            }
-            if visible_at.is_none_or(|at| at.elapsed() >= HIT_VISIBLE_INTERVAL) {
-                visible = window.is_visible().unwrap_or(true);
-                visible_at = Some(Instant::now());
-            }
-            // The page stops drawing and drops its room subscriptions while the pet is hidden (stores/activity.ts).
-            if shown != Some(visible) {
-                shown = Some(visible);
-                let _ = window.emit_to("main", "window:visible", visible);
+            #[cfg(target_os = "windows")]
+            if let Some(why) = transparency::due() {
+                transparency::restore(&window, &why);
             }
             let idle = !visible || overlay.hit.lock().map(|st| st.inert()).unwrap_or(false);
             if idle {
@@ -1357,6 +1367,10 @@ pub fn run() {
                     Ok(false) => applog!("overlay", "tool window subclass not installed"),
                     Err(e) => applog!("overlay", "tool window subclass failed: {e}"),
                 }
+                // A full-screen game can leave the overlay black over the desktop: its web view's failures are
+                // logged and its transparency is set again after them (src/transparency.rs).
+                #[cfg(target_os = "windows")]
+                transparency::watch_process_failures(&w);
                 #[cfg(target_os = "macos")]
                 join_all_spaces(&w, "overlay");
                 // The monitor last picked from the tray, while it is plugged in; else the primary one.
@@ -1414,6 +1428,8 @@ pub fn run() {
                             } else {
                                 applog!("tray", "show pet");
                                 let _ = w.show();
+                                #[cfg(target_os = "windows")]
+                                transparency::request("shown from the tray");
                             }
                         }
                     }
