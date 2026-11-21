@@ -714,7 +714,7 @@ def test_a_room_no_seat_is_in_any_more_hears_only_that_the_game_ended():
         await w.settled()
         # Room r-q sees its member q at the table by its member id there; r by q's seat id.
         assert s_left.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": [a.id, b.id, q_room.id],
-                                             "on": True}
+                                             "on": True, "base": BASE}
         assert s_here.of("ddz_live")[-1]["ids"] == [a.id, b.id, q.id]
         # The save of the seat of the queue moves to another room during the game.
         await w.m.depart("r-q", q_room.id)

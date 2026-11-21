@@ -216,8 +216,8 @@ def test_three_waiting_get_a_table_all_three_accept_and_play_it_across_rooms_to_
         await settle()
         assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS - DEPOSIT] * 3
         # The rooms the seats' saves are in hear of the game, by the member ids they know them by, and only those.
-        live_a = {"type": "ddz_live", "table": tid, "ids": [a_room.id, b.id, c.id], "on": True}
-        live_c = {"type": "ddz_live", "table": tid, "ids": [a.id, b.id, c_room.id], "on": True}
+        live_a = {"type": "ddz_live", "table": tid, "ids": [a_room.id, b.id, c.id], "on": True, "base": BASE}
+        live_c = {"type": "ddz_live", "table": tid, "ids": [a.id, b.id, c_room.id], "on": True, "base": BASE}
         assert s_watch1.of("ddz_live") == [live_a] and sa_room.of("ddz_live") == [live_a]
         assert s_watch2.of("ddz_live") == [live_c] and s_none.of("ddz_live") == [] and sb.of("ddz_live") == []
         assert w.t.by_id[tid].live_rooms == {"r-a", "r-c"}
@@ -228,8 +228,10 @@ def test_three_waiting_get_a_table_all_three_accept_and_play_it_across_rooms_to_
         await play_out(w, tid)
         assert sa.of("ddz_result")[0]["deltas"] == [2700, -1500, -1500]
         # The winner's pet in its room shows the shards.
-        assert s_watch1.of("ddz_live")[-1] == {**live_a, "on": False, "gains": {a_room.id: 2700}}
-        assert s_watch2.of("ddz_live")[-1] == {**live_c, "on": False, "gains": {a.id: 2700}}
+        assert s_watch1.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": live_a["ids"], "on": False,
+                                                "gains": {a_room.id: 2700}}
+        assert s_watch2.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": live_c["ids"], "on": False,
+                                                "gains": {a.id: 2700}}
         assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS + 2700, SHARDS - 1500, SHARDS - 1500]
         # Another game, as at an invited table.
         for p in (a, b, c):
@@ -419,7 +421,8 @@ def test_a_new_dou_dizhu_connection_takes_the_seat_back_and_a_room_join_does_not
             await w.t.answer(p, tid, True)
         await settle()
         t = w.t.by_id[tid]
-        assert s_left.of("ddz_live") == [{"type": "ddz_live", "table": tid, "ids": [a.id, b_room.id, c.id], "on": True}]
+        assert s_left.of("ddz_live") == [{"type": "ddz_live", "table": tid, "ids": [a.id, b_room.id, c.id], "on": True,
+                                         "base": BASE}]
         assert w.t.holds(w.who["b"]) and not w.t.holds(w.who["stays"])
         await w.bye(b)
         assert t.seats[1].peer is None and sa.of("ddz_seat")[-1]["away"] is True and w.t.holds(w.who["b"])
@@ -427,7 +430,8 @@ def test_a_new_dou_dizhu_connection_takes_the_seat_back_and_a_room_join_does_not
         b_x, s_x = w.member("b", room="r-x")
         await w.t.joined("r-x", b_x)
         assert t.seats[1].peer is None and s_x.of("ddz_state") == []
-        assert s_x.of("ddz_live") == [{"type": "ddz_live", "table": tid, "ids": [a.id, b_x.id, c.id], "on": True}]
+        assert s_x.of("ddz_live") == [{"type": "ddz_live", "table": tid, "ids": [a.id, b_x.id, c.id], "on": True,
+                                      "base": BASE}]
         # A new dou dizhu connection does, with its own nick: it hears it is ready first, then the whole game.
         b2, sb2 = w.lobby("b2", w.who["b"])
         await w.t.hello(b2)
@@ -1121,7 +1125,8 @@ def test_a_member_of_a_room_playing_at_a_table_of_the_queue_is_shown_playing_to_
         # a, playing from no room, joins r: x hears a is playing, by a's member id in r.
         a_room, sa_room = w.member("a", room="r")
         await w.t.joined("r", a_room)
-        assert sx.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": [a_room.id, b.id, c.id], "on": True}
+        assert sx.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid, "ids": [a_room.id, b.id, c.id], "on": True,
+                                          "base": BASE}
         # Back on a new room connection, with a new member id: told again.
         await w.m.depart("r", a_room.id)
         a2, _ = w.member("a", room="r")

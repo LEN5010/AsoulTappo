@@ -66,6 +66,13 @@ def code_of(fn, *a):
     return getattr(e.value, "code", None)
 
 
+def private_keys(msgs):
+    """The keys of a seat's own messages found anywhere in a watcher's [msgs]; a watcher's own place in the list of
+    watchers (``ddz_watchers`` `you`) is its own."""
+    return {"you", "played", "counter"} & keys_in(
+        [{k: v for k, v in m.items() if not (m["type"] == "ddz_watchers" and k == "you")} for m in msgs])
+
+
 def keys_in(x):
     """Every dict key anywhere in [x]."""
     if isinstance(x, dict):
@@ -129,7 +136,7 @@ def test_a_watcher_sees_the_hand_of_its_seat_and_nothing_of_the_others():
         await w.play_out(t)
         msgs = sv.got
         assert leaked(msgs, hands, bottom, 1) == []
-        assert not {"you", "played", "counter"} & keys_in(msgs)
+        assert private_keys(msgs) == set()
         # Everything public reached it, marked as watched; the counter the seats turned on did not.
         kinds = {m["type"] for m in msgs}
         assert {"ddz_bid", "ddz_landlord", "ddz_play", "ddz_result"} <= kinds and "ddz_counter" not in kinds
@@ -185,7 +192,7 @@ def test_a_dealt_game_comes_to_each_watcher_with_its_seat_hand_and_another_game_
         hands, bottom = [list(s.hand) for s in t.seats], list(t.bottom)
         await w.play_out(t)
         assert leaked(since(sv, n), hands, bottom, 1) == []
-        assert not {"you", "played", "counter"} & keys_in(sv.got)
+        assert private_keys(sv.got) == set()
     run(go())
 
 
@@ -370,11 +377,11 @@ def test_a_table_takes_twenty_watchers_and_one_moving_to_another_seat_is_not_a_n
 
 
 # ------------------------------------------------------------------ when watching ends
-@pytest.mark.parametrize("how, reason", [
-    ("closed", "closed"), ("reopen", "reopen"), ("poor", "reopen"), ("gone", "gone"), ("nobid", "gone"),
-    ("playing", "playing"), ("left", None), ("stopped", None),
+@pytest.mark.parametrize("how, reason, over", [
+    ("closed", "closed", None), ("reopen", "reopen", None), ("poor", "reopen", None), ("gone", "gone", "gone"),
+    ("nobid", "gone", "nobid"), ("playing", "playing", None), ("left", None, None), ("stopped", None, None),
 ])
-def test_when_watching_ends(how, reason):
+def test_when_watching_ends(how, reason, over):
     async def go():
         w = WatchWorld()
         ((a, sa), (b, sb), (c, sc)), t = await w.game("a", "b", "c")
@@ -424,7 +431,11 @@ def test_when_watching_ends(how, reason):
         else:
             w.t.watch(v, "", 0)
         ends = sv.of("ddz_watch_end")
-        assert ends == ([{"type": "ddz_watch_end", "table": t.id, "reason": reason}] if reason else [])
+        # A game ended with nothing won says why, as the seats hear it.
+        end = {"type": "ddz_watch_end", "table": t.id, "reason": reason, **({"over": over} if over else {})}
+        assert ends == ([end] if reason else [])
+        if how == "nobid":
+            assert sa.of("ddz_over")[-1]["reason"] == over
         assert v.watching is None and t.watchers == {}
         # Nothing more of the table reaches it.
         n = len(sv.got)
@@ -452,7 +463,8 @@ def test_another_game_at_an_invited_table_that_does_not_start_ends_watching():
             await w.t.again(p, t.id)
         await w.settled()
         assert t.id not in w.t.by_id
-        assert sv.of("ddz_watch_end") == [{"type": "ddz_watch_end", "table": t.id, "reason": "gone"}]
+        assert sv.of("ddz_watch_end") == [{"type": "ddz_watch_end", "table": t.id, "reason": "gone",
+                                           "over": "no_shards"}]
         assert v.watching is None
     run(go())
 
@@ -478,7 +490,9 @@ def test_the_seats_that_show_watchers_and_the_watchers_hear_who_watches_at_most_
         w.watch(v1, t, 0)
         want = {"type": "ddz_watchers", "table": t.id, "faces": [{"nick": "v1", "character": v1.character,
                                                                   "seat": 0}]}
-        assert sa.of("ddz_watchers") == [want] and sb.of("ddz_watchers") == [want] and s1.of("ddz_watchers") == [want]
+        # The watcher's copy says which face is its own; the seats' do not.
+        assert sa.of("ddz_watchers") == [want] and sb.of("ddz_watchers") == [want]
+        assert s1.of("ddz_watchers") == [{**want, "you": 0}]
         # A seat whose client does not show watchers hears nothing, and its hand is not shown.
         assert sc.of("ddz_watchers") == []
         w.mono += WATCH_INTERVAL / 2
@@ -490,7 +504,9 @@ def test_the_seats_that_show_watchers_and_the_watchers_hear_who_watches_at_most_
         faces = [{"nick": "v1", "character": v1.character, "seat": 0},
                  {"nick": "v2", "character": v2.character, "seat": None}]
         assert [m["faces"] for m in sa.of("ddz_watchers")] == [want["faces"], faces]
-        assert s2.of("ddz_watchers")[-1]["faces"] == faces and s1.of("ddz_watchers")[-1]["faces"] == faces
+        assert s2.of("ddz_watchers")[-1] == {"type": "ddz_watchers", "table": t.id, "faces": faces, "you": 1}
+        assert s1.of("ddz_watchers")[-1] == {"type": "ddz_watchers", "table": t.id, "faces": faces, "you": 0}
+        assert "you" not in sa.of("ddz_watchers")[-1]
         # Moving to another seat's hand changes the list; the last to go leaves it empty.
         w.watch(v2, t, 1)
         await w.counts.fire()
@@ -522,6 +538,7 @@ def test_a_watcher_back_within_the_second_hears_who_watches_and_a_seat_taken_aga
         await w.counts.fire()
         # The list did not change meanwhile, but it comes again to the watcher back.
         assert [m["faces"] for m in sv.of("ddz_watchers")] == [[{"nick": "v", "character": v.character, "seat": 0}]] * 2
+        assert [m["you"] for m in sv.of("ddz_watchers")] == [0, 0]
         # a's connection goes and a new one takes the seat again: after its state, who watches.
         await w.m.depart("r", a.id)
         a2, sa2 = w.member("a")
@@ -559,6 +576,20 @@ def test_watchers_nicks_follow_the_blocklist_and_emotes_reach_watchers():
         n = len(sv.got)
         w.t._show(t, {"type": "ddz_counter", "table": t.id, "on": True, "left": 1})
         assert len(sv.got) == n
+    run(go())
+
+
+def test_the_room_hears_the_stake_of_a_game_under_way():
+    async def go():
+        w = WatchWorld()
+        ((a, sa), _, _), t = await w.game("a", "b", "c")
+        assert sa.of("ddz_live")[-1] == {"type": "ddz_live", "table": t.id, "ids": [s.id for s in t.seats],
+                                         "on": True, "base": BASE}
+        v, sv = w.member("v")
+        await w.t.joined("r", v)
+        assert sv.of("ddz_live") == [sa.of("ddz_live")[-1]]
+        await w.play_out(t)
+        assert "base" not in sv.of("ddz_live")[-1] and sv.of("ddz_live")[-1]["on"] is False
     run(go())
 
 
@@ -604,9 +635,11 @@ def test_watching_over_the_socket(api):  # noqa: F811
         v.send_json({"type": "ddz_watch", "table": tid, "seat": 1})
         snap = receive(v, "ddz_watch")
         assert snap["seat"] == 1 and snap["hand"] == hand
+        faces = [{"nick": "v", "character": "嘉然", "seat": 1}]
+        assert receive(v, "ddz_watchers") == {"type": "ddz_watchers", "table": tid, "faces": faces, "you": 0}
         v.send_json({"type": "ddz_watch", "table": tid, "seat": 2})
         assert receive(v, "error")["code"] == "rate_limited"
-        assert receive(b, "ddz_watchers")["faces"] == [{"nick": "v", "character": "嘉然", "seat": 1}]
+        assert receive(b, "ddz_watchers") == {"type": "ddz_watchers", "table": tid, "faces": faces}
         v.send_json({"type": "ddz_watch", "table": ""})
         v.send_json({"type": "ping"})
         while (m := v.receive_json())["type"] != "pong":

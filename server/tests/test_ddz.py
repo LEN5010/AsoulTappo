@@ -677,7 +677,8 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
         assert w.last("ddz_seat") == {"type": "ddz_seat", "table": tid, "seat": 1, "id": b2.id, "away": False,
                                       "auto": False}
         live, state = sock.got
-        assert live == {"type": "ddz_live", "table": tid, "ids": [a.id, b2.id, c.id], "on": True}
+        assert live == {"type": "ddz_live", "table": tid, "ids": [a.id, b2.id, c.id], "on": True,
+                        "base": BASE}
         assert state["type"] == "ddz_state" and state["you"] == 1 and state["hand"] == t.seats[1].hand
         assert state["phase"] == "play" and state["landlord"] == 0 and state["turn"] == 2 and state["bid"] == 3
         assert [s["left"] for s in state["seats"]] == [19, 17, 17] and state["trick"] == [t.trick[0], [], None]
@@ -720,7 +721,7 @@ def test_rejoining_on_turn_updates_observers_and_other_seats():
         await w.t.joined("r", a2)
         await settle()
         assert observer.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid,
-                                               "ids": [a2.id, b.id, c.id], "on": True}
+                                               "ids": [a2.id, b.id, c.id], "on": True, "base": BASE}
         assert w.last("ddz_seat", 1) == {"type": "ddz_seat", "table": tid, "seat": 0, "id": a2.id,
                                          "away": False, "auto": False, "turn": 0, "sec": CFG["playSec"]}
     run(go())
@@ -854,7 +855,8 @@ def test_a_game_over_the_socket(api):
         d.send_json({"type": "ddz_answer", "table": tid, "accept": True})
         for ws in (a, b, d):
             assert ws.receive_json()["type"] == "ddz_answer"
-            assert ws.receive_json() == {"type": "ddz_live", "table": tid, "ids": invite["ids"], "on": True}
+            assert ws.receive_json() == {"type": "ddz_live", "table": tid, "ids": invite["ids"], "on": True,
+                                         "base": BASE}
         deal = a.receive_json()
         b.receive_json(), d.receive_json()
         assert deal["type"] == "ddz_deal" and deal["turn"] == 0

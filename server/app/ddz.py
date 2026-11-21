@@ -80,8 +80,9 @@ at the table and whose save has a game left, and when a member with a game left 
 - ``ddz_counter`` {table, on, left, error?} to that seat alone: its counter now, also sent unasked when it is turned
   on; `error` no_shards when the save could not pay, error when the purchase failed.
 
-To the room: ``ddz_live`` {table, ids, on, gains?}: the three members started (on) or ended a game; `gains` are the
-shards the winners won, by member id. The ids are the room's: a seat whose save is in the room on another connection
+To the room: ``ddz_live`` {table, ids, on, base?, gains?}: the three members started (on) or ended a game; `base`
+is the stake, with on only (clients before watching read table, ids, on and gains alone); `gains` are the shards the
+winners won, by member id. The ids are the room's: a seat whose save is in the room on another connection
 (a dou dizhu one) goes by that connection's member id. A table the queue made tells every room its seats' saves are
 in. A room told of the start that none of the saves is in by the end hears only {table, on: false}.
 
@@ -156,12 +157,14 @@ of its save: it queues, opens, sits and is invited as anyone else, and watches a
   (the seats of ``ddz_watch`` and ``ddz_deal``, ``ddz_seat``'s `id`) are those of the watcher's room (Tables._ids_in).
   The watcher keeps the seat's hand itself from then on: a ``ddz_play`` of the seat takes its cards out, the
   ``ddz_landlord`` of the seat adds `bottom`.
-- ``ddz_watch_end`` {table, reason} to the watcher: it watches no more, as the table closed (closed), opened again
-  for players after the game (reopen), ended with nothing won or another game at it did not start (gone), or the
-  watcher's save is dealt in at a table (playing). Stopping, leaving the room and losing the connection end it
+- ``ddz_watch_end`` {table, reason, over?} to the watcher: it watches no more, as the table closed (closed), opened
+  again for players after the game (reopen), ended with nothing won or another game at it did not start (gone, with
+  `over` the reason of the ``ddz_over`` the seats hear: nobid, gone, no_shards, ddz_cap, ddz_locked, ddz_account,
+  error, ...), or the watcher's save is dealt in at a table (playing). Stopping, leaving the room and losing the connection end it
   without a word.
-- ``ddz_watchers`` {table, faces: [{nick, character, seat}]}: who watches, oldest first, `seat` the seat whose hand
-  each sees (null for none); to the watchers and to the seats whose client says `ddzWatch` (one that quit aside),
+- ``ddz_watchers`` {table, faces: [{nick, character, seat}], you?}: who watches, oldest first, `seat` the seat whose
+  hand each sees (null for none), and in a watcher's copy only `you`, its own place in `faces`; to the watchers and to
+  the seats whose client says `ddzWatch` (one that quit aside),
   whenever it changes, at most every COUNTS_SEC, an empty list once the last goes; to a seat taken again (after its
   ``ddz_state``) at once while anyone watches.
 """
@@ -1647,7 +1650,7 @@ class Tables:
                 log.error("ddz: game %s keeps its deposits until the next start", table.row)
         finally:
             table.phase = DONE
-            self._end_watch(table, "gone")
+            self._end_watch(table, "gone", over=reason)
             self._drop(table)
             table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
             held, table.held = table.held, []
@@ -1806,7 +1809,8 @@ class Tables:
                 await self._live(live, True)
             elif room_id in self._rooms(live):
                 live.live_rooms.add(room_id)
-                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": self._ids_in(room, live), "on": True})
+                peer.enqueue({"type": "ddz_live", "table": live.id, "ids": self._ids_in(room, live), "on": True,
+                              "base": live.base})
         # The counts the others were sent last: a change since then is on its way to everyone (_counts_changed), the
         # newcomer included, which a send of the counts as they are now could leave behind.
         if peer.ddz_match and self._counts_sent:
@@ -2084,7 +2088,8 @@ class Tables:
                 room = self.manager.rooms.get(room_id)
                 if room is not None:
                     await self.manager.broadcast(room_id, {"type": "ddz_live", "table": table.id,
-                                                           "ids": self._ids_in(room, table), "on": True})
+                                                           "ids": self._ids_in(room, table), "on": True,
+                                                           "base": table.base})
             return
         saves = {s.token for s in table.seats if s.token}
         rooms |= table.live_rooms
@@ -2412,13 +2417,17 @@ class Tables:
             table.watch_owed.discard(peer.id)
             self._watchers_changed(table)
 
-    def _end_watch(self, table: Table, reason: str | None) -> None:
-        """Every watcher of [table] stops, told why (``ddz_watch_end``) unless [reason] is None."""
+    def _end_watch(self, table: Table, reason: str | None, over: str | None = None) -> None:
+        """Every watcher of [table] stops, told why (``ddz_watch_end``) unless [reason] is None; [over] is the reason
+        of the ``ddz_over`` the seats hear, when they hear one."""
         if not table.watchers:
             return
+        end: dict[str, Any] = {"type": "ddz_watch_end", "table": table.id, "reason": reason}
+        if over:
+            end["over"] = over
         for peer, _ in list(table.watchers.values()):
             if reason:
-                peer.enqueue({"type": "ddz_watch_end", "table": table.id, "reason": reason})
+                peer.enqueue(end)
             if peer.watching == table.id:
                 peer.watching = None
         table.watchers.clear()
@@ -2527,25 +2536,26 @@ class Tables:
     def _send_watchers(self, table: Table) -> None:
         """Tells the seats whose client shows watchers, and the watchers, who watches (``ddz_watchers``), when it
         differs from what they were told last (an empty list once the last goes); a watcher not told yet hears it all
-        the same."""
+        the same. A watcher's copy has `you`, its own place in the list."""
         if table.phase == DONE or self.by_id.get(table.id) is not table:
             return
         faces = self._faces(table)
         owed, table.watch_owed = table.watch_owed, set()
         msg = self._watchers_msg(table, faces)
+        # The faces follow table.watchers' order.
+        watchers = [(i, peer) for i, (peer, _) in enumerate(table.watchers.values())]
         if faces == table.watch_sent:
-            for i in owed:
-                w = table.watchers.get(i)
-                if w is not None:
-                    w[0].enqueue(msg)
+            for i, peer in watchers:
+                if peer.id in owed:
+                    peer.enqueue({**msg, "you": i})
             return
         table.watch_sent = faces
         table.watch_at = self.clock()
         for s in table.seats:
             if s.peer is not None and not s.quit and s.peer.ddz_watch:
                 s.peer.enqueue(msg)
-        for peer, _ in list(table.watchers.values()):
-            peer.enqueue(msg)
+        for i, peer in watchers:
+            peer.enqueue({**msg, "you": i})
 
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
@@ -2578,7 +2588,7 @@ class Tables:
             return
         table.phase = DONE
         # Watchers are there only when another game at the table fails to start.
-        self._end_watch(table, "gone")
+        self._end_watch(table, "gone", over=reason)
         self._drop(table)
         self._refuse(table, refused or [])
         over = {"type": "ddz_over", "table": table.id, "reason": reason}
