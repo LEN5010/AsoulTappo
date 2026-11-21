@@ -1,4 +1,4 @@
-// Shared panel motion. Everything animates transform and opacity only, so a busy main
+// Shared panel motion. Everything animates transform and opacity only (but for grow and shrink), so a busy main
 // thread (a heavy page mounting, say) cannot stall an animation that is already running.
 import { reducedMotion } from "../stores/theme";
 
@@ -116,4 +116,39 @@ export function squash(el: Element | null | undefined): void {
     [{ transform: "scale(0.92, 0.92)" }, { transform: "scale(1.04, 1.04)", offset: 0.55 }, { transform: "scale(1, 1)" }],
     { duration: 260, easing: "ease-out" },
   );
+}
+
+const GROW_MS = 300;
+const SHRINK_MS = 240;
+/**
+ * A row that has just come into a short list opens from no height to its own and fades in; `done` is called when it
+ * is open (a Transition's enter hook). Height is the one layout property animated in this file, kept to lists of a
+ * few short rows, so the rows under it slide instead of jumping.
+ */
+export function grow(el: Element, done: () => void): void {
+  if (reducedMotion.value || !(el instanceof HTMLElement)) return done();
+  const height = `${el.offsetHeight}px`;
+  el.style.overflow = "hidden";
+  const a = el.animate([{ height: "0px", opacity: 0 }, { height, opacity: 1 }], { duration: GROW_MS, easing: EASE_OUT });
+  void a.finished.catch(() => undefined).then(() => {
+    el.style.overflow = "";
+    done();
+  });
+}
+
+/** The way out of [grow]: the row closes to no height as it fades (a Transition's leave hook). */
+export function shrink(el: Element, done: () => void): void {
+  if (reducedMotion.value || !(el instanceof HTMLElement)) return done();
+  const height = `${el.offsetHeight}px`;
+  el.style.overflow = "hidden";
+  const a = el.animate([{ height, opacity: 1 }, { height: "0px", opacity: 0 }],
+    { duration: SHRINK_MS, easing: EASE_IN_OUT, fill: "forwards" });
+  void a.finished.catch(() => undefined).then(done);
+}
+
+/** A number that has just changed swells for a moment and settles. */
+export function bump(el: Element | null | undefined): void {
+  if (!el || reducedMotion.value) return;
+  el.animate([{ transform: "scale(1)" }, { transform: "scale(1.35)", offset: 0.3 }, { transform: "scale(1)" }],
+    { duration: 360, easing: "ease-out" });
 }

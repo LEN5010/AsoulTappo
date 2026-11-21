@@ -14,6 +14,8 @@
   color: var(--c-700);
 }
 .stake b { font: 800 var(--fs-label)/1 var(--font-latin); font-variant-numeric: tabular-nums; }
-.mult { font: 800 var(--fs-body)/1 var(--font-latin); color: var(--ink); font-variant-numeric: tabular-nums; }
+.mult { display: inline-block; font: 800 var(--fs-body)/1 var(--font-latin); color: var(--ink); font-variant-numeric: tabular-nums; }
 .watching { display: inline-flex; align-items: center; gap: 3px; font: 800 var(--fs-label)/1 var(--font-latin); color: var(--ink-3); }
 .row > .ui-btn { flex: none; min-width: 72px; }
+.fade-enter-active, .fade-leave-active { transition: opacity var(--dur-base) var(--ease-out); }
+.fade-enter-from, .fade-leave-to { opacity: 0; }

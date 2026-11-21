@@ -17,6 +17,7 @@ import {
 } from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
+import { grow, shrink } from "../../ui/motion";
 import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
 import DdzSeats from "./DdzSeats.vue";
@@ -121,7 +122,9 @@ const waited = useWaited(() => queued.value?.since);
     </template>
     <DdzInvite v-if="sheet" :mode="sheet" :need-account="needAccount" @close="sheet = null" />
   </section>
-  <DdzTables v-if="roomTables.length || liveTables.length" :open="roomTables" :live="liveTables" />
+  <Transition :css="false" @enter="grow" @leave="shrink">
+    <DdzTables v-if="roomTables.length || liveTables.length" :open="roomTables" :live="liveTables" />
+  </Transition>
 </template>
 
 <style scoped>

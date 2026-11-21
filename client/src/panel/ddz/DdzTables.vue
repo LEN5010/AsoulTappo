@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The room's tables under the dou dizhu banner, on paper: the open tables this save may sit down at first, oldest
 // first, then the games under way in the order they started. Up to SHOWN rows; the rest fold into a last row that
-// unfolds them.
+// unfolds them. Rows open and close in height as they come and go, so the page under the list slides.
 import { computed, ref, watch } from "vue";
 import type { DdzOpenTable } from "../../net/protocol";
 import Icon from "../../ui/Icon.vue";
+import { grow, shrink } from "../../ui/motion";
 import DdzLiveRow from "./DdzLiveRow.vue";
 import DdzOpenRow from "./DdzOpenRow.vue";
 
@@ -15,25 +16,22 @@ const rows = computed(() => [
   ...props.open.map((t) => ({ key: `o${t.table}`, open: t, live: null })),
   ...props.live.map(([table, ids]) => ({ key: `l${table}`, open: null, live: { table, ids } })),
 ]);
-const folded = computed(() => (unfolded.value ? 0 : Math.max(0, rows.value.length - SHOWN)));
-const shown = computed(() => (folded.value ? rows.value.slice(0, SHOWN) : rows.value));
+const extra = computed(() => Math.max(0, rows.value.length - SHOWN));
+const shown = computed(() => (unfolded.value ? rows.value : rows.value.slice(0, SHOWN)));
 // Folded again once there is nothing left to fold.
-watch(() => rows.value.length <= SHOWN, (few) => { if (few) unfolded.value = false; });
+watch(() => extra.value === 0, (few) => { if (few) unfolded.value = false; });
 </script>
 
 <template>
-  <div class="ui-group ui-frame tables">
-    <template v-for="r in shown" :key="r.key">
+  <TransitionGroup tag="div" class="ui-group ui-frame tables" data-rise :css="false" @enter="grow" @leave="shrink">
+    <div v-for="r in shown" :key="r.key">
       <DdzOpenRow v-if="r.open" :table="r.open" />
       <DdzLiveRow v-else-if="r.live" :table="r.live.table" :ids="r.live.ids" />
-    </template>
-    <button v-if="folded" type="button" class="more" @click="unfolded = true">
-      还有 {{ folded }} 局<Icon name="down" :size="13" />
+    </div>
+    <button v-if="extra" key="more" type="button" class="more" :aria-expanded="unfolded" @click="unfolded = !unfolded">
+      <span>{{ unfolded ? "收起" : `还有 ${extra} 局` }}</span><Icon name="down" :size="13" />
     </button>
-    <button v-else-if="unfolded" type="button" class="more" @click="unfolded = false">
-      收起<Icon name="down" :size="13" class="up" />
-    </button>
-  </div>
+  </TransitionGroup>
 </template>
 
 <style scoped>
@@ -55,5 +53,6 @@ watch(() => rows.value.length <= SHOWN, (few) => { if (few) unfolded.value = fal
 }
 .more:hover { background: var(--c-50); }
 .more:focus-visible { outline: 2px solid var(--c-500); outline-offset: -2px; }
-.up { rotate: 180deg; }
+.more .icon { transition: rotate var(--dur-base) var(--ease-out); }
+.more[aria-expanded="true"] .icon { rotate: 180deg; }
 </style>

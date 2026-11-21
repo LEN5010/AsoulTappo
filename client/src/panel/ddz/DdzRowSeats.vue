@@ -1,13 +1,15 @@
 <script setup lang="ts">
 // The three seats of a table in a row of the room's table list, on paper: a small round face with the name under it.
 // An empty seat is a dashed ring (a key when [pickable]); a seat offered to someone from the queue turns its ring; a seat
-// taken by someone not in the room is a plain disc with no name. In a game under way the landlord's face wears a crown
-// and each face carries the cards its seat has left.
+// taken by someone not in the room is a plain disc with no name. In a game under way the landlord's face wears a crown,
+// which pops on when the bidding ends, and each face carries the cards its seat has left, which swell as they drop.
+import { watch } from "vue";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
+import { bump } from "../../ui/motion";
 
 export type RowSeat = { character: string; nick: string } | null | "pending" | "other";
-defineProps<{
+const props = defineProps<{
   seats: RowSeat[];
   /** The landlord's seat, once known. */
   lord?: number | null;
@@ -18,6 +20,10 @@ defineProps<{
 }>();
 const emit = defineEmits<{ pick: [seat: number, event: MouseEvent]; press: [] }>();
 const face = (s: RowSeat) => (s && s !== "pending" && s !== "other" ? s : null);
+const counts: (Element | null)[] = [];
+watch(() => props.left?.slice(), (now, was) => {
+  now?.forEach((n, i) => { if (was?.[i] !== undefined && n !== was[i]) bump(counts[i]); });
+}, { flush: "post" });
 </script>
 
 <template>
@@ -29,8 +35,8 @@ const face = (s: RowSeat) => (s && s !== "pending" && s !== "other" ? s : null);
       ></button>
       <span v-else class="face">
         <CharacterAvatar v-if="face(s)" :character="face(s)!.character" :size="30" />
-        <i v-if="lord === i" class="crown" aria-label="地主"><Icon name="crown" :size="9" /></i>
-        <b v-if="left?.[i] !== undefined" class="left">{{ left[i] }}</b>
+        <Transition name="crown"><i v-if="lord === i" class="crown" aria-label="地主"><Icon name="crown" :size="9" /></i></Transition>
+        <b v-if="left?.[i] !== undefined" :ref="(el) => (counts[i] = el as Element | null)" class="left">{{ left[i] }}</b>
       </span>
       <span class="name">{{ face(s)?.nick ?? "" }}</span>
     </div>
@@ -63,9 +69,6 @@ button.face:focus-visible { outline: 2px solid var(--c-500); outline-offset: 2px
 @keyframes wait {
   to { rotate: 1turn; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .pending .face { animation: none; }
-}
 .crown {
   position: absolute;
   top: -5px;
@@ -79,6 +82,9 @@ button.face:focus-visible { outline: 2px solid var(--c-500); outline-offset: 2px
   box-shadow: 0 0 0 1.5px var(--surface);
   color: #fff;
 }
+/* The crown lands when the landlord is known: from nothing, a little past full size, then at rest. */
+.crown-enter-active { transition: scale var(--dur-slow) var(--ease-pop), rotate var(--dur-slow) var(--ease-pop), opacity var(--dur-fast); }
+.crown-enter-from { scale: 0; rotate: -40deg; opacity: 0; }
 /* The cards left: a small white card leaning on the face's foot. */
 .left {
   position: absolute;
