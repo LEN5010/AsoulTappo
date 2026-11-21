@@ -371,8 +371,8 @@ def test_a_table_takes_twenty_watchers_and_one_moving_to_another_seat_is_not_a_n
 
 # ------------------------------------------------------------------ when watching ends
 @pytest.mark.parametrize("how, reason", [
-    ("closed", "closed"), ("reopen", "reopen"), ("gone", "gone"), ("nobid", "gone"), ("playing", "playing"),
-    ("left", None), ("stopped", None),
+    ("closed", "closed"), ("reopen", "reopen"), ("poor", "reopen"), ("gone", "gone"), ("nobid", "gone"),
+    ("playing", "playing"), ("left", None), ("stopped", None),
 ])
 def test_when_watching_ends(how, reason):
     async def go():
@@ -389,6 +389,14 @@ def test_when_watching_ends(how, reason):
                 await w.t.again(b, t.id)
                 await w.t.leave(c, t.id)
                 assert t.phase == "open"
+        elif how == "poor":
+            # Another game asked for by all three, but one of them can no longer pay: the table waits again.
+            await w.play_out(t)
+            w.g.store.update_player(w.who["c"], shards=0)
+            for p in (a, b, c):
+                await w.t.again(p, t.id)
+            await w.settled()
+            assert t.phase == "open" and t.seats[2].empty
         elif how == "gone":
             for p in (a, b, c):
                 await w.m.depart("r", p.id)
@@ -424,6 +432,28 @@ def test_when_watching_ends(how, reason):
             w.t.auto(t.seats[t.turn].peer, t.id, True)
             await w.settled()
         assert [m for m in since(sv, n) if m.get("table") == t.id] == []
+    run(go())
+
+
+def test_another_game_at_an_invited_table_that_does_not_start_ends_watching():
+    async def go():
+        w = WatchWorld()
+        peers = [w.member(n)[0] for n in "abc"]
+        await w.t.invite("r", peers[0], [peers[1].id, peers[2].id], BASE)
+        t = w.t.by_save[w.who["a"]]
+        for p in peers[1:]:
+            await w.t.answer(p, t.id, True)
+        await w.settled()
+        v, sv = w.member("v")
+        w.watch(v, t, 0)
+        await w.play_out(t)
+        w.g.store.update_player(w.who["c"], shards=0)
+        for p in peers:
+            await w.t.again(p, t.id)
+        await w.settled()
+        assert t.id not in w.t.by_id
+        assert sv.of("ddz_watch_end") == [{"type": "ddz_watch_end", "table": t.id, "reason": "gone"}]
+        assert v.watching is None
     run(go())
 
 
@@ -525,8 +555,10 @@ def test_watchers_nicks_follow_the_blocklist_and_emotes_reach_watchers():
         assert sa.of("ddz_watchers")[-1]["faces"][0]["nick"] == "*"
         w.t.emote(a, t.id, "wave")
         assert sv.of("ddz_emote") == [{"type": "ddz_emote", "table": t.id, "seat": 0, "emote": "wave", "watch": True}]
-        with pytest.raises(ValueError):
-            w.t._show(t, {"type": "ddz_counter", "table": t.id})
+        # Only the messages every seat may hear are copied to watchers.
+        n = len(sv.got)
+        w.t._show(t, {"type": "ddz_counter", "table": t.id, "on": True, "left": 1})
+        assert len(sv.got) == n
     run(go())
 
 

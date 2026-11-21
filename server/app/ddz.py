@@ -2472,7 +2472,8 @@ class Tables:
         if not table.watchers:
             return
         if data["type"] not in SHOWN:
-            raise ValueError(f"not shown to watchers: {data['type']}")
+            log.error("ddz: %s is not shown to watchers", data["type"])
+            return
         for peer, _ in list(table.watchers.values()):
             msg = {**data, "watch": True}
             if data["type"] == "ddz_seat":
