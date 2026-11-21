@@ -41,7 +41,6 @@ import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { STRIP_HEIGHT, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
 import DeskGuide from "./pet/DeskGuide.vue";
-import GuideMark from "./ui/GuideMark.vue";
 import { beginGuide, deskCardShown, guideRun } from "./stores/guide";
 import { guideLeft } from "./guide";
 const MainPanel = defineAsyncComponent(() => import("./panel/MainPanel.vue"));
@@ -603,9 +602,8 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
       <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote || !!deskCardShown" />
-      <!-- macOS: the first run of the guide keeps it up, with a loop on the count that stands still meanwhile. -->
+      <!-- macOS: the first run of the guide keeps it up. -->
       <AccessBubble v-if="accessHint" :closable="!guideRun.started" @close="accessHint = false" />
-      <GuideMark v-if="accessHint" target="count" :scope="deskEl" :tick="guideTick" />
       <DeskGuide v-if="guideOn" :held="guideHeld" :cooldown="tapCooldown" v-bind="guidePlace" :scope="deskEl" :tick="guideTick" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" class="own-plate">
