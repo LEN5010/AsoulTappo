@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // The browser preview's dou dizhu window: the table (panel/ddz/DdzTable.vue) in a frame of the window's size over the
-// desk page, which its wall moves. The app opens a window of its own instead (stores/ui.ts, openDdzWindow).
+// desk page, which its wall moves. The app opens a window of its own instead (stores/ui.ts, openDdzWindow). It shows the
+// save's own game, else a game being watched.
 import { onBeforeUnmount, reactive } from "vue";
 import DdzTable from "../panel/ddz/DdzTable.vue";
-import { noteDdzWindowClosed } from "../stores/ddz";
+import { ddzScreen, ddzWatch, noteDdzWindowClosed } from "../stores/ddz";
 import { ddzFrame } from "../stores/ui";
 
 /** The window's size in the app (src-tauri/src/lib.rs, DDZ_SIZE). */
@@ -40,7 +41,9 @@ onBeforeUnmount(onUp);
     class="ddz-frame" data-hit data-no-drag
     :style="{ '--w': `${W}px`, '--h': `${H}px`, translate: `calc(-50% + ${at.x}px) calc(-50% + ${at.y}px)` }"
   >
-    <DdzTable @close="close" @drag="drag" />
+    <DdzTable
+      v-if="ddzScreen" :key="ddzScreen === 'watch' ? `watch:${ddzWatch?.id}` : 'own'" @close="close" @drag="drag"
+    />
   </div>
 </template>
 

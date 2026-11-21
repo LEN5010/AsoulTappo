@@ -9,6 +9,10 @@
 // the wall's upper corners and on the felt's two ends.
 // Drawn on a stage of at least 960×600 that is scaled as one piece to the window, in a board of at most 1040×680 in
 // its middle. The wall moves the window; the close key closes it and leaves the seat playing (离桌 leaves the table).
+// The same table shows a game of the room being watched (ddzScreen "watch"): the seat watched from takes the own
+// place at the foot, its hand face up when the server shows it and face down when not, nothing to press; a click on
+// either other seat (or the arrow keys) watches from there. The top bar says 观战 and who watches; closing the window
+// stops watching. Who watches the own table shows in the top bar, and those who see the own hand beside the own name.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { hints, playable } from "../../ddz/rules";
 import { arrange, cardAt, cardsOut, fan, pickJokers, pickRank, rankOfKey, stampOf } from "../../ddz/table";
@@ -18,7 +22,10 @@ import { pet } from "../../stores/pet";
 import { localPet, members, shownNick } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import { reducedMotion } from "../../stores/theme";
-import { autoDdz, againDdz, bidDdz, counterDdz, ddz, ddzConfig, ddzEmotes, ddzLast, leaveDdz, playDdz, type DdzEvent } from "../../stores/ddz";
+import {
+  autoDdz, againDdz, bidDdz, counterDdz, ddz, ddzCanSit, ddzConfig, ddzEmotes, ddzLast, ddzReason, ddzScreen, ddzTables, ddzWatch,
+  ddzWatchers, leaveDdz, playDdz, sitDdz, unwatchDdz, viewDdz, type DdzEvent, type DdzState,
+} from "../../stores/ddz";
 import { economy } from "../../stores/economy";
 import { status } from "../../stores/player";
 import NamePlate from "../../pet/NamePlate.vue";
@@ -31,12 +38,19 @@ import { countTo } from "../park/countTo";
 import DdzCard from "./DdzCard.vue";
 import DdzEmotes from "./DdzEmotes.vue";
 import DdzReceipt from "./DdzReceipt.vue";
+import DdzWatchers from "./DdzWatchers.vue";
 import { SUITS } from "./suits";
 
 const emit = defineEmits<{ close: []; drag: [e: PointerEvent] }>();
 
-const t = computed(() => ddz.value!);
+/** A game of the room being watched, not the save's own. */
+const watching = computed(() => ddzScreen.value === "watch");
+const w = computed(() => (watching.value ? ddzWatch.value : null));
+const t = computed<DdzState>(() => w.value ?? ddz.value!);
+/** The seat at the foot: the own one, or the one watched from. */
 const you = computed(() => t.value.you);
+/** Seat [seat] is this client's own. */
+const self = (seat: number) => !watching.value && seat === you.value;
 /** The seat that plays after the own one sits on the right, the one before it on the left. */
 const rightSeat = computed(() => (you.value + 1) % 3);
 const leftSeat = computed(() => (you.value + 2) % 3);
@@ -53,14 +67,16 @@ const memberOf = (seat: number) => {
 };
 /** The emote over a seat's pet: sent to the table, or by a 1.2.5 tablemate to the room. */
 const emoteOf = (seat: number) => ddzEmotes.value[seat] ?? memberOf(seat)?.emote ?? null;
-const nickOf = (seat: number) => (seat === you.value ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
+const nickOf = (seat: number) => (self(seat) ? settings.nick.trim() || mine.value.nick || "我" : shownNick(t.value.seats[seat]!));
 /** The name plate a seat shows in place of its name tag: the own one when worn, a partner's unless plates are off. */
 const PLATE = { w: 196, h: 28 };
 /** The other seats' pets, and the own one beside the hand. */
 const PET = 0.85;
 const OWN_PET = 0.8;
+/** The pet at the foot: the own one, or the seat watched from. */
+const footCharacter = computed(() => (watching.value ? t.value.seats[you.value]!.character : settings.character));
 const plateOf = (seat: number): string | undefined => {
-  if (seat === you.value) return getPlate(settings.plate)?.id;
+  if (self(seat)) return getPlate(settings.plate)?.id;
   return settings.showPlates ? getPlate(t.value.seats[seat]!.plate ?? memberOf(seat)?.plate)?.id : undefined;
 };
 
@@ -100,7 +116,11 @@ const PLAYED_CARD = 53;
 const LEFT_CARD = 38;
 const BACK_CARD = 30;
 const handRoom = computed(() => board.value.w - HAND_LEFT - HAND_RIGHT);
-const handFan = computed(() => fan(t.value.hand.length, handRoom.value, CARD, HAND_STEP));
+/** Watched, the hand of the seat watched from is not shown: as many cards face down as it holds. */
+const covered = computed(() => !!w.value && !w.value.shown);
+/** The cards at the foot; face down, -1, -2, … stand for them. */
+const held = computed(() => (covered.value ? Array.from({ length: t.value.seats[you.value]?.left ?? 0 }, (_, i) => -1 - i) : t.value.hand));
+const handFan = computed(() => fan(held.value.length, handRoom.value, CARD, HAND_STEP));
 const handX = computed(() => (handRoom.value - handFan.value.width) / 2);
 const selected = ref(new Set<number>());
 /** The landlord's three new cards stand up for a moment before they settle into the hand. */
@@ -108,6 +128,19 @@ const fresh = ref(new Set<number>());
 let freshTimer: ReturnType<typeof setTimeout> | undefined;
 /** Changes with every deal, so the cards come in one by one again. */
 const dealt = ref(0);
+/**
+ * Watched, the cards at the foot turned face down (another seat picked) or face up (its hand came): they change in
+ * place, and turn over left to right when they open.
+ */
+const swapping = ref(false);
+const opening = ref(false);
+let swapTimer: ReturnType<typeof setTimeout> | undefined;
+watch(covered, (now) => {
+  clearTimeout(swapTimer);
+  swapping.value = true;
+  opening.value = !now && !reducedMotion.value;
+  swapTimer = setTimeout(() => { swapping.value = false; opening.value = false; }, FLIP_MS + held.value.length * FLIP_STEP_MS + 60);
+});
 
 // ---- the deal: the cards fly in face down from the bottom cards one by one, then turn over left to right in a
 // wave. The keys to bid wait for it (the server starts the first bid's time after `dealSec`). FLIP_MS and
@@ -126,7 +159,7 @@ function startDeal() {
   dealTimers.forEach(clearTimeout);
   dealTimers = [];
   const total = t.value.dealUntil - Date.now();
-  const n = t.value.hand.length;
+  const n = held.value.length;
   if (total <= 0 || !n) { dealtN.value = null; shut.value = false; return; }
   const turnOver = FLIP_MS + (n - 1) * FLIP_STEP_MS;
   const span = Math.max(0, total - turnOver - DEAL_FLIGHT_MS);
@@ -160,7 +193,7 @@ const handEl = ref<HTMLElement>();
 let drag: { on: boolean; at: number; id: number } | null = null;
 function cardUnder(e: PointerEvent): number {
   const rect = handEl.value!.getBoundingClientRect();
-  return cardAt((e.clientX - rect.left) / unit.value - handX.value, t.value.hand.length, handFan.value.step, CARD);
+  return cardAt((e.clientX - rect.left) / unit.value - handX.value, held.value.length, handFan.value.step, CARD);
 }
 function setCards(from: number, to: number, on: boolean) {
   const next = new Set(selected.value);
@@ -173,7 +206,7 @@ function setCards(from: number, to: number, on: boolean) {
 }
 // A press picks or drops the card under it; dragging on gives every card it crosses the same.
 function handDown(e: PointerEvent) {
-  if (e.button !== 0 || !playing.value || dealing.value) return;
+  if (e.button !== 0 || !playing.value || dealing.value || watching.value) return;
   const at = cardUnder(e);
   if (at < 0) { selected.value = new Set(); return; }
   drag = { on: !selected.value.has(t.value.hand[at]!), at, id: e.pointerId };
@@ -193,7 +226,9 @@ function handUp(e: PointerEvent) {
 const clearPicked = () => { selected.value = new Set(); };
 
 // ---- whose move, and what the keys do
-const myTurn = computed(() => playing.value && t.value.turn === you.value && !mine.value.auto);
+const myTurn = computed(() => !watching.value && playing.value && t.value.turn === you.value && !mine.value.auto);
+/** The seat at the foot is to move: its time bar runs under the hand (the own one not while played for). */
+const footTurn = computed(() => (watching.value ? playing.value && t.value.turn === you.value : myTurn.value));
 const last = computed(() => ddzLast(t.value));
 const offers = computed(() => (myTurn.value && t.value.phase === "play" ? hints(t.value.hand, last.value?.cards ?? null) : []));
 /** Nothing in the hand beats what is on the table: one key passes. */
@@ -237,7 +272,12 @@ function onKey(e: KeyboardEvent) {
   if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]")) return;
   const key = e.key;
   let used = true;
-  if (t.value.phase === "result") {
+  if (watching.value) {
+    if (key === "ArrowLeft") viewDdz(leftSeat.value);
+    else if (key === "ArrowRight") viewDdz(rightSeat.value);
+    else if (key === "Escape" && (t.value.phase === "result" || t.value.phase === "over")) unwatchDdz();
+    else used = false;
+  } else if (t.value.phase === "result") {
     if (key === " " && !t.value.closed) againDdz();
     else if (key === "Escape") leaveDdz(t.value.id);
     else used = false;
@@ -269,7 +309,7 @@ function drain() {
 const clockSeat = computed(() => {
   const x = t.value;
   if (!playing.value || dealing.value || x.turn === null) return null;
-  return x.turn === you.value && !myTurn.value ? null : x.turn;
+  return x.turn === you.value && !footTurn.value ? null : x.turn;
 });
 /** Turns coral from here down. */
 const HURRY_SEC = 5;
@@ -292,7 +332,7 @@ watch([clockSeat, () => t.value.until], tick, { immediate: true });
  * The card counter: what the other two seats still hold by rank. Hidden when the server does not list the plays, and
  * until the own hand is turned over (it would give the hand away).
  */
-const out = computed(() => (playing.value && !dealing.value && t.value.played ? cardsOut(t.value.hand, t.value.played) : null));
+const out = computed(() => (!watching.value && playing.value && !dealing.value && t.value.played ? cardsOut(t.value.hand, t.value.played) : null));
 /**
  * Where the counter is sold it counts only once it is on for the game (while the seats bid, when the save has a game
  * of it left, used once the landlord is known); else it lies grey, a key that turns it on.
@@ -398,6 +438,18 @@ const zones = computed(() => [
   return { seat, side, ...z, w, gap: fan(z.cards.length, room, w, z.small ? 15 : 22).step - w, bid: t.value.phase === "bid" && !!t.value.seats[seat]!.bid };
 }));
 
+/** Who watches this table, and of them who sees the own hand. */
+const watchers = computed(() => ddzWatchers.value[t.value.id] ?? []);
+/** The heading of the watchers of seat [seat] on their list: 我 for the own seat. */
+const groupNick = (seat: number) => (self(seat) ? "我" : nickOf(seat));
+const ownWatchers = computed(() => (watching.value ? [] : watchers.value.filter((f) => f.seat === you.value)));
+/** Watched, at an open table that waits for seats again after the game: a seat this save can take. */
+const canSit = computed(() => {
+  if (w.value?.ended !== "reopen") return false;
+  const open = ddzTables.value.find((x) => x.table === t.value.id);
+  return !!open && open.seats.some((s) => !s) && ddzCanSit(open.base);
+});
+
 const boom = ref<{ seq: number; seat: number } | null>(null);
 /** A long play or a bomb is stamped with its name by its cards for a moment; one stamp on the table at a time. */
 const STAMP_MS = 1200;
@@ -492,6 +544,7 @@ onBeforeUnmount(() => {
   clearTimeout(freshTimer);
   clearTimeout(countTimer);
   clearTimeout(stampTimer);
+  clearTimeout(swapTimer);
   dealTimers.forEach(clearTimeout);
   stopCount?.();
 });
@@ -507,10 +560,14 @@ onBeforeUnmount(() => {
         <svg class="wall-suit left" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[2]" /></svg>
         <svg class="wall-suit right" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[3]" /></svg>
         <div class="top">
-          <button type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
+          <span class="corner">
+            <em v-if="watching" class="ui-tag watch-tag">观战</em>
+            <button v-else type="button" class="ui-btn small ghost" @click="askLeave"><Icon name="logout" :size="16" />离桌</button>
+            <DdzWatchers v-if="watchers.length" :faces="watchers" :seat-nick="groupNick" />
+          </span>
           <span class="corner">
             <button
-              v-if="playing" type="button" class="ui-btn small ghost" :aria-pressed="mine.auto" @click="autoDdz(!mine.auto)"
+              v-if="playing && !watching" type="button" class="ui-btn small ghost" :aria-pressed="mine.auto" @click="autoDdz(!mine.auto)"
             >
               托管
             </button>
@@ -540,6 +597,7 @@ onBeforeUnmount(() => {
               <svg viewBox="0 0 24 24"><path :d="SUITS[0]" /></svg>
               <svg viewBox="0 0 24 24"><path :d="SUITS[1]" /></svg>
             </span>
+            <span v-if="t.phase === 'over'" class="ended" role="status">{{ ddzReason(t) }}</span>
             <div class="mult">
               <small>底分<Icon name="shard" :size="15" /><b>{{ t.base.toLocaleString("en-US") }}</b></small>
               <span ref="multEl" class="x"><i>×</i>{{ shownMult }}</span>
@@ -592,7 +650,9 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away }]">
+          <div v-for="p in sides" :key="p.side" class="seat" :class="[p.side, { gone: t.seats[p.seat]!.away, pickable: watching }]">
+            <!-- Watched: the seat is a key that watches from there. -->
+            <button v-if="watching" type="button" class="pick" :aria-label="nickOf(p.seat)" @click="viewDdz(p.seat)"></button>
             <!-- The emotes open on the side away from the bottom cards, beside the head: over it is the stage's edge. -->
             <PetView
               v-if="memberOf(p.seat)" :character="t.seats[p.seat]!.character" :scale="PET" :min-emote="52"
@@ -633,57 +693,90 @@ onBeforeUnmount(() => {
 
           <div class="hand-wrap" :style="{ left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px`, bottom: `${HAND_BOTTOM}px`, height: `${HAND_H}px` }">
             <div
-              ref="handEl" class="hand" :class="{ idle: !playing || dealing }"
+              ref="handEl" class="hand" :class="{ idle: !playing || dealing || watching }"
               @pointerdown="handDown" @pointermove="handMove" @pointerup="handUp" @pointercancel="handUp"
             >
               <span
-                v-for="(c, i) in t.hand" :key="`${dealt}-${c}`" class="held"
-                :class="{ up: selected.has(c), fresh: fresh.has(c), shut, turning: dealing && !shut }"
+                v-for="(c, i) in held" :key="`${dealt}-${c}`" class="held"
+                :class="{ up: selected.has(c), fresh: fresh.has(c), shut, turning: (dealing && !shut) || opening, stay: swapping && !dealing }"
                 :style="{
                   translate: `${handX + i * handFan.step}px ${selected.has(c) || fresh.has(c) ? 0 : LIFT}px`,
                   zIndex: i, '--i': i, animationDelay: `${shut ? i * dealStep : i * 28}ms`, ...(shut ? dealFrom(i) : {}),
                 }"
               >
                 <span class="sides">
-                  <DdzCard class="face" :card="c" :width="CARD" :plain="i < t.hand.length - 1" />
-                  <DdzCard v-if="dealing" class="back" :card="null" :width="CARD" />
+                  <DdzCard class="face" :card="c < 0 ? null : c" :width="CARD" :plain="i < held.length - 1" />
+                  <DdzCard v-if="dealing || opening" class="flipside" :card="null" :width="CARD" />
                 </span>
               </span>
             </div>
+            <!-- Face down: how many the seat holds, on the top right corner of its cards. -->
+            <b
+              v-if="covered && held.length && !dealing" :key="bumps[you]" class="held-count" :class="{ bump: bumps[you] && !reducedMotion }"
+              :style="{ left: `${handX + (held.length - 1) * handFan.step + CARD}px` }"
+            >
+              {{ held.length }}
+            </b>
           </div>
 
           <span
-            v-if="myTurn && !dealing" :key="t.until" class="clock wide"
+            v-if="footTurn && !dealing" :key="t.until" class="clock wide"
             :style="{ left: `${HAND_LEFT + handRoom / 2}px`, bottom: `${HAND_BOTTOM - 10}px` }"
           >
             <i :style="drain()"></i>
           </span>
 
-          <div class="me">
+          <div class="me" :class="{ gone: watching && mine.away }">
+            <template v-if="watching">
+              <PetView
+                v-if="memberOf(you)" :character="mine.character" :scale="OWN_PET" :min-emote="52"
+                :pulse="memberOf(you)!.pulse" :emote="emoteOf(you)" :combo="memberOf(you)!.combo" :win="memberOf(you)!.win"
+                :motion-id="memberOf(you)!.id"
+              />
+              <PetView v-else :character="mine.character" :scale="OWN_PET" :min-emote="52" :emote="emoteOf(you)" />
+            </template>
             <PetView
-              :character="settings.character" :scale="OWN_PET" :min-emote="52"
+              v-else :character="settings.character" :scale="OWN_PET" :min-emote="52"
               :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy" :left-down="pet.left" :right-down="pet.right"
               :emote="localPet.emote" :win="localPet.win" :pulse="localPet.pulse"
             />
             <div class="mine">
               <span v-if="plateOf(you)" class="worn" :class="{ turn: t.turn === you && !dealing }">
                 <NamePlate
-                  :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(settings.character)"
-                  :width="PLATE.w - 44" :height="PLATE.h" :font="14"
+                  :card="plateOf(you)!" :nick="nickOf(you)" :color="characterColor(footCharacter)"
+                  :width="watching ? PLATE.w : PLATE.w - 44" :height="PLATE.h" :font="14"
                 />
-                <span class="badges"><em v-if="t.landlord === you" class="ui-tag lord">地主</em></span>
+                <span class="badges">
+                  <em v-if="t.landlord === you" class="ui-tag lord">地主</em>
+                  <em v-if="watching && mine.auto" class="ui-tag soft">托管</em>
+                </span>
               </span>
               <div v-else class="pill" :class="{ turn: t.turn === you && !dealing, lord: t.landlord === you }">
-                <i :style="{ background: characterColor(settings.character) }" aria-hidden="true"></i>
+                <i :style="{ background: characterColor(footCharacter) }" aria-hidden="true"></i>
                 <span class="nick">{{ nickOf(you) }}</span>
                 <em v-if="t.landlord === you" class="ui-tag light">地主</em>
+                <template v-if="watching">
+                  <em v-if="mine.away" class="ui-tag soft">离开</em>
+                  <em v-else-if="mine.auto" class="ui-tag soft">托管</em>
+                </template>
               </div>
-              <DdzEmotes up />
+              <DdzEmotes v-if="!watching" up />
+              <!-- Who sees the own hand. -->
+              <DdzWatchers v-if="ownWatchers.length" class="eyes" :faces="ownWatchers" mini />
             </div>
           </div>
 
-          <div class="keys" :style="t.phase === 'result' ? undefined : { left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }">
-            <template v-if="t.phase === 'result'">
+          <div
+            class="keys" :class="{ watched: watching }"
+            :style="t.phase === 'result' || t.phase === 'over' ? undefined : { left: `${HAND_LEFT}px`, right: `${HAND_RIGHT}px` }"
+          >
+            <template v-if="watching">
+              <template v-if="t.phase === 'result' || t.phase === 'over'">
+                <button type="button" class="ui-btn" @click="unwatchDdz">离开<kbd>ESC</kbd></button>
+                <button v-if="canSit" type="button" class="ui-btn primary" @click="sitDdz(t.id)">入座</button>
+              </template>
+            </template>
+            <template v-else-if="t.phase === 'result'">
               <button type="button" class="ui-btn" @click="leaveDdz(t.id)">离桌<kbd>ESC</kbd></button>
               <button v-if="!t.closed" type="button" class="ui-btn primary" :disabled="mine.again" @click="againDdz">
                 再来一局<kbd>SPACE</kbd>
@@ -709,7 +802,7 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <DdzReceipt v-if="t.phase === 'result' && t.result" :key="t.log.at(-1)?.seq" :table="t" />
+          <DdzReceipt v-if="t.phase === 'result' && t.result" :key="t.log.at(-1)?.seq" :table="t" :watching="watching" />
         </div>
       </div>
     </div>
@@ -750,6 +843,8 @@ onBeforeUnmount(() => {
 .top { position: absolute; left: 14px; right: 14px; top: 12px; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; }
 .top .ui-btn { height: 36px; padding: 0 14px; gap: 6px; font-size: var(--fs-body); pointer-events: auto; }
 .corner { display: flex; align-items: center; gap: 6px; }
+/* Watching: the word on a coral tag, as tall as the keys beside it. */
+.watch-tag { --tag-bg: var(--c-600); --tag-fg: #fff; height: 28px; padding: 0 12px; display: inline-flex; align-items: center; font-size: 14px; margin-right: 4px; }
 .top .shut-key { width: 40px; padding: 0; }
 
 /* The bottom cards turn over like the cards of a draw. */
@@ -858,7 +953,26 @@ onBeforeUnmount(() => {
   animation: pop 260ms var(--ease-pop) backwards;
 }
 .factor b { font: 800 18px/1 var(--font-latin); letter-spacing: 0.2px; }
-.phase-result .mult { opacity: 0; }
+.phase-result .mult, .phase-over .mult { opacity: 0; }
+/* A game watched that ended with nothing won: why, in the middle of the table, for a moment. */
+.ended {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  z-index: 3;
+  height: 44px;
+  padding: 0 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 3px 0 var(--c-600), 0 10px 20px -8px rgba(var(--c-900-rgb), 0.45);
+  font: 800 18px/1 var(--font);
+  color: var(--c-700);
+  white-space: nowrap;
+  animation: pop 260ms var(--ease-pop) backwards;
+}
 /* The card counter: a ruled paper slip in the table's near left corner, each rank on a tinted line over how many the
    other two still hold, in two rows; a rank all gone fades. The rules are the slip's own colour showing in the gaps. */
 .tally {
@@ -1087,7 +1201,12 @@ onBeforeUnmount(() => {
 .seat.left { left: 25%; }
 .seat.right { left: 75%; }
 .seat :deep(.still), .me :deep(.still) { filter: var(--contour); }
-.seat.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
+.seat.gone :deep(.pet), .me.gone :deep(.pet) { filter: grayscale(0.8); opacity: 0.6; }
+/* Watched: a seat on either side is a key over its pet and name; its name lifts under the pointer. */
+.pick { position: absolute; inset: 0 0 -8px; z-index: 1; padding: 0; border: 0; border-radius: var(--radius-l); background: none; cursor: pointer; pointer-events: auto; }
+.pick:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.seat.pickable .under { transition: translate var(--dur-fast) var(--ease-out); }
+.seat.pickable:has(> .pick:hover) .under { translate: 0 -2px; }
 .under { position: relative; display: flex; align-items: center; margin-top: 2px; }
 /* A name plate in place of the tag: whose move it is rings it, and its tags sit on its top right corner like stickers. */
 .worn { position: relative; flex: none; display: block; border-radius: 8px; transition: box-shadow var(--dur-base); }
@@ -1177,7 +1296,7 @@ onBeforeUnmount(() => {
 }
 /* Over the card's own `position: relative`. */
 .held .sides > * { position: absolute; inset: 0; backface-visibility: hidden; }
-.held .sides > .back { transform: rotateY(180deg); }
+.held .sides > .flipside { transform: rotateY(180deg); }
 .held.shut .sides { transform: rotateY(180deg); }
 /* Turned over one after another, left to right: each lifts a little as it stands on edge, then lies down face up.
    Holds its back until its turn comes. */
@@ -1194,10 +1313,33 @@ onBeforeUnmount(() => {
     -3px 3px 6px -2px rgba(var(--c-900-rgb), 0.3);
 }
 .phase-result .held { filter: saturate(0.6); opacity: 0.75; }
+/* How many cards a seat watched from holds face down: a white disc ringed in coral on the cards' top right corner. */
+.held-count {
+  position: absolute;
+  top: 6px;
+  z-index: 30;
+  width: 34px;
+  height: 34px;
+  margin-left: -20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  box-shadow: 0 0 0 2.5px var(--c-600), 0 5px 10px -4px rgba(var(--c-900-rgb), 0.55);
+  font: 800 19px/1 var(--font-latin);
+  letter-spacing: -0.5px;
+  color: var(--c-700);
+  pointer-events: none;
+}
+.held-count.bump { animation: bump 520ms var(--ease-out); }
+/* Turned face up or down in place: no flight in. */
+.held.stay { animation: none; }
 
 /* The own pet sits beside the hand, live like the two others; under it the own name and the emotes' key. */
 .me { position: absolute; left: 8px; bottom: 10px; width: 196px; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 6; pointer-events: none; }
-.mine { display: flex; align-items: center; gap: 7px; max-width: 100%; }
+.mine { position: relative; display: flex; align-items: center; gap: 7px; max-width: 100%; }
+/* Who sees the own hand: past the name and the emotes' key, clear of the pet. */
+.mine .eyes { position: absolute; left: calc(100% + 8px); top: 50%; translate: 0 -50%; }
 .me .pill { max-width: 148px; box-shadow: 0 1px 2px rgba(var(--shadow-rgb), 0.12), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
 .me .pill.turn { box-shadow: 0 0 0 3px var(--c-500), 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
 .me .pill.lord { box-shadow: 0 0 0 2px #fff, 0 5px 12px -5px rgba(var(--shadow-rgb), 0.3); }
@@ -1206,6 +1348,9 @@ onBeforeUnmount(() => {
 .keys { position: absolute; left: 0; right: 0; bottom: 10px; height: 42px; display: flex; justify-content: center; gap: 12px; z-index: 5; pointer-events: none; }
 .keys .ui-btn { height: 42px; min-width: 118px; padding: 0 16px; font-size: 16px; pointer-events: auto; }
 .keys .ui-btn.bid { min-width: 92px; }
+/* Watched: the keys at the end are the 36 ones. */
+.keys.watched { height: 36px; bottom: 14px; }
+.keys.watched .ui-btn { height: 36px; min-width: 104px; font-size: 14px; }
 /* The corner of a keycap says which key of the keyboard it is. */
 .keys kbd {
   height: 19px;

@@ -7,7 +7,7 @@
 // server decides everything (server/app/ddz.py); the rules here (src/ddz/rules.ts) only light the keys.
 import { computed, ref, watch } from "vue";
 import { isBomb, playable, sortHand } from "../ddz/rules";
-import type { DdzClientMessage, DdzMessage, DdzOpenSeat, DdzOpenTable, Member } from "../net/protocol";
+import type { DdzClientMessage, DdzMessage, DdzOpenSeat, DdzOpenTable, DdzSeatInfo, DdzWatchFace, Member } from "../net/protocol";
 import { DdzLink } from "../net/DdzLink";
 import type { ConnState } from "../net/RoomClient";
 import { EmotePlayer, type EmoteFrame } from "../pet/EmotePlayer";
@@ -18,8 +18,8 @@ import { economy } from "./economy";
 import { account, loadDdzLobby, reloadStatus, saveCode, status } from "./player";
 import { settings } from "./settings";
 import {
-  clearRoomError, ddzEmoteOn, ddzHooks, ddzMatchOn, duelBusy, duelDnd, helloInfo, inRoom, me, members, sendDdz, sendEmote,
-  showRoomError, showWin, shownNick, youId,
+  clearRoomError, ddzEmoteOn, ddzHooks, ddzMatchOn, ddzWatchOn, duelBusy, duelDnd, helloInfo, inRoom, me, members, sendDdz,
+  sendEmote, showRoomError, showWin, shownNick, youId,
 } from "./room";
 import { closeDdzWindow, ddzFrame, openDdzWindow, ui } from "./ui";
 
@@ -144,6 +144,8 @@ export const ddzConfig = computed(() => economy.value?.doudizhu ?? null);
 export const ddz = ref<DdzState | null>(null);
 /** Games under way in the room: the three member ids by table. */
 export const ddzLive = ref<Record<string, string[]>>({});
+/** The base stake of each game under way in the room, where the server says (ddz_live `base`). */
+export const ddzLiveBase = ref<Record<string, number>>({});
 /** This connection waits in the server's queue: at which stake, and since when (local ms); null when it does not. */
 export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 /** How many saves wait at each stake, this one included, as the server last counted. */
@@ -167,6 +169,27 @@ export const ddzLinkOff = ref(false);
 /** The emote over each seat's pet at the table, by seat (the own seat's is the own pet's, room.localPet). */
 export const ddzEmotes = ref<(EmoteFrame | null)[]>([null, null, null]);
 
+/**
+ * A table of the room this client watches, as one of its seats sees it: `you` is the seat watched from, drawn at the
+ * foot of the table, and `hand` its cards when the server shows them. Kept apart from `ddz`, so watching holds nothing
+ * of the save's (invites, the queue, open tables) and the table's window shows it only while the save is at no table.
+ */
+export interface DdzWatch extends DdzState {
+  /** The server shows the hand of seat `you`; false: the seat's cards are drawn face down. */
+  shown: boolean;
+  /** Another seat was picked and its hand has not come yet: the cards are drawn face down, plays leave them. */
+  switching: boolean;
+  /**
+   * How watching ended, "" while it goes on: the table opened again for seats after the game (reopen) or closed after
+   * it (closed), the result staying up; its game ended with nothing won (gone), shown for a moment; or the save's own
+   * game starts (playing), kept up until its deal takes the window.
+   */
+  ended: "" | "reopen" | "closed" | "gone" | "playing";
+}
+export const ddzWatch = ref<DdzWatch | null>(null);
+/** Who watches the own table and the one watched, by table id, as the server last listed them; none listed for none. */
+export const ddzWatchers = ref<Record<string, DdzWatchFace[]>>({});
+
 /** The server has the game (its status says so). */
 export const ddzServerOn = computed(() => !!ddzConfig.value && !!status.value?.ddz);
 /** The server has the game and this client is in a room. */
@@ -175,6 +198,24 @@ export const ddzOn = computed(() => inRoom.value && ddzServerOn.value);
 export const ddzPlaying = computed(() => new Set(Object.values(ddzLive.value).flat()));
 /** The table is up: a game or its result. */
 export const ddzAtTable = computed(() => !!ddz.value && (ddz.value.phase === "bid" || ddz.value.phase === "play" || ddz.value.phase === "result"));
+/** A game of the save's is on the table: being played, or its result while another game may follow. */
+export const ddzInGame = computed(() => ddzAtTable.value && !(ddz.value!.phase === "result" && ddz.value!.closed));
+/** Whether this client can watch a game of the room: the server lets it, and the save is not in a game itself. */
+export const ddzCanWatch = computed(() => ddzOn.value && ddzWatchOn.value && !ddzInGame.value && !ddzPlaying.value.has(youId.value));
+/** What the table's window shows: the save's own game first, else the game watched. */
+export const ddzScreen = computed<"own" | "watch" | null>(() => (ddzAtTable.value ? "own" : ddzWatch.value ? "watch" : null));
+/**
+ * The seat to watch game [table] of the room from: member [id]'s when given and there, else the first seat (the
+ * opener's, or the longest waiting at a table of the queue) when its member is in the room, else the first seat that is.
+ */
+export function ddzWatchSeat(table: string, id?: string): number {
+  const ids = ddzLive.value[table] ?? [];
+  const at = id ? ids.indexOf(id) : -1;
+  if (at >= 0) return at;
+  const here = ids.findIndex((x) => members.has(x));
+  return members.has(ids[0] ?? "") || here < 0 ? 0 : here;
+}
+
 /** An invite or a game holds this save. */
 export const ddzBusy = computed(() => !!ddz.value && ddz.value.phase !== "over" && !(ddz.value.phase === "result" && ddz.value.closed));
 
@@ -438,6 +479,8 @@ let dismissed = "";
 export function noteDdzWindowClosed(): void {
   ui.ddzSeen = false;
   if (dealKey.value) dismissed = dealKey.value;
+  // Closing the window is how a watcher stops watching (a player keeps the seat).
+  else if (ddzWatch.value) unwatchDdz();
 }
 
 const countdown = (sec: number) => ({ sec, until: Date.now() + sec * 1000 });
@@ -508,17 +551,303 @@ function setTurn(t: DdzState, turn: number | undefined, sec: number | undefined)
   Object.assign(t, countdown(sec ?? 0));
 }
 
+/** A move every seat of a table hears, and its watchers too. */
+type PublicMove = Extract<DdzMessage, { type: "ddz_bid" | "ddz_landlord" | "ddz_play" | "ddz_seat" | "ddz_result" | "ddz_again" }>;
+
+/**
+ * Applies public move [msg] to table [t], the own one or one watched; [hand]: the hand of seat `t.you` follows it (the
+ * landlord takes the bottom cards, a play leaves the hand).
+ */
+function applyMove(t: DdzState, msg: PublicMove, hand: boolean): void {
+  switch (msg.type) {
+    case "ddz_bid":
+      t.seats[msg.seat]!.bid = msg.bid;
+      t.bid = Math.max(t.bid, msg.bid);
+      setTurn(t, msg.turn, msg.sec);
+      note(t, { kind: "bid", seat: msg.seat, bid: msg.bid });
+      return;
+    case "ddz_landlord":
+      Object.assign(t, { phase: "play", landlord: msg.seat, bid: msg.bid, bottom: msg.bottom, mult: msg.mult, lead: true, trick: [null, null, null] });
+      t.seats[msg.seat]!.left = 20;
+      if (hand && msg.seat === t.you) t.hand = sortHand([...t.hand, ...msg.bottom]);
+      setTurn(t, msg.turn, msg.sec);
+      note(t, { kind: "landlord", seat: msg.seat });
+      return;
+    case "ddz_play":
+      // The seat that leads sweeps the table: the last trick stayed up until now.
+      if (t.lead) t.trick = [null, null, null];
+      t.trick[msg.seat] = msg.cards;
+      t.seats[msg.seat]!.left = msg.left;
+      if (hand && msg.seat === t.you && msg.cards.length) t.hand = t.hand.filter((c) => !msg.cards.includes(c));
+      t.played?.push(...msg.cards);
+      t.mult = msg.mult;
+      t.bombs = msg.bombs;
+      if (isBomb(msg.cards)) t.boosts.push(msg.cards.length === 2 ? "rocket" : "bomb");
+      t.lead = !!msg.lead;
+      setTurn(t, msg.turn, msg.sec);
+      note(t, { kind: "play", seat: msg.seat, cards: msg.cards, bomb: isBomb(msg.cards) });
+      return;
+    case "ddz_seat": {
+      const s = t.seats[msg.seat]!;
+      Object.assign(s, { id: msg.id, away: msg.away, auto: msg.auto });
+      if (msg.nick !== undefined) Object.assign(s, { nick: msg.nick, character: msg.character ?? s.character, plate: msg.plate ?? null });
+      if (msg.turn !== undefined) setTurn(t, msg.turn, msg.sec);
+      return;
+    }
+    case "ddz_result":
+      t.phase = "result";
+      t.result = {
+        winner: msg.winner, landlord: msg.landlord, bid: msg.bid, bombs: msg.bombs, spring: msg.spring, mult: msg.mult,
+        base: msg.base, deltas: msg.deltas, hands: msg.hands,
+      };
+      t.mult = msg.mult;
+      t.seats.forEach((s, i) => { s.again = false; s.left = msg.hands[i]?.length ?? 0; });
+      t.turn = null;
+      t.acted = false;
+      Object.assign(t, countdown(msg.sec));
+      note(t, { kind: "result" });
+      return;
+    case "ddz_again":
+      t.seats[msg.seat]!.again = true;
+      return;
+  }
+}
+
+// ------------------------------------------------------------------ watching (desk window)
+/** The server takes `ddz_watch` once a second at most (a stop aside); requests go this far apart, the latest seat picked winning. */
+const WATCH_GAP_MS = 1100;
+let watchSentAt = -Infinity;
+/** The request waiting for its time, the one sent and not answered yet, and whether that was sent again. */
+let watchNext: { table: string; seat: number } | null = null;
+let watchAsked: { table: string; seat: number } | null = null;
+let watchRetried = false;
+let watchTimer: ReturnType<typeof setTimeout> | undefined;
+/** The seat watched from before another was picked, as the server last sent it: back on screen if the server turns the new one down. */
+let watchPrev: { seat: number; hand: number[]; shown: boolean } | null = null;
+let watchEndTimer: ReturnType<typeof setTimeout> | undefined;
+/** How long the game watched stays up for the save's own deal after the server said the save starts playing. */
+export const PLAYING_WAIT_MS = 3000;
+
+function sendWatch(): void {
+  clearTimeout(watchTimer);
+  watchTimer = undefined;
+  const next = watchNext;
+  if (!next) return;
+  const wait = watchSentAt + WATCH_GAP_MS - Date.now();
+  if (wait > 0) {
+    watchTimer = setTimeout(sendWatch, wait);
+    return;
+  }
+  watchNext = null;
+  watchSentAt = Date.now();
+  watchAsked = next;
+  watchRetried = false;
+  sendDdz({ type: "ddz_watch", table: next.table, seat: next.seat });
+}
+
+function askWatch(table: string, seat: number): void {
+  watchNext = { table, seat };
+  sendWatch();
+}
+
+/** Forgets the game watched, and any request of it not sent yet. */
+function dropWatch(): void {
+  clearTimeout(watchEndTimer);
+  clearTimeout(watchTimer);
+  watchTimer = undefined;
+  watchNext = null;
+  watchAsked = null;
+  watchPrev = null;
+  ddzWatch.value = null;
+}
+
+/** The server said watching goes on no more, or the save went to a game of its own: tells it, unless it knows. */
+function stopWatch(): void {
+  const live = (!!ddzWatch.value && !ddzWatch.value.ended) || !!watchAsked || !!watchNext;
+  dropWatch();
+  // A stop goes at once: the server takes it any time, unanswered, and the next request's time does not count it.
+  if (live) sendDdz({ type: "ddz_watch", table: "" });
+}
+
+/** A refusal of the room's: when a watch request waits for its answer it is that one's. Says whether it was. */
+function watchRefused(code: string): boolean {
+  const asked = watchAsked;
+  if (!asked) return false;
+  if (code === "rate_limited") {
+    // Held back, once: sent again after the gap.
+    if (watchRetried) return false;
+    watchRetried = true;
+    watchAsked = null;
+    watchNext ??= asked;
+    watchSentAt = Date.now();
+    sendWatch();
+    return true;
+  }
+  if (code !== "ddz_gone" && code !== "ddz_busy" && code !== "ddz_watch_full") return false;
+  watchAsked = null;
+  // Watching goes on (only ddz_watch_end ends it). Another seat turned down (between two games, say): the server
+  // still shows the one before, which comes back as it was.
+  const w = ddzWatch.value;
+  if (w?.id === asked.table && w.switching && !watchNext) {
+    const prev = watchPrev;
+    watchPrev = null;
+    Object.assign(w, { switching: false, ...(prev ? { you: prev.seat, hand: prev.hand, shown: prev.shown } : { shown: false, hand: [] }) });
+  }
+  return true;
+}
+
+/** The seats of a deal or of the whole state. */
+const dealtSeats = (seats: (DdzSeatInfo & { left?: number; bid?: number | null; again?: boolean })[]): DdzSeat[] => seats.map((s) => ({
+  id: s.id, nick: s.nick, character: s.character, auto: s.auto, away: s.away, again: !!s.again,
+  left: s.left ?? 17, bid: s.bid ?? null, ...(s.plate ? { plate: s.plate } : {}),
+}));
+
+/** The cards go out for `dealSec` from now; the first bid's time starts once they are out. */
+function dealOut(t: DdzState, turn: number, sec: number, dealSec: number | undefined): void {
+  const wait = (dealSec ?? 0) * 1000;
+  setTurn(t, turn, sec);
+  t.dealUntil = Date.now() + wait;
+  t.until += wait;
+}
+
+/** A watch message, or a public one of the game watched. */
+type WatchMessage =
+  | ((PublicMove | Extract<DdzMessage, { type: "ddz_emote" | "ddz_deal" }>) & { watch: true })
+  | Extract<DdzMessage, { type: "ddz_watch" | "ddz_watch_end" }>;
+const isWatch = (msg: DdzMessage): msg is WatchMessage =>
+  msg.type === "ddz_watch" || msg.type === "ddz_watch_end" || ("watch" in msg && msg.watch === true);
+
+/**
+ * The whole game watched, as the server sends it for each request: the hand of the seat asked for. One for another seat
+ * than the one picked last (picked again meanwhile) brings all but that hand, which keeps waiting for its own.
+ */
+function takeSnapshot(msg: Extract<DdzMessage, { type: "ddz_watch" }>): void {
+  const before = ddzWatch.value?.id === msg.table ? ddzWatch.value : null;
+  // Only an answer to this client: one after a stop, or for a table it no longer asks for, is late.
+  if (watchAsked?.table !== msg.table && watchNext?.table !== msg.table && !(before && !before.ended)) return;
+  if (watchAsked?.table === msg.table) watchAsked = null;
+  clearTimeout(watchEndTimer);
+  watchPrev = null;
+  const picked = before?.switching ? before.you : msg.seat;
+  const waiting = picked !== msg.seat;
+  const phase = msg.phase === "over" ? "result" : msg.phase === "settling" ? "play" : msg.phase;
+  const t: DdzWatch = {
+    ...blank(msg.table, "room"), log: before?.log ?? [], phase, you: picked, base: msg.base, cap: msg.cap, deal: msg.deal,
+    deposit: ddzDeposit(msg.base), counter: null, played: null, seats: dealtSeats(msg.seats),
+    bid: msg.bid, landlord: msg.landlord, bottom: msg.bottom, mult: msg.mult, bombs: msg.bombs,
+    boosts: Array<"bomb">(msg.bombs).fill("bomb"), turn: msg.phase === "settling" ? null : msg.turn, lead: msg.lead,
+    trick: msg.trick, sec: msg.of, until: Date.now() + msg.sec * 1000,
+    hand: !waiting && msg.hand ? sortHand(msg.hand) : [], shown: !waiting && msg.hand !== null, switching: waiting, ended: "",
+  };
+  if (msg.result) {
+    applyMove(t, msg.result, false);
+    Object.assign(t, { sec: msg.of, until: Date.now() + msg.sec * 1000 });
+    msg.seats.forEach((s, i) => { t.seats[i]!.again = !!s.again; });
+    showHands(t);
+  }
+  note(t, { kind: "sync" });
+  ddzWatch.value = t;
+}
+
+/** At the result every hand is open: the seat watched from shows what it has left, whether or not it was shown. */
+function showHands(t: DdzWatch): void {
+  if (!t.result || t.switching) return;
+  t.hand = sortHand(t.result.hands[t.you] ?? []);
+  t.shown = true;
+}
+
+function onWatchMessage(msg: WatchMessage): void {
+  if (msg.type === "ddz_watch") {
+    takeSnapshot(msg);
+    return;
+  }
+  const w = ddzWatch.value;
+  if (!w || w.id !== msg.table || w.ended) return;
+  switch (msg.type) {
+    case "ddz_watch_end":
+      if (msg.reason === "playing") {
+        // The save's own game comes next (on either connection, in either order) and takes the window; the game
+        // watched stays up until then, so the window does not close and open again. Dropped if no deal comes.
+        Object.assign(w, { ended: "playing", turn: null });
+        clearTimeout(watchEndTimer);
+        watchEndTimer = setTimeout(() => { if (ddzWatch.value === w) dropWatch(); }, PLAYING_WAIT_MS);
+      } else if (w.phase === "result" && msg.reason !== "gone") {
+        // The result stays until the watcher puts it away; at an open table that waits again it may sit down.
+        Object.assign(w, { ended: msg.reason, closed: true, turn: null });
+      } else {
+        Object.assign(w, { ended: "gone", phase: "over", reason: msg.over ?? "", turn: null });
+        clearTimeout(watchEndTimer);
+        watchEndTimer = setTimeout(() => { if (ddzWatch.value === w) dropWatch(); }, DDZ_END_MS);
+      }
+      return;
+    case "ddz_deal": {
+      // Another game at the table: watched on from the same seat.
+      const t: DdzWatch = {
+        ...blank(msg.table, "room"), log: w.log, phase: "bid", you: w.you, base: msg.base, cap: msg.cap, deal: msg.deal,
+        deposit: ddzDeposit(msg.base), counter: null, played: null, seats: dealtSeats(msg.seats),
+        hand: !w.switching && msg.hand ? sortHand(msg.hand) : [], shown: !w.switching && msg.hand !== null,
+        switching: w.switching, ended: "",
+      };
+      dealOut(t, msg.turn, msg.sec, msg.dealSec);
+      note(t, { kind: "deal" });
+      ddzWatch.value = t;
+      return;
+    }
+    case "ddz_emote":
+      seatEmotes[msg.seat]?.play(msg.emote);
+      return;
+    case "ddz_result":
+      applyMove(w, msg, false);
+      showHands(w);
+      return;
+    case "ddz_bid":
+    case "ddz_landlord":
+    case "ddz_play":
+    case "ddz_seat":
+    case "ddz_again":
+      applyMove(w, msg, w.shown && !w.switching);
+      return;
+  }
+}
+
+/** Who watches table [table], as the server listed them. */
+function setWatchers(table: string, faces: DdzWatchFace[], you?: number): void {
+  const next = { ...ddzWatchers.value };
+  if (faces.length) next[table] = faces;
+  else delete next[table];
+  ddzWatchers.value = next;
+  // The server no longer shows the watcher the hand of its seat (that seat's member went to an old client, or left
+  // the watcher's room) and sends no new state for it: the cards turn face down. The watcher finds itself by its
+  // place in the list (`you`); the seats' copy has none.
+  const w = ddzWatch.value;
+  if (w?.id !== table || !w.shown || w.switching || w.phase === "result" || w.ended || you === undefined) return;
+  if (faces[you]?.seat === null) Object.assign(w, { shown: false, hand: [] });
+}
+
 /**
  * A message of dou dizhu, from the room connection or ([via] "link") the dou dizhu connection: each names this save by
  * its own member id.
  */
 export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): void {
   const you = via === "link" ? linkYou : youId.value;
+  if (msg.type === "ddz_watchers") {
+    setWatchers(msg.table, msg.faces, msg.you);
+    return;
+  }
+  // Watching has its own state: none of it reaches the save's table.
+  if (isWatch(msg)) {
+    if (via === "room") onWatchMessage(msg);
+    return;
+  }
   if (msg.type === "ddz_live") {
     const live = { ...ddzLive.value };
+    const bases = { ...ddzLiveBase.value };
     if (msg.on) live[msg.table] = [...msg.ids];
     else delete live[msg.table];
+    if (msg.on && msg.base !== undefined) bases[msg.table] = msg.base;
+    else delete bases[msg.table];
     ddzLive.value = live;
+    ddzLiveBase.value = bases;
     // The whole room sees the winners' shards go up over their pets.
     if (!msg.on) for (const [id, gain] of Object.entries(msg.gains ?? {})) showWin(id, gain);
     return;
@@ -555,6 +884,10 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     callTimer = setTimeout(() => { if (ddzCall.value?.table === msg.table) ddzCall.value = null; }, msg.sec * 1000);
     return;
   }
+  // A game of the save's own takes the window from the one watched; a seat taken at an open table puts away the
+  // result of the game watched there.
+  if (msg.type === "ddz_deal" || msg.type === "ddz_state") stopWatch();
+  else if ((msg.type === "ddz_open" || msg.type === "ddz_invite") && ddzWatch.value?.ended) dropWatch();
   // The table put aside, when the message is of it: it comes back on screen with what it knew.
   let prior: DdzState | null = null;
   if (msg.type === "ddz_open" || msg.type === "ddz_invite" || msg.type === "ddz_deal" || msg.type === "ddz_state") {
@@ -663,57 +996,17 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
       return;
     }
     case "ddz_bid":
-      t.seats[msg.seat]!.bid = msg.bid;
-      t.bid = Math.max(t.bid, msg.bid);
-      setTurn(t, msg.turn, msg.sec);
-      note(t, { kind: "bid", seat: msg.seat, bid: msg.bid });
-      return;
     case "ddz_landlord":
-      Object.assign(t, { phase: "play", landlord: msg.seat, bid: msg.bid, bottom: msg.bottom, mult: msg.mult, lead: true, trick: [null, null, null] });
-      t.seats[msg.seat]!.left = 20;
-      if (msg.seat === t.you) t.hand = sortHand([...t.hand, ...msg.bottom]);
-      setTurn(t, msg.turn, msg.sec);
-      note(t, { kind: "landlord", seat: msg.seat });
-      return;
     case "ddz_play":
-      // The seat that leads sweeps the table: the last trick stayed up until now.
-      if (t.lead) t.trick = [null, null, null];
-      t.trick[msg.seat] = msg.cards;
-      t.seats[msg.seat]!.left = msg.left;
-      if (msg.seat === t.you && msg.cards.length) t.hand = t.hand.filter((c) => !msg.cards.includes(c));
-      t.played?.push(...msg.cards);
-      t.mult = msg.mult;
-      t.bombs = msg.bombs;
-      if (isBomb(msg.cards)) t.boosts.push(msg.cards.length === 2 ? "rocket" : "bomb");
-      t.lead = !!msg.lead;
-      setTurn(t, msg.turn, msg.sec);
-      note(t, { kind: "play", seat: msg.seat, cards: msg.cards, bomb: isBomb(msg.cards) });
+    case "ddz_seat":
+    case "ddz_again":
+      applyMove(t, msg, true);
       return;
-    case "ddz_seat": {
-      const s = t.seats[msg.seat]!;
-      Object.assign(s, { id: msg.id, away: msg.away, auto: msg.auto });
-      if (msg.nick !== undefined) Object.assign(s, { nick: msg.nick, character: msg.character ?? s.character, plate: msg.plate ?? null });
-      if (msg.turn !== undefined) setTurn(t, msg.turn, msg.sec);
-      return;
-    }
     case "ddz_result":
-      t.phase = "result";
-      t.result = {
-        winner: msg.winner, landlord: msg.landlord, bid: msg.bid, bombs: msg.bombs, spring: msg.spring, mult: msg.mult,
-        base: msg.base, deltas: msg.deltas, hands: msg.hands,
-      };
-      t.mult = msg.mult;
-      t.seats.forEach((s, i) => { s.again = false; s.left = msg.hands[i]?.length ?? 0; });
-      t.turn = null;
-      t.acted = false;
-      Object.assign(t, countdown(msg.sec));
-      note(t, { kind: "result" });
+      applyMove(t, msg, true);
       void reloadStatus();
       // Out of any room, nobody tells the desk of the game's end (ddz_live): the own pet shows its win from here.
       if (front && t.via === "link" && !inRoom.value && (msg.deltas[t.you] ?? 0) > 0) showWin(youId.value, msg.deltas[t.you]!);
-      return;
-    case "ddz_again":
-      t.seats[msg.seat]!.again = true;
       return;
     case "ddz_counter":
       Object.assign(t, { counter: { on: msg.on, left: msg.left }, counterAsked: false, counterError: msg.error ?? "" });
@@ -743,18 +1036,28 @@ if (!isMirrorWindow) {
   // A move the server would not take: the keys come back. Requests held back are of anything (taps, emotes); the
   // queue's are the dou dizhu connection's (link.onError).
   ddzHooks.refused = (code) => {
+    if (watchRefused(code) || code === "ddz_busy" || code === "ddz_watch_full") return;
     if (code !== "rate_limited" && ddz.value?.via === "room") Object.assign(ddz.value, { acted: false, counterAsked: false });
   };
   // A new table starts without the last one's emotes.
   watch(() => ddz.value?.id, () => seatEmotes.forEach((p) => p.clear()), { flush: "sync" });
+  watch(() => ddzWatch.value?.id, () => seatEmotes.forEach((p) => p.clear()), { flush: "sync" });
+  // Who watches a table is kept while it is the own one or the one watched.
+  watch(() => [ddz.value?.id, ddzWatch.value?.id], (ids) => {
+    const stale = Object.keys(ddzWatchers.value).filter((id) => !ids.includes(id));
+    if (stale.length) ddzWatchers.value = Object.fromEntries(Object.entries(ddzWatchers.value).filter(([id]) => !stale.includes(id)));
+  }, { flush: "sync" });
   // The room connection carries the room's tables: without it nothing of them is known here any more. The seat is
   // kept by the server and comes back, whole, with the room (ddz_state). The queue and its tables are not the room's.
   watch(inRoom, (on) => {
     if (on) return;
     ddzLive.value = {};
+    ddzLiveBase.value = {};
     ddzTables.value = [];
     clearTimeout(callTimer);
     ddzCall.value = null;
+    // Watching ends with the room connection; the server forgets it too.
+    dropWatch();
     dropShelf("room");
     const t = ddz.value;
     if (t?.via !== "room") return;
@@ -853,7 +1156,7 @@ if (!isMirrorWindow) {
   watch(dealKey, (key) => {
     if (!key) {
       opened = "";
-      closeDdzWindow();
+      if (!ddzWatch.value) closeDdzWindow();
       return;
     }
     if (key === opened || key === dismissed) return;
@@ -865,12 +1168,18 @@ if (!isMirrorWindow) {
     // The app checks again: the page hears of the pet being hidden a moment late.
     void openDdzWindow(true).then((shown) => { if (!shown && dealKey.value === key) dismissed = key; });
   }, { flush: "sync" });
+  // The window comes up with the game watched, and goes with it unless a game of the save's own has it.
+  // A deal of the save's own ends watching on its way in: whether it has the window is known once it is in.
+  watch(() => ddzWatch.value?.id ?? "", (id, before) => {
+    if (id && id !== before) void openDdzWindow();
+    else if (!id && before) queueMicrotask(() => { if (!ddzWatch.value && !ddzAtTable.value) closeDdzWindow(); });
+  }, { flush: "sync" });
 }
 
 // ------------------------------------------------------------------ actions (panel or desk)
 export type DdzOp =
   | "invite" | "answer" | "bid" | "play" | "auto" | "again" | "leave" | "queue" | "unqueue" | "open" | "sit" | "call"
-  | "dismiss" | "emote" | "counter";
+  | "dismiss" | "emote" | "counter" | "watch" | "view" | "unwatch";
 
 /**
  * The panel's and the table window's actions run in the desk window, which holds the connections. An argument left
@@ -894,6 +1203,9 @@ export function ddzRequest(op: DdzOp, ...sent: unknown[]): void {
     case "dismiss": dismissDdzCall(); break;
     case "emote": emoteDdz(args[0] as string); break;
     case "counter": counterDdz(); break;
+    case "watch": watchDdz(args[0] as string, args[1] as number | undefined); break;
+    case "view": viewDdz(args[0] as number); break;
+    case "unwatch": unwatchDdz(); break;
   }
 }
 const viaDesk = (op: DdzOp, ...args: unknown[]): boolean => {
@@ -1058,4 +1370,40 @@ export function dismissDdzCall(): void {
   if (viaDesk("dismiss")) return;
   clearTimeout(callTimer);
   ddzCall.value = null;
+}
+
+/**
+ * Watch game [table] of the room from seat [seat] (ddzWatchSeat picks one); the table's window comes up with it. The
+ * game watched already: watched from that seat, and its window brought up.
+ */
+export function watchDdz(table: string, seat = ddzWatchSeat(table)): void {
+  if (viaDesk("watch", table, seat)) return;
+  if (!ddzCanWatch.value || !ddzLive.value[table] || seat < 0 || seat > 2) return;
+  const w = ddzWatch.value;
+  if (w?.id === table && !w.ended) {
+    viewDdz(seat);
+    void openDdzWindow();
+    return;
+  }
+  // The result of a game of the save's that is over gives the window up.
+  if (ddz.value?.phase === "result" && ddz.value.closed) close();
+  askWatch(table, seat);
+}
+
+/** Watch the game watched from seat [seat]: its cards lie face down until the server sends them. */
+export function viewDdz(seat: number): void {
+  if (viaDesk("view", seat)) return;
+  const w = ddzWatch.value;
+  if (!w || w.ended || w.you === seat || seat < 0 || seat > 2) return;
+  if (!w.switching) watchPrev = { seat: w.you, hand: w.hand, shown: w.shown };
+  // At the result every hand is open already.
+  const left = w.phase === "result" ? w.result?.hands[seat] : undefined;
+  Object.assign(w, { you: seat, hand: left ? sortHand(left) : [], shown: !!left, switching: true });
+  askWatch(w.id, seat);
+}
+
+/** Stop watching; the window goes. */
+export function unwatchDdz(): void {
+  if (viaDesk("unwatch")) return;
+  stopWatch();
 }

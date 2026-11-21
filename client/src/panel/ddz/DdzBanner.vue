@@ -6,18 +6,20 @@
 // with a tick on those who accepted, the stake as a chip after them, and the keys to answer over the time left; at an
 // open table it seats who sits there with the empty seats as dashed rings, the stake, and the keys to call someone and
 // to put the table away (the opener's) or to leave. While this save sits at a table the key brings up the table's window. Under it, the room's other open
-// tables, each on its own strip, while this save is free to sit down.
+// tables, each on its own strip, while this save is free to sit down; and the room's games under way, each with the
+// key that watches it, while this save is in no game itself.
 import { computed, ref } from "vue";
 import { inRoom, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  answerDdz, ddz, ddzAtTable, ddzBusy, ddzCanCall, ddzConfig, ddzLink, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying,
+  answerDdz, ddz, ddzAtTable, ddzBusy, ddzCanCall, ddzCanWatch, ddzConfig, ddzLink, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying,
   ddzQueue, ddzQueueOn, ddzReason, ddzRetry, ddzTables, leaveDdz, unqueueDdz, type DdzState,
 } from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
 import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
+import DdzLiveRow from "./DdzLiveRow.vue";
 import DdzOpenRow from "./DdzOpenRow.vue";
 import DdzSeats from "./DdzSeats.vue";
 import { useInviteKeys } from "./inviteKeys";
@@ -53,6 +55,8 @@ const tables = computed(() => Object.values(ddzLive.value).map((ids) =>
 const seated = computed(() => inRoom.value && !ddz.value && ddzPlaying.value.has(youId.value));
 /** The room's open tables, while this save is free to sit down at one. */
 const roomTables = computed(() => (ddzMatchable.value && !ddzBusy.value && !seated.value && !ddzAtTable.value ? ddzTables.value : []));
+/** The room's games under way, to watch, while this save is in no game itself. */
+const liveTables = computed(() => (ddzCanWatch.value ? Object.entries(ddzLive.value) : []));
 const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ?? 0) - Date.now())}ms` });
 const keys = useInviteKeys(() => invite.value?.id, answerDdz);
 
@@ -122,8 +126,9 @@ const waited = useWaited(() => queued.value?.since);
     </template>
     <DdzInvite v-if="sheet" :mode="sheet" :need-account="needAccount" @close="sheet = null" />
   </section>
-  <section v-if="roomTables.length" class="banner tables">
+  <section v-if="roomTables.length || liveTables.length" class="banner tables">
     <DdzOpenRow v-for="x in roomTables" :key="x.table" :table="x" />
+    <DdzLiveRow v-for="[id, ids] in liveTables" :key="id" :table="id" :ids="ids" />
   </section>
 </template>
 

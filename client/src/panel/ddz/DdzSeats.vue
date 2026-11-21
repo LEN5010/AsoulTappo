@@ -1,15 +1,16 @@
 <script setup lang="ts">
 // Three seats in a row, each a round face with a name tag: who is at a table, or about to be. An empty seat is a
 // dashed ring (a key when [pick] is listened to) over a blank tag; a seat offered to someone from the queue turns its
-// ring slowly; a seat that accepted an invite gets a tick. With [stake], the table's base follows them past a rule,
+// ring slowly; a seat that accepted an invite gets a tick; a seat taken by someone not in the room ("other") is a solid
+// see-through white disc without a tag. With [stake], the table's base follows them past a rule,
 // as a chip the size of a face.
 import { characterColor } from "../../manifest";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
 
 defineProps<{
-  /** null for a seat nobody has yet, "pending" for one offered to someone from the queue. */
-  seats: ({ character: string; nick: string; ticked?: boolean } | null | "pending")[];
+  /** null for a seat nobody has yet, "pending" for one offered to someone from the queue, "other" for one taken by someone not in the room. */
+  seats: ({ character: string; nick: string; ticked?: boolean } | null | "pending" | "other")[];
   /** Diameter of a face, px. */
   size?: number;
   /** Faces only. */
@@ -20,12 +21,15 @@ defineProps<{
   stake?: number;
 }>();
 const emit = defineEmits<{ pick: [seat: number, event: MouseEvent]; press: [] }>();
-const face = (s: unknown) => (s && s !== "pending" ? (s as { character: string; nick: string; ticked?: boolean }) : null);
+const face = (s: unknown) => (s && s !== "pending" && s !== "other" ? (s as { character: string; nick: string; ticked?: boolean }) : null);
 </script>
 
 <template>
   <div class="seats" :class="{ bare }" :style="{ '--d': `${size ?? 56}px` }">
-    <div v-for="(s, i) in seats" :key="i" class="seat" :class="{ empty: !face(s), pending: s === 'pending', ticked: face(s)?.ticked }">
+    <div
+      v-for="(s, i) in seats" :key="i" class="seat"
+      :class="{ empty: !face(s) && s !== 'other', other: s === 'other', pending: s === 'pending', ticked: face(s)?.ticked }"
+    >
       <button
         v-if="pickable && !s" type="button" class="face" aria-label="入座"
         @pointerdown="emit('press')" @click="emit('pick', i, $event)"
@@ -34,7 +38,7 @@ const face = (s: unknown) => (s && s !== "pending" ? (s as { character: string; 
       <div v-if="face(s) && !bare" class="tag">
         <i :style="{ background: characterColor(face(s)!.character) }" aria-hidden="true"></i><span>{{ face(s)!.nick }}</span>
       </div>
-      <div v-else-if="!bare" class="tag blank" aria-hidden="true"></div>
+      <div v-else-if="!bare" class="tag blank" :class="{ none: s === 'other' }" aria-hidden="true"></div>
     </div>
     <template v-if="stake !== undefined">
       <i class="rule" aria-hidden="true"></i>
@@ -115,6 +119,9 @@ button.face:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .tag :deep(svg) { flex: none; color: var(--c-600); }
 /* An empty seat: the room of a name, see-through. */
 .tag.blank { width: var(--d); background: rgba(255, 255, 255, 0.26); box-shadow: none; }
+/* Someone not in the room: a solid see-through disc (a dashed ring is only a seat to take), no tag, its room kept. */
+.other .face { background: rgba(255, 255, 255, 0.4); box-shadow: none; }
+.tag.none { visibility: hidden; }
 /* The stake: past a rule as tall as a face, a chip of the table (white, a dashed coral ring inside its edge). */
 .rule { flex: none; width: 2px; height: calc(var(--d) * 0.72); margin: calc(var(--d) * 0.14) 6px 0; border-radius: 1px; background: rgba(255, 255, 255, 0.45); }
 .chip {

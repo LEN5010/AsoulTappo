@@ -30,14 +30,15 @@ const groupSources = {
   freshItems: () => [...player.freshItems], counter: () => ({ ...counter }),
   room: () => ({ conn: room.conn.value, roomId: room.roomId.value, youId: room.youId.value, lastError: room.lastError.value,
     info: room.roomInfo.value, duel: room.duel.value, profileOn: room.profileOn.value, nameOn: room.nameOn.value,
-    cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value, ddzMatchOn: room.ddzMatchOn.value }),
+    cheerOn: room.cheerOn.value, cheer: room.cheer.value, cheerDone: room.cheerDone.value, ddzMatchOn: room.ddzMatchOn.value,
+    ddzWatchOn: room.ddzWatchOn.value }),
   publicRooms: () => room.publicRooms.value,
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
-  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, queue: ddzStore.ddzQueue.value,
+  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, liveBase: ddzStore.ddzLiveBase.value, queue: ddzStore.ddzQueue.value,
     waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value, tables: ddzStore.ddzTables.value,
     call: ddzStore.ddzCall.value, link: ddzStore.ddzLink.value, linkOff: ddzStore.ddzLinkOff.value,
-    emotes: ddzStore.ddzEmotes.value }),
+    emotes: ddzStore.ddzEmotes.value, watch: ddzStore.ddzWatch.value, watchers: ddzStore.ddzWatchers.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz, ddzMatch }) =>
     ({ id, uid, nick, character, plate, ddz, ddzMatch })),
 };
@@ -74,6 +75,7 @@ function applyGroups(s: Partial<Groups>) {
   if (s.ddz) {
     ddzStore.ddz.value = s.ddz.table;
     ddzStore.ddzLive.value = s.ddz.live;
+    ddzStore.ddzLiveBase.value = s.ddz.liveBase;
     ddzStore.ddzQueue.value = s.ddz.queue;
     ddzStore.ddzWaiting.value = s.ddz.waiting;
     ddzStore.ddzRetry.value = s.ddz.retry;
@@ -82,6 +84,8 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddzLink.value = s.ddz.link;
     ddzStore.ddzLinkOff.value = s.ddz.linkOff;
     ddzStore.ddzEmotes.value = s.ddz.emotes;
+    ddzStore.ddzWatch.value = s.ddz.watch;
+    ddzStore.ddzWatchers.value = s.ddz.watchers;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {
@@ -102,6 +106,7 @@ function applyGroups(s: Partial<Groups>) {
     room.cheer.value = s.room.cheer;
     room.cheerDone.value = s.room.cheerDone;
     room.ddzMatchOn.value = s.room.ddzMatchOn;
+    room.ddzWatchOn.value = s.room.ddzWatchOn;
   }
   if (s.publicRooms !== undefined) room.publicRooms.value = s.publicRooms;
   if (s.members) {
