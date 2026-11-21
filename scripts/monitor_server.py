@@ -135,9 +135,11 @@ def read_database(path, now, day):
 def check_shards(state, day, sums, threshold):
     previous = state["shards"]
     state["shards"] = {"day": day, "sums": sums}
-    if previous.get("day") != day:
+    if not previous.get("day"):
         return None
-    increases = [(source, amount - previous["sums"].get(source, 0)) for source, amount in sums.items()]
+    # A new China day starts from nothing: what it has given so far came after the last run.
+    before = previous["sums"] if previous["day"] == day else {}
+    increases = [(source, amount - before.get(source, 0)) for source, amount in sums.items()]
     increases = [(source, delta) for source, delta in increases if delta > 0]
     total = sum(delta for _, delta in increases)
     if total <= threshold:

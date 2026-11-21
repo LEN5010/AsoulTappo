@@ -175,12 +175,23 @@ def test_shard_rollover_uses_china_day(watcher, store, capsys):
     watcher.run()
     capsys.readouterr()
     watcher.now += 180
-    store.add_ledger("save", "2026-11-20", "starter", 3_000_000)
+    store.add_ledger("save", "2026-11-20", "starter", 1_000_000)
 
     assert watcher.run() == 0
     assert capsys.readouterr().out == "巡检完成，异常 0 项\n"
-    assert monitor.load_state(watcher.state)["shards"] == {"day": "2026-11-20", "sums": {"starter": 3_000_000}}
+    assert monitor.load_state(watcher.state)["shards"] == {"day": "2026-11-20", "sums": {"starter": 1_000_000}}
     store.add_ledger("save", "2026-11-20", "starter", 2_000_001)
+    watcher.run()
+    assert "异常：碎片发放" in capsys.readouterr().out
+
+
+def test_shards_given_just_after_midnight_count_against_the_new_day(watcher, store, capsys):
+    store.add_ledger("save", "2026-11-19", "tap", 5_000_000)
+    watcher.run()
+    capsys.readouterr()
+    watcher.now += 180
+    # Given between the last run of the old day and the first of the new one: all of it came since the last run.
+    store.add_ledger("save", "2026-11-20", "starter", 3_000_000)
     watcher.run()
     assert "异常：碎片发放" in capsys.readouterr().out
 

@@ -56,18 +56,26 @@ code() { curl -s -m 5 -o /dev/null -w '%{http_code}' "$1"; }
 # A copy of the live database. sqlite3's .backup copies a few pages at a time and starts over whenever the server
 # writes in between, which under load kept a 354 MB copy going for minutes. Connection.backup() with its default
 # pages=-1 copies every page in one step from one read snapshot; in WAL mode the server's writes go on meanwhile and
-# cannot restart it. A failure exits nonzero, which stops this script.
+# cannot restart it. A failure exits nonzero, which stops this script. The copy is made under a name prune does not
+# count and takes the backup's name only once complete, so a failed one is never kept as a backup.
 backup_db() { # source target
   python3 - "$1" "$2" <<'PY'
 import os, sqlite3, sys
 # connect() would make an empty database at a wrong path and copy that.
 if not os.path.isfile(sys.argv[1]):
     sys.exit(f"no database at {sys.argv[1]}")
-src = sqlite3.connect(sys.argv[1], timeout=30)
-dst = sqlite3.connect(sys.argv[2])
-src.backup(dst)
-dst.close()
-src.close()
+part = sys.argv[2] + ".part"
+try:
+    src = sqlite3.connect(sys.argv[1], timeout=30)
+    dst = sqlite3.connect(part)
+    src.backup(dst)
+    dst.close()
+    src.close()
+    os.replace(part, sys.argv[2])
+finally:
+    for leftover in (part, part + "-journal"):
+        if os.path.exists(leftover):
+            os.unlink(leftover)
 PY
 }
 
