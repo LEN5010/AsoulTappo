@@ -121,6 +121,11 @@ class Peer:
     ddz: bool = False
     # the client also queues for dou dizhu tables across rooms (app/ddz.py, the queue)
     ddz_match: bool = False
+    # the client watches dou dizhu games and shows who watches its own seat (app/ddz.py, watching)
+    ddz_watch: bool = False
+    # the table this connection watches, None for none; and the clock time of its last ddz_watch (Tables.watch)
+    watching: str | None = None
+    watch_at: float = float("-inf")
     # the room this connection joined; "" for a dou dizhu connection (`lobby`)
     room: str = ""
     # a dou dizhu connection, in no room: it queues and plays at the tables the queue makes (app/ddz.py)

@@ -38,6 +38,8 @@ class JoinMsg(_Msg):
     ddz: bool = False
     # The client also queues for dou dizhu tables across rooms (with ddz); servers without the queue ignore it.
     ddzMatch: bool = False
+    # The client watches dou dizhu games (with ddzMatch); servers without watching ignore it.
+    ddzWatch: bool = False
 
 
 class LeaveMsg(_Msg):
@@ -266,6 +268,8 @@ class DdzHelloMsg(_Msg):
     accountToken: Optional[str] = Field(default=None, max_length=512)
     plate: Optional[str] = Field(default=None, max_length=64)
     dnd: bool = False
+    # The client shows who watches its seat: its hand may be shown to them (ddz_watchers).
+    ddzWatch: bool = False
 
 
 class DdzEmoteMsg(_Msg):
@@ -283,11 +287,20 @@ class DdzCounterMsg(_Msg):
     table: str = Field(min_length=1, max_length=32)
 
 
+class DdzWatchMsg(_Msg):
+    """Watch a game under way, the hand of seat [seat] shown when it may be; another table or seat replaces what the
+    connection watched, and an empty table stops watching."""
+
+    type: Literal["ddz_watch"] = "ddz_watch"
+    table: str = Field(max_length=32)
+    seat: int = Field(default=0, ge=0, le=2)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
           DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
-          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg, DdzCounterMsg],
+          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg, DdzCounterMsg, DdzWatchMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)

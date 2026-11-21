@@ -131,6 +131,39 @@ Open tables, with members whose client said `ddzMatch` only:
 - ``ddz_tables`` {tables: [{table, base, seats}, ...]}: the open tables of the room, oldest first, seats as in
   ``ddz_open``; to its members whenever they change, at most every COUNTS_SEC, an empty list once the last goes; on
   joining the room, the list it was told last, unless it was told of none.
+
+Watching, for room members whose client said `ddzMatch` and `ddzWatch` (``joined`` then lists "ddz_watch" in
+`features`; a dou dizhu connection says `ddzWatch` in ``ddz_hello``, which only lets its seat be watched). A member
+watches a game the room is told of (``ddz_live``, see Tables._rooms) once it is dealt, from one seat's side: the hand of
+that seat is shown when the seat's client says `ddzWatch` too (Seat.watchable, the last connection that held the seat)
+and the seat plays in the watcher's room (the table's own room and not a seat from the queue, or the seat's save is in
+the room on any connection); the other two hands never are, nor the card counter. A watcher takes no seat and nothing
+of its save: it queues, opens, sits and is invited as anyone else, and watches at most WATCH_MAX to a table.
+
+- ``ddz_watch`` {table, seat?} from a room connection (a dou dizhu connection's is not_joined): watch `table` from
+  seat `seat` (0 when left out); another seat or table replaces what the connection watched, a table "" stops
+  watching (always, told nothing). At most once every WATCH_INTERVAL, stopping aside. Refused with ddz_gone (the
+  table is not bidding, playing or paid, or the room does not see it) | ddz_busy (the save sits at the table, or at
+  any table that is starting, bidding, playing or paid) | ddz_watch_full | rate_limited | bad_message (the client
+  did not say `ddzMatch` and `ddzWatch`, or `seat` is not 0 to 2); a refusal leaves what it watched as it was.
+- ``ddz_watch`` {table, seat, hand, phase, seats: [{id, nick, character, plate?, left, bid, auto, away, again}], base,
+  cap, deal, bid, landlord, bottom, mult, bombs, turn, lead, trick, sec, of, result} to the watcher, on every
+  ``ddz_watch`` that holds: the game as ``ddz_state`` has it, without `you`, `played` and `counter`; `hand` the
+  seat's cards now, null when not shown; `result` the last ``ddz_result`` while the phase is over, else null.
+- To the watchers as to the seats, with `watch` true: ``ddz_bid``, ``ddz_landlord``, ``ddz_play``, ``ddz_seat``,
+  ``ddz_result``, ``ddz_again`` and ``ddz_emote``. Each deal comes to each watcher as ``ddz_deal`` {seats, hand, base,
+  cap, deal, turn, sec, dealSec, watch}, without `you` and `counter`, `hand` the seat's 17 cards or null. Member ids
+  (the seats of ``ddz_watch`` and ``ddz_deal``, ``ddz_seat``'s `id`) are those of the watcher's room (Tables._ids_in).
+  The watcher keeps the seat's hand itself from then on: a ``ddz_play`` of the seat takes its cards out, the
+  ``ddz_landlord`` of the seat adds `bottom`.
+- ``ddz_watch_end`` {table, reason} to the watcher: it watches no more, as the table closed (closed), opened again
+  for players after the game (reopen), ended with nothing won or another game at it did not start (gone), or the
+  watcher's save is dealt in at a table (playing). Stopping, leaving the room and losing the connection end it
+  without a word.
+- ``ddz_watchers`` {table, faces: [{nick, character, seat}]}: who watches, oldest first, `seat` the seat whose hand
+  each sees (null for none); to the watchers and to the seats whose client says `ddzWatch` (one that quit aside),
+  whenever it changes, at most every COUNTS_SEC, an empty list once the last goes; to a seat taken again (after its
+  ``ddz_state``) at once while anyone watches.
 """
 from __future__ import annotations
 
@@ -183,6 +216,12 @@ OPEN, INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = (
     "open", "invite", "starting", "bid", "play", "settling", "over", "done")
 # Coin ledger source of the coins the card counter costs.
 COUNTER = "ddz_counter"
+# Watchers a table has at most (a watcher moving to another seat's hand is not a new one).
+WATCH_MAX = 20
+# A connection asks to watch at most this often (stopping is never held up).
+WATCH_INTERVAL = 1.0
+# The messages of a game its watchers hear as the seats do (Tables._show); anything else is never copied to them.
+SHOWN = frozenset({"ddz_bid", "ddz_landlord", "ddz_play", "ddz_seat", "ddz_result", "ddz_again", "ddz_emote"})
 
 
 # ------------------------------------------------------------------ the bank
@@ -427,6 +466,9 @@ class Seat:
     counter: bool = False
     counter_left: int = 0
     buying: bool = False
+    # The connection that held the seat last said `ddzWatch`: it shows who watches the seat, so watchers may be
+    # shown its hand. Kept while the seat's member is away.
+    watchable: bool = False
 
     @property
     def empty(self) -> bool:
@@ -500,6 +542,16 @@ class Table:
     # An invite's invited saves were waiting in the queue: their places, given back should no game come of it
     # (Tables._restore).
     held: list[Waiting] = field(default_factory=list)
+    # Watching: the connections watching the game, by member id, each with the seat whose hand it looks at; the
+    # last ``ddz_result`` of the game (for one that starts watching after it); and the watchers' faces as the table
+    # was told them last (``ddz_watchers``), when, the timer of the next telling, and the member ids of the watchers
+    # not told them yet (Tables._watchers_changed).
+    watchers: dict[str, tuple[Peer, int]] = field(default_factory=dict)
+    result: dict | None = None
+    watch_sent: list[dict] = field(default_factory=list)
+    watch_at: float = float("-inf")
+    watch_timer: Any = None
+    watch_owed: set[str] = field(default_factory=set)
 
     @property
     def match(self) -> bool:
@@ -615,6 +667,7 @@ class Tables:
 
     def clear(self) -> None:
         for table in list(self.by_id.values()):
+            self._end_watch(table, None)
             self._drop(table)
         self.refused.clear()
         self.lobby.clear()
@@ -699,7 +752,7 @@ class Tables:
         self._check_free(peers)
         table = Table(id=secrets.token_hex(4), room=room_id, base=base, deposit=deposit, seats=[
             Seat(token=p.token, peer=p, id=p.id, nick=p.nick, character=p.character, plate=p.plate, accepted=p is peer,
-                 raw=p.raw_nick)
+                 raw=p.raw_nick, watchable=p.ddz_watch)
             for p in peers])
         self.by_id[table.id] = table
         for p in peers:
@@ -811,7 +864,7 @@ class Tables:
 
     def _seat_for(self, peer: Peer, **kw: Any) -> Seat:
         return Seat(token=peer.token or "", peer=peer, id=peer.id, nick=peer.nick, character=peer.character,
-                    plate=peer.plate, raw=peer.raw_nick,
+                    plate=peer.plate, raw=peer.raw_nick, watchable=peer.ddz_watch,
                     **{"accepted": True, **kw})
 
     def _empty_seat(self) -> Seat:
@@ -1185,6 +1238,8 @@ class Tables:
         if 0 in gone:
             self._disband(table, "disband", by=table.seats[0], quiet=gone)
             return
+        # Watchers of the game before (another game asked for) stop: the table waits for players again.
+        self._end_watch(table, "reopen")
         table.phase = OPEN
         table.row, table.deal, table.live_rooms = None, 0, set()
         for i, s in enumerate(table.seats):
@@ -1264,10 +1319,13 @@ class Tables:
         self._deal(table)
 
     def _deal(self, table: Table) -> None:
+        # A save of the table watching a game anywhere plays now instead.
+        self._unwatch_saves({s.token for s in table.seats if s.token}, "playing")
         deck = list(rules.DECK)
         self.rng.shuffle(deck)
         table.deal += 1
         table.phase = BID
+        table.result = None
         table.bottom = sorted(deck[51:])
         table.bid, table.bidder, table.bids_made, table.landlord = 0, None, 0, None
         table.last, table.trick, table.bombs = None, [None, None, None], 0
@@ -1284,6 +1342,13 @@ class Tables:
                 s.peer.enqueue({"type": "ddz_deal", "table": table.id, "seats": seats, "you": i, "hand": s.hand,
                                 "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "turn": first,
                                 "sec": sec, "dealSec": DEAL_SEC, **self._counter(s)})
+        # Each watcher its own: the seats by the member ids its room knows, the hand of the seat it looks at.
+        for peer, at in list(table.watchers.values()):
+            ids = self._watch_ids(table, peer)
+            peer.enqueue({"type": "ddz_deal", "table": table.id,
+                          "seats": [{**x, "id": i} for x, i in zip(seats, ids)],
+                          "hand": self._hand_for(table, at, peer), "base": table.base, "cap": cfg["capMult"],
+                          "deal": table.deal, "turn": first, "sec": sec, "dealSec": DEAL_SEC, "watch": True})
 
     def _counter(self, s: Seat) -> dict:
         """A seat's card counter as its own messages carry it; nothing where the counter is free."""
@@ -1393,8 +1458,9 @@ class Tables:
         if s.auto == on:
             return
         s.auto = on
-        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": s.peer is None,
-                    "auto": s.auto})
+        said = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": s.peer is None, "auto": s.auto}
+        table.tell(said)
+        self._show(table, said)
 
     async def bid(self, peer: Peer, table_id: str, bid: int) -> None:
         table, seat = self._table(peer, table_id, BID)
@@ -1418,8 +1484,10 @@ class Tables:
             said["turn"] = nxt
             said["sec"] = self._give_turn(table, nxt, cfg["bidSec"])
             table.tell(said)
+            self._show(table, said)
             return
         table.tell(said)
+        self._show(table, said)
         if table.bidder is None:
             if table.deal >= MAX_DEALS:
                 await self._abort(table, "nobid")
@@ -1434,8 +1502,10 @@ class Tables:
         # Before the landlord is told: the counter is on by the time the client shows the play.
         for x in table.seats:
             self._counter_on(table, x)
-        table.tell({"type": "ddz_landlord", "table": table.id, "seat": lord, "bid": table.bid, "bottom": table.bottom,
-                    "mult": table.mult(cfg["capMult"]), "turn": lord, "sec": sec})
+        said = {"type": "ddz_landlord", "table": table.id, "seat": lord, "bid": table.bid, "bottom": table.bottom,
+                "mult": table.mult(cfg["capMult"]), "turn": lord, "sec": sec}
+        table.tell(said)
+        self._show(table, said)
 
     async def play(self, peer: Peer, table_id: str, cards: list[int]) -> None:
         table, seat = self._table(peer, table_id, PLAY)
@@ -1466,6 +1536,7 @@ class Tables:
                 "mult": table.mult(cfg["capMult"]), "bombs": table.bombs}
         if not s.hand:
             table.tell(said)
+            self._show(table, said)
             await self._finish(table, seat)
             return
         nxt = (seat + 1) % 3
@@ -1478,6 +1549,7 @@ class Tables:
         said["lead"] = lead
         said["sec"] = self._give_turn(table, nxt, cfg["playSec"])
         table.tell(said)
+        self._show(table, said)
 
     async def _finish(self, table: Table, winner: int) -> None:
         """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table."""
@@ -1498,10 +1570,12 @@ class Tables:
         table.phase = OVER
         for s in table.seats:
             s.again = False
-        table.tell({"type": "ddz_result", "table": table.id, "winner": "landlord" if landlord_won else "farmers",
-                    "landlord": lord, "bid": table.bid, "bombs": table.bombs, "spring": spring, "mult": mult,
-                    "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
-                    "sec": cfg["againSec"]}, quit=True)
+        table.result = {"type": "ddz_result", "table": table.id, "winner": "landlord" if landlord_won else "farmers",
+                        "landlord": lord, "bid": table.bid, "bombs": table.bombs, "spring": spring, "mult": mult,
+                        "base": table.base, "deltas": deltas, "hands": [s.hand for s in table.seats],
+                        "sec": cfg["againSec"]}
+        table.tell(table.result, quit=True)
+        self._show(table, table.result)
         await self._live(table, False, deltas=deltas)
         if table.open and not self._gone(table.seats[0]):
             # An open table goes on without those who left: they are free now, and their seats empty on reopening.
@@ -1535,6 +1609,7 @@ class Tables:
         """After a game at an open table whose opener asked for another: those who asked keep their seats and the
         table is open again, with the same stake and rules; anyone else hears the table is gone."""
         self._cancel_timer(table)
+        self._end_watch(table, "reopen")
         table.phase = OPEN
         table.row, table.deal, table.live_rooms, table.opened_at = None, 0, set(), self.clock()
         for i, s in enumerate(table.seats):
@@ -1572,6 +1647,7 @@ class Tables:
                 log.error("ddz: game %s keeps its deposits until the next start", table.row)
         finally:
             table.phase = DONE
+            self._end_watch(table, "gone")
             self._drop(table)
             table.tell({"type": "ddz_over", "table": table.id, "reason": reason}, quit=True)
             held, table.held = table.held, []
@@ -1593,6 +1669,7 @@ class Tables:
             said["turn"] = seat
             said["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
         table.tell(said)
+        self._show(table, said)
 
     async def again(self, peer: Peer, table_id: str) -> None:
         table, seat = self._table(peer, table_id, OVER)
@@ -1600,7 +1677,9 @@ class Tables:
         if s.again:
             return
         s.again = True
-        table.tell({"type": "ddz_again", "table": table.id, "seat": seat})
+        said = {"type": "ddz_again", "table": table.id, "seat": seat}
+        table.tell(said)
+        self._show(table, said)
         if self._reopen_due(table):
             self._reopen(table)
             return
@@ -1655,13 +1734,18 @@ class Tables:
     def _quit(self, table: Table, seat: int) -> None:
         s = table.seats[seat]
         s.quit, s.auto = True, True
-        table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": True})
+        said = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": True}
+        table.tell(said)
+        self._show(table, said)
         if table.turn == seat and table.phase in (BID, PLAY):
             self._give_turn(table, seat, AUTO_SEC)
 
     async def departed(self, room_id: str, peer: Peer) -> None:
         """A member left the room (leave, kick, lost connection): it stops waiting in the queue, an invite is dropped,
-        a seat in a game is played for until its save comes back."""
+        a seat in a game is played for until its save comes back. A connection watching a game stops, told nothing;
+        whether watchers elsewhere may see a seat's hand may have changed."""
+        self._unwatch(peer)
+        self._rooms_changed()
         self._leave_queue(peer, tell=False)
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
@@ -1693,7 +1777,9 @@ class Tables:
                 # Nobody is left to watch it played out.
                 await self._abort(table, "gone")
                 return
-            table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": s.auto})
+            said = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id, "away": True, "auto": s.auto}
+            table.tell(said)
+            self._show(table, said)
             if table.turn == seat:
                 self._give_turn(table, seat, AUTO_SEC)
 
@@ -1710,6 +1796,7 @@ class Tables:
         seat = self._mine(table, peer, lambda t, s: not (t.match or s.roam) and t.room == room_id and (
             peer.ddz_match if t.open else peer.ddz))
         handoff = self._retake(table, seat, peer) if table is not None and seat is not None else False
+        self._rooms_changed()
         for live in list(self.by_id.values()):
             if live.phase not in (BID, PLAY, SETTLING):
                 continue
@@ -1756,7 +1843,7 @@ class Tables:
             s.peer.enqueue({"type": "ddz_closed", "table": table.id})
         face = (s.nick, s.character, s.plate)
         s.peer, s.id, s.nick, s.character, s.plate = peer, peer.id, peer.nick, peer.character, peer.plate
-        s.raw = peer.raw_nick
+        s.raw, s.watchable = peer.raw_nick, peer.ddz_watch
         # The others hear the seat's new face with its new member id (_back).
         s.restyled = face != (s.nick, s.character, s.plate)
         if not handoff:
@@ -1782,9 +1869,15 @@ class Tables:
             else:
                 msg["sec"] = self._give_turn(table, seat, cfg["bidSec"] if table.phase == BID else cfg["playSec"])
         table.tell(msg, but=seat)
+        self._show(table, msg)
         # A game of the counter the save has left is used now, should the landlord have been found without it.
         self._counter_on(table, s)
         peer.enqueue(self._state(table, seat))
+        # Whether watchers may see the seat's hand may have changed with its connection; the member hears who watches
+        # at once.
+        if table.watchers and peer.ddz_watch:
+            peer.enqueue(self._watchers_msg(table, self._faces(table)))
+        self._watchers_changed(table)
 
     # ------------------------------------------------------- dou dizhu connections
     async def hello(self, peer: Peer) -> None:
@@ -1842,6 +1935,7 @@ class Tables:
         s = table.seats[seat]
         s.peer, s.id = peer, peer.id
         s.nick, s.character, s.plate, s.raw = peer.nick, peer.character, peer.plate, peer.raw_nick
+        s.watchable = peer.ddz_watch
         if table.phase == OPEN:
             sec = max(0.0, round(s.until - self.clock(), 1))
             peer.enqueue({"type": "ddz_invite", "table": table.id, "ids": [x.id for x in table.seats],
@@ -1861,7 +1955,11 @@ class Tables:
 
     def restyle(self, peer: Peer) -> None:
         """[peer]'s nick, pet or plate changed (its own state, or the blocklist masking its nick again): the seat it
-        plays shows the new face, and the table hears it (ddz_seat with the face; an open table's list and seats)."""
+        plays shows the new face, and the table hears it (ddz_seat with the face; an open table's list and seats). The
+        table it watches hears it with its watchers."""
+        watched = self.by_id.get(peer.watching) if peer.watching else None
+        if watched is not None and peer.id in watched.watchers:
+            self._watchers_changed(watched)
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table is not None else None
         if table is None or seat is None:
@@ -1878,9 +1976,11 @@ class Tables:
         if table.phase == OPEN:
             self._open_changed(table)
         elif table.phase in (INVITE, STARTING, BID, PLAY, SETTLING, OVER):
-            table.tell({"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id,
-                        "away": s.quit or (table.phase != INVITE and s.peer is None), "auto": s.auto,
-                        "nick": s.nick, "character": s.character, "plate": s.plate})
+            said = {"type": "ddz_seat", "table": table.id, "seat": seat, "id": s.id,
+                    "away": s.quit or (table.phase != INVITE and s.peer is None), "auto": s.auto,
+                    "nick": s.nick, "character": s.character, "plate": s.plate}
+            table.tell(said)
+            self._show(table, said)
 
     def remask(self, mask: Callable[[str], str]) -> None:
         """The blocklist changed: every seat shown at a table, its member there or away, shows its nick masked again
@@ -1895,6 +1995,9 @@ class Tables:
                 if nick != s.nick:
                     s.nick = nick
                     self._tell_face(table, i)
+            # The watchers' nicks are their connections', masked again by then.
+            if table.watchers:
+                self._watchers_changed(table)
 
     async def bye(self, peer: Peer) -> None:
         """A dou dizhu connection closed: as a member leaving its room (departed)."""
@@ -1923,6 +2026,7 @@ class Tables:
                 p.enqueue({"type": "ddz_emote", "table": table.id, "seat": seat, "emote": emote})
             elif table.room is not None and p.room == table.room == peer.room:
                 p.enqueue({"type": "emote", "id": peer.id, "emote": emote})
+        self._show(table, {"type": "ddz_emote", "table": table.id, "seat": seat, "emote": emote})
 
     def _state(self, table: Table, seat: int) -> dict:
         """The whole game as [seat] may see it."""
@@ -2167,7 +2271,7 @@ class Tables:
         deposit = self.bank.deposit(base)
         table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, seats=[
             Seat(token=w.token, peer=w.peer, id=w.peer.id, nick=w.peer.nick, character=w.peer.character,
-                 plate=w.peer.plate, since=w.since, seq=w.seq, raw=w.peer.raw_nick)
+                 plate=w.peer.plate, since=w.since, seq=w.seq, raw=w.peer.raw_nick, watchable=w.peer.ddz_watch)
             for w in three])
         for w in three:
             self._dequeue(w)
@@ -2267,6 +2371,181 @@ class Tables:
         for p in list(self.lobby.values()):
             p.enqueue(msg)
 
+    # ----------------------------------------------------------------- watching
+    def watch(self, peer: Peer, table_id: str, seat: int = 0) -> None:
+        """Room member [peer] (its client said `ddzMatch` and `ddzWatch`) watches the game at [table_id] with the hand
+        of [seat] shown when it may be (_hand_for), and hears it whole (``ddz_watch``); or, [table_id] empty, stops
+        watching, told nothing. Another table or seat replaces what it watched; a refusal leaves that as it was."""
+        if not table_id:
+            self._unwatch(peer)
+            return
+        now = self.clock()
+        if now - peer.watch_at < WATCH_INTERVAL:
+            raise GameError("rate_limited", "too many requests")
+        peer.watch_at = now
+        table = self.by_id.get(table_id)
+        room = self.manager.rooms.get(peer.room)
+        if (table is None or table.phase not in (BID, PLAY, SETTLING, OVER) or room is None or not peer.active
+                or room.peers.get(peer.id) is not peer or peer.room not in self._rooms(table)):
+            raise GameError("ddz_gone", "")
+        if peer.token:
+            own = self.by_save.get(peer.token)
+            if any(s.token == peer.token for s in table.seats) or (
+                    own is not None and own.phase in (STARTING, BID, PLAY, SETTLING, OVER)):
+                raise GameError("ddz_busy", "")
+        if peer.id not in table.watchers and len(table.watchers) >= WATCH_MAX:
+            raise GameError("ddz_watch_full", "")
+        if peer.watching != table.id:
+            self._unwatch(peer)
+        table.watchers[peer.id] = (peer, seat)
+        peer.watching = table.id
+        peer.enqueue(self._watch_state(table, seat, peer))
+        table.watch_owed.add(peer.id)
+        self._watchers_changed(table)
+
+    def _unwatch(self, peer: Peer) -> None:
+        """[peer] stops watching, told nothing."""
+        table = self.by_id.get(peer.watching) if peer.watching else None
+        peer.watching = None
+        if table is not None and table.watchers.get(peer.id, (None,))[0] is peer:
+            del table.watchers[peer.id]
+            table.watch_owed.discard(peer.id)
+            self._watchers_changed(table)
+
+    def _end_watch(self, table: Table, reason: str | None) -> None:
+        """Every watcher of [table] stops, told why (``ddz_watch_end``) unless [reason] is None."""
+        if not table.watchers:
+            return
+        for peer, _ in list(table.watchers.values()):
+            if reason:
+                peer.enqueue({"type": "ddz_watch_end", "table": table.id, "reason": reason})
+            if peer.watching == table.id:
+                peer.watching = None
+        table.watchers.clear()
+        table.watch_owed.clear()
+        self._watchers_changed(table)
+
+    def _unwatch_saves(self, saves: set[str], reason: str) -> None:
+        """The connections of [saves] watching a game stop, told why: their saves play."""
+        if not saves:
+            return
+        for table in list(self.by_id.values()):
+            for peer, _ in [w for w in table.watchers.values() if w[0].token and w[0].token in saves]:
+                peer.enqueue({"type": "ddz_watch_end", "table": table.id, "reason": reason})
+                peer.watching = None
+                del table.watchers[peer.id]
+                table.watch_owed.discard(peer.id)
+                self._watchers_changed(table)
+
+    def _rooms_changed(self) -> None:
+        """A connection joined or left a room: which hands watchers may see may have changed (_hand_for)."""
+        for table in list(self.by_id.values()):
+            if table.watchers or table.watch_sent:
+                self._watchers_changed(table)
+
+    def _shows(self, table: Table, seat: int, peer: Peer) -> bool:
+        """Whether watcher [peer] may see the hand of seat [seat]: the seat's client shows who watches it
+        (Seat.watchable), and the seat plays in the watcher's room (the table's own room, not a seat from the queue) or
+        its save is in that room on some connection."""
+        s = table.seats[seat]
+        if not s.watchable or not s.token:
+            return False
+        if table.room is not None and table.room == peer.room and not s.roam:
+            return True
+        room = self.manager.rooms.get(peer.room)
+        return room is not None and any(p.token == s.token for p in room.peers.values())
+
+    def _hand_for(self, table: Table, seat: int, peer: Peer) -> list[int] | None:
+        """The hand of seat [seat] as watcher [peer] gets it: a copy, None when it may not see it (_shows). The only
+        way a hand reaches a watcher before the result."""
+        return list(table.seats[seat].hand) if self._shows(table, seat, peer) else None
+
+    def _watch_ids(self, table: Table, peer: Peer) -> list[str]:
+        """The seats of [table] by the member ids the room of watcher [peer] knows them by (_ids_in)."""
+        room = self.manager.rooms.get(peer.room)
+        return self._ids_in(room, table) if room is not None else [s.id for s in table.seats]
+
+    def _show(self, table: Table, data: dict) -> None:
+        """Copies a message every seat may hear (one of SHOWN) to the watchers of [table], with `watch` true; a
+        ``ddz_seat``'s member id as the watcher's room knows it. Only messages passed here reach watchers, so what is
+        added to the seats' messages (Table.tell) stays theirs."""
+        if not table.watchers:
+            return
+        if data["type"] not in SHOWN:
+            raise ValueError(f"not shown to watchers: {data['type']}")
+        for peer, _ in list(table.watchers.values()):
+            msg = {**data, "watch": True}
+            if data["type"] == "ddz_seat":
+                msg["id"] = self._watch_ids(table, peer)[data["seat"]]
+            peer.enqueue(msg)
+
+    def _watch_state(self, table: Table, seat: int, peer: Peer) -> dict:
+        """The whole game as watcher [peer] may see it, with the hand of [seat] (_hand_for)."""
+        cfg = self.bank.cfg()
+        ids = self._watch_ids(table, peer)
+        return {
+            "type": "ddz_watch", "table": table.id, "seat": seat, "hand": self._hand_for(table, seat, peer),
+            "phase": table.phase,
+            "seats": [{**_face(s), "id": i, "left": len(s.hand), "bid": s.bid, "auto": s.auto,
+                       "away": s.peer is None or s.quit, "again": s.again}
+                      for s, i in zip(table.seats, ids)],
+            "base": table.base, "cap": cfg["capMult"], "deal": table.deal, "bid": table.bid,
+            "landlord": table.landlord, "bottom": list(table.bottom) if table.landlord is not None else [],
+            "mult": table.mult(cfg["capMult"]), "bombs": table.bombs, "turn": table.turn,
+            "lead": table.phase == PLAY and table.last is None,
+            "trick": [None if x is None else list(x) for x in table.trick],
+            "sec": max(0.0, round(table.deadline - self.clock(), 1)), "of": table.turn_sec,
+            "result": table.result if table.phase == OVER else None,
+        }
+
+    def _faces(self, table: Table) -> list[dict]:
+        """The watchers of [table] as the table sees them: nick, pet, and the seat whose hand each sees (None when it
+        sees none)."""
+        return [{"nick": p.nick, "character": p.character, "seat": at if self._shows(table, at, p) else None}
+                for p, at in table.watchers.values()]
+
+    @staticmethod
+    def _watchers_msg(table: Table, faces: list[dict]) -> dict:
+        return {"type": "ddz_watchers", "table": table.id, "faces": faces}
+
+    def _watchers_changed(self, table: Table) -> None:
+        """The watchers of [table], or what they see, may have changed: the table hears them now, or COUNTS_SEC after
+        it was last told."""
+        if table.phase == DONE or self.by_id.get(table.id) is not table or table.watch_timer is not None:
+            return
+        wait = table.watch_at + COUNTS_SEC - self.clock()
+        if wait > 0:
+            table.watch_timer = self.count_timers.later(wait, lambda: self._watchers_due(table))
+        else:
+            self._send_watchers(table)
+
+    async def _watchers_due(self, table: Table) -> None:
+        table.watch_timer = None
+        self._send_watchers(table)
+
+    def _send_watchers(self, table: Table) -> None:
+        """Tells the seats whose client shows watchers, and the watchers, who watches (``ddz_watchers``), when it
+        differs from what they were told last (an empty list once the last goes); a watcher not told yet hears it all
+        the same."""
+        if table.phase == DONE or self.by_id.get(table.id) is not table:
+            return
+        faces = self._faces(table)
+        owed, table.watch_owed = table.watch_owed, set()
+        msg = self._watchers_msg(table, faces)
+        if faces == table.watch_sent:
+            for i in owed:
+                w = table.watchers.get(i)
+                if w is not None:
+                    w[0].enqueue(msg)
+            return
+        table.watch_sent = faces
+        table.watch_at = self.clock()
+        for s in table.seats:
+            if s.peer is not None and not s.quit and s.peer.ddz_watch:
+                s.peer.enqueue(msg)
+        for peer, _ in list(table.watchers.values()):
+            peer.enqueue(msg)
+
     # ------------------------------------------------------------------- ending
     def _cancel_timer(self, table: Table) -> None:
         if table.timer is not None:
@@ -2276,6 +2555,10 @@ class Tables:
     def _drop(self, table: Table) -> None:
         self._cancel_timer(table)
         self.by_id.pop(table.id, None)
+        self._end_watch(table, "closed")
+        if table.watch_timer is not None:
+            table.watch_timer.cancel()
+            table.watch_timer = None
         for s in table.seats:
             if self.by_save.get(s.token) is table:
                 del self.by_save[s.token]
@@ -2293,6 +2576,8 @@ class Tables:
         if table.phase == DONE:
             return
         table.phase = DONE
+        # Watchers are there only when another game at the table fails to start.
+        self._end_watch(table, "gone")
         self._drop(table)
         self._refuse(table, refused or [])
         over = {"type": "ddz_over", "table": table.id, "reason": reason}

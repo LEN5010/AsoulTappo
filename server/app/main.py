@@ -36,7 +36,7 @@ from . import notice as notices
 from .notice import Notice, OUTDATED_MESSAGE, version_key
 from .models import (
     DdzAgainMsg, DdzAnswerMsg, DdzAutoMsg, DdzBidMsg, DdzCallMsg, DdzInviteMsg, DdzLeaveMsg, DdzOpenMsg, DdzPlayMsg,
-    DdzCounterMsg, DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg,
+    DdzCounterMsg, DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg, DdzWatchMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
     ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
@@ -1414,7 +1414,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     break
                 peer = Peer(id=secrets.token_hex(4), nick=blocklist.mask(msg.nick), character=character, ws=ws,
                             token=who, plate=plate, send_timeout=manager.send_timeout, lobby=True, ddz=True,
-                            ddz_match=True, dnd=msg.dnd)
+                            ddz_match=True, ddz_watch=msg.ddzWatch, dnd=msg.dnd)
                 peer.join_seq = seq
                 peer.on_failure = functools.partial(_lobby_failed, peer)
                 raw_nicks[peer.id] = peer.raw_nick = msg.nick
@@ -1459,6 +1459,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 peer.dnd = msg.dnd
                 peer.ddz = msg.ddz and bool(game.manifest.ddz)
                 peer.ddz_match = peer.ddz and msg.ddzMatch
+                peer.ddz_watch = peer.ddz_match and msg.ddzWatch
                 peer.status = room_status(msg.status)
                 await run_in_threadpool(game.note_room_nick, who, msg.nick)
                 peer.account = signed_in
@@ -1474,6 +1475,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     # A client that queues for dou dizhu hears that this server has the queue, and emotes that go
                     # through the table (ddz_emote).
                     joined["features"] = [*FEATURES, "ddz_match", "ddz_emote"] if peer.ddz_match else list(FEATURES)
+                    # A client that watches dou dizhu games hears that this server lets it (ddz_watch).
+                    if peer.ddz_watch:
+                        joined["features"].append("ddz_watch")
                     # The newcomer's cheer bar starts as the room's stands.
                     joined["cheer"] = {k: v for k, v in manager.cheer_state(manager.rooms[room_id]).items() if k != "type"}
                 await send(joined)
@@ -1640,6 +1644,14 @@ async def ws_endpoint(ws: WebSocket) -> None:
             elif isinstance(msg, DdzCounterMsg):
                 try:
                     await tables.counter(peer, msg.table)
+                except GameError as e:
+                    await err(e.code, "")
+            elif isinstance(msg, DdzWatchMsg):
+                if not (peer.ddz_match and peer.ddz_watch):
+                    await err("bad_message", "join with ddzMatch and ddzWatch to watch games")
+                    continue
+                try:
+                    tables.watch(peer, msg.table, msg.seat)
                 except GameError as e:
                     await err(e.code, "")
             elif isinstance(msg, (DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg,
