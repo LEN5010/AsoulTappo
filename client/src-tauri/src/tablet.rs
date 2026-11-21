@@ -11,11 +11,19 @@
 //! hook. Its tap would count twice if the tablet's reports still arrived here, so a tip-down is held for `ECHO_MS`
 //! and dropped when the hook saw a left press around the same moment.
 //!
+//! Some drivers send that mouse input with `SendInput`, which gives every tap the injected flag a clicker's presses
+//! have (src/input.rs, AUTOMATED INPUT). A left press with the flag that comes within `ECHO_MS` of a tip-down this
+//! module read from the tablet's own reports is the pen's, and `PenMatch` passes it on as not injected. Without a
+//! tablet sending reports no press is changed.
+//!
 //! PRIVACY: as the hook, this forwards that a press happened and where the cursor is, never what was drawn.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
-use std::time::Instant;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use rdev::{Button, EventType};
 
 /// A tip-down waits this long (ms) for the same tap to show up at the mouse hook before it counts as a press.
 pub const ECHO_MS: u64 = 30;
@@ -40,6 +48,103 @@ fn mouse_left_down() -> Option<u64> {
     match MOUSE_LEFT_DOWN.load(Ordering::Relaxed) {
         NEVER => None,
         at => Some(at),
+    }
+}
+
+/// When a tablet last reported its tip touching down.
+static TIP_DOWN: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// A tablet's report showed the tip (or the eraser) touching down at [at].
+pub fn note_tip_down(at: Instant) {
+    if let Ok(mut last) = TIP_DOWN.lock() {
+        *last = Some(at);
+    }
+}
+
+/// When a tablet last reported a tip-down, if one ever did.
+pub fn last_tip_down() -> Option<Instant> {
+    TIP_DOWN.lock().ok().and_then(|last| *last)
+}
+
+/// An event as the filter thread gets it (src/input.rs): what happened, when, and whether software sent it.
+pub type Heard = (EventType, Instant, Option<bool>);
+
+/// Puts back the pen's taps that a tablet driver sent with `SendInput`. An injected left press waits here, and what
+/// came after it waits behind it so the order holds, until a tip-down within `ECHO_MS` of it is known (the pen's: it
+/// goes on as not injected, and so does its release) or `ECHO_MS` has passed (it goes on as it came).
+#[derive(Default)]
+pub struct PenMatch {
+    queue: VecDeque<Heard>,
+    /// The last left press went on as the pen's: its injected release is the pen's too.
+    pen_press: bool,
+    /// Presses passed on as the pen's since `take_matched` was last called.
+    matched: u32,
+}
+
+fn echo() -> Duration {
+    Duration::from_millis(ECHO_MS)
+}
+
+fn apart(a: Instant, b: Instant) -> Duration {
+    if a > b {
+        a - b
+    } else {
+        b - a
+    }
+}
+
+impl PenMatch {
+    pub fn push(&mut self, heard: Heard) {
+        self.queue.push_back(heard);
+    }
+
+    /// How long the press at the front may still wait for its tip-down; None when nothing waits.
+    pub fn wait(&self, now: Instant) -> Option<Duration> {
+        match self.queue.front() {
+            Some((EventType::ButtonPress(Button::Left), at, Some(true))) => {
+                Some((*at + echo()).saturating_duration_since(now))
+            }
+            _ => None,
+        }
+    }
+
+    /// Moves the events decided by [now] into [out], in order; [tip_down] is when a tablet last reported one.
+    pub fn take(&mut self, now: Instant, tip_down: Option<Instant>, out: &mut Vec<Heard>) {
+        while let Some(&(event, at, injected)) = self.queue.front() {
+            let injected = match event {
+                EventType::ButtonPress(Button::Left) if injected == Some(true) => {
+                    if tip_down.is_some_and(|tip| apart(tip, at) <= echo()) {
+                        self.pen_press = true;
+                        self.matched += 1;
+                        Some(false)
+                    } else if now >= at + echo() {
+                        self.pen_press = false;
+                        injected
+                    } else {
+                        break;
+                    }
+                }
+                EventType::ButtonPress(Button::Left) => {
+                    self.pen_press = false;
+                    injected
+                }
+                EventType::ButtonRelease(Button::Left) => {
+                    if std::mem::take(&mut self.pen_press) && injected == Some(true) {
+                        Some(false)
+                    } else {
+                        injected
+                    }
+                }
+                _ => injected,
+            };
+            self.queue.pop_front();
+            out.push((event, at, injected));
+        }
+    }
+
+    /// How many presses went on as the pen's since the last call.
+    pub fn take_matched(&mut self) -> u32 {
+        std::mem::take(&mut self.matched)
     }
 }
 
@@ -107,7 +212,7 @@ mod win {
         CreateWindowExW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, HWND_MESSAGE, MSG, WM_INPUT,
     };
 
-    use super::{mouse_left_down, now_ms, PenState};
+    use super::{mouse_left_down, note_tip_down, now_ms, PenState};
 
     /// HID usage page Digitizers, its top-level collections Digitizer and Pen, and the usages Tip Switch and Eraser.
     const PAGE_DIGITIZER: u16 = 0x0D;
@@ -248,6 +353,7 @@ mod win {
         let mut cache = HashMap::new();
         let mut pen = PenState::default();
         let mut heard = false;
+        let mut last_tip = false;
         let mut msg: MSG = unsafe { std::mem::zeroed() };
         while unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) } > 0 {
             if msg.message == WM_INPUT {
@@ -256,6 +362,10 @@ mod win {
                         heard = true;
                         applog!("tablet", "first pen report");
                     }
+                    if tip && !last_tip {
+                        note_tip_down(std::time::Instant::now());
+                    }
+                    last_tip = tip;
                     let mut at = POINT { x: 0, y: 0 };
                     if unsafe { GetCursorPos(&mut at) } != 0 {
                         push(EventType::MouseMove { x: at.x as f64, y: at.y as f64 }, None);
@@ -321,6 +431,107 @@ mod tests {
         // Unless the hook had it.
         assert_eq!(pen.report(true, 300, None), PenOut::default());
         assert_eq!(pen.report(false, 310, Some(305)), PenOut::default());
+    }
+
+    fn ms(base: Instant, n: u64) -> Instant {
+        base + Duration::from_millis(n)
+    }
+
+    fn flags(out: &[Heard]) -> Vec<(EventType, Option<bool>)> {
+        out.iter().map(|(e, _, i)| (*e, *i)).collect()
+    }
+
+    const DOWN: EventType = EventType::ButtonPress(Button::Left);
+    const UP: EventType = EventType::ButtonRelease(Button::Left);
+
+    #[test]
+    fn an_injected_press_at_a_tip_down_is_the_pens_and_so_is_its_release() {
+        let t = Instant::now();
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        m.push((DOWN, ms(t, 100), Some(true)));
+        m.take(ms(t, 101), Some(ms(t, 92)), &mut out);
+        m.push((UP, ms(t, 180), Some(true)));
+        m.take(ms(t, 181), Some(ms(t, 92)), &mut out);
+        assert_eq!(flags(&out), [(DOWN, Some(false)), (UP, Some(false))]);
+        assert_eq!(m.take_matched(), 1);
+        assert_eq!(m.take_matched(), 0);
+    }
+
+    #[test]
+    fn an_injected_press_waits_for_a_tip_down_reported_after_it() {
+        let t = Instant::now();
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        m.push((DOWN, ms(t, 100), Some(true)));
+        m.push((EventType::KeyPress(rdev::Key::KeyA), ms(t, 105), Some(false)));
+        // No tip-down yet: the press and the key behind it wait.
+        m.take(ms(t, 110), None, &mut out);
+        assert!(out.is_empty());
+        assert_eq!(m.wait(ms(t, 110)), Some(Duration::from_millis(ECHO_MS - 10)));
+        m.take(ms(t, 121), Some(ms(t, 120)), &mut out);
+        assert_eq!(flags(&out), [(DOWN, Some(false)), (EventType::KeyPress(rdev::Key::KeyA), Some(false))]);
+        assert_eq!(m.wait(ms(t, 121)), None);
+    }
+
+    #[test]
+    fn without_a_tip_down_an_injected_press_stays_injected() {
+        let t = Instant::now();
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        m.push((DOWN, ms(t, 100), Some(true)));
+        m.take(ms(t, 100 + ECHO_MS - 1), None, &mut out);
+        assert!(out.is_empty());
+        m.take(ms(t, 100 + ECHO_MS), None, &mut out);
+        m.push((UP, ms(t, 150), Some(true)));
+        m.take(ms(t, 151), None, &mut out);
+        assert_eq!(flags(&out), [(DOWN, Some(true)), (UP, Some(true))]);
+        assert_eq!(m.take_matched(), 0);
+    }
+
+    #[test]
+    fn a_tip_down_long_before_or_after_does_not_match() {
+        let t = ms(Instant::now(), 1_000);
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        m.push((DOWN, t, Some(true)));
+        m.take(ms(t, ECHO_MS), Some(t - Duration::from_millis(ECHO_MS + 1)), &mut out);
+        m.push((DOWN, ms(t, 500), Some(true)));
+        m.take(ms(t, 500 + ECHO_MS), Some(ms(t, 500 + ECHO_MS + 1)), &mut out);
+        assert_eq!(flags(&out), [(DOWN, Some(true)), (DOWN, Some(true))]);
+    }
+
+    #[test]
+    fn presses_without_the_flag_and_other_buttons_pass_at_once_unchanged() {
+        let t = Instant::now();
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        let right = EventType::ButtonPress(Button::Right);
+        m.push((DOWN, t, Some(false)));
+        m.push((right, t, Some(true)));
+        m.push((DOWN, t, None));
+        assert_eq!(m.wait(t), None);
+        m.take(t, Some(t), &mut out);
+        assert_eq!(flags(&out), [(DOWN, Some(false)), (right, Some(true)), (DOWN, None)]);
+        assert_eq!(m.take_matched(), 0);
+    }
+
+    #[test]
+    fn a_hand_press_after_a_pen_tap_keeps_its_own_flag() {
+        let t = Instant::now();
+        let mut m = PenMatch::default();
+        let mut out = Vec::new();
+        m.push((DOWN, ms(t, 100), Some(true)));
+        m.push((UP, ms(t, 150), Some(true)));
+        m.take(ms(t, 151), Some(ms(t, 100)), &mut out);
+        // A real mouse click, then a clicker's: neither is the pen's.
+        m.push((DOWN, ms(t, 2_000), Some(false)));
+        m.push((UP, ms(t, 2_050), Some(true)));
+        m.take(ms(t, 2_051), Some(ms(t, 100)), &mut out);
+        assert_eq!(
+            flags(&out),
+            [(DOWN, Some(false)), (UP, Some(false)), (DOWN, Some(false)), (UP, Some(true))]
+        );
     }
 
     #[test]
