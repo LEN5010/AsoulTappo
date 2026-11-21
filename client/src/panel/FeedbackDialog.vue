@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The settings page's feedback (stores/feedback.ts): a text, an optional contact and, in the desktop app, the latest
-// part of the log, ticked by default. Closes once sent; the settings row says so.
+// part of the log, which the player ticks to send. Closes once sent; the settings row says so.
 import { computed, ref } from "vue";
 import Modal from "../ui/Modal.vue";
 import { isTauri } from "../composables/tauri";
@@ -10,7 +10,7 @@ const emit = defineEmits<{ close: []; sent: [left: number] }>();
 
 const text = ref("");
 const contact = ref("");
-const withLog = ref(true);
+const withLog = ref(false);
 const busy = ref(false);
 const failed = ref("");
 const ready = computed(() => !!text.value.trim() && !busy.value);
