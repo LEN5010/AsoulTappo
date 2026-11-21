@@ -41,6 +41,8 @@ export interface Member {
   status?: string | null;
   /** The member's client plays dou dizhu and the server has it; servers before it send none. */
   ddz?: boolean;
+  /** The member's client queues for dou dizhu and opens tables; servers before it send none. */
+  ddzMatch?: boolean;
 }
 
 /** Profile fields a member can change with `state` ("" takes off the plate). */
@@ -96,16 +98,44 @@ export type DuelMessage =
   /** To both sides: ended without a winner (declined, timeout, gone, no_shards, duel_cap; idle and draws refund). */
   | { type: "duel_over"; duel: string; reason: string };
 
-/** A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for. */
-export interface DdzSeatInfo { id: string; nick: string; character: string; auto: boolean; away: boolean }
+/**
+ * A seat of a dou dizhu table as dealt: `away` while its member is out of the room, `auto` while it is played for;
+ * `plate` the name plate its member wears, when one is.
+ */
+export interface DdzSeatInfo { id: string; nick: string; character: string; plate?: string | null; auto: boolean; away: boolean }
+
+/** A seat of an open table: its member, one offered to a save of the queue (who stays unsaid), or null for empty. */
+export type DdzOpenSeat = { id: string; nick: string; character: string } | { pending: true } | null;
+/** An open table of the room, as `ddz_tables` lists it. */
+export interface DdzOpenTable { table: string; base: number; seats: DdzOpenSeat[] }
 
 /**
  * Dou dizhu messages from the server (server/app/ddz.py); all but `ddz_live` go to the three seats only. Seats are
  * numbered 0 to 2 in turn order; cards are 0..53 (src/ddz/rules.ts).
  */
 export type DdzMessage =
-  /** Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. */
-  | { type: "ddz_invite"; table: string; from: string; ids: string[]; base: number; deposit: number; sec: number }
+  /**
+   * Member [from] invited the two others of `ids` at base stake `base`; each seat pays `deposit` when all accept. A
+   * table the queue made has no `from`, all three answer, and `seats` names its members, who may be in other rooms.
+   * The seat of an open table offered to this save from the queue comes the same way, with `accepted` the seats taken
+   * and an empty seat as "" in `ids` and null in `seats`.
+   */
+  | {
+    type: "ddz_invite"; table: string; from?: string; ids: string[]; base: number; deposit: number; sec: number;
+    match?: boolean; seats?: ({ id: string; nick: string; character: string; plate?: string | null } | null)[]; accepted?: string[];
+  }
+  /**
+   * The open table this save sits at, whenever it changes: `you` is the own seat, `sec` the time until it is put away;
+   * `starting` while the three deposits are taken (the deal, or the table waiting again, follows).
+   */
+  | {
+    type: "ddz_open"; table: string; base: number; deposit: number; you: number; seats: DdzOpenSeat[]; sec: number;
+    starting?: boolean;
+  }
+  /** The open tables of the room, oldest first; an empty list once the last goes. */
+  | { type: "ddz_tables"; tables: DdzOpenTable[] }
+  /** The opener of an open table calls this member to it; shown for `sec` seconds. */
+  | { type: "ddz_call"; table: string; from: string; base: number; deposit: number; sec: number; seats: DdzOpenSeat[] }
   | { type: "ddz_answer"; table: string; id: string }
   /**
    * Ended with nothing won (declined, timeout, gone, nobid, no_shards, ddz_cap, ddz_locked, ddz_account: a seat's save
@@ -116,23 +146,45 @@ export type DdzMessage =
   | {
     type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; you: number; hand: number[]; base: number; cap: number; deal: number;
     turn: number; sec: number; dealSec?: number;
+    /** The own seat's card counter where it is sold: on for this game, and the games of it the save has left. */
+    counter?: DdzCounter;
+    watch?: undefined;
+  }
+  /**
+   * A deal of the table this client watches: the viewed seat's hand (null when it is not shown), no own seat and no
+   * counter.
+   */
+  | {
+    type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; hand: number[] | null; base: number; cap: number; deal: number;
+    turn: number; sec: number; dealSec?: number; watch: true;
   }
   /** A bid (0 passes); `turn` bids next while the bidding goes on. */
-  | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number }
-  | { type: "ddz_landlord"; table: string; seat: number; bid: number; bottom: number[]; mult: number; turn: number; sec: number }
+  | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number; watch?: true }
+  | {
+    type: "ddz_landlord"; table: string; seat: number; bid: number; bottom: number[]; mult: number; turn: number; sec: number;
+    watch?: true;
+  }
   /** A play ([] passes); `turn` plays next, and leads when `lead`. */
   | {
     type: "ddz_play"; table: string; seat: number; cards: number[]; left: number; mult: number; bombs: number;
-    turn?: number; sec?: number; lead?: boolean;
+    turn?: number; sec?: number; lead?: boolean; watch?: true;
   }
-  /** A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. */
-  | { type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number }
+  /**
+   * A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. A member back on a
+   * connection with another nick, pet or plate brings them along.
+   */
+  | {
+    type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number;
+    nick?: string; character?: string; plate?: string | null; watch?: true;
+  }
+  /** Seat `seat` of the own table showed emote `emote`, in whatever room. */
+  | { type: "ddz_emote"; table: string; seat: number; emote: string; watch?: true }
   | {
     type: "ddz_result"; table: string; winner: "landlord" | "farmers"; landlord: number; bid: number; bombs: number;
     /** 0 none, 1 spring, 2 counter-spring. */
-    spring: number; mult: number; base: number; deltas: number[]; hands: number[][]; sec: number;
+    spring: number; mult: number; base: number; deltas: number[]; hands: number[][]; sec: number; watch?: true;
   }
-  | { type: "ddz_again"; table: string; seat: number }
+  | { type: "ddz_again"; table: string; seat: number; watch?: true }
   | { type: "ddz_closed"; table: string }
   /** The whole game, for a seat whose member came back. */
   | {
@@ -140,9 +192,55 @@ export type DdzMessage =
     seats: (DdzSeatInfo & { left: number; bid: number | null })[]; base: number; cap: number; deal: number; bid: number;
     landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number; lead: boolean;
     trick: (number[] | null)[]; sec: number; of: number;
+    /** Every card played this deal, in order; left out by servers before the card counter. */
+    played?: number[];
+    counter?: DdzCounter;
   }
-  /** To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. */
-  | { type: "ddz_live"; table: string; ids: string[]; on: boolean; gains?: Record<string, number> };
+  /** The own seat's card counter now: the answer to asking for it, and sent when a game of it is used. */
+  | { type: "ddz_counter"; table: string; on: boolean; left: number; error?: string }
+  /**
+   * To the whole room: the three members started (on) or ended a game; `gains` are the winners' shards by member id. A
+   * room none of them is in by the end hears only that it ended.
+   */
+  | { type: "ddz_live"; table: string; ids: string[]; on: true; base?: number }
+  | { type: "ddz_live"; table: string; ids?: string[]; on: false; gains?: Record<string, number> }
+  /**
+   * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
+   * null when it does not, with `reason` when the server took it out (ddz_locked, ddz_account, no_shards, ddz_cap,
+   * ddz_dnd, error), or ddz_match_cooldown with `retry`: the save declined a table of the queue or let it lapse, and
+   * may queue again in that many seconds.
+   */
+  | { type: "ddz_queue"; base: number | null; waited?: number; reason?: string; retry?: number }
+  /** How many saves wait at each stake, as [base, saves]; stakes nobody waits at are left out. */
+  | { type: "ddz_waiting"; counts: [number, number][] }
+  /**
+   * The table this client watches, as seen from seat `seat`: the answer to each `ddz_watch`, a change of seat
+   * included. `hand` is that seat's hand (null when it is not shown); `phase` is the server's own; `result` the last
+   * `ddz_result` while the phase is "over".
+   */
+  | {
+    type: "ddz_watch"; table: string; seat: number; hand: number[] | null; phase: "bid" | "play" | "settling" | "over";
+    seats: (DdzSeatInfo & { left: number; bid: number | null; again?: boolean })[]; base: number; cap: number; deal: number;
+    bid: number; landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number | null; lead: boolean;
+    trick: (number[] | null)[]; sec: number; of: number; result: (DdzMessage & { type: "ddz_result" }) | null;
+  }
+  /**
+   * Watching table `table` ended: it closed, it opened again for seats after a game (reopen), its game ended with
+   * nothing won (gone, with `over` the reason ddz_over gives), or the own save started a game (playing). Not sent when
+   * the watcher stopped or left.
+   */
+  | { type: "ddz_watch_end"; table: string; reason: "closed" | "reopen" | "gone" | "playing"; over?: string }
+  /**
+   * Who watches table `table`, to its seats and its watchers: each one's nick, pet and the seat whose hand it sees
+   * (null for none). To a watcher, `you` is its own place in `faces`.
+   */
+  | { type: "ddz_watchers"; table: string; faces: DdzWatchFace[]; you?: number };
+
+/** A watcher of a dou dizhu table, as `ddz_watchers` lists it. */
+export interface DdzWatchFace { nick: string; character: string; seat: number | null }
+
+/** A seat's card counter where the economy sells it (`doudizhu.counter`). */
+export interface DdzCounter { on: boolean; left: number }
 
 /** Dou dizhu messages to the server; only to servers whose economy has `doudizhu`. */
 export type DdzClientMessage =
@@ -151,8 +249,55 @@ export type DdzClientMessage =
   | { type: "ddz_bid"; table: string; bid: number }
   | { type: "ddz_play"; table: string; cards: number[] }
   | { type: "ddz_auto"; table: string; on: boolean }
+  /** Turn the own seat's card counter on, buying its games when the save has none left; where it is sold only. */
+  | { type: "ddz_counter"; table: string }
   | { type: "ddz_again"; table: string }
-  | { type: "ddz_leave"; table: string };
+  | { type: "ddz_leave"; table: string }
+  /** Wait for a table at stake `base`, 0 to stop; only to servers that list "ddz_match" in `joined.features`. */
+  | { type: "ddz_queue"; base: number }
+  /** Open tables, to the same servers: open one at `base`, sit down at one (at `seat` when empty), call a member. */
+  | { type: "ddz_open"; base: number }
+  | { type: "ddz_sit"; table: string; seat?: number }
+  | { type: "ddz_call"; table: string; id: string }
+  /** An emote to the other seats of the own table. */
+  | { type: "ddz_emote"; table: string; emote: string }
+  /**
+   * Watch table `table` from seat `seat` (0 when left out), or another seat of it; "" stops. Only on the room
+   * connection, to servers that list "ddz_watch" in `joined.features`.
+   */
+  | { type: "ddz_watch"; table: string; seat?: number };
+
+/** Who a dou dizhu connection is: the same as a room join's. */
+export interface DdzHello {
+  nick: string; character: string; token?: string; accountToken?: string; plate?: string; dnd?: boolean;
+  /** This client knows watchers (`ddz_watchers`); servers without them ignore it. */
+  ddzWatch?: boolean;
+}
+
+/** What a dou dizhu connection hears beyond the table's messages. */
+export type DdzLinkMessage =
+  | DdzMessage
+  /**
+   * The hello went through: its member id; the stake the save waits at, taken over from an older connection (null
+   * when it does not); the table whose seat it took back (null for none: whatever it held before is gone).
+   */
+  | { type: "ddz_ready"; you: string; base: number | null; waited?: number; table: string | null }
+  | { type: "error"; code: string; message: string; reason?: string }
+  | { type: "pong" };
+
+/** GET /api/ddz/lobby: what the lobby shows the save. */
+export interface DdzLobby {
+  /** The stakes: the deposit, whether the save can pay it, how many saves wait there (it included). */
+  tiers: { base: number; deposit: number; afford: boolean; waiting: number }[];
+  /** Today's net win, the cap and what is left under it. */
+  net: number; cap: number; left: number;
+  /** The taps the save has and needs. */
+  taps: number; minTaps: number;
+  /** Whether the save meets the account rule of the server. */
+  account: boolean;
+  /** The save holds a seat a dou dizhu connection takes back. */
+  seated: boolean;
+}
 
 export type ClientMessage =
   | {
@@ -163,6 +308,10 @@ export type ClientMessage =
     status?: string;
     /** This client plays dou dizhu; servers without it ignore it. */
     ddz?: boolean;
+    /** This client also queues for dou dizhu tables across rooms; servers without the queue ignore it. */
+    ddzMatch?: boolean;
+    /** This client watches dou dizhu tables and knows watchers; servers without watching ignore it. */
+    ddzWatch?: boolean;
     motionVersion?: number;
   }
   | { type: "leave" }
@@ -188,6 +337,8 @@ export type ClientMessage =
   | { type: "duel_invite"; id: string; bet: number }
   | { type: "duel_answer"; duel: string; accept: boolean }
   | { type: "duel_throw"; duel: string; hand: Hand }
+  /** Opens a dou dizhu connection, in no room. */
+  | ({ type: "ddz_hello" } & DdzHello)
   | DdzClientMessage;
 
 export type ServerMessage =

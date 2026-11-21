@@ -26,7 +26,8 @@ DEPOSIT = BASE * CFG["capMult"] * 2
 
 def test_the_example_numbers():
     assert CFG == {"stakes": [50, 250, 500], "capMult": 24, "rake": 10, "inviteSec": 15, "bidSec": 15,
-                   "playSec": 30, "againSec": 30, "dailyWinCap": 50000, "minTaps": 10000}
+                   "playSec": 30, "againSec": 30, "dailyWinCap": 50000, "minTaps": 10000,
+                   "counter": {"coins": 1, "games": 10}}
 
 
 # ------------------------------------------------------------------ helpers
@@ -676,7 +677,8 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
         assert w.last("ddz_seat") == {"type": "ddz_seat", "table": tid, "seat": 1, "id": b2.id, "away": False,
                                       "auto": False}
         live, state = sock.got
-        assert live == {"type": "ddz_live", "table": tid, "ids": [a.id, b2.id, c.id], "on": True}
+        assert live == {"type": "ddz_live", "table": tid, "ids": [a.id, b2.id, c.id], "on": True,
+                        "base": BASE}
         assert state["type"] == "ddz_state" and state["you"] == 1 and state["hand"] == t.seats[1].hand
         assert state["phase"] == "play" and state["landlord"] == 0 and state["turn"] == 2 and state["bid"] == 3
         assert [s["left"] for s in state["seats"]] == [19, 17, 17] and state["trick"] == [t.trick[0], [], None]
@@ -687,6 +689,24 @@ def test_a_member_who_leaves_the_room_is_played_for_and_comes_back_to_its_seat()
         await w.t.play(c, tid, [])
         await play_out(w, tid)
         assert w.last("ddz_result", 1)["winner"] == "landlord"
+    run(go())
+
+
+def test_the_state_lists_every_card_played_this_deal():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        a, b, c = w.peers
+        t = w.t.by_id[tid]
+        assert w.t._state(t, 1)["played"] == []
+        first = [t.seats[0].hand[0]]
+        await w.t.play(a, tid, first)
+        await w.t.play(b, tid, [])
+        second = [next(x for x in t.seats[2].hand if rules.rank(x) > rules.rank(first[0]))]
+        await w.t.play(c, tid, second)
+        assert w.t._state(t, 1)["played"] == first + second
+        w.t._deal(t)
+        assert w.t._state(t, 1)["played"] == []
     run(go())
 
 
@@ -701,7 +721,7 @@ def test_rejoining_on_turn_updates_observers_and_other_seats():
         await w.t.joined("r", a2)
         await settle()
         assert observer.of("ddz_live")[-1] == {"type": "ddz_live", "table": tid,
-                                               "ids": [a2.id, b.id, c.id], "on": True}
+                                               "ids": [a2.id, b.id, c.id], "on": True, "base": BASE}
         assert w.last("ddz_seat", 1) == {"type": "ddz_seat", "table": tid, "seat": 0, "id": a2.id,
                                          "away": False, "auto": False, "turn": 0, "sec": CFG["playSec"]}
     run(go())
@@ -835,7 +855,8 @@ def test_a_game_over_the_socket(api):
         d.send_json({"type": "ddz_answer", "table": tid, "accept": True})
         for ws in (a, b, d):
             assert ws.receive_json()["type"] == "ddz_answer"
-            assert ws.receive_json() == {"type": "ddz_live", "table": tid, "ids": invite["ids"], "on": True}
+            assert ws.receive_json() == {"type": "ddz_live", "table": tid, "ids": invite["ids"], "on": True,
+                                         "base": BASE}
         deal = a.receive_json()
         b.receive_json(), d.receive_json()
         assert deal["type"] == "ddz_deal" and deal["turn"] == 0
@@ -1045,4 +1066,96 @@ def test_another_game_nobody_stayed_for_gives_the_deposits_back(monkeypatch):
         await settle()
         assert w.t.by_id == {} and w.t.by_save == {} and w.timers.live() == []
         assert [w.shards(p) for p in w.pids] == before
+    run(go())
+
+
+@pytest.mark.parametrize("again", [False, True])
+def test_a_cancelled_handler_while_the_deposits_are_taken_leaves_the_start_to_the_table(monkeypatch, again):
+    """The last to accept (or to ask for another game) has its connection handler cancelled while the database takes
+    the deposits: the start goes on on the table's own task and deals."""
+    async def go():
+        import threading
+
+        w = World(rng=Stacked(first=0))
+        if again:
+            tid = await w.playing()
+            await play_out(w, tid)
+        else:
+            tid = await w.invited()
+        a, b, c = w.peers
+        gate = threading.Event()
+        real = Bank.start
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            return real(self, pids, base)
+
+        monkeypatch.setattr(Bank, "start", slow)
+        if again:
+            await w.t.again(a, tid)
+            await w.t.again(b, tid)
+            task = asyncio.create_task(w.t.again(c, tid))
+        else:
+            await w.t.answer(b, tid, True)
+            task = asyncio.create_task(w.t.answer(c, tid, True))
+        t = w.t.by_id[tid]
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        assert t.phase == "starting"
+        task.cancel()
+        await asyncio.sleep(0.01)
+        gate.set()
+        await w.t.idle()
+        await settle()
+        assert t.phase == "bid" and t.row is not None and w.t.by_id.get(tid) is t
+        assert all(len(s.of("ddz_deal")) == (2 if again else 1) for s in w.socks)
+        assert [w.shards(p) for p in w.pids][0] < SHARDS
+    run(go())
+
+
+def test_the_start_task_cancelled_while_the_deposits_are_taken_hands_them_back(monkeypatch):
+    """The table's own start task is cancelled (the server stops) while the database takes the deposits: the table
+    ends, the saves are free, and the transaction, done after, hands back what it took."""
+    async def go():
+        import threading
+
+        w = World(rng=Stacked(first=0))
+        tid = await w.invited()
+        a, b, c = w.peers
+        before = [w.shards(p) for p in w.pids]
+        gate = threading.Event()
+        real = Bank.start
+        done = threading.Event()
+
+        def slow(self, pids, base):
+            gate.wait(5)
+            try:
+                return real(self, pids, base)
+            finally:
+                done.set()
+
+        monkeypatch.setattr(Bank, "start", slow)
+        await w.t.answer(b, tid, True)
+        handler = asyncio.create_task(w.t.answer(c, tid, True))
+        t = w.t.by_id[tid]
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if t.phase == "starting":
+                break
+        assert t.phase == "starting"
+        for task in list(w.t._tasks):
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await handler
+        assert w.t.by_id == {} and w.t.by_save == {}
+        assert all(s.of("ddz_over")[-1]["reason"] == "error" for s in w.socks)
+        gate.set()
+        for _ in range(200):
+            await asyncio.sleep(0.005)
+            if done.is_set() and [w.shards(p) for p in w.pids] == before:
+                break
+        assert [w.shards(p) for p in w.pids] == before
+        assert w.g.store.open_ddz_games() == []
     run(go())

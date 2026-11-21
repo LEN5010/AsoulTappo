@@ -1,28 +1,25 @@
 <script setup lang="ts">
 // A playing card of the dou dizhu table: white paper, the rank in Barlow with its suit under it, hearts and diamonds
-// in deep coral. The jokers are 阿草, grey on the small one. `card` null draws the back. Everything is sized from
-// `width` (px), so one card serves the hand, the table and the receipt.
+// in deep coral. The jokers are 阿草, grey on the small one. `card` null draws the back: plain coral with a white
+// edge and the A-SOUL mark in its middle. Everything is sized from `width` (px), so one card serves the hand, the
+// table and the receipt.
 import { computed } from "vue";
 import { isRed, rank, rankLabel, suit } from "../../ddz/rules";
 import alpaca from "../../assets/brand/side-alpaca.webp";
+import { SUITS } from "./suits";
 
 // `plain` leaves the large suit off the corner: for a card lying under another, where a sliver of it would show.
 const props = withDefaults(defineProps<{ card: number | null; width?: number; plain?: boolean }>(), { width: 64 });
 
-/** 24×24 outlines: spade, heart, club, diamond. */
-const SUITS = [
-  "M12 2s8 6.2 8 11.2c0 2.700-2 4.500-4.300 4.500-1.300 0-2.400-.5-3.100-1.400.2 2 .9 3.600 2.400 4.700H9c1.500-1.100 2.200-2.700 2.400-4.700-.7.9-1.800 1.400-3.100 1.400C6 17.700 4 15.900 4 13.200 4 8.200 12 2 12 2z",
-  "M12 21s-7.500-4.600-9.300-9.400C1.300 7.800 3.600 4 7.200 4c2 0 3.700 1 4.800 2.700C13.100 5 14.800 4 16.800 4c3.600 0 5.900 3.800 4.500 7.600C19.500 16.400 12 21 12 21z",
-  "M7.600 7a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM2.200 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM13 13.600a4.400 4.400 0 1 0 8.800 0 4.400 4.400 0 1 0-8.800 0zM12 11c.2 5 .9 8 2.600 10H9.400c1.700-2 2.400-5 2.600-10z",
-  "M12 2l7.500 10L12 22 4.500 12z",
-];
+/** Narrower backs (the other seats' stacks) go without the mark, too small to read there. */
+const MARK_MIN = 40;
 const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   label: rankLabel(rank(props.card)), path: SUITS[suit(props.card)]!, red: isRed(props.card),
 }));
 </script>
 
 <template>
-  <span v-if="card === null" class="ddz-card back" :style="{ '--w': width }"></span>
+  <span v-if="card === null" class="ddz-card back" :style="{ '--w': width }"><i v-if="width >= MARK_MIN" class="mark"></i></span>
   <span v-else-if="!face" class="ddz-card joker" :class="{ small: card === 52 }" :style="{ '--w': width }">
     <span class="word"><i v-for="c in 'JOKER'" :key="c">{{ c }}</i></span>
     <img :src="alpaca" alt="" draggable="false" />
@@ -102,16 +99,21 @@ const face = computed(() => (props.card === null || props.card >= 52 ? null : {
   pointer-events: none;
 }
 .joker.small img { filter: grayscale(1); opacity: 0.8; }
-/* The back: coral, a white edge, a line inside it. */
+/* The back: plain coral, a white edge, the A-SOUL mark in white across its middle. */
 .back {
-  background: var(--grad-sky);
-  box-shadow: inset 0 0 0 calc(var(--px) * 0.09) #fff, 0 1px 3px rgba(var(--c-900-rgb), 0.35);
+  background: var(--c-500);
+  box-shadow: inset 0 0 0 calc(var(--px) * 0.085) #fff, 0 1px 3px rgba(var(--c-900-rgb), 0.35);
 }
-.back::after {
-  content: "";
+.mark {
   position: absolute;
-  inset: calc(var(--px) * 0.19);
-  border-radius: calc(var(--px) * 0.06);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  left: 19%;
+  right: 19%;
+  top: 50%;
+  aspect-ratio: 2287 / 721;
+  translate: 0 -50%;
+  background: #fff;
+  -webkit-mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  mask: url("../../assets/brand/asoul-logo.svg") center / contain no-repeat;
+  pointer-events: none;
 }
 </style>

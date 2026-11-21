@@ -37,7 +37,9 @@ Weights are percentages unless said otherwise.
   amounts. ``rake`` percent of what the winners win is burnt. An invite waits ``inviteSec``, a bid ``bidSec``, a play
   ``playSec``, and the three have ``againSec`` after a game to ask for another. A save whose games of the China day
   have won it ``dailyWinCap`` or more starts no further game that day; losses are not capped. The three saves need
-  ``minTaps`` taps in all.
+  ``minTaps`` taps in all. With ``counter`` {coins, games} the card counter is sold: ``coins`` park coins buy
+  ``games`` games of it (a coin the save lacks is bought with shards at ``park.coin.price``), and one is used on each
+  game the save plays with it; without ``counter`` it is free.
 - ``park``, paid in coins:
 
   - ``coin``: ``price`` shards each; ``gift`` free a day with the save's first status that day; buying and the gift
@@ -107,11 +109,19 @@ def load(path: Path | str | None = None) -> tuple[dict[str, Any], dict[str, Any]
 
 
 def check(data: dict[str, Any]) -> None:
-    """Refuses settings that would roll nonsense: so far the holo chance, a percentage."""
+    """Refuses settings that would roll nonsense: the holo chance, a percentage, and the card counter's price."""
     chance = data.get("resonance", {}).get("holoChance")
     if chance is not None and (isinstance(chance, bool) or not isinstance(chance, (int, float))
                                or not 0 <= chance <= 100):
         raise ValueError(f"resonance.holoChance must be a percentage from 0 to 100, not {chance!r}")
+    counter = (data.get("doudizhu") or {}).get("counter")
+    if counter is not None:
+        for key in ("coins", "games"):
+            n = counter.get(key) if isinstance(counter, dict) else None
+            if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+                raise ValueError(f"doudizhu.counter.{key} must be a whole number of 1 or more, not {n!r}")
+        if not (data.get("park") or {}).get("coin"):
+            raise ValueError("doudizhu.counter is paid in park coins: it needs park.coin")
 
 
 def drop_config(anti: dict[str, Any]) -> DropConfig:

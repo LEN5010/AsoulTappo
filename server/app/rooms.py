@@ -113,10 +113,23 @@ class Peer:
     status: str | None = None
     # turns rock-paper-scissors invites down; never shown to the room
     dnd: bool = False
+    # the nick as the client sent it, before the blocklist masked it into `nick` (seats re-mask it, app/ddz.py)
+    raw_nick: str = ""
     # joined with a valid main-site account token: may make the room public on a server with accounts
     account: bool = False
     # the client can play dou dizhu (it said so when joining)
     ddz: bool = False
+    # the client also queues for dou dizhu tables across rooms (app/ddz.py, the queue)
+    ddz_match: bool = False
+    # the client watches dou dizhu games and shows who watches its own seat (app/ddz.py, watching)
+    ddz_watch: bool = False
+    # the table this connection watches, None for none; and the clock time of its last ddz_watch (Tables.watch)
+    watching: str | None = None
+    watch_at: float = float("-inf")
+    # the room this connection joined; "" for a dou dizhu connection (`lobby`)
+    room: str = ""
+    # a dou dizhu connection, in no room: it queues and plays at the tables the queue makes (app/ddz.py)
+    lobby: bool = False
     emotes: set[str] = field(default_factory=set)
     last_emote: float = 0.0
     tap_budget: float = 0.0
@@ -318,10 +331,9 @@ class RoomManager:
                 room.banned |= pending.banned
                 self.rename(room, pending.name)
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
-                    token=token, send_timeout=self.send_timeout, **profile)
+                    token=token, send_timeout=self.send_timeout, room=room_id, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
-        self._joins += 1
-        peer.join_seq = self._joins
+        peer.join_seq = self.next_seq()
         if token:
             room.cheer_gone.pop(token, None)
         room.peers[peer.id] = peer
@@ -334,6 +346,11 @@ class RoomManager:
                 room.public = True
             del self.restoring[room_id]
         return peer
+
+    def next_seq(self) -> int:
+        """The next Peer.join_seq, shared by room joins and dou dizhu connections."""
+        self._joins += 1
+        return self._joins
 
     async def _failed(self, room_id: str, peer: Peer) -> None:
         if not await self.depart(room_id, peer.id):

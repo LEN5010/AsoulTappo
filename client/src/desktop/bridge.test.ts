@@ -417,13 +417,71 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   panel.ddz.answerDdz(true);
   panel.ddz.playDdz([0, 1]);
   await vi.advanceTimersByTimeAsync(50);
-  expect(request.mock.calls).toEqual([["answer", true], ["play", [0, 1]]]);
+  // The answer names the table the panel showed, so the desk cannot apply it to another one.
+  expect(request.mock.calls).toEqual([["answer", true, "t1"], ["play", [0, 1]]]);
   desk.ddz.ddz.value = null;
   desk.ddz.onDdzMessage({ type: "ddz_live", table: "t2", ids: ["x", "y", "z"], on: false });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.ddz.ddz.value).toBeNull();
   expect(panel.ddz.ddzPlaying.value.size).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("mirrors the dou dizhu queue into the panel and runs the panel's queueing in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.room.ddzMatchOn.value = true;
+  desk.ddz.onDdzMessage({ type: "ddz_queue", base: 50, waited: 4 });
+  desk.ddz.onDdzMessage({ type: "ddz_waiting", counts: [[50, 2]] });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.room.ddzMatchOn.value).toBe(true);
+  expect(panel.ddz.ddzQueue.value).toEqual(desk.ddz.ddzQueue.value);
+  expect(panel.ddz.ddzQueue.value!.base).toBe(50);
+  expect(panel.ddz.ddzOthersWaiting(50)).toBe(1);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.unqueueDdz();
+  panel.ddz.queueDdz(250);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["unqueue"], ["queue", 250]]);
+  desk.ddz.onDdzMessage({ type: "ddz_queue", base: null });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddzQueue.value).toBeNull();
+});
+
+it("mirrors the dou dizhu connection and the table's emotes, and runs the table window's emotes and lobby reads in the desk", async () => {
+  const desk = await context(false);
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.ddz.ddzLink.value = "reconnecting";
+  const seats = ["a", "me", "b"].map((id) => ({ id, nick: id, character: "乃琳", auto: false, away: false }));
+  desk.ddz.onDdzMessage({
+    type: "ddz_deal", table: "t", seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  desk.ddz.onDdzMessage({ type: "ddz_emote", table: "t", seat: 2, emote: "thumbup" });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddzLink.value).toBe("reconnecting");
+  expect(table.ddz.ddzEmotes.value.map((f) => f?.key ?? null)).toEqual([null, null, "thumbup"]);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  table.ddz.emoteDdz("thumbup");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["emote", "thumbup"]]);
+  // The lobby is read by the desk, which holds the save's credentials; the window gets the answer.
+  const lobby = {
+    tiers: [{ base: 50, deposit: 2400, afford: true, waiting: 2 }], net: 0, cap: 50000, left: 50000, taps: 10000,
+    minTaps: 10000, account: true, seated: false,
+  };
+  const read = vi.spyOn(desk.player, "loadDdzLobby").mockResolvedValue(lobby);
+  expect(await table.player.loadDdzLobby()).toEqual(lobby);
+  read.mockResolvedValue("off");
+  expect(await table.player.loadDdzLobby()).toBe("off");
+  expect(read).toHaveBeenCalledTimes(2);
+  desk.ddz.ddzLinkOff.value = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddzLinkOff.value).toBe(true);
 });
 
 it("mirrors the table into its own window beside the panel, runs its moves in the desk, and stops when it closes", async () => {
@@ -472,6 +530,71 @@ it("mirrors the table into its own window beside the panel, runs its moves in th
   await vi.advanceTimersByTimeAsync(50);
   expect(table.ddz.ddz.value!.seats[1]!.bid).toBeNull();
   expect(panel.ddz.ddz.value!.seats[1]!.bid).toBe(2);
+});
+
+it("mirrors the game watched and its watchers, runs the windows' watching in the desk, and stops when the table's window closes", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.ddzWatchOn.value = true;
+  const seats = ["a", "x", "b"].map((id) => ({ id, nick: id, character: "乃琳", left: 17, bid: null, auto: false, away: false, again: false }));
+  desk.ddz.ddzWatch.value = {
+    id: "w", via: "room", phase: "play", you: 2, seats, hand: [52, 1], shown: true, switching: false, ended: "", log: [],
+    trick: [null, null, null], landlord: 2, bottom: [], turn: 0, sec: 30, until: Date.now() + 30000, result: null,
+  } as unknown as typeof desk.ddz.ddzWatch.value;
+  desk.ddz.onDdzMessage({ type: "ddz_watchers", table: "w", faces: [{ nick: "我", character: "嘉然", seat: 2 }] });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.room.ddzWatchOn.value).toBe(true);
+  expect(panel.room.ddzWatchOn.value).toBe(true);
+  for (const w of [panel, table]) {
+    expect(w.ddz.ddzWatch.value).toMatchObject({ id: "w", you: 2, hand: [52, 1], shown: true });
+    expect(w.ddz.ddzWatchers.value).toEqual({ w: [{ nick: "我", character: "嘉然", seat: 2 }] });
+    expect(w.ddz.ddzScreen.value).toBe("watch");
+    // Watching holds nothing of the save's.
+    expect(w.ddz.ddzBusy.value).toBe(false);
+  }
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.watchDdz("w2", 1);
+  table.ddz.viewDdz(0);
+  table.ddz.unwatchDdz();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["watch", "w2", 1], ["view", 0], ["unwatch"]]);
+  request.mockRestore();
+  // The watcher closed the table's window: watching stops in the desk, and in the windows that mirror it.
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await emitTo("main", "ddz:closed", null);
+  expect(desk.ddz.ddzWatch.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddzWatch.value).toBeNull();
+  expect(panel.ddz.ddzWatchers.value).toEqual({});
+});
+
+it("runs the table window's leave in the desk, in a game and on the result, and not for a table gone", async () => {
+  const desk = await context(false);
+  desk.room.youId.value = "me";
+  const seats = ["a", "me", "b"].map((id) => ({ id, nick: id, character: "乃琳", auto: false, away: false }));
+  const deal = (table: string) => desk.ddz.onDdzMessage({
+    type: "ddz_deal", table, seats, you: 1, hand: [0, 1, 52], base: 100, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  deal("t");
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  // The window names its table and no phase: the phase left out reaches the desk as null over the bridge.
+  table.ddz.leaveDdz("old");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toMatchObject({ id: "t", phase: "bid" });
+  table.ddz.leaveDdz("t");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toBeNull();
+  deal("t2");
+  desk.ddz.ddz.value!.phase = "result";
+  await vi.advanceTimersByTimeAsync(50);
+  expect(table.ddz.ddz.value).toMatchObject({ id: "t2", phase: "result" });
+  table.ddz.leaveDdz("t2");
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.ddz.ddz.value).toBeNull();
 });
 
 it("keeps a pet's pose that reaches the panel before the member and applies it once the member arrives", async () => {
@@ -674,4 +797,29 @@ it("keeps the guide's progress from both windows when their changes cross", asyn
   for (const s of [desk.settings, panel.settings]) {
     expect(s.guide.done.sort()).toEqual(["draw", "grip", "tap"]);
   }
+});
+
+it("mirrors open tables and a call into the panel and runs the panel's sitting and calling in the desk", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.youId.value = "me";
+  desk.room.members.set("a", { id: "a", uid: "u-a", nick: "贝", character: "贝拉", taps: 0, ddz: true, ddzMatch: true, pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: {} as never });
+  const tables = [{ table: "o1", base: 50, seats: [{ id: "a", nick: "贝", character: "贝拉" }, null, null] }];
+  desk.ddz.onDdzMessage({ type: "ddz_tables", tables });
+  desk.ddz.onDdzMessage({ type: "ddz_call", table: "o1", from: "a", base: 50, deposit: 2400, sec: 15, seats: tables[0]!.seats });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddzTables.value).toEqual(tables);
+  expect(panel.ddz.ddzCall.value).toEqual(desk.ddz.ddzCall.value);
+  expect(panel.room.members.get("a")!.ddzMatch).toBe(true);
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.openDdz(50);
+  panel.ddz.sitDdz("o1", 2);
+  panel.ddz.callDdz("a", "o1");
+  panel.ddz.leaveDdz("o1", "open");
+  panel.ddz.dismissDdzCall();
+  await vi.advanceTimersByTimeAsync(50);
+  // The table the key was pressed for goes with the request, for the desk to check against its own.
+  expect(request.mock.calls).toEqual([["open", 50], ["sit", "o1", 2], ["call", "a", "o1"], ["leave", "o1", "open"], ["dismiss"]]);
 });

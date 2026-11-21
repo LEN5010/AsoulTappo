@@ -7,7 +7,7 @@ import { noteActivity } from "./activity";
 import { MotionSender } from "../net/MotionSender";
 import {
   restingMotion, toHttpBase, ROOM_NAME_MAX, type CheerState, type DdzClientMessage, type DdzMessage, type DuelMessage, type Hand,
-  type Member, type MemberProfile, type PetMotion, type ProfilePatch, type PublicRoom, type RoomInfo,
+  type DdzHello, type Member, type MemberProfile, type PetMotion, type ProfilePatch, type PublicRoom, type RoomInfo,
 } from "../net/protocol";
 import { ownsEmote } from "../items";
 import { getEmote, memberOf } from "../manifest";
@@ -138,6 +138,9 @@ const events: RoomEvents = {
       endPokes();
       endProfiles();
       endCheer();
+      ddzMatchOn.value = false;
+      ddzEmoteOn.value = false;
+      ddzWatchOn.value = false;
     }
   },
   onJoined(room, you, list, features) {
@@ -149,6 +152,9 @@ const events: RoomEvents = {
     profileOn.value = features.includes("profile");
     endCheer();
     cheerOn.value = features.includes("cheer");
+    ddzMatchOn.value = features.includes("ddz_match");
+    ddzEmoteOn.value = features.includes("ddz_emote");
+    ddzWatchOn.value = features.includes("ddz_watch");
     lastError.value = "";
     clearMembers();
     list.forEach(add);
@@ -266,8 +272,12 @@ const events: RoomEvents = {
       ddzHooks.refused(code);
       return;
     }
+    // A watch the server turned down: the store drops it, and the words show as for any refusal.
+    if (code === "ddz_busy" || code === "ddz_watch_full") ddzHooks.refused(code);
     if (code === "rate_limited") {
       rateLimited += 1;
+      // It may be a join of the dou dizhu queue, which the store sends once more.
+      ddzHooks.refused(code);
       return;
     }
     writeLog("room", `error ${code}${rateLimited ? ` (${rateLimited} rate_limited before)` : ""}`);
@@ -358,6 +368,15 @@ function errorText(code: string, message: string): string {
       return "今天赢到上限了";
     case "ddz_target_cap":
       return "有人今天赢到上限了";
+    case "ddz_dnd":
+      return "免打扰时不能匹配";
+    case "ddz_match_cooldown":
+    case "ddz_full":
+      return "稍后再匹配";
+    case "ddz_queued":
+      return "已在别处匹配";
+    case "ddz_watch_full":
+      return "观众已满";
     default:
       return message || code;
   }
@@ -554,8 +573,11 @@ let duelTimer: ReturnType<typeof setTimeout> | undefined;
 export const duelOn = computed(() => inRoom.value && !!duelConfig.value && !!status.value?.duel);
 /** An invite or a duel is under way. */
 export const duelBusy = computed(() => duel.value?.phase === "invite" || duel.value?.phase === "throw");
-/** Invites are turned down: by the setting, and while the pet lets clicks through, as it could not answer them. */
-const duelDnd = () => settings.duelDnd || settings.clickThrough;
+/**
+ * Invites are turned down: by the setting, and while the pet lets clicks through, as it could not answer them. The
+ * server then turns dou dizhu invites down too, and keeps the save out of its queue.
+ */
+export const duelDnd = () => settings.duelDnd || settings.clickThrough;
 
 /**
  * A server with main-site accounts takes bets (rock-paper-scissors, dou dizhu) only from saves linked to one, on every
@@ -673,6 +695,30 @@ export function throwHand(hand: Hand): void {
  * the room only carries them.
  */
 export const ddzHooks: { message(msg: DdzMessage): void; refused(code: string): void } = { message() {}, refused() {} };
+/** The server queues for dou dizhu tables across rooms (it lists "ddz_match" in `joined.features`). */
+export const ddzMatchOn = ref(false);
+/** The room's server takes emotes through a table (it lists "ddz_emote" in `joined.features`); older ones do not. */
+export const ddzEmoteOn = ref(false);
+/** The room's server lets members watch the room's games (it lists "ddz_watch" in `joined.features`). */
+export const ddzWatchOn = ref(false);
+/** Shows the words for refusal [code] where the room's errors show. */
+export function showRoomError(code: string): void {
+  lastError.value = errorText(code, "");
+}
+export function clearRoomError(): void {
+  lastError.value = "";
+}
+
+/** Who this client is to the server, for a room join and for the dou dizhu connection's hello alike. */
+export function helloInfo(): DdzHello {
+  return {
+    nick: settings.nick.trim() || "匿名小面包",
+    character: settings.character,
+    ...(settings.plate ? { plate: settings.plate } : {}),
+    ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
+    ...(duelDnd() ? { dnd: true } : {}),
+  };
+}
 
 /** Desk only. */
 export function sendDdz(msg: DdzClientMessage): void {
@@ -695,17 +741,20 @@ export function syncMotion(pose: PetMotion): void {
   if (!isMirrorWindow && inRoom.value) motionSender.update(pose);
 }
 
-/** Play an emote on the local pet and send it to the room. Only owned emotes can be sent. */
-export function sendEmote(name: string, now = Date.now()): boolean {
+/**
+ * Play an emote on the local pet and send it to the room ([toRoom]; a dou dizhu table sends its own). Only owned
+ * emotes can be sent.
+ */
+export function sendEmote(name: string, now = Date.now(), toRoom = true): boolean {
   if (isMirrorWindow) {
-    void requestDesktop("sendEmote", name, now);
+    void requestDesktop("sendEmote", name, now, toRoom);
     return true;
   }
   if (!ownsEmote(name, collection.owned)) return false;
   if (now - lastSent < SEND_INTERVAL_MS) return false;
   lastSent = now;
   localPlayer.play(name);
-  if (inRoom.value) client.sendEmote(name);
+  if (inRoom.value && toRoom) client.sendEmote(name);
   return true;
 }
 
@@ -735,13 +784,11 @@ export function joinRoom(room: string): void {
   roomId.value = id;
   client.join(settings.serverUrl, {
     room: id,
-    nick: settings.nick.trim() || "匿名小面包",
-    character: settings.character,
-    ...(settings.plate ? { plate: settings.plate } : {}),
-    ...(activeAccount() ? { accountToken: activeAccount()!.token } : { token }),
-    ...(duelDnd() ? { dnd: true } : {}),
+    ...helloInfo(),
     ...(shownStatus.value ? { status: shownStatus.value } : {}),
     ddz: true,
+    ddzMatch: true,
+    ddzWatch: true,
   });
 }
 

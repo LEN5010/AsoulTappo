@@ -28,9 +28,12 @@ import { isOverdue } from "./todo";
 import { wakeAudio } from "./audio/sfx";
 import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
-import { ddzAtTable, ddzBubble } from "./stores/ddz";
+import DdzQueueSign from "./pet/DdzQueueSign.vue";
+import DdzSign from "./pet/DdzSign.vue";
+import { ddzBubble, ddzMatchable, ddzQueue, ddzScreen, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
+  picking,
 } from "./pet/duelPick";
 import AccessBubble from "./pet/AccessBubble.vue";
 import AutoInputBubble from "./pet/AutoInputBubble.vue";
@@ -383,6 +386,18 @@ const nameOnDesk = (m: RemoteMember) =>
   remoteDocked(m) ? { position: "absolute" as const, bottom: `${Math.round(DESK_GAP * settings.remoteScale) + 4}px` } : undefined;
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
+/** The open dou dizhu table member [m] opened in the room, shown as a sign over its pet. */
+const signOf = (m: RemoteMember) => (ddzMatchable.value
+  ? ddzTables.value.find((t) => { const s = t.seats[0]; return !!s && "id" in s && s.id === m.id; }) : undefined);
+/** The partner being dragged: its sign, drawn apart from the pet, comes back where it is let go. */
+const draggedRemote = ref<string | null>(null);
+/** Whether the sign over [m]'s pet shows: not while the pet is dragged, or says something in a bubble of its own. */
+const signShown = (m: RemoteMember) => !!signOf(m) && draggedRemote.value !== m.id && !m.emote && !m.win && picking.value !== m.id;
+/** The box of [m]'s pet, for the sign to stand on its top edge. */
+const signAt = (m: RemoteMember) => {
+  const at = remoteAt(m);
+  return { transform: `translate(${at.x}px, ${at.y}px)`, width: `${remoteSize.value.w}px` };
+};
 const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
 const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
 const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
@@ -560,7 +575,8 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
   <div ref="deskEl" class="desk" :style="skinVars" @dragstart.prevent>
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
-      :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => onRemoteMoved(m, p)" @dragging="kick" @tap="openPick(m)"
+      :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => { draggedRemote = null; onRemoteMoved(m, p); }"
+      @dragging="draggedRemote = m.id; kick()" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
@@ -580,6 +596,14 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       </template>
       <DuelPick :id="m.id" v-bind="pickPlace(m)" />
     </PetActor>
+    <!-- The signs of open tables, over every partner's pet and under the own pet and its bubbles. -->
+    <div class="signs">
+      <template v-for="m in shownOthers" :key="m.id">
+        <div v-if="signShown(m)" class="sign-at" :style="signAt(m)">
+          <DdzSign :key="signOf(m)!.table" :table="signOf(m)!" />
+        </div>
+      </template>
+    </div>
 
     <PetActor
       :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :style="{ width: `${ownWidth}px` }"
@@ -599,6 +623,10 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
       <DuelBubble v-bind="duelPlace" />
       <DdzBubble v-if="!duel" v-bind="ddzPlace" />
+      <!-- While the save waits in the dou dizhu queue: a sign over the head, out of the way of the bubbles. -->
+      <div v-if="ddzQueue && !duel && !ddzBubble && !localPet.emote && !localPet.win" class="queue-at">
+        <DdzQueueSign />
+      </div>
       <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
       <RaceBubble v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote || !!deskCardShown" />
@@ -663,7 +691,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </Transition>
     <TodoFrame v-if="!isTauri && todoFrame.open" />
     <RaceFrame v-if="!isTauri && raceFrame.open" />
-    <DdzFrame v-if="!isTauri && ddzFrame.open && ddzAtTable" />
+    <DdzFrame v-if="!isTauri && ddzFrame.open && ddzScreen" />
   </div>
 </template>
 
@@ -686,6 +714,10 @@ html.browser-preview body {
 /* A shrunken strip (CounterBar's --bar-zoom) slides by as much less. */
 .strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 calc(-14px * var(--bar-zoom, 1)); }
 .desk > :deep(*) { pointer-events: auto; }
+/* A layer of no size of its own; each sign stands on the top edge of its pet's box. */
+.signs, .sign-at { position: absolute; left: 0; top: 0; height: 0; }
+.queue-at { position: absolute; left: 0; right: 0; top: 0; height: 0; z-index: 2; }
+.signs { width: 0; }
 /* The own name plate in the strip's place, the handle on its left like the strip's: a short white line that reads
  * on any wallpaper. The side padding keeps the plate centred under the pet. */
 .own-plate {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // How a game ended, as a receipt dropped onto the mat: who won and at what multiplier on top, where the multiplier
 // came from as a row of tags, then the three seats with the shards they won or lost, the winners first. A spring is
-// stamped in the corner. A seat that asked for another game gets a tick on its face.
+// stamped in the corner. A seat that asked for another game gets a tick on its face. Watched ([watching]), no seat is
+// the own one: each shows its own name and pet.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { shownNick } from "../../stores/room";
 import { settings } from "../../stores/settings";
@@ -10,19 +11,20 @@ import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
 import { countTo } from "../park/countTo";
 
-const props = defineProps<{ table: DdzState }>();
+const props = defineProps<{ table: DdzState; watching?: boolean }>();
 const r = computed(() => props.table.result!);
 
-/** Winners first, each side from the own seat on. */
+/** Winners first, each side from the own seat (or the one watched from) on. */
 const rows = computed(() => {
   const t = props.table;
   return [0, 1, 2].map((k) => (t.you + k) % 3)
     .sort((a, b) => Number(r.value.deltas[b]! > 0) - Number(r.value.deltas[a]! > 0))
     .map((seat) => {
       const s = t.seats[seat]!;
+      const own = !props.watching && seat === t.you;
       return {
-        seat, character: seat === t.you ? settings.character : s.character, again: s.again, delta: r.value.deltas[seat]!,
-        nick: seat === t.you ? settings.nick.trim() || s.nick || "我" : shownNick(s), landlord: seat === r.value.landlord,
+        seat, character: own ? settings.character : s.character, again: s.again, delta: r.value.deltas[seat]!,
+        nick: own ? settings.nick.trim() || s.nick || "我" : shownNick(s), landlord: seat === r.value.landlord,
       };
     });
 });

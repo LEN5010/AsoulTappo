@@ -36,6 +36,10 @@ class JoinMsg(_Msg):
     motionVersion: int = Field(default=1, ge=1)
     # The client can play dou dizhu: only such members can be invited to a table.
     ddz: bool = False
+    # The client also queues for dou dizhu tables across rooms (with ddz); servers without the queue ignore it.
+    ddzMatch: bool = False
+    # The client watches dou dizhu games (with ddzMatch); servers without watching ignore it.
+    ddzWatch: bool = False
 
 
 class LeaveMsg(_Msg):
@@ -223,10 +227,80 @@ class DdzLeaveMsg(_Msg):
     table: str = Field(min_length=1, max_length=32)
 
 
+class DdzQueueMsg(_Msg):
+    """Wait for a table with two saves of any room at one of the economy's base stakes; 0 stops waiting."""
+
+    type: Literal["ddz_queue"] = "ddz_queue"
+    base: int = Field(ge=0, le=10**9)
+
+
+class DdzOpenMsg(_Msg):
+    """Open a table in the room at one of the economy's base stakes, taking its first seat."""
+
+    type: Literal["ddz_open"] = "ddz_open"
+    base: int = Field(ge=1, le=10**9)
+
+
+class DdzCallMsg(_Msg):
+    """The opener of an open table calls a member of the room to it."""
+
+    type: Literal["ddz_call"] = "ddz_call"
+    table: str = Field(min_length=1, max_length=32)
+    id: str = Field(min_length=1, max_length=32)
+
+
+class DdzSitMsg(_Msg):
+    """Sit down at an open table of the room: at [seat] when it is empty, else at the first empty one."""
+
+    type: Literal["ddz_sit"] = "ddz_sit"
+    table: str = Field(min_length=1, max_length=32)
+    seat: Optional[int] = Field(default=None, ge=0, le=2)
+
+
+class DdzHelloMsg(_Msg):
+    """Opens a dou dizhu connection, in no room: the same identity as `join` (the save, the nick, the pet and the
+    plate, checked the same way). It queues for tables (``ddz_queue``) and plays at the tables the queue makes."""
+
+    type: Literal["ddz_hello"] = "ddz_hello"
+    nick: str = Field(min_length=1, max_length=MAX_NICK_LEN)
+    character: str = Field(default="default", max_length=32)
+    token: Optional[str] = Field(default=None, max_length=128)
+    accountToken: Optional[str] = Field(default=None, max_length=512)
+    plate: Optional[str] = Field(default=None, max_length=64)
+    dnd: bool = False
+    # The client shows who watches its seat: its hand may be shown to them (ddz_watchers).
+    ddzWatch: bool = False
+
+
+class DdzEmoteMsg(_Msg):
+    """Show an emote to the other seats of the own table, in any room."""
+
+    type: Literal["ddz_emote"] = "ddz_emote"
+    table: str = Field(min_length=1, max_length=32)
+    emote: str = Field(min_length=1, max_length=32)
+
+
+class DdzCounterMsg(_Msg):
+    """Turn the card counter on for the own seat, buying its games when the save has none left."""
+
+    type: Literal["ddz_counter"] = "ddz_counter"
+    table: str = Field(min_length=1, max_length=32)
+
+
+class DdzWatchMsg(_Msg):
+    """Watch a game under way, the hand of seat [seat] shown when it may be; another table or seat replaces what the
+    connection watched, and an empty table stops watching."""
+
+    type: Literal["ddz_watch"] = "ddz_watch"
+    table: str = Field(max_length=32)
+    seat: int = Field(default=0, ge=0, le=2)
+
+
 ClientMessage = Annotated[
     Union[JoinMsg, LeaveMsg, TapMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PokeMsg, DrinkMsg, ProfileMsg, EmoteMsg, StateMsg, PingMsg,
           SetPublicMsg, SetNameMsg, KickMsg, DndMsg, DuelInviteMsg, DuelAnswerMsg, DuelThrowMsg,
-          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg],
+          DdzInviteMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzQueueMsg,
+          DdzOpenMsg, DdzSitMsg, DdzCallMsg, DdzHelloMsg, DdzEmoteMsg, DdzCounterMsg, DdzWatchMsg],
     Field(discriminator="type"),
 ]
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
@@ -247,6 +321,8 @@ class Member(BaseModel):
     status: Optional[str] = None
     # the member's client can play dou dizhu; clients before it never read it
     ddz: bool = False
+    # the member's client queues for dou dizhu and opens tables (app/ddz.py); clients before it never read it
+    ddzMatch: bool = False
 
 
 class RoomInfo(BaseModel):

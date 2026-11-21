@@ -1,14 +1,16 @@
 <script setup lang="ts">
-// Emotes at the dou dizhu table: a key in the corner opens the player's favourite emotes (the starter ones without
-// any), and a pick plays it on the own pet for the whole room. The table has no other way to talk.
+// Emotes at the dou dizhu table: a key opens the player's favourite emotes (the starter ones without any), and a pick
+// plays it on the own pet for the other seats of the table. The table has no other way to talk. `up` is the key under
+// the own pet at the table's foot: a white key whose sheet opens over it.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { assetUrl } from "../../asset";
 import { starterEmotesOf } from "../../items";
 import { getEmote } from "../../manifest";
-import { sendEmote } from "../../stores/room";
+import { emoteDdz } from "../../stores/ddz";
 import { settings } from "../../stores/settings";
 import Icon from "../../ui/Icon.vue";
 
+defineProps<{ up?: boolean }>();
 const MAX = 10;
 const open = ref(false);
 const root = ref<HTMLElement>();
@@ -16,7 +18,7 @@ const list = computed(() => (settings.favorites.length ? settings.favorites : st
   .map((key) => ({ key, e: getEmote(key) })).filter((x) => x.e).slice(0, MAX));
 function pick(key: string) {
   open.value = false;
-  sendEmote(key);
+  emoteDdz(key);
 }
 // A press anywhere else puts the tray away.
 function away(e: PointerEvent) {
@@ -27,8 +29,8 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", away, true));
 </script>
 
 <template>
-  <div v-if="list.length" ref="root" class="emotes">
-    <button type="button" class="ui-btn small ghost" title="表情" aria-label="表情" :aria-expanded="open" @click="open = !open">
+  <div v-if="list.length" ref="root" class="emotes" :class="{ up }">
+    <button type="button" class="ui-btn small" :class="{ ghost: !up }" title="表情" aria-label="表情" :aria-expanded="open" @click="open = !open">
       <Icon name="heart" :size="18" />
     </button>
     <Transition name="tray">
@@ -58,6 +60,10 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", away, true));
 }
 .emo { width: 56px; height: 56px; padding: 0; }
 .emo img { width: 46px; height: 46px; object-fit: contain; pointer-events: none; }
+/* Under the own pet the key is as tall as the name beside it, and the sheet opens upward from its left edge. */
+.emotes.up > .ui-btn { width: 38px; height: 28px; border-radius: 14px; }
+.emotes.up .tray { right: auto; left: 0; top: auto; bottom: 36px; }
+.emotes.up .tray-enter-active { transform-origin: 0 100%; }
 .tray-enter-active { transition: opacity var(--dur-fast), scale var(--dur-fast) var(--ease-pop); transform-origin: 100% 0; }
 .tray-enter-from { opacity: 0; scale: 0.85; }
 .tray-leave-active { transition: opacity var(--dur-fast) var(--ease-in); }
