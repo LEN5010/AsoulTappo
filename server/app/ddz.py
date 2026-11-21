@@ -1372,10 +1372,11 @@ class Tables:
 
     def _counter_on(self, table: Table, s: Seat) -> bool:
         """Turns the card counter of seat [s] on for the game being played, using one of its save's games: only
-        for a member at the table, and once a game. The seat is told; the game used is written down on a task of its
-        own, the table not waiting for it."""
-        if (s.counter or s.counter_left < 1 or s.peer is None or s.quit or table.phase != PLAY
-                or not self.bank.counter()):
+        for a member at the table on a client that shows the counter (one that said ``ddzMatch``; 1.2.5 has no
+        counter), and once a game. The seat is told; the game used is written down on a task of its own, the table
+        not waiting for it."""
+        if (s.counter or s.counter_left < 1 or s.peer is None or not s.peer.ddz_match or s.quit
+                or table.phase != PLAY or not self.bank.counter()):
             return False
         s.counter, s.counter_left = True, s.counter_left - 1
         self._spawn(self._use_counter(s.token))

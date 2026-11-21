@@ -14,6 +14,18 @@ PRICE = M.park["coin"]["price"]
 GAMES = CFG["counter"]["games"]
 
 
+@pytest.fixture(autouse=True)
+def counter_clients(monkeypatch):
+    """The seats' clients show the counter: they said ``ddzMatch``, as every client with the counter does."""
+    join = World.join
+
+    def knowing(self, *a, **k):
+        peer, sock = join(self, *a, **k)
+        peer.ddz_match = True
+        return peer, sock
+    monkeypatch.setattr(World, "join", knowing)
+
+
 def held(w, pid):
     p = w.g.store.get_player(pid, w.clock.t)
     return p["shards"], p["coins"], p["ddz_counter"]
@@ -148,6 +160,27 @@ def test_a_member_away_when_the_landlord_is_known_uses_its_game_on_coming_back()
     run(go())
 
 
+def test_a_seat_on_a_client_without_the_counter_keeps_its_games():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.dealt()
+        a, b, _ = w.peers
+        w.g.store.update_player(w.pids[1], coins=1)
+        await w.t.counter(b, tid)
+        await w.t.idle()
+        # The save goes on playing from a 1.2.5 client, which has no counter: its games are left for later.
+        await w.m.depart("r", b.id)
+        await settle()
+        b2, sock = w.join("b", w.pids[1])
+        b2.ddz_match = False
+        await w.t.joined("r", b2)
+        await w.t.bid(a, tid, 3)
+        await w.t.idle()
+        assert sock.of("ddz_counter") == [] and w.t.by_id[tid].seats[1].counter is False
+        assert held(w, w.pids[1])[2] == GAMES
+    run(go())
+
+
 def test_only_a_seat_of_a_game_under_way_may_ask():
     async def go():
         w = World(rng=Stacked(first=0))
@@ -197,7 +230,8 @@ def test_over_the_socket(api):  # noqa: F811
     for name in "abc":
         save(g, name)
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b, c.websocket_connect("/ws") as d:
-        joined(a, "a")
+        # a's client shows the counter (it says ddzMatch); b's and d's are like 1.2.5's.
+        joined(a, "a", ddzMatch=True)
         jb = joined(b, "b")
         a.receive_json()
         jd = joined(d, "c")
