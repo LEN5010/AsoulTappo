@@ -92,9 +92,9 @@ class World:
         self.m.on_depart = self.t.departed
         self.bank = Bank(self.g)
 
-    def join(self, nick, pid=None, room="r", ddz=True):
+    def join(self, nick, pid=None, room="r", ddz=True, seq=None):
         sock = Sock()
-        peer = self.m.join(room, nick, "嘉然", sock, token=pid)
+        peer = self.m.join(room, nick, "嘉然", sock, token=pid, seq=seq)
         peer.ddz = ddz
         # Heard at once, without the writer task: the tests read what was told right after telling it.
         peer.enqueue = lambda data, done=None: sock.got.append(data) if peer.active else None
@@ -1004,6 +1004,23 @@ def test_a_connection_that_finishes_joining_late_does_not_take_the_seat_from_a_n
         w.m.leave("r", late.id)
         await w.t.joined("r", late)
         assert t.seats[1].peer is None and s_late.of("ddz_state") == []
+    run(go())
+
+
+def test_a_join_sent_first_stays_the_older_one_however_late_it_gets_through():
+    async def go():
+        w = World(rng=Stacked(first=0))
+        tid = await w.playing()
+        t = w.t.by_id[tid]
+        pid = w.pids[1]
+        # The join sent first takes its place when it came; the one sent after gets through the room first.
+        first, second = w.m.next_seq(), w.m.next_seq()
+        new, s_new = w.join("b", pid, seq=second)
+        await w.t.joined("r", new)
+        old, s_old = w.join("b", pid, seq=first)
+        await w.t.joined("r", old)
+        assert old.join_seq < new.join_seq
+        assert t.seats[1].peer is new and s_new.of("ddz_closed") == [] and s_old.of("ddz_state") == []
     run(go())
 
 

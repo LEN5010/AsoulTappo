@@ -311,9 +311,10 @@ class RoomManager:
         return new_room_id()
 
     def join(self, room_id: str, nick: str, character: str, ws: Sender,
-             token: str | None = None, may_list: bool = True, **profile: str | None) -> Peer:
+             token: str | None = None, may_list: bool = True, seq: int | None = None, **profile: str | None) -> Peer:
         """[token]: the joining save's player id, None without a save. [may_list]: whether this joiner may host a
-        listed room, for a room of the last run whose host comes back."""
+        listed room, for a room of the last run whose host comes back. [seq]: the joiner's Peer.join_seq, taken when
+        its join came (next_seq); a new one when None."""
         room = self.rooms.get(room_id)
         pending = self._restoring(room_id)
         if room is not None:
@@ -333,7 +334,7 @@ class RoomManager:
         peer = Peer(id=secrets.token_hex(4), nick=nick, character=character, ws=ws,
                     token=token, send_timeout=self.send_timeout, room=room_id, **profile)
         peer.on_failure = lambda: self._failed(room_id, peer)
-        peer.join_seq = self.next_seq()
+        peer.join_seq = self.next_seq() if seq is None else seq
         if token:
             room.cheer_gone.pop(token, None)
         room.peers[peer.id] = peer

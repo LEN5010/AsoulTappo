@@ -1469,6 +1469,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 continue
 
             if isinstance(msg, JoinMsg):
+                # As with the hello: its place among the connections of the save is when the join came, not when its
+                # awaits are done, so a join sent earlier and slower to look up stays the older one.
+                seq = manager.next_seq()
                 if peer is not None:
                     await err("already_joined")
                     continue
@@ -1487,7 +1490,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 prior_info = prior.info() if prior is not None else None
                 try:
                     peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
-                                        may_list=not accounts or signed_in, **profile)
+                                        may_list=not accounts or signed_in, seq=seq, **profile)
                     raw_nicks[peer.id] = peer.raw_nick = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
