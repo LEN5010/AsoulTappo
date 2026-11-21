@@ -146,6 +146,10 @@ export const ddz = ref<DdzState | null>(null);
 export const ddzLive = ref<Record<string, string[]>>({});
 /** The base stake of each game under way in the room, where the server says (ddz_live `base`). */
 export const ddzLiveBase = ref<Record<string, number>>({});
+/** How a game under way in the room stands: the landlord's seat, the cards each seat has left, the multiplier, the watchers. */
+export interface DdzLiveState { landlord: number | null; left: number[]; mult: number; watching: number }
+/** How each game under way in the room stands, by table, where the server says (ddz_live_state). */
+export const ddzLiveState = ref<Record<string, DdzLiveState>>({});
 /** This connection waits in the server's queue: at which stake, and since when (local ms); null when it does not. */
 export const ddzQueue = ref<{ base: number; since: number } | null>(null);
 /** How many saves wait at each stake, this one included, as the server last counted. */
@@ -848,8 +852,19 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
     else delete bases[msg.table];
     ddzLive.value = live;
     ddzLiveBase.value = bases;
+    if (!msg.on && ddzLiveState.value[msg.table]) {
+      const { [msg.table]: _, ...rest } = ddzLiveState.value;
+      ddzLiveState.value = rest;
+    }
     // The whole room sees the winners' shards go up over their pets.
     if (!msg.on) for (const [id, gain] of Object.entries(msg.gains ?? {})) showWin(id, gain);
+    return;
+  }
+  if (msg.type === "ddz_live_state") {
+    // Only of a game the room was told of: one that ended meanwhile is gone for good.
+    if (!ddzLive.value[msg.table]) return;
+    const state = { landlord: msg.landlord, left: msg.seats.map((s) => s.left), mult: msg.mult, watching: msg.watching };
+    ddzLiveState.value = { ...ddzLiveState.value, [msg.table]: state };
     return;
   }
   if (msg.type === "ddz_queue") {
@@ -1053,6 +1068,7 @@ if (!isMirrorWindow) {
     if (on) return;
     ddzLive.value = {};
     ddzLiveBase.value = {};
+    ddzLiveState.value = {};
     ddzTables.value = [];
     clearTimeout(callTimer);
     ddzCall.value = null;

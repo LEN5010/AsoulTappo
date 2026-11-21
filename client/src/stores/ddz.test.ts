@@ -1129,6 +1129,22 @@ function snapshot(seat: number, hand: number[] | null, over: Record<string, unkn
 }
 const watchSent = (socket: Socket) => sentOf(socket, "ddz_watch");
 
+it("keeps how each game of the room stands while the game is on", async () => {
+  const { socket, d } = await watchSetup();
+  const stands = (table: string, over: Record<string, unknown> = {}) => ({
+    type: "ddz_live_state", table, landlord: 2, seats: [{ left: 3 }, { left: 17 }, { left: 20 }], mult: 2, watching: 1, ...over,
+  });
+  socket.recv(stands("w"));
+  expect(d.ddzLiveState.value).toEqual({ w: { landlord: 2, left: [3, 17, 20], mult: 2, watching: 1 } });
+  // A game the room was not told of stays out.
+  socket.recv(stands("gone"));
+  expect(Object.keys(d.ddzLiveState.value)).toEqual(["w"]);
+  socket.recv(stands("w", { mult: 4, watching: 0 }));
+  expect(d.ddzLiveState.value.w).toMatchObject({ mult: 4, watching: 0 });
+  socket.recv({ type: "ddz_live", table: "w", on: false });
+  expect(d.ddzLiveState.value).toEqual({});
+});
+
 it("watches a game of the room apart from the save's own table, and follows the hand of the seat watched", async () => {
   const { socket, d, frame } = await watchSetup();
   expect(d.ddzCanWatch.value).toBe(true);

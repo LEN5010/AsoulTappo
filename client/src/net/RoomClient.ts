@@ -390,6 +390,7 @@ export class RoomClient {
       case "ddz_watch":
       case "ddz_watch_end":
       case "ddz_watchers":
+      case "ddz_live_state":
         this.events.onDdz?.(msg);
         break;
       case "error":

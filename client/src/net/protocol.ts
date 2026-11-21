@@ -205,6 +205,12 @@ export type DdzMessage =
   | { type: "ddz_live"; table: string; ids: string[]; on: true; base?: number }
   | { type: "ddz_live"; table: string; ids?: string[]; on: false; gains?: Record<string, number> }
   /**
+   * To members on clients that watch, while a game of the room (ddz_live) is on, at most once a second: the landlord's
+   * seat (null while the seats bid), the cards each seat has left in ddz_live's order, the multiplier so far and how
+   * many watch it.
+   */
+  | { type: "ddz_live_state"; table: string; landlord: number | null; seats: { left: number }[]; mult: number; watching: number }
+  /**
    * The queue, to clients that said `ddzMatch`: this connection waits at stake `base`, `waited` seconds so far; `base`
    * null when it does not, with `reason` when the server took it out (ddz_locked, ddz_account, no_shards, ddz_cap,
    * ddz_dnd, error), or ddz_match_cooldown with `retry`: the save declined a table of the queue or let it lapse, and

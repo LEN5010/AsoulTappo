@@ -37,7 +37,8 @@ const groupSources = {
   publicRooms: () => room.publicRooms.value,
   pomodoro: () => pomodoroStore.pomodoro.value,
   todos: () => todoStore.todos.value,
-  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, liveBase: ddzStore.ddzLiveBase.value, queue: ddzStore.ddzQueue.value,
+  ddz: () => ({ table: ddzStore.ddz.value, live: ddzStore.ddzLive.value, liveBase: ddzStore.ddzLiveBase.value,
+    liveState: ddzStore.ddzLiveState.value, queue: ddzStore.ddzQueue.value,
     waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value, tables: ddzStore.ddzTables.value,
     call: ddzStore.ddzCall.value, link: ddzStore.ddzLink.value, linkOff: ddzStore.ddzLinkOff.value,
     emotes: ddzStore.ddzEmotes.value, watch: ddzStore.ddzWatch.value, watchers: ddzStore.ddzWatchers.value }),
@@ -78,6 +79,7 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddz.value = s.ddz.table;
     ddzStore.ddzLive.value = s.ddz.live;
     ddzStore.ddzLiveBase.value = s.ddz.liveBase;
+    ddzStore.ddzLiveState.value = s.ddz.liveState ?? {};
     ddzStore.ddzQueue.value = s.ddz.queue;
     ddzStore.ddzWaiting.value = s.ddz.waiting;
     ddzStore.ddzRetry.value = s.ddz.retry;

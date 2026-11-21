@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Dou dizhu on the online page, in a room or not: a strip of the table's mat. At rest it carries the key that waits
 // in the queue (DdzInvite.vue, a stake to pick) and, in a room, the key that opens a table (on a server without
-// open tables, the key that invites), and the faces of members playing a game, or how many wait in the queue; while
+// open tables, the key that invites), and how many wait in the queue or how many games the room plays; while
 // this save waits it shows the stake, the time waited and the key that stops; while an invite is out it seats the three
 // with a tick on those who accepted, the stake as a chip after them, and the keys to answer over the time left; at an
 // open table it seats who sits there with the empty seats as dashed rings, the stake, and the keys to call someone and
-// to put the table away (the opener's) or to leave. While this save sits at a table the key brings up the table's window. Under it, the room's other open
-// tables, each on its own strip, while this save is free to sit down; and the room's games under way, each with the
-// key that watches it, while this save is in no game itself.
+// to put the table away (the opener's) or to leave. While this save sits at a table the key brings up the table's window. Under it, on paper
+// (DdzTables.vue), the room's other open tables while this save is free to sit down, and the room's games under way,
+// each with the key that watches it, while this save is in no game itself.
 import { computed, ref } from "vue";
 import { inRoom, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
@@ -19,9 +19,8 @@ import { openDdzWindow } from "../../stores/ui";
 import Icon from "../../ui/Icon.vue";
 import DdzCard from "./DdzCard.vue";
 import DdzInvite from "./DdzInvite.vue";
-import DdzLiveRow from "./DdzLiveRow.vue";
-import DdzOpenRow from "./DdzOpenRow.vue";
 import DdzSeats from "./DdzSeats.vue";
+import DdzTables from "./DdzTables.vue";
 import { useInviteKeys } from "./inviteKeys";
 import { useWaited } from "./waited";
 
@@ -48,9 +47,8 @@ const seats = computed(() => faces(invite.value, true));
 const mineSeats = computed(() => faces(mine.value, false));
 /** Someone of the room may be called to the open table. */
 const callable = computed(() => [...members.values()].some(ddzCanCall));
-/** The tables of the room, as the faces of their members who are still here. */
-const tables = computed(() => Object.values(ddzLive.value).map((ids) =>
-  ids.map((id) => members.get(id)).filter((m) => !!m).map((m) => ({ character: m.character, nick: shownNick(m) }))).filter((x) => x.length));
+/** How many games the room plays. */
+const games = computed(() => Object.keys(ddzLive.value).length);
 /** This save sits at a table it walked away from, which is still being played. */
 const seated = computed(() => inRoom.value && !ddz.value && ddzPlaying.value.has(youId.value));
 /** The room's open tables, while this save is free to sit down at one. */
@@ -103,12 +101,9 @@ const waited = useWaited(() => queued.value?.since);
         <p v-else-if="queued" class="note waiting" role="status">匹配中<b>{{ waited }}</b></p>
         <p v-else-if="ddzQueueOn && ddzRetry" class="note" role="status">稍后再匹配</p>
         <p v-else-if="othersWaiting" class="note">{{ othersWaiting }} 人匹配中</p>
+        <p v-else-if="games" class="note">{{ games }} 局进行中</p>
       </div>
       <span v-if="queued" class="stake"><small>底分</small><Icon name="shard" :size="14" /><b>{{ queued.base.toLocaleString("en-US") }}</b></span>
-      <div v-else-if="tables.length" class="live">
-        <DdzSeats v-for="(faces, i) in tables" :key="i" :seats="faces" :size="26" bare />
-        <span class="ui-tag light">牌局中</span>
-      </div>
       <div class="acts">
         <button v-if="ddzAtTable" type="button" class="ui-btn white" @click="openDdzWindow()">回到牌桌</button>
         <button v-else-if="queued" type="button" class="ui-btn white" @click="unqueueDdz">取消</button>
@@ -126,10 +121,7 @@ const waited = useWaited(() => queued.value?.since);
     </template>
     <DdzInvite v-if="sheet" :mode="sheet" :need-account="needAccount" @close="sheet = null" />
   </section>
-  <section v-if="roomTables.length || liveTables.length" class="banner tables">
-    <DdzOpenRow v-for="x in roomTables" :key="x.table" :table="x" />
-    <DdzLiveRow v-for="[id, ids] in liveTables" :key="id" :table="id" :ids="ids" />
-  </section>
+  <DdzTables v-if="roomTables.length || liveTables.length" :open="roomTables" :live="liveTables" />
 </template>
 
 <style scoped>
@@ -148,8 +140,6 @@ const waited = useWaited(() => queued.value?.since);
   overflow: hidden;
 }
 .banner.inviting { min-height: 104px; }
-/* The room's open tables: a strip of the mat under the banner, one row each. */
-.banner.tables { padding-top: 14px; padding-bottom: 12px; flex-direction: column; align-items: stretch; gap: 10px; }
 .banner::before {
   content: "";
   position: absolute;
@@ -187,7 +177,6 @@ const waited = useWaited(() => queued.value?.since);
 /* The time waited ticks in figures of one width, so the line does not jitter. */
 .note.waiting { display: flex; align-items: baseline; gap: 6px; }
 .note.waiting b { font: 800 var(--fs-label)/1.2 var(--font-latin); font-variant-numeric: tabular-nums; }
-.live { flex: none; display: flex; align-items: center; gap: 10px; }
 .acts { flex: none; margin-left: auto; display: flex; gap: 8px; }
 .acts .ui-btn { height: 38px; min-width: 76px; padding: 0 16px; }
 /* Every key on coral is white (the button spec: a change of colour only means selected). */

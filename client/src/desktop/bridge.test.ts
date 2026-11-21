@@ -409,10 +409,12 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   desk.room.youId.value = "me";
   desk.ddz.onDdzMessage({ type: "ddz_invite", table: "t1", from: "host", ids: ["host", "me", "third"], base: 100, deposit: 4800, sec: 15 });
   desk.ddz.onDdzMessage({ type: "ddz_live", table: "t2", ids: ["x", "y", "z"], on: true });
+  desk.ddz.onDdzMessage({ type: "ddz_live_state", table: "t2", landlord: 1, seats: [{ left: 17 }, { left: 15 }, { left: 17 }], mult: 2, watching: 0 });
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.ddz.ddz.value).toMatchObject({ id: "t1", phase: "invite", you: 1, sent: false, base: 100, deposit: 4800 });
   expect(panel.ddz.ddzBusy.value).toBe(true);
   expect([...panel.ddz.ddzPlaying.value]).toEqual(["x", "y", "z"]);
+  expect(panel.ddz.ddzLiveState.value).toEqual({ t2: { landlord: 1, left: [17, 15, 17], mult: 2, watching: 0 } });
   const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
   panel.ddz.answerDdz(true);
   panel.ddz.playDdz([0, 1]);
@@ -424,6 +426,7 @@ it("mirrors the dou dizhu table and the room's games into the panel and runs the
   await vi.advanceTimersByTimeAsync(50);
   expect(panel.ddz.ddz.value).toBeNull();
   expect(panel.ddz.ddzPlaying.value.size).toBe(0);
+  expect(panel.ddz.ddzLiveState.value).toEqual({});
   expect(fetch).not.toHaveBeenCalled();
 });
 
