@@ -722,6 +722,17 @@ async function exportLogFile() {
   flex-direction: column;
   gap: 14px;
 }
+/* Both columns end level: the last group of each reaches the column's foot. The rows each platform shows differ
+   (start at login and the run log on the desktop, run as administrator on Windows only), so the shorter column's last
+   group keeps blank space under its rows. */
+.column > section:last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.column > section:last-child > .ui-group {
+  flex: 1;
+}
 /* One grid for both columns: rows are 48px, and a title (24px line, 10px under it) with the 14px gap above it is 48px
    as well, so every row of one column sits level with a row of the other. */
 .column > section > .ui-label {
