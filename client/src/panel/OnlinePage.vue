@@ -30,7 +30,7 @@ import PublicRoomList from "./PublicRoomList.vue";
 import RecentRoomList from "./RecentRoomList.vue";
 import { dropRoom } from "../recentRooms";
 import SegTabs from "../ui/SegTabs.vue";
-import { ddzOn, ddzPlaying, ddzQueueOn } from "../stores/ddz";
+import { ddzCanWatch, ddzLive, ddzOn, ddzPlaying, ddzQueueOn, ddzWatchSeat, watchDdz } from "../stores/ddz";
 import DdzBanner from "./ddz/DdzBanner.vue";
 
 const input = ref(settings.lastRoom);
@@ -244,6 +244,14 @@ const faceTitle = (m: Member) =>
   `${m.id === youId.value ? "我" : shownNick(m)} ${(cheer.value?.shares[m.id] ?? 0).toLocaleString("en-US")}`;
 
 // Removing a member asks first; the question goes away with the member or the room.
+/** The game member [m] plays in the room, when this client can watch it. */
+const gameOf = (m: Member) => (ddzCanWatch.value ? Object.keys(ddzLive.value).find((id) => ddzLive.value[id]!.includes(m.id)) : undefined);
+/** Watch member [m]'s game from its seat. */
+function watchMember(m: Member) {
+  const table = gameOf(m);
+  if (table) watchDdz(table, ddzWatchSeat(table, m.id));
+}
+
 const kicking = ref<Member | null>(null);
 function kick() {
   if (kicking.value) kickMember(kicking.value.id);
@@ -461,7 +469,10 @@ async function copy() {
           </span>
           <span class="taps">{{ m.taps.toLocaleString("en-US") }}<small>敲击</small></span>
           <!-- Keys acting on one member. -->
-          <span v-if="m.id !== youId && (isHost || duelOn)" class="acts">
+          <span v-if="m.id !== youId && (isHost || duelOn || gameOf(m))" class="acts">
+            <button v-if="gameOf(m)" type="button" class="ui-btn small" title="观战" aria-label="观战" @click="watchMember(m)">
+              <Icon name="eye" :size="16" />
+            </button>
             <button
               v-if="duelOn" type="button" class="ui-btn small" title="猜拳" aria-label="猜拳" :disabled="!canDuel(m)"
               @click="picking = m"

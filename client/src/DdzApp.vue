@@ -3,14 +3,15 @@
 // (panel/ddz/DdzTable.vue) on a transparent window, shown once it has drawn. It mirrors the desk's state
 // (desktop/bridge.ts) and sends the moves there; it talks to no server. The desk opens it with each deal and closes it
 // once the table is put away. Closing it leaves the seat playing (the server's autopilot moves when the time runs
-// out).
+// out). A game of the room being watched shows here too while the save has none of its own; closing the window then
+// stops watching (the desk hears of it, stores/ddz.ts noteDdzWindowClosed).
 import { onBeforeUnmount, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { wakeAudio } from "./audio/sfx";
 import { listenInput } from "./composables/tauri";
 import DdzTable from "./panel/ddz/DdzTable.vue";
-import { ddzAtTable } from "./stores/ddz";
+import { ddzScreen, ddzWatch } from "./stores/ddz";
 import { onInput, stopPet } from "./stores/pet";
 import { skinVars } from "./stores/theme";
 import { ui } from "./stores/ui";
@@ -47,7 +48,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="ddz-app" :style="skinVars">
-    <DdzTable v-if="ddzAtTable" @close="close" @drag="getCurrentWindow().startDragging()" />
+    <DdzTable
+      v-if="ddzScreen" :key="ddzScreen === 'watch' ? `watch:${ddzWatch?.id}` : 'own'"
+      @close="close" @drag="getCurrentWindow().startDragging()"
+    />
   </div>
 </template>
 
