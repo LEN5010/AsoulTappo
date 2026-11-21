@@ -180,8 +180,9 @@ mod win {
     use windows_sys::Win32::Foundation::{GetLastError, HANDLE, POINT};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::{
-        GetRawInputData, GetRawInputDeviceInfoW, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
-        RAWINPUTHEADER, RIDEV_INPUTSINK, RIDI_PREPARSEDDATA, RID_INPUT, RIM_TYPEHID,
+        GetRawInputData, GetRawInputDeviceInfoW, GetRawInputDeviceList, RegisterRawInputDevices, HRAWINPUT, RAWINPUT,
+        RAWINPUTDEVICE, RAWINPUTDEVICELIST, RAWINPUTHEADER, RIDEV_INPUTSINK, RIDI_DEVICEINFO, RIDI_PREPARSEDDATA,
+        RID_DEVICE_INFO, RID_INPUT, RIM_TYPEHID,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, HWND_MESSAGE, MSG, WM_INPUT,
@@ -286,6 +287,54 @@ mod win {
             .collect()
     }
 
+    /// The HID devices present, as usage page/usage and vendor:product ids, so a log shows what a tablet offers when
+    /// its pen reports never arrive here. Kinds and ids only, never device names.
+    fn hid_devices() -> String {
+        let item = size_of::<RAWINPUTDEVICELIST>() as u32;
+        let mut count = 0u32;
+        if unsafe { GetRawInputDeviceList(std::ptr::null_mut(), &mut count, item) } == u32::MAX || count == 0 {
+            return "none".to_string();
+        }
+        let mut list = vec![RAWINPUTDEVICELIST { hDevice: std::ptr::null_mut(), dwType: 0 }; count as usize];
+        let got = unsafe { GetRawInputDeviceList(list.as_mut_ptr(), &mut count, item) };
+        if got == u32::MAX {
+            return "unknown".to_string();
+        }
+        let mut seen: Vec<String> = list
+            .iter()
+            .take(got as usize)
+            .filter(|device| device.dwType == RIM_TYPEHID)
+            .filter_map(|device| {
+                let mut info = RID_DEVICE_INFO { cbSize: size_of::<RID_DEVICE_INFO>() as u32, ..Default::default() };
+                let mut size = info.cbSize;
+                let read = unsafe {
+                    GetRawInputDeviceInfoW(
+                        device.hDevice,
+                        RIDI_DEVICEINFO,
+                        (&mut info as *mut RID_DEVICE_INFO).cast(),
+                        &mut size,
+                    )
+                };
+                if read == u32::MAX || read == 0 || info.dwType != RIM_TYPEHID {
+                    return None;
+                }
+                // SAFETY: dwType says the union holds its HID variant.
+                let hid = unsafe { info.Anonymous.hid };
+                Some(format!(
+                    "{:02X}/{:02X} {:04X}:{:04X}",
+                    hid.usUsagePage, hid.usUsage, hid.dwVendorId, hid.dwProductId
+                ))
+            })
+            .collect();
+        seen.sort();
+        seen.dedup();
+        if seen.is_empty() {
+            "none".to_string()
+        } else {
+            seen.join(", ")
+        }
+    }
+
     /// Reads pen reports on this thread until its message loop ends: `push` gets the cursor's position for every
     /// report and a left button press or release for the tip, marked as not injected.
     pub fn run(mut push: impl FnMut(EventType, Option<bool>)) -> Result<(), String> {
@@ -323,7 +372,7 @@ mod win {
             unsafe { DestroyWindow(window) };
             return Err(format!("raw input registration error {error}"));
         }
-        applog!("tablet", "listening for pen reports");
+        applog!("tablet", "listening for pen reports; HID devices: {}", hid_devices());
 
         let mut cache = HashMap::new();
         let mut pen = PenState::default();
