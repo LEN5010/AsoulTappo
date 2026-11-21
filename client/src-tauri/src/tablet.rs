@@ -1,36 +1,45 @@
 //! Pen tablets on Windows.
 //!
-//! A pen in Windows Ink mode is pointer input: the system moves the cursor and sends the window under it pointer
-//! messages, and none of it passes the low-level mouse hook (src/input.rs), so the pet would neither see the pen
-//! move nor count its taps. This module reads the tablet's own HID reports through Raw Input (digitizer usage page,
-//! registered with RIDEV_INPUTSINK so they arrive whichever window is in front) and turns them into what the hook
-//! gives for a mouse: the cursor's position on every report, a left press when the tip touches down and a release
-//! when it lifts. Only the tip switch is read from a report; where the pen is comes from the cursor.
+//! A pen in Windows Ink mode is pointer input: the system moves the cursor itself and sends the window under it
+//! pointer messages, so the low-level mouse hook (src/input.rs) never sees the pen move. Its taps do reach the hook,
+//! as mouse presses the system sends on the pen's behalf (`0xFF515700` in their extra info) with the injected flag a
+//! clicker's presses have (src/input.rs, AUTOMATED INPUT); with press-and-hold on, a tap's press may come only when
+//! the pen lifts, and a hold comes as a right click. This module reads the tablet's own HID reports through Raw
+//! Input (digitizer usage page, registered with RIDEV_INPUTSINK so they arrive whichever window is in front) and
+//! turns them into what the hook gives for a mouse: the cursor's position on every report, a left press when the tip
+//! touches down and a release when it lifts. Only the tip switch is read from a report; where the pen is comes from
+//! the cursor.
 //!
-//! A tablet driver in mouse mode (Windows Ink off, or a driver that sends its own mouse input) already reaches the
+//! While a tablet is sending reports (`PEN_LIVE_MS`), mouse button presses with the injected flag are dropped
+//! together with their releases (`PenGate`), and the pen's taps count from its reports instead: the presses that
+//! Windows Ink or a driver's `SendInput` sends for the pen neither count twice nor count as software's. Dropping
+//! only takes presses away, so it gives a clicker nothing. Without a tablet sending reports no press is changed.
+//!
+//! A tablet driver in mouse mode (Windows Ink off) that sends its taps as ordinary mouse input already reaches the
 //! hook. Its tap would count twice if the tablet's reports still arrived here, so a tip-down is held for `ECHO_MS`
-//! and dropped when the hook saw a left press around the same moment.
-//!
-//! Some drivers send that mouse input with `SendInput`, which gives every tap the injected flag a clicker's presses
-//! have (src/input.rs, AUTOMATED INPUT). A left press with the flag that comes within `ECHO_MS` of a tip-down this
-//! module read from the tablet's own reports is the pen's, and `PenMatch` passes it on as not injected. Without a
-//! tablet sending reports no press is changed.
+//! and dropped when the hook passed on a left press around the same moment.
 //!
 //! PRIVACY: as the hook, this forwards that a press happened and where the cursor is, never what was drawn.
 
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Instant;
 
 use rdev::{Button, EventType};
 
 /// A tip-down waits this long (ms) for the same tap to show up at the mouse hook before it counts as a press.
 pub const ECHO_MS: u64 = 30;
 
-/// No left press seen yet.
+/// A pen counts as in use this long (ms) after its tablet's last report. A tablet reports many times a second while
+/// the pen is near it, touching or not.
+pub const PEN_LIVE_MS: u64 = 2000;
+
+/// Not seen yet.
 const NEVER: u64 = u64::MAX;
 static MOUSE_LEFT_DOWN: AtomicU64 = AtomicU64::new(NEVER);
+static PEN_REPORT: AtomicU64 = AtomicU64::new(NEVER);
+static TIP_DOWN: AtomicU64 = AtomicU64::new(NEVER);
+static TIP_UP: AtomicU64 = AtomicU64::new(NEVER);
 static START: OnceLock<Instant> = OnceLock::new();
 
 /// Milliseconds on this module's own clock.
@@ -38,113 +47,79 @@ pub fn now_ms() -> u64 {
     START.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
-/// The mouse hook saw a left button press.
-pub fn note_mouse_left_down() {
-    MOUSE_LEFT_DOWN.store(now_ms(), Ordering::Relaxed);
-}
-
-/// When the mouse hook last saw a left press, on now_ms()'s clock.
-fn mouse_left_down() -> Option<u64> {
-    match MOUSE_LEFT_DOWN.load(Ordering::Relaxed) {
+fn load(at: &AtomicU64) -> Option<u64> {
+    match at.load(Ordering::Relaxed) {
         NEVER => None,
         at => Some(at),
     }
 }
 
-/// When a tablet last reported its tip touching down.
-static TIP_DOWN: Mutex<Option<Instant>> = Mutex::new(None);
+/// A left press from the mouse hook was passed on (not dropped by `PenGate`).
+pub fn note_mouse_left_down() {
+    MOUSE_LEFT_DOWN.store(now_ms(), Ordering::Relaxed);
+}
 
-/// A tablet's report showed the tip (or the eraser) touching down at [at].
-pub fn note_tip_down(at: Instant) {
-    if let Ok(mut last) = TIP_DOWN.lock() {
-        *last = Some(at);
+/// When a left press from the mouse hook was last passed on, on now_ms()'s clock.
+fn mouse_left_down() -> Option<u64> {
+    load(&MOUSE_LEFT_DOWN)
+}
+
+/// A tablet report arrived at [now]: [tip] is whether the tip (or the eraser) is down, [was] whether it was before.
+pub fn note_pen_report(tip: bool, was: bool, now: u64) {
+    PEN_REPORT.store(now, Ordering::Relaxed);
+    if tip && !was {
+        TIP_DOWN.store(now, Ordering::Relaxed);
+    } else if !tip && was {
+        TIP_UP.store(now, Ordering::Relaxed);
     }
 }
 
-/// When a tablet last reported a tip-down, if one ever did.
-pub fn last_tip_down() -> Option<Instant> {
-    TIP_DOWN.lock().ok().and_then(|last| *last)
+/// When a tablet last sent a report, its tip last touched down and last lifted, on now_ms()'s clock.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PenTimes {
+    pub report: Option<u64>,
+    pub tip_down: Option<u64>,
+    pub tip_up: Option<u64>,
 }
 
-/// An event as the filter thread gets it (src/input.rs): what happened, when, and whether software sent it.
-pub type Heard = (EventType, Instant, Option<bool>);
+pub fn pen_times() -> PenTimes {
+    PenTimes { report: load(&PEN_REPORT), tip_down: load(&TIP_DOWN), tip_up: load(&TIP_UP) }
+}
 
-/// Puts back the pen's taps that a tablet driver sent with `SendInput`. An injected left press waits here, and what
-/// came after it waits behind it so the order holds, until a tip-down within `ECHO_MS` of it is known (the pen's: it
-/// goes on as not injected, and so does its release) or `ECHO_MS` has passed (it goes on as it came).
+/// Whether a pen is in use at [now], given its tablet's last report. The report thread may have stored a time a
+/// little after [now] was read.
+pub fn pen_live(report: Option<u64>, now: u64) -> bool {
+    report.is_some_and(|at| now.saturating_sub(at) <= PEN_LIVE_MS)
+}
+
+/// Drops software's mouse button presses while a pen is in use, each with its release, whatever button it is.
 #[derive(Default)]
-pub struct PenMatch {
-    queue: VecDeque<Heard>,
-    /// The last left press went on as the pen's: its injected release is the pen's too.
-    pen_press: bool,
-    /// Presses passed on as the pen's since `take_matched` was last called.
-    matched: u32,
+pub struct PenGate {
+    /// Buttons whose last press was dropped: their release goes too.
+    dropped: Vec<Button>,
 }
 
-fn echo() -> Duration {
-    Duration::from_millis(ECHO_MS)
-}
-
-fn apart(a: Instant, b: Instant) -> Duration {
-    if a > b {
-        a - b
-    } else {
-        b - a
-    }
-}
-
-impl PenMatch {
-    pub fn push(&mut self, heard: Heard) {
-        self.queue.push_back(heard);
-    }
-
-    /// How long the press at the front may still wait for its tip-down; None when nothing waits.
-    pub fn wait(&self, now: Instant) -> Option<Duration> {
-        match self.queue.front() {
-            Some((EventType::ButtonPress(Button::Left), at, Some(true))) => {
-                Some((*at + echo()).saturating_duration_since(now))
+impl PenGate {
+    /// Whether one event from the mouse hook goes on. [injected]: the press's or release's injected flag;
+    /// [live]: whether a pen is in use (`pen_live`).
+    pub fn pass(&mut self, event: &EventType, injected: Option<bool>, live: bool) -> bool {
+        match event {
+            EventType::ButtonPress(b) => {
+                self.dropped.retain(|d| d != b);
+                if injected == Some(true) && live {
+                    self.dropped.push(*b);
+                    false
+                } else {
+                    true
+                }
             }
-            _ => None,
+            EventType::ButtonRelease(b) => {
+                let before = self.dropped.len();
+                self.dropped.retain(|d| d != b);
+                self.dropped.len() == before
+            }
+            _ => true,
         }
-    }
-
-    /// Moves the events decided by [now] into [out], in order; [tip_down] is when a tablet last reported one.
-    pub fn take(&mut self, now: Instant, tip_down: Option<Instant>, out: &mut Vec<Heard>) {
-        while let Some(&(event, at, injected)) = self.queue.front() {
-            let injected = match event {
-                EventType::ButtonPress(Button::Left) if injected == Some(true) => {
-                    if tip_down.is_some_and(|tip| apart(tip, at) <= echo()) {
-                        self.pen_press = true;
-                        self.matched += 1;
-                        Some(false)
-                    } else if now >= at + echo() {
-                        self.pen_press = false;
-                        injected
-                    } else {
-                        break;
-                    }
-                }
-                EventType::ButtonPress(Button::Left) => {
-                    self.pen_press = false;
-                    injected
-                }
-                EventType::ButtonRelease(Button::Left) => {
-                    if std::mem::take(&mut self.pen_press) && injected == Some(true) {
-                        Some(false)
-                    } else {
-                        injected
-                    }
-                }
-                _ => injected,
-            };
-            self.queue.pop_front();
-            out.push((event, at, injected));
-        }
-    }
-
-    /// How many presses went on as the pen's since the last call.
-    pub fn take_matched(&mut self) -> u32 {
-        std::mem::take(&mut self.matched)
     }
 }
 
@@ -212,7 +187,7 @@ mod win {
         CreateWindowExW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW, HWND_MESSAGE, MSG, WM_INPUT,
     };
 
-    use super::{mouse_left_down, note_tip_down, now_ms, PenState};
+    use super::{mouse_left_down, note_pen_report, now_ms, PenState};
 
     /// HID usage page Digitizers, its top-level collections Digitizer and Pen, and the usages Tip Switch and Eraser.
     const PAGE_DIGITIZER: u16 = 0x0D;
@@ -362,15 +337,14 @@ mod win {
                         heard = true;
                         applog!("tablet", "first pen report");
                     }
-                    if tip && !last_tip {
-                        note_tip_down(std::time::Instant::now());
-                    }
+                    let now = now_ms();
+                    note_pen_report(tip, last_tip, now);
                     last_tip = tip;
                     let mut at = POINT { x: 0, y: 0 };
                     if unsafe { GetCursorPos(&mut at) } != 0 {
                         push(EventType::MouseMove { x: at.x as f64, y: at.y as f64 }, None);
                     }
-                    let out = pen.report(tip, now_ms(), mouse_left_down());
+                    let out = pen.report(tip, now, mouse_left_down());
                     if out.down {
                         push(EventType::ButtonPress(Button::Left), Some(false));
                     }
@@ -433,105 +407,165 @@ mod tests {
         assert_eq!(pen.report(false, 310, Some(305)), PenOut::default());
     }
 
-    fn ms(base: Instant, n: u64) -> Instant {
-        base + Duration::from_millis(n)
-    }
-
-    fn flags(out: &[Heard]) -> Vec<(EventType, Option<bool>)> {
-        out.iter().map(|(e, _, i)| (*e, *i)).collect()
-    }
-
     const DOWN: EventType = EventType::ButtonPress(Button::Left);
     const UP: EventType = EventType::ButtonRelease(Button::Left);
+    const RIGHT_DOWN: EventType = EventType::ButtonPress(Button::Right);
+    const RIGHT_UP: EventType = EventType::ButtonRelease(Button::Right);
 
     #[test]
-    fn an_injected_press_at_a_tip_down_is_the_pens_and_so_is_its_release() {
-        let t = Instant::now();
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        m.push((DOWN, ms(t, 100), Some(true)));
-        m.take(ms(t, 101), Some(ms(t, 92)), &mut out);
-        m.push((UP, ms(t, 180), Some(true)));
-        m.take(ms(t, 181), Some(ms(t, 92)), &mut out);
-        assert_eq!(flags(&out), [(DOWN, Some(false)), (UP, Some(false))]);
-        assert_eq!(m.take_matched(), 1);
-        assert_eq!(m.take_matched(), 0);
+    fn a_pen_is_in_use_until_its_tablet_goes_quiet() {
+        assert!(!pen_live(None, 5_000));
+        assert!(pen_live(Some(5_000), 5_000));
+        assert!(pen_live(Some(5_000), 5_000 + PEN_LIVE_MS));
+        assert!(!pen_live(Some(5_000), 5_000 + PEN_LIVE_MS + 1));
+        // The report thread stored a time just after this one was read.
+        assert!(pen_live(Some(5_003), 5_000));
     }
 
     #[test]
-    fn an_injected_press_waits_for_a_tip_down_reported_after_it() {
-        let t = Instant::now();
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        m.push((DOWN, ms(t, 100), Some(true)));
-        m.push((EventType::KeyPress(rdev::Key::KeyA), ms(t, 105), Some(false)));
-        // No tip-down yet: the press and the key behind it wait.
-        m.take(ms(t, 110), None, &mut out);
-        assert!(out.is_empty());
-        assert_eq!(m.wait(ms(t, 110)), Some(Duration::from_millis(ECHO_MS - 10)));
-        m.take(ms(t, 121), Some(ms(t, 120)), &mut out);
-        assert_eq!(flags(&out), [(DOWN, Some(false)), (EventType::KeyPress(rdev::Key::KeyA), Some(false))]);
-        assert_eq!(m.wait(ms(t, 121)), None);
+    fn software_clicks_while_a_pen_is_in_use_go_with_their_releases() {
+        let mut gate = PenGate::default();
+        assert!(!gate.pass(&DOWN, Some(true), true));
+        assert!(!gate.pass(&UP, Some(true), true));
+        // Press-and-hold: the right click Windows sends when the pen lifts.
+        assert!(!gate.pass(&RIGHT_DOWN, Some(true), true));
+        assert!(!gate.pass(&RIGHT_UP, Some(true), true));
+        let middle = EventType::ButtonPress(Button::Middle);
+        assert!(!gate.pass(&middle, Some(true), true));
+        assert!(!gate.pass(&EventType::ButtonRelease(Button::Middle), Some(true), true));
     }
 
     #[test]
-    fn without_a_tip_down_an_injected_press_stays_injected() {
-        let t = Instant::now();
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        m.push((DOWN, ms(t, 100), Some(true)));
-        m.take(ms(t, 100 + ECHO_MS - 1), None, &mut out);
-        assert!(out.is_empty());
-        m.take(ms(t, 100 + ECHO_MS), None, &mut out);
-        m.push((UP, ms(t, 150), Some(true)));
-        m.take(ms(t, 151), None, &mut out);
-        assert_eq!(flags(&out), [(DOWN, Some(true)), (UP, Some(true))]);
-        assert_eq!(m.take_matched(), 0);
+    fn without_a_pen_software_clicks_pass_as_they_are() {
+        let mut gate = PenGate::default();
+        assert!(gate.pass(&DOWN, Some(true), false));
+        assert!(gate.pass(&UP, Some(true), false));
     }
 
     #[test]
-    fn a_tip_down_long_before_or_after_does_not_match() {
-        let t = ms(Instant::now(), 1_000);
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        m.push((DOWN, t, Some(true)));
-        m.take(ms(t, ECHO_MS), Some(t - Duration::from_millis(ECHO_MS + 1)), &mut out);
-        m.push((DOWN, ms(t, 500), Some(true)));
-        m.take(ms(t, 500 + ECHO_MS), Some(ms(t, 500 + ECHO_MS + 1)), &mut out);
-        assert_eq!(flags(&out), [(DOWN, Some(true)), (DOWN, Some(true))]);
+    fn hand_clicks_pass_while_a_pen_is_in_use() {
+        let mut gate = PenGate::default();
+        assert!(gate.pass(&DOWN, Some(false), true));
+        assert!(gate.pass(&UP, Some(false), true));
+        // macOS and Linux report no flag.
+        assert!(gate.pass(&DOWN, None, true));
+        assert!(gate.pass(&UP, None, true));
+        assert!(gate.pass(&EventType::MouseMove { x: 1.0, y: 2.0 }, None, true));
     }
 
     #[test]
-    fn presses_without_the_flag_and_other_buttons_pass_at_once_unchanged() {
-        let t = Instant::now();
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        let right = EventType::ButtonPress(Button::Right);
-        m.push((DOWN, t, Some(false)));
-        m.push((right, t, Some(true)));
-        m.push((DOWN, t, None));
-        assert_eq!(m.wait(t), None);
-        m.take(t, Some(t), &mut out);
-        assert_eq!(flags(&out), [(DOWN, Some(false)), (right, Some(true)), (DOWN, None)]);
-        assert_eq!(m.take_matched(), 0);
+    fn a_release_follows_its_own_press() {
+        let mut gate = PenGate::default();
+        // Dropped while the pen was in use: its release goes too, even once the pen is put away.
+        assert!(!gate.pass(&DOWN, Some(true), true));
+        assert!(!gate.pass(&UP, Some(true), false));
+        // Passed before the pen came near: its release passes too.
+        assert!(gate.pass(&DOWN, Some(true), false));
+        assert!(gate.pass(&UP, Some(true), true));
+        // A hand press after a dropped one starts over; only one release goes.
+        assert!(!gate.pass(&RIGHT_DOWN, Some(true), true));
+        assert!(gate.pass(&RIGHT_DOWN, Some(false), true));
+        assert!(gate.pass(&RIGHT_UP, Some(false), true));
     }
 
     #[test]
-    fn a_hand_press_after_a_pen_tap_keeps_its_own_flag() {
-        let t = Instant::now();
-        let mut m = PenMatch::default();
-        let mut out = Vec::new();
-        m.push((DOWN, ms(t, 100), Some(true)));
-        m.push((UP, ms(t, 150), Some(true)));
-        m.take(ms(t, 151), Some(ms(t, 100)), &mut out);
-        // A real mouse click, then a clicker's: neither is the pen's.
-        m.push((DOWN, ms(t, 2_000), Some(false)));
-        m.push((UP, ms(t, 2_050), Some(true)));
-        m.take(ms(t, 2_051), Some(ms(t, 100)), &mut out);
-        assert_eq!(
-            flags(&out),
-            [(DOWN, Some(false)), (UP, Some(false)), (DOWN, Some(false)), (UP, Some(true))]
-        );
+    fn report_times_mark_the_tip_edges() {
+        // The statics are shared by every test, so only this one writes them.
+        note_pen_report(false, false, 100);
+        assert_eq!(pen_times(), PenTimes { report: Some(100), tip_down: None, tip_up: None });
+        note_pen_report(true, false, 120);
+        note_pen_report(true, true, 130);
+        note_pen_report(false, true, 190);
+        assert_eq!(pen_times(), PenTimes { report: Some(190), tip_down: Some(120), tip_up: Some(190) });
+    }
+
+    /// The tablet thread and the filter thread of src/input.rs, as far as a tap goes: what each lets through.
+    #[derive(Default)]
+    struct Tap {
+        pen: PenState,
+        gate: PenGate,
+        last_report: Option<u64>,
+        mouse_down: Option<u64>,
+        counted: Vec<(EventType, Option<bool>)>,
+    }
+
+    impl Tap {
+        fn report(&mut self, tip: bool, at: u64) {
+            self.last_report = Some(at);
+            let out = self.pen.report(tip, at, self.mouse_down);
+            if out.down {
+                self.counted.push((DOWN, Some(false)));
+            }
+            if out.up {
+                self.counted.push((UP, Some(false)));
+            }
+        }
+
+        fn hook(&mut self, ev: EventType, injected: bool, at: u64) {
+            if self.gate.pass(&ev, Some(injected), pen_live(self.last_report, at)) {
+                if ev == DOWN {
+                    self.mouse_down = Some(at);
+                }
+                self.counted.push((ev, Some(injected)));
+            }
+        }
+    }
+
+    /// Windows Ink with press-and-hold on: the system's press and release come only when the pen lifts, flagged as
+    /// injected. The tap counts once, from the tablet, as not injected.
+    #[test]
+    fn a_windows_ink_tap_counts_once_from_the_tablet() {
+        let mut t = Tap::default();
+        t.report(false, 90);
+        t.report(true, 100);
+        t.report(true, 100 + ECHO_MS);
+        t.report(false, 180);
+        t.hook(DOWN, true, 182);
+        t.hook(UP, true, 183);
+        t.report(false, 190);
+        assert_eq!(t.counted, [(DOWN, Some(false)), (UP, Some(false))]);
+    }
+
+    /// The same with the system's press at the tip-down, before the tablet thread has read that report.
+    #[test]
+    fn a_press_ahead_of_the_tip_report_is_dropped_too() {
+        let mut t = Tap::default();
+        t.report(false, 90);
+        t.hook(DOWN, true, 99);
+        t.report(true, 100);
+        t.report(true, 100 + ECHO_MS);
+        t.hook(UP, true, 170);
+        t.report(false, 171);
+        assert_eq!(t.counted, [(DOWN, Some(false)), (UP, Some(false))]);
+    }
+
+    /// A driver in mouse mode sends the tap as an ordinary mouse press while its tablet still reports: the hook's
+    /// press counts and the tablet's is dropped as its echo.
+    #[test]
+    fn a_hand_press_from_a_mouse_mode_driver_counts_once_from_the_hook() {
+        let mut t = Tap::default();
+        t.report(false, 90);
+        t.report(true, 100);
+        t.hook(DOWN, false, 102);
+        t.report(true, 100 + ECHO_MS);
+        t.report(false, 170);
+        t.hook(UP, false, 171);
+        assert_eq!(t.counted, [(DOWN, Some(false)), (UP, Some(false))]);
+    }
+
+    /// A clicker running while the pen lies on the tablet gets nothing; once the tablet goes quiet its clicks count
+    /// as they are, injected.
+    #[test]
+    fn a_clicker_next_to_a_pen_gains_nothing() {
+        let mut t = Tap::default();
+        t.report(false, 0);
+        for k in 1..=5u64 {
+            t.hook(DOWN, true, k * 100);
+            t.hook(UP, true, k * 100 + 20);
+        }
+        assert!(t.counted.is_empty());
+        t.hook(DOWN, true, PEN_LIVE_MS + 1);
+        assert_eq!(t.counted, [(DOWN, Some(true))]);
     }
 
     #[test]
