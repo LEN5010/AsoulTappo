@@ -705,10 +705,17 @@ onBeforeUnmount(() => {
               >
                 <span class="sides">
                   <DdzCard class="face" :card="c < 0 ? null : c" :width="CARD" :plain="i < held.length - 1" />
-                  <DdzCard v-if="dealing || opening" class="back" :card="null" :width="CARD" />
+                  <DdzCard v-if="dealing || opening" class="flipside" :card="null" :width="CARD" />
                 </span>
               </span>
             </div>
+            <!-- Face down: how many the seat holds, on the top right corner of its cards. -->
+            <b
+              v-if="covered && held.length && !dealing" :key="bumps[you]" class="held-count" :class="{ bump: bumps[you] && !reducedMotion }"
+              :style="{ left: `${handX + (held.length - 1) * handFan.step + CARD}px` }"
+            >
+              {{ held.length }}
+            </b>
           </div>
 
           <span
@@ -1288,7 +1295,7 @@ onBeforeUnmount(() => {
 }
 /* Over the card's own `position: relative`. */
 .held .sides > * { position: absolute; inset: 0; backface-visibility: hidden; }
-.held .sides > .back { transform: rotateY(180deg); }
+.held .sides > .flipside { transform: rotateY(180deg); }
 .held.shut .sides { transform: rotateY(180deg); }
 /* Turned over one after another, left to right: each lifts a little as it stands on edge, then lies down face up.
    Holds its back until its turn comes. */
@@ -1305,6 +1312,25 @@ onBeforeUnmount(() => {
     -3px 3px 6px -2px rgba(var(--c-900-rgb), 0.3);
 }
 .phase-result .held { filter: saturate(0.6); opacity: 0.75; }
+/* How many cards a seat watched from holds face down: a white disc ringed in coral on the cards' top right corner. */
+.held-count {
+  position: absolute;
+  top: 6px;
+  z-index: 30;
+  width: 34px;
+  height: 34px;
+  margin-left: -20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  box-shadow: 0 0 0 2.5px var(--c-600), 0 5px 10px -4px rgba(var(--c-900-rgb), 0.55);
+  font: 800 19px/1 var(--font-latin);
+  letter-spacing: -0.5px;
+  color: var(--c-700);
+  pointer-events: none;
+}
+.held-count.bump { animation: bump 520ms var(--ease-out); }
 /* Turned face up or down in place: no flight in. */
 .held.stay { animation: none; }
 

@@ -4,10 +4,16 @@
 // does not carry it).
 import { computed } from "vue";
 import { members, shownNick } from "../../stores/room";
-import { watchDdz } from "../../stores/ddz";
+import { ddzWatch, watchDdz } from "../../stores/ddz";
+import { openDdzWindow } from "../../stores/ui";
 import DdzSeats from "./DdzSeats.vue";
 
 const props = defineProps<{ table: string; ids: string[] }>();
+/** The game watched already: its window comes up, watched from the same seat. */
+function watch() {
+  if (ddzWatch.value?.id === props.table && !ddzWatch.value.ended) void openDdzWindow();
+  else watchDdz(props.table);
+}
 const seats = computed(() => props.ids.map((id) => {
   const m = members.get(id);
   return m ? { character: m.character, nick: shownNick(m) } : null;
@@ -17,7 +23,7 @@ const seats = computed(() => props.ids.map((id) => {
 <template>
   <div class="row">
     <DdzSeats :seats="seats" :size="36" />
-    <button type="button" class="ui-btn white" @click="watchDdz(table)">观战</button>
+    <button type="button" class="ui-btn white" @click="watch">观战</button>
   </div>
 </template>
 
