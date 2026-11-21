@@ -148,14 +148,26 @@ export type DdzMessage =
     turn: number; sec: number; dealSec?: number;
     /** The own seat's card counter where it is sold: on for this game, and the games of it the save has left. */
     counter?: DdzCounter;
+    watch?: undefined;
+  }
+  /**
+   * A deal of the table this client watches: the viewed seat's hand (null when it is not shown), no own seat and no
+   * counter.
+   */
+  | {
+    type: "ddz_deal"; table: string; seats: DdzSeatInfo[]; hand: number[] | null; base: number; cap: number; deal: number;
+    turn: number; sec: number; dealSec?: number; watch: true;
   }
   /** A bid (0 passes); `turn` bids next while the bidding goes on. */
-  | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number }
-  | { type: "ddz_landlord"; table: string; seat: number; bid: number; bottom: number[]; mult: number; turn: number; sec: number }
+  | { type: "ddz_bid"; table: string; seat: number; bid: number; turn?: number; sec?: number; watch?: true }
+  | {
+    type: "ddz_landlord"; table: string; seat: number; bid: number; bottom: number[]; mult: number; turn: number; sec: number;
+    watch?: true;
+  }
   /** A play ([] passes); `turn` plays next, and leads when `lead`. */
   | {
     type: "ddz_play"; table: string; seat: number; cards: number[]; left: number; mult: number; bombs: number;
-    turn?: number; sec?: number; lead?: boolean;
+    turn?: number; sec?: number; lead?: boolean; watch?: true;
   }
   /**
    * A seat's member left or came back, or its autopilot changed; with `turn` its turn starts over. A member back on a
@@ -163,16 +175,16 @@ export type DdzMessage =
    */
   | {
     type: "ddz_seat"; table: string; seat: number; id: string; away: boolean; auto: boolean; turn?: number; sec?: number;
-    nick?: string; character?: string; plate?: string | null;
+    nick?: string; character?: string; plate?: string | null; watch?: true;
   }
   /** Seat `seat` of the own table showed emote `emote`, in whatever room. */
-  | { type: "ddz_emote"; table: string; seat: number; emote: string }
+  | { type: "ddz_emote"; table: string; seat: number; emote: string; watch?: true }
   | {
     type: "ddz_result"; table: string; winner: "landlord" | "farmers"; landlord: number; bid: number; bombs: number;
     /** 0 none, 1 spring, 2 counter-spring. */
-    spring: number; mult: number; base: number; deltas: number[]; hands: number[][]; sec: number;
+    spring: number; mult: number; base: number; deltas: number[]; hands: number[][]; sec: number; watch?: true;
   }
-  | { type: "ddz_again"; table: string; seat: number }
+  | { type: "ddz_again"; table: string; seat: number; watch?: true }
   | { type: "ddz_closed"; table: string }
   /** The whole game, for a seat whose member came back. */
   | {
@@ -200,7 +212,31 @@ export type DdzMessage =
    */
   | { type: "ddz_queue"; base: number | null; waited?: number; reason?: string; retry?: number }
   /** How many saves wait at each stake, as [base, saves]; stakes nobody waits at are left out. */
-  | { type: "ddz_waiting"; counts: [number, number][] };
+  | { type: "ddz_waiting"; counts: [number, number][] }
+  /**
+   * The table this client watches, as seen from seat `seat`: the answer to each `ddz_watch`, a change of seat
+   * included. `hand` is that seat's hand (null when it is not shown); `phase` is the server's own; `result` the last
+   * `ddz_result` while the phase is "over".
+   */
+  | {
+    type: "ddz_watch"; table: string; seat: number; hand: number[] | null; phase: "bid" | "play" | "settling" | "over";
+    seats: (DdzSeatInfo & { left: number; bid: number | null; again?: boolean })[]; base: number; cap: number; deal: number;
+    bid: number; landlord: number | null; bottom: number[]; mult: number; bombs: number; turn: number | null; lead: boolean;
+    trick: (number[] | null)[]; sec: number; of: number; result: (DdzMessage & { type: "ddz_result" }) | null;
+  }
+  /**
+   * Watching table `table` ended: it closed, it opened again for seats after a game (reopen), its game ended with
+   * nothing won (gone), or the own save started a game (playing). Not sent when the watcher stopped or left.
+   */
+  | { type: "ddz_watch_end"; table: string; reason: "closed" | "reopen" | "gone" | "playing" }
+  /**
+   * Who watches table `table`, to its seats and its watchers: each one's nick, pet and the seat whose hand it sees
+   * (null for none).
+   */
+  | { type: "ddz_watchers"; table: string; faces: DdzWatchFace[] };
+
+/** A watcher of a dou dizhu table, as `ddz_watchers` lists it. */
+export interface DdzWatchFace { nick: string; character: string; seat: number | null }
 
 /** A seat's card counter where the economy sells it (`doudizhu.counter`). */
 export interface DdzCounter { on: boolean; left: number }
@@ -223,11 +259,18 @@ export type DdzClientMessage =
   | { type: "ddz_sit"; table: string; seat?: number }
   | { type: "ddz_call"; table: string; id: string }
   /** An emote to the other seats of the own table. */
-  | { type: "ddz_emote"; table: string; emote: string };
+  | { type: "ddz_emote"; table: string; emote: string }
+  /**
+   * Watch table `table` from seat `seat` (0 when left out), or another seat of it; "" stops. Only on the room
+   * connection, to servers that list "ddz_watch" in `joined.features`.
+   */
+  | { type: "ddz_watch"; table: string; seat?: number };
 
 /** Who a dou dizhu connection is: the same as a room join's. */
 export interface DdzHello {
   nick: string; character: string; token?: string; accountToken?: string; plate?: string; dnd?: boolean;
+  /** This client knows watchers (`ddz_watchers`); servers without them ignore it. */
+  ddzWatch?: boolean;
 }
 
 /** What a dou dizhu connection hears beyond the table's messages. */
@@ -266,6 +309,8 @@ export type ClientMessage =
     ddz?: boolean;
     /** This client also queues for dou dizhu tables across rooms; servers without the queue ignore it. */
     ddzMatch?: boolean;
+    /** This client watches dou dizhu tables and knows watchers; servers without watching ignore it. */
+    ddzWatch?: boolean;
     motionVersion?: number;
   }
   | { type: "leave" }

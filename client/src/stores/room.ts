@@ -140,6 +140,7 @@ const events: RoomEvents = {
       endCheer();
       ddzMatchOn.value = false;
       ddzEmoteOn.value = false;
+      ddzWatchOn.value = false;
     }
   },
   onJoined(room, you, list, features) {
@@ -153,6 +154,7 @@ const events: RoomEvents = {
     cheerOn.value = features.includes("cheer");
     ddzMatchOn.value = features.includes("ddz_match");
     ddzEmoteOn.value = features.includes("ddz_emote");
+    ddzWatchOn.value = features.includes("ddz_watch");
     lastError.value = "";
     clearMembers();
     list.forEach(add);
@@ -270,6 +272,8 @@ const events: RoomEvents = {
       ddzHooks.refused(code);
       return;
     }
+    // A watch the server turned down: the store drops it, and the words show as for any refusal.
+    if (code === "ddz_busy" || code === "ddz_watch_full") ddzHooks.refused(code);
     if (code === "rate_limited") {
       rateLimited += 1;
       // It may be a join of the dou dizhu queue, which the store sends once more.
@@ -371,6 +375,8 @@ function errorText(code: string, message: string): string {
       return "稍后再匹配";
     case "ddz_queued":
       return "已在别处匹配";
+    case "ddz_watch_full":
+      return "观众已满";
     default:
       return message || code;
   }
@@ -693,6 +699,8 @@ export const ddzHooks: { message(msg: DdzMessage): void; refused(code: string): 
 export const ddzMatchOn = ref(false);
 /** The room's server takes emotes through a table (it lists "ddz_emote" in `joined.features`); older ones do not. */
 export const ddzEmoteOn = ref(false);
+/** The room's server lets members watch the room's games (it lists "ddz_watch" in `joined.features`). */
+export const ddzWatchOn = ref(false);
 /** Shows the words for refusal [code] where the room's errors show. */
 export function showRoomError(code: string): void {
   lastError.value = errorText(code, "");
@@ -780,6 +788,7 @@ export function joinRoom(room: string): void {
     ...(shownStatus.value ? { status: shownStatus.value } : {}),
     ddz: true,
     ddzMatch: true,
+    ddzWatch: true,
   });
 }
 

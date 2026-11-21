@@ -106,7 +106,7 @@ export class DdzLink {
     ws.onopen = () => {
       if (this.ws !== ws || !this.hello) return;
       this.gotPong = true;
-      ws.send(JSON.stringify({ type: "ddz_hello", ...this.hello } satisfies ClientMessage));
+      ws.send(JSON.stringify({ type: "ddz_hello", ...this.hello, ddzWatch: true } satisfies ClientMessage));
       this.helloPending = true;
       this.startPing();
     };

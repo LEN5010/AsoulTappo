@@ -67,7 +67,7 @@ const HAND = [0, 1, 4, 8, 12, 16, 20, 24, 28, 29, 32, 36, 40, 44, 48, 49, 52];
 
 it("joins saying it plays, and offers a game only when the save looks able to start one", async () => {
   const { socket, d, r, player } = await setup();
-  expect(socket.sent[0]).toMatchObject({ type: "join", ddz: true });
+  expect(socket.sent[0]).toMatchObject({ type: "join", ddz: true, ddzWatch: true });
   expect(d.ddzOn.value).toBe(true);
   expect(d.ddzCanStart.value).toBe(true);
   expect([50, 250, 500].map(d.ddzDeposit)).toEqual([2400, 12000, 24000]);
@@ -408,7 +408,7 @@ it("queues on a dou dizhu connection of its own, in a room or not, and closes it
   const lk = Socket.all.at(-1)!;
   expect(lk.url).toContain("/ws?v=");
   lk.open();
-  expect(lk.sent).toEqual([{ type: "ddz_hello", nick: settings.nick.trim() || "匿名小面包", character: settings.character, token: expect.any(String) }]);
+  expect(lk.sent).toEqual([{ type: "ddz_hello", nick: settings.nick.trim() || "匿名小面包", character: settings.character, token: expect.any(String), ddzWatch: true }]);
   lk.recv({ type: "ddz_ready", you: "L", base: null, table: null });
   expect(d.ddzLink.value).toBe("open");
   expect(sentOf(lk, "ddz_queue")).toEqual([{ type: "ddz_queue", base: 250 }]);
@@ -1108,4 +1108,211 @@ it("asked again on a new connection after accepting, shows the answer as given",
   const lk = linkUp();
   lk.recv({ type: "ddz_invite", table: "m1", ids: ["L", "x", "y"], base: 50, deposit: 2400, sec: 9, match: true, seats: [{ ...ME, id: "L" }, X, Y], accepted: ["x", "L"] });
   expect(d.ddz.value).toMatchObject({ id: "m1", answered: true, accepted: ["x", "L"] });
+});
+
+// ------------------------------------------------------------------ watching
+async function watchSetup() {
+  const ctx = await setup();
+  ctx.socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A, B, OLD], features: ["ddz_match", "ddz_watch"] });
+  // A game of the room: two members and a save from another room.
+  ctx.socket.recv({ type: "ddz_live", table: "w", ids: ["a", "x", "b"], on: true });
+  return ctx;
+}
+const WSEATS = [A, { id: "x", nick: "路人", character: "心宜" }, B].map(({ id, nick, character }) => ({ id, nick, character, auto: false, away: false }));
+/** The game watched as the server sends it: in play, the landlord on seat 2, seat [seat]'s hand [hand]. */
+function snapshot(seat: number, hand: number[] | null, over: Record<string, unknown> = {}) {
+  return {
+    type: "ddz_watch", table: "w", seat, hand, phase: "play", base: 50, cap: 24, deal: 1, bid: 2, landlord: 2,
+    bottom: [5, 9, 53], mult: 2, bombs: 0, turn: 0, lead: true, trick: [null, null, null], sec: 20, of: 30, result: null,
+    seats: WSEATS.map((s, i) => ({ ...s, left: [3, 17, 20][i]!, bid: [0, 1, 2][i]! })), ...over,
+  };
+}
+const watchSent = (socket: Socket) => sentOf(socket, "ddz_watch");
+
+it("watches a game of the room apart from the save's own table, and follows the hand of the seat watched", async () => {
+  const { socket, d, frame } = await watchSetup();
+  expect(d.ddzCanWatch.value).toBe(true);
+  expect([d.ddzWatchSeat("w"), d.ddzWatchSeat("w", "b"), d.ddzWatchSeat("w", "nobody")]).toEqual([0, 2, 0]);
+  d.watchDdz("w");
+  expect(watchSent(socket)).toEqual([{ type: "ddz_watch", table: "w", seat: 0 }]);
+  socket.recv(snapshot(0, [0, 4, 8]));
+  expect(d.ddzWatch.value).toMatchObject({ id: "w", you: 0, phase: "play", shown: true, switching: false, hand: [8, 4, 0], counter: null, played: null });
+  expect(d.ddzWatch.value!.seats.map((s) => s.left)).toEqual([3, 17, 20]);
+  expect(d.ddzScreen.value).toBe("watch");
+  expect(frame.open).toBe(true);
+  // The save stays free: nothing of its own is held.
+  expect(d.ddz.value).toBeNull();
+  expect([d.ddzBusy.value, d.ddzAtTable.value, d.ddzCanStart.value, d.ddzCanQueue.value, d.ddzCanOpen.value]).toEqual([false, false, true, true, true]);
+  // A play of the seat watched leaves its hand; another seat's only its count.
+  socket.recv({ type: "ddz_play", table: "w", seat: 0, cards: [0, 4], left: 1, mult: 2, bombs: 0, turn: 1, sec: 30, watch: true });
+  socket.recv({ type: "ddz_play", table: "w", seat: 1, cards: [], left: 17, mult: 2, bombs: 0, turn: 2, sec: 30, watch: true });
+  expect(d.ddzWatch.value).toMatchObject({ hand: [8], trick: [[0, 4], [], null], turn: 2 });
+  expect(d.ddzWatch.value!.seats.map((s) => s.left)).toEqual([1, 17, 20]);
+  expect(d.ddzWatch.value!.log.at(-1)).toMatchObject({ kind: "play", seat: 1 });
+  // Another seat: its cards lie face down until the server sends them; plays meanwhile leave the hand alone.
+  d.viewDdz(2);
+  expect(d.ddzWatch.value).toMatchObject({ you: 2, hand: [], shown: false, switching: true });
+  expect(watchSent(socket)).toHaveLength(1); // a second apart
+  socket.recv({ type: "ddz_play", table: "w", seat: 2, cards: [5], left: 19, mult: 2, bombs: 0, turn: 0, sec: 30, watch: true });
+  expect(d.ddzWatch.value).toMatchObject({ hand: [], trick: [[0, 4], [], [5]] });
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(watchSent(socket).at(-1)).toEqual({ type: "ddz_watch", table: "w", seat: 2 });
+  socket.recv(snapshot(2, [9, 53], { trick: [[0, 4], [], [5]], turn: 0, lead: false }));
+  expect(d.ddzWatch.value).toMatchObject({ you: 2, hand: [53, 9], shown: true, switching: false });
+  // Picked twice within the second: only the last is asked for, and the late answer for the first brings no hand.
+  d.viewDdz(1);
+  d.viewDdz(0);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(watchSent(socket).slice(2)).toEqual([{ type: "ddz_watch", table: "w", seat: 0 }]);
+  socket.recv(snapshot(1, [2, 3]));
+  expect(d.ddzWatch.value).toMatchObject({ you: 0, hand: [], switching: true });
+  socket.recv(snapshot(0, [4]));
+  expect(d.ddzWatch.value).toMatchObject({ you: 0, hand: [4], switching: false });
+  // A message of another table is not this one's.
+  socket.recv({ type: "ddz_play", table: "zz", seat: 0, cards: [4], left: 0, mult: 2, bombs: 0, watch: true });
+  expect(d.ddzWatch.value!.hand).toEqual([4]);
+});
+
+it("keeps a hand the server does not show face down until the result, and adds the bottom cards to one it shows", async () => {
+  const { socket, d } = await watchSetup();
+  d.watchDdz("w", 1);
+  socket.recv(snapshot(1, null, { phase: "bid", landlord: null, bottom: [], bid: 1, turn: 2 }));
+  expect(d.ddzWatch.value).toMatchObject({ you: 1, phase: "bid", hand: [], shown: false });
+  socket.recv({ type: "ddz_landlord", table: "w", seat: 1, bid: 3, bottom: [5, 9, 53], mult: 3, turn: 1, sec: 30, watch: true });
+  expect(d.ddzWatch.value).toMatchObject({ phase: "play", landlord: 1, hand: [], bottom: [5, 9, 53] });
+  expect(d.ddzWatch.value!.seats[1]!.left).toBe(20);
+  socket.recv({
+    type: "ddz_result", table: "w", winner: "farmers", landlord: 1, bid: 3, bombs: 0, spring: 0, mult: 3, base: 50,
+    deltas: [150, -300, 150], hands: [[], [8, 12], [20]], sec: 30, watch: true,
+  });
+  expect(d.ddzWatch.value).toMatchObject({ phase: "result", hand: [12, 8], shown: true, result: { winner: "farmers" } });
+  socket.recv({ type: "ddz_again", table: "w", seat: 0, watch: true });
+  expect(d.ddzWatch.value!.seats[0]!.again).toBe(true);
+  // Another game at the table: watched on from the same seat, its hand as the deal says.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.watchDdz("w", 2);
+  socket.recv(snapshot(2, [1, 2], { phase: "bid", landlord: null, bottom: [] }));
+  socket.recv({ type: "ddz_deal", table: "w", seats: WSEATS, hand: HAND, base: 50, cap: 24, deal: 2, turn: 0, sec: 15, dealSec: 1.8, watch: true });
+  expect(d.ddzWatch.value).toMatchObject({ you: 2, deal: 2, phase: "bid", shown: true, turn: 0 });
+  expect(d.ddzWatch.value!.hand).toHaveLength(17);
+  expect(d.ddzWatch.value!.dealUntil - Date.now()).toBe(1800);
+  expect(d.ddzWatch.value!.log.at(-1)).toMatchObject({ kind: "deal" });
+  // The landlord taking the bottom cards adds them to a hand that is shown.
+  socket.recv({ type: "ddz_landlord", table: "w", seat: 2, bid: 1, bottom: [53, 52, 51], mult: 1, turn: 2, sec: 30, watch: true });
+  expect(d.ddzWatch.value!.hand).toHaveLength(20);
+});
+
+it("ends watching when the save's own game is dealt, and keeps the save's open table as it is meanwhile", async () => {
+  const { socket, d, frame } = await watchSetup();
+  socket.recv({ type: "ddz_open", table: "o", base: 50, deposit: 2400, you: 1, seats: [{ ...A }, { ...ME }, null], sec: 600 });
+  expect(d.ddz.value).toMatchObject({ phase: "open" });
+  expect(d.ddzCanWatch.value).toBe(true); // waiting at an open table
+  d.watchDdz("w");
+  socket.recv(snapshot(0, [4]));
+  // A deal of the table watched, and a watcher list of each table, leave the save's own table alone.
+  socket.recv({ type: "ddz_deal", table: "w", seats: WSEATS, hand: null, base: 50, cap: 24, deal: 2, turn: 0, sec: 15, watch: true });
+  expect(d.ddz.value).toMatchObject({ id: "o", phase: "open" });
+  expect(d.ddzWatch.value).toMatchObject({ deal: 2, shown: false });
+  socket.recv({ type: "ddz_watchers", table: "w", faces: [{ nick: "我", character: "嘉然", seat: null }] });
+  expect(d.ddzWatchers.value).toEqual({ w: [{ nick: "我", character: "嘉然", seat: null }] });
+  expect(d.ddzScreen.value).toBe("watch");
+  // The open table fills and deals: its game takes the window, and the server hears that watching stopped.
+  await vi.advanceTimersByTimeAsync(1100);
+  socket.recv({ type: "ddz_deal", table: "o", seats: SEATS, you: 1, hand: HAND, base: 50, cap: 24, deal: 1, turn: 0, sec: 15 });
+  expect(d.ddzWatch.value).toBeNull();
+  expect(d.ddzScreen.value).toBe("own");
+  expect(watchSent(socket).at(-1)).toEqual({ type: "ddz_watch", table: "" });
+  expect(d.ddzCanWatch.value).toBe(false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(frame.open).toBe(true);
+  expect(d.ddzWatchers.value).toEqual({}); // the table watched is gone
+  socket.recv({ type: "ddz_watchers", table: "o", faces: [{ nick: "贝", character: "贝拉", seat: 1 }] });
+  expect(d.ddzWatchers.value.o).toHaveLength(1);
+  d.watchDdz("w"); // not while playing
+  expect(watchSent(socket).at(-1)).toEqual({ type: "ddz_watch", table: "" });
+});
+
+it("ends watching as the server says: the result stays at a table that opens again, a game that falls through goes", async () => {
+  const { socket, d, frame } = await watchSetup();
+  const result = {
+    type: "ddz_result", table: "w", winner: "landlord", landlord: 2, bid: 2, bombs: 0, spring: 0, mult: 2, base: 50,
+    deltas: [-100, -100, 180], hands: [[1], [2, 3], []], sec: 30,
+  };
+  d.watchDdz("w");
+  // Come in at the result: every hand is open.
+  socket.recv(snapshot(0, null, { phase: "over", turn: null, result }));
+  expect(d.ddzWatch.value).toMatchObject({ phase: "result", shown: true, hand: [1], result: { winner: "landlord" } });
+  socket.recv({ type: "ddz_tables", tables: [{ table: "w", base: 50, seats: [{ ...A }, null, null] }] });
+  socket.recv({ type: "ddz_watch_end", table: "w", reason: "reopen" });
+  expect(d.ddzWatch.value).toMatchObject({ ended: "reopen", closed: true, phase: "result" });
+  expect(d.ddzCanSit(50)).toBe(true);
+  socket.recv({ type: "ddz_play", table: "w", seat: 0, cards: [1], left: 0, mult: 2, bombs: 0, watch: true });
+  expect(d.ddzWatch.value!.phase).toBe("result"); // nothing more of it is heard
+  d.sitDdz("w");
+  expect(socket.sent.at(-1)).toEqual({ type: "ddz_sit", table: "w" });
+  socket.recv({ type: "ddz_open", table: "w", base: 50, deposit: 2400, you: 1, seats: [{ ...A }, { ...ME }, null], sec: 600 });
+  expect(d.ddzWatch.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(frame.open).toBe(false);
+
+  // A game that falls through: its ending shows for a moment, then the window goes.
+  socket.recv({ type: "ddz_closed", table: "w" });
+  expect(d.ddz.value).toBeNull();
+  socket.recv({ type: "ddz_live", table: "w2", ids: ["a", "x", "b"], on: true });
+  await vi.advanceTimersByTimeAsync(1100);
+  d.watchDdz("w2");
+  socket.recv({ ...snapshot(0, [4]), table: "w2" });
+  expect(frame.open).toBe(true);
+  socket.recv({ type: "ddz_watch_end", table: "w2", reason: "gone" });
+  expect(d.ddzWatch.value).toMatchObject({ ended: "gone", phase: "over" });
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  expect(d.ddzWatch.value).toBeNull();
+  expect(frame.open).toBe(false);
+
+  // The save's own game starting elsewhere: watching ends at once.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.watchDdz("w2");
+  socket.recv({ ...snapshot(0, [4]), table: "w2" });
+  socket.recv({ type: "ddz_watch_end", table: "w2", reason: "playing" });
+  expect(d.ddzWatch.value).toBeNull();
+});
+
+it("stops when the window closes, and takes a refusal of the server as the end of the request", async () => {
+  const { socket, d, r, frame } = await watchSetup();
+  d.watchDdz("w");
+  socket.recv({ type: "error", code: "ddz_watch_full", message: "" });
+  expect(r.lastError.value).toBe("观众已满");
+  expect(d.ddzWatch.value).toBeNull();
+  socket.recv(snapshot(0, [4])); // late, after the refusal: not shown
+  expect(d.ddzWatch.value).toBeNull();
+  // Held back once: asked again after the gap.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.watchDdz("w", 2);
+  socket.recv({ type: "error", code: "rate_limited", message: "" });
+  expect(watchSent(socket)).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(watchSent(socket)).toHaveLength(3);
+  socket.recv(snapshot(2, [9]));
+  expect(d.ddzWatch.value).toMatchObject({ you: 2 });
+  // The window closed by the watcher: watching stops.
+  frame.open = false;
+  d.noteDdzWindowClosed();
+  expect(d.ddzWatch.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(watchSent(socket).at(-1)).toEqual({ type: "ddz_watch", table: "" });
+  // The room connection going ends watching too.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.watchDdz("w");
+  socket.recv(snapshot(0, [4]));
+  socket.close();
+  expect(d.ddzWatch.value).toBeNull();
+});
+
+it("shows no way in on a server without watching", async () => {
+  const { socket, d } = await setup();
+  socket.recv({ type: "ddz_live", table: "w", ids: ["a", "x", "b"], on: true });
+  expect(d.ddzCanWatch.value).toBe(false);
+  const sent = socket.sent.length;
+  d.watchDdz("w");
+  expect(socket.sent).toHaveLength(sent);
 });

@@ -511,6 +511,45 @@ it("mirrors the table into its own window beside the panel, runs its moves in th
   expect(panel.ddz.ddz.value!.seats[1]!.bid).toBe(2);
 });
 
+it("mirrors the game watched and its watchers, runs the windows' watching in the desk, and stops when the table's window closes", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  const table = await context("ddz");
+  await vi.advanceTimersByTimeAsync(50);
+  desk.room.ddzWatchOn.value = true;
+  const seats = ["a", "x", "b"].map((id) => ({ id, nick: id, character: "乃琳", left: 17, bid: null, auto: false, away: false, again: false }));
+  desk.ddz.ddzWatch.value = {
+    id: "w", via: "room", phase: "play", you: 2, seats, hand: [52, 1], shown: true, switching: false, ended: "", log: [],
+    trick: [null, null, null], landlord: 2, bottom: [], turn: 0, sec: 30, until: Date.now() + 30000, result: null,
+  } as unknown as typeof desk.ddz.ddzWatch.value;
+  desk.ddz.onDdzMessage({ type: "ddz_watchers", table: "w", faces: [{ nick: "我", character: "嘉然", seat: 2 }] });
+  await vi.advanceTimersByTimeAsync(50);
+  expect(desk.room.ddzWatchOn.value).toBe(true);
+  expect(panel.room.ddzWatchOn.value).toBe(true);
+  for (const w of [panel, table]) {
+    expect(w.ddz.ddzWatch.value).toMatchObject({ id: "w", you: 2, hand: [52, 1], shown: true });
+    expect(w.ddz.ddzWatchers.value).toEqual({ w: [{ nick: "我", character: "嘉然", seat: 2 }] });
+    expect(w.ddz.ddzScreen.value).toBe("watch");
+    // Watching holds nothing of the save's.
+    expect(w.ddz.ddzBusy.value).toBe(false);
+  }
+  const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
+  panel.ddz.watchDdz("w2", 1);
+  table.ddz.viewDdz(0);
+  table.ddz.unwatchDdz();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(request.mock.calls).toEqual([["watch", "w2", 1], ["view", 0], ["unwatch"]]);
+  request.mockRestore();
+  // The watcher closed the table's window: watching stops in the desk, and in the windows that mirror it.
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await emitTo("main", "ddz:closed", null);
+  expect(desk.ddz.ddzWatch.value).toBeNull();
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.ddz.ddzWatch.value).toBeNull();
+  expect(panel.ddz.ddzWatchers.value).toEqual({});
+});
+
 it("runs the table window's leave in the desk, in a game and on the result, and not for a table gone", async () => {
   const desk = await context(false);
   desk.room.youId.value = "me";
