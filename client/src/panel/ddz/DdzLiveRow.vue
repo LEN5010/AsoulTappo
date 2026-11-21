@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // A game under way in the room, on a strip of the mat as the open tables are: its three seats (a seat whose member is
-// not in the room shows as a ring), its stake as a chip after them where the server says it (ddz_live `base`), and the
+// not in the room shows as a plain disc), its stake as a chip after them where the server says it (ddz_live `base`), and the
 // key that watches it.
 import { computed } from "vue";
 import { members, shownNick } from "../../stores/room";
@@ -16,7 +16,7 @@ function watch() {
 }
 const seats = computed(() => props.ids.map((id) => {
   const m = members.get(id);
-  return m ? { character: m.character, nick: shownNick(m) } : null;
+  return m ? { character: m.character, nick: shownNick(m) } : "other" as const;
 }));
 </script>
 
