@@ -5,7 +5,7 @@
 // once the table is put away. Closing it leaves the seat playing (the server's autopilot moves when the time runs
 // out). A game of the room being watched shows here too while the save has none of its own; closing the window then
 // stops watching (the desk hears of it, stores/ddz.ts noteDdzWindowClosed).
-import { onBeforeUnmount, onMounted } from "vue";
+import { computed, onBeforeUnmount, onMounted, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { wakeAudio } from "./audio/sfx";
@@ -26,9 +26,21 @@ async function updateSeen() {
 let unInput: (() => void) | undefined;
 let unResize: (() => void) | undefined;
 let unFocus: (() => void) | undefined;
+// The own pet beside the hand moves with the keys and the mouse while the table is in sight and it is the save's own
+// game (a watched game shows the players' pets as the room sends them); the desk counts the taps either way.
+let inputGeneration = 0;
+const previewActive = computed(() => ui.ddzSeen && ddzScreen.value === "own");
+watch(previewActive, async (active) => {
+  const generation = ++inputGeneration;
+  unInput?.();
+  unInput = undefined;
+  stopPet();
+  if (!active) return;
+  const unlisten = await listenInput((e) => onInput(e, false));
+  if (generation === inputGeneration) unInput = unlisten;
+  else unlisten();
+}, { immediate: true });
 onMounted(async () => {
-  // The own pet beside the hand moves with the keys and the mouse; the desk counts the taps.
-  unInput = await listenInput((e) => onInput(e, false));
   unResize = await getCurrentWindow().onResized(updateSeen);
   unFocus = await getCurrentWindow().onFocusChanged(updateSeen);
   document.addEventListener("visibilitychange", updateSeen);
@@ -38,6 +50,7 @@ onMounted(async () => {
   await invoke("show_ddz").catch(() => {});
 });
 onBeforeUnmount(() => {
+  inputGeneration++;
   unInput?.();
   unResize?.();
   unFocus?.();

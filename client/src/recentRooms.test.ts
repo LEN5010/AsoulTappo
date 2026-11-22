@@ -16,6 +16,13 @@ describe("recent rooms", () => {
     expect(nameRoom(list, "b", "夜聊")).toEqual([{ room: "b", name: "夜聊", at: 5 }]);
     expect(nameRoom(list, "b", "")).toEqual([{ room: "b", at: 5 }]);
     expect(nameRoom(list, "x", "夜聊")).toEqual(list);
+    // The same name again, or none again, gives back the very list: nothing to save or send.
+    const named = nameRoom(list, "b", "夜聊");
+    expect(nameRoom(named, "b", "夜聊")).toBe(named);
+    const unnamed = [{ room: "c", at: 1 }];
+    expect(nameRoom(unnamed, "c", undefined)).toBe(unnamed);
+    expect(nameRoom(unnamed, "c", "")).toBe(unnamed);
+    expect(nameRoom(list, "x", "夜聊")).toBe(list);
     expect(noteRoom(list, "b", 6, "")).toEqual([{ room: "b", at: 6 }]);
   });
 

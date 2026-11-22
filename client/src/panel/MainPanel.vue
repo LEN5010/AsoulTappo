@@ -51,17 +51,38 @@ const ParkChips = defineAsyncComponent(() => import("./park/ParkChips.vue"));
 const loadPage = (page: Page) => PAGES[page]().catch(() => {});
 const WARM_STEP_MS = 400;
 let warming: ReturnType<typeof setTimeout> | undefined;
+/** The pages still to fetch ahead; undefined until the first page is up. */
+let warmQueue: Page[] | undefined;
+let warmActive = true;
+/**
+ * Fetches the other pages one by one while the panel is up and the terms are agreed. A panel opened only to confirm
+ * the statement after an update loads none of them; closing the panel pauses the rest until it opens again.
+ */
 function warmPages() {
   // The standalone edition never loads the pages it does not show.
-  const rest = (STANDALONE ? [...STANDALONE_PAGES] : Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
+  warmQueue ??= (STANDALONE ? [...STANDALONE_PAGES] : Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
+  if (warming !== undefined || !warmActive || !agreed.value) return;
   const next = () => {
-    const page = rest.shift();
-    if (!page) { warming = undefined; return; }
+    warming = undefined;
+    if (!warmActive || !agreed.value) return;
+    const page = warmQueue?.shift();
+    if (!page) return;
     void loadPage(page);
     warming = setTimeout(next, WARM_STEP_MS);
   };
   warming = setTimeout(next, WARM_STEP_MS);
 }
+function pauseWarming() {
+  warmActive = false;
+  clearTimeout(warming);
+  warming = undefined;
+}
+function resumeWarming() {
+  warmActive = true;
+  if (warmQueue?.length) warmPages();
+}
+// Agreeing in the panel that came up for it starts what the dialog held back.
+watch(agreed, (ok) => { if (ok && warmQueue?.length) warmPages(); });
 
 const emit = defineEmits<{ resetPet: [] }>();
 const ALL_NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -217,6 +238,8 @@ onMounted(shownNow);
 onActivated(shownNow);
 onDeactivated(hiddenNow);
 onBeforeUnmount(hiddenNow);
+onActivated(resumeWarming);
+onDeactivated(pauseWarming);
 
 onMounted(async () => {
   window.addEventListener("keydown", onKey);

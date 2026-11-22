@@ -144,6 +144,8 @@ watch(() => props.busy, () => (pointing.value = false));
 watch(() => props.paused, (paused) => { if (!paused) stripKeyed.value = false; }, { flush: "post" });
 const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
 const hold = computed(() => !playing.value || pointing.value);
+// The strip stops where nobody sees it pass: under a detail sheet, the odds or a reveal, and on a page not shown.
+const stripCovered = computed(() => !pageActive.value || props.busy || !!props.paused);
 
 // The pearl plate leans toward the pointer, up to LEAN_DEG, and its frame metal and glare follow.
 const heroEl = ref<HTMLElement>();
@@ -411,7 +413,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="strip.length" class="closet-strip" :class="{ keyed: stripKeyed }" role="region" aria-label="衣橱卡牌"
+        v-if="strip.length" class="closet-strip" :class="{ keyed: stripKeyed, covered: stripCovered }" role="region" aria-label="衣橱卡牌"
         :style="{ '--marquee': `${strip.length * 2.1}s` }"
         @pointerdown="stripKeyed = false" @keydown="onStripKey"
         @focusin="stripKeyed = ($event.target as HTMLElement).matches(':focus-visible')"
@@ -955,6 +957,10 @@ h3 {
 .keyed .strip-track,
 .calm .strip-track {
   animation: none;
+}
+/* Covered or off screen it waits where it is, and goes on from there. */
+.covered .strip-track {
+  animation-play-state: paused;
 }
 .strip-group {
   flex: none;

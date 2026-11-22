@@ -13,9 +13,10 @@ export const restingMotion = (): PetMotion => ({ dx: 0, dy: 0, keyDown: false, l
 
 /**
  * The newest room motion format this client reads: 2 packed deltas for subscribed members, 3 the same with each
- * room's button edges gathered into one ordered `motion_edges` message.
+ * room tick's button edges and positions gathered into one ordered `motion_edges` message, 4 the same with the
+ * tick's taps in that message too (`room_tick`).
  */
-export const MOTION_VERSION = 3;
+export const MOTION_VERSION = 4;
 
 /** Quarter-pixel coordinates and keyboard/left/right bits. Absent fields retain their last value. */
 export interface PackedMotion { x: number; y: number; b: number }
@@ -363,8 +364,10 @@ export type ServerMessage =
   | { type: "motion_batch"; motions: ({ id: string } & PetMotion)[] }
   | { type: "motion_delta" | "motion_snapshot"; motions: MotionDelta[] }
   | ({ type: "motion_edge" } & MotionDelta)
-  /** Button edges of the last 50ms, oldest first; one member may appear more than once. */
+  /** Button edges and positions of the room's last tick, oldest first; one member may appear more than once. */
   | { type: "motion_edges"; edges: MotionDelta[] }
+  /** Motion version 4: the room's last tick, motions as in `motion_edges`, then each member's taps added up. */
+  | { type: "room_tick"; motions: MotionDelta[]; taps: { id: string; count: number; total: number }[] }
   | { type: "emote"; id: string; emote: string }
   /** [from] poked [to]; `quiet` on the copy for a member poked while turning invites down. */
   | { type: "poke"; from: string; to: string; quiet?: boolean }

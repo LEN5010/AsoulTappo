@@ -100,7 +100,9 @@ export function useRaceFeed(opts: { view?: "summary" | "schedule"; scheduleOnly?
   watch(view, () => void poll());
 
   function onVisible() {
-    if (!hidden()) void poll();
+    if (hidden()) return;
+    now.value = Date.now();
+    void poll();
   }
   function start() {
     if (active) return;
@@ -108,7 +110,9 @@ export function useRaceFeed(opts: { view?: "summary" | "schedule"; scheduleOnly?
     activation++;
     now.value = Date.now();
     void poll();
-    clockTimer = setInterval(() => (now.value = Date.now()), opts.view === "schedule" ? 1000 : TICK);
+    // A hidden window's clock stands still: the replay and the rows hanging off it are worked out again only once it
+    // shows (onVisible), from the time then.
+    clockTimer = setInterval(() => { if (!hidden()) now.value = Date.now(); }, opts.view === "schedule" ? 1000 : TICK);
     document.addEventListener("visibilitychange", onVisible);
   }
   function stop() {

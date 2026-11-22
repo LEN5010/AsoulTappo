@@ -285,7 +285,7 @@ export class RoomClient {
       case "joined":
         this.joinPending = false;
         // A server that knows packed motion says which version it speaks; every other one keeps hearing and
-        // sending full poses. Version 3 only adds `motion_edges`, read below whatever was agreed.
+        // sending full poses. Versions 3 and 4 only add `motion_edges` and `room_tick`, read below whatever was agreed.
         this.motionV2 = (msg.motionVersion ?? 1) >= 2;
         // A room joined again on the same connection starts from nothing, like the server's side of it.
         this.sentPose = null;
@@ -330,6 +330,10 @@ export class RoomClient {
       case "motion_edges":
         // In the order they happened: a press and its release in one batch are both shown (MotionFrames).
         for (const delta of msg.edges) this.motionDelta(delta);
+        break;
+      case "room_tick":
+        for (const delta of msg.motions) this.motionDelta(delta);
+        for (const tap of msg.taps) this.events.onTap(tap.id, tap.count, tap.total);
         break;
       case "emote":
         this.events.onEmote(msg.id, msg.emote);

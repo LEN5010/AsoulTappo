@@ -36,6 +36,8 @@ export async function syncSettings() {
     const patch = Object.fromEntries(Object.entries(value).filter(([key, v]) =>
       JSON.stringify(v) !== JSON.stringify(old[key as keyof Settings]),
     ));
+    // A write that changed nothing (the same value again) tells no window anything.
+    if (!Object.keys(patch).length) return;
     const message: SettingsMessage = { from: windowLabel, patch };
     if (windowLabel === "main") for (const side of SIDE_WINDOWS) void emitTo(side, "desktop:settings", message);
     else void emitTo("main", "desktop:settings", message);

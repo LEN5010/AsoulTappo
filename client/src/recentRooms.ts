@@ -22,8 +22,14 @@ export function noteRoom(list: readonly RecentRoom[], room: string, at: number, 
   return [entry, ...list.filter((r) => r.room !== room)].slice(0, MAX_RECENT_ROOMS);
 }
 
-/** [list] with [room]'s name as the server now gives it, where it stands; unchanged when the room is not listed. */
-export function nameRoom(list: readonly RecentRoom[], room: string, name: string | undefined): RecentRoom[] {
+/**
+ * [list] with [room]'s name as the server now gives it, where it stands. [list] itself when that changes nothing (the
+ * room is not listed, or already has that name): room info comes again on every host or listing change, and a new
+ * list would save the settings and send them to every window each time.
+ */
+export function nameRoom(list: RecentRoom[], room: string, name: string | undefined): RecentRoom[] {
+  const known = list.find((r) => r.room === room);
+  if (!known || (known.name ?? "") === (name ?? "")) return list;
   return list.map((r) => (r.room !== room ? r : name ? { ...r, name } : { room: r.room, at: r.at }));
 }
 

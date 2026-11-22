@@ -113,7 +113,7 @@ describe("RoomClient", () => {
     const ws = FakeWs.all[0];
     expect(ws.url).toBe(`ws://h:1/ws?v=${APP_VERSION}`);
     ws.open();
-    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
+    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 4 });
     ws.recv({ type: "joined", room: "r", you: "me", members: [] });
     // A server without the list offers nothing beyond the 1.1 messages.
     expect(ev.onJoined).toHaveBeenCalledWith("r", "me", [], []);
@@ -180,6 +180,16 @@ describe("RoomClient", () => {
       ["y", { dx: -20, dy: 20, keyDown: false, left: false, right: false }],
       ["x", { ...still, dx: 1, dy: 1.5, left: true }],
     ]);
+    // A room tick: its motions in order, then each member's taps.
+    ev.onMotion.mockClear();
+    ev.onTap.mockClear();
+    ws.recv({ type: "room_tick", motions: [{ id: "x", b: 1 }, { id: "x", x: 8 }],
+      taps: [{ id: "x", count: 3, total: 10 }, { id: "me", count: 1, total: 4 }] });
+    expect(ev.onMotion.mock.calls).toEqual([
+      ["x", { ...still, dx: 1, dy: 1.5, keyDown: true }],
+      ["x", { ...still, dx: 2, dy: 1.5, keyDown: true }],
+    ]);
+    expect(ev.onTap.mock.calls).toEqual([["x", 3, 10], ["me", 1, 4]]);
     // A new connection starts over: everything is said again.
     ws.close();
     vi.advanceTimersByTime(400);
@@ -192,12 +202,12 @@ describe("RoomClient", () => {
     expect(next.sent.at(-1)).toEqual({ type: "motion_subscribe", ids: ["x"] });
   });
 
-  it("asks the 1.1.4 server, which refuses motion version 3, for version 2 instead", () => {
+  it("asks the 1.1.4 server, which refuses motion versions above 2, for version 2 instead", () => {
     const { c, ev } = setup();
     c.join("http://h:1", INFO);
     const ws = FakeWs.all[0];
     ws.open();
-    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
+    expect(ws.sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 4 });
     ws.recv({ type: "error", code: "bad_message", message: "invalid message" });
     expect(ws.sent[1]).toEqual({ type: "join", ...INFO, motionVersion: 2 });
     expect(ev.onError).not.toHaveBeenCalled();
@@ -224,7 +234,7 @@ describe("RoomClient", () => {
     vi.advanceTimersByTime(400);
     expect(FakeWs.all).toHaveLength(2);
     FakeWs.all[1].open();
-    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 3 });
+    expect(FakeWs.all[1].sent[0]).toEqual({ type: "join", ...INFO, motionVersion: 4 });
   });
 
   it("leave() stops reconnecting", () => {
