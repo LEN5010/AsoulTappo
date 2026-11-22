@@ -35,6 +35,8 @@ export interface LinkGame {
   seconds: number;
   /** The top prize stored when the game started; missing from servers before it. */
   max?: number;
+  /** Server milliseconds when the game started; missing from servers before it. */
+  start?: number;
   /** Server milliseconds. */
   deadline: number;
   /** The server's milliseconds when it answered. */
@@ -63,7 +65,8 @@ export interface LinkState {
 interface LinkAnswer { link: LinkState; result?: LinkResult; settled?: boolean }
 /** A move's answer: the moves accepted and pairs cleared, or a full answer once the game is settled. */
 type MoveAnswer = Partial<LinkAnswer> & { seq?: number; cleared?: number; shuffle?: number[] };
-interface Move { game: number; seq: number; a: number; b: number }
+/** `t`: milliseconds from the game's start to the pair, by the server's clock; fixed when the pair is taken. */
+interface Move { game: number; seq: number; a: number; b: number; t: number }
 
 /** Waits between retries of a request that got no answer. */
 const BACKOFF_MS = [400, 800, 1600, 3200, 5000];
@@ -137,6 +140,12 @@ let finishFor: number | null = null;
 /** The store has been asked for something: it follows the save from then on. */
 let used = false;
 let nextTile = 1;
+/**
+ * The clock that times pairs: the server's time when the game first came onto the board, against the local
+ * monotonic clock. Later snapshots of the game never move it (a stale one would set linkOffset back), so the times
+ * sent only grow. `last` is the latest time sent for the game.
+ */
+let anchor: { id: number; server: number; local: number; last: number } | null = null;
 let waiters: (() => void)[] = [];
 
 function readJson<T>(key: string): T | null {
@@ -202,6 +211,7 @@ function tilesFor(board: number[], keep: boolean): number[] {
 /** Puts the server's game on the board, dropping the queue. */
 function adopt(game: LinkGame): void {
   const same = linkGame.value?.id === game.id;
+  if (anchor?.id !== game.id) anchor = { id: game.id, server: game.now, local: performance.now(), last: 0 };
   dropQueue();
   linkTiles.value = tilesFor(game.board, same);
   linkGame.value = game;
@@ -349,7 +359,7 @@ async function pump(): Promise<void> {
   const flight = {};
   inFlight = flight;
   const mine = epoch;
-  const r = await parkTry<MoveAnswer>("POST", "/api/park/link/move", { game: move.game, seq: move.seq, a: move.a, b: move.b });
+  const r = await parkTry<MoveAnswer>("POST", "/api/park/link/move", { game: move.game, seq: move.seq, a: move.a, b: move.b, t: move.t });
   if (inFlight === flight) inFlight = null;
   if (mine !== epoch || queue[0] !== move) return;
   if (!r.ok) {
@@ -392,6 +402,15 @@ async function pump(): Promise<void> {
   void pump();
 }
 
+/** Milliseconds from [g]'s start to now on the pair clock, never less than the last pair's. */
+function pairTime(g: LinkGame): number {
+  if (anchor?.id !== g.id) anchor = { id: g.id, server: serverNow(), local: performance.now(), last: 0 };
+  const start = g.start ?? g.deadline - g.seconds * 1000;
+  const t = Math.max(anchor.last, 0, Math.round(anchor.server + (performance.now() - anchor.local) - start));
+  anchor.last = t;
+  return t;
+}
+
 /** Takes the pair [a], [b] off the board and queues its move. false when the board takes no move now. */
 export function playPair(a: number, b: number): boolean {
   const g = linkGame.value;
@@ -402,7 +421,7 @@ export function playPair(a: number, b: number): boolean {
   tiles[b] = EMPTY;
   linkTiles.value = applyShift(tiles, g.rows, g.cols, g.shift);
   linkGame.value = { ...g, board, cleared: g.cleared + 1 };
-  queue.push({ game: g.id, seq: accepted + queue.length, a, b });
+  queue.push({ game: g.id, seq: accepted + queue.length, a, b, t: pairTime(g) });
   if (board.some((v) => v !== EMPTY) && !findPair(board, g.rows, g.cols)) linkShuffling.value = true;
   void pump();
   return true;
@@ -486,6 +505,7 @@ export function dismissResult(): void {
 /** Another save or server: nothing of the last one stays. */
 export function resetLink(): void {
   session++;
+  anchor = null;
   dropQueue();
   stopFinishing();
   linkStarting.value = false;

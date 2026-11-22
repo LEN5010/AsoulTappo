@@ -18,6 +18,8 @@ class DropConfig:
     fast_taps_per_sec: int = 10
     fast_streak_sec: float = 30.0
     tap_cooldown_sec: float = 60.0
+    # 连连看 (park_link.py): a pair claimed sooner than this after the one before is not counted in the prize.
+    link_min_pair_ms: int = 250
 
 
 def roll_tier(rates, available, pity, hard_pity, rng: Rng, x: float | None = None) -> str:

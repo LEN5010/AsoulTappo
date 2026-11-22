@@ -145,7 +145,9 @@ def test_solvable_is_greedy_with_the_shift():
 
 
 @pytest.mark.parametrize("rows,cols,kinds", [(4, 6, 6), (6, 8, 12), (6, 10, 15)])
-def test_reverse_placement_clears_in_reverse_order(rows, cols, kinds):
+def test_reverse_placement_clears_in_reverse_order(monkeypatch, rows, cols, kinds):
+    # A budget no machine reaches, so generate never falls back to a random deal here.
+    monkeypatch.setattr(link, "BUDGET_S", 60)
     for seed in range(15):
         board, pairs = link._reverse(rows, cols, kinds, random.Random(seed))
         assert link.generate(rows, cols, kinds, "none", random.Random(seed)) == board
@@ -158,14 +160,15 @@ def test_reverse_placement_clears_in_reverse_order(rows, cols, kinds):
 
 
 @pytest.mark.parametrize("rows,cols,kinds,shift", [(6, 8, 12, "down"), (6, 8, 12, "left"), (6, 10, 15, "center")])
-def test_shifted_boards_are_solvable_or_hold_a_pair(rows, cols, kinds, shift):
+def test_shifted_boards_are_solvable_or_hold_a_pair(monkeypatch, rows, cols, kinds, shift):
+    monkeypatch.setattr(link, "BUDGET_S", 60)
     solved = 0
     for seed in range(30):
         board = link.generate(rows, cols, kinds, shift, random.Random(seed))
         assert sorted(board) == deck(kinds)
         assert link.find_pair(board, rows, cols) is not None
         solved += link.solvable(board, rows, cols, shift)
-    # The attempt cap rarely runs out at these sizes; the time budget may on a loaded machine.
+    # Only the attempt cap applies with the budget lifted; it rarely runs out at these sizes.
     assert solved >= 27
 
 
@@ -216,12 +219,13 @@ def test_shuffle_makes_a_pair_when_tries_run_out(monkeypatch, board, rows, cols)
 
 @pytest.mark.parametrize("rows,cols,kinds,shift", LEVELS)
 def test_generation_time_per_level(rows, cols, kinds, shift):
-    # The server budget is about 50 ms a game on one core; the mean here is a loose check, not a benchmark.
+    # The server budget is about 50 ms a game on one core (generate stops at BUDGET_S); the bound here is loose so a
+    # loaded machine does not fail it, and catches only a runaway loop.
     n = 20
     start = time.perf_counter()
     for seed in range(n):
         link.generate(rows, cols, kinds, shift, random.Random(seed))
-    assert (time.perf_counter() - start) / n < 0.05
+    assert (time.perf_counter() - start) / n < 0.5
 
 
 class Constant:

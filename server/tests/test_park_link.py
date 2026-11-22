@@ -8,11 +8,12 @@ from fastapi.testclient import TestClient
 
 import app.main as main
 from app import economy
+from app.cards import DropConfig
 from app.game import DAY_OFFSET, SCRATCH_DAYS, Game, GameError
 from app.link import EMPTY, connect, find_pair, remove_pair
 from app.manifest import Manifest
 from app.park import LINK_FEE, LINK_PRIZE, Park
-from app.park_link import ParkLink
+from app.park_link import LINK_CLAIM_SLACK_MS, ParkLink
 from app.store import Store, day_of
 from fixtures import Clock, tiny_manifest
 
@@ -25,10 +26,11 @@ ENTRY = CFG["entry"]
 SHARDS = 10_000
 
 
-def setup(shards=SHARDS, taps=None, require_account=False, seed=7):
-    """A save with [shards] and the park open (unless [taps] says otherwise); the rng is seeded."""
+def setup(shards=SHARDS, taps=None, require_account=False, seed=7, cfg=None):
+    """A save with [shards] and the park open (unless [taps] says otherwise); the rng is seeded. [cfg]: the
+    anti-cheat settings, the defaults when None."""
     clock = Clock()
-    g = Game(Store(":memory:"), Manifest.load(), rng=random.Random(seed), now=clock)
+    g = Game(Store(":memory:"), Manifest.load(), cfg, rng=random.Random(seed), now=clock)
     park = Park(lambda: g)
     pl = ParkLink(park, require_account=lambda: require_account)
     pid = g.status(TOKEN)["player"]
@@ -55,10 +57,13 @@ def prize(level: dict, cleared: int, total: int) -> int:
     return level["max"] * cleared ** 2 // total ** 2
 
 
-def play_pair(pl, game, board, seq):
-    """Clears the first pair find_pair gives on [board]; returns (reply, board after it, as the client keeps it)."""
+def play_pair(pl, game, board, seq, clock=None, t=None):
+    """Clears the first pair find_pair gives on [board], a second after the last when [clock] is given, claiming [t];
+    returns (reply, board after it, as the client keeps it)."""
+    if clock is not None:
+        clock.t += 1
     a, b = find_pair(board, game["rows"], game["cols"])
-    reply = pl.move(TOKEN, game["id"], seq, a, b)
+    reply = pl.move(TOKEN, game["id"], seq, a, b, t)
     if reply.get("settled"):
         return reply, None
     after = remove_pair(board, game["rows"], game["cols"], game["shift"], a, b)
@@ -303,7 +308,7 @@ def test_a_move_answers_little_and_a_resend_answers_the_same():
     assert pl.move(TOKEN, game["id"], 0, a, b) == reply
     assert pl.move(TOKEN, game["id"], 0, b, a) == reply  # a pair either way round
     row = g.store.park_link_game(pid, game["id"])
-    assert json.loads(row["events"]) == [{"a": a, "b": b, "t": 1500}] and row["cleared"] == 1
+    assert json.loads(row["events"]) == [{"a": a, "b": b, "t": 1500, "c": 1500}] and row["cleared"] == 1
     assert json.loads(row["board"]) == remove_pair(board, game["rows"], game["cols"], game["shift"], a, b)
     assert json.loads(row["board0"]) == board
 
@@ -406,7 +411,7 @@ def test_a_game_keeps_the_top_prize_it_started_with():
     assert g.store.park_link_game(pid, game["id"])["max"] == top
     board = game["board"]
     for seq in range(3):
-        _, board = play_pair(pl, game, board, seq)
+        _, board = play_pair(pl, game, board, seq, clock)
     g.manifest.park["link"]["levels"][0]["max"] = top * 10
     assert game["max"] == top and pl.state(TOKEN)["link"]["game"]["max"] == top
     assert pl.finish(TOKEN, game["id"])["result"]["prize"] == prize({"max": top}, 3, game["total"])
@@ -446,7 +451,7 @@ def test_a_prize_goes_on_the_day_the_game_is_settled():
     game = pl.start(TOKEN)["link"]["game"]
     board = game["board"]
     for seq in range(3):
-        _, board = play_pair(pl, game, board, seq)
+        _, board = play_pair(pl, game, board, seq, clock)
     clock.t = midnight + 1
     out = pl.finish(TOKEN, game["id"])
     want = prize(LEVELS[0], 3, game["total"])
@@ -478,17 +483,16 @@ def test_get_settles_a_game_past_its_time():
     g, pl, clock, pid = setup()
     game = pl.start(TOKEN)["link"]["game"]
     start = clock()
-    clock.t += 1
     board = game["board"]
     for seq in range(4):
-        _, board = play_pair(pl, game, board, seq)
+        _, board = play_pair(pl, game, board, seq, clock)
     clock.t = start + LEVELS[0]["seconds"] + CFG["grace"]
     assert pl.state(TOKEN)["link"]["game"]["cleared"] == 4  # still within the grace
     clock.t += 1
     link = pl.state(TOKEN)["link"]
     want = prize(LEVELS[0], 4, game["total"])
     assert link["game"] is None and link["last"]["reason"] == "time" and link["last"]["prize"] == want
-    assert link["today"] == [link["last"]] and link["last"]["ms"] == 1000
+    assert link["today"] == [link["last"]] and link["last"]["ms"] == 4000
     assert shards(g, pid) == SHARDS - ENTRY + want
     pl.state(TOKEN)
     assert shards(g, pid) == SHARDS - ENTRY + want
@@ -535,11 +539,193 @@ def test_park_today_sets_the_fees_against_the_prizes():
         game = pl.start(TOKEN)["link"]["game"]
         board = game["board"]
         for seq in range(n + 2):
-            _, board = play_pair(pl, game, board, seq)
+            _, board = play_pair(pl, game, board, seq, clock)
         won += pl.finish(TOKEN, game["id"])["result"]["prize"]
     today = pl.state(TOKEN)["park"]["today"]
     assert today == {"spent": 2 * ENTRY, "won": won} and won > 0
     assert ledger(g, pid) == [(day_of(clock()), LINK_PRIZE, won, 2), (day_of(clock()), LINK_FEE, -2 * ENTRY, 2)]
+
+
+# --------------------------------------------------------- minimum time per pair
+MIN_PAIR = DropConfig().link_min_pair_ms
+
+
+def events(g, pid, gid):
+    return json.loads(g.store.park_link_game(pid, gid)["events"])
+
+
+def test_an_instant_script_wins_nothing():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    board, seq, reply = game["board"], 0, {}
+    while not reply.get("settled"):
+        reply, board = play_pair(pl, game, board, seq)
+        seq += 1
+    assert reply["result"]["reason"] == "clear" and reply["result"]["cleared"] == game["total"]
+    assert reply["result"]["prize"] == 0 and shards(g, pid) == SHARDS - ENTRY
+    evs = events(g, pid, game["id"])
+    assert "fast" not in evs[0] and all(ev["fast"] for ev in evs[1:])
+    assert "fast" not in json.dumps(reply)
+
+
+def test_an_instant_script_claiming_spaced_times_wins_nothing():
+    # every claim sits within the slack and none is fast, but nothing arrived after the start
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 0.01
+    board, seq = game["board"], 0
+    while (seq + 1) * MIN_PAIR <= LINK_CLAIM_SLACK_MS:
+        _, board = play_pair(pl, game, board, seq, t=(seq + 1) * MIN_PAIR)
+        seq += 1
+    evs = events(g, pid, game["id"])
+    assert seq == LINK_CLAIM_SLACK_MS // MIN_PAIR and not any(ev.get("fast") for ev in evs)
+    assert pl.finish(TOKEN, game["id"])["result"]["prize"] == 0
+
+
+def test_the_first_pair_is_never_fast():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 0.5
+    _, board = play_pair(pl, game, game["board"], 0, t=50)
+    first = events(g, pid, game["id"])[0]
+    assert first["c"] == 50 and first["t"] == 500 and "fast" not in first
+    # a claim past the slack is still cut
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 1
+    play_pair(pl, game, game["board"], 0, t=60_000)
+    assert events(g, pid, game["id"])[0]["c"] == 1000 + LINK_CLAIM_SLACK_MS
+
+
+def test_a_human_paced_game_pays_in_full():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    start = clock()
+    board, seq, reply = game["board"], 0, {}
+    while not reply.get("settled"):
+        clock.t = start + 2.5 * (seq + 1)
+        reply, board = play_pair(pl, game, board, seq, t=round(2500 * (seq + 1) - 200))  # the client's estimate
+        seq += 1
+    assert reply["result"]["prize"] == LEVELS[0]["max"]
+
+
+def test_an_idle_script_that_bursts_loses_the_burst():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 30
+    board = game["board"]
+    for seq in range(6):
+        _, board = play_pair(pl, game, board, seq, t=30_000)
+    evs = events(g, pid, game["id"])
+    assert "fast" not in evs[0] and all(ev["fast"] for ev in evs[1:])
+    assert pl.finish(TOKEN, game["id"])["result"]["prize"] == prize(LEVELS[0], 1, game["total"])
+
+
+def test_claims_spaced_at_the_threshold_win_the_full_prize():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    start = clock()
+    board, seq, reply = game["board"], 0, {}
+    while not reply.get("settled"):
+        clock.t = start + (seq + 1) * MIN_PAIR / 1000
+        reply, board = play_pair(pl, game, board, seq, t=(seq + 1) * MIN_PAIR)
+        seq += 1
+    assert reply["result"]["prize"] == LEVELS[0]["max"]
+    assert not any(ev.get("fast") for ev in events(g, pid, game["id"]))
+
+
+def test_late_arrivals_with_spaced_claims_are_not_fast():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 10  # five pairs played a second apart arrive together, as a queue sent after a stall
+    board = game["board"]
+    for seq in range(5):
+        _, board = play_pair(pl, game, board, seq, t=(seq + 1) * 1000)
+    evs = events(g, pid, game["id"])
+    assert [ev["c"] for ev in evs] == [1000, 2000, 3000, 4000, 5000] and {ev["t"] for ev in evs} == {10_000}
+    assert not any(ev.get("fast") for ev in evs)
+    assert pl.finish(TOKEN, game["id"])["result"]["prize"] == prize(LEVELS[0], 5, game["total"])
+
+
+def test_claims_past_the_arrival_and_slack_are_cut():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 10
+    board = game["board"]
+    for seq in range(4):
+        _, board = play_pair(pl, game, board, seq, t=10_000 + seq * 5000)
+    evs = events(g, pid, game["id"])
+    top = 10_000 + LINK_CLAIM_SLACK_MS
+    assert [ev["c"] for ev in evs] == [10_000, top, top, top]
+    assert [bool(ev.get("fast")) for ev in evs] == [False, False, True, True]
+    assert pl.finish(TOKEN, game["id"])["result"]["prize"] == prize(LEVELS[0], 2, game["total"])
+
+
+def test_a_claim_before_the_last_one_is_moved_up_to_it():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    board = game["board"]
+    for seq, t in enumerate((1000, 500, 3000)):
+        _, board = play_pair(pl, game, board, seq, clock, t=t)
+    evs = events(g, pid, game["id"])
+    assert [ev["c"] for ev in evs] == [1000, 1000, 3000]
+    assert [bool(ev.get("fast")) for ev in evs] == [False, True, False]
+
+
+def test_one_fast_pair_costs_that_pair_only():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    board = game["board"]
+    for seq in range(8):
+        # the sixth pair claims the time of the fifth
+        _, board = play_pair(pl, game, board, seq, clock, t=5000 if seq == 5 else None)
+    assert [i for i, ev in enumerate(events(g, pid, game["id"])) if ev.get("fast")] == [5]
+    result = pl.finish(TOKEN, game["id"])["result"]
+    assert result["cleared"] == 8 and result["prize"] == prize(LEVELS[0], 7, game["total"])
+
+
+def test_a_resend_with_another_time_changes_nothing():
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 2
+    a, b = find_pair(game["board"], game["rows"], game["cols"])
+    reply = pl.move(TOKEN, game["id"], 0, a, b, 1000)
+    before = events(g, pid, game["id"])
+    assert before == [{"a": a, "b": b, "t": 2000, "c": 1000}]
+    clock.t += 5
+    assert pl.move(TOKEN, game["id"], 0, a, b, 0) == reply
+    assert pl.move(TOKEN, game["id"], 0, a, b, 6000) == reply
+    assert events(g, pid, game["id"]) == before
+
+
+def test_the_threshold_is_an_anti_cheat_setting():
+    assert economy.drop_config({}).link_min_pair_ms == MIN_PAIR == 250
+    example = economy.drop_config(Manifest.load().anti_cheat)
+    assert example.link_min_pair_ms == 300
+    with pytest.raises(ValueError, match="link_min_pair_msec"):
+        economy.drop_config({"link_min_pair_msec": 300})
+    # the server uses the configured value: 280 ms apart is fast at 300, not at the default
+    for cfg, fast in ((example, True), (None, False)):
+        g, pl, clock, pid = setup(cfg=cfg)
+        game = pl.start(TOKEN)["link"]["game"]
+        board = game["board"]
+        for seq, t in enumerate((1000, 1280)):
+            _, board = play_pair(pl, game, board, seq, clock, t=t)
+        assert bool(events(g, pid, game["id"])[1].get("fast")) is fast
+
+
+def test_the_threshold_stays_on_the_server():
+    body = TestClient(main.app).get("/api/economy").text
+    assert "link_min_pair_ms" not in body
+
+
+def test_the_game_tells_its_start():
+    g, pl, clock, pid = setup()
+    start = clock()
+    game = pl.start(TOKEN)["link"]["game"]
+    clock.t += 3
+    again = pl.state(TOKEN)["link"]["game"]
+    assert game["start"] == again["start"] == round(start * 1000) and again["now"] == round((start + 3) * 1000)
 
 
 # ------------------------------------------------------------------- generation
@@ -622,6 +808,19 @@ def test_http_account_required(api, monkeypatch):
     monkeypatch.setitem(g.manifest.park["link"], "account", True)
     r = c.post("/api/park/link/start", headers=H)
     assert r.status_code == 409 and r.json()["detail"]["code"] == "account_required"
+
+
+def test_http_move_takes_the_claimed_time(api):
+    c, g, clock, pid = api
+    game = c.post("/api/park/link/start", headers=H).json()["link"]["game"]
+    clock.t += 4
+    a, b = find_pair(game["board"], game["rows"], game["cols"])
+    for t in (-1, 86_400_001):
+        r = c.post("/api/park/link/move", json={"game": game["id"], "seq": 0, "a": a, "b": b, "t": t}, headers=H)
+        assert r.status_code == 422, t
+    r = c.post("/api/park/link/move", json={"game": game["id"], "seq": 0, "a": a, "b": b, "t": 3000}, headers=H)
+    assert r.json() == {"seq": 1, "cleared": 1}
+    assert events(g, pid, game["id"])[0]["c"] == 3000
 
 
 def test_http_game_ids_stay_in_sqlite_range(api):

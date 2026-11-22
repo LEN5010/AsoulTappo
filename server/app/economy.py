@@ -76,7 +76,8 @@ Weights are percentages unless said otherwise.
     abandoned ones too), the n-th on ``levels[n-1]``: {rows, cols, kinds, seconds, shift, max, hints}. The board holds
     ``kinds`` emotes four times each (rows × cols = kinds × 4), static ones from the emote sets in ``sets``; after
     each pair the tiles move by ``shift`` (none, down, left or center; center needs an even ``cols``). A game pays
-    max × cleared² // total² shards (pairs), ``max`` when cleared. Moves that reach the server up to ``grace``
+    max × counted² // total² shards (pairs), ``max`` when cleared; counted leaves out pairs played faster than
+    the antiCheat setting ``link_min_pair_ms`` allows. Moves that reach the server up to ``grace``
     seconds after the deadline still count. ``hints`` are counted by the client only. With ``account`` a save needs
     a main-site account to start a game (on a server with accounts).
 

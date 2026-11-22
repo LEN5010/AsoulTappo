@@ -4,8 +4,9 @@ A game costs `entry` shards, burnt when it starts; a save starts at most len(lev
 day a game starts, abandoned ones too, and the n-th of the day is played on levels[n-1]. The board and its rules are
 link.py; the client holds the whole board and reports each pair it clears, in order (`seq`). The server checks every
 pair against its own board, keeps the time (moves after deadline + grace are not taken) and shuffles a board left with
-no pair. A game pays max × cleared² // total² shards once, when it is cleared, finished, or found past its time by
-the next call (lazy settlement). Per-move answers are kept minimal; full answers come with start, finish, settlement
+no pair. A game pays max × counted² // total² shards once, when it is cleared, finished, or found past its time by
+the next call (lazy settlement); counted leaves out the pairs claimed sooner than antiCheat link_min_pair_ms after the
+one before (`fast`), and is at most the pairs that time could have held by the last pair's arrival. Per-move answers are kept minimal; full answers come with start, finish, settlement
 and GET."""
 from __future__ import annotations
 
@@ -20,6 +21,9 @@ from .store import Store, day_of
 # Tries of start: the board is laid outside the store's lock, and laid again when the level changed in between (a
 # concurrent start or the day turning); the last try lays it inside.
 START_TRIES = 3
+# How far past its arrival a move may claim to have been played (ms): the client's clock estimate and the time the
+# report spent on the way. A later claim is cut to this.
+LINK_CLAIM_SLACK_MS = 1500
 
 
 def _dump(value: Any) -> str:
@@ -82,7 +86,8 @@ class ParkLink:
                 "shift": row["shift"], "kinds": json.loads(row["kinds"]), "board": json.loads(row["board"]),
                 "seq": row["cleared"], "cleared": row["cleared"], "total": row["total"], "max": row["max"],
                 "hints": self._level(row["level"])["hints"], "seconds": round(row["deadline"] - row["started_at"]),
-                "deadline": round(row["deadline"] * 1000), "now": round(now * 1000)}
+                "start": round(row["started_at"] * 1000), "deadline": round(row["deadline"] * 1000),
+                "now": round(now * 1000)}
 
     def _view(self, st: Store, pid: str, now: float) -> dict[str, Any]:
         """LinkState: today's settled games, today's count, the daily cap, the game in play and the last result."""
@@ -108,7 +113,8 @@ class ParkLink:
         it alone, and goes on the shard ledger of the day it is settled on, as park scratch prizes do."""
         if row["settled_at"] is not None:
             return row
-        prize = row["max"] * row["cleared"] ** 2 // row["total"] ** 2
+        counted = self._counted(row)
+        prize = row["max"] * counted ** 2 // row["total"] ** 2
         if not st.settle_park_link(row["id"], prize, reason, now):
             return st.park_link_game(row["player_id"], row["id"]) or row
         if prize > 0:
@@ -117,6 +123,15 @@ class ParkLink:
             st.update_player(pid, shards=p["shards"] + prize)
             st.add_ledger(pid, day_of(now), LINK_PRIZE, prize)
         return {**row, "prize": prize, "reason": reason, "settled_at": now}
+
+    def _counted(self, row: dict[str, Any]) -> int:
+        """Pairs the prize counts: the cleared ones but the `fast` ones, and no more than link_min_pair_ms fits into
+        the server-measured arrival of the last pair, so a script cannot bank spaced claims within the slack."""
+        events = json.loads(row["events"])
+        if not events:
+            return 0
+        fast = sum(1 for ev in events if ev.get("fast"))
+        return max(0, min(row["cleared"] - fast, events[-1]["t"] // self.park.game.cfg.link_min_pair_ms))
 
     def _due(self, st: Store, pid: str, now: float) -> dict[str, Any] | None:
         """The save's game in play, after settling it (reason time) when it is past deadline + grace."""
@@ -190,10 +205,11 @@ class ParkLink:
                          level["rows"] * level["cols"] // 2, level["max"], now, now + level["seconds"])
         return None
 
-    def move(self, token: str, game_id: int, seq: int, a: int, b: int) -> dict[str, Any]:
-        """Takes the [seq]-th pair (a, b) of the game. Answers {seq, cleared, shuffle?}; a settled game (including one
-        this pair clears or one past its time) answers in full with `settled` and `result`. The time is taken on
-        arrival, before waiting for the store's lock."""
+    def move(self, token: str, game_id: int, seq: int, a: int, b: int, t: int | None = None) -> dict[str, Any]:
+        """Takes the [seq]-th pair (a, b) of the game, played [t] ms after the start as the client claims (the arrival
+        when absent). Answers {seq, cleared, shuffle?}; a settled game (including one this pair clears or one past
+        its time) answers in full with `settled` and `result`. The time is taken on arrival, before waiting for the
+        store's lock."""
         cfg = self.cfg
         g = self.park.game
         pid = player_id_for(token)
@@ -206,13 +222,13 @@ class ParkLink:
                 row = self._settle(st, row, "time", now)
             reply = None
             if row["settled_at"] is None:
-                row, reply = self._move(st, row, seq, a, b, now)
+                row, reply = self._move(st, row, seq, a, b, t, now)
             result = self._result(row) if reply is None else None
         if reply is not None:
             return reply
         return {"settled": True, **self._answer(token), "result": result}
 
-    def _move(self, st: Store, row: dict[str, Any], seq: int, a: int, b: int,
+    def _move(self, st: Store, row: dict[str, Any], seq: int, a: int, b: int, t: int | None,
               now: float) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """In move's transaction: the game after the pair and the minimal reply, None as the reply when the pair
         cleared the board and settled the game."""
@@ -233,7 +249,17 @@ class ParkLink:
                 or not connect(board, rows, cols, a, b):
             raise GameError("bad_move", "这两张牌连不上")
         board = list(remove_pair(board, rows, cols, row["shift"], a, b))
-        ev: dict[str, Any] = {"a": a, "b": b, "t": round((now - row["started_at"]) * 1000)}
+        arrived = round((now - row["started_at"]) * 1000)
+        # The claimed time c: at most the arrival plus the slack and, from the second pair on, never before the
+        # claim of the pair before; a pair claimed too soon after it is fast. The first pair is never fast, as the
+        # start's answer may reach the client late; settlement caps instant play by the arrival instead.
+        claimed = min(arrived if t is None else t, arrived + LINK_CLAIM_SLACK_MS)
+        ev: dict[str, Any] = {"a": a, "b": b, "t": arrived, "c": claimed}
+        if events:
+            before = events[-1].get("c", events[-1]["t"])
+            ev["c"] = claimed = max(before, claimed)
+            if claimed - before < self.park.game.cfg.link_min_pair_ms:
+                ev["fast"] = True
         cleared = n + 1
         if cleared < row["total"] and not find_pair(board, rows, cols):
             board = list(shuffle(board, rows, cols, self.park.game.rng))

@@ -712,6 +712,7 @@
     "max_taps_per_sec": 15,
     "fast_taps_per_sec": 10,
     "fast_streak_sec": 30.0,
-    "tap_cooldown_sec": 60.0
+    "tap_cooldown_sec": 60.0,
+    "link_min_pair_ms": 300
   }
 }

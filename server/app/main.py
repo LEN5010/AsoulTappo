@@ -724,6 +724,9 @@ class LinkMoveBody(BaseModel):
     seq: int
     a: int
     b: int
+    # When the pair was played: ms after the game's start (LinkGame.start), on the server's clock as the client
+    # reckons it. Without it the arrival counts.
+    t: int | None = Field(default=None, ge=0, le=86_400_000)
 
 
 class LinkFinishBody(BaseModel):
@@ -745,7 +748,7 @@ def api_park_link_start(who: PlayerId = Depends(player)) -> dict:
 @app.post("/api/park/link/move")
 def api_park_link_move(body: LinkMoveBody, who: PlayerId = Depends(player)) -> dict:
     """One cleared pair: {seq, cleared, shuffle?}, or the full answer with `settled` and `result` once settled."""
-    return _guard(park_link.move, who, body.game, body.seq, body.a, body.b)
+    return _guard(park_link.move, who, body.game, body.seq, body.a, body.b, body.t)
 
 
 @app.post("/api/park/link/finish")

@@ -39,6 +39,8 @@ async function started(g = game()) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
+  // The pair clock follows the faked time.
+  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
   vi.resetModules();
   const status = ref<{ player: string } | null>({ player: "A" });
   player.status = status;
@@ -48,7 +50,10 @@ beforeEach(() => {
   parkTry.mockImplementation((method: string, path: string, body?: Record<string, unknown>) =>
     new Promise<Reply>((answer) => calls.push({ method, path, body, answer })));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("park link queue", () => {
   it("removes a pair at once and sends the moves one at a time, in order", async () => {
@@ -59,12 +64,12 @@ describe("park link queue", () => {
     expect(L.playPair(2, 3)).toBe(true);
     await flush();
     expect(moves()).toHaveLength(1);
-    expect(moves()[0]!.body).toEqual({ game: 7, seq: 0, a: 0, b: 1 });
+    expect(moves()[0]!.body).toMatchObject({ game: 7, seq: 0, a: 0, b: 1 });
 
     moves()[0]!.answer(ok({ seq: 1, cleared: 1 }));
     await flush();
     expect(moves()).toHaveLength(2);
-    expect(moves()[1]!.body).toEqual({ game: 7, seq: 1, a: 2, b: 3 });
+    expect(moves()[1]!.body).toMatchObject({ game: 7, seq: 1, a: 2, b: 3 });
     moves()[1]!.answer(ok({ seq: 2, cleared: 2 }));
     await flush();
     expect(moves()).toHaveLength(2);
@@ -92,15 +97,15 @@ describe("park link queue", () => {
     expect(moves()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(400);
     expect(moves()).toHaveLength(2);
-    expect(moves()[1]!.body).toEqual({ game: 7, seq: 0, a: 0, b: 1 });
+    expect(moves()[1]!.body).toMatchObject({ game: 7, seq: 0, a: 0, b: 1 });
     moves()[1]!.answer(fail(502, "bad_gateway"));
     await vi.advanceTimersByTimeAsync(799);
     expect(moves()).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(1);
-    expect(moves()[2]!.body).toEqual({ game: 7, seq: 0, a: 0, b: 1 });
+    expect(moves()[2]!.body).toMatchObject({ game: 7, seq: 0, a: 0, b: 1 });
     moves()[2]!.answer(ok({ seq: 1, cleared: 1 }));
     await flush();
-    expect(moves()[3]!.body).toEqual({ game: 7, seq: 1, a: 2, b: 3 });
+    expect(moves()[3]!.body).toMatchObject({ game: 7, seq: 1, a: 2, b: 3 });
   });
 
   it("drops the queue on bad_seq and takes the server's board", async () => {
@@ -124,7 +129,7 @@ describe("park link queue", () => {
     expect(moves()).toHaveLength(1);
     L.playPair(2, 3);
     await flush();
-    expect(moves()[1]!.body).toEqual({ game: 7, seq: 1, a: 2, b: 3 });
+    expect(moves()[1]!.body).toMatchObject({ game: 7, seq: 1, a: 2, b: 3 });
   });
 
   it("takes the server's board on bad_move too", async () => {
@@ -282,7 +287,7 @@ describe("park link races (audit)", () => {
     expect(L.linkGame.value!.board).toEqual(BOARD);
     L.playPair(0, 1);
     await flush();
-    expect(moves()[1]!.body).toEqual({ game: 8, seq: 0, a: 0, b: 1 });
+    expect(moves()[1]!.body).toMatchObject({ game: 8, seq: 0, a: 0, b: 1 });
   });
 
   it("2: merges a start answer for the game already on the board and keeps its queue", async () => {
@@ -299,12 +304,12 @@ describe("park link races (audit)", () => {
     expect(L.linkGame.value!.cleared).toBe(2);
     moves()[0]!.answer(ok({ seq: 1, cleared: 1 }));
     await flush();
-    expect(moves()[1]!.body).toEqual({ game: 7, seq: 1, a: 2, b: 3 });
+    expect(moves()[1]!.body).toMatchObject({ game: 7, seq: 1, a: 2, b: 3 });
     moves()[1]!.answer(ok({ seq: 2, cleared: 2 }));
     await flush();
     L.playPair(4, 5);
     await flush();
-    expect(moves()[2]!.body).toEqual({ game: 7, seq: 2, a: 4, b: 5 });
+    expect(moves()[2]!.body).toMatchObject({ game: 7, seq: 2, a: 4, b: 5 });
   });
 
   it("3: a stale move answer neither releases the new sender nor touches the new queue", async () => {
@@ -323,7 +328,7 @@ describe("park link races (audit)", () => {
     expect(moves()).toHaveLength(2);
     moves()[1]!.answer(ok({ seq: 1, cleared: 1 }));
     await flush();
-    expect(moves()[2]!.body).toEqual({ game: 8, seq: 1, a: 2, b: 3 });
+    expect(moves()[2]!.body).toMatchObject({ game: 8, seq: 1, a: 2, b: 3 });
   });
 
   it("3: a stale start answer does not replace the next save's game", async () => {
@@ -403,7 +408,7 @@ describe("park link races (audit)", () => {
     expect(moves()).toHaveLength(1);
     L.playPair(4, 5);
     await flush();
-    expect(moves()[1]!.body).toEqual({ game: 7, seq: 2, a: 4, b: 5 });
+    expect(moves()[1]!.body).toMatchObject({ game: 7, seq: 2, a: 4, b: 5 });
   });
 
   it("7: ignores a snapshot older than the moves accepted", async () => {
@@ -493,5 +498,87 @@ describe("park link races (audit)", () => {
     expect(L.linkShownResult.value).toEqual(r);
     L.dismissResult();
     expect(L.linkShownResult.value).toBe(null);
+  });
+});
+
+describe("park link pair times", () => {
+  it("sends each pair's time from the game's start by the server's clock", async () => {
+    // Started at the server's 995,000; the clock here runs 2,000 behind the server's.
+    const L = await started(game({ start: 995_000, now: 1_002_000 }));
+    vi.setSystemTime(1_001_500);
+    L.playPair(0, 1);
+    await flush();
+    expect(moves()[0]!.body).toEqual({ game: 7, seq: 0, a: 0, b: 1, t: 8_500 });
+  });
+
+  it("keeps a pair's time on every retry", async () => {
+    const L = await started(game({ start: 1_000_000 }));
+    vi.setSystemTime(1_004_000);
+    L.playPair(0, 1);
+    await flush();
+    moves()[0]!.answer(fail(0, "offline"));
+    await flush();
+    vi.setSystemTime(1_009_000);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(moves()).toHaveLength(2);
+    expect(moves()[1]!.body).toEqual(moves()[0]!.body);
+    expect(moves()[1]!.body).toMatchObject({ t: 4_000 });
+  });
+
+  it("counts from the deadline less the game's time without a start", async () => {
+    // deadline 1,060,000 less 60 seconds: started at 1,000,000.
+    const L = await started(game());
+    vi.setSystemTime(1_003_250);
+    L.playPair(0, 1);
+    await flush();
+    expect(moves()[0]!.body).toMatchObject({ t: 3_250 });
+  });
+  it("keeps timing pairs on the first snapshot's clock when a stale one sets the countdown back", async () => {
+    const L = await started(game({ start: 1_000_000, now: 1_000_000 }));
+    vi.setSystemTime(1_005_000);
+    L.playPair(0, 1);
+    // A load answered late: its server time is 3 seconds old, so linkOffset goes back.
+    const p = L.loadLink();
+    calls.filter((c) => c.method === "GET")[0]!.answer(ok({ link: state(game({ start: 1_000_000, now: 1_002_000 })) }));
+    await p;
+    expect(L.linkOffset.value).toBe(-3_000);
+    vi.setSystemTime(1_006_000);
+    L.playPair(2, 3);
+    await flush();
+    moves()[0]!.answer(ok({ seq: 1, cleared: 1 }));
+    await flush();
+    expect(moves()[0]!.body).toMatchObject({ t: 5_000 });
+    expect(moves()[1]!.body).toMatchObject({ t: 6_000 });
+  });
+
+  it("times pairs by the monotonic clock, never going back", async () => {
+    let mono = 50_000;
+    vi.spyOn(performance, "now").mockImplementation(() => mono);
+    const L = await started(game({ start: 1_000_000, now: 1_000_000 }));
+    mono += 2_500;
+    // The wall clock jumping back does not matter.
+    vi.setSystemTime(900_000);
+    L.playPair(0, 1);
+    mono += 1_200;
+    L.playPair(2, 3);
+    await flush();
+    moves()[0]!.answer(ok({ seq: 1, cleared: 1 }));
+    await flush();
+    expect(moves()[0]!.body).toMatchObject({ t: 2_500 });
+    expect(moves()[1]!.body).toMatchObject({ t: 3_700 });
+  });
+
+  it("gives a new game a clock of its own", async () => {
+    const L = await started(game({ start: 1_000_000, now: 1_000_000 }));
+    vi.setSystemTime(1_010_000);
+    L.playPair(0, 1);
+    await flush();
+    const p = L.loadLink();
+    calls.filter((c) => c.method === "GET")[0]!.answer(ok({ link: state(game({ id: 8, start: 1_009_000, now: 1_010_000 })) }));
+    await p;
+    vi.setSystemTime(1_011_000);
+    L.playPair(0, 1);
+    await flush();
+    expect(moves().at(-1)!.body).toMatchObject({ game: 8, t: 2_000 });
   });
 });
