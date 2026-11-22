@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // The park (乐园, protocol/PROTOCOL.md 乐园): one sheet of paper whose top
-// edge is a coral band with the four pages (coins, scratch cards, the race and the lottery), the page's timer and
+// edge is a coral band with the pages (coins, scratch cards, the race, the lottery and tile matching), the page's timer and
 // its host; the page picked fills the white body. The coins held and the server-wide pool (the lottery's top prize)
 // are in the panel's top bar (ParkChips). The games open at economy.park.coin.minTaps taps in all; until then
 // the body shows how far there is to go. Today's free coin is granted by the server with a status (`park.gifted`, in
 // that one status only); when the park is shown at that moment, +1 rises into the coins and 阿草 takes it. A server
 // that still waits for the first visit of the day (`gift` in the park's state) is asked for it here. While the page is
 // open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
-// without coins moving.
+// without coins moving. The fifth page, tile matching, shows on servers whose economy has it.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { economy } from "../stores/economy";
 import { status } from "../stores/player";
@@ -23,16 +23,20 @@ import CoinSection from "./park/CoinSection.vue";
 import ScratchSection from "./park/ScratchSection.vue";
 import RaceSection from "./park/RaceSection.vue";
 import LotterySection from "./park/LotterySection.vue";
+import LinkSection from "./park/LinkSection.vue";
 import "./park/park.css";
 
-const TABS: { id: ParkTab; label: string }[] = [
+const ALL_TABS: { id: ParkTab; label: string }[] = [
   { id: "coin", label: "驼币" },
   { id: "scratch", label: "刮刮乐" },
   { id: "race", label: "赛跑" },
   { id: "lottery", label: "夺宝" },
+  { id: "link", label: "连连看" },
 ];
 /** The sections read the park's numbers from the server's economy: they open once it is known. */
 const ready = computed(() => !!economy.value?.park);
+/** Tile matching is shown only on servers whose economy has it. */
+const TABS = computed(() => ALL_TABS.filter((t) => t.id !== "link" || !!economy.value?.park?.link));
 const minTaps = computed(() => economy.value?.park?.coin.minTaps ?? 0);
 const RELOAD_MS = 15000;
 /** 阿草 takes today's free coin for this long. */
@@ -47,6 +51,10 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 // Shared through band.ts so a section can switch pages; a fresh park page opens on the coins, as before.
 const tab = parkTab;
 tab.value = "coin";
+// A server without tile matching: its page goes back to the coins.
+watch(TABS, (tabs) => {
+  if (!tabs.some((t) => t.id === tab.value)) tab.value = "coin";
+});
 const taps = computed(() => status.value?.totals.taps ?? 0);
 /** Known before the park is loaded: the taps in all are in every status. */
 const locked = computed(() => (park.value ? !park.value.unlocked : !!status.value && taps.value < minTaps.value));
@@ -100,7 +108,7 @@ async function enter() {
 }
 
 /**
- * Booth shortcuts while the park is shown and unlocked: `[` / `]` cycle booths and `Alt+1`..`Alt+4` jump directly,
+ * Booth shortcuts while the park is shown and unlocked: `[` / `]` cycle booths and `Alt+1`..`Alt+5` jump directly,
  * standing down when an overlay is up or focus is inside an editable field (and leaving plain `0`–`9` free for
  * `MainPanel`'s sidebar nav and `LotterySection`'s number picker).
  */
@@ -110,18 +118,20 @@ function onPageKey(e: KeyboardEvent) {
   const el = (e.target as HTMLElement | null) ?? (document.activeElement as HTMLElement | null);
   if (el?.closest?.("input, textarea, select, [contenteditable]")) return;
   if (e.altKey && !e.ctrlKey && !e.metaKey) {
-    const m = /^Digit([1-4])$/.exec(e.code);
-    if (m) {
+    const m = /^Digit([1-5])$/.exec(e.code);
+    const to = m ? TABS.value[Number(m[1]) - 1] : undefined;
+    if (to) {
       e.preventDefault();
-      tab.value = TABS[Number(m[1]) - 1]!.id;
+      tab.value = to.id;
     }
     return;
   }
   if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "[" || e.key === "]")) {
     e.preventDefault();
-    const at = TABS.findIndex((t) => t.id === tab.value);
-    const next = ((at < 0 ? 0 : at) + (e.key === "]" ? 1 : -1) + TABS.length) % TABS.length;
-    tab.value = TABS[next]!.id;
+    const tabs = TABS.value;
+    const at = tabs.findIndex((t) => t.id === tab.value);
+    const next = ((at < 0 ? 0 : at) + (e.key === "]" ? 1 : -1) + tabs.length) % tabs.length;
+    tab.value = tabs[next]!.id;
   }
 }
 
@@ -196,7 +206,8 @@ watch(() => status.value?.park?.gifted, (n) => {
             <CoinSection v-if="tab === 'coin'" @bought="popCoins" />
             <ScratchSection v-else-if="tab === 'scratch'" />
             <RaceSection v-else-if="tab === 'race'" />
-            <LotterySection v-else />
+            <LotterySection v-else-if="tab === 'lottery'" />
+            <LinkSection v-else-if="tab === 'link'" />
           </KeepAlive>
         </template>
       </div>

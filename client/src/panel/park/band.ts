@@ -3,7 +3,7 @@
 // kept alive, so a page that is not shown keeps its entry and the band swaps at once on a page turn.
 import { computed, onBeforeUnmount, ref, shallowReactive, type ComputedRef } from "vue";
 
-export type ParkTab = "coin" | "scratch" | "race" | "lottery";
+export type ParkTab = "coin" | "scratch" | "race" | "lottery" | "link";
 
 /** The park page shown. A section may set it to send the player to another page. */
 export const parkTab = ref<ParkTab>("coin");

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The park's coral band, the top edge of its one sheet of paper: the four page keys on the left; on the right the
+// The park's coral band, the top edge of its one sheet of paper: the page keys on the left; on the right the
 // page's timer, an info key, and the host standing behind the sheet with its head over the band's top edge,
 // as on the check-in calendar.
 import { computed, ref } from "vue";
@@ -344,8 +344,9 @@ function onTabKey(e: KeyboardEvent) {
     padding: 0 11px;
   }
 }
-/* Short or narrow panels: a low band without the host; the timer comes down to the keys' size. */
-@container panel (max-height: 560px) or (max-width: 680px) {
+/* Short or narrow panels: a low band without the host; the timer comes down to the keys' size. Five pages with a
+ * timer and the info key need the host's room below about 900px wide. */
+@container panel (max-height: 560px) or (max-width: 900px) {
   .park-band {
     height: 52px;
     padding-right: 12px;

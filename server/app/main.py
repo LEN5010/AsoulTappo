@@ -47,6 +47,7 @@ from .moderation import Blocklist
 from .lottery import Lottery
 from .park import Park
 from .park_race import OddsChanged, Races, RaceView, room_message as race_room_message
+from .park_link import ParkLink
 from .park_scratch import ParkScratch
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
@@ -169,6 +170,18 @@ park_scratch = ParkScratch(park)
 _pruned = park_scratch.prune()
 if _pruned:
     print(f"pruned {_pruned} old park scratch cards", flush=True)
+# park: link setup
+# 连连看; a park.link whose emote sets cannot fill a board stops the start. With main-site accounts (`accounts`, set
+# below) its `account` switch makes a game need a linked save.
+if (manifest.park or {}).get("link"):
+    economy_file.check_link(manifest.park["link"], manifest.data.get("emoteSets", []))
+    # `accounts` is made further down from MAIN_API_URL; without it no save can be linked.
+    if manifest.park["link"].get("account") and not os.environ.get("MAIN_API_URL", "").strip():
+        print("park.link.account has no effect: this server has no main-site accounts (MAIN_API_URL)", flush=True)
+park_link = ParkLink(park, require_account=lambda: accounts is not None)
+_pruned = park_link.prune()
+if _pruned:
+    print(f"pruned {_pruned} old park link games", flush=True)
 # park: race setup
 # The dumpling race: Races.tick about once a second off the event loop starts, settles or calls off what is due and
 # prepares the next race. Throw-away databases (":memory:", the tests) run no schedule; tests call tick themselves.
@@ -698,6 +711,46 @@ async def api_park_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depen
             for peer in [p for p in room.peers.values() if p.token == who]:
                 await manager.broadcast(room_id, ScratchBroadcast(id=peer.id, shards=shards).model_dump())
     return out
+
+
+# park: link routes
+STATUS.update({"account_required": 409, "link_done": 409, "no_game": 404, "bad_seq": 409, "bad_move": 409})
+
+
+class LinkMoveBody(BaseModel):
+    # SQLite's integer range; a larger id would overflow the query.
+    game: int = Field(ge=1, le=2**63 - 1)
+    # Checked by ParkLink.move (bad_seq, bad_move), so a wrong number answers in the game's own terms.
+    seq: int
+    a: int
+    b: int
+
+
+class LinkFinishBody(BaseModel):
+    game: int = Field(ge=1, le=2**63 - 1)
+
+
+@app.get("/api/park/link")
+def api_park_link(who: PlayerId = Depends(player)) -> dict:
+    """Status, park and the save's 连连看 (`link`): today's games, the game in play and the last result."""
+    return _guard(park_link.state, who)
+
+
+@app.post("/api/park/link/start")
+def api_park_link_start(who: PlayerId = Depends(player)) -> dict:
+    """Starts the day's next game, or hands back the game in play at no charge."""
+    return _guard(park_link.start, who)
+
+
+@app.post("/api/park/link/move")
+def api_park_link_move(body: LinkMoveBody, who: PlayerId = Depends(player)) -> dict:
+    """One cleared pair: {seq, cleared, shuffle?}, or the full answer with `settled` and `result` once settled."""
+    return _guard(park_link.move, who, body.game, body.seq, body.a, body.b)
+
+
+@app.post("/api/park/link/finish")
+def api_park_link_finish(body: LinkFinishBody, who: PlayerId = Depends(player)) -> dict:
+    return _guard(park_link.finish, who, body.game)
 
 
 # park: race routes

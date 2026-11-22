@@ -1,5 +1,5 @@
-"""Store methods of the park (乐园): coins, shared counters and news, park scratch cards, races, lottery and redeem
-codes."""
+"""Store methods of the park (乐园): coins, shared counters and news, park scratch cards, 连连看, races, lottery and
+redeem codes."""
 from __future__ import annotations
 
 import sqlite3
@@ -177,6 +177,78 @@ class ParkStore(_StoreState):
             n = self._db.execute(
                 "DELETE FROM park_scratch_cards WHERE revealed > 0 AND ts < ? AND id NOT IN "
                 "(SELECT MIN(id) FROM park_scratch_cards GROUP BY player_id, kind)", (before,)).rowcount
+            self._commit()
+            return n
+
+    # --- park: link
+    def add_park_link(self, pid: str, day: str, level: int, rows: int, cols: int, shift: str, kinds: str, board: str,
+                      total: int, top: int, started_at: float, deadline: float) -> int:
+        """A new 连连看 game on [board] (JSON, also kept as board0) paying at most [top] shards; in the caller's
+        transaction, which takes the fee."""
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT INTO park_link (player_id, day, level, rows, cols, shift, kinds, board0, board, total, max, "
+                "started_at, deadline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (pid, day, level, rows, cols, shift, kinds, board, board, total, top, started_at, deadline))
+            self._commit()
+            return int(cur.lastrowid)
+
+    def park_link_active(self, pid: str) -> dict[str, Any] | None:
+        """The save's game not settled yet; a save has one at most."""
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_link WHERE player_id = ? AND settled_at IS NULL "
+                                   "ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+        return dict(row) if row else None
+
+    def park_link_game(self, pid: str, game_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM park_link WHERE id = ? AND player_id = ?",
+                                   (game_id, pid)).fetchone()
+        return dict(row) if row else None
+
+    def park_link_played(self, pid: str, day: str) -> int:
+        """Games the save started on [day], settled or not."""
+        with self._lock:
+            row = self._db.execute("SELECT COUNT(*) FROM park_link WHERE player_id = ? AND day = ?",
+                                   (pid, day)).fetchone()
+        return int(row[0])
+
+    def park_link_day(self, pid: str, day: str) -> list[dict[str, Any]]:
+        """The save's games started on [day], in the order started, without their boards."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, level, events, cleared, total, started_at, deadline, settled_at, prize, reason "
+                "FROM park_link WHERE player_id = ? AND day = ? ORDER BY id", (pid, day)).fetchall()
+        return [dict(r) for r in rows]
+
+    def park_link_last(self, pid: str) -> dict[str, Any] | None:
+        """The save's game settled last, without its boards."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, level, events, cleared, total, started_at, deadline, settled_at, prize, reason "
+                "FROM park_link WHERE player_id = ? AND settled_at IS NOT NULL ORDER BY settled_at DESC, id DESC "
+                "LIMIT 1", (pid,)).fetchone()
+        return dict(row) if row else None
+
+    def update_park_link(self, game_id: int, board: str, events: str, cleared: int) -> None:
+        """The board, events and cleared pairs after an accepted move; in the caller's transaction."""
+        with self._lock:
+            self._db.execute("UPDATE park_link SET board = ?, events = ?, cleared = ? WHERE id = ?",
+                             (board, events, cleared, game_id))
+            self._commit()
+
+    def settle_park_link(self, game_id: int, prize: int, reason: str, ts: float) -> bool:
+        """Settles the game unless it is settled already; True when this call did. The caller's transaction pays."""
+        with self._lock:
+            n = self._db.execute("UPDATE park_link SET prize = ?, reason = ?, settled_at = ? "
+                                 "WHERE id = ? AND settled_at IS NULL", (prize, reason, ts, game_id)).rowcount
+            self._commit()
+        return n > 0
+
+    def prune_park_link(self, before: float) -> int:
+        """Deletes games settled before [before]; a game not settled yet is kept however old."""
+        with self._lock:
+            n = self._db.execute("DELETE FROM park_link WHERE settled_at < ?", (before,)).rowcount
             self._commit()
             return n
 
