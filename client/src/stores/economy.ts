@@ -11,6 +11,13 @@ import { STANDALONE } from "../edition";
 /** The client's own input guard (src/pet/TapGuard.ts): a fast second, a streak of them, and the cooldown that follows. */
 export interface TapGuardRules { fastPerSecond: number; fastStreakSec: number; cooldownSec: number }
 
+/** One level of the park's tile matching: the board, its kinds (4 tiles each), time, shift, top prize and hints. */
+export interface LinkLevel {
+  rows: number; cols: number; kinds: number; seconds: number;
+  shift: "none" | "down" | "left" | "center"; max: number; hints: number;
+}
+export interface LinkConfig { entry: number; grace: number; account: boolean; sets: string[]; levels: LinkLevel[] }
+
 /**
  * A limited pool (server/app/banners.py): the standing pool with `items` in a tier of their own, drawn at `rate`
  * percent and for certain on the `pity`-th draw since the last one. `start` and `end` are seconds.
@@ -112,6 +119,11 @@ export type Economy = {
       daily: number; closeAt: number; drawAt: number; pool: { seed: number; perCoin: number };
       secondEach?: number; second?: number; third: number;
     };
+    /**
+     * Tile matching (park_link.py): `entry` shards a game, `levels.length` games a day, game n plays `levels[n-1]`.
+     * Tiles are static emotes of `sets`. With `account` a game needs a bound account.
+     */
+    link?: LinkConfig;
   };
 } & {
   /** Missing from servers before the economy left the manifest. */
