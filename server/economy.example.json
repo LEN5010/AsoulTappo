@@ -694,6 +694,17 @@
       },
       "secondEach": 5000,
       "third": 600
+    },
+    "link": {
+      "entry": 50,
+      "grace": 3,
+      "account": false,
+      "sets": ["jiaran-eat", "nailin-tavern-2025", "beila-adventure-2025", "symphony-xinyi", "symphony-sinuo", "achao"],
+      "levels": [
+        {"rows": 4, "cols": 6, "kinds": 6, "seconds": 60, "shift": "none", "max": 60, "hints": 3},
+        {"rows": 6, "cols": 8, "kinds": 12, "seconds": 90, "shift": "down", "max": 90, "hints": 2},
+        {"rows": 6, "cols": 10, "kinds": 15, "seconds": 120, "shift": "center", "max": 120, "hints": 1}
+      ]
     }
   },
   "antiCheat": {

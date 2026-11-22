@@ -10,11 +10,13 @@ from typing import Any, Callable
 from .game import BOARD_DEFAULT_NICK, Game, GameError, _loadout_json, player_id_for
 from .store import Store, day_of
 
-# Shard ledger sources. COIN_BUY is what coins cost; PRIZE_SOURCES are the park's shard prizes, which the page sets
-# against it as the day's result. Redeem codes are gifts, not winnings, and stay out of that result; the race pays in
-# coins (coin ledger race_prize), so it is not in it either.
+# Shard ledger sources. COIN_BUY is what coins cost and LINK_FEE what 连连看 games cost (park_link.py); PRIZE_SOURCES
+# are the park's shard prizes, which the page sets against both as the day's result. Redeem codes are gifts, not
+# winnings, and stay out of that result; the race pays in coins (coin ledger race_prize), so it is not in it either.
 COIN_BUY = "coin_buy"
-PRIZE_SOURCES = ("park_scratch", "lottery_prize")
+LINK_FEE = "park_link_fee"
+LINK_PRIZE = "park_link"
+PRIZE_SOURCES = ("park_scratch", "lottery_prize", LINK_PRIZE)
 REDEEM = "redeem"
 # Coin ledger sources besides the spending of each game (named by the game: "scratch", "race", "lottery").
 COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "race_prize", "redeem", "admin")
@@ -60,7 +62,7 @@ class Park:
             "stamps": total % c["stampsPerCoin"],
             "stampsTotal": total,
             "badge": sum(1 for n in c["badges"] if total >= n),
-            "today": {"spent": -st.ledger_sum(p["id"], day, (COIN_BUY,)),
+            "today": {"spent": -st.ledger_sum(p["id"], day, (COIN_BUY, LINK_FEE)),
                       "won": st.ledger_sum(p["id"], day, PRIZE_SOURCES)},
             "jackpot": self.pool(st),
         }

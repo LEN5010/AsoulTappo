@@ -392,6 +392,35 @@ CREATE TABLE IF NOT EXISTS redeem_locks (
   locks INTEGER NOT NULL DEFAULT 0,
   last REAL NOT NULL
 );
+-- park: link tables
+-- 连连看 games (park_link.py). day: the China day the game started on, which counts it toward the daily games; level:
+-- the n-th game of that day (from 1). kinds: emote keys by tile kind (JSON); board0 and board: the board at the start
+-- and now (JSON, -1 empty); events: the accepted pairs, [{a, b, t: ms after the start, shuffle?: the board after a
+-- server-side shuffle}]. cleared and total count pairs; max: the level's top prize when the game started, which its
+-- settlement pays from. started_at, deadline and settled_at are Unix seconds;
+-- settled_at stays NULL until the game is settled, which pays prize once. reason: clear, time or quit.
+CREATE TABLE IF NOT EXISTS park_link (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  level INTEGER NOT NULL,
+  rows INTEGER NOT NULL,
+  cols INTEGER NOT NULL,
+  shift TEXT NOT NULL,
+  kinds TEXT NOT NULL,
+  board0 TEXT NOT NULL,
+  board TEXT NOT NULL,
+  events TEXT NOT NULL DEFAULT '[]',
+  cleared INTEGER NOT NULL DEFAULT 0,
+  total INTEGER NOT NULL,
+  max INTEGER NOT NULL,
+  started_at REAL NOT NULL,
+  deadline REAL NOT NULL,
+  settled_at REAL,
+  prize INTEGER NOT NULL DEFAULT 0,
+  reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS park_link_player ON park_link (player_id, day);
 -- Feedback from the settings page (feedback.py): the text, an optional contact, the client's version and system, and
 -- the latest part of its log when the player ticked it ('' without). [day] is the China day it came on.
 CREATE TABLE IF NOT EXISTS feedback (

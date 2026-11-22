@@ -71,6 +71,14 @@ Weights are percentages unless said otherwise.
     park adds ``pool.perCoin``, and it rolls over until a draw has a top winner. The second prize is ``secondEach``
     shards each (without it, the rule before: ``second`` of the day's sales split between winners, rolling over when
     nobody wins it), the third ``third`` shards each.
+  - ``link``: 连连看 (park_link.py), one player against the clock, paid in shards. A game costs ``entry`` shards,
+    which are burnt; a save plays at most len(``levels``) games a China day (counted by the day a game starts,
+    abandoned ones too), the n-th on ``levels[n-1]``: {rows, cols, kinds, seconds, shift, max, hints}. The board holds
+    ``kinds`` emotes four times each (rows × cols = kinds × 4), static ones from the emote sets in ``sets``; after
+    each pair the tiles move by ``shift`` (none, down, left or center; center needs an even ``cols``). A game pays
+    max × cleared² // total² shards (pairs), ``max`` when cleared. Moves that reach the server up to ``grace``
+    seconds after the deadline still count. ``hints`` are counted by the client only. With ``account`` a save needs
+    a main-site account to start a game (on a server with accounts).
 
 - ``antiCheat``: fields of ``cards.DropConfig`` by name; missing ones keep their defaults. Never sent to clients.
   The rules that tell automatic input from a hand are not here: see ``app/guard.py``.
@@ -109,7 +117,8 @@ def load(path: Path | str | None = None) -> tuple[dict[str, Any], dict[str, Any]
 
 
 def check(data: dict[str, Any]) -> None:
-    """Refuses settings that would roll nonsense: the holo chance, a percentage, and the card counter's price."""
+    """Refuses settings that would roll nonsense: the holo chance, a percentage, the card counter's price and a
+    连连看 board that cannot be laid (check_link, without the emote sets)."""
     chance = data.get("resonance", {}).get("holoChance")
     if chance is not None and (isinstance(chance, bool) or not isinstance(chance, (int, float))
                                or not 0 <= chance <= 100):
@@ -122,6 +131,63 @@ def check(data: dict[str, Any]) -> None:
                 raise ValueError(f"doudizhu.counter.{key} must be a whole number of 1 or more, not {n!r}")
         if not (data.get("park") or {}).get("coin"):
             raise ValueError("doudizhu.counter is paid in park coins: it needs park.coin")
+    link = (data.get("park") or {}).get("link")
+    if link is not None:
+        check_link(link)
+        # A game needs the park open (park.coin.minTaps taps).
+        taps = (data["park"].get("coin") or {}).get("minTaps")
+        if isinstance(taps, bool) or not isinstance(taps, int) or taps < 0:
+            raise ValueError(f"park.link needs park.coin.minTaps, a whole number of 0 or more, not {taps!r}")
+
+
+LINK_SHIFTS = ("none", "down", "left", "center")
+
+
+def _whole(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a whole number of 1 or more, not {value!r}")
+    return value
+
+
+def check_link(link: Any, emote_sets: list[dict[str, Any]] | None = None) -> None:
+    """Refuses a park.link the game could not be played with. With the manifest's [emote_sets], also that every set
+    in ``sets`` exists and their static emotes cover the largest ``kinds``; the server runs that part at start."""
+    if not isinstance(link, dict):
+        raise ValueError("park.link must be an object")
+    for key in ("entry", "grace"):
+        _whole(link.get(key), f"park.link.{key}")
+    if not isinstance(link.get("account", False), bool):
+        raise ValueError("park.link.account must be true or false")
+    sets = link.get("sets")
+    if not isinstance(sets, list) or not sets or not all(isinstance(s, str) for s in sets):
+        raise ValueError("park.link.sets must list emote set ids")
+    levels = link.get("levels")
+    if not isinstance(levels, list) or not levels:
+        raise ValueError("park.link.levels must list at least one level")
+    for i, level in enumerate(levels):
+        name = f"park.link.levels[{i}]"
+        if not isinstance(level, dict):
+            raise ValueError(f"{name} must be an object")
+        rows, cols, kinds = (_whole(level.get(k), f"{name}.{k}") for k in ("rows", "cols", "kinds"))
+        for key in ("seconds", "max", "hints"):
+            _whole(level.get(key), f"{name}.{key}")
+        if rows * cols != kinds * 4:
+            raise ValueError(f"{name}: rows × cols must be kinds × 4")
+        shift = level.get("shift")
+        if shift not in LINK_SHIFTS:
+            raise ValueError(f"{name}.shift must be one of {', '.join(LINK_SHIFTS)}, not {shift!r}")
+        if shift == "center" and cols % 2:
+            raise ValueError(f"{name}: shift center needs an even number of cols")
+    if emote_sets is None:
+        return
+    by_id = {s["id"]: s for s in emote_sets}
+    missing = [s for s in sets if s not in by_id]
+    if missing:
+        raise ValueError(f"park.link.sets: no emote set {', '.join(missing)}")
+    static = len({e["key"] for s in sets for e in by_id[s]["emotes"] if not e.get("animated")})
+    most = max(level["kinds"] for level in levels)
+    if static < most:
+        raise ValueError(f"park.link.sets hold {static} static emotes, fewer than the {most} kinds of a level")
 
 
 def drop_config(anti: dict[str, Any]) -> DropConfig:
