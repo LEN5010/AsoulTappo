@@ -81,12 +81,14 @@ PY
 
 # The server reaches the main site at https://len5010.top/...; this host's own public address is slow to reach from
 # itself, so the name resolves to the local nginx instead (same certificate, milliseconds instead of seconds).
+# The websocket protocol is named outright: app/ws_writes.py coalesces writes only for websockets-sansio. An image
+# whose uvicorn lacks it fails to start, and the trial's check stops there.
 run_server() { # name port data-dir app-dir config-dir image
   docker run -d --name "$1" --network host --restart unless-stopped --env-file $ENV \
     --add-host len5010.top:127.0.0.1 \
     -v "$3":/srv/data -v "$4":/srv/app:ro -v "$5":/srv/config:ro --user app \
     --log-opt max-size=50m --log-opt max-file=3 \
-    "asoultappo-server:$6" uvicorn app.main:app --host 127.0.0.1 --port "$2" >/dev/null
+    "asoultappo-server:$6" uvicorn app.main:app --host 127.0.0.1 --port "$2" --ws websockets-sansio >/dev/null
 }
 
 check() { # port container

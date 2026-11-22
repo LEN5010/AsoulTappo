@@ -15,4 +15,5 @@ RUN useradd -m app && mkdir -p /srv/data && chown -R app /srv/data
 USER app
 VOLUME /srv/data
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# websockets-sansio named outright: app/ws_writes.py coalesces writes only for that protocol, whatever "auto" picks.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--ws", "websockets-sansio"]
