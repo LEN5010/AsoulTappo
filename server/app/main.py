@@ -17,6 +17,7 @@ from urllib.parse import unquote
 from typing import Awaitable, Callable, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+import starlette.websockets
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -40,7 +41,7 @@ from .models import (
     DdzCounterMsg, DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg, DdzWatchMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
-    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapBroadcast, TapMsg, client_message_adapter,
+    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapMsg, client_message_adapter,
 )
 from .moderation import Blocklist
 from .lottery import Lottery
@@ -52,6 +53,7 @@ from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
                     room_status)
 from .store import Store
+from .ws_writes import CoalesceWebSocketWrites
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +296,10 @@ class PackHeaders:
 
 
 app.add_middleware(PackHeaders)
+# Added last, so it runs outside the other middleware and gets uvicorn's own websocket send (app/ws_writes.py).
+app.add_middleware(CoalesceWebSocketWrites)
+# Raised by Starlette 1.x on a send after the connection closed; a RuntimeError, not a WebSocketDisconnect.
+WEBSOCKET_CLOSED = getattr(starlette.websockets, "WebSocketDisconnected", ConnectionError)
 
 
 def _member(p: Peer) -> Member:
@@ -1565,8 +1571,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     continue
                 peer.tap_budget -= count
                 peer.taps += count
-                await manager.broadcast(room_id, TapBroadcast(
-                    id=peer.id, count=count, total=peer.taps).model_dump())
+                # Goes out with the room's next tick, added up with the member's other taps in it.
+                manager.tap(room_id, peer, count)
             elif isinstance(msg, MotionMsg):
                 await manager.motion(room_id, peer, msg.model_dump(exclude={"type"}))
             elif isinstance(msg, PoseMsg):
@@ -1761,7 +1767,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await run_in_threadpool(game.note_room_nick, peer.token, msg.nick)
                 tables.restyle(peer)
                 await manager.broadcast(room_id, _state(peer))
-    except (WebSocketDisconnect, ConnectionError):
+    except (WebSocketDisconnect, ConnectionError, WEBSOCKET_CLOSED):
         pass
     except asyncio.TimeoutError:
         try:

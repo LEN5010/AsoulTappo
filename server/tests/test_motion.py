@@ -86,10 +86,10 @@ def test_packed_motion_messages_are_bounded(message):
 def test_a_newer_motion_version_gets_the_newest_this_server_has():
     manager.rooms.clear()
     with TestClient(app) as client, client.websocket_connect('/ws') as ws:
-        ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 4})
+        ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 5})
         joined = ws.receive_json()
         assert joined['type'] == 'joined'
-        assert joined['motionVersion'] == 3
+        assert joined['motionVersion'] == 4
 
 
 def test_edges_reach_a_version_3_client_in_one_ordered_message():

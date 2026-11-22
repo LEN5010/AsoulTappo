@@ -17,6 +17,8 @@ def auto(monkeypatch):
     """Saves the game takes for automatic: add a save id to hide it, remove it to show it again."""
     saves: set[str] = set()
     monkeypatch.setattr(main.game, "auto_input", lambda pid: pid in saves)
+    # Taps wait for the room tick; without the wait they are out before the pong that synced() waits for.
+    monkeypatch.setattr(manager, "motion_interval", 0)
     return saves
 
 

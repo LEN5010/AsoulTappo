@@ -150,11 +150,13 @@ def test_ping_pong_even_before_join():
 def test_tap_totals_accumulate_and_oversized_batch_rejected():
     c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as ws:
-        join(ws)
+        me = join(ws)["you"]
         ws.send_json({"type": "tap", "count": 3})
         ws.send_json({"type": "tap", "count": 4})
-        assert ws.receive_json()["total"] == 3
-        assert ws.receive_json()["total"] == 7
+        # Both came within one room tick: they go out added up.
+        assert ws.receive_json() == {"type": "tap", "id": me, "count": 7, "total": 7}
+        ws.send_json({"type": "tap", "count": 2})
+        assert ws.receive_json()["total"] == 9
         ws.send_json({"type": "tap", "count": 100000})
         assert ws.receive_json()["code"] == "bad_message"
 

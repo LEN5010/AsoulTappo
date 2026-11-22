@@ -1,4 +1,5 @@
-"""In-memory rooms with ordered writers, subscriptions, 100ms motion batches and 50ms button-edge batches."""
+"""In-memory rooms with ordered writers, motion subscriptions and one 100ms tick per room for edges, positions and
+taps."""
 from __future__ import annotations
 
 import asyncio
@@ -13,9 +14,10 @@ from typing import Any, Awaitable, Callable, Protocol
 MAX_ROOM_SIZE = 20
 MAX_OUTBOX = 256
 # Motion formats: 1 full poses; 2 packed deltas for subscribed members, one message per button edge;
-# 3 as 2 with the edges of a room gathered into one ordered message per receiver.
-MOTION_VERSION = 3
-# Edges kept per member within one edge batch; earlier ones are dropped, the latest pose always goes out.
+# 3 as 2 with the edges and positions of a room tick gathered into one ordered message per receiver (`motion_edges`);
+# 4 as 3 with the tick's taps in that message too (`room_tick`), instead of one `tap` message per member.
+MOTION_VERSION = 4
+# Edges kept per member within one tick; earlier ones are dropped, the latest pose always goes out.
 MAX_EDGES_PER_BATCH = 6
 # Room messages beyond the 1.1 set, listed in `joined` for clients that announce a motion version.
 # "drink": members tell the room they drank water; "name": the host names the room.
@@ -175,6 +177,15 @@ class Peer:
             # Edge batches still waiting to go out join up; the order of their edges is kept.
             previous, _ = self.outbox[-1]
             self.outbox[-1] = ({"type": "motion_edges", "edges": previous["edges"] + data["edges"]}, None)
+        elif data["type"] == "room_tick" and self.outbox and self.outbox[-1][0]["type"] == "room_tick":
+            # Ticks still waiting to go out join up: motions in order, each member's taps added up to its latest total.
+            previous, _ = self.outbox[-1]
+            taps = {tap["id"]: dict(tap) for tap in previous["taps"]}
+            for tap in data["taps"]:
+                held = taps.get(tap["id"])
+                taps[tap["id"]] = {**tap, "count": tap["count"] + held["count"]} if held else dict(tap)
+            self.outbox[-1] = ({"type": "room_tick", "motions": previous["motions"] + data["motions"],
+                                "taps": list(taps.values())}, None)
         elif len(self.outbox) >= MAX_OUTBOX:
             self.overloaded = True
             if done is not None:
@@ -226,11 +237,14 @@ class Room:
     id: str
     # in join order: the host passes to the earliest remaining member
     peers: dict[str, Peer] = field(default_factory=dict)
+    # Latest positions not sent yet, by member id; they go out with the room's next tick.
     motions: dict[str, dict] = field(default_factory=dict)
+    # The room tick: edges, positions and taps waiting go out together (RoomManager._flush_tick).
     motion_timer: asyncio.TimerHandle | None = None
     # Button edges for motion version 3 receivers, in the order they happened: (member id, full pose).
     edges: list[tuple[str, dict]] = field(default_factory=list)
-    edge_timer: asyncio.TimerHandle | None = None
+    # Taps not sent yet, by member id in the order they first came: [taps since the last tick, member's total].
+    taps: dict[str, list[int]] = field(default_factory=dict)
     host: str | None = None
     public: bool = False
     # The name the host gave the room as typed (kept for masking again when the blocked words change), and as shown.
@@ -261,13 +275,12 @@ class Restore:
 
 
 class RoomManager:
-    def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0,
-                 motion_interval: float = 0.1, edge_interval: float = 0.05,
+    def __init__(self, max_size: int = MAX_ROOM_SIZE, send_timeout: float = 2.0, motion_interval: float = 0.1,
                  cheer_interval: float = CHEER_SEND_INTERVAL, clock: Callable[[], float] = time.monotonic) -> None:
         self.max_size = max_size
         self.send_timeout = send_timeout
+        # The room tick: how long edges, positions and taps wait to go out together.
         self.motion_interval = motion_interval
-        self.edge_interval = edge_interval
         self.cheer_interval = cheer_interval
         self.clock = clock
         self._joins = 0
@@ -375,11 +388,12 @@ class RoomManager:
             peer.writer.cancel()
         room.motions.pop(peer_id, None)
         room.edges = [edge for edge in room.edges if edge[0] != peer_id]
+        room.taps.pop(peer_id, None)
         for other in room.peers.values():
             other.motion_ids.discard(peer_id)
             other.sent_motion.pop(peer_id, None)
         if not room.peers:
-            for timer in (room.motion_timer, room.edge_timer, room.cheer_timer):
+            for timer in (room.motion_timer, room.cheer_timer):
                 if timer:
                     timer.cancel()
             del self.rooms[room_id]
@@ -460,11 +474,23 @@ class RoomManager:
             self._queue_edge(room, peer.id, pose)
         else:
             room.motions[peer.id] = {"id": peer.id, **pose}
-            if room.motion_timer is None:
-                room.motion_timer = asyncio.get_running_loop().call_later(self.motion_interval, self._flush_motion, room)
+            self._tick_soon(room)
+
+    def tap(self, room_id: str, peer: Peer, count: int) -> None:
+        """Holds [count] taps of [peer] (its Peer.taps already counts them) for the room's next tick."""
+        room = self.rooms.get(room_id)
+        if room is None or count <= 0:
+            return
+        held = room.taps.get(peer.id)
+        room.taps[peer.id] = [count + (held[0] if held else 0), peer.taps]
+        self._tick_soon(room)
+
+    def _tick_soon(self, room: Room) -> None:
+        if room.motion_timer is None:
+            room.motion_timer = asyncio.get_running_loop().call_later(self.motion_interval, self._flush_tick, room)
 
     def _queue_edge(self, room: Room, sender: str, pose: dict) -> None:
-        """Holds an edge for the version 3 receivers until the room's edge batch goes out."""
+        """Holds an edge for the version 3 receivers until the room's next tick."""
         if not any(p.motion_version >= 3 and p.id != sender for p in room.peers.values()):
             return
         mine = [i for i, (pid, _) in enumerate(room.edges) if pid == sender]
@@ -472,34 +498,41 @@ class RoomManager:
             # Faster than anyone can watch: the oldest of this member's edges gives way.
             del room.edges[mine[0]]
         room.edges.append((sender, pose))
-        if room.edge_timer is None:
-            room.edge_timer = asyncio.get_running_loop().call_later(self.edge_interval, self._flush_edges, room)
+        self._tick_soon(room)
 
-    def _flush_edges(self, room: Room) -> None:
-        """Each version 3 receiver gets the room's edges in order, as changes against what it already has."""
-        if room.edge_timer is not None:
-            room.edge_timer.cancel()
-            room.edge_timer = None
-        edges, room.edges = room.edges, []
-        if not edges:
+    def _flush_tick(self, room: Room) -> None:
+        """Sends each member what the room's tick gathered, as changes against what it already has. Version 3 gets
+        the edges in order, then the positions (which must not overtake an edge), in one `motion_edges`; version 4
+        gets those and the taps in one `room_tick`. Older versions get the positions in one message (they had the
+        edges as they came). Up to version 3 every member's taps follow as one `tap` message each; the writes of one
+        tick leave together (app/ws_writes.py)."""
+        if room.motion_timer is not None:
+            room.motion_timer.cancel()
+            room.motion_timer = None
+        if self.rooms.get(room.id) is not room:
             return
-        for receiver in list(room.peers.values()):
-            if receiver.motion_version < 3:
-                continue
-            out = [delta for sender, pose in edges if (delta := self._motion_for(receiver, sender, pose))]
-            if out:
-                receiver.enqueue({"type": "motion_edges", "edges": out})
-
-    def _flush_motion(self, room: Room) -> None:
-        room.motion_timer = None
-        # Positions that came after an edge must not overtake it.
-        self._flush_edges(room)
+        edges, room.edges = room.edges, []
         updates = list(room.motions.values())
         room.motions.clear()
-        for peer in list(room.peers.values()):
-            motions = [delta for m in updates if (delta := self._motion_for(peer, m["id"], m))]
-            if motions:
-                peer.enqueue({"type": "motion_delta" if peer.motion_version >= 2 else "motion_batch", "motions": motions})
+        taps = [{"id": pid, "count": count, "total": total} for pid, (count, total) in room.taps.items()]
+        room.taps = {}
+        for receiver in list(room.peers.values()):
+            if receiver.motion_version >= 3:
+                motions = [delta for sender, pose in edges if (delta := self._motion_for(receiver, sender, pose))]
+                motions += [delta for m in updates if (delta := self._motion_for(receiver, m["id"], m))]
+                if receiver.motion_version >= 4:
+                    if motions or taps:
+                        receiver.enqueue({"type": "room_tick", "motions": motions, "taps": taps})
+                    continue
+                if motions:
+                    receiver.enqueue({"type": "motion_edges", "edges": motions})
+            else:
+                motions = [delta for m in updates if (delta := self._motion_for(receiver, m["id"], m))]
+                if motions:
+                    receiver.enqueue({"type": "motion_delta" if receiver.motion_version >= 2 else "motion_batch",
+                                      "motions": motions})
+            for tap in taps:
+                receiver.enqueue({"type": "tap", **tap})
 
     def _motion_for(self, receiver: Peer, sender: str, pose: dict) -> dict | None:
         if receiver.id == sender:

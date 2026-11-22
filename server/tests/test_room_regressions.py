@@ -275,7 +275,7 @@ def test_queued_packed_batches_merge_field_by_field():
 
 
 def _edges_room(versions, **options):
-    manager = RoomManager(edge_interval=60, motion_interval=60, **options)
+    manager = RoomManager(motion_interval=60, **options)
     peers = []
     for i, version in enumerate(versions):
         peer = manager.join("e", str(i), "c", Socket())
@@ -305,7 +305,7 @@ def test_edges_batch_for_version_3_and_stay_immediate_for_older_receivers():
         assert packed.ws.messages == [{"type": "motion_edge", "id": sender.id, "b": 1},
                                       {"type": "motion_edge", "id": sender.id, "x": 4, "b": 0}]
         assert batched.ws.messages == []
-        manager._flush_edges(manager.rooms["e"])
+        manager._flush_tick(manager.rooms["e"])
         await delivered(batched.ws, 1)
         assert batched.ws.messages == [{"type": "motion_edges", "edges": [
             {"id": sender.id, "b": 1}, {"id": sender.id, "x": 4, "b": 0}]}]
@@ -320,11 +320,11 @@ def test_a_position_batch_never_overtakes_a_pending_edge():
         watcher.ws.messages.clear()
         await manager.motion("e", sender, _pose(left=True))
         await manager.motion("e", sender, _pose(left=True, dx=2.0))
-        manager._flush_motion(manager.rooms["e"])
-        await delivered(watcher.ws, 2)
+        manager._flush_tick(manager.rooms["e"])
+        await delivered(watcher.ws, 1)
+        # One message for the tick: the edge first, the position after it.
         assert watcher.ws.messages == [
-            {"type": "motion_edges", "edges": [{"id": sender.id, "b": 2}]},
-            {"type": "motion_delta", "motions": [{"id": sender.id, "x": 8}]}]
+            {"type": "motion_edges", "edges": [{"id": sender.id, "b": 2}, {"id": sender.id, "x": 8}]}]
         assert manager.rooms["e"].edges == []
     asyncio.run(run())
 
@@ -338,7 +338,7 @@ def test_edge_batches_drop_a_flood_but_keep_the_latest_pose():
         for i in range(21):
             await manager.motion("e", sender, _pose(keyDown=i % 2 == 0))
         assert len(manager.rooms["e"].edges) == 6
-        manager._flush_edges(manager.rooms["e"])
+        manager._flush_tick(manager.rooms["e"])
         await delivered(watcher.ws, 1)
         edges = watcher.ws.messages[0]["edges"]
         # An edge that matches what the watcher already has adds nothing.
