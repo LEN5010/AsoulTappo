@@ -1,6 +1,7 @@
 """Holo versions (镭射款): resonance turns a draw of one of their cards into them at the economy's holoChance."""
 import itertools
 import json
+import random
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,10 +17,8 @@ TOKEN = "holo-player-token-0001"
 NEW = "1.2.4"
 M = Manifest.load()
 CARD, HOLO = next(iter(M.holos.items()))
-#: Every holo version but HOLO. A save holding every common card draws the cards whose holo version it lacks first:
-#: with these held as well, that is CARD alone.
-OTHER_HOLOS = [h for h in M.holos.values() if h != HOLO]
-# A tier roll inside common, the pick (the only card left to find), then the holo roll.
+# A tier roll inside common, the pick (the only card left to find, else the first common card: CARD), then the holo
+# roll.
 COMMON = .5
 
 
@@ -86,7 +85,7 @@ def test_a_first_holo_version_comes_with_its_card():
 
 
 def test_a_first_holo_version_of_a_held_card_pays_no_shards():
-    g, pid = game(100, COMMON, 0, 0, owned=[CARD, *OTHER_HOLOS])
+    g, pid = game(100, COMMON, 0, 0, owned=[CARD])
     r = g.resonate(TOKEN, 1, NEW)
     drop = r["drops"][0]
     assert drop["holo"] is True and drop["new"] is True and drop["cardNew"] is False and drop["shards"] == 0
@@ -97,7 +96,7 @@ def test_a_first_holo_version_of_a_held_card_pays_no_shards():
 
 
 def test_a_repeat_holo_version_pays_the_holo_refund():
-    g, pid = game(100, COMMON, 0, 0, owned=[CARD, HOLO, *OTHER_HOLOS])
+    g, pid = game(100, COMMON, 0, 0, owned=[CARD, HOLO])
     r = g.resonate(TOKEN, 1, NEW)
     drop = r["drops"][0]
     refund = M.resonance["duplicateRefund"]["holo"]
@@ -110,7 +109,7 @@ def test_a_repeat_holo_version_pays_the_holo_refund():
 
 @pytest.mark.parametrize("roll, holo_configured, holo", [(0, False, True), (.99, True, False)])
 def test_a_repeat_without_a_holo_refund_uses_the_card_refund(roll, holo_configured, holo):
-    g, _ = game(25, COMMON, 0, roll, owned=[CARD, HOLO, *OTHER_HOLOS])
+    g, _ = game(25, COMMON, 0, roll, owned=[CARD, HOLO])
     if not holo_configured:
         g.manifest.resonance["duplicateRefund"].pop("holo")
     drop = g.resonate(TOKEN, 1, NEW)["drops"][0]
@@ -119,7 +118,7 @@ def test_a_repeat_without_a_holo_refund_uses_the_card_refund(roll, holo_configur
 
 
 def test_the_second_holo_version_in_one_batch_is_a_repeat():
-    g, pid = game(100, COMMON, 0, 0, COMMON, 0, 0, owned=OTHER_HOLOS)
+    g, pid = game(100, COMMON, 0, 0, COMMON, 0, 0)
     drops = g.resonate(TOKEN, 2, NEW)["drops"]
     assert [(d["item"], d.get("holo"), d["new"], d["shards"]) for d in drops] == [
         (CARD, True, True, 0), (CARD, True, False, M.resonance["duplicateRefund"]["holo"])]
@@ -245,14 +244,39 @@ PICK = card_roll(MIDDLE)
 
 
 def picked_from_all(pool):
-    """The card PICK gives when every common card is a candidate (as before the holo versions kept cards apart)."""
+    """The card PICK gives when every common card is a candidate."""
     cards = [i["id"] for i in pool["common"] if i["kind"] == "card"]
     return cards[int(MIDDLE * len(cards))]
 
 
-def test_a_save_owning_every_item_still_draws_and_finds_its_missing_holo_version():
-    g, pid, version, pool = whole_save(COMMON, PICK, 0)
+def card_pick(card, without=()):
+    """A roll for the common pick that gives [card] when every common card but [without] is a candidate."""
+    cards = [i["id"] for i in M.resonance_pool["common"] if i["kind"] == "card" and i["id"] not in without]
+    return card_roll((cards.index(card) + .5) / len(cards))
+
+
+def test_a_missing_holo_version_does_not_draw_its_card_first():
+    g, pid, version, pool = whole_save(COMMON, PICK, .99)
     assert picked_from_all(pool) != CARD
+    drop = g.resonate(TOKEN, 1, version)["drops"][0]
+    assert drop["item"] == picked_from_all(pool) and drop["new"] is False
+    assert HOLO not in g.store.owned(pid)
+
+
+def test_a_save_lacking_one_holo_version_draws_every_common_card_alike():
+    # The holo chance is too small to come up, so HOLO stays missing over the whole run.
+    g, pid, version, pool = whole_save(chance=.0001)
+    g.rng = random.Random(7)
+    g.store.update_player(pid, shards=160 * 2000)
+    drawn = [d["item"] for _ in range(20) for d in g.resonate(TOKEN, 100, version)["drops"]]
+    assert HOLO not in g.store.owned(pid)
+    counts = [drawn.count(i["id"]) for i in pool["common"] if i["kind"] == "card"]
+    even = sum(counts) / len(counts)
+    assert min(counts) > even * .4 and max(counts) < even * 2
+
+
+def test_a_save_owning_every_item_still_finds_its_missing_holo_version():
+    g, pid, version, _ = whole_save(COMMON, card_pick(CARD), 0)
     r = g.resonate(TOKEN, 1, version)
     drop = r["drops"][0]
     assert drop["item"] == CARD and drop["holo"] is True and drop["new"] is True and drop["cardNew"] is False
@@ -260,24 +284,12 @@ def test_a_save_owning_every_item_still_draws_and_finds_its_missing_holo_version
     assert g.store.owned(pid)[HOLO] == 1
 
 
-def test_without_the_holo_the_preferred_card_is_a_repeat_and_stays_preferred():
-    g, pid, version, _ = whole_save(COMMON, PICK, .99, COMMON, PICK, 0)
-    drops = g.resonate(TOKEN, 2, version)["drops"]
-    assert drops[0]["item"] == CARD and "holo" not in drops[0]
-    assert drops[0]["new"] is False and drops[0]["shards"] == M.resonance["duplicateRefund"]["normal"]
-    assert drops[1]["item"] == CARD and drops[1]["holo"] is True and drops[1]["new"] is True
-    assert g.store.owned(pid)[HOLO] == 1
-
-
-def test_a_batch_moves_on_to_the_next_missing_holo_version():
+def test_a_batch_finds_two_missing_holo_versions():
     other = next(card for card in M.holos if card != CARD)
     lacking = (HOLO, M.holos[other])
-    # A quarter into the card group: the first of the two cards, then the only one left.
-    pick = card_roll(.25)
-    g, pid, version, pool = whole_save(COMMON, pick, 0, COMMON, pick, 0, lacking=lacking)
-    order = [i["id"] for i in pool["common"] if i["id"] in (CARD, other)]
+    g, pid, version, _ = whole_save(COMMON, card_pick(CARD), 0, COMMON, card_pick(other), 0, lacking=lacking)
     drops = g.resonate(TOKEN, 2, version)["drops"]
-    assert [(d["item"], d.get("holo"), d["new"]) for d in drops] == [(order[0], True, True), (order[1], True, True)]
+    assert [(d["item"], d.get("holo"), d["new"]) for d in drops] == [(CARD, True, True), (other, True, True)]
     owned = g.store.owned(pid)
     assert all(owned[h] == 1 for h in lacking)
 
@@ -304,17 +316,23 @@ def test_a_client_that_cannot_show_the_holo_version_draws_as_before():
 
 def test_a_tier_with_a_missing_holo_version_stays_in_the_roll():
     # A limited-tier card (a tier that rolls no repeats) given a holo version: once the whole pool is owned, its tier
-    # keeps its odds while the holo is missing, and its draws go to that card first.
+    # keeps its odds while the holo is missing, and its draws are spread over the whole tier.
     c = next(c for c in M.data["cards"] if c["rarity"] == "limited")
     card, holo = f"card:{c['id']}", f"holo:{c['id']}"
+    tier = [i["id"] for i in M.resonance_pool_for(NEW)["limited"]]
+    pick = (tier.index(card) + .5) / len(tier)
     rates = M.resonance["rates"]
     assert "limited" not in M.resonance.get("repeatTiers", ())
     edge = sum(rates[r] for r in ("legendary", "skin", "epic", "rare", "uncommon"))
     in_tier = (edge + rates["limited"] / 2) / 100
-    g, pid, version, _ = whole_save(in_tier, .99, 0, lacking=(holo,), holos={card: holo})
+    g, pid, version, _ = whole_save(in_tier, pick, 0, lacking=(holo,), holos={card: holo})
     drop = g.resonate(TOKEN, 1, version)["drops"][0]
     assert drop["rarity"] == "limited" and drop["item"] == card and drop["holo"] is True and drop["new"] is True
     assert g.store.owned(pid)[holo] == 1
+    # another card of the tier comes as a repeat
+    g, pid, version, _ = whole_save(in_tier, .99, lacking=(holo,), holos={card: holo})
+    drop = g.resonate(TOKEN, 1, version)["drops"][0]
+    assert drop["rarity"] == "limited" and drop["item"] == tier[-1] != card and drop["new"] is False
     # with that holo version owned the tier drops out and its odds go to common
     g, _, version, _ = whole_save(in_tier, .99, 0, lacking=(), holos={card: holo})
     assert g.resonate(TOKEN, 1, version)["drops"][0]["rarity"] == "common"
@@ -322,8 +340,7 @@ def test_a_tier_with_a_missing_holo_version_stays_in_the_roll():
 
 def test_a_limited_pool_draw_finds_the_missing_holo_version_too():
     # The tier roll stays under the featured range at the top of the roll.
-    g, pid, version, pool = whole_save(COMMON, PICK, 0, banner={})
-    assert picked_from_all(pool) != CARD
+    g, pid, version, _ = whole_save(COMMON, card_pick(CARD), 0, banner={})
     r = g.resonate(TOKEN, 1, version, "forms")
     drop = r["drops"][0]
     assert drop["item"] == CARD and drop["holo"] is True and drop["new"] is True and "featured" not in drop
@@ -336,7 +353,7 @@ def test_a_limited_pool_without_common_odds_still_deals_the_missing_holo_version
     limited = [i["id"] for i in M.resonance_pool["limited"]][:2]
     rates = {**{tier: 0 for tier in ("legendary", "skin", "epic", "rare", "uncommon")}, "limited": 100}
     over = {"items": limited, "rate": 0, "pity": None, "share": 50, "rates": rates}
-    g, pid, version, _ = whole_save(COMMON, PICK, 0, banner=over)
+    g, pid, version, _ = whole_save(COMMON, card_pick(CARD), 0, banner=over)
     assert g.manifest.banner("forms", version, g.now()).tier_rates(M.resonance["rates"])["common"] == 0
     drop = g.resonate(TOKEN, 1, version, "forms")["drops"][0]
     assert drop["rarity"] == "common" and drop["item"] == CARD and drop["holo"] is True and drop["new"] is True
@@ -351,7 +368,8 @@ def test_a_shared_tier_with_a_missing_holo_version_keeps_the_banner_share():
     over = {"items": [plain], "rate": 0, "pity": None, "share": 50}
     # common, the share roll (over 50: a standing card), the pick, the holo roll; then common, now featured for
     # certain (the last common draw here gave a standing card), and the pick among the featured.
-    g, pid, version, _ = whole_save(COMMON, .99, PICK, 0, COMMON, 0, banner=over, featured=False)
+    g, pid, version, _ = whole_save(COMMON, .99, card_pick(CARD, without=[plain]), 0, COMMON, 0, banner=over,
+                                    featured=False)
     first = g.resonate(TOKEN, 1, version, "forms")
     drop = first["drops"][0]
     assert drop["item"] == CARD and drop["holo"] is True and "featured" not in drop

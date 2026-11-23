@@ -441,8 +441,8 @@ class Game:
         A drawn card with a holo version the client can show (Manifest.holos_for) is that version at holoChance
         percent: the save gets the holo version and the card. A first holo version pays no shards even when the card
         is a repeat (and the card's count stays). A repeat holo version uses its configured refund when present.
-        Such a card whose holo version the save lacks keeps its tier in the roll, and once a tier's items are all
-        owned its draws go to those cards first; the holo version still comes at holoChance percent.
+        Such a card whose holo version the save lacks keeps its tier in the roll. It is drawn no more often for it:
+        once a tier's items are all owned, its draws are spread evenly over them.
 
         With [banner_id] the draws are from that limited pool (app/banners.py): the standing pool at the banner's
         odds, with its featured items found in their own tier or in one of their own; a drop names one with
@@ -476,10 +476,9 @@ class Game:
                       for kind in cfg["commonKindWeights"]}
             common_missing = {kind: [item for item in items if item["id"] not in owned]
                               for kind, items in common.items()}
-            # Cards whose holo version (one this client can show) the save lacks: drawn after the missing items.
+            # Cards whose holo version (one this client can show) the save lacks: they keep their tier in the roll.
             lacking = {card for card, holo in holos.items() if holo not in owned}
             shine = {r: [item for item in items if item["id"] in lacking] for r, items in pool.items()}
-            common_shine = {kind: [item for item in items if item["id"] in lacking] for kind, items in common.items()}
             # A tier with nothing left to find (holo versions included) drops out and its odds go to common, unless it
             # keeps rolling repeats.
             repeating = {r for r in cfg.get("repeatTiers", ()) if pool.get(r)}
@@ -502,7 +501,7 @@ class Game:
                     candidates = [item]
                 else:
                     rarity = cardlogic.roll_tier(rates, available, pity, cfg["pity"], self.rng, x)
-                    candidates = missing[rarity] or shine[rarity] or pool[rarity]
+                    candidates = missing[rarity] or pool[rarity]
                     shared = [item for item in featured if item["rarity"] == rarity] if banner and banner.share else []
                     # The tier's standing items are all found (holo versions included) and it rolls no repeats: the
                     # featured ones are what kept it in the roll.
@@ -524,7 +523,7 @@ class Game:
                     pass
                 elif rarity == "common":
                     item = cardlogic.pick_common_group(
-                        [(weight, common_missing[kind] or common_shine[kind] or common[kind])
+                        [(weight, common_missing[kind] or common[kind])
                          for kind, weight in cfg["commonKindWeights"].items() if common[kind]], self.rng)
                 else:
                     item = candidates[min(int(self.rng.random() * len(candidates)), len(candidates) - 1)]
@@ -549,8 +548,6 @@ class Game:
                         common_missing[item["kind"]].remove(item)
                 if holo_fresh and not up:
                     shine[rarity].remove(item)
-                    if rarity == "common":
-                        common_shine[item["kind"]].remove(item)
                 for r in pity:
                     pity[r] = 0 if rarity == r else pity[r] + 1
                 drop = {"item": iid, "rarity": rarity, "new": fresh, "count": owned[iid], "shards": gained}
