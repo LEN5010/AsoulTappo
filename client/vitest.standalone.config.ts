@@ -7,5 +7,8 @@ import pkg from "./package.json" with { type: "json" };
 export default defineConfig({
   plugins: [vue()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version), __STANDALONE__: "true" },
-  test: { environment: "node", include: ["src/**/*.standalone.test.ts"], setupFiles: ["src/test/standalone.setup.ts"] },
+  test: {
+    environment: "node", include: ["src/**/*.standalone.test.ts"],
+    setupFiles: ["src/test/network.setup.ts", "src/test/standalone.setup.ts"],
+  },
 });

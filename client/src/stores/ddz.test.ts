@@ -30,7 +30,12 @@ beforeEach(() => {
   vi.stubGlobal("localStorage", { getItem: withEconomy((k: string) => (k === "asoultappo.settings.v1" ? agreed : null)), setItem: () => {} });
   vi.stubGlobal("WebSocket", Socket);
 });
-afterEach(() => { room?.leaveRoom(); room = undefined; vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(async () => {
+  room?.leaveRoom(); room = undefined;
+  // Reads still on their way end on this test's stubs: past the test they would go out, and count in the next one.
+  await vi.advanceTimersByTimeAsync(0);
+  vi.useRealTimers(); vi.unstubAllGlobals();
+});
 
 const ME = { id: "me", uid: "u-me", nick: "我", character: "嘉然", taps: 0, ddz: true };
 const A = { id: "a", uid: "u-a", nick: "贝", character: "贝拉", taps: 0, ddz: true };

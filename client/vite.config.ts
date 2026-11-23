@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     // The standalone edition's tests run with their own config (vitest.standalone.config.ts).
     test: {
       environment: "node", include: ["src/**/*.test.ts"], exclude: [...configDefaults.exclude, "src/**/*.standalone.test.ts"],
-      setupFiles: ["src/test/economy.setup.ts"],
+      setupFiles: ["src/test/network.setup.ts", "src/test/economy.setup.ts"],
     },
   };
 });

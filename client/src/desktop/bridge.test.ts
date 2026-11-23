@@ -28,6 +28,8 @@ beforeEach(() => {
   const saved = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => saved.get(key) ?? null, setItem: (key: string, v: string) => saved.set(key, v) });
   vi.stubGlobal("fetch", vi.fn());
+  // A connection that stays on its way: a table of the queue's brings the desk's up.
+  vi.stubGlobal("WebSocket", class { readyState = 0; send() {} close() {} });
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16));
   vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
 });
