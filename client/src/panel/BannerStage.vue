@@ -7,7 +7,7 @@
 // holds: its featured items as standees (the one on show times its own turn), then the 衣橱 series as a row
 // (CollectionRows.vue); under the sheet the 衣橱 cards pass by. A pool with more featured items than a row of
 // standees takes keeps a lineup under the hero.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { formReach, getCharacter, PET_BASE, skinSeries } from "../characters";
@@ -243,19 +243,40 @@ const plateW = ref(0);
 const frontScale = computed(() => Math.max(0.5, plateW.value * (raised.value ? 1 : 0.96) / PET_BASE.width));
 const backScale = computed(() => frontScale.value * 0.58);
 let resize: ResizeObserver | undefined;
-onMounted(() => {
-  const measure = () => {
-    plateW.value = plateEl.value?.offsetWidth || (heroEl.value ? heroEl.value.clientWidth / 1.3 : 0);
-  };
-  measure();
-  resize = new ResizeObserver(measure);
-  if (plateEl.value) resize.observe(plateEl.value);
-  if (heroEl.value) resize.observe(heroEl.value);
-});
-// Another pool may stand the item on another plate.
-watch(plateEl, (el) => { if (el) resize?.observe(el); }, { flush: "post" });
-onBeforeUnmount(() => {
+let measureFrame = 0;
+let observing = false;
+function measure() {
+  measureFrame = 0;
+  const w = plateEl.value?.offsetWidth || (heroEl.value ? heroEl.value.clientWidth / 1.3 : 0);
+  if (w > 0) plateW.value = w;
+}
+function scheduleMeasure() {
+  if (!measureFrame) measureFrame = requestAnimationFrame(measure);
+}
+function connectResize() {
+  observing = true;
   resize?.disconnect();
+  if (plateEl.value) resize?.observe(plateEl.value);
+  if (heroEl.value) resize?.observe(heroEl.value);
+  scheduleMeasure();
+}
+function disconnectResize() {
+  observing = false;
+  resize?.disconnect();
+  cancelAnimationFrame(measureFrame);
+  measureFrame = 0;
+}
+onMounted(() => {
+  measure();
+  resize = new ResizeObserver(scheduleMeasure);
+  connectResize();
+});
+onActivated(connectResize);
+onDeactivated(disconnectResize);
+// Another pool may stand the item on another plate or swap between the hand and the hero.
+watch([plateEl, heroEl], () => { if (observing) connectResize(); }, { flush: "post" });
+onBeforeUnmount(() => {
+  disconnectResize();
   cancelAnimationFrame(leanFrame);
   stopTurn();
 });
