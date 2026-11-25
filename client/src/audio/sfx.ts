@@ -30,7 +30,8 @@ function context(): AudioContext | null {
   return ctx;
 }
 
-function audio(): { ac: AudioContext; out: GainNode } | null {
+/** The shared context and the node sounds go into; null while settings.sfx is off. */
+export function audio(): { ac: AudioContext; out: GainNode } | null {
   if (!settings.sfx) return null;
   const ac = context();
   return ac ? { ac, out: master! } : null;
@@ -92,7 +93,8 @@ const buffers = new Map<string, Promise<AudioBuffer | null>>();
 /** A sound that decodes later than this after its moment is dropped instead of playing out of step. */
 const LATE_S = 0.25;
 
-function decoded(ac: AudioContext, name: string): Promise<AudioBuffer | null> {
+/** A recording of assets/sfx, by its file name; null when it cannot be had. */
+export function decoded(ac: AudioContext, name: string): Promise<AudioBuffer | null> {
   let buffer = buffers.get(name);
   if (!buffer) {
     buffer = fetch(URLS[name]!).then((r) => r.arrayBuffer()).then((b) => ac.decodeAudioData(b)).catch(() => null);

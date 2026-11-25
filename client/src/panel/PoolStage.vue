@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
 <template>
   <section
     class="pool-stage"
-    :class="{ calm: reducedMotion, marquee: canMarquee, run: scrolling }"
+    :class="{ calm: reducedMotion, marquee: canMarquee, run: scrolling, tabbed: $slots.switch, full: closetOn && $slots.switch }"
     :style="{ '--marquee': marqueeDuration }"
   >
     <div class="wash" aria-hidden="true">
@@ -165,7 +165,7 @@ onBeforeUnmount(() => {
     <div class="info">
       <header class="title">
         <slot name="switch"><span class="ui-eyebrow">RESONANCE</span></slot>
-        <h3 ref="titleEl">此间共鸣</h3>
+        <h3 ref="titleEl">常驻共鸣</h3>
       </header>
 
       <div ref="sheetEl" class="sheet">
@@ -691,6 +691,51 @@ h3 {
   .wash { left: 50%; transform: translateX(-50%); height: 300px; bottom: auto; }
   .info { width: 100%; }
   .sheet { margin-left: 0; }
+}
+/* Both rows under the pools' tabs: a little closer together, so the standees stay above the bar. */
+@container panel (min-width: 661px) and (max-height: 745px) {
+  .full .feature-slot {
+    min-height: 58px;
+  }
+  .full .feature {
+    position: relative;
+  }
+  .full .feature h4 {
+    margin-bottom: 0;
+    padding-right: 76px;
+  }
+  .full .owned {
+    position: absolute;
+    right: 0;
+    bottom: 7px;
+  }
+  .full .sheet {
+    gap: 8px;
+    padding: 11px 18px 10px;
+  }
+  .full .meter {
+    gap: 7px;
+  }
+  .full .tiers li {
+    gap: 4px;
+  }
+  .full .t-ring {
+    width: 38px;
+  }
+}
+@container panel (max-height: 690px) {
+  .full .tiers {
+    display: none;
+  }
+}
+/* Under the tabs a low window has no room for the standees' names. */
+@container panel (min-width: 661px) and (max-height: 600px) {
+  .tabbed .skin-name {
+    display: none;
+  }
+  .tabbed .skins {
+    padding: 2px 0 0;
+  }
 }
 /* Keeps the action bar above the fold: the total still sums up what the tier gauges break down. */
 @container panel (max-height: 640px) {

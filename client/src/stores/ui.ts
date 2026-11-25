@@ -9,7 +9,7 @@ export const STANDALONE_PAGES: readonly Page[] = ["emotes", "dex", "settings"];
 export const ui = reactive({
   panelOpen: false, panelMinimized: false, page: "emotes" as Page, craftTarget: "", quickOpen: false,
   /** The collection's page opens on this card filter once (the resonance page's holo collection asks for "holo"). */
-  dexFilter: "" as "" | "holo",
+  dexFilter: "" as "" | "holo" | `photo:${string}`,
   /**
    * The pool picked on the resonance page: a limited pool's id, or "" for the standing pool. null until one is picked:
    * the page then shows the first running limited pool, else the standing one.
@@ -18,6 +18,9 @@ export const ui = reactive({
   /** Desk window only: the dou dizhu table's window is open and not minimized, as it last reported (desktop/bridge.ts). */
   ddzSeen: false,
 });
+/** The page in the panel lies on a picture rather than on paper (panel/photo/PhotoBackdrop.vue). `dark`: it is dark under
+ *  the window's keys. `whole`: it is seen by itself, over the whole panel. */
+export const ground = reactive({ dark: false, whole: false });
 // The scratch page became part of the park: a page named the old way (from the other window, say) opens the park.
 watch(() => ui.page as string, (page) => { if (page === "scratch") ui.page = "park"; }, { flush: "sync", immediate: true });
 // The standalone edition: a key or a message that asks for any other page (the strip's draw key, a detail's way to

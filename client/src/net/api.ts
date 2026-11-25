@@ -179,8 +179,8 @@ export function newToken(rand: (n: number) => Uint8Array = (n) => crypto.getRand
   return Array.from(rand(24), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** The paths Api.park may reach: /api/park and /api/redeem, and below them. */
-export const PARK_PATH = /^\/api\/(park|redeem)(\/[\w\-/]*)?(\?[\w=&%.\-]*)?$/;
+/** The paths Api.park may reach: /api/park, /api/redeem and /api/photocards, and below them. */
+export const PARK_PATH = /^\/api\/(park|redeem|photocards)(\/[\w\-/]*)?(\?[\w=&%.\-]*)?$/;
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -312,7 +312,7 @@ export class Api {
   /** The newest client release, which the server reads from the main site. */
   latestRelease = () => this.call<ReleaseInfo>("GET", "/api/client/release", undefined, {});
   account = () => this.call<{ user: MainUser; save: SaveSummary | null }>("GET", "/api/account");
-  /** Any request of the park or redeem codes; other paths are refused here, before reaching the server. */
+  /** Any request of the park, redeem codes or photocards; other paths are refused here, before reaching the server. */
   park = <T>(method: "GET" | "POST", path: string, body?: unknown) => {
     if (!PARK_PATH.test(path)) return Promise.reject(new ApiError(0, "bad_path", "不是乐园的接口"));
     return this.call<T>(method, path, body);

@@ -7,7 +7,7 @@ import { incomeTip } from "../income";
 import { inRoom, members } from "../stores/room";
 import { reducedMotion, skinVars } from "../stores/theme";
 import { clamp, viewport } from "../stores/desk";
-import { STANDALONE_PAGES, closePanel, ui, type Page } from "../stores/ui";
+import { STANDALONE_PAGES, closePanel, ground, ui, type Page } from "../stores/ui";
 import { STANDALONE } from "../edition";
 import { isPanelWindow, setDragging } from "../composables/tauri";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -306,8 +306,10 @@ function badgeOf(id: Page): number {
   >
     <span class="glow" aria-hidden="true"></span>
 
-    <div class="face">
+    <div class="face" :class="{ dark: ground.dark, whole: ground.whole, calm: reducedMotion }">
       <div class="main">
+        <!-- A page that lies on something else than paper puts it here; the sidebar lies over it. -->
+        <div class="page-ground" aria-hidden="true"></div>
         <div class="topbar" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span v-if="!online && !STANDALONE" class="offline" role="status"><i aria-hidden="true"></i>未连接</span>
           <ParkChips v-if="!STANDALONE && agreed && shown === 'park' && status && !noPark" />
@@ -315,7 +317,7 @@ function badgeOf(id: Page): number {
             <Icon name="megaphone" :size="17" />
             <i v-if="dueNotices.length" class="notice-dot" aria-hidden="true"></i>
           </button>
-          <span v-if="!STANDALONE" class="wallet" :title="walletTip">
+          <span v-if="!STANDALONE" class="wallet" :title="walletTip" :inert="ground.whole">
             <Icon name="shard" :size="16" />
             <b :key="flash" :class="{ gain: flash > 0 }">{{ shownShards.toLocaleString("en-US") }}</b>
           </span>
@@ -343,7 +345,7 @@ function badgeOf(id: Page): number {
 
       <PageShutter ref="shutter" :title="nextNav.en" :label="nextNav.label" />
 
-      <aside class="side">
+      <aside class="side" :inert="ground.whole">
         <div class="logo" @pointerdown="down" @pointermove="move" @pointerup="up" @pointercancel="up" @lostpointercapture="up">
           <span class="logo-mark" role="img" aria-label="A-SOUL"></span>
           <span class="logo-word">TAPPO</span>
@@ -430,6 +432,12 @@ function badgeOf(id: Page): number {
   flex-direction: column;
   background: var(--c-50);
 }
+.page-ground {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
 /* The drag handle: the shard balance (with the park's coins and jackpot on the park page) and the window keys sit on its right. */
 .topbar {
   position: relative;
@@ -496,6 +504,31 @@ function badgeOf(id: Page): number {
   height: 32px;
   padding: 0;
 }
+/* On a dark picture. */
+.dark .topbar {
+  --focus: #fff;
+}
+.dark .win.ui-btn:not(:disabled) {
+  color: #fff;
+}
+.dark .win.ui-btn:hover:not(:disabled) {
+  --key-top: rgba(255, 255, 255, 0.16);
+  --key-bottom: rgba(255, 255, 255, 0.16);
+}
+.dark .win.ui-btn:active:not(:disabled) {
+  --key-top: rgba(255, 255, 255, 0.26);
+  --key-bottom: rgba(255, 255, 255, 0.26);
+}
+.dark .offline,
+.dark .offline i {
+  color: #fff;
+}
+.dark .offline i {
+  background: var(--c-400);
+}
+.dark .notice-dot {
+  box-shadow: none;
+}
 .notice-key {
   position: relative;
   margin-right: 4px;
@@ -552,6 +585,23 @@ function badgeOf(id: Page): number {
   padding-top: 22px;
   background: var(--grad-sky);
   user-select: none;
+  transition: transform 620ms cubic-bezier(0.2, 0.7, 0.2, 1) 520ms;
+}
+/* While a picture is seen by itself: the sidebar is off to the left, the balance out of the way. */
+.whole .side {
+  transform: translateX(calc(-100% - 12px));
+  transition: transform 420ms cubic-bezier(0.5, 0, 0.75, 0.4);
+}
+.wallet {
+  transition: opacity 300ms var(--ease-out) 620ms;
+}
+.whole .wallet {
+  opacity: 0;
+  transition: opacity 260ms var(--ease-out);
+}
+.calm .side,
+.calm .wallet {
+  transition: none;
 }
 
 .logo {

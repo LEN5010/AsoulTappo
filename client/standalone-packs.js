@@ -1,7 +1,8 @@
 // The standalone edition has no server to fetch `pack:` files from (src/manifest.ts resolveAsset): the build copies
-// them from assets-packs at the repository root into the output under packs/. Only vite.config.ts uses the plugin,
-// and only for the standalone edition, so the online build's output does not grow. Plain JavaScript: the type check
-// has no Node types (standalone-packs.d.ts declares what is used from TypeScript).
+// them from assets-packs at the repository root into the output under packs/. It also leaves out the files only the
+// online edition shows. Only vite.config.ts uses the plugins, and only for the standalone edition, so the online build's
+// output does not grow. Plain JavaScript: the type check has no Node types (standalone-packs.d.ts declares what is used
+// from TypeScript).
 import { cpSync, existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
@@ -32,6 +33,35 @@ export function copyPacks(outDir) {
 
 /** A fresh empty directory for the tests. */
 export const tempDir = () => mkdtempSync(join(tmpdir(), "asoultappo-packs-"));
+
+/** The folders of files only the online edition shows. Its code is left out of the standalone build (ResonancePage.vue),
+ *  but the bundler has put the files out by the time it knows. */
+const ONLINE_ONLY = ["src/assets/photocards/"];
+
+/** Takes the [ONLINE_ONLY] files out of [bundle], and fails when anything left in it names one of them. */
+export function dropOnlineFiles(bundle) {
+  const all = Object.values(bundle);
+  const text = (file) => (file.type === "chunk" ? file.code : typeof file.source === "string" ? file.source : "");
+  const mine = (file) => file.type === "asset" && file.originalFileNames.length > 0
+    && file.originalFileNames.every((name) => ONLINE_ONLY.some((dir) => name.startsWith(dir)));
+  for (const file of all.filter(mine)) {
+    const name = file.fileName.split("/").pop();
+    const user = all.find((f) => text(f).includes(name));
+    if (user) throw new Error(`standalone build: ${user.fileName} uses ${file.originalFileNames[0]}`);
+    delete bundle[file.fileName];
+  }
+}
+
+/** @returns {import("vite").Plugin} */
+export function dropOnline() {
+  return {
+    name: "asoultappo-standalone-online-only",
+    apply: "build",
+    generateBundle(_, bundle) {
+      dropOnlineFiles(bundle);
+    },
+  };
+}
 
 /** @returns {import("vite").Plugin} */
 export function bundlePacks() {
