@@ -5924,5 +5924,182 @@
    "still": "pack:plates/wardrobe-beila.webp",
    "aspect": 0.8647
   }
+ ],
+ "photocards": [
+  {
+   "id": "asoul2026",
+   "name": "此间共鸣",
+   "event": "A-SOUL2026 线下演唱会",
+   "cards": [
+    {
+     "id": "diana-1",
+     "kind": "solo",
+     "characters": [
+      "嘉然"
+     ]
+    },
+    {
+     "id": "diana-2",
+     "kind": "solo",
+     "characters": [
+      "嘉然"
+     ]
+    },
+    {
+     "id": "diana-3",
+     "kind": "solo",
+     "characters": [
+      "嘉然"
+     ]
+    },
+    {
+     "id": "diana-4",
+     "kind": "solo",
+     "characters": [
+      "嘉然"
+     ]
+    },
+    {
+     "id": "bella-1",
+     "kind": "solo",
+     "characters": [
+      "贝拉"
+     ]
+    },
+    {
+     "id": "bella-2",
+     "kind": "solo",
+     "characters": [
+      "贝拉"
+     ]
+    },
+    {
+     "id": "bella-3",
+     "kind": "solo",
+     "characters": [
+      "贝拉"
+     ]
+    },
+    {
+     "id": "bella-4",
+     "kind": "solo",
+     "characters": [
+      "贝拉"
+     ]
+    },
+    {
+     "id": "eileen-1",
+     "kind": "solo",
+     "characters": [
+      "乃琳"
+     ]
+    },
+    {
+     "id": "eileen-2",
+     "kind": "solo",
+     "characters": [
+      "乃琳"
+     ]
+    },
+    {
+     "id": "eileen-3",
+     "kind": "solo",
+     "characters": [
+      "乃琳"
+     ]
+    },
+    {
+     "id": "eileen-4",
+     "kind": "solo",
+     "characters": [
+      "乃琳"
+     ]
+    },
+    {
+     "id": "diana-eileen-1",
+     "kind": "duo",
+     "characters": [
+      "嘉然",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "diana-eileen-2",
+     "kind": "duo",
+     "characters": [
+      "嘉然",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "bella-eileen-1",
+     "kind": "duo",
+     "characters": [
+      "贝拉",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "bella-eileen-2",
+     "kind": "duo",
+     "characters": [
+      "贝拉",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "bella-diana-1",
+     "kind": "duo",
+     "characters": [
+      "贝拉",
+      "嘉然"
+     ]
+    },
+    {
+     "id": "bella-diana-2",
+     "kind": "duo",
+     "characters": [
+      "贝拉",
+      "嘉然"
+     ]
+    },
+    {
+     "id": "group-1",
+     "kind": "group",
+     "characters": [
+      "嘉然",
+      "贝拉",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "group-2",
+     "kind": "group",
+     "characters": [
+      "嘉然",
+      "贝拉",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "group-3",
+     "kind": "group",
+     "characters": [
+      "嘉然",
+      "贝拉",
+      "乃琳"
+     ]
+    },
+    {
+     "id": "group-4",
+     "kind": "group",
+     "characters": [
+      "嘉然",
+      "贝拉",
+      "乃琳"
+     ]
+    }
+   ]
+  }
  ]
 }

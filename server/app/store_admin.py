@@ -136,12 +136,14 @@ class AdminStore(_StoreState):
     # --- admin repairs (Game.admin_reset_save, admin_grant_all, admin_empty_saves); each runs in the caller's
     # transaction, so the change and its admin log entry land together.
     def reset_collection(self, pid: str) -> tuple[int, int]:
-        """Deletes the save's items and limited pool draws and zeroes its pity. Returns the rows deleted from items and
-        from banner_draws."""
+        """Deletes the save's items and limited pool draws and zeroes its pity, the photocards' included; a photocard
+        box not opened yet counts as opened. Returns the rows deleted from items and from banner_draws."""
         with self._lock:
             items = self._db.execute("DELETE FROM items WHERE player_id=?", (pid,)).rowcount
             pools = self._db.execute("DELETE FROM banner_draws WHERE player_id=?", (pid,)).rowcount
             self._db.execute("UPDATE players SET draw_pity=0, skin_pity=0 WHERE id=?", (pid,))
+            self._db.execute("DELETE FROM photo_saves WHERE player_id=?", (pid,))
+            self._db.execute("UPDATE photo_boxes SET opened=ts WHERE player_id=? AND opened=0", (pid,))
             # _Tx drops the caches on a rollback only.
             self._counts.pop(pid, None)
             self._commit()
@@ -215,15 +217,16 @@ class AdminStore(_StoreState):
         return {r[0]: {"amount": r[1], "count": r[2]} for r in rows}
 
     def empty_saves(self, pids: list[str]) -> dict[str, Any]:
-        """Deletes the items, drops, limited pool draws and ledger rows of the saves [pids] and zeroes their shards and
-        pity. The save rows stay, and so do their update reward claims, so a token cannot claim a reward again.
-        Returns the shards zeroed (shardsZeroed) and the rows deleted per table."""
+        """Deletes the items, drops, limited pool draws, photocard boxes and ledger rows of the saves [pids] and zeroes
+        their shards and pity. The save rows stay, and so do their update reward claims, so a token cannot claim a
+        reward again. Returns the shards zeroed (shardsZeroed) and the rows deleted per table."""
         ids = json.dumps(pids)
         with self._lock:
             shards = self._db.execute(f"SELECT COALESCE(SUM(shards), 0) FROM players WHERE id IN {_IDS}",
                                       (ids,)).fetchone()[0]
             deleted = {key: self._db.execute(f"DELETE FROM {table} WHERE player_id IN {_IDS}", (ids,)).rowcount
                        for key, table in (("items", "items"), ("drops", "drops"), ("bannerDraws", "banner_draws"),
+                                          ("photoBoxes", "photo_boxes"), ("photoSaves", "photo_saves"),
                                           ("shardLedger", "shard_ledger"))}
             self._db.execute(f"UPDATE players SET shards=0, draw_pity=0, skin_pity=0 WHERE id IN {_IDS}", (ids,))
             self._counts.clear()

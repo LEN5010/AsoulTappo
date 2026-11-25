@@ -10,6 +10,7 @@ A card with a ``holo`` has a holo version (镭射款), an item of its own: reson
 Starter items (see ``starter`` in the manifest) are owned by every player and never drop.
 An emote set with a ``source`` (scratch) is won there only: its emotes are neither in the resonance pool nor crafted.
 A card or skin with a ``since`` ships with that release: older clients' pools leave it out.
+Photocards (``photocards``) are kept apart from these items: see photo_deal.py.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from typing import Any
 
 from . import banners as banner_file
 from . import economy as economy_file
+from . import photo_deal
 from . import race as race_rules
 from .notice import version_key
 
@@ -53,6 +55,9 @@ class Manifest:
         data["economy"], anti = economy_file.load(economy)
         m = cls(data, anti)
         m.banners  # a banner the server could not run stops the start
+        for i, series in enumerate(m.photo_shelf):
+            if series not in m.photo_series:
+                raise ValueError(f"photocards[{i}].series: no photocard series {series!r}")
         if (m.park or {}).get("race"):
             # So does a race map or skill the race could not be run with.
             race_rules.Rules.of(m.park["race"], [c["id"] for c in data["characters"]])
@@ -218,6 +223,17 @@ class Manifest:
         """The park, paid in coins: {coin, scratch, race, lottery} (see PARK in scripts/asset_catalog.py). None on a
         manifest without it, which turns the park off."""
         return self.data.get("economy", {}).get("park")
+
+    @cached_property
+    def photo_shelf(self) -> dict[str, dict]:
+        """Photocard boxes by series, in shelf order: {series, price, size, daily, rare, split, signPity, swap, refund}
+        each (see economy.py). Empty on an economy without them, which turns photocards off."""
+        return {cfg["series"]: cfg for cfg in self.data.get("economy", {}).get("photocards") or []}
+
+    @cached_property
+    def photo_series(self) -> dict[str, photo_deal.Series]:
+        """Photocard series by id, in manifest order, whether on the shelf or not."""
+        return photo_deal.load(self.data.get("photocards"))
 
     @cached_property
     def scratch_emotes(self) -> tuple[str, ...]:

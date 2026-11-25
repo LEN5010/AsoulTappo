@@ -13,6 +13,7 @@ from typing import Any, Callable, Literal, Mapping
 
 from . import banners
 from . import cards as cardlogic
+from . import photo_deal
 from . import scratch as scratchlogic
 from .cards import DropConfig, Rng
 from .guard import Batch, Guard, Verdict
@@ -1148,14 +1149,14 @@ class Game:
 
     def collection(self, token: str, version: str | None = None) -> dict[str, Any]:
         """What the save holds and its latest drops, without the holo versions a client of [version] cannot show (see
-        Manifest.holos_for); None: everything."""
+        Manifest.holos_for); None: all of those. Photocards are told by photocards.py only."""
         pid = player_id_for(token)
         self.store.get_player(pid, self.now())
         held = set(self.manifest.holos.values()) - set(self.manifest.holos_for(version).values())
-        owned = self.store.owned(pid)
+        owned = {iid: n for iid, n in self.store.owned(pid).items()
+                 if iid not in held and not iid.startswith(photo_deal.PREFIXES)}
         recent = self.store.recent_drops(pid)
         if held:
-            owned = {iid: n for iid, n in owned.items() if iid not in held}
             recent = [d for d in recent if d["item"] not in held]
         return {"owned": owned, "recent": recent}
 

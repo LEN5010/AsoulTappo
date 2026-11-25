@@ -81,18 +81,29 @@ Weights are percentages unless said otherwise.
     seconds after the deadline still count. ``hints`` are counted by the client only. With ``account`` a save needs
     a main-site account to start a game (on a server with accounts).
 
+- ``photocards``: boxes of photocards (photocards.py), a list in shelf order with one entry for each of the manifest's
+  ``series`` on the shelf; missing or empty, there are no photocards. A box costs ``price`` shards and holds ``size``
+  cards; a save buys ``daily`` boxes of a series a China day, and 0 keeps the series on the shelf but sells none. One
+  card of a box is rare for certain and each other one at ``rare`` percent; what a rare card is goes by the weights of
+  ``split`` ({duo, group, sign}), and neither a duo nor a group card repeats before the save holds all of its kind. The
+  ``signPity``-th box since the last one with a signed card has one for certain until the save holds them all. A repeat
+  solo card turns into ``refund.solo`` shards, a repeat duo or group card into ``refund.rare``; ``swap`` repeats of
+  signed cards are traded for one the save lacks, and turn into ``refund.rare`` shards each once it holds them all. All
+  of it is counted by series.
 - ``antiCheat``: fields of ``cards.DropConfig`` by name; missing ones keep their defaults. Never sent to clients.
   The rules that tell automatic input from a hand are not here: see ``app/guard.py``.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
 from .cards import DropConfig
+from .photo_deal import RARE_KINDS
 
 ENV = "ASOULTAPPO_ECONOMY"
 EXAMPLE = Path(__file__).resolve().parent.parent / "economy.example.json"
@@ -118,8 +129,8 @@ def load(path: Path | str | None = None) -> tuple[dict[str, Any], dict[str, Any]
 
 
 def check(data: dict[str, Any]) -> None:
-    """Refuses settings that would roll nonsense: the holo chance, a percentage, the card counter's price and a
-    连连看 board that cannot be laid (check_link, without the emote sets)."""
+    """Refuses settings that would roll nonsense: the holo chance, a percentage, the card counter's price, photocard
+    boxes that could not be dealt and a 连连看 board that cannot be laid (check_link, without the emote sets)."""
     chance = data.get("resonance", {}).get("holoChance")
     if chance is not None and (isinstance(chance, bool) or not isinstance(chance, (int, float))
                                or not 0 <= chance <= 100):
@@ -132,6 +143,8 @@ def check(data: dict[str, Any]) -> None:
                 raise ValueError(f"doudizhu.counter.{key} must be a whole number of 1 or more, not {n!r}")
         if not (data.get("park") or {}).get("coin"):
             raise ValueError("doudizhu.counter is paid in park coins: it needs park.coin")
+    if data.get("photocards") is not None:
+        check_photocards(data["photocards"])
     link = (data.get("park") or {}).get("link")
     if link is not None:
         check_link(link)
@@ -144,10 +157,56 @@ def check(data: dict[str, Any]) -> None:
 LINK_SHIFTS = ("none", "down", "left", "center")
 
 
-def _whole(value: Any, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{name} must be a whole number of 1 or more, not {value!r}")
+def _whole(value: Any, name: str, least: int = 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < least:
+        raise ValueError(f"{name} must be a whole number of {least} or more, not {value!r}")
     return value
+
+
+def _number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value >= 0
+
+
+#: The most cards a box holds.
+PHOTO_SIZE_MAX = 100
+
+
+def check_photocards(shelf: Any) -> None:
+    """Refuses photocard boxes that could not be dealt, and those whose repeats pay their price back;
+    Manifest.load checks that their series exist."""
+    if not isinstance(shelf, list):
+        raise ValueError("photocards must be a list")
+    listed: set[str] = set()
+    for i, cfg in enumerate(shelf):
+        name = f"photocards[{i}]"
+        if not isinstance(cfg, dict):
+            raise ValueError(f"{name} must be an object")
+        series = cfg.get("series")
+        if not isinstance(series, str) or not series:
+            raise ValueError(f"{name}.series must name a photocard series")
+        if series in listed:
+            raise ValueError(f"{name}.series: {series!r} is listed twice")
+        listed.add(series)
+        for key in ("price", "size", "signPity", "swap"):
+            _whole(cfg.get(key), f"{name}.{key}")
+        if cfg["size"] > PHOTO_SIZE_MAX:
+            raise ValueError(f"{name}.size must be {PHOTO_SIZE_MAX} or less, not {cfg['size']!r}")
+        _whole(cfg.get("daily"), f"{name}.daily", 0)
+        if not _number(cfg.get("rare")) or cfg["rare"] > 100:
+            raise ValueError(f"{name}.rare must be a percentage from 0 to 100, not {cfg.get('rare')!r}")
+        split = cfg.get("split")
+        if not isinstance(split, dict) or set(split) != set(RARE_KINDS) or not all(map(_number, split.values())):
+            raise ValueError(f"{name}.split must give a weight to each of {', '.join(RARE_KINDS)}")
+        if not 0 < sum(split.values()) < math.inf:
+            raise ValueError(f"{name}.split must not be all zero or add up to more than a number holds")
+        refund = cfg.get("refund")
+        for key in ("solo", "rare"):
+            _whole(refund.get(key) if isinstance(refund, dict) else None, f"{name}.refund.{key}", 0)
+        # What a box of nothing but repeats pays back on average.
+        rares = 1 + (cfg["size"] - 1) * cfg["rare"] / 100
+        back = rares * refund["rare"] + (cfg["size"] - rares) * refund["solo"]
+        if back >= cfg["price"]:
+            raise ValueError(f"{name}.refund pays {back:g} a box back on average, not less than its price {cfg['price']}")
 
 
 def check_link(link: Any, emote_sets: list[dict[str, Any]] | None = None) -> None:
