@@ -1,0 +1,25 @@
+{
+  "note": "乃琳's solo cards: frame colours, name, icons, small type and back. Cards of hers differ only in `source`.",
+  "extends": "_portrait",
+  "ramp": [80, ["3F4F78", "3C4C76", "3C4C76", "3D4C77", "3C4E78", "45547C", "536085", "666C90", "747A9B", "8686A6", "9A96AE", "A4A2B6", "AEAEBC", "B9BBC5", "C1C8CC", "CAD0D3", "D0D6D8", "D7DADE", "DCE0E2", "DFE6E8", "E2EAEB", "E4ECEE", "E4ECEE"]],
+  "tinted": [34, 40, 74],
+  "spark_dark": [190, 192, 200],
+  "frame_source": "eileen-3.png",
+  "names": [[56, 1510, 380, 1598]],
+  "icons": [[880, 1596, 1032, 1694]],
+  "twin": {"from": [109.5, 1604, 148, 1647], "print": [63.5, 1604], "foil": [109.5, 1604]},
+  "lines": [{"x": 64.8, "y": 1664.5, "handle": "@乃琳Queen", "handle_w": 131.4}],
+  "back": {
+    "name": "eileen",
+    "solid": 40,
+    "source": "back-eileen.png",
+    "sparkles": [["tl", 11.0, 22.5], ["br", 10.5, 18.5]],
+    "logo": [440, 112],
+    "logo_ink": "pale",
+    "subtitle": [744.5, 313.5],
+    "marks": {"pale": [[771.7, 75.4], [825.3, 75.4], [878.6, 75.4], [932.4, 75.4], [985.6, 75.4]], "deep": [[75.1, 1640.8], [128.9, 1640.8], [182.7, 1640.8], [236.3, 1640.8], [289.9, 1640.8]]},
+    "darker": [[76, 1366, 284, 1594]]
+  },
+  "foil": {"dark": [0.11, 0.13, 0.26], "lit": [0.6, 0.65, 0.86]},
+  "print": {"dark": [0.43, 0.47, 0.68], "lit": [0.92, 0.94, 0.99]}
+}

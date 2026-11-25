@@ -1,0 +1,7 @@
+{
+  "note": "贝拉 and 嘉然: the two names and their small type.",
+  "extends": "_duo",
+  "frame_source": "bella-diana-1.png",
+  "names": [[80, 934, 392, 1024], [1316, 930, 1650, 1022]],
+  "lines": [{"x": 87.5, "y": 1034.5, "handle": "@贝拉kira", "handle_w": 102.5}, {"x": 1172.5, "y": 1033, "handle": "@嘉然今天吃什么", "handle_w": 172.9}]
+}

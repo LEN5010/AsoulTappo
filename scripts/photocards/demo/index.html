@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>官周小卡材质</title>
+<style>
+  :root { --bg: #26222a; --ink: #f3ecef; --key: #3a343f; --key-edge: #1b181e; }
+  :root[data-bg="light"] { --bg: #FFF7F2; --ink: #3A222B; --key: #ffffff; --key-edge: #e9d6cb; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink); transition: background .3s;
+    font: 500 14px/1.4 -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+    display: grid; grid-template-rows: 1fr auto; overflow: hidden;
+  }
+  .stage { display: grid; place-items: center; min-height: 0; padding: 28px 16px 8px; touch-action: none; }
+  .scene { height: min(100%, 780px); max-width: 100%; aspect-ratio: var(--card-w, 1080) / var(--card-h, 1720); perspective: 1400px; }
+  .scene.wide { height: auto; width: min(100%, 780px); max-height: 100%; }
+  .card {
+    position: relative; width: 100%; height: 100%; transform-style: preserve-3d; cursor: pointer;
+    will-change: transform;
+  }
+  .face {
+    position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden;
+    background: #d9c4cc center / cover no-repeat;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .12), 0 22px 44px -18px rgba(0, 0, 0, .55);
+  }
+  .face.back { transform: rotateY(180deg); }
+  .face canvas { display: block; width: 100%; height: 100%; }
+  .bar { display: flex; justify-content: center; gap: 10px; padding: 10px 16px 18px; }
+  button, select {
+    font: inherit; color: inherit; background: var(--key); border: 0; border-radius: 10px; padding: 8px 16px;
+    box-shadow: 0 3px 0 var(--key-edge); cursor: pointer; transition: translate .12s, box-shadow .12s;
+  }
+  button:hover { translate: 0 -1px; box-shadow: 0 4px 0 var(--key-edge); }
+  button:active { translate: 0 2px; box-shadow: 0 1px 0 var(--key-edge); }
+  button[aria-pressed="true"] { outline: 2px solid #FC966E; outline-offset: -2px; }
+  button:disabled { opacity: .4; cursor: default; translate: none; box-shadow: 0 3px 0 var(--key-edge); }
+  .bar i { width: 1px; background: var(--key-edge); margin: 4px 4px; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="scene">
+    <div class="card" id="card">
+      <div class="face front"><canvas id="front"></canvas></div>
+      <div class="face back"><canvas id="back"></canvas></div>
+    </div>
+  </div>
+</div>
+<div class="bar">
+  <select id="cards" aria-label="卡片"></select>
+  <i></i>
+  <button id="flip" type="button">翻面</button>
+  <button id="mat" type="button" aria-pressed="true">材质</button>
+  <button id="sign" type="button" aria-pressed="false">签名</button>
+  <button id="bg" type="button">背景</button>
+</div>
+
+<script>
+// The print finishes of an official photocard, drawn over two textures per side:
+//   base: what is printed.   mat: R gloss, G foil (0.5 the dark tinted foil, 1 silver), B the front's small type.
+// Front: glossy art window with a point highlight; a frame with a pressed cross-hatching, the only relief on the
+// card; flat foil (a deep purple bar and capsule with silver lettering, the name, the marks). Type lies over
+// the cross-hatching: no ridge crosses a letter.
+// Back: reverse-UV matte with glossy sparkles, and flat reflective lettering.
+const VERT = `
+attribute vec2 a;
+varying vec2 v_uv;
+void main() {
+  v_uv = vec2(a.x * 0.5 + 0.5, 0.5 - a.y * 0.5);
+  gl_Position = vec4(a, 0.0, 1.0);
+}`;
+
+const FRAG = `
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_base;
+uniform sampler2D u_mat;
+uniform sampler2D u_noise;
+uniform vec2 u_light;     // where the light falls, 0 to 1 across and down
+uniform vec2 u_size;      // texture size in texels; the short side is 1080
+uniform float u_scale;    // texels per canvas pixel
+uniform float u_back;
+uniform float u_on;
+uniform vec3 u_foilDark;
+uniform vec3 u_foilLit;
+uniform vec3 u_silverDark;
+uniform vec3 u_silverLit;
+uniform vec3 u_printDark;
+uniform vec3 u_printLit;
+uniform sampler2D u_sign;  // R the signature, G when the pen reaches it, B the distance to its edge (0.5 on it, 1 is 12 texels outside, 0 as far inside)
+uniform vec4 u_signBox;    // its place on the card in texels: left, top, width, height; no width, no signature
+uniform float u_signT;     // how far the pen has got, 0 to 1; more once it is done
+uniform float u_signGleam; // a band of light crossing the ink, -0.5 to 1.9
+uniform vec3 u_tip;        // the pen's tip while it writes: where, in texels, and how bright
+
+const vec3 PEN_INK = vec3(0.78, 0.57, 0.20);
+const vec3 PEN_DEEP = vec3(0.47, 0.30, 0.07);
+const vec3 PEN_LIT = vec3(1.0, 0.92, 0.66);
+const vec3 PEN_EDGE = vec3(0.20, 0.11, 0.03);
+const float PITCH = 14.0;                       // spacing of the frame's embossed lines, in texels
+const vec3 LIGHT = vec3(1.0, 0.965, 0.905);
+
+// Three independent smooth noises, one cell per unit of p.
+vec3 noise3(vec2 p) {
+  return texture2D(u_noise, (p + 0.5) / 256.0).rgb;
+}
+// The same, in hard cells: single grains.
+vec3 grain3(vec2 p) {
+  return texture2D(u_noise, (floor(p) + 0.5) / 256.0).rgb;
+}
+// Height of the two families of pressed diagonal ridges, 0 to 1 each: a rounded ridge about a third of the pitch wide.
+vec2 lattice(vec2 q) {
+  float aa = u_scale / PITCH * 1.5;
+  vec2 t = abs(fract(vec2(q.x + q.y, q.x - q.y) * 0.70711 / PITCH) - 0.5) * 2.0;
+  return 1.0 - smoothstep(0.04 - aa, 0.40 + aa, t);
+}
+
+void main() {
+  vec2 q = v_uv * u_size;
+  vec3 base = texture2D(u_base, v_uv).rgb;
+  vec3 m = texture2D(u_mat, v_uv).rgb;
+  float gloss = m.r;
+  float foilAmt = smoothstep(0.15, 0.4, m.g);
+  // Where silver meets bare card its soft edge passes through the tinted foil's value; with card and silver
+  // both within reach, the edge is silver too.
+  vec4 near4 = vec4(texture2D(u_mat, (q + vec2(1.5, 1.5)) / u_size).g, texture2D(u_mat, (q + vec2(-1.5, 1.5)) / u_size).g,
+                    texture2D(u_mat, (q + vec2(1.5, -1.5)) / u_size).g, texture2D(u_mat, (q + vec2(-1.5, -1.5)) / u_size).g);
+  float gmax = max(max(near4.x, near4.y), max(near4.z, near4.w));
+  float gmin = min(min(near4.x, near4.y), min(near4.z, near4.w));
+  float silver = max(smoothstep(0.62, 0.9, m.g), (1.0 - smoothstep(0.2, 0.45, gmin)) * smoothstep(0.55, 0.72, gmax));
+
+  // Distances in units of the card's short side, so the highlight is round and the same size on every card.
+  float unit = min(u_size.x, u_size.y);
+  vec2 P = q / unit;
+  vec2 Lp = u_light * u_size / unit;
+  float dist = length(P - Lp);
+  vec2 ld = normalize(Lp - P + vec2(1e-4));
+  float hot = exp(-dist * dist / (2.0 * 0.075 * 0.075));
+  float mid = exp(-dist * dist / (2.0 * 0.20 * 0.20));
+  float wide = exp(-dist * dist / (2.0 * 0.48 * 0.48));
+
+  // The light brightens the print around it, and lays no veil over it: away from the reflections themselves its
+  // colours are as deep as they are printed, and its paper is white.
+  vec3 col = base * (0.975 + 0.025 * wide);
+  float matRest = (1.0 - gloss) * (1.0 - foilAmt);
+
+  if (u_back < 0.5) {
+    // Art window: a glossy film with a fine orange peel that breaks the reflection into grains.
+    // The peel moves the edge of the highlight in and out; single grains glint just around it.
+    float peel = noise3(q / 6.5).g;
+    float dw = dist + (peel - 0.5) * 0.036;
+    float core = exp(-dw * dw / (2.0 * 0.07 * 0.07));
+    float point = exp(-dist * dist / (2.0 * 0.032 * 0.032));
+    float near = exp(-dist * dist / (2.0 * 0.12 * 0.12));
+    float spec = core * 0.82 + point * 0.5 + mid * (0.02 + 0.07 * peel);
+    col = mix(col, LIGHT, clamp(gloss * spec, 0.0, 0.95));
+    col += gloss * pow(grain3(q / 1.8).r, 12.0) * near * 0.6 * LIGHT;
+
+    // Frame: a pressed cross-hatching with a pearly reflection. Each ridge is lit on the side facing the light
+    // and shaded on the other, everywhere on the card and more strongly near the light.
+    vec2 L0 = lattice(q);
+    vec2 Lf = lattice(q + ld * 1.2);
+    vec2 Lb = lattice(q - ld * 1.2);
+    float fade = smoothstep(2.5, 5.5, PITCH / u_scale);
+    float relief = (max(Lf.x, Lf.y) - max(Lb.x, Lb.y)) * fade;
+    float pressed = matRest * (1.0 - smoothstep(0.05, 0.45, m.b));
+    // A family of lines mirrors the light best when it runs across the direction to it.
+    float fa = 0.35 + 0.65 * abs(dot(ld, vec2(0.70711, 0.70711)));
+    float fb = 0.35 + 0.65 * abs(dot(ld, vec2(0.70711, -0.70711)));
+    float lines = max(L0.x * fa, L0.y * fb) * fade;
+    vec3 pearl = mix(vec3(1.0, 0.90, 0.68), vec3(1.0, 0.86, 0.93), smoothstep(0.10, 0.42, dist));
+    col = mix(col, vec3(1.0), matRest * mid * 0.16);
+    col = mix(col, max(col, pearl), pressed * lines * clamp(mid * 0.85 + wide * 0.06, 0.0, 1.0));
+    col += pressed * lines * hot * 0.5;
+    col += pressed * (max(-relief, 0.0) * (0.048 + 0.15 * mid) - max(relief, 0.0) * (0.058 + 0.04 * mid));
+    // The hollows between the ridges sit a touch darker.
+    col *= 1.0 - pressed * fade * 0.024 * (1.0 - max(L0.x, L0.y));
+  } else {
+    // Reverse UV: the matte ground scatters the light into a wide, faint glow with a very fine grain;
+    // the sparkles stay mirror-smooth.
+    // A little below white, so lit lettering stands out from it.
+    col *= 0.965;
+    vec3 gr = grain3(q);
+    float haze = exp(-dist * dist / (2.0 * 0.34 * 0.34));
+    col = mix(col, vec3(1.0, 0.95, 0.97), matRest * haze * (0.09 + 0.06 * gr.r));
+    col += matRest * haze * pow(gr.g, 10.0) * 0.12 * vec3(1.0, 0.90, 0.96);
+    col = mix(col, LIGHT, gloss * clamp(hot + mid * 0.42 + wide * 0.06, 0.0, 0.95));
+    col *= 1.0 - gloss * 0.06 * (1.0 - mid);
+  }
+
+  // Foil, flat on both sides. On the front: a deep tinted one that only half mirrors, and silver.
+  // Besides the light itself it mirrors the room: two soft bands that slide across as the card leans.
+  float uneven = noise3(q / 9.0).b;
+  vec2 lean = u_light - 0.5;
+  float band = 0.5 + 0.5 * cos((v_uv.x * 0.9 + v_uv.y * 0.55 - lean.x * 2.4 - lean.y * 1.5) * 6.2832);
+  float band2 = 0.5 + 0.5 * cos((v_uv.x * 2.3 - v_uv.y * 1.4 + lean.x * 3.1 - lean.y * 2.2 + 0.3) * 6.2832);
+  float refl = clamp(mid * 1.25 + hot * 0.6 + wide * 0.22 + smoothstep(0.5, 1.0, band) * 0.42 + smoothstep(0.6, 1.0, band2) * 0.2, 0.0, 1.0);
+  refl *= 0.93 + 0.14 * uneven;
+  vec3 ftint = mix(u_foilDark, u_foilLit, clamp(refl * 0.55, 0.0, 1.0)) + hot * 0.16;
+  vec3 fsilver = mix(u_silverDark, u_silverLit, clamp(refl * 1.15 + 0.04, 0.0, 1.0));
+  vec3 fcol = mix(ftint, fsilver, silver);
+  if (u_back > 0.5) {
+    // The back's lettering is one reflective print. It answers the light smoothly, so the logo and the name
+    // brighten and darken by the same amount, each as a whole.
+    // Away from the light it stays clearly darker than the card, so it never fades into the ground.
+    float r = smoothstep(0.2, 0.8, clamp(wide * 0.8 + mid * 0.5 + hot * 0.3, 0.0, 1.0));
+    // Lettering on the pale part of the card answers less than the logo does, or it would fade into it: the name at
+    // a portrait card's lower end, the line under a landscape card's logo.
+    r *= 1.0 - (u_size.x > u_size.y ? 0.4 * smoothstep(0.50, 0.57, v_uv.y) : 0.2 * smoothstep(0.45, 0.85, v_uv.y));
+    fcol = mix(u_printDark, u_printLit, r);
+  }
+  col = mix(col, fcol, foilAmt);
+
+  // The signature: a gold paint marker. Opaque ink with metal in it: it mirrors the light and the room, softer than
+  // foil, and lies almost flat, with only a trace of its thickness at a stroke's sides.
+  // It lies over the picture's gloss and the frame's ridges and hides both. Each texel fades in as the pen passes it.
+  vec2 at = (q - u_signBox.xy) / max(u_signBox.zw, vec2(1.0));
+  vec2 near1 = 1.5 / max(u_signBox.zw, vec2(1.0));
+  vec3 sg = texture2D(u_sign, at).rgb;
+  vec2 rise = vec2(texture2D(u_sign, at + vec2(near1.x, 0.0)).b - texture2D(u_sign, at - vec2(near1.x, 0.0)).b,
+                   texture2D(u_sign, at + vec2(0.0, near1.y)).b - texture2D(u_sign, at - vec2(0.0, near1.y)).b) * 8.0;
+  float pen = step(0.5, u_signBox.z) * step(u_back, 0.5) * step(0.0, at.x) * step(at.x, 1.0) * step(0.0, at.y) * step(at.y, 1.0);
+  pen *= clamp((u_signT - sg.g) * 160.0, 0.0, 1.0);
+  float from = (sg.b - 0.5) * 24.0;      // texels outside the stroke's edge, below 0 inside it
+  float slope = smoothstep(-5.5, -1.0, from);
+  float side = dot(rise, ld) * slope;    // above 0 on the side toward the light
+  float mirror = mid * 0.95 + hot * 0.45 + wide * 0.20 + smoothstep(0.35, 1.0, band) * 0.40 + smoothstep(0.55, 1.0, band2) * 0.16;
+  float shine = clamp(0.24 + mirror * 0.70 + side * (0.05 + 0.10 * mid), 0.0, 1.0);
+  vec3 ink = mix(mix(PEN_DEEP, PEN_INK, smoothstep(0.0, 0.34, shine)), PEN_LIT, smoothstep(0.30, 0.95, shine));
+  ink *= 1.0 + 0.07 * (noise3(q / 26.0).r - 0.5) + 0.08 * (grain3(q / 1.2).g - 0.5);
+  ink += PEN_LIT * pow(grain3(q / 1.4).b, 12.0) * (0.06 + mid * 0.30);
+  float run = at.x * 0.8 + at.y * 0.4 - u_signGleam;
+  ink = mix(ink, vec3(1.0, 0.96, 0.82), clamp(exp(-run * run * 46.0) * 0.72, 0.0, 1.0));
+  float edge = pen * 0.36 * clamp(1.1 - from, 0.0, 1.0);
+  col = mix(mix(col, PEN_EDGE, edge), ink, pen * sg.r);
+  base = mix(mix(base, PEN_EDGE, edge), PEN_INK, pen * sg.r);
+  // The pen's tip while it writes.
+  float tip = dot(q - u_tip.xy, q - u_tip.xy);
+  col += vec3(1.0, 0.86, 0.50) * u_tip.z * (0.50 * exp(-tip / 700.0) + 0.14 * exp(-tip / 9000.0)) * step(u_back, 0.5);
+
+  gl_FragColor = vec4(clamp(mix(base, col, u_on), 0.0, 1.0), 1.0);
+}`;
+
+// catalog.js: where the cards and their textures are.
+let ART = null, CARDS = [], SIGNS = {};
+const SILVER = { dark: [0.36, 0.33, 0.37], lit: [1.0, 0.98, 0.97] };
+
+function loadImage(url) {
+  return new Promise((ok, bad) => {
+    const img = new Image();
+    img.onload = () => ok(img);
+    img.onerror = () => bad(new Error(url));
+    img.src = url;
+  });
+}
+
+function makeFace(canvas, back) {
+  const gl = canvas.getContext("webgl", { antialias: false, alpha: false });
+  if (!gl) throw new Error("no webgl");
+  const shader = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, "a");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const u = (n) => gl.getUniformLocation(prog, n);
+  const textures = [0, 1].map((i) => {
+    gl.activeTexture(gl.TEXTURE0 + i);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  });
+  // Smooth noise for the grain of the finishes: random texels, read with linear filtering.
+  const noise = new Uint8Array(256 * 256 * 4);
+  let seed = 20261123;
+  for (let i = 0; i < noise.length; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    noise[i] = seed >>> 24;
+  }
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, noise);
+  gl.uniform1i(u("u_base"), 0);
+  gl.uniform1i(u("u_mat"), 1);
+  gl.uniform1i(u("u_noise"), 2);
+  gl.uniform1f(u("u_back"), back ? 1 : 0);
+  gl.uniform3fv(u("u_silverDark"), SILVER.dark);
+  gl.uniform3fv(u("u_silverLit"), SILVER.lit);
+  const uLight = u("u_light"), uScale = u("u_scale"), uOn = u("u_on"), uSignBox = u("u_signBox"), uSignT = u("u_signT"), uSignGleam = u("u_signGleam");
+  gl.uniform1i(u("u_sign"), 3);
+  gl.activeTexture(gl.TEXTURE3);
+  const signTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, signTex);
+  for (const k of ["MIN_FILTER", "MAG_FILTER"]) gl.texParameteri(gl.TEXTURE_2D, gl[`TEXTURE_${k}`], gl.LINEAR);
+  for (const k of ["WRAP_S", "WRAP_T"]) gl.texParameteri(gl.TEXTURE_2D, gl[`TEXTURE_${k}`], gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255]));
+  let sign = null;
+  let size = [1, 1];
+  let ready = false;
+  const face = {
+    /** Puts a card's side on this face; a card without that side leaves the face blank. */
+    async load(card) {
+      ready = false;
+      const urls = back ? ART.back(card.back) : ART.front(card.id);
+      canvas.parentElement.style.backgroundImage = back && !card.back ? "none" : `url(${urls[0]})`;
+      if (back && !card.back) return;
+      const images = await Promise.all(urls.map(loadImage));
+      images.forEach((img, i) => {
+        gl.activeTexture(gl.TEXTURE0 + i);
+        gl.bindTexture(gl.TEXTURE_2D, textures[i]);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+      });
+      sign = !back && card.size[1] > card.size[0] ? SIGNS[card.back] ?? null : null;
+      if (sign) {
+        const img = await loadImage(ART.sign(card.back));
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, signTex);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
+      }
+      size = card.size;
+      gl.uniform2f(u("u_size"), size[0], size[1]);
+      gl.uniform3fv(u("u_foilDark"), card.foil.dark);
+      gl.uniform3fv(u("u_foilLit"), card.foil.lit);
+      gl.uniform3fv(u("u_printDark"), card.print.dark);
+      gl.uniform3fv(u("u_printLit"), card.print.lit);
+      ready = true;
+      face.fit();
+    },
+    fit() {
+      // Drawn above screen resolution, as the browser resamples the card when it leans; capped at the texture.
+      const w = Math.max(1, Math.min(size[0], Math.round(canvas.clientWidth * (window.devicePixelRatio || 1) * 1.5)));
+      const h = Math.max(1, Math.round(w * size[1] / size[0]));
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+    },
+    draw(light, on, signT = -1, gleam = -1) {
+      canvas.style.visibility = ready ? "visible" : "hidden";
+      if (!ready) return;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.uniform2f(uLight, light.x, light.y);
+      gl.uniform1f(uScale, size[0] / canvas.width);
+      gl.uniform1f(uOn, on);
+      gl.uniform4fv(uSignBox, sign && signT >= 0 ? sign.box : [0, 0, 0, 0]);
+      gl.uniform1f(uSignT, signT);
+      gl.uniform1f(uSignGleam, gleam);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+  };
+  return face;
+}
+
+// Same lean and light mapping as client/src/holo/shader.ts.
+const MAX_TILT = 10;
+const clamp01 = (n) => Math.min(1, Math.max(0, n));
+const lightOf = (t) => ({ x: clamp01(0.5 + t.ry / 22), y: clamp01(0.5 - t.rx / 22) });
+
+const params = new URLSearchParams(location.search);
+const stage = document.getElementById("stage");
+const card = document.getElementById("card");
+const still = params.has("lx");
+let tilt = { rx: 0, ry: 0 };
+let aim = null;
+let flipped = params.get("side") === "back";
+let canFlip = true;
+let turn = flipped ? 180 : 0;
+let on = params.get("mat") === "0" ? 0 : 1;
+let signing = null;    // when the pen began, and how long it takes; null without a signature
+let last = 0;
+if (params.get("bg") === "light") document.documentElement.dataset.bg = "light";
+
+(async () => {
+  const faces = [makeFace(document.getElementById("front"), false), makeFace(document.getElementById("back"), true)];
+  const fit = () => faces.forEach((f) => f.fit());
+  new ResizeObserver(fit).observe(card);
+
+  const scene = card.parentElement;
+  const flipKey = document.getElementById("flip");
+  ART = await import("./catalog.js");
+  ({ cards: CARDS, signs: SIGNS } = await ART.catalog());
+  const signKey = document.getElementById("sign");
+  const writeFor = () => { const c = CARDS.find((k) => k.id === picker.value); return c && c.size[1] > c.size[0] ? SIGNS[c.back] ?? null : null; };
+  signKey.addEventListener("click", () => {
+    const s = writeFor();
+    signing = signing || !s ? null : { at: performance.now(), ms: s.ms };
+    signKey.setAttribute("aria-pressed", String(!!signing));
+  });
+  const picker = document.getElementById("cards");
+  CARDS.forEach((c) => picker.append(new Option(c.label, c.id)));
+  picker.addEventListener("change", () => void show(CARDS.find((c) => c.id === picker.value)));
+  async function show(c) {
+    picker.value = c.id;
+    scene.style.setProperty("--card-w", c.size[0]);
+    scene.style.setProperty("--card-h", c.size[1]);
+    scene.classList.toggle("wide", c.size[0] > c.size[1]);
+    canFlip = !!c.back;
+    signKey.disabled = !writeFor();
+    if (signing) signing = writeFor() ? { at: -1e9, ms: 1 } : null;
+    signKey.setAttribute("aria-pressed", String(!!signing));
+    flipKey.disabled = !c.back;
+    if (!c.back) flipped = false;
+    await Promise.all(faces.map((f) => f.load(c)));
+    fit();
+  }
+  await show(CARDS.find((c) => c.id === params.get("card")) ?? CARDS[0]);
+  if (!canFlip) flipped = false;
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function frame(now) {
+    const dt = Math.min(64, now - (last || now));
+    last = now;
+    // Without a pointer the card sways slowly, so the light keeps moving across it.
+    const t = now / 1000;
+    const idle = calm ? { rx: 0, ry: 0 } : { rx: 5.5 * Math.sin(t * 0.61), ry: 8.5 * Math.sin(t * 0.43 + 1.0) };
+    const to = aim ?? idle;
+    const k = 1 - Math.exp(-dt / (aim ? 70 : 420));
+    tilt = { rx: tilt.rx + (to.rx - tilt.rx) * k, ry: tilt.ry + (to.ry - tilt.ry) * k };
+    turn += ((flipped ? 180 : 0) - turn) * (1 - Math.exp(-dt / 130));
+    const light = still ? { x: +params.get("lx"), y: +(params.get("ly") ?? 0.5) } : lightOf(tilt);
+    if (!params.has("flat")) card.style.transform = `rotateX(${tilt.rx.toFixed(2)}deg) rotateY(${(tilt.ry + turn).toFixed(2)}deg)`;
+    else card.style.transform = `rotateY(${turn.toFixed(2)}deg)`;
+    const signT = signing ? Math.min(2, (now - signing.at) / signing.ms) : -1;
+    // Light runs along the ink once it is written.
+    const gleam = signing && signing.ms > 1 ? -0.5 + 2.4 * Math.min(1, Math.max(0, (now - signing.at - signing.ms - 120) / 1100)) : -1;
+    faces.forEach((f) => f.draw(light, on, signT, gleam));
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  document.documentElement.dataset.ready = "1";
+})().catch((e) => { document.documentElement.dataset.error = String(e); console.error(e); });
+
+stage.addEventListener("pointermove", (e) => {
+  const box = card.parentElement.getBoundingClientRect();
+  const x = clamp01((e.clientX - box.left) / box.width), y = clamp01((e.clientY - box.top) / box.height);
+  aim = { rx: (0.5 - y) * 2 * MAX_TILT, ry: (x - 0.5) * 2 * MAX_TILT };
+});
+stage.addEventListener("pointerleave", () => (aim = null));
+const flip = () => { if (canFlip) flipped = !flipped; };
+card.addEventListener("click", flip);
+document.getElementById("flip").addEventListener("click", flip);
+document.getElementById("mat").addEventListener("click", (e) => {
+  on = on ? 0 : 1;
+  e.currentTarget.setAttribute("aria-pressed", String(!!on));
+});
+document.getElementById("bg").addEventListener("click", () => {
+  const root = document.documentElement;
+  if (root.dataset.bg === "light") delete root.dataset.bg;
+  else root.dataset.bg = "light";
+});
+</script>
+</body>
+</html>

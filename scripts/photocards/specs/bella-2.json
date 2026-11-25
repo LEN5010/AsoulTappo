@@ -1,0 +1,7 @@
+{
+  "note": "src/bella-2.png was moved up 3 px (1.5 texels) after it was registered: this card's art window is printed about 1.3 texels lower than its marks predict.",
+  "extends": "_bella",
+  "label": "贝拉 2",
+  "order": 202,
+  "source": "bella-2.png"
+}

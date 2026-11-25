@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>官周小卡开盒</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #17131d; color: #f6eef3; overflow: hidden; user-select: none; -webkit-user-select: none;
+    font: 600 14px/1.3 -apple-system, "PingFang SC", "Noto Sans SC", sans-serif;
+  }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #gl.held { cursor: grabbing; }
+  .hud { position: fixed; inset: 0; pointer-events: none; transition: opacity .3s; }
+  .hud.dim { opacity: .28; }
+  .count { position: absolute; left: 22px; top: 16px; font-size: 15px; letter-spacing: .06em; opacity: 0; transition: opacity .3s; font-variant-numeric: tabular-nums; }
+  .count b { font-size: 22px; font-weight: 800; }
+  .count.on { opacity: .92; }
+  .keys { position: absolute; right: 18px; top: 16px; display: flex; gap: 10px; }
+  .end { position: absolute; left: 50%; bottom: 22px; translate: -50% 0; }
+  button {
+    pointer-events: auto; font: inherit; color: #f6eef3; background: #453b4f; border: 0; border-radius: 10px; padding: 7px 14px;
+    box-shadow: 0 3px 0 #241e2b; cursor: pointer; transition: translate .12s, box-shadow .12s, opacity .25s, visibility .25s;
+  }
+  button:hover { translate: 0 -1px; box-shadow: 0 4px 0 #241e2b; }
+  button:active { translate: 0 2px; box-shadow: 0 1px 0 #241e2b; }
+  button.primary { background: #FC966E; box-shadow: 0 3px 0 #C34637; color: #3A222B; padding: 9px 22px; font-weight: 700; }
+  button.primary:hover { box-shadow: 0 4px 0 #C34637; }
+  button.primary:active { box-shadow: 0 1px 0 #C34637; }
+  button.off { opacity: 0; visibility: hidden; }
+  button[aria-pressed="true"] { background: #FC966E; box-shadow: 0 3px 0 #C34637; color: #3A222B; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="hud" id="hud">
+  <div class="count" id="count"><b>0</b> / 20</div>
+  <div class="keys">
+    <button id="auto" class="off" type="button" aria-pressed="false">连撕</button>
+    <button id="sound" type="button">声音 开</button>
+  </div>
+  <div class="end"><button id="again" class="primary off" type="button">再开一盒</button></div>
+</div>
+<script type="module">
+  // A plain file server sends no cache headers, so the browser would keep old copies of these for hours.
+  await Promise.all(["catalog", "open/gl", "open/shaders", "open/sound", "open/scene"].map((n) => fetch(`${n}.js`, { cache: "reload" })));
+  await import("./open/scene.js");
+</script>
+</body>
+</html>
