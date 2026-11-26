@@ -104,10 +104,16 @@ class ParkLink:
                 "last": self._result(last) if last else None}
 
     def _answer(self, token: str, active: Any = _UNREAD, **extra: Any) -> dict[str, Any]:
+        """The status, the park and LinkState as they are at one moment, whatever another device does meanwhile: all
+        read under one hold of the store's lock, the park and LinkState at one time. The player is read after the
+        status, which may grant today's free coin."""
         g = self.park.game
-        status = g.status(token)
-        park = self.park.state(token)
-        link = self._view(g.store, player_id_for(token), g.now(), active)
+        pid = player_id_for(token)
+        with g.store.lock:
+            status = g.status(token)
+            now = g.now()
+            park = self.park.view(g.store, g.store.get_player(pid, now), day_of(now))
+            link = self._view(g.store, pid, now, active)
         return {**status, "park": park, "link": link, **extra}
 
     # ------------------------------------------------------------- settlement
@@ -151,11 +157,12 @@ class ParkLink:
         cfg = self.cfg
         g = self.park.game
         pid = player_id_for(token)
-        row = g.store.park_link_active(pid)
-        if row is not None and g.now() > row["deadline"] + cfg["grace"]:
-            with g.store.transaction() as st:
-                row = self._due(st, pid, g.now())
-        return self._answer(token, row)
+        with g.store.lock:
+            row = g.store.park_link_active(pid)
+            if row is not None and g.now() > row["deadline"] + cfg["grace"]:
+                with g.store.transaction() as st:
+                    row = self._due(st, pid, g.now())
+            return self._answer(token, row)
 
     def start(self, token: str) -> dict[str, Any]:
         """Starts the day's next game: takes the entry fee and makes the game in one transaction. A game in play is
@@ -218,19 +225,21 @@ class ParkLink:
         g = self.park.game
         pid = player_id_for(token)
         now = g.now()
-        with g.store.transaction() as st:
-            row = st.park_link_game(pid, game_id)
-            if row is None:
-                raise GameError("no_game", "没有这局连连看")
-            if row["settled_at"] is None and now > row["deadline"] + cfg["grace"]:
-                row = self._settle(st, row, "time", now)
-            reply = None
-            if row["settled_at"] is None:
-                row, reply = self._move(st, row, seq, a, b, t, now)
-            result = self._result(row) if reply is None else None
-        if reply is not None:
-            return reply
-        return {"settled": True, **self._answer(token), "result": result}
+        # The settled answer is read under the same hold of the lock as the settlement.
+        with g.store.lock:
+            with g.store.transaction() as st:
+                row = st.park_link_game(pid, game_id)
+                if row is None:
+                    raise GameError("no_game", "没有这局连连看")
+                if row["settled_at"] is None and now > row["deadline"] + cfg["grace"]:
+                    row = self._settle(st, row, "time", now)
+                reply = None
+                if row["settled_at"] is None:
+                    row, reply = self._move(st, row, seq, a, b, t, now)
+                result = self._result(row) if reply is None else None
+            if reply is not None:
+                return reply
+            return {"settled": True, **self._answer(token), "result": result}
 
     def _move(self, st: Store, row: dict[str, Any], seq: int, a: int, b: int, t: int | None,
               now: float) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -291,13 +300,14 @@ class ParkLink:
         g = self.park.game
         pid = player_id_for(token)
         now = g.now()
-        with g.store.transaction() as st:
-            row = st.park_link_game(pid, game_id)
-            if row is None:
-                raise GameError("no_game", "没有这局连连看")
-            row = self._settle(st, row, "time" if now >= row["deadline"] else "quit", now)
-            result = self._result(row)
-        return self._answer(token, result=result)
+        with g.store.lock:
+            with g.store.transaction() as st:
+                row = st.park_link_game(pid, game_id)
+                if row is None:
+                    raise GameError("no_game", "没有这局连连看")
+                row = self._settle(st, row, "time" if now >= row["deadline"] else "quit", now)
+                result = self._result(row)
+            return self._answer(token, result=result)
 
     def prune(self) -> int:
         """Forgets games settled more than SCRATCH_DAYS ago. Returns rows removed."""

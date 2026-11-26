@@ -809,6 +809,35 @@ def test_get_reads_the_game_in_play_once(monkeypatch):
     assert len(reads) == 1
 
 
+def test_an_answer_is_read_at_one_moment_whatever_another_device_does(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, current_thread
+    g, pl, clock, pid = setup()
+    old = shards(g, pid)
+    read = Event()
+    status = g.status
+
+    def pausing(token):
+        out = status(token)
+        if current_thread().name.startswith("reader"):
+            read.set()
+            time.sleep(0.2)  # another device starts a game meanwhile
+        return out
+
+    monkeypatch.setattr(g, "status", pausing)
+    with ThreadPoolExecutor(1, thread_name_prefix="reader") as reader, \
+            ThreadPoolExecutor(1, thread_name_prefix="other") as other:
+        answer = reader.submit(pl.state, TOKEN)
+        assert read.wait(5)
+        started = other.submit(pl.start, TOKEN)
+        out = answer.result(5)
+        assert started.result(5)["link"]["game"] is not None
+    playing = out["link"]["game"] is not None
+    assert (out["shards"], out["park"]["today"]["spent"], out["link"]["played"]) == \
+        ((old - ENTRY, ENTRY, 1) if playing else (old, 0, 0))
+    assert shards(g, pid) == old - ENTRY
+
+
 # ------------------------------------------------------------------------ prune
 def test_prune_forgets_old_settled_games_only():
     g, pl, clock, pid = setup()
