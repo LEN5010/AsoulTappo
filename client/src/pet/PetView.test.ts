@@ -1,7 +1,7 @@
 import { createSSRApp } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { describe, expect, it } from "vitest";
-import { characters } from "../characters";
+import { characters, formReach } from "../characters";
 import { characterColor } from "../manifest";
 import PetView from "./PetView.vue";
 
@@ -54,5 +54,32 @@ describe("see-through pets", () => {
     expect(faded.match(/opacity:0\.4/g)).toHaveLength(1);
     const solid = await renderToString(createSSRApp(PetView, { character: "嘉然山海经", opacity: 1 }));
     expect(solid).toMatch(/<div class="art"( style="")? data-v/);
+  });
+});
+
+describe("the second form's wing past the picture", () => {
+  const reachOf = (html: string) => html.match(/<span class="reach"[^>]*>/g) ?? [];
+  it("takes the mouse on the desk while the second form shows", async () => {
+    const html = await renderToString(createSSRApp(PetView, { character: "嘉然然龙", form: true, reachHit: true, scale: 1 }));
+    const [reach, ...more] = reachOf(html);
+    expect(more).toHaveLength(0);
+    expect(reach).toContain("data-hit");
+    // Right of the 240px picture, as wide as the loop draws past it (formReach).
+    expect(reach).toContain("left:240px;");
+    const width = Number(/width:([\d.]+)px/.exec(reach!)![1]);
+    expect(width).toBeCloseTo(formReach("嘉然然龙"), 5);
+    expect(width).toBeGreaterThan(36);
+    const twice = reachOf(await renderToString(createSSRApp(PetView, { character: "嘉然然龙", form: true, reachHit: true, scale: 2 })));
+    expect(Number(/width:([\d.]+)px/.exec(twice[0]!)![1])).toBeCloseTo(formReach("嘉然然龙") * 2, 5);
+  });
+  it("leaves the sides empty in the first form, for skins whose loop stays on the picture and off the desk", async () => {
+    for (const props of [
+      { character: "嘉然然龙", form: false, reachHit: true },
+      { character: "嘉然然龙", form: true },
+      { character: "乃琳法师", form: true, reachHit: true },
+      { character: "嘉然山海经", reachHit: true },
+    ]) {
+      expect(reachOf(await renderToString(createSSRApp(PetView, props)))).toHaveLength(0);
+    }
   });
 });

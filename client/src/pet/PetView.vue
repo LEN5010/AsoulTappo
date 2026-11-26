@@ -50,6 +50,8 @@ const props = withDefaults(
     flipBubble?: boolean;
     /** A showcase holds a two-form skin in one of its forms; left out, presses decide (SkinForm.ts). */
     form?: boolean | null;
+    /** On the desk: what the second form draws past the picture's right edge takes the mouse (hit.ts). */
+    reachHit?: boolean;
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, sip: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
@@ -140,6 +142,20 @@ const loopStyle = computed(() => {
   };
 });
 
+/**
+ * The part of the loop drawn past the picture's right edge (嘉然然龙's open wing), in the loop's own place: on the desk
+ * it is a hit target of its own, since the pet's box (`data-hit-inset`) ends at the picture.
+ */
+const reachStyle = computed(() => {
+  const l = loop.value;
+  if (!l || !props.reachHit) return null;
+  const k = (PET_BASE.width * s.value) / l.width;
+  const edge = PET_BASE.width * s.value;
+  const width = (l.x + l.w) * k - edge;
+  if (width <= 0) return null;
+  return { left: `${edge}px`, bottom: `${(l.height - l.y - l.h) * k}px`, width: `${width}px`, height: `${l.h * k}px` };
+});
+
 // ---- the cup after a drink of water
 const SIP_MS = 3200;
 const sipShown = ref(0);
@@ -195,6 +211,7 @@ const bubbleAnchor = computed(() => ({
       <span v-if="motionId || rightDown" class="layer mouse click" :class="{ 'click-right': motionId }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
+    <span v-if="reachStyle && formOn && active" class="reach" data-hit :style="reachStyle"></span>
 
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
     <ComboBubble
@@ -272,6 +289,8 @@ const bubbleAnchor = computed(() => ({
 .remote-motion .click-left, .remote-motion .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
+/* Draws nothing: it only takes the mouse over the wing, which the picture's layers let through. */
+.reach { position: absolute; }
 /* A paper disc with the cup, popping up beside the head and drifting off. */
 .sip {
   position: absolute;

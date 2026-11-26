@@ -653,7 +653,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse" :opacity="settings.petOpacity"
-        :motion-id="m.id"
+        :motion-id="m.id" reach-hit
         :emote="m.emote" :combo="m.combo" :win="m.win" :sip="m.sip"
         v-bind="remoteEmote(m)"
       />
@@ -686,7 +686,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :win="localPet.win" :pulse="localPet.pulse" :sip="localPet.sip"
-        :min-emote="56" :opacity="settings.petOpacity" v-bind="ownEmote"
+        :min-emote="56" :opacity="settings.petOpacity" reach-hit v-bind="ownEmote"
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <!-- The standalone edition has no cooldown, no server notes and no room: only the local bubbles. -->
