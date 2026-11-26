@@ -172,4 +172,25 @@ mod tests {
             assert!(!state.interactive((outside.x, outside.y), (0.0, 0.0), scale));
         }
     }
+
+    #[test]
+    fn negative_pet_coordinates_use_the_scale_of_each_screen() {
+        let rect = crate::hit::HitRect { x: -12.0, y: -8.0, w: 20.0, h: 16.0, keep: false };
+        // AppKit supplies points relative to the window on either screen.
+        for (scale, origin_x, cursor_x, expected) in [
+            (2.0, 0.0, -10.0, (-20.0, -8.0)),
+            (1.0, -1920.0, -1930.0, (-10.0, -4.0)),
+        ] {
+            let state = crate::hit::HitState {
+                rects: vec![rect],
+                page_scale: Some(scale),
+                ..Default::default()
+            };
+            let cursor = content_cursor(NSPoint::new(cursor_x - origin_x, 804.0), 800.0, scale);
+            assert_eq!((cursor.x, cursor.y), expected);
+            assert!(state.interactive(expected, (0.0, 0.0), scale));
+            let edge = content_cursor(NSPoint::new(8.0, 804.0), 800.0, scale);
+            assert!(!state.interactive((edge.x, edge.y), (0.0, 0.0), scale));
+        }
+    }
 }

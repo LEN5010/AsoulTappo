@@ -163,4 +163,43 @@ mod tests {
         let log = "开始\n桌宠\n".as_bytes().to_vec();
         assert_eq!(tail_of(log, 8), "桌宠\n");
     }
+
+    #[test]
+    fn tail_reads_whole_lines_from_rotated_log_files() {
+        use super::{tail, Log, CURRENT, LOG, PREVIOUS};
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("asoultappo-tail-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let previous = dir.join(PREVIOUS);
+        let current = dir.join(CURRENT);
+        // The fixture owns both files. Other tests may log while these bytes are being checked.
+        let saved = LOG.lock().unwrap().replace(Log { dir: dir.clone(), file: None, written: 0 });
+        fs::write(&previous, b"").unwrap();
+        fs::write(&current, b"").unwrap();
+        assert_eq!(tail(100), "");
+
+        fs::write(&current, b"short\n").unwrap();
+        assert_eq!(tail(100), "short\n");
+        fs::write(&current, format!("{}\nlast\n", "x".repeat(32_768))).unwrap();
+        assert_eq!(tail(8), "last\n");
+
+        // The rotated file ends inside 桌. Decode only after joining the two byte ranges.
+        let text = "前文\n桌宠\n";
+        let split = "前文\n".len() + 1;
+        fs::write(&previous, &text.as_bytes()[..split]).unwrap();
+        fs::write(&current, &text.as_bytes()[split..]).unwrap();
+        assert_eq!(tail(10), "桌宠\n");
+        assert_eq!(tail(6), "");
+
+        fs::write(&previous, b"old\r\n").unwrap();
+        fs::write(&current, b"one\ntwo\r\nthree").unwrap();
+        assert_eq!(tail(100), "old\r\none\ntwo\r\nthree");
+        assert_eq!(tail(13), "two\r\nthree");
+        assert_eq!(tail(6), "three");
+        assert_eq!(tail(4), "");
+
+        *LOG.lock().unwrap() = saved;
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
