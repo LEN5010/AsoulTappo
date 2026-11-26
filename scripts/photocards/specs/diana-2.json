@@ -1,0 +1,6 @@
+{
+  "extends": "_diana",
+  "label": "嘉然 2",
+  "order": 102,
+  "source": "diana-2.png"
+}

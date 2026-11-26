@@ -1,0 +1,6 @@
+{
+  "extends": "_group",
+  "label": "团体 3",
+  "order": 503,
+  "source": "group-3.png"
+}

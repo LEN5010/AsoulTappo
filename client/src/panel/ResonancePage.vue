@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { prime } from "../audio/sfx";
 import { getCard, type ManifestCard, type Rarity } from "../manifest";
@@ -8,8 +8,9 @@ import { type Item, RARITY_DESC, RARITY_LABEL } from "../items";
 import { bannerBaseRates, bannerLeft, bannerRates, baseRates, featuredItems, heldItems, pityOpen, poolDone, poolOf, effectiveRates, runningBanners } from "../resonance";
 import { formatCount, nextTapText, todayIncome } from "../income";
 import { collection, resonate, draws, shards, status, online, error, loadEconomy } from "../stores/player";
+import { loadPhotocards, photoError, photoOn } from "../stores/photocards";
 import { reducedMotion } from "../stores/theme";
-import { ui } from "../stores/ui";
+import { openPanel, ui } from "../stores/ui";
 import { panelQueue } from "../stores/guide";
 import Icon from "../ui/Icon.vue";
 import Modal from "../ui/Modal.vue";
@@ -21,7 +22,21 @@ import CardDetail from "./CardDetail.vue";
 import SkinDetail from "./SkinDetail.vue";
 import HistoryDialog from "./HistoryDialog.vue";
 import PlateDetail from "./PlateDetail.vue";
+import {
+  albumSeries, breakOff, buyOnShelf, leaveShop, markShopSeen, photoBusy, photoOver, pickSeries, PHOTO_POOL, poster, resumeOnShelf, shelfIds,
+  shopFresh, shopSeries,
+} from "./photo/shop";
 import type { Plate } from "../pet/plates";
+
+// The photocards' page and what opens over it, with their art: only where a server sells them.
+const never = () => new Promise<never>(() => {});
+const loadPhotoStage = () => (__STANDALONE__ ? never() : import("./photo/PhotoStage.vue"));
+const loadPhotoBackdrop = () => (__STANDALONE__ ? never() : import("./photo/PhotoBackdrop.vue"));
+const loadWarm = () => (__STANDALONE__ ? never() : import("./photo/warm"));
+const PhotoStage = defineAsyncComponent(loadPhotoStage);
+const PhotoConsole = defineAsyncComponent(() => (__STANDALONE__ ? never() : import("./photo/PhotoConsole.vue")));
+const PhotoOverlays = defineAsyncComponent(() => (__STANDALONE__ ? never() : import("./photo/PhotoOverlays.vue")));
+const PhotoBackdrop = defineAsyncComponent(loadPhotoBackdrop);
 
 const pool = computed(() => poolOf(heldItems()));
 // The pools: the standing one, and the limited ones the server runs now. A minute's tick opens and closes them and
@@ -38,14 +53,35 @@ watch(() => pageActive.value && online.value && expired.value, (ids) => {
 }, { immediate: true });
 const banners = computed(() => runningBanners(now.value));
 /** The pool on show: the one picked, else a running limited pool, else the standing pool. */
-const poolId = computed(() => ui.pool ?? banners.value[0]?.id ?? "");
+const poolId = computed(() => (ui.pool === PHOTO_POOL && !photoOn.value ? null : ui.pool) ?? banners.value[0]?.id ?? "");
+/** The photocards' page is on show. */
+const photos = computed(() => photoOn.value && poolId.value === PHOTO_POOL);
+const photosSeen = ref(false);
+watch(photos, (on) => { if (on) photosSeen.value = true; }, { immediate: true });
 const banner = computed(() => banners.value.find((b) => b.id === poolId.value) ?? null);
 const pools = computed(() => [
-  { id: "", name: "此间共鸣" },
+  { id: "", name: "常驻共鸣" },
+  ...(photoOn.value ? [{ id: PHOTO_POOL, name: "官周小卡", fresh: shopFresh.value }] : []),
   ...banners.value.map((b) => ({ id: b.id, name: b.name, left: bannerLeft(b, now.value) })),
 ]);
 // A picked pool that ended while it was on show hands the page back to the default.
-watch(banner, (b) => { if (!b && ui.pool && economy.value) ui.pool = null; });
+watch(banner, (b) => { if (!b && ui.pool && ui.pool !== PHOTO_POOL && economy.value) ui.pool = null; });
+// Their page is fetched while another pool is on show, so switching to it waits for nothing.
+watch(() => photoOn.value && pageActive.value, (on) => {
+  if (!on) return;
+  void loadPhotoStage();
+  void loadPhotoBackdrop();
+}, { immediate: true });
+function near(id: string) {
+  if (id === PHOTO_POOL) void loadWarm().then((m) => m.warmShelf());
+}
+watch(() => photos.value && pageActive.value && online.value, (on) => {
+  if (on) void loadPhotocards();
+}, { immediate: true });
+watch(() => photos.value && pageActive.value && shelfIds.value.join(), (ids) => { if (ids) markShopSeen(); }, { immediate: true });
+watch(photos, (on) => { if (!on) leaveShop(); });
+onDeactivated(breakOff);
+onBeforeUnmount(leaveShop);
 const featuredLeft = computed(() => !!banner.value?.items.some((id) => !collection.owned[id]));
 /** The shared tiers whose next draw in the pool on show gives a featured item. */
 const guaranteed = computed(() => (banner.value && status.value?.resonance.banners?.[banner.value.id]?.guaranteed) || []);
@@ -91,6 +127,12 @@ function inspect(item: Item) {
   if (item.kind === "card") detail.value = getCard(item.ref) ?? null;
   else skin.value = item;
 }
+/** The photocards' album in the dex. */
+function openAlbum(kind: string) {
+  albumSeries.value = shopSeries.value;
+  ui.dexFilter = `photo:${kind}`;
+  openPanel("dex");
+}
 /** Past this share of the hard pity the gauge glows with anticipation. */
 const PITY_NEAR = 90;
 /** The gauges of the bar: a limited pool's own promise first, then the save's two; the bar has room for two. */
@@ -130,7 +172,7 @@ function onRevealClose() {
   revealing.value = false;
 }
 // The guide's cards on the desk wait for the reveal (stores/guide.ts).
-watch(revealing, (up) => { panelQueue.reveal = up; });
+watch(() => revealing.value || photoBusy.value, (up) => { panelQueue.reveal = up; });
 onBeforeUnmount(() => { panelQueue.reveal = false; });
 function draw(count: number) {
   if (revealing.value || !online.value || complete.value || draws.value < count) return;
@@ -150,20 +192,38 @@ async function nextBatch() {
 </script>
 
 <template>
-  <div class="resonance-page ui-scroll" :class="{ calm: reducedMotion }">
-    <p v-if="error" class="ui-error" role="alert">{{ error }}</p>
+  <div class="resonance-page ui-scroll" :class="{ calm: reducedMotion, poster: photos && poster }">
+    <PhotoBackdrop v-if="photosSeen" :on="photos" />
+    <p v-if="photos ? photoError && !photoOver : error" class="ui-error" role="alert">{{ photos ? photoError : error }}</p>
     <Transition name="pool" mode="out-in" :css="!reducedMotion">
+      <PhotoStage
+        v-if="photos" key="photocards" :series="shopSeries" :shelf="shelfIds" :busy="photoBusy" :paused="!!photoOver"
+        @inspect="photoOver = { ...$event, kind: 'card' }" @album="openAlbum" @pick="pickSeries"
+      >
+        <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="photoBusy" @update:model-value="ui.pool = $event" /></template>
+      </PhotoStage>
       <BannerStage
-        v-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
+        v-else-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
         :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
       >
-        <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" /></template>
+        <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" @near="near" /></template>
       </BannerStage>
       <PoolStage v-else :busy="revealing" :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event">
-        <template v-if="banners.length" #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" /></template>
+        <template v-if="pools.length > 1" #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" @near="near" /></template>
       </PoolStage>
     </Transition>
-    <footer class="console" :class="{ 'state-empty': !complete && draws < 1, 'state-once': !complete && draws >= 1 && draws < 10, 'state-ten': !complete && draws >= 10 }">
+    <footer
+      class="console"
+      :class="{
+        'state-empty': !complete && draws < 1, 'state-once': !complete && draws >= 1 && draws < 10, 'state-ten': !complete && draws >= 10,
+      }"
+      :inert="photos && !!poster"
+    >
+      <PhotoConsole
+        v-if="photos" :series="shopSeries" :busy="photoBusy" :now="now" @buy="buyOnShelf" @resume="resumeOnShelf"
+        @swap="photoOver = { kind: 'swap' }" @odds="photoOver = { kind: 'odds' }" @album="openAlbum('all')"
+      />
+      <template v-else>
       <div class="pities">
         <div
           v-for="g in gauges" :key="g.id" class="pity" :class="[g.id, { near: g.percent >= PITY_NEAR }]"
@@ -221,6 +281,7 @@ async function nextBatch() {
           </button>
         </span>
       </div>
+      </template>
     </footer>
     <Modal v-if="probabilities" :title="banner ? `${banner.name}概率` : '共鸣概率'" heading @close="probabilities = false">
       <table v-if="res" class="rates"><thead><tr><th>档位</th><th>基础概率</th><th>当前概率</th><th>保底</th></tr></thead><tbody>
@@ -248,8 +309,9 @@ async function nextBatch() {
         </tr>
       </tbody></table>
       <p v-else class="rates-wait" role="status">连接服务器后显示</p>
-      <p v-if="banner && res" class="rates-note">卡池结束后，{{ featuredWord }}进入此间共鸣。</p>
+      <p v-if="banner && res" class="rates-note">卡池结束后，{{ featuredWord }}进入常驻共鸣。</p>
     </Modal>
+    <PhotoOverlays v-if="photos" />
     <HistoryDialog v-if="history" @close="history = false" />
     <CardDetail v-if="detail" :card="detail" preview @close="detail = null" />
     <SkinDetail v-if="skin" :name="skin.ref" @close="skin = null" />
@@ -283,6 +345,18 @@ async function nextBatch() {
   border-radius: 20px 20px 0 0;
   background: var(--surface);
   box-shadow: 0 -10px 28px -18px rgba(var(--shadow-rgb), 0.38), 0 -1px 2px rgba(var(--shadow-rgb), 0.05);
+}
+/* Out of the way of the picture the page lies on, while that is seen by itself. */
+.console {
+  transition: transform 620ms var(--ease-out) 300ms, opacity 420ms var(--ease-out) 300ms;
+}
+.poster .console {
+  opacity: 0;
+  transform: translateY(100%);
+  transition: transform 380ms var(--ease-in), opacity 320ms var(--ease-in);
+}
+.resonance-page.poster {
+  overflow: hidden;
 }
 .pities {
   flex: 0 1 190px;

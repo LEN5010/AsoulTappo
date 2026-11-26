@@ -153,6 +153,8 @@ def test_emptying_unused_saves_counts_first_then_needs_the_count(admin_env):
         assert c.post("/api/resonance/draw", json={"count": 2}, headers=h).status_code == 200
     g.store.add_update_claim(reward, pid_of(bulk[0]), start)
     g.store.save_banner_draws(pid_of(bulk[1]), "pool-a", 1, 2)
+    g.store.set_photo_save(pid_of(bulk[2]), "s", 1, 1, 2)
+    g.store.add_photo_box(pid_of(bulk[2]), "s", day_of(start), 1000, "{}", start)
     # saves in the range that were used in some way
     tapped = guest(10)
     play(c, tapped)
@@ -207,13 +209,16 @@ def test_emptying_unused_saves_counts_first_then_needs_the_count(admin_env):
     assert r.status_code == 200
     out = r.json()
     assert out["saves"] == 3 and out["dryRun"] is False and out["ledger"] == totals and out["shardsZeroed"] == shards
-    assert out["deleted"] == {"items": items, "drops": drops, "bannerDraws": 1, "shardLedger": rows}
+    assert out["deleted"] == {"items": items, "drops": drops, "bannerDraws": 1, "photoBoxes": 1, "photoSaves": 1,
+                              "shardLedger": rows}
 
     for pid in ids:
         p = g.store.get_player(pid, g.now())
         assert g.store.has_player(pid) and (p["shards"], p["draw_pity"], p["skin_pity"]) == (0, 0, 0)
         assert g.store.owned(pid) == {} and g.store.drops_page(pid, None, 10) == [] and ledger(g, pid) == {}
         assert g.store.banner_draws(pid) == {}
+    emptied = pid_of(bulk[2])
+    assert g.store.photo_save(emptied, "s")["spare"] == 0 and g.store.photo_unopened(emptied, "s") is None
     # the save that claimed the reward still has the claim, so its token cannot claim it again
     assert g.store.open_update_rewards(pid_of(bulk[0])) == []
     for pid, p in before.items():

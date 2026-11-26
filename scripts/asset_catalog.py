@@ -391,6 +391,23 @@ WARDROBE_PLATE_VIDEOS = {
 }
 
 
+# -------------------------------------------------------------- photocards
+# The photocards (官周小卡) sold in boxes, by series: ids are unique within a series. `name` is the series', `event` what
+# its cards were made for. `kind`: solo, duo or group. Each solo card also comes signed, so signed versions are not
+# listed. The server deals the boxes (server/app/photo_deal.py); which series are on the shelf and at what odds is in
+# the economy file.
+_PHOTO_MEMBERS = {"diana": "嘉然", "bella": "贝拉", "eileen": "乃琳"}
+_PHOTO_DUOS = (("diana", "eileen"), ("bella", "eileen"), ("bella", "diana"))
+PHOTOCARDS = [
+    {"id": "asoul2026", "name": "此间共鸣", "event": "A-SOUL2026 线下演唱会", "cards": [
+        {"id": f"{m}-{n}", "kind": "solo", "characters": [name]}
+        for m, name in _PHOTO_MEMBERS.items() for n in range(1, 5)] + [
+        {"id": f"{a}-{b}-{n}", "kind": "duo", "characters": [_PHOTO_MEMBERS[a], _PHOTO_MEMBERS[b]]}
+        for a, b in _PHOTO_DUOS for n in range(1, 3)] + [
+        {"id": f"group-{n}", "kind": "group", "characters": list(_PHOTO_MEMBERS.values())} for n in range(1, 5)]},
+]
+
+
 # -------------------------------------------------------- frames and badges
 # id, kind, display name, source file (relative to <assets>/杂项), series, min cards
 # frame unlock: own >= min(5, series size) distinct cards; badge: own >= 1 card.

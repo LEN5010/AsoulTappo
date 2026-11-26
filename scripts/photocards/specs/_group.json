@@ -1,0 +1,9 @@
+{
+  "note": "Every group card: one horizontal capsule at the bottom right of the art, the A-SOUL wordmark centred under it and one line of small type. Measured on group-3, checked on the other three.",
+  "extends": "_landscape",
+  "frame_source": "group-3.png",
+  "pills": [{"box": [1395.7, 898.4, 1611.3, 953.6], "text": "A-SOUL", "vertical": false}],
+  "names": [[660, 932, 1050, 1024]],
+  "lines": [{"x": 647.6, "y": 1032.2, "label": "GROUP A-SOUL", "label_w": 157.4, "dash": [171.3, 225.8], "handle_x": 240.0, "handle": "@A-SOUL_Official", "handle_w": 182.9}],
+  "sparkles": [["tl", 10.5, 17.0], ["br", 10.0, 17.0, 13.0]]
+}

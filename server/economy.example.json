@@ -707,6 +707,19 @@
       ]
     }
   },
+  "photocards": [
+    {
+      "series": "asoul2026",
+      "price": 1000,
+      "size": 10,
+      "daily": 3,
+      "rare": 5,
+      "split": {"duo": 50, "group": 30, "sign": 20},
+      "signPity": 5,
+      "swap": 4,
+      "refund": {"solo": 10, "rare": 200}
+    }
+  ],
   "antiCheat": {
     "min_taps_active_minute": 10,
     "max_taps_per_sec": 15,

@@ -49,6 +49,7 @@ from .park import Park
 from .park_race import OddsChanged, Races, RaceView, room_message as race_room_message
 from .park_link import ParkLink
 from .park_scratch import ParkScratch
+from .photocards import Photocards
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
 from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
@@ -222,6 +223,11 @@ async def _lottery_loop() -> None:
 
 
 PARK_LOOPS.append(_lottery_loop)
+# Photocard boxes (economy photocards), paid in shards.
+photocards = Photocards(lambda: game)
+_pruned = photocards.prune()
+if _pruned:
+    print(f"pruned {_pruned} old photocard boxes", flush=True)
 # park: redeem setup
 # Redeem codes: made through /admin/codes, entered through POST /api/redeem.
 redeem = Redeem(lambda: game, park)
@@ -366,6 +372,9 @@ STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shar
           "login_required": 401, "too_many_tries": 429, "no_code": 409,
           # A limited pool that is not running (banners.py).
           "no_banner": 409,
+          # Photocards (photocards.py).
+          "no_photocards": 404, "no_series": 404, "photo_off_sale": 409, "photo_sold_out": 409, "price_changed": 409,
+          "no_box": 404, "no_spare": 409,
           # Feedback (feedback.py).
           "bad_feedback": 400, "feedback_limit": 429, "feedback_full": 429}
 
@@ -921,6 +930,47 @@ async def api_scratch_reveal(body: ScratchRevealBody, who: PlayerId = Depends(pl
     return out
 
 
+class PhotoBuyBody(BaseModel):
+    series: str = Field(min_length=1, max_length=64)
+    # The price the client showed; another one is refused (price_changed).
+    price: int | None = Field(default=None, ge=1, le=2**31)
+
+
+class PhotoOpenBody(BaseModel):
+    # SQLite's integer range; a larger id would overflow the query.
+    box: int = Field(ge=1, le=2**63 - 1)
+
+
+class PhotoSwapBody(BaseModel):
+    item: str = Field(min_length=1, max_length=64)
+
+
+@app.get("/api/photocards")
+def api_photocards(who: PlayerId = Depends(player)) -> dict:
+    """Status and the save's photocards (`photocards`), of every series: what it holds, the boxes left today, its counts
+    and the box not opened to the end yet."""
+    return _guard(photocards.state, who)
+
+
+@app.post("/api/photocards/buy")
+def api_photocards_buy(body: PhotoBuyBody, who: PlayerId = Depends(player)) -> dict:
+    """Buys a box of the series, or hands back its one not opened yet at no charge."""
+    return _guard(photocards.buy, who, body.series, body.price)
+
+
+@app.post("/api/photocards/open")
+def api_photocards_open(body: PhotoOpenBody, who: PlayerId = Depends(player)) -> dict:
+    """The last bag of the box was opened; saying it again changes nothing."""
+    return _guard(photocards.open, who, body.box)
+
+
+@app.post("/api/photocards/swap")
+def api_photocards_swap(body: PhotoSwapBody, who: PlayerId = Depends(player)) -> dict:
+    """Trades rare repeats for a signed card of their series the save lacks: `swapped`, and `settled` with the last
+    one."""
+    return _guard(photocards.swap, who, body.item)
+
+
 @app.get("/api/loadout")
 def api_loadout(who: PlayerId = Depends(player), x_client_version: str = Header(default="")) -> dict:
     return _guard(game.get_loadout, who, showcase_size(x_client_version))
@@ -968,7 +1018,8 @@ def _link(token: str, authorization: str) -> dict:
         if linked:
             if guest and guest != linked and st.has_player(guest) and not st.account_for_player(guest):
                 summary = game.save_summary(guest)
-                if summary["taps"] or summary["owned"]:
+                # Photocards are not in `owned`: a save that bought boxes was played too.
+                if summary["taps"] or summary["owned"] or st.photo_played(guest):
                     raise HTTPException(409, {"code": "account_has_save", "message": "账号已有桌宠存档",
                                               "account": game.save_summary(linked), "guest": summary})
             # The guest may already be the linked save (an earlier link whose answer never arrived).

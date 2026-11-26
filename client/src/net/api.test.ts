@@ -145,6 +145,12 @@ describe("PARK_PATH", () => {
     for (const p of ["/api/park/race", "/api/park/race/history", "/api/park/race/replay/1794568200"]) expect(PARK_PATH.test(p)).toBe(true);
     expect(PARK_PATH.test("/api/me")).toBe(false);
   });
+
+  it("lets photocards through and nothing that only begins like them", () => {
+    for (const p of ["/api/photocards", "/api/photocards/buy", "/api/photocards/open", "/api/photocards/swap"])
+      expect(PARK_PATH.test(p)).toBe(true);
+    for (const p of ["/api/photocardsx", "/api/photocards/../me", "/x/api/photocards"]) expect(PARK_PATH.test(p)).toBe(false);
+  });
 });
 
 describe("Api timeouts", () => {

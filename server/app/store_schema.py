@@ -437,4 +437,28 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS feedback_player ON feedback (player_id, day);
 CREATE INDEX IF NOT EXISTS feedback_day ON feedback (day);
+-- Photocard boxes (photocards.py). contents: what the box holds as it was dealt, JSON {cards: [{item, new?, shards?,
+-- spare?}] in the order they are opened, settled?: {cards, shards}}; the save got all of it when it bought the box.
+-- opened: when the client said the last bag was opened, 0 until then. day: the China day it was bought on.
+CREATE TABLE IF NOT EXISTS photo_boxes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL,
+  series TEXT NOT NULL,
+  day TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  contents TEXT NOT NULL,
+  ts REAL NOT NULL,
+  opened REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS photo_boxes_player ON photo_boxes (player_id, series, day);
+-- A save's boxes of one photocard series: how many, how many since the last one with a signed card, and the repeat
+-- signed cards put by for a trade.
+CREATE TABLE IF NOT EXISTS photo_saves (
+  player_id TEXT NOT NULL,
+  series TEXT NOT NULL,
+  boxes INTEGER NOT NULL DEFAULT 0,
+  dry INTEGER NOT NULL DEFAULT 0,
+  spare INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (player_id, series)
+);
 """

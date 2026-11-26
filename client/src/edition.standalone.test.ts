@@ -1,6 +1,6 @@
 // The standalone edition (src/edition.ts), run with __STANDALONE__ true: npm run test:standalone.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { copyPacks, listFiles, PACK_KINDS, PACKS_DIR, tempDir } from "../standalone-packs.js";
+import { copyPacks, dropOnlineFiles, listFiles, PACK_KINDS, PACKS_DIR, tempDir } from "../standalone-packs.js";
 import viteConfig from "../vite.config";
 
 const calls = { fetch: [] as string[], sockets: [] as string[] };
@@ -234,5 +234,20 @@ describe("standalone packs", () => {
     };
     expect(names("standalone")).toContain("asoultappo-standalone-packs");
     expect(names("production")).not.toContain("asoultappo-standalone-packs");
+    expect(names("standalone")).toContain("asoultappo-standalone-online-only");
+    expect(names("production")).not.toContain("asoultappo-standalone-online-only");
+  });
+
+  it("leaves out the photocards' files, and fails when something uses one", () => {
+    const card = {
+      type: "asset" as const, fileName: "assets/diana-1-aa.webp", source: new Uint8Array(),
+      originalFileNames: ["src/assets/photocards/asoul2026/front/diana-1.webp"],
+    };
+    const other = { type: "asset" as const, fileName: "assets/cat-bb.webp", source: new Uint8Array(), originalFileNames: ["src/assets/cat.webp"] };
+    const page = (code: string) => ({ type: "chunk" as const, fileName: "assets/page-cc.js", code });
+    const bundle = { [card.fileName]: card, [other.fileName]: other, "assets/page-cc.js": page("assets/cat-bb.webp") };
+    dropOnlineFiles(bundle);
+    expect(Object.keys(bundle)).toEqual(["assets/cat-bb.webp", "assets/page-cc.js"]);
+    expect(() => dropOnlineFiles({ [card.fileName]: card, "assets/page-cc.js": page(`"/${card.fileName}"`) })).toThrow("page-cc.js");
   });
 });

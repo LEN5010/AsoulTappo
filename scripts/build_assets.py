@@ -666,6 +666,8 @@ def main() -> None:
                                        "packs are kept")
     ap.add_argument("--holo-only", action="store_true",
                     help="Update the holo masks and the cards' holo entries only, leaving every other asset as it is")
+    ap.add_argument("--photocards-only", action="store_true",
+                    help="Update the manifest's photocard list only, leaving every asset as it is")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
@@ -677,7 +679,14 @@ def main() -> None:
         ap.error("--wardrobe-only is a mode of its own")
     if args.holo_only and (args.cards_only or args.emotes_only or args.wardrobe_only):
         ap.error("--holo-only is a mode of its own")
+    if args.photocards_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.holo_only):
+        ap.error("--photocards-only is a mode of its own")
     previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
+    if args.photocards_only:
+        manifest = {**previous, "photocards": cat.PHOTOCARDS}
+        write_manifests(manifest)
+        print(f"{sum(len(s['cards']) for s in cat.PHOTOCARDS)} photocards")
+        return
     if args.holo_src:
         print(f"{build_holo_masks(Path(args.holo_src), args.force)} holo masks built")
     if args.holo_only:
@@ -746,6 +755,7 @@ def main() -> None:
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
         "plates": manifest_plates(motion),
+        "photocards": cat.PHOTOCARDS,
     }
     from build_previews import build_emote_covers, build_pet_previews
     build_emote_covers(manifest)

@@ -1,0 +1,5 @@
+{
+  "note": "Every duo card: a vertical capsule at the top left and the bottom right of the art.",
+  "extends": "_landscape",
+  "pills": [{"box": [59.7, 171, 116.4, 383.5], "text": "A-SOUL", "vertical": true}, {"box": [1611.8, 676.5, 1668.5, 889], "text": "A-SOUL", "vertical": true}]
+}

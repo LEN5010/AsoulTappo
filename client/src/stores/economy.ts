@@ -19,6 +19,19 @@ export interface LinkLevel {
 export interface LinkConfig { entry: number; grace: number; account: boolean; sets: string[]; levels: LinkLevel[] }
 
 /**
+ * Photocard boxes of one series (server/app/photocards.py): a box costs `price` shards and holds `size` cards, one of
+ * them rare for certain and each other one at `rare` percent. A save buys `daily` a China day; at 0 the series is on
+ * the shelf but not sold. `split` weighs what a rare card is. The `signPity`-th box since the last one with a signed
+ * card has one for certain, until the save holds them all. `swap` repeats of signed cards are traded for one the save
+ * lacks; `refund` is what other repeats turn into, and signed ones once the save holds them all.
+ */
+export interface PhotocardConfig {
+  series: string; price: number; size: number; daily: number; rare: number;
+  split: Record<"duo" | "group" | "sign", number>;
+  signPity: number; swap: number; refund: { solo: number; rare: number };
+}
+
+/**
  * A limited pool (server/app/banners.py): the standing pool with `items` in a tier of their own, drawn at `rate`
  * percent and for certain on the `pity`-th draw since the last one. `start` and `end` are seconds.
  */
@@ -125,6 +138,8 @@ export type Economy = {
      */
     link?: LinkConfig;
   };
+  /** In shelf order, a series at most once. Missing or empty on servers without photocards. */
+  photocards?: PhotocardConfig[];
 } & {
   /** Missing from servers before the economy left the manifest. */
   tapGuard?: TapGuardRules;

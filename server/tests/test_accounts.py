@@ -113,6 +113,19 @@ def test_new_device_gets_a_choice_between_saves(env):
     assert c.get("/api/me", headers=bearer("tok-alice")).status_code == 200
 
 
+def test_a_guest_that_bought_photocards_counts_as_played(env):
+    c, g, *_ = env
+    c.post("/api/account/link", headers={"X-Player-Token": GUEST, **bearer("tok-alice")})
+    other = {"X-Player-Token": "o" * 32}
+    pid = c.get("/api/me", headers=other).json()["player"]
+    link = lambda: c.post("/api/account/link", headers={**other, **bearer("tok-alice")})
+    g.store.set_photo_save(pid, "series", 0, 0, 0)
+    assert link().status_code == 200
+    g.store.set_photo_save(pid, "series", 1, 1, 0)
+    r = link()
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "account_has_save"
+
+
 def test_account_without_save_and_a_save_of_another_account(env):
     c, *_ = env
     assert c.get("/api/me", headers=bearer("tok-bob")).json()["detail"]["code"] == "account_not_linked"

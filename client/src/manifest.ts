@@ -99,6 +99,11 @@ export type ManifestPlate = { id: string; name: string } & (
   | { emoteSet: string; series?: undefined }
   | { series: string; emoteSet?: undefined; video: string; poster: string; still: string; aspect: number }
 );
+export type PhotoKind = "solo" | "duo" | "group";
+/** A photocard (官周小卡). A solo card also comes signed, an item of its own (src/photocards.ts). */
+export interface ManifestPhotocard { id: string; kind: PhotoKind; characters: string[] }
+/** Photocards sold together; card ids are unique within a series. `event` is what the cards were made for. */
+export interface ManifestPhotoSeries { id: string; name: string; event: string; cards: ManifestPhotocard[] }
 export interface Manifest {
   version: number;
   characters: ManifestCharacter[];
@@ -114,6 +119,7 @@ export interface Manifest {
   /** `name` is the id (folder, save item, room field); `title` replaces it on screen; `since` is the release that ships it. */
   skins: { name: string; member: string; title?: string; since?: string }[];
   plates: ManifestPlate[];
+  photocards: ManifestPhotoSeries[];
 }
 
 export const manifest = raw as unknown as Manifest;

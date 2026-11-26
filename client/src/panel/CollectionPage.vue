@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The dex brings card albums, searchable emote sets and skins together.
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, ref, watch } from "vue";
 import { characterColor, getCard, manifest, RARITY_ORDER, type ManifestCard, type ManifestEmoteSet, type Rarity } from "../manifest";
 import { assetUrl } from "../asset";
 import { getItem, ownsEmote, RARITY_LABEL, type Item } from "../items";
 import { collection, error } from "../stores/player";
+import { photoAlbums } from "../stores/photocards";
 import { settings } from "../stores/settings";
 import { sendEmote } from "../stores/room";
 import { ui } from "../stores/ui";
@@ -19,8 +20,14 @@ import CardAlbum from "./CardAlbum.vue";
 import CardDetail from "./CardDetail.vue";
 import CraftAction from "../ui/CraftAction.vue";
 import SkinAlbum from "./SkinAlbum.vue";
+import { PHOTO_FILTERS, type PhotoFilter } from "./photo/labels";
 import { rise } from "../ui/motion";
 import { STANDALONE } from "../edition";
+
+const PhotoAlbum = defineAsyncComponent(() => {
+  if (__STANDALONE__) return new Promise<never>(() => {});
+  return import("./photo/PhotoAlbum.vue");
+});
 
 type OwnFilter = "all" | "owned" | "missing";
 const OWN_FILTERS = [
@@ -157,16 +164,30 @@ function fireSelectedEmote(item: Item) {
   selectedItem.value = null;
 }
 
-const category = ref("card");
-const CATEGORIES = [{ id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" }];
+const picked = ref("card");
+const categories = computed(() => [
+  { id: "card", label: "卡片" }, { id: "emote", label: "表情" }, { id: "skin", label: "皮肤" },
+  ...(photoAlbums.value.length ? [{ id: "photo", label: "小卡" }] : []),
+]);
+/** The category on show; the photocards' while there are any. */
+const category = computed({
+  get: () => (picked.value === "photo" && !photoAlbums.value.length ? "card" : picked.value),
+  set: (id) => { picked.value = id; },
+});
+const photoFilter = ref<PhotoFilter>("all");
 const selectedSeries = ref("all");
 const cardFilter = ref<AlbumFilter>("all");
-// Asked from another page (the resonance page's holo collection): all the cards, at that filter.
+// Asked from another page (the resonance page's holo collection, its photocards): all the cards, at that filter.
 watch(() => ui.dexFilter, (filter) => {
   if (!filter) return;
-  category.value = "card";
-  selectedSeries.value = "all";
-  cardFilter.value = filter;
+  if (filter === "holo") {
+    category.value = "card";
+    selectedSeries.value = "all";
+    cardFilter.value = filter;
+  } else {
+    category.value = "photo";
+    photoFilter.value = PHOTO_FILTERS.find((f) => `photo:${f.id}` === filter)?.id ?? "all";
+  }
   ui.dexFilter = "";
 }, { immediate: true });
 const CARD_FILTERS = [
@@ -202,8 +223,9 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
 <template>
   <div class="collection-page">
     <div class="dex-bar">
-      <SegTabs v-model="category" class="dex-kind" :tabs="CATEGORIES" label="图鉴分类" />
+      <SegTabs v-model="category" class="dex-kind" :tabs="categories" :style="{ '--kinds': categories.length }" label="图鉴分类" />
       <FilterChips v-if="category === 'card'" v-model="cardFilter" :options="CARD_FILTERS" label="卡片筛选" />
+      <FilterChips v-else-if="category === 'photo'" v-model="photoFilter" :options="PHOTO_FILTERS" label="小卡筛选" />
       <span v-else-if="category === 'emote'" class="progress">已解锁 <b>{{ progress.owned }}</b> / {{ progress.total }}</span>
     </div>
     <template v-if="category === 'card'">
@@ -211,6 +233,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
       <CardAlbum :cards="cards" :filter="cardFilter" @inspect="inspectCard" />
     </template>
     <SkinAlbum v-else-if="category === 'skin'" />
+    <PhotoAlbum v-else-if="category === 'photo'" :filter="photoFilter" />
     <template v-else>
     <div class="emote-bar">
       <SegTabs v-model="charTab" plain class="tabs-bar" :tabs="charTabs" label="角色筛选" />
@@ -331,7 +354,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   margin-bottom: 8px;
 }
 .dex-kind {
-  flex: 0 0 222px;
+  flex: 0 0 calc(var(--kinds, 3) * 74px);
 }
 .emote-bar {
   flex: none;
@@ -344,7 +367,7 @@ if (ui.craftTarget && !ui.craftTarget.startsWith("profile:")) {
   flex: 1 1 auto;
   min-width: 0;
 }
-@container panel (max-width: 860px) {
+@container panel (max-width: 920px) {
   .dex-bar {
     flex-wrap: wrap;
   }

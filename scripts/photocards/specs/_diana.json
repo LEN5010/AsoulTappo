@@ -1,0 +1,23 @@
+{
+  "note": "嘉然's solo cards: frame colours, name, icons, small type and back. Cards of hers differ only in `source`.",
+  "extends": "_portrait",
+  "ramp": [80, ["C793AC", "C793AC", "C893AD", "C795AB", "C395AC", "C697AC", "CBA0B1", "CFA8B4", "D3ADBB", "D4B5C0", "D6BDC5", "DAC7CD", "DDD1D3", "E1D8D9", "E4DEDE", "E5E0E1", "E7E4E5", "E9E7E9", "EAEBEC", "EEEFF1", "F0F3F3", "EFF5F5", "EFF5F5"]],
+  "tinted": [62, 34, 70],
+  "spark_dark": [208, 152, 176],
+  "frame_source": "diana-1.png",
+  "names": [[56, 1510, 390, 1596]],
+  "icons": [[878, 1598, 1046, 1694]],
+  "twin": {"from": [57.5, 1599, 105.25, 1649], "print": [57.5, 1599], "foil": [103.5, 1599]},
+  "lines": [{"x": 64.6, "y": 1664.5, "handle": "@嘉然今天吃什么", "handle_w": 172.8}],
+  "back": {
+    "name": "diana",
+    "source": "back-diana.png",
+    "sparkles": [["tl", 11.0, 22.5], ["br", 10.5, 18.5]],
+    "logo": [440, 112],
+    "darker": [[44, 1432, 300, 1618]],
+    "marks": {"pale": [[772.5, 73.9], [826.3, 73.9], [880.2, 73.9], [934.0, 73.9], [987.8, 73.9]], "deep": [[71.0, 1656.4], [125.4, 1656.4], [179.9, 1656.4], [234.3, 1656.4], [288.8, 1656.4]]},
+    "subtitle": [744.5, 313.5]
+  },
+  "foil": {"dark": [0.2, 0.1, 0.25], "lit": [0.78, 0.56, 0.8]},
+  "print": {"dark": [0.27, 0.17, 0.29], "lit": [0.96, 0.92, 0.95]}
+}

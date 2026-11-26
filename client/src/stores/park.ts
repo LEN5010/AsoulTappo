@@ -96,7 +96,7 @@ export function parkRequest<T>(method: ParkMethod, path: string, body?: unknown)
 }
 
 /**
- * Any request of the park or redeem codes (paths under /api/park or /api/redeem), from any window. The answer's
+ * Any request of the park, redeem codes or photocards (PARK_PATH in net/api.ts), from any window. The answer's
  * status and park state are applied before it resolves; a failure resolves with the error, never rejects.
  */
 export async function parkTry<T>(method: ParkMethod, path: string, body?: unknown): Promise<ParkReply<T>> {

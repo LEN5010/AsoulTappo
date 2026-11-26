@@ -1,0 +1,25 @@
+{
+  "note": "贝拉's solo cards: frame colours, name, icons, small type and back. Cards of hers differ only in `source`.",
+  "extends": "_portrait",
+  "ramp": [80, ["B57069", "B57069", "B46F69", "B46F69", "B47069", "B87970", "BB847A", "BF8F86", "C49B91", "C9A69C", "CCAFA7", "D1B9B6", "D5C3C3", "D8CECA", "DBD6D0", "DFDCD6", "E4E1DB", "E7E5E1", "EBEAE7", "F2F2F1", "F2F4F4", "F2F7F8", "F1F6F8"]],
+  "tinted": [72, 34, 38],
+  "spark_dark": [178, 152, 157],
+  "sparkles": [["tl", 12.0, 21.0], ["br", 10.5, 14.0]],
+  "frame_source": "bella-1.png",
+  "names": [[54, 1508, 364, 1600]],
+  "icons": [[874, 1582, 1054, 1712]],
+  "twin": {"from": [61, 1605, 105, 1646], "print": [61, 1605], "foil": [107, 1605]},
+  "lines": [{"x": 64.6, "y": 1664.0, "handle": "@贝拉kira", "handle_w": 102.2}],
+  "back": {
+    "name": "bella",
+    "source": "back-bella.png",
+    "sparkles": [["tl", 11.0, 22.5], ["br", 10.5, 18.5]],
+    "logo": [446.5, 110.5],
+    "logo_ink": "pale",
+    "subtitle": [751, 312],
+    "marks": {"pale": [[779.6, 71.3], [833.2, 71.3], [886.8, 71.3], [940.4, 71.3], [994.0, 71.3]], "deep": [[80.7, 1640.2], [134.2, 1640.2], [187.7, 1640.2], [241.1, 1640.2], [294.6, 1640.2]]},
+    "darker": [[70, 1354, 282, 1606]]
+  },
+  "foil": {"dark": [0.24, 0.1, 0.12], "lit": [0.8, 0.56, 0.58]},
+  "print": {"dark": [0.29, 0.17, 0.18], "lit": [0.96, 0.92, 0.92]}
+}

@@ -1,0 +1,11 @@
+{
+  "note": "Every solo card: the frame's geometry, measured on diana-1. Colours, name, icons and back come from the member's base.",
+  "size": [1080, 1720],
+  "scale": [0.638541, 0.638288],
+  "grid": [34.4, 31.0, 43.37, 36.18],
+  "sparkles": [["tl", 12.0, 21.0], ["br", 10.0, 11.0]],
+  "window": [80, 70.5, 995.5, 1474, 24],
+  "bar": {"box": [251, 42.5, 850, 98], "text": "ZJ ENTERTAINMENT", "text_box": [330, 60.5, 771, 80], "tracking": 38},
+  "pills": [{"box": [757.6, 1447.5, 972, 1504.2], "text": "A-SOUL", "vertical": false}],
+  "marks": [[1039.7, 267.7], [1039.7, 322.3], [1039.7, 376.0], [1039.7, 429.3], [1039.7, 483.0], [37.3, 1205.5], [37.3, 1258.9], [37.3, 1313.2], [37.3, 1367.1], [37.3, 1420.8]]
+}

@@ -1,0 +1,69 @@
+# 官周小卡素材的生成
+
+这里是小卡的模板和生成脚本。成品在 `client/src/assets/photocards/`：`open/` 是所有系列共用的，其余每个系列一个目录，由 `pack.py` 写出。`demo/` 是看材质和开盒动画的网页。扫描件、照片、签名 SVG 不进仓库，用环境变量 `PHOTOCARDS` 指向存放它们的工作目录：
+
+- `src/`：对位好的扫描和照片、活动标志（`logo.png`、`logo-subtitle.png`、`logo-title.png`）、发售海报（`poster/`）、演唱会主视觉（`kv/`）、签名 SVG（`sign/`）。
+- `tex/`：`build_tex.py` 和 `sign.py` 生成的贴图、`cards.json`、`signs.json`。
+- `open/tex/`：`foil.py` 和 `box.py` 生成的开盒贴图。
+
+## 步骤
+
+Python 3.11，装 `opencv-python pillow numpy`。
+
+1. `build_tex.py [卡的编号 ...] [--backs]`：按 `specs/` 生成卡面和材质贴图。不写编号就全部生成。另要环境变量 `CJK_FONT`，指向 Noto Sans SC 字体文件。
+2. `sign.py`：从三份笔触动画 SVG 生成签名贴图。另要 `PLAYWRIGHT`（playwright-core 目录）和 `CHROMIUM`（无头 Chromium）。位置和大小改 `PLACE`，书写时间改 `SPEED`。
+3. `foil.py <工作目录>`、`box.py <工作目录> <A-SOUL 标志 png>`：生成开盒用的环境图、软阴影和盒子印刷。
+4. `pack.py`：合并同一模板的材质图、转成无损 WebP，写进客户端，再用 `thumbs.py` 生成卡册、购买页和整盒摊开用的小图。盒子纸板、折痕和页面底光的颜色写在它的 `LOOK` 里，横版卡里从左到右站着谁写在 `STAND` 里。
+5. `stage.py`：把主视觉处理成购买页背景用的图，写进 `<系列>/stage/` 和 `<系列>/title.webp`：五张虚化程度递增的图、一张远近图、一张标题图。读 `src/kv/clean/poster.jpg`（去字版主视觉）、`src/kv/mask.png`（成员的遮罩，在 Mac 上用 `swift lift.swift <主视觉> mask.png` 生成，主视觉先缩到 3200 宽、裁成 16:9）和 `src/logo-title.png`。背景里的雾色、暗色和灯的位置写在 `pack.py` 的 `LOOK` 里。没有主视觉的系列跳过这一步，购买页是纸面。
+6. `poster.cjs <系列>`：画购买页的两张盒子图，写进 `<系列>/shop/`。`poster.webp` 是货架静止的样子，用在画面开始渲染之前和没有 WebGL 2 的电脑上；`mini.webp` 是单独一个盒子，用在系列切换上。先开客户端的开发服务器，地址放进 `CLIENT`，另要 `PLAYWRIGHT` 和 `CHROMIUM`。改了卡面、盒子或 `client/src/photo/shelf.ts` 里的摆放，就重跑一次。
+
+卡的名单在 `scripts/asset_catalog.py` 的 `PHOTOCARDS`，改了之后用 `build_assets.py --photocards-only` 写进两份 manifest。
+
+`tone.py` 拿扫描件和发售海报上的卡面预览比较，算出扫描要改正多少，写进 `tone.json`，`build_tex.py` 读它：
+
+- `gain`：彩度的倍数，按色相分 12 段。
+- `white`、`light`：每张卡的白平衡和明暗。
+- `frame`：边框从上到下的颜色。深色一头取自扫描，往下按设计稿的渐变走；扫描的中段混着网纹的珠光，偏灰偏黄。
+
+色相保持印刷的样子。纸面调成白之后，扫描的色相和设计稿一致，只有蓝色印出来偏紫，实物照片也是这样。换了扫描件就先重跑 `tone.py`，再用 `build_tex.py` 全部重建。没有海报的系列要另找颜色基准。
+
+`logo.py` 从两张主视觉（`src/kv/` 的带标志版和去字版）取出活动标志，从发售海报取出它下面那行字，改了取法才需要重跑，之后用 `build_tex.py --backs` 重建背面，再跑 `box.py` 和 `stage.py`。
+
+## 单位和模板
+
+所有坐标的单位是成品贴图的像素，短边 1080。竖版 1080×1720，横版 1720×1080。
+
+边框、长条、胶囊、叉号、星点、小字都是按尺寸重画的，同一种卡用同一套尺寸。`specs/` 里每张卡一个 JSON 配置，文件名以 `_` 开头的是基础配置，只被继承：
+
+- `_portrait.json`：所有单人卡的边框尺寸。
+- `_landscape.json`：所有横版卡（双人和团体）的边框颜色、尺寸，以及它们共用的那一个背面。
+- `_duo.json`：双人卡的两个竖胶囊。`_group.json`：团体卡。
+- 成员或组合的基础配置（`_diana.json`、`_diana-eileen.json`）：颜色、名字、图标、小字、背面。
+- 具体的卡（`diana-2.json`）通常只有 `extends`、`label`、`order`、`source` 四项。
+
+扫描件没有色彩配置，纸面发灰，亮处偏暗，颜色偏淡，都按 `tone.json` 改正；暗处和设计稿本来就接近，没有动。形状和画面只有三样取自扫描：卡图窗口里的画面（`source`）、名字和图标的形状（`names`、`icons`、`twin` 这些区域里比较暗的部分，取自 `frame_source`，没写就取自 `source`）。同一成员的卡名字和图标相同，所以共用一张参考扫描。
+
+## 配置项
+
+| 项 | 含义 |
+| --- | --- |
+| `extends` | 继承的配置名。子配置的顶层项覆盖父配置的同名项，不做深层合并。 |
+| `label`、`order` | 显示的名字和排序。 |
+| `size`、`scale` | 贴图尺寸；`scale` 是放大后的扫描每像素合多少贴图像素（横、纵）。 |
+| `source`、`frame_source` | `src/` 里的文件名。 |
+| `ramp` | 扫描上量到的边框颜色，从上到下：`[步长, [颜色...]]`，每隔步长取一个色，最后一个是纸面。画出来的边框用 `tone.json` 的 `frame`。 |
+| `tinted` | 深色烫印（长条、胶囊、名字、图标）不受光时的颜色。 |
+| `spark_dark` | 扫描上量到的右下那块深色星点的颜色。 |
+| `grid`、`sparkles` | 星点网格 `[x0, y0, 横间距, 纵间距]`；每块是 `[角, 列数, 行数]`，可加第四项表示最大的星的半径。 |
+| `window` | 卡图窗口 `[x0, y0, x1, y1, 圆角]`。 |
+| `bar`、`pills` | 顶部长条和胶囊的位置、里面的字。 |
+| `marks` | 十个叉号的中心。 |
+| `names`、`icons` | 从扫描里取形状的区域，都是深色烫印。 |
+| `twin` | 单人卡名字下面的两个小图标，同一个图形印两份：左边是不反光的黑色印刷，右边和名字同一种烫印。`from` 是取形状的区域，`print` 和 `foil` 是这块区域的左上角分别落在哪里。 |
+| `lines` | 名字下面的小字：`x`、`y`、`handle`、`handle_w`，另有 `label`（默认 `MEMBER OF A-SOUL`）、`label_w`、`dash`、`handle_x`。 |
+| `foil`、`print` | 着色器用的颜色（0 到 1）：正面深色烫印、背面文字，各有不受光和受光两个色。 |
+| `back` | 背面，按 `name` 共用。可用项：`source`、`lighter`、`darker`（从背面照片取形状的区域，分别取比底色浅和比底色深的部分）；`solid`（照片里最大的实心深色图形有多宽，给了才能把实心图形取完整）；`logo`（活动标志左上角落在哪里）；`logo_ink`（标志和副标题算浅色那组 `pale` 还是深色那组 `deep`，只影响关掉材质时的底图颜色）；`marks`（`pale`、`deep` 两组重画的叉号）；`subtitle`（标志下面那行字的中心落在哪里）；`grid`、`sparkles`。 |
+
+## 材质通道
+
+材质图的 R 是光面，G 是烫印（0.5 是深色烫印，1 是银色），B 在正面是压在网纹上面的小字，背面不用。签名贴图的通道见 `sign.py`。

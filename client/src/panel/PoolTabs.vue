@@ -11,8 +11,17 @@ import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
 
-const props = defineProps<{ pools: { id: string; name: string; left?: string }[]; modelValue: string; disabled?: boolean }>();
-const emit = defineEmits<{ "update:modelValue": [id: string] }>();
+const props = defineProps<{
+  /** `fresh` marks a pool with something new on sale. */
+  pools: { id: string; name: string; left?: string; fresh?: boolean }[];
+  modelValue: string;
+  disabled?: boolean;
+}>();
+const emit = defineEmits<{
+  "update:modelValue": [id: string];
+  /** The pointer is on a pool that is not on show. */
+  near: [id: string];
+}>();
 
 const root = ref<HTMLElement>();
 
@@ -57,10 +66,12 @@ onMounted(() => {
       :aria-selected="p.id === modelValue"
       :tabindex="p.id === modelValue ? 0 : -1"
       :disabled="disabled"
+      @pointerenter="p.id !== modelValue && emit('near', p.id)"
       @click="p.id !== modelValue && emit('update:modelValue', p.id)"
     >
       <span>{{ p.name }}</span>
       <small v-if="p.left"><Icon name="clock" :size="11" />{{ p.left }}</small>
+      <i v-if="p.fresh && p.id !== modelValue" class="fresh">NEW</i>
     </button>
   </div>
 </template>
@@ -131,6 +142,19 @@ onMounted(() => {
 }
 .pool-tab:disabled:not(.on) small :deep(svg) {
   color: var(--ink-3);
+}
+.fresh {
+  position: absolute;
+  right: -7px;
+  top: -8px;
+  z-index: 1;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: var(--c-700);
+  color: #fff;
+  font: 800 10px/1.1 var(--font-latin);
+  font-style: normal;
+  letter-spacing: 0.04em;
 }
 @keyframes pearl-lip {
   from { background-position: 0% 50%; }

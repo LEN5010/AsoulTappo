@@ -1,0 +1,6 @@
+{
+  "extends": "_bella",
+  "label": "贝拉 3",
+  "order": 203,
+  "source": "bella-3.png"
+}
