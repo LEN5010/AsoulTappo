@@ -58,7 +58,8 @@ class Park:
         return {
             "coins": p["coins"],
             "unlocked": p["taps_total"] >= c["minTaps"],
-            "gift": p["gift_day"] != day,
+            # Days are YYYY-MM-DD: a late request for the day before offers no gift given since.
+            "gift": p["gift_day"] < day,
             "stamps": total % c["stampsPerCoin"],
             "stampsTotal": total,
             "badge": sum(1 for n in c["badges"] if total >= n),

@@ -268,6 +268,17 @@ def test_the_gift_day_only_moves_forward():
     assert g.store.grant_park_gift(pid, "2026-11-27", 1, 0)
 
 
+def test_a_late_request_for_the_day_before_is_offered_no_gift():
+    g, park, clock, pid = setup(gifted=False)
+    old_day = day_of(clock())
+    clock.t = next_midnight(clock.t) + 1
+    assert g.status(TOKEN)["park"]["gifted"] == COIN["gift"]
+    p = g.store.get_player(pid, clock())
+    assert not park.view(g.store, p, old_day)["gift"]
+    assert not park.view(g.store, p, day_of(clock()))["gift"]
+    assert park.view(g.store, p, day_of(next_midnight(clock.t) + 1))["gift"]
+
+
 def test_a_server_without_the_park_gives_no_coin():
     g = Game(Store(":memory:"), tiny_manifest(), now=Clock())
     pid = g.status(TOKEN)["player"]
