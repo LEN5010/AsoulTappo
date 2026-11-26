@@ -15,6 +15,7 @@ Python 3.11，装 `opencv-python pillow numpy`。
 3. `foil.py <工作目录>`、`box.py <工作目录> <A-SOUL 标志 png>`：生成开盒用的环境图、软阴影和盒子印刷。
 4. `pack.py`：合并同一模板的材质图、转成无损 WebP，写进客户端，再用 `thumbs.py` 生成卡册、购买页和整盒摊开用的小图。盒子纸板、折痕和页面底光的颜色写在它的 `LOOK` 里，横版卡里从左到右站着谁写在 `STAND` 里。
 5. `stage.py`：把主视觉处理成购买页背景用的图，写进 `<系列>/stage/` 和 `<系列>/title.webp`：五张虚化程度递增的图、一张远近图、一张标题图。读 `src/kv/clean/poster.jpg`（去字版主视觉）、`src/kv/mask.png`（成员的遮罩，在 Mac 上用 `swift lift.swift <主视觉> mask.png` 生成，主视觉先缩到 3200 宽、裁成 16:9）和 `src/logo-title.png`。背景里的雾色、暗色和灯的位置写在 `pack.py` 的 `LOOK` 里。没有主视觉的系列跳过这一步，购买页是纸面。
+   远近图让每个成员整块移动：脚本按 `STROKES`（沿每个人画的线）把画面分给各人，每人的远近取自自己在 `NEAR` 里的点。两人相接处远近差得多，远的那人在交界旁边让开；差得少就混在一起。成员旁边的舞台先跟着成员动几个像素，再过渡到舞台自己的远近。换主视觉要重画 `STROKES`、`FINE`（手指这类细的地方）和 `NEAR`。`stage.py depth` 只重新生成远近图。
 6. `poster.cjs <系列>`：画购买页的两张盒子图，写进 `<系列>/shop/`。`poster.webp` 是货架静止的样子，用在画面开始渲染之前和没有 WebGL 2 的电脑上；`mini.webp` 是单独一个盒子，用在系列切换上。先开客户端的开发服务器，地址放进 `CLIENT`，另要 `PLAYWRIGHT` 和 `CHROMIUM`。改了卡面、盒子或 `client/src/photo/shelf.ts` 里的摆放，就重跑一次。
 
 卡的名单在 `scripts/asset_catalog.py` 的 `PHOTOCARDS`，改了之后用 `build_assets.py --photocards-only` 写进两份 manifest。

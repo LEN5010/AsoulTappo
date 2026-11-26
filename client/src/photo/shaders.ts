@@ -967,14 +967,22 @@ float join(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0);
   return mix(b, a, h) + k * h * (1.0 - h);
 }
-// What lies at a place once everything has moved by how near it is.
+// What lies at a place once everything has moved by how near it is. What is as near as t is seen here when it lies at
+// a - b t. Going from the nearest down, the first t that what lies there is at least as near as, in steps of about
+// three pixels of that way and then halving the step that crossed: what is nearer covers what is behind it.
 vec2 moved(vec2 uv) {
-  vec2 q = uv;
-  for (int i = 0; i < 3; i++) {
-    float d = textureLod(u_depth, q, 0.0).r;
-    q = uv - u_par * (d - 0.42) - (uv - vec2(0.5, 0.42)) * u_dolly * d;
+  vec2 a = uv + u_par * 0.42, b = u_par + (uv - vec2(0.5, 0.42)) * u_dolly;
+  float n = clamp(ceil(length(b * u_kv.zw) / 3.0), 2.0, 24.0), hi = 1.0, lo = 0.0;
+  for (int i = 1; i <= 24; i++) {
+    float t = 1.0 - float(i) / n;
+    if (textureLod(u_depth, a - b * t, 0.0).r >= t) { lo = t; break; }
+    hi = t;
   }
-  return q;
+  for (int i = 0; i < 5; i++) {
+    float t = 0.5 * (hi + lo);
+    if (textureLod(u_depth, a - b * t, 0.0).r >= t) lo = t; else hi = t;
+  }
+  return a - b * lo;
 }
 float beam(vec2 p, vec4 b, float wide) {
   vec2 d = p - b.xy, way = vec2(sin(b.z), cos(b.z));
