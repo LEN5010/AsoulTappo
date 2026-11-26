@@ -14,6 +14,8 @@ export interface Settings {
   character: string;
   /** Pet scale factor relative to the 240x135 base canvas. */
   scale: number;
+  /** How much of the pets' figures shows on the desk, 0.3 to 1; bubbles, names and the strip stay solid. */
+  petOpacity: number;
   mouseFollow: boolean;
   mouseSensitivity: number;
   clickThrough: boolean;
@@ -185,6 +187,7 @@ export const DEFAULT_SETTINGS: Settings = {
   nick: "",
   character: defaultCharacter,
   scale: 1,
+  petOpacity: 1,
   mouseFollow: true,
   mouseSensitivity: 0.3,
   clickThrough: false,
@@ -297,6 +300,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   else if (out.serverUrl === LEGACY_SERVER_URL) out.serverUrl = DEFAULT_SETTINGS.serverUrl;
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
+  out.petOpacity = Math.min(1, Math.max(0.3, out.petOpacity));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
   out.barScale = Math.min(1.5, Math.max(0.6, out.barScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));

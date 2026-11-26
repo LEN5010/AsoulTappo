@@ -27,6 +27,13 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ barScale: 9 }))).barScale).toBe(1.5);
     expect(loadSettings(store(JSON.stringify({ barScale: "x" }))).barScale).toBe(1);
   });
+  it("shows the pets solid unless set otherwise, and never fainter than the settings page goes", () => {
+    expect(loadSettings(store(null)).petOpacity).toBe(1);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 0.55 }))).petOpacity).toBe(0.55);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 0 }))).petOpacity).toBe(0.3);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 4 }))).petOpacity).toBe(1);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: "x" }))).petOpacity).toBe(1);
+  });
   it("keeps only string favorites (at most 8) and never shares the default array", () => {
     const s = loadSettings(store(JSON.stringify({ favorites: ["a", 3, "b", ...Array(10).fill("c")], tapView: "x" })));
     expect(s.favorites).toEqual(["a", "b", "c", "c", "c", "c", "c", "c"]);

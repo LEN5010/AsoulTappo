@@ -272,6 +272,13 @@ async function exportLogFile() {
                 </span>
               </label>
               <label class="ui-row">
+                <span>桌宠不透明度</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="settings.petOpacity" :min="0.3" :max="1" :step="0.05" />
+                  <b class="ui-val">{{ Math.round(settings.petOpacity * 100) }}%</b>
+                </span>
+              </label>
+              <label class="ui-row">
                 <span>表情停留时间</span>
                 <span class="ui-ctl">
                   <RangeInput v-model="settings.emoteHoldMs" :min="1200" :max="6000" :step="100" />

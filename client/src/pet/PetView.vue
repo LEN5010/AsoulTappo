@@ -38,6 +38,8 @@ const props = withDefaults(
     win?: ComboFrame | null;
     /** Increments when the player drank water after a reminder: a cup beside the head for a moment. */
     sip?: number;
+    /** How much of the figure shows (settings.petOpacity on the desk); the bubbles beside it stay solid. */
+    opacity?: number;
     /** smallest emote picture height in px (keeps remote bubbles readable) */
     minEmote?: number;
     /** largest emote picture height in px, for frames too short for a scaled-up bubble */
@@ -176,7 +178,7 @@ const bubbleAnchor = computed(() => ({
 
 <template>
   <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
-    <div v-if="assets" class="art">
+    <div v-if="assets" class="art" :style="opacity !== undefined && opacity < 1 ? { opacity } : undefined">
       <div class="still">
         <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
         <Transition :name="loop?.entrance === 'summon' ? 'loop-summon' : 'loop'">
