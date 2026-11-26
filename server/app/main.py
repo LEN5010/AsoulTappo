@@ -1097,10 +1097,13 @@ class ReasonBody(BaseModel):
 
 
 @app.get("/admin/stats", dependencies=[Depends(admin)])
-def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
-    out = game.admin_stats(days)
-    out["totals"]["rooms"] = len(manager.rooms)
-    out["totals"]["online"] = sum(len(r.peers) for r in manager.rooms.values())
+async def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
+    # The rooms change on the event loop: counted here at one moment, the database read in the thread pool.
+    rooms = len(manager.rooms)
+    online = sum(len(r.peers) for r in manager.rooms.values())
+    out = await run_in_threadpool(game.admin_stats, days)
+    out["totals"]["rooms"] = rooms
+    out["totals"]["online"] = online
     return out
 
 
@@ -1191,9 +1194,11 @@ def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
 
 
 @app.get("/admin/online", dependencies=[Depends(admin)])
-def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
+async def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
     """Room occupancy, interaction counts, duels and cheer rounds."""
-    return analytics.online(game, days, game.tracker.room_numbers(list(manager.rooms.values())))
+    # As _sample_rooms: the room numbers on the event loop, which changes the rooms, the database in the thread pool.
+    numbers = game.tracker.room_numbers(list(manager.rooms.values()))
+    return await run_in_threadpool(analytics.online, game, days, numbers)
 
 
 @app.get("/admin/anomalies", dependencies=[Depends(admin)])

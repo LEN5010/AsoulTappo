@@ -1,6 +1,10 @@
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 import app.main as main
+from app import analytics
 from app.cards import DropConfig
 from app.game import Game, GameError, day_of, player_id_for
 from app.manifest import Manifest
@@ -50,6 +54,67 @@ def test_stats_count_saves_links_and_daily_activity(admin_env):
     assert series[0] == {"day": series[0]["day"], "active": 0, "newSaves": 0, "items": 0}
     assert series[1]["active"] == 2 and series[1]["newSaves"] == 2 and series[1]["items"] >= 2
     assert series[2]["active"] == 1 and series[2]["newSaves"] == 0
+
+
+def _on_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+class _LoopOnly(dict):
+    """A dict the event loop changes: notes whether each read came from the loop's thread."""
+    def __init__(self, reads, *args):
+        super().__init__(*args)
+        self.reads = reads
+
+    def _read(self):
+        self.reads.append(_on_loop())
+
+    def __len__(self):
+        self._read()
+        return super().__len__()
+
+    def __iter__(self):
+        self._read()
+        return super().__iter__()
+
+    def values(self):
+        self._read()
+        return super().values()
+
+    def items(self):
+        self._read()
+        return super().items()
+
+
+def test_admin_counts_read_the_rooms_on_the_event_loop_and_the_database_off_it(admin_env, monkeypatch):
+    c, g, *_ = admin_env
+    reads, db = [], []
+    peers = _LoopOnly(reads, {"a": SimpleNamespace(token="t-a"), "b": SimpleNamespace(token="t-b")})
+    room = SimpleNamespace(peers=peers, public=False, host="a")
+    empty = SimpleNamespace(peers=_LoopOnly(reads), public=False, host="")
+    monkeypatch.setattr(main.manager, "rooms", _LoopOnly(reads, {"r1": room, "r2": empty}))
+    stats, online = main.game.admin_stats, analytics.online
+
+    def admin_stats(*args):
+        db.append(_on_loop())
+        return stats(*args)
+
+    def admin_online(*args):
+        db.append(_on_loop())
+        return online(*args)
+
+    monkeypatch.setattr(main.game, "admin_stats", admin_stats)
+    monkeypatch.setattr(analytics, "online", admin_online)
+    totals = c.get("/admin/stats?days=1", headers=KEY).json()["totals"]
+    assert totals["rooms"] == 2 and totals["online"] == 2
+    now = c.get("/admin/online?days=1", headers=KEY).json()["now"]
+    assert now["rooms"] == 1 and now["members"] == 2 and now["saves"] == 2
+    assert reads and all(reads)
+    assert db == [False, False]
 
 
 def test_days_follow_china_standard_time():
