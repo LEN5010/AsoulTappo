@@ -360,9 +360,11 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
 
 
 @app.get("/rooms/{room_id}")
-async def room_open(room_id: str) -> dict:
+async def room_open(room_id: str, request: Request) -> dict:
     """Whether a room has members now, without making it: a client going back to the room it was in when it last
-    closed joins only an open one (a join of any other id makes the room). Like a join, it needs only the id."""
+    closed joins only an open one (a join of any other id makes the room). Like a join, it needs only the id; an
+    address may ask only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS (_may_look_up_room)."""
+    _may_look_up_room(request)
     return {"room": room_id, "open": len(room_id) <= 64 and room_id in manager.rooms}
 
 
@@ -478,6 +480,33 @@ def _may_start_save(request: Request, who: PlayerId) -> None:
         if len(started) >= NEW_SAVES_PER_HOUR:
             raise HTTPException(429, {"code": "too_many_saves", "message": "这个网络新建的存档太多，请一小时后再试"})
         started[str(who)] = now
+
+
+# GET /rooms/{id} needs no save, so one address may ask it only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS: enough
+# for every client behind one network to check its last room on start, too few to try room names in bulk. Counted per
+# address like new saves; this machine itself is not counted.
+ROOM_LOOKUPS = 60
+ROOM_LOOKUP_SECONDS = 600.0
+ROOM_LOOKUP_ADDRESSES = 50000
+_room_lookups: dict[str, tuple[float, int]] = {}
+_room_lookups_lock = threading.Lock()
+
+
+def _may_look_up_room(request: Request) -> None:
+    """Refuses a room lookup once its address has made ROOM_LOOKUPS within the current ROOM_LOOKUP_SECONDS."""
+    address = _address(request)
+    if address is None:
+        return
+    now = game.now()
+    with _room_lookups_lock:
+        if len(_room_lookups) > ROOM_LOOKUP_ADDRESSES:
+            _room_lookups.clear()
+        start, count = _room_lookups.get(address, (now, 0))
+        if now - start >= ROOM_LOOKUP_SECONDS:
+            start, count = now, 0
+        if count >= ROOM_LOOKUPS:
+            raise HTTPException(429, {"code": "too_many_lookups", "message": "查询房间太频繁，请稍后再试"})
+        _room_lookups[address] = (start, count + 1)
 
 
 def player(request: Request, x_player_token: str = Header(default=""), authorization: str = Header(default=""),
