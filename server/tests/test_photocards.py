@@ -957,6 +957,7 @@ def test_the_api(monkeypatch):
     bought = post("buy", {"series": SID}).json()
     box = got(bought)["box"]
     assert len(box["cards"]) == SIZE and bought["shards"] == shards(g, pid)
+    assert bought["receipt"] == {"series": SID, "box": box}
     for body in (None, {}, {"series": ""}, {"series": "x" * 65}, {"series": 1}, {"series": SID, "price": 0},
                  {"series": SID, "price": "x"}, {"series": SID, "price": 2**70}):
         assert post("buy", body).status_code == 422
