@@ -13,11 +13,17 @@ import Icon from "../ui/Icon.vue";
 import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
 import { SkinForm } from "./SkinForm";
+import { pawPainter, type PawPose } from "./pawPaint";
 
 const props = withDefaults(
   defineProps<{
     character: string;
     motionId?: string;
+    /**
+     * The own pet: the input hook's pose (stores/pet.ts), drawn straight onto the layers as it changes, so the paws
+     * moving never render this view or its parent. In place of keyDown, formPress, mouseDx/Dy and left/rightDown.
+     */
+    pose?: Readonly<PawPose & { formPress: number }>;
     scale?: number;
     /** Local pet: keyboard layer pressed state (driven by global key hook). */
     keyDown?: boolean;
@@ -70,29 +76,17 @@ onMounted(() => {
   visibility = new IntersectionObserver(([entry]) => { inView.value = !!entry?.isIntersecting; });
   if (root.value) visibility.observe(root.value);
 });
-// Another member's pet is drawn from the room's updates, straight onto its layers: each update sets where
-// the mouse layer goes and the stylesheet glides it there, so nothing renders or runs between updates.
+/** The paws are drawn straight onto the layers (pawPaint.ts), never by a render: another member's pet, the own pet. */
+const direct = computed(() => !!props.motionId || !!props.pose);
+// Another member's pet is drawn from the room's updates: each update sets where the mouse layer goes and the
+// stylesheet glides it there, so nothing renders or runs between updates.
 // Subscribed only while it can be seen, which is also what the room is asked to send (net/MotionFrames.ts).
 watch([() => props.motionId, () => props.scale, assets, active, inView, root], () => {
   stopMotion?.(); stopMotion = undefined;
   const el = root.value;
   if (!props.motionId || !el || !active.value || !inView.value) return;
-  const mouse = [...el.querySelectorAll<HTMLElement>(".mouse")];
-  const keyboard = el.querySelector<HTMLElement>(".kb");
-  const [left, right] = [el.querySelector<HTMLElement>(".click-left"), el.querySelector<HTMLElement>(".click-right")];
-  const scale = props.scale;
-  stopMotion = remoteMotion.subscribe(props.motionId, (pose) => {
-    const at = `translate(${pose.dx * scale}px, ${pose.dy * scale}px)`;
-    for (const layer of mouse) layer.style.transform = at;
-    if (keyboard) {
-      keyboard.style.transform = `translateY(${(pose.keyDown ? PET_BASE.keyboard.pressOffset : 0) * scale}px)`;
-      // The quick way down, the springy way back up, as for the own pet (.kb.down below).
-      keyboard.classList.toggle("down", pose.keyDown);
-    }
-    // Not drawn at all while the button is up: a masked layer that travels with the mouse costs a frame each step.
-    if (left) left.style.display = pose.left ? "block" : "none";
-    if (right) right.style.display = pose.right ? "block" : "none";
-  });
+  const paint = pawPainter(el, props.scale);
+  stopMotion = remoteMotion.subscribe(props.motionId, (pose) => paint(pose, pose.keyDown));
 }, { flush: "post" });
 onBeforeUnmount(() => { stopMotion?.(); visibility?.disconnect(); });
 const s = computed(() => props.scale);
@@ -113,6 +107,18 @@ watch(
 );
 const pressed = computed(() => props.keyDown || pulseDown.value);
 
+// The own pet's pose, painted whenever it changes; bound to the layers again when the pet is drawn anew.
+let paintOwn: ((pose: PawPose, pressed: boolean) => void) | null = null;
+const ownPressed = () => !!props.pose?.keyDown || pulseDown.value;
+watch([() => props.pose, () => props.motionId, () => props.scale, assets, root], () => {
+  const el = root.value, pose = props.pose;
+  paintOwn = pose && !props.motionId && el && assets.value ? pawPainter(el, props.scale) : null;
+  if (paintOwn && pose) paintOwn(pose, ownPressed());
+}, { flush: "post", immediate: true });
+watch(() => (props.pose ? [props.pose.dx, props.pose.dy, props.pose.left, props.pose.right, ownPressed()] : null), () => {
+  if (paintOwn && props.pose) paintOwn(props.pose, ownPressed());
+}, { flush: "post" });
+
 // ---- the second form of a two-form skin: the own pet times its presses, another member's pet its tap batches
 const typedForm = ref(false);
 const formOn = computed(() => (props.form ?? typedForm.value) && !!assets.value?.form);
@@ -122,11 +128,11 @@ watch(() => assets.value?.form, (has) => {
   form = has ? new SkinForm((on) => (typedForm.value = on)) : undefined;
 }, { immediate: true });
 onBeforeUnmount(() => form?.reset());
-watch(() => props.formPress, (press) => {
+watch(() => props.formPress ?? props.pose?.formPress, (press) => {
   if (press !== undefined) form?.press(Date.now());
 });
 watch(() => props.pulse, () => {
-  if (props.formPress === undefined) form?.press(Date.now());
+  if (props.formPress === undefined && !props.pose) form?.press(Date.now());
 });
 const sized = (p: { bg: string; bgSmall: string; bgMedium: string }) =>
   (s.value <= 1 ? p.bgSmall : s.value <= 2 ? p.bgMedium : p.bg);
@@ -171,13 +177,13 @@ const box = computed(() => ({ width: u(PET_BASE.width), height: u(PET_BASE.heigh
 const kbStyle = computed(() => {
   const k = PET_BASE.keyboard;
   const box = { left: u(k.x), top: u(k.y), width: u(k.size), height: u(k.size) };
-  // Another member's layers are moved by the motion painter above, never by a render.
-  return props.motionId ? box : { ...box, transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)` };
+  // Layers drawn straight onto (`direct`) are moved by the painters above, never by a render.
+  return direct.value ? box : { ...box, transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)` };
 });
 const mouseStyle = computed(() => {
   const m = PET_BASE.mouse;
   const box = { left: u(m.x), top: u(m.y), width: u(m.size), height: u(m.size) };
-  return props.motionId ? box : { ...box, transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)` };
+  return direct.value ? box : { ...box, transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)` };
 });
 const clickColor = computed(() => characterColor(assets.value?.name ?? props.character));
 const clickMask = (src: string) => ({ maskImage: `url("${src}")`, WebkitMaskImage: `url("${src}")` });
@@ -193,7 +199,7 @@ const bubbleAnchor = computed(() => ({
 </script>
 
 <template>
-  <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
+  <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId, 'direct-pose': direct }" :style="box">
     <div v-if="assets" class="art" :style="opacity !== undefined && opacity < 1 ? { opacity } : undefined">
       <div class="still">
         <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
@@ -205,10 +211,10 @@ const bubbleAnchor = computed(() => ({
           <span v-if="loop && !loop.behind && formOn && active" class="layer loop" :style="loopStyle"><img :src="loop.src" draggable="false" alt="" /></span>
         </Transition>
       </div>
-      <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
+      <img class="layer kb" :class="direct ? undefined : { down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
-      <span v-if="motionId || leftDown" class="layer mouse click" :class="{ 'click-left': motionId }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
-      <span v-if="motionId || rightDown" class="layer mouse click" :class="{ 'click-right': motionId }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
+      <span v-if="direct || leftDown" class="layer mouse click" :class="{ 'click-left': direct }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
+      <span v-if="direct || rightDown" class="layer mouse click" :class="{ 'click-right': direct }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
     <span v-if="reachStyle && formOn && active" class="reach" data-hit :style="reachStyle"></span>
@@ -286,7 +292,7 @@ const bubbleAnchor = computed(() => ({
 .smooth-mouse .mouse { transition: transform 60ms linear; }
 /* Updates come every 100ms (net/MotionSender.ts): the layer takes that long to reach each one. */
 .remote-motion .mouse { transition: transform 100ms linear; }
-.remote-motion .click-left, .remote-motion .click-right { display: none; }
+.direct-pose .click-left, .direct-pose .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
 /* Draws nothing: it only takes the mouse over the wing, which the picture's layers let through. */

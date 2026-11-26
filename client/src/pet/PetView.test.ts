@@ -83,3 +83,37 @@ describe("the second form's wing past the picture", () => {
     }
   });
 });
+
+describe("the own pet's paws", () => {
+  const kb = (html: string) => /<img class="(down )?layer kb"[^>]*style="([^"]*)"/.exec(html);
+  it("press the keyboard paw down by the press offset at the pet's size, and put it back up", async () => {
+    const down = kb(await renderToString(createSSRApp(PetView, { character: "嘉然山海经", keyDown: true, scale: 2 })))!;
+    expect(down[1]).toBe("down ");
+    expect(down[2]).toContain("transform:translateY(10px)");
+    const up = kb(await renderToString(createSSRApp(PetView, { character: "嘉然山海经", scale: 2 })))!;
+    expect(up[1]).toBeUndefined();
+    expect(up[2]).toContain("transform:translateY(0px)");
+  });
+  it("move the mouse paw and its pressed buttons together, at the pet's size", async () => {
+    const html = await renderToString(createSSRApp(PetView, {
+      character: "嘉然山海经", scale: 1.5, mouseDx: 4, mouseDy: -2, leftDown: true,
+    }));
+    expect(html.match(/class="layer mouse[^"]*"[^>]*style="[^"]*transform:translate\(6px, -3px\)/g)).toHaveLength(2);
+  });
+});
+
+describe("the own pet given its pose", () => {
+  it("keeps both button layers, hidden, and moves no layer by a render", async () => {
+    const pose = { keyDown: true, left: true, right: false, dx: 7, dy: -3, formPress: 2 };
+    const html = await renderToString(createSSRApp(PetView, { character: "乃琳", pose, opacity: 0.5 }));
+    expect(html).toContain("direct-pose");
+    expect(html).not.toContain("remote-motion");
+    expect(html).toContain("click-left");
+    expect(html).toContain("click-right");
+    expect(html).not.toContain("translate(");
+    expect(html).not.toContain("translateY(");
+    expect(html).not.toMatch(/class="[^"]*\bdown\b/);
+    // The figure fades as before.
+    expect(html).toContain('<div class="art" style="opacity:0.5;"');
+  });
+});

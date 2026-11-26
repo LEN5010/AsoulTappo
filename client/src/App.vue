@@ -692,8 +692,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @drag="onDrag" @tap="onOwnTap" @pointermove="keepPeek"
     >
       <PetView
-        :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
-        :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
+        :character="settings.character" :scale="settings.scale" :pose="pet" :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :win="localPet.win" :pulse="localPet.pulse" :sip="localPet.sip"
         :min-emote="56" :opacity="settings.petOpacity" reach-hit v-bind="ownEmote"
       />
