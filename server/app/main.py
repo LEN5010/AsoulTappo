@@ -493,22 +493,34 @@ def _may_start_save(request: Request, who: PlayerId) -> None:
 ROOM_LOOKUPS = 60
 ROOM_LOOKUP_SECONDS = 600.0
 ROOM_LOOKUP_ADDRESSES = 50000
+# By address: (start of its window, lookups in it), in the order the windows started (a new window moves its address
+# to the end), so the ended windows are the first ones.
 _room_lookups: dict[str, tuple[float, int]] = {}
 _room_lookups_lock = threading.Lock()
 
 
 def _may_look_up_room(request: Request) -> None:
-    """Refuses a room lookup once its address has made ROOM_LOOKUPS within the current ROOM_LOOKUP_SECONDS."""
+    """Refuses a room lookup once its address has made ROOM_LOOKUPS within the current ROOM_LOOKUP_SECONDS. Over
+    ROOM_LOOKUP_ADDRESSES addresses, the ended windows go; only a table still over it with running ones is emptied."""
     address = _address(request)
     if address is None:
         return
     now = game.now()
     with _room_lookups_lock:
         if len(_room_lookups) > ROOM_LOOKUP_ADDRESSES:
-            _room_lookups.clear()
+            ended = []
+            for old, (start, _) in _room_lookups.items():
+                if now - start < ROOM_LOOKUP_SECONDS:
+                    break
+                ended.append(old)
+            for old in ended:
+                del _room_lookups[old]
+            if len(_room_lookups) > ROOM_LOOKUP_ADDRESSES:
+                _room_lookups.clear()
         start, count = _room_lookups.get(address, (now, 0))
         if now - start >= ROOM_LOOKUP_SECONDS:
             start, count = now, 0
+            del _room_lookups[address]
         if count >= ROOM_LOOKUPS:
             raise HTTPException(429, {"code": "too_many_lookups", "message": "查询房间太频繁，请稍后再试"})
         _room_lookups[address] = (start, count + 1)
