@@ -219,3 +219,109 @@ describe("a table waiting for a hand", () => {
     expect(await engine(o, woken, 3000)).toBeGreaterThan(180);
   });
 });
+
+const tornAfter = (list: Told, from: number) => list.filter(([at, e]) => e.type === "torn" && at > from).length;
+const inHand = (o: Opening, i: number, state: string) => () => o.state().active?.i === i && o.state().active?.state === state;
+/** Presses go on through each rare card as it comes; the run up to the end, and how many presses it took. */
+async function pressThrough(o: Opening, list: Told, rare: number[]): Promise<void> {
+  for (const i of rare) {
+    // Each is taken up sealed, torn by itself and turned over in the dark, and waits on show for a press.
+    await until(o, inHand(o, i, "sealed"));
+    await until(o, told(list, "shown", i));
+    expect(o.state().spot).toBe(o.state().deal[i]);
+    await idle(o, 1500);
+    expect(told(list, "kept", i)()).toBe(false);
+    o.press();
+    await until(o, told(list, "kept", i));
+  }
+}
+
+describe("a box skipped through", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("sends the cards of one member down at once and opens each rare one as it would have been", async () => {
+    const { o, told: list } = table(MIXED);
+    await until(o, sealed(o, 0));
+    const at = o.clock;
+    expect(o.skip()).toBe("rush");
+    // The plain ones go to the row first, without a press, left to right.
+    expect(await until(o, () => [0, 2, 5].every((i) => told(list, "kept", i)()), 4000)).toBeLessThan(2500);
+    expect(keptOrder(list)).toEqual([0, 2, 5]);
+    expect(list.some(([, e]) => e.type === "shown" && [0, 2, 5].includes(e.index))).toBe(false);
+    await pressThrough(o, list, [1, 3, 4]);
+    await until(o, () => o.state().phase === "end", 6000);
+    expect(keptOrder(list)).toEqual([0, 2, 5, 1, 3, 4]);
+    // The box counted as opened at the skip: nothing more is told torn.
+    expect(tornAfter(list, at)).toBe(0);
+  });
+
+  it("lays the whole box out on a second skip while a rare card is on its way", async () => {
+    const { o, told: list } = table(MIXED);
+    await until(o, sealed(o, 0));
+    o.skip();
+    await until(o, told(list, "shown", 1));
+    expect(o.skip()).toBe("all");
+    expect(await until(o, () => o.state().phase === "end", 6000)).toBeLessThan(3000);
+    expect(told(list, "shown", 3)()).toBe(false);
+  });
+
+  it("ends by itself when no rare card is left", async () => {
+    const { o, told: list } = table(PLAIN);
+    await until(o, sealed(o, 0));
+    o.press();
+    await until(o, told(list, "shown", 0));
+    expect(o.skip()).toBe("rush");
+    // The one on show goes down at once.
+    expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(16);
+    expect(await until(o, () => o.state().phase === "end", 8000)).toBeLessThan(5000);
+    expect(keptOrder(list)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("lets a rare card on show finish before the row comes", async () => {
+    const { o, told: list } = table(MIXED);
+    await until(o, sealed(o, 0));
+    o.press();
+    await until(o, told(list, "shown", 0));
+    o.press();
+    await until(o, sealed(o, 1));
+    o.press();
+    await until(o, told(list, "shown", 1));
+    expect(o.skip()).toBe("rush");
+    await idle(o, 1500);
+    expect(told(list, "kept", 1)()).toBe(false);
+    o.press();
+    await until(o, () => [1, 2, 5].every((i) => told(list, "kept", i)()), 5000);
+    await pressThrough(o, list, [3, 4]);
+    await until(o, () => o.state().phase === "end", 6000);
+    expect(keptOrder(list)).toEqual([0, 1, 2, 5, 3, 4]);
+  });
+
+  it("goes through a skipped box by itself while it opens by itself", async () => {
+    const { o, told: list } = table(MIXED);
+    await until(o, sealed(o, 0));
+    o.setAuto(true);
+    expect(o.skip()).toBe("rush");
+    await until(o, () => o.state().phase === "end", 30000);
+    expect(keptOrder(list)).toEqual([0, 2, 5, 1, 3, 4]);
+  });
+
+  it("goes out with what is left on the desk when closed while a skipped box is still showing", async () => {
+    const { o, told: list } = table(MIXED);
+    await until(o, sealed(o, 0));
+    o.skip();
+    await until(o, told(list, "shown", 1));
+    let gone = false;
+    void o.goOut().then(() => { gone = true; });
+    await until(o, () => gone, 3000);
+    expect(o.state().phase).toBe("leaving");
+    expect(told(list, "kept", 1)()).toBe(false);
+  });
+
+  it("lays everything out at once when skipped before the box is open", async () => {
+    const { o } = table(MIXED, false);
+    await until(o, () => o.state().phase === "intro");
+    expect(o.skip()).toBe("all");
+    await until(o, () => o.state().phase === "end", 6000);
+  });
+});

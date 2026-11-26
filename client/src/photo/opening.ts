@@ -89,8 +89,11 @@ export interface Opening {
   press(repeat?: boolean): void;
   /** Bags are opened one after another by themselves. */
   setAuto(on: boolean): void;
-  /** Ends the run wherever it is: every card goes to the row, and the row is laid out. */
-  skip(): void;
+  /** Cuts the run short. The first time while bags are being opened ("rush"): what is left comes out of the box in a row,
+   * the cards of one member go down to the row at once and each rare one is opened as it would have been; a rare one on
+   * show goes down first. Otherwise ("all"): every card goes to the row, and the row is laid out. Null when there is
+   * nothing to cut short. Either way the box counts as opened from then on. */
+  skip(): "rush" | "all" | null;
   /** Clears the table; resolves once it is empty. Nothing can be pressed any more. */
   leave(): Promise<void>;
   /** The same, and what lies under the table comes into sight, with another box coming down to [place]. */
@@ -110,6 +113,11 @@ export interface Opening {
 }
 
 const TEETH = 30;
+/** A box skipped through (rush()): how far apart its bags leave the box, how long each is on its way to the row and
+ * where that row stands, how far apart those of one member are torn and how fast, how long a rare one takes to come up
+ * into the hand and how long it is held there before it is torn. The steps are the draw board's (RevealScene: a tile
+ * dealt every 42 ms, a quiet one turned every 70 ms, 300 ms from a turn to its spotlight). */
+const RUSH_DEAL = 42, RUSH_OUT = 620, ROW_Y = -40, RUSH_STEP = 70, RUSH_TEAR = 200, RUSH_UP = 560, RUSH_BEAT = 300;
 /** How long what sways by itself goes on after the last touch while the table waits. */
 const STIR_MS = 3000;
 /** Less than this from one picture to the next is no change. */
@@ -119,7 +127,7 @@ const LID_W = 2.1, LID_FROM = Math.asin(0.2);
 /** How tall a card stands in the row. */
 const RAIL_S = 98 / CARD_H;
 
-type BagState = "box" | "rise" | "arrive" | "sealed" | "torn" | "falling" | "heap" | "gone";
+type BagState = "box" | "rise" | "arrive" | "sealed" | "line" | "torn" | "falling" | "heap" | "gone";
 type CardState = "in" | "pop" | "out" | "fly" | "rail" | "spread" | "inspect";
 interface Place { x: number; y: number; s: number }
 interface Card extends CardModel {
@@ -136,6 +144,9 @@ interface Route {
   u: number;
   pose: { rx: number; ry: number; s: number };
   rz: number;
+  /** How big the bag is at its end, and whether it ends in the row of a box skipped through. */
+  size: number;
+  line: boolean;
   /** The bag goes back along it. */
   back?: boolean;
 }
@@ -162,6 +173,9 @@ interface Bag extends BagModel {
   fade: number;
   float: number;
   leanX: number; leanY: number;
+  /** It stands in the row of a box skipped through; it is torn there without a sound for each bit. */
+  row: boolean;
+  hush: boolean;
 }
 interface Table extends BoxModel {
   on: boolean;
@@ -212,7 +226,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     return {
       ...bagModel(card, rnd(0, 20), rand() < 0.5 ? 0 : 1), card, i, state: "box", n: 0, thr, rise: 0, route: null,
       vbx: 0, vby: 0, vw: 0, curlV: 0, tug: 0, tugV: 0, alone: false, drive: null, resolve: null, sealedAt: 0, fade: 0,
-      float: 0, leanX: 0, leanY: 0,
+      float: 0, leanX: 0, leanY: 0, row: false, hush: false,
     };
   }
   const makeCard = (info: CardInfo): Card => ({ ...cardModel(info), state: "in", home: { x: 0, y: 0, s: 1 } });
@@ -258,6 +272,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   let from = calm ? null : options.from ?? null;
   const visiting = !!from;
   let left: Promise<void> | null = null;      // leave() was called
+  let rushing = false;   // skipped through: the row is out, or coming
+  let rushNext = false;  // skipped while a rare card was on show: the row comes once it has gone down
   let released: (() => void) | null = null;
 
   /* ---------------------------------------------------------------- standing still */
@@ -457,10 +473,10 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     a.n += 1;
     a.q = a.n / TEETH;
     scene.lights = a.card.info.light;
-    snd.tick(a.q, speed, (a.p.x + (a.gx - 0.5) * BAG[0]) / 480, k === 0 ? 1.3 : 1);
+    if (!a.hush) snd.tick(a.q, speed, (a.p.x + (a.gx - 0.5) * BAG[0]) / 480, k === 0 ? 1.3 : 1);
   }
   async function tearAlone(a: Bag, ms: number): Promise<void> {
-    if (a.alone || a.torn || a.state !== "sealed") return;
+    if (a.alone || a.torn || (a.state !== "sealed" && a.state !== "line")) return;
     a.alone = true;
     if (a.n === 0) a.gx = rnd(0.2, 0.8);
     a.hint = -2;
@@ -475,12 +491,15 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     a.q = 1;
     a.strain = 0;
     a.state = "torn";
-    const gap = time.clock - lastTear;
-    lastTear = time.clock;
-    tempo = lerp(tempo, 1 - smooth(650, 2000, gap), 0.6);
-    eager = early = false;
-    ptr.far = ptr.y;
-    ptr.dir = -1;
+    // One of the row is no tear of the hand's: the pace and what was pressed stay as they were.
+    if (!a.hush) {
+      const gap = time.clock - lastTear;
+      lastTear = time.clock;
+      tempo = lerp(tempo, 1 - smooth(650, 2000, gap), 0.6);
+      eager = early = false;
+      ptr.far = ptr.y;
+      ptr.dir = -1;
+    }
     snd.snap(speed, (a.gx - 0.5) * 0.5);
     // The flap goes on up and over with the hand.
     a.curlV += 0.0008 + 0.0012 * speed;
@@ -489,7 +508,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     void tween(a, { beam: 1 }, RANK(a.card) ? 820 : 400, E.flow, RANK(a.card) ? 60 : 0);
     a.tugV -= 0.03;
     a.resolve?.();
-    emit({ type: "torn", index: a.i });
+    // A box skipped through counts as opened already.
+    if (!rushing) emit({ type: "torn", index: a.i });
   }
 
   /* ---------------------------------------------------------------- particles */
@@ -696,13 +716,14 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       else if (b.card.info.signed) await revealSigned(b, live);
       else await revealSolo(b, live);
       if (!live()) return;
+      if (rushNext) return void rush();
     }
   }
 
   /** The way from the box to the middle, as one line: straight up out of it, then over in a bow. Evenly measured, so
    * one curve of speed can run along the whole of it. */
-  function route(b: Bag): Route {
-    const from = riseAt(b), clear = riseAt({ i: b.i, rise: 1.04 }), to = [0, 24, 0];
+  function route(b: Bag, to = [0, 24, 0], size = 1, line = false): Route {
+    const from = riseAt(b), clear = riseAt({ i: b.i, rise: 1.04 });
     const up = [0, 1, 2].map((k) => clear[k] - from[k]), straight = Math.hypot(...up);
     const pts: number[][] = [[...from], [...clear]];
     const c1 = clear.map((v, k) => v + (up[k] / straight) * 120), c2 = [to[0] - 120, to[1] - 96, 46];
@@ -717,7 +738,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       at.push(at[i - 1] + Math.hypot(p[0] - o[0], p[1] - o[1], p[2] - o[2]));
     }
     const pose = { rx: box.p.rx, ry: box.p.ry, s: box.p.s };
-    return { pts, at, clear: at[1], all: at[at.length - 1], u: 0, pose, rz: rnd(-1.0, 1.0) };
+    return { pts, at, clear: at[1], all: at[at.length - 1], u: 0, pose, rz: rnd(-1.0, 1.0), size, line };
   }
   function follow(b: Bag, r: Route): void {
     const d = r.u * r.all;
@@ -728,10 +749,16 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     // How far along the bow it is: it straightens up, grows, and leans into the turn.
     const w = clamp((d - r.clear) / (r.all - r.clear)), e = w * w * (3 - 2 * w);
     Object.assign(b.p, {
-      x: q[0], y: q[1], z: q[2], rx: lerp(r.pose.rx, 0, e), ry: lerp(r.pose.ry, 0, e), s: lerp(r.pose.s, 1, e),
+      x: q[0], y: q[1], z: q[2], rx: lerp(r.pose.rx, 0, e), ry: lerp(r.pose.ry, 0, e), s: lerp(r.pose.s, r.size, e),
       rz: 7 * Math.sin(Math.PI * w) * (1 - w) + r.rz * e,
     });
-    if (b.state === "rise" && d > r.clear && !r.back) { b.state = "arrive"; active = b; }
+    if (b.state === "rise" && d > r.clear && !r.back) {
+      if (r.line) b.state = "line";
+      else {
+        b.state = "arrive";
+        active = b;
+      }
+    }
     if (r.back && d <= r.clear) {
       if (active === b) active = null;
       b.state = r.u > 0.004 ? "rise" : "box";
@@ -791,9 +818,9 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
 
   /** The card shows itself at the mouth, back first: whose back it is already tells something. */
   function popCard(b: Bag): void {
-    const c = b.card, land = c.info.land;
+    const c = b.card, land = c.info.land, s = b.row ? b.p.s : 1;
     c.state = "pop";
-    c.p = P(b.p.x, b.p.y + 0.5 * MM, { ry: -180, rz: (land ? -90 : 0) + b.p.rz, s: 1 });
+    c.p = P(b.p.x, b.p.y + 0.5 * MM * s, { ry: -180, rz: (land ? -90 : 0) + b.p.rz, s });
     c.lipOn = 1;
     void tween(b, { open: 1 }, pace(420), E.flow);
   }
@@ -998,9 +1025,11 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     snd.rustle(2, 120, 0.12, 0.7);
   }
 
+  /** [c] goes to its place in the row, the one of its bag in the deal. */
   function keep(c: Card): void {
-    void collect(c, opened - 1);
-    emit({ type: "kept", index: cards.indexOf(c) });
+    const k = cards.indexOf(c);
+    void collect(c, k);
+    emit({ type: "kept", index: k });
   }
   async function collect(c: Card, k: number): Promise<void> {
     c.state = "fly";
@@ -1174,8 +1203,166 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   }
 
   /* ---------------------------------------------------------------- cut short */
-  function skip(): void {
-    if (dead || left || phase === "gather" || phase === "end" || phase === "taking") return;
+  function skip(): "rush" | "all" | null {
+    if (dead || left || phase === "gather" || phase === "end" || phase === "taking") return null;
+    opened = COUNT;
+    if (rushing || rushNext || calm || (phase !== "play" && phase !== "spot")) {
+      spreadAll();
+      return "all";
+    }
+    if (phase === "spot") rushNext = true;
+    else void rush();
+    return "rush";
+  }
+
+  /** What is left comes out of the box at once and stands in a row across the table. The bags of one member are torn
+   * one after another from left to right, and their cards go down to the row, turning over on the way; then each rare one
+   * is taken up out of the row, torn, and shown as it would have been, waiting for a press. A plain card that was out
+   * already goes down first. */
+  async function rush(): Promise<void> {
+    epoch += 1;
+    const my = epoch, live: Live = () => my === epoch;
+    rushing = true;
+    rushNext = false;
+    pressWaiters = [];
+    grip = null;
+    eager = early = false;
+    tempo = 0;
+    haste = 1;
+    shown = spinning = null;
+    // A card out of its bag already goes on down.
+    for (const b of bags) {
+      const c = b.card;
+      if (!b.torn || (c.state !== "in" && c.state !== "pop" && c.state !== "out")) continue;
+      if (c.state === "out") {
+        sendHome(c);
+        continue;
+      }
+      if (c.state === "in") popCard(b);
+      if (b.state !== "falling") {
+        void tween(c.p, { y: -100, rz: 0 }, 300, E.flow);
+        void dropBag(b, 1, 300);
+      }
+      void wait(300).then(() => { if (live()) sendHome(c); });
+    }
+
+    const row = bags.filter((b) => !b.torn && b.state !== "gone"), n = row.length;
+    const s = n <= 6 ? 0.5 : n <= 10 ? 0.42 : 0.34, step = Math.min(BAG[0] * s + 14, 820 / Math.max(1, n - 1));
+    let late = 0;
+    if (n) {
+      snd.slide(0.4, 0.8, -0.2);
+      snd.rustle(8, 700, 0.12, 0.9);
+      void tween(box.p, { rz: -0.9, y: 71 }, 160, E.flow).then(() => tween(box.p, { rz: 0, y: 74 }, 420, E.flow));
+    }
+    row.forEach((b, j) => {
+      const to = [(j - (n - 1) / 2) * step, ROW_Y, 0];
+      Object.assign(b, { row: true, hush: true, hint: -2, drive: null, alone: false, resolve: null });
+      if (b === active) active = null;
+      if (b.state === "box" || b.state === "rise") {
+        // Up out of the box, one after another; one on its way up already goes on from where it is.
+        const was = b.route;
+        if (b.state === "box") Object.assign(b, { state: "rise", p: P() });
+        const r = b.route = route(b, to, s, true);
+        if (was) startAt(r, [b.p.x, b.p.y, b.p.z]);
+        follow(b, r);
+        b.px = b.p.x;
+        b.py = b.p.y;
+        void tween(r, { u: 1 }, RUSH_OUT, E.glide, late).then(() => { if (b.route === r) b.route = null; });
+        late += RUSH_DEAL;
+      } else {
+        // One that is out already goes across.
+        b.route = null;
+        b.state = "line";
+        void tween(b.p, { x: to[0], y: to[1], z: 0, rx: 0, ry: 0, rz: 0, s }, RUSH_OUT, E.flow);
+      }
+    });
+    if (n) await wait(RUSH_OUT + Math.max(0, late - RUSH_DEAL));
+    if (!live()) return;
+
+    const plain = row.filter((b) => !RANK(b.card)), rare = row.filter((b) => RANK(b.card));
+    for (const [j, b] of plain.entries()) {
+      // Their fronts are asked for a few ahead, and let go of once they are down.
+      const ahead = plain.slice(j, j + 3).map((x) => x.card);
+      ahead.forEach((c) => kit.want(c.info, "front"));
+      const away = cards.filter((c) => c.state === "pop" || c.state === "fly");
+      kit.letGo([...away, ...ahead, ...rare.slice(0, 1).map((x) => x.card)].map((c) => c.info));
+      await kit.want(b.card.info, "front").ready;
+      await kit.want(b.card.info, "behind").ready;
+      if (!live()) return;
+      void openInRow(b, live);
+      await wait(RUSH_STEP);
+      if (!live()) return;
+    }
+
+    for (const [j, b] of rare.entries()) {
+      cur = b.i;
+      kit.want(b.card.info, "front");
+      kit.want(b.card.info, "behind");
+      kit.letGo(rare.slice(j, j + 3).map((x) => x.card.info));
+      // Taken up out of the row into the hand, as one that comes out of the box.
+      Object.assign(b, { row: false, hush: false, state: "arrive" });
+      active = b;
+      snd.slide(0.26, 0.95, -0.35);
+      await tween(b.p, { x: 0, y: 24, z: 0, rx: 0, ry: 0, rz: rnd(-1.0, 1.0), s: 1 }, RUSH_UP, E.glide);
+      await kit.want(b.card.info, "front").ready;
+      await kit.want(b.card.info, "behind").ready;
+      if (!live() || active !== b) return;
+      b.state = "sealed";
+      grip = null;
+      ptr.sx = ptr.x;
+      ptr.sy = ptr.y;
+      if (ptr.down) ptr.moved = 10;
+      b.sealedAt = hc;
+      if (!early) await wait(RUSH_BEAT);
+      if (!live()) return;
+      early = false;
+      void tearAlone(b, 560);
+      await new Promise<void>((done) => {
+        b.resolve = done;
+        if (b.torn) done();
+      });
+      if (!live()) return;
+      if (b.card.info.land) await revealWide(b, live);
+      else await revealSigned(b, live);
+      if (!live()) return;
+    }
+    await finale();
+  }
+  /** A bag of the row is torn by itself, and its card comes up out of it and goes down to the row. */
+  async function openInRow(b: Bag, live: Live): Promise<void> {
+    const c = b.card;
+    await tearAlone(b, RUSH_TEAR);
+    if (!live()) return;
+    // The flap goes up first.
+    await wait(110);
+    if (!live()) return;
+    popCard(b);
+    void tween(b, { open: 1 }, 260, E.flow);
+    void tween(c.p, { y: c.p.y - CARD_H * 0.17 * b.p.s }, 200, E.out);
+    await wait(150);
+    if (!live()) return;
+    void dropBag(b, 0.7, 360);
+    sendHome(c);
+  }
+  /** A card that is out goes down to the row, in its turn. */
+  function sendHome(c: Card): void {
+    const k = cards.indexOf(c);
+    bringHome(c, k);
+    emit({ type: "kept", index: k });
+  }
+  /** [r] begins at [at] instead, straight on to where it clears the box. */
+  function startAt(r: Route, at: number[]): void {
+    r.pts[0] = at;
+    const d = Math.hypot(...r.pts[1].map((v, k) => v - at[k])), more = d - r.at[1];
+    r.at = r.at.map((v, k) => (k ? v + more : 0));
+    r.clear = r.at[1];
+    r.all = r.at[r.at.length - 1];
+    r.u = 0;
+  }
+
+  /** Every card goes to the row from wherever it is, and the row is laid out. */
+  function spreadAll(): void {
+    rushNext = false;
     epoch += 1;
     time.clear();
     pressWaiters = [];
@@ -1186,7 +1373,6 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     eager = early = false;
     haste = 1;
     tempo = 0;
-    opened = COUNT;
     setAuto(false);
     setDim(false);
     void tween(scene, { spot: 0, toneAmt: 0, rays: 0 }, 760, E.flow);
@@ -1293,10 +1479,13 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   /** Another box on its way down to the shelf: the point its perspective is drawn toward, and where it lands. */
   let coming: { lens: Vec2; y: number } | null = null;
   async function departOut(place?: BoxPlace): Promise<void> {
-    if (phase !== "end" && phase !== "taking") breakOff();
+    // A box skipped through goes out before it was all shown: what is on the desk goes with the cards.
+    const midway = phase !== "end" && phase !== "taking";
+    if (midway) breakOff();
     setPhase("leaving");
     if (inspecting) await putBack();
     snd.slide(0.6, 0.9);
+    if (midway) sweep();
     // Gathered up by rows, the lowest first.
     const order = [...cards].sort((a, b) => b.p.y - a.p.y || a.p.x - b.p.x);
     order.forEach((c, i) => {
@@ -1311,12 +1500,34 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     const lens: Vec2 = [(place.cx - r.left - r.width / 2) / view.css, (place.cy - r.top - r.height / 2) / view.css];
     scene.coverAt = [lens[0] + to.x, lens[1] + to.y];
     await wait(420);
+    if (midway) for (const b of bags) b.state = "gone";
     coming = { lens, y: to.y };
     Object.assign(box, { on: true, swaying: false, lid, tuck, flaps, lit, p: { ...to, y: to.y - view.h, ry: to.ry - 30 } });
     void tween(box.p, { ry: to.ry }, 840, E.out);
     void wait(420).then(() => snd.thud());
     await tween(box.p, { y: to.y }, 840, E.out);
     box.p = to;
+  }
+  /** The bags still about go off the desk, and the box off its side. */
+  function sweep(): void {
+    void tween(box.p, { x: boxAway() }, 520, E.flow);
+    for (const b of bags) {
+      b.route = null;
+      b.drive = null;
+      if (b.state === "gone") continue;
+      if (b.state === "heap") void tween(b.p, { x: b.p.x + 420, rz: b.p.rz + 40 }, 520, E.flow, rnd(0, 120));
+      else if (b.state === "box" || b.state === "rise") Object.assign(b, { state: "box", rise: 0 });
+      else {
+        if (b.state !== "falling") {
+          b.p = heldPose(b);
+          b.state = "falling";
+          b.fade = 0;
+          void tween(b, { fade: 1, beam: 0 }, 320, E.flow);
+        }
+        void tween(b.p, { y: view.h / 2 + BAG[1] }, 460, E.flow);
+      }
+    }
+    if (active) active = null;
   }
   async function departBack(place?: BoxPlace): Promise<void> {
     const idle = phase === "intro";
@@ -1408,6 +1619,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
           b.hint = k < 1 ? -0.25 + k * 1.5 : -2;
         }
       }
+      if (b.state === "line" && b.drive) pull(b, b.drive.q, 0.65);
       if (b.drive && b.torn) b.drive = null;
       // The flap rolls up as it comes away, and goes on over once it is free.
       b.curlV += ((b.torn ? 3.1 : 1.0 + 1.6 * clamp(b.q * 1.2)) - b.curl) * dt * (b.torn ? 0.00026 : 0.00011);
@@ -1646,6 +1858,21 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       painter.thumb(c, dim);
     }
 
+    // What was left of a box skipped through, standing in a row.
+    for (const b of bags) {
+      if (!b.row || (b.state !== "line" && b.state !== "torn")) continue;
+      const c = b.card, p = b.p;
+      shadow(p.x + 6, p.y + 16 * p.s, BAG[0] * p.s, BAG[1] * p.s, p.rz, 0.45 * dim, 1.55);
+      solid();
+      clearDepth();
+      const between = c.state === "pop" ? () => {
+        c.lip = p.y - (BAG[1] / 2 - 10) * p.s;
+        c.lipLight = b.beam * glowOf(c.info).power;
+        drawCard(c);
+      } : null;
+      painter.bag(b, { between, lit: dim });
+    }
+
     // A bag on its way to the heap.
     for (const b of bags) {
       if (b.state !== "falling") continue;
@@ -1725,7 +1952,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     leavePointer() { if (!ptr.down) { touched(); ptr.inside = false; } },
     press(repeat = false) { if (!dead && !left) { touched(); press(repeat); } },
     setAuto(on) { if (!dead && !left) { touched(); setAuto(on); } },
-    skip() { touched(); skip(); },
+    skip() { touched(); return skip(); },
     leave() { touched(); return leave(); },
     goOut: (place) => { touched(); return goWith(() => departOut(place)); },
     goBack: (place) => { touched(); return goWith(() => departBack(place)); },

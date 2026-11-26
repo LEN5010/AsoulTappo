@@ -37,9 +37,10 @@ interface Bag { index: number; item: PhotoItem; fresh: boolean; shards: number; 
 const bags = shallowRef<Bag[]>([]);
 const total = computed(() => bags.value.length);
 
-/** Bags torn, cards that went to the row, and what the repeats among those turned into so far. */
+/** Bags torn, the cards that went to the row (a box skipped through sends them out of turn), and what the repeats among
+ * those turned into so far. */
 const torn = ref(0);
-const kept = ref(0);
+const kept = shallowRef(new Set<number>());
 const paid = ref(0);
 const bump = ref(0);
 const face = ref<number | null>(null);
@@ -65,6 +66,8 @@ let alive = true;
 let round = 0;
 /** The box has come to the table: what comes after it does not come from the shelf. */
 let taken = false;
+/** Skipped through: the box is opened, though not all of it was shown yet. */
+let rushed = false;
 /** It came with no shelf to come from: the table fades in. */
 const plain = ref(false);
 
@@ -73,9 +76,12 @@ function deal(): void {
     const item = photoItem(c.item);
     return item ? [{ index, item, fresh: !!c.new, shards: c.shards ?? 0, spare: !!c.spare }] : [];
   });
-  torn.value = kept.value = bags.value.filter((b) => b.index < view.value.opened).length;
-  paid.value = bags.value.slice(0, kept.value).reduce((sum, b) => sum + b.shards, 0);
+  const n = bags.value.filter((b) => b.index < view.value.opened).length;
+  torn.value = n;
+  kept.value = new Set(Array.from({ length: n }, (_, k) => k));
+  paid.value = bags.value.slice(0, n).reduce((sum, b) => sum + b.shards, 0);
   face.value = inspecting.value = null;
+  rushed = false;
   playing.value = dim.value = auto.value = ended.value = false;
 }
 /** The first [n] bags on the table are open, as the box counts them. */
@@ -145,7 +151,8 @@ function told(e: OpeningEvent): void {
 /** A card leaves for the row: its caption goes, and a repeat pays. */
 function keep(index: number): void {
   if (face.value === index) face.value = null;
-  kept.value = Math.max(kept.value, index + 1);
+  if (kept.value.has(index)) return;
+  kept.value = new Set(kept.value).add(index);
   const b = bags.value[index];
   if (!b?.shards) return;
   const box = host.value?.getBoundingClientRect();
@@ -166,7 +173,8 @@ function settlePaid(): void {
 }
 function finishBags(): void {
   tell(total.value);
-  torn.value = kept.value = total.value;
+  torn.value = total.value;
+  kept.value = new Set(bags.value.keys());
   settlePaid();
 }
 
@@ -192,7 +200,7 @@ const spareBefore = computed(() => {
 
 /** A cell a bag: empty, opened, or opened and rare in its members' colours. */
 const cells = computed(() => bags.value.map((b, k) => {
-  if (k >= kept.value) return { on: k < torn.value, tone: "" };
+  if (!kept.value.has(k)) return { on: k < torn.value, tone: "" };
   const c = b.item.characters.map(characterColor);
   const tone: Record<PhotoItemKind, string> = {
     solo: "", sign: "var(--grad-gold)", group: `linear-gradient(180deg, ${c.join(", ")})`, duo: `linear-gradient(180deg, ${c.join(", ")})`,
@@ -249,17 +257,25 @@ async function close(): Promise<void> {
   let place: BoxPlace | undefined;
   if (table && !calm.value && !flat.value) {
     mount?.wake();
-    place = shelfStage.value?.place(ended.value);
-    await (ended.value ? table.goOut(place) : table.goBack(place));
+    // One skipped through has no bags left to take back.
+    const done = ended.value || rushed;
+    place = shelfStage.value?.place(done);
+    await (done ? table.goOut(place) : table.goBack(place));
   }
   if (!alive) return;
   clearTable(!!place);
 }
+/** The first time, the box counts as opened while what is left still comes out: plain cards at once, rare ones in turn. */
 function skip(): void {
   if (leaving.value || !playing.value && !table) return;
-  finishBags();
-  face.value = null;
-  table?.skip();
+  if (table?.skip() === "rush") {
+    rushed = true;
+    tell(total.value);
+    torn.value = total.value;
+  } else {
+    finishBags();
+    face.value = null;
+  }
   mount?.wake();
 }
 function toggleAuto(): void {
