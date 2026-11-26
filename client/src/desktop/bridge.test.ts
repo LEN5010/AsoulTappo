@@ -65,6 +65,44 @@ async function context(panel: boolean | "ddz") {
   };
 }
 
+const panelGroups = ["checkins", "collection", "counter", "ddz", "economy", "freshItems", "members", "park",
+  "player", "pomodoro", "publicRooms", "room", "scratchCard", "todos"];
+
+it.each([
+  { label: "panel", keys: panelGroups },
+  { label: "ddz", keys: panelGroups },
+] as const)("delivers the $label window's state groups and public hall flag", async ({ label, keys }) => {
+  const desk = await context(false);
+  desk.player.ddzHallOn.value = true;
+  const { emitTo } = await import("@tauri-apps/api/event");
+  vi.mocked(emitTo).mockClear();
+  const mirror = await context(label === "panel" ? true : "ddz");
+  const reply = vi.mocked(emitTo).mock.calls.find(([to, event]) => to === label && event.startsWith("desktop:reply:"));
+  const { state } = (reply![2] as { result: { state: Record<string, unknown> } }).result;
+  expect(Object.keys(state).sort()).toEqual(keys);
+  expect(state.ddz).toHaveProperty("hall", true);
+  expect(mirror.player.ddzHallOn.value).toBe(true);
+  desk.player.ddzHallOn.value = false;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(mirror.player.ddzHallOn.value).toBe(false);
+});
+
+it("catches the panel up with changes made while it was hidden", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.panelOpen = false;
+  await vi.advanceTimersByTimeAsync(50);
+  desk.player.ddzHallOn.value = true;
+  desk.room.youId.value = "next-seat";
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.player.ddzHallOn.value).toBe(false);
+  expect(panel.room.youId.value).not.toBe("next-seat");
+  panel.ui.ui.panelOpen = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.player.ddzHallOn.value).toBe(true);
+  expect(panel.room.youId.value).toBe("next-seat");
+});
+
 it("mirrors desk state and exchanges setting edits without starting panel requests", async () => {
   const desk = await context(false);
   desk.counter.total = 42;

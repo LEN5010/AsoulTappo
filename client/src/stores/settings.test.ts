@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import { DEFAULT_SETTINGS, loadSettings, partnerNames, setPartnerNames } from "./settings";
 import { FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX } from "./feedback";
 
@@ -105,5 +106,59 @@ describe("loadSettings", () => {
     expect(long.feedbackText).toHaveLength(FEEDBACK_TEXT_MAX);
     expect(long.feedbackContact).toHaveLength(FEEDBACK_CONTACT_MAX);
     expect(loadSettings(store(JSON.stringify({ feedbackText: 3 }))).feedbackText).toBe("");
+  });
+});
+
+describe("desk settings persistence", () => {
+  const key = "asoultappo.settings.v1";
+  let page: EventTarget;
+  let stored: Map<string, string>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    page = new EventTarget();
+    vi.stubGlobal("window", Object.assign(page, { __TAURI_INTERNALS__: {}, location: { search: "" } }));
+    stored = new Map();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => stored.get(k) ?? null,
+      setItem: (k: string, value: string) => stored.set(k, value),
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("persists normalized placement, scales, opacity, draft, showcase order and taskbar settings", async () => {
+    stored.set(key, JSON.stringify({
+      petX: -52, petY: 28, partnerRowX: -80.7, panelScale: 1.35, petOpacity: 0.53,
+      feedbackText: "留给明天", feedbackContact: "房主", showcase: ["c", "a", "c", "b"],
+      barFolded: true, barFollow: false, barScale: 1.2, rejoinRoom: "last-room",
+    }));
+    const { settings, loadSettings } = await import("./settings");
+    const normalized = {
+      petX: -52, petY: 28, partnerRowX: -81, panelScale: 1.35, petOpacity: 0.53,
+      feedbackText: "留给明天", feedbackContact: "房主", showcase: ["c", "a", "b"],
+      barFolded: true, barFollow: false, barScale: 1.2, rejoinRoom: "last-room",
+    };
+    expect(settings).toMatchObject(normalized);
+    settings.showcase.reverse();
+    await vi.advanceTimersByTimeAsync(200);
+    const reordered = { ...normalized, showcase: ["b", "a", "c"] };
+    expect(JSON.parse(stored.get(key)!)).toMatchObject(reordered);
+    expect(loadSettings()).toMatchObject(reordered);
+  });
+
+  it("keeps the last of several desk edits when the page is hidden", async () => {
+    const { settings } = await import("./settings");
+    settings.feedbackText = "草";
+    await nextTick();
+    settings.feedbackText = "草稿";
+    await nextTick();
+    settings.feedbackText = "草稿已改";
+    await nextTick();
+    page.dispatchEvent(new Event("pagehide"));
+    expect(JSON.parse(stored.get(key)!).feedbackText).toBe("草稿已改");
   });
 });
