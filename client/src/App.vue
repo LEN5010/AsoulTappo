@@ -42,7 +42,8 @@ import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, autoStrikes, clo
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
-import { STRIP_HEIGHT, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
+import { STRIP_HEIGHT, emotePlace, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
+import { edgeShift } from "./pet/lift";
 import DeskGuide from "./pet/DeskGuide.vue";
 import { beginGuide, deskCardShown, guideRun } from "./stores/guide";
 import { guideLeft } from "./guide";
@@ -64,7 +65,7 @@ import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
 import {
   DESK_GAP, clamp, defaultFormation, defaultPetPos, dockY, enterRoom, formationCells, formationOffset, inLastRow,
-  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, rowCols, viewport, type FormationPlace, type Pos,
+  nextDockSlot, nextSlot, placeFormation, placePet, placeRemote, remotePos, resetOwnPet, viewport, type FormationPlace, type Pos,
   type Size,
 } from "./stores/desk";
 import { ddzFrame, openPanel, openTodoWindow, raceFrame, raisePanel, todoFrame, togglePanel, ui } from "./stores/ui";
@@ -83,8 +84,8 @@ const onResize = () => (viewport.value = { w: window.innerWidth, h: window.inner
 onResize();
 
 // ---- own pet
-/** The strip under the own pet: on a pet narrower than its keys need it shrinks to the pet's width as a whole. */
-const bar = computed(() => stripFit(settings.scale));
+/** The strip under the own pet: it shrinks to a small pet's width as a whole, or keeps the size set for it. */
+const bar = computed(() => stripFit(settings.scale, settings.barFollow ? undefined : settings.barScale));
 /** The own pet's width: room for the plate's handles beside the pet, wider than the strip (see ownDeskWidth). */
 const ownWidth = computed(() => ownDeskWidth(settings.scale));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
@@ -104,11 +105,13 @@ const stripNatural = ref(STRIP_HEIGHT);
 const stripHeight = computed(() => stripNatural.value * bar.value.zoom);
 /** The own pet's size with the strip under it, which a docked or folded pet does not have. */
 const fullSize = computed<Size>(() => ({
-  w: Math.max(ownSize.value.w, bar.value.width),
+  w: ownSize.value.w,
   h: Math.round(PET_BASE.height * settings.scale) + stripHeight.value,
 }));
 /** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
 const dragDock = ref<boolean | null>(null);
+/** The own pet's left edge while it is dragged, null when it is not. */
+const dragX = ref<number | null>(null);
 const docked = computed(() => dragDock.value ?? settings.petDocked);
 /** The strip stays under the pet: not folded away in the settings, and not on the bottom edge where it has no room. */
 const barPinned = computed(() => !settings.barFolded && !docked.value);
@@ -132,6 +135,22 @@ function onOwnTap() {
   peek.value = !peek.value;
 }
 const barShown = computed(() => !settings.clickThrough && (barPinned.value || peek.value));
+/**
+ * How far the strip moves sideways to stay on screen: one wider than the pet stands out beside it, and the pet still
+ * reaches the screen's edges.
+ */
+const barShift = computed(() => {
+  const x = (dragX.value ?? ownPos.value.x) + (ownWidth.value - bar.value.width) / 2;
+  return edgeShift(x, bar.value.width, viewport.value.w);
+});
+/** The own pet's box with a pinned strip standing out beside it, for placing partners clear of both. */
+const ownArea = computed(() => {
+  const pos = ownPos.value;
+  const left = pos.x + (ownWidth.value - bar.value.width) / 2 + barShift.value;
+  if (!barPinned.value || plateShown.value || bar.value.width <= ownWidth.value) return { pos, size: ownSize.value };
+  const x = Math.min(pos.x, left);
+  return { pos: { x, y: pos.y }, size: { w: Math.max(pos.x + ownSize.value.w, left + bar.value.width) - x, h: ownSize.value.h } };
+});
 const ownPos = computed<Pos>(() => {
   if (settings.petDocked) {
     const x = clamp({ x: settings.petX, y: 0 }, reaching(ownSize.value, ownReach.value)).x;
@@ -145,11 +164,13 @@ function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
   const placed = placePet(p, reaching(fullSize.value, ownReach.value), settings.scale);
   dragDock.value = placed.docked;
+  dragX.value = placed.pos.x;
   return placed.pos;
 }
 function onOwnMoved(p: Pos) {
   settings.petDocked = dragDock.value ?? false;
   dragDock.value = null;
+  dragX.value = null;
   settings.petX = p.x;
   settings.petY = p.y;
 }
@@ -297,27 +318,28 @@ watch(
       if (remotePos.has(key)) continue;
       const taken = keys.map((k) => remotePos.get(k)).filter((p): p is Pos => !!p);
       // Next to a docked own pet newcomers stand on the edge too, while it has room.
-      const edge = settings.petDocked ? nextDockSlot(ownPos.value, ownSize.value, remoteSize.value, taken) : null;
-      remotePos.set(key, edge ?? nextSlot(ownPos.value, ownSize.value, remoteSize.value, taken));
+      const own = ownArea.value;
+      const edge = settings.petDocked ? nextDockSlot(own.pos, own.size, remoteSize.value, taken) : null;
+      remotePos.set(key, edge ?? nextSlot(own.pos, own.size, remoteSize.value, taken));
     }
   },
   { immediate: true },
 );
 // Formation and row mode: partners stand in rows in the order of `others` (join order), and a drag on any of them
-// moves all. A row is a formation as wide as the screen holds that always stands on the bottom edge, so a drag only
-// moves it sideways.
+// moves all. A row is a formation of all partners side by side that always stands on the bottom edge, so a drag only
+// moves it sideways; wider than the screen, it runs off the sides and a drag brings either end in.
 const inFormation = computed(() => settings.partnerLayout !== "free");
 const inRow = computed(() => settings.partnerLayout === "row");
 /** The formation while one of its pets ([by], a member id) is dragged; saved to the settings on release. */
 const liveFormation = ref<(FormationPlace & { by: string }) | null>(null);
 const formationIndex = computed(() => new Map(shownOthers.value.map((m, i) => [m.id, i])));
 const formationCols = computed(() =>
-  (inRow.value ? rowCols(shownOthers.value.length, remoteSize.value, viewport.value) : settings.formationCols));
+  (inRow.value ? Math.max(1, shownOthers.value.length) : settings.formationCols));
 /** Where the formation was left, or null for next to the own pet. */
 function savedFormation(n: number, cols: number, size: Size): FormationPlace | null {
   if (inRow.value) {
-    if (settings.partnerRowX < 0) return null;
-    return placeFormation({ x: settings.partnerRowX, y: 0 }, n, cols, size, settings.remoteScale, viewport.value, true);
+    if (settings.partnerRowX === -1) return null;
+    return placeFormation({ x: settings.partnerRowX, y: 0 }, n, cols, size, settings.remoteScale, viewport.value, true, true);
   }
   if (settings.formationX < 0) return null;
   return placeFormation(
@@ -330,9 +352,10 @@ const formation = computed(() => {
   const cols = formationCols.value;
   const size = remoteSize.value;
   // The room kept under the own pet for its strip, as ownPos keeps it, so the default place does not jump with it.
-  const own = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  const own = { w: ownArea.value.size.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
   const place = liveFormation.value ?? savedFormation(n, cols, size) ??
-    defaultFormation(ownPos.value, own, inRow.value || settings.petDocked, n, cols, size, settings.remoteScale);
+    defaultFormation(ownArea.value.pos, own, inRow.value || settings.petDocked, n, cols, size, settings.remoteScale,
+      viewport.value, inRow.value);
   return { ...place, n, cells: formationCells(place.anchor, n, cols, size) };
 });
 // A pet that leaves during its drag never reports the release; the formation then stays where it was saved. A drag
@@ -346,7 +369,7 @@ function dragFormation(m: RemoteMember, p: Pos): Pos {
   const off = formationOffset(i, formationCols.value, remoteSize.value);
   const placed = placeFormation(
     { x: p.x - off.x, y: p.y - off.y }, shownOthers.value.length, formationCols.value, remoteSize.value,
-    settings.remoteScale, viewport.value, inRow.value || undefined,
+    settings.remoteScale, viewport.value, inRow.value || undefined, inRow.value,
   );
   liveFormation.value = { ...placed, by: m.id };
   return { x: placed.anchor.x + off.x, y: placed.anchor.y + off.y };
@@ -355,7 +378,8 @@ function saveFormation() {
   const placed = liveFormation.value;
   if (!placed) return;
   if (inRow.value) {
-    settings.partnerRowX = placed.anchor.x;
+    // -1 stands for next to the own pet.
+    settings.partnerRowX = placed.anchor.x === -1 ? 0 : placed.anchor.x;
   } else {
     settings.formationX = placed.anchor.x;
     settings.formationY = placed.anchor.y;
@@ -418,8 +442,8 @@ const plateCeiling = computed(() => {
   const bubbleTop = (headAnchor(settings.character).y + 16) * s - Math.max(56, 72 * s) - 12;
   return ownPos.value.y + Math.min(0, bubbleTop);
 });
-const nearRight = (x: number, scale: number, minEmote: number) =>
-  x + 172 * scale + Math.max(minEmote, 72 * scale) + 24 > viewport.value.w;
+const ownEmote = computed(() => emotePlace(ownPos.value, settings.character, settings.scale, 56, viewport.value));
+const remoteEmote = (m: RemoteMember) => emotePlace(remoteAt(m), m.character, settings.remoteScale, 44, viewport.value);
 
 // ---- window, input and tray
 let unInput: (() => void) | undefined;
@@ -583,7 +607,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
         :motion-id="m.id"
         :emote="m.emote" :combo="m.combo" :win="m.win" :sip="m.sip"
-        :flip-bubble="nearRight(remoteAt(m).x, settings.remoteScale, 44)"
+        v-bind="remoteEmote(m)"
       />
       <template v-if="settings.showNames">
         <NamePlate
@@ -614,7 +638,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :win="localPet.win" :pulse="localPet.pulse" :sip="localPet.sip"
-        :min-emote="56" :flip-bubble="nearRight(ownPos.x, settings.scale, 56)"
+        :min-emote="56" v-bind="ownEmote"
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <!-- The standalone edition has no cooldown, no server notes and no room: only the local bubbles. -->
@@ -672,6 +696,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       </div>
       <CounterBar
         v-else-if="barShown" key="bar" :count="shownCount" :view="settings.tapView" :width="bar.layout" :zoom="bar.zoom"
+        :style="{ left: `${barShift}px` }"
         :quick-open="ui.quickOpen" :draws="STANDALONE ? 0 : draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="toggleQuick" @menu="raisePanel" @resonance="openPanel('resonance')"

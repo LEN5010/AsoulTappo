@@ -51,7 +51,7 @@ const boxStyle = computed(() => {
   };
 });
 // No transform at full size: it would make the strip a stacking context and a containing block it is not now.
-const faceStyle = computed(() => ({ width: `${props.width}px`, ...(props.zoom < 1 ? { transform: `scale(${props.zoom})` } : {}) }));
+const faceStyle = computed(() => ({ width: `${props.width}px`, ...(props.zoom !== 1 ? { transform: `scale(${props.zoom})` } : {}) }));
 
 const MILESTONE = 1000;
 /** A larger jump is a reload or a sync, not taps crossing the line. */
@@ -70,7 +70,8 @@ watch(
 </script>
 
 <template>
-  <div class="bar-box" :style="boxStyle">
+  <!-- Marked for the mouse on its own: a strip wider than the pet's box stands out beside it. -->
+  <div class="bar-box" :style="boxStyle" data-hit>
     <div class="bar" :style="faceStyle">
       <button
         type="button" class="count" data-guide="count"

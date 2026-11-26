@@ -1,4 +1,5 @@
-import { PET_BASE } from "../characters";
+import { PET_BASE, headAnchor } from "../characters";
+import type { Pos, Size } from "../stores/desk";
 import { nameBand, plateSize } from "./plates";
 
 /** Match the flex actor's actual children; names never grow wider than the pet. */
@@ -20,10 +21,15 @@ export const PLATE_GRIP = 14;
 /**
  * The strip under the own pet at [scale]: laid out `layout` px wide and drawn `zoom` times as large, `width` px on
  * screen. A pet narrower than the strip shrinks the whole strip to its own width, so the strip never stands out on
- * the sides and keeps the pet away from the screen edges.
+ * the sides and keeps the pet away from the screen edges. With [own] the strip is drawn at that size whatever the
+ * pet's, as wide as the pet or wider; the caller keeps what stands out on screen.
  */
-export function stripFit(scale: number): { layout: number; zoom: number; width: number } {
+export function stripFit(scale: number, own?: number): { layout: number; zoom: number; width: number } {
   const pet = PET_BASE.width * scale;
+  if (own != null) {
+    const layout = Math.max(STRIP_WIDTH, pet / own);
+    return { layout, zoom: own, width: layout * own };
+  }
   if (pet >= STRIP_WIDTH) return { layout: pet, zoom: 1, width: pet };
   return { layout: STRIP_WIDTH, zoom: pet / STRIP_WIDTH, width: pet };
 }
@@ -35,4 +41,24 @@ export function stripFit(scale: number): { layout: number; zoom: number; width: 
  */
 export function ownDeskWidth(scale: number): number {
   return Math.max(stripFit(scale).width, Math.round(PET_BASE.width * scale) + PLATE_GRIP * 2);
+}
+
+/** What an emote takes over its anchor besides the picture: the point under it and the ×N badge's rise over it. */
+const EMOTE_ROOM = 20;
+/** Kept free between an emote and the top of the screen. */
+const EMOTE_EDGE = 4;
+
+/**
+ * Where the emote over a pet at [pos] goes, as PetView's props: on the other side of the head next to the right screen
+ * edge, and where the screen ends over it, down beside the head instead of off the screen. A pet above the screen's top
+ * moves its emote no further than one standing at it. [min] is PetView's minEmote.
+ */
+export function emotePlace(pos: Pos, character: string, scale: number, min: number, vp: Size): { flipBubble: boolean; bubbleShift: Pos } {
+  const size = Math.max(min, 72 * scale);
+  const top = (headAnchor(character).y + 16) * scale - size - EMOTE_ROOM;
+  const down = Math.max(0, Math.round(EMOTE_EDGE - top - Math.max(0, pos.y)));
+  // Away from the face it would cover.
+  const out = Math.round(Math.min(36 * scale, down * 0.6));
+  const flipBubble = pos.x + 172 * scale + out + size + 24 > vp.w;
+  return { flipBubble, bubbleShift: { x: flipBubble && out ? -out : out, y: down } };
 }

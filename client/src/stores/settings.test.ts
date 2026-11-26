@@ -20,6 +20,12 @@ describe("loadSettings", () => {
     expect(s.serverUrl).toBe(DEFAULT_SETTINGS.serverUrl);
     expect("extra" in s).toBe(false);
   });
+  it("lets the strip follow the pet unless a size is set for it, within what the settings page offers", () => {
+    expect(loadSettings(store(null))).toMatchObject({ barFollow: true, barScale: 1 });
+    expect(loadSettings(store(JSON.stringify({ barFollow: false, barScale: 0.1 })))).toMatchObject({ barFollow: false, barScale: 0.6 });
+    expect(loadSettings(store(JSON.stringify({ barScale: 9 }))).barScale).toBe(1.5);
+    expect(loadSettings(store(JSON.stringify({ barScale: "x" }))).barScale).toBe(1);
+  });
   it("keeps only string favorites (at most 8) and never shares the default array", () => {
     const s = loadSettings(store(JSON.stringify({ favorites: ["a", 3, "b", ...Array(10).fill("c")], tapView: "x" })));
     expect(s.favorites).toEqual(["a", "b", "c", "c", "c", "c", "c", "c"]);
@@ -68,7 +74,7 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ partnerLayout: "row", partnerRowX: 300.6 })))).toMatchObject({
       partnerLayout: "row", partnerRowX: 301,
     });
-    expect(loadSettings(store(JSON.stringify({ partnerRowX: -40 }))).partnerRowX).toBe(-1);
+    expect(loadSettings(store(JSON.stringify({ partnerRowX: -40 }))).partnerRowX).toBe(-40);
     expect(loadSettings(store("{}")).partnerRowX).toBe(-1);
   });
   it("keeps a capture background only as a six-digit hex colour and the capture size within limits", () => {

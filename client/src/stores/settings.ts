@@ -106,10 +106,15 @@ export interface Settings {
   formationY: number;
   /** The formation's last row stands on the bottom edge of the screen. */
   formationDocked: boolean;
-  /** Left of the row of partners on the bottom edge (CSS px, -1 = next to the own pet). */
+  /** Left of the row of partners on the bottom edge (CSS px, -1 = next to the own pet); below -1 a row wider than the
+   * screen starts left of it. */
   partnerRowX: number;
   /** The strip under the own pet is folded away; a click on the pet shows it for a few seconds. */
   barFolded: boolean;
+  /** The strip shrinks with a small own pet; off, it keeps the size of `barScale` whatever the pet's. */
+  barFollow: boolean;
+  /** Scale of the strip while `barFollow` is off. */
+  barScale: number;
   /** The own name plate stands where the strip would (swapped from the strip's menu). */
   barPlate: boolean;
   /** The own pet stands on the bottom edge of the screen: its desk on the edge, the strip hidden. */
@@ -229,6 +234,8 @@ export const DEFAULT_SETTINGS: Settings = {
   formationDocked: false,
   partnerRowX: -1,
   barFolded: false,
+  barFollow: true,
+  barScale: 1,
   barPlate: false,
   petDocked: false,
   bossKey: "",
@@ -283,6 +290,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
+  out.barScale = Math.min(1.5, Math.max(0.6, out.barScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
   out.volume = Math.min(1, Math.max(0, out.volume));
   out.pomodoroFocus = Math.min(120, Math.max(5, Math.round(out.pomodoroFocus)));
@@ -301,7 +309,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.formationCols = Math.min(10, Math.max(1, Math.round(out.formationCols)));
   out.formationX = Math.max(-1, Math.round(out.formationX));
   out.formationY = Math.max(-1, Math.round(out.formationY));
-  out.partnerRowX = Math.max(-1, Math.round(out.partnerRowX));
+  out.partnerRowX = Math.round(out.partnerRowX);
   // Screen pixels may be negative left of or above the main monitor.
   out.todoX = Math.round(out.todoX);
   out.todoY = Math.round(out.todoY);

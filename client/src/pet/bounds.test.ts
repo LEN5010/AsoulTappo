@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PLATE_GRIP, STRIP_WIDTH, ownDeskWidth, remotePetSize, stripFit } from "./bounds";
-import { PET_BASE } from "../characters";
+import { PLATE_GRIP, STRIP_WIDTH, emotePlace, ownDeskWidth, remotePetSize, stripFit } from "./bounds";
+import { PET_BASE, headAnchor } from "../characters";
 
 describe("the strip under the own pet", () => {
   it("shrinks as a whole to the width of a pet narrower than it", () => {
@@ -17,6 +17,22 @@ describe("the strip under the own pet", () => {
     const before = (scale: number) => Math.max(STRIP_WIDTH, PET_BASE.width * scale);
     for (const scale of [STRIP_WIDTH / PET_BASE.width, 0.9, 1, 1.5, 2, 3]) {
       expect(stripFit(scale)).toEqual({ layout: before(scale), zoom: 1, width: before(scale) });
+    }
+  });
+
+  it("keeps the size set for it whatever the pet's, as wide as a wider pet", () => {
+    for (const own of [0.6, 1, 1.5]) {
+      for (const scale of [0.5, 0.8, 1, 2]) {
+        const fit = stripFit(scale, own);
+        expect(fit.zoom).toBe(own);
+        expect(fit.width).toBeCloseTo(Math.max(STRIP_WIDTH * own, PET_BASE.width * scale));
+        expect(fit.layout * fit.zoom).toBeCloseTo(fit.width);
+        expect(fit.layout).toBeGreaterThanOrEqual(STRIP_WIDTH);
+      }
+    }
+    // At full size it is the strip of 1.2.5.
+    for (const scale of [0.5, 0.8, 1, 2]) {
+      expect(stripFit(scale, 1).width).toBe(Math.max(STRIP_WIDTH, PET_BASE.width * scale));
     }
   });
 
@@ -91,5 +107,45 @@ describe("partners next to a docked own pet", () => {
   it("give up when the edge is full", () => {
     const narrow = { w: 420, h: 700 };
     expect(nextDockSlot({ x: 100, y: 0 }, ownSize, size, [], narrow)).toBeNull();
+  });
+});
+
+describe("the emote over a pet", () => {
+  const vp = { w: 1920, h: 1080 };
+  const at = (x: number, y: number, scale = 1, character = "贝拉", min = 56) => emotePlace({ x, y }, character, scale, min, vp);
+  /** Top of the picture and its badge on screen, as PetView draws them. */
+  const top = (y: number, scale: number, character: string, min: number) =>
+    y + (headAnchor(character).y + 16) * scale + at(400, y, scale, character, min).bubbleShift.y - Math.max(min, 72 * scale) - 20;
+
+  it("stays over the head while there is room for it", () => {
+    expect(at(400, 500)).toEqual({ flipBubble: false, bubbleShift: { x: 0, y: 0 } });
+  });
+
+  it("moves down beside the head at the top of the screen, on every pet and size", () => {
+    for (const character of ["嘉然", "乃琳", "贝拉", "心宜", "思诺", "贝拉2025生日"]) {
+      for (const scale of [0.4, 0.5, 1, 2, 3]) {
+        for (const min of [44, 56]) {
+          for (const y of [0, 8, 30]) expect(top(y, scale, character, min)).toBeGreaterThanOrEqual(3.5);
+        }
+      }
+    }
+    expect(at(400, 8).bubbleShift.x).toBeGreaterThan(0);
+  });
+
+  it("moves down less the more room there is over the pet", () => {
+    const shifts = [8, 20, 40, 80].map((y) => at(400, y).bubbleShift.y);
+    expect(shifts).toEqual([...shifts].sort((a, b) => b - a));
+    expect(shifts.at(-1)).toBe(0);
+  });
+
+  it("goes to the other side of the head next to the right edge, also where it moves down", () => {
+    expect(at(1900, 500)).toEqual({ flipBubble: true, bubbleShift: { x: 0, y: 0 } });
+    const low = at(1900, 8);
+    expect(low.flipBubble).toBe(true);
+    expect(low.bubbleShift.x).toBeLessThan(0);
+  });
+
+  it("is moved no further for a pet above the screen's top than for one standing at it", () => {
+    expect(at(400, -300)).toEqual(at(400, 0));
   });
 });

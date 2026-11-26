@@ -2,8 +2,8 @@ import { PET_BASE } from "../characters";
 // Where pets stand on the desktop overlay. Own pet and panel positions live in settings;
 // other members' pets are remembered per room (by member key) in localStorage, so a
 // friend you dragged next to your pet stays there next time. In formation mode partners stand in rows instead,
-// placed by one anchor kept in settings; in row mode they stand side by side on the bottom edge, a formation as wide
-// as the screen allows.
+// placed by one anchor kept in settings; in row mode they stand side by side on the bottom edge, all in one row, which
+// runs off the screen's sides when it is wider.
 import { reactive, ref } from "vue";
 import { isMirrorWindow } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
@@ -174,29 +174,30 @@ export function formationCells(anchor: Pos, n: number, cols: number, size: Size,
 }
 
 /**
+ * Left edge of something [w] px wide at [x]: kept on screen while it fits; wider than the screen, it moves sideways
+ * until either of its ends is on screen.
+ */
+export function panX(x: number, w: number, vp: Size = viewport.value, margin = 8): number {
+  const far = vp.w - margin - w;
+  return Math.round(Math.min(Math.max(x, Math.min(margin, far)), Math.max(margin, far)));
+}
+
+/**
  * Where a formation goes: a docked one keeps its last row on the bottom edge (pets of [scale], as dockY) and only its
  * x is kept on screen; any other is kept fully on screen. [docked] unset decides it as placePet does for one pet:
- * docked once the last row comes within DOCK_SNAP of its docked place.
+ * docked once the last row comes within DOCK_SNAP of its docked place. With [pan] (row mode) a docked one wider than
+ * the screen may stand anywhere panX allows.
  */
 export function placeFormation(
-  p: Pos, n: number, cols: number, size: Size, scale: number, vp: Size = viewport.value, docked?: boolean,
+  p: Pos, n: number, cols: number, size: Size, scale: number, vp: Size = viewport.value, docked?: boolean, pan = false,
 ): FormationPlace {
   const full = formationSize(n, cols, size);
   if (!full.h) return { anchor: clamp(p, size, vp), docked: !!docked };
   const lastRow = full.h - size.h;
   const bottom = dockY(scale, vp);
   const dock = docked ?? p.y + lastRow >= bottom - DOCK_SNAP;
-  if (dock) return { anchor: { x: clamp(p, full, vp).x, y: bottom - lastRow }, docked: true };
+  if (dock) return { anchor: { x: pan ? panX(p.x, full.w, vp) : clamp(p, full, vp).x, y: bottom - lastRow }, docked: true };
   return { anchor: clamp(p, full, vp), docked: false };
-}
-
-/**
- * Pets per row in row mode: all [n] side by side, or as many as the screen's width holds, the rest in rows above.
- */
-export function rowCols(n: number, size: Size, vp: Size = viewport.value, gap = FORMATION_GAP): number {
-  const margin = 8;
-  const fit = Math.floor((vp.w - 2 * margin + gap) / (size.w + gap));
-  return Math.max(1, Math.min(n, fit));
 }
 
 /**
@@ -205,14 +206,14 @@ export function rowCols(n: number, size: Size, vp: Size = viewport.value, gap = 
  */
 export function defaultFormation(
   own: Pos, ownSize: Size, ownDocked: boolean, n: number, cols: number, size: Size, scale: number,
-  vp: Size = viewport.value,
+  vp: Size = viewport.value, pan = false,
 ): FormationPlace {
   const full = formationSize(n, cols, size);
   const margin = 8;
   let x = own.x - FORMATION_GAP - full.w;
   const right = own.x + ownSize.w + FORMATION_GAP;
   if (x < margin && right + full.w <= vp.w - margin) x = right;
-  return placeFormation({ x, y: own.y + ownSize.h - full.h }, n, cols, size, scale, vp, ownDocked);
+  return placeFormation({ x, y: own.y + ownSize.h - full.h }, n, cols, size, scale, vp, ownDocked, pan);
 }
 
 export function enterRoom(room: string): void {

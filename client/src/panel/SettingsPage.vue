@@ -292,6 +292,16 @@ async function exportLogFile() {
                 <span>桌宠位置</span>
                 <button type="button" class="ui-btn small" @click="emit('resetPet')">放回右下角</button>
               </div>
+              <div class="ui-row">
+                <label for="set-bar-follow">任务栏跟随桌宠大小</label>
+                <span class="version-side">
+                  <span v-if="!settings.barFollow" class="ui-ctl beside-switch" title="任务栏大小">
+                    <RangeInput v-model="settings.barScale" :min="0.6" :max="1.5" :step="0.1" aria-label="任务栏大小" />
+                    <b class="ui-val">×{{ settings.barScale.toFixed(1) }}</b>
+                  </span>
+                  <input id="set-bar-follow" v-model="settings.barFollow" class="ui-switch" type="checkbox" />
+                </span>
+              </div>
               <label class="ui-row">
                 <span>收起任务栏</span>
                 <input v-model="settings.barFolded" class="ui-switch" type="checkbox" />
