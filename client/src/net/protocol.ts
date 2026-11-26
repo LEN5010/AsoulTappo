@@ -316,6 +316,10 @@ export interface DdzLobby {
   account: boolean;
   /** The save holds a seat a dou dizhu connection takes back. */
   seated: boolean;
+  /** Names the list of tables (servers from 1.3.0): sent back as `?hall=`, the same list answers `hallSame`. */
+  hallTag?: string;
+  /** The list the tag sent names is still the one: the stakes come without `tables`, and the ones held stand. */
+  hallSame?: boolean;
 }
 
 export type ClientMessage =

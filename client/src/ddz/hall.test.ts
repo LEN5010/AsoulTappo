@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { DdzHallTable, DdzLobby } from "../net/protocol";
-import { hallOn, hallPreview, hallSeated, hallTables } from "./hall";
+import { hallOn, hallPreview, hallSeated, hallTables, withHeldTables } from "./hall";
 
 const A = { nick: "贝", character: "贝拉" };
 const B = { nick: "琳", character: "乃琳" };
@@ -10,6 +10,17 @@ const lobby = (tiers: DdzLobby["tiers"]): DdzLobby =>
   ({ tiers, net: 0, cap: 0, left: 0, taps: 0, minTaps: 0, account: true, seated: false });
 const tier = (base: number, waiting: number, tables?: DdzHallTable[]) =>
   ({ base, deposit: base * 48, afford: true, waiting, ...(tables ? { tables } : {}) });
+
+it("takes the tables it holds when the server says its list is still the same", () => {
+  const held = { ...lobby([tier(50, 1, [table("t1", [A, null, null])]), tier(250, 0, [])]), hallTag: "x1" };
+  const same = { ...lobby([tier(50, 2), tier(250, 1)]), hallTag: "x1", hallSame: true };
+  const kept = withHeldTables(same, held);
+  // The counts are the new answer's, the tables the ones held.
+  expect(kept.tiers.map((t) => [t.waiting, t.tables?.map((x) => x.table)])).toEqual([[2, ["t1"]], [1, []]]);
+  expect(hallOn(kept)).toBe(true);
+  const fresh = { ...lobby([tier(50, 0, [])]), hallTag: "x2" };
+  expect(withHeldTables(fresh, held)).toBe(fresh);
+});
 
 it("knows the hall by the tables its lobby lists, an empty list included", () => {
   expect(hallOn(null)).toBe(false);

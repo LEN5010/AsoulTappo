@@ -8,7 +8,7 @@
 // the open table this save opened, at its stake: no tray, the members as keys.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { DdzLobby } from "../../net/protocol";
-import { hallOn, hallPreview, hallSeated, hallTables } from "../../ddz/hall";
+import { hallOn, hallPreview, hallSeated, hallTables, withHeldTables } from "../../ddz/hall";
 import { ddzHallOn, loadDdzLobby, status } from "../../stores/player";
 import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
@@ -26,16 +26,19 @@ import DdzSeats from "./DdzSeats.vue";
 const props = defineProps<{ needAccount?: boolean; mode: "match" | "invite" | "open" | "call"; to?: string }>();
 const emit = defineEmits<{ close: [] }>();
 
-/** For the queue: what the server says of it (GET /api/ddz/lobby), read every few seconds while the sheet is up. */
+/**
+ * For the queue: what the server says of it (GET /api/ddz/lobby), read every few seconds while the sheet is up. Each
+ * read names the list of tables it holds, which the server then leaves out while it is the same.
+ */
 const POLL_MS = 4000;
 const lobby = ref<DdzLobby | null>(null);
 let poll: ReturnType<typeof setTimeout> | undefined;
 let alive = true;
 async function read() {
   clearTimeout(poll);
-  const got = await loadDdzLobby();
+  const got = await loadDdzLobby(lobby.value?.hallTag);
   if (!alive) return;
-  if (got && got !== "off") lobby.value = got;
+  if (got && got !== "off") lobby.value = withHeldTables(got, lobby.value);
   poll = setTimeout(read, POLL_MS);
 }
 if (props.mode === "match") void read();

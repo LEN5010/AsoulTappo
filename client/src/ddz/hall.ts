@@ -12,6 +12,13 @@ export const hallOn = (lobby: DdzLobby | null | undefined): boolean => !!lobby?.
 const tablesAt = (lobby: DdzLobby | null | undefined, base: number): DdzHallTable[] =>
   lobby?.tiers.find((t) => t.base === base)?.tables ?? [];
 
+/** [got], a lobby just read, with the tables of [held] where the server said its list is still the one held
+ *  (`hallSame`); the rest of [got] is new. */
+export function withHeldTables(got: DdzLobby, held: DdzLobby | null | undefined): DdzLobby {
+  if (!got.hallSame || !held) return got;
+  return { ...got, tiers: got.tiers.map((t) => ({ ...t, tables: tablesAt(held, t.base) })) };
+}
+
 /** The tables listed at [base] that the save may sit down at, the own one [own] left out, at most [max]. */
 export function hallTables(lobby: DdzLobby | null | undefined, base: number, own?: string, max = HALL_ROWS): DdzHallTable[] {
   return tablesAt(lobby, base).filter((t) => t.table !== own && t.seats.some((s) => !s)).slice(0, max);

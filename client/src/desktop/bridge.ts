@@ -320,7 +320,7 @@ export async function initDesktop(): Promise<() => void> {
         case "inviteDuel": room.inviteDuel(args[0] as string, args[1] as number); break;
         case "loadProfile": result = await room.loadProfile(args[0] as string); break;
         case "loadBoard": result = await player.loadBoard(); break;
-        case "loadDdzLobby": result = await player.loadDdzLobby(); break;
+        case "loadDdzLobby": result = await player.loadDdzLobby((args[0] as string | null | undefined) ?? undefined); break;
         case "loadBoardProfile": result = await player.loadBoardProfile(args[0] as string); break;
         case "loadEconomy": await player.loadEconomy(args[0] as string); break;
         case "park": result = await parkStore.parkRequest(args[0] as parkStore.ParkMethod, args[1] as string, args[2]); break;

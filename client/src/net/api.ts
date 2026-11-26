@@ -277,8 +277,9 @@ export class Api {
     this.call<ResonanceResult>("POST", "/api/resonance/draw", banner ? { count, banner } : { count }, undefined,
       RESONANCE_TIMEOUT_MS);
   me = () => this.call<PlayerStatus>("GET", "/api/me");
-  /** The dou dizhu lobby; 404 on a server without the game or the lobby. */
-  ddzLobby = () => this.call<DdzLobby>("GET", "/api/ddz/lobby");
+  /** The dou dizhu lobby; 404 on a server without the game or the lobby. [hall]: the tag of the list of tables held. */
+  ddzLobby = (hall?: string) =>
+    this.call<DdzLobby>("GET", hall ? `/api/ddz/lobby?hall=${encodeURIComponent(hall)}` : "/api/ddz/lobby");
   /** Prices, odds and caps (src/stores/economy.ts); servers from before /api/economy carry them in the manifest. */
   economy = async (): Promise<Economy> => {
     try {

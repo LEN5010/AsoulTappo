@@ -738,15 +738,20 @@ export async function loadBoard(): Promise<Board | null> {
  */
 export const ddzHallOn = ref(false);
 
-/** The dou dizhu lobby (GET /api/ddz/lobby); "off" on a server without it, null when the server does not answer. */
-export async function loadDdzLobby(): Promise<DdzLobby | "off" | null> {
-  if (isMirrorWindow) return requestDesktop<DdzLobby | "off" | null>("loadDdzLobby").catch(() => null);
+/**
+ * The dou dizhu lobby (GET /api/ddz/lobby); "off" on a server without it, null when the server does not answer.
+ * [hall]: the tag of the list of tables the caller holds; while it is the same list the answer says so (`hallSame`)
+ * and leaves the tables out (src/ddz/hall.ts withHeldTables).
+ */
+export async function loadDdzLobby(hall?: string): Promise<DdzLobby | "off" | null> {
+  if (isMirrorWindow) return requestDesktop<DdzLobby | "off" | null>("loadDdzLobby", hall ?? null).catch(() => null);
   const session = current;
-  return serial(session, () => session.api.ddzLobby())
+  return serial(session, () => session.api.ddzLobby(hall))
     .then((lobby) => (lobby && Array.isArray(lobby.tiers) ? lobby : null))
     .catch((e: unknown) => (e instanceof ApiError && e.status === 404 ? "off" as const : null))
     .then((lobby) => {
-      if (lobby && session === current) ddzHallOn.value = lobby !== "off" && hallOn(lobby);
+      // Only a server with the hall knows its list is the same.
+      if (lobby && session === current) ddzHallOn.value = lobby !== "off" && (lobby.hallSame === true || hallOn(lobby));
       return lobby;
     });
 }

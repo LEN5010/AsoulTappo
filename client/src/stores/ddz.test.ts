@@ -807,6 +807,26 @@ it("turns the queue off on a server whose lobby answers 404", async () => {
   expect(await player.loadDdzLobby()).toBe("off");
 });
 
+it("sends back the tag of the hall's list it holds, and a list still the same keeps the hall on", async () => {
+  const { fetchMock, player } = await setup();
+  await vi.advanceTimersByTimeAsync(0);
+  const head = { net: 0, cap: 50000, left: 50000, taps: 10000, minTaps: 10000, account: true, seated: false };
+  const stake = { base: 50, deposit: 2400, afford: true, waiting: 1 };
+  fetchMock.mockImplementation((async (url: string) => (String(url).includes("/api/ddz/lobby")
+    ? {
+      ok: true, status: 200, json: async () => (String(url).endsWith("/api/ddz/lobby?hall=ab0")
+        ? { ...head, tiers: [stake], hallTag: "ab0", hallSame: true }
+        : { ...head, tiers: [{ ...stake, tables: [] }], hallTag: "ab0" }),
+    }
+    : { ok: true, status: 200, json: async () => playerStatus() })) as never);
+  expect(await player.loadDdzLobby()).toMatchObject({ hallTag: "ab0" });
+  expect(player.ddzHallOn.value).toBe(true);
+  expect(await player.loadDdzLobby("ab0")).toMatchObject({ hallSame: true });
+  expect(player.ddzHallOn.value).toBe(true);
+  const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]));
+  expect(urls.filter((u) => u.endsWith("/api/ddz/lobby?hall=ab0"))).toHaveLength(1);
+});
+
 it("says why the server took the save out of the queue or refused it", async () => {
   const { d, r } = await setup();
   d.queueDdz(50);
