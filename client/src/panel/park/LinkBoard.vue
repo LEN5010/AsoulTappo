@@ -1,3 +1,50 @@
+<script lang="ts">
+const STEPS: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+
+/**
+ * The cell an arrow [key] moves to from cell [from], among the cells holding a tile ([cells]) on a board [cols]
+ * wide: the nearest one that way in the same row (or column), else in the row nearest to it. null at the edge and
+ * for any other key.
+ */
+export function stepCell(cells: number[], cols: number, from: number, key: string): number | null {
+  const step = STEPS[key];
+  if (!step) return null;
+  const [dr, dc] = step;
+  const r0 = Math.floor(from / cols);
+  const c0 = from % cols;
+  let best: number | null = null;
+  let bestAcross = Infinity;
+  let bestAlong = Infinity;
+  for (const at of cells) {
+    const r = Math.floor(at / cols) - r0;
+    const c = (at % cols) - c0;
+    const along = r * dr + c * dc;
+    if (along <= 0) continue;
+    const across = Math.abs(dr ? c : r);
+    if (across < bestAcross || (across === bestAcross && along < bestAlong)) {
+      best = at;
+      bestAcross = across;
+      bestAlong = along;
+    }
+  }
+  return best;
+}
+
+/** The cell of [cells] nearest to cell [at] (rows plus columns apart), the first one on a tie; null when none. */
+export function nearestCell(cells: number[], cols: number, at: number): number | null {
+  let best: number | null = null;
+  let bestD = Infinity;
+  for (const c of cells) {
+    const d = Math.abs(Math.floor(c / cols) - Math.floor(at / cols)) + Math.abs((c % cols) - (at % cols));
+    if (d < bestD) {
+      best = c;
+      bestD = d;
+    }
+  }
+  return best;
+}
+</script>
+
 <script setup lang="ts">
 // The tile matching board (docs/design/park-link.md 6): emote tiles on the sheet, sized to the box it is given, with
 // half a tile of room around them for links that run outside the board. A tile is a physical object, not a key:
@@ -7,7 +54,11 @@
 // runs over the board as a coral line from one tile to the other, then draws itself in after them, while the pair it
 // took pops and goes with a ring at each. A new game deals its tiles in on a diagonal wave; a shuffle turns them over
 // on the same wave.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+//
+// Keys: one tile is in the tab order (the one the keys were on, else the one picked, else the first); the arrows go
+// from tile to tile and Enter or Space presses the tile as a pointer does. A pair taken from under the keys hands
+// them to the nearest tile left. The focus ring shows for the keys only (:focus-visible).
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { EASE_OUT } from "../../ui/motion";
 import { EMPTY } from "./link";
 
@@ -115,6 +166,54 @@ function press(id: number) {
   if (!props.disabled) emit("pick", id);
 }
 
+// ---- keys
+/** The tile the keys were on last, and its cell then. */
+const cursor = ref<{ id: number; at: number } | null>(null);
+/** The tile in the tab order. */
+const stop = computed<number | null>(() => {
+  const list = cells.value;
+  const c = cursor.value;
+  if (c && list.some((t) => t.id === c.id)) return c.id;
+  if (props.selected !== null && list.some((t) => t.id === props.selected)) return props.selected;
+  const at = nearestCell(list.map((t) => t.at), props.cols, c?.at ?? 0);
+  return list.find((t) => t.at === at)?.id ?? null;
+});
+
+function focusTile(id: number | null): void {
+  const at = cells.value.find((t) => t.id === id)?.at;
+  if (at !== undefined) board.value?.querySelector<HTMLElement>(`button.cell[data-at="${at}"]`)?.focus();
+}
+
+function onKey(e: KeyboardEvent, t: { id: number; at: number }): void {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.key === "Enter" || e.key === " ") {
+    // The button's own click from the key is not used: a pick is the press alone, as with a pointer.
+    e.preventDefault();
+    if (e.repeat) return;
+    cursor.value = { id: t.id, at: t.at };
+    press(t.id);
+    return;
+  }
+  if (!(e.key in STEPS)) return;
+  e.preventDefault();
+  const to = stepCell(cells.value.map((c) => c.at), props.cols, t.at, e.key);
+  const next = to === null ? undefined : cells.value.find((c) => c.at === to);
+  if (!next) return;
+  cursor.value = { id: next.id, at: next.at };
+  focusTile(next.id);
+}
+
+// The tile under the keys goes (a pair taken, a shuffle, another board): the keys move to the tab order's tile.
+watch(cells, () => {
+  const el = board.value;
+  if (!el || !el.contains(document.activeElement)) return;
+  void nextTick(() => {
+    const now = document.activeElement;
+    if (el.contains(now) || (now && now !== document.body)) return;
+    focusTile(stop.value);
+  });
+});
+
 /**
  * Runs [frames] on every tile on the board, each starting a wave step later per diagonal from the top left. The first
  * frame holds until a tile's turn, so the board never shows its tiles before they come in.
@@ -150,8 +249,9 @@ watch(() => props.flip, flipIn, { flush: "post" });
       :style="{ width: `${width}px`, height: `${height}px`, '--tile': `${tileSize}px` }"
     >
       <button
-        v-for="t in cells" :key="t.id" type="button" tabindex="-1" class="cell" :data-at="t.at" :aria-label="names[t.kind]"
-        :style="{ transform: placeOf(t.at) }" @pointerdown.left.prevent="press(t.id)"
+        v-for="t in cells" :key="t.id" type="button" :tabindex="t.id === stop ? 0 : -1" class="cell" :data-at="t.at"
+        :aria-label="names[t.kind]" :style="{ transform: placeOf(t.at) }" @pointerdown.left.prevent="press(t.id)"
+        @keydown="onKey($event, t)" @keyup.space.prevent @focus="cursor = { id: t.id, at: t.at }"
       >
         <span class="tile" :class="{ on: selected === t.id, hint: hinted.has(t.id), shake: shake === t.id }">
           <img :src="faces[t.kind]" alt="" draggable="false" decoding="async" />
@@ -217,6 +317,11 @@ watch(() => props.flip, flipIn, { flush: "post" });
 }
 .cell:focus-visible {
   outline: none;
+}
+/* The keys' tile wears the panel's focus ring (ui/tokens.css) on its rounded face. */
+.cell:focus-visible .tile {
+  outline: 2px solid var(--focus, var(--ink));
+  outline-offset: 2px;
 }
 
 .tile {
