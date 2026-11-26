@@ -491,6 +491,73 @@ describe("buying and opening a box", () => {
   });
 });
 
+describe("the receipt of a box bought", () => {
+  const receipt = (id: number, series = A) => ({ receipt: { series, box: box(id, series) } });
+
+  it("puts the box on the table though a load sent later came back first, before the box", async () => {
+    const P = await store();
+    const pending = P.buyPhotoBox(A);
+    const load = P.loadPhotocards();
+    expect(paths()).toEqual(["/buy", ""]);
+    calls[1]!.answer(answer());
+    await load;
+    calls[0]!.answer(answer(bought(1), {}, receipt(1)));
+    await flush();
+    // That answer is older than the one taken: what the save has now is asked for once more.
+    expect(paths()).toEqual(["/buy", "", ""]);
+    calls[2]!.answer(answer(bought(1)));
+    expect((await pending)!.id).toBe(1);
+    expect([...table(P), P.photoView(A).opening, P.photoError.value]).toEqual([1, 0, true, ""]);
+  });
+
+  it("needs no other load when the state has the box", async () => {
+    const P = await store();
+    const pending = P.buyPhotoBox(A);
+    calls[0]!.answer(answer(bought(1), {}, receipt(1)));
+    expect(await pending).toBe(P.photoView(A).box);
+    expect(paths()).toEqual(["/buy"]);
+  });
+
+  it("says the box was opened on another device when the server has it opened by now", async () => {
+    const P = await store();
+    const pending = P.buyPhotoBox(A);
+    calls[0]!.answer(answer(opened(), {}, receipt(1)));
+    await flush();
+    expect(paths()).toEqual(["/buy", ""]);
+    calls[1]!.answer(answer(opened()));
+    expect(await pending).toBeNull();
+    expect([...table(P), P.photoView(A).opening, P.photoError.value]).toEqual([undefined, 0, false, "这盒已在其他设备开完"]);
+    expect(shown(P).owned.size).toBe(3);
+  });
+
+  it("opens the box of the receipt when the state cannot be loaded again", async () => {
+    const P = await store();
+    const pending = P.buyPhotoBox(A);
+    const load = P.loadPhotocards();
+    calls[1]!.answer(answer());
+    await load;
+    calls[0]!.answer(answer(bought(1), {}, receipt(1)));
+    await flush();
+    calls[2]!.answer(fail(0, "offline"));
+    expect((await pending)!.id).toBe(1);
+    expect([...table(P), P.photoView(A).opening]).toEqual([1, 0, true]);
+  });
+
+  it("is looked for once more from a server that sends none", async () => {
+    const P = await store();
+    const pending = P.buyPhotoBox(A);
+    const load = P.loadPhotocards();
+    calls[1]!.answer(answer());
+    await load;
+    calls[0]!.answer(answer(bought(1)));
+    await flush();
+    expect(paths()).toEqual(["/buy", "", ""]);
+    calls[2]!.answer(answer(bought(1)));
+    expect((await pending)!.id).toBe(1);
+    expect(P.photoError.value).toBe("");
+  });
+});
+
 describe("two series at once", () => {
   it("have a box on the table each", async () => {
     const P = await withBox();

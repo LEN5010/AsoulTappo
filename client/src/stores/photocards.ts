@@ -49,7 +49,9 @@ export interface PhotocardState {
   /** Every series the server knows by id, on the shelf or not. */
   series: Record<string, PhotocardSave>;
 }
-interface Answer { photocards: PhotocardState; swapped?: string; settled?: PhotocardSettled }
+/** What buying handed over: the box bought, or the one handed back. A server from before receipts sends none. */
+export interface PhotocardReceipt { series: string; box: PhotocardBox }
+interface Answer { photocards: PhotocardState; swapped?: string; settled?: PhotocardSettled; receipt?: PhotocardReceipt }
 
 /** A series as the pages show it: what bags left to open hold is not in it. */
 export interface PhotoView {
@@ -84,6 +86,7 @@ const KEEP = 10;
 /** Waits before the end of a box is told again. */
 const BACKOFF_MS = [1000, 3000, 8000, 20000];
 const OFFLINE = "无法连接服务器";
+const OPENED_ELSEWHERE = "这盒已在其他设备开完";
 
 /** The server's latest state; null before the first load. */
 export const photoState = shallowRef<PhotocardState | null>(null);
@@ -314,7 +317,7 @@ export async function buyPhotoBox(series: string): Promise<PhotocardBox | null> 
     const price = photoView(series).cfg?.price;
     const r = await request("POST", "/buy", { series, price });
     if (!r) return null;
-    if (r.ok) return waiting(series)?.box ?? null;
+    if (r.ok) return await settle(series, r.data.receipt);
     const message = messageOf(r.error);
     if (lost(r.error)) {
       // No answer: the box may have been bought. A load finds it.
@@ -332,6 +335,34 @@ export async function buyPhotoBox(series: string): Promise<PhotocardBox | null> 
   } finally {
     if (mine === session) photoBuying.value = "";
   }
+}
+
+/**
+ * The box a purchase handed over, on the table. The state taken may not show it: an answer sent later came back first,
+ * or another device opened it meanwhile. Then the state is loaded once more; the box is opened elsewhere when that one
+ * lacks it too, and the receipt's box is taken where it cannot be loaded.
+ */
+async function settle(series: string, receipt: PhotocardReceipt | undefined): Promise<PhotocardBox | null> {
+  const bought = receipt?.series === series ? receipt.box : undefined;
+  const confirmed = () => {
+    const box = waiting(series)?.box;
+    return box && (!bought || box.id === bought.id) ? box : null;
+  };
+  const now = confirmed();
+  if (now) return now;
+  const found = await request("GET", "");
+  if (!found) return null;
+  const box = confirmed();
+  if (box) return box;
+  if (found.ok) {
+    if (bought) photoError.value = OPENED_ELSEWHERE;
+    return null;
+  }
+  // Whether it was opened elsewhere cannot be told: the box bought is opened here.
+  if (bought && !waiting(series)) tables.set(series, { box: bought, opened: openedOf(bought.id) });
+  const taken = confirmed();
+  if (!taken) photoError.value = messageOf(found.error);
+  return taken;
 }
 
 /**
