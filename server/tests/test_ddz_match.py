@@ -263,6 +263,58 @@ def test_a_decline_puts_the_others_back_ahead_of_later_saves_and_the_line_goes_o
     run(go())
 
 
+@pytest.mark.parametrize("how", ["poor", "error"])
+def test_a_start_that_falls_short_puts_the_three_back_in_the_line(how, monkeypatch):
+    async def go():
+        w = MatchWorld()
+        (a, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[0]["table"]
+        w.mono += 4
+        await w.t.answer(a, tid, True)
+        await w.t.answer(b, tid, True)
+        if how == "poor":
+            w.g.store.update_player(w.who["b"], shards=DEPOSIT - 1)
+        else:
+            # The database fails once the deposits are taken, and is there again.
+            monkeypatch.setattr(Bank, "start", lambda *x: 1 / 0)
+        await w.t.answer(c, tid, True)
+        await w.t.idle()
+        reason = {"poor": "no_shards", "error": "error"}[how]
+        for s in (sa, sb, sc):
+            assert s.of("ddz_over") == [{"type": "ddz_over", "table": tid, "reason": reason}]
+        assert w.g.store.open_ddz_games() == [] and tid not in w.t.by_id
+        if how == "poor":
+            # Read again in the line: the one that may no longer play leaves it, told why; the others wait on.
+            assert queue_msgs(sb)[-1] == {"base": None, "reason": "no_shards"} and w.who["b"] not in w.t.waiting
+            assert [x.peer for x in w.t.lines[BASE]] == [a, c] and w.t.by_id == {}
+            assert queue_msgs(sa)[-1] == queue_msgs(sc)[-1] == {"base": BASE, "waited": 4.0}
+        else:
+            # All three may still play: asked again, as at any table of the queue.
+            assert [s.of("ddz_invite")[-1]["ids"] for s in (sa, sb, sc)] == [[a.id, b.id, c.id]] * 3
+            assert len(sa.of("ddz_invite")) == 2 and w.t.waiting == {}
+    run(go())
+
+
+def test_another_game_that_falls_short_puts_nobody_back_in_the_line():
+    async def go():
+        w = MatchWorld()
+        three = await w.queued("a", "b", "c")
+        w.peers = [p for p, _ in three]
+        socks = [s for _, s in three]
+        tid = socks[0].of("ddz_invite")[0]["table"]
+        for p in w.peers:
+            await w.t.answer(p, tid, True)
+        await w.t.bid(w.peers[0], tid, 3)
+        await play_out(w, tid)
+        w.g.store.update_player(w.who["c"], shards=0)
+        for p in w.peers:
+            await w.t.again(p, tid)
+        await w.t.idle()
+        assert socks[0].of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "no_shards"}
+        assert w.t.waiting == {} and w.t.lines == {}
+    run(go())
+
+
 def test_the_time_running_out_drops_who_did_not_answer():
     async def go():
         w = MatchWorld()

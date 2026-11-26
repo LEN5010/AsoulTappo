@@ -480,10 +480,15 @@ it("takes a table of the queue on the connection, plays it there, and keeps the 
   lk.recv({ type: "ddz_answer", table: "m1", id: "L" });
   lk.recv({ type: "ddz_over", table: "m1", reason: "declined", by: "y" });
   expect(d.ddz.value).toMatchObject({ phase: "over", by: "天边" });
-  // Put back at the front of the line, still counting from when it started waiting.
+  // Put back at the front of the line, still counting from when it started waiting; why the table fell through stays
+  // up for its moment first.
   lk.recv({ type: "ddz_queue", base: 50, waited: 20 });
-  expect(d.ddz.value).toBeNull();
   expect(d.ddzQueue.value).toEqual({ base: 50, since: Date.now() - 20000 });
+  expect([d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual(["over", "天边没有接受"]);
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS - 1);
+  expect(d.ddzBubble.value).toBe("over");
+  await vi.advanceTimersByTimeAsync(1);
+  expect([d.ddz.value, d.ddzBubble.value, d.ddzQueue.value?.base]).toEqual([null, null, 50]);
   // Matched again and dealt: the moves go on the connection; a room's refusal does not touch its keys.
   lk.recv({ type: "ddz_queue", base: null });
   lk.recv({ type: "ddz_invite", table: "m2", ids: ["L", "x", "y"], base: 50, deposit: 2400, sec: 15, match: true, seats: [{ ...ME, id: "L" }, X, Y] });
@@ -577,6 +582,169 @@ it("comes back on a new connection: the wait and the seat the server kept, or no
   await vi.advanceTimersByTimeAsync(8000);
   linkUp({ you: "L3" });
   expect(d.ddz.value).toBeNull();
+});
+
+/** An invite of the queue's to the save (member [you]) and two others. */
+const matchInvite = (table: string, you: string, more: Record<string, unknown> = {}) => ({
+  type: "ddz_invite", table, ids: ["x", you, "y"], base: 50, deposit: 2400, sec: 15, match: true,
+  seats: [X, { ...ME, id: you }, Y], ...more,
+});
+
+it("gives an answer that did not arrive again when the next connection is asked the same", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv(matchInvite("m1", "L"));
+  expect(d.ddzCut.value).toBe(false);
+  // The connection goes before the answer arrives: nothing is accepted yet, and the keys give way.
+  lk.close();
+  expect(d.ddzCut.value).toBe(true);
+  const sent = lk.sent.length;
+  d.answerDdz(true);
+  expect(lk.sent).toHaveLength(sent);
+  expect(d.ddz.value).toMatchObject({ id: "m1", phase: "invite", answered: false });
+  await vi.advanceTimersByTimeAsync(1000);
+  const lk2 = linkUp({ you: "L2", table: "m1" });
+  expect(sentOf(lk2, "ddz_answer")).toEqual([]); // not before it is asked
+  lk2.recv(matchInvite("m1", "L2", { accepted: ["x"], sec: 13 }));
+  expect(sentOf(lk2, "ddz_answer")).toEqual([{ type: "ddz_answer", table: "m1", accept: true }]);
+  expect(d.ddzCut.value).toBe(false);
+  expect(d.ddz.value).toMatchObject({ id: "m1", answered: true, accepted: ["x"] });
+  lk2.recv({ type: "ddz_answer", table: "m1", id: "L2" });
+  // Arrived: asked once more on another connection, it is not given again.
+  lk2.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  const lk3 = linkUp({ you: "L3", table: "m1" });
+  lk3.recv(matchInvite("m1", "L3", { accepted: ["x", "L3"], sec: 9 }));
+  expect(sentOf(lk3, "ddz_answer")).toEqual([]);
+  expect(d.ddz.value).toMatchObject({ answered: true });
+});
+
+it("gives an answer again that went out on a connection already dead, and a refusal too", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv(matchInvite("m1", "L"));
+  d.answerDdz(true); // out, but the server never had it
+  expect(d.ddz.value!.answered).toBe(true);
+  lk.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  const lk2 = linkUp({ you: "L2", table: "m1" });
+  lk2.recv(matchInvite("m1", "L2"));
+  expect(sentOf(lk2, "ddz_answer")).toEqual([{ type: "ddz_answer", table: "m1", accept: true }]);
+  lk2.recv({ type: "ddz_over", table: "m1", reason: "declined", by: "y" });
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  // Turned down on a dead connection: told again, and not shown again.
+  lk2.recv(matchInvite("m2", "L2"));
+  d.answerDdz(false);
+  lk2.close();
+  await vi.advanceTimersByTimeAsync(3000);
+  const lk3 = linkUp({ you: "L3", table: "m2" });
+  lk3.recv(matchInvite("m2", "L3"));
+  expect(sentOf(lk3, "ddz_answer")).toEqual([{ type: "ddz_answer", table: "m2", accept: false }]);
+  expect([d.ddz.value, d.ddzBubble.value]).toEqual([null, null]);
+});
+
+it("never answers an asking with an answer given to an earlier one", async () => {
+  const { d, settings } = await setup();
+  d.queueDdz(50);
+  let lk = linkUp();
+  const offer = (you: string) => matchInvite("o1", you, { ids: ["x", you, ""], seats: [X, { ...ME, id: you }, null], accepted: ["x"] });
+  const again = async (ready: Record<string, unknown>) => {
+    lk.close();
+    await vi.advanceTimersByTimeAsync(20_000);
+    lk = linkUp(ready);
+  };
+  // Accepted and seated, left, and offered the same table later: asked as if for the first time.
+  lk.recv(offer("L"));
+  d.answerDdz(true);
+  lk.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 1, seats: [X, { ...ME, id: "L" }, null], sec: 540 });
+  d.leaveDdz("o1", "open");
+  lk.recv({ type: "ddz_closed", table: "o1" });
+  d.queueDdz(50);
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  lk.recv(offer("L"));
+  expect(d.ddz.value).toMatchObject({ id: "o1", answered: false });
+  expect(sentOf(lk, "ddz_answer")).toHaveLength(1);
+  // Turned down, and the server says the seat is gone: a new connection asked for it later is not answered for.
+  d.answerDdz(false);
+  lk.recv({ type: "ddz_over", table: "o1", reason: "declined" });
+  lk.recv({ type: "ddz_queue", base: null, reason: "ddz_match_cooldown", retry: 1 });
+  await vi.advanceTimersByTimeAsync(1000);
+  d.queueDdz(50);
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  await again({ base: 50, table: null });
+  lk.recv(offer("L"));
+  expect(sentOf(lk, "ddz_answer")).toEqual([]);
+  expect(d.ddz.value).toMatchObject({ id: "o1", answered: false });
+  // Accepted on a dead connection, the table gone from the next one: the same table offered there asks anew.
+  d.answerDdz(true);
+  await again({ table: null });
+  lk.recv(offer("L"));
+  expect(sentOf(lk, "ddz_answer")).toEqual([]);
+  expect(d.ddz.value).toMatchObject({ id: "o1", answered: false });
+  // Accepted on a dead connection, then invites turned down for good: not given again.
+  d.answerDdz(true);
+  settings.duelDnd = true;
+  await again({ you: "L9", table: "o1" });
+  lk.recv(offer("L9"));
+  expect(sentOf(lk, "ddz_answer")).toEqual([]);
+  settings.duelDnd = false;
+});
+
+it("says the connection was lost when an invite or a seat went with it", async () => {
+  const { d } = await setup();
+  d.queueDdz(50);
+  let lk = linkUp();
+  lk.recv(matchInvite("m1", "L"));
+  d.answerDdz(true);
+  lk.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  lk = linkUp();
+  expect(d.ddzBubble.value).toBe("over");
+  expect(d.ddzReason(d.ddz.value!)).toBe("掉线了");
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  expect([d.ddz.value, d.ddzBubble.value]).toEqual([null, null]);
+  // The same for a seat at an open table.
+  lk.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 1, seats: [X, { ...ME, id: "L" }, null], sec: 540 });
+  lk.close();
+  await vi.advanceTimersByTimeAsync(1000);
+  linkUp();
+  expect([d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual(["over", "掉线了"]);
+});
+
+it("shows the seat the queue gave at an open table until the game or the table goes", async () => {
+  const { socket, d, frame } = await setup();
+  socket.recv({ type: "joined", room: "r", you: "me", members: [ME, A], features: ["ddz_match"] });
+  // A seat taken in the room is the room's: the sign of the queue does not show for it.
+  socket.recv({ type: "ddz_open", table: "r1", base: 50, deposit: 2400, you: 0, seats: [{ ...ME }, null, null], sec: 600 });
+  expect(d.ddzQueueSeat.value).toBeNull();
+  socket.recv({ type: "ddz_closed", table: "r1" });
+  d.queueDdz(50);
+  const lk = linkUp();
+  lk.recv({ type: "ddz_queue", base: 50, waited: 0 });
+  lk.recv({ type: "ddz_queue", base: null });
+  lk.recv(matchInvite("o1", "L", { ids: ["x", "L", ""], seats: [X, { ...ME, id: "L" }, null], accepted: ["x"] }));
+  expect(d.ddzQueueSeat.value).toBeNull();
+  d.answerDdz(true);
+  const seats = [X, { ...ME, id: "L" }];
+  lk.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 1, seats: [...seats, null], sec: 540 });
+  expect([d.ddzQueueSeat.value?.id, d.ddzBubble.value, d.ddzQueue.value]).toEqual(["o1", null, null]);
+  // Put away before its game: the reason shows, then the wait the server gave back.
+  lk.recv({ type: "ddz_over", table: "o1", reason: "disband", by: "x" });
+  lk.recv({ type: "ddz_queue", base: 50, waited: 90 });
+  expect([d.ddzQueueSeat.value, d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual([null, "over", "已散桌"]);
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  expect([d.ddz.value, d.ddzQueue.value?.base]).toEqual([null, 50]);
+  // Filled and dealt: the table's window comes up.
+  lk.recv({ type: "ddz_queue", base: null });
+  lk.recv({ type: "ddz_open", table: "o2", base: 50, deposit: 2400, you: 1, seats: [...seats, Y], sec: 500, starting: true });
+  expect(d.ddzQueueSeat.value).toMatchObject({ id: "o2", starting: true });
+  lk.recv({
+    type: "ddz_deal", table: "o2", seats: [...seats, Y].map((s) => ({ auto: false, away: false, ...s })), you: 1, hand: HAND,
+    base: 50, cap: 24, deal: 1, turn: 0, sec: 15, dealSec: 0,
+  });
+  expect([d.ddzQueueSeat.value, frame.open]).toEqual([null, true]);
 });
 
 it("takes back a seat the server kept after a restart, and stops on a server without the connection", async () => {

@@ -12,7 +12,7 @@ import { computed, ref } from "vue";
 import { inRoom, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  answerDdz, ddz, ddzAtTable, ddzBusy, ddzCanCall, ddzCanWatch, ddzConfig, ddzLink, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying,
+  answerDdz, ddz, ddzAtTable, ddzBusy, ddzCanCall, ddzCanWatch, ddzConfig, ddzCut, ddzLink, ddzLive, ddzMatchable, ddzOthersWaiting, ddzPlaying,
   ddzQueue, ddzQueueOn, ddzReason, ddzRetry, ddzTables, leaveDdz, unqueueDdz, type DdzState,
 } from "../../stores/ddz";
 import { openDdzWindow } from "../../stores/ui";
@@ -59,8 +59,8 @@ const liveTables = computed(() => (ddzCanWatch.value ? Object.entries(ddzLive.va
 const drain = () => ({ animationDuration: `${Math.max(0, (invite.value?.until ?? 0) - Date.now())}ms` });
 const keys = useInviteKeys(() => invite.value?.id, answerDdz);
 
-/** Waiting in the queue (an invite or a table on screen comes first). */
-const queued = computed(() => (t.value || ddzAtTable.value ? null : ddzQueue.value));
+/** Waiting in the queue (an invite or a table on screen comes first; how one ended is said beside the wait). */
+const queued = computed(() => (invite.value || ddzAtTable.value ? null : ddzQueue.value));
 /** Others waiting at any stake, while this save does not wait and hears the counts (in a room with open tables, or on the dou dizhu connection). */
 const othersWaiting = computed(() => ((ddzMatchable.value || ddzLink.value === "open") && !ddzQueue.value
   ? (ddzConfig.value?.stakes ?? []).reduce((n, s) => n + ddzOthersWaiting(s), 0) : 0));
@@ -73,7 +73,8 @@ const waited = useWaited(() => queued.value?.since);
       <DdzSeats class="who" :seats="seats" :size="44" :stake="invite.base" />
       <div :key="invite.id" class="acts answer">
         <div class="row">
-          <template v-if="!invite.sent && !invite.answered">
+          <p v-if="ddzCut" class="note" role="status">重连中…</p>
+          <template v-else-if="!invite.sent && !invite.answered">
             <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>
             <button type="button" class="ui-btn white" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
           </template>

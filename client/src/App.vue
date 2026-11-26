@@ -30,7 +30,7 @@ import DuelPick from "./pet/DuelPick.vue";
 import DdzBubble from "./pet/DdzBubble.vue";
 import DdzQueueSign from "./pet/DdzQueueSign.vue";
 import DdzSign from "./pet/DdzSign.vue";
-import { ddzBubble, ddzMatchable, ddzQueue, ddzScreen, ddzTables } from "./stores/ddz";
+import { ddzBubble, ddzMatchable, ddzQueue, ddzQueueSeat, ddzScreen, ddzTables } from "./stores/ddz";
 import {
   DDZ_HEIGHT, DDZ_WIDTH, DUEL_HEIGHT, DUEL_WIDTH, POKED_HEIGHT, POKED_WIDTH, bubblePlacement, closePick, insidePick, openPick, pickSize,
   picking,
@@ -628,8 +628,9 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
         <DuelBubble v-bind="duelPlace" />
         <DdzBubble v-if="!duel" v-bind="ddzPlace" />
-        <!-- While the save waits in the dou dizhu queue: a sign over the head, out of the way of the bubbles. -->
-        <div v-if="ddzQueue && !duel && !ddzBubble && !localPet.emote && !localPet.win" class="queue-at">
+        <!-- While the save waits in the dou dizhu queue, or at the open table the queue seated it at: a sign over the
+             head, out of the way of the bubbles. -->
+        <div v-if="(ddzQueue || ddzQueueSeat) && !duel && !ddzBubble && !localPet.emote && !localPet.win" class="queue-at">
           <DdzQueueSign />
         </div>
         <PokeBubble v-if="!duel && !ddzBubble" v-bind="pokedPlace" />

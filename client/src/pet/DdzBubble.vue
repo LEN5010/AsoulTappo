@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Over the own pet for dou dizhu: an invite to answer (or the own invite waiting), with the three faces and a tick
-// on those who accepted; a call to an open table of the room, with who sits there and the key that sits down; for a
-// moment after a game, the open table this save sits at waiting again, with the key that stands up (puts it away, for
-// the opener); how an invite ended; and, while a game goes on with the table out of sight, a key that brings the table
-// up. The server keeps the time; the bar only shows it.
+// on those who accepted (no keys while the connection that takes the answer is down); a call to an open table of the
+// room, with who sits there and the key that sits down; for a moment after a game, the open table this save sits at
+// waiting again, with the key that stands up (puts it away, for the opener); how an invite ended; and, while a game
+// goes on with the table out of sight, a key that brings the table up. The server keeps the time; the bar only shows it.
 import { computed } from "vue";
 import {
-  answerDdz, ddz, ddzBubble, ddzCall, ddzCanSit, ddzReason, ddzReopened, dismissDdzCall, leaveDdz, sitDdz,
+  answerDdz, ddz, ddzBubble, ddzCall, ddzCanSit, ddzCut, ddzReason, ddzReopened, dismissDdzCall, leaveDdz, sitDdz,
 } from "../stores/ddz";
 import { shownNick } from "../stores/room";
 import { settings } from "../stores/settings";
@@ -68,6 +68,7 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
             <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'open')">{{ t.you === 0 ? "散桌" : "离开" }}</button>
           </div>
           <p v-else-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
+          <p v-else-if="ddzCut" class="line">重连中…</p>
           <div v-else-if="!t.sent" class="keys">
             <button type="button" class="ui-btn primary" :disabled="t.answered" @pointerdown="keys.press()" @click="keys.answer(true, $event)">接受</button>
             <button type="button" class="ui-btn" :disabled="t.answered" @pointerdown="keys.press()" @click="keys.answer(false, $event)">拒绝</button>

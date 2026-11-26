@@ -1,21 +1,29 @@
 <script setup lang="ts">
 // Over the own pet while this save waits in the dou dizhu queue: a small paper sign, as over the pet of a member who
-// opened a table (DdzSign.vue), with the time waited and a key that stops waiting. Pressing the sign itself brings up
-// the online page, where the queue's banner is.
-import { ddzQueue, unqueueDdz } from "../stores/ddz";
+// opened a table (DdzSign.vue), with the time waited and a key that stops waiting. Once the queue seated the save at
+// an open table, the sign goes on there: how many seats are taken, and a key that leaves (not while the game starts).
+// Pressing the sign itself brings up the online page, where the banner is.
+import { computed } from "vue";
+import { ddzQueue, ddzQueueSeat, leaveDdz, unqueueDdz } from "../stores/ddz";
 import { openPanel } from "../stores/ui";
 import { useWaited } from "../panel/ddz/waited";
 import Icon from "../ui/Icon.vue";
 
 const waited = useWaited(() => ddzQueue.value?.since);
+const seat = ddzQueueSeat;
+/** Seats taken, one offered to another save of the queue included (as on the sign over the opener's pet). */
+const taken = computed(() => seat.value?.seats.filter((s) => s.id || s.pending).length ?? 0);
 </script>
 
 <template>
   <div class="sign" data-hit role="status">
     <button type="button" class="open" aria-label="斗地主" @click="openPanel('room')">
-      <i class="dot" aria-hidden="true"></i>匹配中<b>{{ waited }}</b>
+      <i class="dot" aria-hidden="true"></i>
+      <template v-if="seat">等人<b>{{ taken }}/3</b></template>
+      <template v-else>匹配中<b>{{ waited }}</b></template>
     </button>
-    <button type="button" class="stop" title="取消" aria-label="取消" @click="unqueueDdz"><Icon name="close" :size="12" /></button>
+    <button v-if="!seat" type="button" class="stop" title="取消" aria-label="取消" @click="unqueueDdz"><Icon name="close" :size="12" /></button>
+    <button v-else-if="!seat.starting" type="button" class="stop" title="离开" aria-label="离开" @click="leaveDdz(seat.id, 'open')"><Icon name="close" :size="12" /></button>
   </div>
 </template>
 

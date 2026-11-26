@@ -15,10 +15,11 @@ one line, oldest first, kept in memory; when three in it may sit down together, 
 room, through the same invite, which all three have to accept. A save that declines, closes the connection or lets
 the time run out is out of the queue, and may queue again only after MATCH_RETRY_SEC; the others go back into the line
 where their wait puts them, ahead of anyone who came after them. Once all three accept, the game goes on as an invited
-one; a seat whose connection closes is played for, and a new dou dizhu connection of the save takes it again (hello),
-as it takes over the save's place in the line from an older one. Closing the connection, turning invites down (dnd,
-on any connection of the save), starting an invite, accepting one, or opening or sitting down at an open table takes
-a save out of the queue.
+one; when the deposits cannot be taken, the three go back into the line, and one that may no longer play leaves it,
+told why. A seat whose connection closes is played for, and a new dou dizhu connection of the save takes it again
+(hello), as it takes over the save's place in the line from an older one. Closing the connection, turning invites down
+(dnd, on any connection of the save), starting an invite, accepting one, or opening or sitting down at an open table
+takes a save out of the queue.
 
 Open tables: a member on a client that said `ddzMatch` opens a table at a stake in its room and takes seat 0; members
 of the room sit down at its empty seats, and sitting is consent. The third to sit starts the game: the three deposits
@@ -31,9 +32,10 @@ and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
 the start: one that leaves the table while the deposits are being taken, or leaves the room and is not back once they
 are, gives them back and stands up (the opener puts the table away), as decided once they are taken; its save sits
-nowhere else (ddz_busy) until they are back. After a game, those who ask for another keep their seats; when the opener did and someone did
-not (or left), the table opens again with them, at the same stake and by the same rules, else it closes as an invited
-one does.
+nowhere else (ddz_busy) until they are back. A save of the queue that waits at a table put away before its first game
+there goes back to its place in the line. After a game, those who ask for another keep their seats; when the opener did
+and someone did not (or left), the table opens again with them, at the same stake and by the same rules, else it closes
+as an invited one does.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
 that waited longest at a table the queue made, the opener of an open table):
@@ -1094,8 +1096,9 @@ class Tables:
         for i, s in enumerate(table.seats):
             if s.peer is not None and i not in quiet:
                 s.peer.enqueue({"type": "ddz_closed", "table": table.id} if s is by else over)
-        # A save of the queue asked to sit down goes back to its place in the line.
-        self._requeue(table.base, [s for s in table.seats if s.asked])
+        # The saves of the queue go back to their places in the line: one asked to sit down, and one that sat here
+        # waiting for the others (a game at the table ends its wait: _take).
+        self._requeue(table.base, [s for i, s in enumerate(table.seats) if s.since is not None and i not in quiet])
 
     def _room_tables(self, room_id: str) -> list[dict]:
         """The open tables of room [room_id] as its members see them, oldest first."""
@@ -1187,6 +1190,9 @@ class Tables:
             for s, left in zip(table.seats, start.lefts):
                 s.auto, s.timeouts = False, 0
                 s.counter, s.counter_left = False, left
+                # A seat of the queue got its game: should the table open again and be put away, its save does not
+                # go back to the line (_disband).
+                s.since = None
             table.deal = 0
             await self._live(table, True)
             self._deal(table)
@@ -1304,12 +1310,12 @@ class Tables:
         except GameError as e:
             code = {"ddz_target_poor": "no_shards", "ddz_target_cap": "ddz_cap",
                     "ddz_target_locked": "ddz_locked", "ddz_target_account": "ddz_account"}.get(e.code, e.code)
-            self._end(table, code)
+            self._fell_short(table, code, again)
             return
         except Exception:
             # The transaction rolled back: nothing was taken.
             log.exception("ddz: taking the deposits at %s failed", table.id)
-            self._end(table, "error")
+            self._fell_short(table, "error", again)
             return
         if table.phase != STARTING or self.by_id.get(table.id) is not table:
             # The table went while the deposits were taken (the server cleared its tables).
@@ -1332,6 +1338,14 @@ class Tables:
         table.deal = 0
         await self._live(table, True)
         self._deal(table)
+
+    def _fell_short(self, table: Table, reason: str, again: bool) -> None:
+        """The deposits of an invited table or one the queue made could not be taken: it ends. The saves of a table
+        the queue made go back to their places in the line; the one that may no longer play leaves it there, told why
+        (_match). After a game at the table ([again]) their wait is over."""
+        self._end(table, reason)
+        if table.match and not again:
+            self._requeue(table.base, table.seats)
 
     def _deal(self, table: Table) -> None:
         # A save of the table watching a game anywhere plays now instead.

@@ -489,6 +489,82 @@ def test_a_table_put_away_while_a_save_of_the_queue_is_asked_puts_it_back_in_its
     run(go())
 
 
+@pytest.mark.parametrize("how", ["leave", "depart", "expired", "opener_poor", "error"])
+def test_a_save_of_the_queue_waiting_at_a_table_put_away_goes_back_to_its_place(how, monkeypatch):
+    async def go():
+        w = OpenWorld()
+        q, sq = w.queuer("q")
+        await w.t.queue(q, BASE)
+        w.mono += 5
+        ((a, _),), tid = await w.opened("a")
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        await w.t.answer(q, tid, True)
+        assert w.t.by_id[tid].seats[1].accepted and w.t.waiting == {}
+        if how in ("opener_poor", "error"):
+            b, _ = w.member("b")
+            if how == "opener_poor":
+                w.g.store.update_player(w.who["a"], shards=0)
+            else:
+                monkeypatch.setattr(Bank, "try_start", lambda *x: 1 / 0)
+            w.mono += QUEUE_INTERVAL
+            await w.t.sit("r", b, tid)
+            await w.settled()
+        elif how == "leave":
+            await w.t.leave(a, tid)
+        elif how == "depart":
+            await w.m.depart("r", a.id)
+        else:
+            w.mono += OPEN_SEC
+            await w.timers.fire()
+        await w.t.idle()
+        reason = {"expired": "expired", "error": "error"}.get(how, "disband")
+        assert sq.of("ddz_over")[-1]["reason"] == reason and tid not in w.t.by_id
+        assert queue_msgs(sq)[-1]["base"] == BASE and queue_msgs(sq)[-1]["waited"] >= FILL_SEC + 5
+        assert [x.peer for x in w.t.lines[BASE]] == [q] and w.who["q"] not in w.t.by_save
+        # It waits since it first did: ahead of one that queues now.
+        late, _ = w.queuer("late")
+        await w.t.queue(late, BASE)
+        assert [x.peer for x in w.t.lines[BASE]] == [q, late]
+    run(go())
+
+
+def test_a_save_of_the_queue_that_stood_up_or_played_at_an_open_table_does_not_go_back_to_the_line():
+    async def go():
+        w = OpenWorld()
+        q, sq = w.queuer("q")
+        await w.t.queue(q, BASE)
+        ((a, _), (b, _)), tid = await w.opened("a", "b")
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        await w.t.answer(q, tid, True)
+        await w.settled()
+        table = w.t.by_id[tid]
+        w.peers = [a, b, q]
+        await w.t.bid(a, tid, 3)
+        await play_out(w, tid)
+        # The opener and the save of the queue ask for another game, b leaves: the table waits again, then goes.
+        await w.t.again(a, tid)
+        await w.t.again(q, tid)
+        await w.t.leave(b, tid)
+        assert sq.of("ddz_open")[-1]["seats"][1] is None and table.seats[2].peer is q
+        await w.t.leave(a, tid)
+        await w.t.idle()
+        assert sq.of("ddz_over")[-1]["reason"] == "disband" and queue_msgs(sq)[-1] == {"base": None}
+        assert w.t.waiting == {} and w.t.lines == {}
+        # Standing up from a table that waits is the save's own doing: it is out, as by a cancel.
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(q, BASE)
+        ((c, _),), tid = await w.opened("c")
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        await w.t.answer(q, tid, True)
+        await w.t.leave(q, tid)
+        await w.t.idle()
+        assert w.t.waiting == {} and w.t.by_id[tid].seats[1].empty
+    run(go())
+
+
 def test_a_save_of_the_queue_freed_by_an_invite_ending_takes_a_seat_waiting_for_it():
     async def go():
         w = OpenWorld()
