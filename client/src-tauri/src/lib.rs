@@ -333,9 +333,79 @@ fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), Stri
 /// The panel window was created and has not been shown yet: its first show places it (`place_panel`).
 static PANEL_UNPLACED: AtomicBool = AtomicBool::new(false);
 
-/// The panel's size on a monitor, in that monitor's pixels: 1000×720 logical, smaller when the work area is.
-fn panel_size(area: &tauri::PhysicalRect<i32, u32>, scale: f64) -> (f64, f64) {
-    ((1000.0 * scale).min(area.size.width as f64 - 20.0), (720.0 * scale).min(area.size.height as f64 - 20.0))
+/// The size the player picked for the panel (`panelScale`, src/stores/settings.ts), sent by the desk.
+static PANEL_SCALE: Mutex<f64> = Mutex::new(1.0);
+/// The panel page's zoom now (`panel_place::fit`), put back when the window is shown or changes monitor.
+static PANEL_ZOOM: Mutex<f64> = Mutex::new(1.0);
+
+/// The panel on a monitor: its window's width and height in that monitor's pixels, and its page's zoom
+/// (src/panel_place.rs, `fit`).
+fn panel_size(area: &tauri::PhysicalRect<i32, u32>, scale: f64) -> (f64, f64, f64) {
+    let picked = PANEL_SCALE.lock().map(|s| *s).unwrap_or(1.0);
+    panel_place::fit(area.size.width as f64, area.size.height as f64, scale, picked)
+}
+
+/// Draws the panel's page at `zoom`: laid out at `panel_place::PAGE` in a window that size times `zoom`.
+fn zoom_panel(panel: &WebviewWindow, zoom: f64) {
+    if let Ok(mut now) = PANEL_ZOOM.lock() {
+        *now = zoom;
+    }
+    if let Err(e) = panel.set_zoom(zoom) {
+        applog!("panel", "zoom {zoom:.2} failed: {e}");
+    }
+}
+
+/// Puts the panel at `x`,`y` with a size of `w`×`h`, all in the pixels of the monitor whose scale is `scale`.
+fn move_panel(panel: &WebviewWindow, x: f64, y: f64, w: f64, h: f64, scale: f64) -> tauri::Result<()> {
+    // Tao turns a physical position into points with the window's own scale, which is the scale of the monitor it is
+    // on now, not of the one it goes to.
+    #[cfg(target_os = "macos")]
+    let result = panel
+        .set_size(tauri::LogicalSize::new(w / scale, h / scale))
+        .and_then(|_| panel.set_position(tauri::LogicalPosition::new(x / scale, y / scale)));
+    // Moved first: crossing to a monitor of another scale resizes the window, so the size is set once it is there.
+    #[cfg(not(target_os = "macos"))]
+    let result = {
+        let _ = scale;
+        let at = PhysicalPosition::new(x.round() as i32, y.round() as i32);
+        panel
+            .set_position(at)
+            .and_then(|_| panel.set_size(PhysicalSize::new(w.round() as u32, h.round() as u32)))
+            .and_then(|_| panel.set_position(at))
+    };
+    result
+}
+
+/// The size the player picked for the panel, from the desk at startup and on every change: a panel already placed
+/// takes it at once, about its own centre and inside the work area of the monitor it is on.
+#[tauri::command]
+fn set_panel_scale(app: tauri::AppHandle, scale: f64) {
+    if let Ok(mut picked) = PANEL_SCALE.lock() {
+        *picked = scale;
+    }
+    let Some(panel) = app.get_webview_window("panel") else { return };
+    // Not shown yet: its first show sizes it (`place_panel`).
+    if PANEL_UNPLACED.load(Ordering::Relaxed) {
+        return;
+    }
+    let monitor = match panel.current_monitor() {
+        Ok(Some(m)) => m,
+        _ => return applog!("panel", "scale: its monitor is unknown"),
+    };
+    let area = *monitor.work_area();
+    let monitor_scale = monitor.scale_factor();
+    let (w, h, zoom) = panel_size(&area, monitor_scale);
+    let (Ok(at), Ok(size)) = (panel.outer_position(), panel.outer_size()) else { return };
+    // The window's own pixels are the monitor's: it is on that monitor.
+    let (cx, cy) = (at.x as f64 + size.width as f64 / 2.0, at.y as f64 + size.height as f64 / 2.0);
+    let (left, top) = (area.position.x as f64, area.position.y as f64);
+    let x = (cx - w / 2.0).clamp(left, (left + area.size.width as f64 - w).max(left));
+    let y = (cy - h / 2.0).clamp(top, (top + area.size.height as f64 - h).max(top));
+    zoom_panel(&panel, zoom);
+    match move_panel(&panel, x, y, w, h, monitor_scale) {
+        Ok(()) => applog!("panel", "scaled to {scale:.2}: zoom {zoom:.2}, {w:.0}x{h:.0}"),
+        Err(e) => applog!("panel", "scale failed: {e}"),
+    }
 }
 
 /// Where the overlay's page starts, in its monitor's pixels (`Monitor::work_area`'s units).
@@ -362,7 +432,7 @@ fn place_panel(app: &tauri::AppHandle, panel: &WebviewWindow) {
     };
     let area = *monitor.work_area();
     let scale = monitor.scale_factor();
-    let (w, h) = panel_size(&area, scale);
+    let (w, h, zoom) = panel_size(&area, scale);
     // CSS px times the page's device pixel ratio are the monitor's pixels: physical pixels on Windows, points times
     // the backing scale on macOS (how tauri reports a monitor there).
     let avoid: Vec<panel_place::Rect> = match (overlay.is_visible(), overlay_origin(&overlay, &area)) {
@@ -389,29 +459,16 @@ fn place_panel(app: &tauri::AppHandle, panel: &WebviewWindow) {
     };
     let (x, y) = panel_place::place(bounds, w, h, &avoid, 16.0 * scale, 10.0 * scale);
     let covered = panel_place::covered(&panel_place::Rect { x, y, w, h }, &avoid);
-    // Tao turns a physical position into points with the window's own scale, which is the scale of the monitor it is
-    // on now, not of the one it goes to.
-    #[cfg(target_os = "macos")]
-    let result = panel
-        .set_size(tauri::LogicalSize::new(w / scale, h / scale))
-        .and_then(|_| panel.set_position(tauri::LogicalPosition::new(x / scale, y / scale)));
-    // Moved first: crossing to a monitor of another scale resizes the window, so the size is set once it is there.
-    #[cfg(not(target_os = "macos"))]
-    let result = {
-        let at = PhysicalPosition::new(x.round() as i32, y.round() as i32);
-        panel
-            .set_position(at)
-            .and_then(|_| panel.set_size(PhysicalSize::new(w.round() as u32, h.round() as u32)))
-            .and_then(|_| panel.set_position(at))
-    };
-    match result {
+    zoom_panel(panel, zoom);
+    match move_panel(panel, x, y, w, h, scale) {
         Ok(()) => applog!(
             "panel",
-            "placed at {:.0},{:.0} ({:.0}x{:.0}) on the pet's monitor, {} area(s) to avoid, {:.0} px² of them covered",
+            "placed at {:.0},{:.0} ({:.0}x{:.0}, zoom {:.2}) on the pet's monitor, {} area(s) to avoid, {:.0} px² of them covered",
             x,
             y,
             w,
             h,
+            zoom,
             avoid.len(),
             covered
         ),
@@ -424,6 +481,9 @@ fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("panel") {
         if PANEL_UNPLACED.swap(false, Ordering::Relaxed) {
             place_panel(&app, &window);
+        } else {
+            // Kept by the webview as far as known; set again in case a platform drops it.
+            zoom_panel(&window, PANEL_ZOOM.lock().map(|z| *z).unwrap_or(1.0));
         }
         window.unminimize().map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
@@ -457,8 +517,11 @@ async fn open_panel(
     }
     let window = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("index.html?window=panel".into()))
         .title(edition::DISPLAY_NAME)
-        .inner_size(1000.0, 720.0)
+        .inner_size(panel_place::PAGE.0, panel_place::PAGE.1)
         .min_inner_size(640.0, 480.0)
+        // Its size comes from the settings only (`set_panel_scale`): the page is laid out for one proportion.
+        .resizable(false)
+        .maximizable(false)
         .transparent(true)
         .decorations(false)
         .always_on_top(false)
@@ -476,8 +539,9 @@ async fn open_panel(
         })?;
     applog!("panel", "created");
     if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
-        let (w, h) = panel_size(monitor.work_area(), monitor.scale_factor());
+        let (w, h, zoom) = panel_size(monitor.work_area(), monitor.scale_factor());
         window.set_size(PhysicalSize::new(w as u32, h as u32)).map_err(|e| e.to_string())?;
+        zoom_panel(&window, zoom);
     }
     window.center().map_err(|e| e.to_string())?;
     // Its first show moves it to the pet's monitor, clear of the pet.
@@ -1244,6 +1308,7 @@ pub fn run() {
             set_hit_regions,
             set_dragging,
             open_panel,
+            set_panel_scale,
             watch_second_start,
             toggle_panel,
             show_panel,
@@ -1280,10 +1345,19 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if window.label() == "panel" {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
-                    let _ = window.emit("panel:visible", false);
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        let _ = window.emit("panel:visible", false);
+                    }
+                    // Moved to a monitor of another scale: the window keeps its logical size, the page its zoom.
+                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                        if let Some(panel) = window.app_handle().get_webview_window("panel") {
+                            zoom_panel(&panel, PANEL_ZOOM.lock().map(|z| *z).unwrap_or(1.0));
+                        }
+                    }
+                    _ => {}
                 }
             }
             if window.label() == "todo" {

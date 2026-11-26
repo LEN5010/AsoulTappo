@@ -35,6 +35,26 @@ impl Rect {
     }
 }
 
+/// The panel's page in CSS px: the window is this size times the page's zoom, in logical pixels.
+pub const PAGE: (f64, f64) = (1000.0, 720.0);
+/// The sizes a player can pick (`panelScale`, src/stores/settings.ts).
+pub const SCALES: (f64, f64) = (0.9, 1.5);
+/// What the window keeps clear of the work area's sides, in total, in the monitor's pixels.
+const ROOM: f64 = 20.0;
+
+/// The panel on a monitor whose work area is `area_w`×`area_h` of its pixels, `scale` of them to a logical pixel, at
+/// the size the player picked: the window's width and height in the monitor's pixels, and the page's zoom.
+///
+/// The window keeps the page's proportions, so the page is laid out at `PAGE` and drawn `zoom` times as large. A pick
+/// that does not fit comes down until it does, but not below the pick itself or 1: from there the window is cut to the
+/// work area and the page lays itself out in what is left (its container queries), as it did before the setting.
+pub fn fit(area_w: f64, area_h: f64, scale: f64, picked: f64) -> (f64, f64, f64) {
+    let picked = if picked.is_finite() { picked.clamp(SCALES.0, SCALES.1) } else { 1.0 };
+    let room = ((area_w - ROOM) / (PAGE.0 * scale)).min((area_h - ROOM) / (PAGE.1 * scale));
+    let zoom = picked.min(room).max(picked.min(1.0));
+    ((PAGE.0 * zoom * scale).min(area_w - ROOM), (PAGE.1 * zoom * scale).min(area_h - ROOM), zoom)
+}
+
 /// How much of `avoid` a window at `spot` covers.
 pub fn covered(spot: &Rect, avoid: &[Rect]) -> f64 {
     avoid.iter().map(|r| spot.overlap(r)).sum()
@@ -94,9 +114,81 @@ mod tests {
         Rect { x: a.right() - w - 48.0 * scale, y: a.bottom() - h - 80.0 * scale, w, h }
     }
 
-    /// The panel's size on a monitor (lib.rs, open_panel).
+    /// The panel's size on a monitor at the default size.
     fn size(a: Rect, scale: f64) -> (f64, f64) {
-        ((1000.0 * scale).min(a.w - 20.0), (720.0 * scale).min(a.h - 20.0))
+        let (w, h, _) = fit(a.w, a.h, scale, 1.0);
+        (w, h)
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
+
+    #[test]
+    fn the_default_size_is_the_old_one_everywhere() {
+        // Work areas in their own pixels and their scale: big, tall and short ones.
+        for (w, h, scale) in [
+            (1920.0, 1032.0, 1.0),
+            (1366.0, 708.0, 1.25),
+            (1280.0, 672.0, 1.0),
+            (1920.0, 1008.0, 1.5),
+            (2560.0, 1410.0, 2.0),
+            (800.0, 560.0, 1.0),
+        ] {
+            let (fw, fh, zoom) = fit(w, h, scale, 1.0);
+            assert_eq!(zoom, 1.0);
+            assert_eq!((fw, fh), ((1000.0 * scale).min(w - 20.0), (720.0 * scale).min(h - 20.0)));
+        }
+    }
+
+    #[test]
+    fn a_bigger_pick_keeps_the_proportions() {
+        // 2560×1440 at 100%, 40 for the taskbar.
+        let (w, h, zoom) = fit(2560.0, 1400.0, 1.0, 1.5);
+        assert_eq!(zoom, 1.5);
+        assert_eq!((w, h), (1500.0, 1080.0));
+        // An ultrawide one: room for nearly ×1.9, the pick is the most it gets.
+        assert_eq!(fit(3440.0, 1392.0, 1.0, 1.5).2, 1.5);
+    }
+
+    #[test]
+    fn a_pick_that_does_not_fit_comes_down_to_what_does() {
+        // 1920×1080 at 100% with a 48 px taskbar: ×1.5 does not fit, the window takes the work area's height.
+        let (w, h, zoom) = fit(1920.0, 1032.0, 1.0, 1.5);
+        assert!(close(zoom, 1012.0 / 720.0));
+        assert!(close(h, 1012.0));
+        assert!(close(w / h, 1000.0 / 720.0));
+        // A MacBook at 200% (1280×800 points, menu bar and Dock out): the height lets ×1 at most, and no less.
+        let (w, h, zoom) = fit(2560.0, 1410.0, 2.0, 1.3);
+        assert_eq!(zoom, 1.0);
+        assert_eq!((w, h), (2000.0, 1390.0));
+        // A portrait monitor: the width is what limits it.
+        let (w, _, zoom) = fit(1080.0, 1872.0, 1.0, 1.5);
+        assert!(close(zoom, 1.06));
+        assert!(close(w, 1060.0));
+    }
+
+    #[test]
+    fn a_smaller_pick_fits_a_small_screen_whole() {
+        // 1280×720 at 100% (or 1920×1080 at 150%): ×0.9 shows the whole page, the default cuts its height.
+        let (w, h, zoom) = fit(1280.0, 672.0, 1.0, 0.9);
+        assert_eq!(zoom, 0.9);
+        assert!(close(w, 900.0) && close(h, 648.0));
+        let (w, h, zoom) = fit(1920.0, 1008.0, 1.5, 0.9);
+        assert_eq!(zoom, 0.9);
+        assert!(close(w, 1350.0) && close(h, 972.0));
+        // 1366×768 at 125%: even ×0.9 is cut a little, never below the pick.
+        let (w, h, zoom) = fit(1366.0, 708.0, 1.25, 0.9);
+        assert_eq!(zoom, 0.9);
+        assert!(close(w, 1125.0));
+        assert_eq!(h, 688.0);
+    }
+
+    #[test]
+    fn a_pick_out_of_range_is_held_to_it() {
+        assert_eq!(fit(3840.0, 2100.0, 1.0, 9.0).2, SCALES.1);
+        assert_eq!(fit(3840.0, 2100.0, 1.0, 0.1).2, SCALES.0);
+        assert_eq!(fit(3840.0, 2100.0, 1.0, f64::NAN).2, 1.0);
     }
 
     fn inside(a: Rect, x: f64, y: f64, w: f64, h: f64) -> bool {
