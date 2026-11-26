@@ -930,10 +930,24 @@ uniform float u_px;        // device pixels to a CSS pixel
 uniform sampler2D u_a;     // two pictures of it, each more out of focus than the one before, and how far between them
 uniform sampler2D u_b;
 uniform float u_mix;
+uniform sampler2D u_sa;    // the stage alone in the same two, read as light
+uniform sampler2D u_sb;
+uniform sampler2D u_la;    // the pieces standing on it, cut out side by side on a sheet: their light multiplied by how
+uniform sampler2D u_lb;    // much they cover
+uniform sampler2D u_ka;    // how much they cover
+uniform sampler2D u_kb;
+uniform vec2 u_texa;       // a texel of each sheet, in parts of it
+uniform vec2 u_texb;
+uniform vec2 u_sheet;      // how large the sheets are, in sizes of the picture
+uniform vec4 u_cut[5];     // where each piece is cut out of the picture, and where it lies on the sheet: left, top, width,
+uniform vec4 u_on[5];      // height in parts of each; from the back
+uniform vec4 u_deep[5];    // how near it is: how much of each channel of u_near, and how much besides
+uniform float u_cuts;      // how many there are
+uniform float u_lay;       // 0: the pictures as they are; 1: laid together from their pieces, each where it has moved to
+uniform sampler2D u_near;  // how near the stage (r), the members beside Diana (g) and Diana (b) are
 uniform sampler2D u_far;   // the one most out of focus
 uniform sampler2D u_gone;  // the same of the series before, as it makes way: u_over
 uniform float u_over;
-uniform sampler2D u_depth; // how near everything is
 uniform vec4 u_kv;         // its place: left, top, width, height
 uniform float u_floor;     // where the floor begins
 uniform float u_side;      // where the page begins, right of the sidebar
@@ -967,22 +981,37 @@ float join(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0);
   return mix(b, a, h) + k * h * (1.0 - h);
 }
-// What lies at a place once everything has moved by how near it is. What is as near as t is seen here when it lies at
-// a - b t. Going from the nearest down, the first t that what lies there is at least as near as, in steps of about
-// three pixels of that way and then halving the step that crossed: what is nearer covers what is behind it.
-vec2 moved(vec2 uv) {
-  vec2 a = uv + u_par * 0.42, b = u_par + (uv - vec2(0.5, 0.42)) * u_dolly;
-  float n = clamp(ceil(length(b * u_kv.zw) / 3.0), 2.0, 24.0), hi = 1.0, lo = 0.0;
-  for (int i = 1; i <= 24; i++) {
-    float t = 1.0 - float(i) / n;
-    if (textureLod(u_depth, a - b * t, 0.0).r >= t) { lo = t; break; }
-    hi = t;
-  }
-  for (int i = 0; i < 5; i++) {
-    float t = 0.5 * (hi + lo);
-    if (textureLod(u_depth, a - b * t, 0.0).r >= t) lo = t; else hi = t;
-  }
-  return a - b * lo;
+vec2 g_dx, g_dy;
+vec3 pick(sampler2D s, vec2 q) { return textureGrad(s, q, g_dx, g_dy).rgb; }
+vec3 encoded(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+const vec4 STAGE = vec4(1.0, 0.0, 0.0, 0.0);
+// How near a piece is at q.
+float nearOf(vec4 deep, vec2 q) { return deep.w + dot(textureLod(u_near, q, 0.0).rgb, deep.rgb); }
+// Everything moves by how near it is: what is as near as t is seen at a place when it lies at a - b t there. Where a
+// piece is seen from here: as its depth changes slowly, a few steps find it.
+vec2 found(vec4 deep, vec2 a, vec2 b) {
+  if (deep.rgb == vec3(0.0)) return a - b * deep.w;
+  vec2 q = a - b * nearOf(deep, a - b * 0.5);
+  q = a - b * nearOf(deep, q);
+  return a - b * nearOf(deep, q);
+}
+// Where on the sheet piece k lies at q of the picture; outside it where the piece is not cut out there. Along the
+// picture's edges it goes on as it is there.
+vec2 onSheet(int k, vec2 q, vec2 texel) {
+  vec4 cut = u_cut[k], on = u_on[k];
+  vec2 f = (clamp(q, 0.0, 1.0) - cut.xy) / cut.zw;
+  if (any(lessThan(f, vec2(0.0))) || any(greaterThan(f, vec2(1.0)))) return vec2(-1.0);
+  return clamp(on.xy + f * on.zw, on.xy + 0.5 * texel, on.xy + on.zw - 0.5 * texel);
+}
+// What a piece shows on a sheet: its light multiplied by how much it covers, and how much.
+vec4 piece(vec2 s, sampler2D light, sampler2D cover) {
+  if (s.x < 0.0) return vec4(0.0);
+  vec2 dx = g_dx / u_sheet, dy = g_dy / u_sheet;
+  float k = textureGrad(cover, s, dx, dy).r;
+  return vec4(min(textureGrad(light, s, dx, dy).rgb, vec3(k)), k);
 }
 float beam(vec2 p, vec4 b, float wide) {
   vec2 d = p - b.xy, way = vec2(sin(b.z), cos(b.z));
@@ -1027,9 +1056,38 @@ void main() {
   float light = leak(p, size);
   if (light >= 1.04) { o_c = vec4(u_paper, 1.0); return; }
   vec3 ground = mix(u_top, u_bottom, smoothstep(0.0, size.y, p.y));
-  vec2 uv = (p - u_kv.xy) / u_kv.zw, q = moved(uv);
-  float near = textureLod(u_depth, q, 0.0).r;
-  vec3 pic = mix(texture(u_a, q).rgb, texture(u_b, q).rgb, u_mix);
+  vec2 uv = (p - u_kv.xy) / u_kv.zw;
+  // How far apart neighbouring pixels are in the picture: places moved by different depths jump apart between
+  // neighbours, and the sharper picture is read as if they did not, or it would be read far too out of focus there.
+  g_dx = vec2(1.0 / (u_px * u_kv.z), 0.0);
+  g_dy = vec2(0.0, 1.0 / (u_px * u_kv.w));
+  vec2 a = uv + u_par * 0.42, b = u_par + (uv - vec2(0.5, 0.42)) * u_dolly;
+  // How near what is seen is, for the lamps: the nearest piece that covers most of the place.
+  vec3 pic = mix(pick(u_a, uv), pick(u_b, uv), u_mix);
+  float near;
+  if (u_lay > 0.0) {
+    // Laid together from its pieces, each where it has moved to, the nearer over the farther, as light.
+    vec2 q = found(STAGE, a, b);
+    vec3 ca = pick(u_sa, q), cb = pick(u_sb, q);
+    near = nearOf(STAGE, q);
+    for (int k = 0; k < 5; k++) {
+      if (float(k) >= u_cuts) break;
+      vec2 r = found(u_deep[k], a, b);
+      vec4 pa = piece(onSheet(k, r, u_texa), u_la, u_ka), pb = piece(onSheet(k, r, u_texb), u_lb, u_kb);
+      ca = pa.rgb + (1.0 - pa.a) * ca;
+      cb = pb.rgb + (1.0 - pb.a) * cb;
+      if (pa.a > 0.5) near = nearOf(u_deep[k], r);
+    }
+    // While nothing moves, as the pictures are.
+    pic = mix(pic, mix(encoded(ca), encoded(cb), u_mix), u_lay);
+  } else {
+    near = nearOf(STAGE, uv);
+    for (int k = 0; k < 5; k++) {
+      if (float(k) >= u_cuts) break;
+      vec2 s = onSheet(k, uv, u_texa);
+      if (s.x >= 0.0 && textureLod(u_ka, s, 0.0).r > 0.5) near = nearOf(u_deep[k], uv);
+    }
+  }
   if (u_over < 1.0) pic = mix(texture(u_gone, uv).rgb, pic, u_over);
   vec3 col = mix(ground, pic, 1.0 - smoothstep(0.80, 0.985, uv.y));
 

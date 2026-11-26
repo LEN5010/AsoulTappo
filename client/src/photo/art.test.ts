@@ -68,10 +68,17 @@ describe.each(all)("the art of $series.id", ({ series, art }) => {
 
   it("has a whole stage or none", () => {
     if (!art.stage) return;
-    const { focus, depth, title, look } = art.stage;
-    for (const url of [...focus, depth, title]) picture(url);
-    expect(new Set([...focus, depth, title]).size).toBe(focus.length + 2);
+    const { focus, stages, sheets, covers, depth, title, look, pieces } = art.stage;
+    const all = [...focus, ...stages, ...sheets, ...covers, depth, title];
+    for (const url of all) picture(url);
+    expect(new Set(all).size).toBe(focus.length * 4 + 2);
     expect(focus.length).toBeGreaterThan(2);
+    for (const list of [stages, sheets, covers]) expect(list.length).toBe(focus.length);
+    expect(pieces.cuts.length).toBeGreaterThan(0);
+    for (const c of pieces.cuts) {
+      for (const [x, y, w, h] of [c.in, c.on]) expect(x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= 1 && y + h <= 1).toBe(true);
+      expect(c.near.length).toBe(4);
+    }
     for (const c of [look.dark, look.mist, look.light, ...look.ground]) {
       expect(c.length).toBe(3);
       expect(c.every((v) => v >= 0 && v <= 1)).toBe(true);

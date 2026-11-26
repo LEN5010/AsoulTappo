@@ -82,12 +82,33 @@ export interface CardInfo extends Template {
 export interface StageArt {
   id: string;
   look: StageLook;
-  /** The key visual from sharp to the blur it has behind the box. */
+  /** The key visual from sharp to the blur it has behind the box, as it is while nothing moves. */
   focus: readonly string[];
-  /** How near everything in it is. */
+  /** The stage alone in each of those. */
+  stages: readonly string[];
+  /** In each, the pieces that stand on the stage, cut out and laid side by side: their colour multiplied by how much
+   *  of each place they cover. */
+  sheets: readonly string[];
+  /** How much they cover, on the same sheets. */
+  covers: readonly string[];
+  /** How near the stage (red), the members beside Diana (green) and Diana (blue) are. */
   depth: string;
+  pieces: StagePieces;
   /** The event's title. */
   title: string;
+}
+/** Where a key visual's pieces lie (scripts/photocards/stage.py), from the back. */
+export interface StagePieces {
+  /** How large the sheet is, in sizes of the picture. */
+  sheet: Vec2;
+  cuts: readonly {
+    name: string;
+    /** Where it is cut out of the picture, and where it lies on the sheet: left, top, width, height, in parts of each. */
+    in: Vec4;
+    on: Vec4;
+    /** How near it is: how much of each of the depth's channels, and how much besides. */
+    near: Vec4;
+  }[];
 }
 export interface SeriesArt {
   id: string;
@@ -111,6 +132,7 @@ const inks = import.meta.glob<string>("../assets/photocards/*/box.webp",
 const sheets = import.meta.glob<Sheet>("../assets/photocards/*/cards.json", { eager: true, import: "default" });
 const stages = import.meta.glob<string>("../assets/photocards/*/{stage/*,title}.webp",
   { eager: true, query: "?url", import: "default" });
+const layouts = import.meta.glob<StagePieces>("../assets/photocards/*/stage/layout.json", { eager: true, import: "default" });
 const opening = import.meta.glob<string>("../assets/photocards/open/*.webp",
   { eager: true, query: "?url", import: "default" });
 
@@ -150,8 +172,12 @@ function stageOf(id: string, look: StageLook | undefined): StageArt | null {
   const url = (path: string): string | undefined => stages[`../assets/photocards/${id}/${path}.webp`];
   const focus: string[] = [];
   for (let i = 0, f = url("stage/0"); f; f = url(`stage/${++i}`)) focus.push(f);
-  const depth = url("stage/depth"), title = url("title");
-  return look && focus.length > 1 && depth && title ? { id, look, focus, depth, title } : null;
+  const each = (name: string) => focus.map((_, i) => url(`stage/${name}-${i}`)).filter((u): u is string => !!u);
+  const alone = each("stage"), sheets = each("layers"), covers = each("cover");
+  const depth = url("stage/depth"), title = url("title"), pieces = layouts[`../assets/photocards/${id}/stage/layout.json`];
+  const whole = [alone, sheets, covers].every((l) => l.length === focus.length);
+  return look && focus.length > 1 && whole && depth && pieces && title
+    ? { id, look, focus, stages: alone, sheets, covers, depth, pieces, title } : null;
 }
 
 function build(id: string): SeriesArt | null {

@@ -158,8 +158,10 @@ export async function picture(url: string): Promise<Picture> {
   return image(url);
 }
 
-/** [single]: only the first channel is kept. */
-export function texture(gl: GL, source: TexImageSource | null, { mips = true, repeat = false, single = false } = {}): WebGLTexture {
+/** [single]: only the first channel is kept. [srgb]: its colours are sRGB and are read as light, so that what is read
+ *  between texels is mixed as light mixes. */
+export function texture(gl: GL, source: TexImageSource | null,
+  { mips = true, repeat = false, single = false, srgb = false } = {}): WebGLTexture {
   const t = gl.createTexture()!;
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, t);
@@ -170,7 +172,7 @@ export function texture(gl: GL, source: TexImageSource | null, { mips = true, re
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
   if (source) {
     if (single) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, source);
-    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     if (mips) gl.generateMipmap(gl.TEXTURE_2D);
     const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
     if (aniso && mips) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
