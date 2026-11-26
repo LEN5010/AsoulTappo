@@ -107,12 +107,22 @@ fn toggle(app: &AppHandle) {
                 crate::DDZ_OPEN.store(false, Ordering::Relaxed);
             }
         }
-        let _ = main.hide();
+        // The hit test reads the pet window's visibility from the overlay state, as after the tray's hide.
+        let overlay = app.try_state::<Arc<crate::Overlay>>();
+        if main.hide().is_ok() {
+            if let Some(o) = &overlay {
+                o.visible.store(false, Ordering::Relaxed);
+            }
+        }
         crate::BOSS_HIDDEN.store(true, Ordering::Relaxed);
     } else {
         applog!("hotkey", "show");
         crate::BOSS_HIDDEN.store(false, Ordering::Relaxed);
-        let _ = main.show();
+        if main.show().is_ok() {
+            if let Some(o) = app.try_state::<Arc<crate::Overlay>>() {
+                o.visible.store(true, Ordering::Relaxed);
+            }
+        }
         #[cfg(target_os = "windows")]
         crate::transparency::request("shown by the hide hotkey");
         let panel = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed));
