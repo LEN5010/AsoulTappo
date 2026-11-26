@@ -182,7 +182,8 @@ rest as at a room's open table, `sec` the time until it is put away:
 GET /api/ddz/lobby lists the public open tables in each stake's `tables` (Tables.lobby_tables): those waiting with a
 seat empty, fullest first, then oldest, then by id, at most LOBBY_TABLES; each {table, seats}, a seat {nick,
 character}, {pending: true} when offered to a save of the queue, or null when empty; no member ids, no rooms. Its
-presence tells a client the server has the hall.
+presence tells a client the server has the hall. `hallTag` names that list (Tables.lobby_hall); a client that sends it
+back (``?hall=``) while the list is the same gets `hallSame` true and the stakes without `tables`.
 
 Today's counts (tracking.COUNT_KEYS): ``ddz_ask`` each table the queue made and each open table's seat offered to a
 save of the queue; ``ddz_ask_timeout`` and ``ddz_ask_decline`` each of those asks that ran out, or was declined or
@@ -233,6 +234,7 @@ import random
 import secrets
 import threading
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -735,6 +737,14 @@ class Tables:
         self._tables_dirty: set[str] = set()
         self._tables_at = float("-inf")
         self._tables_timer: Any = None
+        # The lobby's public open tables (lobby_hall): by stake, every one waiting, in the order of _waiting_tables, each
+        # with its seats as listed; rebuilt on the first read after an open table changed (_tables_changed, _drop).
+        # The generation counts the rebuilds that changed them, after a prefix of this run's own, so a tag a client
+        # holds from another run never matches.
+        self._hall_rows: dict[int, list[tuple[Table, dict]]] = {}
+        self._hall_dirty = True
+        self._hall_run = secrets.token_hex(3)
+        self._hall_gen = 0
 
     @property
     def bank(self) -> Bank:
@@ -770,6 +780,7 @@ class Tables:
         self._tables_sent = {}
         self._tables_dirty = set()
         self._tables_at = float("-inf")
+        self._hall_dirty = True
 
     def in_game(self, peer: Peer) -> bool:
         """Whether the connection sits at a table whose deposits are taken (or being taken)."""
@@ -1094,17 +1105,45 @@ class Tables:
         _waiting_tables, those of a room that bans save [token] left out. Each {table, seats}, a seat {nick,
         character}, {pending: true} when offered to a save of the queue, or None when empty; no member ids, no
         rooms."""
+        return self.lobby_hall(token)[0]
+
+    def lobby_hall(self, token: str | None = None) -> tuple[dict[int, list[dict]], str]:
+        """lobby_tables for save [token], and the tag of that list: the same tag, the same list, within this run.
+        The tables are sorted and summed up once per change (_hall_list); a request only leaves out those of rooms
+        that ban the save, which go into its tag."""
         out: dict[int, list[dict]] = {}
+        left_out: list[str] = []
+        for base, rows in self._hall_list().items():
+            shown: list[dict] = []
+            for t, row in rows:
+                if len(shown) >= LOBBY_TABLES:
+                    break
+                if self._banned(t, token):
+                    left_out.append(t.id)
+                    continue
+                shown.append(row)
+            if shown:
+                out[base] = shown
+        tag = f"{self._hall_run}{self._hall_gen}"
+        if left_out:
+            tag += "-" + format(zlib.crc32(",".join(left_out).encode()), "08x")
+        return out, tag
+
+    def _hall_list(self) -> dict[int, list[tuple[Table, dict]]]:
+        """Every public open table waiting, by stake, in the order of _waiting_tables, with its row of the lobby;
+        rebuilt when an open table changed since, the generation going up when the rows did."""
+        if not self._hall_dirty:
+            return self._hall_rows
+        rows: dict[int, list[tuple[Table, dict]]] = {}
         for t in self._waiting_tables():
-            if self._banned(t, token):
-                continue
-            shown = out.setdefault(t.base, [])
-            if len(shown) >= LOBBY_TABLES:
-                continue
-            shown.append({"table": t.id, "seats": [
+            rows.setdefault(t.base, []).append((t, {"table": t.id, "seats": [
                 None if s.empty else {"pending": True} if s.asked else {"nick": s.nick, "character": s.character}
-                for s in t.seats]})
-        return out
+                for s in t.seats]}))
+        if {b: [(t.id, t.room, row) for t, row in r] for b, r in rows.items()} != {
+                b: [(t.id, t.room, row) for t, row in r] for b, r in self._hall_rows.items()}:
+            self._hall_gen += 1
+        self._hall_rows, self._hall_dirty = rows, False
+        return rows
 
     def call(self, room_id: str, peer: Peer, table_id: str, target_id: str) -> None:
         """The opener of the open table [table_id] calls member [target_id] of the room to it (``ddz_call``); the
@@ -1336,7 +1375,8 @@ class Tables:
 
     def _tables_changed(self, room_id: str | None) -> None:
         """The open tables of room [room_id] changed: its members hear them now, or COUNTS_SEC after the rooms were
-        last told."""
+        last told. The lobby's list is built again on its next read (_hall_list)."""
+        self._hall_dirty = True
         if room_id is None:
             return
         self._tables_dirty.add(room_id)
@@ -2945,6 +2985,7 @@ class Tables:
     def _drop(self, table: Table) -> None:
         self._cancel_timer(table)
         self.by_id.pop(table.id, None)
+        self._hall_dirty = True
         self._end_watch(table, "closed")
         if table.watch_timer is not None:
             table.watch_timer.cancel()

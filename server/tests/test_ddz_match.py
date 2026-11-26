@@ -707,6 +707,7 @@ def test_the_lobby_shows_the_stakes_the_cap_and_the_rules(api, monkeypatch):
     save(g, "new", taps=99)
     get = lambda name: c.get("/api/ddz/lobby", headers={"X-Player-Token": tok(name)}).json()  # noqa: E731
     lobby = get("rich")
+    assert isinstance(lobby.pop("hallTag"), str)
     assert lobby == {
         "tiers": [{"base": b, "deposit": b * CFG["capMult"] * 2, "afford": b <= BASE, "waiting": 0,
                    "tables": []}

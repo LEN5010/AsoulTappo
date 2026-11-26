@@ -605,20 +605,28 @@ def api_economy(x_client_version: str = Header(default="")) -> dict:
 
 
 @app.get("/api/ddz/lobby")
-async def api_ddz_lobby(who: PlayerId = Depends(player)) -> dict:
+async def api_ddz_lobby(who: PlayerId = Depends(player),
+                        hall_tag: str = Query("", alias="hall", max_length=64)) -> dict:
     """The dou dizhu lobby for the save: the stakes (deposit, whether it can pay it, how many saves wait there, the
     public open tables waiting there, see Tables.lobby_tables), today's net win and what is left under the cap, the
     taps it has and needs, whether it meets the account rule, and whether it holds a seat a dou dizhu connection takes
-    again (`seated`: the client opens one to get it back)."""
+    again (`seated`: the client opens one to get it back). `hallTag` names the list of tables; a client that sends the
+    tag it holds (`?hall=`) and still has the same list gets `hallSame` true and the stakes without `tables`. Without
+    the tag (clients before 1.3.0) every stake has its `tables`."""
     if not game.manifest.ddz:
         raise HTTPException(404, {"code": "no_ddz", "message": "这个服务器没有斗地主"})
     out = await run_in_threadpool(_guard, tables.bank.lobby, who)
     # Read on the loop, where the queue changes.
     counts = tables.counts()
-    hall = tables.lobby_tables(who)
+    hall, tag = tables.lobby_hall(who)
+    same = bool(hall_tag) and hall_tag == tag
     for tier in out["tiers"]:
         tier["waiting"] = counts.get(tier["base"], 0)
-        tier["tables"] = hall.get(tier["base"], [])
+        if not same:
+            tier["tables"] = hall.get(tier["base"], [])
+    out["hallTag"] = tag
+    if same:
+        out["hallSame"] = True
     out["seated"] = tables.holds(who)
     return out
 
