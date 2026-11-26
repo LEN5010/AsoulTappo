@@ -55,6 +55,16 @@ pub fn fit(area_w: f64, area_h: f64, scale: f64, picked: f64) -> (f64, f64, f64)
     ((PAGE.0 * zoom * scale).min(area_w - ROOM), (PAGE.1 * zoom * scale).min(area_h - ROOM), zoom)
 }
 
+/// The size the page is drawn at: the player's pick where the web view can zoom its page, else the page's own size
+/// (macOS before 11 has no page zoom).
+pub fn usable_pick(picked: f64, can_zoom: bool) -> f64 {
+    if can_zoom {
+        picked
+    } else {
+        1.0
+    }
+}
+
 /// How much of `avoid` a window at `spot` covers.
 pub fn covered(spot: &Rect, avoid: &[Rect]) -> f64 {
     avoid.iter().map(|r| spot.overlap(r)).sum()
@@ -193,6 +203,15 @@ mod tests {
 
     fn inside(a: Rect, x: f64, y: f64, w: f64, h: f64) -> bool {
         x >= a.x && y >= a.y && x + w <= a.right() && y + h <= a.bottom()
+    }
+
+    #[test]
+    fn a_web_view_without_page_zoom_keeps_the_page_at_its_own_size() {
+        assert_eq!(usable_pick(1.5, true), 1.5);
+        assert_eq!(usable_pick(0.9, true), 0.9);
+        assert_eq!(usable_pick(1.5, false), 1.0);
+        assert_eq!(usable_pick(0.9, false), 1.0);
+        assert_eq!(fit(2560.0, 1400.0, 1.0, usable_pick(1.5, false)), (1000.0, 720.0, 1.0));
     }
 
     #[test]

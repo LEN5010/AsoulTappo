@@ -341,14 +341,47 @@ static PANEL_ZOOM: Mutex<f64> = Mutex::new(1.0);
 /// The panel on a monitor: its window's width and height in that monitor's pixels, and its page's zoom
 /// (src/panel_place.rs, `fit`).
 fn panel_size(area: &tauri::PhysicalRect<i32, u32>, scale: f64) -> (f64, f64, f64) {
-    let picked = PANEL_SCALE.lock().map(|s| *s).unwrap_or(1.0);
-    panel_place::fit(area.size.width as f64, area.size.height as f64, scale, picked)
+    panel_place::fit(area.size.width as f64, area.size.height as f64, scale, panel_pick())
+}
+
+/// The size the panel is drawn at: the player's pick, or the page's own size where the web view cannot zoom.
+fn panel_pick() -> f64 {
+    panel_place::usable_pick(PANEL_SCALE.lock().map(|s| *s).unwrap_or(1.0), page_zoom_supported())
+}
+
+/// Whether the web view can zoom its page. wry sends `-[WKWebView setPageZoom:]`, which macOS has from 11 on; on an
+/// older WebKit the message raises an Objective-C exception that ends the app. Asked once WebKit is loaded.
+#[cfg(target_os = "macos")]
+fn page_zoom_supported() -> bool {
+    use objc2::{runtime::AnyClass, sel};
+    static KNOWN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if let Some(known) = KNOWN.get() {
+        return *known;
+    }
+    // Not loaded yet: no web view exists to zoom, and the answer is asked again next time.
+    let Some(class) = AnyClass::get(c"WKWebView") else { return false };
+    *KNOWN.get_or_init(|| {
+        let known = class.responds_to(sel!(setPageZoom:));
+        if !known {
+            applog!("panel", "this WebKit has no page zoom: the panel stays at its own size");
+        }
+        known
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn page_zoom_supported() -> bool {
+    true
 }
 
 /// Draws the panel's page at `zoom`: laid out at `panel_place::PAGE` in a window that size times `zoom`.
 fn zoom_panel(panel: &WebviewWindow, zoom: f64) {
     if let Ok(mut now) = PANEL_ZOOM.lock() {
         *now = zoom;
+    }
+    // The page stays at its own size there (`panel_pick`), so there is nothing to set.
+    if !page_zoom_supported() {
+        return;
     }
     if let Err(e) = panel.set_zoom(zoom) {
         applog!("panel", "zoom {zoom:.2} failed: {e}");
@@ -1657,6 +1690,21 @@ pub fn run() {
                 let _ = _app.emit_to("main", "tray", "raise-panel");
             }
         });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod page_zoom_tests {
+    use super::*;
+
+    #[test]
+    fn this_webkit_answers_whether_it_zooms_pages() {
+        // macOS 11 and later have `setPageZoom:`; this machine is one of them.
+        assert!(page_zoom_supported());
+        assert!(page_zoom_supported());
+        // The runtime's answer is about the selector asked for, not any.
+        use objc2::{runtime::AnyClass, sel};
+        assert!(!AnyClass::get(c"WKWebView").unwrap().responds_to(sel!(setPageZoomThatIsNotThere:)));
+    }
 }
 
 #[cfg(test)]
