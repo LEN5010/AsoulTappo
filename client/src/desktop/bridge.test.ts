@@ -191,6 +191,12 @@ it("sends a feedback from the panel through the desk, which reads the log itself
   expect(posted).toEqual([expect.objectContaining({ text: "抖", log: "the log\n" })]);
   expect(await feedback.sendFeedback({ text: "抖", contact: "", log: false })).toEqual({ ok: true, left: 4 });
   expect(posted[1]).toMatchObject({ log: "" });
+  // The panel names the draft; the desk sends that request id as it is.
+  const going = feedback.submitFeedback({ text: "抖", contact: "", log: false });
+  const id = feedback.feedbackSending.value?.draft.requestId;
+  expect(await going).toEqual({ ok: true, left: 4 });
+  expect(id).toMatch(/^[0-9a-f]{32}$/);
+  expect(posted[2]).toMatchObject({ text: "抖", requestId: id });
 });
 
 it("mirrors remote pet animation poses into the panel without another room socket", async () => {

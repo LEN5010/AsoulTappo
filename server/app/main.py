@@ -689,6 +689,8 @@ class FeedbackBody(BaseModel):
     system: str = Field(default="", max_length=feedback.SYSTEM_MAX * 2)
     # The latest part of the client's log; "" when the player left it out.
     log: str = Field(default="", max_length=feedback.LOG_MAX)
+    # Names this send of the draft, so a resend after a lost answer gets the same feedback back (1.3.0 on).
+    request_id: str = Field(default="", alias="requestId", max_length=feedback.REQUEST_MAX, pattern=r"^[A-Za-z0-9_-]*$")
 
 
 @app.post("/api/feedback")
@@ -696,7 +698,7 @@ def api_feedback(body: FeedbackBody, request: Request, who: PlayerId = Depends(p
                  x_client_version: str = Header(default="")) -> dict:
     """Keeps a feedback from the settings page (feedback.py): its id and how many more the save may send today."""
     return _guard(feedback.send, game.store, game.now(), who, _address(request), x_client_version, body.system,
-                  body.text, body.contact, body.log)
+                  body.text, body.contact, body.log, body.request_id)
 
 
 @app.post("/api/update-reward")
@@ -1097,10 +1099,13 @@ class ReasonBody(BaseModel):
 
 
 @app.get("/admin/stats", dependencies=[Depends(admin)])
-def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
-    out = game.admin_stats(days)
-    out["totals"]["rooms"] = len(manager.rooms)
-    out["totals"]["online"] = sum(len(r.peers) for r in manager.rooms.values())
+async def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
+    # The rooms change on the event loop: counted here at one moment, the database read in the thread pool.
+    rooms = len(manager.rooms)
+    online = sum(len(r.peers) for r in manager.rooms.values())
+    out = await run_in_threadpool(game.admin_stats, days)
+    out["totals"]["rooms"] = rooms
+    out["totals"]["online"] = online
     return out
 
 
@@ -1191,9 +1196,11 @@ def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
 
 
 @app.get("/admin/online", dependencies=[Depends(admin)])
-def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
+async def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
     """Room occupancy, interaction counts, duels and cheer rounds."""
-    return analytics.online(game, days, game.tracker.room_numbers(list(manager.rooms.values())))
+    # As _sample_rooms: the room numbers on the event loop, which changes the rooms, the database in the thread pool.
+    numbers = game.tracker.room_numbers(list(manager.rooms.values()))
+    return await run_in_threadpool(analytics.online, game, days, numbers)
 
 
 @app.get("/admin/anomalies", dependencies=[Depends(admin)])

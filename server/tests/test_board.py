@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.game import (BOARD_DEFAULT_NICK, BOARD_POINTS, BOARD_SECONDS, BOARD_SIZE, Game, GameError, board_id,
                       player_id_for)
+from app import photo_deal
 from app.manifest import Manifest
 from app.store import Store
 from fixtures import Clock
@@ -249,3 +250,23 @@ def test_a_board_that_asks_for_an_account_reads_only_the_items_of_linked_saves()
     assert [row["cards"] for row in g.board(tok(2), True)["cards"]] == [2]
     assert g.board(tok(2), True)["me"] == {"rank": None, "cards": 5, "big": 0, "skins": 0,
                                            "score": 5 * BOARD_POINTS["card"], "off": "account"}
+
+
+def test_photocards_count_nothing_and_the_board_scan_leaves_them_in_sqlite():
+    g = game()
+    assert photo_deal.PREFIXES == ("photo:", "sign:")
+    assert not [iid for iid in g.board_points if iid.startswith(photo_deal.PREFIXES)]
+    series = next(iter(M.photo_series.values()))
+    photos = {iid: 1 for iid in (*series.solo, *series.duo, *series.group, *series.sign)}
+    t, pid = save(g, 1, NORMAL[:2])
+    before = g.board(t, False)
+    g._board = None
+    g.store.add_items(pid, photos, NOW)
+    every = {iid for _, iid, _ in g.store.held_items()}
+    assert set(photos) <= every
+    scored = {iid for _, iid, _ in g.store.held_items(False, photo_deal.PREFIXES)}
+    assert scored == every - set(photos) and {f"card:{c}" for c in NORMAL[:2]} <= scored
+    g.now.t += 1
+    after = g.board(t, False)
+    assert after["cards"] == before["cards"] and after["me"] == before["me"]
+

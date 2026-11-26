@@ -196,7 +196,23 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
 
     def _commit(self) -> None:
         if not getattr(self, "_in_tx", False):
-            self._db.commit()
+            try:
+                self._db.commit()
+            except BaseException:
+                # As in _Tx: SQLite can refuse the COMMIT and keep the write open, and the next writer would commit
+                # it with its own.
+                self._undo()
+                raise
+
+    def _undo(self) -> None:
+        """Rolls back what is still open on the connection and forgets what the caches answered for."""
+        try:
+            if self._db.in_transaction:
+                self._db.rollback()
+        finally:
+            # Rows the caches answered for may be gone again.
+            self._active.clear()
+            self._counts.clear()
 
     @property
     def lock(self) -> threading.RLock:
@@ -523,14 +539,17 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
 
-    def held_items(self, linked: bool = False) -> list[tuple[str, str, float]]:
+    def held_items(self, linked: bool = False, skip: tuple[str, ...] = ()) -> list[tuple[str, str, float]]:
         """(player id, item id, when it first came) of every item a save holds; with [linked], only of the saves
-        bound to a main-site account, so the read does not grow with saves that are never listed. The collection
+        bound to a main-site account, so the read does not grow with saves that are never listed; without the items
+        whose id starts with one of [skip], which SQLite leaves out before they reach Python. The collection
         board's scan: it reads committed rows on the statistics connection (_reading), so player requests do not
         wait for it, and Game.board calls it outside any transaction."""
         only = " AND player_id IN (SELECT player_id FROM account_links)" if linked else ""
+        only += " AND substr(item_id, 1, ?) != ?" * len(skip)
+        args = [x for prefix in skip for x in (len(prefix), prefix)]
         with self._reading() as db:
-            rows = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}").fetchall()
+            rows = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}", args).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
 
     def set_room_nick(self, pid: str, nick: str) -> None:
@@ -821,12 +840,15 @@ class _Tx:
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
             if exc_type is None:
-                self.store._db.commit()
+                try:
+                    self.store._db.commit()
+                except BaseException:
+                    # SQLite can refuse the COMMIT and keep the transaction open: undo it here, or the next caller
+                    # on this connection would commit it with its own.
+                    self.store._undo()
+                    raise
             else:
-                self.store._db.rollback()
-                # Rows the caches answered for may be gone again.
-                self.store._active.clear()
-                self.store._counts.clear()
+                self.store._undo()
         finally:
             self.store._in_tx = False
             self.store._lock.release()

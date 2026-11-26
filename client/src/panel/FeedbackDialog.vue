@@ -1,33 +1,36 @@
 <script setup lang="ts">
 // The settings page's feedback (stores/feedback.ts): a text, an optional contact and, in the desktop app, the latest
 // part of the log, which the player ticks to send. Closes once sent; the settings row says so. The text and the
-// contact stay in the settings until a send goes through, so closing the dialog keeps them.
+// contact stay in the settings until a send goes through, so closing the dialog keeps them. The send lives in the
+// store: a dialog opened again while it is out shows it going and closes once it answers.
 import { computed, ref } from "vue";
 import Modal from "../ui/Modal.vue";
 import { isTauri } from "../composables/tauri";
-import { FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX, sendFeedback } from "../stores/feedback";
+import {
+  FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX, feedbackSending, submitFeedback, type FeedbackResult,
+} from "../stores/feedback";
 import { settings } from "../stores/settings";
 
 const emit = defineEmits<{ close: []; sent: [left: number] }>();
 
-const withLog = ref(false);
-const busy = ref(false);
+const withLog = ref(feedbackSending.value?.draft.log ?? false);
+const busy = computed(() => feedbackSending.value !== null);
 const failed = ref("");
 const ready = computed(() => !!settings.feedbackText.trim() && !busy.value);
 
+async function follow(result: Promise<FeedbackResult>) {
+  const r = await result;
+  if (r.ok) emit("sent", r.left);
+  else failed.value = r.message;
+}
+
+if (feedbackSending.value) void follow(feedbackSending.value.result);
+
 async function send() {
   if (!ready.value) return;
-  busy.value = true;
   failed.value = "";
-  const draft = { text: settings.feedbackText, contact: settings.feedbackContact };
-  const r = await sendFeedback({ ...draft, log: isTauri && withLog.value });
-  busy.value = false;
-  if (r.ok) {
-    // What was typed while it went out stays.
-    if (settings.feedbackText === draft.text) settings.feedbackText = "";
-    if (settings.feedbackContact === draft.contact) settings.feedbackContact = "";
-    emit("sent", r.left);
-  } else failed.value = r.message;
+  const draft = { text: settings.feedbackText, contact: settings.feedbackContact, log: isTauri && withLog.value };
+  await follow(submitFeedback(draft));
 }
 </script>
 
