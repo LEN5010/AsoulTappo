@@ -145,6 +145,9 @@ export interface Settings {
   standaloneStatementSeen: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
+  /** What the feedback dialog holds unsent: the text and the contact, kept until a send goes through. */
+  feedbackText: string;
+  feedbackContact: string;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
   skinNotes: Record<string, string>;
   /** The first-run guide's progress (src/guide.ts); replaced as a whole, never changed in place. */
@@ -250,6 +253,8 @@ export const DEFAULT_SETTINGS: Settings = {
   statementSeen: "",
   standaloneStatementSeen: "",
   promoSeen: false,
+  feedbackText: "",
+  feedbackContact: "",
   skinNotes: {},
   guide: cleanGuide(undefined),
 };
@@ -320,6 +325,9 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
   out.skinNotes = cleanSkinNotes(out.skinNotes);
+  // As long as the server takes them (stores/feedback.ts).
+  out.feedbackText = out.feedbackText.slice(0, 1000);
+  out.feedbackContact = out.feedbackContact.slice(0, 100);
   out.reminders = cleanReminders(out.reminders);
   // Missing up to 1.2.5: the guide then starts.
   out.guide = cleanGuide(out.guide);

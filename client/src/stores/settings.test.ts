@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, loadSettings, partnerNames, setPartnerNames } from "./settings";
+import { FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX } from "./feedback";
 
 const store = (v: string | null) => ({ getItem: () => v });
 
@@ -81,5 +82,15 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
     expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");
     expect(loadSettings(store(JSON.stringify({ captureW: 9000, captureH: 12.4 })))).toMatchObject({ captureW: 1600, captureH: 160 });
+  });
+  it("keeps an unsent feedback draft as text, no longer than the server takes", () => {
+    expect(loadSettings(store(null))).toMatchObject({ feedbackText: "", feedbackContact: "" });
+    expect(loadSettings(store(JSON.stringify({ feedbackText: "卡住了", feedbackContact: "qq 1" })))).toMatchObject({
+      feedbackText: "卡住了", feedbackContact: "qq 1",
+    });
+    const long = loadSettings(store(JSON.stringify({ feedbackText: "a".repeat(5000), feedbackContact: "b".repeat(500) })));
+    expect(long.feedbackText).toHaveLength(FEEDBACK_TEXT_MAX);
+    expect(long.feedbackContact).toHaveLength(FEEDBACK_CONTACT_MAX);
+    expect(loadSettings(store(JSON.stringify({ feedbackText: 3 }))).feedbackText).toBe("");
   });
 });
