@@ -65,7 +65,7 @@ const callKeys = useInviteKeys(() => call.value?.table, (sit, table) => (sit ? s
         </header>
         <div class="body" :class="{ tall: ddzBubble === 'over' }">
           <div v-if="ddzBubble === 'open'" class="keys solo">
-            <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'open')">{{ t.you === 0 ? "散桌" : "离开" }}</button>
+            <button type="button" class="ui-btn" @click="leaveDdz(t.id, 'open')">{{ t.you === 0 && t.via === "room" ? "散桌" : "离开" }}</button>
           </div>
           <p v-else-if="ddzBubble === 'over'" class="line">{{ ddzReason(t) }}</p>
           <p v-else-if="ddzCut" class="line">重连中…</p>

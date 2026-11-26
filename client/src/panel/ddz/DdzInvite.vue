@@ -1,21 +1,25 @@
 <script setup lang="ts">
 // Starting a dou dizhu game: the three seats on a strip of the mat, the base stake as three keys in a tray, and the
 // key that goes. [mode] picks how: "match" waits in the server's queue, in a room or not (each stake shows how many
-// others wait at it); "invite" picks two members of the room (the members as keys, those who cannot be asked greyed);
-// "open" opens a table in the room, the two other seats left empty. "call" asks one member to the open table this
-// save opened, at its stake: no tray, the members as keys.
+// others wait at it); on a server with the hall it sits down instead, at the fullest public table of the stake or at
+// one of those listed under the tray (src/ddz/hall.ts), the strip showing where the go key seats the save and each
+// stake counting who sits or waits there; "invite" picks two members of the room (the members as keys, those who
+// cannot be asked greyed); "open" opens a table in the room, the two other seats left empty. "call" asks one member to
+// the open table this save opened, at its stake: no tray, the members as keys.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { DdzLobby } from "../../net/protocol";
-import { loadDdzLobby, status } from "../../stores/player";
+import { hallOn, hallPreview, hallSeated, hallTables } from "../../ddz/hall";
+import { ddzHallOn, loadDdzLobby, status } from "../../stores/player";
 import { duelDnd, members, shownNick, youId } from "../../stores/room";
 import { settings } from "../../stores/settings";
 import {
-  callDdz, ddz, ddzCanCall, ddzCanInvite, ddzCanOpen, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit, ddzLink,
-  ddzOthersWaiting, ddzQueue, ddzRetry, ddzStakeOpen, inviteDdz, openDdz, queueDdz,
+  callDdz, ddz, ddzCanCall, ddzCanHallSit, ddzCanInvite, ddzCanOpen, ddzCanQueue, ddzCanStart, ddzConfig, ddzDeposit,
+  ddzLink, ddzOthersWaiting, ddzQueue, ddzRetry, ddzStakeOpen, inviteDdz, openDdz, queueDdz, quickSitDdz,
 } from "../../stores/ddz";
 import CharacterAvatar from "../../ui/CharacterAvatar.vue";
 import Icon from "../../ui/Icon.vue";
 import Modal from "../../ui/Modal.vue";
+import DdzHallRow from "./DdzHallRow.vue";
 import DdzSeats from "./DdzSeats.vue";
 
 /** Bets need an account here and none is signed in; [to]: where the sheet is drawn (Modal), when not on the panel. */
@@ -36,11 +40,22 @@ async function read() {
 }
 if (props.mode === "match") void read();
 onBeforeUnmount(() => { alive = false; clearTimeout(poll); });
-/** Others waiting at [base]: the dou dizhu connection's counts while it is up, else the server's last answer. */
+/**
+ * The server has the hall: "match" sits down instead of waiting in the queue. Until the sheet's first answer, as the
+ * desk last heard.
+ */
+const hall = computed(() => props.mode === "match" && (lobby.value ? hallOn(lobby.value) : ddzHallOn.value));
+/** The own open table, left out of the hall's list and counts. */
+const own = computed(() => (ddz.value?.phase === "open" ? ddz.value.id : undefined));
+/**
+ * Others waiting at [base]: in the queue, the dou dizhu connection's counts while it is up, else the server's last
+ * answer; with the hall, those sitting at its tables there too.
+ */
 function waitingAt(base: number): number {
-  if (ddzLink.value === "open") return ddzOthersWaiting(base);
+  const seated = hall.value ? hallSeated(lobby.value, base, own.value) : 0;
+  if (ddzLink.value === "open") return ddzOthersWaiting(base) + seated;
   const n = lobby.value?.tiers.find((x) => x.base === base)?.waiting ?? 0;
-  return Math.max(0, n - (ddzQueue.value?.base === base ? 1 : 0));
+  return Math.max(0, n - (ddzQueue.value?.base === base ? 1 : 0)) + seated;
 }
 /** A stake this save can pay: as its shards say, and as the server last said. */
 const affords = (s: number) => ddzStakeOpen(s) && (lobby.value?.tiers.find((x) => x.base === s)?.afford ?? true);
@@ -79,8 +94,12 @@ function toggle(id: string) {
   if (want.value === 1) picked.value = picked.value.includes(id) ? [] : [id];
   else picked.value = picked.value.includes(id) ? picked.value.filter((x) => x !== id) : picked.value.length < 2 ? [...picked.value, id] : picked.value;
 }
+/** The hall's tables at the stake picked, fullest first. */
+const hallRows = computed(() => (hall.value ? hallTables(lobby.value, base.value, own.value) : []));
 const seats = computed(() => {
   const me = { character: settings.character, nick: settings.nick.trim() || "我" };
+  // Where the go key seats the save: the fullest table of the stake, or a table of its own.
+  if (hall.value) return hallPreview(hallRows.value[0], me, (s) => ({ character: s.character, nick: shownNick(s) }));
   const face = (id: string | undefined) => {
     if (id === youId.value) return me;
     const m = id ? members.get(id) : undefined;
@@ -115,6 +134,7 @@ const blocked = computed(() => {
   }
   if (s.ddz.net >= cfg.dailyWinCap) return "今天赢到上限了，明天再来";
   if (!cfg.stakes.some(affords)) return "碎片不够押金";
+  if (props.mode === "match" && hall.value) return duelDnd() ? "免打扰时不能入座" : "";
   if (props.mode === "match") return duelDnd() ? "免打扰时不能匹配" : ddzRetry.value ? "稍后再匹配" : "";
   if (props.mode === "open") return duelDnd() ? "免打扰时不能开桌" : "";
   if (others.value.filter(ddzCanInvite).length < 2) return "房间里要有两位能上桌的伙伴";
@@ -123,7 +143,7 @@ const blocked = computed(() => {
 const ready = computed(() => {
   switch (props.mode) {
     case "call": return !!table.value && picked.value.length === 1;
-    case "match": return affords(base.value) && ddzCanQueue.value;
+    case "match": return affords(base.value) && (hall.value ? ddzCanHallSit.value : ddzCanQueue.value);
     case "open": return ddzStakeOpen(base.value) && ddzCanOpen.value;
     default: return ddzStakeOpen(base.value) && ddzCanStart.value && picked.value.length === 2;
   }
@@ -132,6 +152,7 @@ const go = { match: "匹配", invite: "邀请", open: "开桌", call: "邀请" }
 function send() {
   if (!ready.value) return;
   if (props.mode === "call") callDdz(picked.value[0]!, table.value!.id);
+  else if (props.mode === "match" && hall.value) quickSitDdz(base.value);
   else if (props.mode === "match") queueDdz(base.value);
   else if (props.mode === "open") openDdz(base.value);
   else inviteDdz([...picked.value], base.value);
@@ -178,8 +199,11 @@ function send() {
         </div>
         <p v-else class="ui-empty">房间里还没有别人</p>
       </div>
+      <div v-if="hallRows.length" class="ui-group ui-frame hall">
+        <DdzHallRow v-for="r in hallRows" :key="r.table" :table="r" :base="base" :open="ready" @sat="emit('close')" />
+      </div>
       <p v-if="blocked" class="blocked">{{ blocked }}</p>
-      <button v-else type="button" class="ui-btn primary go" :disabled="!ready" @click="send">{{ go[mode] }}</button>
+      <button v-else type="button" class="ui-btn primary go" :disabled="!ready" @click="send">{{ hall ? "入座" : go[mode] }}</button>
     </div>
   </Modal>
 </template>
@@ -264,6 +288,15 @@ function send() {
 /* The stake of the table called to: as a stake key, but fixed. */
 .fixed { margin: 0; height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; border-radius: var(--radius-key); background: var(--c-100); font: 800 18px/1 var(--font-latin); color: var(--ink); }
 .fixed .icon { color: var(--c-600); }
+
+/* The hall's tables at the stake picked. The sheet fits the panel at its smallest (a 460px face, 420px for the sheet):
+   the sheet without them is 326px high, and each row takes 64px, so rows past the ones that fit are left out. */
+@container panel (max-height: 590px) {
+  .hall > :nth-child(3) { display: none; }
+}
+@container panel (max-height: 525px) {
+  .hall > :nth-child(2) { display: none; }
+}
 
 .go { height: 42px; font-size: 15px; }
 .blocked { margin: 0; height: 42px; display: grid; place-items: center; border-radius: var(--radius-key); background: var(--c-50); font: 800 var(--fs-body)/1.3 var(--font); color: var(--ink-2); text-align: center; }

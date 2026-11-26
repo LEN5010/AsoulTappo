@@ -209,6 +209,34 @@ export function cardSlide(): void {
   sample(anyOf("slide", 3), 0.46, jitter(1, 0.06));
 }
 
+/**
+ * A game starts at a dou dizhu table this save sat waiting at, its window out of sight: two card slides, as a deal.
+ * Played in the desk window, whose output may still be asleep without a press there; it then stays silent rather than
+ * coming out at the next click.
+ */
+export function tableCue(): void {
+  const a = audio();
+  if (!a) return;
+  const { ac, out } = a;
+  const takes = [anyOf("slide", 3), anyOf("slide", 3)];
+  const awake = ac.state === "running" ? Promise.resolve() : Promise.race([ac.resume(), new Promise((r) => setTimeout(r, 500))]);
+  void Promise.all([...takes.map((name) => decoded(ac, name)), awake.catch(() => {})]).then((got) => {
+    if (ac.state !== "running") return;
+    const at = ac.currentTime;
+    takes.forEach((_, i) => {
+      const buffer = got[i] as AudioBuffer | null;
+      if (!buffer) return;
+      const src = ac.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = jitter(1, 0.04);
+      const level = ac.createGain();
+      level.gain.value = 0.9;
+      src.connect(level).connect(out);
+      src.start(at + i * 0.14);
+    });
+  });
+}
+
 /** Poking the alpaca: one of a few silly noises, never the same twice in a row. */
 const SILLY = [
   // a nasal, wobbling bleat

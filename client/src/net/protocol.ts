@@ -109,6 +109,11 @@ export interface DdzSeatInfo { id: string; nick: string; character: string; plat
 export type DdzOpenSeat = { id: string; nick: string; character: string } | { pending: true } | null;
 /** An open table of the room, as `ddz_tables` lists it. */
 export interface DdzOpenTable { table: string; base: number; seats: DdzOpenSeat[] }
+/**
+ * A public open table waiting for seats, a room's or one of the hall's (opened on a dou dizhu connection), as the lobby
+ * lists it: the faces of its taken seats, `pending` for one offered to a save of the queue, null for an empty one.
+ */
+export interface DdzHallTable { table: string; seats: ({ nick: string; character: string } | { pending: true } | null)[] }
 
 /**
  * Dou dizhu messages from the server (server/app/ddz.py); all but `ddz_live` go to the three seats only. Seats are
@@ -262,7 +267,11 @@ export type DdzClientMessage =
   | { type: "ddz_leave"; table: string }
   /** Wait for a table at stake `base`, 0 to stop; only to servers that list "ddz_match" in `joined.features`. */
   | { type: "ddz_queue"; base: number }
-  /** Open tables, to the same servers: open one at `base`, sit down at one (at `seat` when empty), call a member. */
+  /**
+   * Open tables, to the same servers: open one at `base`, sit down at one (at `seat` when empty), call a member. On a
+   * dou dizhu connection of a server with the hall (the lobby lists `tables`): `ddz_open` sits down at the fullest
+   * public table waiting at `base`, or opens one of the hall there; `ddz_sit` sits down at public table `table`.
+   */
   | { type: "ddz_open"; base: number }
   | { type: "ddz_sit"; table: string; seat?: number }
   | { type: "ddz_call"; table: string; id: string }
@@ -294,8 +303,11 @@ export type DdzLinkMessage =
 
 /** GET /api/ddz/lobby: what the lobby shows the save. */
 export interface DdzLobby {
-  /** The stakes: the deposit, whether the save can pay it, how many saves wait there (it included). */
-  tiers: { base: number; deposit: number; afford: boolean; waiting: number }[];
+  /**
+   * The stakes: the deposit, whether the save can pay it, how many saves wait there in the queue (it included), and on a
+   * server with the hall the public open tables waiting there with an empty seat (fullest first, then oldest).
+   */
+  tiers: { base: number; deposit: number; afford: boolean; waiting: number; tables?: DdzHallTable[] }[];
   /** Today's net win, the cap and what is left under it. */
   net: number; cap: number; left: number;
   /** The taps the save has and needs. */

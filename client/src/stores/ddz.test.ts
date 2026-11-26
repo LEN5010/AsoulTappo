@@ -4,6 +4,10 @@ import { TERMS_VERSION } from "../legal";
 import { APP_VERSION } from "../version";
 import { withEconomy } from "../test/economy";
 
+// The cue when a game starts at a table the save waited at: a call is enough here (no audio in tests).
+const tableCue = vi.hoisted(() => vi.fn());
+vi.mock("../audio/sfx", async (original) => ({ ...(await original<typeof import("../audio/sfx")>()), tableCue }));
+
 class Socket implements WsLike {
   static all: Socket[] = [];
   readyState = 0;
@@ -25,7 +29,7 @@ class Socket implements WsLike {
 }
 let room: typeof import("./room") | undefined;
 beforeEach(() => {
-  vi.resetModules(); vi.useFakeTimers(); Socket.all = [];
+  vi.resetModules(); vi.useFakeTimers(); Socket.all = []; tableCue.mockClear();
   const agreed = JSON.stringify({ termsAgreed: TERMS_VERSION, statementSeen: APP_VERSION });
   vi.stubGlobal("localStorage", { getItem: withEconomy((k: string) => (k === "asoultappo.settings.v1" ? agreed : null)), setItem: () => {} });
   vi.stubGlobal("WebSocket", Socket);
@@ -1559,4 +1563,247 @@ it("goes on watching through a refusal, back on the seat the server still shows,
   expect(d.ddzWatch.value).toMatchObject({ you: 2, hand: [], shown: false });
   socket.recv({ type: "ddz_play", table: "w", seat: 2, cards: [4], left: 16, mult: 1, bombs: 0, watch: true });
   expect(d.ddzWatch.value!.hand).toEqual([]);
+});
+
+// ------------------------------------------------------------------ the hall
+/** An open table of the hall on the dou dizhu connection, seen from seat [you] ("L" is the save there). */
+const hallOpen = (table: string, you: number, seats: unknown[], more: Record<string, unknown> = {}) =>
+  ({ type: "ddz_open", table, base: 50, deposit: 2400, you, seats, sec: 600, ...more });
+const LME = { ...seatOf(ME), id: "L" };
+/** The room, joined on a server with open tables. */
+const joinedOpen = () => Socket.all[0]!.recv({ type: "joined", room: "r", you: "me", members: [ME, NEW_A, B], features: ["ddz_match"] });
+
+it("sits down in the hall on the dou dizhu connection, a queue interval apart from joins, and sends a sit held back once more", async () => {
+  const { d, r, player } = await setup();
+  joinedOpen();
+  player.ddzHallOn.value = true;
+  const before = Socket.all.length;
+  d.quickSitDdz(500); // cannot pay the deposit
+  d.quickSitDdz(100); // not a stake
+  expect(Socket.all).toHaveLength(before);
+  d.quickSitDdz(50);
+  // The connection comes up for it; the sit goes once it is ready.
+  const lk = linkUp();
+  const opens = () => sentOf(lk, "ddz_open");
+  expect(opens()).toEqual([{ type: "ddz_open", base: 50 }]);
+  lk.recv({ type: "error", code: "rate_limited", message: "" });
+  expect(opens()).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(opens()).toEqual([{ type: "ddz_open", base: 50 }, { type: "ddz_open", base: 50 }]);
+  lk.recv({ type: "error", code: "rate_limited", message: "" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(opens()).toHaveLength(2); // only once
+  // The server seats the save at a table of the hall: the pet's sign and the banner show it as the queue's open seat.
+  lk.recv(hallOpen("h1", 0, [LME, null, null]));
+  expect(d.ddzQueueSeat.value).toMatchObject({ id: "h1", via: "link", you: 0, phase: "open" });
+  expect(d.ddzCanCall(r.members.get("a")!)).toBe(false); // a table of the hall has no opener to call anyone
+  d.quickSitDdz(50); // seated already
+  d.sitDdzAt("h2");
+  await vi.advanceTimersByTimeAsync(1100);
+  expect([opens().length, sentOf(lk, "ddz_sit").length]).toEqual([2, 0]);
+  d.leaveDdz("h1", "open");
+  expect(lk.sent.at(-1)).toEqual({ type: "ddz_leave", table: "h1" });
+  // At a table of the list, at a seat; one that filled up meanwhile is said nothing of, other refusals as always.
+  d.sitDdzAt("h2", 2);
+  expect(sentOf(lk, "ddz_sit")).toEqual([{ type: "ddz_sit", table: "h2", seat: 2 }]);
+  lk.recv({ type: "error", code: "ddz_gone", message: "" });
+  expect(r.lastError.value).toBe("");
+  // A join and a sit keep the interval between them, and the later one replaces the one not sent yet.
+  d.queueDdz(50);
+  d.sitDdzAt("h3");
+  expect([sentOf(lk, "ddz_queue").length, sentOf(lk, "ddz_sit").length]).toEqual([0, 1]);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(sentOf(lk, "ddz_sit").slice(1)).toEqual([{ type: "ddz_sit", table: "h3" }]);
+  expect(sentOf(lk, "ddz_queue")).toEqual([]);
+  lk.recv({ type: "error", code: "no_shards", message: "" });
+  expect(r.lastError.value).toBe("碎片不足");
+  // A hold on the queue does not keep the save from sitting down; turning invites down does.
+  d.ddzRetry.value = true;
+  await vi.advanceTimersByTimeAsync(1100);
+  d.quickSitDdz(50);
+  expect(opens()).toHaveLength(3);
+  lk.recv({ type: "error", code: "ddz_busy", message: "" });
+  r.lastError.value = "";
+  (await import("./settings")).settings.duelDnd = true;
+  await vi.advanceTimersByTimeAsync(1100);
+  d.quickSitDdz(50);
+  d.sitDdzAt("h4");
+  await vi.advanceTimersByTimeAsync(1100);
+  expect([opens().length, sentOf(lk, "ddz_sit").length]).toEqual([3, 2]);
+});
+
+
+it("sits down at the fullest table of the stake, once, when the table picked is gone", async () => {
+  const { d, r, player } = await setup();
+  joinedOpen();
+  player.ddzHallOn.value = true;
+  d.sitDdzAt("h1", 1, 50);
+  const lk = linkUp();
+  // The stake stays on this side.
+  expect(sentOf(lk, "ddz_sit")).toEqual([{ type: "ddz_sit", table: "h1", seat: 1 }]);
+  lk.recv({ type: "error", code: "ddz_gone", message: "" });
+  expect(sentOf(lk, "ddz_open")).toEqual([]); // a queue interval after the sit
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(sentOf(lk, "ddz_open")).toEqual([{ type: "ddz_open", base: 50 }]);
+  // Gone again: no second try.
+  lk.recv({ type: "error", code: "ddz_gone", message: "" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect([sentOf(lk, "ddz_open").length, sentOf(lk, "ddz_sit").length]).toEqual([1, 1]);
+  // Without the stake (a key that did not give it), nothing follows, and nothing is said.
+  d.sitDdzAt("h2");
+  expect(sentOf(lk, "ddz_sit").slice(1)).toEqual([{ type: "ddz_sit", table: "h2" }]);
+  lk.recv({ type: "error", code: "ddz_gone", message: "" });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect([sentOf(lk, "ddz_open").length, r.lastError.value]).toEqual([1, ""]);
+});
+
+it("takes a seat at a table of the hall that waited again after the connection dropped, at its stake", async () => {
+  const { d, player } = await setup();
+  joinedOpen();
+  player.ddzHallOn.value = true;
+  d.quickSitDdz(50);
+  let lk = linkUp();
+  lk.recv(hallOpen("h1", 0, [LME, X, null]));
+  // Dropped and back: the server stood the seat up, and the save sits down again without a word.
+  const drop = async () => {
+    lk.close();
+    await vi.advanceTimersByTimeAsync(1000);
+    lk = linkUp();
+    await vi.advanceTimersByTimeAsync(1100);
+  };
+  await drop();
+  expect(sentOf(lk, "ddz_open")).toEqual([{ type: "ddz_open", base: 50 }]);
+  expect([d.ddz.value, d.ddzBubble.value]).toEqual([null, null]);
+  lk.recv(hallOpen("h2", 1, [X, LME, null]));
+  expect(d.ddzQueueSeat.value).toMatchObject({ id: "h2" });
+  // Not once the deposits are taken: the seat went with the connection, as always.
+  lk.recv(hallOpen("h2", 1, [X, LME, Y], { starting: true }));
+  await drop();
+  expect(sentOf(lk, "ddz_open")).toEqual([]);
+  expect([d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual(["over", "掉线了"]);
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  // Nor on a server without the hall.
+  lk.recv(hallOpen("h3", 1, [X, LME, null]));
+  player.ddzHallOn.value = false;
+  await drop();
+  expect(sentOf(lk, "ddz_open")).toEqual([]);
+  expect([d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual(["over", "掉线了"]);
+  await vi.advanceTimersByTimeAsync(d.DDZ_END_MS);
+  // Nor by a save shown away when the connection comes back.
+  player.ddzHallOn.value = true;
+  const { settings } = await import("./settings");
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(0);
+  lk.recv(hallOpen("h4", 1, [X, LME, null]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(d.ddz.value).toMatchObject({ id: "h4", phase: "open" }); // chosen away before sitting: kept
+  await drop();
+  expect(sentOf(lk, "ddz_open")).toEqual([]);
+  expect([d.ddzBubble.value, d.ddzReason(d.ddz.value!)]).toEqual(["over", "掉线了"]);
+  settings.status = "";
+});
+
+it("waits in the queue instead of sitting down on a server without the hall", async () => {
+  const { d, fetchMock, player } = await setup();
+  expect(player.ddzHallOn.value).toBe(false);
+  d.sitDdzAt("h1");
+  expect(Socket.all).toHaveLength(1); // no connection for it
+  d.quickSitDdz(50);
+  const lk = linkUp();
+  expect([sentOf(lk, "ddz_queue"), sentOf(lk, "ddz_open")]).toEqual([[{ type: "ddz_queue", base: 50 }], []]);
+  // The lobby says whether the server has the hall: its stakes list the tables waiting there.
+  const tier = { base: 50, deposit: 2400, afford: true, waiting: 0 };
+  const answer = (tiers: unknown[]) => fetchMock.mockImplementation((async (url: string) => (String(url).endsWith("/api/ddz/lobby")
+    ? { ok: true, status: 200, json: async () => ({ tiers, seated: false }) }
+    : { ok: true, status: 200, json: async () => playerStatus() })) as never);
+  answer([{ ...tier, tables: [] }]);
+  await player.loadDdzLobby();
+  expect(player.ddzHallOn.value).toBe(true);
+  answer([tier]);
+  await player.loadDdzLobby();
+  expect(player.ddzHallOn.value).toBe(false);
+});
+
+it("stands up from an open table that waits when the save turns away, on the connection the table is on", async () => {
+  const { socket, d, player, settings } = await setup();
+  joinedOpen();
+  const away = await import("./away");
+  // A table of the room: left on the room connection once the status chosen turns away.
+  socket.recv({ type: "ddz_open", table: "o1", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sentOf(socket, "ddz_leave")).toEqual([]);
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sentOf(socket, "ddz_leave")).toEqual([{ type: "ddz_leave", table: "o1" }]);
+  expect(d.ddz.value).toBeNull();
+  // Shown away already: a table sat down at, of the room or of the hall, is kept.
+  socket.recv({ type: "ddz_open", table: "o2", base: 50, deposit: 2400, you: 0, seats: [seatOf(ME), null, null], sec: 600 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(d.ddz.value).toMatchObject({ id: "o2", phase: "open" });
+  d.leaveDdz("o2", "open");
+  player.ddzHallOn.value = true;
+  d.quickSitDdz(50);
+  const lk = linkUp();
+  lk.recv(hallOpen("h1", 0, [LME, null, null]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect([sentOf(lk, "ddz_leave"), sentOf(socket, "ddz_leave").length]).toEqual([[], 2]);
+  expect(d.ddz.value).toMatchObject({ id: "h1", phase: "open" });
+  // While the deposits are taken the seat stays.
+  settings.status = "";
+  await vi.advanceTimersByTimeAsync(0);
+  lk.recv(hallOpen("h1", 0, [LME, X, Y], { starting: true }));
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sentOf(lk, "ddz_leave")).toEqual([]);
+  // Back to waiting, then ten minutes without input: left on the dou dizhu connection.
+  settings.status = "";
+  lk.recv(hallOpen("h1", 0, [LME, X, null]));
+  const stop = away.startAway();
+  await vi.advanceTimersByTimeAsync(5 * 60_000);
+  expect(sentOf(lk, "ddz_leave")).toEqual([]);
+  await vi.advanceTimersByTimeAsync(5 * 60_000 + 15_000);
+  expect(away.shownStatus.value).toBe("away");
+  expect(sentOf(lk, "ddz_leave")).toEqual([{ type: "ddz_leave", table: "h1" }]);
+  expect(sentOf(socket, "ddz_leave")).toHaveLength(2);
+  expect(d.ddz.value).toBeNull();
+  stop();
+});
+
+it("says aloud a game starting at an open table the save waited at, while its window is out of sight", async () => {
+  const { socket, d, frame, settings } = await setup();
+  joinedOpen();
+  const deal = (table: string, n = 1) => socket.recv({ type: "ddz_deal", table, seats: SEATS, you: 1, hand: HAND, base: 50, cap: 24, deal: n, turn: 0, sec: 15, dealSec: 0 });
+  const open = (table: string, seats: unknown[], starting = false) =>
+    socket.recv({ type: "ddz_open", table, base: 50, deposit: 2400, you: 1, seats, sec: 600, ...(starting ? { starting } : {}) });
+  open("o1", [seatOf(NEW_A), seatOf(ME), null]);
+  open("o1", [seatOf(NEW_A), seatOf(ME), seatOf(B)], true);
+  deal("o1");
+  expect(tableCue).toHaveBeenCalledTimes(1);
+  expect(frame.open).toBe(true); // the window came up with the deal
+  // A deal again after no bids is not said.
+  frame.open = false;
+  deal("o1", 2);
+  expect(tableCue).toHaveBeenCalledTimes(1);
+  // The seat that filled the table, and a table of an invite, start without it.
+  socket.recv({ type: "ddz_closed", table: "o1" });
+  open("o2", [seatOf(NEW_A), seatOf(ME), seatOf(B)], true);
+  deal("o2");
+  socket.recv({ type: "ddz_closed", table: "o2" });
+  socket.recv({ type: "ddz_invite", table: "t1", from: "a", ids: ["a", "me", "b"], base: 50, deposit: 2400, sec: 15 });
+  d.answerDdz(true);
+  frame.open = false;
+  deal("t1");
+  socket.recv({ type: "ddz_closed", table: "t1" });
+  expect(tableCue).toHaveBeenCalledTimes(1);
+  // Nor with the table's window in sight, the interface sounds off, or the volume all the way down.
+  for (const set of [() => { frame.open = true; }, () => { settings.sfx = false; }, () => { settings.volume = 0; }]) {
+    frame.open = false;
+    settings.sfx = true;
+    settings.volume = 1;
+    open("o3", [seatOf(NEW_A), seatOf(ME), null]);
+    set();
+    deal("o3");
+    socket.recv({ type: "ddz_closed", table: "o3" });
+  }
+  expect(tableCue).toHaveBeenCalledTimes(1);
 });
