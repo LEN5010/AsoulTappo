@@ -359,6 +359,13 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
     return {"rooms": manager.public_rooms(PUBLIC_LIST_LIMIT)}
 
 
+@app.get("/rooms/{room_id}")
+async def room_open(room_id: str) -> dict:
+    """Whether a room has members now, without making it: a client going back to the room it was in when it last
+    closed joins only an open one (a join of any other id makes the room). Like a join, it needs only the id."""
+    return {"room": room_id, "open": len(room_id) <= 64 and room_id in manager.rooms}
+
+
 # ------------------------------------------------------------------ HTTP API
 STATUS = {"bad_token": 401, "account_expired": 401, "save_linked": 401, "no_shards": 409, "owned": 409,
           "checked_in": 409, "account_not_linked": 409, "account_unavailable": 503, "accounts_disabled": 404,

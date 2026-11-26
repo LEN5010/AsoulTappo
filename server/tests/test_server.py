@@ -120,6 +120,18 @@ def test_created_room_can_be_joined():
         assert join(ws, room=room)["room"] == room
 
 
+def test_room_open_tells_whether_a_room_has_members_without_making_it():
+    c = TestClient(app).__enter__()  # single portal/loop for every socket
+    assert c.get("/rooms/gone").json() == {"room": "gone", "open": False}
+    assert "gone" not in manager.rooms
+    with c.websocket_connect("/ws") as ws:
+        join(ws, room="here")
+        assert c.get("/rooms/here").json() == {"room": "here", "open": True}
+    # The last member left: the room is gone with it.
+    assert c.get("/rooms/here").json()["open"] is False
+    assert c.get("/rooms/" + "x" * 65).json()["open"] is False
+
+
 def test_state_updates_character_and_nick():
     c = TestClient(app).__enter__()  # single portal/loop for every socket
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:

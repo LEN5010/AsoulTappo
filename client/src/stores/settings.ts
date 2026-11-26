@@ -19,6 +19,8 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
+  /** The room the save was in when the app last closed ("" = none): the desk goes back into it once on start. */
+  rejoinRoom: string;
   /** The rooms joined lately, newest first (recentRooms.ts). */
   recentRooms: RecentRoom[];
   /** Tap batching window (100–200ms). */
@@ -188,6 +190,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
+  rejoinRoom: "",
   recentRooms: [],
   batchMs: 150,
   favorites: [],

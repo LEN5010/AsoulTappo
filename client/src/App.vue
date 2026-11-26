@@ -59,7 +59,7 @@ import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { windowVisible } from "./stores/activity";
 import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
-import { duel, inRoom, poked, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { duel, inRoom, poked, localPet, memberKey, others, rejoinOnStart, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
@@ -499,6 +499,8 @@ onMounted(async () => {
   window.addEventListener("keydown", closeOnEscape);
   // Reporting and the release watch wait for the terms; the panel holds the dialog that asks for them.
   startReporting();
+  // Back into the room the save was in when the app last closed; it waits for the terms too.
+  rejoinOnStart();
   beginGuide();
   if (!agreed.value) openPanel();
   stopDay = watchDay();
