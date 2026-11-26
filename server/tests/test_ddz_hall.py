@@ -671,3 +671,53 @@ def test_a_payment_given_up_with_the_tables_cleared_leaves_the_game_open():
         assert w.g.store.ddz_game(t.row)["state"] == "open"
 
     run(asyncio.wait_for(go(), 10))
+
+
+# ------------------------------------------------------------------ a room's bans and the queue
+def test_an_empty_seat_is_not_offered_to_a_save_the_room_bans_which_keeps_its_place_in_the_line():
+    async def go():
+        w = OpenWorld()
+        ((x, _),), rtid = await w.opened("x")
+        b, sb = w.queuer("b")
+        c, sc = w.queuer("c")
+        w.m.rooms["r"].banned.add(w.who["b"])
+        await w.t.queue(b, BASE)
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(c, BASE)
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        t = w.t.by_id[rtid]
+        # The seat goes to the next in the line; the banned save still waits, first.
+        assert not sb.of("ddz_invite") and sc.of("ddz_invite")[-1]["table"] == rtid
+        assert w.t.by_save.get(w.who["b"]) is None and w.t.by_save[w.who["c"]] is t
+        assert [q.token for q in w.t.lines[BASE]] == [w.who["b"]]
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_save_the_room_bans_after_its_seat_was_offered_goes_back_to_its_place_in_the_line():
+    async def go():
+        w = OpenWorld()
+        ((x, _),), rtid = await w.opened("x")
+        b, sb = w.queuer("b")
+        w.mono += FILL_SEC
+        await w.t.queue(b, BASE)
+        t = w.t.by_id[rtid]
+        assert w.t.by_save[w.who["b"]] is t and sb.of("ddz_invite")[-1]["table"] == rtid
+        since = t.seats[1].since
+        w.m.rooms["r"].banned.add(w.who["b"])
+        await w.t.answer(b, rtid, True)
+        assert sb.of("ddz_over")[-1] == {"type": "ddz_over", "table": rtid, "reason": "gone"}
+        assert w.t.by_save.get(w.who["b"]) is None and all(s.token != w.who["b"] for s in t.seats)
+        # Back in the line where it was, with no cooldown, and told it waits.
+        assert w.t.waiting[w.who["b"]].since == since and w.who["b"] not in w.t.match_refused
+        assert sb.of("ddz_queue")[-1]["base"] == BASE
+        # Another save in the line gets the seat.
+        c, sc = w.queuer("c")
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(c, BASE)
+        assert sc.of("ddz_invite")[-1]["table"] == rtid and w.t.by_save.get(w.who["b"]) is None
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))

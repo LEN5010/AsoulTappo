@@ -33,7 +33,8 @@ of the room sit down at its empty seats, and sitting is consent. The third to si
 go in one transaction, and a seat whose save may no longer play is let go, told why, while the table waits again (the
 opener's puts it away). Before the start a member stands up by leaving the table or the room; the opener doing so puts
 the table away, as does OPEN_SEC without the three seats taken. An empty seat that has waited FILL_SEC is offered to
-the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
+the save that waited longest in the queue at the table's stake (a save the table's room bans keeps its place for
+another table, and one banned before it accepts goes back there), one seat at a time; it accepts as at a table the queue
 made (the seats taken do not answer again), plays on its dou dizhu connection and takes the seat again on a new one,
 and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
@@ -1194,8 +1195,10 @@ class Tables:
         at = next((i for i, s in enumerate(table.seats) if s.empty and now >= s.empty_since + FILL_SEC), None)
         if at is None:
             return False
+        # A save the table's room bans keeps its place in the line for another table.
         w = next((w for w in self.lines.get(table.base, [])
-                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd), None)
+                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd
+                  and not self._banned(table, w.token)), None)
         if w is None:
             return False
         sec = self.bank.cfg()["inviteSec"]
@@ -1226,6 +1229,11 @@ class Tables:
             self._unseat_asked(table, seat, "declined")
             return
         s = table.seats[seat]
+        if self._banned(table, s.token):
+            # The room banned the save after the seat was offered: the seat goes to the next, and the save back to its
+            # place in the line.
+            self._unseat_banned(table, seat)
+            return
         s.accepted, s.until = True, 0.0
         if table.hall:
             # A seat taken: the hall table's time to wait starts over, as on a sit (_sit_at).
@@ -1252,6 +1260,19 @@ class Tables:
         table.seats[seat] = self._empty_seat()
         table.seats[seat].empty_since = now - FILL_SEC
         self._open_changed(table)
+
+    def _unseat_banned(self, table: Table, seat: int) -> None:
+        """The save offered seat [seat] may not sit at the table any more (its room bans the save): it hears the seat
+        is gone and goes back to its place in the line, with no cooldown; the seat is offered to the next at once."""
+        s = table.seats[seat]
+        if self.by_save.get(s.token) is table:
+            del self.by_save[s.token]
+        if s.peer is not None:
+            s.peer.enqueue({"type": "ddz_over", "table": table.id, "reason": "gone"})
+        table.seats[seat] = self._empty_seat()
+        table.seats[seat].empty_since = self.clock() - FILL_SEC
+        self._open_changed(table)
+        self._requeue(table.base, [s])
 
     def _stand(self, table: Table, seat: int) -> None:
         """Seat [seat] of an open table stands up: it is empty again, and its member hears the table is gone. A hall
