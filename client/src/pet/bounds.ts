@@ -43,6 +43,16 @@ export function ownDeskWidth(scale: number): number {
   return Math.max(stripFit(scale).width, Math.round(PET_BASE.width * scale) + PLATE_GRIP * 2);
 }
 
+/**
+ * The left edges the own pet's box ([width] px, ownDeskWidth) may take in a viewport [vw] px wide: the empty bands
+ * beside the picture ([band] each) may stand out past the screen, so the picture reaches either side edge, but what
+ * its second form draws past the picture on the right ([reach]) stays on screen.
+ */
+export function ownXRange(width: number, band: number, reach: number, vw: number): { min: number; max: number } {
+  const min = -band;
+  return { min, max: Math.max(min, vw - (width - band) - reach) };
+}
+
 /** What an emote takes over its anchor besides the picture: the point under it and the ×N badge's rise over it. */
 const EMOTE_ROOM = 20;
 /** Kept free between an emote and the top of the screen. */

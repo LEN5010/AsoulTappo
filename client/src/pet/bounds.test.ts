@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLATE_GRIP, STRIP_WIDTH, emotePlace, ownDeskWidth, remotePetSize, stripFit } from "./bounds";
+import { PLATE_GRIP, STRIP_WIDTH, emotePlace, ownDeskWidth, ownXRange, remotePetSize, stripFit } from "./bounds";
 import { PET_BASE, headAnchor } from "../characters";
 
 describe("the strip under the own pet", () => {
@@ -147,5 +147,30 @@ describe("the emote over a pet", () => {
 
   it("is moved no further for a pet above the screen's top than for one standing at it", () => {
     expect(at(400, -300)).toEqual(at(400, 0));
+  });
+});
+
+describe("the own pet against the side edges", () => {
+  it("lets the empty bands beside the picture stand out past the screen, so the picture reaches the edges", () => {
+    for (const scale of [0.6, 1, 1.4]) {
+      const width = ownDeskWidth(scale);
+      const pet = PET_BASE.width * scale;
+      const band = Math.floor((width - pet) / 2);
+      const { min, max } = ownXRange(width, band, 0, 1707);
+      // the picture's left edge on the screen's left edge, its right edge on the right one, at most half a pixel in
+      expect(min + (width - pet) / 2).toBeGreaterThanOrEqual(0);
+      expect(min + (width - pet) / 2).toBeLessThanOrEqual(0.5);
+      expect(max + (width + pet) / 2).toBeLessThanOrEqual(1707);
+      expect(max + (width + pet) / 2).toBeGreaterThanOrEqual(1706.5);
+    }
+  });
+
+  it("keeps what a second form draws past the picture on screen", () => {
+    const { max } = ownXRange(268, 14, 30, 1707);
+    expect(max + 14 + 240 + 30).toBe(1707);
+  });
+
+  it("puts a box wider than the screen at its left edge", () => {
+    expect(ownXRange(268, 14, 0, 200)).toEqual({ min: -14, max: -14 });
   });
 });

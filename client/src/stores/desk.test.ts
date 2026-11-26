@@ -128,7 +128,7 @@ describe("partners in a row on the bottom edge", () => {
 });
 
 describe("resetOwnPet", () => {
-  it("takes a docked own pet off the bottom edge before it gives up its place", () => {
+  it("takes a docked own pet off the bottom edge, then gives up its y, which alone sends it to its default place", () => {
     const before = { petDocked: settings.petDocked, petX: settings.petX, petY: settings.petY };
     Object.assign(settings, { petDocked: true, petX: 300, petY: 900 });
     // In the panel each change reaches the desk as its own patch, in this order.
@@ -137,7 +137,7 @@ describe("resetOwnPet", () => {
       watch(() => settings[key], () => order.push(key), { flush: "sync" }));
     try {
       resetOwnPet();
-      expect(order).toEqual(["petDocked", "petX", "petY"]);
+      expect(order).toEqual(["petDocked", "petY", "petX"]);
       expect({ petDocked: settings.petDocked, petX: settings.petX, petY: settings.petY })
         .toEqual({ petDocked: false, petX: -1, petY: -1 });
     } finally {

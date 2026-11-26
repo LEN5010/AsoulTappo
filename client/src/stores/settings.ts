@@ -48,7 +48,10 @@ export interface Settings {
   duelDnd: boolean;
   /** The status shown to rooms: a `ROOM_STATUSES` id, "" for none. */
   status: string;
-  /** Own pet and panel position on the desktop overlay (CSS px, -1 = default place). */
+  /**
+   * Own pet and panel position on the desktop overlay (CSS px, -1 = default place). The own pet's petY says it: its petX
+   * may be below 0, its box standing out past the left edge.
+   */
   petX: number;
   petY: number;
   panelX: number;
