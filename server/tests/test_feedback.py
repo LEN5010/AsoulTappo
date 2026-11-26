@@ -19,6 +19,7 @@ def fb(env, monkeypatch):
     monkeypatch.setattr(main, "ADMIN_KEY", "admin-secret")
     monkeypatch.setattr(feedback, "_addresses", {})
     monkeypatch.setattr(feedback, "_addresses_day", "")
+    monkeypatch.setattr(feedback, "_requests", {})
     return env
 
 
@@ -106,3 +107,46 @@ def test_the_admin_pages_through_and_deletes(fb, monkeypatch):
     assert c.delete(f"/admin/feedback/{ids[0]}", headers=KEY).status_code == 409
     assert c.get(f"/admin/feedback/{ids[0]}", headers=KEY).status_code == 409
     assert c.get("/admin/feedback", headers={"X-Admin-Key": "wrong"}).status_code == 404
+
+
+def test_a_resent_request_gets_its_receipt_again_and_counts_once(fb, monkeypatch):
+    c, g, *_ = fb
+    monkeypatch.setattr(feedback, "PER_ADDRESS", 2)
+    monkeypatch.setattr(main, "_address", lambda request: "203.0.113.7")
+    play(c, GUEST_HEADERS)
+    rid = "0f9c3a52-6b1e-4d2a-9c7e-2f4b8a1d3e5c"
+    first = send(c, GUEST_HEADERS, requestId=rid)
+    again = send(c, GUEST_HEADERS, requestId=rid)
+    assert first.status_code == again.status_code == 200
+    assert again.json() == first.json() == {"id": first.json()["id"], "left": feedback.PER_SAVE - 1}
+    assert len(c.get("/admin/feedback", headers=KEY).json()["feedback"]) == 1
+    # the address counted the feedback once, so one more goes through
+    assert send(c, GUEST_HEADERS).status_code == 200
+    assert send(c, GUEST_HEADERS).status_code == 429
+    # another save's request of the same id is its own feedback
+    play(c, token(1))
+    monkeypatch.setattr(main, "_address", lambda request: "203.0.113.8")
+    other = send(c, token(1), requestId=rid)
+    assert other.status_code == 200 and other.json()["id"] != first.json()["id"]
+
+
+def test_the_last_feedback_of_the_day_resent_gets_its_receipt_not_the_limit(fb):
+    c, g, *_ = fb
+    play(c, GUEST_HEADERS)
+    for _ in range(feedback.PER_SAVE - 1):
+        assert send(c, GUEST_HEADERS).status_code == 200
+    last = send(c, GUEST_HEADERS, requestId="last-one")
+    assert last.json()["left"] == 0
+    again = send(c, GUEST_HEADERS, requestId="last-one")
+    assert again.status_code == 200 and again.json() == last.json()
+    assert send(c, GUEST_HEADERS, requestId="a-new-one").status_code == 429
+
+
+def test_a_request_id_is_short_letters_digits_and_dashes(fb):
+    c, g, *_ = fb
+    play(c, GUEST_HEADERS)
+    assert send(c, GUEST_HEADERS, requestId="x" * 65).status_code == 422
+    assert send(c, GUEST_HEADERS, requestId="a b").status_code == 422
+    assert send(c, GUEST_HEADERS, requestId="").status_code == 200
+    assert send(c, GUEST_HEADERS, requestId="").json()["left"] == feedback.PER_SAVE - 2
+

@@ -3,7 +3,11 @@ when the player ticks it, the latest part of the client's log. There are no repl
 it (/admin/feedback).
 
 A save sends PER_SAVE a China day and an address PER_ADDRESS; the server keeps PER_SERVER a day in all, so a script
-with many saves and addresses still cannot make it store more than about PER_SERVER x LOG_MAX a day."""
+with many saves and addresses still cannot make it store more than about PER_SERVER x LOG_MAX a day.
+
+A client may name each feedback it sends with a request id, kept with the draft until a send goes through. The same
+save sending the same id again (its answer was lost) gets the first feedback's id back, and nothing is kept or counted
+again. The server remembers the last REQUESTS_MAX ids in memory, so a restart forgets them."""
 from __future__ import annotations
 
 import threading
@@ -21,11 +25,16 @@ PER_SAVE = 5
 PER_ADDRESS = 20
 PER_SERVER = 500
 ADDRESSES_MAX = 50000
+REQUEST_MAX = 64
+# About two days of what the server keeps: a resend after a lost answer comes within minutes.
+REQUESTS_MAX = 2 * PER_SERVER
 
 # Feedback per address on a China day: {address: count}, kept for that day only.
 _addresses: dict[str, int] = {}
 _addresses_day = ""
 _addresses_lock = threading.Lock()
+# Feedback by (save, request id), oldest first; read and written under _addresses_lock.
+_requests: dict[tuple[str, str], int] = {}
 
 
 def _clip(s: str, n: int) -> str:
@@ -33,9 +42,9 @@ def _clip(s: str, n: int) -> str:
 
 
 def send(store: Any, now: float, pid: str, address: str | None, version: str, system: str, text: str, contact: str,
-         log: str) -> dict[str, Any]:
+         log: str, request: str = "") -> dict[str, Any]:
     """Keeps one feedback of the save [pid] (an existing save) sent from [address] (None: not counted). Returns its
-    id and how many more the save may send today."""
+    id and how many more the save may send today. A [request] id the save sent before answers that feedback's id."""
     global _addresses_day
     text = text.strip()
     if not text:
@@ -43,9 +52,13 @@ def send(store: Any, now: float, pid: str, address: str | None, version: str, sy
     if not store.has_player(pid):
         raise GameError("no_save", "存档还没有建好，请稍后再试")
     day = day_of(now)
-    if store.feedback_count(day, pid) >= PER_SAVE:
+    key = (pid, request) if request else None
+    if key not in _requests and store.feedback_count(day, pid) >= PER_SAVE:
         raise GameError("feedback_limit", "今天的反馈次数用完了，明天再来吧")
     with _addresses_lock:
+        # Before any limit: the resend of the day's last feedback still gets its answer.
+        if key is not None and key in _requests:
+            return {"id": _requests[key], "left": max(0, PER_SAVE - store.feedback_count(day, pid))}
         # Counted again under the lock: two feedbacks of a save sent at once both saw the count before either was kept.
         sent = store.feedback_count(day, pid)
         if sent >= PER_SAVE:
@@ -61,6 +74,10 @@ def send(store: Any, now: float, pid: str, address: str | None, version: str, sy
                                  text[:TEXT_MAX], _clip(contact, CONTACT_MAX), log[-LOG_MAX:])
         if address is not None:
             _addresses[address] = _addresses.get(address, 0) + 1
+        if key is not None:
+            while len(_requests) >= REQUESTS_MAX:
+                del _requests[next(iter(_requests))]
+            _requests[key] = fid
     return {"id": fid, "left": PER_SAVE - sent - 1}
 
 

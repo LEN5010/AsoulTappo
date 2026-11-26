@@ -689,6 +689,8 @@ class FeedbackBody(BaseModel):
     system: str = Field(default="", max_length=feedback.SYSTEM_MAX * 2)
     # The latest part of the client's log; "" when the player left it out.
     log: str = Field(default="", max_length=feedback.LOG_MAX)
+    # Names this send of the draft, so a resend after a lost answer gets the same feedback back (1.3.0 on).
+    request_id: str = Field(default="", alias="requestId", max_length=feedback.REQUEST_MAX, pattern=r"^[A-Za-z0-9_-]*$")
 
 
 @app.post("/api/feedback")
@@ -696,7 +698,7 @@ def api_feedback(body: FeedbackBody, request: Request, who: PlayerId = Depends(p
                  x_client_version: str = Header(default="")) -> dict:
     """Keeps a feedback from the settings page (feedback.py): its id and how many more the save may send today."""
     return _guard(feedback.send, game.store, game.now(), who, _address(request), x_client_version, body.system,
-                  body.text, body.contact, body.log)
+                  body.text, body.contact, body.log, body.request_id)
 
 
 @app.post("/api/update-reward")
