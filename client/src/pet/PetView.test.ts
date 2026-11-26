@@ -1,7 +1,7 @@
 import { createSSRApp } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { describe, expect, it } from "vitest";
-import { characters, formReach } from "../characters";
+import { characters, formReach, getCharacter, PET_BASE } from "../characters";
 import { characterColor } from "../manifest";
 import PetView from "./PetView.vue";
 
@@ -72,11 +72,29 @@ describe("the second form's wing past the picture", () => {
     const twice = reachOf(await renderToString(createSSRApp(PetView, { character: "嘉然然龙", form: true, reachHit: true, scale: 2 })));
     expect(Number(/width:([\d.]+)px/.exec(twice[0]!)![1])).toBeCloseTo(formReach("嘉然然龙") * 2, 5);
   });
+  it.each(["乃琳法师", "贝拉炎头队长"])("takes the mouse over what %s's loop draws above the picture", async (character) => {
+    for (const scale of [1, 2]) {
+      const [reach, ...more] = reachOf(await renderToString(createSSRApp(PetView, { character, form: true, reachHit: true, scale })));
+      expect(more).toHaveLength(0);
+      expect(reach).toContain("data-hit");
+      const l = getCharacter(character)!.form!.loop!;
+      const k = (PET_BASE.width * scale) / l.width;
+      // The loop's own columns, from where it starts above the picture down to the picture's top edge.
+      const top = PET_BASE.height * scale - (l.height - l.y) * k;
+      expect(top).toBeLessThan(-16 * scale);
+      const px = (name: string) => Number(new RegExp(`${name}:(-?[\\d.]+)px`).exec(reach!)![1]);
+      expect(px("left")).toBeCloseTo(l.x * k, 5);
+      expect(px("width")).toBeCloseTo(l.w * k, 5);
+      expect(px("top")).toBeCloseTo(top, 5);
+      expect(px("height")).toBeCloseTo(-top, 5);
+    }
+  });
   it("leaves the sides empty in the first form, for skins whose loop stays on the picture and off the desk", async () => {
     for (const props of [
       { character: "嘉然然龙", form: false, reachHit: true },
       { character: "嘉然然龙", form: true },
-      { character: "乃琳法师", form: true, reachHit: true },
+      { character: "乃琳法师", form: false, reachHit: true },
+      { character: "贝拉炎头队长", form: true },
       { character: "嘉然山海经", reachHit: true },
     ]) {
       expect(reachOf(await renderToString(createSSRApp(PetView, props)))).toHaveLength(0);

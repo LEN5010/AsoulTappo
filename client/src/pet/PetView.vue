@@ -156,17 +156,26 @@ const loopStyle = computed(() => {
 });
 
 /**
- * The part of the loop drawn past the picture's right edge (嘉然然龙's open wing), in the loop's own place: on the desk
- * it is a hit target of its own, since the pet's box (`data-hit-inset`) ends at the picture.
+ * The parts of the loop drawn past the picture's edges (嘉然然龙's open wing on the right, 乃琳法师's star disc and
+ * 贝拉炎头队长's flames above), in the loop's own place: on the desk each is a hit target of its own, since the pet's
+ * box (`data-hit-inset`) ends at the picture. Above and below take the loop's columns over the picture, the sides the
+ * loop's full height.
  */
-const reachStyle = computed(() => {
+const reachStyles = computed(() => {
   const l = loop.value;
-  if (!l || !props.reachHit) return null;
+  if (!l || !props.reachHit) return [];
   const k = (PET_BASE.width * s.value) / l.width;
-  const edge = PET_BASE.width * s.value;
-  const width = (l.x + l.w) * k - edge;
-  if (width <= 0) return null;
-  return { left: `${edge}px`, bottom: `${(l.height - l.y - l.h) * k}px`, width: `${width}px`, height: `${l.h * k}px` };
+  const w = PET_BASE.width * s.value, h = PET_BASE.height * s.value;
+  // The loop's box in the picture's px; the second picture is drawn at the picture's width from the bottom up.
+  const left = l.x * k, right = (l.x + l.w) * k;
+  const top = h - (l.height - l.y) * k, bottom = top + l.h * k;
+  const boxes: { x: number; y: number; w: number; h: number }[] = [];
+  const inLeft = Math.max(left, 0), inRight = Math.min(right, w);
+  if (top < 0 && inRight > inLeft) boxes.push({ x: inLeft, y: top, w: inRight - inLeft, h: Math.min(bottom, 0) - top });
+  if (bottom > h && inRight > inLeft) boxes.push({ x: inLeft, y: Math.max(top, h), w: inRight - inLeft, h: bottom - Math.max(top, h) });
+  if (left < 0) boxes.push({ x: left, y: top, w: Math.min(right, 0) - left, h: bottom - top });
+  if (right > w) boxes.push({ x: Math.max(left, w), y: top, w: right - Math.max(left, w), h: bottom - top });
+  return boxes.map((b) => ({ left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` }));
 });
 
 // Another member's loop frames go on while that member taps, moves or changes form, the desk idle or not.
@@ -227,7 +236,9 @@ const bubbleAnchor = computed(() => ({
       <span v-if="direct || rightDown" class="layer mouse click" :class="{ 'click-right': direct }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
-    <span v-if="reachStyle && formOn && active" class="reach" data-hit :style="reachStyle"></span>
+    <template v-if="formOn && active">
+      <span v-for="(at, i) in reachStyles" :key="i" class="reach" data-hit :style="at"></span>
+    </template>
 
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
     <ComboBubble
@@ -305,7 +316,7 @@ const bubbleAnchor = computed(() => ({
 .direct-pose .click-left, .direct-pose .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
-/* Draws nothing: it only takes the mouse over the wing, which the picture's layers let through. */
+/* Draws nothing: it only takes the mouse over what the loop draws past the picture, which its layers let through. */
 .reach { position: absolute; }
 /* A paper disc with the cup, popping up beside the head and drifting off. */
 .sip {
