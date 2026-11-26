@@ -34,15 +34,15 @@ compile_error!("the online edition needs the default feature `updater`; the stan
 
 use std::cell::Cell;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::AtomicIsize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use hit::{HitRect, HitState};
 #[cfg(target_os = "macos")]
-use overlay_macos::{
-    fit_to_monitor, hit_cursor, hit_origin, monitor_count, monitor_keys, needs_refit, primary_index, window_rect,
-};
+use overlay_macos::{fit_to_monitor, monitor_count, monitor_keys, primary_index, window_rect};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -57,11 +57,9 @@ const HIT_TEST_IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// only when a pet's drawn parts do, and the first poll after it moves again brings the fast pace back.
 const HIT_TEST_STILL_INTERVAL: Duration = Duration::from_millis(100);
 const HIT_TEST_STILL_AFTER: Duration = Duration::from_secs(2);
-/// How long the hit test trusts what the window last said about being shown, and about where it is and
-/// its scale. Each of those questions is answered on the main thread, so asking all of them on every poll
-/// keeps the app's event loop busy while nothing changes; only the cursor is read every time.
+/// Linux fallback: how long the hit test trusts the last `window.is_visible()` answer.
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
 const HIT_VISIBLE_INTERVAL: Duration = Duration::from_millis(250);
-const HIT_GEOMETRY_INTERVAL: Duration = Duration::from_millis(500);
 /// How often the overlay checks that it still covers its monitor's work area
 /// (monitor plugged/unplugged, resolution, scaling or taskbar changed).
 const REFIT_INTERVAL: Duration = Duration::from_secs(2);
@@ -69,6 +67,8 @@ const REFIT_INTERVAL: Duration = Duration::from_secs(2);
 const HIT_SUMMARY_INTERVAL: Duration = Duration::from_secs(60);
 /// Debug build: how often the hit test writes its full state while the pet can be hit.
 const HIT_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the Windows hit test checks the overlay's actual extended style against what it last set.
+const STYLE_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 /// How long the pet window's real style may differ from what the hit test set before that is
 /// logged (the style is applied on the main thread, a little after the hit test asks).
 const STYLE_MISMATCH_GRACE: Duration = Duration::from_secs(1);
@@ -80,8 +80,70 @@ struct Overlay {
     monitor: Mutex<usize>,
     /// The overlay currently lets clicks through, so a mouse press lands on another window.
     passing: AtomicBool,
-    /// The overlay was moved outside the hit test (tray or hotkey: next monitor): its cached origin and scale are stale.
+    /// The overlay moved or resized (tray, hotkey, or window event): its cached geometry is stale.
     moved: AtomicBool,
+    /// Cached visibility of the overlay window (updated on show/hide and synced off the hot path).
+    visible: AtomicBool,
+    /// Windows: main overlay HWND for thread-safe `IsWindowVisible` without waking the UI thread.
+    #[cfg(target_os = "windows")]
+    hwnd: AtomicIsize,
+}
+
+/// Whether the frontend has called `set_popup_open` at least once (preserves legacy behavior before first call).
+static POPUP_TRACKED: AtomicBool = AtomicBool::new(false);
+/// Whether any desk popup currently needs `outside-click` events.
+static POPUP_OPEN: AtomicBool = AtomicBool::new(false);
+/// Whether the main desk window currently consumes `mouse_move` events (default true for compatibility).
+static MAIN_MOUSE_ACTIVE: AtomicBool = AtomicBool::new(true);
+static PANEL_MOUSE_ACTIVE: AtomicBool = AtomicBool::new(true);
+static BOSS_HIDDEN: AtomicBool = AtomicBool::new(false);
+/// Whether the panel window is currently shown.
+static PANEL_VISIBLE: AtomicBool = AtomicBool::new(false);
+/// Whether the capture window is currently open.
+static CAPTURE_OPEN: AtomicBool = AtomicBool::new(false);
+/// Whether the dou dizhu table window is currently open.
+static DDZ_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Minimum spacing for low-rate mouse activity pulses sent to `main` when 60 Hz mouse follow is off.
+const MOUSE_PULSE_INTERVAL: Duration = Duration::from_secs(1);
+
+fn outside_click_allowed(tracked: bool, open: bool) -> bool {
+    !tracked || open
+}
+
+fn mouse_move_allowed(
+    boss_hidden: bool,
+    main_active: bool,
+    panel_visible: bool,
+    panel_active: bool,
+    capture_open: bool,
+    ddz_open: bool,
+) -> bool {
+    !boss_hidden && (main_active || (panel_visible && panel_active) || capture_open || ddz_open)
+}
+
+fn allow_mouse_pulse(last: &mut Option<Instant>, now: Instant) -> bool {
+    if last.is_none_or(|prev| now.duration_since(prev) >= MOUSE_PULSE_INTERVAL) {
+        *last = Some(now);
+        true
+    } else {
+        false
+    }
+}
+
+fn should_emit_outside_click() -> bool {
+    outside_click_allowed(POPUP_TRACKED.load(Ordering::Acquire), POPUP_OPEN.load(Ordering::Relaxed))
+}
+
+fn should_emit_mouse_move() -> bool {
+    mouse_move_allowed(
+        BOSS_HIDDEN.load(Ordering::Relaxed),
+        MAIN_MOUSE_ACTIVE.load(Ordering::Relaxed),
+        PANEL_VISIBLE.load(Ordering::Relaxed),
+        PANEL_MOUSE_ACTIVE.load(Ordering::Relaxed),
+        CAPTURE_OPEN.load(Ordering::Relaxed),
+        DDZ_OPEN.load(Ordering::Relaxed),
+    )
 }
 
 fn main_window(app: &tauri::AppHandle) -> Option<WebviewWindow> {
@@ -165,9 +227,14 @@ struct ExportedLog {
 
 /// Copies the log to the desktop (or downloads) and shows it in the file manager.
 #[tauri::command]
-fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) -> Result<ExportedLog, String> {
-    log_state(&overlay, "export from the panel");
-    export_log_files(&app)
+async fn export_log(app: tauri::AppHandle, overlay: tauri::State<'_, Arc<Overlay>>) -> Result<ExportedLog, String> {
+    let overlay = overlay.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        log_state(&overlay, "export from the panel");
+        export_log_files(&app)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// How much of the log goes with a feedback: within what the server takes (server/app/feedback.py LOG_MAX).
@@ -175,9 +242,14 @@ const FEEDBACK_LOG_BYTES: usize = 120 * 1024;
 
 /// The latest part of the log, for a feedback the player sends with it from the settings page.
 #[tauri::command]
-fn log_tail(overlay: tauri::State<'_, Arc<Overlay>>) -> String {
-    log_state(&overlay, "feedback sent with the log");
-    applog::tail(FEEDBACK_LOG_BYTES)
+async fn log_tail(overlay: tauri::State<'_, Arc<Overlay>>) -> Result<String, String> {
+    let overlay = overlay.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        log_state(&overlay, "feedback sent with the log");
+        applog::tail(FEEDBACK_LOG_BYTES)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Whether this is the debug build (`--features debug-log`), which logs more from the page too.
@@ -618,16 +690,25 @@ fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
         }
         window.unminimize().map_err(|e| e.to_string())?;
         window.show().map_err(|e| e.to_string())?;
+        PANEL_VISIBLE.store(true, Ordering::Relaxed);
         window.set_focus().map_err(|e| e.to_string())?;
         app.emit_to("panel", "panel:visible", true).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
+fn panel_hidden() {
+    if PANEL_VISIBLE.swap(false, Ordering::Relaxed) {
+        #[cfg(target_os = "macos")]
+        media::clear_video_cache();
+    }
+}
+
 #[tauri::command]
 fn hide_panel(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("panel") {
         window.hide().map_err(|e| e.to_string())?;
+        panel_hidden();
         app.emit_to("panel", "panel:visible", false).map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -874,6 +955,7 @@ async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, Str
     }
     if let Some(window) = app.get_webview_window("ddz") {
         show_window(&window)?;
+        DDZ_OPEN.store(true, Ordering::Relaxed);
         if auto {
             attention(&window);
         }
@@ -898,6 +980,7 @@ async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, Str
             e.to_string()
         })?;
     applog!("ddz", "created");
+    DDZ_OPEN.store(true, Ordering::Relaxed);
     DDZ_ATTENTION.store(auto, Ordering::Relaxed);
     if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
         let area = monitor.work_area();
@@ -926,6 +1009,7 @@ fn show_ddz(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("ddz") {
         Some(window) => {
             show_window(&window)?;
+            DDZ_OPEN.store(true, Ordering::Relaxed);
             if DDZ_ATTENTION.swap(false, Ordering::Relaxed) {
                 attention(&window);
             }
@@ -937,10 +1021,11 @@ fn show_ddz(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn close_ddz(app: tauri::AppHandle) -> Result<(), String> {
-    match app.get_webview_window("ddz") {
-        Some(window) => window.close().map_err(|e| e.to_string()),
-        None => Ok(()),
+    if let Some(window) = app.get_webview_window("ddz") {
+        window.close().map_err(|e| e.to_string())?;
     }
+    DDZ_OPEN.store(false, Ordering::Relaxed);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1008,11 +1093,14 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
             applog!("capture", "close");
             window.destroy().map_err(|e| e.to_string())?;
         }
+        CAPTURE_OPEN.store(false, Ordering::Relaxed);
         return Ok(());
     }
     if let Some(window) = existing {
         window.unminimize().map_err(|e| e.to_string())?;
-        return window.show().map_err(|e| e.to_string());
+        window.show().map_err(|e| e.to_string())?;
+        CAPTURE_OPEN.store(true, Ordering::Relaxed);
+        return Ok(());
     }
     let (width, height) = (width.clamp(160.0, 1600.0), height.clamp(160.0, 1600.0));
     let window = WebviewWindowBuilder::new(&app, "capture", WebviewUrl::App("capture.html".into()))
@@ -1033,6 +1121,7 @@ async fn set_capture_window(app: tauri::AppHandle, open: bool, width: f64, heigh
             e.to_string()
         })?;
     applog!("capture", "created");
+    CAPTURE_OPEN.store(true, Ordering::Relaxed);
     #[cfg(target_os = "macos")]
     paint_when_covered(&window);
     #[cfg(not(target_os = "macos"))]
@@ -1095,6 +1184,23 @@ fn set_hit_regions(
 fn set_dragging(overlay: tauri::State<'_, Arc<Overlay>>, active: bool) {
     if let Ok(mut st) = overlay.hit.lock() {
         st.dragging = active;
+    }
+}
+
+/// Whether any desk popup currently needs `outside-click` events.
+#[tauri::command]
+fn set_popup_open(open: bool) {
+    POPUP_OPEN.store(open, Ordering::Relaxed);
+    POPUP_TRACKED.store(true, Ordering::Release);
+}
+
+/// Whether `label` currently consumes `mouse_move` events.
+#[tauri::command]
+fn set_mouse_active(label: String, active: bool) {
+    match label.as_str() {
+        "main" => MAIN_MOUSE_ACTIVE.store(active, Ordering::Relaxed),
+        "panel" => PANEL_MOUSE_ACTIVE.store(active, Ordering::Relaxed),
+        _ => {}
     }
 }
 
@@ -1204,9 +1310,29 @@ fn hit_origin(window: &WebviewWindow) -> tauri::Result<PhysicalPosition<i32>> {
     window.inner_position()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn hit_cursor(window: &WebviewWindow) -> tauri::Result<PhysicalPosition<f64>> {
-    window.cursor_position()
+/// Windows: read the cursor directly on the hit-test thread without waking the UI main thread.
+#[cfg(target_os = "windows")]
+fn hit_cursor(_window: &WebviewWindow) -> Option<PhysicalPosition<f64>> {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut pt = POINT { x: 0, y: 0 };
+    (unsafe { GetCursorPos(&mut pt) } != 0).then(|| PhysicalPosition::new(pt.x as f64, pt.y as f64))
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn hit_cursor(window: &WebviewWindow) -> Option<PhysicalPosition<f64>> {
+    window.cursor_position().ok()
+}
+
+#[cfg(target_os = "windows")]
+fn overlay_visible(overlay: &Overlay) -> bool {
+    let h = overlay.hwnd.load(Ordering::Relaxed);
+    if h != 0 {
+        use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        return unsafe { IsWindowVisible(h as HWND) != 0 };
+    }
+    overlay.visible.load(Ordering::Relaxed)
 }
 
 /// Polls in a row with the mouse button up before a stuck drag is dropped (~300 ms).
@@ -1250,40 +1376,48 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
         let mut last_refit_key: Option<String> = None;
         let mut last_summary = Instant::now();
         let mut last_snapshot = Instant::now();
+        let mut last_style_check: Option<Instant> = None;
         let mut style_mismatch: Option<Instant> = None;
         let mut style_mismatch_logged = false;
         let mut shown: Option<bool> = None;
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         let mut visible = true;
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         let mut visible_at: Option<Instant> = None;
+        #[cfg(not(target_os = "macos"))]
         let mut geometry: Option<(PhysicalPosition<i32>, f64)> = None;
-        let mut geometry_at = Instant::now();
+        #[cfg(target_os = "macos")]
+        let mut mac_geometry = overlay_macos::read_geometry(&window).ok();
         let mut pause = HIT_TEST_INTERVAL;
         let mut last_cursor: Option<(f64, f64)> = None;
         let mut still_since = Instant::now();
         loop {
             // The style the pet window really has, against what the hit test last set: if they stay
             // apart, clicks land where the hit test thinks they pass (or the other way round).
-            let set = overlay.passing.load(Ordering::Relaxed);
-            match diag::overlay_passes() {
-                Some(actual) if actual != set => {
-                    let since = *style_mismatch.get_or_insert_with(Instant::now);
-                    if !style_mismatch_logged && since.elapsed() >= STYLE_MISMATCH_GRACE {
-                        style_mismatch_logged = true;
-                        applog!(
-                            "overlay",
-                            "pet window {} the mouse but the hit test set it to {}; {}",
-                            if actual { "passes" } else { "takes" },
-                            if set { "pass" } else { "take" },
-                            diag::under_cursor()
-                        );
+            if last_style_check.is_none_or(|t| t.elapsed() >= STYLE_CHECK_INTERVAL) {
+                last_style_check = Some(Instant::now());
+                let set = overlay.passing.load(Ordering::Relaxed);
+                match diag::overlay_passes() {
+                    Some(actual) if actual != set => {
+                        let since = *style_mismatch.get_or_insert_with(Instant::now);
+                        if !style_mismatch_logged && since.elapsed() >= STYLE_MISMATCH_GRACE {
+                            style_mismatch_logged = true;
+                            applog!(
+                                "overlay",
+                                "pet window {} the mouse but the hit test set it to {}; {}",
+                                if actual { "passes" } else { "takes" },
+                                if set { "pass" } else { "take" },
+                                diag::under_cursor()
+                            );
+                        }
                     }
-                }
-                _ => {
-                    if style_mismatch_logged {
-                        applog!("overlay", "pet window style matches the hit test again");
+                    _ => {
+                        if style_mismatch_logged {
+                            applog!("overlay", "pet window style matches the hit test again");
+                        }
+                        style_mismatch = None;
+                        style_mismatch_logged = false;
                     }
-                    style_mismatch = None;
-                    style_mismatch_logged = false;
                 }
             }
             if last_summary.elapsed() >= HIT_SUMMARY_INTERVAL {
@@ -1293,6 +1427,23 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                     applog!("overlay", "took the mouse {n} times in the last minute");
                 }
             }
+            #[cfg(target_os = "windows")]
+            let visible = overlay_visible(&overlay);
+            #[cfg(target_os = "macos")]
+            let mut visible = overlay.visible.load(Ordering::Relaxed);
+            #[cfg(target_os = "macos")]
+            if !visible {
+                if let Some((_, win_num)) = mac_geometry {
+                    // Thread-safe CoreGraphics check spots `hotkey.rs` showing the window without waking the UI thread.
+                    if overlay_macos::window_onscreen(win_num) == Some(true)
+                        && window.is_visible().unwrap_or(false)
+                    {
+                        overlay.visible.store(true, Ordering::Relaxed);
+                        visible = true;
+                    }
+                }
+            }
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
             if visible_at.is_none_or(|at| at.elapsed() >= HIT_VISIBLE_INTERVAL) {
                 visible = window.is_visible().unwrap_or(true);
                 visible_at = Some(Instant::now());
@@ -1308,9 +1459,24 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
             if visible && (came_back || last_refit.elapsed() >= REFIT_INTERVAL) {
                 last_refit = Instant::now();
                 let index = overlay.monitor.lock().map(|m| *m).unwrap_or(0);
-                if needs_refit(&window, index) {
-                    // The window is about to move: ask where it is again on the next poll.
-                    geometry = None;
+                #[cfg(target_os = "macos")]
+                let refit = overlay_macos::check_refit(&window, index)
+                    .is_some_and(|(actual_visible, needs, geom, win_num)| {
+                        mac_geometry = Some((geom, win_num));
+                        if !actual_visible {
+                            overlay.visible.store(false, Ordering::Relaxed);
+                            visible = false;
+                            if shown != Some(false) {
+                                shown = Some(false);
+                                let _ = window.emit_to("main", "window:visible", false);
+                            }
+                        }
+                        actual_visible && needs
+                    });
+                #[cfg(not(target_os = "macos"))]
+                let refit = needs_refit(&window, index);
+                if refit {
+                    overlay.moved.store(true, Ordering::Relaxed);
                     let was = window_rect(&window);
                     // A refit that does not stick repeats on every check: log it once, not every 2 s.
                     let key = format!("{index} {was}");
@@ -1333,17 +1499,36 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
                 continue;
             }
             std::thread::sleep(pause);
-            if overlay.moved.swap(false, Ordering::Relaxed) {
-                geometry = None;
-            }
-            if geometry.is_none() || geometry_at.elapsed() >= HIT_GEOMETRY_INTERVAL {
-                geometry = match (hit_origin(&window), window.scale_factor()) {
-                    (Ok(origin), Ok(scale)) => Some((origin, scale)),
+            #[cfg(target_os = "macos")]
+            let sample: Option<(PhysicalPosition<f64>, PhysicalPosition<i32>, f64)> = {
+                if overlay.moved.swap(false, Ordering::Relaxed) {
+                    mac_geometry = None;
+                }
+                if mac_geometry.is_none() {
+                    mac_geometry = overlay_macos::read_geometry(&window).ok();
+                }
+                mac_geometry.and_then(|(geom, _)| {
+                    overlay_macos::hit_cursor_cached(geom)
+                        .map(|cursor| (cursor, PhysicalPosition::new(0, 0), geom.scale))
+                })
+            };
+            #[cfg(not(target_os = "macos"))]
+            let sample: Option<(PhysicalPosition<f64>, PhysicalPosition<i32>, f64)> = {
+                if overlay.moved.swap(false, Ordering::Relaxed) {
+                    geometry = None;
+                }
+                if geometry.is_none() {
+                    geometry = match (hit_origin(&window), window.scale_factor()) {
+                        (Ok(origin), Ok(scale)) => Some((origin, scale)),
+                        _ => None,
+                    };
+                }
+                match (hit_cursor(&window), geometry) {
+                    (Some(cursor), Some((origin, scale))) => Some((cursor, origin, scale)),
                     _ => None,
-                };
-                geometry_at = Instant::now();
-            }
-            let (Ok(cursor), Some((origin, scale))) = (hit_cursor(&window), geometry) else {
+                }
+            };
+            let Some((cursor, origin, scale)) = sample else {
                 // No cursor (lock screen, UAC, remote desktop): let clicks through rather than
                 // keep whatever was last decided, which could leave the whole screen unclickable.
                 if !cursor_lost {
@@ -1364,35 +1549,37 @@ fn spawn_hit_test(window: WebviewWindow, overlay: Arc<Overlay>) {
             pause = if still_since.elapsed() >= HIT_TEST_STILL_AFTER { HIT_TEST_STILL_INTERVAL } else { HIT_TEST_INTERVAL };
             // A drag whose pointer-up never reached the frontend (webview hung, capture lost)
             // must not keep the full-screen overlay taking every click.
-            if let Ok(mut st) = overlay.hit.lock() {
-                if st.dragging {
-                    // The button check below counts polls at the fast pace.
-                    pause = HIT_TEST_INTERVAL;
-                }
-                if st.dragging && !primary_button_down() {
-                    released_for += 1;
-                    if released_for >= DRAG_RELEASE_POLLS {
-                        st.dragging = false;
-                        released_for = 0;
-                        applog!("overlay", "drag ended by the button check: the page missed the pointer-up");
-                    }
-                } else {
-                    released_for = 0;
-                }
-            }
             let snapshot = applog::DEBUG && last_snapshot.elapsed() >= HIT_SNAPSHOT_INTERVAL;
             let (ignore, state) = match overlay.hit.lock() {
-                Ok(st) => (
-                    !st.interactive((cursor.x, cursor.y), (origin.x as f64, origin.y as f64), scale),
-                    snapshot.then(|| {
-                        format!(
-                            "{} hit rects, page scale {}, dragging {}",
-                            st.rects.len(),
-                            st.page_scale.map_or_else(|| "not reported".to_string(), |s| s.to_string()),
-                            st.dragging
-                        )
-                    }),
-                ),
+                Ok(mut st) => {
+                    if st.dragging {
+                        // The button check below counts polls at the fast pace.
+                        pause = HIT_TEST_INTERVAL;
+                        if !primary_button_down() {
+                            released_for += 1;
+                            if released_for >= DRAG_RELEASE_POLLS {
+                                st.dragging = false;
+                                released_for = 0;
+                                applog!("overlay", "drag ended by the button check: the page missed the pointer-up");
+                            }
+                        } else {
+                            released_for = 0;
+                        }
+                    } else {
+                        released_for = 0;
+                    }
+                    (
+                        !st.interactive((cursor.x, cursor.y), (origin.x as f64, origin.y as f64), scale),
+                        snapshot.then(|| {
+                            format!(
+                                "{} hit rects, page scale {}, dragging {}",
+                                st.rects.len(),
+                                st.page_scale.map_or_else(|| "not reported".to_string(), |s| s.to_string()),
+                                st.dragging
+                            )
+                        }),
+                    )
+                }
                 Err(_) => continue,
             };
             set_ignoring(ignore);
@@ -1438,6 +1625,8 @@ pub fn run() {
             set_always_on_top,
             set_hit_regions,
             set_dragging,
+            set_popup_open,
+            set_mouse_active,
             open_panel,
             set_panel_scale,
             watch_second_start,
@@ -1475,13 +1664,22 @@ pub fn run() {
             update::install_version
         ])
         .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(
+                event,
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. }
+            ) {
+                window.state::<Arc<Overlay>>().moved.store(true, Ordering::Relaxed);
+            }
             if window.label() == "panel" {
                 match event {
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        if window.hide().is_ok() {
+                            panel_hidden();
+                        }
                         let _ = window.emit("panel:visible", false);
                     }
+                    tauri::WindowEvent::Destroyed => PANEL_VISIBLE.store(false, Ordering::Relaxed),
                     // Moved to a monitor of another scale: the window keeps its logical size, the page its zoom,
                     // until the move ends (`panel_moved`).
                     tauri::WindowEvent::ScaleFactorChanged { .. } => {
@@ -1508,6 +1706,7 @@ pub fn run() {
             // However the table's window went (its close key, the desk, the system), the desk stops sending to it.
             if window.label() == "ddz" {
                 if let tauri::WindowEvent::Destroyed = event {
+                    DDZ_OPEN.store(false, Ordering::Relaxed);
                     applog!("ddz", "closed");
                     // From the app: the window's own handle is going away.
                     let _ = window.app_handle().emit_to("main", "ddz:closed", ());
@@ -1516,8 +1715,12 @@ pub fn run() {
             if window.label() == "capture" {
                 match event {
                     tauri::WindowEvent::CloseRequested { .. } => {
+                        CAPTURE_OPEN.store(false, Ordering::Relaxed);
                         applog!("capture", "closed from its title bar");
                         let _ = window.emit_to("main", "capture:closed", ());
+                    }
+                    tauri::WindowEvent::Destroyed => {
+                        CAPTURE_OPEN.store(false, Ordering::Relaxed);
                     }
                     // A minimized window reports no size; that one is not kept.
                     tauri::WindowEvent::Resized(size) => {
@@ -1599,7 +1802,9 @@ pub fn run() {
                 // still doesn't count as covering a browser, which would stop drawing (src/tool_window.rs).
                 #[cfg(target_os = "windows")]
                 if let Ok(hwnd) = w.hwnd() {
-                    diag::set_overlay(hwnd.0 as isize);
+                    let raw = hwnd.0 as isize;
+                    diag::set_overlay(raw);
+                    overlay.hwnd.store(raw, Ordering::Relaxed);
                 }
                 #[cfg(target_os = "windows")]
                 match tool_window::keep(&w) {
@@ -1629,6 +1834,7 @@ pub fn run() {
                 if let Err(e) = w.show() {
                     applog!("overlay", "show failed: {e}");
                 }
+                overlay.visible.store(true, Ordering::Relaxed);
                 spawn_hit_test(w, overlay.clone());
                 diag::spawn_foreground_watch();
                 elevation::spawn_watch(app.handle().clone());
@@ -1665,9 +1871,11 @@ pub fn run() {
                             if w.is_visible().unwrap_or(true) {
                                 applog!("tray", "hide pet");
                                 let _ = w.hide();
+                                tray_overlay.visible.store(false, Ordering::Relaxed);
                             } else {
                                 applog!("tray", "show pet");
                                 let _ = w.show();
+                                tray_overlay.visible.store(true, Ordering::Relaxed);
                                 #[cfg(target_os = "windows")]
                                 transparency::request("shown from the tray");
                             }
@@ -1697,14 +1905,19 @@ pub fn run() {
                         applog!("tray", "reset pet position");
                         if let Some(w) = main_window(app) {
                             let _ = w.show();
+                            tray_overlay.visible.store(true, Ordering::Relaxed);
                         }
                         let _ = app.emit_to("main", "tray", "reset-position");
                     }
                     "next_monitor" => move_to_next_monitor(app, &tray_overlay, "tray", false),
                     // Here too: when the pet window blocks clicks the panel may be unreachable.
                     "export_log" => {
-                        log_state(&tray_overlay, "export from the tray");
-                        let _ = export_log_files(app);
+                        let overlay = tray_overlay.clone();
+                        let app = app.clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            log_state(&overlay, "export from the tray");
+                            let _ = export_log_files(&app);
+                        });
                     }
                     "quit" => {
                         applog!("tray", "quit");
@@ -1733,12 +1946,13 @@ pub fn run() {
             let input_overlay = overlay.clone();
             // Debug build: when the last click line was written, and clicks skipped since.
             let click_log: Mutex<(Option<Instant>, u32)> = Mutex::new((None, 0));
+            let mouse_pulse: Mutex<Option<Instant>> = Mutex::new(None);
             input::spawn_hook(move |heard| {
                 let down = matches!(heard.event, input::InputEvent::MouseDown { .. });
                 let passing = input_overlay.passing.load(Ordering::Relaxed);
                 // A press that fell through the overlay landed on another window. The Windows overlay
                 // never takes focus, so the desk gets no blur for it and is told here instead.
-                if down && passing {
+                if down && passing && should_emit_outside_click() {
                     let _ = handle.emit_to("main", "outside-click", ());
                 }
                 if applog::DEBUG && down {
@@ -1756,6 +1970,14 @@ pub fn run() {
                             c.1 += 1;
                         }
                     }
+                }
+                if matches!(heard.event, input::InputEvent::MouseMove { .. }) && !should_emit_mouse_move() {
+                    // Keep the main desk's room-away, idle-wake and reminder clocks aware of mouse use at <= 1 Hz.
+                    let pulse = mouse_pulse.lock().map(|mut t| allow_mouse_pulse(&mut t, Instant::now())).unwrap_or(false);
+                    if pulse && handle.emit_to("main", "input", heard).is_err() {
+                        input::note_emit_failure();
+                    }
+                    return;
                 }
                 // Both windows listen: the desk pet, and the panel's preview pet on the emote and room pages.
                 if handle.emit("input", heard).is_err() {
@@ -1807,6 +2029,40 @@ mod page_zoom_tests {
 #[cfg(test)]
 mod heard_input_tests {
     use super::*;
+
+    #[test]
+    fn outside_click_is_sent_until_the_desk_reports_and_while_a_popup_is_open() {
+        assert!(outside_click_allowed(false, false));
+        assert!(!outside_click_allowed(true, false));
+        assert!(outside_click_allowed(true, true));
+    }
+
+    #[test]
+    fn mouse_pulses_are_at_least_one_second_apart() {
+        let mut last = None;
+        let start = Instant::now();
+        assert!(allow_mouse_pulse(&mut last, start));
+        assert!(!allow_mouse_pulse(&mut last, start + Duration::from_millis(999)));
+        assert!(allow_mouse_pulse(&mut last, start + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn mouse_moves_are_broadcast_only_while_a_window_uses_them() {
+        // Main, panel visible, panel preview active, capture, table, expected broadcast.
+        for (main, panel, preview, capture, table, broadcast) in [
+            (false, false, false, false, false, false),
+            (true,  false, false, false, false, true),
+            (false, true,  true,  false, false, true),
+            (false, false, false, true,  false, true),
+            (false, false, false, false, true,  true),
+            (false, true,  false, false, false, false),
+            (false, false, true,  false, false, false),
+            (true,  true,  true,  true,  true,  true),
+        ] {
+            assert_eq!(mouse_move_allowed(false, main, panel, preview, capture, table), broadcast);
+            assert!(!mouse_move_allowed(true, main, panel, preview, capture, table));
+        }
+    }
 
     #[test]
     fn the_page_is_told_who_sent_an_input_edge_when_the_hook_can_tell() {

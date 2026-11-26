@@ -85,6 +85,7 @@ mod imp {
     use std::collections::HashSet;
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::OnceLock;
     use std::time::{Duration, Instant};
 
     use serde::Serialize;
@@ -103,7 +104,9 @@ mod imp {
         SetEvent, WaitForSingleObject, EVENT_MODIFY_STATE, INFINITE, PROCESS_SYNCHRONIZE, SYNCHRONIZATION_SYNCHRONIZE,
     };
     use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY, SW_SHOWNORMAL};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AllowSetForegroundWindow, GetForegroundWindow, GetWindowThreadProcessId, ASFW_ANY, SW_SHOWNORMAL,
+    };
 
     use super::{Instance, Startup};
 
@@ -128,9 +131,11 @@ mod imp {
     static SHOW: AtomicUsize = AtomicUsize::new(0);
     /// A thread waits on `SHOW` already (`spawn_show_listener`).
     static LISTENING: AtomicBool = AtomicBool::new(false);
+    /// Cached process elevation: a process's own token elevation does not change while it runs.
+    static ELEVATED: OnceLock<bool> = OnceLock::new();
 
     pub fn is_elevated() -> bool {
-        crate::diag::elevated() == Some(true)
+        *ELEVATED.get_or_init(|| crate::diag::elevated() == Some(true))
     }
 
     /// An administrator running with UAC's filtered token: UAC can raise this same account.
@@ -375,15 +380,47 @@ mod imp {
     /// Tell the desk page when an elevated window has stayed in front for `TELL_AFTER` (a game,
     /// not a glance at Task Manager), and again when input reaches the pet once more.
     pub fn spawn_watch(app: tauri::AppHandle) {
+        if is_elevated() {
+            return;
+        }
         std::thread::spawn(move || {
+            let self_pid = unsafe { GetCurrentProcessId() };
             let can = can_elevate();
             let mut current: Option<String> = None;
             let mut since = Instant::now();
             let mut told = false;
             let mut logged: HashSet<String> = HashSet::new();
+            let mut cached_fg: Option<(isize, u32)> = None;
+            let mut cached_result: Option<String> = None;
             loop {
                 std::thread::sleep(WATCH_EVERY);
-                let now = foreground_outranks_us();
+                let (hwnd, pid) = unsafe {
+                    let fg = GetForegroundWindow();
+                    if fg.is_null() {
+                        (0isize, 0u32)
+                    } else {
+                        let mut pid = 0u32;
+                        GetWindowThreadProcessId(fg, &mut pid);
+                        (fg as isize, pid)
+                    }
+                };
+                let now = if cached_fg == Some((hwnd, pid)) {
+                    cached_result.clone()
+                } else if hwnd == 0 || pid == 0 || pid == self_pid {
+                    cached_fg = Some((hwnd, pid));
+                    cached_result = None;
+                    None
+                } else {
+                    let res = foreground_outranks_us();
+                    if unsafe { GetForegroundWindow() as isize } == hwnd {
+                        cached_fg = Some((hwnd, pid));
+                        cached_result = res.clone();
+                    } else {
+                        cached_fg = None;
+                        cached_result = None;
+                    }
+                    res
+                };
                 BLOCKED.store(now.is_some(), Ordering::Relaxed);
                 if now != current {
                     if told && now.is_none() {

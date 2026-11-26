@@ -12,6 +12,7 @@ use hidapi::{HidApi, HidDevice};
 use super::{pressed_bits, record_changes, InputEvent};
 
 const POLL: Duration = Duration::from_millis(10);
+const MAX_REPORTS_PER_POLL: usize = 64;
 /// How often the device list is read again for controllers plugged in later.
 const RESCAN: Duration = Duration::from_secs(5);
 /// Scans in a row that may find no Sony controller before they come less often, and the longest wait between two.
@@ -105,7 +106,7 @@ struct Pad {
 impl Pad {
     fn poll(&mut self, out: &mut Vec<InputEvent>) -> hidapi::HidResult<()> {
         let mut report = [0u8; 128];
-        loop {
+        for _ in 0..MAX_REPORTS_PER_POLL {
             let size = self.device.read_timeout(&mut report, 0)?;
             if size == 0 {
                 return Ok(());
@@ -115,6 +116,7 @@ impl Pad {
                 self.held = now;
             }
         }
+        Ok(())
     }
 
     fn disconnect(&self, out: &mut Vec<InputEvent>) {
@@ -128,6 +130,7 @@ where
     F: Fn(InputEvent) + Send + 'static,
 {
     std::thread::spawn(move || {
+        HidApi::disable_device_discovery();
         let mut api = match HidApi::new() {
             Ok(api) => api,
             Err(e) => {
@@ -148,8 +151,13 @@ where
             let rescan = if pads.is_empty() { rescan_interval(misses) } else { RESCAN };
             if scanned.is_none_or(|at| at.elapsed() >= rescan) {
                 let started = Instant::now();
+                // HidApi::new populated the first device list.
+                let scan = if scanned.is_none() {
+                    Ok(())
+                } else {
+                    api.reset_devices().and_then(|()| api.add_devices(SONY, 0))
+                };
                 scanned = Some(started);
-                let scan = api.reset_devices().and_then(|()| api.add_devices(SONY, 0));
                 let took = started.elapsed();
                 if slow.note(took, Instant::now()) {
                     applog!("pad", "PlayStation HID scan took {} ms", took.as_millis());

@@ -5,6 +5,7 @@
 //! blank for seconds and the abandoned requests pile up. This handler takes the place of the
 //! built-in one and answers `Range` requests with the part asked for.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::http::{header, Request, Response, StatusCode};
@@ -13,6 +14,44 @@ use tauri::{AppHandle, Runtime, UriSchemeContext, UriSchemeResponder};
 /// Unpacked videos kept for the ranges that follow the first request.
 const KEPT_VIDEOS: usize = 8;
 static VIDEOS: Mutex<Vec<(String, Arc<Vec<u8>>)>> = Mutex::new(Vec::new());
+static VIDEO_CACHE_GEN: AtomicU64 = AtomicU64::new(0);
+
+enum AssetBytes {
+    Owned(Vec<u8>),
+    Shared(Arc<Vec<u8>>),
+}
+
+impl AssetBytes {
+    fn len(&self) -> usize {
+        match self {
+            Self::Owned(v) => v.len(),
+            Self::Shared(v) => v.len(),
+        }
+    }
+
+    fn slice(&self, start: usize, end: usize) -> Vec<u8> {
+        match self {
+            Self::Owned(v) => v[start..=end].to_vec(),
+            Self::Shared(v) => v[start..=end].to_vec(),
+        }
+    }
+
+    fn into_vec(self) -> Vec<u8> {
+        match self {
+            Self::Owned(v) => v,
+            Self::Shared(v) => v.as_ref().clone(),
+        }
+    }
+}
+
+/// Drops cached unpacked videos (e.g. when the panel is hidden) so their buffers are freed immediately.
+pub fn clear_video_cache() {
+    if let Ok(mut videos) = VIDEOS.lock() {
+        VIDEO_CACHE_GEN.fetch_add(1, Ordering::AcqRel);
+        videos.clear();
+        videos.shrink_to_fit();
+    }
+}
 
 pub fn serve<R: Runtime>(ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>, responder: UriSchemeResponder) {
     let app = ctx.app_handle().clone();
@@ -38,16 +77,17 @@ fn respond<R: Runtime>(app: &AppHandle<R>, request: &Request<Vec<u8>>) -> Respon
     if let Some(csp) = csp {
         builder = builder.header(header::CONTENT_SECURITY_POLICY, csp);
     }
+    let total = bytes.len();
     let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok());
-    let response = match range.map(|r| parse_range(r, bytes.len() as u64)) {
-        None => builder.status(StatusCode::OK).body(bytes.to_vec()),
+    let response = match range.map(|r| parse_range(r, total as u64)) {
+        None => builder.status(StatusCode::OK).body(bytes.into_vec()),
         Some(Some((start, end))) => builder
             .status(StatusCode::PARTIAL_CONTENT)
-            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{}", bytes.len()))
-            .body(bytes[start as usize..=end as usize].to_vec()),
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
+            .body(bytes.slice(start as usize, end as usize)),
         Some(None) => builder
             .status(StatusCode::RANGE_NOT_SATISFIABLE)
-            .header(header::CONTENT_RANGE, format!("bytes */{}", bytes.len()))
+            .header(header::CONTENT_RANGE, format!("bytes */{total}"))
             .body(Vec::new()),
     };
     response.unwrap_or_else(|_| plain(StatusCode::INTERNAL_SERVER_ERROR))
@@ -59,22 +99,44 @@ fn plain(status: StatusCode) -> Response<Vec<u8>> {
     response
 }
 
-/// The asset's bytes, mime type and CSP header. Videos are unpacked once and kept.
-fn load<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<(Arc<Vec<u8>>, String, Option<String>)> {
-    if let Some(bytes) = kept(path) {
-        return Some((bytes, "video/mp4".into(), None));
+/// The asset's bytes, mime type and CSP header. Non-mp4 assets bypass the video cache with zero copy;
+/// videos are unpacked once and deduplicated in `VIDEOS`.
+fn load<R: Runtime>(app: &AppHandle<R>, path: &str) -> Option<(AssetBytes, String, Option<String>)> {
+    if path.ends_with(".mp4") {
+        let gen = VIDEO_CACHE_GEN.load(Ordering::Acquire);
+        if let Some(bytes) = kept(path) {
+            return Some((AssetBytes::Shared(bytes), "video/mp4".into(), None));
+        }
+        let asset = app.asset_resolver().get(path.to_string())?;
+        let bytes = cache_video(path, asset.bytes, gen);
+        return Some((AssetBytes::Shared(bytes), asset.mime_type, asset.csp_header));
     }
     let asset = app.asset_resolver().get(path.to_string())?;
-    let bytes = Arc::new(asset.bytes);
-    if path.ends_with(".mp4") {
-        if let Ok(mut videos) = VIDEOS.lock() {
-            if videos.len() >= KEPT_VIDEOS {
-                videos.remove(0);
-            }
-            videos.push((path.to_string(), bytes.clone()));
+    Some((AssetBytes::Owned(asset.bytes), asset.mime_type, asset.csp_header))
+}
+
+fn insert_video(videos: &mut Vec<(String, Arc<Vec<u8>>)>, path: &str, data: Vec<u8>) -> Arc<Vec<u8>> {
+    if let Some(at) = videos.iter().position(|(p, _)| p == path) {
+        let entry = videos.remove(at);
+        let existing = entry.1.clone();
+        videos.push(entry);
+        return existing;
+    }
+    let bytes = Arc::new(data);
+    if videos.len() >= KEPT_VIDEOS {
+        videos.remove(0);
+    }
+    videos.push((path.to_string(), bytes.clone()));
+    bytes
+}
+
+fn cache_video(path: &str, data: Vec<u8>, gen: u64) -> Arc<Vec<u8>> {
+    if let Ok(mut videos) = VIDEOS.lock() {
+        if VIDEO_CACHE_GEN.load(Ordering::Acquire) == gen {
+            return insert_video(&mut videos, path, data);
         }
     }
-    Some((bytes, asset.mime_type, asset.csp_header))
+    Arc::new(data)
 }
 
 fn kept(path: &str) -> Option<Arc<Vec<u8>>> {

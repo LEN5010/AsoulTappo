@@ -9,7 +9,7 @@
 //! again. Setting them again changes nothing while they hold. Each step is logged, so the next report comes with the
 //! moments that led to it.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -36,6 +36,7 @@ const MAX_PENDING: usize = 12;
 
 /// Restores waiting for their time, with their cause. The hit-test thread runs them (`due`).
 static PENDING: Mutex<Vec<(Instant, String)>> = Mutex::new(Vec::new());
+static HAS_PENDING: AtomicBool = AtomicBool::new(false);
 /// Causes not logged yet and when they came, and how many more came past `MAX_PENDING`. The hit-test thread logs them
 /// (`due`): the window's message handler, which asks for most restores, does not wait for the log file.
 static NOTED: Mutex<Vec<(Instant, String)>> = Mutex::new(Vec::new());
@@ -57,11 +58,15 @@ pub fn request(why: &str) {
                 pending.push((now + after, why.to_string()));
             }
         }
+        HAS_PENDING.store(true, Ordering::Release);
     }
 }
 
 /// The cause of a restore whose time has come, taken off the queue. Logs the causes that came since the last call.
 pub fn due() -> Option<String> {
+    if !HAS_PENDING.load(Ordering::Acquire) {
+        return None;
+    }
     let now = Instant::now();
     let noted = NOTED.lock().map(|mut noted| std::mem::take(&mut *noted)).unwrap_or_default();
     for (at, why) in noted {
@@ -73,7 +78,11 @@ pub fn due() -> Option<String> {
     }
     let mut pending = PENDING.lock().ok()?;
     let at = pending.iter().position(|(when, _)| *when <= now)?;
-    Some(pending.remove(at).1)
+    let why = pending.remove(at).1;
+    if pending.is_empty() {
+        HAS_PENDING.store(false, Ordering::Release);
+    }
+    Some(why)
 }
 
 /// Sets the window's transparency and the web view's transparent background again, on the main thread.
