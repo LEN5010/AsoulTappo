@@ -100,6 +100,12 @@ watch(pointed, (kind) => { groundKind.value = kind; });
 
 // ---------------------------------------------------------------- the stage
 const stage = computed(() => seriesArt(props.series)?.stage ?? null);
+const rgb = (c: readonly number[]) => `rgb(${c.map((v) => Math.round(v * 255)).join(" ")})`;
+/** What the pool keys stand on, and the key visual's own dark and mist for them (`.on-poster`). */
+const ground = computed<"paper" | "poster">(() => (stage.value ? "poster" : "paper"));
+const tint = computed(() => (stage.value
+  ? { "--poster-dark": rgb(stage.value.look.dark), "--poster-mist": rgb(stage.value.look.mist) }
+  : undefined));
 const rootEl = ref<HTMLElement>();
 const slotEl = ref<HTMLElement>();
 /** Where the title goes while the key visual is seen by itself, from its place on the page. */
@@ -258,7 +264,9 @@ onBeforeUnmount(() => resize?.disconnect());
 
     <div class="info">
       <header class="title">
-        <div class="switch" :inert="!!poster"><slot name="switch"><span class="ui-eyebrow">PHOTOCARDS</span></slot></div>
+        <div class="switch" :inert="!!poster" :style="tint">
+          <slot name="switch" :ground="ground"><span class="ui-eyebrow">PHOTOCARDS</span></slot>
+        </div>
         <Transition name="head" mode="out-in" :css="!reducedMotion" @enter="onTitle">
           <div v-if="stage" :key="stage.id">
             <div ref="slotEl" class="slot">

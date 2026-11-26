@@ -7,6 +7,7 @@ let keySwitchAt = 0;
 <script setup lang="ts">
 // The pools to draw from, where a stage's eyebrow sits: the standing pool first, then each limited pool with what is
 // left of it. Small tab keys: the picked one is latched in coral, a limited one wears the pearl lip of its material.
+// On a series' key visual they are clear keys of its dark and the picked one is white (`.on-poster` in ui/tokens.css).
 import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
 import Icon from "../ui/Icon.vue";
@@ -16,6 +17,8 @@ const props = defineProps<{
   pools: { id: string; name: string; left?: string; fresh?: boolean }[];
   modelValue: string;
   disabled?: boolean;
+  /** What they stand on: the page's paper, or a series' key visual. */
+  ground?: "paper" | "poster";
 }>();
 const emit = defineEmits<{
   "update:modelValue": [id: string];
@@ -62,7 +65,7 @@ onMounted(() => {
   <div ref="root" class="pool-tabs" :class="{ calm: reducedMotion }" role="tablist" aria-label="卡池" @keydown="onKey">
     <button
       v-for="p in pools" :key="p.id" type="button" role="tab"
-      class="pool-tab ui-tab small" :class="{ on: p.id === modelValue, limited: !!p.left }"
+      class="pool-tab ui-tab small" :class="{ on: p.id === modelValue, limited: !!p.left, 'on-poster': ground === 'poster' }"
       :aria-selected="p.id === modelValue"
       :tabindex="p.id === modelValue ? 0 : -1"
       :disabled="disabled"
@@ -121,6 +124,15 @@ onMounted(() => {
 }
 .calm .pool-tab.limited::before {
   animation: none;
+}
+/* On a key visual a limited pool's key is as clear as the others; its clock keeps the pearl. */
+.pool-tab.limited.on-poster:not(.on):not(:disabled) {
+  --face: var(--poster-face);
+  --lip: var(--poster-lip);
+  color: #fff;
+}
+.pool-tab.on-poster small {
+  text-shadow: none;
 }
 .pool-tab.limited.on {
   --face: linear-gradient(115deg, color-mix(in srgb, var(--holo-pink) 62%, #fff), color-mix(in srgb, var(--holo-lilac) 72%, #fff) 44%,
