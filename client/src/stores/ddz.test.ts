@@ -1703,6 +1703,52 @@ it("takes a seat at a table of the hall that waited again after the connection d
   settings.status = "";
 });
 
+it("stands up from the seat a sit sent before turning away gets, and drops a sit not sent yet", async () => {
+  const { d, player, settings } = await setup();
+  joinedOpen();
+  player.ddzHallOn.value = true;
+  d.quickSitDdz(50);
+  const lk = linkUp();
+  expect(sentOf(lk, "ddz_open")).toEqual([{ type: "ddz_open", base: 50 }]);
+  // Away before the seat is known: the seat the answer gives is stood up from at once.
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(0);
+  lk.recv(hallOpen("h1", 0, [LME, null, null]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(sentOf(lk, "ddz_leave")).toEqual([{ type: "ddz_leave", table: "h1" }]);
+  expect(d.ddz.value).toBeNull();
+  // Sitting down while shown away holds, as before.
+  await vi.advanceTimersByTimeAsync(1100);
+  d.quickSitDdz(50);
+  expect(sentOf(lk, "ddz_open")).toHaveLength(2);
+  lk.recv(hallOpen("h2", 0, [LME, null, null]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(d.ddz.value).toMatchObject({ id: "h2", phase: "open" });
+  expect(sentOf(lk, "ddz_leave")).toHaveLength(1);
+  d.leaveDdz("h2", "open");
+  settings.status = "";
+  await vi.advanceTimersByTimeAsync(0);
+  // A sit still waiting for its time when the save turns away is not sent.
+  d.quickSitDdz(50);
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(sentOf(lk, "ddz_open")).toHaveLength(2);
+  // Back before the answer: the seat is kept.
+  settings.status = "";
+  await vi.advanceTimersByTimeAsync(0);
+  d.quickSitDdz(50);
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(sentOf(lk, "ddz_open")).toHaveLength(3);
+  settings.status = "away";
+  await vi.advanceTimersByTimeAsync(0);
+  settings.status = "";
+  await vi.advanceTimersByTimeAsync(0);
+  lk.recv(hallOpen("h3", 0, [LME, null, null]));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(d.ddz.value).toMatchObject({ id: "h3", phase: "open" });
+  expect(sentOf(lk, "ddz_leave")).toHaveLength(2);
+}, 10_000);
+
 it("waits in the queue instead of sitting down on a server without the hall", async () => {
   const { d, fetchMock, player } = await setup();
   expect(player.ddzHallOn.value).toBe(false);

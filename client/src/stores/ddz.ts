@@ -414,12 +414,15 @@ let sitTimer: ReturnType<typeof setTimeout> | undefined;
 /** The sit sent and not answered yet; whether it was sent once more after the server held it back. */
 const sitAsked = ref<SitAsk | null>(null);
 let sitRetried = false;
+/** The sit that was waiting for its answer when the save turned away: the seat it gets is stood up from at once. */
+let sitAway: SitAsk | null = null;
 
 function dropSit(): void {
   clearTimeout(sitTimer);
   sitTimer = undefined;
   sitNext.value = null;
   sitAsked.value = null;
+  sitAway = null;
 }
 
 /** Sends the sit waiting for its time once the gap since the last join has passed and the connection is ready. */
@@ -1050,8 +1053,11 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
   }
   if (msg.type === "ddz_open") {
     // A sit of the hall's answered: the save sits there, out of the queue.
+    let away = false;
     if (via === "link" && sitAsked.value) {
+      away = sitAsked.value === sitAway;
       sitAsked.value = null;
+      sitAway = null;
       ddzQueue.value = null;
     }
     // Seated at an open table (after a game too, when it opens again): the call to it is answered.
@@ -1073,6 +1079,8 @@ export function onDdzMessage(msg: DdzMessage, via: DdzState["via"] = "room"): vo
       clearTimeout(reopenTimer);
       reopenTimer = setTimeout(() => { if (ddzReopened.value?.table === table) ddzReopened.value = null; }, REOPEN_CUE_MS);
     }
+    // Asked for before the save turned away: it stands up, as one seated already does on turning away.
+    if (away) leaveDdz(msg.table, "open");
     return;
   }
   if (msg.type === "ddz_invite") {
@@ -1256,8 +1264,19 @@ if (!isMirrorWindow) {
   // there, on the connection the table is on, so a game does not start without it. Not while the deposits are being
   // taken. A save already shown away sits down as any other.
   watch(() => shownStatus.value === "away", (away) => {
+    if (!away) {
+      sitAway = null;
+      return;
+    }
+    // A sit of the hall not sent yet is dropped; one sent stands up from the seat its answer gives (onDdzMessage).
+    if (sitNext.value) {
+      clearTimeout(sitTimer);
+      sitTimer = undefined;
+      sitNext.value = null;
+    }
+    sitAway = sitAsked.value;
     const t = ddz.value;
-    if (away && t?.phase === "open" && !t.starting) leaveDdz(t.id, "open");
+    if (t?.phase === "open" && !t.starting) leaveDdz(t.id, "open");
   });
   // What the hello says follows the settings; an open connection hears the change as a room would.
   watch(duelDnd, (dnd) => {
