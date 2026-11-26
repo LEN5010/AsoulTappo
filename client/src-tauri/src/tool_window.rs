@@ -36,7 +36,8 @@ unsafe extern "system" fn keep_tool_window(
         let styles = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
         styles.styleNew |= WS_EX_TOOLWINDOW;
     }
-    // Sent to every top-level window, hidden ones too. Only queued here: the restore runs off this handler.
+    // Sent to every top-level window, hidden ones too. Only queued here: the restore and its log line run off this
+    // handler.
     if msg == WM_DISPLAYCHANGE || msg == WM_DWMCOMPOSITIONCHANGED {
         let shown = if unsafe { IsWindowVisible(hwnd) } != 0 { "shown" } else { "hidden" };
         let why = if msg == WM_DISPLAYCHANGE {
