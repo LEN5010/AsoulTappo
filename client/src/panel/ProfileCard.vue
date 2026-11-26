@@ -3,8 +3,9 @@
 // framed on the upper edge with the collection counts in a column under it, the name on the paper beside it, and up
 // to five showcase cards pinned over the lower right corner, held as a fanned hand once there are more than three.
 // The own card on the 排行 page is the same card made editable: a key swaps the plate, the empty slot after the
-// pinned cards picks the next one, a pinned card's corner key takes it down. The owner opens the pickers and the cards.
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+// pinned cards picks the next one, a pinned card's corner key takes it down, and a pinned card dragged along the row
+// takes another place. The owner opens the pickers and the cards.
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { cardFrame } from "../cards";
 import { characters } from "../characters";
@@ -12,6 +13,8 @@ import { characterColor, memberOf, type ManifestCard } from "../manifest";
 import { MAX_SHOWCASE, type CollectionProgress } from "../net/protocol";
 import { BANNER_ASPECT, BANNER_FIT, bannerArt, sweepArt, type Plate } from "../pet/plates";
 import { roomStatus } from "../roomStatus";
+import { reducedMotion } from "../stores/theme";
+import { moved, nearestSlot, slotWhileDragging } from "./showcaseDrag";
 import Icon from "../ui/Icon.vue";
 import PetBust from "./PetBust.vue";
 
@@ -31,7 +34,11 @@ const props = defineProps<{
   status?: string | null;
 }>();
 const shownStatus = computed(() => roomStatus(props.status));
-const emit = defineEmits<{ open: [card: ManifestCard]; swap: []; pick: []; drop: [card: ManifestCard] }>();
+const emit = defineEmits<{
+  open: [card: ManifestCard]; swap: []; pick: []; drop: [card: ManifestCard];
+  /** The pinned cards' ids in the order they were dragged into. */
+  reorder: [ids: string[]];
+}>();
 
 /** The card's height. Its artwork spans at most BANNER_ASPECT times that, framed as the plate crops are set for,
  * and leaves TEXT_ROOM at the left for the name and counts. */
@@ -99,6 +106,84 @@ const squeeze = computed(() => {
   const room = width.value - SHOWCASE_RIGHT - STATS_END;
   return Math.min(step - MIN_STEP, Math.max(0, Math.ceil((hand - room) / (n - 1))));
 });
+/**
+ * Dragging a pinned card on the own card: past DRAG_START px it lifts and follows the pointer, and the cards between
+ * its place and the slot nearest to it move over, taking that slot's lean. Let go, the order is handed up and the card
+ * settles into its slot from where it was let go. Pointer events, as HTML drag and drop is unreliable in the webviews.
+ */
+const DRAG_START = 5;
+const list = ref<HTMLElement>();
+/** The press on a pinned card that may become a drag. */
+let press: { pointer: number; from: number; x: number; y: number } | null = null;
+/** The drag under way: where the card came from and where it would go, and the slots' centres in the row when it
+ * started. */
+const drag = ref<{ from: number; to: number; dx: number; dy: number; centers: number[] } | null>(null);
+/** The click that ends a drag opens nothing. */
+let swallowClick = false;
+/** For the frame the new order is first drawn in: no transitions, and the dropped card still where it was let go. */
+const settling = ref<{ id: string; dx: number; dy: number } | null>(null);
+
+function pressPin(e: PointerEvent, i: number) {
+  swallowClick = false;
+  if (!props.editable || pinned.value.length < 2 || e.button !== 0 || settling.value) return;
+  press = { pointer: e.pointerId, from: i, x: e.clientX, y: e.clientY };
+}
+function move(e: PointerEvent) {
+  if (!press || e.pointerId !== press.pointer) return;
+  const dx = e.clientX - press.x, dy = e.clientY - press.y;
+  if (!drag.value) {
+    if (Math.hypot(dx, dy) < DRAG_START) return;
+    // The layout boxes, not the turned ones: a fanned card turns about a point under it, which moves its drawn box sideways.
+    const items = [...(list.value?.children ?? [])].slice(0, pinned.value.length) as HTMLElement[];
+    const centers = items.map((li) => li.offsetLeft + li.offsetWidth / 2);
+    drag.value = { from: press.from, to: press.from, dx, dy, centers };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  const d = drag.value;
+  d.dx = dx;
+  d.dy = dy;
+  d.to = nearestSlot(d.centers, d.centers[d.from] + dx);
+}
+async function release(e: PointerEvent) {
+  if (!press || e.pointerId !== press.pointer) return;
+  press = null;
+  const d = drag.value;
+  if (!d) return;
+  swallowClick = true;
+  drag.value = null;
+  // Back in its own place, the card's transition takes it there.
+  if (d.to === d.from) return;
+  const ids = moved(pinned.value.map((c) => c.id), d.from, d.to);
+  const id = ids[d.to];
+  if (!reducedMotion.value) settling.value = { id, dx: d.centers[d.from] + d.dx - d.centers[d.to], dy: d.dy };
+  emit("reorder", ids);
+  if (!settling.value) return;
+  // The new order is drawn with the card where it was let go; from there its transition takes it into the slot.
+  await nextTick();
+  list.value?.getBoundingClientRect();
+  settling.value = null;
+}
+function cancel(e: PointerEvent) {
+  if (!press || e.pointerId !== press.pointer) return;
+  press = null;
+  drag.value = null;
+}
+function openPin(card: ManifestCard) {
+  if (swallowClick) { swallowClick = false; return; }
+  emit("open", card);
+}
+/** Where pinned card [i] stands while a card is dragged or has just been let go; undefined leaves it to the style. */
+function dragStyle(card: ManifestCard, i: number): Record<string, string> | undefined {
+  const s = settling.value;
+  if (s?.id === card.id) return { transform: `translate(${s.dx}px, ${s.dy - 8}px) scale(1.06)`, zIndex: "3" };
+  const d = drag.value;
+  if (!d) return undefined;
+  if (i === d.from) return { transform: `translate(${d.dx}px, ${d.dy - 8}px) scale(1.06)`, zIndex: "3", transition: "none" };
+  const slot = slotWhileDragging(i, d.from, d.to);
+  if (slot === i) return undefined;
+  return { transform: `translateX(${d.centers[slot] - d.centers[i]}px) rotate(${tilt(slot)}deg)` };
+}
+
 const stats = computed(() => (["cards", "emotes", "skins"] as const).map((kind, i) => ({
   label: ["卡片", "表情", "皮肤"][i],
   count: props.progress?.[kind] ?? null,
@@ -138,10 +223,20 @@ const px = (n: number) => `${n}px`;
     <button v-if="editable && swappable" type="button" class="ui-btn small swap" @click="emit('swap')">
       {{ plate ? "换铭牌" : "戴铭牌" }}
     </button>
-    <ul v-if="slots.length && !failed" class="showcase" :class="{ fanned }" :style="{ '--squeeze': px(squeeze) }" aria-label="展示卡">
-      <li v-for="(card, i) in slots" :key="card?.id ?? `empty-${i}`" :class="{ spare: !card }" :style="{ '--tilt': card ? `${tilt(i)}deg` : '0deg' }">
+    <ul
+      v-if="slots.length && !failed" ref="list" class="showcase"
+      :class="{ fanned, sorting: !!drag, calm: reducedMotion || !!settling }" :style="{ '--squeeze': px(squeeze) }" aria-label="展示卡"
+    >
+      <li
+        v-for="(card, i) in slots" :key="card?.id ?? `empty-${i}`" :class="{ spare: !card }"
+        :style="[{ '--tilt': card ? `${tilt(i)}deg` : '0deg' }, card ? dragStyle(card, i) : undefined]"
+      >
         <template v-if="card">
-          <button type="button" class="pin" :class="[cardFrame(card), { framed: !!cardFrame(card) }]" :title="card.name" @click="emit('open', card)">
+          <button
+            type="button" class="pin" :class="[cardFrame(card), { framed: !!cardFrame(card), movable: editable && pinned.length > 1 }]"
+            :title="card.name" @click="openPin(card)"
+            @pointerdown="pressPin($event, i)" @pointermove="move" @pointerup="release" @pointercancel="cancel" @lostpointercapture="cancel"
+          >
             <img :src="assetUrl(card.thumb)" :alt="card.name" decoding="async" draggable="false" />
           </button>
           <button v-if="editable" type="button" class="drop" title="取下" :aria-label="`取下${card.name}`" @click="emit('drop', card)">
@@ -408,6 +503,21 @@ button.art-box:hover .art {
 .pin.empty:hover {
   border-color: var(--c-400);
   color: var(--c-500);
+}
+/* A pinned card the owner can drag along the row; while one is dragged, the row keeps its pointer off the others. */
+.pin.movable {
+  touch-action: none;
+  user-select: none;
+}
+.sorting li:hover {
+  transform: rotate(var(--tilt));
+}
+.showcase.sorting li .drop,
+.showcase.sorting li:hover .drop {
+  opacity: 0;
+}
+.calm li {
+  transition: none;
 }
 /* Takes the card down; shown over the card's corner while the pointer is on it. */
 .drop {

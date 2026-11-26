@@ -53,6 +53,10 @@ function chooseCard(card: ManifestCard) {
 function dropCard(card: ManifestCard) {
   settings.showcase = settings.showcase.filter((id) => id !== card.id);
 }
+/** The cards shown in a new order; ids the manifest does not know keep their place after them. */
+function reorderCards(ids: string[]) {
+  settings.showcase = [...ids, ...settings.showcase.filter((id) => !ids.includes(id))];
+}
 
 // The board: undefined while the first answer is out, null from a server without one or none at all.
 const board = ref<Board | null | undefined>(undefined);
@@ -109,7 +113,7 @@ const scoreText = (score: number) => score.toLocaleString("en-US");
     <ProfileCard
       data-rise :plate="plate" :name="name" :character="settings.character" :showcase="showcase" :progress="progress"
       editable :swappable="plates.length > 0"
-      @open="viewing = $event" @swap="editing = 'plate'" @pick="editing = 'card'" @drop="dropCard"
+      @open="viewing = $event" @swap="editing = 'plate'" @pick="editing = 'card'" @drop="dropCard" @reorder="reorderCards"
     />
 
     <section v-if="board" data-rise>

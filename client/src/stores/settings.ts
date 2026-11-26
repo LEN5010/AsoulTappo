@@ -14,11 +14,15 @@ export interface Settings {
   character: string;
   /** Pet scale factor relative to the 240x135 base canvas. */
   scale: number;
+  /** How much of the pets' figures shows on the desk, 0.3 to 1; bubbles, names and the strip stay solid. */
+  petOpacity: number;
   mouseFollow: boolean;
   mouseSensitivity: number;
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
+  /** The room the save was in when the app last closed ("" = none): the desk goes back into it once on start. */
+  rejoinRoom: string;
   /** The rooms joined lately, newest first (recentRooms.ts). */
   recentRooms: RecentRoom[];
   /** Tap batching window (100–200ms). */
@@ -145,6 +149,9 @@ export interface Settings {
   standaloneStatementSeen: string;
   /** The mystery key in About has been opened; until then its sparkle twinkles now and then. */
   promoSeen: boolean;
+  /** What the feedback dialog holds unsent: the text and the contact, kept until a send goes through. */
+  feedbackText: string;
+  feedbackContact: string;
   /** Names the player gave their own skins, by skin id (stores/skinNotes.ts). */
   skinNotes: Record<string, string>;
   /** The first-run guide's progress (src/guide.ts); replaced as a whole, never changed in place. */
@@ -180,11 +187,13 @@ export const DEFAULT_SETTINGS: Settings = {
   nick: "",
   character: defaultCharacter,
   scale: 1,
+  petOpacity: 1,
   mouseFollow: true,
   mouseSensitivity: 0.3,
   clickThrough: false,
   alwaysOnTop: true,
   lastRoom: "",
+  rejoinRoom: "",
   recentRooms: [],
   batchMs: 150,
   favorites: [],
@@ -250,6 +259,8 @@ export const DEFAULT_SETTINGS: Settings = {
   statementSeen: "",
   standaloneStatementSeen: "",
   promoSeen: false,
+  feedbackText: "",
+  feedbackContact: "",
   skinNotes: {},
   guide: cleanGuide(undefined),
 };
@@ -289,6 +300,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   else if (out.serverUrl === LEGACY_SERVER_URL) out.serverUrl = DEFAULT_SETTINGS.serverUrl;
   out.batchMs = Math.min(200, Math.max(100, out.batchMs));
   out.scale = Math.min(3, Math.max(0.5, out.scale));
+  out.petOpacity = Math.min(1, Math.max(0.3, out.petOpacity));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
   out.barScale = Math.min(1.5, Math.max(0.6, out.barScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
@@ -320,6 +332,9 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.captureW = Math.min(1600, Math.max(160, Math.round(out.captureW)));
   out.captureH = Math.min(1600, Math.max(160, Math.round(out.captureH)));
   out.skinNotes = cleanSkinNotes(out.skinNotes);
+  // As long as the server takes them (stores/feedback.ts).
+  out.feedbackText = out.feedbackText.slice(0, 1000);
+  out.feedbackContact = out.feedbackContact.slice(0, 100);
   out.reminders = cleanReminders(out.reminders);
   // Missing up to 1.2.5: the guide then starts.
   out.guide = cleanGuide(out.guide);

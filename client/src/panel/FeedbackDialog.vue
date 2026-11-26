@@ -1,28 +1,33 @@
 <script setup lang="ts">
 // The settings page's feedback (stores/feedback.ts): a text, an optional contact and, in the desktop app, the latest
-// part of the log, which the player ticks to send. Closes once sent; the settings row says so.
+// part of the log, which the player ticks to send. Closes once sent; the settings row says so. The text and the
+// contact stay in the settings until a send goes through, so closing the dialog keeps them.
 import { computed, ref } from "vue";
 import Modal from "../ui/Modal.vue";
 import { isTauri } from "../composables/tauri";
 import { FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX, sendFeedback } from "../stores/feedback";
+import { settings } from "../stores/settings";
 
 const emit = defineEmits<{ close: []; sent: [left: number] }>();
 
-const text = ref("");
-const contact = ref("");
 const withLog = ref(false);
 const busy = ref(false);
 const failed = ref("");
-const ready = computed(() => !!text.value.trim() && !busy.value);
+const ready = computed(() => !!settings.feedbackText.trim() && !busy.value);
 
 async function send() {
   if (!ready.value) return;
   busy.value = true;
   failed.value = "";
-  const r = await sendFeedback({ text: text.value, contact: contact.value, log: isTauri && withLog.value });
+  const draft = { text: settings.feedbackText, contact: settings.feedbackContact };
+  const r = await sendFeedback({ ...draft, log: isTauri && withLog.value });
   busy.value = false;
-  if (r.ok) emit("sent", r.left);
-  else failed.value = r.message;
+  if (r.ok) {
+    // What was typed while it went out stays.
+    if (settings.feedbackText === draft.text) settings.feedbackText = "";
+    if (settings.feedbackContact === draft.contact) settings.feedbackContact = "";
+    emit("sent", r.left);
+  } else failed.value = r.message;
 }
 </script>
 
@@ -30,11 +35,11 @@ async function send() {
   <Modal title="意见反馈" heading :locked="busy" @close="emit('close')">
     <form class="feedback" @submit.prevent="send">
       <textarea
-        v-model="text" class="ui-input text" :maxlength="FEEDBACK_TEXT_MAX" rows="6" placeholder="遇到的问题或建议"
+        v-model="settings.feedbackText" class="ui-input text" :maxlength="FEEDBACK_TEXT_MAX" rows="6" placeholder="遇到的问题或建议"
         aria-label="反馈内容"
       ></textarea>
       <input
-        v-model="contact" class="ui-input" :maxlength="FEEDBACK_CONTACT_MAX" placeholder="联系方式（选填）"
+        v-model="settings.feedbackContact" class="ui-input" :maxlength="FEEDBACK_CONTACT_MAX" placeholder="联系方式（选填）"
         aria-label="联系方式" autocomplete="off"
       />
       <label v-if="isTauri" class="ui-row log">

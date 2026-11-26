@@ -46,3 +46,13 @@ describe("two-form skins", () => {
     expect(html.match(/class="layer bg/g)).toHaveLength(1);
   });
 });
+
+describe("see-through pets", () => {
+  it("fade the figure only, never the bubbles beside it, and leave a solid pet as it was", async () => {
+    const faded = await renderToString(createSSRApp(PetView, { character: "嘉然山海经", opacity: 0.4, sip: 1 }));
+    expect(faded).toContain('<div class="art" style="opacity:0.4;"');
+    expect(faded.match(/opacity:0\.4/g)).toHaveLength(1);
+    const solid = await renderToString(createSSRApp(PetView, { character: "嘉然山海经", opacity: 1 }));
+    expect(solid).toMatch(/<div class="art"( style="")? data-v/);
+  });
+});

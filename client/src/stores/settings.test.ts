@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, loadSettings, partnerNames, setPartnerNames } from "./settings";
+import { FEEDBACK_CONTACT_MAX, FEEDBACK_TEXT_MAX } from "./feedback";
 
 const store = (v: string | null) => ({ getItem: () => v });
 
@@ -25,6 +26,13 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ barFollow: false, barScale: 0.1 })))).toMatchObject({ barFollow: false, barScale: 0.6 });
     expect(loadSettings(store(JSON.stringify({ barScale: 9 }))).barScale).toBe(1.5);
     expect(loadSettings(store(JSON.stringify({ barScale: "x" }))).barScale).toBe(1);
+  });
+  it("shows the pets solid unless set otherwise, and never fainter than the settings page goes", () => {
+    expect(loadSettings(store(null)).petOpacity).toBe(1);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 0.55 }))).petOpacity).toBe(0.55);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 0 }))).petOpacity).toBe(0.3);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: 4 }))).petOpacity).toBe(1);
+    expect(loadSettings(store(JSON.stringify({ petOpacity: "x" }))).petOpacity).toBe(1);
   });
   it("keeps only string favorites (at most 8) and never shares the default array", () => {
     const s = loadSettings(store(JSON.stringify({ favorites: ["a", 3, "b", ...Array(10).fill("c")], tapView: "x" })));
@@ -81,5 +89,15 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ captureBg: "#0000FF" }))).captureBg).toBe("#0000FF");
     expect(loadSettings(store(JSON.stringify({ captureBg: "url(x)" }))).captureBg).toBe("#00ff00");
     expect(loadSettings(store(JSON.stringify({ captureW: 9000, captureH: 12.4 })))).toMatchObject({ captureW: 1600, captureH: 160 });
+  });
+  it("keeps an unsent feedback draft as text, no longer than the server takes", () => {
+    expect(loadSettings(store(null))).toMatchObject({ feedbackText: "", feedbackContact: "" });
+    expect(loadSettings(store(JSON.stringify({ feedbackText: "卡住了", feedbackContact: "qq 1" })))).toMatchObject({
+      feedbackText: "卡住了", feedbackContact: "qq 1",
+    });
+    const long = loadSettings(store(JSON.stringify({ feedbackText: "a".repeat(5000), feedbackContact: "b".repeat(500) })));
+    expect(long.feedbackText).toHaveLength(FEEDBACK_TEXT_MAX);
+    expect(long.feedbackContact).toHaveLength(FEEDBACK_CONTACT_MAX);
+    expect(loadSettings(store(JSON.stringify({ feedbackText: 3 }))).feedbackText).toBe("");
   });
 });

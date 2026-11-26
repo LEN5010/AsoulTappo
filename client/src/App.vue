@@ -59,7 +59,7 @@ import { onInput, pet, stopPet, tapCooldown } from "./stores/pet";
 import { windowVisible } from "./stores/activity";
 import { shardCombo } from "./stores/shardPop";
 import { draws, online, startReporting, status, stopReporting } from "./stores/player";
-import { duel, inRoom, poked, localPet, memberKey, others, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
+import { duel, inRoom, poked, localPet, memberKey, others, rejoinOnStart, roomId, sendEmote, shownNick, type RemoteMember } from "./stores/room";
 import { startDebugLog } from "./debugLog";
 import { setEmoteKeys } from "./desktop/bossKey";
 import { startCapture } from "./desktop/capture";
@@ -499,6 +499,8 @@ onMounted(async () => {
   window.addEventListener("keydown", closeOnEscape);
   // Reporting and the release watch wait for the terms; the panel holds the dialog that asks for them.
   startReporting();
+  // Back into the room the save was in when the app last closed; it waits for the terms too.
+  rejoinOnStart();
   beginGuide();
   if (!agreed.value) openPanel();
   stopDay = watchDay();
@@ -604,7 +606,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       @dragging="draggedRemote = m.id; kick()" @tap="openPick(m)"
     >
       <PetView
-        :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse"
+        :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse" :opacity="settings.petOpacity"
         :motion-id="m.id"
         :emote="m.emote" :combo="m.combo" :win="m.win" :sip="m.sip"
         v-bind="remoteEmote(m)"
@@ -638,7 +640,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
         :left-down="pet.left" :right-down="pet.right"  :emote="localPet.emote" :combo="shardCombo" combo-icon="shard"
         :win="localPet.win" :pulse="localPet.pulse" :sip="localPet.sip"
-        :min-emote="56" v-bind="ownEmote"
+        :min-emote="56" :opacity="settings.petOpacity" v-bind="ownEmote"
       />
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <!-- The standalone edition has no cooldown, no server notes and no room: only the local bubbles. -->

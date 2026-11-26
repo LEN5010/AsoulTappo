@@ -16,7 +16,8 @@ import { EmotePlayer, SEND_INTERVAL_MS, type EmoteFrame } from "../pet/EmotePlay
 import { TapCombo, type ComboFrame } from "../pet/TapCombo";
 import { settings } from "./settings";
 import { shownStatus } from "./away";
-import { activeAccount, account, collection, token, saveCode, reloadStatus, setAccount, status } from "./player";
+import { activeAccount, account, collection, token, saveCode, online, reloadStatus, setAccount, status } from "./player";
+import { agreed } from "../legal/consent";
 import { Api, authHeaders } from "../net/api";
 import { isMirrorWindow, writeLog } from "../composables/tauri";
 import { requestDesktop } from "../desktop/transport";
@@ -162,6 +163,8 @@ const events: RoomEvents = {
     writeLog("room", `joined, ${list.length} member(s)`);
     // Only a room that let this desk in is remembered; its name follows with the room's info.
     settings.recentRooms = noteRoom(settings.recentRooms, room, Date.now());
+    settings.rejoinRoom = room;
+    rejoining = false;
   },
   onRoomInfo(info) {
     roomInfo.value = info;
@@ -283,11 +286,20 @@ const events: RoomEvents = {
     }
     writeLog("room", `error ${code}${rateLimited ? ` (${rateLimited} rate_limited before)` : ""}`);
     rateLimited = 0;
-    lastError.value = errorText(code, message);
+    // The room taken up again on start turned the join down: nothing to tell, and nothing to come back to.
+    const quiet = rejoining;
+    if (quiet) {
+      rejoining = false;
+      settings.rejoinRoom = "";
+    } else lastError.value = errorText(code, message);
     if (FINAL_ERRORS.has(code)) {
       // The client stopped for good: nothing may join this room again on its own.
+      settings.rejoinRoom = "";
       if ((code === "kicked" || code === "banned") && settings.lastRoom === roomId.value) settings.lastRoom = "";
       if (code === "kicked" || code === "banned") settings.recentRooms = dropRoom(settings.recentRooms, roomId.value);
+      roomId.value = "";
+    } else if (quiet) {
+      client.leave();
       roomId.value = "";
     }
   },
@@ -783,6 +795,8 @@ export function joinRoom(room: string): void {
   batcher.clear();
   motionSender.clear();
   settings.lastRoom = id;
+  // Set again once the room lets this desk in.
+  settings.rejoinRoom = "";
   roomId.value = id;
   client.join(settings.serverUrl, {
     room: id,
@@ -796,10 +810,56 @@ export function joinRoom(room: string): void {
 
 export function leaveRoom(): void {
   if (isMirrorWindow) { void requestDesktop("leaveRoom"); return; }
+  rejoining = false;
+  settings.rejoinRoom = "";
   batcher.clear();
   motionSender.clear();
   client.leave();
   roomId.value = "";
+}
+
+// ---------------------------------------------------------------- back into the room on start
+/** A join sent by rejoinOnStart that the room has not answered yet; a refusal of it is not shown. */
+let rejoining = false;
+let rejoinStarted = false;
+
+/**
+ * Desk only, once a run: the room the save was in when the app last closed is joined again, quietly, once the terms
+ * are agreed and the server answers. Only a room that still has members is joined (GET /rooms/{id}): a join of any
+ * other id would make the room. A server without that answer, a room gone, or a refused join forgets it.
+ */
+export function rejoinOnStart(): void {
+  if (STANDALONE || isMirrorWindow || rejoinStarted) return;
+  rejoinStarted = true;
+  const ready = () => agreed.value && online.value;
+  if (ready()) { void rejoinLast(); return; }
+  const stop = watch(ready, (ok) => {
+    if (!ok) return;
+    stop();
+    void rejoinLast();
+  });
+}
+
+async function rejoinLast(): Promise<void> {
+  const id = settings.rejoinRoom;
+  const base = settings.serverUrl;
+  if (!id || roomId.value) return;
+  let open = false;
+  try {
+    const res = await serverFetch(`${toHttpBase(base)}/rooms/${encodeURIComponent(id)}`);
+    open = res.ok && ((await res.json()) as { open?: unknown } | null)?.open === true;
+  } catch {
+    /* unreachable: counts as gone */
+  }
+  // A room joined or a server chosen meanwhile wins.
+  if (roomId.value || base !== settings.serverUrl || settings.rejoinRoom !== id) return;
+  writeLog("room", open ? "rejoin" : "rejoin skipped: room closed");
+  if (!open) {
+    settings.rejoinRoom = "";
+    return;
+  }
+  rejoining = true;
+  joinRoom(id);
 }
 
 /** Host only: list the room publicly or take it off the list. */
