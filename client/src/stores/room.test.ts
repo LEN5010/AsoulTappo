@@ -539,6 +539,36 @@ it("takes a room that closed before the join came quietly and forgets it", async
   expect(Socket.all).toHaveLength(1);
 });
 
+it("shows why a room joined by hand turned the join down, also while going back to the last one", async () => {
+  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(r.roomId.value).toBe("old");
+  // Before the old room answered.
+  r.joinRoom("new");
+  const socket = Socket.all.at(-1)!;
+  socket.open();
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "new" });
+  expect(socket.sent[0]).not.toHaveProperty("onlyOpen");
+  socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
+  expect(r.lastError.value).toBe("房间已满(最多 20 人)");
+});
+
+it("keeps a join going back to the last room one when the save changes before the room answered", async () => {
+  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  player.saveCode.value = "other-save";
+  const socket = Socket.all.at(-1)!;
+  socket.open();
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
+  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
+  expect(r.lastError.value).toBe("");
+  expect(r.roomId.value).toBe("");
+});
+
 it("does not go back when the player joined a room first", async () => {
   let answer: (v: unknown) => void = () => {};
   const { settings, player, r } = await restart(() => new Promise((resolve) => (answer = resolve)));

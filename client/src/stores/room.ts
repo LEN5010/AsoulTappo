@@ -789,12 +789,14 @@ export async function createRoom(): Promise<string> {
 
 /**
  * Join [room], replacing any room joined or being joined. [opts.rejoin]: this is the join that goes back to the room
- * of the last run (rejoinOnStart): it goes only into the room as it is.
+ * of the last run (rejoinOnStart): it goes only into the room as it is, and a refusal of it is not shown. Any other
+ * join shows why it was refused.
  */
 export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
   if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
   if (!id || STANDALONE) return;
+  rejoining = !!opts.rejoin;
   lastError.value = "";
   batcher.clear();
   motionSender.clear();
@@ -809,7 +811,7 @@ export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
     ddz: true,
     ddzMatch: true,
     ddzWatch: true,
-    ...(opts.rejoin ? { onlyOpen: true } : {}),
+    ...(rejoining ? { onlyOpen: true } : {}),
   });
 }
 
@@ -824,7 +826,8 @@ export function leaveRoom(): void {
 }
 
 // ---------------------------------------------------------------- back into the room on start
-/** A join sent by rejoinOnStart that the room has not answered yet; a refusal of it is not shown. */
+/** The join under way is the one rejoinOnStart sent, and the room has not answered it yet; a refusal of it is not
+ * shown. Each joinRoom sets it for its own join. */
 let rejoining = false;
 let rejoinStarted = false;
 
@@ -869,7 +872,6 @@ async function rejoinLast(): Promise<void> {
     : `rejoin put off: ${answer}`);
   if (answer === "closed") settings.rejoinRoom = "";
   if (answer !== "open") return;
-  rejoining = true;
   joinRoom(id, { rejoin: true });
 }
 
@@ -952,8 +954,10 @@ watch(() => account.value?.token, () => { if (!isMirrorWindow) publicRooms.value
 watch(() => [saveCode.value, account.value?.token], () => {
   if (isMirrorWindow) return;
   const previous = roomId.value;
+  // A join going back to the last room that has not been answered yet stays one.
+  const rejoin = rejoining;
   leaveRoom();
-  if (previous) joinRoom(previous);
+  if (previous) joinRoom(previous, { rejoin });
 }, { flush: "sync" });
 watch(() => settings.character, (character) => { if (!isMirrorWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isMirrorWindow) syncProfile({ nick }); }, { flush: "sync" });
