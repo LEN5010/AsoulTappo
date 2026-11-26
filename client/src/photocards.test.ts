@@ -3,7 +3,8 @@ import art from "./assets/photocards/asoul2026/cards.json";
 import { items } from "./items";
 import { manifest } from "./manifest";
 import {
-  isRarePhoto, isWidePhoto, photoItem, photoItems, photoItemsOf, photoOdds, photoPair, photoSeries, PHOTO_RARE_KINDS,
+  isRarePhoto, isWidePhoto, photoItem, photoItems, photoItemsOf, photoOdds, photoPair, photoSeries, photoShares,
+  PHOTO_RARE_KINDS,
 } from "./photocards";
 import { exampleEconomy } from "./test/economy";
 
@@ -100,5 +101,34 @@ describe("photoOdds", () => {
   it("takes weights that do not sum to 100", () => {
     const odds = photoOdds({ ...CFG, size: 20, rare: 0, split: { duo: 1, group: 0, sign: 3 } });
     expect([odds.rare, odds.duo, odds.group, odds.sign]).toEqual([5, 1.25, 0, 3.75]);
+  });
+
+  it("has every card at its own chance in a box without a certain rare one", () => {
+    const odds = photoOdds({ ...CFG, sure: false, size: 20, rare: 2.1, split: { duo: 1, group: 0.8, sign: 0.3 } });
+    expect(odds.rare).toBe(2.1);
+    expect([odds.duo, odds.group, odds.sign].map((v) => +v.toFixed(6))).toEqual([1, 0.8, 0.3]);
+    // A server that does not say has a certain one.
+    const { sure: _sure, ...older } = CFG;
+    expect(photoOdds({ ...older, size: 10, rare: 5 }).rare).toBeCloseTo((100 + 9 * 5) / 10);
+  });
+});
+
+describe("photoShares", () => {
+  const duo = photoItemsOf(CFG.series, "duo");
+  it("is the whole kind at once while no card of it is weighed apart", () => {
+    expect(photoShares(CFG, duo, 1.2)).toEqual([{ items: duo, rate: 1.2 }]);
+  });
+
+  it("sets the cards weighed apart under the rest, each set with its part of the kind", () => {
+    const cfg = { ...CFG, weight: { "bella-eileen-1": 0.5, "bella-eileen-2": 0.5 } };
+    const [rest, pair] = photoShares(cfg, duo, 1);
+    expect(rest!.items.map((i) => i.card)).toEqual(["diana-eileen-1", "diana-eileen-2", "bella-diana-1", "bella-diana-2"]);
+    expect(pair!.items.map((i) => i.card)).toEqual(["bella-eileen-1", "bella-eileen-2"]);
+    expect([rest!.rate, pair!.rate].map((v) => +v.toFixed(6))).toEqual([0.8, 0.2]);
+  });
+
+  it("keeps signed cards even when their solo cards are weighed", () => {
+    const signs = photoItemsOf(CFG.series, "sign");
+    expect(photoShares({ ...CFG, weight: { "diana-1": 5 } }, signs, 0.3)).toEqual([{ items: signs, rate: 0.3 }]);
   });
 });

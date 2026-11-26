@@ -53,8 +53,21 @@ export function photoPair(item: PhotoItem): PhotoItem | undefined {
 /** Percent of cards that are each rare kind, and any of them, the certain card of a box included and the signed-card
  *  pity not. */
 export function photoOdds(cfg: PhotocardConfig): Record<PhotoRareKind | "rare", number> {
-  const rare = (100 + (cfg.size - 1) * cfg.rare) / cfg.size;
+  const rare = cfg.sure !== false ? (100 + (cfg.size - 1) * cfg.rare) / cfg.size : cfg.rare;
   const total = PHOTO_RARE_KINDS.reduce((sum, k) => sum + cfg.split[k], 0);
   const of = (k: PhotoRareKind) => (total ? (rare * cfg.split[k]) / total : 0);
   return { rare, duo: of("duo"), group: of("group"), sign: of("sign") };
+}
+
+/** [items], all of one kind that [rate] percent of cards are, in sets of those that weigh the same (economy `weight`),
+ *  each with the percent of cards it gives while the save holds none of them: the set of the most first. */
+export function photoShares(
+  cfg: PhotocardConfig, items: readonly PhotoItem[], rate: number,
+): { items: PhotoItem[]; rate: number }[] {
+  const weigh = (i: PhotoItem) => (i.kind === "sign" ? 1 : cfg.weight?.[i.card] ?? 1);
+  const total = items.reduce((sum, i) => sum + weigh(i), 0);
+  const sets = new Map<number, PhotoItem[]>();
+  for (const i of items) sets.set(weigh(i), [...(sets.get(weigh(i)) ?? []), i]);
+  return [...sets].sort(([, a], [, b]) => b.length - a.length)
+    .map(([w, list]) => ({ items: list, rate: total ? (rate * w * list.length) / total : 0 }));
 }

@@ -137,6 +137,12 @@ def test_the_series_holds_the_official_cards():
     (lambda c: c.update(rare=101), "rare"),
     (lambda c: c.update(rare=True), "rare"),
     (lambda c: c.update(rare=float("nan")), "rare"),
+    (lambda c: c.pop("sure"), "sure"),
+    (lambda c: c.update(sure=1), "sure"),
+    (lambda c: c.update(weight=[1]), "weight"),
+    (lambda c: c.update(weight={"diana-1": 0}), "weight"),
+    (lambda c: c.update(weight={"diana-1": True}), "weight"),
+    (lambda c: c.update(weight={"diana-1": float("inf")}), "weight"),
     (lambda c: c["split"].pop("duo"), "split"),
     (lambda c: c["split"].update(solo=1), "split"),
     (lambda c: c["split"].update(sign=-1), "split"),
@@ -148,6 +154,7 @@ def test_the_series_holds_the_official_cards():
     (lambda c: c["refund"].update(solo=c["price"] // (c["size"] - 2)), "refund pays"),
     (lambda c: c["refund"].update(rare=c["price"]), "refund pays"),
     (lambda c: (c.update(rare=100), c["refund"].update(rare=c["price"] // c["size"] + 1)), "refund pays"),
+    (lambda c: (c.update(sure=False, rare=0), c["refund"].update(solo=c["price"] // c["size"] + 1)), "refund pays"),
 ])
 def test_boxes_that_could_not_be_dealt_are_refused(change, match):
     cfg = copy.deepcopy(CFG2)
@@ -173,6 +180,14 @@ def test_a_shelf_may_be_empty_and_a_series_on_it_may_sell_none():
     economy.check_photocards([{**CFG, "daily": 0}, CFG2])
 
 
+def test_a_box_without_a_certain_rare_card_pays_back_by_its_own_chance():
+    # Rare repeats that would pay the price back with a certain rare card in every box.
+    lavish = {**CFG2, "rare": 0, "refund": {"solo": 1, "rare": CFG2["price"]}}
+    economy.check_photocards([{**lavish, "sure": False, "weight": {"diana-1": 0.5}}])
+    with pytest.raises(ValueError, match="refund pays"):
+        economy.check_photocards([lavish])
+
+
 def economy_file(tmp_path, photocards):
     path = tmp_path / "economy.json"
     data = json.loads(economy.EXAMPLE.read_text(encoding="utf-8"))
@@ -183,6 +198,16 @@ def economy_file(tmp_path, photocards):
 def test_an_unknown_series_stops_the_start(tmp_path):
     with pytest.raises(ValueError, match=r"photocards\[1\].*nope"):
         Manifest.load(economy=economy_file(tmp_path, [CFG, {**CFG, "series": "nope"}]))
+
+
+def test_a_weight_names_cards_of_its_series(tmp_path):
+    with pytest.raises(ValueError, match=r"photocards\[0\]\.weight.*'nope'"):
+        Manifest.load(economy=economy_file(tmp_path, [{**CFG, "weight": {"nope": 2}}]))
+    # Signed cards go by the ids of their solo cards, which are weighed as solo cards only.
+    with pytest.raises(ValueError, match="weight"):
+        Manifest.load(economy=economy_file(tmp_path, [{**CFG, "weight": {"sign:asoul2026/diana-1": 2}}]))
+    weighed = {**CFG, "weight": {"bella-eileen-1": 0.5, "group-2": 3, "diana-1": 2}}
+    assert Manifest.load(economy=economy_file(tmp_path, [weighed])).photo_shelf == {SID: weighed}
 
 
 def test_boxes_are_checked_at_the_start_and_keep_their_order(tmp_path):
@@ -343,6 +368,64 @@ def test_the_pity_spares_the_bags_that_rolled_rare_by_themselves():
     # Bag 0 is the certain one; every bag is rare and a duo, and the pity turns only bag 0.
     pulls = deal(cfg(rare=100, split={"duo": 1, "group": 0, "sign": 0}), SERIES, (), 99, SeqRng(0.0))
     assert [p.kind for p in pulls] == ["sign"] + ["duo"] * (SIZE - 1)
+
+
+def test_without_a_certain_rare_card_each_bag_is_rare_at_its_own_chance():
+    rng = random.Random(9)
+    pulls = [p for _ in range(3000) for p in deal(cfg(sure=False, rare=20, signPity=99), SERIES, SERIES.items, 0, rng)]
+    assert sum(p.kind != "solo" for p in pulls) / len(pulls) == pytest.approx(0.2, abs=0.01)
+    assert all(p.kind == "solo" for p in deal(cfg(sure=False, rare=0), SERIES, (), 0, rng))
+    assert all(p.kind != "solo" for p in deal(cfg(sure=False, rare=100), SERIES, (), 0, rng))
+
+
+def test_without_a_certain_rare_card_the_pity_takes_any_plain_bag():
+    no_sign = {"duo": 1, "group": 0, "sign": 0}
+    places = Counter()
+    for seed in range(1500):
+        pulls = deal(cfg(sure=False, rare=0, split=no_sign), SERIES, (), CFG["signPity"] - 1, random.Random(seed))
+        assert [p.kind for p in pulls].count("sign") == 1 and {p.kind for p in pulls} == {"solo", "sign"}
+        places[next(i for i, p in enumerate(pulls) if p.kind == "sign")] += 1
+    assert len(places) == SIZE and max(places.values()) < 2 * min(places.values())
+    # It spares a bag that rolled rare by itself, and takes one anyway when none is plain.
+    for seed in range(200):
+        half = deal(cfg(sure=False, rare=50, split=no_sign), SERIES, (), 99, random.Random(seed))
+        alone = [p.kind for p in deal(cfg(sure=False, rare=50, split=no_sign), SERIES, (), 0, random.Random(seed))]
+        if "solo" in alone:
+            assert [p.kind for p in half].count("duo") == alone.count("duo")
+    full = deal(cfg(sure=False, rare=100, split=no_sign), SERIES, (), 99, random.Random(1))
+    assert sorted(p.kind for p in full) == ["duo"] * (SIZE - 1) + ["sign"]
+
+
+def test_a_card_is_weighed_against_the_others_of_its_kind():
+    only_duo = {"duo": 1, "group": 0, "sign": 0}
+    pair = {f"bella-eileen-{n}": 0.5 for n in (1, 2)}
+    rng = random.Random(10)
+    got = Counter(p.item for _ in range(3000)
+                  for p in deal(cfg(rare=100, split=only_duo, weight=pair), SERIES, SERIES.items, 0, rng))
+    light = sum(got[f"photo:{SID}/{card}"] for card in pair)
+    assert light / sum(got.values()) == pytest.approx(1 / 5, abs=0.01)
+    # A card the save lacks still comes before any repeat, lightly weighed or not.
+    owned = set(SERIES.duo) - {f"photo:{SID}/bella-eileen-1"}
+    assert deal(cfg(rare=100, split=only_duo, weight=pair), SERIES, owned, 0, rng)[0].item == f"photo:{SID}/bella-eileen-1"
+
+
+def test_a_signed_card_stays_even_when_its_solo_card_is_weighed():
+    heavy = cfg(rare=30, split={"duo": 0, "group": 0, "sign": 1}, signPity=99, weight={"diana-1": 5})
+    rng = random.Random(11)
+    pulls = [p for _ in range(4000) for p in deal(heavy, SERIES, SERIES.items, 0, rng)]
+    solo = Counter(p.item for p in pulls if p.kind == "solo")
+    sign = Counter(p.item for p in pulls if p.kind == "sign")
+    assert solo[SERIES.solo[0]] / sum(solo.values()) == pytest.approx(5 / 16, abs=0.02)
+    assert max(sign.values()) < 1.4 * min(sign.values())
+
+
+def test_a_deal_without_weights_is_the_one_it_always_was():
+    rng = random.Random(12)
+    for _ in range(50):
+        state = rng.getstate()
+        plain = deal(cfg(rare=30), SERIES, (), 3, rng)
+        rng.setstate(state)
+        assert deal(cfg(rare=30, weight={}), SERIES, (), 3, rng) == plain
 
 
 # ------------------------------------------------------------------------ buying

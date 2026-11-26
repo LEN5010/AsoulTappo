@@ -40,6 +40,11 @@ class Series:
     def items(self) -> tuple[str, ...]:
         return self.solo + self.duo + self.group + self.sign
 
+    @cached_property
+    def cards(self) -> frozenset[str]:
+        """The cards' own ids, as `weight` names them."""
+        return frozenset(card_of(i) for i in self.solo + self.duo + self.group)
+
 
 @dataclass(frozen=True)
 class Pull:
@@ -73,35 +78,50 @@ def load(raw: Any) -> dict[str, Series]:
     return out
 
 
+def card_of(item: str) -> str:
+    """The card's id in its series: ``photo:s/c`` and ``sign:s/c`` are both ``c``."""
+    return item.split("/", 1)[1]
+
+
 def _pick(rng: Rng, n: int) -> int:
     return min(int(rng.random() * n), n - 1)
+
+
+def _choose(rng: Rng, cards: list[str] | tuple[str, ...], weight: dict[str, float]) -> str:
+    """One of [cards] by the weights of their ids; evenly, the way it always was, while none is weighed."""
+    ws = [weight.get(card_of(c), 1) for c in cards]
+    return cards[pick_weighted(ws, rng) if any(w != 1 for w in ws) else _pick(rng, len(cards))]
 
 
 def deal(cfg: dict[str, Any], series: Series, owned: Collection[str], dry: int, rng: Rng) -> list[Pull]:
     """The cards of one box in the order they are opened, for a save that holds [owned] and bought [dry] boxes since
     the last one with a signed card.
 
-    One bag, at a random place, is rare for certain and each other one at `rare` percent. A rare card's kind is drawn
-    by the weights of `split`. A duo or group card is one the save lacks while its kind has one left, so a box repeats
-    neither kind before it is whole; after that it is any of the kind, as a signed card always is. The other bags hold
-    any of the solo cards. The signPity-th box since the last signed card has one for certain in the bag that is rare
-    for certain, until the save holds every signed card; it may be one the save holds."""
+    With `sure` one bag, at a random place, is rare for certain and each other one at `rare` percent; without it each
+    bag is. A rare card's kind is drawn by the weights of `split`. A duo or group card is one the save lacks while its
+    kind has one left, so a box repeats neither kind before it is whole; after that it is any of the kind. Within its
+    kind a card goes by `weight`, a signed card always evenly. The other bags hold the solo cards. The signPity-th box
+    since the last signed card has one for certain, until the save holds every signed card; it may be one the save
+    holds. It is in the bag that is rare for certain, or without one in any of the plain bags."""
     size = cfg["size"]
     sure = _pick(rng, size)
+    certain = cfg["sure"]
     weights = [cfg["split"][k] for k in RARE_KINDS]
     kinds = ["solo"] * size
     for i in range(size):
-        if i == sure or rng.random() * 100 < cfg["rare"]:
+        if (certain and i == sure) or rng.random() * 100 < cfg["rare"]:
             kinds[i] = RARE_KINDS[pick_weighted(weights, rng)]
     have = set(owned)
     if dry + 1 >= cfg["signPity"] and "sign" not in kinds and not have.issuperset(series.sign):
-        kinds[sure] = "sign"
+        plain = [i for i, k in enumerate(kinds) if k == "solo"]
+        kinds[sure if certain or not plain else plain[_pick(rng, len(plain))]] = "sign"
+    weight = cfg.get("weight") or {}
     out = []
     for kind in kinds:
         cards = series.of(kind)
         if kind in UNREPEATED:
             cards = [c for c in cards if c not in have] or cards
-        item = cards[_pick(rng, len(cards))]
+        item = _choose(rng, cards, {} if kind == "sign" else weight)
         out.append(Pull(item, kind, item not in have))
         have.add(item)
     return out

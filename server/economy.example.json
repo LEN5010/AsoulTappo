@@ -714,6 +714,7 @@
       "size": 10,
       "daily": 3,
       "rare": 5,
+      "sure": true,
       "split": {"duo": 50, "group": 30, "sign": 20},
       "signPity": 5,
       "swap": 4,

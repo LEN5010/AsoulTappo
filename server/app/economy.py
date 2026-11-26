@@ -83,10 +83,12 @@ Weights are percentages unless said otherwise.
 
 - ``photocards``: boxes of photocards (photocards.py), a list in shelf order with one entry for each of the manifest's
   ``series`` on the shelf; missing or empty, there are no photocards. A box costs ``price`` shards and holds ``size``
-  cards; a save buys ``daily`` boxes of a series a China day, and 0 keeps the series on the shelf but sells none. One
-  card of a box is rare for certain and each other one at ``rare`` percent; what a rare card is goes by the weights of
-  ``split`` ({duo, group, sign}), and neither a duo nor a group card repeats before the save holds all of its kind. The
-  ``signPity``-th box since the last one with a signed card has one for certain until the save holds them all. A repeat
+  cards; a save buys ``daily`` boxes of a series a China day, and 0 keeps the series on the shelf but sells none. With
+  ``sure`` one card of a box is rare for certain and each other one at ``rare`` percent; without it each card is.
+  What a rare card is goes by the weights of ``split`` ({duo, group, sign}), and neither a duo nor a group card repeats
+  before the save holds all of its kind. ``weight`` (optional) weighs a card against the others of its kind by its id,
+  1 for those it leaves out; a signed card is any of them evenly. The ``signPity``-th box since the last one with a
+  signed card has one for certain until the save holds them all. A repeat
   solo card turns into ``refund.solo`` shards, a repeat duo or group card into ``refund.rare``; ``swap`` repeats of
   signed cards are traded for one the save lacks, and turn into ``refund.rare`` shards each once it holds them all. All
   of it is counted by series.
@@ -194,6 +196,12 @@ def check_photocards(shelf: Any) -> None:
         _whole(cfg.get("daily"), f"{name}.daily", 0)
         if not _number(cfg.get("rare")) or cfg["rare"] > 100:
             raise ValueError(f"{name}.rare must be a percentage from 0 to 100, not {cfg.get('rare')!r}")
+        if not isinstance(cfg.get("sure"), bool):
+            raise ValueError(f"{name}.sure must be true or false, not {cfg.get('sure')!r}")
+        weight = cfg.get("weight", {})
+        if not isinstance(weight, dict) or not all(
+                isinstance(card, str) and _number(w) and w > 0 for card, w in weight.items()):
+            raise ValueError(f"{name}.weight must give cards by id a weight above 0")
         split = cfg.get("split")
         if not isinstance(split, dict) or set(split) != set(RARE_KINDS) or not all(map(_number, split.values())):
             raise ValueError(f"{name}.split must give a weight to each of {', '.join(RARE_KINDS)}")
@@ -203,7 +211,8 @@ def check_photocards(shelf: Any) -> None:
         for key in ("solo", "rare"):
             _whole(refund.get(key) if isinstance(refund, dict) else None, f"{name}.refund.{key}", 0)
         # What a box of nothing but repeats pays back on average.
-        rares = 1 + (cfg["size"] - 1) * cfg["rare"] / 100
+        sure = 1 if cfg["sure"] else 0
+        rares = sure + (cfg["size"] - sure) * cfg["rare"] / 100
         back = rares * refund["rare"] + (cfg["size"] - rares) * refund["solo"]
         if back >= cfg["price"]:
             raise ValueError(f"{name}.refund pays {back:g} a box back on average, not less than its price {cfg['price']}")

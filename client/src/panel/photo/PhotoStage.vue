@@ -298,7 +298,7 @@ onBeforeUnmount(() => resize?.disconnect());
           <header :key="series" class="series" :class="{ staged: stage }">
             <p class="event">{{ info?.event }}</p>
             <h4 v-if="!stage">{{ info?.name }}</h4>
-            <p class="facts"><span v-if="size">每盒 {{ size }} 张</span><span>必有稀有</span></p>
+            <p class="facts"><span v-if="size">每盒 {{ size }} 张</span><span v-if="view.cfg && view.cfg.sure !== false">必有稀有</span></p>
             <p class="total"><b>{{ got }}</b><i>/ {{ items.length }}</i></p>
             <span class="bar" aria-hidden="true"><i :style="{ width: fill }"></i></span>
           </header>

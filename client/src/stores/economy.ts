@@ -19,15 +19,20 @@ export interface LinkLevel {
 export interface LinkConfig { entry: number; grace: number; account: boolean; sets: string[]; levels: LinkLevel[] }
 
 /**
- * Photocard boxes of one series (server/app/photocards.py): a box costs `price` shards and holds `size` cards, one of
- * them rare for certain and each other one at `rare` percent. A save buys `daily` a China day; at 0 the series is on
- * the shelf but not sold. `split` weighs what a rare card is. The `signPity`-th box since the last one with a signed
- * card has one for certain, until the save holds them all. `swap` repeats of signed cards are traded for one the save
- * lacks; `refund` is what other repeats turn into, and signed ones once the save holds them all.
+ * Photocard boxes of one series (server/app/photocards.py): a box costs `price` shards and holds `size` cards; with
+ * `sure` one of them is rare for certain and each other one at `rare` percent, without it each one is. A save buys
+ * `daily` a China day; at 0 the series is on the shelf but not sold. `split` weighs what a rare card is, `weight` a
+ * card against the others of its kind by its id (1 for those it leaves out; signed cards are even). The `signPity`-th
+ * box since the last one with a signed card has one for certain, until the save holds them all. `swap` repeats of
+ * signed cards are traded for one the save lacks; `refund` is what other repeats turn into, and signed ones once the
+ * save holds them all.
  */
 export interface PhotocardConfig {
   series: string; price: number; size: number; daily: number; rare: number;
+  /** Missing from servers before it could be turned off: there is one. */
+  sure?: boolean;
   split: Record<"duo" | "group" | "sign", number>;
+  weight?: Record<string, number>;
   signPity: number; swap: number; refund: { solo: number; rare: number };
 }
 

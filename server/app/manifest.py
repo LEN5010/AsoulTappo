@@ -58,6 +58,10 @@ class Manifest:
         for i, series in enumerate(m.photo_shelf):
             if series not in m.photo_series:
                 raise ValueError(f"photocards[{i}].series: no photocard series {series!r}")
+            cards = m.photo_series[series].cards
+            for card in m.photo_shelf[series].get("weight", {}):
+                if card not in cards:
+                    raise ValueError(f"photocards[{i}].weight: no card {card!r} in {series}")
         if (m.park or {}).get("race"):
             # So does a race map or skill the race could not be run with.
             race_rules.Rules.of(m.park["race"], [c["id"] for c in data["characters"]])
