@@ -80,6 +80,34 @@ def test_a_sample_writes_the_minute_and_the_counts_so_far():
     assert g.store.daily_counts("")[0]["count"] == 4
 
 
+def test_counts_whose_write_fails_are_kept_for_the_next_flush(monkeypatch):
+    import sqlite3
+
+    import pytest
+    g, clock = make()
+    g.tracker.count("ddz_ask", 2)
+    g.tracker.count("poke")
+    real = g.store.add_daily_counts
+
+    def half(counts):
+        # One key written, then the database fails; a count made meanwhile waits for the next flush.
+        first = next(iter(counts))
+        real({first: counts[first]})
+        g.tracker.count("ddz_ask")
+        raise sqlite3.OperationalError("database is locked")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(g.store, "add_daily_counts", half)
+        with pytest.raises(sqlite3.OperationalError):
+            g.tracker.flush()
+    assert g.store.daily_counts("") == []
+    g.tracker.flush()
+    got = {r["key"]: r["count"] for r in g.store.daily_counts("")}
+    assert got == {"ddz_ask": 3, "poke": 1}
+    g.tracker.flush()
+    assert {r["key"]: r["count"] for r in g.store.daily_counts("")} == got
+
+
 def test_room_joins_pokes_and_emotes_are_counted(admin_env):
     c, g, *_ = admin_env
     play(c, {"X-Player-Token": GUEST})
