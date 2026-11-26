@@ -1,5 +1,7 @@
 """The dou dizhu hall: public open tables, sat down at from dou dizhu connections, and hall tables of no room."""
 import asyncio
+import signal
+from contextlib import contextmanager
 
 import pytest
 
@@ -609,3 +611,231 @@ def test_games_are_counted_by_their_kind_of_table():
         assert w.t.by_id[mtid].match and not w.t.by_id[otid].match and not w.t.by_id[tid].match
         assert counts(w) == counted(ddz_ask=1, ddz_start_invite=1, ddz_start_open=1, ddz_start_match=1)
     run(go())
+
+
+# ------------------------------------------------------------------ paying a game
+def test_a_payment_that_fails_is_tried_again_for_the_same_game_and_the_seats_wait_for_it(monkeypatch):
+    import sqlite3
+
+    async def go():
+        w = OpenWorld()
+        out, tid = await hall_game(w, "a", "b", "c")
+        t = w.t.by_id[tid]
+        before = [w.shards(s.token) for s in t.seats]
+        socks = [sock for _, sock in out]
+        real = w.g.store.set_ddz_deltas
+        fails = [2]
+
+        def flaky(*args):
+            if fails[0]:
+                fails[0] -= 1
+                raise sqlite3.OperationalError("database is locked")
+            return real(*args)
+
+        monkeypatch.setattr(w.g.store, "set_ddz_deltas", flaky)
+        await play_to_end(w, tid)
+        # Unpaid: the seats stay held, nobody hears a result, and the game is open in the database.
+        assert t.phase == "settling" and t.timer is not None and t.outcome is not None
+        assert all(w.t.by_save[s.token] is t for s in t.seats)
+        assert not any(sock.of("ddz_result") for sock in socks)
+        assert w.g.store.ddz_game(t.row)["state"] == "open"
+        assert [w.shards(s.token) for s in t.seats] == before
+        await w.timers.fire()
+        assert t.phase == "settling" and t.timer is not None
+        await w.timers.fire()
+        await settle()
+        # Paid once, then told.
+        assert t.phase == "over" and w.g.store.ddz_game(t.row)["state"] == "settled"
+        result = socks[0].of("ddz_result")
+        assert len(result) == 1 and all(len(sock.of("ddz_result")) == 1 for sock in socks)
+        assert [w.shards(s.token) for s in t.seats] == [n + DEPOSIT + d for n, d in zip(before, result[0]["deltas"])]
+        assert w.t.bank.settle(t.row, 0, True, 1) is None
+        assert w.t.bank.refund_open() == 0
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_payment_given_up_with_the_tables_cleared_leaves_the_game_open():
+    async def go():
+        w = OpenWorld()
+        _, tid = await hall_game(w, "a", "b", "c")
+        t = w.t.by_id[tid]
+
+        def fail(*args):
+            raise RuntimeError("database gone")
+
+        w.g.store.set_ddz_deltas = fail
+        await play_to_end(w, tid)
+        assert t.phase == "settling" and t.timer is not None
+        w.t.clear()
+        assert t.timer is None and not w.t.by_save
+        await w.timers.fire()
+        assert w.g.store.ddz_game(t.row)["state"] == "open"
+
+    run(asyncio.wait_for(go(), 10))
+
+
+# ------------------------------------------------------------------ a room's bans and the queue
+def test_an_empty_seat_is_not_offered_to_a_save_the_room_bans_which_keeps_its_place_in_the_line():
+    async def go():
+        w = OpenWorld()
+        ((x, _),), rtid = await w.opened("x")
+        b, sb = w.queuer("b")
+        c, sc = w.queuer("c")
+        w.m.rooms["r"].banned.add(w.who["b"])
+        await w.t.queue(b, BASE)
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(c, BASE)
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        t = w.t.by_id[rtid]
+        # The seat goes to the next in the line; the banned save still waits, first.
+        assert not sb.of("ddz_invite") and sc.of("ddz_invite")[-1]["table"] == rtid
+        assert w.t.by_save.get(w.who["b"]) is None and w.t.by_save[w.who["c"]] is t
+        assert [q.token for q in w.t.lines[BASE]] == [w.who["b"]]
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_save_the_room_bans_after_its_seat_was_offered_goes_back_to_its_place_in_the_line():
+    async def go():
+        w = OpenWorld()
+        ((x, _),), rtid = await w.opened("x")
+        b, sb = w.queuer("b")
+        w.mono += FILL_SEC
+        await w.t.queue(b, BASE)
+        t = w.t.by_id[rtid]
+        assert w.t.by_save[w.who["b"]] is t and sb.of("ddz_invite")[-1]["table"] == rtid
+        since = t.seats[1].since
+        w.m.rooms["r"].banned.add(w.who["b"])
+        await w.t.answer(b, rtid, True)
+        assert sb.of("ddz_over")[-1] == {"type": "ddz_over", "table": rtid, "reason": "gone"}
+        assert w.t.by_save.get(w.who["b"]) is None and all(s.token != w.who["b"] for s in t.seats)
+        # Back in the line where it was, with no cooldown, and told it waits.
+        assert w.t.waiting[w.who["b"]].since == since and w.who["b"] not in w.t.match_refused
+        assert sb.of("ddz_queue")[-1]["base"] == BASE
+        # Another save in the line gets the seat.
+        c, sc = w.queuer("c")
+        w.mono += QUEUE_INTERVAL
+        await w.t.queue(c, BASE)
+        assert sc.of("ddz_invite")[-1]["table"] == rtid and w.t.by_save.get(w.who["b"]) is None
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+# ------------------------------------------------------------------ the lobby's list and its tag
+def fresh_lobby(w, token=None):
+    """The lobby's tables as built from scratch on every read."""
+    out = {}
+    for t in sorted((t for t in w.t.by_id.values() if t.open and t.phase == "open" and any(s.empty for s in t.seats)),
+                    key=lambda t: (-sum(not s.empty for s in t.seats), t.opened_at, t.id)):
+        if w.t._banned(t, token):
+            continue
+        shown = out.setdefault(t.base, [])
+        if len(shown) < LOBBY_TABLES:
+            shown.append({"table": t.id, "seats": [None if s.empty else {"pending": True} if s.asked
+                                                   else {"nick": s.nick, "character": s.character} for s in t.seats]})
+    return out
+
+
+def test_the_lobby_list_is_sorted_once_per_change_and_its_tag_follows_it(monkeypatch):
+    async def go():
+        w = OpenWorld()
+        sorts = []
+        waiting = w.t._waiting_tables
+        monkeypatch.setattr(w.t, "_waiting_tables", lambda: sorts.append(1) or waiting())
+        seen = set()
+
+        def check(token=None):
+            hall, tag = w.t.lobby_hall(token)
+            assert hall == fresh_lobby(w, token)
+            return tag
+
+        tag = check()
+        ((h1, _),), htid = await hall(w, "h1")
+        assert check() != tag
+        # Nothing changed: the same tag, and no sorting again.
+        tag, n = check(), len(sorts)
+        assert check() == tag and len(sorts) == n
+        seen.add(tag)
+        for name in "pq":
+            w.mono += 1
+            m, _ = w.member(name)
+            await w.t.open("r", m, BASE)
+            assert check() not in seen
+            seen.add(check())
+        rtid = w.t.by_save[w.who["p"]].id
+        # Sitting, a seat offered to the queue and taken, a new face, standing up, a table put away.
+        u, _ = w.member("u")
+        await w.t.sit("r", u, rtid)
+        assert check() not in seen
+        seen.add(check())
+        w.mono += FILL_SEC
+        q, _ = w.queuer("qq")
+        await w.t.queue(q, BASE)
+        assert check() not in seen
+        seen.add(check())
+        u.nick = "新名字"
+        w.t.restyle(u)
+        assert check() not in seen
+        seen.add(check())
+        await w.t.leave(u, rtid)
+        assert check() not in seen
+        seen.add(check())
+        await w.t.leave(h1, htid)
+        assert check() not in seen
+        # A save a room bans: its own list and tag; everyone else's stay as they are.
+        everyone = check()
+        b, _ = w.queuer("b")
+        w.m.rooms["r"].banned.add(w.who["b"])
+        assert check(w.who["b"]) != everyone and check() == everyone
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+@contextmanager
+def time_limit(sec):
+    """Fails the test instead of hanging on a socket that never answers."""
+    def boom(*_):
+        raise TimeoutError(f"no answer in {sec} s")
+    before = signal.signal(signal.SIGALRM, boom)
+    signal.alarm(sec)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, before)
+
+
+def test_the_lobby_leaves_the_tables_out_for_a_client_that_has_them(api):  # noqa: F811
+    with time_limit(20):
+        lobby_tags(*api)
+
+
+def lobby_tags(c, g, _):
+    for name in ("a", "b"):
+        save(g, name)
+    get = lambda name, **q: c.get("/api/ddz/lobby", params=q, headers={  # noqa: E731
+        "X-Player-Token": tok(name), "X-Client-Version": "1.3.0"}).json()
+    first = get("b")
+    assert all(t["tables"] == [] for t in first["tiers"]) and first["hallTag"] and "hallSame" not in first
+    again = get("b", hall=first["hallTag"])
+    assert again["hallSame"] is True and again["hallTag"] == first["hallTag"]
+    assert all("tables" not in t and "waiting" in t and "afford" in t for t in again["tiers"])
+    # A tag of another list, or of another run: the whole list.
+    other = get("b", hall="x" + first["hallTag"])
+    assert "hallSame" not in other and all("tables" in t for t in other["tiers"])
+    with c.websocket_connect("/ws") as a:
+        hello(a, "a")
+        a.send_json({"type": "ddz_open", "base": BASE})
+        tid = receive(a, "ddz_open")["table"]
+        changed = get("b", hall=first["hallTag"])
+        assert changed["hallTag"] != first["hallTag"] and "hallSame" not in changed
+        assert [t["table"] for t in next(x for x in changed["tiers"] if x["base"] == BASE)["tables"]] == [tid]
+    # 1.2.6 sends no tag: the stakes as before, tables and all.
+    old = c.get("/api/ddz/lobby", headers={"X-Player-Token": tok("b"), "X-Client-Version": "1.2.6"}).json()
+    assert {"tiers", "seated"} <= old.keys() and all({"base", "deposit", "afford", "waiting", "tables"} <= t.keys()
+                                                     for t in old["tiers"])

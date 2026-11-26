@@ -33,7 +33,8 @@ of the room sit down at its empty seats, and sitting is consent. The third to si
 go in one transaction, and a seat whose save may no longer play is let go, told why, while the table waits again (the
 opener's puts it away). Before the start a member stands up by leaving the table or the room; the opener doing so puts
 the table away, as does OPEN_SEC without the three seats taken. An empty seat that has waited FILL_SEC is offered to
-the save that waited longest in the queue at the table's stake, one seat at a time; it accepts as at a table the queue
+the save that waited longest in the queue at the table's stake (a save the table's room bans keeps its place for
+another table, and one banned before it accepts goes back there), one seat at a time; it accepts as at a table the queue
 made (the seats taken do not answer again), plays on its dou dizhu connection and takes the seat again on a new one,
 and one that declines, leaves or
 lets the time run out may queue again only after MATCH_RETRY_SEC, the seat going to the next. Nothing is taken before
@@ -181,7 +182,8 @@ rest as at a room's open table, `sec` the time until it is put away:
 GET /api/ddz/lobby lists the public open tables in each stake's `tables` (Tables.lobby_tables): those waiting with a
 seat empty, fullest first, then oldest, then by id, at most LOBBY_TABLES; each {table, seats}, a seat {nick,
 character}, {pending: true} when offered to a save of the queue, or null when empty; no member ids, no rooms. Its
-presence tells a client the server has the hall.
+presence tells a client the server has the hall. `hallTag` names that list (Tables.lobby_hall); a client that sends it
+back (``?hall=``) while the list is the same gets `hallSame` true and the stakes without `tables`.
 
 Today's counts (tracking.COUNT_KEYS): ``ddz_ask`` each table the queue made and each open table's seat offered to a
 save of the queue; ``ddz_ask_timeout`` and ``ddz_ask_decline`` each of those asks that ran out, or was declined or
@@ -232,6 +234,7 @@ import random
 import secrets
 import threading
 import time
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -273,6 +276,9 @@ LOBBY_TABLES = 4
 # Handing the deposits of an open table's start back failed (the database busy): tried again after each of these
 # waits, in seconds; after the last the game is left open for the next start of the server (Bank.refund_open).
 REFUND_RETRY_SEC = (0.5, 2.0)
+# Paying a game that was won failed (the database busy): tried again after each of these waits, the last one repeated
+# until it is paid; the seats stay held and the result unsaid meanwhile.
+SETTLE_RETRY_SEC = (1.0, 5.0, 30.0)
 
 OPEN, INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = (
     "open", "invite", "starting", "bid", "play", "settling", "over", "done")
@@ -624,6 +630,8 @@ class Table:
     live_sent: dict | None = None
     live_at: float = float("-inf")
     live_timer: Any = None
+    # The game's outcome once its last cards are played, until it is paid: (landlord, landlord won, mult, spring).
+    outcome: tuple[int, bool, int, int] | None = None
 
     @property
     def match(self) -> bool:
@@ -729,6 +737,14 @@ class Tables:
         self._tables_dirty: set[str] = set()
         self._tables_at = float("-inf")
         self._tables_timer: Any = None
+        # The lobby's public open tables (lobby_hall): by stake, every one waiting, in the order of _waiting_tables, each
+        # with its seats as listed; rebuilt on the first read after an open table changed (_tables_changed, _drop).
+        # The generation counts the rebuilds that changed them, after a prefix of this run's own, so a tag a client
+        # holds from another run never matches.
+        self._hall_rows: dict[int, list[tuple[Table, dict]]] = {}
+        self._hall_dirty = True
+        self._hall_run = secrets.token_hex(3)
+        self._hall_gen = 0
 
     @property
     def bank(self) -> Bank:
@@ -764,6 +780,7 @@ class Tables:
         self._tables_sent = {}
         self._tables_dirty = set()
         self._tables_at = float("-inf")
+        self._hall_dirty = True
 
     def in_game(self, peer: Peer) -> bool:
         """Whether the connection sits at a table whose deposits are taken (or being taken)."""
@@ -854,6 +871,7 @@ class Tables:
                 self._dequeue(w)
                 table.held.append(w)
         table.tell(invited)
+        table.deadline = self.clock() + cfg["inviteSec"]
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
     async def _invite_expired(self, table: Table) -> None:
@@ -908,6 +926,10 @@ class Tables:
         table, seat = self._table(peer, table_id, INVITE)
         if (seat == 0 and not table.match) or table.seats[seat].accepted:
             raise GameError("ddz_gone", "")
+        if table.deadline and self.clock() >= table.deadline:
+            # The time ran out before its timer was run: the answer comes too late, as after the timer.
+            await self._invite_expired(table)
+            return
         if not accept:
             if table.match:
                 self._end_match(table, "declined", by=peer)
@@ -1083,17 +1105,45 @@ class Tables:
         _waiting_tables, those of a room that bans save [token] left out. Each {table, seats}, a seat {nick,
         character}, {pending: true} when offered to a save of the queue, or None when empty; no member ids, no
         rooms."""
+        return self.lobby_hall(token)[0]
+
+    def lobby_hall(self, token: str | None = None) -> tuple[dict[int, list[dict]], str]:
+        """lobby_tables for save [token], and the tag of that list: the same tag, the same list, within this run.
+        The tables are sorted and summed up once per change (_hall_list); a request only leaves out those of rooms
+        that ban the save, which go into its tag."""
         out: dict[int, list[dict]] = {}
+        left_out: list[str] = []
+        for base, rows in self._hall_list().items():
+            shown: list[dict] = []
+            for t, row in rows:
+                if len(shown) >= LOBBY_TABLES:
+                    break
+                if self._banned(t, token):
+                    left_out.append(t.id)
+                    continue
+                shown.append(row)
+            if shown:
+                out[base] = shown
+        tag = f"{self._hall_run}{self._hall_gen}"
+        if left_out:
+            tag += "-" + format(zlib.crc32(",".join(left_out).encode()), "08x")
+        return out, tag
+
+    def _hall_list(self) -> dict[int, list[tuple[Table, dict]]]:
+        """Every public open table waiting, by stake, in the order of _waiting_tables, with its row of the lobby;
+        rebuilt when an open table changed since, the generation going up when the rows did."""
+        if not self._hall_dirty:
+            return self._hall_rows
+        rows: dict[int, list[tuple[Table, dict]]] = {}
         for t in self._waiting_tables():
-            if self._banned(t, token):
-                continue
-            shown = out.setdefault(t.base, [])
-            if len(shown) >= LOBBY_TABLES:
-                continue
-            shown.append({"table": t.id, "seats": [
+            rows.setdefault(t.base, []).append((t, {"table": t.id, "seats": [
                 None if s.empty else {"pending": True} if s.asked else {"nick": s.nick, "character": s.character}
-                for s in t.seats]})
-        return out
+                for s in t.seats]}))
+        if {b: [(t.id, t.room, row) for t, row in r] for b, r in rows.items()} != {
+                b: [(t.id, t.room, row) for t, row in r] for b, r in self._hall_rows.items()}:
+            self._hall_gen += 1
+        self._hall_rows, self._hall_dirty = rows, False
+        return rows
 
     def call(self, room_id: str, peer: Peer, table_id: str, target_id: str) -> None:
         """The opener of the open table [table_id] calls member [target_id] of the room to it (``ddz_call``); the
@@ -1189,8 +1239,10 @@ class Tables:
         at = next((i for i, s in enumerate(table.seats) if s.empty and now >= s.empty_since + FILL_SEC), None)
         if at is None:
             return False
+        # A save the table's room bans keeps its place in the line for another table.
         w = next((w for w in self.lines.get(table.base, [])
-                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd), None)
+                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd
+                  and not self._banned(table, w.token)), None)
         if w is None:
             return False
         sec = self.bank.cfg()["inviteSec"]
@@ -1217,10 +1269,19 @@ class Tables:
         seat = table.seat_of(peer)
         if seat is None or not table.seats[seat].asked:
             raise GameError("ddz_gone", "")
+        if self.clock() >= table.seats[seat].until:
+            # Too late, its timer not run yet: as when it runs (_open_due).
+            self._unseat_asked(table, seat, "timeout")
+            return
         if not accept:
             self._unseat_asked(table, seat, "declined")
             return
         s = table.seats[seat]
+        if self._banned(table, s.token):
+            # The room banned the save after the seat was offered: the seat goes to the next, and the save back to its
+            # place in the line.
+            self._unseat_banned(table, seat)
+            return
         s.accepted, s.until = True, 0.0
         if table.hall:
             # A seat taken: the hall table's time to wait starts over, as on a sit (_sit_at).
@@ -1247,6 +1308,19 @@ class Tables:
         table.seats[seat] = self._empty_seat()
         table.seats[seat].empty_since = now - FILL_SEC
         self._open_changed(table)
+
+    def _unseat_banned(self, table: Table, seat: int) -> None:
+        """The save offered seat [seat] may not sit at the table any more (its room bans the save): it hears the seat
+        is gone and goes back to its place in the line, with no cooldown; the seat is offered to the next at once."""
+        s = table.seats[seat]
+        if self.by_save.get(s.token) is table:
+            del self.by_save[s.token]
+        if s.peer is not None:
+            s.peer.enqueue({"type": "ddz_over", "table": table.id, "reason": "gone"})
+        table.seats[seat] = self._empty_seat()
+        table.seats[seat].empty_since = self.clock() - FILL_SEC
+        self._open_changed(table)
+        self._requeue(table.base, [s])
 
     def _stand(self, table: Table, seat: int) -> None:
         """Seat [seat] of an open table stands up: it is empty again, and its member hears the table is gone. A hall
@@ -1301,7 +1375,8 @@ class Tables:
 
     def _tables_changed(self, room_id: str | None) -> None:
         """The open tables of room [room_id] changed: its members hear them now, or COUNTS_SEC after the rooms were
-        last told."""
+        last told. The lobby's list is built again on its next read (_hall_list)."""
+        self._hall_dirty = True
         if room_id is None:
             return
         self._tables_dirty.add(room_id)
@@ -1553,6 +1628,7 @@ class Tables:
         table.deal += 1
         table.phase = BID
         table.result = None
+        table.outcome = None
         table.bottom = sorted(deck[51:])
         table.bid, table.bidder, table.bids_made, table.landlord = 0, None, 0, None
         table.last, table.trick, table.bombs = None, [None, None, None], 0
@@ -1781,21 +1857,43 @@ class Tables:
         self._show(table, said)
 
     async def _finish(self, table: Table, winner: int) -> None:
-        """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table."""
+        """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table. The outcome
+        is fixed here (Table.outcome); the payment runs on a task of its own (_pay), which the caller's cancellation
+        does not stop, and the caller waits for its first try."""
         table.phase = SETTLING
         self._cancel_timer(table)
-        bank = self.bank
-        cfg = bank.cfg()
+        cfg = self.bank.cfg()
         lord = table.landlord
         landlord_won = winner == lord
         farmers = [s for i, s in enumerate(table.seats) if i != lord]
         spring = 1 if landlord_won and all(f.plays == 0 for f in farmers) else (
             2 if not landlord_won and table.seats[lord].plays == 1 else 0)
         mult = table.mult(cfg["capMult"], spring=bool(spring))
-        deltas = await run_in_threadpool(bank.settle, table.row, lord, landlord_won, mult)
+        table.outcome = (lord, landlord_won, mult, spring)
+        await asyncio.shield(self._spawn(self._pay(table)))
+
+    async def _pay(self, table: Table, tries: int = 0) -> None:
+        """Pays the outcome of [table]'s game (Bank.settle). Should the database fail, the table stays settling, its
+        seats held and nothing told, and the same game is paid again after each of SETTLE_RETRY_SEC (the last one
+        repeated); Bank.settle pays a game once only. The result goes out once the payment is done."""
+        if table.phase != SETTLING or self.by_id.get(table.id) is not table or table.outcome is None:
+            return
+        lord, landlord_won, mult, spring = table.outcome
+        try:
+            deltas = await run_in_threadpool(self.bank.settle, table.row, lord, landlord_won, mult)
+        except Exception:
+            log.exception("ddz: paying game %s at %s failed", table.row, table.id)
+            if table.phase == SETTLING and self.by_id.get(table.id) is table:
+                wait = SETTLE_RETRY_SEC[min(tries, len(SETTLE_RETRY_SEC) - 1)]
+                table.timer = self.timers.later(wait, lambda: self._pay(table, tries + 1))
+            return
+        if table.phase != SETTLING or self.by_id.get(table.id) is not table:
+            return
+        table.timer = None
         if deltas is None:
             self._close(table, tell=False)
             return
+        cfg = self.bank.cfg()
         table.phase = OVER
         for s in table.seats:
             s.again = False
@@ -2127,7 +2225,8 @@ class Tables:
         """A dou dizhu connection (Peer.lobby) said hello: it hears ``ddz_ready``, takes over the save's place in the
         queue from an older connection of the save, takes its seat again at a table the queue made, at the seat an
         open table took from the queue, or at a seat taken on a dou dizhu connection (Seat.roam), and hears the
-        waiting counts."""
+        waiting counts. An ask of the queue's not answered yet is turned down instead when this connection turns
+        invites down, as set_dnd does on the connection that waited."""
         self.lobby[peer.id] = peer
         held = self.waiting.get(peer.token) if peer.token else None
         if held is not None and held.peer is not peer and held.peer.lobby and (
@@ -2142,15 +2241,26 @@ class Tables:
             held = None
         table = self.by_save.get(peer.token) if peer.token else None
         asked = self._asked_of(table, peer)
+        # An ask not answered yet belongs to the connection that waits, as its place in the line does: one that turns
+        # invites down takes it over only to turn it down (set_dnd).
+        declined = asked is not None and peer.dnd and table is not None and not table.seats[asked].accepted
         seat = asked if asked is not None else self._mine(table, peer, lambda t, s: t.match or s.roam)
         ready: dict[str, Any] = {"type": "ddz_ready", "you": peer.id, "base": held.base if held else None,
-                                 "table": table.id if table is not None and seat is not None else None}
+                                 "table": table.id if table is not None and seat is not None and not declined else None}
         if held is not None:
             ready["waited"] = round(max(0.0, self.clock() - held.since), 1)
         peer.enqueue(ready)
         if self._counts_sent:
             peer.enqueue(self._counts_msg(self._counts_sent))
         if table is None or seat is None:
+            return
+        if declined:
+            s = table.seats[seat]
+            s.peer, s.id = peer, peer.id
+            if table.phase == OPEN:
+                self._unseat_asked(table, seat, "declined")
+            else:
+                self._end_match(table, "declined", by=peer)
             return
         if asked is not None:
             self._hand_over_asked(table, seat, peer)
@@ -2875,6 +2985,7 @@ class Tables:
     def _drop(self, table: Table) -> None:
         self._cancel_timer(table)
         self.by_id.pop(table.id, None)
+        self._hall_dirty = True
         self._end_watch(table, "closed")
         if table.watch_timer is not None:
             table.watch_timer.cancel()

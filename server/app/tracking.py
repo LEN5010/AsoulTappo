@@ -54,10 +54,20 @@ class Tracker:
             self._counts[(day, key)] = self._counts.get((day, key), 0) + n
 
     def flush(self) -> None:
+        """Writes the counts so far in one transaction. When it fails nothing of them is written, and they are kept,
+        with those counted meanwhile, for the next flush."""
         with self._lock:
             counts, self._counts = self._counts, {}
-        if counts:
-            self.store.add_daily_counts(counts)
+        if not counts:
+            return
+        try:
+            with self.store.transaction() as st:
+                st.add_daily_counts(counts)
+        except BaseException:
+            with self._lock:
+                for k, n in counts.items():
+                    self._counts[k] = self._counts.get(k, 0) + n
+            raise
 
     def client(self, pid: str, version_header: str) -> None:
         """Remember the client version of an existing save; a token whose save does not exist yet is tried again

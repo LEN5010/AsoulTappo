@@ -707,6 +707,7 @@ def test_the_lobby_shows_the_stakes_the_cap_and_the_rules(api, monkeypatch):
     save(g, "new", taps=99)
     get = lambda name: c.get("/api/ddz/lobby", headers={"X-Player-Token": tok(name)}).json()  # noqa: E731
     lobby = get("rich")
+    assert isinstance(lobby.pop("hallTag"), str)
     assert lobby == {
         "tiers": [{"base": b, "deposit": b * CFG["capMult"] * 2, "afford": b <= BASE, "waiting": 0,
                    "tables": []}
@@ -1578,3 +1579,112 @@ def test_a_new_connection_during_the_invite_of_a_table_of_the_queue_takes_the_as
         await settle()
         assert t.phase == "bid" and sb2.of("ddz_deal") and sb.of("ddz_deal") == []
     run(go())
+
+
+def test_a_new_connection_turning_invites_down_turns_down_the_ask_it_takes_over():
+    async def go():
+        w = MatchWorld()
+        (_, sa), (b, sb), (c, sc) = await w.queued("a", "b", "c")
+        tid = sa.of("ddz_invite")[-1]["table"]
+        await w.t.answer(b, tid, True)
+        a2, sa2 = w.member("a")
+        a2.dnd = True
+        await w.t.hello(a2)
+        # Not asked again: the table ends as on a decline by the save, the others back in the line.
+        assert sa2.got[0] == {"type": "ddz_ready", "you": a2.id, "base": None, "table": None}
+        assert not sa2.of("ddz_invite") and tid not in w.t.by_id and w.who["a"] not in w.t.by_save
+        assert sb.of("ddz_over")[-1] == {"type": "ddz_over", "table": tid, "reason": "declined", "by": a2.id}
+        assert queue_msgs(sa2)[-1] == {"base": None, "reason": "ddz_match_cooldown", "retry": 60.0}
+        assert sorted(w.t.waiting) == sorted([w.who["b"], w.who["c"]])
+        # An ask already accepted is taken over as it stands.
+        w2 = MatchWorld()
+        (d, sd), (e, _), (f, _) = await w2.queued("d", "e", "f")
+        tid2 = sd.of("ddz_invite")[-1]["table"]
+        await w2.t.answer(d, tid2, True)
+        d2, sd2 = w2.member("d")
+        d2.dnd = True
+        await w2.t.hello(d2)
+        assert sd2.got[0]["table"] == tid2 and sd2.of("ddz_invite")[-1]["table"] == tid2
+        assert w2.t.by_id[tid2].seats[0].peer is d2
+        await w.t.idle()
+        await w2.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_new_connection_turning_invites_down_turns_down_the_seat_of_an_open_table_offered_to_it():
+    async def go():
+        from test_ddz_open import OpenWorld
+        from app.ddz import FILL_SEC
+        w = OpenWorld()
+        ((x, _),), rtid = await w.opened("x")
+        q, sq = w.queuer("q")
+        w.mono += FILL_SEC
+        await w.t.queue(q, BASE)
+        assert sq.of("ddz_invite")[-1]["table"] == rtid
+        q2, sq2 = w.member("q", room=None)
+        q2.dnd = True
+        await w.t.hello(q2)
+        t = w.t.by_id[rtid]
+        assert sq2.got[0]["table"] is None and not sq2.of("ddz_invite")
+        assert sq2.of("ddz_over")[-1] == {"type": "ddz_over", "table": rtid, "reason": "declined"}
+        assert all(s.token != w.who["q"] for s in t.seats) and w.who["q"] not in w.t.by_save
+        assert w.who["q"] in w.t.match_refused
+        await w.t.idle()
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_an_answer_after_the_time_ran_out_is_too_late_though_the_timer_has_not_run():
+    async def go():
+        # A table the queue made: the last accept, late, starts nothing and nothing is taken.
+        w = MatchWorld()
+        peers = await w.queued("a", "b", "c")
+        tid = peers[0][1].of("ddz_invite")[-1]["table"]
+        table = w.t.by_id[tid]
+        for peer, _ in peers[:2]:
+            await w.t.answer(peer, tid, True)
+        w.mono = table.deadline + 1
+        await w.t.answer(peers[2][0], tid, True)
+        await w.t.idle()
+        assert table.phase == "done" and table.row is None and tid not in w.t.by_id
+        assert peers[0][1].of("ddz_over")[-1]["reason"] == "timeout"
+        assert [w.shards(w.who[n]) for n in "abc"] == [SHARDS] * 3
+        assert w.who["c"] in w.t.match_refused and w.who["a"] in w.t.waiting
+        await w.timers.fire()
+        # An invite in a room, the same.
+        w2 = MatchWorld()
+        x, sx = w2.member("x", room="r")
+        y, _ = w2.member("y", room="r")
+        z, _ = w2.member("z", room="r")
+        await w2.t.invite("r", x, [y.id, z.id], BASE)
+        tid2 = w2.t.by_save[w2.who["x"]].id
+        await w2.t.answer(y, tid2, True)
+        w2.mono += CFG["inviteSec"]
+        await w2.t.answer(z, tid2, True)
+        await w2.t.idle()
+        assert tid2 not in w2.t.by_id and sx.of("ddz_over")[-1]["reason"] == "timeout"
+        assert [w2.shards(w2.who[n]) for n in "xyz"] == [SHARDS] * 3
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_seat_of_an_open_table_accepted_after_its_time_ran_out_is_too_late():
+    async def go():
+        from test_ddz_open import OpenWorld
+        from app.ddz import FILL_SEC
+        w = OpenWorld()
+        _, rtid = await w.opened("x", "y")
+        q, sq = w.queuer("q")
+        w.mono += FILL_SEC
+        await w.t.queue(q, BASE)
+        t = w.t.by_id[rtid]
+        assert sq.of("ddz_invite")[-1]["table"] == rtid
+        w.mono = t.seats[2].until
+        await w.t.answer(q, rtid, True)
+        await w.t.idle()
+        assert t.phase == "open" and t.row is None and t.seats[2].empty
+        assert sq.of("ddz_over")[-1] == {"type": "ddz_over", "table": rtid, "reason": "timeout"}
+        assert w.who["q"] in w.t.match_refused and w.shards(w.who["q"]) == SHARDS
+
+    run(asyncio.wait_for(go(), 10))
