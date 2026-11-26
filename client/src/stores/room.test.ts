@@ -476,7 +476,6 @@ it("forgets a room that closed, and joins nothing on a server that cannot tell",
   for (const answer of [
     async () => reply(200, { room: "old", open: false }),
     async () => reply(404, { detail: "Not Found" }),
-    async () => { throw new TypeError("offline"); },
   ]) {
     vi.resetModules();
     const { settings, player, r } = await restart(answer);
@@ -488,6 +487,24 @@ it("forgets a room that closed, and joins nothing on a server that cannot tell",
     expect(settings.rejoinRoom).toBe("");
     // The room box still offers it.
     expect(settings.lastRoom).toBe("old");
+  }
+});
+
+it("keeps the room for the next start when the server does not answer about it", async () => {
+  for (const answer of [
+    async () => reply(429, { detail: { code: "too_many_lookups", message: "" } }),
+    async () => reply(503, { detail: "Service Unavailable" }),
+    async () => reply(502, null),
+    async () => { throw new TypeError("offline"); },
+  ]) {
+    vi.resetModules();
+    const { settings, player, r } = await restart(answer);
+    player.online.value = true;
+    r.rejoinOnStart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Socket.all).toHaveLength(0);
+    expect(r.roomId.value).toBe("");
+    expect(settings.rejoinRoom).toBe("old");
   }
 });
 

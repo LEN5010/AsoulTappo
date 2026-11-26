@@ -826,7 +826,8 @@ let rejoinStarted = false;
 /**
  * Desk only, once a run: the room the save was in when the app last closed is joined again, quietly, once the terms
  * are agreed and the server answers. Only a room that still has members is joined (GET /rooms/{id}): a join of any
- * other id would make the room. A server without that answer, a room gone, or a refused join forgets it.
+ * other id would make the room. A room the server says is empty, a server without that answer (404), or a refused
+ * join forgets it; no answer (offline, too many lookups, a server error) keeps it for the next start.
  */
 export function rejoinOnStart(): void {
   if (STANDALONE || isMirrorWindow || rejoinStarted) return;
@@ -844,20 +845,25 @@ async function rejoinLast(): Promise<void> {
   const id = settings.rejoinRoom;
   const base = settings.serverUrl;
   if (!id || roomId.value) return;
-  let open = false;
+  // "open", "closed" (the room is empty or the server cannot tell) or why there was no answer.
+  let answer = "unreachable";
   try {
     const res = await serverFetch(`${toHttpBase(base)}/rooms/${encodeURIComponent(id)}`);
-    open = res.ok && ((await res.json()) as { open?: unknown } | null)?.open === true;
+    if (res.status === 404) answer = "closed";
+    else if (!res.ok) answer = `status ${res.status}`;
+    else {
+      const open = ((await res.json().catch(() => null)) as { open?: unknown } | null)?.open;
+      answer = open === true ? "open" : open === false ? "closed" : "bad answer";
+    }
   } catch {
-    /* unreachable: counts as gone */
+    /* unreachable: asked again on the next start */
   }
   // A room joined or a server chosen meanwhile wins.
   if (roomId.value || base !== settings.serverUrl || settings.rejoinRoom !== id) return;
-  writeLog("room", open ? "rejoin" : "rejoin skipped: room closed");
-  if (!open) {
-    settings.rejoinRoom = "";
-    return;
-  }
+  writeLog("room", answer === "open" ? "rejoin" : answer === "closed" ? "rejoin skipped: room closed"
+    : `rejoin put off: ${answer}`);
+  if (answer === "closed") settings.rejoinRoom = "";
+  if (answer !== "open") return;
   rejoining = true;
   joinRoom(id);
 }
