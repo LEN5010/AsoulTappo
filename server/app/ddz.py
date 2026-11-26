@@ -18,8 +18,15 @@ where their wait puts them, ahead of anyone who came after them. Once all three 
 one; when the deposits cannot be taken, the three go back into the line, and one that may no longer play leaves it,
 told why. A seat whose connection closes is played for, and a new dou dizhu connection of the save takes it again
 (hello), as it takes over the save's place in the line from an older one. Closing the connection, turning invites down
-(dnd, on any connection of the save), starting an invite, accepting one, or opening or sitting down at an open table
-takes a save out of the queue.
+on it (dnd), starting an invite, accepting one, or opening or sitting down at an open table takes a save out of the
+queue.
+
+Turning invites down (dnd) holds for a connection. What others send the save, an invite from a member of a room or a
+call to an open table, is turned down when any connection of the save turns invites down (Tables._quiet_saves). What
+the save does itself, waiting in the queue, opening a table or sitting down at one, is refused (ddz_dnd) only on a
+connection that turns invites down; another connection of the save doing so does not hold it up. The place a save
+holds in the line, and a seat offered to it from there, belong to the connection that waits: only that connection
+turning invites down gives them up.
 
 Open tables: a member on a client that said `ddzMatch` opens a table at a stake in its room and takes seat 0; members
 of the room sit down at its empty seats, and sitting is consent. The third to sit starts the game: the three deposits
@@ -119,12 +126,13 @@ The queue, on dou dizhu connections only (a room connection's ``ddz_queue`` is a
 
 - ``ddz_queue`` {base} from the connection: wait at stake `base`, or at 0 stop waiting. Refused with ddz_locked |
   ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_queued (the save waits on another
-  connection) | ddz_dnd | ddz_match_cooldown | rate_limited (within QUEUE_INTERVAL of the last time the save joined
-  or moved, on any of its connections) | bad_message (not a stake).
+  connection) | ddz_dnd (the connection turns invites down) | ddz_match_cooldown | rate_limited (within
+  QUEUE_INTERVAL of the last time the save joined or moved, on any of its connections) | bad_message (not a stake).
 - ``ddz_queue`` {base, waited?, reason?, retry?} to the member: it waits at `base`, for `waited` seconds so far;
   `base` null when it does not (cancelled, matched, out). `reason` says why the server took it out: ddz_locked |
-  ddz_account | no_shards | ddz_cap | ddz_dnd | error, or ddz_match_cooldown with `retry`, the seconds until it may
-  queue again (it declined a table of the queue, left it or let its time run out).
+  ddz_account | no_shards | ddz_cap | ddz_dnd (the connection that waits turned invites down) | error, or
+  ddz_match_cooldown with `retry`, the seconds until it may queue again (it declined a table of the queue, left it
+  or let its time run out).
 - ``ddz_waiting`` {counts: [[base, saves], ...]}: how many saves wait at each stake (stakes nobody waits at left out),
   to every room member on a client that queues and every dou dizhu connection, at most every COUNTS_SEC; on joining
   a room or saying hello, the counts last sent, unless nobody waited then.
@@ -132,8 +140,9 @@ The queue, on dou dizhu connections only (a room connection's ``ddz_queue`` is a
 Open tables, with members whose client said `ddzMatch` only:
 
 - ``ddz_open`` {base} from the member: open a table at stake `base` in the room. Refused with ddz_locked |
-  ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_dnd | ddz_gone (not in the room) |
-  rate_limited (the queue's QUEUE_INTERVAL, shared with it) | bad_message (not a stake).
+  ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_dnd (the connection turns invites down)
+  | ddz_gone (not in the room) | rate_limited (the queue's QUEUE_INTERVAL, shared with it) | bad_message (not a
+  stake).
 - ``ddz_sit`` {table, seat?} from the member: sit down at the open table `table` of the room, at `seat` when it is
   empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when the table is not open in the
   room or no seat is empty.
@@ -142,8 +151,8 @@ Open tables, with members whose client said `ddzMatch` only:
   once they are.
 - ``ddz_call`` {table, id} from the opener: call member `id` of the room to the table. Refused with ddz_gone (not
   the opener, or no seat empty) | no_member | ddz_target_locked | ddz_self | ddz_target_old (its client does not
-  open tables) | ddz_target_busy | ddz_cooldown (called within RETRY_SEC). A member turning invites down is not
-  called, and the opener is not told.
+  open tables) | ddz_target_busy | ddz_cooldown (called within RETRY_SEC). A member whose save turns invites down,
+  on any of its connections, is not called, and the opener is not told.
 - ``ddz_call`` {table, from, base, deposit, sec, seats} to the member called: it may sit down (``ddz_sit``); `sec` is
   how long to show the call.
 - ``ddz_open`` {table, base, deposit, you, seats: [{id, nick, character} | {pending} | null, ...], sec, starting?} to
@@ -161,9 +170,9 @@ rest as at a room's open table, `sec` the time until it is put away:
 - ``ddz_open`` {base} from the connection: sit down at stake `base`: at the first empty seat of the public open table
   at that stake, a room's or a hall table, waiting with a seat empty, with the most seats taken (one offered to a save
   of the queue counts as taken), the oldest first among equals, then by id; with none, in seat 0 of a new hall table.
-  Refused with ddz_locked | ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_dnd |
-  rate_limited (QUEUE_INTERVAL, shared with the queue) | bad_message (not a stake); the queue's cooldown
-  (ddz_match_cooldown) does not hold it up. The save leaves the queue.
+  Refused with ddz_locked | ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_dnd (the
+  connection turns invites down) | rate_limited (QUEUE_INTERVAL, shared with the queue) | bad_message (not a
+  stake); the queue's cooldown (ddz_match_cooldown) does not hold it up. The save leaves the queue.
 - ``ddz_sit`` {table, seat?} from the connection: sit down at the public open table `table`, at `seat` when it is
   empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when `table` is not an open table
   waiting with a seat empty. A room's tables are left out for a save the room bans, as it may not join the room.
@@ -763,7 +772,9 @@ class Tables:
                 and table.phase in (STARTING, BID, PLAY, SETTLING))
 
     def _quiet_saves(self) -> set[str]:
-        """The saves turning invites down: those with any connection, a room's or a dou dizhu one, that does."""
+        """The saves turning invites down: those with any connection, a room's or a dou dizhu one, that does. Only for
+        what others send the save (an invite from a member, a call to an open table); what the save does itself, and
+        what comes to the place it holds in the queue, go by the acting or waiting connection's own dnd."""
         out = {p.token for p in self.lobby.values() if p.active and p.dnd and p.token}
         for room in self.manager.rooms.values():
             out |= {p.token for p in room.peers.values() if p.active and p.dnd and p.token}
@@ -854,36 +865,40 @@ class Tables:
             self._end(table, "timeout", refused=[s.peer for s in table.seats[1:] if not s.accepted and s.peer])
 
     def set_dnd(self, peer: Peer, on: bool) -> None:
-        """Called with the duels' own: an invite waiting for this member is turned down, and it stops waiting in the
-        queue."""
+        """Called with the duels' own (which set peer.dnd): an invite from a member waiting for the save is turned
+        down, and what this connection holds from the queue is given up."""
         if not on:
             return
-        # Any connection of the save turning invites down takes the save out of the queue, a place an invite holds for
-        # it too, and turns down what waits for the save's answer, on whichever connection it was asked.
-        self._leave_queue(peer, reason="ddz_dnd", save=True)
+        # What the queue gave belongs to the connection that waits: this connection's place in the line, a place an
+        # invite holds for it, and a seat offered to it from the line. Another connection of the save keeps its own.
+        self._leave_queue(peer, reason="ddz_dnd")
         if not peer.token:
             return
-        self._drop_held(peer.token)
+        self._drop_held(peer.token, peer)
         table = self.by_save.get(peer.token)
         seat = next((i for i, s in enumerate(table.seats) if s.token == peer.token), None) if table else None
         if table is None or seat is None:
             return
         s = table.seats[seat]
         if table.phase == OPEN and s.asked:
-            self._unseat_asked(table, seat, "declined")
+            if s.peer is peer:
+                self._unseat_asked(table, seat, "declined")
             return
         if table.phase != INVITE or s.accepted or s.peer is None:
             return
         if table.match:
-            self._end_match(table, "declined", by=s.peer)
+            if s.peer is peer:
+                self._end_match(table, "declined", by=s.peer)
         elif seat:
+            # An invite from a member is turned down whichever connection of the save turns invites down.
             self._end(table, "declined", by=s.peer, refused=[s.peer])
 
-    def _drop_held(self, token: str) -> None:
-        """The place in the queue an invite holds for save [token] (Table.held) is given up."""
+    def _drop_held(self, token: str, peer: Peer | None = None) -> None:
+        """The place in the queue an invite holds for save [token] (Table.held) is given up; with [peer] only when
+        that connection waited there."""
         table = self.by_save.get(token)
         if table is not None and table.held:
-            table.held = [w for w in table.held if w.token != token]
+            table.held = [w for w in table.held if w.token != token or (peer is not None and w.peer is not peer)]
 
     async def answer(self, peer: Peer, table_id: str, accept: bool) -> None:
         open_table = self.by_id.get(table_id)
@@ -919,7 +934,8 @@ class Tables:
             raise GameError("ddz_gone", "")
         if peer.token in self.by_save:
             raise GameError("ddz_busy", "")
-        if peer.dnd or self._quiet(peer.token):
+        # The connection's own: another connection of the save turning invites down does not hold it up.
+        if peer.dnd:
             raise GameError("ddz_dnd", "")
 
     def _open_table(self, room_id: str, table_id: str) -> Table:
@@ -1004,7 +1020,7 @@ class Tables:
             raise GameError("ddz_gone", "")
         if peer.token in self.by_save:
             raise GameError("ddz_busy", "")
-        if peer.dnd or self._quiet(peer.token):
+        if peer.dnd:
             raise GameError("ddz_dnd", "")
 
     def _waiting_tables(self) -> list[Table]:
@@ -1081,7 +1097,8 @@ class Tables:
 
     def call(self, room_id: str, peer: Peer, table_id: str, target_id: str) -> None:
         """The opener of the open table [table_id] calls member [target_id] of the room to it (``ddz_call``); the
-        member sits down with ``ddz_sit``. A member turning invites down is not called, and the opener is not told.
+        member sits down with ``ddz_sit``. A member whose save turns invites down, on any of its connections, is not
+        called, and the opener is not told.
         The same save is called again only after RETRY_SEC."""
         table = self.by_id.get(table_id)
         if (table is None or not table.open or table.phase != OPEN or table.room != room_id
@@ -1172,9 +1189,8 @@ class Tables:
         at = next((i for i, s in enumerate(table.seats) if s.empty and now >= s.empty_since + FILL_SEC), None)
         if at is None:
             return False
-        quiet = self._quiet_saves()
         w = next((w for w in self.lines.get(table.base, [])
-                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd and w.token not in quiet), None)
+                  if w.token not in self.by_save and w.peer.active and not w.peer.dnd), None)
         if w is None:
             return False
         sec = self.bank.cfg()["inviteSec"]
@@ -2352,7 +2368,7 @@ class Tables:
         held = self.waiting.get(peer.token)
         if held is not None and held.peer is not peer:
             raise GameError("ddz_queued", "")
-        if peer.dnd or self._quiet(peer.token):
+        if peer.dnd:
             raise GameError("ddz_dnd", "")
         if self.clock() < self.match_refused.get(peer.token, float("-inf")):
             raise GameError("ddz_match_cooldown", "")
@@ -2481,12 +2497,11 @@ class Tables:
                     log.exception("ddz: matching at %s failed", base)
                     codes = ["error"] * 3
                 ready, back = [], []
-                quiet = self._quiet_saves()
                 for w, code in zip(three, codes):
                     w.checking = False
                     if self.waiting.get(w.token) is not w:
-                        continue  # cancelled, left or turned invites down meanwhile
-                    code = code or ("ddz_dnd" if w.peer.dnd or w.token in quiet else None)
+                        continue  # cancelled, left or turned invites down on the waiting connection meanwhile
+                    code = code or ("ddz_dnd" if w.peer.dnd else None)
                     if code:
                         self._dequeue(w, reason=code)
                     elif w.token in self.by_save:
@@ -2542,16 +2557,15 @@ class Tables:
 
     def _requeue(self, base: int, seats: list[Seat]) -> None:
         """Puts the saves of [seats] back into the line of [base] (_merge), each waiting since it first did; one
-        whose member left, sits elsewhere, waits again already or turns invites down is not."""
+        whose member left, sits elsewhere, waits again already or turns invites down on that connection is not."""
         cfg = self._game().manifest.ddz
         if not cfg or base not in cfg["stakes"]:
             return
         back = []
-        quiet = self._quiet_saves()
         for s in seats:
             p = s.peer
             if (p is None or not p.active or not p.ddz_match or p.dnd or not p.token or p.token in self.by_save
-                    or p.token in self.waiting or p.token in quiet):
+                    or p.token in self.waiting):
                 continue
             if s.since is not None:
                 w = Waiting(p, base, s.since, s.seq)
@@ -2896,23 +2910,24 @@ class Tables:
         else:
             table.tell(over)
         # The invited that were waiting in the queue get their places back, one that declined itself too (the invite's
-        # own cooldown, RETRY_SEC, holds for the inviter); one that turned invites down for good does not (_restore).
+        # own cooldown, RETRY_SEC, holds for the inviter); one whose waiting connection turned invites down does not
+        # (_restore).
         held, table.held = table.held, []
         self._restore(held)
 
     def _restore(self, held: list[Waiting]) -> None:
         """Gives saves taken out of the queue by an invite their places back, as they were (since, seq), when their
-        connection is still there and the save may still wait: free, not turning invites down, at a stake there is."""
+        connection is still there and the save may still wait: free, that connection not turning invites down, at a
+        stake there is."""
         cfg = self._game().manifest.ddz
         stakes = set(cfg["stakes"]) if cfg else set()
-        quiet = self._quiet_saves()
         back: dict[int, list[Waiting]] = {}
         for old in held:
             # The save's dou dizhu connection now: the one it waited on, or a newer one that took over meanwhile.
             p = max((x for x in self.lobby.values() if x.token == old.token and x.active), key=lambda x: x.join_seq,
                     default=None)
             if (p is None or old.base not in stakes or old.token in self.by_save or old.token in self.waiting
-                    or old.token in quiet):
+                    or p.dnd):
                 continue
             # A new entry: a match that was reading the old one finds it gone and leaves it be.
             w = Waiting(p, old.base, old.since, old.seq)

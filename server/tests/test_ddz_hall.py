@@ -211,6 +211,28 @@ def test_who_may_not_sit_down_in_the_hall(how, code):
     run(go())
 
 
+def test_a_room_connection_turning_invites_down_does_not_keep_the_save_from_the_hall():
+    async def go():
+        w = OpenWorld()
+        ((a, _), (b, _)), tid = await hall(w, "a", "b")
+        c, sc = w.queuer("c")
+        c_room, _ = w.member("c")
+        c_room.dnd = True
+        w.t.set_dnd(c_room, True)
+        w.mono += QUEUE_INTERVAL
+        await w.t.hall_sit(c, tid)
+        await w.settled()
+        assert sc.of("ddz_deal")[0]["you"] == 2
+        # A new hall table, opened by a save whose room connection turns invites down.
+        d, sd = w.queuer("d")
+        d_room, _ = w.member("d")
+        d_room.dnd = True
+        w.mono += QUEUE_INTERVAL
+        await w.t.hall_open(d, BASE)
+        assert last_open(sd)["you"] == 0 and w.t.by_save[w.who["d"]].hall
+    run(go())
+
+
 def test_the_queue_cooldown_does_not_keep_a_save_from_sitting_and_sitting_leaves_the_queue():
     async def go():
         w = OpenWorld()
