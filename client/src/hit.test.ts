@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { sameRects, startHitReporter, type HitRect } from "./hit";
+import { collectRects, sameRects, startHitReporter, type HitRect } from "./hit";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -44,6 +44,22 @@ it("sends the page scale and resends when only the scale changes", () => {
   vi.advanceTimersByTime(200);
   expect(sent.at(-1)).toEqual([rects, 1.875]);
   r.stop();
+});
+
+it("leaves out the sides an element draws nothing on", () => {
+  const el = (left: number, top: number, width: number, height: number, dataset: Record<string, string>) => ({
+    dataset,
+    getBoundingClientRect: () => ({ left, top, width, height, right: left + width, bottom: top + height }),
+  });
+  const root = {
+    querySelectorAll: () => [
+      el(100.5, 50, 268, 170, { hit: "", hitInset: "14" }),
+      el(10, 10, 20, 10, { hit: "keep", hitInset: "0" }),
+      // nothing is left of one narrower than its two sides
+      el(0, 0, 40, 40, { hit: "", hitInset: "20" }),
+    ],
+  } as unknown as ParentNode;
+  expect(collectRects(root)).toEqual([{ x: 114, y: 50, w: 241, h: 170 }, { x: 10, y: 10, w: 20, h: 10, keep: true }]);
 });
 
 it("compares rectangle lists by value", () => {

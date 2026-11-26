@@ -88,6 +88,11 @@ onResize();
 const bar = computed(() => stripFit(settings.scale, settings.barFollow ? undefined : settings.barScale));
 /** The own pet's width: room for the plate's handles beside the pet, wider than the strip (see ownDeskWidth). */
 const ownWidth = computed(() => ownDeskWidth(settings.scale));
+/**
+ * The band on each side of the own pet in its box that only the plate's handle uses: the mouse goes through it
+ * (`data-hit-inset`, hit.ts), the plate takes it with its own row.
+ */
+const ownBand = computed(() => Math.max(0, Math.floor((ownWidth.value - PET_BASE.width * settings.scale) / 2)));
 const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.height * settings.scale + 30 });
 /**
  * Room kept free on the right of a pet for what its second form draws past the picture (an open wing), so the screen
@@ -631,7 +636,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     </div>
 
     <PetActor
-      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :style="{ width: `${ownWidth}px` }"
+      :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :data-hit-inset="ownBand" :style="{ width: `${ownWidth}px` }"
       @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @tap="onOwnTap" @pointermove="keepPeek"
     >
       <PetView
@@ -665,7 +670,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <AccessBubble v-if="accessHint" :closable="!guideRun.started" @close="accessHint = false" />
       <DeskGuide v-if="guideOn" :held="guideHeld" :cooldown="tapCooldown" v-bind="guidePlace" :scope="deskEl" :tick="guideTick" />
       <Transition name="strip" mode="out-in">
-      <div v-if="barShown && plateShown" key="plate" class="own-plate">
+      <div v-if="barShown && plateShown" key="plate" class="own-plate" data-hit>
         <!-- In a room the tag opens the status keys. -->
         <component
           :is="inRoom ? 'button' : 'div'" class="own-tag"

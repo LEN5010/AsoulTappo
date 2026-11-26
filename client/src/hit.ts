@@ -3,16 +3,20 @@
 // the Rust side, which lets the cursor fall through everywhere else
 // (see src-tauri/src/lib.rs, `spawn_hit_test`). With click-through on nothing takes the mouse but the elements marked
 // `data-hit="keep"`: the bubbles with keys (a reminder, an invitation, a todo), which the player still has to answer.
+// `data-hit-inset`: CSS px on the left and right of the element where it draws nothing and lets the mouse through.
 export interface HitRect { x: number; y: number; w: number; h: number; keep?: true }
 
 export function collectRects(root: ParentNode = document): HitRect[] {
   const out: HitRect[] = [];
   root.querySelectorAll<HTMLElement>("[data-hit]").forEach((el) => {
     const r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1) return;
-    const x = Math.floor(r.left);
+    const inset = Math.max(0, Number(el.dataset.hitInset) || 0);
+    const left = r.left + inset;
+    const right = r.right - inset;
+    if (right - left < 1 || r.height < 1) return;
+    const x = Math.floor(left);
     const y = Math.floor(r.top);
-    out.push({ x, y, w: Math.ceil(r.right) - x, h: Math.ceil(r.bottom) - y, ...(el.dataset.hit === "keep" ? { keep: true as const } : {}) });
+    out.push({ x, y, w: Math.ceil(right) - x, h: Math.ceil(r.bottom) - y, ...(el.dataset.hit === "keep" ? { keep: true as const } : {}) });
   });
   return out;
 }
