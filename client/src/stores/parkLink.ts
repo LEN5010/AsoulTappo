@@ -413,6 +413,8 @@ export async function startLink(): Promise<boolean> {
   linkStarting.value = true;
   linkError.value = "";
   const mine = session;
+  // A load sent before the start cannot tell of its game: a load after it is a request of its own.
+  loading = null;
   const r = await parkTry<LinkAnswer>("POST", "/api/park/link/start", {});
   // Another save meanwhile: this answer is not for it.
   if (mine !== session) return false;

@@ -766,3 +766,21 @@ describe("park link clock for the page", () => {
     clock.stop();
   });
 });
+
+describe("park link start that gets no answer", () => {
+  it("looks for the game with a read of its own, not one sent before the start", async () => {
+    const L = await import("./parkLink");
+    const gets = () => calls.filter((c) => c.method === "GET");
+    const before = L.loadLink();
+    const start = L.startLink();
+    calls.find((c) => c.path === "/api/park/link/start")!.answer(fail(0, "offline"));
+    await flush();
+    expect(gets()).toHaveLength(2);
+    gets()[0]!.answer(ok({ link: state(null, { played: 0 }) }));
+    await before;
+    gets()[1]!.answer(ok({ link: state(game()) }));
+    expect(await start).toBe(true);
+    expect(L.linkPlaying.value).toBe(true);
+    expect(L.linkError.value).toBe("");
+  });
+});
