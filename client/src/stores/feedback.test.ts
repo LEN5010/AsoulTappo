@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createSSRApp, ssrContextKey } from "vue";
 import { TERMS_VERSION } from "../legal";
 import { APP_VERSION } from "../version";
 
@@ -41,4 +42,57 @@ it("shows the server's words for a refusal and a plain line for anything else", 
   ({ feedback } = await setup(() => reply(502, "bad gateway")));
   expect(await feedback.sendFeedback({ text: "x", contact: "", log: false }))
     .toEqual({ ok: false, message: "发送失败，请检查网络后再试" });
+});
+
+type Dialog = { send: () => Promise<void>; ready: { value: boolean } };
+/** The dialog's own setup and handlers, without a page; [sent] gets what each `sent` event carried. */
+async function dialog(sent: number[]): Promise<() => Dialog> {
+  const { default: FeedbackDialog } = await import("../panel/FeedbackDialog.vue");
+  const app = createSSRApp({});
+  app.provide(ssrContextKey, {});
+  const setup = (FeedbackDialog as unknown as { setup: (props: object, ctx: object) => Dialog }).setup;
+  const emit = (event: string, left?: number) => { if (event === "sent") sent.push(left!); };
+  return () => app.runWithContext(() => setup({}, { expose() {}, emit }));
+}
+
+it("sends a draft once while it is out, and a dialog opened again follows that send", async () => {
+  let answer!: (r: Response) => void;
+  const { feedback, posted } = await setup(() => new Promise<Response>((done) => { answer = done; }));
+  const { settings } = await import("./settings");
+  settings.feedbackText = "背包在抖";
+  const sent: number[] = [];
+  const open = await dialog(sent);
+  const first = open();
+  const going = first.send();
+  await vi.waitFor(() => expect(posted).toHaveLength(1));
+  // The panel hid (the dialog went away) and the player opens it again while the send is out.
+  const again = open();
+  expect(again.ready.value).toBe(false);
+  await again.send();
+  expect(await Promise.race([feedback.submitFeedback({ text: "背包在抖", contact: "", log: false }), 0])).toBe(0);
+  answer(reply(200, { id: 7, left: 3 }));
+  await going;
+  await vi.waitFor(() => expect(sent).toEqual([3, 3]));
+  expect(posted).toHaveLength(1);
+  expect(settings.feedbackText).toBe("");
+  expect(again.ready.value).toBe(false);
+});
+
+it("names a draft with one request id until a send of it goes through", async () => {
+  let fail = true;
+  const { feedback, posted } = await setup(() => {
+    if (fail) throw new TypeError("offline");
+    return reply(200, { id: 7, left: 3 });
+  });
+  const draft = { text: "背包在抖", contact: "", log: false };
+  expect((await feedback.submitFeedback(draft)).ok).toBe(false);
+  fail = false;
+  expect(await feedback.submitFeedback(draft)).toEqual({ ok: true, left: 3 });
+  const ids = posted.map((body) => (body as { requestId?: string }).requestId);
+  expect(ids[0]).toMatch(/^[0-9a-f]{32}$/);
+  expect(ids[1]).toBe(ids[0]);
+  await feedback.submitFeedback(draft);
+  await feedback.submitFeedback({ ...draft, text: "表情在抖" });
+  const later = posted.slice(2).map((body) => (body as { requestId?: string }).requestId);
+  expect(new Set([ids[0], ...later]).size).toBe(3);
 });
