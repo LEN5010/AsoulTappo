@@ -401,8 +401,17 @@ fn set_panel_scale(app: tauri::AppHandle, scale: f64) {
     let (left, top) = (area.position.x as f64, area.position.y as f64);
     let x = (cx - w / 2.0).clamp(left, (left + area.size.width as f64 - w).max(left));
     let y = (cy - h / 2.0).clamp(top, (top + area.size.height as f64 - h).max(top));
-    zoom_panel(&panel, zoom);
-    match move_panel(&panel, x, y, w, h, monitor_scale) {
+    // Between the two steps the page is laid out larger than its own size, never smaller: its container queries all
+    // look for less room, so nothing in it changes shape on the way.
+    let growing = zoom > PANEL_ZOOM.lock().map(|z| *z).unwrap_or(1.0);
+    if !growing {
+        zoom_panel(&panel, zoom);
+    }
+    let moved = move_panel(&panel, x, y, w, h, monitor_scale);
+    if growing {
+        zoom_panel(&panel, zoom);
+    }
+    match moved {
         Ok(()) => applog!("panel", "scaled to {scale:.2}: zoom {zoom:.2}, {w:.0}x{h:.0}"),
         Err(e) => applog!("panel", "scale failed: {e}"),
     }
