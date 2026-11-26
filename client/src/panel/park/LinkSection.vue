@@ -28,8 +28,8 @@ import LinkPrizes from "./LinkPrizes.vue";
 import LinkResultCard from "./LinkResultCard.vue";
 import { raceClock } from "./raceFeed";
 
-/** The link stays on the board this long. */
-const LINE_MS = 250;
+/** The link and the pair it took stay on the board this long (LinkBoard runs them). */
+const LINE_MS = 340;
 /** The end key waits this long for its second press. */
 const ARM_MS = 2500;
 const REACT_MS = 1800;
@@ -108,7 +108,8 @@ const hint = ref<number[]>([]);
 const lines = ref<LinkLine[]>([]);
 const ghosts = ref<LinkGhost[]>([]);
 const shake = ref<number | null>(null);
-const flipping = ref(false);
+/** Counts the shuffles that came in while in sight: each turns the tiles over (LinkBoard). */
+const flips = ref(0);
 let lineKey = 0;
 let timers: ReturnType<typeof setTimeout>[] = [];
 function later(ms: number, fn: () => void) {
@@ -134,7 +135,7 @@ function pick(id: number) {
   if (!path) {
     if (!calm.value) {
       shake.value = first;
-      later(300, () => { if (shake.value === first) shake.value = null; });
+      later(340, () => { if (shake.value === first) shake.value = null; });
     }
     selected.value = id;
     return;
@@ -173,10 +174,7 @@ watch(linkShuffling, (on, was) => {
     hint.value = [];
     if (!visible.value) return;
     sfx.flip(true);
-    if (!calm.value) {
-      flipping.value = true;
-      later(400, () => (flipping.value = false));
-    }
+    flips.value++;
   }
 });
 
@@ -305,7 +303,7 @@ watch(linkState, (s) => {
       <template v-if="game">
         <LinkBoard
           :rows="game.rows" :cols="game.cols" :board="game.board" :tiles="linkTiles" :faces="faces" :names="names"
-          :selected="selected" :min-pitch="MIN_PITCH" :hint="hint" :lines="lines" :ghosts="ghosts" :shake="shake" :flipping="flipping"
+          :selected="selected" :min-pitch="MIN_PITCH" :hint="hint" :lines="lines" :ghosts="ghosts" :shake="shake" :deal="game.id" :flip="flips"
           :dim="!!linkResult || linkShuffling || timeUp" :disabled="!canPlay" :calm="calm" @pick="pick"
         />
         <p v-if="linkShuffling && linkPlaying" class="veil" role="status">
@@ -526,6 +524,11 @@ watch(linkState, (s) => {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--c-400), var(--c-500));
+  transform-origin: left center;
+  animation: bar-fill 700ms var(--ease-out) 120ms both;
+}
+@keyframes bar-fill {
+  from { transform: scaleX(0); }
 }
 .slot.clear {
   box-shadow: inset 0 0 0 2px var(--gold), 0 6px 12px -8px rgba(var(--gold-rgb), 0.6);
@@ -675,7 +678,8 @@ watch(linkState, (s) => {
 }
 
 .calm .spin,
-.calm .badge.bump {
+.calm .badge.bump,
+.calm .slot-bar i {
   animation: none;
 }
 .calm .progress .ui-bar > i {
