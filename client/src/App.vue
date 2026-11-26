@@ -42,7 +42,7 @@ import { AUTO_NOTE_HEIGHT, AUTO_NOTE_WIDTH, autoHint, autoNote, autoStrikes, clo
 import NamePill from "./pet/NamePill.vue";
 import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
-import { STRIP_HEIGHT, emotePlace, ownDeskWidth, remotePetSize, stripFit } from "./pet/bounds";
+import { PLATE_GRIP, STRIP_HEIGHT, emotePlace, ownDeskWidth, ownXRange, remotePetSize, stripFit } from "./pet/bounds";
 import { edgeShift } from "./pet/lift";
 import DeskGuide from "./pet/DeskGuide.vue";
 import { beginGuide, deskCardShown, guideRun } from "./stores/guide";
@@ -97,12 +97,22 @@ const ownSize = ref<Size>({ w: PET_BASE.width * settings.scale, h: PET_BASE.heig
 /**
  * Room kept free on the right of a pet for what its second form draws past the picture (an open wing), so the screen
  * edge never cuts it. Kept in both forms, so the pet does not move when it changes. The own pet already has the
- * actor's margin beside it.
+ * actor's margin beside it; this is for its first place (defaultPetPos), the side edges go by ownWing.
  */
 const ownReach = computed(() => {
   const s = settings.scale;
   return Math.max(0, Math.ceil(formReach(settings.character) * s - (ownWidth.value - PET_BASE.width * s) / 2));
 });
+/** What the own pet's second form draws past its picture on the right, kept on screen at the right edge. */
+const ownWing = computed(() => Math.ceil(formReach(settings.character) * settings.scale));
+/**
+ * The own pet at [p] kept on screen, [size] its box with the room kept under it: its picture may touch the side edges,
+ * the empty bands beside it standing out past the screen (ownXRange); the top and bottom as for any pet.
+ */
+function keepOwn(p: Pos, size: Size): Pos {
+  const { min, max } = ownXRange(size.w, ownBand.value, ownWing.value, viewport.value.w);
+  return { x: Math.round(Math.min(Math.max(min, p.x), max)), y: clamp(p, size).y };
+}
 const remoteReach = (m: RemoteMember) => Math.ceil(formReach(m.character) * settings.remoteScale);
 const reaching = (size: Size, reach: number): Size => ({ w: size.w + reach, h: size.h });
 /** Height of the strip under the pet at full size, measured while it shows; drawn smaller with a shrunken strip. */
@@ -142,11 +152,11 @@ function onOwnTap() {
 const barShown = computed(() => !settings.clickThrough && (barPinned.value || peek.value));
 /**
  * How far the strip moves sideways to stay on screen: one wider than the pet stands out beside it, and the pet still
- * reaches the screen's edges.
+ * reaches the screen's edges. Up to the edges, as the pet's picture: one as wide as the pet stays under it there.
  */
 const barShift = computed(() => {
   const x = (dragX.value ?? ownPos.value.x) + (ownWidth.value - bar.value.width) / 2;
-  return edgeShift(x, bar.value.width, viewport.value.w);
+  return edgeShift(x, bar.value.width, viewport.value.w, 0);
 });
 /** The own pet's box with a pinned strip standing out beside it, for placing partners clear of both. */
 const ownArea = computed(() => {
@@ -158,19 +168,21 @@ const ownArea = computed(() => {
 });
 const ownPos = computed<Pos>(() => {
   if (settings.petDocked) {
-    const x = clamp({ x: settings.petX, y: 0 }, reaching(ownSize.value, ownReach.value)).x;
-    return peek.value ? clamp({ x, y: dockY(settings.scale) }, reaching(fullSize.value, ownReach.value)) : { x, y: dockY(settings.scale) };
+    const x = keepOwn({ x: settings.petX, y: 0 }, ownSize.value).x;
+    return peek.value ? { x, y: clamp({ x, y: dockY(settings.scale) }, fullSize.value).y } : { x, y: dockY(settings.scale) };
   }
   // Room for the strip is kept under the pet also while the strip is away, so a click can always show it.
-  const size = reaching({ w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) }, ownReach.value);
-  return settings.petX < 0 ? defaultPetPos(size) : clamp({ x: settings.petX, y: settings.petY }, size);
+  const size = { w: ownSize.value.w, h: Math.max(ownSize.value.h, fullSize.value.h) };
+  // Not placed yet: petY is -1. Its x may be below 0, the box standing out past the left edge.
+  return settings.petY < 0 ? defaultPetPos(reaching(size, ownReach.value)) : keepOwn({ x: settings.petX, y: settings.petY }, size);
 });
 function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
-  const placed = placePet(p, reaching(fullSize.value, ownReach.value), settings.scale);
+  const placed = placePet(p, fullSize.value, settings.scale);
+  const pos = { x: keepOwn(p, fullSize.value).x, y: placed.pos.y };
   dragDock.value = placed.docked;
-  dragX.value = placed.pos.x;
-  return placed.pos;
+  dragX.value = pos.x;
+  return pos;
 }
 function onOwnMoved(p: Pos) {
   settings.petDocked = dragDock.value ?? false;
@@ -255,6 +267,26 @@ const pomodoroAt = computed(() => {
 const plateShown = computed(() => settings.barPlate && !docked.value);
 const ownPlate = computed(() => getPlate(settings.plate)?.id);
 const ownPlateSize = computed(() => plateSize(settings.scale));
+/** The own name plate (`.own-plate`) and its width with its sides, measured while it shows. */
+const plateEl = ref<HTMLElement | null>(null);
+const plateWidth = ref(0);
+let plateObserver: ResizeObserver | undefined;
+watch(plateEl, (el) => {
+  plateObserver?.disconnect();
+  plateObserver = undefined;
+  if (!el) return;
+  plateObserver = new ResizeObserver(() => (plateWidth.value = el.offsetWidth));
+  plateObserver.observe(el);
+});
+/**
+ * How far the own name plate, centred under the pet, moves sideways to keep its handle and tag on screen: the pet's
+ * box may stand out past the screen's edges (keepOwn). The side right of the tag is empty.
+ */
+const plateShift = computed(() => {
+  if (!plateWidth.value) return 0;
+  const left = (dragX.value ?? ownPos.value.x) + (ownWidth.value - plateWidth.value) / 2;
+  return edgeShift(left, plateWidth.value - PLATE_GRIP, viewport.value.w, 0);
+});
 const ownName = computed(() => nameBand(settings.scale));
 const ownNick = computed(() => settings.nick.trim() || settings.character);
 // The room sees the status only while this desk is in one, so the own tag shows it only then too.
@@ -560,6 +592,7 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
+  plateObserver?.disconnect();
   window.removeEventListener("resize", onResize);
   window.removeEventListener("blur", closeQuickAway);
   window.removeEventListener("pointerdown", closeQuick, true);
@@ -670,7 +703,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <AccessBubble v-if="accessHint" :closable="!guideRun.started" @close="accessHint = false" />
       <DeskGuide v-if="guideOn" :held="guideHeld" :cooldown="tapCooldown" v-bind="guidePlace" :scope="deskEl" :tick="guideTick" />
       <Transition name="strip" mode="out-in">
-      <div v-if="barShown && plateShown" key="plate" class="own-plate" data-hit>
+      <div v-if="barShown && plateShown" key="plate" ref="plateEl" class="own-plate" data-hit :style="{ left: `${plateShift}px` }">
         <!-- In a room the tag opens the status keys. -->
         <component
           :is="inRoom ? 'button' : 'div'" class="own-tag"

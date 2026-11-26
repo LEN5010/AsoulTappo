@@ -81,12 +81,13 @@ export function defaultPetPos(size: Size, vp: Size = viewport.value): Pos {
 /**
  * Sends the own pet back to its default place, for the tray and the settings page. A docked pet leaves the bottom
  * edge first: docked, it keeps only its x, which would clamp to the left edge. Each field reaches the desk as its own
- * patch when this runs in the panel, so the edge goes first.
+ * patch when this runs in the panel, so the edge goes first, then the y, which alone sends it to its default place
+ * (an x of -1 is a place by the left edge).
  */
 export function resetOwnPet(): void {
   settings.petDocked = false;
-  settings.petX = -1;
   settings.petY = -1;
+  settings.petX = -1;
 }
 
 /**
