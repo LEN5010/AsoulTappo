@@ -470,6 +470,27 @@ def test_a_save_of_the_queue_that_does_not_take_the_seat_waits_and_the_next_is_a
     run(go())
 
 
+def test_a_save_of_the_queue_turning_invites_down_on_a_room_connection_is_still_asked_and_keeps_the_seat():
+    async def go():
+        w = OpenWorld()
+        ((a, sa), (b, sb)), tid = await w.opened("a", "b")
+        q, sq = w.queuer("q")
+        await w.t.queue(q, BASE)
+        # Its room connection joins another room turning invites down meanwhile.
+        q_room, _ = w.member("q", room="r2")
+        q_room.dnd = True
+        w.mono += FILL_SEC
+        await w.timers.fire()
+        # Asked on the dou dizhu connection that waits, its room connection turning invites down.
+        assert sq.of("ddz_invite")[0]["ids"] == [a.id, b.id, q.id]
+        w.t.set_dnd(q_room, True)
+        assert sq.of("ddz_over") == [] and last_open(sa)["seats"] == [seat(a), seat(b), {"pending": True}]
+        await w.t.answer(q, tid, True)
+        await w.settled()
+        assert sq.of("ddz_deal")[0]["you"] == 2
+    run(go())
+
+
 def test_a_table_put_away_while_a_save_of_the_queue_is_asked_puts_it_back_in_its_place():
     async def go():
         w = OpenWorld()

@@ -890,5 +890,6 @@ watch(() => settings.plate, (plate) => { if (!isMirrorWindow) syncProfile({ plat
 // With the nick, which servers from before statuses need in a state. The status is the chosen one, or away by itself.
 watch(shownStatus, (status) => { if (!isMirrorWindow) syncProfile({ nick: settings.nick, status }); }, { flush: "sync" });
 watch(() => settings.batchMs, (ms) => { if (!isMirrorWindow) setBatchMs(ms); });
-// Told to the server only when it has duels; the next join carries it either way.
-watch(duelDnd, (on) => { if (!isMirrorWindow) client.setDnd(on, duelOn.value); }, { flush: "sync" });
+// Told to the server whenever in a room, duels or not: dou dizhu invites and calls read it too. The next join carries
+// it either way.
+watch(duelDnd, (on) => { if (!isMirrorWindow) client.setDnd(on, inRoom.value); }, { flush: "sync" });

@@ -377,7 +377,7 @@ it("shows other members' results", async () => {
   expect(r.duel.value).toBeNull();
 });
 
-it("tells the server about do-not-disturb, counting click-through, only when it has duels", async () => {
+it("tells the server about do-not-disturb, counting click-through, whenever in a room", async () => {
   const { r, socket, settings, player } = await duelSetup();
   settings.duelDnd = true;
   expect(socket.sent.at(-1)).toEqual({ type: "dnd", dnd: true });
@@ -386,21 +386,24 @@ it("tells the server about do-not-disturb, counting click-through, only when it 
   expect(socket.sent.filter((m) => m.type === "dnd")).toEqual([{ type: "dnd", dnd: true }]);
   settings.clickThrough = false;
   expect(socket.sent.at(-1)).toEqual({ type: "dnd", dnd: false });
-  settings.duelDnd = true;
   r.leaveRoom();
+  const told = socket.sent.length;
+  settings.duelDnd = true; // in no room: nothing to say, the next join carries it
+  expect(socket.sent).toHaveLength(told);
   r.joinRoom("r");
   const next = Socket.all.at(-1)!;
   next.open();
   expect(next.sent[0]).toMatchObject({ type: "join", dnd: true });
-  // a server without duels: its status says nothing of them
+  // a server without duels: its status says nothing of them, and dou dizhu invites and calls still read it
   next.recv({ type: "joined", room: "r", you: "me", members: [ME, FRIEND] });
   player.status.value = playerStatus({ duel: undefined }) as typeof player.status.value;
   const sent = next.sent.length;
   settings.duelDnd = false;
+  expect(next.sent.slice(sent)).toEqual([{ type: "dnd", dnd: false }]);
   r.inviteDuel("friend", 150);
   expect(r.duelOn.value).toBe(false);
   expect(r.canDuel(r.members.get("friend")!)).toBe(false);
-  expect(next.sent).toHaveLength(sent);
+  expect(next.sent).toHaveLength(sent + 1);
 });
 
 it("names the side without an account when a server takes bets only from saves linked to one", async () => {
