@@ -53,12 +53,12 @@ class Photocards:
 
     # ------------------------------------------------------------------ views
     def _view(self, st: Store, pid: str, now: float) -> dict[str, Any]:
-        owned = st.owned(pid)
+        owned = st.held_of(pid, (item for series in self.series.values() for item in series.items))
         day = day_of(now)
         return {"day": day,
                 "series": {sid: self._series_view(st, pid, series, owned, day) for sid, series in self.series.items()}}
 
-    def _series_view(self, st: Store, pid: str, series: Series, owned: dict[str, int], day: str) -> dict[str, Any]:
+    def _series_view(self, st: Store, pid: str, series: Series, owned: set[str], day: str) -> dict[str, Any]:
         cfg = self.shelf.get(series.id)
         box = st.photo_unopened(pid, series.id)
         return {

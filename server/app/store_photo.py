@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from typing import Any
+from typing import Any, Iterable
+
+# Ids asked for in one statement, well under SQLite's limit of variables.
+HELD_CHUNK = 500
 
 
 class _StoreState:
@@ -21,6 +24,19 @@ class PhotoStore(_StoreState):
             row = self._db.execute("SELECT boxes, dry, spare FROM photo_saves WHERE player_id = ? AND series = ?",
                                    (pid, series)).fetchone()
         return dict(row) if row else {"boxes": 0, "dry": 0, "spare": 0}
+
+    def held_of(self, pid: str, item_ids: Iterable[str]) -> set[str]:
+        """Which of [item_ids] the save holds, looked up by the items' primary key; the rest of its items are not read."""
+        ids = list(dict.fromkeys(item_ids))
+        held: set[str] = set()
+        with self._lock:
+            for at in range(0, len(ids), HELD_CHUNK):
+                part = ids[at:at + HELD_CHUNK]
+                rows = self._db.execute(
+                    f"SELECT item_id FROM items WHERE player_id = ? AND item_id IN ({','.join('?' * len(part))})",
+                    (pid, *part)).fetchall()
+                held.update(r[0] for r in rows)
+        return held
 
     def photo_played(self, pid: str) -> bool:
         """Whether the save ever bought a box, of any series."""

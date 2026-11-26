@@ -867,6 +867,38 @@ def test_the_database_keeps_a_box_through_a_restart(tmp_path):
     again.store.close()
 
 
+def test_the_view_reads_only_the_photocards_of_the_save(monkeypatch):
+    g, pc, _, pid = setup(manifest=two_series(CFG2))
+    held = [SERIES.solo[1], SERIES.sign[0], SERIES2.duo[2]]
+    for item in held:
+        g.store.add_item(pid, item, 0)
+    for card in list(g.manifest.cards)[:5]:
+        g.store.add_item(pid, "card:" + card, 0)
+    before = pc.state(TOKEN)["photocards"]
+
+    def everything(_pid):
+        raise AssertionError("read every item of the save")
+
+    monkeypatch.setattr(g.store, "owned", everything)
+    with g.store.lock:
+        view = pc._view(g.store, pid, g.now())
+    assert view == before
+    assert view["series"][SID]["owned"] == [SERIES.solo[1], SERIES.sign[0]]
+    assert view["series"][LATER]["owned"] == [SERIES2.duo[2]]
+
+
+def test_the_store_tells_which_of_some_items_a_save_holds():
+    g, _, _, pid = setup()
+    g.store.add_item(pid, SERIES.solo[0], 0)
+    g.store.add_item(pid, "card:" + next(iter(g.manifest.cards)), 0)
+    assert g.store.held_of(pid, [SERIES.solo[0], SERIES.solo[1], SERIES.sign[0]]) == {SERIES.solo[0]}
+    assert g.store.held_of(pid, []) == set()
+    assert g.store.held_of("someone-else", [SERIES.solo[0]]) == set()
+    # More ids than SQLite takes in one statement.
+    many = [f"photo:{SID}/x-{i}" for i in range(2000)] + [SERIES.solo[0]]
+    assert g.store.held_of(pid, many) == {SERIES.solo[0]}
+
+
 # ------------------------------------------------------------------------- HTTP
 def test_the_api(monkeypatch):
     g, _, _, pid = setup(manifest=two_series({**CFG2, "daily": 0}, CFG))
