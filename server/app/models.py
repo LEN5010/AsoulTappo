@@ -40,6 +40,9 @@ class JoinMsg(_Msg):
     ddzMatch: bool = False
     # The client watches dou dizhu games (with ddzMatch); servers without watching ignore it.
     ddzWatch: bool = False
+    # Join only a room that has members now, refused as room_closed otherwise (a client going back to its room on
+    # start); servers before it make the room as for any join.
+    onlyOpen: bool = False
 
 
 class LeaveMsg(_Msg):

@@ -331,6 +331,11 @@ export type ClientMessage =
     ddzMatch?: boolean;
     /** This client watches dou dizhu tables and knows watchers; servers without watching ignore it. */
     ddzWatch?: boolean;
+    /**
+     * Join only a room that has members now: the server refuses with `room_full`, reason `room_closed`, instead of
+     * making it. Servers before it make the room as for any join.
+     */
+    onlyOpen?: boolean;
     motionVersion?: number;
   }
   | { type: "leave" }

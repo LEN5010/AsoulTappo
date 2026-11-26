@@ -459,6 +459,32 @@ describe("RoomClient", () => {
     expect(FakeWs.all[2].sent[0]).not.toHaveProperty("dnd");
   });
 
+  it("asks for an open room only until it is in: a reconnect after that may make the room again", () => {
+    const { c, ev } = setup();
+    c.join("http://h:1", { ...INFO, onlyOpen: true });
+    FakeWs.all[0].open();
+    expect(FakeWs.all[0].sent[0]).toMatchObject({ type: "join", onlyOpen: true });
+    // Dropped before the room answered: still the same attempt.
+    FakeWs.all[0].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[1].open();
+    expect(FakeWs.all[1].sent[0]).toMatchObject({ type: "join", onlyOpen: true });
+    FakeWs.all[1].recv({ type: "joined", room: "r", you: "me", members: [] });
+    // A server restart empties its rooms; the members coming back make the room again.
+    FakeWs.all[1].close();
+    vi.advanceTimersByTime(400);
+    FakeWs.all[2].open();
+    expect(FakeWs.all[2].sent[0]).toMatchObject({ type: "join", room: "r" });
+    expect(FakeWs.all[2].sent[0]).not.toHaveProperty("onlyOpen");
+    // The room gone by the time the join came: final, nothing to reconnect to.
+    c.join("http://h:1", { ...INFO, onlyOpen: true });
+    FakeWs.all[3].open();
+    FakeWs.all[3].recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
+    expect(ev.onError).toHaveBeenLastCalledWith("room_closed", "房间里已经没有人了");
+    vi.advanceTimersByTime(5000);
+    expect(FakeWs.all).toHaveLength(4);
+  });
+
   it("suppresses redundant connState transitions such as leave() while already idle", () => {
     const { c, ev } = setup();
     c.leave();

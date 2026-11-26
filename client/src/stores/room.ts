@@ -305,8 +305,8 @@ const events: RoomEvents = {
   },
 };
 
-/** Errors after which the room client stops instead of reconnecting. */
-const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save"]);
+/** Errors after which the room client stops instead of reconnecting. room_closed answers only a rejoin's join. */
+const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save", "room_closed"]);
 
 function errorText(code: string, message: string): string {
   switch (code) {
@@ -787,10 +787,16 @@ export async function createRoom(): Promise<string> {
   return data.room;
 }
 
-export function joinRoom(room: string): void {
+/**
+ * Join [room], replacing any room joined or being joined. [opts.rejoin]: this is the join that goes back to the room
+ * of the last run (rejoinOnStart): it goes only into the room as it is, and a refusal of it is not shown. Any other
+ * join shows why it was refused.
+ */
+export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
   if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
   if (!id || STANDALONE) return;
+  rejoining = !!opts.rejoin;
   lastError.value = "";
   batcher.clear();
   motionSender.clear();
@@ -805,6 +811,7 @@ export function joinRoom(room: string): void {
     ddz: true,
     ddzMatch: true,
     ddzWatch: true,
+    ...(rejoining ? { onlyOpen: true } : {}),
   });
 }
 
@@ -819,14 +826,16 @@ export function leaveRoom(): void {
 }
 
 // ---------------------------------------------------------------- back into the room on start
-/** A join sent by rejoinOnStart that the room has not answered yet; a refusal of it is not shown. */
+/** The join under way is the one rejoinOnStart sent, and the room has not answered it yet; a refusal of it is not
+ * shown. Each joinRoom sets it for its own join. */
 let rejoining = false;
 let rejoinStarted = false;
 
 /**
  * Desk only, once a run: the room the save was in when the app last closed is joined again, quietly, once the terms
  * are agreed and the server answers. Only a room that still has members is joined (GET /rooms/{id}): a join of any
- * other id would make the room. A server without that answer, a room gone, or a refused join forgets it.
+ * other id would make the room. A room the server says is empty, a server without that answer (404), or a refused
+ * join forgets it; no answer (offline, too many lookups, a server error) keeps it for the next start.
  */
 export function rejoinOnStart(): void {
   if (STANDALONE || isMirrorWindow || rejoinStarted) return;
@@ -844,22 +853,26 @@ async function rejoinLast(): Promise<void> {
   const id = settings.rejoinRoom;
   const base = settings.serverUrl;
   if (!id || roomId.value) return;
-  let open = false;
+  // "open", "closed" (the room is empty or the server cannot tell) or why there was no answer.
+  let answer = "unreachable";
   try {
     const res = await serverFetch(`${toHttpBase(base)}/rooms/${encodeURIComponent(id)}`);
-    open = res.ok && ((await res.json()) as { open?: unknown } | null)?.open === true;
+    if (res.status === 404) answer = "closed";
+    else if (!res.ok) answer = `status ${res.status}`;
+    else {
+      const open = ((await res.json().catch(() => null)) as { open?: unknown } | null)?.open;
+      answer = open === true ? "open" : open === false ? "closed" : "bad answer";
+    }
   } catch {
-    /* unreachable: counts as gone */
+    /* unreachable: asked again on the next start */
   }
   // A room joined or a server chosen meanwhile wins.
   if (roomId.value || base !== settings.serverUrl || settings.rejoinRoom !== id) return;
-  writeLog("room", open ? "rejoin" : "rejoin skipped: room closed");
-  if (!open) {
-    settings.rejoinRoom = "";
-    return;
-  }
-  rejoining = true;
-  joinRoom(id);
+  writeLog("room", answer === "open" ? "rejoin" : answer === "closed" ? "rejoin skipped: room closed"
+    : `rejoin put off: ${answer}`);
+  if (answer === "closed") settings.rejoinRoom = "";
+  if (answer !== "open") return;
+  joinRoom(id, { rejoin: true });
 }
 
 /** Host only: list the room publicly or take it off the list. */
@@ -941,8 +954,10 @@ watch(() => account.value?.token, () => { if (!isMirrorWindow) publicRooms.value
 watch(() => [saveCode.value, account.value?.token], () => {
   if (isMirrorWindow) return;
   const previous = roomId.value;
+  // A join going back to the last room that has not been answered yet stays one.
+  const rejoin = rejoining;
   leaveRoom();
-  if (previous) joinRoom(previous);
+  if (previous) joinRoom(previous, { rejoin });
 }, { flush: "sync" });
 watch(() => settings.character, (character) => { if (!isMirrorWindow) syncProfile({ character }); }, { flush: "sync" });
 watch(() => settings.nick, (nick) => { if (!isMirrorWindow) syncProfile({ nick }); }, { flush: "sync" });

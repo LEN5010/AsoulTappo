@@ -1,4 +1,6 @@
 # Caddy proxies HTTP + WebSocket to the server container automatically.
+# It sends each visitor's address in X-Forwarded-For; the server takes it from Caddy's fixed address only
+# (docker-compose.yml).
 {$DOMAIN:localhost} {
 	encode gzip
 	reverse_proxy server:8000

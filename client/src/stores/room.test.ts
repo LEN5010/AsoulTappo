@@ -458,7 +458,8 @@ it("goes back into the room it was in once the server answers, and only into a r
   expect(r.roomId.value).toBe("old");
   const socket = Socket.all[0];
   socket.open();
-  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old" });
+  // Only into the room as it is: it may close between the answer and the join.
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
   socket.recv({ type: "joined", room: "old", you: "me", members: [] });
   expect(settings.rejoinRoom).toBe("old");
   // Once a run: going offline and back does not ask again.
@@ -476,7 +477,6 @@ it("forgets a room that closed, and joins nothing on a server that cannot tell",
   for (const answer of [
     async () => reply(200, { room: "old", open: false }),
     async () => reply(404, { detail: "Not Found" }),
-    async () => { throw new TypeError("offline"); },
   ]) {
     vi.resetModules();
     const { settings, player, r } = await restart(answer);
@@ -488,6 +488,24 @@ it("forgets a room that closed, and joins nothing on a server that cannot tell",
     expect(settings.rejoinRoom).toBe("");
     // The room box still offers it.
     expect(settings.lastRoom).toBe("old");
+  }
+});
+
+it("keeps the room for the next start when the server does not answer about it", async () => {
+  for (const answer of [
+    async () => reply(429, { detail: { code: "too_many_lookups", message: "" } }),
+    async () => reply(503, { detail: "Service Unavailable" }),
+    async () => reply(502, null),
+    async () => { throw new TypeError("offline"); },
+  ]) {
+    vi.resetModules();
+    const { settings, player, r } = await restart(answer);
+    player.online.value = true;
+    r.rejoinOnStart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Socket.all).toHaveLength(0);
+    expect(r.roomId.value).toBe("");
+    expect(settings.rejoinRoom).toBe("old");
   }
 });
 
@@ -504,6 +522,51 @@ it("takes a refused rejoin quietly and forgets the room", async () => {
   expect(settings.rejoinRoom).toBe("");
   await vi.advanceTimersByTimeAsync(60000);
   expect(Socket.all).toHaveLength(1);
+});
+
+it("takes a room that closed before the join came quietly and forgets it", async () => {
+  const { settings, player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = Socket.all[0];
+  socket.open();
+  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
+  expect(r.lastError.value).toBe("");
+  expect(r.roomId.value).toBe("");
+  expect(settings.rejoinRoom).toBe("");
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(Socket.all).toHaveLength(1);
+});
+
+it("shows why a room joined by hand turned the join down, also while going back to the last one", async () => {
+  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(r.roomId.value).toBe("old");
+  // Before the old room answered.
+  r.joinRoom("new");
+  const socket = Socket.all.at(-1)!;
+  socket.open();
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "new" });
+  expect(socket.sent[0]).not.toHaveProperty("onlyOpen");
+  socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
+  expect(r.lastError.value).toBe("房间已满(最多 20 人)");
+});
+
+it("keeps a join going back to the last room one when the save changes before the room answered", async () => {
+  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  player.saveCode.value = "other-save";
+  const socket = Socket.all.at(-1)!;
+  socket.open();
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
+  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
+  expect(r.lastError.value).toBe("");
+  expect(r.roomId.value).toBe("");
 });
 
 it("does not go back when the player joined a room first", async () => {

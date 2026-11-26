@@ -20,6 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Web
 import starlette.websockets
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -52,8 +53,8 @@ from .park_scratch import ParkScratch
 from .photocards import Photocards
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
-from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
-                    room_status)
+from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomClosed,
+                    RoomFull, RoomManager, room_status)
 from .store import Store
 from .ws_writes import CoalesceWebSocketWrites
 
@@ -359,11 +360,15 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
     return {"rooms": manager.public_rooms(PUBLIC_LIST_LIMIT)}
 
 
-@app.get("/rooms/{room_id}")
-async def room_open(room_id: str, request: Request) -> dict:
+@app.get("/rooms/{room_id:path}", response_model=None)
+async def room_open(room_id: str, request: Request) -> dict | RedirectResponse:
     """Whether a room has members now, without making it: a client going back to the room it was in when it last
     closed joins only an open one (a join of any other id makes the room). Like a join, it needs only the id; an
-    address may ask only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS (_may_look_up_room)."""
+    address may ask only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS (_may_look_up_room). The id is the rest of the
+    path, slashes and all, as a join may name one; an empty one goes to the room list, as the router sends any
+    address with a slash at the end."""
+    if not room_id:
+        return RedirectResponse(request.url.replace(path=request.url.path.rstrip("/")), 307)
     _may_look_up_room(request)
     return {"room": room_id, "open": len(room_id) <= 64 and room_id in manager.rooms}
 
@@ -488,22 +493,34 @@ def _may_start_save(request: Request, who: PlayerId) -> None:
 ROOM_LOOKUPS = 60
 ROOM_LOOKUP_SECONDS = 600.0
 ROOM_LOOKUP_ADDRESSES = 50000
+# By address: (start of its window, lookups in it), in the order the windows started (a new window moves its address
+# to the end), so the ended windows are the first ones.
 _room_lookups: dict[str, tuple[float, int]] = {}
 _room_lookups_lock = threading.Lock()
 
 
 def _may_look_up_room(request: Request) -> None:
-    """Refuses a room lookup once its address has made ROOM_LOOKUPS within the current ROOM_LOOKUP_SECONDS."""
+    """Refuses a room lookup once its address has made ROOM_LOOKUPS within the current ROOM_LOOKUP_SECONDS. Over
+    ROOM_LOOKUP_ADDRESSES addresses, the ended windows go; only a table still over it with running ones is emptied."""
     address = _address(request)
     if address is None:
         return
     now = game.now()
     with _room_lookups_lock:
         if len(_room_lookups) > ROOM_LOOKUP_ADDRESSES:
-            _room_lookups.clear()
+            ended = []
+            for old, (start, _) in _room_lookups.items():
+                if now - start < ROOM_LOOKUP_SECONDS:
+                    break
+                ended.append(old)
+            for old in ended:
+                del _room_lookups[old]
+            if len(_room_lookups) > ROOM_LOOKUP_ADDRESSES:
+                _room_lookups.clear()
         start, count = _room_lookups.get(address, (now, 0))
         if now - start >= ROOM_LOOKUP_SECONDS:
             start, count = now, 0
+            del _room_lookups[address]
         if count >= ROOM_LOOKUPS:
             raise HTTPException(429, {"code": "too_many_lookups", "message": "查询房间太频繁，请稍后再试"})
         _room_lookups[address] = (start, count + 1)
@@ -1658,10 +1675,15 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 prior_info = prior.info() if prior is not None else None
                 try:
                     peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
-                                        may_list=not accounts or signed_in, seq=seq, **profile)
+                                        may_list=not accounts or signed_in, seq=seq, only_open=msg.onlyOpen,
+                                        **profile)
                     raw_nicks[peer.id] = peer.raw_nick = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
+                    continue
+                except RoomClosed:
+                    # Checked in the join itself: the last member may have left during the awaits above.
+                    await send(_final("room_closed", "房间里已经没有人了"))
                     continue
                 except Banned:
                     await send(_final("banned", "你已被移出这个房间"))
