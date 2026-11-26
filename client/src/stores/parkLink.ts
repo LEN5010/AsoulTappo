@@ -9,6 +9,9 @@
 //
 // Every request belongs to an epoch, raised whenever the queue is dropped (another game, a resync, a settle, another
 // save or server): an answer from an earlier epoch changes nothing.
+//
+// A server without the link (no_park: it was turned off) is an answer, not a failure: the board and the pending end
+// go, its message shows and nothing is asked again until the page asks (loadLink, startLink).
 import { computed, ref, shallowRef, watch } from "vue";
 import { STANDALONE } from "../edition";
 import { toHttpBase } from "../net/protocol";
@@ -165,6 +168,8 @@ function writeJson(key: string, value: unknown): void {
 }
 
 const retryable = (e: ParkError) => (e.status === 0 && e.code !== "stale") || e.status >= 500;
+/** The server has no link, or no longer: an end to syncing, not a failure to try again. */
+const linkOff = (e: ParkError) => e.code === "no_park";
 const messageOf = (e: ParkError) => (e.status === 0 ? "无法连接服务器" : e.message);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const backoff = (n: number) => BACKOFF_MS[Math.min(n, BACKOFF_MS.length - 1)]!;
@@ -273,6 +278,14 @@ function settle(d: MoveAnswer): void {
   else clearBoard();
 }
 
+/** The server has no link: the board, its queue and the end asked for go, and the server's message shows. */
+function closeLink(e: ParkError): void {
+  stopFinishing();
+  clearBoard();
+  linkState.value = null;
+  linkError.value = messageOf(e);
+}
+
 /** Loads today's games. false when the request failed (linkError says why). */
 export async function loadLink(): Promise<boolean> {
   used = true;
@@ -280,7 +293,8 @@ export async function loadLink(): Promise<boolean> {
   const r = await parkTry<LinkAnswer>("GET", "/api/park/link");
   if (mine !== epoch) return r.ok;
   if (!r.ok) {
-    if (r.error.code !== "stale") linkError.value = messageOf(r.error);
+    if (linkOff(r.error)) closeLink(r.error);
+    else if (r.error.code !== "stale") linkError.value = messageOf(r.error);
     return false;
   }
   linkError.value = "";
@@ -312,6 +326,10 @@ async function resync(): Promise<void> {
       return;
     }
     if (!r.ok && r.error.code === "stale") return;
+    if (!r.ok && linkOff(r.error)) {
+      closeLink(r.error);
+      return;
+    }
     await sleep(backoff(tries));
   }
 }
@@ -329,6 +347,10 @@ export async function startLink(): Promise<boolean> {
   linkStarting.value = false;
   if (!r.ok) {
     if (r.error.code === "stale") return false;
+    if (linkOff(r.error)) {
+      closeLink(r.error);
+      return false;
+    }
     const message = messageOf(r.error);
     // No answer: the game may have started and been paid for. A load finds it.
     if (retryable(r.error)) await loadLink();
@@ -372,6 +394,10 @@ async function pump(): Promise<void> {
     }
     if (r.error.code === "stale") {
       resetLink();
+      return;
+    }
+    if (linkOff(r.error)) {
+      closeLink(r.error);
       return;
     }
     await resync();
@@ -457,6 +483,10 @@ export async function finishLink(): Promise<boolean> {
       break;
     }
     if (r.error.code === "stale") break;
+    if (linkOff(r.error)) {
+      closeLink(r.error);
+      break;
+    }
     if (!retryable(r.error)) await resync();
     await sleep(backoff(tries++));
   }

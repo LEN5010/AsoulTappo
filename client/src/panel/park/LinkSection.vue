@@ -278,6 +278,10 @@ watch(park, () => {
   loadedAt = Date.now();
   void loadLink();
 });
+// A server that turned the link off is asked again only when the page comes back or its economy changes.
+watch(() => JSON.stringify(cfg.value), (key, was) => {
+  if (active.value && cfg.value && key !== was) void loadLink();
+});
 onMounted(enter);
 onActivated(enter);
 onDeactivated(() => (active.value = false));

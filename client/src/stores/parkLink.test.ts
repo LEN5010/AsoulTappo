@@ -582,3 +582,86 @@ describe("park link pair times", () => {
     expect(moves().at(-1)!.body).toMatchObject({ game: 8, t: 2_000 });
   });
 });
+
+describe("park link when the server has none", () => {
+  const closed = fail(404, "no_park");
+  /** Answers every request at once: the start with [g], the rest with [rest]. */
+  function serve(g: LinkGame, rest: Reply) {
+    parkTry.mockImplementation(async (method: string, path: string, body?: Record<string, unknown>) => {
+      calls.push({ method, path, body, answer: () => {} });
+      return path.endsWith("/start") ? ok({ link: state(g) }) : rest;
+    });
+  }
+  const gets = () => calls.filter((c) => c.method === "GET");
+
+  it("ends an end turned down because the link is off: the board goes and no reads follow", async () => {
+    serve(game({ deadline: 1_000_000 + 90_000 }), closed);
+    const L = await import("./parkLink");
+    expect(await L.startLink()).toBe(true);
+    const finish = L.finishLink();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await finish).toBe(false);
+    expect(gets().length).toBeLessThanOrEqual(1);
+    expect(L.linkSyncing.value).toBe(false);
+    expect(L.linkFinishing.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+  });
+
+  it("stops a resync that finds the link off", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    await flush();
+    moves()[0]!.answer(fail(409, "bad_seq"));
+    await flush();
+    expect(L.linkSyncing.value).toBe(true);
+    gets()[0]!.answer(closed);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(gets()).toHaveLength(1);
+    expect(L.linkSyncing.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+  });
+
+  it("drops the queue when a move finds the link off, reading nothing", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    L.playPair(2, 3);
+    await flush();
+    moves()[0]!.answer(closed);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(moves()).toHaveLength(1);
+    expect(gets()).toHaveLength(0);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkState.value).toBeNull();
+  });
+
+  it("clears the board when a load finds the link off, and loads again when asked", async () => {
+    const L = await started();
+    const p = L.loadLink();
+    gets()[0]!.answer(closed);
+    expect(await p).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+    const again = L.loadLink();
+    gets()[1]!.answer(ok({ link: state(null, { played: 0 }) }));
+    expect(await again).toBe(true);
+    expect(L.linkError.value).toBe("");
+  });
+
+  it("keeps backing off on a resync that gets no answer or a server error", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    await flush();
+    moves()[0]!.answer(fail(409, "bad_seq"));
+    await flush();
+    gets()[0]!.answer(fail(503, "unavailable"));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(gets()).toHaveLength(2);
+    gets()[1]!.answer(fail(0, "offline"));
+    await vi.advanceTimersByTimeAsync(800);
+    expect(gets()).toHaveLength(3);
+    expect(L.linkSyncing.value).toBe(true);
+    expect(L.linkGame.value).not.toBeNull();
+  });
+});
