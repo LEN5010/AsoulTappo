@@ -150,6 +150,8 @@ let nextTile = 1;
  */
 let anchor: { id: number; server: number; local: number; last: number } | null = null;
 let waiters: (() => void)[] = [];
+/** Games known settled, latest last: an answer from before that still has one in play is out of date. */
+let settledIds: number[] = [];
 
 function readJson<T>(key: string): T | null {
   try {
@@ -227,12 +229,18 @@ function adopt(game: LinkGame): void {
   }
 }
 
+function noteSettled(id: number): void {
+  if (!settledIds.includes(id)) settledIds = [...settledIds.slice(-(KEEP - 1)), id];
+}
+
 /**
  * Takes the server's state. Its game replaces the one on the board when it is another game, or the same game with
  * everything queued here accepted (or more). A snapshot older than the moves accepted here keeps the local board,
  * and so does one in between: the queue's resends get the server's stored answers.
  */
 function take(state: LinkState): void {
+  // A game in play there was settled since: the snapshot is out of date.
+  if (state.game && settledIds.includes(state.game.id)) return;
   linkState.value = state;
   const game = state.game;
   const local = linkGame.value;
@@ -259,6 +267,7 @@ function clearBoard(): void {
 
 /** A settled game's result. A board that does not match it (moves the server never took) leaves with it. */
 function showSettled(result: LinkResult): void {
+  noteSettled(result.id);
   dropQueue();
   const local = linkGame.value;
   if (local && (local.id !== result.id || local.cleared !== result.cleared)) {
@@ -358,6 +367,8 @@ export async function startLink(): Promise<boolean> {
     return linkPlaying.value;
   }
   const state = r.data.link;
+  // Answered after the game it started was settled here (a load found it first): nothing to take.
+  if (state.game && settledIds.includes(state.game.id)) return linkPlaying.value;
   if (linkResult.value) markSeen(linkResult.value.id);
   if (state.game && linkGame.value?.id !== state.game.id) linkResult.value = null;
   // The same game already on the board (found by a load meanwhile) merges like any snapshot and keeps the queue.
@@ -545,6 +556,7 @@ export function resetLink(): void {
   linkResult.value = null;
   linkError.value = "";
   accepted = 0;
+  settledIds = [];
 }
 
 // ---------------------------------------------------------------- the store follows the save

@@ -665,3 +665,39 @@ describe("park link when the server has none", () => {
     expect(L.linkGame.value).not.toBeNull();
   });
 });
+
+describe("park link answers that come late", () => {
+  it("keeps a game settled here off the board when its start answers after it", async () => {
+    const L = await import("./parkLink");
+    const g = game();
+    const ended = result({ cleared: 0, prize: 0, reason: "quit" });
+    const start = L.startLink();
+    const load = L.loadLink();
+    calls[1]!.answer(ok({ link: state(g) }));
+    await load;
+    const finish = L.finishLink();
+    await flush();
+    calls.find((c) => c.path === "/api/park/link/finish")!.answer(ok({ link: state(null, { today: [ended], last: ended }), result: ended }));
+    expect(await finish).toBe(true);
+    L.dismissResult();
+    expect(L.linkPlaying.value).toBe(false);
+    calls[0]!.answer(ok({ link: state(g) }));
+    await start;
+    expect(L.linkPlaying.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkState.value!.game).toBeNull();
+  });
+
+  it("still merges a late start answer for the game in play", async () => {
+    const L = await import("./parkLink");
+    const start = L.startLink();
+    const load = L.loadLink();
+    calls[1]!.answer(ok({ link: state(game()) }));
+    await load;
+    L.playPair(0, 1);
+    calls[0]!.answer(ok({ link: state(game()) }));
+    await start;
+    expect(L.linkPlaying.value).toBe(true);
+    expect(L.linkGame.value!.cleared).toBe(1);
+  });
+});
