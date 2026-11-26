@@ -51,6 +51,9 @@ export interface OpeningOptions {
   seed?: number;
   /** The box opens by itself. */
   skipIntro?: boolean;
+  /** While it waits for a hand, what sways by itself comes to rest and no more pictures are asked for (see "standing
+   * still"). Off: it goes on as it always did. REST when not given. */
+  rest?: boolean;
   /** Reduced motion: everything is laid out at once. */
   calm?: boolean;
   /** The box comes from there instead of dropping in, and the dark closes in on it. */
@@ -120,6 +123,8 @@ const TEETH = 30;
 const RUSH_DEAL = 42, RUSH_OUT = 620, ROW_Y = -40, RUSH_STEP = 70, RUSH_TEAR = 200, RUSH_UP = 560, RUSH_BEAT = 300;
 /** How long what sways by itself goes on after the last touch while the table waits. */
 const STIR_MS = 3000;
+/** Whether a table stands still while it waits (OpeningOptions.rest) when the host does not say. */
+const REST = false;
 /** Less than this from one picture to the next is no change. */
 const STILL_EPS = 1e-3;
 /** How fast the lid stirs, and where in its turn it begins to show. */
@@ -199,7 +204,7 @@ interface Scene {
 type Live = () => boolean;
 
 export function createOpening(gl: GL, kit: Kit, painter: Painter, options: OpeningOptions): Opening {
-  const { art, skipIntro = false, calm = false } = options;
+  const { art, skipIntro = false, calm = false, rest: rests = REST } = options;
   const snd: PhotoSound = options.sound ?? photoSound;
   const time = createTimeline();
   const { tween, wait } = time;
@@ -1598,7 +1603,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     hc += step;
     const { clock } = time;
     if (!waiting()) stirred = clock;
-    const want = clock - stirred < STIR_MS ? 1 : 0;
+    const want = !rests || clock - stirred < STIR_MS ? 1 : 0;
     ambRate += (want - ambRate) * (1 - Math.exp(-dt / 260));
     if (Math.abs(want - ambRate) < 0.002) ambRate = want;
     amb += step * ambRate;
@@ -1710,7 +1715,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       f.spin += f.vs * dt * 10;
       return f.life < f.max;
     });
-    rest();
+    if (rests) rest();
   }
 
   /** The run waits for a hand (a press, or a sealed bag to tear), with nothing on the timeline. What it waits for

@@ -22,12 +22,12 @@ const gl = { getError: () => 0 } as unknown as GL;
 type Told = [number, OpeningEvent][];
 /** "sign:bella-2" is the signed bella-2. [woken] is set by every event, as the host wakes the canvas for each. */
 function table(
-  cards: string[], skipIntro = true, { kit: k = kit, painter = {} as Painter, gl: g = gl } = {},
+  cards: string[], skipIntro = true, { kit: k = kit, painter = {} as Painter, gl: g = gl, rest = undefined as boolean | undefined } = {},
 ): { o: Opening; told: Told; woken: { on: boolean } } {
   const told: Told = [], woken = { on: false };
   const deal = cards.map((c) => ({ card: c.replace(/^sign:/, ""), signed: c.startsWith("sign:") }));
   const o: Opening = createOpening(g, k, painter, {
-    art: seriesArt("asoul2026")!, deal, skipIntro, sound: quiet, seed: 1,
+    art: seriesArt("asoul2026")!, deal, skipIntro, ...(rest === undefined ? {} : { rest }), sound: quiet, seed: 1,
     on: (e) => { told.push([o.clock, e]); woken.on = true; },
   });
   return { o, told, woken };
@@ -146,12 +146,12 @@ async function engine(o: Opening, woken: { on: boolean }, ms: number): Promise<n
 }
 const stirs = (list: Told, from: number) => list.filter(([at, e]) => e.type === "stir" && at >= from).length;
 
-describe("a table waiting for a hand", () => {
+describe("a table waiting for a hand, when it may stand still", () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
   it("stops asking for frames while the box waits, and wakes for each stir of the lid", async () => {
-    const { o, told: list, woken } = table(["diana-1"], false);
+    const { o, told: list, woken } = table(["diana-1"], false, { rest: true });
     await until(o, () => o.state().phase === "intro");
     await engine(o, woken, 6000);
     const from = o.clock, drawn = await engine(o, woken, 60000);
@@ -162,7 +162,7 @@ describe("a table waiting for a hand", () => {
   });
 
   it("asks for fewer frames while waiting for the first press, frame by frame", async () => {
-    const { o } = table(["diana-1"], false);
+    const { o } = table(["diana-1"], false, { rest: true });
     for (let f = 0; f < 300; f++) { o.update(1000 / 60); await vi.advanceTimersByTimeAsync(0); }
     expect(o.state().phase).toBe("intro");
     let active = 0;
@@ -176,7 +176,7 @@ describe("a table waiting for a hand", () => {
   });
 
   it("wakes at once for the pointer and for a key", async () => {
-    const { o, woken } = table(["diana-1"], false);
+    const { o, woken } = table(["diana-1"], false, { rest: true });
     await until(o, () => o.state().phase === "intro");
     await engine(o, woken, 8000);
     await until(o, () => !o.busy, 4000);
@@ -191,7 +191,7 @@ describe("a table waiting for a hand", () => {
   });
 
   it("stops while a sealed bag waits to be torn, its hint still coming round", async () => {
-    const { o, told: list, woken } = table(PLAIN);
+    const { o, told: list, woken } = table(PLAIN, true, { rest: true });
     await until(o, sealed(o, 0));
     await engine(o, woken, 6000);
     const from = o.clock, drawn = await engine(o, woken, 42000);
@@ -204,7 +204,7 @@ describe("a table waiting for a hand", () => {
   });
 
   it("stops altogether while a card waits on show, and goes on with a press", async () => {
-    const { o, told: list, woken } = table(PLAIN);
+    const { o, told: list, woken } = table(PLAIN, true, { rest: true });
     await until(o, sealed(o, 0));
     o.press();
     await until(o, told(list, "shown", 0));
@@ -216,13 +216,39 @@ describe("a table waiting for a hand", () => {
 
   it("does not stand still while the pictures of the next card are still on their way", async () => {
     const slow = { ...kit, want: () => ({ ready: new Promise<void>((done) => setTimeout(done, 6000)) }) } as unknown as Kit;
-    const { o, woken } = table(PLAIN, true, { kit: slow });
+    const { o, woken } = table(PLAIN, true, { kit: slow, rest: true });
     for (let t = 0; t < 30000 && !sealed(o, 0)(); t += 2000) await engine(o, woken, 2000);
     expect(o.state().active).toMatchObject({ i: 0, state: "sealed" });
   });
 
+  it("never stands still unless asked to: every frame is wanted and nothing slows", async () => {
+    // Whatever is asked of these does nothing; the painter keeps the clock it is given.
+    let painted = -1;
+    const any = <T>(o: object) => new Proxy(o, { get: (t, k) => (k in t ? Reflect.get(t, k) : () => undefined) }) as T;
+    for (const [cards, intro] of [[["diana-1"], false], [PLAIN, true]] as const) {
+      const { o, told: list } = table([...cards], intro, {
+        painter: any<Painter>({ blended: "over", begin: (f: { clock: number }) => { painted = f.clock; } }),
+        gl: any<GL>({ drawingBufferWidth: 960, drawingBufferHeight: 640, getError: () => 0 }),
+      });
+      o.resize(960, 640, 1);
+      await until(o, intro ? sealed(o, 0) : () => o.state().phase === "intro");
+      const from = o.clock;
+      for (let f = 0; f < 3750; f++) {
+        expect(o.busy).toBe(true);
+        o.update(16);
+        o.draw();
+        await vi.advanceTimersByTimeAsync(16);
+      }
+      expect(o.state().phase).toBe(intro ? "play" : "intro");
+      // What sways by itself went by the table's own clock the whole time.
+      expect(painted).toBe(o.clock);
+      expect(o.clock - from).toBe(60000);
+      expect(stirs(list, 0)).toBe(0);
+    }
+  });
+
   it("keeps drawing while the box opens by itself", async () => {
-    const { o, woken } = table(PLAIN);
+    const { o, woken } = table(PLAIN, true, { rest: true });
     await until(o, sealed(o, 0));
     o.setAuto(true);
     expect(await engine(o, woken, 3000)).toBeGreaterThan(180);
