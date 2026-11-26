@@ -3,7 +3,8 @@
 // the page it lies beside the sidebar, out of focus, and light gets in at its edges until it is paper again. The focus
 // goes over from one picture of it to the next, each more blurred (scripts/photocards/stage.py). It moves with the
 // pointer by how near everything in it is; lamps, dust and a glossy floor are added to it here.
-// One canvas for every visit, taken down a while after the last. Frames are drawn while something moves; what only
+// One canvas for every visit, taken down a while after the last: each visit holds it from when it got it until it
+// leaves, and what is still being loaded when the last one has left is not put on it. Frames are drawn while something moves; what only
 // drifts (lamps, dust) is drawn at half the rate, and comes to rest when nobody has been there for a while.
 import type { StageArt, StageLook } from "./art";
 import { grid, picture, startProgram, texture, type GL, type Picture, type Uniforms, type Vec2, type Vec3, type Vec4 } from "./gl";
@@ -45,10 +46,11 @@ export interface StageLayout {
 export interface StageLight { tones: readonly Vec3[]; turns: 1 | 2 | 3 }
 
 export interface Stage {
+  /** A visit holds it until it calls what this returns (once is enough): after the last one it leaves its host, is
+   *  loaded no further, and is taken down a while later. */
+  hold(): () => void;
   /** Draws in [host]. */
   mount(host: HTMLElement): void;
-  /** Leaves its host. */
-  release(): void;
   /** The key visual is there to be drawn; false when it could not be loaded. */
   load(art: StageArt): Promise<boolean>;
   /** The series on show; another one fades over. */
@@ -132,10 +134,14 @@ async function make(): Promise<Stage | null> {
 }
 
 function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startProgram>): Stage {
+  /** What photoStage hands out for this one: another made after it was lost is not forgotten for it. */
+  const mine = current;
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   const quad = grid(gl, 1, 1);
   const time = createTimeline();
   let dead = false;
+  /** Visits that hold it. */
+  let holders = 0;
   const sets = new Map<string, Set>();
   const asked = new Map<string, Promise<boolean>>();
 
@@ -149,7 +155,12 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
     for (const [k, p] of pictures.entries()) {
       // One at a time, with room for a frame between two.
       await new Promise<void>((done) => setTimeout(done, 0));
-      if (dead) return null;
+      if (dead || !holders) {
+        // Nobody is there to see it.
+        if (!dead) for (const t of made) gl.deleteTexture(t);
+        for (const q of pictures.slice(k)) if ("close" in q) q.close();
+        return null;
+      }
       // Of which kind and which picture it is: the sharpest of each with mips, for when it is drawn smaller.
       const kind = Math.floor(k / n), sharp = k % n === 0;
       if (kind === 2) texels.push([1 / p.width, 1 / p.height]);
@@ -163,8 +174,13 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
     let p = asked.get(art.id);
     if (!p) {
       p = fetchAll(art).then((set) => {
-        if (set) sets.set(art.id, set);
-        return !!set;
+        if (set) {
+          sets.set(art.id, set);
+          return true;
+        }
+        asked.delete(art.id);
+        // Given up while nobody held it: one that holds it by now has it loaded anew.
+        return !dead && holders > 0 ? load(art) : false;
       }, () => {
         asked.delete(art.id);
         return false;
@@ -369,9 +385,36 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
     if (mine) for (const told of [...lostHandlers]) told();
   });
 
+  function leave(): void {
+    cancelAnimationFrame(raf);
+    raf = 0;
+    observer?.disconnect();
+    canvas.remove();
+    host = null;
+    target = null;
+    // One that was lost is down already; the timer may be another's by now.
+    if (dead) return;
+    clearTimeout(takenDown);
+    takenDown = window.setTimeout(() => {
+      if (holders) return;
+      if (current === mine) current = null;
+      takeDown();
+    }, KEEP_MS);
+  }
+
   return {
     up: isUp,
     load,
+    hold() {
+      holders++;
+      clearTimeout(takenDown);
+      let held = true;
+      return () => {
+        if (!held) return;
+        held = false;
+        if (--holders === 0) leave();
+      };
+    },
     mount(el) {
       if (dead) return;
       clearTimeout(takenDown);
@@ -383,19 +426,6 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
       observer.observe(el);
       woken = time.clock;
       measure();
-    },
-    release() {
-      cancelAnimationFrame(raf);
-      raf = 0;
-      observer?.disconnect();
-      canvas.remove();
-      host = null;
-      target = null;
-      clearTimeout(takenDown);
-      takenDown = window.setTimeout(() => {
-        current = null;
-        takeDown();
-      }, KEEP_MS);
     },
     show(art) {
       const next = sets.get(art.id);

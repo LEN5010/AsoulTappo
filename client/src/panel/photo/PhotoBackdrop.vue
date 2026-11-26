@@ -32,15 +32,24 @@ const up = ref(false);
 const flat = ref(false);
 let alive = true;
 let round = 0;
+/** Gives back the stage this visit holds. */
+let leave: (() => void) | null = null;
 
 async function start(): Promise<void> {
   const mine = ++round, now = art.value;
   if (!now) return;
   await nextTick();
   const s = await photoStage();
+  // Held from here, so that leaving while it loads gives it back.
+  const drop = s?.hold() ?? null;
+  if (!alive || mine !== round) return drop?.();
+  leave?.();
+  leave = drop;
   const ok = s ? await s.load(now) : false;
   if (!alive || mine !== round || !host.value) return;
   if (!s || !ok) {
+    leave?.();
+    leave = null;
     groundRose.value = performance.now();
     flat.value = groundUp.value = true;
     return;
@@ -60,7 +69,8 @@ async function start(): Promise<void> {
 function stop(): void {
   round++;
   stage.value?.seen(false);
-  stage.value?.release();
+  leave?.();
+  leave = null;
   stage.value = null;
   up.value = groundUp.value = false;
 }
