@@ -10,6 +10,7 @@ import { clamp, viewport } from "../stores/desk";
 import { STANDALONE_PAGES, closePanel, ground, ui, type Page } from "../stores/ui";
 import { STANDALONE } from "../edition";
 import { isPanelWindow, setDragging } from "../composables/tauri";
+import { usePageActive } from "../composables/usePageActive";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Icon from "../ui/Icon.vue";
 import { EASE_OUT, nextFrame, rise } from "../ui/motion";
@@ -26,7 +27,7 @@ import { agreed } from "../legal/consent";
 import { dueNotices, noticeBoardShown, notices, openNoticeBoard, recheckRelease, watchRelease } from "../stores/update";
 
 // Every page is a chunk of its own. Opening the panel loads the page it opens on; a page turn loads its page
-// behind the shutter, and the rest are fetched one by one once the first page is up (see warmPages).
+// behind the shutter, and the rest are fetched one by one once the first page is up.
 const PAGES = {
   emotes: () => import("./EmotesPage.vue"),
   resonance: () => import("./ResonancePage.vue"),
@@ -47,42 +48,72 @@ const CheerPage = defineAsyncComponent(PAGES.cheer);
 const SettingsPage = defineAsyncComponent(PAGES.settings);
 /** The park's coins and jackpot in the top bar, in the park's chunk. */
 const ParkChips = defineAsyncComponent(() => import("./park/ParkChips.vue"));
+const loadedPages = new Set<Page>();
 /** Resolves once the page's code is in; a failed load is left for the page itself to show. */
-const loadPage = (page: Page) => PAGES[page]().catch(() => {});
-const WARM_STEP_MS = 400;
-let warming: ReturnType<typeof setTimeout> | undefined;
+const loadPage = (page: Page) => {
+  loadedPages.add(page);
+  return PAGES[page]().catch(() => { loadedPages.delete(page); });
+};
+function prefetchPage(page: Page) {
+  if (!pageActive.value || !agreed.value || page === shown.value || loadedPages.has(page)) return;
+  void loadPage(page);
+}
+const WARM_STEP_MS = 2500;
+let warmTimer: ReturnType<typeof setTimeout> | undefined;
+let warmIdle: number | undefined;
 /** The pages still to fetch ahead; undefined until the first page is up. */
 let warmQueue: Page[] | undefined;
-let warmActive = true;
+const pageActive = usePageActive();
+
+function cancelWarm() {
+  clearTimeout(warmTimer);
+  warmTimer = undefined;
+  if (warmIdle !== undefined) {
+    window.cancelIdleCallback(warmIdle);
+    warmIdle = undefined;
+  }
+}
+function scheduleWarm() {
+  if (warmTimer !== undefined || warmIdle !== undefined || !pageActive.value || !agreed.value) return;
+  warmTimer = setTimeout(() => {
+    warmTimer = undefined;
+    if (!pageActive.value || !agreed.value) return;
+    const run = () => {
+      warmIdle = undefined;
+      if (!pageActive.value || !agreed.value) return;
+      while (warmQueue?.length) {
+        const page = warmQueue.shift()!;
+        if (page === shown.value || loadedPages.has(page)) continue;
+        void loadPage(page);
+        if (warmQueue.length) scheduleWarm();
+        return;
+      }
+    };
+    if (window.requestIdleCallback) warmIdle = window.requestIdleCallback(run, { timeout: WARM_STEP_MS });
+    else run();
+  }, WARM_STEP_MS);
+}
 /**
- * Fetches the other pages one by one while the panel is up and the terms are agreed. A panel opened only to confirm
- * the statement after an update loads none of them; closing the panel pauses the rest until it opens again.
+ * Fetches the other pages one by one while the panel stays visible and the browser is idle.
+ * Hovering or focusing a nav button prefetches its target immediately.
  */
-function warmPages() {
-  // The standalone edition never loads the pages it does not show.
-  warmQueue ??= (STANDALONE ? [...STANDALONE_PAGES] : Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
-  if (warming !== undefined || !warmActive || !agreed.value) return;
-  const next = () => {
-    warming = undefined;
-    if (!warmActive || !agreed.value) return;
-    const page = warmQueue?.shift();
-    if (!page) return;
-    void loadPage(page);
-    warming = setTimeout(next, WARM_STEP_MS);
-  };
-  warming = setTimeout(next, WARM_STEP_MS);
-}
-function pauseWarming() {
-  warmActive = false;
-  clearTimeout(warming);
-  warming = undefined;
-}
-function resumeWarming() {
-  warmActive = true;
-  if (warmQueue?.length) warmPages();
-}
-// Agreeing in the panel that came up for it starts what the dialog held back.
-watch(agreed, (ok) => { if (ok && warmQueue?.length) warmPages(); });
+const openingDone = ref(false);
+watch(() => openingDone.value && pageActive.value && agreed.value, async (active, _, onCleanup) => {
+  if (!active) return;
+  let cancelled = false;
+  onCleanup(() => {
+    cancelled = true;
+    cancelWarm();
+  });
+  if (!warmQueue) {
+    // With reduced motion or a terms dialog, the opening can finish before the first page has mounted.
+    await loadPage(shown.value);
+    await nextTick();
+    if (cancelled) return;
+    warmQueue = (STANDALONE ? [...STANDALONE_PAGES] : Object.keys(PAGES) as Page[]).filter((page) => page !== shown.value);
+  }
+  if (warmQueue.length) scheduleWarm();
+});
 
 const emit = defineEmits<{ resetPet: [] }>();
 const ALL_NAV: { id: Page; label: string; en: string; icon: string }[] = [
@@ -238,23 +269,20 @@ onMounted(shownNow);
 onActivated(shownNow);
 onDeactivated(hiddenNow);
 onBeforeUnmount(hiddenNow);
-onActivated(resumeWarming);
-onDeactivated(pauseWarming);
 
 onMounted(async () => {
   window.addEventListener("keydown", onKey);
   stopRelease = watchRelease();
   lightUp();
-  if (reducedMotion.value) { warmPages(); return; }
+  if (reducedMotion.value) { openingDone.value = true; return; }
   turning = true;
   shutter.value?.hold();
   await settle(true);
   turning = false;
-  warmPages();
+  openingDone.value = true;
   if (ui.page !== shown.value) void turnPage();
 });
 onBeforeUnmount(() => {
-  clearTimeout(warming);
   window.removeEventListener("keydown", onKey);
   if (drag) void setDragging(false);
 });
@@ -357,6 +385,8 @@ function badgeOf(id: Page): number {
             v-for="(n, i) in NAV" :key="n.id" type="button"
             :class="{ on: ui.page === n.id }" :title="`${n.label}（${i + 1}）`"
             :aria-current="ui.page === n.id ? 'page' : undefined"
+            @pointerenter="prefetchPage(n.id)"
+            @focus="prefetchPage(n.id)"
             @click="ui.page = n.id"
           >
             <span class="nav-face" aria-hidden="true"></span>

@@ -7,6 +7,7 @@
 // off locally at once and their moves go to the server in order. When a game is settled its result shows over the
 // board; a result not seen yet shows again when the panel opens.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../../composables/usePageActive";
 import * as sfx from "../../audio/sfx";
 import { assetUrl } from "../../asset";
 import { emoteCover, getEmote } from "../../manifest";
@@ -57,10 +58,12 @@ const progress = computed(() => (game.value?.total ? (game.value.cleared / game.
 // ---- the page is shown: kept alive and its booth picked
 const active = ref(false);
 const visible = computed(() => active.value && parkTab.value === "link");
+const pageActive = usePageActive();
+const ticking = computed(() => visible.value && pageActive.value);
 
 // ---- the clock: the server's time, ticking while a game has time left and the page is in sight, set right when it
 // comes back. The store ends the game when it runs out.
-const clock = linkClock(() => visible.value);
+const clock = linkClock(() => ticking.value);
 const now = clock.now;
 const leftMs = computed(() => (game.value ? game.value.deadline - now.value : 0));
 const timeUp = computed(() => linkPlaying.value && leftMs.value <= 0);
@@ -279,7 +282,7 @@ watch(linkState, (s) => {
 </script>
 
 <template>
-  <section class="link" :class="{ calm }" aria-label="连连看">
+  <section class="link" :class="{ calm, inactive: !ticking }" aria-label="连连看">
     <div class="floor" :style="game ? { minHeight: `${(game.rows + 1) * MIN_PITCH}px` } : undefined">
       <!-- A game on the board, in play or settled. -->
       <template v-if="game">
@@ -354,7 +357,7 @@ watch(linkState, (s) => {
         <div class="park-actions-main">
           <span v-if="blocked" class="why">{{ blocked }}</span>
           <button
-            type="button" class="ui-btn primary large start" :class="{ pulse: blocked === null && !result && !calm }"
+            type="button" class="ui-btn primary large start" :class="{ pulse: blocked === null && !result && !calm && ticking }"
             :disabled="blocked !== null" :aria-busy="linkStarting" :title="blocked || undefined"
             @keydown.space.prevent @keyup.space.prevent @click="start"
           >
@@ -399,6 +402,9 @@ watch(linkState, (s) => {
 }
 .spin {
   animation: spin 900ms linear infinite;
+}
+.inactive .spin {
+  animation-play-state: paused;
 }
 @keyframes spin {
   to { rotate: 360deg; }

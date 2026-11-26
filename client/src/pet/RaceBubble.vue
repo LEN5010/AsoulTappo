@@ -12,6 +12,7 @@ export const RACE_HEIGHT = 52;
 // it waits.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRaceFeed } from "../panel/park/raceFeed";
+import { windowVisible } from "../stores/activity";
 import { economy } from "../stores/economy";
 import { noPark } from "../stores/park";
 import { online } from "../stores/player";
@@ -29,7 +30,7 @@ const FRESH_MS = 30_000;
 
 const feed = useRaceFeed({ view: "schedule" });
 const on = computed(() => settings.raceRemind && online.value && !noPark.value && !!economy.value?.park?.race);
-watch(on, (is) => (is ? feed.start() : feed.stop()), { immediate: true });
+watch(() => on.value && windowVisible.value, (active) => (active ? feed.start() : feed.stop()), { immediate: true });
 
 const told = ref(0);
 const up = ref(false);

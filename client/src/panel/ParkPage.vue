@@ -9,7 +9,7 @@
 // open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
 // without coins moving. The fifth page, tile matching, shows on servers whose economy has it; between its games that
 // reload reads its state, which carries the park, instead (one request for both).
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { economy } from "../stores/economy";
 import { status } from "../stores/player";
 import { claimGift, loadPark, noPark, park, parkError } from "../stores/park";
@@ -21,12 +21,13 @@ import { bandOf, clearFlash, flashedHost, flashHost, parkTab, type ParkTab } fro
 import { popCoins } from "./park/pops";
 import ParkBand from "./park/ParkBand.vue";
 import ParkCoin from "./park/ParkCoin.vue";
-import CoinSection from "./park/CoinSection.vue";
-import ScratchSection from "./park/ScratchSection.vue";
-import RaceSection from "./park/RaceSection.vue";
-import LotterySection from "./park/LotterySection.vue";
-import LinkSection from "./park/LinkSection.vue";
 import "./park/park.css";
+
+const CoinSection = defineAsyncComponent(() => import("./park/CoinSection.vue"));
+const ScratchSection = defineAsyncComponent(() => import("./park/ScratchSection.vue"));
+const RaceSection = defineAsyncComponent(() => import("./park/RaceSection.vue"));
+const LotterySection = defineAsyncComponent(() => import("./park/LotterySection.vue"));
+const LinkSection = defineAsyncComponent(() => import("./park/LinkSection.vue"));
 
 const ALL_TABS: { id: ParkTab; label: string }[] = [
   { id: "coin", label: "驼币" },

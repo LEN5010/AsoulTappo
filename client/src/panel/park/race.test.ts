@@ -411,8 +411,9 @@ describe("a replay's clock", () => {
 
 // Races the server ran on its maps with skills dealt (server/app/race.py, the example economy): between them every
 // special square and every skill acts.
+import { computed, ref } from "vue";
 import mapRaces from "./raceMaps.fixture.json";
-import { layoutOf, playStep, sceneryCells, skillText, squareOn, trackOf, SKILL_NAMES } from "./race";
+import { createBoardStepper, createStackStepper, stepCursor, layoutOf, playStep, sceneryCells, skillText, squareOn, trackOf, SKILL_NAMES } from "./race";
 
 describe("a race on a map with skills", () => {
   const races = mapRaces as unknown as { setup: RaceSetup; start: string[]; moves: RaceStep[]; ranking: string[] }[];
@@ -520,6 +521,24 @@ describe("a map's route on the board", () => {
     // A board the route fills has none.
     expect(sceneryCells(layoutOf(2, [[0, 0], [1, 0], [2, 0]]), 2, 3)).toEqual([]);
   });
+
+  it("updates downstream Vue computed squares when skipping a full completed step", () => {
+    const start = ["a", "b"];
+    const moves: RaceStep[] = [{ m: "a", dice: [2], steps: 2, from: 0, to: 2 }];
+    const cursor = ref({ completed: 0, partial: -1 });
+    const stepStacks = createStackStepper();
+    const stacks = computed(() => stepStacks(start, moves, cursor.value.completed, cursor.value.partial));
+    const squares = computed(() => Object.fromEntries(Object.entries(spots(stacks.value)).map(([m, s]) => [m, s.square])));
+
+    const firstRef = stacks.value;
+    expect(squares.value).toEqual({ a: 0, b: 0 });
+    expect(stacks.value).toBe(firstRef);
+
+    // Skipping an entire step while paused (`partial` stays -1) must return a fresh Map reference.
+    cursor.value = { completed: 1, partial: -1 };
+    expect(stacks.value).not.toBe(firstRef);
+    expect(squares.value).toEqual({ a: 2, b: 0 });
+  });
 });
 
 const fixtureRaces = (mapRaces as unknown as Pick<Required<Race>, "setup" | "start" | "moves" | "ranking">[]).map((fixture) => {
@@ -564,4 +583,35 @@ it.each(fixtureRaces)("records every quarter second on $race.setup.map.name (#$r
     });
   });
   expect(frames).toMatchSnapshot();
+});
+
+it.each(fixtureRaces)("steps and scrubs the full board on $race.setup.map.name (#$race.moves.length)", ({ race, times }) => {
+  const shuffled = [...times];
+  let seed = 42;
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+    const j = Math.floor((seed / 2 ** 32) * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const stepBoard = createBoardStepper();
+  const stepStacks = createStackStepper();
+  let previous: { cursor: ReturnType<typeof stepCursor>; board: Map<number, string[]>; standings: Map<number, string[]> } | undefined;
+  for (const t of [...times, ...shuffled]) {
+    const h = playhead(race, t);
+    const cursor = stepCursor(h);
+    const { stacks, hops } = stepBoard(race.start, race.moves, cursor.completed, cursor.partial);
+    const standings = stepStacks(race.start, race.moves, cursor.completed, cursor.partial);
+    const expected = [...stacksAt(race.start, race.moves, h)];
+    expect([...stacks]).toEqual(expected);
+    expect([...standings]).toEqual(expected);
+    expect(hops).toEqual(referenceHops(race.start, race.moves, h));
+    expect(cursor.completed > 0 || cursor.partial >= 0).toBe(h.done > 0 || (h.current >= 0 && h.part >= HOP_AT));
+    if (previous) {
+      const same = cursor.completed === previous.cursor.completed && cursor.partial === previous.cursor.partial;
+      expect(stacks === previous.board).toBe(same);
+      expect(standings === previous.standings).toBe(same);
+    }
+    previous = { cursor, board: stacks, standings };
+  }
 });

@@ -1,12 +1,15 @@
-import { createHash } from "node:crypto";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { manifest } from "../../manifest";
 import RaceTrack from "./RaceTrack.vue";
 import mapRaces from "./raceMaps.fixture.json";
 import { ROUND, stepStart, trackOf, tuanziArt, type Race } from "./race";
 import { economy } from "../../stores/economy";
+
+const { createHash } = await vi.importActual<{
+  createHash(algorithm: "sha1"): { update(html: string): { digest(encoding: "hex"): string } };
+}>("node:crypto");
 
 const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);

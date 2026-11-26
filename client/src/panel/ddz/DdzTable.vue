@@ -14,6 +14,7 @@
 // either other seat (or the arrow keys) watches from there. The top bar says 观战 and who watches; closing the window
 // stops watching. Who watches the own table shows in the top bar, and those who see the own hand beside the own name.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../../composables/usePageActive";
 import { hints, playable } from "../../ddz/rules";
 import { arrange, cardAt, cardsOut, fan, pickJokers, pickRank, rankOfKey, stampOf } from "../../ddz/table";
 import { cardSlide, flip } from "../../audio/sfx";
@@ -314,6 +315,7 @@ const clockSeat = computed(() => {
 });
 /** Turns coral from here down. */
 const HURRY_SEC = 5;
+const pageActive = usePageActive();
 const now = ref(Date.now());
 const secLeft = computed(() => Math.max(0, Math.ceil((t.value.until - now.value) / 1000)));
 let tickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -321,12 +323,12 @@ let tickTimer: ReturnType<typeof setTimeout> | undefined;
 function tick() {
   clearTimeout(tickTimer);
   now.value = Date.now();
-  if (clockSeat.value === null || document.hidden) return;
+  if (clockSeat.value === null || !pageActive.value || document.hidden) return;
   const left = t.value.until - now.value;
   if (left <= 0) return;
   tickTimer = setTimeout(tick, (left % 1000 || 1000) + 10);
 }
-watch([clockSeat, () => t.value.until], tick, { immediate: true });
+watch([clockSeat, () => t.value.until, pageActive], tick, { immediate: true });
 
 // ---- what is on the table
 /**
@@ -529,8 +531,15 @@ function wallDown(e: PointerEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener("keydown", onKey);
-  document.addEventListener("visibilitychange", tick);
+  watch(pageActive, (active, _, onCleanup) => {
+    if (!active) return;
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("visibilitychange", tick);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("visibilitychange", tick);
+    });
+  }, { immediate: true });
   observer = new ResizeObserver(([entry]) => {
     const r = entry?.contentRect;
     if (r && r.width > 0 && r.height > 0) box.value = { w: r.width, h: r.height };
@@ -538,8 +547,6 @@ onMounted(() => {
   if (root.value) observer.observe(root.value);
 });
 onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onKey);
-  document.removeEventListener("visibilitychange", tick);
   clearTimeout(tickTimer);
   observer?.disconnect();
   clearTimeout(freshTimer);
@@ -555,7 +562,7 @@ onBeforeUnmount(() => {
   <div class="ddz" data-overlay>
     <div ref="root" class="fit">
       <div
-        class="stage" :class="`phase-${t.phase}`"
+        class="stage" :class="[`phase-${t.phase}`, { inactive: !pageActive }]"
         :style="{ width: `${stage.w}px`, height: `${stage.h}px`, transform: `scale(${unit})` }" @pointerdown.self="wallDown"
       >
         <svg class="wall-suit left" viewBox="0 0 24 24" aria-hidden="true"><path :d="SUITS[2]" /></svg>
@@ -1258,6 +1265,7 @@ onBeforeUnmount(() => {
   transform-origin: 0 50%;
   animation: drain linear forwards;
 }
+.inactive .clock i { animation-play-state: paused; }
 /* The own move's bar lies between the hand and the keys. */
 .clock.wide { position: absolute; width: 452px; margin: 0 0 0 -226px; background: var(--c-200); z-index: 4; pointer-events: none; }
 .clock.wide i { background: linear-gradient(90deg, var(--c-400), var(--c-600)); }

@@ -21,13 +21,18 @@ import RaceDie, { type Toss } from "./RaceDie.vue";
 import RaceTrack from "./RaceTrack.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
-import { shortDay } from "./lottery";
 import {
-  chinaDay, cutOf, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, leaders, momentOf, OPEN_ROLL_MS, openingAt, playhead,
-  playLength, rankOf, replayAt, replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES, skillText, spots,
-  stacksAt, staggered, stageOf, stepStart, trackOf, type Race, type ReplayClock,
+  chinaDay, createStackStepper, cutOf, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, leaders, momentOf, OPEN_ROLL_MS,
+  openingAt, playhead, playLength, rankOf, replayAt, replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES,
+  skillText, spots, staggered, stageOf, stepCursor, stepStart, trackOf, type Race, type ReplayClock,
 } from "./race";
 import { isFinished, isPlaying, raceClock, useRaceFeed } from "./raceFeed";
+
+/** 2026-11-12 as 11月12日. */
+function shortDay(day: string): string {
+  const [, m, d] = day.split("-").map(Number);
+  return m && d ? `${m}月${d}日` : day;
+}
 
 /** [replay]: the finished race to play, 0 for the live one. */
 const props = defineProps<{ replay?: number }>();
@@ -263,24 +268,46 @@ const head = computed(() => {
   const r = stage.value;
   return r?.start && r.moves?.length ? playhead(r, stageNow.value) : null;
 });
+const cursor = computed<ReturnType<typeof stepCursor> | null>((prev) => head.value && stepCursor(head.value, prev));
+const stepStacks = createStackStepper();
 const stacks = computed(() => {
   const r = stage.value;
-  return r?.start && r.moves && head.value ? stacksAt(r.start, r.moves, head.value) : null;
+  const at = cursor.value;
+  if (!r?.start || !r.moves || !at) return null;
+  return stepStacks(r.start, r.moves, at.completed, at.partial);
 });
 /*
  * The lists below move their rows when the order changes (TransitionGroup). A list that draws again while its rows
- * are on the way starts their move afresh from where they are, so what the lists read must stand still between the
- * clock's ticks: the values that follow the clock are turned into text first, which only changes when they do.
+ * are on the way starts their move afresh from where they are, so what the lists read must keep reference identity
+ * whenever its displayed values are unchanged.
  */
+interface FieldState { order: string[]; squares: Record<string, number>; led: boolean }
 /** First to last (the ranking once it is in, the board's order while it runs, the lanes before), and each one's square. */
-const standing = computed(() => {
+const field = computed<FieldState>((prev) => {
   const r = stage.value;
-  const order = finished.value && r?.ranking ? r.ranking : stacks.value ? rankOf(stacks.value) : r?.start ?? MEMBERS;
+  const st = stacks.value;
+  const order = finished.value && r?.ranking ? r.ranking : st ? rankOf(st) : r?.start ?? MEMBERS;
   const squares: Record<string, number> = {};
-  if (stacks.value) for (const [m, s] of Object.entries(spots(stacks.value))) squares[m] = s.square;
-  return JSON.stringify({ order, squares, led: !!stacks.value });
+  let sqCount = 0;
+  if (st) {
+    for (const [m, s] of Object.entries(spots(st))) {
+      squares[m] = s.square;
+      sqCount += 1;
+    }
+  }
+  const led = !!st;
+  if (
+    prev
+    && prev.led === led
+    && prev.order.length === order.length
+    && prev.order.every((m, i) => m === order[i])
+    && Object.keys(prev.squares).length === sqCount
+    && order.every((m) => prev.squares[m] === squares[m])
+  ) {
+    return prev;
+  }
+  return { order, squares, led };
 });
-const field = computed(() => JSON.parse(standing.value) as { order: string[]; squares: Record<string, number>; led: boolean });
 const order = computed(() => field.value.order);
 const squares = computed(() => field.value.squares);
 /** How far along [m] is, 0 to 1, and its square readout on the side card. */
@@ -357,21 +384,33 @@ function roundDie(m: string): SeatDie | null {
 }
 /** The throws in the air, by member: read as a die comes up and not followed, since they change with every tick. */
 const tosses: { now: Record<string, Toss | null> } = { now: {} };
-const diceText = computed(() => {
+interface SeatDieView { m: string; key: string; face: number; out: boolean; air: boolean }
+/** A seat's die as the row shows it; `air`: its throw is in `tosses`. */
+const seatDice = computed<Record<string, SeatDieView | null>>((prev) => {
   const air: Record<string, Toss | null> = {};
-  const shown = seats.value.map((m) => {
+  const next: Record<string, SeatDieView | null> = {};
+  const list = seats.value;
+  for (const m of list) {
     const d = opening.value ? openingDie(m) : roundDie(m);
     air[m] = d?.toss ?? null;
-    return d ? { m, key: d.key, face: d.face, out: d.out, air: !!d.toss } : { m };
-  });
+    next[m] = d ? { m, key: d.key, face: d.face, out: d.out, air: !!d.toss } : null;
+  }
   tosses.now = air;
-  return JSON.stringify(shown);
+  if (prev && Object.keys(prev).length === list.length) {
+    let same = true;
+    for (const m of list) {
+      const a = prev[m];
+      const b = next[m];
+      if (a === b) continue;
+      if (!a || !b || a.key !== b.key || a.face !== b.face || a.out !== b.out || a.air !== b.air) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return prev;
+  }
+  return next;
 });
-/** A seat's die as the row shows it; `air`: its throw is in `tosses`. */
-const seatDice = computed(() =>
-  Object.fromEntries((JSON.parse(diceText.value) as { m: string; key?: string; face?: number; out?: boolean; air?: boolean }[])
-    .map((d) => [d.m, d.key ? d : null])),
-);
 /** Whose turn it is in the step under way, and whether it still waits for its die. */
 const mover = computed(() => {
   const r = stage.value;
