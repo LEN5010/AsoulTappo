@@ -125,6 +125,8 @@ function clearMembers(): void {
 /** `rate_limited` errors since the last log line; counted instead of logged one by one. */
 let rateLimited = 0;
 
+// What partners do among themselves (moving, tapping, emotes, pokes and wins of their own) is drawn on their pets but
+// leaves the desk's idle clock alone (noteActivity): only what reaches this desk keeps its looping decoration going.
 const events: RoomEvents = {
   onConnState(s) {
     writeLog("room", rateLimited ? `${s} (${rateLimited} rate_limited before)` : s);
@@ -177,21 +179,19 @@ const events: RoomEvents = {
     if (!m) return;
     m.taps = total;
     if (id === youId.value) return; // local pet already reacted instantly
-    noteActivity();
     m.pulse += 1;
     players.get(id)?.combo.add(count);
   },
   onEmote(id, name) {
     if (id === youId.value) return; // shown locally on send
     if (!getEmote(name)) return;
-    noteActivity();
     players.get(id)?.emote.play(name);
   },
   onScratch(id, shards) {
     // The shards go up over the winner's pet, and 阿草 takes it as badly as it does at the stall.
     const face = faceKey(faceOf({ kind: "shards", amount: shards, at: [] }));
-    noteActivity();
     if (id === youId.value) {
+      noteActivity();
       localWin.add(shards);
       if (face) localPlayer.play(face);
       return;
@@ -202,26 +202,26 @@ const events: RoomEvents = {
   },
   onRaceWin(id, coins) {
     // The coins go up over the winner's pet; no stall keeper here.
-    noteActivity();
-    if (id === youId.value) localWin.add(coins, "coin");
-    else players.get(id)?.win.add(coins, "coin");
+    if (id === youId.value) {
+      noteActivity();
+      localWin.add(coins, "coin");
+    } else players.get(id)?.win.add(coins, "coin");
   },
   onMotion(id, pose) {
     const member = members.get(id);
     if (member && id !== youId.value) {
-      noteActivity();
       // Kept for the panel's mirror (desktop/bridge.ts) and never watched: pets are drawn from remoteMotion.
       Object.assign(member.motion, pose);
       remoteMotion.update(id, pose);
     }
   },
   onPoke(from, to, quiet) {
-    noteActivity();
     if (to !== youId.value) {
       const m = members.get(to);
       if (m) m.pulse += 1;
       return;
     }
+    noteActivity();
     localPet.pulse += 1;
     const m = members.get(from);
     if (!quiet && m && from !== youId.value) showPoked(from, shownNick(m));
@@ -229,7 +229,6 @@ const events: RoomEvents = {
   onDrink(id) {
     const m = members.get(id);
     if (!m || id === youId.value) return;
-    noteActivity();
     m.sip += 1;
   },
   onProfile(id, profile) {
@@ -240,18 +239,20 @@ const events: RoomEvents = {
   },
   onCheerDone(round, rewards) {
     // Every paid pet shows its shards at once, the own one included; the shard count follows from the server.
-    noteActivity();
     for (const [id, got] of Object.entries(rewards)) {
       if (got <= 0) continue;
       if (id === youId.value) localWin.add(got);
       else players.get(id)?.win.add(got);
     }
     const mine = rewards[youId.value];
+    if (mine) noteActivity();
     cheerDone.value = { round, got: mine ?? null };
     if (mine) void reloadStatus();
   },
   onDuel(msg) {
-    noteActivity();
+    if ((msg.type === "duel_invite" && (msg.from === youId.value || msg.to === youId.value)) || duel.value?.id === msg.duel) {
+      noteActivity();
+    }
     onDuelMessage(msg);
   },
   onDdz(msg) {
