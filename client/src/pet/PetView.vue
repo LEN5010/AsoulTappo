@@ -13,11 +13,18 @@ import Icon from "../ui/Icon.vue";
 import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
 import { SkinForm } from "./SkinForm";
+import { pawPainter, type PawPose } from "./pawPaint";
+import { usePartnerLoops } from "./partnerLoops";
 
 const props = withDefaults(
   defineProps<{
     character: string;
     motionId?: string;
+    /**
+     * The own pet: the input hook's pose (stores/pet.ts), drawn straight onto the layers as it changes, so the paws
+     * moving never render this view or its parent. In place of keyDown, formPress, mouseDx/Dy and left/rightDown.
+     */
+    pose?: Readonly<PawPose & { formPress: number }>;
     scale?: number;
     /** Local pet: keyboard layer pressed state (driven by global key hook). */
     keyDown?: boolean;
@@ -50,6 +57,8 @@ const props = withDefaults(
     flipBubble?: boolean;
     /** A showcase holds a two-form skin in one of its forms; left out, presses decide (SkinForm.ts). */
     form?: boolean | null;
+    /** On the desk: what the second form draws past the picture's right edge takes the mouse (hit.ts). */
+    reachHit?: boolean;
   }>(),
   {
     scale: 1, keyDown: false, pulse: 0, sip: 0, mouseDx: 0, mouseDy: 0, leftDown: false, rightDown: false,
@@ -68,28 +77,22 @@ onMounted(() => {
   visibility = new IntersectionObserver(([entry]) => { inView.value = !!entry?.isIntersecting; });
   if (root.value) visibility.observe(root.value);
 });
-// Another member's pet is drawn from the room's updates, straight onto its layers: each update sets where
-// the mouse layer goes and the stylesheet glides it there, so nothing renders or runs between updates.
+/** The paws are drawn straight onto the layers (pawPaint.ts), never by a render: another member's pet, the own pet. */
+const direct = computed(() => !!props.motionId || !!props.pose);
+// Another member's pet is drawn from the room's updates: each update sets where the mouse layer goes and the
+// stylesheet glides it there, so nothing renders or runs between updates.
 // Subscribed only while it can be seen, which is also what the room is asked to send (net/MotionFrames.ts).
 watch([() => props.motionId, () => props.scale, assets, active, inView, root], () => {
   stopMotion?.(); stopMotion = undefined;
   const el = root.value;
   if (!props.motionId || !el || !active.value || !inView.value) return;
-  const mouse = [...el.querySelectorAll<HTMLElement>(".mouse")];
-  const keyboard = el.querySelector<HTMLElement>(".kb");
-  const [left, right] = [el.querySelector<HTMLElement>(".click-left"), el.querySelector<HTMLElement>(".click-right")];
-  const scale = props.scale;
+  const paint = pawPainter(el, props.scale);
+  // The first paint is the pose held when subscribing; the ones after it are the member moving.
+  let held = true;
   stopMotion = remoteMotion.subscribe(props.motionId, (pose) => {
-    const at = `translate(${pose.dx * scale}px, ${pose.dy * scale}px)`;
-    for (const layer of mouse) layer.style.transform = at;
-    if (keyboard) {
-      keyboard.style.transform = `translateY(${(pose.keyDown ? PET_BASE.keyboard.pressOffset : 0) * scale}px)`;
-      // The quick way down, the springy way back up, as for the own pet (.kb.down below).
-      keyboard.classList.toggle("down", pose.keyDown);
-    }
-    // Not drawn at all while the button is up: a masked layer that travels with the mouse costs a frame each step.
-    if (left) left.style.display = pose.left ? "block" : "none";
-    if (right) right.style.display = pose.right ? "block" : "none";
+    paint(pose, pose.keyDown);
+    if (!held) partnerLoops.note();
+    held = false;
   });
 }, { flush: "post" });
 onBeforeUnmount(() => { stopMotion?.(); visibility?.disconnect(); });
@@ -111,6 +114,18 @@ watch(
 );
 const pressed = computed(() => props.keyDown || pulseDown.value);
 
+// The own pet's pose, painted whenever it changes; bound to the layers again when the pet is drawn anew.
+let paintOwn: ((pose: PawPose, pressed: boolean) => void) | null = null;
+const ownPressed = () => !!props.pose?.keyDown || pulseDown.value;
+watch([() => props.pose, () => props.motionId, () => props.scale, assets, root], () => {
+  const el = root.value, pose = props.pose;
+  paintOwn = pose && !props.motionId && el && assets.value ? pawPainter(el, props.scale) : null;
+  if (paintOwn && pose) paintOwn(pose, ownPressed());
+}, { flush: "post", immediate: true });
+watch(() => (props.pose ? [props.pose.dx, props.pose.dy, props.pose.left, props.pose.right, ownPressed()] : null), () => {
+  if (paintOwn && props.pose) paintOwn(props.pose, ownPressed());
+}, { flush: "post" });
+
 // ---- the second form of a two-form skin: the own pet times its presses, another member's pet its tap batches
 const typedForm = ref(false);
 const formOn = computed(() => (props.form ?? typedForm.value) && !!assets.value?.form);
@@ -120,11 +135,11 @@ watch(() => assets.value?.form, (has) => {
   form = has ? new SkinForm((on) => (typedForm.value = on)) : undefined;
 }, { immediate: true });
 onBeforeUnmount(() => form?.reset());
-watch(() => props.formPress, (press) => {
+watch(() => props.formPress ?? props.pose?.formPress, (press) => {
   if (press !== undefined) form?.press(Date.now());
 });
 watch(() => props.pulse, () => {
-  if (props.formPress === undefined) form?.press(Date.now());
+  if (props.formPress === undefined && !props.pose) form?.press(Date.now());
 });
 const sized = (p: { bg: string; bgSmall: string; bgMedium: string }) =>
   (s.value <= 1 ? p.bgSmall : s.value <= 2 ? p.bgMedium : p.bg);
@@ -139,6 +154,32 @@ const loopStyle = computed(() => {
     "--loop-steps": l.frames, "--loop-dur": `${l.frames * l.ms}ms`,
   };
 });
+
+/**
+ * The parts of the loop drawn past the picture's edges (嘉然然龙's open wing on the right, 乃琳法师's star disc and
+ * 贝拉炎头队长's flames above), in the loop's own place: on the desk each is a hit target of its own, since the pet's
+ * box (`data-hit-inset`) ends at the picture. Above and below take the loop's columns over the picture, the sides the
+ * loop's full height.
+ */
+const reachStyles = computed(() => {
+  const l = loop.value;
+  if (!l || !props.reachHit) return [];
+  const k = (PET_BASE.width * s.value) / l.width;
+  const w = PET_BASE.width * s.value, h = PET_BASE.height * s.value;
+  // The loop's box in the picture's px; the second picture is drawn at the picture's width from the bottom up.
+  const left = l.x * k, right = (l.x + l.w) * k;
+  const top = h - (l.height - l.y) * k, bottom = top + l.h * k;
+  const boxes: { x: number; y: number; w: number; h: number }[] = [];
+  const inLeft = Math.max(left, 0), inRight = Math.min(right, w);
+  if (top < 0 && inRight > inLeft) boxes.push({ x: inLeft, y: top, w: inRight - inLeft, h: Math.min(bottom, 0) - top });
+  if (bottom > h && inRight > inLeft) boxes.push({ x: inLeft, y: Math.max(top, h), w: inRight - inLeft, h: bottom - Math.max(top, h) });
+  if (left < 0) boxes.push({ x: left, y: top, w: Math.min(right, 0) - left, h: bottom - top });
+  if (right > w) boxes.push({ x: Math.max(left, w), y: top, w: right - Math.max(left, w), h: bottom - top });
+  return boxes.map((b) => ({ left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` }));
+});
+
+// Another member's loop frames go on while that member taps, moves or changes form, the desk idle or not.
+const partnerLoops = usePartnerLoops(root, () => !!props.motionId, () => [props.pulse, formOn.value]);
 
 // ---- the cup after a drink of water
 const SIP_MS = 3200;
@@ -155,13 +196,13 @@ const box = computed(() => ({ width: u(PET_BASE.width), height: u(PET_BASE.heigh
 const kbStyle = computed(() => {
   const k = PET_BASE.keyboard;
   const box = { left: u(k.x), top: u(k.y), width: u(k.size), height: u(k.size) };
-  // Another member's layers are moved by the motion painter above, never by a render.
-  return props.motionId ? box : { ...box, transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)` };
+  // Layers drawn straight onto (`direct`) are moved by the painters above, never by a render.
+  return direct.value ? box : { ...box, transform: `translateY(${(pressed.value ? k.pressOffset : 0) * s.value}px)` };
 });
 const mouseStyle = computed(() => {
   const m = PET_BASE.mouse;
   const box = { left: u(m.x), top: u(m.y), width: u(m.size), height: u(m.size) };
-  return props.motionId ? box : { ...box, transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)` };
+  return direct.value ? box : { ...box, transform: `translate(${props.mouseDx * s.value}px, ${props.mouseDy * s.value}px)` };
 });
 const clickColor = computed(() => characterColor(assets.value?.name ?? props.character));
 const clickMask = (src: string) => ({ maskImage: `url("${src}")`, WebkitMaskImage: `url("${src}")` });
@@ -177,7 +218,7 @@ const bubbleAnchor = computed(() => ({
 </script>
 
 <template>
-  <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId }" :style="box">
+  <div ref="root" class="pet" :class="{ 'smooth-mouse': smoothMouse, 'remote-motion': !!motionId, 'direct-pose': direct }" :style="box">
     <div v-if="assets" class="art" :style="opacity !== undefined && opacity < 1 ? { opacity } : undefined">
       <div class="still">
         <img class="layer bg" :class="{ under: formOn }" :src="sized(assets)" :style="{ width: box.width }" draggable="false" alt="" />
@@ -189,12 +230,15 @@ const bubbleAnchor = computed(() => ({
           <span v-if="loop && !loop.behind && formOn && active" class="layer loop" :style="loopStyle"><img :src="loop.src" draggable="false" alt="" /></span>
         </Transition>
       </div>
-      <img class="layer kb" :class="{ down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
+      <img class="layer kb" :class="direct ? undefined : { down: pressed }" :src="assets.keyboard" :style="kbStyle" draggable="false" alt="" />
       <img class="layer mouse" :src="assets.mouse" :style="mouseStyle" draggable="false" alt="" />
-      <span v-if="motionId || leftDown" class="layer mouse click" :class="{ 'click-left': motionId }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
-      <span v-if="motionId || rightDown" class="layer mouse click" :class="{ 'click-right': motionId }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
+      <span v-if="direct || leftDown" class="layer mouse click" :class="{ 'click-left': direct }" :style="[mouseStyle, clickMask(assets.leftClick), { backgroundColor: clickColor }]" />
+      <span v-if="direct || rightDown" class="layer mouse click" :class="{ 'click-right': direct }" :style="[mouseStyle, clickMask(assets.rightClick), { backgroundColor: clickColor }]" />
     </div>
     <div v-else class="missing">?</div>
+    <template v-if="formOn && active">
+      <span v-for="(at, i) in reachStyles" :key="i" class="reach" data-hit :style="at"></span>
+    </template>
 
     <ComboBubble :frame="combo" :icon="comboIcon" :x="(PET_BASE.keyboard.x + 12) * s" :y="(PET_BASE.keyboard.y - 6) * s" :size="Math.max(14, 18 * s)" />
     <ComboBubble
@@ -269,9 +313,11 @@ const bubbleAnchor = computed(() => ({
 .smooth-mouse .mouse { transition: transform 60ms linear; }
 /* Updates come every 100ms (net/MotionSender.ts): the layer takes that long to reach each one. */
 .remote-motion .mouse { transition: transform 100ms linear; }
-.remote-motion .click-left, .remote-motion .click-right { display: none; }
+.direct-pose .click-left, .direct-pose .click-right { display: none; }
 .click { mask-size: 100% 100%; mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; }
 .missing { color: var(--surface); opacity: 0.5; }
+/* Draws nothing: it only takes the mouse over what the loop draws past the picture, which its layers let through. */
+.reach { position: absolute; }
 /* A paper disc with the cup, popping up beside the head and drifting off. */
 .sip {
   position: absolute;

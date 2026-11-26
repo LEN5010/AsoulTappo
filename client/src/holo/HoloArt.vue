@@ -5,7 +5,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HoloShine } from "../manifest";
 import { acquire, loadImage, release, type HoloRenderer } from "./renderer";
-import { FLAT, type Tilt } from "./shader";
+import { FLAT, frameKey, sameFrame, type Tilt } from "./shader";
 
 const props = withDefaults(defineProps<{
   art: string;
@@ -25,8 +25,11 @@ let renderer: HoloRenderer | null = null;
 let observer: ResizeObserver | undefined;
 let alive = true;
 let loading = 0;
+/** What the canvas shows now, so a frame that would come out the same is not drawn again. */
+let drawn: number[] | null = null;
 
 function giveUp() {
+  drawn = null;
   fallback.value = true;
   ready.value = false;
   if (renderer) release(renderer);
@@ -36,7 +39,11 @@ function giveUp() {
 function draw() {
   if (!renderer || !ready.value) return;
   if (renderer.lost) return giveUp();
-  renderer.draw({ shine: props.shine, tilt: props.tilt, on: props.lit ? 1 : 0.85 });
+  const on = props.lit ? 1 : 0.85;
+  const key = frameKey(renderer.canvas.width, renderer.canvas.height, props.tilt, on, props.shine);
+  if (sameFrame(drawn, key)) return;
+  drawn = key;
+  renderer.draw({ shine: props.shine, tilt: props.tilt, on });
 }
 
 function fit() {
@@ -48,6 +55,7 @@ function fit() {
 
 async function load() {
   const mine = ++loading;
+  drawn = null;
   ready.value = false;
   if (!props.art || !props.mask) return giveUp();
   renderer ??= acquire();
@@ -62,6 +70,8 @@ async function load() {
     return;
   }
   host.value?.append(renderer.canvas);
+  // New pictures on the canvas: the next frame is drawn whatever the lean.
+  drawn = null;
   ready.value = true;
   fit();
 }

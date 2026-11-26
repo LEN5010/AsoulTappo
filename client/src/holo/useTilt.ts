@@ -23,14 +23,25 @@ export function useTilt(max = MAX_TILT, onSettle?: () => void) {
     const to = aim ?? FLAT;
     const k = 1 - Math.exp(-dt / (aim ? FOLLOW_MS : SETTLE_MS));
     const next = { rx: tilt.value.rx + (to.rx - tilt.value.rx) * k, ry: tilt.value.ry + (to.ry - tilt.value.ry) * k };
-    const settled = !aim && Math.abs(next.rx) < 0.05 && Math.abs(next.ry) < 0.05;
-    tilt.value = settled ? FLAT : next;
-    if (settled) {
-      frame = 0;
-      last = 0;
-      moving.value = false;
-      onSettle?.();
-      return;
+    if (aim) {
+      // Within a fiftieth of a degree of the pointer's lean it stands there and waits for the pointer to move.
+      const arrived = Math.abs(next.rx - aim.rx) < 0.02 && Math.abs(next.ry - aim.ry) < 0.02;
+      tilt.value = arrived ? { rx: aim.rx, ry: aim.ry } : next;
+      if (arrived) {
+        frame = 0;
+        last = 0;
+        return;
+      }
+    } else {
+      const settled = Math.abs(next.rx) < 0.05 && Math.abs(next.ry) < 0.05;
+      tilt.value = settled ? FLAT : next;
+      if (settled) {
+        frame = 0;
+        last = 0;
+        moving.value = false;
+        onSettle?.();
+        return;
+      }
     }
     frame = requestAnimationFrame(step);
   }

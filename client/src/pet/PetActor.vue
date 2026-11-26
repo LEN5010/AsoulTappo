@@ -7,8 +7,9 @@ import { dragged, isTap } from "./drag";
 
 // `place` replaces the default rule for where a drag may go (anywhere fully on screen).
 // `glide` eases the pet to a new `pos` instead of jumping there; a drag still follows the pointer.
+// `drag` tells when a press becomes a drag (true) and when that drag ends however it does (false), after `moved`.
 const props = defineProps<{ pos: Pos; label?: string; place?: (p: Pos) => Pos; glide?: boolean }>();
-const emit = defineEmits<{ moved: [pos: Pos]; size: [size: Size]; dragging: []; tap: [] }>();
+const emit = defineEmits<{ moved: [pos: Pos]; size: [size: Size]; dragging: []; drag: [active: boolean]; tap: [] }>();
 
 const root = ref<HTMLElement | null>(null);
 const live = ref<Pos | null>(null);
@@ -24,6 +25,8 @@ const size = (): Size => {
 function down(e: PointerEvent) {
   if (e.button !== 0) return;
   if ((e.target as HTMLElement).closest("button, input, [data-no-drag]")) return;
+  // A drag whose release never reached the page ends here, so every start has its end.
+  if (start && moved) emit("drag", false);
   start = { px: e.clientX, py: e.clientY, x: props.pos.x, y: props.pos.y, id: e.pointerId };
   moved = false;
   root.value?.setPointerCapture(e.pointerId);
@@ -33,8 +36,11 @@ function move(e: PointerEvent) {
   if (!start || e.pointerId !== start.id) return;
   const dx = e.clientX - start.px;
   const dy = e.clientY - start.py;
-  if (!moved && !dragged(dx, dy)) return;
-  moved = true;
+  if (!moved) {
+    if (!dragged(dx, dy)) return;
+    moved = true;
+    emit("drag", true);
+  }
   const raw = { x: start.x + dx, y: start.y + dy };
   live.value = props.place ? props.place(raw) : clamp(raw, size());
   emit("dragging");
@@ -45,6 +51,7 @@ function up(e: PointerEvent) {
   void setDragging(false);
   if (moved && live.value) emit("moved", live.value);
   live.value = null;
+  if (moved) emit("drag", false);
   if (isTap(moved, e.type)) emit("tap");
 }
 
@@ -55,6 +62,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   ro?.disconnect();
   if (start) void setDragging(false);
+  if (start && moved) emit("drag", false);
 });
 </script>
 
