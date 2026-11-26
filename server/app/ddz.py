@@ -2176,7 +2176,8 @@ class Tables:
         """A dou dizhu connection (Peer.lobby) said hello: it hears ``ddz_ready``, takes over the save's place in the
         queue from an older connection of the save, takes its seat again at a table the queue made, at the seat an
         open table took from the queue, or at a seat taken on a dou dizhu connection (Seat.roam), and hears the
-        waiting counts."""
+        waiting counts. An ask of the queue's not answered yet is turned down instead when this connection turns
+        invites down, as set_dnd does on the connection that waited."""
         self.lobby[peer.id] = peer
         held = self.waiting.get(peer.token) if peer.token else None
         if held is not None and held.peer is not peer and held.peer.lobby and (
@@ -2191,15 +2192,26 @@ class Tables:
             held = None
         table = self.by_save.get(peer.token) if peer.token else None
         asked = self._asked_of(table, peer)
+        # An ask not answered yet belongs to the connection that waits, as its place in the line does: one that turns
+        # invites down takes it over only to turn it down (set_dnd).
+        declined = asked is not None and peer.dnd and table is not None and not table.seats[asked].accepted
         seat = asked if asked is not None else self._mine(table, peer, lambda t, s: t.match or s.roam)
         ready: dict[str, Any] = {"type": "ddz_ready", "you": peer.id, "base": held.base if held else None,
-                                 "table": table.id if table is not None and seat is not None else None}
+                                 "table": table.id if table is not None and seat is not None and not declined else None}
         if held is not None:
             ready["waited"] = round(max(0.0, self.clock() - held.since), 1)
         peer.enqueue(ready)
         if self._counts_sent:
             peer.enqueue(self._counts_msg(self._counts_sent))
         if table is None or seat is None:
+            return
+        if declined:
+            s = table.seats[seat]
+            s.peer, s.id = peer, peer.id
+            if table.phase == OPEN:
+                self._unseat_asked(table, seat, "declined")
+            else:
+                self._end_match(table, "declined", by=peer)
             return
         if asked is not None:
             self._hand_over_asked(table, seat, peer)
