@@ -190,14 +190,16 @@ export const setDragging = (active: boolean) => call("set_dragging", { active })
 export interface ExportedLog { path: string; desktop: boolean }
 
 /** Copies the log next to the player (desktop, else downloads) and shows it in the file manager. */
-export function exportLog(): Promise<ExportedLog> {
-  if (!isTauri) return Promise.reject(new Error("not in the desktop app"));
+export async function exportLog(): Promise<ExportedLog> {
+  if (!isTauri) throw new Error("not in the desktop app");
+  await flushLog();
   return invoke<ExportedLog>("export_log");
 }
 
 /** The latest part of the log, for a feedback sent with it; "" outside the desktop app. */
-export function logTail(): Promise<string> {
-  if (!isTauri) return Promise.resolve("");
+export async function logTail(): Promise<string> {
+  if (!isTauri) return "";
+  await flushLog();
   return invoke<string>("log_tail");
 }
 
@@ -206,11 +208,30 @@ let logCap = LOG_LINES_PER_MINUTE;
 let logMinute = 0;
 let logLines = 0;
 let lastLogLine = "";
+let lastLog = { tag: "", msg: "" };
 let logRepeats = 0;
+/** The last write on its way to the native log. */
+let logWriting: Promise<unknown> = Promise.resolve();
+
+/**
+ * Writes the repeats of the last line still counted (they are otherwise written with the next line) and waits for the
+ * writes so far: what reads the log next has them.
+ */
+async function flushLog(): Promise<void> {
+  if (logRepeats > 0) {
+    const { tag, msg } = lastLog;
+    const count = logRepeats;
+    logRepeats = 0;
+    logLines += 1;
+    logWriting = invoke("write_log", { tag, msg: `${msg} (${count} more since the last line)` }).catch(() => {});
+  }
+  await logWriting;
+}
 
 /**
  * Appends a line to the exportable log (tag `web:<tag>`); at most 30 a minute (240 in the debug build).
- * Consecutive repeats within the same minute are counted instead of written one by one, and reported on the next line.
+ * Consecutive repeats within the same minute are counted instead of written one by one, and reported on the next line
+ * (or before the log is read back: `exportLog`, `logTail`).
  */
 export function writeLog(tag: string, msg: string): void {
   if (!isTauri) return;
@@ -233,8 +254,9 @@ export function writeLog(tag: string, msg: string): void {
       : `${msg} (previous line repeated ${logRepeats}x)`;
   logLines += 1;
   lastLogLine = line;
+  lastLog = { tag, msg };
   logRepeats = 0;
-  invoke("write_log", { tag, msg: out }).catch(() => {});
+  logWriting = invoke("write_log", { tag, msg: out }).catch(() => {});
 }
 
 /** Whether this is the debug build for testers; there the page logs more and the per-minute cap is higher. */
