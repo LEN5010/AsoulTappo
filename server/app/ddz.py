@@ -273,6 +273,9 @@ LOBBY_TABLES = 4
 # Handing the deposits of an open table's start back failed (the database busy): tried again after each of these
 # waits, in seconds; after the last the game is left open for the next start of the server (Bank.refund_open).
 REFUND_RETRY_SEC = (0.5, 2.0)
+# Paying a game that was won failed (the database busy): tried again after each of these waits, the last one repeated
+# until it is paid; the seats stay held and the result unsaid meanwhile.
+SETTLE_RETRY_SEC = (1.0, 5.0, 30.0)
 
 OPEN, INVITE, STARTING, BID, PLAY, SETTLING, OVER, DONE = (
     "open", "invite", "starting", "bid", "play", "settling", "over", "done")
@@ -624,6 +627,8 @@ class Table:
     live_sent: dict | None = None
     live_at: float = float("-inf")
     live_timer: Any = None
+    # The game's outcome once its last cards are played, until it is paid: (landlord, landlord won, mult, spring).
+    outcome: tuple[int, bool, int, int] | None = None
 
     @property
     def match(self) -> bool:
@@ -1553,6 +1558,7 @@ class Tables:
         table.deal += 1
         table.phase = BID
         table.result = None
+        table.outcome = None
         table.bottom = sorted(deck[51:])
         table.bid, table.bidder, table.bids_made, table.landlord = 0, None, 0, None
         table.last, table.trick, table.bombs = None, [None, None, None], 0
@@ -1781,21 +1787,43 @@ class Tables:
         self._show(table, said)
 
     async def _finish(self, table: Table, winner: int) -> None:
-        """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table."""
+        """Pays the game [winner] just won. Marked before the first await, so nothing else moves the table. The outcome
+        is fixed here (Table.outcome); the payment runs on a task of its own (_pay), which the caller's cancellation
+        does not stop, and the caller waits for its first try."""
         table.phase = SETTLING
         self._cancel_timer(table)
-        bank = self.bank
-        cfg = bank.cfg()
+        cfg = self.bank.cfg()
         lord = table.landlord
         landlord_won = winner == lord
         farmers = [s for i, s in enumerate(table.seats) if i != lord]
         spring = 1 if landlord_won and all(f.plays == 0 for f in farmers) else (
             2 if not landlord_won and table.seats[lord].plays == 1 else 0)
         mult = table.mult(cfg["capMult"], spring=bool(spring))
-        deltas = await run_in_threadpool(bank.settle, table.row, lord, landlord_won, mult)
+        table.outcome = (lord, landlord_won, mult, spring)
+        await asyncio.shield(self._spawn(self._pay(table)))
+
+    async def _pay(self, table: Table, tries: int = 0) -> None:
+        """Pays the outcome of [table]'s game (Bank.settle). Should the database fail, the table stays settling, its
+        seats held and nothing told, and the same game is paid again after each of SETTLE_RETRY_SEC (the last one
+        repeated); Bank.settle pays a game once only. The result goes out once the payment is done."""
+        if table.phase != SETTLING or self.by_id.get(table.id) is not table or table.outcome is None:
+            return
+        lord, landlord_won, mult, spring = table.outcome
+        try:
+            deltas = await run_in_threadpool(self.bank.settle, table.row, lord, landlord_won, mult)
+        except Exception:
+            log.exception("ddz: paying game %s at %s failed", table.row, table.id)
+            if table.phase == SETTLING and self.by_id.get(table.id) is table:
+                wait = SETTLE_RETRY_SEC[min(tries, len(SETTLE_RETRY_SEC) - 1)]
+                table.timer = self.timers.later(wait, lambda: self._pay(table, tries + 1))
+            return
+        if table.phase != SETTLING or self.by_id.get(table.id) is not table:
+            return
+        table.timer = None
         if deltas is None:
             self._close(table, tell=False)
             return
+        cfg = self.bank.cfg()
         table.phase = OVER
         for s in table.seats:
             s.again = False

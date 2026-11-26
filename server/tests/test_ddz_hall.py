@@ -609,3 +609,65 @@ def test_games_are_counted_by_their_kind_of_table():
         assert w.t.by_id[mtid].match and not w.t.by_id[otid].match and not w.t.by_id[tid].match
         assert counts(w) == counted(ddz_ask=1, ddz_start_invite=1, ddz_start_open=1, ddz_start_match=1)
     run(go())
+
+
+# ------------------------------------------------------------------ paying a game
+def test_a_payment_that_fails_is_tried_again_for_the_same_game_and_the_seats_wait_for_it(monkeypatch):
+    import sqlite3
+
+    async def go():
+        w = OpenWorld()
+        out, tid = await hall_game(w, "a", "b", "c")
+        t = w.t.by_id[tid]
+        before = [w.shards(s.token) for s in t.seats]
+        socks = [sock for _, sock in out]
+        real = w.g.store.set_ddz_deltas
+        fails = [2]
+
+        def flaky(*args):
+            if fails[0]:
+                fails[0] -= 1
+                raise sqlite3.OperationalError("database is locked")
+            return real(*args)
+
+        monkeypatch.setattr(w.g.store, "set_ddz_deltas", flaky)
+        await play_to_end(w, tid)
+        # Unpaid: the seats stay held, nobody hears a result, and the game is open in the database.
+        assert t.phase == "settling" and t.timer is not None and t.outcome is not None
+        assert all(w.t.by_save[s.token] is t for s in t.seats)
+        assert not any(sock.of("ddz_result") for sock in socks)
+        assert w.g.store.ddz_game(t.row)["state"] == "open"
+        assert [w.shards(s.token) for s in t.seats] == before
+        await w.timers.fire()
+        assert t.phase == "settling" and t.timer is not None
+        await w.timers.fire()
+        await settle()
+        # Paid once, then told.
+        assert t.phase == "over" and w.g.store.ddz_game(t.row)["state"] == "settled"
+        result = socks[0].of("ddz_result")
+        assert len(result) == 1 and all(len(sock.of("ddz_result")) == 1 for sock in socks)
+        assert [w.shards(s.token) for s in t.seats] == [n + DEPOSIT + d for n, d in zip(before, result[0]["deltas"])]
+        assert w.t.bank.settle(t.row, 0, True, 1) is None
+        assert w.t.bank.refund_open() == 0
+
+    run(asyncio.wait_for(go(), 10))
+
+
+def test_a_payment_given_up_with_the_tables_cleared_leaves_the_game_open():
+    async def go():
+        w = OpenWorld()
+        _, tid = await hall_game(w, "a", "b", "c")
+        t = w.t.by_id[tid]
+
+        def fail(*args):
+            raise RuntimeError("database gone")
+
+        w.g.store.set_ddz_deltas = fail
+        await play_to_end(w, tid)
+        assert t.phase == "settling" and t.timer is not None
+        w.t.clear()
+        assert t.timer is None and not w.t.by_save
+        await w.timers.fire()
+        assert w.g.store.ddz_game(t.row)["state"] == "open"
+
+    run(asyncio.wait_for(go(), 10))
