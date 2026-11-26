@@ -139,3 +139,16 @@ export function shineUniforms(shine: HoloShine): Record<string, number> {
     u_hueRange: shine.hueRange,
   };
 }
+
+/**
+ * What one draw of a card puts on its canvas besides the pictures: the canvas size, the light, the brightness and the
+ * shine's uniforms. Two draws with the same key draw the same frame.
+ */
+export function frameKey(width: number, height: number, tilt: Tilt, on: number, shine: HoloShine): number[] {
+  const light = lightOf(tilt);
+  return [width, height, light.x, light.y, on, ...Object.values(shineUniforms(shine))];
+}
+
+export function sameFrame(a: readonly number[] | null, b: readonly number[]): boolean {
+  return !!a && a.length === b.length && a.every((v, i) => v === b[i]);
+}
