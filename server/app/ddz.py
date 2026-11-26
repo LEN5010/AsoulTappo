@@ -860,6 +860,7 @@ class Tables:
                 self._dequeue(w)
                 table.held.append(w)
         table.tell(invited)
+        table.deadline = self.clock() + cfg["inviteSec"]
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
 
     async def _invite_expired(self, table: Table) -> None:
@@ -914,6 +915,10 @@ class Tables:
         table, seat = self._table(peer, table_id, INVITE)
         if (seat == 0 and not table.match) or table.seats[seat].accepted:
             raise GameError("ddz_gone", "")
+        if table.deadline and self.clock() >= table.deadline:
+            # The time ran out before its timer was run: the answer comes too late, as after the timer.
+            await self._invite_expired(table)
+            return
         if not accept:
             if table.match:
                 self._end_match(table, "declined", by=peer)
@@ -1225,6 +1230,10 @@ class Tables:
         seat = table.seat_of(peer)
         if seat is None or not table.seats[seat].asked:
             raise GameError("ddz_gone", "")
+        if self.clock() >= table.seats[seat].until:
+            # Too late, its timer not run yet: as when it runs (_open_due).
+            self._unseat_asked(table, seat, "timeout")
+            return
         if not accept:
             self._unseat_asked(table, seat, "declined")
             return
