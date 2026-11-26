@@ -3,7 +3,9 @@
 What a box holds is decided by photo_deal.py when it is bought, and the save gets all of it then: the cards, and the
 shards its repeats turn into. The client plays the opening from the answer and says when it is done (open); until then
 buying a box of the series hands the same one back at no charge, so a request sent again never pays twice and an opening
-broken off goes on later. A save buys `daily` boxes of a series a China day.
+broken off goes on later. The answer to buying names the box it handed over (`receipt`), which the state in it may
+no longer have: another device of the save may have opened it meanwhile. A save buys `daily` boxes of a series a China
+day.
 
 A repeat solo card turns into `refund.solo` shards, a repeat duo or group card into `refund.rare`. A repeat signed card
 is put by (`spare`), and `swap` of them are traded for a signed card of the save's choice it lacks (swap). Once the save
@@ -65,9 +67,13 @@ class Photocards:
             "owned": [i for i in series.items if i in owned],
             "left": max(0, cfg["daily"] - st.photo_bought(pid, series.id, day)) if cfg else 0,
             **st.photo_save(pid, series.id),
-            "box": {"id": box["id"], "ts": box["ts"], "price": box["price"], **json.loads(box["contents"])}
-                   if box else None,
+            "box": self._box(box) if box else None,
         }
+
+    @staticmethod
+    def _box(row: dict[str, Any]) -> dict[str, Any]:
+        """A box as the client gets it, from its row."""
+        return {"id": row["id"], "ts": row["ts"], "price": row["price"], **json.loads(row["contents"])}
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
         """The status and the photocards as they are at one moment, whatever another device does meanwhile."""
@@ -93,7 +99,8 @@ class Photocards:
             now = g.now()
             day = day_of(now)
             p = st.get_player(pid, now)
-            if st.photo_unopened(pid, sid) is None:
+            box = st.photo_unopened(pid, sid)
+            if box is None:
                 if cfg is None or not cfg["daily"]:
                     raise GameError("photo_off_sale", "这一期小卡没有在售")
                 if price is not None and price != cfg["price"]:
@@ -102,11 +109,14 @@ class Photocards:
                     raise GameError("photo_sold_out", "这一期小卡今天买完了")
                 if p["shards"] < cfg["price"]:
                     raise GameError("no_shards", "碎片不足")
-                self._deal(st, p, cfg, series, day, now)
-        return self._answer(token)
+                box = st.photo_box(pid, self._deal(st, p, cfg, series, day, now))
+            receipt = {"series": sid, "box": self._box(box)}
+        # The state is as it is by the time of the answer (another device may have opened the box meanwhile); the
+        # receipt is the box this call handed over.
+        return self._answer(token, receipt=receipt)
 
-    def _deal(self, st: Store, p: dict[str, Any], cfg: dict[str, Any], series: Series, day: str, now: float) -> None:
-        """In buy's transaction: deals the save [p] a box, takes the price and credits what it holds."""
+    def _deal(self, st: Store, p: dict[str, Any], cfg: dict[str, Any], series: Series, day: str, now: float) -> int:
+        """In buy's transaction: deals the save [p] a box, takes the price and credits what it holds. Returns its id."""
         pid = p["id"]
         mine = st.photo_save(pid, series.id)
         owned = st.owned(pid)
@@ -139,7 +149,7 @@ class Photocards:
             st.add_ledger(pid, day, REPEAT, refund, repeats)
         signed = any(pull.kind == "sign" for pull in pulls)
         st.set_photo_save(pid, series.id, mine["boxes"] + 1, 0 if signed or whole else mine["dry"] + 1, spare)
-        st.add_photo_box(pid, series.id, day, cfg["price"], json.dumps(contents, separators=(",", ":")), now)
+        return st.add_photo_box(pid, series.id, day, cfg["price"], json.dumps(contents, separators=(",", ":")), now)
 
     @staticmethod
     def _settle(cfg: dict[str, Any], spare: int) -> dict[str, int] | None:
