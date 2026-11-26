@@ -14,6 +14,14 @@ use super::{pressed_bits, record_changes, InputEvent};
 const POLL: Duration = Duration::from_millis(10);
 /// How often the device list is read again for controllers plugged in later.
 const RESCAN: Duration = Duration::from_secs(5);
+/// Scans in a row that may find no Sony controller before they come less often, and the longest wait between two.
+/// Each scan opens every HID interface on Windows (hidapi's own filter comes after that), which a slow driver may
+/// feel; with no controller around the device list is read once a minute at most.
+const RESCAN_PATIENCE: u32 = 3;
+const RESCAN_MAX: Duration = Duration::from_secs(60);
+/// A scan longer than this is logged, at most once every `SLOW_SCAN_LOG_EVERY`.
+const SLOW_SCAN: Duration = Duration::from_millis(50);
+const SLOW_SCAN_LOG_EVERY: Duration = Duration::from_secs(60);
 /// Sony's USB vendor id. The scan asks for Sony devices only: listing every HID device makes hidapi read the
 /// manufacturer, product and serial strings of each one, a request that reaches the device itself, and doing that to
 /// mice every few seconds can make the system cursor stutter.
@@ -57,6 +65,33 @@ impl Model {
             pressed_bits(digital, state[trigger_offset], state[trigger_offset + 1])
                 | (u32::from(buttons[2] & extra_mask) << 18),
         )
+    }
+}
+
+/// How long to wait before the next scan after [misses] scans in a row found no Sony controller: `RESCAN` at first,
+/// then twice as long each time up to `RESCAN_MAX`.
+fn rescan_interval(misses: u32) -> Duration {
+    if misses < RESCAN_PATIENCE {
+        return RESCAN;
+    }
+    let factor = 1u32.checked_shl(misses - RESCAN_PATIENCE + 1).unwrap_or(u32::MAX);
+    RESCAN.saturating_mul(factor).min(RESCAN_MAX)
+}
+
+/// When a slow scan was last logged.
+#[derive(Default)]
+struct SlowScans {
+    logged: Option<Instant>,
+}
+
+impl SlowScans {
+    /// A scan took [took], finishing at [now]: whether to log it.
+    fn note(&mut self, took: Duration, now: Instant) -> bool {
+        if took <= SLOW_SCAN || self.logged.is_some_and(|at| now.saturating_duration_since(at) < SLOW_SCAN_LOG_EVERY) {
+            return false;
+        }
+        self.logged = Some(now);
+        true
     }
 }
 
@@ -105,11 +140,22 @@ where
         // scan and log the first failure until it opens or disappears.
         let mut unavailable = HashSet::new();
         let mut scanned: Option<Instant> = None;
+        // Scans in a row that found no Sony controller, and when a slow one was last logged.
+        let mut misses = 0u32;
+        let mut slow = SlowScans::default();
         let mut out = Vec::new();
         loop {
-            if scanned.is_none_or(|at| at.elapsed() >= RESCAN) {
-                scanned = Some(Instant::now());
-                match api.reset_devices().and_then(|()| api.add_devices(SONY, 0)) {
+            let rescan = if pads.is_empty() { rescan_interval(misses) } else { RESCAN };
+            if scanned.is_none_or(|at| at.elapsed() >= rescan) {
+                let started = Instant::now();
+                scanned = Some(started);
+                let scan = api.reset_devices().and_then(|()| api.add_devices(SONY, 0));
+                let took = started.elapsed();
+                if slow.note(took, Instant::now()) {
+                    applog!("pad", "PlayStation HID scan took {} ms", took.as_millis());
+                }
+                misses = misses.saturating_add(1);
+                match scan {
                     Ok(()) => {
                         let devices: Vec<_> = api
                             .device_list()
@@ -118,6 +164,10 @@ where
                                 (info.usage_page() == 1 && matches!(info.usage(), 4 | 5)).then_some((info, model))
                             })
                             .collect();
+                        // One that is there but taken by a game still counts as found: it is tried again soon.
+                        if !devices.is_empty() {
+                            misses = 0;
+                        }
                         pads.retain(|pad| {
                             let connected = devices.iter().any(|(info, _)| info.path() == pad.path.as_c_str());
                             if !connected {
@@ -164,7 +214,7 @@ where
             for event in out.drain(..) {
                 emit(event);
             }
-            std::thread::sleep(if pads.is_empty() { RESCAN } else { POLL });
+            std::thread::sleep(if pads.is_empty() { rescan_interval(misses) } else { POLL });
         }
     });
 }
@@ -184,6 +234,25 @@ mod tests {
         report[offset + 7] = 65;
         report[offset + 8] = 64;
         report
+    }
+
+    #[test]
+    fn scans_that_find_no_controller_come_less_often_up_to_a_minute() {
+        let secs = |misses| rescan_interval(misses).as_secs();
+        assert_eq!([0, 1, 2].map(secs), [5, 5, 5]);
+        assert_eq!([3, 4, 5, 6, 7].map(secs), [10, 20, 40, 60, 60]);
+        assert_eq!(secs(u32::MAX), 60);
+    }
+
+    #[test]
+    fn a_slow_scan_is_logged_at_most_once_a_minute() {
+        let t = Instant::now();
+        let mut slow = SlowScans::default();
+        assert!(!slow.note(Duration::from_millis(50), t));
+        assert!(slow.note(Duration::from_millis(51), t));
+        assert!(!slow.note(Duration::from_millis(300), t + Duration::from_secs(59)));
+        assert!(slow.note(Duration::from_millis(80), t + Duration::from_secs(60)));
+        assert!(!slow.note(Duration::from_millis(10), t + Duration::from_secs(200)));
     }
 
     #[test]
