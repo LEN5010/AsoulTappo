@@ -44,6 +44,7 @@ import NamePlate from "./pet/NamePlate.vue";
 import { getPlate, nameBand, plateSize } from "./pet/plates";
 import { PLATE_GRIP, STRIP_HEIGHT, emotePlace, ownDeskWidth, ownXRange, remotePetSize, stripFit } from "./pet/bounds";
 import { edgeShift } from "./pet/lift";
+import { ownBubbles } from "./pet/ownBubbles";
 import DeskGuide from "./pet/DeskGuide.vue";
 import { beginGuide, deskCardShown, guideRun } from "./stores/guide";
 import { guideLeft } from "./guide";
@@ -125,8 +126,8 @@ const fullSize = computed<Size>(() => ({
 }));
 /** While the own pet is dragged: whether it would dock where it is now. Null when it is not dragged. */
 const dragDock = ref<boolean | null>(null);
-/** The own pet's left edge while it is dragged, null when it is not. */
-const dragX = ref<number | null>(null);
+/** Where the own pet is while it is dragged, null when it is not. */
+const dragPos = ref<Pos | null>(null);
 const docked = computed(() => dragDock.value ?? settings.petDocked);
 /** The strip stays under the pet: not folded away in the settings, and not on the bottom edge where it has no room. */
 const barPinned = computed(() => !settings.barFolded && !docked.value);
@@ -155,7 +156,7 @@ const barShown = computed(() => !settings.clickThrough && (barPinned.value || pe
  * reaches the screen's edges. Up to the edges, as the pet's picture: one as wide as the pet stays under it there.
  */
 const barShift = computed(() => {
-  const x = (dragX.value ?? ownPos.value.x) + (ownWidth.value - bar.value.width) / 2;
+  const x = ownAt.value.x + (ownWidth.value - bar.value.width) / 2;
   return edgeShift(x, bar.value.width, viewport.value.w, 0);
 });
 /** The own pet's box with a pinned strip standing out beside it, for placing partners clear of both. */
@@ -176,18 +177,20 @@ const ownPos = computed<Pos>(() => {
   // Not placed yet: petY is -1. Its x may be below 0, the box standing out past the left edge.
   return settings.petY < 0 ? defaultPetPos(reaching(size, ownReach.value)) : keepOwn({ x: settings.petX, y: settings.petY }, size);
 });
+/** The own pet's box as drawn: where a drag has it, else where it stands. */
+const ownAt = computed<Pos>(() => dragPos.value ?? ownPos.value);
 function placeOwnDrag(p: Pos): Pos {
   peek.value = false;
   const placed = placePet(p, fullSize.value, settings.scale);
   const pos = { x: keepOwn(p, fullSize.value).x, y: placed.pos.y };
   dragDock.value = placed.docked;
-  dragX.value = pos.x;
+  dragPos.value = pos;
   return pos;
 }
 function onOwnMoved(p: Pos) {
   settings.petDocked = dragDock.value ?? false;
   dragDock.value = null;
-  dragX.value = null;
+  dragPos.value = null;
   settings.petX = p.x;
   settings.petY = p.y;
 }
@@ -284,7 +287,7 @@ watch(plateEl, (el) => {
  */
 const plateShift = computed(() => {
   if (!plateWidth.value) return 0;
-  const left = (dragX.value ?? ownPos.value.x) + (ownWidth.value - plateWidth.value) / 2;
+  const left = ownAt.value.x + (ownWidth.value - plateWidth.value) / 2;
   return edgeShift(left, plateWidth.value - PLATE_GRIP, viewport.value.w, 0);
 });
 const ownName = computed(() => nameBand(settings.scale));
@@ -460,17 +463,19 @@ const signAt = (m: RemoteMember) => {
   const at = remoteAt(m);
   return { transform: `translate(${at.x}px, ${at.y}px)`, width: `${remoteSize.value.w}px` };
 };
-const duelPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DUEL_WIDTH, h: DUEL_HEIGHT }, viewport.value));
-const ddzPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: DDZ_WIDTH, h: DDZ_HEIGHT }, viewport.value));
-const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: POKED_WIDTH, h: POKED_HEIGHT }, viewport.value));
-const racePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: RACE_WIDTH, h: RACE_HEIGHT }, viewport.value));
-const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
-const autoNotePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT }, viewport.value));
+/** The bubbles over the own pet follow it while it is dragged, as the strip and the plate under it do. */
+const ownBubble = ownBubbles(() => ownAt.value, () => ownSize.value, () => viewport.value);
+const duelPlace = ownBubble.place({ w: DUEL_WIDTH, h: DUEL_HEIGHT });
+const ddzPlace = ownBubble.place({ w: DDZ_WIDTH, h: DDZ_HEIGHT });
+const pokedPlace = ownBubble.place({ w: POKED_WIDTH, h: POKED_HEIGHT });
+const racePlace = ownBubble.place({ w: RACE_WIDTH, h: RACE_HEIGHT });
+const nudgePlace = ownBubble.place({ w: NUDGE_WIDTH, h: NUDGE_HEIGHT });
+const autoNotePlace = ownBubble.place({ w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT });
 /** The own pet's middle and the screen's width, for the bubbles over it that size to their text (pet/centredShift.ts). */
-const ownMiddle = computed(() => ({ x: ownPos.value.x + ownSize.value.w / 2, w: viewport.value.w }));
+const ownMiddle = ownBubble.middle;
 /** A guide card at its widest (ui/GuideCard.vue). */
 const GUIDE_CARD = { w: 250, h: 72 };
-const guidePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, GUIDE_CARD, viewport.value));
+const guidePlace = ownBubble.place(GUIDE_CARD);
 /** Bubbles grow to the left when there is no room on the right of the head (see PetView). */
 /**
  * Viewport y a plate opened upwards from the own strip stays above: the pet's top, or the top of the emote bubble
