@@ -1711,8 +1711,10 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     rest();
   }
 
-  /** The run waits for a hand, with nothing on the timeline. */
-  const waiting = () => (phase === "intro" || phase === "play" || phase === "spot") && !time.busy && !ptr.down;
+  /** The run waits for a hand (a press, or a sealed bag to tear), with nothing on the timeline. What it waits for
+   * otherwise (the pictures of a card) comes outside the frames, and is drawn for until it is there. */
+  const waiting = () => (phase === "intro" || phase === "play" || phase === "spot") && !time.busy && !ptr.down
+    && (pressWaiters.length > 0 || active?.state === "sealed");
   /** Everything drawn that moves from one picture to the next without the timeline. */
   function looks(): number[] {
     const v = [amb, box.p.x, box.p.y, box.p.rx, box.p.ry, box.p.rz, box.lid, scene.dusk, scene.warm, scene.lift];

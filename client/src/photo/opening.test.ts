@@ -21,10 +21,12 @@ const gl = { getError: () => 0 } as unknown as GL;
 
 type Told = [number, OpeningEvent][];
 /** "sign:bella-2" is the signed bella-2. [woken] is set by every event, as the host wakes the canvas for each. */
-function table(cards: string[], skipIntro = true): { o: Opening; told: Told; woken: { on: boolean } } {
+function table(
+  cards: string[], skipIntro = true, { kit: k = kit, painter = {} as Painter, gl: g = gl } = {},
+): { o: Opening; told: Told; woken: { on: boolean } } {
   const told: Told = [], woken = { on: false };
   const deal = cards.map((c) => ({ card: c.replace(/^sign:/, ""), signed: c.startsWith("sign:") }));
-  const o: Opening = createOpening(gl, kit, {} as Painter, {
+  const o: Opening = createOpening(g, k, painter, {
     art: seriesArt("asoul2026")!, deal, skipIntro, sound: quiet, seed: 1,
     on: (e) => { told.push([o.clock, e]); woken.on = true; },
   });
@@ -210,6 +212,13 @@ describe("a table waiting for a hand", () => {
     expect(await engine(o, woken, 20000)).toBe(0);
     o.press();
     expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(32);
+  });
+
+  it("does not stand still while the pictures of the next card are still on their way", async () => {
+    const slow = { ...kit, want: () => ({ ready: new Promise<void>((done) => setTimeout(done, 6000)) }) } as unknown as Kit;
+    const { o, woken } = table(PLAIN, true, { kit: slow });
+    for (let t = 0; t < 30000 && !sealed(o, 0)(); t += 2000) await engine(o, woken, 2000);
+    expect(o.state().active).toMatchObject({ i: 0, state: "sealed" });
   });
 
   it("keeps drawing while the box opens by itself", async () => {
