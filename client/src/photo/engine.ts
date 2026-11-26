@@ -1,7 +1,8 @@
 // One WebGL 2 canvas for every view of the photocards. Its programs and textures are made once; the canvas element itself
 // moves into the view on top (the shelf on the page, the table a box is opened on, a card looked at), and a view it leaves
 // keeps a still picture of itself, unless what it showed goes along.
-// Frames are drawn only while the view on top can be seen and something in it moves.
+// Frames are drawn only while the view on top can be seen and something in it moves. A while after the last view left, or
+// after it was made ready (warm.ts) and nothing came to be shown on it, it is let go of, and made anew when next asked for.
 import { context } from "./gl";
 import { createKit, type Kit } from "./kit";
 import { createPainter, type Painter } from "./painter";
@@ -42,6 +43,8 @@ const QUALITY_MIN = 0.6;
 /** Once they were quicker than this for so long, they are drawn at full size again. */
 const QUICK_MS = 21;
 const WELL_MS = 4000;
+/** It is let go of this long after nothing was shown on it, nor asked for. */
+const IDLE_MS = 45_000;
 
 let current: Promise<PhotoGl | null> | null = null;
 let engine: PhotoGl | null = null;
@@ -50,12 +53,35 @@ const lostHandlers = new Set<() => void>();
 
 /** The shared canvas and what is drawn with; null where there is no WebGL 2. */
 export function photoGl(): Promise<PhotoGl | null> {
+  clearTimeout(idle);
   if (!current) {
     const asked = current = make();
     // One that could not be made is made anew when it is next asked for.
     void asked.then((made) => { if (!made && current === asked) current = null; });
   }
+  // Nothing may come to be shown on it.
+  const asked = current;
+  void asked.then((made) => { if (made && current === asked) rest(); });
   return current;
+}
+
+let idle: ReturnType<typeof setTimeout> | undefined;
+/** Lets it go a while from now, unless a view is shown on it by then, it is asked for again, or it is still loading. */
+function rest(): void {
+  clearTimeout(idle);
+  if (!engine || stack.length) return;
+  idle = setTimeout(() => {
+    const e = engine;
+    if (!e || stack.length) return;
+    if (e.kit.busy) return rest();
+    // Gone before the context is: losing it tells nobody, as nothing stands on it.
+    engine = null;
+    current = null;
+    stop();
+    e.kit.dispose();
+    e.canvas.remove();
+    e.gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }, IDLE_MS);
 }
 
 async function make(): Promise<PhotoGl | null> {
@@ -99,6 +125,7 @@ function lose(which: PhotoGl): void {
   if (engine !== which) return;
   engine = null;
   current = null;
+  clearTimeout(idle);
   stop();
   for (const e of stack) {
     e.observer.disconnect();
@@ -236,6 +263,7 @@ function keepStill(e: Entry): void {
  * one it covers keeps a still picture, or with [bare] nothing: what it showed goes on in the new view.
  */
 export function mountScene(host: HTMLElement, scene: Scene, { bare = false, layer = 0 } = {}): Mount {
+  clearTimeout(idle);
   const under = top();
   const e: Entry = {
     host, scene, layer, shown: true, still: null, size: { w: 0, h: 0 },
@@ -277,6 +305,7 @@ export function mountScene(host: HTMLElement, scene: Scene, { bare = false, laye
       if (at < 0) return;
       const was = e === top();
       stack.splice(at, 1);
+      if (!stack.length) rest();
       if (!was) return;
       stop();
       engine?.canvas.remove();
