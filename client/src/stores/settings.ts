@@ -368,7 +368,8 @@ const canPersist = !isTauri || windowLabel === "main";
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let saveDirty = false;
 
-function flushSettings(): void {
+/** Writes the settings waiting for the debounce now: before the app restarts, which runs no page-leave handler. */
+export function flushSettings(): void {
   if (saveTimer !== undefined) {
     clearTimeout(saveTimer);
     saveTimer = undefined;

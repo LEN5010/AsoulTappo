@@ -783,6 +783,19 @@ it("answers the window that asked: the todos' window and the panel side by side"
   expect(win.todos.todos.value.map((t) => t.title)).toEqual(["取快递"]);
 });
 
+it("hands the desk a setting edited just before a request ahead of that request", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  let seen = "";
+  vi.spyOn(desk.player, "loadBoard").mockImplementation(async () => {
+    seen = desk.settings.nick;
+    return { players: [] } as unknown as Board;
+  });
+  panel.settings.nick = "阿草";
+  await panel.player.loadBoard();
+  expect(seen).toBe("阿草");
+});
+
 it("passes setting edits between the desk, the panel and the todos' window", async () => {
   const desk = await context(false);
   const panel = await context(true);

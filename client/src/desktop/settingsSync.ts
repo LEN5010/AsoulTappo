@@ -104,6 +104,16 @@ function snapshot(s: Settings): Settings {
   return out as unknown as Settings;
 }
 
+/** The running sync's sender of this window's edits not sent yet. */
+let sendPending: (() => void) | undefined;
+/**
+ * Sends this window's setting edits of this turn now instead of with the next flush: a request to the desk made right
+ * after an edit (desktop/transport.ts) then reaches it after the edit, as when each edit went out at once.
+ */
+export function sendSettingsNow(): void {
+  sendPending?.();
+}
+
 export async function syncSettings() {
   const prev = snapshot(settings);
   // A side window's own patches are numbered; for each field, the number of the last one that changed it. The desk
@@ -158,5 +168,13 @@ export async function syncSettings() {
     for (const side of SIDE_WINDOWS) void emitTo(side, "desktop:settings", message);
   }, { target: windowLabel });
   const stop = watch(settings, sendChanges, { deep: true });
-  return { apply: (patch: Partial<Settings>) => receive(patch), stop: () => { unlisten(); stop(); } };
+  sendPending = sendChanges;
+  return {
+    apply: (patch: Partial<Settings>) => receive(patch),
+    stop: () => {
+      unlisten();
+      stop();
+      if (sendPending === sendChanges) sendPending = undefined;
+    },
+  };
 }

@@ -187,4 +187,16 @@ describe("desk settings persistence", () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(write).toHaveBeenCalledTimes(3);
   });
+
+  it("writes pending edits at once when flushed before a restart, and only once", async () => {
+    const { settings, flushSettings } = await import("./settings");
+    const write = vi.spyOn(stored, "set");
+    settings.petX = -20;
+    flushSettings();
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(stored.get(key)!).petX).toBe(-20);
+    await vi.advanceTimersByTimeAsync(200);
+    flushSettings();
+    expect(write).toHaveBeenCalledTimes(1);
+  });
 });
