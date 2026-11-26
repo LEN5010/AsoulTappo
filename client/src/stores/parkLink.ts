@@ -12,7 +12,7 @@
 //
 // A server without the link (no_park: it was turned off) is an answer, not a failure: the board and the pending end
 // go, its message shows and nothing is asked again until the page asks (loadLink, startLink).
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, watch, type Ref } from "vue";
 import { STANDALONE } from "../edition";
 import type { ParkState } from "../net/api";
 import { toHttpBase } from "../net/protocol";
@@ -128,6 +128,39 @@ export const linkShownResult = computed<LinkResult | null>(() => {
 
 /** The server's milliseconds now, by the latest answer that told its time. */
 export const serverNow = () => Date.now() + linkOffset.value;
+
+/** How often a page's clock ticks while a game has time left. */
+const CLOCK_MS = 200;
+
+/**
+ * The server's time for a page that shows the game: it ticks while a game in play has time left and [shown] holds,
+ * stands still otherwise and is set to the server's time again whenever that changes. The store's own timer ends
+ * the game when its time runs out, shown or not. Call in a component's setup (or an effect scope); stop() ends it.
+ */
+export function linkClock(shown: () => boolean): { now: Ref<number>; stop: () => void } {
+  const now = ref(serverNow());
+  let tick: ReturnType<typeof setInterval> | undefined;
+  const halt = () => {
+    clearInterval(tick);
+    tick = undefined;
+  };
+  const unwatch = watch(() => [linkPlaying.value, linkGame.value?.deadline, shown()] as const, ([on, deadline, visible]) => {
+    halt();
+    now.value = serverNow();
+    if (!on || !visible || !deadline || deadline <= now.value) return;
+    tick = setInterval(() => {
+      now.value = serverNow();
+      if (now.value >= deadline) halt();
+    }, CLOCK_MS);
+  }, { immediate: true });
+  return {
+    now,
+    stop: () => {
+      unwatch();
+      halt();
+    },
+  };
+}
 
 let queue: Move[] = [];
 /** Moves accepted by the server in the game on the board. */

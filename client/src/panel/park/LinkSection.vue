@@ -14,7 +14,7 @@ import { economy } from "../../stores/economy";
 import { online, shards } from "../../stores/player";
 import {
   dismissResult, finishLink, linkError, linkFinishing, linkGame, linkHintsLeft, linkPlaying, linkResult, linkShownResult,
-  linkShuffling, linkStarting, linkState, linkSyncing, linkTiles, loadLink, playPair, serverNow, showResult, startLink, takeHint,
+  linkShuffling, linkStarting, linkState, linkSyncing, linkTiles, linkClock, loadLink, playPair, showResult, startLink, takeHint,
 } from "../../stores/parkLink";
 import { reducedMotion } from "../../stores/theme";
 import { ACHAO } from "../../ui/achao";
@@ -58,22 +58,10 @@ const progress = computed(() => (game.value?.total ? (game.value.cleared / game.
 const active = ref(false);
 const visible = computed(() => active.value && parkTab.value === "link");
 
-// ---- the clock: the server's time, ticking while a game has time left. The store ends the game when it runs out.
-const now = ref(serverNow());
-let tick: ReturnType<typeof setInterval> | undefined;
-function stopTick() {
-  clearInterval(tick);
-  tick = undefined;
-}
-watch(() => [linkPlaying.value, game.value?.deadline] as const, ([on, deadline]) => {
-  stopTick();
-  now.value = serverNow();
-  if (!on || !deadline || deadline <= now.value) return;
-  tick = setInterval(() => {
-    now.value = serverNow();
-    if (now.value >= deadline) stopTick();
-  }, 200);
-}, { immediate: true });
+// ---- the clock: the server's time, ticking while a game has time left and the page is in sight, set right when it
+// comes back. The store ends the game when it runs out.
+const clock = linkClock(() => visible.value);
+const now = clock.now;
 const leftMs = computed(() => (game.value ? game.value.deadline - now.value : 0));
 const timeUp = computed(() => linkPlaying.value && leftMs.value <= 0);
 
@@ -277,7 +265,7 @@ onActivated(enter);
 onDeactivated(() => (active.value = false));
 onBeforeUnmount(() => {
   active.value = false;
-  stopTick();
+  clock.stop();
   clearTimeout(armTimer);
   timers.forEach(clearTimeout);
   timers = [];

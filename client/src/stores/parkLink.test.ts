@@ -726,3 +726,43 @@ describe("park link refresh between games", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("park link clock for the page", () => {
+  it("ticks only while a game is in play and the page is shown, and is set right when it shows again", async () => {
+    const { effectScope, ref: vref, watch: vwatch } = await import("vue");
+    const L = await started(game({ deadline: 1_000_000 + 60_000 }));
+    const shown = vref(true);
+    const scope = effectScope();
+    const clock = scope.run(() => L.linkClock(() => shown.value))!;
+    let ticks = 0;
+    scope.run(() => vwatch(clock.now, () => ticks++, { flush: "sync" }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ticks).toBe(5);
+    shown.value = false;
+    await flush();
+    ticks = 0;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ticks).toBe(0);
+    shown.value = true;
+    await flush();
+    expect(clock.now.value).toBe(L.serverNow());
+    expect(ticks).toBe(1);
+    scope.stop();
+    clock.stop();
+    ticks = 0;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ticks).toBe(0);
+  });
+
+  it("stands still between games", async () => {
+    const { effectScope } = await import("vue");
+    const L = await import("./parkLink");
+    const scope = effectScope();
+    const clock = scope.run(() => L.linkClock(() => true))!;
+    const at = clock.now.value;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(clock.now.value).toBe(at);
+    scope.stop();
+    clock.stop();
+  });
+});
