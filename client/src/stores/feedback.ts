@@ -30,7 +30,7 @@ export async function sendFeedback(draft: FeedbackDraft): Promise<FeedbackResult
     }
   }
   const log = draft.log ? await logTail().catch(() => "") : "";
-  const body: FeedbackBody & { requestId?: string } = {
+  const body: FeedbackBody = {
     text: draft.text.trim().slice(0, FEEDBACK_TEXT_MAX),
     contact: draft.contact.trim().slice(0, FEEDBACK_CONTACT_MAX),
     system: navigator.userAgent.slice(0, SYSTEM_MAX),

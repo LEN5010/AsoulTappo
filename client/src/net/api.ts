@@ -166,8 +166,8 @@ export interface Board {
 }
 export type LoadoutPatch = Partial<Loadout>;
 
-/** A feedback from the settings page (server/app/feedback.py). */
-export interface FeedbackBody { text: string; contact: string; system: string; log: string }
+/** A feedback from the settings page (server/app/feedback.py); [requestId] names a draft's sends (servers from 1.3.0). */
+export interface FeedbackBody { text: string; contact: string; system: string; log: string; requestId?: string }
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public detail: Record<string, unknown> = {}) {
