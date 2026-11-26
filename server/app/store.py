@@ -821,12 +821,24 @@ class _Tx:
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
             if exc_type is None:
-                self.store._db.commit()
+                try:
+                    self.store._db.commit()
+                except BaseException:
+                    # SQLite can refuse the COMMIT and keep the transaction open: undo it here, or the next caller
+                    # on this connection would commit it with its own.
+                    self._undo()
+                    raise
             else:
-                self.store._db.rollback()
-                # Rows the caches answered for may be gone again.
-                self.store._active.clear()
-                self.store._counts.clear()
+                self._undo()
         finally:
             self.store._in_tx = False
             self.store._lock.release()
+
+    def _undo(self) -> None:
+        try:
+            if self.store._db.in_transaction:
+                self.store._db.rollback()
+        finally:
+            # Rows the caches answered for may be gone again.
+            self.store._active.clear()
+            self.store._counts.clear()

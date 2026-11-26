@@ -109,6 +109,39 @@ def test_transaction_rolls_back():
     assert s.get_player("p1", 0)["shards"] == 1600
 
 
+def test_a_refused_commit_rolls_back_before_the_next_caller():
+    s = Store(":memory:")
+    s.get_player("p1", 0)
+    collectible = frozenset({"card:c1"})
+    assert s.count_items("p1", collectible) == 0
+
+    def deny_commit(action, operation, *_):
+        if action == sqlite3.SQLITE_TRANSACTION and operation == "COMMIT":
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    s._db.set_authorizer(deny_commit)
+    try:
+        with pytest.raises(sqlite3.DatabaseError):
+            with s.transaction() as st:
+                st.update_player("p1", shards=9)
+                st.add_items("p1", {"card:c1": 1}, 0)
+                st.mark_active("p1", "2026-11-26")
+                assert st.count_items("p1", collectible) == 1
+    finally:
+        s._db.set_authorizer(None)
+    assert not s._db.in_transaction
+    # The next caller's transaction commits nothing of the failed one, and the caches forgot it.
+    with s.transaction() as st:
+        st.get_player("p1", 0)
+    assert s.get_player("p1", 0)["shards"] == 1600
+    assert s.count_items("p1", collectible) == 0 and not s.has_item("p1", "card:c1")
+    assert s.totals("2026-11-26")["activeToday"] == 0
+    s.mark_active("p1", "2026-11-26")
+    assert s.totals("2026-11-26")["activeToday"] == 1
+    s.close()
+
+
 def test_persists_on_disk(tmp_path):
     path = str(tmp_path / "sub" / "t.db")
     s = Store(path)
