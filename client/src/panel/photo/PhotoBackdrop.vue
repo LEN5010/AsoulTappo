@@ -2,7 +2,7 @@
 // The stage under the photocards' page: the key visual of the series on show (photo/stage.ts), under the whole panel with
 // the sidebar over its left. It is part of the resonance page rather than of what stands on it, so going to another pool
 // and back it fades by itself. A series without a key visual has no stage: its page is paper.
-// Until the canvas draws, and where there is no WebGL 2, a picture of it lies there.
+// Until the canvas draws, where there is no WebGL 2, and with reduced motion, a picture of it lies there.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, ref, shallowRef, watch } from "vue";
 import { usePageActive } from "../../composables/usePageActive";
 import { memberLight, seriesArt } from "../../photo/art";
@@ -35,9 +35,15 @@ let round = 0;
 /** Gives back the stage this visit holds. */
 let leave: (() => void) | null = null;
 
+/** The pictures stay: nothing of the stage is loaded. */
+function still(): void {
+  groundRose.value = performance.now();
+  flat.value = groundUp.value = true;
+}
 async function start(): Promise<void> {
   const mine = ++round, now = art.value;
   if (!now) return;
+  if (reducedMotion.value) return still();
   await nextTick();
   const s = await photoStage();
   // Held from here, so that leaving while it loads gives it back.
@@ -50,9 +56,7 @@ async function start(): Promise<void> {
   if (!s || !ok) {
     leave?.();
     leave = null;
-    groundRose.value = performance.now();
-    flat.value = groundUp.value = true;
-    return;
+    return still();
   }
   flat.value = false;
   stage.value = s;
@@ -77,6 +81,11 @@ function stop(): void {
 // Before anything of the page is drawn.
 watch(here, (on) => { if (on && pageActive.value && !reducedMotion.value) openPage(shopSeries.value); }, { immediate: true, flush: "sync" });
 watch(here, (on) => { if (on) void start(); else stop(); }, { immediate: true, flush: "post" });
+watch(reducedMotion, () => {
+  if (!here.value) return;
+  stop();
+  void start();
+}, { flush: "post" });
 // Another series fades over on the running canvas.
 watch(art, async (now) => {
   const s = stage.value;

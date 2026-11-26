@@ -152,3 +152,29 @@ describe("the stage of the photocards' page", () => {
     page.unmount();
   });
 });
+
+describe("the stage with reduced motion", () => {
+  it("is the still key visual: nothing of the stage is loaded or drawn", async () => {
+    reduced.value = true;
+    const shop = await import("./shop");
+    const page = await visit();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect([io.fetched, io.uploaded, io.frames, shown()]).toEqual([0, 0, 0, 0]);
+    expect(shop.groundUp.value).toBe(true);
+    page.unmount();
+  });
+
+  it("comes and goes as motion is turned on and off", async () => {
+    reduced.value = true;
+    const page = await visit();
+    reduced.value = false;
+    await vi.advanceTimersByTimeAsync(50);
+    expect([io.uploaded, shown()]).toEqual([21, 1]);
+    reduced.value = true;
+    await vi.advanceTimersByTimeAsync(50);
+    expect(shown()).toBe(0);
+    await vi.advanceTimersByTimeAsync(46_000);
+    expect(io.lost).toBe(1);
+    page.unmount();
+  });
+});
