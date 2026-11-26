@@ -636,8 +636,9 @@ def test_hello_checks_the_save_the_nick_the_pet_and_the_plate_as_join_does(api, 
         assert receive(a, "error")["code"] == "already_joined"
         a.send_json({"type": "join", "room": "r", "nick": "a", "token": tok("a")})
         assert receive(a, "error")["code"] == "already_joined"
-        # Room messages are not for it.
-        for msg in ({"type": "tap", "count": 1}, {"type": "ddz_open", "base": BASE}, {"type": "emote", "emote": "x"}):
+        # Room messages are not for it (opening and sitting go to the hall, calling stays a room's).
+        for msg in ({"type": "tap", "count": 1}, {"type": "ddz_call", "table": "x", "id": "y"},
+                    {"type": "emote", "emote": "x"}):
             a.send_json(msg)
             assert receive(a, "error")["code"] == "not_joined"
         a.send_json({"type": "leave"})
@@ -690,7 +691,8 @@ def test_the_lobby_shows_the_stakes_the_cap_and_the_rules(api, monkeypatch):
     get = lambda name: c.get("/api/ddz/lobby", headers={"X-Player-Token": tok(name)}).json()  # noqa: E731
     lobby = get("rich")
     assert lobby == {
-        "tiers": [{"base": b, "deposit": b * CFG["capMult"] * 2, "afford": b <= BASE, "waiting": 0}
+        "tiers": [{"base": b, "deposit": b * CFG["capMult"] * 2, "afford": b <= BASE, "waiting": 0,
+                   "tables": []}
                   for b in CFG["stakes"]],
         "net": 0, "cap": CFG["dailyWinCap"], "left": CFG["dailyWinCap"], "taps": 10_000, "minTaps": CFG["minTaps"],
         "account": True, "seated": False,
