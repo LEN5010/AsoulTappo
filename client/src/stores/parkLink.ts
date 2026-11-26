@@ -9,8 +9,12 @@
 //
 // Every request belongs to an epoch, raised whenever the queue is dropped (another game, a resync, a settle, another
 // save or server): an answer from an earlier epoch changes nothing.
-import { computed, ref, shallowRef, watch } from "vue";
+//
+// A server without the link (no_park: it was turned off) is an answer, not a failure: the board and the pending end
+// go, its message shows and nothing is asked again until the page asks (loadLink, startLink).
+import { computed, ref, shallowRef, watch, type Ref } from "vue";
 import { STANDALONE } from "../edition";
+import type { ParkState } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { EMPTY, applyShift, findPair, removePair } from "../panel/park/link";
 import { parkTry, type ParkError } from "./park";
@@ -61,8 +65,8 @@ export interface LinkState {
   last: LinkResult | null;
 }
 
-/** A full answer: the state, and the result when a game has just been settled. */
-interface LinkAnswer { link: LinkState; result?: LinkResult; settled?: boolean }
+/** A full answer: the state, and the result when a game has just been settled; the status and park come with it. */
+interface LinkAnswer { link: LinkState; result?: LinkResult; settled?: boolean; park?: ParkState }
 /** A move's answer: the moves accepted and pairs cleared, or a full answer once the game is settled. */
 type MoveAnswer = Partial<LinkAnswer> & { seq?: number; cleared?: number; shuffle?: number[] };
 /** `t`: milliseconds from the game's start to the pair, by the server's clock; fixed when the pair is taken. */
@@ -125,6 +129,39 @@ export const linkShownResult = computed<LinkResult | null>(() => {
 /** The server's milliseconds now, by the latest answer that told its time. */
 export const serverNow = () => Date.now() + linkOffset.value;
 
+/** How often a page's clock ticks while a game has time left. */
+const CLOCK_MS = 200;
+
+/**
+ * The server's time for a page that shows the game: it ticks while a game in play has time left and [shown] holds,
+ * stands still otherwise and is set to the server's time again whenever that changes. The store's own timer ends
+ * the game when its time runs out, shown or not. Call in a component's setup (or an effect scope); stop() ends it.
+ */
+export function linkClock(shown: () => boolean): { now: Ref<number>; stop: () => void } {
+  const now = ref(serverNow());
+  let tick: ReturnType<typeof setInterval> | undefined;
+  const halt = () => {
+    clearInterval(tick);
+    tick = undefined;
+  };
+  const unwatch = watch(() => [linkPlaying.value, linkGame.value?.deadline, shown()] as const, ([on, deadline, visible]) => {
+    halt();
+    now.value = serverNow();
+    if (!on || !visible || !deadline || deadline <= now.value) return;
+    tick = setInterval(() => {
+      now.value = serverNow();
+      if (now.value >= deadline) halt();
+    }, CLOCK_MS);
+  }, { immediate: true });
+  return {
+    now,
+    stop: () => {
+      unwatch();
+      halt();
+    },
+  };
+}
+
 let queue: Move[] = [];
 /** Moves accepted by the server in the game on the board. */
 let accepted = 0;
@@ -147,6 +184,10 @@ let nextTile = 1;
  */
 let anchor: { id: number; server: number; local: number; last: number } | null = null;
 let waiters: (() => void)[] = [];
+/** Games known settled, latest last: an answer from before that still has one in play is out of date. */
+let settledIds: number[] = [];
+/** The load on its way and the epoch it was asked in: loads asked meanwhile in that epoch share its answer. */
+let loading: { epoch: number; done: Promise<Loaded> } | null = null;
 
 function readJson<T>(key: string): T | null {
   try {
@@ -165,6 +206,8 @@ function writeJson(key: string, value: unknown): void {
 }
 
 const retryable = (e: ParkError) => (e.status === 0 && e.code !== "stale") || e.status >= 500;
+/** The server has no link, or no longer: an end to syncing, not a failure to try again. */
+const linkOff = (e: ParkError) => e.code === "no_park";
 const messageOf = (e: ParkError) => (e.status === 0 ? "无法连接服务器" : e.message);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const backoff = (n: number) => BACKOFF_MS[Math.min(n, BACKOFF_MS.length - 1)]!;
@@ -222,12 +265,18 @@ function adopt(game: LinkGame): void {
   }
 }
 
+function noteSettled(id: number): void {
+  if (!settledIds.includes(id)) settledIds = [...settledIds.slice(-(KEEP - 1)), id];
+}
+
 /**
  * Takes the server's state. Its game replaces the one on the board when it is another game, or the same game with
  * everything queued here accepted (or more). A snapshot older than the moves accepted here keeps the local board,
  * and so does one in between: the queue's resends get the server's stored answers.
  */
 function take(state: LinkState): void {
+  // A game in play there was settled since: the snapshot is out of date.
+  if (state.game && settledIds.includes(state.game.id)) return;
   linkState.value = state;
   const game = state.game;
   const local = linkGame.value;
@@ -254,6 +303,7 @@ function clearBoard(): void {
 
 /** A settled game's result. A board that does not match it (moves the server never took) leaves with it. */
 function showSettled(result: LinkResult): void {
+  noteSettled(result.id);
   dropQueue();
   const local = linkGame.value;
   if (local && (local.id !== result.id || local.cleared !== result.cleared)) {
@@ -273,19 +323,55 @@ function settle(d: MoveAnswer): void {
   else clearBoard();
 }
 
+/** The server has no link: the board, its queue and the end asked for go, and the server's message shows. */
+function closeLink(e: ParkError): void {
+  stopFinishing();
+  clearBoard();
+  linkState.value = null;
+  linkError.value = messageOf(e);
+}
+
+interface Loaded { ok: boolean; park: ParkState | null }
+const parkOf = (d: LinkAnswer | undefined) => (d?.park && typeof d.park === "object" ? d.park : null);
+
+function load(): Promise<Loaded> {
+  used = true;
+  if (loading?.epoch === epoch) return loading.done;
+  const mine = epoch;
+  const done = (async (): Promise<Loaded> => {
+    const r = await parkTry<LinkAnswer>("GET", "/api/park/link");
+    if (!r.ok) {
+      if (mine === epoch) {
+        if (linkOff(r.error)) closeLink(r.error);
+        else if (r.error.code !== "stale") linkError.value = messageOf(r.error);
+      }
+      return { ok: false, park: null };
+    }
+    if (mine === epoch) {
+      linkError.value = "";
+      if (r.data?.link) take(r.data.link);
+    }
+    return { ok: true, park: parkOf(r.data) };
+  })();
+  const entry = { epoch: mine, done };
+  loading = entry;
+  void done.finally(() => {
+    if (loading === entry) loading = null;
+  });
+  return done;
+}
+
 /** Loads today's games. false when the request failed (linkError says why). */
 export async function loadLink(): Promise<boolean> {
-  used = true;
-  const mine = epoch;
-  const r = await parkTry<LinkAnswer>("GET", "/api/park/link");
-  if (mine !== epoch) return r.ok;
-  if (!r.ok) {
-    if (r.error.code !== "stale") linkError.value = messageOf(r.error);
-    return false;
-  }
-  linkError.value = "";
-  if (r.data?.link) take(r.data.link);
-  return true;
+  return (await load()).ok;
+}
+
+/**
+ * Loads today's games for the park page, which then needs no read of its own: the park state that came with them,
+ * null when the request failed. A load asked meanwhile (the stall coming into sight) shares the request.
+ */
+export async function refreshLink(): Promise<ParkState | null> {
+  return (await load()).park;
 }
 
 /**
@@ -312,6 +398,10 @@ async function resync(): Promise<void> {
       return;
     }
     if (!r.ok && r.error.code === "stale") return;
+    if (!r.ok && linkOff(r.error)) {
+      closeLink(r.error);
+      return;
+    }
     await sleep(backoff(tries));
   }
 }
@@ -323,12 +413,18 @@ export async function startLink(): Promise<boolean> {
   linkStarting.value = true;
   linkError.value = "";
   const mine = session;
+  // A load sent before the start cannot tell of its game: a load after it is a request of its own.
+  loading = null;
   const r = await parkTry<LinkAnswer>("POST", "/api/park/link/start", {});
   // Another save meanwhile: this answer is not for it.
   if (mine !== session) return false;
   linkStarting.value = false;
   if (!r.ok) {
     if (r.error.code === "stale") return false;
+    if (linkOff(r.error)) {
+      closeLink(r.error);
+      return false;
+    }
     const message = messageOf(r.error);
     // No answer: the game may have started and been paid for. A load finds it.
     if (retryable(r.error)) await loadLink();
@@ -336,6 +432,8 @@ export async function startLink(): Promise<boolean> {
     return linkPlaying.value;
   }
   const state = r.data.link;
+  // Answered after the game it started was settled here (a load found it first): nothing to take.
+  if (state.game && settledIds.includes(state.game.id)) return linkPlaying.value;
   if (linkResult.value) markSeen(linkResult.value.id);
   if (state.game && linkGame.value?.id !== state.game.id) linkResult.value = null;
   // The same game already on the board (found by a load meanwhile) merges like any snapshot and keeps the queue.
@@ -372,6 +470,10 @@ async function pump(): Promise<void> {
     }
     if (r.error.code === "stale") {
       resetLink();
+      return;
+    }
+    if (linkOff(r.error)) {
+      closeLink(r.error);
       return;
     }
     await resync();
@@ -457,6 +559,10 @@ export async function finishLink(): Promise<boolean> {
       break;
     }
     if (r.error.code === "stale") break;
+    if (linkOff(r.error)) {
+      closeLink(r.error);
+      break;
+    }
     if (!retryable(r.error)) await resync();
     await sleep(backoff(tries++));
   }
@@ -515,6 +621,8 @@ export function resetLink(): void {
   linkResult.value = null;
   linkError.value = "";
   accepted = 0;
+  settledIds = [];
+  loading = null;
 }
 
 // ---------------------------------------------------------------- the store follows the save

@@ -202,6 +202,12 @@ class ParkStore(_StoreState):
                                    "ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
         return dict(row) if row else None
 
+    def park_link_open(self) -> list[dict[str, Any]]:
+        """Every save's game not settled yet, oldest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM park_link WHERE settled_at IS NULL ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
     def park_link_game(self, pid: str, game_id: int) -> dict[str, Any] | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM park_link WHERE id = ? AND player_id = ?",

@@ -582,3 +582,205 @@ describe("park link pair times", () => {
     expect(moves().at(-1)!.body).toMatchObject({ game: 8, t: 2_000 });
   });
 });
+
+describe("park link when the server has none", () => {
+  const closed = fail(404, "no_park");
+  /** Answers every request at once: the start with [g], the rest with [rest]. */
+  function serve(g: LinkGame, rest: Reply) {
+    parkTry.mockImplementation(async (method: string, path: string, body?: Record<string, unknown>) => {
+      calls.push({ method, path, body, answer: () => {} });
+      return path.endsWith("/start") ? ok({ link: state(g) }) : rest;
+    });
+  }
+  const gets = () => calls.filter((c) => c.method === "GET");
+
+  it("ends an end turned down because the link is off: the board goes and no reads follow", async () => {
+    serve(game({ deadline: 1_000_000 + 90_000 }), closed);
+    const L = await import("./parkLink");
+    expect(await L.startLink()).toBe(true);
+    const finish = L.finishLink();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await finish).toBe(false);
+    expect(gets().length).toBeLessThanOrEqual(1);
+    expect(L.linkSyncing.value).toBe(false);
+    expect(L.linkFinishing.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+  });
+
+  it("stops a resync that finds the link off", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    await flush();
+    moves()[0]!.answer(fail(409, "bad_seq"));
+    await flush();
+    expect(L.linkSyncing.value).toBe(true);
+    gets()[0]!.answer(closed);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(gets()).toHaveLength(1);
+    expect(L.linkSyncing.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+  });
+
+  it("drops the queue when a move finds the link off, reading nothing", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    L.playPair(2, 3);
+    await flush();
+    moves()[0]!.answer(closed);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(moves()).toHaveLength(1);
+    expect(gets()).toHaveLength(0);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkState.value).toBeNull();
+  });
+
+  it("clears the board when a load finds the link off, and loads again when asked", async () => {
+    const L = await started();
+    const p = L.loadLink();
+    gets()[0]!.answer(closed);
+    expect(await p).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkError.value).toBe("no_park");
+    const again = L.loadLink();
+    gets()[1]!.answer(ok({ link: state(null, { played: 0 }) }));
+    expect(await again).toBe(true);
+    expect(L.linkError.value).toBe("");
+  });
+
+  it("keeps backing off on a resync that gets no answer or a server error", async () => {
+    const L = await started();
+    L.playPair(0, 1);
+    await flush();
+    moves()[0]!.answer(fail(409, "bad_seq"));
+    await flush();
+    gets()[0]!.answer(fail(503, "unavailable"));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(gets()).toHaveLength(2);
+    gets()[1]!.answer(fail(0, "offline"));
+    await vi.advanceTimersByTimeAsync(800);
+    expect(gets()).toHaveLength(3);
+    expect(L.linkSyncing.value).toBe(true);
+    expect(L.linkGame.value).not.toBeNull();
+  });
+});
+
+describe("park link answers that come late", () => {
+  it("keeps a game settled here off the board when its start answers after it", async () => {
+    const L = await import("./parkLink");
+    const g = game();
+    const ended = result({ cleared: 0, prize: 0, reason: "quit" });
+    const start = L.startLink();
+    const load = L.loadLink();
+    calls[1]!.answer(ok({ link: state(g) }));
+    await load;
+    const finish = L.finishLink();
+    await flush();
+    calls.find((c) => c.path === "/api/park/link/finish")!.answer(ok({ link: state(null, { today: [ended], last: ended }), result: ended }));
+    expect(await finish).toBe(true);
+    L.dismissResult();
+    expect(L.linkPlaying.value).toBe(false);
+    calls[0]!.answer(ok({ link: state(g) }));
+    await start;
+    expect(L.linkPlaying.value).toBe(false);
+    expect(L.linkGame.value).toBeNull();
+    expect(L.linkState.value!.game).toBeNull();
+  });
+
+  it("still merges a late start answer for the game in play", async () => {
+    const L = await import("./parkLink");
+    const start = L.startLink();
+    const load = L.loadLink();
+    calls[1]!.answer(ok({ link: state(game()) }));
+    await load;
+    L.playPair(0, 1);
+    calls[0]!.answer(ok({ link: state(game()) }));
+    await start;
+    expect(L.linkPlaying.value).toBe(true);
+    expect(L.linkGame.value!.cleared).toBe(1);
+  });
+});
+
+describe("park link refresh between games", () => {
+  const park = { coins: 3, unlocked: true, gift: false };
+
+  it("reads the link once for the park page and the stall together and hands back the park", async () => {
+    const L = await import("./parkLink");
+    const page = L.refreshLink();
+    const stall = L.loadLink();
+    expect(calls).toHaveLength(1);
+    calls[0]!.answer(ok({ player: "A", shards: 1, park, link: state(null, { played: 0 }) }));
+    expect(await page).toEqual(park);
+    expect(await stall).toBe(true);
+    expect(L.linkState.value!.played).toBe(0);
+  });
+
+  it("hands back no park when the read fails", async () => {
+    const L = await import("./parkLink");
+    const page = L.refreshLink();
+    calls[0]!.answer(fail(0, "offline"));
+    expect(await page).toBeNull();
+    // A later read is a request of its own.
+    void L.loadLink();
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("park link clock for the page", () => {
+  it("ticks only while a game is in play and the page is shown, and is set right when it shows again", async () => {
+    const { effectScope, ref: vref, watch: vwatch } = await import("vue");
+    const L = await started(game({ deadline: 1_000_000 + 60_000 }));
+    const shown = vref(true);
+    const scope = effectScope();
+    const clock = scope.run(() => L.linkClock(() => shown.value))!;
+    let ticks = 0;
+    scope.run(() => vwatch(clock.now, () => ticks++, { flush: "sync" }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ticks).toBe(5);
+    shown.value = false;
+    await flush();
+    ticks = 0;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ticks).toBe(0);
+    shown.value = true;
+    await flush();
+    expect(clock.now.value).toBe(L.serverNow());
+    expect(ticks).toBe(1);
+    scope.stop();
+    clock.stop();
+    ticks = 0;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ticks).toBe(0);
+  });
+
+  it("stands still between games", async () => {
+    const { effectScope } = await import("vue");
+    const L = await import("./parkLink");
+    const scope = effectScope();
+    const clock = scope.run(() => L.linkClock(() => true))!;
+    const at = clock.now.value;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(clock.now.value).toBe(at);
+    scope.stop();
+    clock.stop();
+  });
+});
+
+describe("park link start that gets no answer", () => {
+  it("looks for the game with a read of its own, not one sent before the start", async () => {
+    const L = await import("./parkLink");
+    const gets = () => calls.filter((c) => c.method === "GET");
+    const before = L.loadLink();
+    const start = L.startLink();
+    calls.find((c) => c.path === "/api/park/link/start")!.answer(fail(0, "offline"));
+    await flush();
+    expect(gets()).toHaveLength(2);
+    gets()[0]!.answer(ok({ link: state(null, { played: 0 }) }));
+    await before;
+    gets()[1]!.answer(ok({ link: state(game()) }));
+    expect(await start).toBe(true);
+    expect(L.linkPlaying.value).toBe(true);
+    expect(L.linkError.value).toBe("");
+  });
+});

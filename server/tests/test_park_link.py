@@ -313,6 +313,18 @@ def test_a_move_answers_little_and_a_resend_answers_the_same():
     assert json.loads(row["board0"]) == board
 
 
+def test_a_move_encodes_the_board_and_the_events_once(monkeypatch):
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    import app.park_link as park_link
+    dumps = []
+    dump = park_link._dump
+    monkeypatch.setattr(park_link, "_dump", lambda v: dumps.append(v) or dump(v))
+    clock.t += 1
+    play_pair(pl, game, game["board"], 0)
+    assert len(dumps) == 2
+
+
 def test_a_resend_of_another_pair_or_a_gap_is_bad_seq():
     g, pl, clock, pid = setup()
     game = pl.start(TOKEN)["link"]["game"]
@@ -714,6 +726,13 @@ def test_the_threshold_is_an_anti_cheat_setting():
         assert bool(events(g, pid, game["id"])[1].get("fast")) is fast
 
 
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "1", None])
+def test_the_threshold_must_be_a_whole_number_of_1_or_more(bad):
+    # 0 would divide by zero when a game with pairs is settled.
+    with pytest.raises(ValueError, match="link_min_pair_ms"):
+        economy.drop_config({"link_min_pair_ms": bad})
+
+
 def test_the_threshold_stays_on_the_server():
     body = TestClient(main.app).get("/api/economy").text
     assert "link_min_pair_ms" not in body
@@ -740,6 +759,170 @@ def test_each_level_lays_a_board_quickly(n):
         level = LEVELS[n]
         assert len(kinds) == level["kinds"] and sorted(board) == sorted(list(range(level["kinds"])) * 4)
     assert worst < 0.2
+
+
+# ------------------------------------------------------------------------ store
+LINK_INDEXES = ("park_link_open", "park_link_settled")
+
+
+def plan(st, sql, *args):
+    return " | ".join(r["detail"] for r in st._db.execute("EXPLAIN QUERY PLAN " + sql, args).fetchall())
+
+
+def test_the_game_in_play_and_the_last_result_are_found_by_their_own_indexes():
+    g, pl, clock, pid = setup()
+    st = g.store
+    for day in range(30):
+        now = clock() + day * 86400
+        for n in range(3):
+            gid, _ = stuck_game(g, pid, now + n)
+            st.settle_park_link(gid, 0, "quit", now + n + 1)
+    stuck_game(g, pid, clock() + 31 * 86400)
+    active = plan(st, "SELECT * FROM park_link WHERE player_id = ? AND settled_at IS NULL ORDER BY id DESC LIMIT 1",
+                  pid)
+    last = plan(st, "SELECT id FROM park_link WHERE player_id = ? AND settled_at IS NOT NULL "
+                    "ORDER BY settled_at DESC, id DESC LIMIT 1", pid)
+    assert "park_link_open" in active and "TEMP B-TREE" not in active
+    assert "park_link_settled" in last and "TEMP B-TREE" not in last
+
+
+def test_an_older_database_gets_the_link_indexes_when_opened(tmp_path):
+    path = str(tmp_path / "old.db")
+    st = Store(path)
+    for name in LINK_INDEXES:
+        st._db.execute(f"DROP INDEX {name}")
+    st._db.commit()
+    st.close()
+    st = Store(path)
+    names = {r[0] for r in st._db.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    st.close()
+    assert set(LINK_INDEXES) <= names
+
+
+def test_get_reads_the_game_in_play_once(monkeypatch):
+    g, pl, clock, pid = setup()
+    pl.start(TOKEN)
+    reads = []
+    active = g.store.park_link_active
+    monkeypatch.setattr(g.store, "park_link_active", lambda p: reads.append(p) or active(p))
+    assert pl.state(TOKEN)["link"]["game"] is not None
+    assert len(reads) == 1
+
+
+def test_an_answer_is_read_at_one_moment_whatever_another_device_does(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, current_thread
+    g, pl, clock, pid = setup()
+    old = shards(g, pid)
+    read = Event()
+    status = g.status
+
+    def pausing(token):
+        out = status(token)
+        if current_thread().name.startswith("reader"):
+            read.set()
+            time.sleep(0.2)  # another device starts a game meanwhile
+        return out
+
+    monkeypatch.setattr(g, "status", pausing)
+    with ThreadPoolExecutor(1, thread_name_prefix="reader") as reader, \
+            ThreadPoolExecutor(1, thread_name_prefix="other") as other:
+        answer = reader.submit(pl.state, TOKEN)
+        assert read.wait(5)
+        started = other.submit(pl.start, TOKEN)
+        out = answer.result(5)
+        assert started.result(5)["link"]["game"] is not None
+    playing = out["link"]["game"] is not None
+    assert (out["shards"], out["park"]["today"]["spent"], out["link"]["played"]) == \
+        ((old - ENTRY, ENTRY, 1) if playing else (old, 0, 0))
+    assert shards(g, pid) == old - ENTRY
+
+
+# ------------------------------------------------------------------- link off
+def played(pairs=3):
+    """A save's first game with [pairs] pairs taken a second apart."""
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    board = game["board"]
+    for seq in range(pairs):
+        _, board = play_pair(pl, game, board, seq, clock)
+    return g, pl, clock, pid, game, board
+
+
+def link_off(monkeypatch, g, park=False):
+    """Turns the link off (or the whole park, when [park]), as a restart with an economy without it does."""
+    if park:
+        monkeypatch.setattr(g.manifest, "park", None)
+    else:
+        monkeypatch.delitem(g.manifest.park, "link")
+
+
+@pytest.mark.parametrize("call", ["state", "start", "finish", "move"])
+def test_with_the_link_off_a_game_paid_for_is_settled_on_its_pairs_and_no_game_starts(monkeypatch, call):
+    g, pl, clock, pid, game, board = played()
+    before = shards(g, pid)
+    link_off(monkeypatch, g)
+    a, b = find_pair(board, game["rows"], game["cols"])
+    args = {"state": (), "start": (), "finish": (game["id"],), "move": (game["id"], 3, a, b)}[call]
+    with pytest.raises(GameError) as e:
+        getattr(pl, call)(TOKEN, *args)
+    assert e.value.code == "no_park"
+    row = g.store.park_link_game(pid, game["id"])
+    won = prize(LEVELS[0], 3, game["total"])
+    assert won > 0 and row["settled_at"] is not None and (row["reason"], row["cleared"], row["prize"]) == ("quit", 3, won)
+    assert shards(g, pid) == before + won
+    assert g.store.park_link_played(pid, day_of(clock())) == 1
+    # Paid once, whatever comes after.
+    for again in ("state", "start", "finish"):
+        with pytest.raises(GameError):
+            getattr(pl, again)(TOKEN, *({"finish": (game["id"],)}.get(again, ())))
+    assert shards(g, pid) == before + won
+    assert [r for r in ledger(g, pid) if r[1] == LINK_PRIZE] == [(day_of(clock()), LINK_PRIZE, won, 1)]
+
+
+def test_with_the_park_off_a_game_past_its_time_is_settled_as_run_out(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    before = shards(g, pid)
+    clock.t += 3600
+    link_off(monkeypatch, g, park=True)
+    with pytest.raises(GameError) as e:
+        pl.state(TOKEN)
+    assert e.value.code == "no_park"
+    row = g.store.park_link_game(pid, game["id"])
+    assert (row["reason"], row["prize"]) == ("time", prize(LEVELS[0], 3, game["total"]))
+    assert shards(g, pid) == before + row["prize"]
+
+
+def test_with_the_link_off_another_saves_game_is_left_alone(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    link_off(monkeypatch, g)
+    for call, args in ((pl.state, ()), (pl.finish, (game["id"],))):
+        with pytest.raises(GameError):
+            call(OTHER, *args)
+    assert g.store.park_link_game(pid, game["id"])["settled_at"] is None
+
+
+def test_with_the_link_off_prune_settles_every_game_in_play(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    other = g.status(OTHER)["player"]
+    g.store.update_player(other, taps_total=M.park["coin"]["minTaps"], gift_day=day_of(clock()))
+    second = pl.start(OTHER)["link"]["game"]
+    before = shards(g, pid), shards(g, other)
+    link_off(monkeypatch, g)
+    assert pl.prune() == 0
+    won = prize(LEVELS[0], 3, game["total"])
+    assert g.store.park_link_game(pid, game["id"])["prize"] == won
+    assert g.store.park_link_game(other, second["id"])["settled_at"] is not None
+    assert (shards(g, pid), shards(g, other)) == (before[0] + won, before[1])
+    pl.prune()
+    assert (shards(g, pid), shards(g, other)) == (before[0] + won, before[1])
+
+
+def test_with_the_link_on_prune_leaves_games_in_play_alone():
+    g, pl, clock, pid, game, _ = played()
+    clock.t += 3600
+    assert pl.prune() == 0
+    assert g.store.park_link_game(pid, game["id"])["settled_at"] is None
 
 
 # ------------------------------------------------------------------------ prune
