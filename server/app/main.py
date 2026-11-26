@@ -53,8 +53,8 @@ from .park_scratch import ParkScratch
 from .photocards import Photocards
 from .redeem import Locked, Redeem
 from .releases import ReleaseFeed
-from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomFull, RoomManager,
-                    room_status)
+from .rooms import (FEATURES, MOTION_VERSION, PROFILE_INTERVAL, Banned, NeedSave, Peer, PokeRefused, RoomClosed,
+                    RoomFull, RoomManager, room_status)
 from .store import Store
 from .ws_writes import CoalesceWebSocketWrites
 
@@ -1660,10 +1660,15 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 prior_info = prior.info() if prior is not None else None
                 try:
                     peer = manager.join(msg.room, blocklist.mask(msg.nick), character, ws, token=who, plate=plate,
-                                        may_list=not accounts or signed_in, seq=seq, **profile)
+                                        may_list=not accounts or signed_in, seq=seq, only_open=msg.onlyOpen,
+                                        **profile)
                     raw_nicks[peer.id] = peer.raw_nick = msg.nick
                 except RoomFull:
                     await err("room_full", "room is full (max 20)")
+                    continue
+                except RoomClosed:
+                    # Checked in the join itself: the last member may have left during the awaits above.
+                    await send(_final("room_closed", "房间里已经没有人了"))
                     continue
                 except Banned:
                     await send(_final("banned", "你已被移出这个房间"))

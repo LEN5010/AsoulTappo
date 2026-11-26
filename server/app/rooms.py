@@ -75,6 +75,10 @@ class Banned(Exception):
     """The save was removed from this room by its host."""
 
 
+class RoomClosed(Exception):
+    """A join that goes only into a room with members found none there."""
+
+
 class NeedSave(Exception):
     """Public rooms take members with a save only."""
 
@@ -339,11 +343,15 @@ class RoomManager:
         return new_room_id()
 
     def join(self, room_id: str, nick: str, character: str, ws: Sender,
-             token: str | None = None, may_list: bool = True, seq: int | None = None, **profile: str | None) -> Peer:
+             token: str | None = None, may_list: bool = True, seq: int | None = None, only_open: bool = False,
+             **profile: str | None) -> Peer:
         """[token]: the joining save's player id, None without a save. [may_list]: whether this joiner may host a
         listed room, for a room of the last run whose host comes back. [seq]: the joiner's Peer.join_seq, taken when
-        its join came (next_seq); a new one when None."""
+        its join came (next_seq); a new one when None. [only_open]: join only a room that has members now, and
+        raise RoomClosed rather than make one."""
         room = self.rooms.get(room_id)
+        if room is None and only_open:
+            raise RoomClosed(room_id)
         pending = self._restoring(room_id)
         if room is not None:
             if token and token in room.banned:
