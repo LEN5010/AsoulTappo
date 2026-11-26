@@ -838,6 +838,93 @@ def test_an_answer_is_read_at_one_moment_whatever_another_device_does(monkeypatc
     assert shards(g, pid) == old - ENTRY
 
 
+# ------------------------------------------------------------------- link off
+def played(pairs=3):
+    """A save's first game with [pairs] pairs taken a second apart."""
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    board = game["board"]
+    for seq in range(pairs):
+        _, board = play_pair(pl, game, board, seq, clock)
+    return g, pl, clock, pid, game, board
+
+
+def link_off(monkeypatch, g, park=False):
+    """Turns the link off (or the whole park, when [park]), as a restart with an economy without it does."""
+    if park:
+        monkeypatch.setattr(g.manifest, "park", None)
+    else:
+        monkeypatch.delitem(g.manifest.park, "link")
+
+
+@pytest.mark.parametrize("call", ["state", "start", "finish", "move"])
+def test_with_the_link_off_a_game_paid_for_is_settled_on_its_pairs_and_no_game_starts(monkeypatch, call):
+    g, pl, clock, pid, game, board = played()
+    before = shards(g, pid)
+    link_off(monkeypatch, g)
+    a, b = find_pair(board, game["rows"], game["cols"])
+    args = {"state": (), "start": (), "finish": (game["id"],), "move": (game["id"], 3, a, b)}[call]
+    with pytest.raises(GameError) as e:
+        getattr(pl, call)(TOKEN, *args)
+    assert e.value.code == "no_park"
+    row = g.store.park_link_game(pid, game["id"])
+    won = prize(LEVELS[0], 3, game["total"])
+    assert won > 0 and row["settled_at"] is not None and (row["reason"], row["cleared"], row["prize"]) == ("quit", 3, won)
+    assert shards(g, pid) == before + won
+    assert g.store.park_link_played(pid, day_of(clock())) == 1
+    # Paid once, whatever comes after.
+    for again in ("state", "start", "finish"):
+        with pytest.raises(GameError):
+            getattr(pl, again)(TOKEN, *({"finish": (game["id"],)}.get(again, ())))
+    assert shards(g, pid) == before + won
+    assert [r for r in ledger(g, pid) if r[1] == LINK_PRIZE] == [(day_of(clock()), LINK_PRIZE, won, 1)]
+
+
+def test_with_the_park_off_a_game_past_its_time_is_settled_as_run_out(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    before = shards(g, pid)
+    clock.t += 3600
+    link_off(monkeypatch, g, park=True)
+    with pytest.raises(GameError) as e:
+        pl.state(TOKEN)
+    assert e.value.code == "no_park"
+    row = g.store.park_link_game(pid, game["id"])
+    assert (row["reason"], row["prize"]) == ("time", prize(LEVELS[0], 3, game["total"]))
+    assert shards(g, pid) == before + row["prize"]
+
+
+def test_with_the_link_off_another_saves_game_is_left_alone(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    link_off(monkeypatch, g)
+    for call, args in ((pl.state, ()), (pl.finish, (game["id"],))):
+        with pytest.raises(GameError):
+            call(OTHER, *args)
+    assert g.store.park_link_game(pid, game["id"])["settled_at"] is None
+
+
+def test_with_the_link_off_prune_settles_every_game_in_play(monkeypatch):
+    g, pl, clock, pid, game, _ = played()
+    other = g.status(OTHER)["player"]
+    g.store.update_player(other, taps_total=M.park["coin"]["minTaps"], gift_day=day_of(clock()))
+    second = pl.start(OTHER)["link"]["game"]
+    before = shards(g, pid), shards(g, other)
+    link_off(monkeypatch, g)
+    assert pl.prune() == 0
+    won = prize(LEVELS[0], 3, game["total"])
+    assert g.store.park_link_game(pid, game["id"])["prize"] == won
+    assert g.store.park_link_game(other, second["id"])["settled_at"] is not None
+    assert (shards(g, pid), shards(g, other)) == (before[0] + won, before[1])
+    pl.prune()
+    assert (shards(g, pid), shards(g, other)) == (before[0] + won, before[1])
+
+
+def test_with_the_link_on_prune_leaves_games_in_play_alone():
+    g, pl, clock, pid, game, _ = played()
+    clock.t += 3600
+    assert pl.prune() == 0
+    assert g.store.park_link_game(pid, game["id"])["settled_at"] is None
+
+
 # ------------------------------------------------------------------------ prune
 def test_prune_forgets_old_settled_games_only():
     g, pl, clock, pid = setup()

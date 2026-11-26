@@ -7,7 +7,8 @@ pair against its own board, keeps the time (moves after deadline + grace are not
 no pair. A game pays max × counted² // total² shards once, when it is cleared, finished, or found past its time by
 the next call (lazy settlement); counted leaves out the pairs claimed sooner than antiCheat link_min_pair_ms after the
 one before (`fast`), and is at most the pairs that time could have held by the last pair's arrival. Per-move answers are kept minimal; full answers come with start, finish, settlement
-and GET."""
+and GET. An economy without the link starts no game; the games already paid for are settled on their pairs by the
+next call of the save, which is refused all the same, and at start (prune)."""
 from __future__ import annotations
 
 import json
@@ -37,6 +38,11 @@ class ParkLink:
         self.park = park
         # Whether the server has main-site accounts; then `account` in the config makes a game need a linked save.
         self.require_account = require_account
+
+    @property
+    def on(self) -> bool:
+        """The economy has the link (and the park). Off, no game starts and the games paid for are settled (_close)."""
+        return bool((self.park.game.manifest.park or {}).get("link"))
 
     @property
     def cfg(self) -> dict[str, Any]:
@@ -143,6 +149,24 @@ class ParkLink:
         fast = sum(1 for ev in events if ev.get("fast"))
         return max(0, min(row["cleared"] - fast, events[-1]["t"] // self.park.game.cfg.link_min_pair_ms))
 
+    @staticmethod
+    def _ended(row: dict[str, Any], now: float) -> str:
+        """The reason of a game ended now on the pairs taken so far: time once its deadline has passed, quit before."""
+        return "time" if now >= row["deadline"] else "quit"
+
+    def _close(self, pid: str, game_id: int | None = None, now: float | None = None) -> None:
+        """With the link off: settles the save's game in play, or its game [game_id], on the pairs taken so far, then
+        refuses as a server without the link does. The settlement needs no link config: it pays from the row's max
+        and total, once, as _settle does."""
+        g = self.park.game
+        now = g.now() if now is None else now
+        with g.store.transaction() as st:
+            row = st.park_link_active(pid) if game_id is None else st.park_link_game(pid, game_id)
+            if row is not None:
+                self._settle(st, row, self._ended(row, now), now)
+        self.cfg  # raises no_park, after the transaction so the settlement is kept
+        raise GameError("no_park", "这个服务器没有连连看")
+
     def _due(self, st: Store, pid: str, now: float) -> dict[str, Any] | None:
         """The save's game in play, after settling it (reason time) when it is past deadline + grace."""
         row = st.park_link_active(pid)
@@ -154,9 +178,11 @@ class ParkLink:
     # ------------------------------------------------------------------ calls
     def state(self, token: str) -> dict[str, Any]:
         """GET: status, park and LinkState, after settling a game past its time."""
-        cfg = self.cfg
         g = self.park.game
         pid = player_id_for(token)
+        if not self.on:
+            self._close(pid)
+        cfg = self.cfg
         with g.store.lock:
             row = g.store.park_link_active(pid)
             if row is not None and g.now() > row["deadline"] + cfg["grace"]:
@@ -167,9 +193,11 @@ class ParkLink:
     def start(self, token: str) -> dict[str, Any]:
         """Starts the day's next game: takes the entry fee and makes the game in one transaction. A game in play is
         handed back as it is, at no charge, so a save never plays two."""
-        cfg = self.cfg
         g = self.park.game
         pid = player_id_for(token)
+        if not self.on:
+            self._close(pid)
+        cfg = self.cfg
         laid: tuple[int, list[str], list[int]] | None = None
         for attempt in range(START_TRIES):
             error: GameError | None = None
@@ -220,11 +248,13 @@ class ParkLink:
         """Takes the [seq]-th pair (a, b) of the game, played [t] ms after the start as the client claims (the arrival
         when absent). Answers {seq, cleared, shuffle?}; a settled game (including one this pair clears or one past
         its time) answers in full with `settled` and `result`. The time is taken on arrival, before waiting for the
-        store's lock."""
-        cfg = self.cfg
+        store's lock. With the link off the game is settled on the pairs taken before this one."""
         g = self.park.game
         pid = player_id_for(token)
         now = g.now()
+        if not self.on:
+            self._close(pid, game_id, now)
+        cfg = self.cfg
         # The settled answer is read under the same hold of the lock as the settlement.
         with g.store.lock:
             with g.store.transaction() as st:
@@ -296,20 +326,27 @@ class ParkLink:
     def finish(self, token: str, game_id: int) -> dict[str, Any]:
         """Settles the game on the pairs taken so far: reason time once the deadline has passed, quit before. A game
         settled already answers its result again and pays nothing. The time is taken on arrival, as in move."""
-        self.cfg
         g = self.park.game
         pid = player_id_for(token)
         now = g.now()
+        if not self.on:
+            self._close(pid, game_id, now)
         with g.store.lock:
             with g.store.transaction() as st:
                 row = st.park_link_game(pid, game_id)
                 if row is None:
                     raise GameError("no_game", "没有这局连连看")
-                row = self._settle(st, row, "time" if now >= row["deadline"] else "quit", now)
+                row = self._settle(st, row, self._ended(row, now), now)
                 result = self._result(row)
             return self._answer(token, result=result)
 
     def prune(self) -> int:
-        """Forgets games settled more than SCRATCH_DAYS ago. Returns rows removed."""
+        """Forgets games settled more than SCRATCH_DAYS ago. Returns rows removed. Run at start: with the link off it
+        first settles every game in play on the pairs taken so far, as a client shows no link then and may never ask."""
         g = self.park.game
+        if not self.on:
+            now = g.now()
+            with g.store.transaction() as st:
+                for row in st.park_link_open():
+                    self._settle(st, row, self._ended(row, now), now)
         return g.store.prune_park_link(g.now() - SCRATCH_DAYS * 86400)
