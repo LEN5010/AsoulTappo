@@ -41,7 +41,8 @@ const groupSources = {
     liveState: ddzStore.ddzLiveState.value, queue: ddzStore.ddzQueue.value,
     waiting: ddzStore.ddzWaiting.value, retry: ddzStore.ddzRetry.value, tables: ddzStore.ddzTables.value,
     call: ddzStore.ddzCall.value, link: ddzStore.ddzLink.value, linkOff: ddzStore.ddzLinkOff.value,
-    emotes: ddzStore.ddzEmotes.value, watch: ddzStore.ddzWatch.value, watchers: ddzStore.ddzWatchers.value }),
+    emotes: ddzStore.ddzEmotes.value, watch: ddzStore.ddzWatch.value, watchers: ddzStore.ddzWatchers.value,
+    hall: player.ddzHallOn.value }),
   members: () => [...room.members.values()].map(({ id, uid, nick, character, plate, ddz, ddzMatch }) =>
     ({ id, uid, nick, character, plate, ddz, ddzMatch })),
 };
@@ -90,6 +91,7 @@ function applyGroups(s: Partial<Groups>) {
     ddzStore.ddzEmotes.value = s.ddz.emotes;
     ddzStore.ddzWatch.value = s.ddz.watch;
     ddzStore.ddzWatchers.value = s.ddz.watchers;
+    player.ddzHallOn.value = !!s.ddz.hall;
   }
   if (s.economy) setEconomy(s.economy);
   if (s.freshItems) {

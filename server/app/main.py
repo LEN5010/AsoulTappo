@@ -561,16 +561,19 @@ def api_economy(x_client_version: str = Header(default="")) -> dict:
 
 @app.get("/api/ddz/lobby")
 async def api_ddz_lobby(who: PlayerId = Depends(player)) -> dict:
-    """The dou dizhu lobby for the save: the stakes (deposit, whether it can pay it, how many saves wait there),
-    today's net win and what is left under the cap, the taps it has and needs, whether it meets the account rule, and
-    whether it holds a seat a dou dizhu connection takes again (`seated`: the client opens one to get it back)."""
+    """The dou dizhu lobby for the save: the stakes (deposit, whether it can pay it, how many saves wait there, the
+    public open tables waiting there, see Tables.lobby_tables), today's net win and what is left under the cap, the
+    taps it has and needs, whether it meets the account rule, and whether it holds a seat a dou dizhu connection takes
+    again (`seated`: the client opens one to get it back)."""
     if not game.manifest.ddz:
         raise HTTPException(404, {"code": "no_ddz", "message": "这个服务器没有斗地主"})
     out = await run_in_threadpool(_guard, tables.bank.lobby, who)
     # Read on the loop, where the queue changes.
     counts = tables.counts()
+    hall = tables.lobby_tables(who)
     for tier in out["tiers"]:
         tier["waiting"] = counts.get(tier["base"], 0)
+        tier["tables"] = hall.get(tier["base"], [])
     out["seated"] = tables.holds(who)
     return out
 
@@ -1394,9 +1397,10 @@ async def _lobby_failed(peer: Peer) -> None:
 # Dou dizhu connections open at once at most; more are refused (ddz_full). The lobby's numbers are on HTTP.
 LOBBY_MAX = 2000
 
-# What a dou dizhu connection (ddz_hello) may send: its queue, the tables it plays at, and its own state.
-LOBBY_MESSAGES = (LeaveMsg, DndMsg, StateMsg, DdzQueueMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg, DdzAutoMsg,
-                  DdzAgainMsg, DdzLeaveMsg, DdzEmoteMsg, DdzCounterMsg)
+# What a dou dizhu connection (ddz_hello) may send: its queue, sitting down at public open tables (the hall), the
+# tables it plays at, and its own state.
+LOBBY_MESSAGES = (LeaveMsg, DndMsg, StateMsg, DdzQueueMsg, DdzOpenMsg, DdzSitMsg, DdzAnswerMsg, DdzBidMsg, DdzPlayMsg,
+                  DdzAutoMsg, DdzAgainMsg, DdzLeaveMsg, DdzEmoteMsg, DdzCounterMsg)
 
 
 def _final(reason: str, message: str) -> dict:
@@ -1772,7 +1776,12 @@ async def ws_endpoint(ws: WebSocket) -> None:
                         raise GameError("bad_message", "join with ddzMatch to queue or open tables")
                     if isinstance(msg, DdzQueueMsg) and not peer.lobby:
                         raise GameError("bad_message", "queue on a dou dizhu connection (ddz_hello)")
-                    if isinstance(msg, DdzOpenMsg):
+                    # On a dou dizhu connection, which is in no room, opening and sitting go to the hall.
+                    if isinstance(msg, DdzOpenMsg) and peer.lobby:
+                        await tables.hall_open(peer, msg.base)
+                    elif isinstance(msg, DdzSitMsg) and peer.lobby:
+                        await tables.hall_sit(peer, msg.table, msg.seat)
+                    elif isinstance(msg, DdzOpenMsg):
                         await tables.open(room_id, peer, msg.base)
                     elif isinstance(msg, DdzSitMsg):
                         await tables.sit(room_id, peer, msg.table, msg.seat)

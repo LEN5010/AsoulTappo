@@ -35,10 +35,22 @@ are, gives them back and stands up (the opener puts the table away), as decided 
 nowhere else (ddz_busy) until they are back. A save of the queue that waits at a table put away before its first game
 there goes back to its place in the line. After a game, those who ask for another keep their seats; when the opener did
 and someone did not (or left), the table opens again with them, at the same stake and by the same rules, else it closes
-as an invited one does.
+as an invited one does. Every open table is public: dou dizhu connections sit down at it too (the hall, below).
+
+The hall: a dou dizhu connection sits down at a stake (``ddz_open``) at the fullest public open table there, a room's
+or a hall table, or opens a hall table when none waits: an open table of no room (Table.hall) that anyone sits down
+at, and that has no opener. Seats taken on a dou dizhu connection, at a hall table or a room's, are taken again by a
+new dou dizhu connection (hello), as seats the queue gave, never by joining a room. Where a room's open table
+follows its opener, a hall table follows its lead seat (Tables._lead), the lowest seat whose save is still there:
+anyone stands up before the start, and the table is put away once nobody sits there (``ddz_over`` gone to a seat
+offered to the queue, which goes back to the line), or after OPEN_SEC from the last seat taken without the three; a
+seat let go at the start empties and the table waits again while anyone is left; after a game it goes on while
+anyone is there, opens again when everyone still there asked for another and someone left, or when the time to ask
+runs out with anyone still there having asked, and closes once nobody is left. Its empty seats are offered to the
+queue at once, nobody of a room waiting to sit there. ``ddz_call`` is a room's only.
 
 Messages to the three seats (all carry `table`); seats are numbered 0 to 2 in turn order, 0 the inviter (the save
-that waited longest at a table the queue made, the opener of an open table):
+that waited longest at a table the queue made, the opener of a room's open table, the first to sit at a hall table):
 
 - ``ddz_invite`` {from, ids, base, deposit, sec}: member `from` invited the two other members of `ids`. A table the
   queue made has no `from`, and has `match` true and `seats` [{id, nick, character}] (the members may be in other
@@ -49,7 +61,8 @@ that waited longest at a table the queue made, the opener of an open table):
 - ``ddz_over`` {reason, by?}: the invite or the game ended with nothing won: declined | timeout | gone (`by` is the
   member) | nobid (three deals nobody bid on) | no_shards | ddz_cap | ddz_locked | ddz_account (a seat's save is not
   linked to a main-site account, on a server with accounts) | error; at an open table also disband (`by` the
-  opener) | expired, and a seat let go at the start hears why its save may not play. Deposits taken went back.
+  opener) | expired, gone without `by` at a hall table put away once nobody sits there (to a seat offered to the
+  queue), and a seat let go at the start hears why its save may not play. Deposits taken went back.
 - ``ddz_deal`` {seats: [{id, nick, character, plate?, auto, away}], you, hand, base, cap, deal, turn, sec, dealSec,
   counter?}: a deal (`plate` when one is worn, in every seat list); the clients deal the cards out over `dealSec`
   seconds, then `turn` bids first with `sec` seconds. `counter` {on, left}, where the card counter is sold: whether
@@ -94,8 +107,9 @@ change it, at most once every COUNTS_SEC, while such a member is in one of its r
 joins.
 
 The dou dizhu connection: ``ddz_hello`` {nick, character, token?, accountToken?, plate?, dnd?} as its first message,
-checked as ``join`` is (refused with no_ddz on a server without the game); it may then send ``ddz_queue``, the moves
-of its table, ``ddz_emote``, ``dnd``, ``state`` and ``leave``, anything else answered with not_joined.
+checked as ``join`` is (refused with no_ddz on a server without the game); it may then send ``ddz_queue``,
+``ddz_open`` and ``ddz_sit`` (the hall), the moves of its table, ``ddz_emote``, ``dnd``, ``state`` and ``leave``,
+anything else answered with not_joined.
 
 - ``ddz_ready`` {you, base, waited?, table} to it: its member id; the stake its save waits at (taken over from an
   older connection of the save, `waited` seconds so far), null when it does not; the table whose seat it takes again,
@@ -137,8 +151,34 @@ Open tables, with members whose client said `ddzMatch` only:
   to a save of the queue, `sec` the time until it is put away; with `starting` the three seats are taken and the
   deposits are being taken (the deal, or the table waiting again, follows).
 - ``ddz_tables`` {tables: [{table, base, seats}, ...]}: the open tables of the room, oldest first, seats as in
-  ``ddz_open``; to its members whenever they change, at most every COUNTS_SEC, an empty list once the last goes; on
-  joining the room, the list it was told last, unless it was told of none.
+  ``ddz_open`` but by the member ids the room knows (Tables._ids_in: a save sitting there on its dou dizhu connection
+  by its member id in the room, when it is there); to its members whenever they change, at most every COUNTS_SEC, an
+  empty list once the last goes; on joining the room, the list it was told last, unless it was told of none.
+
+The hall, on dou dizhu connections (Peer.lobby, which always says `ddzMatch`); the seat hears ``ddz_open`` and the
+rest as at a room's open table, `sec` the time until it is put away:
+
+- ``ddz_open`` {base} from the connection: sit down at stake `base`: at the first empty seat of the public open table
+  at that stake, a room's or a hall table, waiting with a seat empty, with the most seats taken (one offered to a save
+  of the queue counts as taken), the oldest first among equals, then by id; with none, in seat 0 of a new hall table.
+  Refused with ddz_locked | ddz_account | no_shards | ddz_cap | ddz_busy (at a table or invite) | ddz_dnd |
+  rate_limited (QUEUE_INTERVAL, shared with the queue) | bad_message (not a stake); the queue's cooldown
+  (ddz_match_cooldown) does not hold it up. The save leaves the queue.
+- ``ddz_sit`` {table, seat?} from the connection: sit down at the public open table `table`, at `seat` when it is
+  empty, else at the first empty one. Refused as ``ddz_open``, and with ddz_gone when `table` is not an open table
+  waiting with a seat empty. A room's tables are left out for a save the room bans, as it may not join the room.
+- ``ddz_leave`` {table} from a seat: stand up, as at a room's open table, by the hall's rules at a hall table.
+
+GET /api/ddz/lobby lists the public open tables in each stake's `tables` (Tables.lobby_tables): those waiting with a
+seat empty, fullest first, then oldest, then by id, at most LOBBY_TABLES; each {table, seats}, a seat {nick,
+character}, {pending: true} when offered to a save of the queue, or null when empty; no member ids, no rooms. Its
+presence tells a client the server has the hall.
+
+Today's counts (tracking.COUNT_KEYS): ``ddz_ask`` each table the queue made and each open table's seat offered to a
+save of the queue; ``ddz_ask_timeout`` and ``ddz_ask_decline`` each of those asks that ran out, or was declined or
+left by its save; ``ddz_start_match``, ``ddz_start_open``, ``ddz_start_hall`` and ``ddz_start_invite`` each game
+dealt after its deposits were taken, by the kind of table (one another game was asked for included). A connection
+taking a seat or an ask over (hello) counts nothing.
 
 Watching, for room members whose client said `ddzMatch` and `ddzWatch` (``joined`` then lists "ddz_watch" in
 `features`; a dou dizhu connection says `ddzWatch` in ``ddz_hello``, which only lets its seat be watched). A member
@@ -216,8 +256,11 @@ MATCH_RETRY_SEC = 60.0
 QUEUE_INTERVAL = 1.0
 # An open table not filled this long after it opened is put away.
 OPEN_SEC = 600.0
-# An empty seat of an open table that has waited this long is offered to the queue at the table's stake.
+# An empty seat of an open table that has waited this long is offered to the queue at the table's stake (one of a
+# hall table at once).
 FILL_SEC = 60.0
+# The public open tables the lobby lists at each stake at most (GET /api/ddz/lobby).
+LOBBY_TABLES = 4
 # Handing the deposits of an open table's start back failed (the database busy): tried again after each of these
 # waits, in seconds; after the last the game is left open for the next start of the server (Bank.refund_open).
 REFUND_RETRY_SEC = (0.5, 2.0)
@@ -463,7 +506,8 @@ class Seat:
     # to the line.
     since: float | None = None
     seq: int = 0
-    # The seat came from the queue: its member takes it again from any room, as at a table the queue made.
+    # The seat came from the queue, or was taken on a dou dizhu connection: its member takes it again on a new dou
+    # dizhu connection (hello), as at a table the queue made, not by joining a room.
     roam: bool = False
     # An empty seat of an open table (no save): since when it is empty.
     empty_since: float = 0.0
@@ -548,9 +592,11 @@ class Table:
     turn_sec: float = 0.0
     # Rooms told the game is on, told again when it ends (Tables._live).
     live_rooms: set[str] = field(default_factory=set)
-    # Opened by seat 0 in its room for anyone of the room to sit down at (open tables), and since when it waits.
+    # Open for anyone to sit down at (open tables), and since when it waits: opened by seat 0 in its room, or, with
+    # `hall`, on a dou dizhu connection in no room, where the time counts from the last seat taken.
     open: bool = False
     opened_at: float = 0.0
+    hall: bool = False
     # An invite's invited saves were waiting in the queue: their places, given back should no game come of it
     # (Tables._restore).
     held: list[Waiting] = field(default_factory=list)
@@ -572,8 +618,9 @@ class Table:
 
     @property
     def match(self) -> bool:
-        """The queue made this table: no seat invited the others."""
-        return self.room is None
+        """The queue made this table: no seat invited the others, and it is not open (a hall table is in no room
+        either)."""
+        return self.room is None and not self.open
 
     def seat_of(self, peer: Peer) -> int | None:
         return next((i for i, s in enumerate(self.seats) if s.peer is peer), None)
@@ -681,6 +728,10 @@ class Tables:
     @property
     def manager(self) -> RoomManager:
         return self._manager()
+
+    def _count(self, key: str) -> None:
+        """One more of [key] in today's counts (tracking.COUNT_KEYS)."""
+        self._game().tracker.count(key)
 
     def clear(self) -> None:
         for table in list(self.by_id.values()):
@@ -884,12 +935,20 @@ class Tables:
                     plate=peer.plate, raw=peer.raw_nick, watchable=peer.ddz_watch,
                     **{"accepted": True, **kw})
 
-    def _empty_seat(self) -> Seat:
-        return Seat(token="", peer=None, id="", nick="", character="", empty_since=self.clock())
+    def _empty_seat(self, hall: bool = False) -> Seat:
+        """An empty seat of an open table; one of a hall table is due for the queue at once, nobody of a room waiting
+        to sit there."""
+        now = self.clock()
+        return Seat(token="", peer=None, id="", nick="", character="", empty_since=now - FILL_SEC if hall else now)
+
+    def _lead(self, table: Table) -> int | None:
+        """The lead seat of a hall table, which stands where a room's open table has its opener: the lowest seat
+        holding an accepted save that is still there. None when there is none (the table is put away)."""
+        return next((i for i, s in enumerate(table.seats) if not s.empty and s.accepted and not self._gone(s)), None)
 
     async def open(self, room_id: str, peer: Peer, base: int) -> None:
         """[peer] opens a table at stake [base] in room [room_id] and takes seat 0. Members of the room sit down at
-        it (sit); the third to sit starts the game (_begin)."""
+        it (sit), as do dou dizhu connections (hall_open, hall_sit); the third to sit starts the game (_begin)."""
         bank = self.bank
         if base not in bank.cfg()["stakes"]:
             raise GameError("bad_message", "unknown stake")
@@ -915,15 +974,110 @@ class Tables:
         # Anything may have moved while the database was read, the last seat taken included.
         self._check_seat(room_id, peer)
         table = self._open_table(room_id, table_id)
+        self._sit_at(table, peer, seat)
+
+    def _sit_at(self, table: Table, peer: Peer, seat: int | None) -> None:
+        """[peer] takes seat [seat] of the open table [table] when it is empty, else the first empty one. A seat taken
+        on a dou dizhu connection is taken again by hello (roam). At a hall table the time to wait starts over. The
+        third to sit starts the game (_begin)."""
         empty = [i for i, s in enumerate(table.seats) if s.empty]
         at = seat if seat in empty else empty[0]
-        table.seats[at] = self._seat_for(peer)
+        table.seats[at] = self._seat_for(peer, roam=peer.lobby)
         self.by_save[peer.token or ""] = table
         self._leave_queue(peer, save=True)
+        if table.hall:
+            table.opened_at = self.clock()
         if all(not s.empty and s.accepted for s in table.seats):
             self._begin(table)
         else:
             self._open_changed(table)
+
+    # ----------------------------------------------------------------- the hall
+    def _check_hall(self, peer: Peer) -> None:
+        """What keeps dou dizhu connection [peer] from sitting down at a public open table, its save's shards and taps
+        aside (Bank.check). The queue's cooldown (match_refused) does not."""
+        if not peer.lobby or not peer.ddz_match:
+            raise GameError("bad_message", "sit down on a dou dizhu connection (ddz_hello)")
+        if not peer.token:
+            raise GameError("ddz_locked", "")
+        if not peer.active:
+            raise GameError("ddz_gone", "")
+        if peer.token in self.by_save:
+            raise GameError("ddz_busy", "")
+        if peer.dnd or self._quiet(peer.token):
+            raise GameError("ddz_dnd", "")
+
+    def _waiting_tables(self) -> list[Table]:
+        """The public open tables: every open table, a room's or a hall table, waiting with a seat empty; the fullest
+        first (a seat offered to a save of the queue counts as taken), then the oldest, then by id."""
+        return sorted((t for t in self.by_id.values() if t.open and t.phase == OPEN and any(s.empty for s in t.seats)),
+                      key=lambda t: (-sum(not s.empty for s in t.seats), t.opened_at, t.id))
+
+    def _banned(self, table: Table, token: str | None) -> bool:
+        """Whether the room of [table] bans save [token]: it sits down at none of the room's tables, as it may not
+        join the room. A hall table bans nobody."""
+        room = self.manager.rooms.get(table.room) if table.room is not None else None
+        return room is not None and bool(token) and token in room.banned
+
+    def _public_table(self, peer: Peer, table_id: str) -> Table:
+        """The public open table [table_id], while it waits with a seat empty, for [peer] to sit down at."""
+        table = self.by_id.get(table_id)
+        if (table is None or not table.open or table.phase != OPEN or not any(s.empty for s in table.seats)
+                or self._banned(table, peer.token)):
+            raise GameError("ddz_gone", "")
+        return table
+
+    async def hall_open(self, peer: Peer, base: int) -> None:
+        """Dou dizhu connection [peer] sits down at stake [base] (``ddz_open``): at the first empty seat of the fullest
+        public open table at that stake (_waiting_tables), else in seat 0 of a new hall table, which belongs to no room
+        and has no opener."""
+        bank = self.bank
+        if base not in bank.cfg()["stakes"]:
+            raise GameError("bad_message", "unknown stake")
+        self._check_hall(peer)
+        self._limit(peer)
+        deposit = await run_in_threadpool(bank.check, [peer.token], base)
+        # Anything may have moved while the database was read: the table is picked now.
+        self._check_hall(peer)
+        table = next((t for t in self._waiting_tables() if t.base == base and not self._banned(t, peer.token)), None)
+        if table is not None:
+            self._sit_at(table, peer, None)
+            return
+        table = Table(id=secrets.token_hex(4), room=None, base=base, deposit=deposit, phase=OPEN, open=True, hall=True,
+                      opened_at=self.clock(),
+                      seats=[self._seat_for(peer, roam=True), self._empty_seat(True), self._empty_seat(True)])
+        self.by_id[table.id] = table
+        self.by_save[peer.token or ""] = table
+        self._leave_queue(peer, save=True)
+        self._open_changed(table)
+
+    async def hall_sit(self, peer: Peer, table_id: str, seat: int | None = None) -> None:
+        """Dou dizhu connection [peer] sits down at the public open table [table_id] (``ddz_sit``), a room's or a hall
+        table: at [seat] when it is empty, else at the first empty one."""
+        self._check_hall(peer)
+        table = self._public_table(peer, table_id)
+        self._limit(peer)
+        await run_in_threadpool(self.bank.check, [peer.token], table.base)
+        self._check_hall(peer)
+        table = self._public_table(peer, table_id)
+        self._sit_at(table, peer, seat)
+
+    def lobby_tables(self, token: str | None = None) -> dict[int, list[dict]]:
+        """The public open tables the lobby lists, by stake: at most LOBBY_TABLES of each, in the order of
+        _waiting_tables, those of a room that bans save [token] left out. Each {table, seats}, a seat {nick,
+        character}, {pending: true} when offered to a save of the queue, or None when empty; no member ids, no
+        rooms."""
+        out: dict[int, list[dict]] = {}
+        for t in self._waiting_tables():
+            if self._banned(t, token):
+                continue
+            shown = out.setdefault(t.base, [])
+            if len(shown) >= LOBBY_TABLES:
+                continue
+            shown.append({"table": t.id, "seats": [
+                None if s.empty else {"pending": True} if s.asked else {"nick": s.nick, "character": s.character}
+                for s in t.seats]})
+        return out
 
     def call(self, room_id: str, peer: Peer, table_id: str, target_id: str) -> None:
         """The opener of the open table [table_id] calls member [target_id] of the room to it (``ddz_call``); the
@@ -957,12 +1111,14 @@ class Tables:
                         "deposit": table.deposit, "sec": self.bank.cfg()["inviteSec"],
                         "seats": self._shown_seats(table)})
 
-    def _shown_seats(self, table: Table) -> list[dict | None]:
+    def _shown_seats(self, table: Table, ids: list[str] | None = None) -> list[dict | None]:
         """The seats of an open table as its members see them: None for an empty one, {pending} for one offered to
-        a save of the queue (who it is stays unsaid until it accepts)."""
-        return [None if s.empty else {"pending": True} if s.asked else {"id": s.id, "nick": s.nick,
+        a save of the queue (who it is stays unsaid until it accepts); a seat taken by its own member id, or by
+        [ids] (those a room knows, _ids_in)."""
+        ids = ids or [s.id for s in table.seats]
+        return [None if s.empty else {"pending": True} if s.asked else {"id": i, "nick": s.nick,
                                                                           "character": s.character}
-                for s in table.seats]
+                for s, i in zip(table.seats, ids)]
 
     def _open_changed(self, table: Table) -> None:
         """Tells the seats of an open table how it stands, and times what comes next (_open_due); first, an empty
@@ -1030,6 +1186,7 @@ class Tables:
                         "base": table.base, "deposit": table.deposit, "sec": sec, "match": True,
                         "seats": [None if s.empty else _face(s) for s in table.seats],
                         "accepted": [s.id for s in table.seats if not s.empty and s.accepted]})
+        self._count("ddz_ask")
         self._open_changed(table)
         return True
 
@@ -1049,6 +1206,9 @@ class Tables:
             return
         s = table.seats[seat]
         s.accepted, s.until = True, 0.0
+        if table.hall:
+            # A seat taken: the hall table's time to wait starts over, as on a sit (_sit_at).
+            table.opened_at = self.clock()
         if all(not x.empty and x.accepted for x in table.seats):
             self._begin(table)
         else:
@@ -1060,6 +1220,7 @@ class Tables:
         s = table.seats[seat]
         if self.by_save.get(s.token) is table:
             del self.by_save[s.token]
+        self._count("ddz_ask_timeout" if reason == "timeout" else "ddz_ask_decline")
         now = self.clock()
         self.match_refused = {k: t for k, t in self.match_refused.items() if t > now}
         self.match_refused[s.token] = now + MATCH_RETRY_SEC
@@ -1072,13 +1233,18 @@ class Tables:
         self._open_changed(table)
 
     def _stand(self, table: Table, seat: int) -> None:
-        """Seat [seat] of an open table stands up: it is empty again, and its member hears the table is gone."""
+        """Seat [seat] of an open table stands up: it is empty again, and its member hears the table is gone. A hall
+        table left with no accepted save is put away (a seat offered to the queue goes back to the line), before its
+        empty seats are offered to anyone."""
         s = table.seats[seat]
         if self.by_save.get(s.token) is table:
             del self.by_save[s.token]
         if s.peer is not None:
             s.peer.enqueue({"type": "ddz_closed", "table": table.id})
-        table.seats[seat] = self._empty_seat()
+        table.seats[seat] = self._empty_seat(table.hall)
+        if table.hall and self._lead(table) is None:
+            self._disband(table, "gone")
+            return
         self._open_changed(table)
 
     def _disband(self, table: Table, reason: str, by: Seat | None = None, quiet: frozenset[int] | set[int] = frozenset()
@@ -1101,10 +1267,21 @@ class Tables:
         self._requeue(table.base, [s for i, s in enumerate(table.seats) if s.since is not None and i not in quiet])
 
     def _room_tables(self, room_id: str) -> list[dict]:
-        """The open tables of room [room_id] as its members see them, oldest first."""
+        """The open tables of room [room_id] as its members see them, oldest first, the seats by the member ids the
+        room knows (_ids_in): a save sitting there on its dou dizhu connection goes by its connection in the room."""
+        room = self.manager.rooms.get(room_id)
         tables = sorted((t for t in self.by_id.values() if t.open and t.phase == OPEN and t.room == room_id),
                         key=lambda t: (t.opened_at, t.id))
-        return [{"table": t.id, "base": t.base, "seats": self._shown_seats(t)} for t in tables]
+        return [{"table": t.id, "base": t.base,
+                 "seats": self._shown_seats(t, self._ids_in(room, t) if room is not None else None)} for t in tables]
+
+    def _tables_moved(self, room_id: str, peer: Peer) -> None:
+        """[peer] joined or left room [room_id]: when its save sits at an open table of the room on another
+        connection, the room's list shows that seat by another member id (_room_tables)."""
+        table = self.by_save.get(peer.token) if peer.token else None
+        if (table is not None and table.open and table.phase == OPEN and table.room == room_id
+                and any(s.token == peer.token and s.peer is not peer for s in table.seats)):
+            self._tables_changed(room_id)
 
     def _tables_changed(self, room_id: str | None) -> None:
         """The open tables of room [room_id] changed: its members hear them now, or COUNTS_SEC after the rooms were
@@ -1187,6 +1364,7 @@ class Tables:
         gone = [i for i, s in enumerate(table.seats) if not self._here(table, s)]
         if row is not None and not gone:
             table.row = row
+            self._count("ddz_start_hall" if table.hall else "ddz_start_open")
             for s, left in zip(table.seats, start.lefts):
                 s.auto, s.timeouts = False, 0
                 s.counter, s.counter_left = False, left
@@ -1225,9 +1403,9 @@ class Tables:
         return room is not None and room.peers.get(p.id) is p
 
     def _give_up(self, table: Table, seat: int) -> None:
-        """Seat [seat] of an open table being started is given up: its member is off it and, back in the room, does
-        not take it again (joined). The save stays held (by_save) until what may have been taken from it is back; the
-        table lets it go then (_let_go)."""
+        """Seat [seat] of an open table being started is given up: its member is off it and, back in the room (or on a
+        new dou dizhu connection), does not take it again (joined, hello). The save stays held (by_save) until what
+        may have been taken from it is back; the table lets it go then (_let_go)."""
         s = table.seats[seat]
         s.peer, s.quit = None, True
 
@@ -1250,13 +1428,16 @@ class Tables:
     def _let_go(self, table: Table, codes: list[str | None]) -> None:
         """After a start that fell short or was taken back: a seat whose save may no longer play hears why and is
         emptied, as is one whose member left meanwhile, and the table waits again; when the opener's is one of them,
-        it goes."""
+        it goes. A hall table goes only when all three are."""
         gone = {i for i, (s, code) in enumerate(zip(table.seats, codes)) if code or s.peer is None or s.quit}
         for i in gone:
             s = table.seats[i]
             if codes[i] and s.peer is not None:
                 s.peer.enqueue({"type": "ddz_over", "table": table.id, "reason": codes[i]})
-        if 0 in gone:
+        if table.hall and len(gone) == len(table.seats):
+            self._disband(table, "gone", quiet=gone)
+            return
+        if not table.hall and 0 in gone:
             self._disband(table, "disband", by=table.seats[0], quiet=gone)
             return
         # Watchers of the game before (another game asked for) stop: the table waits for players again.
@@ -1269,7 +1450,7 @@ class Tables:
                 continue
             if self.by_save.get(s.token) is table:
                 del self.by_save[s.token]
-            table.seats[i] = self._empty_seat()
+            table.seats[i] = self._empty_seat(table.hall)
         self._open_changed(table)
 
     # ------------------------------------------------------------------- a game
@@ -1330,6 +1511,7 @@ class Tables:
             return
         # A game comes of the invite: the invited saves' places in the queue are gone.
         table.held = []
+        self._count("ddz_start_match" if table.match else "ddz_start_invite")
         if again:
             for x in table.seats:
                 x.auto, x.timeouts = x.peer is None, 0
@@ -1608,8 +1790,9 @@ class Tables:
         table.tell(table.result, quit=True)
         self._show(table, table.result)
         await self._live(table, False, deltas=deltas)
-        if table.open and not self._gone(table.seats[0]):
-            # An open table goes on without those who left: they are free now, and their seats empty on reopening.
+        if table.open and (self._lead(table) is not None if table.hall else not self._gone(table.seats[0])):
+            # An open table goes on without those who left (a room's as long as its opener is there, a hall table as
+            # long as anyone is): they are free now, and their seats empty on reopening.
             for s in table.seats:
                 if self._gone(s):
                     self._let_seat_go(table, s)
@@ -1621,7 +1804,9 @@ class Tables:
     async def _again_expired(self, table: Table) -> None:
         if table.phase != OVER:
             return
-        if table.open and table.seats[0].again:
+        # A room's open table opens again when its opener asked for another, a hall table when anyone still there did.
+        if table.open and (any(s.again and not self._gone(s) for s in table.seats) if table.hall
+                           else table.seats[0].again):
             self._reopen(table)
         else:
             self._close(table)
@@ -1637,8 +1822,9 @@ class Tables:
         s.quit, s.again = True, False
 
     def _reopen(self, table: Table) -> None:
-        """After a game at an open table whose opener asked for another: those who asked keep their seats and the
-        table is open again, with the same stake and rules; anyone else hears the table is gone."""
+        """After a game at an open table whose opener (at a hall table, anyone still there) asked for another: those
+        who asked keep their seats and the table is open again, with the same stake and rules; anyone else hears the
+        table is gone."""
         self._cancel_timer(table)
         self._end_watch(table, "reopen")
         table.phase = OPEN
@@ -1651,15 +1837,16 @@ class Tables:
                 del self.by_save[s.token]
             if not self._gone(s) and s.peer is not None:
                 s.peer.enqueue({"type": "ddz_closed", "table": table.id})
-            table.seats[i] = self._empty_seat()
+            table.seats[i] = self._empty_seat(table.hall)
         self._open_changed(table)
 
     def _reopen_due(self, table: Table) -> bool:
-        """After a game at an open table: whether the opener and everyone still at the table asked for another,
-        someone having left (all three asking start the next game instead)."""
-        return (table.open and table.phase == OVER and table.seats[0].again
+        """After a game at an open table: whether the opener (at a hall table, which has none, nobody in particular)
+        and everyone still at the table asked for another, someone having left and someone still there (all three
+        asking start the next game instead)."""
+        return (table.open and table.phase == OVER and (table.hall or table.seats[0].again)
                 and all(s.again for s in table.seats if not self._gone(s))
-                and any(self._gone(s) for s in table.seats))
+                and any(self._gone(s) for s in table.seats) and not all(self._gone(s) for s in table.seats))
 
     async def _abort(self, table: Table, reason: str) -> None:
         """Ends a game whose deposits are taken with nothing won: they go back. That runs on a task of its own
@@ -1734,8 +1921,9 @@ class Tables:
             peer.enqueue({"type": "ddz_closed", "table": table.id})
             self._give_up(table, seat)
         elif table.phase == OPEN:
-            # The opener puts the table away; anyone else stands up, or declines the seat it was offered.
-            if seat == 0:
+            # The opener puts the table away; anyone else stands up, or declines the seat it was offered. At a hall
+            # table everyone stands up (_stand puts it away once nobody sits there).
+            if seat == 0 and not table.hall:
                 self._disband(table, "disband", by=table.seats[0])
             elif table.seats[seat].asked:
                 self._unseat_asked(table, seat, "declined")
@@ -1745,7 +1933,7 @@ class Tables:
             self._end_match(table, "declined", by=peer)
         elif table.phase == INVITE:
             self._end(table, "gone" if seat == 0 else "declined", by=peer, refused=[peer] if seat else [])
-        elif table.phase == OVER and table.open and seat:
+        elif table.phase == OVER and table.open and (seat or table.hall):
             peer.enqueue({"type": "ddz_closed", "table": table.id})
             self._leave_over(table, seat)
         elif table.phase == OVER:
@@ -1754,13 +1942,16 @@ class Tables:
             self._quit(table, seat)
 
     def _leave_over(self, table: Table, seat: int) -> None:
-        """After a game at an open table, seat [seat] (not the opener's) leaves: its save is free, and the table
-        opens again once everyone still there asked for another."""
+        """After a game at an open table, seat [seat] (not the opener's; any at a hall table) leaves: its save is
+        free, and the table opens again once everyone still there asked for another. A hall table nobody is left at
+        closes."""
         s = table.seats[seat]
         self._let_seat_go(table, s)
         s.peer = None
         if self._reopen_due(table):
             self._reopen(table)
+        elif table.hall and self._lead(table) is None:
+            self._close(table)
 
     def _quit(self, table: Table, seat: int) -> None:
         s = table.seats[seat]
@@ -1777,6 +1968,7 @@ class Tables:
         whether watchers elsewhere may see a seat's hand may have changed."""
         self._unwatch(peer)
         self._rooms_changed()
+        self._tables_moved(room_id, peer)
         self._leave_queue(peer, tell=False)
         table = self.by_save.get(peer.token) if peer.token else None
         seat = table.seat_of(peer) if table else None
@@ -1784,7 +1976,7 @@ class Tables:
             return
         s = table.seats[seat]
         if table.phase == OPEN:
-            if seat == 0:
+            if seat == 0 and not table.hall:
                 self._disband(table, "disband", by=s)
             elif s.asked:
                 # Leaving counts as declining, as at a table the queue made.
@@ -1796,7 +1988,7 @@ class Tables:
         elif table.phase == INVITE:
             # An inviter leaving waits as after a refusal, so leaving and coming back cannot repeat the invite.
             self._end(table, "gone", by=peer, refused=[x.peer for x in table.seats[1:] if x.peer] if seat == 0 else [])
-        elif table.phase == OVER and table.open and seat:
+        elif table.phase == OVER and table.open and (seat or table.hall):
             self._leave_over(table, seat)
         elif table.phase == OVER:
             self._close(table)
@@ -1817,9 +2009,9 @@ class Tables:
     async def joined(self, room_id: str, peer: Peer) -> None:
         """A member joined the room: it hears of the games under way there, and takes its seat again if its save
         has one at an invited or open table of this room (an open table's on a client that opens tables). A seat of a
-        table the queue made, or one an open table took from the queue, is taken again on a dou dizhu connection
-        instead (hello). Back while the deposits are being taken, it takes the seat and hears the deal like the
-        others."""
+        table the queue made, one an open table took from the queue, or one taken on a dou dizhu connection (a hall
+        table's included), is taken again on a dou dizhu connection instead (hello). Back while the deposits are
+        being taken, it takes the seat and hears the deal like the others."""
         room = self.manager.rooms.get(room_id)
         if room is None or room.peers.get(peer.id) is not peer:
             return  # gone again before it got through joining
@@ -1845,9 +2037,10 @@ class Tables:
         # newcomer included, which a send of the counts as they are now could leave behind.
         if peer.ddz_match and self._counts_sent:
             peer.enqueue(self._counts_msg(self._counts_sent))
-        # The same for the room's open tables.
+        # The same for the room's open tables; the room's list then follows the save's seat there to this connection.
         if peer.ddz_match and room_id in self._tables_sent:
             peer.enqueue({"type": "ddz_tables", "tables": self._tables_sent[room_id]})
+        self._tables_moved(room_id, peer)
         if table is not None and seat is not None:
             self._back(table, seat, peer, handoff)
 
@@ -1916,8 +2109,9 @@ class Tables:
     # ------------------------------------------------------- dou dizhu connections
     async def hello(self, peer: Peer) -> None:
         """A dou dizhu connection (Peer.lobby) said hello: it hears ``ddz_ready``, takes over the save's place in the
-        queue from an older connection of the save, takes its seat again at a table the queue made or at the seat an
-        open table took from the queue, and hears the waiting counts."""
+        queue from an older connection of the save, takes its seat again at a table the queue made, at the seat an
+        open table took from the queue, or at a seat taken on a dou dizhu connection (Seat.roam), and hears the
+        waiting counts."""
         self.lobby[peer.id] = peer
         held = self.waiting.get(peer.token) if peer.token else None
         if held is not None and held.peer is not peer and held.peer.lobby and (
@@ -2041,7 +2235,8 @@ class Tables:
 
     def holds(self, pid: str) -> bool:
         """Whether save [pid] holds a seat that a dou dizhu connection takes again (hello): at a table the queue
-        made, or one an open table took from the queue, before its game is paid."""
+        made, one an open table took from the queue, or one taken on a dou dizhu connection, before its game is
+        paid."""
         table = self.by_save.get(pid)
         return table is not None and table.phase in (OPEN, STARTING, BID, PLAY) and any(
             s.token == pid and (table.match or s.roam) and not s.asked and not (s.quit and table.phase == STARTING)
@@ -2082,8 +2277,9 @@ class Tables:
         }
 
     def _rooms(self, table: Table) -> set[str]:
-        """The rooms that see the table: its own room (an invited or open table's), and the rooms the saves of its
-        seats of the queue are in now, on any of their connections (one that walked away from the table included)."""
+        """The rooms that see the table: its own room (an invited or a room's open table's), and the rooms the saves of
+        its seats of the queue, or taken on a dou dizhu connection (Seat.roam), are in now, on any of their connections
+        (one that walked away from the table included). A hall table has no room of its own."""
         rooms = {table.room} if table.room is not None else set()
         saves = {s.token for s in table.seats if s.token and (table.match or s.roam)}
         if saves:
@@ -2325,6 +2521,7 @@ class Tables:
                     "seats": [_face(s) for s in table.seats]})
         table.deadline = self.clock() + cfg["inviteSec"]
         table.timer = self.timers.later(cfg["inviteSec"], lambda: self._invite_expired(table))
+        self._count("ddz_ask")
 
     def _merge(self, base: int, entries: list[Waiting]) -> None:
         """Puts [entries] into the line of [base] by when each started waiting, so the line stays oldest first:
@@ -2491,8 +2688,8 @@ class Tables:
 
     def _shows(self, table: Table, seat: int, peer: Peer) -> bool:
         """Whether watcher [peer] may see the hand of seat [seat]: the seat's client shows who watches it
-        (Seat.watchable), and the seat plays in the watcher's room (the table's own room, not a seat from the queue) or
-        its save is in that room on some connection."""
+        (Seat.watchable), and the seat plays in the watcher's room (the table's own room, not a seat from the queue or
+        taken on a dou dizhu connection) or its save is in that room on some connection."""
         s = table.seats[seat]
         if not s.watchable or not s.token:
             return False
@@ -2735,6 +2932,7 @@ class Tables:
         into the line (_requeue)."""
         if table.phase == DONE:
             return
+        self._count("ddz_ask_timeout" if reason == "timeout" else "ddz_ask_decline")
         if reason == "timeout":
             back = [s for s in table.seats if s.accepted]
             out = [s for s in table.seats if not s.accepted]

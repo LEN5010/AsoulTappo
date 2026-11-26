@@ -818,13 +818,22 @@ it("mirrors open tables and a call into the panel and runs the panel's sitting a
   expect(panel.ddz.ddzTables.value).toEqual(tables);
   expect(panel.ddz.ddzCall.value).toEqual(desk.ddz.ddzCall.value);
   expect(panel.room.members.get("a")!.ddzMatch).toBe(true);
+  // Whether the server has the hall, as the desk's last lobby said.
+  expect(panel.player.ddzHallOn.value).toBe(false);
+  desk.player.ddzHallOn.value = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.player.ddzHallOn.value).toBe(true);
   const request = vi.spyOn(desk.ddz, "ddzRequest").mockImplementation(() => {});
   panel.ddz.openDdz(50);
   panel.ddz.sitDdz("o1", 2);
   panel.ddz.callDdz("a", "o1");
   panel.ddz.leaveDdz("o1", "open");
   panel.ddz.dismissDdzCall();
+  panel.ddz.quickSitDdz(50);
+  panel.ddz.sitDdzAt("h1");
   await vi.advanceTimersByTimeAsync(50);
   // The table the key was pressed for goes with the request, for the desk to check against its own.
-  expect(request.mock.calls).toEqual([["open", 50], ["sit", "o1", 2], ["call", "a", "o1"], ["leave", "o1", "open"], ["dismiss"]]);
+  expect(request.mock.calls).toEqual([
+    ["open", 50], ["sit", "o1", 2], ["call", "a", "o1"], ["leave", "o1", "open"], ["dismiss"], ["quickSit", 50], ["sitAt", "h1", null, null],
+  ]);
 });

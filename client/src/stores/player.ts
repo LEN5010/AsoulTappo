@@ -17,6 +17,7 @@ import { requestDesktop } from "../desktop/transport";
 import { compareVersions } from "../semver";
 import { APP_VERSION } from "../version";
 import { STANDALONE, StandaloneRefused } from "../edition";
+import { hallOn } from "../ddz/hall";
 
 const TOKEN_KEY = "asoultappo.token.v1";
 
@@ -731,13 +732,23 @@ export async function loadBoard(): Promise<Board | null> {
   return serial(session, () => session.api.board()).catch(() => null);
 }
 
+/**
+ * Desk: the last lobby of the current server listed the hall's tables (src/ddz/hall.ts); false until one did, and on a
+ * server without the lobby.
+ */
+export const ddzHallOn = ref(false);
+
 /** The dou dizhu lobby (GET /api/ddz/lobby); "off" on a server without it, null when the server does not answer. */
 export async function loadDdzLobby(): Promise<DdzLobby | "off" | null> {
   if (isMirrorWindow) return requestDesktop<DdzLobby | "off" | null>("loadDdzLobby").catch(() => null);
   const session = current;
   return serial(session, () => session.api.ddzLobby())
     .then((lobby) => (lobby && Array.isArray(lobby.tiers) ? lobby : null))
-    .catch((e: unknown) => (e instanceof ApiError && e.status === 404 ? "off" as const : null));
+    .catch((e: unknown) => (e instanceof ApiError && e.status === 404 ? "off" as const : null))
+    .then((lobby) => {
+      if (lobby && session === current) ddzHallOn.value = lobby !== "off" && hallOn(lobby);
+      return lobby;
+    });
 }
 
 /** The profile of a save on the collection board; null when it is no longer on it or the server does not answer. */

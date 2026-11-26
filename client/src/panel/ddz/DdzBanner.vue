@@ -5,7 +5,7 @@
 // this save waits it shows the stake, the time waited and the key that stops; while an invite is out it seats the three
 // with a tick on those who accepted, the stake as a chip after them, and the keys to answer over the time left; at an
 // open table it seats who sits there with the empty seats as dashed rings, the stake, and the keys to call someone and
-// to put the table away (the opener's) or to leave. While this save sits at a table the key brings up the table's window. Under it, on paper
+// to put the table away (the opener's of a room's table; a table of the hall has no opener) or to leave. While this save sits at a table the key brings up the table's window. Under it, on paper
 // (DdzTables.vue), the room's other open tables while this save is free to sit down, and the room's games under way,
 // each with the key that watches it, while this save is in no game itself.
 import { computed, ref } from "vue";
@@ -86,7 +86,7 @@ const waited = useWaited(() => queued.value?.since);
     <template v-else-if="mine">
       <DdzSeats class="who" :seats="mineSeats" :size="44" :stake="mine.base" />
       <div v-if="!mine.starting" class="acts">
-        <template v-if="mine.you === 0">
+        <template v-if="mine.you === 0 && mine.via === 'room'">
           <button type="button" class="ui-btn white" @click="leaveDdz(mine.id, 'open')">散桌</button>
           <button type="button" class="ui-btn white" :disabled="!callable" @click="sheet = 'call'">邀请</button>
         </template>

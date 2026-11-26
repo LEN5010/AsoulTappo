@@ -667,15 +667,22 @@ fn close_race(app: tauri::AppHandle) -> Result<(), String> {
 /// area allows, in the middle of its monitor. The desk opens it with each deal; a window already open is brought to
 /// the front. The page shows it once it has drawn (`show_ddz`). Closing it closes it (the desk hears `ddz:closed`)
 /// and leaves the game going: the next call makes it again. `auto`: opened by a deal, not by the player; then it
-/// stays shut while the hide key has the pet hidden, and the answer is false.
+/// stays shut while the hide key has the pet hidden, and the answer is false. Opened by a deal, it also asks for the
+/// player's attention (the taskbar button flashes on Windows): at once when it was open already, else once the page
+/// has drawn and shows it (`show_ddz`).
 #[tauri::command]
 async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, String> {
-    if auto.unwrap_or(false) && !main_window(&app).is_some_and(|w| w.is_visible().unwrap_or(true)) {
+    let auto = auto.unwrap_or(false);
+    if auto && !main_window(&app).is_some_and(|w| w.is_visible().unwrap_or(true)) {
         applog!("ddz", "not opened: the pet is hidden");
         return Ok(false);
     }
     if let Some(window) = app.get_webview_window("ddz") {
-        return show_window(&window).map(|_| true);
+        show_window(&window)?;
+        if auto {
+            attention(&window);
+        }
+        return Ok(true);
     }
     let window = WebviewWindowBuilder::new(&app, "ddz", WebviewUrl::App("index.html?window=ddz".into()))
         .title("斗地主")
@@ -696,6 +703,7 @@ async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, Str
             e.to_string()
         })?;
     applog!("ddz", "created");
+    DDZ_ATTENTION.store(auto, Ordering::Relaxed);
     if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
         let area = monitor.work_area();
         let scale = monitor.scale_factor();
@@ -708,10 +716,26 @@ async fn open_ddz(app: tauri::AppHandle, auto: Option<bool>) -> Result<bool, Str
     Ok(true)
 }
 
+/// The table's window being made was opened by a deal: `show_ddz` asks for attention once it shows it.
+static DDZ_ATTENTION: AtomicBool = AtomicBool::new(false);
+
+/// Asks for the player's attention to [window] without taking it from them (Informational: a short flash).
+fn attention(window: &WebviewWindow) {
+    if let Err(e) = window.request_user_attention(Some(tauri::UserAttentionType::Informational)) {
+        applog!("ddz", "attention failed: {e}");
+    }
+}
+
 #[tauri::command]
 fn show_ddz(app: tauri::AppHandle) -> Result<(), String> {
     match app.get_webview_window("ddz") {
-        Some(window) => show_window(&window),
+        Some(window) => {
+            show_window(&window)?;
+            if DDZ_ATTENTION.swap(false, Ordering::Relaxed) {
+                attention(&window);
+            }
+            Ok(())
+        }
         None => Ok(()),
     }
 }
