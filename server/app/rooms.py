@@ -294,14 +294,29 @@ class RoomManager:
 
     def snapshot(self) -> list[dict]:
         """What a restart would lose of each room: whether it is listed, the host's save, the removed saves and the
-        room's name."""
+        room's name. What this run still holds of the last one goes in again with its "age" (seconds since it was
+        saved), so the next run lets it run out when this one would have: a room nobody came back to, and for a room
+        whose members came back before its host, that host's claim to the role and the listing, which then stands in
+        for the save holding the role meanwhile. One entry per room."""
+        now = self.clock()
         out = []
         for room_id, room in list(self.rooms.items()):
             host = room.peers.get(room.host) if room.host else None
             entry = {"room": room_id, "public": room.public, "host": host.token if host else None,
                      "banned": sorted(room.banned), "name": room.raw_name}
+            pending = self.restoring.get(room_id)
+            if pending is not None and pending.host and pending.until > now:
+                entry["host"] = pending.host
+                entry["public"] = room.public or pending.public
+                entry["age"] = max(0.0, RESTORE_SECONDS - (pending.until - now))
             if entry["public"] or entry["host"] or entry["banned"] or entry["name"]:
                 out.append(entry)
+        for room_id, pending in list(self.restoring.items()):
+            if room_id in self.rooms or pending.until <= now:
+                continue
+            out.append({"room": room_id, "public": pending.public, "host": pending.host,
+                        "banned": sorted(pending.banned), "name": pending.name,
+                        "age": max(0.0, RESTORE_SECONDS - (pending.until - now))})
         return out
 
     def restore(self, rooms: list[dict], age: Callable[[dict], float]) -> None:

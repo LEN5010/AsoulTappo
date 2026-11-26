@@ -165,3 +165,91 @@ def test_a_restarted_room_is_handed_back_to_its_host(monkeypatch):
             assert c.get("/rooms").json()["rooms"][0]["room"] == "r1"
     # Without a stop signal (as in tests) nothing is saved for the next start.
     assert main.game.store.take_rooms() == []
+
+
+# ------------------------------------------------------------------ two restarts in a row
+def restart(store, wall, clock):
+    """A start at wall time [wall]: the rooms of the last stop come back into a new manager on [clock]."""
+    m = manager_at(clock)
+    m.restore(store.take_rooms(), lambda entry: max(0.0, wall - entry["saved"]))
+    return m
+
+
+def named_public_room(m):
+    m.join("x", "a", "c", Dummy(), token="pa")
+    m.rename(m.rooms["x"], "夜间自习")
+    m.rooms["x"].public = True
+    m.rooms["x"].banned.add("pz")
+
+
+def test_a_room_still_waiting_for_its_host_survives_a_second_restart():
+    s = Store(":memory:")
+    first = RoomManager()
+    named_public_room(first)
+    s.save_rooms(first.snapshot(), 100.0)
+    second = restart(s, 101.0, [0.0])
+    # Stopped again before anyone came back.
+    s.save_rooms(second.snapshot(), 102.0)
+    third = restart(s, 103.0, [0.0])
+    with pytest.raises(Banned):
+        third.join("x", "z", "c", Dummy(), token="pz")
+    pa = third.join("x", "a", "c", Dummy(), token="pa")
+    assert third.rooms["x"].info() == {"host": pa.id, "public": True, "name": "夜间自习"}
+
+
+def test_a_room_carried_over_a_second_restart_keeps_its_first_deadline():
+    def third_start(wall):
+        s = Store(":memory:")
+        first = RoomManager()
+        named_public_room(first)
+        s.save_rooms(first.snapshot(), 100.0)
+        clock = [0.0]
+        second = restart(s, 650.0, clock)
+        clock[0] = 10.0
+        s.save_rooms(second.snapshot(), 660.0)
+        return restart(s, wall, [0.0])
+
+    assert third_start(690.0).restoring["x"].name == "夜间自习"
+    # 605 seconds after the first stop: gone, as it would be without the second restart.
+    assert third_start(705.0).restoring == {}
+
+
+def test_an_expired_room_is_not_carried_over():
+    clock = [0.0]
+    m = manager_at(clock)
+    m.restore([{"room": "x", "public": True, "host": "pa", "banned": [], "name": "n"}], lambda entry: 590.0)
+    clock[0] = 10.0
+    assert m.snapshot() == []
+
+
+def test_a_room_whose_members_came_back_first_keeps_the_hosts_claim():
+    s = Store(":memory:")
+    first = RoomManager()
+    named_public_room(first)
+    s.save_rooms(first.snapshot(), 100.0)
+    clock = [0.0]
+    second = restart(s, 400.0, clock)
+    pb = second.join("x", "b", "c", Dummy(), token="pb")
+    assert (second.rooms["x"].host, second.rooms["x"].public) == (pb.id, False)
+    clock[0] = 5.0
+    # One row per room: the table keys on the room.
+    [entry] = second.snapshot()
+    s.save_rooms([entry], 405.0)
+    [row] = s.take_rooms()
+    assert (row["host"], row["public"], row["banned"], row["name"]) == ("pa", True, ["pz"], "夜间自习")
+    # The host's claim runs out when it would have without the restart.
+    assert row["saved"] == pytest.approx(100.0)
+    s.save_rooms([entry], 405.0)
+    third = restart(s, 410.0, [0.0])
+    third.join("x", "b", "c", Dummy(), token="pb")
+    pa = third.join("x", "a", "c", Dummy(), token="pa")
+    assert third.rooms["x"].info() == {"host": pa.id, "public": True, "name": "夜间自习"}
+
+
+def test_a_live_room_without_a_pending_host_is_saved_as_it_is():
+    clock = [0.0]
+    m = manager_at(clock)
+    m.restore([{"room": "x", "public": False, "host": None, "banned": ["pz"], "name": "n"}], lambda entry: 100.0)
+    m.join("x", "b", "c", Dummy(), token="pb")
+    m.rename(m.rooms["x"], "新名")
+    assert m.snapshot() == [{"room": "x", "public": False, "host": "pb", "banned": ["pz"], "name": "新名"}]
