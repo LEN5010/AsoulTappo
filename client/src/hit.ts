@@ -26,8 +26,21 @@ export function sameRects(a: HitRect[], b: HitRect[]): boolean {
     a.every((r, i) => r.x === b[i].x && r.y === b[i].y && r.w === b[i].w && r.h === b[i].h && !r.keep === !b[i].keep);
 }
 
+/** Whether a hit target is among [nodes] or inside one of them. */
+function hasHitNode(nodes: NodeList): boolean {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (!(node instanceof Element)) continue;
+    if (node.hasAttribute("data-hit") || (node.childElementCount > 0 && node.querySelector("[data-hit]"))) return true;
+  }
+  return false;
+}
+
 /**
  * Observe layout changes and sample only while a hit target is animating.
+ * Style and class changes are watched on the hit targets and what holds them only, so the layers drawn inside a
+ * target (a pet's paws, moving every frame) cost nothing here. While paused (a pet is dragged, and the native side
+ * takes every click meanwhile) nothing is sampled; resuming measures again.
  * Each report carries the page's device pixel ratio: on Windows the webview multiplies the monitor
  * scale by the system text size, so the monitor scale alone misplaces the rectangles.
  */
@@ -36,14 +49,22 @@ export function startHitReporter(
   collect: () => HitRect[] = () => collectRects(),
   intervalMs?: number,
   readScale: () => number = () => globalThis.devicePixelRatio || 1,
-): { kick(): void; stop(): void } {
+): { kick(): void; setPaused(paused: boolean): void; stop(): void } {
   let last: HitRect[] | null = null;
   let lastScale = 0;
   let frame: number | null = null;
+  let paused = false;
+  let stopped = false;
+  /** Hit targets came or went while paused: the observed elements are gathered again on resuming. */
+  let stale = false;
   const animating = new Set<Element>();
-  const kick = () => { if (frame === null) frame = requestAnimationFrame(report); };
+  const kick = () => {
+    if (paused || stopped) return;
+    if (frame === null) frame = requestAnimationFrame(report);
+  };
   const report = () => {
     frame = null;
+    if (paused || stopped) return;
     const rects = collect();
     const scale = readScale();
     if (!last || !sameRects(last, rects) || scale !== lastScale) {
@@ -54,11 +75,32 @@ export function startHitReporter(
     if (animating.size) kick();
   };
   let resize: ResizeObserver | undefined;
-  let mutations: MutationObserver | undefined;
+  let structure: MutationObserver | undefined;
+  let styles: MutationObserver | undefined;
   const observe = () => {
     resize?.disconnect();
-    document.querySelectorAll("[data-hit]").forEach((el) => resize?.observe(el));
+    styles?.disconnect();
+    const held = new Set<Element>();
+    document.querySelectorAll("[data-hit]").forEach((el) => {
+      resize?.observe(el);
+      for (let at: Element | null = el; at && !held.has(at); at = at.parentElement) held.add(at);
+    });
+    for (const el of held) styles?.observe(el, { attributes: true, attributeFilter: ["style", "class"] });
     for (const el of animating) if (!el.isConnected) animating.delete(el);
+  };
+  const setPaused = (next: boolean) => {
+    if (stopped || paused === next) return;
+    paused = next;
+    if (paused) {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      return;
+    }
+    if (stale) {
+      stale = false;
+      observe();
+    }
+    kick();
   };
   const animation = (event: Event) => {
     const el = event.target as Element;
@@ -71,21 +113,18 @@ export function startHitReporter(
   const timer = intervalMs === undefined ? undefined : setInterval(report, intervalMs);
   if (intervalMs === undefined) {
     resize = new ResizeObserver(kick);
-    mutations = new MutationObserver((records) => {
-      let structure = false;
-      let layout = false;
-      for (const record of records) {
-        if (record.type === "childList") {
-          if ([...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element &&
-            (node.matches("[data-hit]") || node.querySelector("[data-hit]")))) structure = true;
-        } else if (record.target instanceof Element &&
-          (record.target.matches("[data-hit]") || record.target.querySelector("[data-hit]"))) layout = true;
+    styles = new MutationObserver(kick);
+    // Hit targets coming, going, or made and unmade with the attribute.
+    structure = new MutationObserver((records) => {
+      if (!records.some((r) => r.type === "attributes" || hasHitNode(r.addedNodes) || hasHitNode(r.removedNodes))) return;
+      if (paused) {
+        stale = true;
+        return;
       }
-      if (structure) observe();
-      if (structure || layout) kick();
+      observe();
+      kick();
     });
-    mutations.observe(document.documentElement, { subtree: true, childList: true, attributes: true,
-      attributeFilter: ["style", "class", "data-hit"] });
+    structure.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-hit"] });
     observe();
     window.addEventListener("resize", kick);
     for (const name of ["transitionrun", "transitionend", "transitioncancel", "animationstart", "animationend", "animationcancel"])
@@ -94,10 +133,13 @@ export function startHitReporter(
   report();
   return {
     kick,
+    setPaused,
     stop() {
+      stopped = true;
       clearInterval(timer);
-      resize?.disconnect(); mutations?.disconnect();
+      resize?.disconnect(); structure?.disconnect(); styles?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
       if (intervalMs === undefined) {
         window.removeEventListener("resize", kick);
         for (const name of ["transitionrun", "transitionend", "transitioncancel", "animationstart", "animationend", "animationcancel"])

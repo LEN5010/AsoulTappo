@@ -523,6 +523,15 @@ const kick = () => {
   hits?.kick();
   guideTick.value++;
 };
+/**
+ * Pets being dragged. The native side takes every click during a drag, so the hit regions are not sampled meanwhile;
+ * they are measured again when the last drag ends.
+ */
+let drags = 0;
+function onDrag(active: boolean) {
+  drags = Math.max(0, drags + (active ? 1 : -1));
+  hits?.setPaused(drags > 0);
+}
 const deskEl = ref<HTMLElement | null>(null);
 /** The guide has cards left: nothing of it runs once every card is answered. */
 const guideOn = computed(() => guideLeft(settings.guide));
@@ -649,7 +658,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
     <PetActor
       v-for="m in shownOthers" :key="m.id" :pos="remoteAt(m)" :label="shownNick(m)"
       :place="(p) => placeRemoteDrag(m, p)" @moved="(p) => { draggedRemote = null; onRemoteMoved(m, p); }"
-      @dragging="draggedRemote = m.id; kick()" @tap="openPick(m)"
+      @dragging="draggedRemote = m.id; kick()" @drag="onDrag" @tap="openPick(m)"
     >
       <PetView
         :character="m.character" :scale="settings.remoteScale" :pulse="m.pulse" :opacity="settings.petOpacity"
@@ -680,7 +689,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
 
     <PetActor
       :pos="ownPos" label="我的桌宠" :place="placeOwnDrag" glide data-own-pet :data-hit-inset="ownBand" :style="{ width: `${ownWidth}px` }"
-      @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @tap="onOwnTap" @pointermove="keepPeek"
+      @moved="onOwnMoved" @size="onOwnSize" @dragging="kick" @drag="onDrag" @tap="onOwnTap" @pointermove="keepPeek"
     >
       <PetView
         :character="settings.character" :scale="settings.scale" :key-down="pet.keyDown" :form-press="pet.formPress" :mouse-dx="pet.dx" :mouse-dy="pet.dy"
