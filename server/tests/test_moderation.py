@@ -110,9 +110,11 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "ADMIN_KEY", "admin-secret")
     monkeypatch.setattr(main, "accounts", None)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, tmp_path / "tappo.db"
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
 
 
 def put(c, words):

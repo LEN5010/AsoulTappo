@@ -512,6 +512,7 @@ def test_admin_statistics_queue_before_the_player_worker_pool(monkeypatch):
         assert all(a.json()["totals"] == {"rooms": 0, "online": 0} for a in answers)
 
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     asyncio.run(run())
     store.close()
 
@@ -529,9 +530,11 @@ def signed_in(monkeypatch):
     monkeypatch.setattr(main, "accounts", accounts)
     monkeypatch.setattr(main, "_account_slots", asyncio.Semaphore(0))
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.tables.clear()
     yield g, fake, pid
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.tables.clear()
 
 

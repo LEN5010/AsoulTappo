@@ -946,6 +946,7 @@ def api(monkeypatch):
     g, pl, clock, pid = setup()
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, g, clock, pid
 

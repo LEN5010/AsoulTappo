@@ -244,7 +244,7 @@ from . import ddz_rules as rules
 from .duel import Timers
 from .game import Game, GameError, day_of
 from .park import COIN_BUY, Park
-from .rooms import Peer, RoomManager
+from .rooms import Peer, Room, RoomManager
 
 log = logging.getLogger(__name__)
 
@@ -2407,23 +2407,22 @@ class Tables:
         its seats of the queue, or taken on a dou dizhu connection (Seat.roam), are in now, on any of their connections
         (one that walked away from the table included). A hall table has no room of its own."""
         rooms = {table.room} if table.room is not None else set()
-        saves = {s.token for s in table.seats if s.token and (table.match or s.roam)}
-        if saves:
-            rooms |= {rid for rid, room in self.manager.rooms.items()
-                      if any(p.token in saves for p in room.peers.values())}
+        for s in table.seats:
+            if s.token and (table.match or s.roam):
+                rooms |= self.manager.rooms_of_save(s.token)
         return rooms
 
-    @staticmethod
-    def _ids_in(room: Any, table: Table) -> list[str]:
+    def _ids_in(self, room: Room, table: Table) -> list[str]:
         """The seats of [table] by the member ids [room] knows them by: a seat's own member when it is in the room,
         else the newest connection of its save there; the seat's own id when its save is not in the room."""
         out = []
+        by_save = self.manager.by_save
         for s in table.seats:
             p = s.peer
             if p is not None and p.active and room.peers.get(p.id) is p:
                 out.append(p.id)
                 continue
-            there = max((x for x in room.peers.values() if s.token and x.token == s.token),
+            there = max(by_save.get(s.token, {}).get(room.id, {}).values() if s.token else (),
                         key=lambda x: x.join_seq, default=None)
             out.append(there.id if there is not None else s.id)
         return out
@@ -2450,14 +2449,14 @@ class Tables:
                     self._tell_live_state(room_id, msg)
             return
         self._stop_live_state(table)
-        saves = {s.token for s in table.seats if s.token}
+        occupied = set().union(*(self.manager.rooms_of_save(s.token) for s in table.seats))
         rooms |= table.live_rooms
         table.live_rooms = set()
         for room_id in sorted(rooms):
             room = self.manager.rooms.get(room_id)
             if room is None:
                 continue
-            if not any(p.token in saves for p in room.peers.values()):
+            if room_id not in occupied:
                 await self.manager.broadcast(room_id, {"type": "ddz_live", "table": table.id, "on": False})
                 continue
             ids = self._ids_in(room, table)
@@ -2819,8 +2818,7 @@ class Tables:
             return False
         if table.room is not None and table.room == peer.room and not s.roam:
             return True
-        room = self.manager.rooms.get(peer.room)
-        return room is not None and any(p.token == s.token for p in room.peers.values())
+        return peer.room in self.manager.by_save.get(s.token, {})
 
     def _hand_for(self, table: Table, seat: int, peer: Peer) -> list[int] | None:
         """The hand of seat [seat] as watcher [peer] gets it: a copy, None when it may not see it (_shows). The only

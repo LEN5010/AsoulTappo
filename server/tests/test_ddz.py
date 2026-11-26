@@ -815,10 +815,12 @@ def api(monkeypatch):
     monkeypatch.setattr(main.tables, "timers", timers)
     monkeypatch.setattr(main.tables, "rng", Stacked(first=0))
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.tables.clear()
     with TestClient(main.app) as c:
         yield c, g, timers
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.tables.clear()
 
 

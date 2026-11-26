@@ -3,18 +3,17 @@
 Run from the repository root: server/.venv/bin/python scripts/benchmark_server.py
 Uses a temporary SQLite database and in-process socket sinks.
 
-`--root <checkout>` measures another checkout of this repository with the same script, which is how
-the before/after tables in docs/reports/performance.md (local notes) are made (the baseline is commit 3923c02).
+`--root <checkout>` measures another checkout with the same room-tick protocol.
 
 Room traffic is what the server writes to one member's connection, counted three ways:
 - JSON: the message text as Starlette serializes it.
 - wire: the same messages through permessage-deflate as the server negotiates it (one zlib stream per
   connection, 4 KiB window, sync flush per message) plus the WebSocket frame header. TLS is not counted.
-- binary: an estimate for the same updates in a fixed binary layout (see `binary_size`), uncompressed, with
-  the same frame header.
-Members move the mouse layer along smooth two-axis curves; "typing" adds key presses, each two button edges.
-Rows with "edges batched" use motion version 3: button edges go out once per 50ms tick as one `motion_edges`
-message per receiver instead of one message per edge.
+- binary: an estimate for the packed motion portion in a fixed binary layout (see `binary_size`),
+  uncompressed, with the same frame header.
+Members move the mouse layer along smooth two-axis curves; "typing" adds key presses and taps.
+The server flushes every 100ms. Versions 1 and 2 send button edges immediately, version 3 batches
+them with positions, and version 4 sends those batches and taps together as `room_tick`.
 """
 from __future__ import annotations
 
@@ -31,6 +30,7 @@ import time
 import zlib
 
 TICK_MS = 50
+ROOM_TICK_MS = 100
 SECONDS = 20
 
 
@@ -95,11 +95,16 @@ def binary_size(data: dict) -> int:
 
 class Socket:
     def __init__(self):
-        self.messages = self.json = self.wire = self.binary = 0
         self.deflate = zlib.compressobj(6, zlib.DEFLATED, -12)
+        self.reset_counts()
+
+    def reset_counts(self):
+        self.messages = self.json = self.wire = self.binary = 0
+        self.taps = self.tap_messages = self.room_ticks = 0
 
     async def send_json(self, data):
-        if not data["type"].startswith("motion"):
+        kind = data["type"]
+        if kind == "benchmark_marker":
             return
         text = json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode()
         self.messages += 1
@@ -107,8 +112,16 @@ class Socket:
         # permessage-deflate drops the four bytes that end a sync flush.
         payload = len(self.deflate.compress(text) + self.deflate.flush(zlib.Z_SYNC_FLUSH)) - 4
         self.wire += payload + (2 if payload < 126 else 4)
-        if data["type"] in ("motion_delta", "motion_edge", "motion_edges", "motion_snapshot"):
+        if kind in ("motion_delta", "motion_edge", "motion_edges", "motion_snapshot"):
             self.binary += binary_size(data)
+        elif kind == "tap":
+            self.tap_messages += 1
+            self.taps += data["count"]
+        elif kind == "room_tick":
+            self.room_ticks += 1
+            self.taps += sum(tap["count"] for tap in data["taps"])
+            if data["motions"]:
+                self.binary += binary_size(data)
 
     async def close(self, code=1000):
         pass
@@ -119,22 +132,24 @@ def curve(member: int, tick: int) -> tuple[float, float]:
     return (20 * math.sin(t * 4.4 + member * 1.7), 20 * math.sin(t * 3.1 + member * .9))
 
 
-async def room(manager_type, size: int, moving: int, shown: int | None, typing: bool, packed: bool,
-               batched: bool = False) -> dict:
+async def room(manager_type, size: int, moving: int, shown: int | None, typing: bool, version: int) -> dict:
     """[shown]: how many other members the watched client displays (packed motion only; older clients
     hear everyone). The watched client is the last member and sits still."""
+    packed = version >= 2
     send_every = 2 if packed else 1  # client: 100ms with packed motion, 50ms before
-    flush_every = 2 if packed else 1  # server batches at the same pace
+    flush_every = ROOM_TICK_MS // TICK_MS
     step = 4 if packed else 10  # quarter pixels, tenths before
     # Flushed by hand below, one simulated tick at a time.
-    manager = manager_type(motion_interval=60, **({"edge_interval": 60} if batched else {}))
+    manager = manager_type(motion_interval=60)
     peers = [manager.join("benchmark", str(i), "嘉然", Socket()) for i in range(size)]
+    current = manager.rooms["benchmark"]
+    for peer in peers:
+        peer.motion_version = version
     resting = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False}
     sent: list[dict | None] = [None] * size
     uplink = [0] * size
+    tap_uplink = [0] * size
     if packed:
-        for peer in peers:
-            peer.motion_version = 3 if batched else 2
         watcher = peers[-1]
         others = [p.id for p in peers[:-1]]
         manager.subscribe_motion("benchmark", watcher, others if shown is None else others[:shown])
@@ -155,47 +170,51 @@ async def room(manager_type, size: int, moving: int, shown: int | None, typing: 
             uplink[i] += len(json.dumps({"type": "pose", **patch}, separators=(",", ":")))
             await manager.pose("benchmark", peers[i], patch)
 
+    async def flush() -> None:
+        manager._flush_tick(current)
+        # An ordered marker waits for the tick to reach every sink without adding to its traffic.
+        await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
+
     ticks = SECONDS * 1000 // TICK_MS
     for i in range(size):
         await move(i, resting)
-    for socket in (p.ws for p in peers):
-        socket.messages = socket.json = socket.wire = socket.binary = 0
+    await flush()
+    for peer in peers:
+        peer.ws.reset_counts()
     uplink = [0] * size
     held = [False] * size
     for tick in range(ticks):
         for i in range(moving):
             x, y = curve(i, tick)
             pose = {**resting, "dx": round(x * step) / step, "dy": round(y * step) / step, "keyDown": held[i]}
-            # Six presses a second, each held for 50ms: a button edge goes out at once.
+            # A press every 150ms, held for 50ms, with one tap per press.
             if typing and (tick + i) % 3 == 0:
                 held[i] = True
                 await move(i, {**pose, "keyDown": True})
+                peers[i].taps += 1
+                manager.tap("benchmark", peers[i], 1)
+                tap_uplink[i] += len('{"type":"tap","count":1}')
             elif held[i]:
                 held[i] = False
                 await move(i, {**pose, "keyDown": False})
             elif tick % send_every == 0:
                 await move(i, pose)
-        if batched:
-            manager._flush_edges(manager.rooms["benchmark"])
-            # As on a live server, each batch is written before the next tick's: none join up in the outbox.
-            await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
         if tick % flush_every == flush_every - 1:
-            current = manager.rooms["benchmark"]
-            if current.motion_timer:
-                current.motion_timer.cancel()
-            manager._flush_motion(current)
-            # An ordered marker waits for that batch to reach every sink. It is not counted as traffic.
-            await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
-    await asyncio.gather(*(peer.send({"type": "benchmark_marker"}, 2) for peer in peers))
+            await flush()
     watched = peers[-1].ws
     kib = lambda n: round(n / SECONDS / 1024, 2)  # noqa: E731
-    result = {"members": size, "moving": moving, "typing": typing, "edges_batched": batched,
+    result = {"members": size, "moving": moving, "typing": typing, "motion_version": version,
+              "edges_batched": version >= 3,
               "shown": size - 1 if shown is None or not packed else shown,
               "client_messages_per_s": round(watched.messages / SECONDS, 1),
               "client_json_KiB_per_s": kib(watched.json), "client_wire_KiB_per_s": kib(watched.wire),
+              "client_taps_per_s": round(watched.taps / SECONDS, 1),
+              "client_tap_messages_per_s": round(watched.tap_messages / SECONDS, 1),
+              "client_room_ticks_per_s": round(watched.room_ticks / SECONDS, 1),
               "room_messages_per_s": round(sum(p.ws.messages for p in peers) / SECONDS, 1),
               "room_wire_KiB_per_s": kib(sum(p.ws.wire for p in peers)),
-              "mover_uplink_json_KiB_per_s": kib(uplink[0])}
+              "mover_uplink_json_KiB_per_s": kib(uplink[0] + tap_uplink[0]),
+              "mover_tap_uplink_json_KiB_per_s": kib(tap_uplink[0])}
     if packed:
         result["client_binary_KiB_per_s"] = kib(watched.binary)
     for peer in peers:
@@ -206,18 +225,12 @@ async def room(manager_type, size: int, moving: int, shown: int | None, typing: 
 async def motion() -> dict:
     from app.rooms import RoomManager
 
-    packed = hasattr(RoomManager, "subscribe_motion")
     scenarios = [(2, 1, None, False), (6, 5, None, False), (20, 1, None, False), (20, 19, None, False),
                  (20, 19, None, True)]
-    if packed:
-        scenarios += [(20, 19, 5, False), (20, 19, 5, True), (20, 19, 0, True)]
-    rows = [await room(RoomManager, *scenario, packed) for scenario in scenarios]
-    batched = hasattr(RoomManager, "_flush_edges")
-    if batched:
-        rows += [await room(RoomManager, *scenario, packed, True)
-                 for scenario in scenarios if scenario[3] or scenario[:2] == (20, 19)]
-    return {"protocol": "packed, 100ms" if packed else "full pose, 50ms",
-            "rows": rows}
+    subscriptions = [(20, 19, 5, False), (20, 19, 5, True), (20, 19, 0, True)]
+    rows = [await room(RoomManager, *scenario, version) for version in (1, 2, 3, 4)
+            for scenario in (scenarios if version == 1 else scenarios + subscriptions)]
+    return {"room_tick_ms": ROOM_TICK_MS, "rows": rows}
 
 
 if __name__ == "__main__":

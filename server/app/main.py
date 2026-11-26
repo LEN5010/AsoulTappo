@@ -5,6 +5,7 @@ import asyncio
 import functools
 import hashlib
 import ipaddress
+import json
 import logging
 import os
 import secrets
@@ -43,7 +44,7 @@ from .models import (
     DdzCounterMsg, DdzEmoteMsg, DdzHelloMsg, DdzQueueMsg, DdzSitMsg, DdzWatchMsg,
     DndMsg, DuelAnswerMsg, DuelInviteMsg, DuelThrowMsg, EmoteBroadcast, EmoteMsg, ErrorMsg, JoinedMsg, JoinMsg,
     KickMsg, LeaveMsg, Member, MemberJoinedMsg, MotionMsg, PoseMsg, MotionSubscribeMsg, PingMsg, PokeMsg, DrinkMsg, PongMsg, ProfileMsg,
-    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapMsg, client_message_adapter,
+    ProfileReply, RoomInfo, RoomInfoMsg, ScratchBroadcast, SetPublicMsg, SetNameMsg, StateBroadcast, StateMsg, TapMsg, parse_client_text,
 )
 from .moderation import Blocklist
 from .lottery import Lottery
@@ -232,9 +233,8 @@ async def _race_loop() -> None:
             wins = await run_in_threadpool(races.tick)
             # A win of roomAt coins or more shows over the winner's pet in every room the save sits in.
             for win in wins:
-                for room_id, room in list(manager.rooms.items()):
-                    for peer in [p for p in room.peers.values() if p.token == win["pid"]]:
-                        await manager.broadcast(room_id, race_room_message(peer.id, win["coins"]))
+                for room_id, peer in manager.peers_of_save(win["pid"]):
+                    await manager.broadcast(room_id, race_room_message(peer.id, win["coins"]))
         except Exception as e:  # a failed tick must not stop the next ones
             print(f"race tick failed: {e!r}", flush=True)
 
@@ -1655,14 +1655,26 @@ async def ws_endpoint(ws: WebSocket) -> None:
     async def err(code: str, message: str = "") -> None:
         await send(ErrorMsg(code=code, message=message).model_dump(exclude_none=True))
 
+    receive = getattr(ws, "receive", None)
     try:
         while True:
-            try:
-                raw = await ws.receive_json()
-            except (ValueError, KeyError, TypeError):
-                # Not JSON text: a bad JSON text frame, or a binary frame (no "text", or "text": None on
-                # some ASGI servers). Validation below answers it as bad_message.
-                raw = None
+            if receive is not None:
+                state = getattr(ws, "application_state", None)
+                if state is not None and state != WebSocketState.CONNECTED:
+                    # The server closed the connection meanwhile (a kick, a failed writer): stop reading.
+                    break
+                frame = await receive()
+                if frame["type"] == "websocket.disconnect":
+                    break
+                # A binary frame has no text (or "text": None on some ASGI servers): validation below answers it as
+                # bad_message, as it does a bad JSON text.
+                raw = frame.get("text")
+            else:
+                # Sockets of tests that only have receive_json.
+                try:
+                    raw = json.dumps(await ws.receive_json())
+                except (ValueError, KeyError, TypeError):
+                    raw = None
             if peer is not None and not peer.active:
                 # Removed from the room (kicked, or its writer failed). The server closed that connection: stop
                 # reading (clients send a last `leave` on the way out). Still open: it counts as not joined.
@@ -1670,7 +1682,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     break
                 room_id, peer = None, None
             try:
-                msg = client_message_adapter.validate_python(raw)
+                msg = parse_client_text(raw)
             except ValidationError:
                 await err("bad_message", "invalid message")
                 continue

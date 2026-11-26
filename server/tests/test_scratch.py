@@ -271,6 +271,7 @@ def api(monkeypatch):
     g, _ = game(.58)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, g
 

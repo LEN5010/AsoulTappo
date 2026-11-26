@@ -51,6 +51,7 @@ def env(monkeypatch):
     monkeypatch.setattr(main, "accounts", MainAccounts("https://main.test/api/", fake, lambda: clock[0]))
     monkeypatch.setattr(main, "MAIN_API_URL", "https://main.test/api")
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, g, fake, clock
 

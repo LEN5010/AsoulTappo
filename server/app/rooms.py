@@ -3,6 +3,7 @@ taps."""
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import secrets
 import time
@@ -13,6 +14,10 @@ from typing import Any, Awaitable, Callable, Protocol
 
 MAX_ROOM_SIZE = 20
 MAX_OUTBOX = 256
+# Batches waiting in an outbox that a newer one of the same kind joins: positions keep each member's latest; edges and
+# room ticks keep their order (Peer.enqueue).
+_POSITION_BATCHES = ("motion_batch", "motion_delta")
+_ORDERED_BATCHES = {"motion_edges": "edges", "room_tick": "motions"}
 # Motion formats: 1 full poses; 2 packed deltas for subscribed members, one message per button edge;
 # 3 as 2 with the edges and positions of a room tick gathered into one ordered message per receiver (`motion_edges`);
 # 4 as 3 with the tick's taps in that message too (`room_tick`), instead of one `tap` message per member.
@@ -60,6 +65,24 @@ RESTING = {"dx": 0.0, "dy": 0.0, "keyDown": False, "left": False, "right": False
 def pack_motion(pose: dict) -> dict[str, int]:
     return {"x": math.floor(pose["dx"] * 4 + .5), "y": math.floor(pose["dy"] * 4 + .5),
             "b": int(pose["keyDown"]) | int(pose["left"]) << 1 | int(pose["right"]) << 2}
+
+
+class _Broadcast(dict):
+    """A message for a whole room, written once as the text every member is sent (as WebSocket.send_json writes it);
+    a sender without send_text gets the message itself."""
+
+    __slots__ = ("text",)
+
+    def __init__(self, data: dict) -> None:
+        super().__init__(data)
+        self.text = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+
+
+class _MergedBatch(dict):
+    """An ordered batch in one member's outbox that later batches joined: its list is that outbox's own, so the next
+    one extends it in place."""
+
+    __slots__ = ()
 
 
 class Sender(Protocol):
@@ -170,26 +193,22 @@ class Peer:
             if done is not None:
                 done.set_exception(ConnectionError("member left"))
             return
-        # Only coalesce adjacent position batches: ordered edges remain between them.
-        if data["type"] in ("motion_batch", "motion_delta") and self.outbox and self.outbox[-1][0]["type"] == data["type"]:
-            previous, _ = self.outbox[-1]
+        if self.overloaded:
+            # The writer stops at its next message: nothing more goes out.
+            if done is not None:
+                done.set_exception(ConnectionError("outbox full"))
+            return
+        kind = data["type"]
+        previous, previous_done = self.outbox[-1] if self.outbox else (None, None)
+        # Only adjacent batches join, and none that someone waits for: ordered edges remain between position batches.
+        joins = done is None and previous_done is None and previous is not None and previous["type"] == kind
+        if joins and kind in _POSITION_BATCHES:
             latest = {m["id"]: m.copy() for m in previous["motions"]}
             for motion in data["motions"]:
                 latest.setdefault(motion["id"], {}).update(motion)
-            self.outbox[-1] = ({"type": data["type"], "motions": list(latest.values())}, None)
-        elif data["type"] == "motion_edges" and self.outbox and self.outbox[-1][0]["type"] == "motion_edges":
-            # Edge batches still waiting to go out join up; the order of their edges is kept.
-            previous, _ = self.outbox[-1]
-            self.outbox[-1] = ({"type": "motion_edges", "edges": previous["edges"] + data["edges"]}, None)
-        elif data["type"] == "room_tick" and self.outbox and self.outbox[-1][0]["type"] == "room_tick":
-            # Ticks still waiting to go out join up: motions in order, each member's taps added up to its latest total.
-            previous, _ = self.outbox[-1]
-            taps = {tap["id"]: dict(tap) for tap in previous["taps"]}
-            for tap in data["taps"]:
-                held = taps.get(tap["id"])
-                taps[tap["id"]] = {**tap, "count": tap["count"] + held["count"]} if held else dict(tap)
-            self.outbox[-1] = ({"type": "room_tick", "motions": previous["motions"] + data["motions"],
-                                "taps": list(taps.values())}, None)
+            self.outbox[-1] = ({"type": kind, "motions": list(latest.values())}, None)
+        elif joins and kind in _ORDERED_BATCHES:
+            self._merge_ordered(previous, data, _ORDERED_BATCHES[kind])
         elif len(self.outbox) >= MAX_OUTBOX:
             self.overloaded = True
             if done is not None:
@@ -199,6 +218,25 @@ class Peer:
         self.ready.set()
         if self.writer is None:
             self.writer = asyncio.create_task(self._write())
+
+    def _merge_ordered(self, previous: dict, data: dict, batch: str) -> None:
+        """[data] joins the batch [previous] at the end of the outbox: edges, and a room tick's motions, in order; a
+        room tick's taps add up to each member's latest total. The lists of a batch still as it was made may be
+        shared (a tick's taps go to every member), so the first join copies, and later ones extend the copy."""
+        taps = None
+        if batch == "motions" and data["taps"]:
+            by_id = {tap["id"]: tap for tap in previous["taps"]}
+            for tap in data["taps"]:
+                held = by_id.get(tap["id"])
+                by_id[tap["id"]] = {**tap, "count": tap["count"] + held["count"]} if held else tap
+            taps = list(by_id.values())
+        if not isinstance(previous, _MergedBatch):
+            previous = _MergedBatch(previous)
+            previous[batch] = previous[batch].copy()
+            self.outbox[-1] = (previous, None)
+        previous[batch].extend(data[batch])
+        if taps is not None:
+            previous["taps"] = taps
 
     async def send(self, data: dict, timeout: float) -> None:
         self.send_timeout = timeout
@@ -211,11 +249,13 @@ class Peer:
         try:
             while self.active:
                 await self.ready.wait()
-                while self.outbox:
+                while self.outbox or self.overloaded:
                     if self.overloaded:
                         raise ConnectionError("outbox full")
                     data, current = self.outbox.popleft()
-                    await asyncio.wait_for(self.ws.send_json(data), self.send_timeout)
+                    send_text = getattr(self.ws, "send_text", None) if isinstance(data, _Broadcast) else None
+                    send = send_text(data.text) if send_text is not None else self.ws.send_json(data)
+                    await asyncio.wait_for(send, self.send_timeout)
                     if current is not None and not current.done():
                         current.set_result(None)
                     current = None
@@ -236,17 +276,42 @@ class Peer:
             self.outbox.clear()
 
 
+@dataclass(slots=True)
+class _Motion:
+    """A member's pose for a room tick, packed (pack_motion) once for every member that gets it packed."""
+    sender: str
+    pose: dict
+    packed: dict[str, int] | None = None
+
+    def for_peer(self, receiver: Peer) -> dict | None:
+        """What [receiver] gets of it: the full pose (motion version 1), or the packed fields that changed since it
+        last got this member's, for a member it subscribed to; None for nothing."""
+        sender = self.sender
+        if receiver.id == sender:
+            return None
+        if receiver.motion_version < 2:
+            return {"id": sender, **self.pose}
+        if sender not in receiver.motion_ids:
+            return None
+        if self.packed is None:
+            self.packed = pack_motion(self.pose)
+        previous = receiver.sent_motion.get(sender, {})
+        delta = {key: value for key, value in self.packed.items() if previous.get(key) != value}
+        receiver.sent_motion[sender] = self.packed
+        return {"id": sender, **delta} if delta else None
+
+
 @dataclass
 class Room:
     id: str
     # in join order: the host passes to the earliest remaining member
     peers: dict[str, Peer] = field(default_factory=dict)
     # Latest positions not sent yet, by member id; they go out with the room's next tick.
-    motions: dict[str, dict] = field(default_factory=dict)
+    motions: dict[str, _Motion] = field(default_factory=dict)
     # The room tick: edges, positions and taps waiting go out together (RoomManager._flush_tick).
     motion_timer: asyncio.TimerHandle | None = None
-    # Button edges for motion version 3 receivers, in the order they happened: (member id, full pose).
-    edges: list[tuple[str, dict]] = field(default_factory=list)
+    # Button edges for motion version 3 and up, in the order they happened.
+    edges: list[_Motion] = field(default_factory=list)
     # Taps not sent yet, by member id in the order they first came: [taps since the last tick, member's total].
     taps: dict[str, list[int]] = field(default_factory=dict)
     host: str | None = None
@@ -289,10 +354,15 @@ class RoomManager:
         self.clock = clock
         self._joins = 0
         self.rooms: dict[str, Room] = {}
+        # The members of each room by their save: save -> room id -> member id -> Peer (members without a save are
+        # not in it). Kept by join and leave.
+        self.by_save: dict[str, dict[str, dict[str, Peer]]] = {}
         # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
         # Rooms of the last run, by room id, until their host is back or they run out (see RESTORE_SECONDS).
         self.restoring: dict[str, Restore] = {}
+        # The soonest `until` among them: joins drop the entries that ran out once the clock passes it.
+        self._restore_at = float("inf")
         # Masks blocked words in room names; main sets the blocklist's.
         self.mask: Callable[[str], str] = lambda text: text
 
@@ -331,13 +401,11 @@ class RoomManager:
             if left > 0:
                 self.restoring[entry["room"]] = Restore(bool(entry["public"]), entry["host"] or None,
                                                         set(entry["banned"]), now + left, str(entry.get("name") or ""))
+        self._expire_restoring(now)
 
-    def _restoring(self, room_id: str) -> Restore | None:
-        pending = self.restoring.get(room_id)
-        if pending is not None and pending.until <= self.clock():
-            del self.restoring[room_id]
-            return None
-        return pending
+    def _expire_restoring(self, now: float) -> None:
+        self.restoring = {rid: pending for rid, pending in self.restoring.items() if pending.until > now}
+        self._restore_at = min((pending.until for pending in self.restoring.values()), default=float("inf"))
 
     def create_room(self) -> str:
         return new_room_id()
@@ -352,7 +420,9 @@ class RoomManager:
         room = self.rooms.get(room_id)
         if room is None and only_open:
             raise RoomClosed(room_id)
-        pending = self._restoring(room_id)
+        if self.restoring and (now := self.clock()) >= self._restore_at:
+            self._expire_restoring(now)
+        pending = self.restoring.get(room_id)
         if room is not None:
             if token and token in room.banned:
                 raise Banned(room_id)
@@ -373,6 +443,7 @@ class RoomManager:
         peer.join_seq = self.next_seq() if seq is None else seq
         if token:
             room.cheer_gone.pop(token, None)
+            self.by_save.setdefault(token, {}).setdefault(room_id, {})[peer.id] = peer
         room.peers[peer.id] = peer
         if room.host is None:
             room.host = peer.id
@@ -388,6 +459,18 @@ class RoomManager:
         """The next Peer.join_seq, shared by room joins and dou dizhu connections."""
         self._joins += 1
         return self._joins
+
+    def rooms_of_save(self, token: str | None) -> set[str]:
+        """The rooms [token] has a member in."""
+        by_room = self.by_save.get(token) if token else None
+        return set(by_room) if by_room else set()
+
+    def peers_of_save(self, token: str | None) -> list[tuple[str, Peer]]:
+        """(room id, member) for every member of [token], room by room."""
+        by_room = self.by_save.get(token) if token else None
+        if not by_room:
+            return []
+        return [(rid, peer) for rid, peers in list(by_room.items()) for peer in list(peers.values()) if peer.active]
 
     async def _failed(self, room_id: str, peer: Peer) -> None:
         if not await self.depart(room_id, peer.id):
@@ -405,12 +488,22 @@ class RoomManager:
         if peer is None:
             return False
         peer.active = False
+        if peer.token:
+            by_room = self.by_save.get(peer.token)
+            if by_room is not None:
+                in_room = by_room.get(room_id)
+                if in_room is not None:
+                    in_room.pop(peer_id, None)
+                    if not in_room:
+                        del by_room[room_id]
+                if not by_room:
+                    del self.by_save[peer.token]
         if peer.token in room.cheer and not any(p.token == peer.token for p in room.peers.values()):
             room.cheer_gone[peer.token] = self.clock()
         if peer.writer and peer.writer is not asyncio.current_task():
             peer.writer.cancel()
         room.motions.pop(peer_id, None)
-        room.edges = [edge for edge in room.edges if edge[0] != peer_id]
+        room.edges = [edge for edge in room.edges if edge.sender != peer_id]
         room.taps.pop(peer_id, None)
         for other in room.peers.values():
             other.motion_ids.discard(peer_id)
@@ -459,9 +552,10 @@ class RoomManager:
     async def broadcast(self, room_id: str, data: dict, exclude: str | None = None) -> None:
         room = self.rooms.get(room_id)
         if room:
+            message = _Broadcast(data)
             for peer in list(room.peers.values()):
                 if peer.id != exclude:
-                    peer.enqueue(data)
+                    peer.enqueue(message)
 
     async def hide(self, room_id: str, peer: Peer, hidden: bool) -> None:
         """Stops showing the room this member's taps and motion, or shows them again. A hidden member rests in
@@ -485,18 +579,19 @@ class RoomManager:
         room = self.rooms[room_id]
         previous = peer.motion
         peer.motion = pose
+        motion = _Motion(peer.id, pose)
         edge = previous is None or any(previous[k] != pose[k] for k in ("keyDown", "left", "right"))
         if edge:
             room.motions.pop(peer.id, None)
             for receiver in room.peers.values():
                 if receiver.motion_version >= 3:
                     continue
-                update = self._motion_for(receiver, peer.id, pose)
+                update = motion.for_peer(receiver)
                 if update:
                     receiver.enqueue({"type": "motion_edge" if receiver.motion_version == 2 else "motion", **update})
-            self._queue_edge(room, peer.id, pose)
+            self._queue_edge(room, motion)
         else:
-            room.motions[peer.id] = {"id": peer.id, **pose}
+            room.motions[peer.id] = motion
             self._tick_soon(room)
 
     def tap(self, room_id: str, peer: Peer, count: int) -> None:
@@ -512,15 +607,15 @@ class RoomManager:
         if room.motion_timer is None:
             room.motion_timer = asyncio.get_running_loop().call_later(self.motion_interval, self._flush_tick, room)
 
-    def _queue_edge(self, room: Room, sender: str, pose: dict) -> None:
-        """Holds an edge for the version 3 receivers until the room's next tick."""
-        if not any(p.motion_version >= 3 and p.id != sender for p in room.peers.values()):
+    def _queue_edge(self, room: Room, motion: _Motion) -> None:
+        """Holds an edge for the version 3 and later receivers until the room's next tick."""
+        if not any(p.motion_version >= 3 and p.id != motion.sender for p in room.peers.values()):
             return
-        mine = [i for i, (pid, _) in enumerate(room.edges) if pid == sender]
+        mine = [i for i, edge in enumerate(room.edges) if edge.sender == motion.sender]
         if len(mine) >= MAX_EDGES_PER_BATCH:
             # Faster than anyone can watch: the oldest of this member's edges gives way.
             del room.edges[mine[0]]
-        room.edges.append((sender, pose))
+        room.edges.append(motion)
         self._tick_soon(room)
 
     def _flush_tick(self, room: Room) -> None:
@@ -541,8 +636,8 @@ class RoomManager:
         room.taps = {}
         for receiver in list(room.peers.values()):
             if receiver.motion_version >= 3:
-                motions = [delta for sender, pose in edges if (delta := self._motion_for(receiver, sender, pose))]
-                motions += [delta for m in updates if (delta := self._motion_for(receiver, m["id"], m))]
+                motions = [delta for edge in edges if (delta := edge.for_peer(receiver))]
+                motions.extend(delta for update in updates if (delta := update.for_peer(receiver)))
                 if receiver.motion_version >= 4:
                     if motions or taps:
                         receiver.enqueue({"type": "room_tick", "motions": motions, "taps": taps})
@@ -550,25 +645,12 @@ class RoomManager:
                 if motions:
                     receiver.enqueue({"type": "motion_edges", "edges": motions})
             else:
-                motions = [delta for m in updates if (delta := self._motion_for(receiver, m["id"], m))]
+                motions = [delta for update in updates if (delta := update.for_peer(receiver))]
                 if motions:
                     receiver.enqueue({"type": "motion_delta" if receiver.motion_version >= 2 else "motion_batch",
                                       "motions": motions})
             for tap in taps:
                 receiver.enqueue({"type": "tap", **tap})
-
-    def _motion_for(self, receiver: Peer, sender: str, pose: dict) -> dict | None:
-        if receiver.id == sender:
-            return None
-        if receiver.motion_version < 2:
-            return {"id": sender, **pose}
-        if sender not in receiver.motion_ids:
-            return None
-        packed = pack_motion(pose)
-        previous = receiver.sent_motion.get(sender, {})
-        delta = {key: value for key, value in packed.items() if previous.get(key) != value}
-        receiver.sent_motion[sender] = packed
-        return {"id": sender, **delta} if delta else None
 
     def subscribe_motion(self, room_id: str, peer: Peer, ids: list[str]) -> None:
         room = self.rooms[room_id]
@@ -613,11 +695,10 @@ class RoomManager:
         """Adds [taps] paid taps of save [pid] to the round of the room it joined last. When the round is then full,
         returns the room, the round's number, the saves to pay and the shards for each; progress otherwise goes out
         by itself. A round left full by a save whose grace ran out finishes with the next taps anyone puts in."""
-        seats = [(peer.join_seq, room) for room in self.rooms.values()
-                 for peer in room.peers.values() if peer.token == pid]
-        if taps <= 0 or not seats:
+        seats = self.peers_of_save(pid) if taps > 0 else []
+        if not seats:
             return None
-        room = max(seats, key=lambda seat: seat[0])[1]
+        room = self.rooms[max(seats, key=lambda seat: seat[1].join_seq)[0]]
         saves = self._cheer_saves(room)
         if len(saves) < CHEER_MIN_SAVES:
             return None

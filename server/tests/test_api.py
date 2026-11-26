@@ -22,6 +22,7 @@ def client(monkeypatch):
     g.now.t += 1
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:  # one portal/event loop shared by all sockets
         yield c
 

@@ -250,6 +250,7 @@ def test_rooms_fill_the_bar_from_reported_taps_and_pay_over_the_socket(monkeypat
         g.store.update_player(player_id_for(token), taps_total=CHEER_MIN_TAPS)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     monkeypatch.setattr(main.manager, "cheer_interval", 1000.0)
     per_minute = M.income["tapsPerMinute"]
     target, each = 2 * CHEER_PER_SAVE, 2 * CHEER_REWARD_PER_SAVE

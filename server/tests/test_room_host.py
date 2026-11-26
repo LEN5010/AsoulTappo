@@ -11,8 +11,10 @@ from app.rooms import Banned, NeedSave, RoomManager
 @pytest.fixture(autouse=True)
 def _clean():
     manager.rooms.clear()
+    manager.by_save.clear()
     yield
     manager.rooms.clear()
+    manager.by_save.clear()
 
 
 def token(name):

@@ -17,9 +17,11 @@ from test_room_host import Dummy, join, token
 @pytest.fixture(autouse=True)
 def _clean():
     manager.rooms.clear()
+    manager.by_save.clear()
     manager.restoring.clear()
     yield
     manager.rooms.clear()
+    manager.by_save.clear()
     manager.restoring.clear()
 
 
@@ -138,6 +140,7 @@ def test_the_stop_signal_notes_the_rooms_before_the_server_closes_them(monkeypat
         handler(signal.SIGTERM, None)
         # A second signal keeps the first snapshot, taken before any connection closed.
         manager.rooms.clear()
+        manager.by_save.clear()
         handler(signal.SIGTERM, None)
     finally:
         signal.signal(signal.SIGTERM, previous)
