@@ -1,16 +1,18 @@
+import { createHash } from "node:crypto";
 import { createSSRApp, h } from "vue";
 import { renderToString } from "vue/server-renderer";
 import { describe, expect, it } from "vitest";
 import { manifest } from "../../manifest";
 import RaceTrack from "./RaceTrack.vue";
-import { tuanziArt, type Race } from "./race";
+import mapRaces from "./raceMaps.fixture.json";
+import { ROUND, stepStart, trackOf, tuanziArt, type Race } from "./race";
 import { economy } from "../../stores/economy";
 
 const CFG = economy.value!.park!.race!;
 const MEMBERS = manifest.characters.map((c) => c.id);
 
 const render = (race: Race | null, t: number) =>
-  renderToString(createSSRApp({ render: () => h(RaceTrack, { race, t, track: CFG.track, members: MEMBERS }) }));
+  renderToString(createSSRApp({ render: () => h(RaceTrack, { race, t, track: trackOf(race?.setup, CFG.track), members: MEMBERS }) }));
 
 const count = (html: string, cls: string) => html.match(new RegExp(`class="[^"]*\\b${cls}\\b`, "g"))?.length ?? 0;
 
@@ -42,4 +44,22 @@ describe("race track", () => {
       }
     }
   });
+});
+
+const fixtureRaces = (mapRaces as unknown as Pick<Required<Race>, "setup" | "start" | "moves" | "ranking">[]).map((fixture) => {
+  const running = {
+    ...fixture, id: 3600, opensAt: 3600, startsAt: 6900, phase: "running" as const, hash: "",
+    odds: { win: {}, top2: {}, last: {} }, pool: {}, mine: [], leadMs: 4000, stepMs: 2400,
+    slowFrom: Math.floor((fixture.moves.length - 1) / ROUND) * ROUND, slowMs: 3600,
+  };
+  const endsAt = running.startsAt + Math.ceil(stepStart(running, running.moves.length) / 1000);
+  const times: number[] = [];
+  for (let t = running.startsAt * 1000 - 250; t <= endsAt * 1000 + 1000; t += 250) times.push(t);
+  return { race: { ...running, endsAt }, times };
+});
+
+it.each(fixtureRaces)("renders every quarter second on $race.setup.map.name (#$race.moves.length)", async ({ race, times }) => {
+  const frames: string[] = [];
+  for (const t of times) frames.push(createHash("sha1").update(await render(race, t)).digest("hex"));
+  expect(frames).toMatchSnapshot();
 });

@@ -4,7 +4,7 @@ import {
   DICE_TOSS, rollStart, roundAt, roundDice, roundsOf, chinaDay, playLength, replayAt, replayTime,
   airFaces, boardOf, bounce, cellOf, cutOf, cornersOf, saidAt, squareKind, stepPath, walkPath, spots, SQUARE_AT, stacksAt, stageOf, stepLength, stepPhases, stepStart, staggered, TOSS_STAGGER_MS,
   type Race, type RaceSetup, type RaceStep,
-  stepTimes,
+  ROUND, type Playhead, stepTimes,
 } from "./race";
 import fixture from "./race.fixture.json";
 
@@ -520,4 +520,48 @@ describe("a map's route on the board", () => {
     // A board the route fills has none.
     expect(sceneryCells(layoutOf(2, [[0, 0], [1, 0], [2, 0]]), 2, 3)).toEqual([]);
   });
+});
+
+const fixtureRaces = (mapRaces as unknown as Pick<Required<Race>, "setup" | "start" | "moves" | "ranking">[]).map((fixture) => {
+  const running = {
+    ...fixture, id: 3600, opensAt: 3600, startsAt: 6900, phase: "running" as const, hash: "",
+    odds: { win: {}, top2: {}, last: {} }, pool: {}, mine: [], leadMs: 4000, stepMs: 2400,
+    slowFrom: Math.floor((fixture.moves.length - 1) / ROUND) * ROUND, slowMs: 3600,
+  };
+  const endsAt = running.startsAt + Math.ceil(stepStart(running, running.moves.length) / 1000);
+  const times: number[] = [];
+  for (let t = running.startsAt * 1000 - 250; t <= endsAt * 1000 + 1000; t += 250) times.push(t);
+  return { race: { ...running, endsAt }, times };
+});
+
+function referenceHops(start: string[], moves: RaceStep[], h: Playhead) {
+  const out: Record<string, string> = {};
+  const upto = h.current >= 0 ? h.current : h.done - 1;
+  const st = new Map<number, string[]>([[0, [...start]]]);
+  for (let i = 0; i <= upto && i < moves.length; i++) {
+    const s = moves[i];
+    const under = i === h.current;
+    if (under && h.part < HOP_AT) break;
+    const acted = (s.end !== undefined || !!s.stack) && !(under && h.part < SQUARE_AT);
+    playStep(st, s, acted);
+    const key = `${i}${acted ? "b" : "a"}`;
+    // Without a square the group has nothing more to do when a climber under it moves: it keeps its hop.
+    for (const m of [s.m, ...(s.carry ?? [])]) out[m] = s.end === undefined ? `${i}a` : key;
+    if (acted && s.square === "flip") for (const m of st.get(s.to) ?? []) out[m] = key;
+    if (acted && s.react?.length) for (const m of s.stack ?? s.react) out[m] = key;
+  }
+  return out;
+}
+
+it.each(fixtureRaces)("records every quarter second on $race.setup.map.name (#$race.moves.length)", ({ race, times }) => {
+  const frames = times.map((t) => {
+    const h = playhead(race, t);
+    return JSON.stringify({
+      stacks: [...stacksAt(race.start, race.moves, h)],
+      hops: referenceHops(race.start, race.moves, h),
+      movers: moving(race.moves, h),
+      hasLeader: h.done > 0 || (h.current >= 0 && h.part >= HOP_AT),
+    });
+  });
+  expect(frames).toMatchSnapshot();
 });
