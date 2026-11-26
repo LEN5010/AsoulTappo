@@ -5,6 +5,7 @@
 // window the desktop under it stays clickable and the place keeps its own clicks.
 import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { PLAIN, arrowPath, ellipseAround, loopPath, variantOf, type Arrow, type Box } from "../guideShape";
+import { touchesGuide } from "../pet/guideChanges";
 
 const props = defineProps<{
   target: string;
@@ -65,13 +66,14 @@ function follow() {
   frame = requestAnimationFrame(step);
 }
 
-// The place may come and go (the strip under the pet does): looked up again whenever the page changes around it.
-const changes = new MutationObserver(() => follow());
+// The place may come and go (the strip under the pet does): looked up again when a guided place comes, goes or is
+// renamed. A drag comes as `tick`, a change of the place's size through `resize`.
+const changes = new MutationObserver((records) => { if (touchesGuide(records)) follow(); });
 onMounted(() => {
   measure();
   follow();
   window.addEventListener("resize", follow);
-  changes.observe(props.scope ?? document.body, { subtree: true, childList: true });
+  changes.observe(props.scope ?? document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-guide"] });
 });
 onBeforeUnmount(() => {
   window.removeEventListener("resize", follow);

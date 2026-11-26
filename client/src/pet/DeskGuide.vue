@@ -10,6 +10,7 @@ import { deskCardShown, finishCard, guideLink, guideRun, watchPlaceClicks } from
 import GuideCard from "../ui/GuideCard.vue";
 import GuideMark from "../ui/GuideMark.vue";
 import { variantOf } from "../guideShape";
+import { touchesGuide } from "./guideChanges";
 
 const props = defineProps<{
   /** Something with a better claim is over the pet. */
@@ -126,7 +127,8 @@ let stopClicks: (() => void) | undefined;
 watch(() => props.scope, (scope) => {
   watcher?.disconnect();
   if (!scope) return;
-  watcher ??= new MutationObserver(look);
+  // The pet's tree changes all the time (bubbles, numbers); the places are looked for only when one of them did.
+  watcher ??= new MutationObserver((records) => { if (touchesGuide(records)) look(); });
   watcher.observe(scope, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-guide"] });
   look();
 }, { flush: "post" });
