@@ -351,8 +351,8 @@ void main() {
 
 // The print finishes of an official photocard, drawn over two textures per side:
 //   base: what is printed.   mat: R gloss, G foil (0.5 the dark tinted foil, 1 silver), B the front's small type.
-// Front: glossy art window with a point highlight; a frame with a pressed cross-hatching, the only relief on the
-// card; flat foil (a deep purple bar and capsule with silver lettering, the name, the marks). Type lies over
+// Front: glossy art window with a point highlight; a satin frame pressed with a cross-hatching, the only relief on
+// the card; flat foil (a deep purple bar and capsule with silver lettering, the name, the marks). Type lies over
 // the cross-hatching: no ridge crosses a letter.
 // Back: reverse-UV matte with glossy sparkles, and flat reflective lettering.
 // The finishes are FRAG of scripts/photocards/demo/index.html, word for word, for either side of one mesh; around them
@@ -465,25 +465,22 @@ void main() {
     col = mix(col, LIGHT, clamp(gloss * spec, 0.0, 0.95));
     col += gloss * pow(grain3(q / 1.8).r, 12.0) * near * 0.6 * LIGHT;
 
-    // Frame: a pressed cross-hatching with a pearly reflection. Each ridge is lit on the side facing the light
-    // and shaded on the other, everywhere on the card and more strongly near the light.
+    // Frame: a satin laminate pressed with a diagonal cross-hatching. The pressed lines sit a little darker than the
+    // flat between them, lit on the side facing the light and shaded on the other. Over them the frame mirrors the
+    // light as the picture does, a little weaker and softer, without the picture's point and grains; where the
+    // highlight is strong it washes out the hatching and the print, and on white paper that is all that shows of it.
     vec2 L0 = lattice(q);
     vec2 Lf = lattice(q + ld * 1.2);
     vec2 Lb = lattice(q - ld * 1.2);
-    float fade = smoothstep(2.5, 5.5, PITCH / u_scale);
+    // Lines three pixels apart are drawn in full; closer than that they would crawl, and they fade out.
+    float fade = smoothstep(1.8, 3.0, PITCH / u_scale);
     float relief = (max(Lf.x, Lf.y) - max(Lb.x, Lb.y)) * fade;
     float pressed = matRest * (1.0 - smoothstep(0.05, 0.45, m.b));
-    // A family of lines mirrors the light best when it runs across the direction to it.
-    float fa = 0.35 + 0.65 * abs(dot(ld, vec2(0.70711, 0.70711)));
-    float fb = 0.35 + 0.65 * abs(dot(ld, vec2(0.70711, -0.70711)));
-    float lines = max(L0.x * fa, L0.y * fb) * fade;
-    vec3 pearl = mix(vec3(1.0, 0.90, 0.68), vec3(1.0, 0.86, 0.93), smoothstep(0.10, 0.42, dist));
-    col = mix(col, vec3(1.0), matRest * mid * 0.16);
-    col = mix(col, max(col, pearl), pressed * lines * clamp(mid * 0.85 + wide * 0.06, 0.0, 1.0));
-    col += pressed * lines * hot * 0.5;
-    col += pressed * (max(-relief, 0.0) * (0.048 + 0.15 * mid) - max(relief, 0.0) * (0.058 + 0.04 * mid));
-    // The hollows between the ridges sit a touch darker.
-    col *= 1.0 - pressed * fade * 0.024 * (1.0 - max(L0.x, L0.y));
+    float groove = pressed * max(L0.x, L0.y) * fade;
+    col += pressed * (max(-relief, 0.0) * 0.048 - max(relief, 0.0) * 0.058);
+    col *= 1.0 - groove * 0.035;
+    float soft = exp(-dist * dist / (2.0 * 0.08 * 0.08));
+    col = mix(col, LIGHT, clamp(matRest * (soft * 0.66 + mid * 0.20) * (1.0 - 0.15 * groove), 0.0, 0.9));
   } else {
     // Reverse UV: the matte ground scatters the light into a wide, faint glow with a very fine grain;
     // the sparkles stay mirror-smooth.
