@@ -4,7 +4,7 @@
 // page names the card and sums up the collection: the total, the tiers side by side as one instrument, then the
 // special collections as rows (CollectionRows.vue: the holo versions, and the 衣橱 series where this pool gives its
 // tier odds), and the skins.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { cardLabel, cardWord, ownsHolo, poolName, TIER_LABEL } from "../cards";
@@ -102,9 +102,11 @@ const sheetEl = ref<HTMLElement>();
 const peekRoom = ref(0);
 function measurePeek() {
   if (!titleEl.value || !sheetEl.value) return;
+  const sheet = sheetEl.value.getBoundingClientRect();
+  if (!sheet.width) return;
   const glyphs = document.createRange();
   glyphs.selectNodeContents(titleEl.value);
-  peekRoom.value = sheetEl.value.getBoundingClientRect().right - glyphs.getBoundingClientRect().right;
+  peekRoom.value = sheet.right - glyphs.getBoundingClientRect().right;
 }
 const peekSize = computed(() => {
   // A pair reaches past the box on the left (.pair in the styles).
@@ -129,21 +131,46 @@ const scrolling = computed(() => canMarquee.value && pageActive.value && !props.
 /** One group width at the old 24px/s, so the loop keeps the same pace at any panel size. */
 const marqueeDuration = computed(() => `${Math.max(8, skinWidth.value / 24)}s`);
 let resize: ResizeObserver | undefined;
-onMounted(() => {
-  resize = new ResizeObserver(() => {
-    skinWidth.value = skinGroup.value?.[0]?.offsetWidth ?? 0;
-    viewportWidth.value = skinViewport.value?.clientWidth ?? 0;
-    measurePeek();
-  });
-  if (skinViewport.value) resize.observe(skinViewport.value);
-  if (skinGroup.value?.[0]) resize.observe(skinGroup.value[0]);
-  if (sheetEl.value) resize.observe(sheetEl.value);
-  // The title's width changes once the bundled font replaces the fallback.
-  void document.fonts.ready.then(measurePeek);
-});
-onBeforeUnmount(() => {
+let frame = 0;
+let observing = false;
+function measure() {
+  frame = 0;
+  const sw = skinGroup.value?.[0]?.offsetWidth ?? 0;
+  const vw = skinViewport.value?.clientWidth ?? 0;
+  if (vw > 0) {
+    skinWidth.value = sw;
+    viewportWidth.value = vw;
+  }
+  measurePeek();
+}
+function schedule() {
+  if (!frame) frame = requestAnimationFrame(measure);
+}
+function connect() {
+  observing = true;
   resize?.disconnect();
+  if (skinViewport.value) resize?.observe(skinViewport.value);
+  if (skinGroup.value?.[0]) resize?.observe(skinGroup.value[0]);
+  if (sheetEl.value) resize?.observe(sheetEl.value);
+  schedule();
+}
+function disconnect() {
+  observing = false;
+  resize?.disconnect();
+  cancelAnimationFrame(frame);
+  frame = 0;
+}
+onMounted(() => {
+  measure();
+  resize = new ResizeObserver(schedule);
+  connect();
+  // The title's width changes once the bundled font replaces the fallback.
+  void document.fonts?.ready.then(schedule);
 });
+onActivated(connect);
+onDeactivated(disconnect);
+watch(skinViewport, () => { if (observing) connect(); }, { flush: "post" });
+onBeforeUnmount(disconnect);
 </script>
 
 <template>

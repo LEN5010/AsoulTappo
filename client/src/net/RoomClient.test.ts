@@ -458,4 +458,29 @@ describe("RoomClient", () => {
     FakeWs.all[2].open();
     expect(FakeWs.all[2].sent[0]).not.toHaveProperty("dnd");
   });
+
+  it("suppresses redundant connState transitions such as leave() while already idle", () => {
+    const { c, ev } = setup();
+    c.leave();
+    expect(ev.onConnState).not.toHaveBeenCalled();
+
+    c.join("http://h:1", INFO);
+    expect(ev.onConnState).toHaveBeenCalledTimes(1);
+    expect(ev.onConnState).toHaveBeenLastCalledWith("connecting");
+
+    c.leave();
+    expect(ev.onConnState).toHaveBeenCalledTimes(2);
+    expect(ev.onConnState).toHaveBeenLastCalledWith("idle");
+
+    c.leave();
+    expect(ev.onConnState).toHaveBeenCalledTimes(2);
+
+    c.join("http://h:1", INFO);
+    FakeWs.all[1].open();
+    expect(ev.onConnState).toHaveBeenLastCalledWith("open");
+
+    c.join("nonsense", INFO);
+    expect(ev.onError).toHaveBeenCalledWith("bad_url", expect.any(String));
+    expect(ev.onConnState).toHaveBeenLastCalledWith("idle");
+  });
 });

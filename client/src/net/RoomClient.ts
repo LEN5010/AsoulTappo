@@ -87,6 +87,7 @@ const OPEN = 1;
  * room it was last asked to join, until `leave()` is called.
  */
 export class RoomClient {
+  private state: ConnState = "idle";
   private ws: WsLike | null = null;
   private serverUrl = "";
   private joinInfo: JoinInfo | null = null;
@@ -219,6 +220,12 @@ export class RoomClient {
     this.send({ type: "state", ...patch });
   }
 
+  private setState(s: ConnState): void {
+    if (this.state === s) return;
+    this.state = s;
+    this.events.onConnState(s);
+  }
+
   private send(msg: ClientMessage): void {
     if (this.ws && this.ws.readyState === OPEN) this.ws.send(JSON.stringify(msg));
   }
@@ -234,10 +241,10 @@ export class RoomClient {
     } catch {
       this.events.onError("bad_url", "服务器地址无效");
       this.wantOpen = false;
-      this.events.onConnState("idle");
+      this.setState("idle");
       return;
     }
-    this.events.onConnState(this.attempt === 0 ? "connecting" : "reconnecting");
+    this.setState(this.attempt === 0 ? "connecting" : "reconnecting");
     let ws: WsLike;
     try {
       ws = this.opts.createSocket(url);
@@ -250,7 +257,7 @@ export class RoomClient {
       if (this.ws !== ws) return;
       this.attempt = 0;
       this.gotPong = true;
-      this.events.onConnState("open");
+      this.setState("open");
       if (this.joinInfo) {
         this.send({ type: "join", ...this.joinInfo, motionVersion: this.joinVersion });
         this.joinPending = true;
@@ -273,7 +280,7 @@ export class RoomClient {
       this.joinPending = false;
       this.stopPing();
       if (this.wantOpen) this.scheduleReconnect();
-      else this.events.onConnState("idle");
+      else this.setState("idle");
     };
     ws.onerror = () => {
       /* onclose follows */
@@ -420,7 +427,7 @@ export class RoomClient {
     const { baseDelayMs, maxDelayMs } = this.opts;
     const delay = Math.min(maxDelayMs, baseDelayMs * 2 ** this.attempt) + Math.random() * 250;
     this.attempt += 1;
-    this.events.onConnState("reconnecting");
+    this.setState("reconnecting");
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (this.wantOpen) this.open();
@@ -472,6 +479,6 @@ export class RoomClient {
         /* ignore */
       }
     }
-    if (emit) this.events.onConnState("idle");
+    if (emit) this.setState("idle");
   }
 }
