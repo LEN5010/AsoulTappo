@@ -233,6 +233,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   let opened = FROM;
   let active: Bag | null = null;
   let shown: Card | null = null;
+  /** A plain card turning over in the middle, before it waits there. */
+  let spinning: Card | null = null;
   let spot: Spot | null = null;
   let inspecting: Card | null = null;
   let fx: Mote[] = [];
@@ -387,6 +389,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     if (phase === "intro") pressBox();
     else if (active?.state === "sealed") void tearAlone(active, 560);
     else if (inspecting) void putBack();
+    // A key held down lets a plain card finish turning before it goes on; a press of its own sends it on at once.
+    else if (repeat && spinning && spinning === shown) early = true;
     else ask();
   }
   function setAuto(on: boolean): void {
@@ -710,24 +714,39 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       if (b.state === "box") Object.assign(b, { route: null, rise: 0 });
     }
   }
-  async function arrive(b: Bag): Promise<void> {
-    const my = epoch, ms = pace(1060);
-    b.resolve = null;
+  /** Draws [b] up out of the box onto its way, with the box giving a little. */
+  function setOut(b: Bag, ms: number): Route {
     b.state = "rise";
     b.p = P();
-    b.route = route(b);
-    follow(b, b.route);
+    const r = b.route = route(b);
+    follow(b, r);
     b.px = b.p.x;
     b.py = b.p.y;
-    snd.slide(0.26, 0.95, -0.35);
     snd.rustle(5, ms * 0.6, 0.09, 1);
-    void tween(b.route, { u: 1 }, ms, E.glide).then(() => { b.route = null; });
-    // The box gives a little as the bag is drawn out of it.
     void tween(box.p, { rz: -0.9, y: 71 }, ms * 0.22, E.flow)
       .then(() => tween(box.p, { rz: 0, y: 74 }, ms * 0.6, E.flow));
+    return r;
+  }
+  /** The next bag stands up out of the box while the card before it is on show, so it is there as soon as that one
+   * goes. */
+  function lift(b: Bag | undefined): void {
+    if (!b || b.state !== "box") return;
+    kit.want(b.card.info, "front");
+    kit.want(b.card.info, "behind");
+    const r = setOut(b, pace(1060));
+    // Short of where the bow begins: over it, it is the bag in hand.
+    void tween(r, { u: Math.max(0, r.clear - 1) / r.all }, pace(560), E.flow);
+  }
+  async function arrive(b: Bag): Promise<void> {
+    const my = epoch, ready = b.state === "rise" && !!b.route, ms = pace(ready ? 560 : 1060);
+    b.resolve = null;
+    const r = ready ? b.route! : setOut(b, ms);
+    snd.slide(0.26, 0.95, -0.35);
+    void tween(r, { u: 1 }, ms, E.glide).then(() => { if (b.route === r) b.route = null; });
     await kit.want(b.card.info, "front").ready;
     await kit.want(b.card.info, "behind").ready;
-    await wait(ms * 0.72);
+    // One that stood ready can be torn while it settles.
+    await wait(ms * (ready ? 0.5 : 0.72));
     if (my !== epoch || active !== b) return;
     b.state = "sealed";
     grip = null;
@@ -790,12 +809,13 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     tempo = 0;
     keep(c);
     spot = null;
+    lift(bags[cur + 1]);
     await wait(260);
   }
 
   /** A card of one member comes out of its bag and turns over; a signed one unhurried, in its own light. False once the
-   * run has ended. */
-  async function soloOut(b: Bag, live: Live, grand = false): Promise<boolean> {
+   * run has ended; "asked" when a press sent a plain one on before it had turned all the way. */
+  async function soloOut(b: Bag, live: Live, grand = false): Promise<false | "seen" | "asked"> {
     const c = b.card, pc = grand ? (ms: number) => ms * 1.35 : pace;
     // The flap goes up first.
     if (!grand) await wait(pc(210));
@@ -815,15 +835,24 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     await wait(pc(370));
     if (!live()) return false;
     c.state = "out";
-    if (!grand) shown = c;
+    // A press that came before it was out lets it turn over first, then sends it on.
+    const queued = !grand && early;
+    if (!grand) {
+      early = false;
+      shown = spinning = c;
+      lift(bags[cur + 1]);
+    }
     void tween(c, { lipOn: 0 }, pc(200));
-    // Over it goes, rising a little and leaning into the turn.
+    // Over it goes, rising a little and leaning into the turn; one sent on finishes the turn on its way to the row.
+    const turning = () => c.state === "out";
     void tween(c.p, grand ? { y: -14, s: 1.36 } : { y: -26, s: 1.2 }, pc(760), E.flow);
     void tween(c.p, { z: grand ? 130 : 90 }, pc(380), E.flow)
-      .then(() => tween(c.p, { z: grand ? 110 : 40 }, pc(420), E.flow));
-    void tween(c.p, { rz: -3.2 }, pc(320), E.flow).then(() => tween(c.p, { rz: 0 }, pc(460), E.flow));
+      .then(() => { if (turning()) void tween(c.p, { z: grand ? 110 : 40 }, pc(420), E.flow); });
+    void tween(c.p, { rz: -3.2 }, pc(320), E.flow)
+      .then(() => { if (turning()) void tween(c.p, { rz: 0 }, pc(460), E.flow); });
     void tween(c.p, { ry: 0 }, pc(740), E.flow);
-    await wait(pc(330));
+    if (grand) await wait(pc(330));
+    else if (await waitOrPress(pc(330))) return sent(live);
     if (!live()) return false;
     snd.flip(0.75, 1);
     c.sheen = -0.5;
@@ -836,9 +865,18 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       if (!live()) return false;
       written = write(c);
       void tween(scene, { rays: 0.10 }, 700, E.flow);
+      await wait(pc(420) - 115);
+    } else {
+      if (await waitOrPress(pc(420))) return sent(live);
+      spinning = null;
+      if (queued) early = true;
     }
-    await wait(pc(420) - (grand ? 115 : 0));
-    return live() && written;
+    return live() && await written && "seen";
+  }
+  /** A plain card sent on while it turned. */
+  function sent(live: Live): false | "asked" {
+    spinning = null;
+    return live() && "asked";
   }
   /** The pen goes over the card; resolves once all of it is there. */
   function write(c: Card): Promise<boolean> {
@@ -858,14 +896,20 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       };
     });
   }
+  /** A plain card stays until a press sends it to the row, at once however far it has turned; the next bag is ready. */
   async function revealSolo(b: Bag, live: Live): Promise<void> {
-    if (!await soloOut(b, live)) return;
-    emit({ type: "shown", index: b.i });
-    await hold(lerp(220, 40, tempo), auto ? 320 : 0);
-    if (!live()) return;
+    const how = await soloOut(b, live);
+    if (!how) return;
+    if (how === "seen") {
+      emit({ type: "shown", index: b.i });
+      await hold(0, auto ? 320 : 0);
+      if (!live()) return;
+    }
+    // The press that sent it on is spent: the next bag waits for one of its own.
+    early = eager = false;
+    pressWaiters = [];
     shown = null;
     keep(b.card);
-    await wait(pace(110));
   }
 
   /** A signed card comes up out of the gold, and is signed while it turns over. */
@@ -887,6 +931,17 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     if (live()) await settleRare(c);
   }
 
+  /** Waits [ms], or less if a press comes in the meantime: true then. */
+  function waitOrPress(ms: number): Promise<boolean> {
+    return new Promise((done) => {
+      const go = () => done(true);
+      pressWaiters.push(go);
+      void wait(ms).then(() => {
+        pressWaiters = pressWaiters.filter((f) => f !== go);
+        done(false);
+      });
+    });
+  }
   /** Holds a card on show until the next press; a run of quick tears does not wait long. */
   async function hold(least: number, autoMs: number): Promise<void> {
     const asked = pressed();
