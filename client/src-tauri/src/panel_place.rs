@@ -65,6 +65,29 @@ pub fn usable_pick(picked: f64, can_zoom: bool) -> f64 {
     }
 }
 
+/// The panel at `at` sized again for the work area `area` (`fit`): its new window and the page's zoom. Its centre
+/// stays where it was, held inside the work area.
+pub fn refit(area: Rect, scale: f64, picked: f64, at: Rect) -> (Rect, f64) {
+    let (w, h, zoom) = fit(area.w, area.h, scale, picked);
+    let (cx, cy) = (at.x + at.w / 2.0, at.y + at.h / 2.0);
+    let x = (cx - w / 2.0).clamp(area.x, (area.right() - w).max(area.x));
+    let y = (cy - h / 2.0).clamp(area.y, (area.bottom() - h).max(area.y));
+    (Rect { x, y, w, h }, zoom)
+}
+
+/// The work area the panel was last fitted to, in its monitor's pixels, and that monitor's scale.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Home {
+    pub area: Rect,
+    pub scale: f64,
+}
+
+/// Whether a panel fitted to `home` and now on `now` needs fitting again: it went to another monitor, or its own
+/// monitor's work area or scale changed. A panel never fitted is left to its first show.
+pub fn left_home(home: Option<Home>, now: Home) -> bool {
+    home.is_some_and(|home| home != now)
+}
+
 /// How much of `avoid` a window at `spot` covers.
 pub fn covered(spot: &Rect, avoid: &[Rect]) -> f64 {
     avoid.iter().map(|r| spot.overlap(r)).sum()
@@ -212,6 +235,55 @@ mod tests {
         assert_eq!(usable_pick(1.5, false), 1.0);
         assert_eq!(usable_pick(0.9, false), 1.0);
         assert_eq!(fit(2560.0, 1400.0, 1.0, usable_pick(1.5, false)), (1000.0, 720.0, 1.0));
+    }
+
+    #[test]
+    fn moved_to_a_smaller_work_area_the_panel_is_fitted_to_it() {
+        // ×1.5 on a 2560×1440 monitor at 100%, then dragged onto a 1920×1080 one at 150% to its right.
+        let big = area(0.0, 0.0, 2560.0, 1400.0);
+        let (w, h, zoom) = fit(big.w, big.h, 1.0, 1.5);
+        assert_eq!((w, h, zoom), (1500.0, 1080.0, 1.5));
+        let small = area(2560.0, 0.0, 1920.0, 1032.0);
+        let at = Rect { x: 2700.0, y: 40.0, w, h };
+        let (to, zoom) = refit(small, 1.5, 1.5, at);
+        assert_eq!(zoom, 1.0);
+        assert_eq!((to.w, to.h), (1500.0, 1012.0));
+        assert!(inside(small, to.x, to.y, to.w, to.h));
+        // Its centre stays where it was as far as the work area allows.
+        assert_eq!(to.x + to.w / 2.0, at.x + at.w / 2.0);
+    }
+
+    #[test]
+    fn moved_back_to_a_bigger_work_area_the_panel_takes_the_pick_again() {
+        let small = area(2560.0, 0.0, 1920.0, 1032.0);
+        let (w, h, zoom) = fit(small.w, small.h, 1.5, 1.5);
+        assert_eq!(zoom, 1.0);
+        let big = area(0.0, 0.0, 2560.0, 1400.0);
+        let (to, zoom) = refit(big, 1.0, 1.5, Rect { x: 2400.0, y: 300.0, w, h });
+        assert_eq!(zoom, 1.5);
+        assert_eq!((to.w, to.h), (1500.0, 1080.0));
+        assert!(inside(big, to.x, to.y, to.w, to.h));
+    }
+
+    #[test]
+    fn a_panel_off_its_work_area_is_brought_inside() {
+        let a = area(-1280.0, 200.0, 1280.0, 672.0);
+        let (to, zoom) = refit(a, 1.0, 1.0, Rect { x: -1600.0, y: 0.0, w: 1500.0, h: 1080.0 });
+        assert_eq!(zoom, 1.0);
+        assert_eq!((to.w, to.h), (1000.0, 652.0));
+        assert!(inside(a, to.x, to.y, to.w, to.h));
+    }
+
+    #[test]
+    fn only_another_monitor_or_work_area_asks_for_a_refit() {
+        let home = Home { area: area(0.0, 0.0, 2560.0, 1400.0), scale: 1.0 };
+        assert!(!left_home(None, home));
+        assert!(!left_home(Some(home), home));
+        // Another monitor.
+        assert!(left_home(Some(home), Home { area: area(2560.0, 0.0, 1920.0, 1032.0), scale: 1.5 }));
+        // The same monitor at another scale, or with the taskbar moved.
+        assert!(left_home(Some(home), Home { scale: 1.25, ..home }));
+        assert!(left_home(Some(home), Home { area: area(0.0, 0.0, 2560.0, 1360.0), ..home }));
     }
 
     #[test]

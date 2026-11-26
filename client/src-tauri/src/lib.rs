@@ -421,33 +421,121 @@ fn set_panel_scale(app: tauri::AppHandle, scale: f64) {
     if PANEL_UNPLACED.load(Ordering::Relaxed) {
         return;
     }
+    refit_panel(&panel, &format!("scaled to {scale:.2}"));
+}
+
+/// The work area and scale the panel was last fitted to (`panel_place::Home`).
+static PANEL_HOME: Mutex<Option<panel_place::Home>> = Mutex::new(None);
+
+fn panel_home(area: &tauri::PhysicalRect<i32, u32>, scale: f64) -> panel_place::Home {
+    panel_place::Home {
+        area: panel_place::Rect {
+            x: area.position.x as f64,
+            y: area.position.y as f64,
+            w: area.size.width as f64,
+            h: area.size.height as f64,
+        },
+        scale,
+    }
+}
+
+fn set_panel_home(home: panel_place::Home) {
+    if let Ok(mut now) = PANEL_HOME.lock() {
+        *now = Some(home);
+    }
+}
+
+/// Sizes the panel for the monitor it is on now at the size the player picked, about its own centre and inside that
+/// monitor's work area (`panel_place::refit`). `why` starts the log line.
+fn refit_panel(panel: &WebviewWindow, why: &str) {
     let monitor = match panel.current_monitor() {
         Ok(Some(m)) => m,
-        _ => return applog!("panel", "scale: its monitor is unknown"),
+        _ => return applog!("panel", "{why}: its monitor is unknown"),
     };
-    let area = *monitor.work_area();
     let monitor_scale = monitor.scale_factor();
-    let (w, h, zoom) = panel_size(&area, monitor_scale);
+    let home = panel_home(monitor.work_area(), monitor_scale);
     let (Ok(at), Ok(size)) = (panel.outer_position(), panel.outer_size()) else { return };
     // The window's own pixels are the monitor's: it is on that monitor.
-    let (cx, cy) = (at.x as f64 + size.width as f64 / 2.0, at.y as f64 + size.height as f64 / 2.0);
-    let (left, top) = (area.position.x as f64, area.position.y as f64);
-    let x = (cx - w / 2.0).clamp(left, (left + area.size.width as f64 - w).max(left));
-    let y = (cy - h / 2.0).clamp(top, (top + area.size.height as f64 - h).max(top));
+    let at = panel_place::Rect { x: at.x as f64, y: at.y as f64, w: size.width as f64, h: size.height as f64 };
+    let (to, zoom) = panel_place::refit(home.area, monitor_scale, panel_pick(), at);
+    // Before the window moves: the move it makes is not one to answer (`panel_moved`).
+    set_panel_home(home);
     // Between the two steps the page is laid out larger than its own size, never smaller: its container queries all
     // look for less room, so nothing in it changes shape on the way.
     let growing = zoom > PANEL_ZOOM.lock().map(|z| *z).unwrap_or(1.0);
     if !growing {
-        zoom_panel(&panel, zoom);
+        zoom_panel(panel, zoom);
     }
-    let moved = move_panel(&panel, x, y, w, h, monitor_scale);
+    let moved = move_panel(panel, to.x, to.y, to.w, to.h, monitor_scale);
     if growing {
-        zoom_panel(&panel, zoom);
+        zoom_panel(panel, zoom);
     }
     match moved {
-        Ok(()) => applog!("panel", "scaled to {scale:.2}: zoom {zoom:.2}, {w:.0}x{h:.0}"),
-        Err(e) => applog!("panel", "scale failed: {e}"),
+        Ok(()) => applog!("panel", "{why}: zoom {zoom:.2}, {:.0}x{:.0}", to.w, to.h),
+        Err(e) => applog!("panel", "{why}: failed: {e}"),
     }
+}
+
+/// How long the panel has to stay where it is before a move counts as finished.
+const PANEL_SETTLE: Duration = Duration::from_millis(400);
+/// When the panel last moved.
+static PANEL_MOVED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+/// A thread is waiting for the panel's move to finish (`panel_moved`).
+static PANEL_SETTLING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the player may still be dragging a window: the primary mouse button is down. Elsewhere a pause is the
+/// only sign.
+fn window_drag_held() -> bool {
+    #[cfg(target_os = "windows")]
+    return primary_button_down();
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::{msg_send, runtime::AnyClass};
+        // SAFETY: `+[NSEvent pressedMouseButtons]` reads the buttons' state and may be asked from any thread.
+        return AnyClass::get(c"NSEvent").is_some_and(|class| {
+            let buttons: usize = unsafe { msg_send![class, pressedMouseButtons] };
+            buttons & 1 != 0
+        });
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    false
+}
+
+/// The panel moved. Once it stays put, a panel that reached another monitor, or whose monitor's work area or scale
+/// changed, is fitted to it again at the size the player picked (it cannot be resized by hand). The window reports
+/// many moves while it is dragged; one thread waits for the last of them.
+fn panel_moved(app: &tauri::AppHandle) {
+    if let Ok(mut at) = PANEL_MOVED_AT.lock() {
+        *at = Some(Instant::now());
+    }
+    if PANEL_SETTLING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(100));
+            let quiet = PANEL_MOVED_AT.lock().ok().and_then(|at| *at).is_none_or(|at| at.elapsed() >= PANEL_SETTLE);
+            if quiet && !window_drag_held() {
+                break;
+            }
+        }
+        PANEL_SETTLING.store(false, Ordering::Release);
+        let Some(panel) = app.get_webview_window("panel") else { return };
+        // A minimized window is moved off every monitor (Windows); a hidden or unplaced one is fitted when shown.
+        if PANEL_UNPLACED.load(Ordering::Relaxed)
+            || !panel.is_visible().unwrap_or(false)
+            || panel.is_minimized().unwrap_or(true)
+        {
+            return;
+        }
+        let Ok(Some(monitor)) = panel.current_monitor() else { return };
+        let now = panel_home(monitor.work_area(), monitor.scale_factor());
+        let home = PANEL_HOME.lock().ok().and_then(|h| *h);
+        if panel_place::left_home(home, now) {
+            refit_panel(&panel, "moved to another monitor or work area");
+        }
+    });
 }
 
 /// Where the overlay's page starts, in its monitor's pixels (`Monitor::work_area`'s units).
@@ -501,6 +589,7 @@ fn place_panel(app: &tauri::AppHandle, panel: &WebviewWindow) {
     };
     let (x, y) = panel_place::place(bounds, w, h, &avoid, 16.0 * scale, 10.0 * scale);
     let covered = panel_place::covered(&panel_place::Rect { x, y, w, h }, &avoid);
+    set_panel_home(panel_home(&area, scale));
     zoom_panel(panel, zoom);
     match move_panel(panel, x, y, w, h, scale) {
         Ok(()) => applog!(
@@ -1393,12 +1482,14 @@ pub fn run() {
                         let _ = window.hide();
                         let _ = window.emit("panel:visible", false);
                     }
-                    // Moved to a monitor of another scale: the window keeps its logical size, the page its zoom.
+                    // Moved to a monitor of another scale: the window keeps its logical size, the page its zoom,
+                    // until the move ends (`panel_moved`).
                     tauri::WindowEvent::ScaleFactorChanged { .. } => {
                         if let Some(panel) = window.app_handle().get_webview_window("panel") {
                             zoom_panel(&panel, PANEL_ZOOM.lock().map(|z| *z).unwrap_or(1.0));
                         }
                     }
+                    tauri::WindowEvent::Moved(_) => panel_moved(window.app_handle()),
                     _ => {}
                 }
             }
@@ -1704,6 +1795,12 @@ mod page_zoom_tests {
         // The runtime's answer is about the selector asked for, not any.
         use objc2::{runtime::AnyClass, sel};
         assert!(!AnyClass::get(c"WKWebView").unwrap().responds_to(sel!(setPageZoomThatIsNotThere:)));
+    }
+
+    #[test]
+    fn a_window_is_not_taken_for_dragged_with_no_button_down() {
+        // Nobody holds the mouse while the tests run.
+        assert!(!window_drag_held());
     }
 }
 
