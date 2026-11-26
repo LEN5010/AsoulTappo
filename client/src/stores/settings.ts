@@ -4,7 +4,7 @@ import { defaultCharacter } from "../characters";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { cleanReminders, type Reminder } from "../reminders";
 import { roomStatus } from "../roomStatus";
-import { isTauri } from "../composables/tauri";
+import { isTauri, windowLabel } from "../composables/tauri";
 import { STANDALONE } from "../edition";
 import { cleanGuide, mergeGuide, type Guide } from "../guide";
 
@@ -356,6 +356,9 @@ export const settings = reactive<Settings>(loadSettings());
 watch(
   settings,
   (v) => {
+    // In the app the desk keeps them: the other windows' copies follow it a moment late (desktop/settingsSync.ts), and
+    // one written then would put an older value over the desk's.
+    if (isTauri && windowLabel !== "main") return;
     try {
       localStorage.setItem(KEY, JSON.stringify(v));
     } catch {

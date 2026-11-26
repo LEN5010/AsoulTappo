@@ -130,6 +130,8 @@ function pressPin(e: PointerEvent, i: number) {
 }
 function move(e: PointerEvent) {
   if (!press || e.pointerId !== press.pointer) return;
+  // Let go where the card did not hear it (off the card before a drag captured the pointer): the press is over.
+  if (!(e.buttons & 1)) return clear();
   const dx = e.clientX - press.x, dy = e.clientY - press.y;
   if (!drag.value) {
     if (Math.hypot(dx, dy) < DRAG_START) return;
@@ -144,13 +146,17 @@ function move(e: PointerEvent) {
   d.dy = dy;
   d.to = nearestSlot(d.centers, d.centers[d.from] + dx);
 }
+/** The press, and the drag it became, are over. */
+function clear() {
+  press = null;
+  drag.value = null;
+}
 async function release(e: PointerEvent) {
   if (!press || e.pointerId !== press.pointer) return;
-  press = null;
   const d = drag.value;
+  clear();
   if (!d) return;
   swallowClick = true;
-  drag.value = null;
   // Back in its own place, the card's transition takes it there.
   if (d.to === d.from) return;
   const ids = moved(pinned.value.map((c) => c.id), d.from, d.to);
@@ -165,8 +171,7 @@ async function release(e: PointerEvent) {
 }
 function cancel(e: PointerEvent) {
   if (!press || e.pointerId !== press.pointer) return;
-  press = null;
-  drag.value = null;
+  clear();
 }
 function openPin(card: ManifestCard) {
   if (swallowClick) { swallowClick = false; return; }

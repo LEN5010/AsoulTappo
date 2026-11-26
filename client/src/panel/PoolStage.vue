@@ -143,8 +143,10 @@ function measure() {
   }
   measurePeek();
 }
+/** One measuring in the next frame, while the stage is in use: a late call (the font loaded) after it was put away
+ * waits for the next activation, which measures anyway. */
 function schedule() {
-  if (!frame) frame = requestAnimationFrame(measure);
+  if (observing && !frame) frame = requestAnimationFrame(measure);
 }
 function connect() {
   observing = true;
