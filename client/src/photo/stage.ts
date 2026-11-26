@@ -6,7 +6,7 @@
 // One canvas for every visit, taken down a while after the last. Frames are drawn while something moves; what only
 // drifts (lamps, dust) is drawn at half the rate, and comes to rest when nobody has been there for a while.
 import type { StageArt, StageLook } from "./art";
-import { grid, picture, startProgram, texture, type GL, type Picture, type Vec2, type Vec3, type Vec4 } from "./gl";
+import { grid, picture, startProgram, texture, type GL, type Picture, type Uniforms, type Vec2, type Vec3, type Vec4 } from "./gl";
 import { clamp, lerp, smooth } from "./math";
 import { STAGE_FS, STAGE_VS } from "./shaders";
 import { createTimeline, E, type Ease, type Numbers } from "./time";
@@ -86,7 +86,18 @@ const DPR_MAX = 2;
 /** Drawn smaller after so many frames slower than this, step by step down to this part of its size. */
 const SLOW_MS = 26, SLOW_FRAMES = 40, STEP = 0.2, COARSE = 0.5;
 
-interface Set { art: StageArt; focus: WebGLTexture[]; depth: WebGLTexture }
+interface Set {
+  art: StageArt;
+  focus: WebGLTexture[];
+  stages: WebGLTexture[];
+  sheets: WebGLTexture[];
+  covers: WebGLTexture[];
+  depth: WebGLTexture;
+  /** A texel of each sheet, in parts of it. */
+  texels: Vec2[];
+}
+/** How much nearer the nearest piece is than the farthest. */
+const DEEP = 0.83;
 const REST: StageState = { focus: 0.6, veil: 0.6, play: 1, dolly: 0, lamps: 1, dev: 1, leak: 1, wide: 0 };
 
 let current: Promise<Stage | null> | null = null;
@@ -130,17 +141,23 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
 
   /* ---------------------------------------------------------------- the pictures */
   async function fetchAll(art: StageArt): Promise<Set | null> {
-    const pictures = await Promise.all([...art.focus, art.depth].map((url) => picture(url)));
+    const n = art.focus.length;
+    const urls = [...art.focus, ...art.stages, ...art.sheets, ...art.covers, art.depth];
+    const pictures = await Promise.all(urls.map((url) => picture(url)));
     const made: WebGLTexture[] = [];
-    for (const p of pictures) {
+    const texels: Vec2[] = [];
+    for (const [k, p] of pictures.entries()) {
       // One at a time, with room for a frame between two.
       await new Promise<void>((done) => setTimeout(done, 0));
       if (dead) return null;
-      made.push(texture(gl, p as Picture, { mips: made.length === 0 }));
+      // Of which kind and which picture it is: the sharpest of each with mips, for when it is drawn smaller.
+      const kind = Math.floor(k / n), sharp = k % n === 0;
+      if (kind === 2) texels.push([1 / p.width, 1 / p.height]);
+      made.push(texture(gl, p as Picture, { mips: kind < 4 && sharp, srgb: kind === 1 || kind === 2, single: kind === 3 }));
       if ("close" in p) p.close();
     }
-    const depth = made.pop()!;
-    return { art, focus: made, depth };
+    const of = (kind: number) => made.slice(kind * n, (kind + 1) * n);
+    return { art, focus: of(0), stages: of(1), sheets: of(2), covers: of(3), depth: made[4 * n], texels };
   }
   function load(art: StageArt): Promise<boolean> {
     let p = asked.get(art.id);
@@ -280,8 +297,14 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
     prog.tex("u_a", 0, set.focus[i]);
     prog.tex("u_b", 1, set.focus[i + 1]);
     prog.tex("u_far", 2, set.focus[steps]);
-    prog.tex("u_depth", 3, set.depth);
+    prog.tex("u_near", 3, set.depth);
     prog.tex("u_gone", 4, (gone ?? set).focus[steps]);
+    prog.tex("u_sa", 5, set.stages[i]);
+    prog.tex("u_sb", 6, set.stages[i + 1]);
+    prog.tex("u_la", 7, set.sheets[i]);
+    prog.tex("u_lb", 8, set.sheets[i + 1]);
+    prog.tex("u_ka", 9, set.covers[i]);
+    prog.tex("u_kb", 10, set.covers[i + 1]);
     const w = weights();
     const lamps = ([1, 2, 3] as const).map((k): Vec3 => {
       const v = w[k - 1] * (0.5 + 0.4 * lamp.tinted) * now.lamps;
@@ -297,9 +320,18 @@ function build(canvas: HTMLCanvasElement, gl: GL, prog: ReturnType<typeof startP
     });
     const play = now.play;
     const { title } = place;
+    const par: Vec2 = [at.x * PLAY[0] * play, at.y * PLAY[1] * play];
+    // How far the nearest piece has moved against the farthest, in device pixels: within the first the pictures as they
+    // are give way to their pieces laid together where each has moved to.
+    const apart = (Math.hypot(par[0] * kv[2], par[1] * kv[3]) * DEEP + Math.abs(now.dolly) * 0.5 * kv[2]) * dpr;
+    const { pieces } = set.art;
+    const cuts: Uniforms = {};
+    pieces.cuts.forEach((c, k) => Object.assign(cuts, { [`u_cut[${k}]`]: c.in, [`u_on[${k}]`]: c.on, [`u_deep[${k}]`]: c.near }));
     prog.set({
       u_res: [pw, ph], u_px: dpr, u_mix: f - i, u_kv: kv, u_floor: floor, u_side: place.side, u_low: low,
-      u_par: [at.x * PLAY[0] * play, at.y * PLAY[1] * play], u_dolly: now.dolly,
+      u_lay: smooth(0, 1, apart), u_sheet: pieces.sheet, u_cuts: pieces.cuts.length, u_texa: set.texels[i],
+      u_texb: set.texels[i + 1], ...cuts,
+      u_par: par, u_dolly: now.dolly,
       u_veil: now.veil, u_soft: clamp(now.focus), u_dev: now.dev, u_leak: now.leak, u_time: t,
       u_paper: place.paper, u_mist: look.mist, u_dark: look.dark, u_top: look.ground[0], u_bottom: look.ground[1],
       u_c1: lamps[0], u_c2: lamps[1], u_c3: lamps[2],
