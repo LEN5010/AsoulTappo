@@ -458,7 +458,8 @@ it("goes back into the room it was in once the server answers, and only into a r
   expect(r.roomId.value).toBe("old");
   const socket = Socket.all[0];
   socket.open();
-  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old" });
+  // Only into the room as it is: it may close between the answer and the join.
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
   socket.recv({ type: "joined", room: "old", you: "me", members: [] });
   expect(settings.rejoinRoom).toBe("old");
   // Once a run: going offline and back does not ask again.
@@ -516,6 +517,21 @@ it("takes a refused rejoin quietly and forgets the room", async () => {
   const socket = Socket.all[0];
   socket.open();
   socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
+  expect(r.lastError.value).toBe("");
+  expect(r.roomId.value).toBe("");
+  expect(settings.rejoinRoom).toBe("");
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(Socket.all).toHaveLength(1);
+});
+
+it("takes a room that closed before the join came quietly and forgets it", async () => {
+  const { settings, player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  const socket = Socket.all[0];
+  socket.open();
+  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
   expect(r.lastError.value).toBe("");
   expect(r.roomId.value).toBe("");
   expect(settings.rejoinRoom).toBe("");

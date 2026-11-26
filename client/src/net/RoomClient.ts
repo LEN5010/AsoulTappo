@@ -58,6 +58,11 @@ export interface JoinInfo {
   ddzMatch?: boolean;
   /** This client watches dou dizhu tables and knows watchers. */
   ddzWatch?: boolean;
+  /**
+   * Join only a room that has members now (going back to a room on start). Sent until the room lets this client in;
+   * the reconnects after that join the ordinary way, so a room a server restart emptied is made again.
+   */
+  onlyOpen?: boolean;
 }
 
 /** Minimal WebSocket shape so tests can inject a fake. */
@@ -291,6 +296,7 @@ export class RoomClient {
     switch (msg.type) {
       case "joined":
         this.joinPending = false;
+        if (this.joinInfo) delete this.joinInfo.onlyOpen;
         // A server that knows packed motion says which version it speaks; every other one keeps hearing and
         // sending full poses. Versions 3 and 4 only add `motion_edges` and `room_tick`, read below whatever was agreed.
         this.motionV2 = (msg.motionVersion ?? 1) >= 2;
@@ -412,7 +418,8 @@ export class RoomClient {
           break;
         }
         // A full room, or a join the server rejected as invalid, is permanent for this attempt: stop retrying.
-        // Being removed by the host or refused by a public room also comes as room_full, with a reason.
+        // Being removed by the host, refused by a public room or finding the room gone (onlyOpen) also comes as
+        // room_full, with a reason.
         if (msg.code === "room_full" || (msg.code === "bad_message" && this.joinPending)) this.stop(true);
         this.events.onError(msg.code === "room_full" && msg.reason ? msg.reason : msg.code, msg.message);
         break;

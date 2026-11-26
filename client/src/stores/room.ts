@@ -305,8 +305,8 @@ const events: RoomEvents = {
   },
 };
 
-/** Errors after which the room client stops instead of reconnecting. */
-const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save"]);
+/** Errors after which the room client stops instead of reconnecting. room_closed answers only a rejoin's join. */
+const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save", "room_closed"]);
 
 function errorText(code: string, message: string): string {
   switch (code) {
@@ -787,7 +787,11 @@ export async function createRoom(): Promise<string> {
   return data.room;
 }
 
-export function joinRoom(room: string): void {
+/**
+ * Join [room], replacing any room joined or being joined. [opts.rejoin]: this is the join that goes back to the room
+ * of the last run (rejoinOnStart): it goes only into the room as it is.
+ */
+export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
   if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
   const id = room.trim();
   if (!id || STANDALONE) return;
@@ -805,6 +809,7 @@ export function joinRoom(room: string): void {
     ddz: true,
     ddzMatch: true,
     ddzWatch: true,
+    ...(opts.rejoin ? { onlyOpen: true } : {}),
   });
 }
 
@@ -865,7 +870,7 @@ async function rejoinLast(): Promise<void> {
   if (answer === "closed") settings.rejoinRoom = "";
   if (answer !== "open") return;
   rejoining = true;
-  joinRoom(id);
+  joinRoom(id, { rejoin: true });
 }
 
 /** Host only: list the room publicly or take it off the list. */
