@@ -82,3 +82,54 @@ it("stays idle for what partners do among themselves and wakes for what reaches 
   socket.recv({ type: "poke", from: "friend", to: "me", quiet: false });
   expect(activity.renderActive.value).toBe(true);
 });
+
+it("keeps a partner's own loops playing while the partner keeps tapping, however long this desk is idle", async () => {
+  const { effectScope, ref } = await import("vue");
+  /** An endless animation, as a second form's loop frames run (pet/PetView.vue `.loop img`). */
+  const endless = () => ({
+    playState: "running" as AnimationPlayState,
+    effect: { getComputedTiming: () => ({ iterations: Infinity }) },
+    pause() { this.playState = "paused"; },
+    play() { this.playState = "running"; },
+  });
+  const partnerLoop = endless();
+  const ownDecoration = endless();
+  // The desk's idle clock pauses every endless animation on the page (stores/activity.ts).
+  vi.stubGlobal("document", {
+    hidden: false, getAnimations: () => [partnerLoop, ownDecoration], createElement: () => ({}),
+    addEventListener: () => {}, removeEventListener: () => {},
+  });
+  const { activity, socket, r } = await setup();
+  const { usePartnerLoops } = await import("../pet/partnerLoops");
+  const pet = ref({ getAnimations: () => [partnerLoop] });
+  const scope = effectScope();
+  scope.run(() => usePartnerLoops(pet, () => true, () => r.members.get("friend")!.pulse));
+
+  for (let i = 1; i <= 40; i++) {
+    await vi.advanceTimersByTimeAsync(1000);
+    socket.recv({ type: "tap", id: "friend", count: 1, total: i });
+    socket.recv({ type: "pong" });
+  }
+  await vi.advanceTimersByTimeAsync(0);
+  expect(activity.renderActive.value).toBe(false);
+  expect(ownDecoration.playState).toBe("paused");
+  expect(partnerLoop.playState).toBe("running");
+
+  // Quiet as long as the desk: it rests too. The room stays connected meanwhile.
+  for (let i = 0; i < 31; i++) {
+    await vi.advanceTimersByTimeAsync(1000);
+    socket.recv({ type: "pong" });
+  }
+  expect(partnerLoop.playState).toBe("paused");
+  // Taps again: it plays again, the desk's own decoration still resting.
+  socket.recv({ type: "tap", id: "friend", count: 1, total: 41 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(partnerLoop.playState).toBe("running");
+  expect(ownDecoration.playState).toBe("paused");
+  // Input on this desk wakes everything.
+  activity.noteActivity();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(ownDecoration.playState).toBe("running");
+  expect(partnerLoop.playState).toBe("running");
+  scope.stop();
+});

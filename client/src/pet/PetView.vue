@@ -14,6 +14,7 @@ import type { EmoteFrame } from "./EmotePlayer";
 import type { ComboFrame } from "./TapCombo";
 import { SkinForm } from "./SkinForm";
 import { pawPainter, type PawPose } from "./pawPaint";
+import { usePartnerLoops } from "./partnerLoops";
 
 const props = withDefaults(
   defineProps<{
@@ -86,7 +87,13 @@ watch([() => props.motionId, () => props.scale, assets, active, inView, root], (
   const el = root.value;
   if (!props.motionId || !el || !active.value || !inView.value) return;
   const paint = pawPainter(el, props.scale);
-  stopMotion = remoteMotion.subscribe(props.motionId, (pose) => paint(pose, pose.keyDown));
+  // The first paint is the pose held when subscribing; the ones after it are the member moving.
+  let held = true;
+  stopMotion = remoteMotion.subscribe(props.motionId, (pose) => {
+    paint(pose, pose.keyDown);
+    if (!held) partnerLoops.note();
+    held = false;
+  });
 }, { flush: "post" });
 onBeforeUnmount(() => { stopMotion?.(); visibility?.disconnect(); });
 const s = computed(() => props.scale);
@@ -161,6 +168,9 @@ const reachStyle = computed(() => {
   if (width <= 0) return null;
   return { left: `${edge}px`, bottom: `${(l.height - l.y - l.h) * k}px`, width: `${width}px`, height: `${l.h * k}px` };
 });
+
+// Another member's loop frames go on while that member taps, moves or changes form, the desk idle or not.
+const partnerLoops = usePartnerLoops(root, () => !!props.motionId, () => [props.pulse, formOn.value]);
 
 // ---- the cup after a drink of water
 const SIP_MS = 3200;

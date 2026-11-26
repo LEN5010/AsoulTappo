@@ -1,7 +1,9 @@
 // Two reasons to stop drawing. A window that is not on screen (hidden, minimized, covered where the
-// webview reports it) needs nothing painted. The desk that has shown nothing new for a while stops its
-// looping decoration (name plate videos and sweeps, endless CSS animations); a key, the mouse or anything
-// from the room starts it again. The panel never goes idle: a card video may be watched hands off.
+// webview reports it) needs nothing painted. The desk that has had nothing of its own for a while stops its
+// looping decoration (name plate videos and sweeps, endless CSS animations): a key, the mouse, or what the room
+// sends to this desk (a poke, its own wins, its own duel, dou dizhu) starts it again. Partners moving, tapping
+// and playing among themselves do not; their pets still draw it, and a partner's own loop frames go on with
+// that partner's activity (pet/partnerLoops.ts). The panel never goes idle: a card video may be watched hands off.
 import { computed, ref, watch } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -26,8 +28,8 @@ function checkIdle() {
 }
 
 /**
- * Something visible happened: local input (the global hook keeps reporting it while the pet is hidden, where
- * it starts nothing) or a room event. One timer runs per idle period, however many calls arrive.
+ * Something for this desk happened: local input (the global hook keeps reporting it while the pet is hidden, where
+ * it starts nothing) or a room event that reaches it. One timer runs per idle period, however many calls arrive.
  */
 export function noteActivity() {
   if (!idles || !windowVisible.value) return;
