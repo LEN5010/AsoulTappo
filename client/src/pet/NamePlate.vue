@@ -11,6 +11,7 @@ import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
 import { getPlate, motionArt, plateArt, sweepArt, sweepFrames, panCycle, videoFace, type ArtBox } from "./plates";
 import { followVideo } from "./plateVideo";
+import { useInView } from "./inView";
 
 const props = withDefaults(
   /** `card` is the plate id: a big hidden card's id or a manifest plate's. */
@@ -39,8 +40,11 @@ const artSrc = computed(() =>
   sweep.value?.src ?? (series.value ? assetUrl(series.value.poster) : card.value ? assetUrl(card.value.thumb) : ""));
 const videoSrc = computed(() => series.value?.video ?? card.value?.video ?? null);
 const pageActive = usePageActive();
-// The video and the sweep loop for as long as they are let: they stop with the idle desk too.
-const moving = computed(() => pageActive.value && renderActive.value && !props.still && !reducedMotion.value);
+const root = ref<HTMLElement>();
+/** Watched only on a plate that moves: off screen (a partner past the screen's side) its video is not decoded. */
+const inView = useInView(root, () => !props.still && (!!videoSrc.value || !!sweep.value));
+// The video and the sweep loop for as long as they are let: they stop with the idle desk and off screen too.
+const moving = computed(() => pageActive.value && renderActive.value && !props.still && !reducedMotion.value && inView.value);
 const playing = computed(() => !!videoSrc.value && moving.value);
 
 const canvas = ref<HTMLCanvasElement>();
@@ -90,7 +94,7 @@ const px = (n: number) => `${n}px`;
 
 <template>
   <div
-    v-if="plate && stillArt" class="plate frame-gold"
+    v-if="plate && stillArt" ref="root" class="plate frame-gold"
     :style="{ width: px(width), height: px(height), '--r': px(Math.round(height * 0.27)) }"
   >
     <div class="win" :class="{ sweep: !!sweep }">
