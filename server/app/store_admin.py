@@ -56,8 +56,8 @@ class AdminStore(_StoreState):
         with self._lock:
             self._db.execute("DELETE FROM room_restore")
             self._db.executemany(
-                "INSERT INTO room_restore (room, public, host, banned, saved) VALUES (?,?,?,?,?)",
-                [(r["room"], int(r["public"]), r["host"], json.dumps(r["banned"]), ts) for r in rooms])
+                "INSERT INTO room_restore (room, public, host, banned, saved, name) VALUES (?,?,?,?,?,?)",
+                [(r["room"], int(r["public"]), r["host"], json.dumps(r["banned"]), ts, r["name"]) for r in rooms])
             self._commit()
 
     def take_rooms(self) -> list[dict[str, Any]]:
@@ -67,7 +67,7 @@ class AdminStore(_StoreState):
             self._db.execute("DELETE FROM room_restore")
             self._commit()
         return [{"room": r["room"], "public": bool(r["public"]), "host": r["host"], "banned": json.loads(r["banned"]),
-                 "saved": r["saved"]} for r in rows]
+                 "saved": r["saved"], "name": r["name"]} for r in rows]
 
     def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0,
                       auto: int = 0, injected: int = 0) -> None:

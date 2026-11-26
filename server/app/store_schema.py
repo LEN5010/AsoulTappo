@@ -204,13 +204,14 @@ CREATE TABLE IF NOT EXISTS room_samples (
   public INTEGER NOT NULL
 );
 -- Rooms as the server left them when it stopped (see RoomManager.snapshot); read back and emptied at the next start.
--- host: the host's save; banned: JSON list of the saves the host removed.
+-- host: the host's save; banned: JSON list of the saves the host removed; name: the room's name as typed.
 CREATE TABLE IF NOT EXISTS room_restore (
   room TEXT PRIMARY KEY,
   public INTEGER NOT NULL,
   host TEXT,
   banned TEXT NOT NULL,
-  saved REAL NOT NULL
+  saved REAL NOT NULL,
+  name TEXT NOT NULL DEFAULT ''
 );
 -- Server-wide counts per China day (room joins, pokes, profile views, emotes, duel invites, cheer rounds).
 CREATE TABLE IF NOT EXISTS daily_counts (
