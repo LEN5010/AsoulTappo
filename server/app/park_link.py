@@ -230,8 +230,8 @@ class ParkLink:
 
     def _move(self, st: Store, row: dict[str, Any], seq: int, a: int, b: int, t: int | None,
               now: float) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        """In move's transaction: the game after the pair and the minimal reply, None as the reply when the pair
-        cleared the board and settled the game."""
+        """In move's transaction: the minimal reply with the row as it was read, or the settled game after the pair
+        and None as the reply when the pair cleared the board."""
         events = json.loads(row["events"])
         n = len(events)
         if seq < 0 or seq > n:
@@ -265,11 +265,13 @@ class ParkLink:
             board = list(shuffle(board, rows, cols, self.park.game.rng))
             ev["shuffle"] = board
         events.append(ev)
-        st.update_park_link(row["id"], _dump(board), _dump(events), cleared)
-        row = {**row, "board": _dump(board), "events": _dump(events), "cleared": cleared}
-        if cleared >= row["total"]:
-            return self._settle(st, row, "clear", now), None
-        return row, self._reply(cleared, ev)
+        board_json, events_json = _dump(board), _dump(events)
+        st.update_park_link(row["id"], board_json, events_json, cleared)
+        if cleared < row["total"]:
+            # move reads the row only once the game is settled.
+            return row, self._reply(cleared, ev)
+        row = {**row, "board": board_json, "events": events_json, "cleared": cleared}
+        return self._settle(st, row, "clear", now), None
 
     @staticmethod
     def _reply(seq: int, ev: dict[str, Any]) -> dict[str, Any]:

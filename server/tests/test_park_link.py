@@ -313,6 +313,18 @@ def test_a_move_answers_little_and_a_resend_answers_the_same():
     assert json.loads(row["board0"]) == board
 
 
+def test_a_move_encodes_the_board_and_the_events_once(monkeypatch):
+    g, pl, clock, pid = setup()
+    game = pl.start(TOKEN)["link"]["game"]
+    import app.park_link as park_link
+    dumps = []
+    dump = park_link._dump
+    monkeypatch.setattr(park_link, "_dump", lambda v: dumps.append(v) or dump(v))
+    clock.t += 1
+    play_pair(pl, game, game["board"], 0)
+    assert len(dumps) == 2
+
+
 def test_a_resend_of_another_pair_or_a_gap_is_bad_seq():
     g, pl, clock, pid = setup()
     game = pl.start(TOKEN)["link"]["game"]
