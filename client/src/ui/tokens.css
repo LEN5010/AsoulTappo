@@ -322,7 +322,8 @@
  * corners: ::before is the lip plate, ::after the face. Under the pointer a key rises 1px on a lip 1px taller
  * and a white wash fades in over its face (--veil), so it brightens in its own colour; only the picked key
  * changes colour. --key-y + --key-lip-h stays 3px in every state, so the bottom edge never moves.
- * `.small` is the 28px key; `.on-coral` is the same key on a coral ground, picked in white.
+ * `.small` is the 28px key; `.on-coral` is the same key on a coral ground, picked in white; `.on-poster` is the
+ * same key on a series' key visual, clear over its dark and picked in white.
  */
 .ui-tab {
   --face: linear-gradient(180deg, #fff, var(--key-white-shade));
@@ -450,6 +451,47 @@
   --key-y: 0px;
   --key-lip-h: 0px;
   color: rgba(255, 255, 255, 0.72);
+  text-shadow: none;
+  cursor: default;
+}
+/* On a key visual: a faint light over a plate of the picture's own dark, so the lip below shows darker, lettered in
+ * white; picked, white and lettered in that dark on a lip of its mist. No coral touches the picture. The page sets
+ * --poster-dark and --poster-mist from the series' look. */
+.ui-tab.on-poster {
+  --poster-face: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+  --poster-lip: color-mix(in srgb, var(--poster-dark, #150d2e) 55%, transparent);
+  --face: var(--poster-face);
+  --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  --veil: rgba(255, 255, 255, 0.14);
+  --lip: var(--poster-lip);
+  --lip-shadow: 0 4px 10px -3px color-mix(in srgb, var(--poster-dark, #150d2e) 45%, transparent);
+  --focus: #fff;
+  color: #fff;
+  text-shadow: 0 1px 6px color-mix(in srgb, var(--poster-dark, #150d2e) 60%, transparent);
+}
+.ui-tab.on-poster:hover:not(:disabled):not(.on) {
+  color: #fff;
+}
+.ui-tab.on-poster:active:not(:disabled):not(.on) {
+  --lip-shadow: 0 1px 2px -1px color-mix(in srgb, var(--poster-dark, #150d2e) 50%, transparent);
+}
+/* The picked key stays white while the row waits. */
+.ui-tab.on-poster.on {
+  --face: linear-gradient(180deg, #fff, color-mix(in srgb, var(--poster-mist, #cca1fa) 10%, #fff));
+  --face-inset: inset 0 1px 0 #fff;
+  --lip: color-mix(in srgb, var(--poster-mist, #cca1fa) 60%, #fff);
+  --lip-shadow: 0 2px 6px -2px color-mix(in srgb, var(--poster-dark, #150d2e) 60%, transparent);
+  color: var(--poster-dark, #150d2e);
+  text-shadow: none;
+}
+.ui-tab.on-poster:disabled:not(.on) {
+  --face: rgba(255, 255, 255, 0.1);
+  --face-inset: inset 0 0 0 transparent;
+  --lip: transparent;
+  --lip-shadow: none;
+  --key-y: 0px;
+  --key-lip-h: 0px;
+  color: rgba(255, 255, 255, 0.6);
   text-shadow: none;
   cursor: default;
 }

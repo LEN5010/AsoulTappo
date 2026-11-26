@@ -200,7 +200,9 @@ async function nextBatch() {
         v-if="photos" key="photocards" :series="shopSeries" :shelf="shelfIds" :busy="photoBusy" :paused="!!photoOver"
         @inspect="photoOver = { ...$event, kind: 'card' }" @album="openAlbum" @pick="pickSeries"
       >
-        <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="photoBusy" @update:model-value="ui.pool = $event" /></template>
+        <template #switch="{ ground }">
+          <PoolTabs :model-value="poolId" :pools="pools" :ground="ground" :disabled="photoBusy" @update:model-value="ui.pool = $event" />
+        </template>
       </PhotoStage>
       <BannerStage
         v-else-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
