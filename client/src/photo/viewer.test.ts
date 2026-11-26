@@ -4,10 +4,17 @@ import { seriesArt, type CardInfo } from "./art";
 import type { Face } from "./shelf";
 
 /** Textures made from each picture, and those there are now. */
-const io = vi.hoisted(() => ({ made: new Map<string, number>(), live: new Set<object>(), url: "" }));
+const io = vi.hoisted(() => ({
+  made: new Map<string, number>(), live: new Set<object>(),
+  /** A picture that comes once this resolves. */
+  late: null as null | { url: string; come: Promise<void> },
+}));
 vi.mock("./gl", async (actual) => ({
   ...await actual<typeof import("./gl")>(),
-  picture: async (url: string) => ({ width: 4, height: 4, url, close() {} }),
+  picture: async (url: string) => {
+    if (io.late?.url === url) await io.late.come;
+    return { width: 4, height: 4, url, close() {} };
+  },
   texture: (_gl: unknown, source: { url?: string } | null) => {
     const t = { url: source?.url ?? "" };
     if (t.url) io.made.set(t.url, (io.made.get(t.url) ?? 0) + 1);
@@ -71,6 +78,7 @@ beforeEach(() => {
   vi.resetModules();
   io.made.clear();
   io.live.clear();
+  io.late = null;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -117,6 +125,24 @@ describe("a card looked at", () => {
     expect(kit.faces(infoOf(faces[1]))).not.toBeNull();
     expect(drawn.length).toBeGreaterThan(100);
     expect(drawn.filter((d) => !d.faces)).toEqual([]);
+    view.dispose();
+  });
+
+  it("lets go of a card paged past quickly whose textures came after the one paged to", async () => {
+    const { kit, view, run, settled } = await setup(true);
+    view.open(faces[0], { near: near(0) });
+    await run(100);
+    let come!: () => void;
+    io.late = { url: infoOf(faces[1]).front[0], come: new Promise<void>((done) => { come = done; }) };
+    for (let i = 1; i <= 5; i++) view.change(faces[i], 1, near(i));
+    await run(100);
+    expect(kit.faces(infoOf(faces[5]))).not.toBeNull();
+    come();
+    await settled();
+    await run(100);
+    const front = infoOf(faces[1]).front[0];
+    expect(io.made.get(front)).toBe(1);
+    expect([...io.live].some((t) => (t as { url: string }).url === front)).toBe(false);
     view.dispose();
   });
 

@@ -126,7 +126,9 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
     wanted = face;
     beside = near;
     void load(face).then(() => {
-      if (dead || mine !== round) return;
+      if (dead) return;
+      // Another was asked for meanwhile: this one's textures may have come after it.
+      if (mine !== round) return recycle();
       const c = make(face), to = { ...c.p };
       card = c;
       if (pen) c.model.signT = -1;
@@ -150,7 +152,8 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
     wanted = face;
     beside = near;
     void load(face).then(async () => {
-      if (dead || mine !== round) return;
+      if (dead) return;
+      if (mine !== round) return recycle();
       const was = card;
       if (!was || calm) {
         card = make(face);
