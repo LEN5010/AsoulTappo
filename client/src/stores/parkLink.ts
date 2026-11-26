@@ -14,6 +14,7 @@
 // go, its message shows and nothing is asked again until the page asks (loadLink, startLink).
 import { computed, ref, shallowRef, watch } from "vue";
 import { STANDALONE } from "../edition";
+import type { ParkState } from "../net/api";
 import { toHttpBase } from "../net/protocol";
 import { EMPTY, applyShift, findPair, removePair } from "../panel/park/link";
 import { parkTry, type ParkError } from "./park";
@@ -64,8 +65,8 @@ export interface LinkState {
   last: LinkResult | null;
 }
 
-/** A full answer: the state, and the result when a game has just been settled. */
-interface LinkAnswer { link: LinkState; result?: LinkResult; settled?: boolean }
+/** A full answer: the state, and the result when a game has just been settled; the status and park come with it. */
+interface LinkAnswer { link: LinkState; result?: LinkResult; settled?: boolean; park?: ParkState }
 /** A move's answer: the moves accepted and pairs cleared, or a full answer once the game is settled. */
 type MoveAnswer = Partial<LinkAnswer> & { seq?: number; cleared?: number; shuffle?: number[] };
 /** `t`: milliseconds from the game's start to the pair, by the server's clock; fixed when the pair is taken. */
@@ -152,6 +153,8 @@ let anchor: { id: number; server: number; local: number; last: number } | null =
 let waiters: (() => void)[] = [];
 /** Games known settled, latest last: an answer from before that still has one in play is out of date. */
 let settledIds: number[] = [];
+/** The load on its way and the epoch it was asked in: loads asked meanwhile in that epoch share its answer. */
+let loading: { epoch: number; done: Promise<Loaded> } | null = null;
 
 function readJson<T>(key: string): T | null {
   try {
@@ -295,20 +298,47 @@ function closeLink(e: ParkError): void {
   linkError.value = messageOf(e);
 }
 
+interface Loaded { ok: boolean; park: ParkState | null }
+const parkOf = (d: LinkAnswer | undefined) => (d?.park && typeof d.park === "object" ? d.park : null);
+
+function load(): Promise<Loaded> {
+  used = true;
+  if (loading?.epoch === epoch) return loading.done;
+  const mine = epoch;
+  const done = (async (): Promise<Loaded> => {
+    const r = await parkTry<LinkAnswer>("GET", "/api/park/link");
+    if (!r.ok) {
+      if (mine === epoch) {
+        if (linkOff(r.error)) closeLink(r.error);
+        else if (r.error.code !== "stale") linkError.value = messageOf(r.error);
+      }
+      return { ok: false, park: null };
+    }
+    if (mine === epoch) {
+      linkError.value = "";
+      if (r.data?.link) take(r.data.link);
+    }
+    return { ok: true, park: parkOf(r.data) };
+  })();
+  const entry = { epoch: mine, done };
+  loading = entry;
+  void done.finally(() => {
+    if (loading === entry) loading = null;
+  });
+  return done;
+}
+
 /** Loads today's games. false when the request failed (linkError says why). */
 export async function loadLink(): Promise<boolean> {
-  used = true;
-  const mine = epoch;
-  const r = await parkTry<LinkAnswer>("GET", "/api/park/link");
-  if (mine !== epoch) return r.ok;
-  if (!r.ok) {
-    if (linkOff(r.error)) closeLink(r.error);
-    else if (r.error.code !== "stale") linkError.value = messageOf(r.error);
-    return false;
-  }
-  linkError.value = "";
-  if (r.data?.link) take(r.data.link);
-  return true;
+  return (await load()).ok;
+}
+
+/**
+ * Loads today's games for the park page, which then needs no read of its own: the park state that came with them,
+ * null when the request failed. A load asked meanwhile (the stall coming into sight) shares the request.
+ */
+export async function refreshLink(): Promise<ParkState | null> {
+  return (await load()).park;
 }
 
 /**
@@ -557,6 +587,7 @@ export function resetLink(): void {
   linkError.value = "";
   accepted = 0;
   settledIds = [];
+  loading = null;
 }
 
 // ---------------------------------------------------------------- the store follows the save

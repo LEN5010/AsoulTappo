@@ -7,11 +7,13 @@
 // that one status only); when the park is shown at that moment, +1 rises into the coins and 阿草 takes it. A server
 // that still waits for the first visit of the day (`gift` in the park's state) is asked for it here. While the page is
 // open it loads again with the status every RELOAD_MS at most: race and lottery prizes, the pool and a new day change
-// without coins moving. The fifth page, tile matching, shows on servers whose economy has it.
+// without coins moving. The fifth page, tile matching, shows on servers whose economy has it; between its games that
+// reload reads its state, which carries the park, instead (one request for both).
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { economy } from "../stores/economy";
 import { status } from "../stores/player";
 import { claimGift, loadPark, noPark, park, parkError } from "../stores/park";
+import { linkPlaying, linkState, refreshLink } from "../stores/parkLink";
 import { reducedMotion } from "../stores/theme";
 import { ACHAO } from "../ui/achao";
 import Icon from "../ui/Icon.vue";
@@ -72,6 +74,8 @@ const hostKind = computed(() => (!noPark.value && !flashedHost.value && entry.va
 let active = false;
 let entering = false;
 let loadedAt = 0;
+/** Tile matching is on show between games, its state loaded: its read brings the park (a closed one reads the park). */
+const linkReads = () => tab.value === "link" && !!economy.value?.park?.link && !linkPlaying.value && !!linkState.value;
 
 function celebrateGift(n: number) {
   popCoins(n);
@@ -95,7 +99,7 @@ async function enter() {
   entering = true;
   loadedAt = Date.now();
   try {
-    const state = await loadPark();
+    const state = (linkReads() ? await refreshLink() : null) ?? await loadPark();
     // Being offline already shows elsewhere; a refusal from the server shows here.
     const failed = state || park.value ? null : parkError.value;
     loadError.value = failed && failed.status > 0 ? failed.message : "";

@@ -701,3 +701,28 @@ describe("park link answers that come late", () => {
     expect(L.linkGame.value!.cleared).toBe(1);
   });
 });
+
+describe("park link refresh between games", () => {
+  const park = { coins: 3, unlocked: true, gift: false };
+
+  it("reads the link once for the park page and the stall together and hands back the park", async () => {
+    const L = await import("./parkLink");
+    const page = L.refreshLink();
+    const stall = L.loadLink();
+    expect(calls).toHaveLength(1);
+    calls[0]!.answer(ok({ player: "A", shards: 1, park, link: state(null, { played: 0 }) }));
+    expect(await page).toEqual(park);
+    expect(await stall).toBe(true);
+    expect(L.linkState.value!.played).toBe(0);
+  });
+
+  it("hands back no park when the read fails", async () => {
+    const L = await import("./parkLink");
+    const page = L.refreshLink();
+    calls[0]!.answer(fail(0, "offline"));
+    expect(await page).toBeNull();
+    // A later read is a request of its own.
+    void L.loadLink();
+    expect(calls).toHaveLength(2);
+  });
+});

@@ -11,7 +11,6 @@ import * as sfx from "../../audio/sfx";
 import { assetUrl } from "../../asset";
 import { emoteCover, getEmote } from "../../manifest";
 import { economy } from "../../stores/economy";
-import { park } from "../../stores/park";
 import { online, shards } from "../../stores/player";
 import {
   dismissResult, finishLink, linkError, linkFinishing, linkGame, linkHintsLeft, linkPlaying, linkResult, linkShownResult,
@@ -35,7 +34,6 @@ const ARM_MS = 2500;
 const REACT_MS = 1800;
 /** Tiles keep this pitch at least (some 30 pixels a tile); the floor keeps room for the board at it. */
 const MIN_PITCH = 32;
-const RELOAD_MS = 15000;
 const fmt = (n: number) => n.toLocaleString("en-US");
 
 const calm = computed(() => reducedMotion.value);
@@ -262,22 +260,14 @@ watch(() => [visible.value, linkShownResult.value] as const, ([shown, r]) => {
   if (shown && r) showResult(r);
 }, { immediate: true });
 
-// ---- the page comes and goes; another save or server is followed by the store
-let loadedAt = 0;
+// ---- the page comes and goes; another save or server is followed by the store. Between games the park page's
+// regular reload reads this page's state, with the park in it (ParkPage, refreshLink).
 function enter() {
   if (active.value) return;
   active.value = true;
   sfx.prime();
-  loadedAt = Date.now();
   void loadLink();
 }
-// The park page loads again every so often while shown (a new day, a game settled elsewhere): so does this one
-// between games.
-watch(park, () => {
-  if (!active.value || linkPlaying.value || Date.now() - loadedAt < RELOAD_MS) return;
-  loadedAt = Date.now();
-  void loadLink();
-});
 // A server that turned the link off is asked again only when the page comes back or its economy changes.
 watch(() => JSON.stringify(cfg.value), (key, was) => {
   if (active.value && cfg.value && key !== was) void loadLink();
