@@ -62,6 +62,19 @@ describe("economy", () => {
     store.setEconomy(exampleEconomy, undefined, 1_070_000);
     expect(store.economyDue(1_090_000)).toBe(false);
   });
+
+  it("writes economy cache to localStorage only in the Tauri main window", async () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: "?window=panel" } });
+    const panel = await fresh();
+    panel.store.setEconomy(exampleEconomy);
+    expect(panel.store.economy.value?.resonance.cost).toBe(exampleEconomy.resonance.cost);
+    expect(panel.stored.has(ECONOMY_KEY)).toBe(false);
+
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: "" } });
+    const main = await fresh();
+    main.store.setEconomy(exampleEconomy);
+    expect(main.stored.has(ECONOMY_KEY)).toBe(true);
+  });
 });
 
 describe("Api.economy", () => {

@@ -43,9 +43,14 @@ const view = (): CaptureView => ({
 
 export async function startCapture(): Promise<() => void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let latest: CaptureView | null = null;
   const send = () => {
+    clearTimeout(timer);
     timer = undefined;
-    if (settings.captureOpen) void emitTo("capture", "capture:view", view());
+    if (!settings.captureOpen) return;
+    const payload = latest ?? view();
+    latest = null;
+    void emitTo("capture", "capture:view", payload);
   };
   // The window asks once it listens; its close button reports here so the setting follows; the size it is
   // dragged to is the size it opens with next time.
@@ -58,8 +63,24 @@ export async function startCapture(): Promise<() => void> {
     sized = setTimeout(() => { settings.captureW = Math.round(w); settings.captureH = Math.round(h); }, 400);
   }, { target: "main" });
   // The count and the combo change with every tap: what changed within a frame goes out together.
-  const stopView = watch(view, () => { if (settings.captureOpen) timer ??= setTimeout(send, 16); });
+  const stopView = watch(
+    () => (settings.captureOpen ? view() : null),
+    (next) => {
+      latest = next;
+      if (!next) {
+        clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      timer ??= setTimeout(send, 16);
+    },
+  );
   const stopOpen = watch(() => settings.captureOpen, (open) => {
+    if (!open) {
+      latest = null;
+      clearTimeout(timer);
+      timer = undefined;
+    }
     invoke("set_capture_window", { open, width: settings.captureW, height: settings.captureH })
       .catch(() => { if (open) settings.captureOpen = false; });
   }, { immediate: true });

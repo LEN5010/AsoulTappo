@@ -161,4 +161,30 @@ describe("desk settings persistence", () => {
     page.dispatchEvent(new Event("pagehide"));
     expect(JSON.parse(stored.get(key)!).feedbackText).toBe("草稿已改");
   });
+
+  it("writes 200 ms after the last edit and flushes pending edits on hide or close", async () => {
+    const doc = Object.assign(new EventTarget(), { hidden: false });
+    vi.stubGlobal("document", doc);
+    const { settings } = await import("./settings");
+    const write = vi.spyOn(stored, "set");
+    settings.petX = -20;
+    await vi.advanceTimersByTimeAsync(100);
+    settings.petX = -35;
+    await vi.advanceTimersByTimeAsync(199);
+    expect(write).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(stored.get(key)!).petX).toBe(-35);
+
+    settings.petX = -40;
+    doc.hidden = true;
+    doc.dispatchEvent(new Event("visibilitychange"));
+    expect(JSON.parse(stored.get(key)!).petX).toBe(-40);
+    settings.petX = -45;
+    page.dispatchEvent(new Event("beforeunload"));
+    expect(JSON.parse(stored.get(key)!).petX).toBe(-45);
+    page.dispatchEvent(new Event("pagehide"));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(write).toHaveBeenCalledTimes(3);
+  });
 });
