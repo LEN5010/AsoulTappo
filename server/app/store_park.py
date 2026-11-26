@@ -62,11 +62,13 @@ class ParkStore(_StoreState):
         return int(row["n"])
 
     def grant_park_gift(self, pid: str, day: str, coins: int, min_taps: int) -> bool:
-        """Gives the save [coins] and marks [day]'s gift given, when it has [min_taps] taps and no gift that day.
-        One conditional update and its coin_ledger row, committed together (or in the caller's transaction)."""
+        """Gives the save [coins] and marks [day]'s gift given, when it has [min_taps] taps and no gift that day or
+        later. One conditional update and its coin_ledger row, committed together (or in the caller's transaction).
+        Days are YYYY-MM-DD and '' sorts first, so the gift day only moves forward: a late request that read the day
+        before midnight cannot set it back and let the new day's gift come twice."""
         with self._lock:
             done = self._db.execute(
-                "UPDATE players SET coins = coins + ?, gift_day = ? WHERE id = ? AND gift_day != ? AND taps_total >= ?",
+                "UPDATE players SET coins = coins + ?, gift_day = ? WHERE id = ? AND gift_day < ? AND taps_total >= ?",
                 (coins, day, pid, day, min_taps)).rowcount
             if done:
                 self._db.execute(
