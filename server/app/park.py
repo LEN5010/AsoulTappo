@@ -23,8 +23,9 @@ COIN_SOURCES = ("buy", "gift", "stamp", "scratch_again", "race_refund", "race_pr
 # park_counters key of the lottery's top prize pool: lottery.pool.seed when absent, fed by every coin spent in the park
 # (spend), paid out by the lottery's draw.
 POOL = "lottery_pool"
-# News older than this goes on the next start.
+# News retention and how many rows a cleanup can delete at once.
 NEWS_KEEP_DAYS = 7
+NEWS_PRUNE_BATCH = 1000
 # China days with coin rows the save's own ledger shows (GET /api/park/ledger).
 LEDGER_DAYS = 14
 
@@ -87,7 +88,7 @@ class Park:
         return {"days": days}
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
-        return {**self.game.status(token), "park": self.state(token), **extra}
+        return {**self.game.status(token, include_park=False), "park": self.state(token), **extra}
 
     # ----------------------------------------------------------------- buying
     def buy(self, token: str, count: int) -> dict[str, Any]:
@@ -194,4 +195,4 @@ class Park:
 
     def prune_news(self) -> int:
         g = self.game
-        return g.store.prune_park_news(g.now() - NEWS_KEEP_DAYS * 86400)
+        return g.store.prune_park_news(g.now() - NEWS_KEEP_DAYS * 86400, NEWS_PRUNE_BATCH)

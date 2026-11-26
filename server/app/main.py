@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
 import ipaddress
 import logging
 import os
@@ -14,13 +15,13 @@ from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
-from typing import Awaitable, Callable, Literal
+from typing import Awaitable, Callable, Literal, TypeVar
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 import starlette.websockets
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -46,7 +47,7 @@ from .models import (
 )
 from .moderation import Blocklist
 from .lottery import Lottery
-from .park import Park
+from .park import NEWS_PRUNE_BATCH, Park
 from .park_race import OddsChanged, Races, RaceView, room_message as race_room_message
 from .park_link import ParkLink
 from .park_scratch import ParkScratch
@@ -64,6 +65,17 @@ SAMPLE_SECONDS = 60
 # Background loops of the park's games (the race's schedule, the lottery's draw), each an async function that runs
 # until cancelled; a game appends its own where it is set up below.
 PARK_LOOPS: list = []
+# Queued statistics and upstream calls wait on the event loop, leaving workers for ordinary player requests.
+_admin_slots = asyncio.Semaphore(2)
+_board_slots = asyncio.Semaphore(2)
+_account_slots = asyncio.Semaphore(8)
+_lottery_slots = asyncio.Semaphore(2)
+_Result = TypeVar("_Result")
+
+
+async def _limited(slots: asyncio.Semaphore, fn: Callable[..., _Result], *args) -> _Result:
+    async with slots:
+        return await run_in_threadpool(fn, *args)
 
 
 async def _sample_rooms() -> None:
@@ -132,6 +144,10 @@ TAP_BURST = 75.0  # taps that may pile up while idle, a few seconds' worth
 PACKS_DIR = find_packs_dir()
 # ASOULTAPPO_ECONOMY: the economy file (app/economy.py); the server does not start without it.
 manifest = Manifest.load(PACKS_DIR / "manifest.json")
+# The manifest does not change while the server runs: its answer is encoded once and tagged for conditional requests.
+_manifest_body = JSONResponse(manifest.data).body
+_manifest_etag = f'"{hashlib.sha256(_manifest_body).hexdigest()}"'
+_manifest_headers = {"ETag": _manifest_etag, "Cache-Control": "public, no-cache"}
 # ASOULTAPPO_DB: sqlite file (default data/asoultappo.db, ":memory:" for throw-away runs)
 # ASOULTAPPO_GUARD: the file with the rules that tell automatic input from a hand (app/guard.py); none judges nothing.
 game = Game(Store(os.environ.get("ASOULTAPPO_DB", "data/asoultappo.db")), manifest,
@@ -167,6 +183,23 @@ park = Park(lambda: game, lambda nick: blocklist.mask(nick))
 _pruned = park.prune_news()
 if _pruned:
     print(f"pruned {_pruned} old park news", flush=True)
+
+
+async def _prune_park_news() -> None:
+    """Old park news goes NEWS_PRUNE_BATCH rows at a time: a minute apart while full batches go, else hourly."""
+    delay = 60
+    while True:
+        await asyncio.sleep(delay)
+        try:
+            n = await run_in_threadpool(park.prune_news)
+        except Exception:
+            log.exception("park news cleanup failed")
+            delay = 3600
+        else:
+            delay = 60 if n == NEWS_PRUNE_BATCH else 3600
+
+
+PARK_LOOPS.append(_prune_park_news)
 # park: scratch setup
 park_scratch = ParkScratch(park)
 _pruned = park_scratch.prune()
@@ -356,7 +389,7 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
     if accounts:
         if not _bearer(authorization):
             raise HTTPException(401, {"code": "account_required", "message": "登录账号后才能查看公开房间"})
-        await run_in_threadpool(_guard, _main_user, authorization)
+        await _authorized_user(authorization)
     return {"rooms": manager.public_rooms(PUBLIC_LIST_LIMIT)}
 
 
@@ -421,10 +454,24 @@ def _main_user(authorization: str) -> dict:
     return accounts.user_for(_bearer(authorization))
 
 
+async def _authorized_user(authorization: str) -> dict:
+    """The main-site user of [authorization]: a fresh cached answer at once, else a lookup that waits for one of the
+    _account_slots on the event loop rather than holding a worker thread."""
+    cached = accounts.cached_user(_bearer(authorization)) if accounts else None
+    if cached is not None:
+        return cached
+    return await _limited(_account_slots, _guard, _main_user, authorization)
+
+
 def _who(token: str, authorization: str) -> PlayerId:
     """The save a request acts on: the account's linked save, or the guest token's own save."""
-    if authorization:
-        pid = game.store.linked_player(_main_user(authorization)["id"])
+    return _save_of(token, _main_user(authorization) if authorization else None)
+
+
+def _save_of(token: str, user: dict | None) -> PlayerId:
+    """_who with the account's main-site [user] looked up already (None: the guest token's own save)."""
+    if user is not None:
+        pid = game.store.linked_player(user["id"])
         if pid is None:
             raise GameError("account_not_linked", "账号还没有桌宠存档")
         return PlayerId(pid)
@@ -587,26 +634,28 @@ class LoadoutBody(BaseModel):
 
 
 @app.get("/api/board")
-def api_board(order: Literal["cards", "score"] = "cards", who: PlayerId = Depends(player)) -> dict:
+async def api_board(order: Literal["cards", "score"] = "cards", who: PlayerId = Depends(player)) -> dict:
     """The collection board by cards (clients before the collection score) or by score; on a server with main-site
     accounts only saves linked to one are ranked."""
-    out = _guard(game.board, who, accounts is not None, order)
+    out = await _limited(_board_slots, _guard, game.board, who, accounts is not None, order)
     return {**out, "cards": [{**row, "nick": blocklist.mask(row["nick"])} for row in out["cards"]]}
 
 
 @app.get("/api/board/profile/{bid}")
-def api_board_profile(bid: str, showcase: int = Query(default=3, ge=0, le=16),
-                      who: PlayerId = Depends(player)) -> dict:
+async def api_board_profile(bid: str, showcase: int = Query(default=3, ge=0, le=16),
+                            who: PlayerId = Depends(player)) -> dict:
     """The showcase and progress of a save on the collection board's top rows. [showcase] is how many showcase cards
     the asker lays out (three, for a client from before 1.2.5)."""
-    out = _guard(game.board_profile, bid, accounts is not None, showcase)
+    out = await _limited(_board_slots, _guard, game.board_profile, bid, accounts is not None, showcase)
     game.tracker.count("board_profile")
     return out
 
 
 @app.get("/api/manifest")
-def api_manifest() -> dict:
-    return manifest.data
+async def api_manifest(if_none_match: str = Header(default="")) -> Response:
+    if any(tag.strip().removeprefix("W/") in ("*", _manifest_etag) for tag in if_none_match.split(",")):
+        return Response(status_code=304, headers=_manifest_headers)
+    return Response(_manifest_body, media_type="application/json", headers=_manifest_headers)
 
 
 @app.get("/api/economy")
@@ -881,9 +930,10 @@ class LotteryBody(BaseModel):
 
 
 @app.get("/api/park/lottery")
-def api_park_lottery(who: PlayerId = Depends(player)) -> dict:
+async def api_park_lottery(who: PlayerId = Depends(player)) -> dict:
     """Today's draw (hash, times, prizes, my numbers) and the last drawn day with my results."""
-    return _guard(lottery.state, who)
+    # A read that reaches draw time ahead of the background loop can settle the previous day.
+    return await _limited(_lottery_slots, _guard, lottery.state, who)
 
 
 @app.post("/api/park/lottery")
@@ -1066,15 +1116,18 @@ def _public_user(user: dict) -> dict:
 
 
 @app.get("/api/account")
-def api_account(authorization: str = Header(default="")) -> dict:
-    user = _guard(_main_user, authorization)
+async def api_account(authorization: str = Header(default="")) -> dict:
+    user = await _authorized_user(authorization)
+    return await run_in_threadpool(_account_view, user)
+
+
+def _account_view(user: dict) -> dict:
     pid = game.store.linked_player(user["id"])
     return {"user": _public_user(user), "save": game.save_summary(pid) if pid else None}
 
 
-def _link(token: str, authorization: str) -> dict:
+def _link(token: str, user: dict) -> dict:
     """Binds the account to this device's guest save, a new save, or reports two saves to choose from."""
-    user = _main_user(authorization)
     guest = player_id_for(token) if token else None
     with game.store.transaction() as st:
         linked = st.linked_player(user["id"])
@@ -1095,8 +1148,9 @@ def _link(token: str, authorization: str) -> dict:
 
 
 @app.post("/api/account/link")
-def api_account_link(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> dict:
-    return _guard(_link, x_player_token, authorization)
+async def api_account_link(x_player_token: str = Header(default=""), authorization: str = Header(default="")) -> dict:
+    user = await _authorized_user(authorization)
+    return await run_in_threadpool(_guard, _link, x_player_token, user)
 
 
 # ------------------------------------------------------------------ admin
@@ -1128,18 +1182,18 @@ async def admin_stats(days: int = Query(default=30, ge=1, le=180)) -> dict:
     # The rooms change on the event loop: counted here at one moment, the database read in the thread pool.
     rooms = len(manager.rooms)
     online = sum(len(r.peers) for r in manager.rooms.values())
-    out = await run_in_threadpool(game.admin_stats, days)
+    out = await _limited(_admin_slots, game.admin_stats, days)
     out["totals"]["rooms"] = rooms
     out["totals"]["online"] = online
     return out
 
 
 @app.get("/admin/accounts", dependencies=[Depends(admin)])
-def admin_accounts(ids: str | None = None, offset: int = Query(default=0, ge=0),
-                   limit: int = Query(default=20, ge=1, le=100)) -> dict:
+async def admin_accounts(ids: str | None = None, offset: int = Query(default=0, ge=0),
+                         limit: int = Query(default=20, ge=1, le=100)) -> dict:
     """[ids]: comma-separated main-site user ids to narrow to (the main site resolves its search)."""
     user_ids = None if ids is None else [i for i in ids.split(",") if i][:100]
-    return game.admin_accounts(user_ids, offset, limit)
+    return await _limited(_admin_slots, game.admin_accounts, user_ids, offset, limit)
 
 
 @app.post("/admin/accounts/{user_id}/shards", dependencies=[Depends(admin)])
@@ -1154,15 +1208,16 @@ def admin_unlink(user_id: str, body: ReasonBody | None = None, who: str = Depend
 
 
 @app.get("/admin/economy", dependencies=[Depends(admin)])
-def admin_economy(days: int = Query(default=14, ge=1, le=90), scope: Literal["all", "new"] = "all",
-                  new_days: int = Query(default=7, ge=1, le=30, alias="newDays")) -> dict:
-    return game.admin_economy(days, scope, new_days)
+async def admin_economy(days: int = Query(default=14, ge=1, le=90), scope: Literal["all", "new"] = "all",
+                        new_days: int = Query(default=7, ge=1, le=30, alias="newDays")) -> dict:
+    return await _limited(_admin_slots, game.admin_economy, days, scope, new_days)
 
 
 @app.get("/admin/saves", dependencies=[Depends(admin)])
-def admin_saves(q: str = Query(min_length=1, max_length=128), limit: int = Query(default=20, ge=1, le=50)) -> dict:
+async def admin_saves(q: str = Query(min_length=1, max_length=128),
+                      limit: int = Query(default=20, ge=1, le=50)) -> dict:
     """[q]: a main-site user id, or a player id prefix of 4-16 hex characters; both are tried."""
-    return game.admin_saves(q, limit)
+    return await _limited(_admin_slots, game.admin_saves, q, limit)
 
 
 @app.get("/admin/saves/{player}", dependencies=[Depends(admin)])
@@ -1215,9 +1270,9 @@ def admin_holds() -> dict:
 
 
 @app.get("/admin/insights", dependencies=[Depends(admin)])
-def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
+async def admin_insights(days: int = Query(default=30, ge=1, le=90)) -> dict:
     """New saves and returns, clients and collections of active saves, draws by rarity."""
-    return analytics.insights(game, days)
+    return await _limited(_admin_slots, analytics.insights, game, days)
 
 
 @app.get("/admin/online", dependencies=[Depends(admin)])
@@ -1225,13 +1280,13 @@ async def admin_online(days: int = Query(default=14, ge=1, le=90)) -> dict:
     """Room occupancy, interaction counts, duels and cheer rounds."""
     # As _sample_rooms: the room numbers on the event loop, which changes the rooms, the database in the thread pool.
     numbers = game.tracker.room_numbers(list(manager.rooms.values()))
-    return await run_in_threadpool(analytics.online, game, days, numbers)
+    return await _limited(_admin_slots, analytics.online, game, days, numbers)
 
 
 @app.get("/admin/anomalies", dependencies=[Depends(admin)])
-def admin_anomalies(day: date | None = Query(default=None)) -> dict:
+async def admin_anomalies(day: date | None = Query(default=None)) -> dict:
     """Saves whose taps look automated and the saves that gained the most shards on [day] (default today)."""
-    return analytics.anomalies(game, day.isoformat() if day else None)
+    return await _limited(_admin_slots, analytics.anomalies, game, day.isoformat() if day else None)
 
 
 @app.get("/admin/log", dependencies=[Depends(admin)])
@@ -1247,19 +1302,19 @@ class UpdateRewardBody(BaseModel):
 
 
 @app.get("/admin/update-rewards", dependencies=[Depends(admin)])
-def admin_update_rewards() -> dict:
-    return game.admin_update_rewards()
+async def admin_update_rewards() -> dict:
+    return await _limited(_admin_slots, game.admin_update_rewards)
 
 
 @app.post("/admin/update-rewards", dependencies=[Depends(admin)])
-def admin_add_update_reward(body: UpdateRewardBody, who: str = Depends(actor)) -> dict:
+async def admin_add_update_reward(body: UpdateRewardBody, who: str = Depends(actor)) -> dict:
     """Every save on [version] or newer can claim [shards] once, until the reward is ended."""
-    return _guard(game.admin_add_update_reward, body.version, body.shards, who)
+    return await _limited(_admin_slots, _guard, game.admin_add_update_reward, body.version, body.shards, who)
 
 
 @app.post("/admin/update-rewards/{reward_id}/end", dependencies=[Depends(admin)])
-def admin_end_update_reward(reward_id: int, who: str = Depends(actor)) -> dict:
-    return _guard(game.admin_end_update_reward, reward_id, who)
+async def admin_end_update_reward(reward_id: int, who: str = Depends(actor)) -> dict:
+    return await _limited(_admin_slots, _guard, game.admin_end_update_reward, reward_id, who)
 
 
 MAX_BLOCKED_WORDS = 20000
@@ -1553,17 +1608,32 @@ def _room_info(room_id: str) -> dict:
 def _room_identity(token: str | None, account_token: str | None) -> tuple[PlayerId | None, bool]:
     """Rooms resolve the same save as HTTP; an unknown identity joins without unlocks. The flag tells whether the
     join carried a valid main-site account token (with or without a linked save)."""
-    signed_in = False
-    if account_token and accounts:
-        try:
-            _main_user(f"Bearer {account_token}")
-            signed_in = True
-        except GameError:
-            pass
+    user = None
     try:
-        return _who(token or "", f"Bearer {account_token}" if account_token else ""), signed_in
+        if account_token:
+            user = _main_user(f"Bearer {account_token}")
+        return _save_of(token or "", user), user is not None
     except GameError:
-        return None, signed_in
+        return None, user is not None
+
+
+def _room_identity_of(token: str | None, user: dict) -> tuple[PlayerId | None, bool]:
+    """_room_identity for an account whose main-site [user] is known already."""
+    try:
+        return _save_of(token or "", user), True
+    except GameError:
+        return None, True
+
+
+async def _resolve_room_identity(token: str | None, account_token: str | None) -> tuple[PlayerId | None, bool]:
+    """_room_identity off the event loop. An account token with a fresh cached answer resolves its save at once; only
+    one the main site must be asked about waits for an upstream slot (_account_slots)."""
+    if account_token and accounts:
+        cached = accounts.cached_user(_bearer(f"Bearer {account_token}"))
+        if cached is not None:
+            return await run_in_threadpool(_room_identity_of, token, cached)
+        return await _limited(_account_slots, _room_identity, token, account_token)
+    return await run_in_threadpool(_room_identity, token, account_token)
 
 
 @app.websocket("/ws")
@@ -1621,7 +1691,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if not game.manifest.ddz:
                     await err("no_ddz", "这个服务器没有斗地主")
                     continue
-                who, _ = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
+                who, _ = await _resolve_room_identity(msg.token, msg.accountToken)
                 if who is None or not await run_in_threadpool(game.store.has_player, who):
                     # Only a save that is there plays (a token of none derives an id all the same, and the hello does
                     # not make one): a connection without one would only take room on the server.
@@ -1660,7 +1730,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 if peer is not None:
                     await err("already_joined")
                     continue
-                who, signed_in = await run_in_threadpool(_room_identity, msg.token, msg.accountToken)
+                who, signed_in = await _resolve_room_identity(msg.token, msg.accountToken)
                 profile = await run_in_threadpool(game.profile_for, who, msg.room)
                 if notice.outdated(client_version):
                     await send(_final("client_outdated", OUTDATED_MESSAGE))

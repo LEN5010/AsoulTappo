@@ -121,7 +121,7 @@ class ParkScratch:
                 "emotesWhole": all(i in owned for i in self._emotes(cfg["cards"]["basic"]))}
 
     def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
-        return {**self.park.game.status(token), "park": self.park.state(token), **self.state(token), **extra}
+        return {**self.park._answer(token), **self.state(token), **extra}
 
     def buy(self, token: str, kind: str, version: str | None = None) -> dict[str, Any]:
         """Buys a card of [kind]: its prize is decided now and paid by reveal. A card still to reveal is handed back

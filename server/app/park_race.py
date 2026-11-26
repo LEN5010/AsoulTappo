@@ -346,18 +346,20 @@ class Races:
     def void(self, race_id: int) -> int:
         """Calls off a race that never started: every save's coins come back (Park.refund). Returns the saves."""
         g = self.game
-        with g.store.transaction() as st:
-            row = st.race_get(race_id)
-            if not row or row["status"] != "open":
-                return 0
-            now = g.now()
-            staked: dict[str, int] = {}
-            for bet in st.race_bets(race_id):
-                staked[bet["player_id"]] = staked.get(bet["player_id"], 0) + bet["coins"]
-            for pid, coins in staked.items():
-                self.park.refund(st, pid, coins, REFUND, now)
-            st.race_set_status(race_id, "void")
-        return len(staked)
+        st = g.store
+        while True:
+            staked, count = st.race_refunds(race_id)
+            with st.transaction(immediate=True):
+                row = st.race_get(race_id)
+                if not row or row["status"] != "open":
+                    return 0
+                if st.race_bet_count(race_id) != count:
+                    continue
+                now = g.now()
+                for pid, coins in staked.items():
+                    self.park.refund(st, pid, coins, REFUND, now)
+                st.race_set_status(race_id, "void")
+                return len(staked)
 
     def settle(self, race_id: int) -> list[dict[str, Any]]:
         """Pays a running race's winning bets once, in coins: each bet's prize is coins × its own odds in tenths of a
@@ -365,25 +367,29 @@ class Races:
         prizes reach roomAt, with their coins."""
         g = self.game
         cfg = self.cfg
-        wins: list[dict[str, Any]] = []
-        with g.store.transaction() as st:
+        st = g.store
+        row = st.race_get(race_id)
+        if not row or row["status"] != "running":
+            return []
+        # Starting the race closed its bets, so the market stays fixed through settlement.
+        ranking = json.loads(row["ranking"])
+        prizes: list[tuple[int, int]] = []
+        tenths: dict[str, int] = {}
+        for bet in st.race_settlement_bets(race_id):
+            if _hit(bet["kind"], bet["member"], ranking):
+                prize = bet["coins"] * bet["odds"]
+                prizes.append((prize, bet["id"]))
+                pid = bet["player_id"]
+                tenths[pid] = tenths.get(pid, 0) + prize
+        paid = {pid: payout((total,)) for pid, total in tenths.items()}
+        wins = [{"pid": pid, "coins": coins} for pid, coins in paid.items() if coins >= cfg["roomAt"]]
+        with st.transaction(immediate=True):
             row = st.race_get(race_id)
             if not row or row["status"] != "running":
                 return []
             now = g.now()
-            ranking = json.loads(row["ranking"])
-            prizes: dict[str, list[int]] = {}
-            for bet in st.race_bets(race_id):
-                if not _hit(bet["kind"], bet["member"], ranking):
-                    continue
-                prize = bet["coins"] * bet["odds"]
-                st.race_set_prize(bet["id"], prize)
-                prizes.setdefault(bet["player_id"], []).append(prize)
-            for pid, got in prizes.items():
-                total = payout(got)
-                self.park.grant(st, pid, total, PRIZE, now)
-                if total >= cfg["roomAt"]:
-                    wins.append({"pid": pid, "coins": total})
+            st.race_set_prizes(prizes)
+            st.add_park_payouts("coins", day_of(now), PRIZE, {pid: n for pid, n in paid.items() if n > 0}, now)
             st.race_set_status(race_id, "settled")
         return wins
 
@@ -409,19 +415,24 @@ class Races:
             if row["status"] != "open" or now >= row["starts_at"]:
                 raise GameError("race_closed", "这一场已停止下注")
             most = cfg.get("maxCoins") or 0
-            staked = sum(b["coins"] for b in st.race_bets(race_id, pid))
+            bets = st.race_bets(race_id, pid)
+            staked = sum(b["coins"] for b in bets)
             if most and staked + coins > most:
                 raise GameError("race_cap", f"每场最多押 {most} 枚，这场还能押 {max(0, most - staked)} 枚")
             setup = json.loads(row["setup"])
-            odds = race.odds_tenths(cfg, kind, members, st.race_stakes(race_id).get(kind, {}), setup.get("popularity"),
-                                    setup.get("chance"))[member]
+            stakes = st.race_stakes(race_id)
+            selection = stakes.setdefault(kind, {})
+            odds = race.odds_tenths(cfg, kind, members, selection, setup.get("popularity"), setup.get("chance"))[member]
             # In tenths; the margin absorbs float noise in the shown number (1.1 × 10 is 11.000000000000002).
             if shown is not None and odds < shown * 10 - 1e-6:
                 raise OddsChanged(odds / 10)
             self.park.spend(st, pid, coins, SPEND, now)
             st.race_add_bet(race_id, pid, kind, member, coins, odds, now)
-        return {**g.status(token), "park": self.park.state(token),
-                "race": self._race(g.store.race_get(race_id), pid, g.now(), version)}
+            selection[member] = selection.get(member, 0) + coins
+            bettors = st.race_bettors(race_id)
+            bets.append({"kind": kind, "member": member, "coins": coins, "odds": odds})
+        answer = self.park._answer(token)
+        return {**answer, "race": self._race(row, pid, g.now(), version, market=(stakes, bettors), bets=bets)}
 
     # ------------------------------------------------------------------ view
     def view(self, token: str, version: str | None = None, view: RaceView = "full") -> dict[str, Any]:
@@ -524,18 +535,22 @@ class Races:
                 "settled": "done", "void": "void"}[row["status"]]
 
     def _race(self, row: dict[str, Any], pid: str, now: float, version: str | None = None,
-              playback: bool = True) -> dict[str, Any]:
+              playback: bool = True, *, market: tuple[dict[str, dict[str, int]], int] | None = None,
+              bets: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         status = row["status"]
         st = self.game.store
         cfg = self.cfg
         members = self.members
-        if status == "settled":
+        if market is not None:
+            stakes, bettors = market
+        elif status == "settled":
             stakes, bettors = _settled_market(st, row["id"])
         else:
             stakes, bettors = st.race_stakes(row["id"]), st.race_bettors(row["id"])
         setup = json.loads(row["setup"])
         odds = race.odds(cfg, members, stakes, setup.get("popularity"), setup.get("chance"))
-        bets = st.race_bets(row["id"], pid)
+        if bets is None:
+            bets = st.race_bets(row["id"], pid)
         # A settled bet's prize in coins, to a tenth (coins × odds); the save's total is payout() of them.
         mine = [{"kind": b["kind"], "member": b["member"], "coins": b["coins"], "odds": b["odds"] / 10,
                  **({"prize": b["prize"] / 10} if status == "settled" else {})}

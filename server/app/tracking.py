@@ -12,7 +12,7 @@ from .store import Store, day_of
 COUNT_KEYS = ("room_join", "poke", "drink", "profile", "board_profile", "emote", "duel_invite", "cheer_round",
               "ddz_ask", "ddz_ask_timeout", "ddz_ask_decline", "ddz_start_match", "ddz_start_open", "ddz_start_hall",
               "ddz_start_invite")
-# Saves whose client is remembered; the cache starts over when full.
+# Saves whose client is remembered; when full, the save remembered first goes.
 CLIENT_CACHE_LIMIT = 50000
 MAX_VERSION = 32
 
@@ -80,8 +80,8 @@ class Tracker:
                 return
         if self.store.set_client(pid, version):
             with self._lock:
-                if len(self._clients) >= CLIENT_CACHE_LIMIT:
-                    self._clients.clear()
+                if pid not in self._clients and len(self._clients) >= CLIENT_CACHE_LIMIT:
+                    self._clients.pop(next(iter(self._clients)))
                 self._clients[pid] = version
 
     @staticmethod

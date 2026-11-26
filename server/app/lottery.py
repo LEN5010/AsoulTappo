@@ -89,16 +89,22 @@ def settle(cfg: dict[str, Any], price: int, winning: str, tickets: list[tuple[in
     prize's rollover coming in."""
     tiers = [(tid, tier_of(n, winning)) for tid, n in tickets]
     count = {t: sum(1 for _, x in tiers if x == t) for t in TIERS}
+    result = _draw_amounts(cfg, price, len(tickets), count, pool, roll_second)
+    result.prizes = [(tid, t, result.each[TIERS[t]]) for tid, t in tiers if t]
+    return result
+
+
+def _draw_amounts(cfg: dict[str, Any], price: int, sales: int, count: dict[int, int],
+                  pool: int, roll_second: int) -> Settlement:
     fixed = second_each(cfg)
     # A fixed second pays what its tickets won, and nothing rolls over (the rollover from before it ends here).
-    second = fixed * count[2] if fixed else second_pool(cfg, price, len(tickets), roll_second)
+    second = fixed * count[2] if fixed else second_pool(cfg, price, sales, roll_second)
     each = {1: pool // count[1] if count[1] else 0, 2: second // count[2] if count[2] else 0, 3: cfg["third"]}
     after = cfg["pool"]["seed"] + pool - each[1] * count[1] if count[1] else pool
     return Settlement(
         pools={"top": pool, "second": second},
         winners={TIERS[t]: count[t] for t in TIERS}, each={TIERS[t]: each[t] if count[t] else 0 for t in TIERS},
-        roll={"second": second - each[2] * count[2]}, pool=after,
-        prizes=[(tid, t, each[t]) for tid, t in tiers if t])
+        roll={"second": second - each[2] * count[2]}, pool=after)
 
 
 def day_start(ts: float) -> float:
@@ -256,7 +262,7 @@ class Lottery:
             self.park.spend(st, pid, n, SPEND, now)
             st.add_lottery_tickets(day, pid, bought, now)
             state = self.state_of(st, pid, now)
-        return {**g.status(token), "park": self.park.state(token), "lottery": state, "bought": bought}
+        return self.park._answer(token, lottery=state, bought=bought)
 
     @staticmethod
     def _random(count: int, avoid: set[str]) -> list[str]:
@@ -268,44 +274,59 @@ class Lottery:
     def draw(self, day: str) -> dict[str, Any] | None:
         """Draws [day] unless it is drawn already (or has no row); returns the stored result."""
         cfg = self.cfg
+        price = self.price
         g = self.game
-        with g.store.transaction() as st:
+        st = g.store
+        while True:
             row = st.lottery_day(day)
             if row is None or row["drawn"] is not None:
                 return None
-            now = g.now()
-            tickets = st.lottery_tickets(day)
-            s = settle(cfg, self.price, row["number"], [(t["id"], t["number"]) for t in tickets],
-                       self.park.pool(st), st.park_counter(ROLL_SECOND))
-            st.set_lottery_prizes(s.prizes)
-            owner = {t["id"]: t["player_id"] for t in tickets}
-            paid: dict[str, int] = {}
-            for tid, _, prize in s.prizes:
-                paid[owner[tid]] = paid.get(owner[tid], 0) + prize
-            pay_day = day_of(now)
-            for pid, shards in paid.items():
-                p = st.get_player(pid, now)
-                st.update_player(pid, shards=p["shards"] + shards)
-                st.add_ledger(pid, pay_day, PRIZE, shards)
-            st.set_park_counter(POOL, s.pool)
-            st.set_park_counter(ROLL_SECOND, s.roll["second"])
-            result = {"sales": len(tickets), "pools": s.pools, "winners": s.winners, "each": s.each, "roll": s.roll,
-                      "pool": s.pool, "paid": sum(paid.values())}
-            st.set_lottery_drawn(day, now, json.dumps(result))
-            if tickets:
-                self._announce(st, day, row["number"], s, owner, now)
-        return result
+            number = row["number"]
+            tickets = st.lottery_draw_tickets(day)
+            winners: dict[int, list[int]] = {tier: [] for tier in TIERS}
+            per_player: dict[str, list[int]] = {}
+            top: dict[str, int] = {}
+            for tid, pid, ticket in tickets:
+                tier = tier_of(ticket, number)
+                if tier:
+                    winners[tier].append(tid)
+                    per_player.setdefault(pid, [0, 0, 0, 0])[tier] += 1
+                if tier == 1:
+                    top[pid] = min(top.get(pid, tid), tid)
+            counts = {tier: len(ids) for tier, ids in winners.items()}
+            top_pids = sorted(top, key=top.__getitem__)[:NEWS_NICKS]
 
-    def _announce(self, st: Store, day: str, number: str, s: Settlement, owner: dict[int, str], now: float) -> None:
+            with st.transaction(immediate=True):
+                current = st.lottery_day(day)
+                if current is None or current["drawn"] is not None:
+                    return None
+                # A buy already in progress at closing can commit after the read snapshot.
+                if st.lottery_sales(day) != len(tickets):
+                    continue
+                now = g.now()
+                s = _draw_amounts(cfg, price, len(tickets), counts, self.park.pool(st), st.park_counter(ROLL_SECOND))
+                first, second, third = (s.each[tier] for tier in TIERS.values())
+                st.set_lottery_prizes((tid, tier, s.each[TIERS[tier]])
+                                      for tier, ids in winners.items() for tid in ids)
+                paid = {pid: n[1] * first + n[2] * second + n[3] * third for pid, n in per_player.items()}
+                st.add_park_payouts("shards", day_of(now), PRIZE, paid, now)
+                st.set_park_counter(POOL, s.pool)
+                st.set_park_counter(ROLL_SECOND, s.roll["second"])
+                result = {"sales": len(tickets), "pools": s.pools, "winners": s.winners, "each": s.each,
+                          "roll": s.roll, "pool": s.pool, "paid": sum(paid.values())}
+                st.set_lottery_drawn(day, now, json.dumps(result))
+                if tickets:
+                    self._announce(st, day, number, s, top_pids, now)
+                return result
+
+    def _announce(self, st: Store, day: str, number: str, s: Settlement, top: list[str], now: float) -> None:
         """One news item a draw. News carries one save, so the first top winner (earliest ticket) is its nick, and
         every top winner's nick is in `nicks`, one per save; without a top winner the nick is empty."""
-        top = list(dict.fromkeys(owner[tid] for tid, tier, _ in s.prizes if tier == 1))
+        nicks = list(self._nicks(st, top).values())
         detail = {"day": day, "number": number, "winners": s.winners, "each": s.each,
-                  "nicks": [self.park.nick(st, pid) for pid in top[:NEWS_NICKS]]}
-        if top:
-            self.park.announce(st, "lottery_draw", top[0], now, **detail)
-        else:
-            st.add_park_news(now, "lottery_draw", "", "", json.dumps(detail, ensure_ascii=False))
+                  "nicks": nicks}
+        st.add_park_news(now, "lottery_draw", top[0] if top else "", nicks[0] if nicks else "",
+                         json.dumps(detail, ensure_ascii=False))
 
     def tick(self) -> list[str]:
         """Makes the current day's row and draws every earlier day not drawn yet: a day ends at its draw time, so the
