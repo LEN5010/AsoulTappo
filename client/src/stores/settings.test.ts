@@ -34,6 +34,12 @@ describe("loadSettings", () => {
     expect(loadSettings(store(JSON.stringify({ petOpacity: 4 }))).petOpacity).toBe(1);
     expect(loadSettings(store(JSON.stringify({ petOpacity: "x" }))).petOpacity).toBe(1);
   });
+  it("keeps the panel at its old size unless one is set, within what the settings page offers", () => {
+    expect(loadSettings(store(null)).panelScale).toBe(1);
+    expect(loadSettings(store(JSON.stringify({ panelScale: 0.5 }))).panelScale).toBe(0.9);
+    expect(loadSettings(store(JSON.stringify({ panelScale: 3 }))).panelScale).toBe(1.5);
+    expect(loadSettings(store(JSON.stringify({ panelScale: "x" }))).panelScale).toBe(1);
+  });
   it("keeps only string favorites (at most 8) and never shares the default array", () => {
     const s = loadSettings(store(JSON.stringify({ favorites: ["a", 3, "b", ...Array(10).fill("c")], tapView: "x" })));
     expect(s.favorites).toEqual(["a", "b", "c", "c", "c", "c", "c", "c"]);

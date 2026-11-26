@@ -122,6 +122,11 @@ export interface Settings {
   barFollow: boolean;
   /** Scale of the strip while `barFollow` is off. */
   barScale: number;
+  /**
+   * Size of the panel window (0.9–1.5): its page keeps the layout of 1000×720 CSS px and is drawn this many times as
+   * large (src-tauri/src/panel_place.rs, `fit`).
+   */
+  panelScale: number;
   /** The own name plate stands where the strip would (swapped from the strip's menu). */
   barPlate: boolean;
   /** The own pet stands on the bottom edge of the screen: its desk on the edge, the strip hidden. */
@@ -248,6 +253,7 @@ export const DEFAULT_SETTINGS: Settings = {
   barFolded: false,
   barFollow: true,
   barScale: 1,
+  panelScale: 1,
   barPlate: false,
   petDocked: false,
   bossKey: "",
@@ -306,6 +312,7 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
   out.petOpacity = Math.min(1, Math.max(0.3, out.petOpacity));
   out.remoteScale = Math.min(1.5, Math.max(0.4, out.remoteScale));
   out.barScale = Math.min(1.5, Math.max(0.6, out.barScale));
+  out.panelScale = Math.min(1.5, Math.max(0.9, out.panelScale));
   out.emoteHoldMs = Math.min(6000, Math.max(1200, out.emoteHoldMs));
   out.volume = Math.min(1, Math.max(0, out.volume));
   out.pomodoroFocus = Math.min(120, Math.max(5, Math.round(out.pomodoroFocus)));

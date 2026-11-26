@@ -64,6 +64,12 @@ const GROUP = "1106311431";
 const SPONSOR = "https://len5010.me/sponsor/";
 const contactOpen = ref(false);
 const promoOpen = ref(false);
+/**
+ * The panel's size while its slider is held: the window and the page under the pointer change with the setting, so it
+ * is set when the slider is let go.
+ */
+const panelDraft = ref(settings.panelScale);
+watch(() => settings.panelScale, (v) => { panelDraft.value = v; });
 /** The health reminders' own dialog; the row's key says how many are on. */
 const tipsOpen = ref(false);
 const tipsLabel = computed(() => {
@@ -327,6 +333,13 @@ async function exportLogFile() {
           <section v-else-if="group === 'window'" data-rise>
             <h4 class="ui-label"><span>窗口设置</span></h4>
             <div class="ui-group ui-frame">
+              <label v-if="isTauri" class="ui-row">
+                <span>面板大小</span>
+                <span class="ui-ctl">
+                  <RangeInput v-model="panelDraft" :min="0.9" :max="1.5" :step="0.1" @change="settings.panelScale = panelDraft" />
+                  <b class="ui-val">×{{ panelDraft.toFixed(1) }}</b>
+                </span>
+              </label>
               <label class="ui-row">
                 <span>桌宠置顶</span>
                 <input v-model="settings.alwaysOnTop" class="ui-switch" type="checkbox" />

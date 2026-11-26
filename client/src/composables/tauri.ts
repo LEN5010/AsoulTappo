@@ -167,6 +167,8 @@ async function call(cmd: string, args: Record<string, unknown>): Promise<void> {
 
 export const setClickThrough = (enabled: boolean) => call("set_click_through", { enabled });
 export const setAlwaysOnTop = (enabled: boolean) => call("set_always_on_top", { enabled });
+/** The panel window's size (`panelScale`): an open panel takes it at once, a closed one when it is next shown. */
+export const setPanelScale = (scale: number) => call("set_panel_scale", { scale });
 /**
  * What a global shortcut does: hide the pet and the panel, flip click-through, move the pet to the next monitor, or
  * play the quick emote at a place.
