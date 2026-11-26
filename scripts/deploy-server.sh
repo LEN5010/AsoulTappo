@@ -129,17 +129,22 @@ switch)
   docker image inspect "asoultappo-server:$SHA" >/dev/null && [ -d $D/server/app ] || { echo "run trial for $SHA first" >&2; exit 1; }
   [ "$LIVE" != "$SHA" ] || { echo "already running $SHA" >&2; exit 1; }
   BAK=/root/asoultappo-$TS-before-$SHA.db APPBAK=/root/asoultappo-app-$TS-$LIVE
+  # The economy file the old code ran with: an economy change made after this switch may hold keys the old code
+  # refuses at start, so a rollback puts this one back before it starts the old container.
+  ECOBAK=/root/economy-$TS-before.json
   backup_db $DB $BAK
   echo "players $(sqlite3 $BAK 'select count(*) from players')"
   cp -a $BASE/app $APPBAK
+  cp -a $CFG/economy.json $ECOBAK
   docker stop -t 30 asoultappo >/dev/null && docker rename asoultappo "asoultappo-$LIVE"
   echo "rooms saved $(sq $DB 'select count(*) from room_restore')"
   rsync -rc --delete --exclude __pycache__ $D/server/app/ $BASE/app/
   chown -R www:www $BASE/app
   run_server asoultappo 8000 $BASE/data $BASE/app $CFG "$SHA"
-  echo "backups $BAK $APPBAK; old container asoultappo-$LIVE stopped"
+  echo "backups $BAK $APPBAK $ECOBAK; old container asoultappo-$LIVE stopped"
   echo "rollback: docker stop -t 30 asoultappo && docker rename asoultappo asoultappo-$SHA &&"
-  echo "  rsync -rc --delete $APPBAK/ $BASE/app/ && docker rename asoultappo-$LIVE asoultappo && docker start asoultappo"
+  echo "  rsync -rc --delete $APPBAK/ $BASE/app/ && install -o www -g www -m 644 $ECOBAK $CFG/economy.json &&"
+  echo "  docker rename asoultappo-$LIVE asoultappo && docker start asoultappo"
   sleep 6
   docker ps --format '{{.Names}} {{.Image}} {{.Status}}' | grep '^asoultappo '
   check 8000 asoultappo
@@ -164,6 +169,9 @@ EOF
   backup_db $DB /root/asoultappo-$SHA-before-economy.db
   install -o www -g www -m 644 $NEW $CFG/economy.json && rm -f $NEW
   echo "backups /root/economy-$SHA-before.json /root/asoultappo-$SHA-before-economy.db"
+  echo "rollback: install -o www -g www -m 644 /root/economy-$SHA-before.json $CFG/economy.json && docker restart -t 30 asoultappo"
+  echo "before a rollback of the code: put back the economy file its switch backed up (rollback line of switch);"
+  echo "  older code may refuse keys of this file at start"
   docker restart -t 30 asoultappo >/dev/null
   sleep 6
   check 8000 asoultappo
