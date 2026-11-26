@@ -24,6 +24,8 @@ START_TRIES = 3
 # How far past its arrival a move may claim to have been played (ms): the client's clock estimate and the time the
 # report spent on the way. A later claim is cut to this.
 LINK_CLAIM_SLACK_MS = 1500
+# _view's default: the game in play is read there.
+_UNREAD: Any = object()
 
 
 def _dump(value: Any) -> str:
@@ -89,21 +91,23 @@ class ParkLink:
                 "start": round(row["started_at"] * 1000), "deadline": round(row["deadline"] * 1000),
                 "now": round(now * 1000)}
 
-    def _view(self, st: Store, pid: str, now: float) -> dict[str, Any]:
-        """LinkState: today's settled games, today's count, the daily cap, the game in play and the last result."""
+    def _view(self, st: Store, pid: str, now: float, active: Any = _UNREAD) -> dict[str, Any]:
+        """LinkState: today's settled games, today's count, the daily cap, the game in play and the last result.
+        [active]: the game in play (None for none) when the caller has just read it."""
         today = st.park_link_day(pid, day_of(now))
-        active = st.park_link_active(pid)
+        if active is _UNREAD:
+            active = st.park_link_active(pid)
         last = st.park_link_last(pid)
         return {"today": [self._result(r) for r in today if r["settled_at"] is not None],
                 "played": len(today), "levels": len(self.cfg["levels"]),
                 "game": self._game(active, now) if active else None,
                 "last": self._result(last) if last else None}
 
-    def _answer(self, token: str, **extra: Any) -> dict[str, Any]:
+    def _answer(self, token: str, active: Any = _UNREAD, **extra: Any) -> dict[str, Any]:
         g = self.park.game
         status = g.status(token)
         park = self.park.state(token)
-        link = self._view(g.store, player_id_for(token), g.now())
+        link = self._view(g.store, player_id_for(token), g.now(), active)
         return {**status, "park": park, "link": link, **extra}
 
     # ------------------------------------------------------------- settlement
@@ -150,8 +154,8 @@ class ParkLink:
         row = g.store.park_link_active(pid)
         if row is not None and g.now() > row["deadline"] + cfg["grace"]:
             with g.store.transaction() as st:
-                self._due(st, pid, g.now())
-        return self._answer(token)
+                row = self._due(st, pid, g.now())
+        return self._answer(token, row)
 
     def start(self, token: str) -> dict[str, Any]:
         """Starts the day's next game: takes the entry fee and makes the game in one transaction. A game in play is

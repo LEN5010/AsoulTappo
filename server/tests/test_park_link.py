@@ -761,6 +761,54 @@ def test_each_level_lays_a_board_quickly(n):
     assert worst < 0.2
 
 
+# ------------------------------------------------------------------------ store
+LINK_INDEXES = ("park_link_open", "park_link_settled")
+
+
+def plan(st, sql, *args):
+    return " | ".join(r["detail"] for r in st._db.execute("EXPLAIN QUERY PLAN " + sql, args).fetchall())
+
+
+def test_the_game_in_play_and_the_last_result_are_found_by_their_own_indexes():
+    g, pl, clock, pid = setup()
+    st = g.store
+    for day in range(30):
+        now = clock() + day * 86400
+        for n in range(3):
+            gid, _ = stuck_game(g, pid, now + n)
+            st.settle_park_link(gid, 0, "quit", now + n + 1)
+    stuck_game(g, pid, clock() + 31 * 86400)
+    active = plan(st, "SELECT * FROM park_link WHERE player_id = ? AND settled_at IS NULL ORDER BY id DESC LIMIT 1",
+                  pid)
+    last = plan(st, "SELECT id FROM park_link WHERE player_id = ? AND settled_at IS NOT NULL "
+                    "ORDER BY settled_at DESC, id DESC LIMIT 1", pid)
+    assert "park_link_open" in active and "TEMP B-TREE" not in active
+    assert "park_link_settled" in last and "TEMP B-TREE" not in last
+
+
+def test_an_older_database_gets_the_link_indexes_when_opened(tmp_path):
+    path = str(tmp_path / "old.db")
+    st = Store(path)
+    for name in LINK_INDEXES:
+        st._db.execute(f"DROP INDEX {name}")
+    st._db.commit()
+    st.close()
+    st = Store(path)
+    names = {r[0] for r in st._db.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
+    st.close()
+    assert set(LINK_INDEXES) <= names
+
+
+def test_get_reads_the_game_in_play_once(monkeypatch):
+    g, pl, clock, pid = setup()
+    pl.start(TOKEN)
+    reads = []
+    active = g.store.park_link_active
+    monkeypatch.setattr(g.store, "park_link_active", lambda p: reads.append(p) or active(p))
+    assert pl.state(TOKEN)["link"]["game"] is not None
+    assert len(reads) == 1
+
+
 # ------------------------------------------------------------------------ prune
 def test_prune_forgets_old_settled_games_only():
     g, pl, clock, pid = setup()

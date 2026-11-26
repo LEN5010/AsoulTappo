@@ -422,6 +422,11 @@ CREATE TABLE IF NOT EXISTS park_link (
   reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS park_link_player ON park_link (player_id, day);
+-- The save's game in play (park_link_active) and its game settled last (park_link_last), whatever its history holds.
+-- A database from before them gets them when it is opened, as SCHEMA runs on every start.
+CREATE INDEX IF NOT EXISTS park_link_open ON park_link (player_id) WHERE settled_at IS NULL;
+CREATE INDEX IF NOT EXISTS park_link_settled ON park_link (player_id, settled_at DESC, id DESC)
+  WHERE settled_at IS NOT NULL;
 -- Feedback from the settings page (feedback.py): the text, an optional contact, the client's version and system, and
 -- the latest part of its log when the player ticked it ('' without). [day] is the China day it came on.
 CREATE TABLE IF NOT EXISTS feedback (
