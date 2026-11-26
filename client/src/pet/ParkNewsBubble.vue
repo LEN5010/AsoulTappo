@@ -7,8 +7,11 @@ import { newsLine, type NewsLine } from "../parkNews";
 import { markNewsSeen, unseenParkNews } from "../stores/park";
 import { tapCooldown } from "../stores/pet";
 import Icon from "../ui/Icon.vue";
+import { useCentredShift, type PetMiddle } from "./centredShift";
 
-const props = defineProps<{ paused?: boolean }>();
+const props = defineProps<{ paused?: boolean; middle?: PetMiddle }>();
+const paper = ref<HTMLElement>();
+const shift = useCentredShift(paper, () => props.middle);
 
 const SHOW_MS = 5000;
 const GAP_MS = 600;
@@ -44,7 +47,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 <template>
   <div class="anchor" role="status">
     <Transition name="news">
-      <p v-if="line" class="news">
+      <p v-if="line" ref="paper" class="news" :style="{ '--shift': `${shift}px` }">
         <b v-if="line.nick" class="nick">{{ line.nick }}</b>
         <span>{{ line.text }}</span>
         <span v-if="line.shards" class="amount"><Icon name="shard" :size="13" />{{ fmt(line.shards) }}</span>
@@ -56,20 +59,21 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 <style scoped>
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; pointer-events: none; z-index: 5; }
 .news {
-  position: absolute; left: 0; bottom: 8px; margin: 0; padding: 6px 12px; transform: translateX(-50%);
+  position: absolute; left: 0; bottom: 8px; margin: 0; padding: 6px 12px; transform: translateX(calc(-50% + var(--shift, 0px)));
   display: flex; align-items: center; gap: 5px; max-width: 320px; box-sizing: border-box;
   border-radius: 14px; background: var(--surface); box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4);
   font: 700 var(--fs-body)/1.3 var(--font); color: var(--ink); white-space: nowrap;
 }
+/* The point stays on the pet when the paper shifts. */
 .news::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
+  content: ""; position: absolute; left: calc(50% - var(--shift, 0px)); top: 100%; translate: -50% 0;
   border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
 }
 .nick { min-width: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-weight: 800; color: var(--c-700); }
 .amount { display: inline-flex; align-items: center; gap: 2px; font: 800 var(--fs-number)/1 var(--font-latin); }
 .amount svg { color: var(--c-600); }
 .news-enter-active { transition: opacity var(--dur-fast), transform var(--dur-fast) var(--ease-pop); }
-.news-enter-from { opacity: 0; transform: translate(-50%, 8px) scale(0.8); }
+.news-enter-from { opacity: 0; transform: translate(calc(-50% + var(--shift, 0px)), 8px) scale(0.8); }
 .news-leave-active { transition: opacity var(--dur-base) var(--ease-in); }
 .news-leave-to { opacity: 0; }
 </style>

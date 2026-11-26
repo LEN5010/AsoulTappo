@@ -466,6 +466,8 @@ const pokedPlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, {
 const racePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: RACE_WIDTH, h: RACE_HEIGHT }, viewport.value));
 const nudgePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: NUDGE_WIDTH, h: NUDGE_HEIGHT }, viewport.value));
 const autoNotePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, { w: AUTO_NOTE_WIDTH, h: AUTO_NOTE_HEIGHT }, viewport.value));
+/** The own pet's middle and the screen's width, for the bubbles over it that size to their text (pet/centredShift.ts). */
+const ownMiddle = computed(() => ({ x: ownPos.value.x + ownSize.value.w / 2, w: viewport.value.w }));
 /** A guide card at its widest (ui/GuideCard.vue). */
 const GUIDE_CARD = { w: 250, h: 72 };
 const guidePlace = computed(() => bubblePlacement(ownPos.value, ownSize.value, GUIDE_CARD, viewport.value));
@@ -684,12 +686,12 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <PomodoroChip v-if="!settings.clickThrough" :style="pomodoroAt" @open="openPomodoro" />
       <!-- The standalone edition has no cooldown, no server notes and no room: only the local bubbles. -->
       <template v-if="!STANDALONE">
-        <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" />
-        <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge || !!deskCardShown" />
+        <CooldownBubble :until="autoShown || autoNote ? 0 : tapCooldown" :auto="autoCooling" :middle="ownMiddle" />
+        <ParkNewsBubble :paused="!!duel || !!ddzBubble || !!adminHint || accessHint || autoShown || autoNote || !!nudge || !!deskCardShown" :middle="ownMiddle" />
       </template>
-      <AdminBubble v-if="adminHint" :hint="adminHint" @close="adminHint = null" />
+      <AdminBubble v-if="adminHint" :hint="adminHint" :middle="ownMiddle" @close="adminHint = null" />
       <template v-if="!STANDALONE">
-        <AutoInputBubble v-if="autoShown" @open="openAutoNote()" />
+        <AutoInputBubble v-if="autoShown" :middle="ownMiddle" @open="openAutoNote()" />
         <AutoInputNote :open="autoNote && !duel && !ddzBubble" :cooling="autoCooling" v-bind="autoNotePlace" @close="closeAutoHint()" />
         <DuelBubble v-bind="duelPlace" />
         <DdzBubble v-if="!duel" v-bind="ddzPlace" />
@@ -703,7 +705,7 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
       <NudgeBubble v-if="!duel && !ddzBubble && !poked" v-bind="nudgePlace" @todos="openTodo" />
       <RaceBubble v-if="!STANDALONE" v-bind="racePlace" :paused="!!duel || !!ddzBubble || !!poked || !!nudge || autoNote || !!deskCardShown" />
       <!-- macOS: the first run of the guide keeps it up. -->
-      <AccessBubble v-if="accessHint" :closable="!guideRun.started" @close="accessHint = false" />
+      <AccessBubble v-if="accessHint" :closable="!guideRun.started" :middle="ownMiddle" @close="accessHint = false" />
       <DeskGuide v-if="guideOn" :held="guideHeld" :cooldown="tapCooldown" v-bind="guidePlace" :scope="deskEl" :tick="guideTick" />
       <Transition name="strip" mode="out-in">
       <div v-if="barShown && plateShown" key="plate" ref="plateEl" class="own-plate" data-hit :style="{ left: `${plateShift}px` }">

@@ -5,9 +5,12 @@
 // removed and added again. [closable] false: it stays (the run the first-run guide starts in).
 import { ref } from "vue";
 import { openInputSettings } from "../composables/tauri";
+import { useCentredShift, type PetMiddle } from "./centredShift";
 
-withDefaults(defineProps<{ closable?: boolean }>(), { closable: true });
+const props = withDefaults(defineProps<{ closable?: boolean; middle?: PetMiddle }>(), { closable: true });
 const emit = defineEmits<{ close: [] }>();
+const paper = ref<HTMLElement>();
+const shift = useCentredShift(paper, () => props.middle);
 const opened = ref(false);
 function open() {
   void openInputSettings();
@@ -21,7 +24,7 @@ async function restart() {
 
 <template>
   <div class="anchor">
-    <div class="access" data-hit="keep" data-no-drag role="alert">
+    <div ref="paper" class="access" data-hit="keep" data-no-drag role="alert" :style="{ '--shift': `${shift}px` }">
       <p>需要输入监控权限</p>
       <small>已开启仍提示：删除条目后重新添加</small>
       <div class="actions">
@@ -37,11 +40,12 @@ async function restart() {
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; z-index: 6; }
 .access {
   position: absolute; left: 0; bottom: 8px; width: max-content; max-width: 240px; padding: 8px 10px;
-  transform: translateX(-50%); border-radius: 14px; background: var(--surface);
+  transform: translateX(calc(-50% + var(--shift, 0px))); border-radius: 14px; background: var(--surface);
   box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4); color: var(--ink);
 }
+/* The point stays on the pet when the paper shifts. */
 .access::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
+  content: ""; position: absolute; left: calc(50% - var(--shift, 0px)); top: 100%; translate: -50% 0;
   border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
 }
 .access p { margin: 0 0 2px; font: 800 var(--fs-label)/1.35 var(--font); }

@@ -2,8 +2,11 @@
 // Over the pet while its inputs sit out a cooldown, for going faster than a hand or ([auto]) for keeping automatic
 // input on after the note about it: how long is left, in minutes while that is two or more.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { useCentredShift, type PetMiddle } from "./centredShift";
 
-const props = defineProps<{ until: number; auto?: boolean }>();
+const props = defineProps<{ until: number; auto?: boolean; middle?: PetMiddle }>();
+const paper = ref<HTMLElement>();
+const shift = useCentredShift(paper, () => props.middle);
 const now = ref(Date.now());
 let timer: ReturnType<typeof setInterval> | undefined;
 
@@ -25,7 +28,7 @@ const wait = computed(() => (left.value >= 120 ? `${Math.ceil(left.value / 60)} 
 <template>
   <div class="anchor" role="status">
     <Transition name="cool">
-      <p v-if="left > 0" class="cool">{{ auto ? "自动点击冷却中" : "太快啦" }}，歇 {{ wait }}</p>
+      <p v-if="left > 0" ref="paper" class="cool" :style="{ '--shift': `${shift}px` }">{{ auto ? "自动点击冷却中" : "太快啦" }}，歇 {{ wait }}</p>
     </Transition>
   </div>
 </template>
@@ -33,16 +36,17 @@ const wait = computed(() => (left.value >= 120 ? `${Math.ceil(left.value / 60)} 
 <style scoped>
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; pointer-events: none; z-index: 5; }
 .cool {
-  position: absolute; left: 0; bottom: 8px; margin: 0; padding: 6px 12px; transform: translateX(-50%);
+  position: absolute; left: 0; bottom: 8px; margin: 0; padding: 6px 12px; transform: translateX(calc(-50% + var(--shift, 0px)));
   border-radius: 14px; background: var(--surface); box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4);
   font: 800 var(--fs-strong)/1.3 var(--font); color: var(--ink); white-space: nowrap;
 }
+/* The point stays on the pet when the paper shifts. */
 .cool::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
+  content: ""; position: absolute; left: calc(50% - var(--shift, 0px)); top: 100%; translate: -50% 0;
   border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
 }
 .cool-enter-active { transition: opacity var(--dur-fast), transform var(--dur-fast) var(--ease-pop); }
-.cool-enter-from { opacity: 0; transform: translate(-50%, 8px) scale(0.8); }
+.cool-enter-from { opacity: 0; transform: translate(calc(-50% + var(--shift, 0px)), 8px) scale(0.8); }
 .cool-leave-active { transition: opacity var(--dur-base) var(--ease-in); }
 .cool-leave-to { opacity: 0; }
 </style>

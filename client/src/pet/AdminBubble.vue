@@ -3,8 +3,11 @@
 // its keys and clicks unless it runs as administrator too. Stays until closed or acted on.
 import { computed, ref } from "vue";
 import { setRunAsAdmin, type InputBlocked } from "../composables/tauri";
+import { useCentredShift, type PetMiddle } from "./centredShift";
 
-const props = defineProps<{ hint: InputBlocked }>();
+const props = defineProps<{ hint: InputBlocked; middle?: PetMiddle }>();
+const paper = ref<HTMLElement>();
+const shift = useCentredShift(paper, () => props.middle);
 const emit = defineEmits<{ close: [] }>();
 const name = computed(() => (props.hint.by ?? "").replace(/\.exe$/i, ""));
 const busy = ref(false);
@@ -25,7 +28,7 @@ async function restart() {
 
 <template>
   <div class="anchor">
-    <div class="admin" data-hit="keep" data-no-drag role="alert">
+    <div ref="paper" class="admin" data-hit="keep" data-no-drag role="alert" :style="{ '--shift': `${shift}px` }">
       <p>{{ name }} 以管理员身份运行，桌宠收不到按键</p>
       <div class="actions">
         <button v-if="hint.canElevate" type="button" class="ui-btn small primary" :disabled="busy" @click="restart">以管理员身份重启</button>
@@ -41,11 +44,12 @@ async function restart() {
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; z-index: 6; }
 .admin {
   position: absolute; left: 0; bottom: 8px; width: max-content; max-width: 240px; padding: 8px 10px;
-  transform: translateX(-50%); border-radius: 14px; background: var(--surface);
+  transform: translateX(calc(-50% + var(--shift, 0px))); border-radius: 14px; background: var(--surface);
   box-shadow: 0 6px 16px -6px rgba(var(--shadow-rgb), 0.4); color: var(--ink);
 }
+/* The point stays on the pet when the paper shifts. */
 .admin::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% 0;
+  content: ""; position: absolute; left: calc(50% - var(--shift, 0px)); top: 100%; translate: -50% 0;
   border: 7px solid transparent; border-top-color: var(--surface); border-bottom: 0;
 }
 .admin p { margin: 0 0 6px; font: 800 var(--fs-label)/1.35 var(--font); }

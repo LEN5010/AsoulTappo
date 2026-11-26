@@ -5,6 +5,7 @@ import type { Member } from "../net/protocol";
 import { canDuel, canPoke, canProfile, inviteDuel, members, pokeSoon } from "../stores/room";
 import { openPanel } from "../stores/ui";
 import type { Pos, Size } from "../stores/desk";
+import { centredShift } from "./centredShift";
 
 /** The bubble closes after this long without the pointer on it. */
 export const PICK_MS = 6000;
@@ -110,8 +111,6 @@ watch(() => !picking.value || (staking.value ? pickKeys.value.duel : anyKey(pick
  * no room above it. [pos] and [size] are the pet's box, [bubble] the bubble's size.
  */
 export function bubblePlacement(pos: Pos, size: Size, bubble: Size, screen: Size, margin = 8): { shift: number; below: boolean } {
-  const left = pos.x + size.w / 2 - bubble.w / 2;
-  const fitted = Math.min(Math.max(left, margin), Math.max(margin, screen.w - margin - bubble.w));
   // 8px gap and the 7px point between the bubble and the pet
-  return { shift: Math.round(fitted - left), below: pos.y - bubble.h - 15 < margin };
+  return { shift: centredShift(pos.x + size.w / 2, bubble.w, screen.w, margin), below: pos.y - bubble.h - 15 < margin };
 }

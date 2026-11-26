@@ -2,13 +2,19 @@
 // Over the pet once the server counts this save's input as automatic (an auto-clicker, a macro). Stays until its key
 // opens the note behind it (AutoInputNote.vue). The other bubbles over the pet are white paper; this one is a coral
 // plate with a breathing glow, so it is not taken for one of them.
+import { ref } from "vue";
+import { useCentredShift, type PetMiddle } from "./centredShift";
+
+const props = defineProps<{ middle?: PetMiddle }>();
 const emit = defineEmits<{ open: [] }>();
+const paper = ref<HTMLElement>();
+const shift = useCentredShift(paper, () => props.middle);
 </script>
 
 <template>
   <div class="anchor">
     <Transition name="alert" appear>
-      <div class="auto" data-hit="keep" data-no-drag role="alert">
+      <div ref="paper" class="auto" data-hit="keep" data-no-drag role="alert" :style="{ '--shift': `${shift}px` }">
         <span class="mark" aria-hidden="true">!</span>
         <p>识别到自动点击</p>
         <button type="button" class="ui-btn small" @click="emit('open')">看看</button>
@@ -21,13 +27,14 @@ const emit = defineEmits<{ open: [] }>();
 .anchor { position: absolute; left: 50%; top: 0; width: 0; height: 0; z-index: 6; }
 .auto {
   position: absolute; left: 0; bottom: 10px; display: flex; align-items: center; gap: 10px; width: max-content;
-  padding: 10px 10px 10px 12px; transform: translateX(-50%); border-radius: var(--radius-l);
+  padding: 10px 10px 10px 12px; transform: translateX(calc(-50% + var(--shift, 0px))); border-radius: var(--radius-l);
   background: var(--grad-sky); color: var(--ink);
   box-shadow: 0 8px 18px -6px rgba(var(--c-900-rgb), 0.45), var(--glow-l);
   animation: breathe 2.2s var(--ease-in-out) infinite alternate;
 }
+/* The point stays on the pet when the plate shifts. */
 .auto::after {
-  content: ""; position: absolute; left: 50%; top: 100%; translate: -50% -1px;
+  content: ""; position: absolute; left: calc(50% - var(--shift, 0px)); top: 100%; translate: -50% -1px;
   border: 8px solid transparent; border-top-color: var(--c-500); border-bottom: 0;
 }
 .mark {
