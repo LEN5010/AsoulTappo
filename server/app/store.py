@@ -196,7 +196,23 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
 
     def _commit(self) -> None:
         if not getattr(self, "_in_tx", False):
-            self._db.commit()
+            try:
+                self._db.commit()
+            except BaseException:
+                # As in _Tx: SQLite can refuse the COMMIT and keep the write open, and the next writer would commit
+                # it with its own.
+                self._undo()
+                raise
+
+    def _undo(self) -> None:
+        """Rolls back what is still open on the connection and forgets what the caches answered for."""
+        try:
+            if self._db.in_transaction:
+                self._db.rollback()
+        finally:
+            # Rows the caches answered for may be gone again.
+            self._active.clear()
+            self._counts.clear()
 
     @property
     def lock(self) -> threading.RLock:
@@ -829,19 +845,10 @@ class _Tx:
                 except BaseException:
                     # SQLite can refuse the COMMIT and keep the transaction open: undo it here, or the next caller
                     # on this connection would commit it with its own.
-                    self._undo()
+                    self.store._undo()
                     raise
             else:
-                self._undo()
+                self.store._undo()
         finally:
             self.store._in_tx = False
             self.store._lock.release()
-
-    def _undo(self) -> None:
-        try:
-            if self.store._db.in_transaction:
-                self.store._db.rollback()
-        finally:
-            # Rows the caches answered for may be gone again.
-            self.store._active.clear()
-            self.store._counts.clear()

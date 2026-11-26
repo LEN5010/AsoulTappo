@@ -142,6 +142,30 @@ def test_a_refused_commit_rolls_back_before_the_next_caller():
     s.close()
 
 
+def test_a_refused_commit_of_a_single_write_rolls_it_back():
+    s = Store(":memory:")
+    s.get_player("p1", 0)
+
+    def deny_commit(action, operation, *_):
+        if action == sqlite3.SQLITE_TRANSACTION and operation == "COMMIT":
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    s._db.set_authorizer(deny_commit)
+    try:
+        with pytest.raises(sqlite3.DatabaseError):
+            s.update_player("p1", shards=9)
+    finally:
+        s._db.set_authorizer(None)
+    assert not s._db.in_transaction
+    assert s.get_player("p1", 0)["shards"] == 1600
+    # The next single write commits only itself.
+    s.mark_active("p1", "2026-11-26")
+    assert not s._db.in_transaction
+    assert s.get_player("p1", 0)["shards"] == 1600 and s.totals("2026-11-26")["activeToday"] == 1
+    s.close()
+
+
 def test_persists_on_disk(tmp_path):
     path = str(tmp_path / "sub" / "t.db")
     s = Store(path)
