@@ -37,7 +37,9 @@ export type OpeningEvent =
   /** A card of the spread is taken up, or put back. */
   | { type: "inspect"; index: number | null }
   /** The spread lies complete. */
-  | { type: "end" };
+  | { type: "end" }
+  /** It stood still and stirs again on its own (a hint comes round): another picture is needed. */
+  | { type: "stir" };
 
 export interface OpeningOptions {
   art: SeriesArt;
@@ -108,6 +110,12 @@ export interface Opening {
 }
 
 const TEETH = 30;
+/** How long what sways by itself goes on after the last touch while the table waits. */
+const STIR_MS = 3000;
+/** Less than this from one picture to the next is no change. */
+const STILL_EPS = 1e-3;
+/** How fast the lid stirs, and where in its turn it begins to show. */
+const LID_W = 2.1, LID_FROM = Math.asin(0.2);
 /** How tall a card stands in the row. */
 const RAIL_S = 98 / CARD_H;
 
@@ -251,6 +259,22 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   const visiting = !!from;
   let left: Promise<void> | null = null;      // leave() was called
   let released: (() => void) | null = null;
+
+  /* ---------------------------------------------------------------- standing still */
+  // While the table waits for a hand, what sways by itself (the box, a bag or a card held up, the light, the desk) slows
+  // to a stop a while after the last touch, and once nothing moves no more pictures are asked for. The hints (the lid
+  // that stirs, the mouth of a sealed bag) still come round: each wakes the table for as long as it plays.
+  /** What sways by itself goes by this clock; it slows to a stop while the table waits. */
+  let amb = 0;
+  let ambRate = 1;
+  /** The hints go by this one: it stands while nothing is drawn, and goes on at once to the next hint. */
+  let hc = 0;
+  /** When the table last moved by itself or was touched. */
+  let stirred = 0;
+  /** Nothing moves: no pictures are needed until a touch, or the next hint. */
+  let still = false;
+  let nap: ReturnType<typeof setTimeout> | null = null;
+  let seen: number[] = [];
 
   /* ---------------------------------------------------------------- events */
   /** What happens while it is being made is told once it is. */
@@ -753,7 +777,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     ptr.sx = ptr.x;
     ptr.sy = ptr.y;
     if (ptr.down) ptr.moved = 10;
-    b.sealedAt = time.clock;
+    b.sealedAt = hc;
     // A press that came while the bag was on its way tears it.
     if (early && !ptr.down) void tearAlone(b, 420);
     early = false;
@@ -1355,22 +1379,30 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
 
   /* ---------------------------------------------------------------- each frame */
   function update(dt: number): void {
-    time.advance(dt * haste);
+    wake();
+    const step = dt * haste;
+    time.advance(step);
+    hc += step;
     const { clock } = time;
+    if (!waiting()) stirred = clock;
+    const want = clock - stirred < STIR_MS ? 1 : 0;
+    ambRate += (want - ambRate) * (1 - Math.exp(-dt / 260));
+    if (Math.abs(want - ambRate) < 0.002) ambRate = want;
+    amb += step * ambRate;
     ptr.vx *= Math.exp(-dt / 90);
     ptr.vy *= Math.exp(-dt / 90);
     if (box.swaying) {
-      const t = clock / 1000, k = box.sway;
+      const t = amb / 1000, k = box.sway;
       box.p.ry = box.ry0 + 7 * k * Math.sin(t * 0.8) + (ptr.inside ? ptr.x / 480 * 12 * k : 0);
       box.p.rx = box.rx0 + 2.5 * k * Math.sin(t * 0.63 + 1) + (ptr.inside ? -ptr.y / 320 * 5 * k : 0);
       // The lid stirs now and then.
-      if (phase === "intro" && k && box.p.y > -20) box.lid = 90 + 5 * k * Math.max(0, Math.sin(t * 2.1)) ** 6;
+      if (phase === "intro" && k && box.p.y > -20) box.lid = 90 + 5 * k * Math.max(0, Math.sin(hc / 1000 * LID_W)) ** 6;
     }
     for (const b of bags) {
       if (b.route) follow(b, b.route);
       if (b.state === "sealed" && b === active) {
         if (b.drive) pull(b, b.drive.q, 0.65);
-        const idle = clock - b.sealedAt;
+        const idle = hc - b.sealedAt;
         if (b.state === "sealed" && !b.n && idle > 900 && !ptr.down) {
           const k = ((idle - 900) % 2100) / 900;
           b.hint = k < 1 ? -0.25 + k * 1.5 : -2;
@@ -1433,8 +1465,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     for (const c of cards) {
       const held = c === shown || (spot?.sign && c === spot.card);
       const near = held && !turn.held, wide = c === inspecting;
-      const tx = near && ptr.inside ? clamp(ptr.x / 300, -1, 1) : near ? 0.5 * Math.sin(clock / 1300) : 0;
-      const ty = near && ptr.inside ? clamp((ptr.y - c.p.y) / 260, -1, 1) : near ? 0.5 * Math.sin(clock / 1700 + 1) : 0;
+      const tx = near && ptr.inside ? clamp(ptr.x / 300, -1, 1) : near ? 0.5 * Math.sin(amb / 1300) : 0;
+      const ty = near && ptr.inside ? clamp((ptr.y - c.p.y) / 260, -1, 1) : near ? 0.5 * Math.sin(amb / 1700 + 1) : 0;
       const k = 1 - Math.exp(-dt / 90);
       c.amp += ((wide ? 26 : 18) - c.amp) * k;
       movePen(c, dt);
@@ -1446,8 +1478,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       // One on its way back stands straight by the time it is over the box.
       const a: Bag = active, back = !!a.route?.back, on = !back && (a.state === "sealed" || a.state === "arrive");
       const k = 1 - Math.exp(-dt / (back ? 70 : 160));
-      const toX = on && ptr.inside ? clamp(ptr.x / 260, -1, 1) : on ? 0.55 * Math.sin(clock / 1500) : 0;
-      const toY = on && ptr.inside ? clamp(ptr.y / 260, -1, 1) : on ? 0.4 * Math.sin(clock / 1900 + 2) : 0;
+      const toX = on && ptr.inside ? clamp(ptr.x / 260, -1, 1) : on ? 0.55 * Math.sin(amb / 1500) : 0;
+      const toY = on && ptr.inside ? clamp(ptr.y / 260, -1, 1) : on ? 0.4 * Math.sin(amb / 1900 + 2) : 0;
       a.float += ((on ? 1 : 0) - a.float) * (1 - Math.exp(-dt / (back ? 70 : 400)));
       a.leanX += (toX - a.leanX) * k;
       a.leanY += (toY - a.leanY) * k;
@@ -1464,23 +1496,87 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       f.spin += f.vs * dt * 10;
       return f.life < f.max;
     });
+    rest();
+  }
+
+  /** The run waits for a hand, with nothing on the timeline. */
+  const waiting = () => (phase === "intro" || phase === "play" || phase === "spot") && !time.busy && !ptr.down;
+  /** Everything drawn that moves from one picture to the next without the timeline. */
+  function looks(): number[] {
+    const v = [amb, box.p.x, box.p.y, box.p.rx, box.p.ry, box.p.rz, box.lid, scene.dusk, scene.warm, scene.lift];
+    v.push(turn.yaw, turn.pitch);
+    for (const b of bags) {
+      if (b.state === "gone") continue;
+      v.push(b.p.x, b.p.y, b.p.z, b.p.rx, b.p.ry, b.p.rz, b.p.s, b.bx, b.by, b.curl, b.rad, b.tug, b.lift2, b.wave);
+      v.push(b.shown, b.glow, b.hint, b.float, b.leanX, b.leanY);
+    }
+    for (const c of cards) {
+      if (c.state === "in") continue;
+      v.push(c.p.x, c.p.y, c.p.z, c.p.rx, c.p.ry, c.p.rz, c.p.s, c.tiltX, c.tiltY, c.float, c.amp, c.tipAmt);
+    }
+    return v;
+  }
+  /** Whether the picture just drawn is the one the next would be; if so, a wake-up is set for the next hint. */
+  function rest(): void {
+    const now = looks(), before = seen;
+    seen = now;
+    if (!waiting() || ambRate || fx.length || now.length !== before.length) return;
+    for (let k = 0; k < now.length; k++) if (Math.abs(now[k] - before[k]) > STILL_EPS) return;
+    still = true;
+    const ms = nextHint();
+    if (!Number.isFinite(ms)) return;
+    nap = setTimeout(() => {
+      nap = null;
+      if (dead || !still) return;
+      // Nothing was drawn meanwhile: the hints go on from where the next one begins.
+      hc += ms;
+      still = false;
+      emit({ type: "stir" });
+    }, ms);
+  }
+  /** A picture is wanted: of a touch, or of a frame drawn. */
+  function wake(): void {
+    still = false;
+    if (nap !== null) clearTimeout(nap);
+    nap = null;
+  }
+  function touched(): void {
+    wake();
+    stirred = time.clock;
+  }
+  /** How long until a hint plays again, by the hints' clock. */
+  function nextHint(): number {
+    let ms = Infinity;
+    if (box.swaying && phase === "intro" && box.sway && box.p.y > -20) {
+      const at = ((hc / 1000) * LID_W) % (2 * Math.PI);
+      // Just begun to rise, too little to be seen yet: it goes on now.
+      ms = at > LID_FROM && at < Math.PI / 2 ? 0
+        : (((LID_FROM - at) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI)) / LID_W * 1000;
+    }
+    const a = active;
+    if (a?.state === "sealed" && !a.n && !ptr.down) {
+      const idle = hc - a.sealedAt;
+      ms = Math.min(ms, idle < 900 ? 900 - idle : 2100 - ((idle - 900) % 2100));
+    }
+    return Math.max(1, ms);
   }
   /* ---------------------------------------------------------------- drawing */
   /** A bag in hand gives under the pull, floats, and leans toward the pointer. */
   const heldPose = (b: Bag): Pose => ({
-    ...b.p, y: b.p.y + b.tug + 2.6 * Math.sin(time.clock / 1050) * b.float, ry: b.p.ry + b.leanX * 13,
+    ...b.p, y: b.p.y + b.tug + 2.6 * Math.sin(amb / 1050) * b.float, ry: b.p.ry + b.leanX * 13,
     rx: b.p.rx - b.leanY * 11,
   });
   const lamp = (): Vec3 => [
-    ptr.inside ? ptr.x : 180 * Math.sin(time.clock / 1400),
-    ptr.inside ? ptr.y : -120 + 60 * Math.sin(time.clock / 1900), 230,
+    ptr.inside ? ptr.x : 180 * Math.sin(amb / 1400),
+    ptr.inside ? ptr.y : -120 + 60 * Math.sin(amb / 1900), 230,
   ];
   const roomShift = (): Vec2 => [
-    (ptr.inside ? ptr.x / 480 : 0.4 * Math.sin(time.clock / 2300)) * 0.05,
-    (ptr.inside ? ptr.y / 320 : 0.3 * Math.sin(time.clock / 2900)) * 0.035,
+    (ptr.inside ? ptr.x / 480 : 0.4 * Math.sin(amb / 2300)) * 0.05,
+    (ptr.inside ? ptr.y / 320 : 0.3 * Math.sin(amb / 2900)) * 0.035,
   ];
   function draw(): void {
-    const { clock } = time, { clearDepth, shadow, solid } = painter;
+    // What the painter moves by itself (a bag's breath, a card held up, the light and the desk) stands with the rest.
+    const clock = amb, { clearDepth, shadow, solid } = painter;
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.enable(gl.BLEND);
     gl.depthFunc(gl.LEQUAL);
@@ -1623,16 +1719,16 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       if (from) putFrom(from);
       from = null;
     },
-    down(x, y, t) { if (!dead && !left) onDown(x, y, t); },
-    move(x, y, t) { if (!dead) onMove(x, y, t); },
-    up(off = false) { if (!dead) onUp(off); },
-    leavePointer() { if (!ptr.down) ptr.inside = false; },
-    press(repeat = false) { if (!dead && !left) press(repeat); },
-    setAuto(on) { if (!dead && !left) setAuto(on); },
-    skip,
-    leave,
-    goOut: (place) => goWith(() => departOut(place)),
-    goBack: (place) => goWith(() => departBack(place)),
+    down(x, y, t) { if (!dead && !left) { touched(); onDown(x, y, t); } },
+    move(x, y, t) { if (!dead) { touched(); onMove(x, y, t); } },
+    up(off = false) { if (!dead) { touched(); onUp(off); } },
+    leavePointer() { if (!ptr.down) { touched(); ptr.inside = false; } },
+    press(repeat = false) { if (!dead && !left) { touched(); press(repeat); } },
+    setAuto(on) { if (!dead && !left) { touched(); setAuto(on); } },
+    skip() { touched(); skip(); },
+    leave() { touched(); return leave(); },
+    goOut: (place) => { touched(); return goWith(() => departOut(place)); },
+    goBack: (place) => { touched(); return goWith(() => departBack(place)); },
     places: () => cards.map((c, index) => ({
       index, x: c.home.x, y: c.home.y, w: (c.info.land ? CARD_H : CARD_W) * c.home.s, h: (c.info.land ? CARD_W : CARD_H) * c.home.s,
     })),
@@ -1647,13 +1743,14 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     get clock() { return time.clock; },
     get busy() {
       if (dead) return false;
-      // Bags and the box are never quite still, nor is a card that is held up.
-      if (phase !== "end" && phase !== "leaving") return true;
+      // Bags and the box are still only once the table has stood waiting a while.
+      if (phase !== "end" && phase !== "leaving") return !still;
       return time.busy || !!inspecting || fx.length > 0 || scene.lift !== lifted();
     },
     dispose(followed = false) {
       if (dead) return;
       dead = true;
+      wake();
       epoch += 1;
       time.clear();
       pressWaiters = [];

@@ -20,14 +20,15 @@ const kit = {
 const gl = { getError: () => 0 } as unknown as GL;
 
 type Told = [number, OpeningEvent][];
-/** "sign:bella-2" is the signed bella-2. */
-function table(cards: string[]): { o: Opening; told: Told } {
-  const told: Told = [];
+/** "sign:bella-2" is the signed bella-2. [woken] is set by every event, as the host wakes the canvas for each. */
+function table(cards: string[], skipIntro = true): { o: Opening; told: Told; woken: { on: boolean } } {
+  const told: Told = [], woken = { on: false };
   const deal = cards.map((c) => ({ card: c.replace(/^sign:/, ""), signed: c.startsWith("sign:") }));
   const o: Opening = createOpening(gl, kit, {} as Painter, {
-    art: seriesArt("asoul2026")!, deal, skipIntro: true, sound: quiet, seed: 1, on: (e) => told.push([o.clock, e]),
+    art: seriesArt("asoul2026")!, deal, skipIntro, sound: quiet, seed: 1,
+    on: (e) => { told.push([o.clock, e]); woken.on = true; },
   });
-  return { o, told };
+  return { o, told, woken };
 }
 /** Frames go by until [done] holds; how long that took. */
 async function until(o: Opening, done: () => boolean, most = 20000): Promise<number> {
@@ -125,5 +126,96 @@ describe("a box opened by presses", () => {
     o.setAuto(true);
     await until(o, () => o.state().phase === "end", 60000);
     expect(keptOrder(list)).toEqual(MIXED.map((_, i) => i));
+  });
+});
+
+/** Time goes by as the engine draws: a frame while the table is busy or was woken, none otherwise. Frames drawn. */
+async function engine(o: Opening, woken: { on: boolean }, ms: number): Promise<number> {
+  let drawn = 0;
+  for (let t = 0; t < ms; t += 16) {
+    if (o.busy || woken.on) {
+      woken.on = false;
+      o.update(16);
+      drawn++;
+    }
+    await vi.advanceTimersByTimeAsync(16);
+  }
+  return drawn;
+}
+const stirs = (list: Told, from: number) => list.filter(([at, e]) => e.type === "stir" && at >= from).length;
+
+describe("a table waiting for a hand", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("stops asking for frames while the box waits, and wakes for each stir of the lid", async () => {
+    const { o, told: list, woken } = table(["diana-1"], false);
+    await until(o, () => o.state().phase === "intro");
+    await engine(o, woken, 6000);
+    const from = o.clock, drawn = await engine(o, woken, 60000);
+    expect(o.state().phase).toBe("intro");
+    expect(drawn).toBeLessThan(3750 * 0.6);
+    // The lid stirs every three seconds or so, each time woken for.
+    expect(stirs(list, from)).toBeGreaterThanOrEqual(15);
+  });
+
+  it("asks for fewer frames while waiting for the first press, frame by frame", async () => {
+    const { o } = table(["diana-1"], false);
+    for (let f = 0; f < 300; f++) { o.update(1000 / 60); await vi.advanceTimersByTimeAsync(0); }
+    expect(o.state().phase).toBe("intro");
+    let active = 0;
+    for (let f = 0; f < 3600; f++) {
+      if (o.busy) active++;
+      o.update(1000 / 60);
+      await Promise.resolve();
+    }
+    expect(o.state().phase).toBe("intro");
+    expect(active).toBeLessThan(3600 * 0.6);
+  });
+
+  it("wakes at once for the pointer and for a key", async () => {
+    const { o, woken } = table(["diana-1"], false);
+    await until(o, () => o.state().phase === "intro");
+    await engine(o, woken, 8000);
+    await until(o, () => !o.busy, 4000);
+    o.move(40, 20, 0);
+    expect(o.busy).toBe(true);
+    // The table goes on moving for a while after it.
+    expect(await engine(o, woken, 1000)).toBeGreaterThan(55);
+    await until(o, () => !o.busy, 8000);
+    o.press();
+    expect(o.busy).toBe(true);
+    await until(o, () => o.state().phase === "play");
+  });
+
+  it("stops while a sealed bag waits to be torn, its hint still coming round", async () => {
+    const { o, told: list, woken } = table(PLAIN);
+    await until(o, sealed(o, 0));
+    await engine(o, woken, 6000);
+    const from = o.clock, drawn = await engine(o, woken, 42000);
+    expect(o.state().active).toMatchObject({ i: 0, state: "sealed", n: 0 });
+    expect(drawn).toBeLessThan(2625 * 0.6);
+    // Every 2.1 s.
+    expect(stirs(list, from)).toBeGreaterThanOrEqual(18);
+    o.press();
+    await until(o, told(list, "shown", 0));
+  });
+
+  it("stops altogether while a card waits on show, and goes on with a press", async () => {
+    const { o, told: list, woken } = table(PLAIN);
+    await until(o, sealed(o, 0));
+    o.press();
+    await until(o, told(list, "shown", 0));
+    await engine(o, woken, 8000);
+    expect(await engine(o, woken, 20000)).toBe(0);
+    o.press();
+    expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(32);
+  });
+
+  it("keeps drawing while the box opens by itself", async () => {
+    const { o, woken } = table(PLAIN);
+    await until(o, sealed(o, 0));
+    o.setAuto(true);
+    expect(await engine(o, woken, 3000)).toBeGreaterThan(180);
   });
 });
