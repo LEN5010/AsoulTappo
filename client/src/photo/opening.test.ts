@@ -327,6 +327,28 @@ describe("a box skipped through", () => {
     expect(told(list, "kept", 1)()).toBe(false);
   });
 
+  it("draws the row of a skipped box", async () => {
+    // Whatever is asked of these does nothing.
+    const any = <T>(o: object) => new Proxy(o, { get: (t, k) => (k in t ? Reflect.get(t, k) : () => undefined) }) as T;
+    const { o, told: list } = table(MIXED, true, {
+      painter: any<Painter>({ blended: "over" }),
+      gl: any<GL>({ drawingBufferWidth: 960, drawingBufferHeight: 640, getError: () => 0 }),
+    });
+    o.resize(960, 640, 1);
+    await until(o, sealed(o, 0));
+    o.skip();
+    let frames = 0;
+    await until(o, () => {
+      o.draw();
+      frames++;
+      if (told(list, "shown", 1)()) o.press();
+      if (told(list, "shown", 3)()) o.press();
+      if (told(list, "shown", 4)()) o.press();
+      return o.state().phase === "end";
+    }, 40000);
+    expect(frames).toBeGreaterThan(100);
+  });
+
   it("lays everything out at once when skipped before the box is open", async () => {
     const { o } = table(MIXED, false);
     await until(o, () => o.state().phase === "intro");

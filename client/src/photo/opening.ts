@@ -1247,6 +1247,9 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     }
 
     const row = bags.filter((b) => !b.torn && b.state !== "gone"), n = row.length;
+    const plain = row.filter((b) => !RANK(b.card)), rare = row.filter((b) => RANK(b.card));
+    // The first fronts come while the row comes out.
+    for (const b of plain.slice(0, 3)) kit.want(b.card.info, "front");
     const s = n <= 6 ? 0.5 : n <= 10 ? 0.42 : 0.34, step = Math.min(BAG[0] * s + 14, 820 / Math.max(1, n - 1));
     let late = 0;
     if (n) {
@@ -1279,7 +1282,6 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     if (n) await wait(RUSH_OUT + Math.max(0, late - RUSH_DEAL));
     if (!live()) return;
 
-    const plain = row.filter((b) => !RANK(b.card)), rare = row.filter((b) => RANK(b.card));
     for (const [j, b] of plain.entries()) {
       // Their fronts are asked for a few ahead, and let go of once they are down.
       const ahead = plain.slice(j, j + 3).map((x) => x.card);
