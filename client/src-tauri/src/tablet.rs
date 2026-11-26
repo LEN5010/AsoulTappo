@@ -248,25 +248,30 @@ mod win {
             .then(|| usages[..count as usize].iter().any(|u| *u == USAGE_TIP || *u == USAGE_ERASER))
     }
 
-    /// The tip switch of every report in one WM_INPUT, oldest first.
-    fn tips(cache: &mut HashMap<isize, Vec<u64>>, input: HRAWINPUT) -> Vec<bool> {
+    /// The tip switch of every report in one WM_INPUT, oldest first, into `out`. `data` is the thread's buffer for the
+    /// input, kept from one message to the next and grown when one is larger.
+    fn tips(cache: &mut HashMap<isize, Vec<u64>>, input: HRAWINPUT, data: &mut Vec<u64>, out: &mut Vec<bool>) {
+        out.clear();
         let header = size_of::<RAWINPUTHEADER>() as u32;
         let mut size = 0u32;
         unsafe { GetRawInputData(input, RID_INPUT, std::ptr::null_mut(), &mut size, header) };
         if size <= header {
-            return Vec::new();
+            return;
         }
         // A short HID report makes the input smaller than RAWINPUT, whose union is as large as its mouse variant.
-        let mut data = buffer(size.max(size_of::<RAWINPUT>() as u32));
+        let words = (size.max(size_of::<RAWINPUT>() as u32) as usize).div_ceil(size_of::<u64>());
+        if data.len() < words {
+            data.resize(words, 0);
+        }
         let got = unsafe { GetRawInputData(input, RID_INPUT, data.as_mut_ptr().cast(), &mut size, header) };
         if got == u32::MAX || got <= header || got as usize > data.len() * size_of::<u64>() {
-            return Vec::new();
+            return;
         }
         let raw = data.as_ptr().cast::<RAWINPUT>();
         // SAFETY: the buffer is at least a RAWINPUT long and aligned for it; the reports follow the HID header inside it.
         let (device, len, count, first) = unsafe {
             if (*raw).header.dwType != RIM_TYPEHID {
-                return Vec::new();
+                return;
             }
             let hid = &(*raw).data.hid;
             (
@@ -278,13 +283,14 @@ mod win {
         };
         let offset = first as usize - data.as_ptr() as usize;
         if len == 0 || offset + len * count > got as usize {
-            return Vec::new();
+            return;
         }
-        let Some(layout) = preparsed(cache, device) else { return Vec::new() };
-        (0..count)
-            // SAFETY: checked above that every report lies inside the bytes the system wrote.
-            .filter_map(|i| tip_down(layout, unsafe { std::slice::from_raw_parts(first.add(i * len), len) }))
-            .collect()
+        let Some(layout) = preparsed(cache, device) else { return };
+        out.extend(
+            (0..count)
+                // SAFETY: checked above that every report lies inside the bytes the system wrote.
+                .filter_map(|i| tip_down(layout, unsafe { std::slice::from_raw_parts(first.add(i * len), len) })),
+        );
     }
 
     /// The HID devices present, as usage page/usage and vendor:product ids, so a log shows what a tablet offers when
@@ -378,10 +384,14 @@ mod win {
         let mut pen = PenState::default();
         let mut heard = false;
         let mut last_tip = false;
+        // One message's input and its reports' tip switches, kept for the next message.
+        let mut data: Vec<u64> = Vec::new();
+        let mut reports: Vec<bool> = Vec::new();
         let mut msg: MSG = unsafe { std::mem::zeroed() };
         while unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) } > 0 {
             if msg.message == WM_INPUT {
-                for tip in tips(&mut cache, msg.lParam as HRAWINPUT) {
+                tips(&mut cache, msg.lParam as HRAWINPUT, &mut data, &mut reports);
+                for &tip in &reports {
                     if !heard {
                         heard = true;
                         applog!("tablet", "first pen report");
