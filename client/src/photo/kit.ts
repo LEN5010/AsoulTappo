@@ -59,6 +59,8 @@ export interface Kit {
   readonly tex: Record<"room" | "shadow" | "noise", WebGLTexture>;
   /** The programs and the shared textures can be used. Rejects when one of them cannot be made. */
   readonly ready: Promise<void>;
+  /** Pictures asked for are still being loaded. */
+  readonly busy: boolean;
   /** Loads what every card of a series needs, its signatures and its backs, the print of its box, and its floor. */
   load(series: string): Promise<void>;
   /** The print of a series' box alone, and its signatures alone. */
@@ -98,6 +100,15 @@ export function createKit(gl: GL): Kit {
   };
   const bits = makeBits(gl);
 
+  /** Loads under way. */
+  let pending = 0;
+  function track<T>(p: Promise<T>): Promise<T> {
+    pending++;
+    const done = () => { pending--; };
+    p.then(done, done);
+    return p;
+  }
+
   let turns: Promise<unknown> = Promise.resolve();
   /** Textures are made one at a time, with room for a frame between two of them. Null once this is disposed of. */
   function upload(
@@ -113,7 +124,7 @@ export function createKit(gl: GL): Kit {
   }
 
   const tex = {} as Kit["tex"];
-  const shared = Promise.all([OPEN_ART.room, OPEN_ART.shadow].map((url) => G.picture(url).then((p) => upload(p)))).then(([room, shadow]) => {
+  const shared = track(Promise.all([OPEN_ART.room, OPEN_ART.shadow].map((url) => G.picture(url).then((p) => upload(p))))).then(([room, shadow]) => {
     if (disposed || !room || !shadow) return;
     Object.assign(tex, { room, shadow });
     // The same random texels as the card page's grain.
@@ -132,7 +143,7 @@ export function createKit(gl: GL): Kit {
   const asked = new Map<string, Promise<void>>();
   function once(key: string, begin: () => Promise<boolean>): Promise<void> {
     let p = asked.get(key);
-    if (!p) asked.set(key, p = begin().catch(() => false).then((whole) => { if (!whole) asked.delete(key); }));
+    if (!p) asked.set(key, p = track(begin()).catch(() => false).then((whole) => { if (!whole) asked.delete(key); }));
     return p;
   }
   async function loadSigns(series: string): Promise<boolean> {
@@ -203,7 +214,7 @@ export function createKit(gl: GL): Kit {
       made.texture = G.texture(gl, canvas);
       made.drawn = true;
     };
-    made.ready = fill();
+    made.ready = track(fill());
     return made;
   }
 
@@ -217,12 +228,12 @@ export function createKit(gl: GL): Kit {
     if (!h) {
       const made: Held = { key, tex: null, users: 0, ready: Promise.resolve() };
       held.set(key, h = made);
-      made.ready = G.picture(url).then((picture) => upload(picture, (p) => (
+      made.ready = track(G.picture(url).then((picture) => upload(picture, (p) => (
         made.users ? G.texture(gl, small ? shrunk(p) : p) : null))).then((tex) => {
         if (!tex) return;
         if (made.users && !disposed) made.tex = tex;
         else gl.deleteTexture(tex);
-      });
+      }));
     }
     h.users += 1;
     return h;
@@ -289,6 +300,7 @@ export function createKit(gl: GL): Kit {
   return {
     progs, mesh, bits, tex,
     ready: Promise.all([shared, ...Object.values(progs).map((p) => p.ready)]).then(() => {}),
+    get busy() { return pending > 0; },
     ink: inkOf,
     signs: signsOf,
     async load(series) { await Promise.all([inkOf(series), signsOf(series), loadBacks(series), floorOf(series)]); },

@@ -867,6 +867,78 @@ def test_the_database_keeps_a_box_through_a_restart(tmp_path):
     again.store.close()
 
 
+def test_buying_answers_with_the_box_it_handed_over():
+    g, pc, _, _ = setup()
+    out = pc.buy(TOKEN, SID)
+    assert out["receipt"] == {"series": SID, "box": got(out)["box"]}
+    # The box handed back at no charge is the one bought.
+    again = pc.buy(TOKEN, SID)
+    assert again["receipt"] == out["receipt"]
+    assert "receipt" not in pc.state(TOKEN) and "receipt" not in pc.open(TOKEN, got(out)["box"]["id"])
+
+
+def test_buying_answers_with_its_box_though_another_device_opened_it_meanwhile(monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    g, pc, _, pid = setup()
+    committed, resume = threading.Event(), threading.Event()
+    answer = pc._answer
+
+    def wait_after_buy(token, **extra):
+        if threading.current_thread().name.startswith("buyer"):
+            committed.set()
+            assert resume.wait(5)
+        return answer(token, **extra)
+
+    monkeypatch.setattr(pc, "_answer", wait_after_buy)
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="buyer") as pool:
+        pending = pool.submit(pc.buy, TOKEN, SID)
+        try:
+            assert committed.wait(5)
+            box = mine(pc)["box"]
+            pc.open(TOKEN, box["id"])
+        finally:
+            resume.set()
+        reply = pending.result(timeout=5)
+    # The state is as it is now; the receipt is what was bought.
+    assert got(reply)["box"] is None and got(reply)["boxes"] == 1
+    assert reply["receipt"] == {"series": SID, "box": box}
+    assert ledger(g, pid)[BOX] == (-PRICE, 1)
+
+
+def test_the_view_reads_only_the_photocards_of_the_save(monkeypatch):
+    g, pc, _, pid = setup(manifest=two_series(CFG2))
+    held = [SERIES.solo[1], SERIES.sign[0], SERIES2.duo[2]]
+    for item in held:
+        g.store.add_item(pid, item, 0)
+    for card in list(g.manifest.cards)[:5]:
+        g.store.add_item(pid, "card:" + card, 0)
+    before = pc.state(TOKEN)["photocards"]
+
+    def everything(_pid):
+        raise AssertionError("read every item of the save")
+
+    monkeypatch.setattr(g.store, "owned", everything)
+    with g.store.lock:
+        view = pc._view(g.store, pid, g.now())
+    assert view == before
+    assert view["series"][SID]["owned"] == [SERIES.solo[1], SERIES.sign[0]]
+    assert view["series"][LATER]["owned"] == [SERIES2.duo[2]]
+
+
+def test_the_store_tells_which_of_some_items_a_save_holds():
+    g, _, _, pid = setup()
+    g.store.add_item(pid, SERIES.solo[0], 0)
+    g.store.add_item(pid, "card:" + next(iter(g.manifest.cards)), 0)
+    assert g.store.held_of(pid, [SERIES.solo[0], SERIES.solo[1], SERIES.sign[0]]) == {SERIES.solo[0]}
+    assert g.store.held_of(pid, []) == set()
+    assert g.store.held_of("someone-else", [SERIES.solo[0]]) == set()
+    # More ids than SQLite takes in one statement.
+    many = [f"photo:{SID}/x-{i}" for i in range(2000)] + [SERIES.solo[0]]
+    assert g.store.held_of(pid, many) == {SERIES.solo[0]}
+
+
 # ------------------------------------------------------------------------- HTTP
 def test_the_api(monkeypatch):
     g, _, _, pid = setup(manifest=two_series({**CFG2, "daily": 0}, CFG))
@@ -885,6 +957,7 @@ def test_the_api(monkeypatch):
     bought = post("buy", {"series": SID}).json()
     box = got(bought)["box"]
     assert len(box["cards"]) == SIZE and bought["shards"] == shards(g, pid)
+    assert bought["receipt"] == {"series": SID, "box": box}
     for body in (None, {}, {"series": ""}, {"series": "x" * 65}, {"series": 1}, {"series": SID, "price": 0},
                  {"series": SID, "price": "x"}, {"series": SID, "price": 2**70}):
         assert post("buy", body).status_code == 422

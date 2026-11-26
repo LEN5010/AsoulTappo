@@ -1,8 +1,12 @@
 // The frames of the shared canvas: one a tick, whatever happens inside it.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./gl", () => ({ context: () => ({}) }));
-vi.mock("./kit", () => ({ createKit: () => ({ ready: compiled() }) }));
+/** Contexts let go of, kits disposed of. */
+const gone = vi.hoisted(() => ({ contexts: 0, kits: 0, busy: false }));
+vi.mock("./gl", () => ({ context: () => ({ getExtension: () => ({ loseContext: () => { gone.contexts++; } }) }) }));
+vi.mock("./kit", () => ({
+  createKit: () => ({ ready: compiled(), get busy() { return gone.busy; }, dispose: () => { gone.kits++; } }),
+}));
 vi.mock("./painter", () => ({ createPainter: () => ({}) }));
 
 /** The programs of the next canvas. */
@@ -39,6 +43,7 @@ async function engine() {
 }
 
 beforeEach(() => {
+  Object.assign(gone, { contexts: 0, kits: 0, busy: false });
   queue = new Map();
   ids = 0;
   now = 0;
@@ -218,3 +223,55 @@ describe("the shared canvas", () => {
     expect(await photoGl()).toBe(await second);
   });
 });
+
+describe("the shared canvas while nothing is shown on it", () => {
+  const IDLE = 45_000;
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("is let go of a while after the last view left, and made anew when it is next asked for", async () => {
+    vi.useFakeTimers();
+    const { mountScene, photoGl, onPhotoLost } = await engine();
+    const told = vi.fn();
+    onPhotoLost(told);
+    const first = await photoGl();
+    const under = mountScene(host(), scene()), over = mountScene(host(), scene(), { layer: 2 });
+    over.release();
+    await vi.advanceTimersByTimeAsync(IDLE * 2);
+    expect([gone.kits, gone.contexts]).toEqual([0, 0]);
+    under.release();
+    await vi.advanceTimersByTimeAsync(IDLE - 1000);
+    expect(gone.kits).toBe(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect([gone.kits, gone.contexts]).toEqual([1, 1]);
+    // Nothing that stood on it starts over: there was nothing.
+    expect(told).not.toHaveBeenCalled();
+    const next = await photoGl();
+    expect(next).not.toBeNull();
+    expect(next).not.toBe(first);
+  });
+
+  it("is let go of when it was made ready and nothing came to be shown on it", async () => {
+    vi.useFakeTimers();
+    const { photoGl } = await engine();
+    await vi.advanceTimersByTimeAsync(IDLE + 1000);
+    expect([gone.kits, gone.contexts]).toEqual([1, 1]);
+    expect(await photoGl()).not.toBeNull();
+  });
+
+  it("waits while what was asked for is still being loaded, and while it is asked for again", async () => {
+    vi.useFakeTimers();
+    const { photoGl } = await engine();
+    gone.busy = true;
+    await vi.advanceTimersByTimeAsync(IDLE * 3);
+    expect(gone.kits).toBe(0);
+    gone.busy = false;
+    await vi.advanceTimersByTimeAsync(IDLE - 10_000);
+    const same = await photoGl();
+    await vi.advanceTimersByTimeAsync(IDLE - 10_000);
+    expect(gone.kits).toBe(0);
+    expect(await photoGl()).toBe(same);
+    await vi.advanceTimersByTimeAsync(IDLE + 1000);
+    expect(gone.kits).toBe(1);
+  });
+});
+
