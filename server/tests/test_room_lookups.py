@@ -1,4 +1,6 @@
 """One address may ask GET /rooms/{id} only so many times within a window (main.ROOM_LOOKUPS)."""
+from urllib.parse import quote
+
 import pytest
 
 import app.main as main
@@ -39,4 +41,24 @@ def test_lookups_from_this_machine_are_not_counted(env, monkeypatch):
     monkeypatch.setattr(main, "_room_lookups", {})
     for n in range(3):  # the test client has no address to count
         assert c.get(f"/rooms/r{n}").status_code == 200
+    assert main._room_lookups == {}
+
+
+def test_a_room_id_with_a_slash_is_looked_up_whole(env):
+    c, *_ = env
+    main.manager.join("音乐/夜场", "a", "c", None)
+    try:
+        assert c.get("/rooms/" + quote("音乐/夜场", safe="")).json() == {"room": "音乐/夜场", "open": True}
+        # A proxy that decodes the slash on its way still asks for the same room.
+        assert c.get("/rooms/音乐/夜场").json() == {"room": "音乐/夜场", "open": True}
+        assert c.get("/rooms/" + quote("音乐/", safe="")).json() == {"room": "音乐/", "open": False}
+    finally:
+        main.manager.rooms.clear()
+    # The routes next to it are unchanged.
+    assert c.post("/rooms").json()["room"]
+    # the list, which this server shows to accounts only
+    assert c.get("/rooms").json()["detail"]["code"] == "account_required"
+    # As before the room id could hold a slash: the address with one at the end goes to the list.
+    moved = c.get("/rooms/", follow_redirects=False)
+    assert moved.status_code == 307 and moved.headers["location"].endswith("/rooms")
     assert main._room_lookups == {}

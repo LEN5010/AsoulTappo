@@ -20,6 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Web
 import starlette.websockets
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -359,11 +360,15 @@ async def public_rooms(authorization: str = Header(default="")) -> dict:
     return {"rooms": manager.public_rooms(PUBLIC_LIST_LIMIT)}
 
 
-@app.get("/rooms/{room_id}")
-async def room_open(room_id: str, request: Request) -> dict:
+@app.get("/rooms/{room_id:path}", response_model=None)
+async def room_open(room_id: str, request: Request) -> dict | RedirectResponse:
     """Whether a room has members now, without making it: a client going back to the room it was in when it last
     closed joins only an open one (a join of any other id makes the room). Like a join, it needs only the id; an
-    address may ask only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS (_may_look_up_room)."""
+    address may ask only ROOM_LOOKUPS times within ROOM_LOOKUP_SECONDS (_may_look_up_room). The id is the rest of the
+    path, slashes and all, as a join may name one; an empty one goes to the room list, as the router sends any
+    address with a slash at the end."""
+    if not room_id:
+        return RedirectResponse(request.url.replace(path=request.url.path.rstrip("/")), 307)
     _may_look_up_room(request)
     return {"room": room_id, "open": len(room_id) <= 64 and room_id in manager.rooms}
 
