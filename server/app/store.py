@@ -523,14 +523,17 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 f"FROM items WHERE count > 0 AND item_id IN ({marks}) GROUP BY player_id", (*big, *cards)).fetchall()
         return [dict(r) for r in rows]
 
-    def held_items(self, linked: bool = False) -> list[tuple[str, str, float]]:
+    def held_items(self, linked: bool = False, skip: tuple[str, ...] = ()) -> list[tuple[str, str, float]]:
         """(player id, item id, when it first came) of every item a save holds; with [linked], only of the saves
-        bound to a main-site account, so the read does not grow with saves that are never listed. The collection
+        bound to a main-site account, so the read does not grow with saves that are never listed; without the items
+        whose id starts with one of [skip], which SQLite leaves out before they reach Python. The collection
         board's scan: it reads committed rows on the statistics connection (_reading), so player requests do not
         wait for it, and Game.board calls it outside any transaction."""
         only = " AND player_id IN (SELECT player_id FROM account_links)" if linked else ""
+        only += " AND substr(item_id, 1, ?) != ?" * len(skip)
+        args = [x for prefix in skip for x in (len(prefix), prefix)]
         with self._reading() as db:
-            rows = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}").fetchall()
+            rows = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}", args).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
 
     def set_room_nick(self, pid: str, nick: str) -> None:
