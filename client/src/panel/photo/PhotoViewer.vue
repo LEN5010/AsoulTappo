@@ -67,6 +67,11 @@ let mount: Mount | null = null;
 let alive = true;
 
 const faceOf = (item: PhotoItem) => ({ card: item.card, signed: item.kind === "sign" });
+/** The cards beside [item] in the list: their textures are kept, for a step back or on. */
+function nearOf(item: PhotoItem) {
+  const i = props.list.findIndex((x) => x.id === item.id);
+  return i < 0 ? [] : [props.list[i - 1], props.list[i + 1]].flatMap((x) => (x ? [faceOf(x)] : []));
+}
 async function start(): Promise<void> {
   const gl = await photoGl();
   if (!alive) return;
@@ -81,13 +86,13 @@ async function start(): Promise<void> {
   viewer.value = v;
   mount = mountScene(host.value, v, { layer: 2 });
   mount.show(pageActive.value);
-  v.open(faceOf(props.item), { from: props.from, write: props.write });
+  v.open(faceOf(props.item), { from: props.from, write: props.write, near: nearOf(props.item) });
   mount.wake();
 }
 watch(() => props.item, (item, was) => {
   const same = item.series === was.series && item.card === was.card;
   const dir = props.list.findIndex((i) => i.id === item.id) < props.list.findIndex((i) => i.id === was.id) ? -1 : 1;
-  viewer.value?.change(faceOf(item), same ? 0 : dir);
+  viewer.value?.change(faceOf(item), same ? 0 : dir, nearOf(item));
   mount?.wake();
 });
 function turnOver() {

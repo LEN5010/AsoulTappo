@@ -26,10 +26,11 @@ export interface ViewerOptions {
 export interface Viewer extends Scene {
   /** CSS pixels on the right that belong to what stands beside the card. */
   inset(px: number): void;
-  /** The first card; it comes out of [from], and is signed as it opens with [write]. */
-  open(face: Face, o?: { from?: CardPlace; write?: boolean }): void;
+  /** The first card; it comes out of [from], and is signed as it opens with [write]. [near]: the cards beside it in
+   *  the list, whose textures are kept while they are there. */
+  open(face: Face, o?: { from?: CardPlace; write?: boolean; near?: readonly Face[] }): void;
   /** Another card comes in from the left (-1) or the right; 0 for the other face of the same one. */
-  change(face: Face, dir: -1 | 0 | 1): void;
+  change(face: Face, dir: -1 | 0 | 1, near?: readonly Face[]): void;
   turnOver(): void;
   /** Writes the signature again. */
   write(): void;
@@ -69,6 +70,9 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
   let settled = false;
   /** Cards whose textures are being loaded: they are shown once those are there. */
   let loading = 0;
+  /** The card asked for last, and those beside it in the list. */
+  let wanted: Face | null = null;
+  let beside: readonly Face[] = [];
 
   const infoOf = (f: Face): CardInfo | undefined => (f.signed ? art.signed(f.card) : art.card(f.card));
   /** How big a card lies there: what fits beside the facts, with room for the keys on either side. */
@@ -87,6 +91,13 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
     card.s = s;
     if (time.busy) void time.tween(card.p, { s }, 240, E.flow);
     else card.p.s = s;
+  }
+  /** Lets go of the full-size textures of every card but the one on show, those on their way out, the one asked for last
+   *  and those beside it. */
+  function recycle(): void {
+    if (dead) return;
+    const keep = [card?.face, ...gone.map((g) => g.face), wanted, ...beside].flatMap((f) => (f ? [infoOf(f)!] : []));
+    kit.letGo(keep, 0, true);
   }
   async function load(face: Face): Promise<void> {
     const info = infoOf(face)!;
@@ -107,9 +118,13 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
     void time.tween(c, { sheen: 1.9 }, 1200, E.flow, 220);
   }
 
-  function open(face: Face, { from: place, write: pen = false }: { from?: CardPlace; write?: boolean } = {}): void {
+  function open(
+    face: Face, { from: place, write: pen = false, near = [] }: { from?: CardPlace; write?: boolean; near?: readonly Face[] } = {},
+  ): void {
     const mine = ++round;
     woken = time.clock;
+    wanted = face;
+    beside = near;
     void load(face).then(() => {
       if (dead || mine !== round) return;
       const c = make(face), to = { ...c.p };
@@ -129,13 +144,19 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
       if (pen) void time.wait(calm ? 0 : 620).then(() => { if (mine === round) write(); });
     });
   }
-  function change(face: Face, dir: -1 | 0 | 1): void {
+  function change(face: Face, dir: -1 | 0 | 1, near: readonly Face[] = []): void {
     const mine = ++round;
     woken = time.clock;
+    wanted = face;
+    beside = near;
     void load(face).then(async () => {
       if (dead || mine !== round) return;
       const was = card;
-      if (!was || calm) { card = make(face); return; }
+      if (!was || calm) {
+        card = make(face);
+        recycle();
+        return;
+      }
       if (!dir) {
         // Turned over once, on from how it is seen: the other face comes round.
         sound?.flip(0.5, 1);
@@ -158,7 +179,10 @@ export function createViewer(gl: GL, kit: Kit, painter: Painter, opts: ViewerOpt
       sound?.slide(0.34, 1.15, dir * 0.3);
       gone.push(was);
       void time.tween(was.p, { x: -dir * (view.w * 0.5 + 180), rz: -dir * 7, ry: was.p.ry + dir * 18 }, 420, E.flow)
-        .then(() => { gone = gone.filter((g) => g !== was); });
+        .then(() => {
+          gone = gone.filter((g) => g !== was);
+          recycle();
+        });
       const c = make(face), to = { ...c.p };
       Object.assign(c.p, { x: dir * (view.w * 0.5 + 160), rz: dir * 7, ry: -dir * 18 });
       card = c;
