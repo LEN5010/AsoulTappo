@@ -47,6 +47,8 @@ networks:
     ipam:
       config:
         - subnet: 172.29.0.0/24
+          # Addresses Docker hands out itself stay clear of caddy's.
+          ip_range: 172.29.0.128/25
 
 volumes:
   server_data:
