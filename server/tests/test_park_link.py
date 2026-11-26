@@ -714,6 +714,13 @@ def test_the_threshold_is_an_anti_cheat_setting():
         assert bool(events(g, pid, game["id"])[1].get("fast")) is fast
 
 
+@pytest.mark.parametrize("bad", [0, -1, True, 1.5, "1", None])
+def test_the_threshold_must_be_a_whole_number_of_1_or_more(bad):
+    # 0 would divide by zero when a game with pairs is settled.
+    with pytest.raises(ValueError, match="link_min_pair_ms"):
+        economy.drop_config({"link_min_pair_ms": bad})
+
+
 def test_the_threshold_stays_on_the_server():
     body = TestClient(main.app).get("/api/economy").text
     assert "link_min_pair_ms" not in body

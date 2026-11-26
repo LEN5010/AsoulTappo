@@ -265,6 +265,10 @@ def drop_config(anti: dict[str, Any]) -> DropConfig:
     unknown = sorted(set(anti) - known)
     if unknown:
         raise ValueError(f"unknown {SERVER_ONLY} settings: {', '.join(unknown)}")
+    # 连连看 settlement divides by it.
+    pair_ms = anti.get("link_min_pair_ms", DropConfig.link_min_pair_ms)
+    if isinstance(pair_ms, bool) or not isinstance(pair_ms, int) or pair_ms < 1:
+        raise ValueError(f"{SERVER_ONLY}.link_min_pair_ms must be a whole number of 1 or more, not {pair_ms!r}")
     return DropConfig(**anti)
 
 
