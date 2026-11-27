@@ -3,6 +3,7 @@
 // coin not yet earned: opaque grayscale, never see-through. `sheen` runs a slow light across its face. `fill` takes
 // the size from --size set on a parent instead of `size`, so CSS can resize it; it always uses the 256px picture.
 import { computed, ref } from "vue";
+import { usePageActive } from "../../composables/usePageActive";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
 import { COIN, COIN_SMALL } from "./coin";
@@ -12,13 +13,14 @@ const props = withDefaults(
   { size: 72, tilt: true },
 );
 
+const pageActive = usePageActive();
 const src = computed(() => (props.size <= 64 && !props.fill ? COIN_SMALL : COIN));
 const failed = ref(false);
 </script>
 
 <template>
   <span
-    class="park-coin" :class="{ grey, tilt, fill }" aria-hidden="true"
+    class="park-coin" :class="{ grey, tilt, fill, paused: !pageActive }" aria-hidden="true"
     :style="fill ? { '--src': `url(${src})` } : { '--size': `${size}px`, '--src': `url(${src})` }"
   >
     <Icon v-if="failed" class="glyph" name="coin" :size="size" />
@@ -94,6 +96,9 @@ const failed = ref(false);
     transparent 67%
   ) 165% 0 / 260% 100% no-repeat;
   animation: coin-sheen 4.4s var(--ease-in-out) infinite;
+}
+.paused .sheen {
+  animation-play-state: paused;
 }
 /* Interactive hover sweep triggered when a parent sets --coin-glint-pos to -65% (at rest 165%). */
 .glint {

@@ -5,6 +5,7 @@
 // removed and added again. [closable] false: it stays (the run the first-run guide starts in).
 import { ref } from "vue";
 import { openInputSettings } from "../composables/tauri";
+import { flushSettings } from "../stores/settings";
 import { useCentredShift, type PetMiddle } from "./centredShift";
 
 const props = withDefaults(defineProps<{ closable?: boolean; middle?: PetMiddle }>(), { closable: true });
@@ -17,6 +18,7 @@ function open() {
   opened.value = true;
 }
 async function restart() {
+  flushSettings();
   const { relaunch } = await import("@tauri-apps/plugin-process");
   await relaunch();
 }

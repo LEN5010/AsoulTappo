@@ -10,7 +10,8 @@
 // The number keys double as reels: 机选 spins them onto the number bought, and a draw's first showing spins them onto
 // the drawn number, one digit at a time from the right, while the ring of balls turns and each digit's ball drops onto
 // its key.
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
+import { usePageActive } from "../../composables/usePageActive";
 import { economy } from "../../stores/economy";
 import { online, status } from "../../stores/player";
 import { park, parkTry } from "../../stores/park";
@@ -67,22 +68,23 @@ const pop = ref<"" | "past">("");
 const rootEl = ref<HTMLElement>();
 
 // ---- the clock (lotteryState.ts) and the page's own keys run while the page is shown
+const pageActive = usePageActive();
 function start() {
+  if (active.value) return;
   active.value = true;
   window.addEventListener("keydown", onPageKey, true);
   startClock();
 }
 function stop() {
+  if (!active.value) return;
   active.value = false;
   window.removeEventListener("keydown", onPageKey, true);
   stopClock();
   pop.value = "";
   settle();
 }
-// The page is kept alive: mounting (the park may open while the page is shown) and coming back both start the clock.
-onMounted(start);
-onActivated(start);
-onDeactivated(stop);
+// The page is kept alive: mounting, returning, or unhiding the panel starts the clock; hiding or deactivating stops it.
+watch(pageActive, (on) => (on ? start() : stop()), { immediate: true });
 onBeforeUnmount(() => {
   stop();
   pressTimers.forEach(clearTimeout);
@@ -377,6 +379,50 @@ const boreMask = `bore-${uid}`;
 const globeEl = ref<HTMLElement>();
 const cabinetEl = ref<HTMLElement>();
 const tubePathEl = ref<SVGPathElement>();
+/** Cached `.gball` and `.drop` elements so the rAF loop never queries the DOM. */
+const gballEls = new Map<string, HTMLElement>();
+const dropEls = new Map<number, HTMLElement>();
+function setBallEl(d: string, el: unknown) {
+  if (el instanceof HTMLElement) gballEls.set(d, el);
+  else gballEls.delete(d);
+}
+function setDropEl(id: number, el: unknown) {
+  if (el instanceof HTMLElement) dropEls.set(id, el);
+  else dropEls.delete(id);
+}
+
+/** Cached tube path arc-length & sample lookup table, rebuilt only when `tube.d` changes. */
+interface TubePathCache { d: string; length: number; xs: Float32Array; ys: Float32Array; steps: number }
+const TUBE_PATH_STEPS = 128;
+let tubePathCache: TubePathCache | null = null;
+function getTubePathCache(): TubePathCache | null {
+  const d = tube.value?.d;
+  const path = tubePathEl.value;
+  if (!d || !path) return null;
+  if (tubePathCache && tubePathCache.d === d) return tubePathCache;
+  const length = path.getTotalLength();
+  const steps = TUBE_PATH_STEPS;
+  const xs = new Float32Array(steps + 1);
+  const ys = new Float32Array(steps + 1);
+  for (let i = 0; i <= steps; i++) {
+    const pt = path.getPointAtLength((length * i) / steps);
+    xs[i] = pt.x;
+    ys[i] = pt.y;
+  }
+  tubePathCache = { d, length, xs, ys, steps };
+  return tubePathCache;
+}
+function sampleTubePath(cache: TubePathCache, dist: number): Pt {
+  if (cache.length <= 0) return { x: cache.xs[0]!, y: cache.ys[0]! };
+  const clamped = Math.max(0, Math.min(dist, cache.length));
+  const f = (clamped / cache.length) * cache.steps;
+  const i = Math.min(cache.steps - 1, Math.floor(f));
+  const u = f - i;
+  return {
+    x: cache.xs[i]! + (cache.xs[i + 1]! - cache.xs[i]!) * u,
+    y: cache.ys[i]! + (cache.ys[i + 1]! - cache.ys[i]!) * u,
+  };
+}
 
 /** The tube and the track, from the rendered machine: the path to draw and the points a ball runs through. */
 interface Pt { x: number; y: number }
@@ -395,6 +441,7 @@ function layoutTube() {
   const cols = keysEl.value?.querySelectorAll<HTMLElement>(".key-col");
   if (!m || !g || !cab || !cols || cols.length < 3 || !g.offsetWidth) {
     tube.value = null;
+    tubePathCache = null;
     // The globe is gone (a short panel): a ball on its way out leaves now, so its draw goes on without it.
     const sim = globeSim;
     globeSim = null;
@@ -548,11 +595,10 @@ onBeforeUnmount(() => cancelAnimationFrame(loopFrame));
 
 /** Writes every ball's transform: the globe's, then the ones on their way. */
 function paintFrame() {
-  const g = globeEl.value;
-  if (g && globeSim) {
-    for (const el of g.querySelectorAll<HTMLElement>(".gball")) {
-      const b = globeSim.balls.find((x) => x.d === el.dataset.d);
-      if (b) el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px) rotate(${b.a.toFixed(3)}rad)`;
+  if (globeSim) {
+    for (const b of globeSim.balls) {
+      const el = gballEls.get(b.d);
+      if (el) el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px) rotate(${b.a.toFixed(3)}rad)`;
     }
   }
   for (const run of runs) if (run.el) run.el.style.transform = run.transform;
@@ -591,9 +637,9 @@ function sendBall(i: number, d: string, done: () => void) {
   const t = tube.value;
   const sim = globeSim;
   const col = keysEl.value?.querySelectorAll<HTMLElement>(".key-col")[i];
-  const path = tubePathEl.value;
+  const pathCache = getTubePathCache();
   const m = machineEl.value;
-  if (!t || !sim || !col || !path || !m || calm.value) {
+  if (!t || !sim || !col || !pathCache || !m || calm.value) {
     plays.later(BALL_DROP_MS, done);
     return;
   }
@@ -603,7 +649,7 @@ function sendBall(i: number, d: string, done: () => void) {
   const slot = { x: cb.left + cb.width / 2 - mb.left, y: cb.top + cb.height / 2 - mb.top };
   const size = parseFloat(getComputedStyle(col).getPropertyValue("--slot-ball")) || 64;
   const track = Math.abs(t.entry.x - t.end);
-  const curve = path.getTotalLength() - track;
+  const curve = pathCache.length - track;
   if (!sim.has(d)) sim.add(d);
   const g = plays.gen;
   sim.pull(d, (b) => {
@@ -627,9 +673,9 @@ function sendBall(i: number, d: string, done: () => void) {
 /** Moves each ball on its way to where it is at [now]; hands it to its window once it has settled there. */
 function advanceRuns(now: number) {
   const t = tube.value;
-  const path = tubePathEl.value;
   if (!runs.length) return;
-  if (!t || !path) {
+  const pathCache = getTubePathCache();
+  if (!t || !pathCache) {
     runs.forEach((r) => r.done());
     runs = [];
     drops.value = [];
@@ -637,7 +683,7 @@ function advanceRuns(now: number) {
   }
   const finished: Run[] = [];
   for (const run of runs) {
-    run.el ??= machineEl.value?.querySelector<HTMLElement>(`.drop[data-id="${run.id}"]`) ?? null;
+    run.el ??= dropEls.get(run.id) ?? null;
     const sec = (now - run.t0) / 1000;
     const r = t.ball / 2;
     let x: number;
@@ -655,8 +701,7 @@ function advanceRuns(now: number) {
         const v = run.lead ? s / run.lead : 1;
         p = { x: run.from.x + (t.exit.x - run.from.x) * v, y: run.from.y + (t.exit.y - run.from.y) * v };
       } else {
-        const q = path.getPointAtLength(Math.min(s - run.lead, path.getTotalLength()));
-        p = { x: q.x, y: q.y };
+        p = sampleTubePath(pathCache, s - run.lead);
       }
       // It rolls: turned by the way come, clockwise when going right.
       const dx = p.x - run.px;
@@ -918,7 +963,7 @@ function onPopKey(e: KeyboardEvent) {
 
 
 <template>
-  <section ref="rootEl" class="lottery" :class="{ calm, reveal: !!reveal }" aria-label="每日夺宝">
+  <section ref="rootEl" class="lottery" :class="{ calm, reveal: !!reveal, inactive: !pageActive }" aria-label="每日夺宝">
     <div class="stage" :class="{ empty: !state }">
       <p v-if="loadError" class="ui-error" role="alert">{{ loadError }}</p>
 
@@ -954,14 +999,14 @@ function onPopKey(e: KeyboardEvent) {
           </svg>
           <!-- The drawn balls on their way from the globe to their windows (placed by script). -->
           <i
-            v-for="b in drops" :key="b.id" class="drop lball" :class="{ odd: odd(b.d) }" :data-id="b.id" aria-hidden="true"
+            v-for="b in drops" :key="b.id" :ref="(el) => setDropEl(b.id, el)" class="drop lball" :class="{ odd: odd(b.d) }" :data-id="b.id" aria-hidden="true"
             :style="{ '--s': `${b.size}px` }"
           ><b>{{ b.d }}</b></i>
           <div class="stand" :class="{ blowing }" aria-hidden="true">
             <div ref="globeEl" class="globe" :class="{ ready: globeReady, blowing }">
               <i class="air-plume"></i>
               <i
-                v-for="d in DIGITS" :key="d" class="gball lball" :class="{ odd: odd(d), out: !present[d] }" :data-d="d"
+                v-for="d in DIGITS" :key="d" :ref="(el) => setBallEl(d, el)" class="gball lball" :class="{ odd: odd(d), out: !present[d] }" :data-d="d"
               ><b>{{ d }}</b></i>
               <svg class="glass" viewBox="0 0 100 100">
                 <path d="M14 45 A36 36 0 0 1 45 14" />
@@ -1160,7 +1205,7 @@ function onPopKey(e: KeyboardEvent) {
           <small class="buy-cost"><img :src="COIN_SMALL" alt="" draggable="false" />{{ state.left }}</small>
         </button>
         <button
-          type="button" class="ui-btn primary buy-key" :class="{ pulse: pickReady && !calm }" :disabled="!pickReady"
+          type="button" class="ui-btn primary buy-key" :class="{ pulse: pickReady && !calm && pageActive }" :disabled="!pickReady"
           :aria-busy="busy === 'pick'" aria-keyshortcuts="Enter"
           :title="samePickedCount > 0 ? `已选 ${samePickedCount} 注，再买共 ${samePickedCount + 1} 注` : undefined"
           @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
@@ -1586,6 +1631,10 @@ function onPopKey(e: KeyboardEvent) {
   border-radius: 2px;
   background: var(--c-500);
   animation: caret 1.1s steps(1) infinite;
+}
+.inactive .caret,
+.inactive .globe.blowing .air-plume {
+  animation-play-state: paused;
 }
 @keyframes caret {
   50% { opacity: 0; }

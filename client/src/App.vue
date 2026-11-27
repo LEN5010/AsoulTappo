@@ -77,7 +77,7 @@ import { skinVars } from "./stores/theme";
 import { startHitReporter } from "./hit";
 import {
   debugLogEnabled, isTauri, listenInput, listenInputAccess, listenInputBlocked, listenOutsideClick, listenEmoteKey, listenTodoMoved, listenTray, setAlwaysOnTop,
-  setClickThrough, setHotkey, setHitRegions, setPanelScale, type InputBlocked,
+  setClickThrough, setHotkey, setHitRegions, setPanelScale, setPopupOpen, type InputBlocked,
 } from "./composables/tauri";
 
 // ---- viewport
@@ -544,6 +544,8 @@ const closeQuickAway = () => {
   peek.value = false;
   closePick();
 };
+watch(() => ui.quickOpen || statusOpen.value || gripOpen.value || pomodoroOpen.value || peek.value || !!picking.value,
+  setPopupOpen, { immediate: true });
 
 onMounted(async () => {
   window.addEventListener("resize", onResize);

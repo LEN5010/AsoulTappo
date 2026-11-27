@@ -5,6 +5,7 @@
 import { ref, watch } from "vue";
 import type { Rarity } from "../manifest";
 import { toHttpBase } from "../net/protocol";
+import { isTauri, windowLabel } from "../composables/tauri";
 import { settings } from "./settings";
 import { STANDALONE } from "../edition";
 
@@ -178,11 +179,14 @@ export function isEconomy(data: unknown): data is Economy {
     !!d.craftCost && !!d.checkin && !!d.scratch;
 }
 
+const canPersist = !isTauri || windowLabel === "main";
+
 /** The server's answer (or the desk's, relayed to the panel). */
 export function setEconomy(data: Economy, from = server(), at = Date.now()): void {
   if (STANDALONE || from !== server() || !isEconomy(data)) return;
   cached = { server: from, at, data };
   economy.value = data;
+  if (!canPersist) return;
   try { localStorage.setItem(KEY, JSON.stringify(cached)); } catch { /* storage unavailable */ }
 }
 

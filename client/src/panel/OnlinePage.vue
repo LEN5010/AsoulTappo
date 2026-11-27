@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { MAX_ROOM_SIZE, ROOM_NAME_MAX, toHttpBase, type Member, type PublicRoom } from "../net/protocol";
 import { Api, type ServerInfo } from "../net/api";
 import { accountLoginTrusted } from "../net/trust";
@@ -47,14 +47,16 @@ function closeStatus(e: Event) {
     statusOpen.value = false;
   }
 }
-onMounted(() => {
+watch(statusOpen, (open, _, onCleanup) => {
+  if (!open) return;
   window.addEventListener("pointerdown", closeStatus, true);
   window.addEventListener("keydown", closeStatus);
+  onCleanup(() => {
+    window.removeEventListener("pointerdown", closeStatus, true);
+    window.removeEventListener("keydown", closeStatus);
+  });
 });
-onBeforeUnmount(() => {
-  window.removeEventListener("pointerdown", closeStatus, true);
-  window.removeEventListener("keydown", closeStatus);
-});
+onBeforeUnmount(() => clearTimeout(flashTimer));
 const busy = ref(false);
 const notice = ref("");
 const copied = ref(false);

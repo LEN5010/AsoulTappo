@@ -65,6 +65,44 @@ async function context(panel: boolean | "ddz") {
   };
 }
 
+const panelGroups = ["checkins", "collection", "counter", "ddz", "economy", "freshItems", "members", "park",
+  "player", "pomodoro", "publicRooms", "room", "scratchCard", "todos"];
+
+it.each([
+  { label: "panel", keys: panelGroups },
+  { label: "ddz", keys: ["checkins", "collection", "counter", "ddz", "economy", "members", "player", "publicRooms", "room", "scratchCard"] },
+] as const)("delivers the $label window's state groups and public hall flag", async ({ label, keys }) => {
+  const desk = await context(false);
+  desk.player.ddzHallOn.value = true;
+  const { emitTo } = await import("@tauri-apps/api/event");
+  vi.mocked(emitTo).mockClear();
+  const mirror = await context(label === "panel" ? true : "ddz");
+  const reply = vi.mocked(emitTo).mock.calls.find(([to, event]) => to === label && event.startsWith("desktop:reply:"));
+  const { state } = (reply![2] as { result: { state: Record<string, unknown> } }).result;
+  expect(Object.keys(state).sort()).toEqual(keys);
+  expect(state.ddz).toHaveProperty("hall", true);
+  expect(mirror.player.ddzHallOn.value).toBe(true);
+  desk.player.ddzHallOn.value = false;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(mirror.player.ddzHallOn.value).toBe(false);
+});
+
+it("catches the panel up with changes made while it was hidden", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.panelOpen = false;
+  await vi.advanceTimersByTimeAsync(50);
+  desk.player.ddzHallOn.value = true;
+  desk.room.youId.value = "next-seat";
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.player.ddzHallOn.value).toBe(false);
+  expect(panel.room.youId.value).not.toBe("next-seat");
+  panel.ui.ui.panelOpen = true;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(panel.player.ddzHallOn.value).toBe(true);
+  expect(panel.room.youId.value).toBe("next-seat");
+});
+
 it("mirrors desk state and exchanges setting edits without starting panel requests", async () => {
   const desk = await context(false);
   desk.counter.total = 42;
@@ -72,13 +110,16 @@ it("mirrors desk state and exchanges setting edits without starting panel reques
   expect(panel.counter.total).toBe(42);
   panel.settings.character = "贝拉";
   panel.settings.favorites.push("example");
+  await Promise.resolve();
   expect(desk.settings.character).toBe("贝拉");
   expect(desk.settings.favorites).toEqual(["example"]);
   panel.settings.showcase.push("card");
   panel.settings.onBoard = false;
+  await Promise.resolve();
   expect(desk.settings.showcase).toEqual(["card"]);
   expect(desk.settings.onBoard).toBe(false);
   desk.settings.clickThrough = true;
+  await Promise.resolve();
   expect(panel.settings.clickThrough).toBe(true);
   desk.counter.total++;
   await vi.advanceTimersByTimeAsync(50);
@@ -265,9 +306,11 @@ it.each(["keyDown", "left", "right"] as const)("shows a short remote %s press in
   stops.push(panel.motion.subscribe("friend", (pose) => drawn.push(pose[button])));
   await vi.advanceTimersByTimeAsync(50);
   desk.motion.update("friend", { ...resting, [button]: true });
+  await Promise.resolve();
   expect(panel.room.members.get("friend")!.motion[button]).toBe(true);
   await vi.advanceTimersByTimeAsync(5);
   desk.motion.update("friend", resting);
+  await Promise.resolve();
   expect(panel.room.members.get("friend")!.motion[button]).toBe(false);
   await vi.advanceTimersByTimeAsync(16);
   expect(drawn.at(-1)).toBe(true);
@@ -511,7 +554,7 @@ it("mirrors the table into its own window beside the panel, runs its moves in th
   expect(invoke).not.toHaveBeenCalledWith("open_panel", expect.anything());
   const table = await context("ddz");
   await vi.advanceTimersByTimeAsync(50);
-  // It gets the whole state when it comes up, though the panel was up already.
+  // It gets its initial state even while the panel is already up.
   expect(table.counter.total).toBe(7);
   expect(table.ddz.ddz.value).toMatchObject({ id: "t", phase: "bid", you: 1, hand: [52, 0, 1] });
   expect(table.ddz.ddzAtTable.value).toBe(true);
@@ -740,16 +783,32 @@ it("answers the window that asked: the todos' window and the panel side by side"
   expect(win.todos.todos.value.map((t) => t.title)).toEqual(["取快递"]);
 });
 
+it("hands the desk a setting edited just before a request ahead of that request", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  let seen = "";
+  vi.spyOn(desk.player, "loadBoard").mockImplementation(async () => {
+    seen = desk.settings.nick;
+    return { players: [] } as unknown as Board;
+  });
+  panel.settings.nick = "阿草";
+  await panel.player.loadBoard();
+  expect(seen).toBe("阿草");
+});
+
 it("passes setting edits between the desk, the panel and the todos' window", async () => {
   const desk = await context(false);
   const panel = await context(true);
   const win = await todoWindow();
   win.settings.todoPinned = false;
+  await Promise.resolve();
   expect(desk.settings.todoPinned).toBe(false);
   expect(panel.settings.todoPinned).toBe(false);
   panel.settings.nick = "阿草";
+  await Promise.resolve();
   expect(win.settings.nick).toBe("阿草");
   desk.settings.todoSound = false;
+  await Promise.resolve();
   expect(win.settings.todoSound).toBe(false);
   expect(panel.settings.todoSound).toBe(false);
 });
@@ -780,6 +839,7 @@ it("passes the panel's opening queue to the desk for the first-run guide", async
   expect(deskGuide).toMatchObject({ panelVisible: true, panelBusy: true });
   // Answered in one window, answered in both: the progress is replaced as a whole, so the patch carries it.
   deskStore.finishCard("panel");
+  await Promise.resolve();
   expect(desk.settings.guide.done).toEqual(["panel"]);
   expect(panel.settings.guide.done).toEqual(["panel"]);
 });
@@ -790,6 +850,7 @@ it("keeps the guide's progress from both windows when their changes cross", asyn
   const panel = await context(true);
   const panelStore = await import("../stores/guide");
   desk.settings.guide = { v: 1, done: [] };
+  await Promise.resolve();
   expect(panel.settings.guide.v).toBe(1);
   // The bridge delivers each window's patch before the other's own edit has gone out: a replace would lose one.
   const { emitTo } = await import("@tauri-apps/api/event");
@@ -803,6 +864,7 @@ it("keeps the guide's progress from both windows when their changes cross", asyn
   deskStore.finishCard("tap");
   panelStore.finishCard("grip");
   panelStore.finishCard("draw");
+  await Promise.resolve();
   send.mockImplementation((target, event, payload) => deliver(target as string, event, payload));
   for (const [target, event, payload] of held) await deliver(target, event, payload);
   for (const s of [desk.settings, panel.settings]) {
@@ -842,4 +904,146 @@ it("mirrors open tables and a call into the panel and runs the panel's sitting a
   expect(request.mock.calls).toEqual([
     ["open", 50], ["sit", "o1", 2], ["call", "a", "o1"], ["leave", "o1", "open"], ["dismiss"], ["quickSit", 50], ["sitAt", "h1", null, null],
   ]);
+});
+
+it("sends each newly opened mirror its full state once, in the sync reply", async () => {
+  await context(false);
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  for (const label of ["panel", "ddz"] as const) {
+    send.mockClear();
+    await context(label === "panel" ? true : "ddz");
+    await vi.advanceTimersByTimeAsync(100);
+    const replies = send.mock.calls.filter(([to, event]) => to === label && event.startsWith("desktop:reply:"));
+    expect(replies).toHaveLength(1);
+    expect(replies[0]![2]).toMatchObject({ result: { state: { ddz: { hall: false }, members: [] } } });
+    expect(send).not.toHaveBeenCalledWith(label, "desktop:state", expect.anything());
+  }
+});
+
+it("holds changes after sync and sends just those groups on first visibility", async () => {
+  const desk = await context(false);
+  const { emitTo } = await import("@tauri-apps/api/event");
+  await emitTo("main", "desktop:request", { id: "first", action: "sync", args: [], from: "panel" });
+  vi.mocked(emitTo).mockClear();
+  desk.counter.total = 17;
+  await vi.advanceTimersByTimeAsync(50);
+  await emitTo("main", "desktop:interest", { from: "panel", visible: false, live: false });
+  desk.counter.total = 18;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(emitTo).not.toHaveBeenCalledWith("panel", "desktop:state", expect.anything());
+  desk.player.ddzHallOn.value = true;
+  await emitTo("main", "desktop:interest", { from: "panel", visible: true, live: false });
+  expect(emitTo).toHaveBeenCalledWith("panel", "desktop:state", {
+    counter: expect.objectContaining({ total: 18 }), ddz: expect.objectContaining({ hall: true }),
+  });
+  await vi.advanceTimersByTimeAsync(100);
+  expect(vi.mocked(emitTo).mock.calls.filter(([to, event]) => to === "panel" && event === "desktop:state")).toHaveLength(1);
+});
+
+it("sends one full snapshot when a previously visible panel opens again", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  await context("ddz");
+  panel.ui.ui.panelOpen = false;
+  await vi.advanceTimersByTimeAsync(50);
+  desk.counter.total = 23;
+  const { emitTo } = await import("@tauri-apps/api/event");
+  vi.mocked(emitTo).mockClear();
+  panel.ui.ui.panelOpen = true;
+  await vi.advanceTimersByTimeAsync(100);
+  const patches = vi.mocked(emitTo).mock.calls.filter(([to, event]) => to === "panel" && event === "desktop:state");
+  expect(patches).toHaveLength(1);
+  expect(Object.keys(patches[0]![2] as object).sort()).toEqual(panelGroups);
+  expect(panel.counter.total).toBe(23);
+});
+
+it("batches ordinary changes for 50 ms using each mirror's subscribed groups", async () => {
+  const desk = await context(false);
+  await context(true);
+  await context("ddz");
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  send.mockClear();
+  desk.counter.total = 30;
+  desk.player.freshItems.add("card:x");
+  await vi.advanceTimersByTimeAsync(49);
+  expect(send.mock.calls.filter(([, event]) => event === "desktop:state")).toHaveLength(0);
+  desk.counter.total = 31;
+  desk.player.ddzHallOn.value = true;
+  await vi.advanceTimersByTimeAsync(1);
+  const shared = { counter: expect.objectContaining({ total: 31 }), ddz: expect.objectContaining({ hall: true }) };
+  expect(send.mock.calls.filter(([, event]) => event === "desktop:state")).toHaveLength(2);
+  expect(send).toHaveBeenCalledWith("panel", "desktop:state", { ...shared, freshItems: ["card:x"] });
+  expect(send).toHaveBeenCalledWith("ddz", "desktop:state", shared);
+});
+
+it("coalesces same-turn motion edges into one IPC without dropping press-and-release pulses", async () => {
+  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  const desk = await context(false);
+  const panel = await context(true);
+  panel.ui.ui.page = "room";
+  const resting = { dx: 0, dy: 0, keyDown: false, left: false, right: false };
+  for (const id of ["a", "b"]) {
+    desk.room.members.set(id, {
+      id, nick: id, character: "乃琳", taps: 0, pulse: 0, emote: null, combo: null, win: null, sip: 0, motion: { ...resting },
+    });
+  }
+  await vi.advanceTimersByTimeAsync(50);
+  const drawnA: boolean[] = [];
+  stops.push(panel.motion.subscribe("a", (pose) => drawnA.push(pose.keyDown)));
+  stops.push(panel.motion.subscribe("b", () => {}));
+  await vi.advanceTimersByTimeAsync(50);
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  send.mockClear();
+
+  // Same microtask: member "a" presses and releases, member "b" presses -> 1 IPC, 70ms hold preserved.
+  desk.motion.update("a", { ...resting, keyDown: true });
+  desk.motion.update("a", resting);
+  desk.motion.update("b", { ...resting, keyDown: true });
+  await Promise.resolve();
+  const motionCalls = send.mock.calls.filter(([to, ev]) => to === "panel" && ev === "desktop:motion");
+  expect(motionCalls).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(16);
+  expect(drawnA.at(-1)).toBe(true);
+  await vi.advanceTimersByTimeAsync(100);
+  expect(drawnA.at(-1)).toBe(false);
+});
+
+it("coalesces multi-field settings edits in one turn into a single desktop:settings message", async () => {
+  const desk = await context(false);
+  const panel = await context(true);
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  send.mockClear();
+  desk.settings.petDocked = true;
+  desk.settings.petX = 120;
+  desk.settings.petY = 240;
+  await Promise.resolve();
+  const panelSettingsCalls = send.mock.calls.filter(([to, ev]) => to === "panel" && ev === "desktop:settings");
+  expect(panelSettingsCalls).toHaveLength(1);
+  expect(panelSettingsCalls[0]![2]).toEqual({ from: "main", patch: { petDocked: true, petX: 120, petY: 240 } });
+  expect(panel.settings).toMatchObject({ petDocked: true, petX: 120, petY: 240 });
+});
+
+it("skips capture snapshots while captureOpen is false and reuses the latest snapshot once open", async () => {
+  const desk = await context(false);
+  const { startCapture } = await import("./capture");
+  stops.push(await startCapture());
+  const { emitTo } = await import("@tauri-apps/api/event");
+  const send = vi.mocked(emitTo);
+  send.mockClear();
+
+  desk.counter.today = 5;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(send.mock.calls.filter(([to, ev]) => to === "capture" && ev === "capture:view")).toHaveLength(0);
+
+  desk.settings.captureOpen = true;
+  await vi.advanceTimersByTimeAsync(8);
+  desk.counter.today = 9;
+  await vi.advanceTimersByTimeAsync(8);
+  const calls = send.mock.calls.filter(([to, ev]) => to === "capture" && ev === "capture:view");
+  expect(calls).toHaveLength(1);
+  expect(calls[0]![2]).toMatchObject({ bar: { count: 9, view: "today" } });
 });

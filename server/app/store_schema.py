@@ -278,6 +278,7 @@ CREATE TABLE IF NOT EXISTS park_news (
   nick TEXT NOT NULL DEFAULT '',
   detail TEXT NOT NULL DEFAULT '{}'
 );
+CREATE INDEX IF NOT EXISTS park_news_ts ON park_news (ts DESC, id DESC);
 -- park: scratch tables
 -- Coin scratch cards (park_scratch.py), decided when bought and paid when revealed (revealed = 0 until then). tier:
 -- again, shards, emote, skin, big or miss; shards, coins and item are what the reveal pays. A save's first card of
@@ -296,6 +297,7 @@ CREATE TABLE IF NOT EXISTS park_scratch_cards (
   revealed REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS park_scratch_cards_player ON park_scratch_cards (player_id, revealed);
+CREATE INDEX IF NOT EXISTS park_scratch_revealed ON park_scratch_cards (ts) WHERE revealed > 0;
 -- park: race tables
 -- Dumpling races (park_race.py), id = when its bets open (unix seconds). seed (hex), ranking and result stay
 -- server-side until status 'running'; result ({start, order, rolls, moves, rest}) is kept for good, for replays
@@ -330,6 +332,7 @@ CREATE TABLE IF NOT EXISTS park_race_bets (
   ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS park_race_bets_race ON park_race_bets (race_id, player_id);
+CREATE INDEX IF NOT EXISTS park_race_bets_totals ON park_race_bets (race_id, kind, member, coins);
 -- park: lottery tables
 -- The daily lottery (lottery.py): one row per China day, made before the day's first ticket. `hash` is SHA-256 of
 -- number + salt and is public all day; number and salt go public once `drawn` is set. `result` is the draw's JSON.
@@ -355,6 +358,7 @@ CREATE TABLE IF NOT EXISTS lottery_tickets (
 CREATE INDEX IF NOT EXISTS lottery_tickets_day ON lottery_tickets (day, player_id);
 -- A save's own days (lottery_history), without scanning every ticket of the server.
 CREATE INDEX IF NOT EXISTS lottery_tickets_player ON lottery_tickets (player_id, day);
+CREATE INDEX IF NOT EXISTS lottery_tickets_jackpot ON lottery_tickets (day, player_id) WHERE tier = 1;
 -- park: redeem tables
 -- Redeem codes made through /admin/codes (see redeem.py). code: normalized (upper case, no dashes or spaces); custom: an
 -- admin wrote it rather than the generator; uses: claims allowed, used: claims so far; expires: Unix seconds, 0 never.
@@ -427,6 +431,8 @@ CREATE INDEX IF NOT EXISTS park_link_player ON park_link (player_id, day);
 CREATE INDEX IF NOT EXISTS park_link_open ON park_link (player_id) WHERE settled_at IS NULL;
 CREATE INDEX IF NOT EXISTS park_link_settled ON park_link (player_id, settled_at DESC, id DESC)
   WHERE settled_at IS NOT NULL;
+-- Old settled games go by settled_at (ParkStore.prune_park_link).
+CREATE INDEX IF NOT EXISTS park_link_settled_at ON park_link (settled_at) WHERE settled_at IS NOT NULL;
 -- Feedback from the settings page (feedback.py): the text, an optional contact, the client's version and system, and
 -- the latest part of its log when the player ticked it ('' without). [day] is the China day it came on.
 CREATE TABLE IF NOT EXISTS feedback (

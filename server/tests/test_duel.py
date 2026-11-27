@@ -598,10 +598,12 @@ def api(monkeypatch):
     monkeypatch.setattr(main.duels, "timers", timers)
     monkeypatch.setattr(main.duels, "rng", SeqRng(.99))
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.duels.clear()
     with TestClient(main.app) as c:
         yield c, g, timers
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.duels.clear()
 
 

@@ -1,7 +1,7 @@
 // State of the local pet, driven by the global input hook. Shared by the desk pet and the
 // live preview in the backpack page.
 import { ref, watch } from "vue";
-import type { InputEvent } from "../composables/tauri";
+import { setMouseActive, windowLabel, type InputEvent } from "../composables/tauri";
 import { PetPose } from "../pet/PetPose";
 import { ShownPresses } from "../pet/ShownPresses";
 import { DEFAULT_RULES, TapGuard } from "../pet/TapGuard";
@@ -75,4 +75,5 @@ export function stopPet(): void {
 }
 
 watch(() => settings.mouseFollow, (enabled) => { if (!enabled) pose.stopMouse(); }, { flush: "sync" });
+if (windowLabel === "main") watch(() => settings.mouseFollow && windowVisible.value, setMouseActive, { immediate: true });
 watch(windowVisible, (visible) => { if (!visible) pose.stopMouse(); }, { flush: "sync" });

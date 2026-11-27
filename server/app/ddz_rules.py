@@ -117,7 +117,10 @@ def hand_beats(a: Hand, b: Hand) -> bool:
 
 def beats(cards: Iterable[int], last: Iterable[int]) -> bool:
     """Whether [cards] may be played on [last]: some reading of the one beats some reading of the other."""
-    mine, theirs = classify(cards), classify(last)
+    return _beats(classify(cards), classify(last))
+
+
+def _beats(mine: list[Hand], theirs: list[Hand]) -> bool:
     return any(hand_beats(a, b) for a in mine for b in theirs)
 
 
@@ -206,17 +209,17 @@ def choose(hand: Iterable[int], last: Iterable[int] | None, *, partner_led: bool
     """The cards to play from [hand] on [last] (None to lead); [] passes. [partner_led]: [last] is the other farmer's.
     [danger]: an opponent has DANGER cards or fewer."""
     hand = sorted(hand)
-    whole = bool(classify(hand))
+    whole = classify(hand)
     if last is None:
         return hand if whole else _lead(_Hold(hand))
-    last = sorted(last)
-    if whole and beats(hand, last):
+    previous = classify(last)
+    if _beats(whole, previous):
         return hand
     if partner_led:
         return []
     hold = _Hold(hand)
-    plays = sorted((p for h in classify(last) for p in _follows(hold, h)), key=lambda p: p[0])
-    plays = [(cost, cards) for cost, cards in plays if beats(cards, last)]
+    plays = sorted((p for h in previous for p in _follows(hold, h)), key=lambda p: p[0])
+    plays = [(cost, cards) for cost, cards in plays if _beats(classify(cards), previous)]
     for cost, cards in plays:
         if cost[0] == 0:
             return cards
@@ -224,10 +227,9 @@ def choose(hand: Iterable[int], last: Iterable[int] | None, *, partner_led: bool
     spend = [hold.cards[r] for r in sorted(r for r, n in hold.count.items() if n == 4)]
     if hold.kept >= {SMALL_JOKER, BIG_JOKER}:
         spend.append(hold.cards[SMALL_JOKER] + hold.cards[BIG_JOKER])
-    spend += [cards for _, cards in plays]
+    spend = [cards for cards in spend if _beats(classify(cards), previous)]
+    spend.extend(cards for _, cards in plays)
     for cards in spend:
-        if not beats(cards, last):
-            continue
         gone = set(cards)
         if danger or classify([c for c in hand if c not in gone]) or len(gone) == len(hand):
             return sorted(cards)

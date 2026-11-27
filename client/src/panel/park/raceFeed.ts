@@ -3,6 +3,7 @@
 // offset to the server's clock, so every client plays the same moment. The race page, the race's own window and the
 // desk's start reminder each run one.
 import { computed, ref, watch } from "vue";
+import { windowVisible } from "../../stores/activity";
 import { parkTry } from "../../stores/park";
 import type { Race, RaceAnswer } from "./race";
 
@@ -10,8 +11,9 @@ import type { Race, RaceAnswer } from "./race";
 const BETTING_POLL = 10_000;
 /** How often the race is asked for while it is about to start, ms. */
 const STARTING_POLL = 350;
-/** How often the clock ticks, ms. */
+/** How often the live playback clock ticks, ms. */
 const TICK = 100;
+const MAX_TIMEOUT = 2_147_483_647;
 
 export const isPlaying = (r: Race | null, t: number) => !!r?.moves && !!r.endsAt && t < r.endsAt * 1000;
 export const isFinished = (r: Race | null, t: number) => !!r?.ranking && !!r.endsAt && t >= r.endsAt * 1000;
@@ -44,11 +46,31 @@ export function useRaceFeed(opts: { view?: "summary" | "schedule"; scheduleOnly?
   });
 
   let active = false;
+  let running = false;
   let activation = 0;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
-  let clockTimer: ReturnType<typeof setInterval> | null = null;
+  let clockTimer: ReturnType<typeof setTimeout> | null = null;
   let loading = false;
-  const hidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+  const hidden = () => !windowVisible.value || (typeof document !== "undefined" && document.visibilityState === "hidden");
+
+  function armClock() {
+    if (clockTimer !== null) clearTimeout(clockTimer);
+    clockTimer = null;
+    let delay = TICK;
+    if (opts.view === "summary") {
+      delay = 1000 - serverNow.value % 1000 + 10;
+    } else if (opts.view === "schedule") {
+      const r = scheduledRace.value;
+      const boundary = r?.phase === "betting" ? r.startsAt : r?.phase === "running" ? r.endsAt : undefined;
+      if (!boundary || boundary * 1000 <= serverNow.value) return;
+      delay = Math.min(boundary * 1000 - serverNow.value + 50, MAX_TIMEOUT);
+    }
+    clockTimer = setTimeout(() => {
+      if (!running || hidden()) return;
+      now.value = Date.now();
+      armClock();
+    }, delay);
+  }
 
   /** When to ask next: every 10 s while bets are open, soon around the start and the end, slowly otherwise. */
   function nextDelay(): number {
@@ -69,21 +91,23 @@ export function useRaceFeed(opts: { view?: "summary" | "schedule"; scheduleOnly?
     if (pollTimer) clearTimeout(pollTimer);
     pollTimer = null;
     // A hidden window asks again once it shows (onVisible).
-    if (!active || loading || hidden()) return;
+    if (!running || loading || hidden()) return;
     loading = true;
     const current = activation;
     const askedView = view.value;
     const path = askedView === "full" ? "/api/park/race" : `/api/park/race?view=${askedView}`;
     const sent = Date.now();
     const reply = await parkTry<RaceAnswer | ScheduleAnswer>("GET", path);
+    if (current !== activation) return;
     loading = false;
-    if (!active) return;
-    if (askedView !== view.value || current !== activation) {
+    if (!running || hidden()) return;
+    if (askedView !== view.value) {
       void poll();
       return;
     }
+    const got = Date.now();
+    now.value = got;
     if (reply.ok) {
-      const got = Date.now();
       offset.value = reply.data.now * 1000 - (sent + got) / 2;
       const r = reply.data.race;
       schedule.value = {
@@ -95,33 +119,41 @@ export function useRaceFeed(opts: { view?: "summary" | "schedule"; scheduleOnly?
     } else if (reply.error.status > 0) {
       loadError.value = reply.error.message;
     }
+    if (opts.view) armClock();
     pollTimer = setTimeout(poll, reply.ok ? nextDelay() : askedView === "schedule" ? 60_000 : 5000);
   }
   watch(view, () => void poll());
 
   function onVisible() {
-    if (hidden()) return;
+    const visible = active && !hidden();
+    if (running === visible) return;
+    running = visible;
+    activation++;
+    loading = false;
+    if (!running) {
+      if (pollTimer !== null) clearTimeout(pollTimer);
+      if (clockTimer !== null) clearTimeout(clockTimer);
+      pollTimer = null;
+      clockTimer = null;
+      return;
+    }
     now.value = Date.now();
+    armClock();
     void poll();
   }
+  watch(windowVisible, onVisible);
+
   function start() {
     if (active) return;
     active = true;
-    activation++;
-    now.value = Date.now();
-    void poll();
-    // A hidden window's clock stands still: the replay and the rows hanging off it are worked out again only once it
-    // shows (onVisible), from the time then.
-    clockTimer = setInterval(() => { if (!hidden()) now.value = Date.now(); }, opts.view === "schedule" ? 1000 : TICK);
     document.addEventListener("visibilitychange", onVisible);
+    onVisible();
   }
   function stop() {
+    if (!active) return;
     active = false;
-    if (pollTimer) clearTimeout(pollTimer);
-    if (clockTimer) clearInterval(clockTimer);
-    pollTimer = null;
-    clockTimer = null;
     document.removeEventListener("visibilitychange", onVisible);
+    onVisible();
   }
 
   return { data, loadError, now, serverNow, race, last, scheduledRace, phase, finished, live, poll, start, stop };

@@ -54,6 +54,7 @@ def test_a_room_id_with_a_slash_is_looked_up_whole(env):
         assert c.get("/rooms/" + quote("音乐/", safe="")).json() == {"room": "音乐/", "open": False}
     finally:
         main.manager.rooms.clear()
+        main.manager.by_save.clear()
     # The routes next to it are unchanged.
     assert c.post("/rooms").json()["room"]
     # the list, which this server shows to accounts only

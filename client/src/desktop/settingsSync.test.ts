@@ -61,6 +61,7 @@ afterEach(() => {
 it("hands the desk's own change to every side window", async () => {
   const w = await windows();
   w.main.settings.petX = 300;
+  await nextTick();
   w.flush();
   expect(w.every.map((x) => x.settings.petX)).toEqual([300, 300, 300, 300, 300]);
   expect(w.sent.map((m) => m.target).sort()).toEqual(["ddz", "panel", "race", "todo"]);
@@ -70,7 +71,9 @@ it("hands the desk's own change to every side window", async () => {
 it("hands a side window's change to the desk and on to the other side windows, and sends nothing back out", async () => {
   const w = await windows();
   w.panel.settings.favorites.push("a");
+  await nextTick();
   w.flush();
+  await nextTick();
   expect(w.every.map((x) => x.settings.favorites)).toEqual(Array(5).fill(["a"]));
   // Only the desk passes patches on: a window that applied one does not send it again.
   expect(w.sent.filter((m) => m.payload.from !== "main").map((m) => m.target)).toEqual(["main"]);
@@ -83,6 +86,7 @@ it("sends only the fields that changed, and nothing for the same value again", a
   w.todo.settings.petX = 20;
   expect(w.sent).toEqual([]);
   w.todo.settings.feedbackText = "hi";
+  await nextTick();
   expect(w.sent.map((m) => m.payload.patch)).toEqual([{ feedbackText: "hi" }]);
   w.flush();
   expect(w.every.map((x) => x.settings.feedbackText)).toEqual(Array(5).fill("hi"));
@@ -93,6 +97,7 @@ it("meets the guide's progress with the one here instead of replacing it", async
   const w = await windows();
   w.panel.settings.guide.done.push("tap");
   w.main.settings.guide.done.push("draw");
+  await nextTick();
   w.flush();
   for (const x of w.every) expect([...x.settings.guide.done].sort()).toEqual(["draw", "tap"]);
   w.every.forEach((x) => x.stop());
@@ -102,6 +107,7 @@ it("ends with one value everywhere when the pet is dragged while the panel puts 
   const w = await windows();
   w.main.settings.petX = 180;
   w.panel.settings.petX = -1;
+  await nextTick();
   w.flush();
   await nextTick();
   // The desk took the drag first and the reset after it: the reset is where everyone ends.
@@ -113,6 +119,7 @@ it("ends with the desk's order when two side windows change the same field", asy
   const w = await windows();
   w.panel.settings.petX = 1;
   w.ddz.settings.petX = 2;
+  await nextTick();
   w.flush();
   expect(w.every.map((x) => x.settings.petX)).toEqual([2, 2, 2, 2, 2]);
   w.every.forEach((x) => x.stop());
@@ -123,8 +130,10 @@ it("never takes a side window back to an older value of its own while newer ones
   const seen: string[] = [];
   const type = (text: string) => { w.panel.settings.feedbackText = text; };
   type("a");
+  await nextTick();
   w.step(); // The desk takes "a" and confirms it to every side window.
   type("ab");
+  await nextTick();
   type("abc");
   while (w.step()) seen.push(w.panel.settings.feedbackText);
   expect(seen.every((text) => text === "abc")).toBe(true);
@@ -135,6 +144,7 @@ it("never takes a side window back to an older value of its own while newer ones
 it("takes another window's change made after its own", async () => {
   const w = await windows();
   w.panel.settings.feedbackText = "mine";
+  await nextTick();
   w.step();
   w.todo.settings.feedbackText = "theirs";
   w.flush();
@@ -143,6 +153,8 @@ it("takes another window's change made after its own", async () => {
 });
 
 describe("keeping the settings", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
   async function load(search: string) {
     vi.resetModules();
     const setItem = vi.fn();
@@ -153,26 +165,28 @@ describe("keeping the settings", () => {
   }
 
   it("in the app, only the desk writes them to storage", async () => {
+    vi.useFakeTimers();
     const desk = await load("");
     desk.settings.petX = 40;
-    await nextTick();
+    await vi.advanceTimersByTimeAsync(200);
     expect(desk.setItem).toHaveBeenCalledTimes(1);
     for (const side of ["panel", "todo", "race", "ddz"]) {
       const mirror = await load(`?window=${side}`);
       mirror.settings.petX = 41;
-      await nextTick();
+      await vi.advanceTimersByTimeAsync(200);
       expect(mirror.setItem).not.toHaveBeenCalled();
     }
   });
 
   it("in the browser preview, every page still writes them", async () => {
+    vi.useFakeTimers();
     vi.resetModules();
     const setItem = vi.fn();
     vi.stubGlobal("window", { location: { search: "?window=todo" }, addEventListener() {} });
     vi.stubGlobal("localStorage", { getItem: () => null, setItem });
     const { settings } = await import("../stores/settings");
     settings.petX = 42;
-    await nextTick();
+    await vi.advanceTimersByTimeAsync(200);
     expect(setItem).toHaveBeenCalledTimes(1);
   });
 });

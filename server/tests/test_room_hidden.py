@@ -38,6 +38,7 @@ def synced(ws):
 
 def test_the_room_sees_no_taps_or_motion_of_a_hidden_member(auto):
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client, client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
         me = join(a, "a", TOKEN)["you"]
         join(b, "b", OTHER)
@@ -74,6 +75,7 @@ def test_the_room_sees_no_taps_or_motion_of_a_hidden_member(auto):
 
 def test_packed_poses_of_a_hidden_member_build_on_what_it_sent(auto):
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client, client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
         me = join(a, "a", TOKEN, motionVersion=3)["you"]
         join(b, "b", OTHER)

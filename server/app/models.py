@@ -312,6 +312,14 @@ ClientMessage = Annotated[
 client_message_adapter: TypeAdapter = TypeAdapter(ClientMessage)
 
 
+def parse_client_text(raw: str | bytes | None) -> ClientMessage:
+    """A client's WebSocket text frame, read and validated in one pass; anything else (a binary frame) fails with
+    ValidationError."""
+    if not isinstance(raw, (str, bytes, bytearray)):
+        return client_message_adapter.validate_python(None)
+    return client_message_adapter.validate_json(raw)
+
+
 # ---------------- server -> client ----------------
 class Member(BaseModel):
     id: str

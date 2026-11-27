@@ -28,8 +28,8 @@ import Icon from "../../ui/Icon.vue";
 import alpaca from "../../assets/brand/side-alpaca.webp";
 import { COIN } from "./coin";
 import {
-  cornersOf, cutOf, HOP_AT, layoutOf, leaders, momentOf, moving, playhead, playStep, rankOf, saidAt, sceneryCells, spots,
-  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stacksAt, stageOf, stepPath, stepTimes, type MomentKind,
+  cornersOf, createBoardStepper, cutOf, HOP_AT, layoutOf, leaders, momentOf, playhead, rankOf, saidAt, sceneryCells, spots,
+  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stageOf, stepCursor, stepPath, stepTimes, type MomentKind,
   type Race, type Spot,
 } from "./race";
 import SkillCutIn from "./SkillCutIn.vue";
@@ -179,11 +179,14 @@ const step = computed(() => (head.value && head.value.current >= 0 ? moves.value
 /** The mover waits for the die: lit until the group sets off. */
 const waiting = computed(() => !!head.value && head.value.current >= 0 && stageOf(head.value.part) !== "walk");
 /** The special square acting in the step under way (lit while it does), and the squares it lights. */
-const acting = computed(() => {
+const acting = computed<number[]>((prev) => {
   const s = step.value;
   const h = head.value;
-  if (!s?.square || !h || h.part < SQUARE_AT) return [] as number[];
-  return s.square === "portal" && s.end !== undefined ? [s.to, s.end] : [s.to];
+  const next = !s?.square || !h || h.part < SQUARE_AT
+    ? []
+    : s.square === "portal" && s.end !== undefined ? [s.to, s.end] : [s.to];
+  if (prev && prev.length === next.length && prev.every((v, i) => v === next[i])) return prev;
+  return next;
 });
 
 /**
@@ -202,9 +205,10 @@ const trail = computed(() => {
   return { key: h.current, points: way.map((c) => `${c.x},${c.y}`).join(" "), end: way[way.length - 1]! };
 });
 
-const stacks = computed(() =>
-  head.value ? stacksAt(lanes.value, moves.value, head.value) : new Map<number, string[]>([[0, [...lanes.value]]]),
-);
+const cursor = computed<ReturnType<typeof stepCursor> | null>((prev) => head.value && stepCursor(head.value, prev));
+const stepBoard = createBoardStepper();
+const boardState = computed(() => stepBoard(lanes.value, moves.value, cursor.value?.completed ?? 0, cursor.value?.partial ?? -1));
+const stacks = computed(() => boardState.value.stacks);
 const places = computed<Record<string, Spot>>(() => spots(stacks.value));
 /** The square under the active mover while its step plays. */
 const activeSq = computed(() => (ready.value && step.value ? places.value[step.value.m]?.square ?? -1 : -1));
@@ -214,20 +218,20 @@ const above = computed(() => {
   for (const [square, s] of stacks.value) s.forEach((m, k) => (out[m] = square ? s.length - 1 - k : 0));
   return out;
 });
-const movers = computed(() => (head.value ? moving(moves.value, head.value) : []));
+const movers = computed(() => (step.value ? [step.value.m, ...(step.value.carry ?? [])] : []));
+const squareActed = computed(() => !!head.value && head.value.part >= SQUARE_AT);
 /** Drawn over everyone: the movers, and once the step has reordered the stack it landed on, that whole stack. */
 const lifted = computed(() => {
-  const h = head.value;
-  const s = h && h.current >= 0 ? moves.value[h.current] : undefined;
-  if (!h || !s || h.part < SQUARE_AT) return movers.value;
+  const s = step.value;
+  if (!s || !squareActed.value) return movers.value;
   const turned = s.stack ?? (s.square === "flip" ? stacks.value.get(s.to) : undefined);
   return turned ? [...movers.value, ...turned] : movers.value;
 });
 const rankingOrder = computed(() => rankOf(stacks.value));
 /** Who is ahead once the first group has moved: crowned. */
 const leader = computed(() => {
-  const h = head.value;
-  return h && (h.done > 0 || (h.current >= 0 && h.part >= HOP_AT)) ? rankingOrder.value[0] : "";
+  const at = cursor.value;
+  return at && (at.completed > 0 || at.partial >= 0) ? rankingOrder.value[0] : "";
 });
 /** Every move in the race has played out (for inspecting the final board). */
 const ended = computed(() => !!head.value && head.value.current < 0 && head.value.done === moves.value.length && moves.value.length > 0);
@@ -259,26 +263,7 @@ function spotTitle(m: string): string {
  * The move each tuanzi last made: `${step}a` the hop to the die's square, `${step}b` what the special square there did
  * (for a flip, every tuanzi in the stack it turned; for a climb, the climber and everyone it leaves a level lower).
  */
-const hops = computed(() => {
-  const out: Record<string, string> = {};
-  const h = head.value;
-  if (!h) return out;
-  const upto = h.current >= 0 ? h.current : h.done - 1;
-  const st = new Map<number, string[]>([[0, [...lanes.value]]]);
-  for (let i = 0; i <= upto && i < moves.value.length; i++) {
-    const s = moves.value[i];
-    const under = i === h.current;
-    if (under && h.part < HOP_AT) break;
-    const acted = (s.end !== undefined || !!s.stack) && !(under && h.part < SQUARE_AT);
-    playStep(st, s, acted);
-    const key = `${i}${acted ? "b" : "a"}`;
-    // Without a square the group has nothing more to do when a climber under it moves: it keeps its hop.
-    for (const m of [s.m, ...(s.carry ?? [])]) out[m] = s.end === undefined ? `${i}a` : key;
-    if (acted && s.square === "flip") for (const m of st.get(s.to) ?? []) out[m] = key;
-    if (acted && s.react?.length) for (const m of s.stack ?? s.react) out[m] = key;
-  }
-  return out;
-});
+const hops = computed(() => boardState.value.hops);
 
 /**
  * The step whose words are up: the one under way, or the one before while the next mover is still lit, so a word

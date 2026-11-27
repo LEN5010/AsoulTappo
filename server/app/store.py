@@ -19,7 +19,7 @@ from .store_schema import SCHEMA  # noqa: F401 (tests import it from here)
 STARTER_SHARDS = 1600
 # Statistics count days in China Standard Time.
 DAY_OFFSET = 8 * 3600
-# Saves whose collectible count is remembered (see Store.count_items); the cache starts over when full.
+# Saves whose collectible count is remembered (see Store.count_items).
 COUNT_CACHE_LIMIT = 20000
 
 PLAYER_FIELDS = (
@@ -47,10 +47,12 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
         self._db.row_factory = sqlite3.Row
         # Saves marked active on `_active_day`, and collectible counts per save: both are read on every
         # status call and change rarely. Every write goes through this class, which keeps them current;
-        # a rollback drops them (see _Tx).
+        # transactions publish cache changes after committing (see _Tx).
         self._active_day = ""
         self._active: set[str] = set()
         self._counts: dict[str, tuple[frozenset[str], int]] = {}
+        self._tx: _Tx | None = None
+        self._park_news_cache = None
         with self._lock:
             if path != ":memory:":
                 # WAL: a commit appends to the log without rewriting and syncing the database file, and
@@ -195,7 +197,7 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 self._db.execute("ALTER TABLE banner_draws ADD COLUMN guaranteed TEXT NOT NULL DEFAULT ''")
 
     def _commit(self) -> None:
-        if not getattr(self, "_in_tx", False):
+        if self._tx is None:
             try:
                 self._db.commit()
             except BaseException:
@@ -205,14 +207,10 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 raise
 
     def _undo(self) -> None:
-        """Rolls back what is still open on the connection and forgets what the caches answered for."""
-        try:
-            if self._db.in_transaction:
-                self._db.rollback()
-        finally:
-            # Rows the caches answered for may be gone again.
-            self._active.clear()
-            self._counts.clear()
+        """Rolls back what is still open on the connection. The caches keep what was committed: a transaction keeps
+        its own cache changes until it commits (_Tx), and a write outside one changes them after its commit."""
+        if self._db.in_transaction:
+            self._db.rollback()
 
     @property
     def lock(self) -> threading.RLock:
@@ -225,9 +223,9 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
             self._db.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
         return round(time.monotonic() - started, 3)
 
-    def transaction(self):
+    def transaction(self, *, immediate: bool = False):
         """Context manager: holds the lock and commits/rolls back."""
-        return _Tx(self)
+        return _Tx(self, immediate)
 
     # --- players
     def get_player(self, pid: str, now: float) -> dict[str, Any]:
@@ -381,12 +379,16 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
 
     def update_rewards(self) -> list[dict[str, Any]]:
         """Every reward, newest first, with how many saves claimed it."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reading() as db:
+            rows = db.execute(
                 "SELECT r.id, r.version, r.shards, r.created, r.ended, COUNT(c.player_id) AS claims "
                 "FROM update_rewards r LEFT JOIN update_reward_claims c ON c.reward_id = r.id "
                 "GROUP BY r.id ORDER BY r.id DESC").fetchall()
         return [dict(r) for r in rows]
+
+    def open_update_versions(self) -> list[str]:
+        with self._lock:
+            return [row[0] for row in self._db.execute("SELECT version FROM update_rewards WHERE ended IS NULL")]
 
     def add_update_reward(self, version: str, shards: int, ts: float) -> int:
         with self._lock:
@@ -484,14 +486,26 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
     # --- daily statistics (days are China Standard Time dates, YYYY-MM-DD)
     def mark_active(self, pid: str, day: str) -> None:
         with self._lock:
-            if day != self._active_day:
-                self._active_day, self._active = day, set()
-            elif pid in self._active:
+            if day == self._active_day and pid in self._active:
                 # Heartbeats and activity reports repeat this all day; the row is there after the first.
                 return
+            tx = self._tx
+            if tx is not None and day == tx.active_day and pid in tx.active:
+                return
             self._db.execute("INSERT OR IGNORE INTO daily_active (day, player_id) VALUES (?, ?)", (day, pid))
-            self._commit()
-            self._active.add(pid)
+            if tx is None:
+                self._commit()
+                self._remember_active(day, {pid})
+            else:
+                if day != tx.active_day:
+                    tx.active_day, tx.active = day, set()
+                tx.active.add(pid)
+
+    def _remember_active(self, day: str, pids: set[str]) -> None:
+        if day != self._active_day:
+            self._active_day, self._active = day, pids
+        else:
+            self._active.update(pids)
 
     def totals(self, today: str) -> dict[str, int]:
         with self._reading() as db:
@@ -549,8 +563,16 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
         only += " AND substr(item_id, 1, ?) != ?" * len(skip)
         args = [x for prefix in skip for x in (len(prefix), prefix)]
         with self._reading() as db:
-            rows = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}", args).fetchall()
-        return [(r[0], r[1], r[2]) for r in rows]
+            cursor = db.execute(f"SELECT player_id, item_id, first_ts FROM items WHERE count > 0{only}", args)
+            cursor.row_factory = None
+            return cursor.fetchall()
+
+    def hidden_board_saves(self, is_hidden: Callable[[str], bool]) -> set[str]:
+        """Ranking needs only visibility. Escaped loadouts can spell the key with a Unicode escape."""
+        with self._reading() as db:
+            rows = db.execute(
+                "SELECT id, loadout FROM players WHERE instr(loadout, 'board') > 0 OR instr(loadout, char(92)) > 0")
+            return {pid for pid, raw in rows if is_hidden(raw)}
 
     def set_room_nick(self, pid: str, nick: str) -> None:
         """Remember the nick an existing save uses in rooms; nothing happens for a token without a save."""
@@ -581,8 +603,8 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
         return out
 
     def linked_players(self) -> set[str]:
-        with self._lock:
-            return {r["player_id"] for r in self._db.execute("SELECT player_id FROM account_links")}
+        with self._reading() as db:
+            return {r["player_id"] for r in db.execute("SELECT player_id FROM account_links")}
 
     def ledger_amount(self, pid: str, day: str, source: str) -> int:
         """The save's ledger amount from [source] on [day]; 0 without a row."""
@@ -633,17 +655,30 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
         if not item_ids:
             return 0
         with self._lock:
-            hit = self._counts.get(pid)
+            tx = self._tx
+            hit = tx.counts.get(pid, self._counts.get(pid)) if tx is not None else self._counts.get(pid)
             if hit is not None and hit[0] is item_ids:
                 return hit[1]
             # Walk this player's covering index once. A large IN list probes the index once per
             # collectible, including the hundreds a new player has yet to collect.
             rows = self._db.execute("SELECT item_id FROM items WHERE player_id=?", (pid,))
             count = sum(row[0] in item_ids for row in rows)
-            if len(self._counts) >= COUNT_CACHE_LIMIT:
-                self._counts.clear()
-            self._counts[pid] = (item_ids, count)
+            if tx is None:
+                self._remember_count(pid, (item_ids, count))
+            else:
+                tx.counts[pid] = (item_ids, count)
             return count
+
+    def _remember_count(self, pid: str, hit: tuple[frozenset[str], int]) -> None:
+        if pid not in self._counts and len(self._counts) >= COUNT_CACHE_LIMIT:
+            self._counts.pop(next(iter(self._counts)))
+        self._counts[pid] = hit
+
+    def _invalidate_count(self, pid: str) -> None:
+        if self._tx is None:
+            self._counts.pop(pid, None)
+        else:
+            self._tx.counts[pid] = None
 
     def has_item(self, pid: str, item_id: str) -> bool:
         with self._lock:
@@ -657,7 +692,7 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,1,?) "
                 "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + 1",
                 (pid, item_id, now))
-            self._counts.pop(pid, None)
+            self._invalidate_count(pid)
             row = self._db.execute(
                 "SELECT count FROM items WHERE player_id=? AND item_id=?", (pid, item_id)).fetchone()
             self._commit()
@@ -670,7 +705,7 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
                 "INSERT INTO items (player_id, item_id, count, first_ts) VALUES (?,?,?,?) "
                 "ON CONFLICT(player_id, item_id) DO UPDATE SET count = count + excluded.count",
                 [(pid, item, count, now) for item, count in counts.items()])
-            self._counts.pop(pid, None)
+            self._invalidate_count(pid)
             self._commit()
 
     def refund_duplicates(self, name: str, prefix: str, shards_for: Callable[[str], int], now: float) -> tuple[int, int]:
@@ -829,12 +864,26 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
 
 
 class _Tx:
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: Store, immediate: bool) -> None:
         self.store = store
+        self.immediate = immediate
+        self.counts: dict[str, tuple[frozenset[str], int] | None] = {}
+        self.active_day = ""
+        self.active: set[str] = set()
 
     def __enter__(self) -> Store:
         self.store._lock.acquire()
-        self.store._in_tx = True
+        if self.immediate:
+            try:
+                if self.store._db.in_transaction:
+                    # A write outside a transaction that never reached its commit left SQLite's implicit transaction
+                    # open; a plain transaction would commit it with its own, so it is committed before BEGIN.
+                    self.store._db.commit()
+                self.store._db.execute("BEGIN IMMEDIATE")
+            except BaseException:
+                self.store._lock.release()
+                raise
+        self.store._tx = self
         return self.store
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -847,8 +896,15 @@ class _Tx:
                     # on this connection would commit it with its own.
                     self.store._undo()
                     raise
+                for pid, hit in self.counts.items():
+                    if hit is None:
+                        self.store._counts.pop(pid, None)
+                    else:
+                        self.store._remember_count(pid, hit)
+                if self.active:
+                    self.store._remember_active(self.active_day, self.active)
             else:
                 self.store._undo()
         finally:
-            self.store._in_tx = False
+            self.store._tx = None
             self.store._lock.release()

@@ -75,6 +75,7 @@ def test_a_room_shows_the_plate_once_the_set_is_whole(monkeypatch):
     g, pid = game()
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c, c.websocket_connect("/ws") as ws:
         ws.send_json({"type": "join", "room": "r1", "nick": "a", "character": "嘉然", "token": TOKEN, "plate": "achao"})
         welcome = ws.receive_json()

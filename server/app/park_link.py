@@ -116,7 +116,7 @@ class ParkLink:
         g = self.park.game
         pid = player_id_for(token)
         with g.store.lock:
-            status = g.status(token)
+            status = g.status(token, include_park=False)
             now = g.now()
             park = self.park.view(g.store, g.store.get_player(pid, now), day_of(now))
             link = self._view(g.store, pid, now, active)

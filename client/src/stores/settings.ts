@@ -1,6 +1,6 @@
 import { reactive, watch } from "vue";
 import { readRecentRooms, type RecentRoom } from "../recentRooms";
-import { defaultCharacter } from "../characters";
+import { DEFAULT_CHARACTER } from "../characterMeta";
 import { MAX_SHOWCASE } from "../net/protocol";
 import { cleanReminders, type Reminder } from "../reminders";
 import { roomStatus } from "../roomStatus";
@@ -193,7 +193,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // The standalone edition has no server (src/edition.ts).
   serverUrl: STANDALONE ? "" : "https://len5010.top/tappo",
   nick: "",
-  character: defaultCharacter,
+  character: DEFAULT_CHARACTER,
   scale: 1,
   petOpacity: 1,
   mouseFollow: true,
@@ -287,7 +287,16 @@ function cleanSkinNotes(raw: unknown): Record<string, string> {
   return out;
 }
 
-export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage): Settings {
+function defaultStorage(): Pick<Storage, "getItem" | "setItem"> | undefined {
+  try {
+    const s = globalThis.localStorage;
+    return s && typeof s.getItem === "function" && typeof s.setItem === "function" ? s : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = defaultStorage()): Settings {
   const out: Settings = { ...DEFAULT_SETTINGS };
   try {
     const raw = storage?.getItem(KEY);
@@ -353,20 +362,50 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | undefined = glo
 
 export const settings = reactive<Settings>(loadSettings());
 
-watch(
-  settings,
-  (v) => {
-    // In the app the desk keeps them: the other windows' copies follow it a moment late (desktop/settingsSync.ts), and
-    // one written then would put an older value over the desk's.
-    if (isTauri && windowLabel !== "main") return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(v));
-    } catch {
-      /* storage unavailable */
-    }
-  },
-  { deep: true },
-);
+const SAVE_DEBOUNCE_MS = 200;
+// In Tauri only the desk window writes settings to localStorage; side windows sync edits through it (desktop/settingsSync.ts).
+const canPersist = !isTauri || windowLabel === "main";
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let saveDirty = false;
+
+/** Writes the settings waiting for the debounce now: before the app restarts, which runs no page-leave handler. */
+export function flushSettings(): void {
+  if (saveTimer !== undefined) {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+  }
+  const storage = defaultStorage();
+  if (!saveDirty || !canPersist || !storage) {
+    saveDirty = false;
+    return;
+  }
+  saveDirty = false;
+  try {
+    storage.setItem(KEY, JSON.stringify(settings));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+if (canPersist) {
+  watch(
+    settings,
+    () => {
+      if (!defaultStorage()) return;
+      saveDirty = true;
+      if (saveTimer !== undefined) clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushSettings, SAVE_DEBOUNCE_MS);
+    },
+    { deep: true, flush: "sync" },
+  );
+  if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+    globalThis.document?.addEventListener("visibilitychange", () => {
+      if (document.hidden) flushSettings();
+    });
+    window.addEventListener("pagehide", flushSettings);
+    window.addEventListener("beforeunload", flushSettings);
+  }
+}
 
 // The browser preview opens the todos' window as a popup of the same origin: each page follows the settings the
 // other one writes. The app's windows pass theirs through the desk instead (desktop/settingsSync.ts).

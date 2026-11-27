@@ -10,7 +10,8 @@
 // win, its die, its skill and my coins on it. The bet slip is the bottom bar: a runner picked, its three kinds, the
 // stake and the bet key; nothing picked, 往期 and my tickets. 往期 lists the latest finished races
 // (GET /api/park/race/history); one picked plays in the race's window.
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { usePageActive } from "../../composables/usePageActive";
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
 import { online } from "../../stores/player";
@@ -27,11 +28,16 @@ import RaceTrack from "./RaceTrack.vue";
 import ParkCoin from "./ParkCoin.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
-import { shortDay } from "./lottery";
 import {
   FORM_NAMES, hits, KIND_NAMES, SKILL_NAMES, skillText, trackOf, tuanziArt, type Race, type RaceKind, type RacePast,
 } from "./race";
 import { raceClock, useRaceFeed } from "./raceFeed";
+
+/** 2026-11-12 as 11月12日. */
+function shortDay(day: string): string {
+  const [, m, d] = day.split("-").map(Number);
+  return m && d ? `${m}月${d}日` : day;
+}
 
 // ParkPage opens the sections only once the server's economy is known.
 const CFG = economy.value!.park!.race!;
@@ -52,19 +58,22 @@ const poll = feed.poll;
 const liveFinished = feed.finished;
 /** The live race is out: its window is the place to be. */
 const live = feed.live;
-onMounted(startSection);
-onActivated(startSection);
-onDeactivated(stopSection);
-onBeforeUnmount(stopSection);
-
+const pageActive = usePageActive();
+let sectionRunning = false;
 function startSection() {
+  if (sectionRunning) return;
+  sectionRunning = true;
   feed.start();
   window.addEventListener("keydown", onPageEsc, true);
 }
 function stopSection() {
+  if (!sectionRunning) return;
+  sectionRunning = false;
   feed.stop();
   window.removeEventListener("keydown", onPageEsc, true);
 }
+watch(pageActive, (on) => (on ? startSection() : stopSection()), { immediate: true });
+onBeforeUnmount(stopSection);
 
 // ---------------------------------------------------------------- the countdown
 const countdown = computed<{ label: string; time: string }>((previous) => {
@@ -337,7 +346,7 @@ async function togglePast() {
 function onOutside(e: PointerEvent) {
   if (!slipEl.value?.contains(e.target as Node)) pastOpen.value = false;
 }
-watch(pastOpen, (open) => {
+watch(() => pastOpen.value && pageActive.value, (open) => {
   if (open) document.addEventListener("pointerdown", onOutside, true);
   else document.removeEventListener("pointerdown", onOutside, true);
 });
@@ -397,7 +406,7 @@ function openReplay(id: number) {
 </script>
 
 <template>
-  <section class="race" :class="{ calm: reducedMotion }" aria-label="团子赛跑">
+  <section class="race" :class="{ calm: reducedMotion, inactive: !pageActive }" aria-label="团子赛跑">
     <p v-if="loadError" class="ui-error load-error" role="alert">{{ loadError }}</p>
 
     <!-- The bill: the race's map, and what is on: the way in once it has started, else the result before. -->
@@ -415,7 +424,7 @@ function openReplay(id: number) {
           </span>
         </div>
         <button
-          v-if="live" type="button" class="ui-btn primary watch-key" :class="{ pulse: !reducedMotion }"
+          v-if="live" type="button" class="ui-btn primary watch-key" :class="{ pulse: !reducedMotion && pageActive }"
           @click="openRaceWindow()"
         >
           <span class="live-beacon" aria-hidden="true"><i class="live-ring"></i><i class="live-dot"></i></span>
@@ -585,7 +594,7 @@ function openReplay(id: number) {
             </button>
           </span>
           <button
-            type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy && !reducedMotion }"
+            type="button" class="ui-btn primary bet-key" :class="{ pulse: !betBlock && !busy && !reducedMotion && pageActive }"
             :disabled="busy || !!betBlock" :aria-busy="busy" :title="betKeyTitle"
             @keydown.space.prevent @keyup.space.prevent @keydown="(e) => e.repeat && e.preventDefault()"
             @click="place"
@@ -717,6 +726,10 @@ function openReplay(id: number) {
   border-radius: 50%;
   background: currentColor;
   animation: live-beat 1.2s var(--ease-out) infinite;
+}
+.inactive .live-ring,
+.inactive .live-dot {
+  animation-play-state: paused;
 }
 @keyframes live-beat {
   50% { opacity: 0.3; }

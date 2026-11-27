@@ -817,8 +817,8 @@ def test_an_answer_is_read_at_one_moment_whatever_another_device_does(monkeypatc
     read = Event()
     status = g.status
 
-    def pausing(token):
-        out = status(token)
+    def pausing(token, **kw):
+        out = status(token, **kw)
         if current_thread().name.startswith("reader"):
             read.set()
             time.sleep(0.2)  # another device starts a game meanwhile
@@ -946,6 +946,7 @@ def api(monkeypatch):
     g, pl, clock, pid = setup()
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, g, clock, pid
 

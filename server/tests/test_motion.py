@@ -6,6 +6,7 @@ from app.main import app, manager
 
 def test_motion_is_scoped_to_the_room_and_leaves_taps_unchanged():
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client:
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b, client.websocket_connect('/ws') as other:
             for ws, room, name in ((a, 'motion', 'a'), (b, 'motion', 'b'), (other, 'elsewhere', 'c')):
@@ -48,6 +49,7 @@ def test_motion_requires_joining_and_bounded_offsets(dx):
 
 def test_a_client_that_asks_for_packed_motion_gets_it_and_subscribes():
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client:
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
             a.send_json({'type': 'join', 'room': 'packed', 'nick': 'a', 'motionVersion': 2})
@@ -85,6 +87,7 @@ def test_packed_motion_messages_are_bounded(message):
 
 def test_a_newer_motion_version_gets_the_newest_this_server_has():
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client, client.websocket_connect('/ws') as ws:
         ws.send_json({'type': 'join', 'room': 'future', 'nick': 'a', 'motionVersion': 5})
         joined = ws.receive_json()
@@ -94,6 +97,7 @@ def test_a_newer_motion_version_gets_the_newest_this_server_has():
 
 def test_edges_reach_a_version_3_client_in_one_ordered_message():
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client:
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
             a.send_json({'type': 'join', 'room': 'edges', 'nick': 'a', 'motionVersion': 3})

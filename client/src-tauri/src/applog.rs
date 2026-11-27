@@ -6,7 +6,7 @@
 //! states and errors.
 
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -78,18 +78,20 @@ pub fn write_now(tag: &str, msg: &str) {
     }
 }
 
+fn flush_and_dir() -> std::io::Result<PathBuf> {
+    let mut log = LOG.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(log) = log.as_mut() else {
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "log not started"));
+    };
+    if let Some(file) = log.file.as_mut() {
+        let _ = file.flush();
+    }
+    Ok(log.dir.clone())
+}
+
 /// The older and the current file, in that order, after flushing what is written.
 fn read_all() -> std::io::Result<Vec<u8>> {
-    let dir = {
-        let mut log = LOG.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(log) = log.as_mut() else {
-            return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "log not started"));
-        };
-        if let Some(file) = log.file.as_mut() {
-            let _ = file.flush();
-        }
-        log.dir.clone()
-    };
+    let dir = flush_and_dir()?;
     let mut out = Vec::new();
     for name in [PREVIOUS, CURRENT] {
         if let Ok(bytes) = std::fs::read(dir.join(name)) {
@@ -111,9 +113,27 @@ pub fn export(to_dir: &Path) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
+fn read_tail_file(path: &Path, want: usize) -> std::io::Result<Vec<u8>> {
+    let mut file = File::open(path)?;
+    let start = file.metadata()?.len().saturating_sub(want as u64);
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(want as u64).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 /// The latest part of the log, at most `max` bytes, for a feedback the player sends it with; "" before the log started.
 pub fn tail(max: usize) -> String {
-    read_all().map(|bytes| tail_of(bytes, max)).unwrap_or_default()
+    let Ok(dir) = flush_and_dir() else { return String::new() };
+    // One extra byte tells tail_of whether the combined log was cut, even at a file boundary.
+    let want = max.saturating_add(1);
+    let mut bytes = read_tail_file(&dir.join(CURRENT), want).unwrap_or_default();
+    if bytes.len() < want {
+        let mut older = read_tail_file(&dir.join(PREVIOUS), want - bytes.len()).unwrap_or_default();
+        older.append(&mut bytes);
+        bytes = older;
+    }
+    tail_of(bytes, max)
 }
 
 /// The last `max` bytes of `bytes`, from the first whole line on when cut.
@@ -162,5 +182,44 @@ mod tests {
     fn tail_never_splits_a_character() {
         let log = "开始\n桌宠\n".as_bytes().to_vec();
         assert_eq!(tail_of(log, 8), "桌宠\n");
+    }
+
+    #[test]
+    fn tail_reads_whole_lines_from_rotated_log_files() {
+        use super::{tail, Log, CURRENT, LOG, PREVIOUS};
+        use std::fs;
+
+        let dir = std::env::temp_dir().join(format!("asoultappo-tail-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let previous = dir.join(PREVIOUS);
+        let current = dir.join(CURRENT);
+        // The fixture owns both files. Other tests may log while these bytes are being checked.
+        let saved = LOG.lock().unwrap().replace(Log { dir: dir.clone(), file: None, written: 0 });
+        fs::write(&previous, b"").unwrap();
+        fs::write(&current, b"").unwrap();
+        assert_eq!(tail(100), "");
+
+        fs::write(&current, b"short\n").unwrap();
+        assert_eq!(tail(100), "short\n");
+        fs::write(&current, format!("{}\nlast\n", "x".repeat(32_768))).unwrap();
+        assert_eq!(tail(8), "last\n");
+
+        // The rotated file ends inside 桌. Decode only after joining the two byte ranges.
+        let text = "前文\n桌宠\n";
+        let split = "前文\n".len() + 1;
+        fs::write(&previous, &text.as_bytes()[..split]).unwrap();
+        fs::write(&current, &text.as_bytes()[split..]).unwrap();
+        assert_eq!(tail(10), "桌宠\n");
+        assert_eq!(tail(6), "");
+
+        fs::write(&previous, b"old\r\n").unwrap();
+        fs::write(&current, b"one\ntwo\r\nthree").unwrap();
+        assert_eq!(tail(100), "old\r\none\ntwo\r\nthree");
+        assert_eq!(tail(13), "two\r\nthree");
+        assert_eq!(tail(6), "three");
+        assert_eq!(tail(4), "");
+
+        *LOG.lock().unwrap() = saved;
+        fs::remove_dir_all(dir).unwrap();
     }
 }

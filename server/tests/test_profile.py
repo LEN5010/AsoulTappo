@@ -120,6 +120,7 @@ def test_room_members_ask_for_each_others_profiles(monkeypatch):
     g.set_loadout(TOKEN, {"showcase": [CARDS[1], CARDS[0]]})
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c, c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
         a.send_json({"type": "join", "room": "profiles", "nick": "a", "token": TOKEN, "motionVersion": 3})
         ja = a.receive_json()

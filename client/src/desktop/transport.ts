@@ -1,5 +1,6 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { windowLabel, type WindowLabel } from "../composables/tauri";
+import { sendSettingsNow } from "./settingsSync";
 
 export type DesktopAction = "sync" | "resonate" | "craftItem" | "checkin" | "claimUpdateRewards" | "loadCheckins" |
   "loadScratch" | "buyScratch" | "revealScratch" | "sendEmote" | "createRoom" | "joinRoom" | "leaveRoom" | "tidyRemotes" |
@@ -19,6 +20,8 @@ export const DESKTOP_ACTION_TIMEOUT_MS: Partial<Record<DesktopAction, number>> =
 
 /** The other windows' actions run in the desk window. Never retry a mutation after a lost reply. */
 export async function requestDesktop<T = void>(action: DesktopAction, ...args: unknown[]): Promise<T> {
+  // Edits made just before the request go first: the desk handles the request with them.
+  sendSettingsNow();
   const id = crypto.randomUUID();
   return new Promise<T>((resolve, reject) => {
     let settled = false;

@@ -9,8 +9,10 @@ from app.rooms import ROOM_STATUSES, room_status
 @pytest.fixture(autouse=True)
 def _clean():
     manager.rooms.clear()
+    manager.by_save.clear()
     yield
     manager.rooms.clear()
+    manager.by_save.clear()
 
 
 def join(ws, nick, **extra):

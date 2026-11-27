@@ -12,7 +12,8 @@ class _StoreState:
     """What the mixins use of Store; Store sets them in __init__."""
     _db: sqlite3.Connection
     _lock: threading.RLock
-    _counts: dict[str, tuple[frozenset[str], int]]
+
+    def _invalidate_count(self, pid: str) -> None: ...
 
     def _commit(self) -> None: ...
 
@@ -146,8 +147,7 @@ class AdminStore(_StoreState):
             self._db.execute("UPDATE players SET draw_pity=0, skin_pity=0 WHERE id=?", (pid,))
             self._db.execute("DELETE FROM photo_saves WHERE player_id=?", (pid,))
             self._db.execute("UPDATE photo_boxes SET opened=ts WHERE player_id=? AND opened=0", (pid,))
-            # _Tx drops the caches on a rollback only.
-            self._counts.pop(pid, None)
+            self._invalidate_count(pid)
             self._commit()
         return items, pools
 
@@ -231,7 +231,8 @@ class AdminStore(_StoreState):
                                           ("photoBoxes", "photo_boxes"), ("photoSaves", "photo_saves"),
                                           ("shardLedger", "shard_ledger"))}
             self._db.execute(f"UPDATE players SET shards=0, draw_pity=0, skin_pity=0 WHERE id IN {_IDS}", (ids,))
-            self._counts.clear()
+            for pid in pids:
+                self._invalidate_count(pid)
             self._commit()
         return {"shardsZeroed": shards, "deleted": deleted}
 

@@ -8,8 +8,10 @@ from app.rooms import MAX_ROOM_SIZE, RoomManager, new_room_id
 @pytest.fixture(autouse=True)
 def _clean():
     manager.rooms.clear()
+    manager.by_save.clear()
     yield
     manager.rooms.clear()
+    manager.by_save.clear()
 
 
 def join(ws, room="r1", nick="a"):

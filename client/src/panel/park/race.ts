@@ -666,6 +666,72 @@ export function stacksAt(start: readonly string[], moves: readonly RaceStep[], h
   return stacks;
 }
 
+interface StepCursor { completed: number; partial: number }
+
+/** The board changes when the group leaves its square, or when its landing square acts. */
+export function stepCursor(h: Playhead, previous?: StepCursor | null): StepCursor {
+  const completed = h.current >= 0 ? (h.part >= SQUARE_AT ? h.current + 1 : h.current) : h.done;
+  const partial = h.current >= 0 && h.part >= HOP_AT && h.part < SQUARE_AT ? h.current : -1;
+  return previous?.completed === completed && previous.partial === partial ? previous : { completed, partial };
+}
+
+interface BoardState { stacks: Map<number, string[]>; hops: Record<string, string> }
+
+/** Keep completed moves, and play a partial move on a separate snapshot so it can be scrubbed either way. */
+export function createBoardStepper(withHops = true) {
+  let cache: {
+    start: readonly string[];
+    moves: readonly RaceStep[];
+    completed: number;
+    partial: number;
+    base: BoardState;
+    frame: BoardState;
+  } | undefined;
+
+  function copy(board: BoardState): BoardState {
+    return { stacks: new Map([...board.stacks].map(([sq, stack]) => [sq, [...stack]])), hops: { ...board.hops } };
+  }
+  function apply(board: BoardState, s: RaceStep, i: number, complete: boolean) {
+    playStep(board.stacks, s, complete);
+    if (!withHops) return;
+    const acted = complete && (s.end !== undefined || !!s.stack);
+    const key = `${i}${acted ? "b" : "a"}`;
+    for (const m of [s.m, ...(s.carry ?? [])]) board.hops[m] = s.end === undefined ? `${i}a` : key;
+    if (acted && s.square === "flip") for (const m of board.stacks.get(s.to) ?? []) board.hops[m] = key;
+    if (acted && s.react?.length) for (const m of s.stack ?? s.react) board.hops[m] = key;
+  }
+
+  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number): BoardState => {
+    const target = Math.min(completed, moves.length);
+    if (!cache || cache.start !== start || cache.moves !== moves || target < cache.completed) {
+      const base = { stacks: new Map([[0, [...start]]]), hops: {} };
+      cache = { start, moves, completed: 0, partial: -1, base, frame: base };
+    }
+    if (cache.completed === target && cache.partial === partial) return cache.frame;
+    if (cache.completed < target) {
+      cache.base = copy(cache.base);
+      while (cache.completed < target) {
+        const i = cache.completed++;
+        apply(cache.base, moves[i], i, true);
+      }
+    }
+    cache.partial = partial;
+    cache.frame = cache.base;
+    if (partial >= 0 && partial < moves.length) {
+      cache.frame = copy(cache.base);
+      apply(cache.frame, moves[partial], partial, false);
+    }
+    return cache.frame;
+  };
+}
+
+/** The standings need only the stacks, retaining their reference between board changes. */
+export function createStackStepper() {
+  const step = createBoardStepper(false);
+  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number) =>
+    step(start, moves, completed, partial).stacks;
+}
+
 export function spots(stacks: Map<number, string[]>): Record<string, Spot> {
   const out: Record<string, Spot> = {};
   for (const [square, s] of stacks) {

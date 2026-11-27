@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { getCharacter } from "../characters";
 import { settings } from "../stores/settings";
 import { adminStatus, autostartStatus, copyText, exportLog, isTauri, openAboutLink, setHotkey, setAutostart, setRunAsAdmin, type AdminStatus, type AutostartStatus, type HotkeySlot } from "../composables/tauri";
@@ -163,8 +164,13 @@ const autostart = ref<AutostartStatus | null>(null);
 const autostartBusy = ref(false);
 const refreshAutostart = async () => { autostart.value = await autostartStatus(); };
 // Also read back when the panel comes to the front, after a change in System Settings or Task Manager.
-onMounted(() => { void refreshAutostart(); window.addEventListener("focus", refreshAutostart); });
-onBeforeUnmount(() => window.removeEventListener("focus", refreshAutostart));
+const pageActive = usePageActive();
+watch(pageActive, (active, _, onCleanup) => {
+  if (!active) return;
+  void refreshAutostart();
+  window.addEventListener("focus", refreshAutostart);
+  onCleanup(() => window.removeEventListener("focus", refreshAutostart));
+}, { immediate: true });
 async function toggleAutostart(e: Event) {
   const input = e.target as HTMLInputElement;
   autostartBusy.value = true;
@@ -493,7 +499,7 @@ async function exportLogFile() {
               <div v-else class="ui-row promo-row">
                 <span>神秘按钮</span>
                 <button
-                  type="button" class="ui-btn small about-key primary promo-key" :class="{ wiggle: !settings.promoSeen }"
+                  type="button" class="ui-btn small about-key primary promo-key" :class="{ wiggle: !settings.promoSeen && pageActive }"
                   @click="openPromo"
                 >
                   <Icon name="spark" :size="15" /><span>点我试试</span>

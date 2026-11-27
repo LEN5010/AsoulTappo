@@ -3,11 +3,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invokeMock = vi.hoisted(() => vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
-async function loadTauri() {
+async function loadTauri(label = "panel") {
   vi.resetModules();
-  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: "?window=panel" } });
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {}, location: { search: label === "main" ? "" : `?window=${label}` } });
   return import("./tauri");
 }
+
+describe("window input subscriptions", () => {
+  beforeEach(() => { invokeMock.mockClear(); });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("reports popup state on the first call and on changes", async () => {
+    const { setPopupOpen } = await loadTauri("main");
+    setPopupOpen(false);
+    setPopupOpen(false);
+    setPopupOpen(true);
+    expect(invokeMock.mock.calls).toEqual([
+      ["set_popup_open", { open: false }],
+      ["set_popup_open", { open: true }],
+    ]);
+  });
+
+  it.each(["main", "panel"])("reports mouse activity changes with the %s label", async (label) => {
+    const { setMouseActive } = await loadTauri(label);
+    setMouseActive(true);
+    setMouseActive(true);
+    setMouseActive(false);
+    expect(invokeMock.mock.calls).toEqual([
+      ["set_mouse_active", { label, active: true }],
+      ["set_mouse_active", { label, active: false }],
+    ]);
+  });
+});
 
 describe("writeLog", () => {
   beforeEach(() => {

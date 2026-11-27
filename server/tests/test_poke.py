@@ -82,6 +82,7 @@ def test_the_cooldown_list_forgets_members_who_left():
 
 def test_the_server_offers_pokes_when_joining_and_answers_over_the_socket():
     manager.rooms.clear()
+    manager.by_save.clear()
     with TestClient(app) as client:
         with client.websocket_connect('/ws') as a, client.websocket_connect('/ws') as b:
             a.send_json({'type': 'join', 'room': 'pokes', 'nick': 'a', 'motionVersion': 3})
@@ -120,6 +121,7 @@ def test_the_rest_of_the_room_sees_a_member_drink_once_in_a_while():
 
 def test_drinking_goes_over_the_socket_and_is_counted(monkeypatch):
     manager.rooms.clear()
+    manager.by_save.clear()
     counted = []
     monkeypatch.setattr(app_main.game.tracker, "count", lambda key, n=1: counted.append(key))
     with TestClient(app) as client:

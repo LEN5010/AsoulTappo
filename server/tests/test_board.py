@@ -163,6 +163,7 @@ def test_joining_and_renaming_in_a_room_keep_the_room_nick(monkeypatch):
     t, pid = save(g, 1, NORMAL[:1])
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c, c.websocket_connect("/ws") as ws:
         ws.send_json({"type": "join", "room": "nicks", "nick": "进房", "token": t, "motionVersion": 2})
         ws.receive_json()

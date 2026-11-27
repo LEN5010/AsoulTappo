@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import time
+from concurrent.futures import Future
 from datetime import date
 from functools import cached_property
 from threading import Lock
@@ -179,6 +180,9 @@ class Game:
         self.now = now
         self.collectible_ids = frozenset(manifest.items) - manifest.starter
         self.board_points = board_points(manifest)
+        self._board: dict[bool, dict[str, Any]] | None = None
+        self._board_lock = Lock()
+        self._board_pending: dict[bool, Future[dict[str, Any]]] = {}
         # Counts, room samples and clients for the admin pages.
         self.tracker = Tracker(store, lambda: self.now())
 
@@ -855,7 +859,7 @@ class Game:
         return self.store.duel_net(pid, day_of(self.now()))
 
     # ------------------------------------------------------------------ status
-    def status(self, token: str) -> dict[str, Any]:
+    def status(self, token: str, *, include_park: bool = True) -> dict[str, Any]:
         pid = player_id_for(token)
         now = self.now()
         day = day_of(now)
@@ -893,7 +897,7 @@ class Game:
             out["duel"] = {"net": self.store.duel_net(pid, day)}
         if self.manifest.ddz:
             out["ddz"] = {"net": self.store.ddz_net(pid, day)}
-        if self.manifest.park:
+        if include_park and self.manifest.park:
             out["park"] = {"coins": p["coins"], "news": self.park_news(now)}
             if gifted:
                 out["park"]["gifted"] = gifted
@@ -999,7 +1003,7 @@ class Game:
         if key is None:
             raise GameError("bad_version", "版本号格式应为 1.2.3")
         with self.store.transaction() as st:
-            if any(r["ended"] is None and version_key(r["version"]) == key for r in st.update_rewards()):
+            if any(version_key(open_version) == key for open_version in st.open_update_versions()):
                 raise GameError("reward_open", "这个版本已有进行中的更新奖励")
             version = version.strip().removeprefix("v")
             st.add_update_reward(version, shards, self.now())
@@ -1355,10 +1359,37 @@ class Game:
         return None
 
     def _work_out_board(self, require_account: bool) -> dict[str, Any]:
+        """The board, worked out at most every BOARD_SECONDS. Requests that come while it is being worked out wait for
+        that one, rather than each working out the same board in a thread of its own."""
         now = self.now()
-        cached = getattr(self, "_board", None)
-        if cached and now - cached["at"] < BOARD_SECONDS and cached["require_account"] == require_account:
-            return cached
+        with self._board_lock:
+            cached = self._board.get(require_account) if self._board else None
+            if cached and now - cached["at"] < BOARD_SECONDS:
+                return cached
+            pending = self._board_pending.get(require_account)
+            refresh = pending is None
+            if pending is None:
+                pending = self._board_pending[require_account] = Future()
+        if refresh:
+            self._refresh_board(require_account, pending)
+        return pending.result()
+
+    def _refresh_board(self, require_account: bool, pending: Future[dict[str, Any]]) -> None:
+        try:
+            data = self._calculate_board(require_account)
+        except Exception as exc:
+            pending.set_exception(exc)
+        else:
+            with self._board_lock:
+                if self._board is None:
+                    self._board = {}
+                self._board[require_account] = data
+            pending.set_result(data)
+        finally:
+            with self._board_lock:
+                del self._board_pending[require_account]
+
+    def _calculate_board(self, require_account: bool) -> dict[str, Any]:
         saves: dict[str, dict[str, Any]] = {}
         # A board that asks for an account lists linked saves only, so only their items are read. Photocards score
         # nothing (photo_deal), so SQLite leaves them out.
@@ -1372,11 +1403,9 @@ class Game:
             counts["last"] = max(counts["last"], ts)
             if iid.startswith("card:"):
                 counts["last_card"] = max(counts["last_card"], ts)
-        pids = sorted(saves)
-        loadouts = {pid: _loadout_json(raw) for pid, raw in self.store.loadouts(pids).items()}
-        room_nicks = self.store.room_nicks(pids)
+        hidden = self.store.hidden_board_saves(lambda raw: _loadout_json(raw).get("board") is False)
         linked = self.store.linked_players() if require_account else None
-        listed = [(pid, c) for pid, c in saves.items() if self._listed(pid, loadouts.get(pid, {}), linked) is None]
+        listed = [(pid, c) for pid, c in saves.items() if pid not in hidden and (linked is None or pid in linked)]
         ranked = {
             # Cards, then big hidden cards, then who had the last of those cards first.
             "cards": sorted((x for x in listed if x[1]["cards"]),
@@ -1384,6 +1413,9 @@ class Game:
             # Score, then big hidden cards, then who reached the score first.
             "score": sorted(listed, key=lambda x: (-x[1]["score"], -x[1]["big"], x[1]["last"])),
         }
+        pids = list(dict.fromkeys(pid for ranking in ranked.values() for pid, _ in ranking[:BOARD_SIZE]))
+        loadouts = {pid: _loadout_json(raw) for pid, raw in self.store.loadouts(pids).items()}
+        room_nicks = self.store.room_nicks(pids)
         rows: dict[str, list[dict[str, Any]]] = {}
         shown: dict[str, dict[str, Any]] = {}
         for order, in_order in ranked.items():
@@ -1392,12 +1424,11 @@ class Game:
                 if pid not in shown:
                     shown[pid] = self._board_row(pid, counts, loadouts.get(pid, {}), room_nicks)
                 rows[order].append({**shown[pid], "rank": rank})
-        self._board = {
-            "at": now, "require_account": require_account, "rows": rows,
+        return {
+            "at": self.now(), "rows": rows,
             "ids": {row["id"]: pid for pid, row in shown.items()},
             "rank": {order: {pid: i for i, (pid, _) in enumerate(in_order, 1)} for order, in_order in ranked.items()},
         }
-        return self._board
 
     def _count_item(self, counts: dict[str, Any], iid: str) -> None:
         """Adds an item a save holds (one with board points) to its board counts."""

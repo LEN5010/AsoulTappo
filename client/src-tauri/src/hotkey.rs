@@ -78,13 +78,17 @@ fn toggle(app: &AppHandle) {
         let shown = panel.as_ref().is_some_and(|p| p.is_visible().unwrap_or(false));
         PANEL_WAS_SHOWN.store(shown, Ordering::Relaxed);
         if let Some(p) = panel.filter(|_| shown) {
-            let _ = p.hide();
+            if p.hide().is_ok() {
+                crate::panel_hidden();
+            }
             let _ = app.emit_to("panel", "panel:visible", false);
         }
         let shown = capture.as_ref().is_some_and(|c| c.is_visible().unwrap_or(false));
         CAPTURE_WAS_SHOWN.store(shown, Ordering::Relaxed);
         if let Some(c) = capture.filter(|_| shown) {
-            let _ = c.hide();
+            if c.hide().is_ok() {
+                crate::CAPTURE_OPEN.store(false, Ordering::Relaxed);
+            }
         }
         let shown = todo.as_ref().is_some_and(|t| t.is_visible().unwrap_or(false));
         TODO_WAS_SHOWN.store(shown, Ordering::Relaxed);
@@ -99,21 +103,39 @@ fn toggle(app: &AppHandle) {
         let shown = ddz.as_ref().is_some_and(|d| d.is_visible().unwrap_or(false));
         DDZ_WAS_SHOWN.store(shown, Ordering::Relaxed);
         if let Some(d) = ddz.filter(|_| shown) {
-            let _ = d.hide();
+            if d.hide().is_ok() {
+                crate::DDZ_OPEN.store(false, Ordering::Relaxed);
+            }
         }
-        let _ = main.hide();
+        // The hit test reads the pet window's visibility from the overlay state, as after the tray's hide.
+        let overlay = app.try_state::<Arc<crate::Overlay>>();
+        if main.hide().is_ok() {
+            if let Some(o) = &overlay {
+                o.visible.store(false, Ordering::Relaxed);
+            }
+        }
+        crate::BOSS_HIDDEN.store(true, Ordering::Relaxed);
     } else {
         applog!("hotkey", "show");
-        let _ = main.show();
+        crate::BOSS_HIDDEN.store(false, Ordering::Relaxed);
+        if main.show().is_ok() {
+            if let Some(o) = app.try_state::<Arc<crate::Overlay>>() {
+                o.visible.store(true, Ordering::Relaxed);
+            }
+        }
         #[cfg(target_os = "windows")]
         crate::transparency::request("shown by the hide hotkey");
         let panel = panel.filter(|_| PANEL_WAS_SHOWN.swap(false, Ordering::Relaxed));
         if let Some(p) = &panel {
-            let _ = p.show();
+            if p.show().is_ok() {
+                crate::PANEL_VISIBLE.store(true, Ordering::Relaxed);
+            }
             let _ = app.emit_to("panel", "panel:visible", true);
         }
         if let Some(c) = capture.filter(|_| CAPTURE_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
-            let _ = c.show();
+            if c.show().is_ok() {
+                crate::CAPTURE_OPEN.store(true, Ordering::Relaxed);
+            }
         }
         if let Some(t) = todo.filter(|_| TODO_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
             let _ = t.show();
@@ -122,7 +144,9 @@ fn toggle(app: &AppHandle) {
             let _ = r.show();
         }
         if let Some(d) = ddz.filter(|_| DDZ_WAS_SHOWN.swap(false, Ordering::Relaxed)) {
-            let _ = d.show();
+            if d.show().is_ok() {
+                crate::DDZ_OPEN.store(true, Ordering::Relaxed);
+            }
         }
         // The panel is a regular window: shown alone it stays where it was, under the window in front. The key press
         // lets this process take the foreground, so the panel comes to the front as when it is opened by hand.

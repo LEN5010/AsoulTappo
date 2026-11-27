@@ -608,6 +608,7 @@ def api(monkeypatch):
     g, ps, clock, pid = setup(.701)
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         yield c, g, pid
 
@@ -637,6 +638,7 @@ def test_http_refuses_a_hidden_card(monkeypatch):
     g = setup(shipped=True)[0]
     monkeypatch.setattr(main, "game", g)
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     with TestClient(main.app) as c:
         r = c.post("/api/park/scratch", json={"kind": "premium"}, headers=H)
         assert r.status_code == 409 and r.json()["detail"]["code"] == "card_hidden"

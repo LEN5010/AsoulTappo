@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from contextlib import AbstractContextManager
-from typing import Any
+from typing import Any, Iterable, Literal
 
 
 class _StoreState:
     """What the mixins use of Store; Store sets them in __init__."""
     _db: sqlite3.Connection
     _lock: threading.RLock
+    _park_news_cache: tuple[float, float, int, list[dict[str, Any]]] | None
 
     def _commit(self) -> None: ...
 
     def _reading(self) -> AbstractContextManager[sqlite3.Connection]: ...
+
+    def get_player(self, pid: str, now: float) -> dict[str, Any]: ...
 
 
 class ParkStore(_StoreState):
@@ -75,7 +79,7 @@ class ParkStore(_StoreState):
                     "INSERT INTO coin_ledger (day, player_id, source, amount, count) VALUES (?, ?, 'gift', ?, 1) "
                     "ON CONFLICT(day, player_id, source) DO UPDATE SET "
                     "amount = amount + excluded.amount, count = count + excluded.count", (day, pid, coins))
-                self._commit()
+            self._commit()
             return bool(done)
 
     def park_counter(self, key: str, default: int = 0) -> int:
@@ -93,21 +97,67 @@ class ParkStore(_StoreState):
         with self._lock:
             cur = self._db.execute("INSERT INTO park_news (ts, kind, player_id, nick, detail) VALUES (?, ?, ?, ?, ?)",
                                    (ts, kind, pid, nick, detail))
+            self._park_news_cache = None
             self._commit()
             return int(cur.lastrowid)
 
     def park_news_since(self, since: float, limit: int) -> list[dict[str, Any]]:
-        """The newest [limit] news items from [since] on, oldest first."""
+        """The newest [limit] news items from [since] on, oldest first (a negative [limit]: all of them). Outside a
+        transaction the answer is kept for a second; a new or pruned item drops it."""
         with self._lock:
-            rows = self._db.execute("SELECT id, ts, kind, nick, detail FROM park_news WHERE ts >= ? "
-                                    "ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
-        return [dict(r) for r in reversed(rows)]
+            now = time.monotonic()
+            cache = None if self._db.in_transaction else self._park_news_cache
+            if cache and now < cache[0] and since >= cache[1] and limit == cache[2]:
+                cached = [row for row in cache[3] if row["ts"] >= since]
+                # If a full page lost a row, older ids may still qualify after a clock change.
+                if len(cache[3]) < limit or len(cached) == len(cache[3]) or limit < 0:
+                    return [row.copy() for row in cached]
+            rows = None
+            if limit >= 0:
+                # News is written in time order, so the newest [limit] ids nearly always are the page: when every one
+                # of them is from [since] on, they are, and reading them walks no more than [limit] rows.
+                last = self._db.execute("SELECT id, ts, kind, nick, detail FROM park_news ORDER BY id DESC LIMIT ?",
+                                        (limit,)).fetchall()
+                if all(r["ts"] >= since for r in last):
+                    rows = last
+            if rows is None:
+                # Fewer than [limit] items since then (or no limit): the time index reaches them without walking the
+                # older news, then they are put in id order.
+                rows = self._db.execute("SELECT id, ts, kind, nick, detail FROM park_news INDEXED BY park_news_ts "
+                                        "WHERE ts >= ? ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
+            news = [dict(r) for r in reversed(rows)]
+            if not self._db.in_transaction:
+                self._park_news_cache = (now + 1, since, limit, news)
+            return [row.copy() for row in news]
 
-    def prune_park_news(self, before: float) -> int:
+    def prune_park_news(self, before: float, limit: int = -1) -> int:
         with self._lock:
-            n = self._db.execute("DELETE FROM park_news WHERE ts < ?", (before,)).rowcount
+            n = self._db.execute(
+                "DELETE FROM park_news WHERE id IN (SELECT id FROM park_news WHERE ts < ? "
+                "ORDER BY ts, id LIMIT ?)", (before, limit)).rowcount
+            if n:
+                self._park_news_cache = None
             self._commit()
             return n
+
+    def add_park_payouts(self, currency: Literal["coins", "shards"], day: str, source: str,
+                         payouts: dict[str, int], now: float) -> None:
+        """Add one payout and ledger entry per save in the caller's settlement transaction."""
+        balance = f"UPDATE players SET {currency} = {currency} + ? WHERE id = ?"
+        table = "coin_ledger" if currency == "coins" else "shard_ledger"
+        with self._lock:
+            updated = self._db.executemany(balance, ((amount, pid) for pid, amount in payouts.items()))
+            if updated.rowcount < len(payouts):
+                for pid, amount in payouts.items():
+                    if self._db.execute("SELECT 1 FROM players WHERE id = ?", (pid,)).fetchone() is None:
+                        self.get_player(pid, now)
+                        self._db.execute(balance, (amount, pid))
+            self._db.executemany(
+                f"INSERT INTO {table} (day, player_id, source, amount, count) VALUES (?, ?, ?, ?, 1) "
+                "ON CONFLICT(day, player_id, source) DO UPDATE SET "
+                "amount = amount + excluded.amount, count = count + excluded.count",
+                ((day, pid, source, amount) for pid, amount in payouts.items()))
+            self._commit()
 
     # --- park: scratch
     def add_park_scratch(self, pid: str, day: str, kind: str, cells: str, tier: str, shards: int, coins: int,
@@ -341,10 +391,26 @@ class ParkStore(_StoreState):
             self._commit()
             return int(cur.lastrowid)
 
-    def race_set_prize(self, bet_id: int, prize: int) -> None:
+    def race_set_prizes(self, prizes: list[tuple[int, int]]) -> None:
         with self._lock:
-            self._db.execute("UPDATE park_race_bets SET prize = ? WHERE id = ?", (prize, bet_id))
+            self._db.executemany("UPDATE park_race_bets SET prize = ? WHERE id = ?", prizes)
             self._commit()
+
+    def race_settlement_bets(self, race_id: int) -> list[sqlite3.Row]:
+        with self._reading() as db:
+            return db.execute(
+                "SELECT id, player_id, kind, member, coins, odds FROM park_race_bets WHERE race_id = ? ORDER BY id",
+                (race_id,)).fetchall()
+
+    def race_refunds(self, race_id: int) -> tuple[dict[str, int], int]:
+        with self._reading() as db:
+            rows = db.execute("SELECT player_id, SUM(coins), COUNT(*) FROM park_race_bets "
+                              "WHERE race_id = ? GROUP BY player_id", (race_id,)).fetchall()
+        return {pid: coins for pid, coins, _ in rows}, sum(n for _, _, n in rows)
+
+    def race_bet_count(self, race_id: int) -> int:
+        with self._lock:
+            return self._db.execute("SELECT COUNT(*) FROM park_race_bets WHERE race_id = ?", (race_id,)).fetchone()[0]
 
     def race_stakes(self, race_id: int) -> dict[str, dict[str, int]]:
         """Coins staked on the race: {kind: {member: coins}}, only what was bet on."""
@@ -442,11 +508,15 @@ class ParkStore(_StoreState):
                                  [(day, pid, n, ts) for n in numbers])
             self._commit()
 
-    def set_lottery_prizes(self, rows: list[tuple[int, int, int]]) -> None:
+    def lottery_draw_tickets(self, day: str) -> list[sqlite3.Row]:
+        with self._reading() as db:
+            return db.execute("SELECT id, player_id, number FROM lottery_tickets WHERE day = ?", (day,)).fetchall()
+
+    def set_lottery_prizes(self, rows: Iterable[tuple[int, int, int]]) -> None:
         """(ticket id, tier, prize) of each winning ticket."""
         with self._lock:
             self._db.executemany("UPDATE lottery_tickets SET tier = ?, prize = ? WHERE id = ?",
-                                 [(tier, prize, tid) for tid, tier, prize in rows])
+                                 ((tier, prize, tid) for tid, tier, prize in rows))
             self._commit()
 
     # --- park: redeem

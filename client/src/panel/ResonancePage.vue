@@ -42,10 +42,21 @@ const pool = computed(() => poolOf(heldItems()));
 // The pools: the standing one, and the limited ones the server runs now. A minute's tick opens and closes them and
 // counts their time down.
 const now = ref(Date.now());
-const clock = window.setInterval(() => (now.value = Date.now()), 30_000);
-onBeforeUnmount(() => window.clearInterval(clock));
 const pageActive = usePageActive();
-watch(pageActive, (active) => { if (active) now.value = Date.now(); });
+let clock: number | undefined;
+function stopClock() {
+  if (clock !== undefined) {
+    window.clearInterval(clock);
+    clock = undefined;
+  }
+}
+watch(pageActive, (active) => {
+  stopClock();
+  if (!active) return;
+  now.value = Date.now();
+  clock = window.setInterval(() => { now.value = Date.now(); }, 30_000);
+}, { immediate: true });
+onBeforeUnmount(stopClock);
 const expired = computed(() => economy.value?.resonance.banners
   ?.filter((b) => b.end * 1000 <= now.value).map((b) => b.id).join(",") ?? "");
 watch(() => pageActive.value && online.value && expired.value, (ids) => {
@@ -192,7 +203,7 @@ async function nextBatch() {
 </script>
 
 <template>
-  <div class="resonance-page ui-scroll" :class="{ calm: reducedMotion, poster: photos && poster }">
+  <div class="resonance-page ui-scroll" :class="{ calm: reducedMotion, poster: photos && poster, inactive: !pageActive }">
     <PhotoBackdrop v-if="photosSeen" :on="photos" />
     <p v-if="photos ? photoError && !photoOver : error" class="ui-error" role="alert">{{ photos ? photoError : error }}</p>
     <Transition name="pool" mode="out-in" :css="!reducedMotion">
@@ -259,7 +270,7 @@ async function nextBatch() {
       <div class="keys">
         <button
           type="button" class="ui-btn large act once"
-          :class="{ primary: canOnce && !canTen, pulse: canOnce && !canTen && !reducedMotion }"
+          :class="{ primary: canOnce && !canTen, pulse: canOnce && !canTen && !reducedMotion && pageActive }"
           :disabled="!canOnce"
           @keydown="guardDrawKey" @keyup="guardDrawKeyUp" @click="draw(1)"
         >
@@ -267,7 +278,7 @@ async function nextBatch() {
           <small class="act-cost"><Icon name="shard" :size="11" />{{ cost }}</small>
         </button>
         <button
-          type="button" class="ui-btn act ten primary" :class="{ pulse: canTen && !reducedMotion }"
+          type="button" class="ui-btn act ten primary" :class="{ pulse: canTen && !reducedMotion && pageActive }"
           :disabled="!canTen"
           @keydown="guardDrawKey" @keyup="guardDrawKeyUp" @click="draw(10)"
         >
@@ -488,6 +499,10 @@ async function nextBatch() {
 .calm .pity.near .ui-bar > i,
 .calm .pity.near .ui-bar > i::after {
   animation: none;
+}
+.inactive .pity.near .ui-bar > i,
+.inactive .pity.near .ui-bar > i::after {
+  animation-play-state: paused;
 }
 @keyframes near-breathe {
   50% {

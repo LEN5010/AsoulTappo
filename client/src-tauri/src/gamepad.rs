@@ -50,6 +50,9 @@ pub fn diff(before: u32, now: u32, out: &mut Vec<InputEvent>) {
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn record_changes(before: u32, now: u32, out: &mut Vec<InputEvent>) {
+    if before == now {
+        return;
+    }
     PRESSES.fetch_add((now & !before).count_ones(), Ordering::Relaxed);
     diff(before, now, out);
 }

@@ -14,9 +14,11 @@ from test_room_host import Dummy, join, token
 @pytest.fixture(autouse=True)
 def _clean():
     manager.rooms.clear()
+    manager.by_save.clear()
     manager.restoring.clear()
     yield
     manager.rooms.clear()
+    manager.by_save.clear()
     manager.restoring.clear()
 
 

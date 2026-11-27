@@ -4,7 +4,7 @@
 // is required, the other layers come from the member. A two-form skin also has formImage.webp, its second picture
 // on the same canvas (pet/SkinForm.ts says when it shows), and may have formLoop.webp: frames of one part of the
 // second picture, side by side, that play over it while it shows (formLoop.json says where; scripts/make_form_loop.py).
-import { memberOf } from "./manifest";
+import { memberNameOf } from "./characterMeta";
 
 const files = import.meta.glob("./assets/characters/*/*.webp", {
   eager: true,
@@ -59,7 +59,7 @@ function build(): Record<string, CharacterAssets> {
   }
   const out: Record<string, CharacterAssets> = {};
   for (const [name, own] of Object.entries(tmp)) {
-    const f = { ...tmp[memberOf(name)], ...own };
+    const f = { ...tmp[memberNameOf(name)], ...own };
     const loop = loops[`./assets/characters/${name}/formLoop.json`];
     if (!f.bgImage || !f.keyboardImage || !f.mouseImage) continue;
     out[name] = {
@@ -93,7 +93,7 @@ export const defaultCharacter = characterNames[0] ?? "";
 
 /** Resolve a (possibly unknown, e.g. from a remote client) name to assets. */
 export function getCharacter(name: string): CharacterAssets | undefined {
-  return characters[name] ?? characters[memberOf(name)] ?? characters[defaultCharacter];
+  return characters[name] ?? characters[memberNameOf(name)] ?? characters[defaultCharacter];
 }
 
 /** How far, in base canvas px, the second form's loop draws past the right edge of the picture (嘉然然龙's open wing). */
@@ -103,7 +103,7 @@ export function formReach(name: string): number {
 }
 
 /** Skin folder names are the member name followed by the collection name. */
-export const skinSeries = (name: string) => name.slice(memberOf(name).length);
+export const skinSeries = (name: string) => name.slice(memberNameOf(name).length);
 
 // Layout of the layers on the 240x135 base canvas.
 export const PET_BASE = {
@@ -141,7 +141,7 @@ const HEADS: Record<string, { x: number; y: number }> = {
   贝拉炎头队长: { x: 146, y: 5 },
 };
 export function headAnchor(name: string): { x: number; y: number } {
-  return HEADS[name] ?? HEADS[memberOf(name)] ?? { x: 150, y: 10 };
+  return HEADS[name] ?? HEADS[memberNameOf(name)] ?? { x: 150, y: 10 };
 }
 
 /**

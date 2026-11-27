@@ -3,7 +3,8 @@
 // (镭射款). Each is a row on the sheet's paper: a small card on the left (the newest owned one) in the collection's
 // material, its name and count, and one pip a card, lit in that material when owned. The 衣橱 pips stand in a group a
 // member, each group a way into her plate; the holo row opens the collection's page at the holo filter.
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
 import { ownsHolo } from "../cards";
 import { characterColor, manifest } from "../manifest";
@@ -80,6 +81,8 @@ const shine = computed(() => {
 });
 const holoEl = ref<HTMLElement>();
 const { tilt: holoTilt, lit: holoLit, moving: holoMoving, follow: holoFollow, leave: holoLeave } = useTilt();
+const pageActive = usePageActive();
+watch(pageActive, (active) => { if (!active) holoLeave(); });
 /**
  * At this size the shading would only blur the art: the art stays a plain image, and the foil is the spectrum through
  * the card's own mask, drifting on its own; the card leans under the pointer.
@@ -96,7 +99,7 @@ function openHolo() {
 </script>
 
 <template>
-  <div v-if="(closet && wardrobe.total) || (holo && holoOn)" class="rows" :class="{ hold, calm: reducedMotion }">
+  <div v-if="(closet && wardrobe.total) || (holo && holoOn)" class="rows" :class="{ hold: hold || !pageActive, calm: reducedMotion }">
     <div
       v-if="closet && wardrobe.total" class="c-row closet" :class="{ peeking: wardrobe.peeking }" role="group" aria-label="衣橱"
       @pointerleave="closetPick = ''"

@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     server: { port: 1420, strictPort: true },
     // Two pages: the desk and panel share index.html, the capture window has its own (src/capture.ts).
-    build: { target: "es2022", chunkSizeWarningLimit: 1500, rollupOptions: { input: ["index.html", "capture.html"] } },
+    build: { target: "es2022", assetsInlineLimit: 0, chunkSizeWarningLimit: 1500, rollupOptions: { input: ["index.html", "capture.html"] } },
     // The standalone edition's tests run with their own config (vitest.standalone.config.ts).
     test: {
       environment: "node", include: ["src/**/*.test.ts"], exclude: [...configDefaults.exclude, "src/**/*.standalone.test.ts"],

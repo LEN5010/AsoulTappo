@@ -144,10 +144,12 @@ def api(monkeypatch):
     monkeypatch.setattr(main, "accounts", MainAccounts("https://main.test/api/", FakeMain(), lambda: 0.0))
     monkeypatch.setattr(main.duels, "timers", ManualTimers())
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.duels.clear()
     with TestClient(main.app) as c:
         yield c, g
     main.manager.rooms.clear()
+    main.manager.by_save.clear()
     main.duels.clear()
 
 

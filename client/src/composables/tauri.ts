@@ -39,8 +39,9 @@ export type InputEvent =
  */
 export async function listenInput(cb: (e: InputEvent) => void): Promise<() => void> {
   if (isTauri) {
-    const un = await listen<InputEvent>("input", (ev) => cb(ev.payload));
-    return un;
+    // Broadcasts reach every listener. A main-only activity pulse needs a window-scoped listener.
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    return getCurrentWindow().listen<InputEvent>("input", (ev) => cb(ev.payload));
   }
   const down = new Set<string>();
   let last: { x: number; y: number } | null = null;
@@ -185,6 +186,22 @@ export const setHotkey = (slot: HotkeySlot, keys: string): Promise<void> =>
 export const setHitRegions = (rects: HitRect[], scale: number) => call("set_hit_regions", { rects, scale });
 /** Keep the overlay clickable while something is being dragged. */
 export const setDragging = (active: boolean) => call("set_dragging", { active });
+
+let lastPopupOpen: boolean | null = null;
+/** Tell the Rust hook whether any desk popup needs `outside-click` events. */
+export function setPopupOpen(open: boolean): void {
+  if (!isTauri || lastPopupOpen === open) return;
+  lastPopupOpen = open;
+  void invoke("set_popup_open", { open }).catch(() => {});
+}
+
+let lastMouseActive: boolean | null = null;
+/** Tell the Rust hook whether this window currently consumes `mouse_move` events. */
+export function setMouseActive(active: boolean): void {
+  if (!isTauri || lastMouseActive === active) return;
+  lastMouseActive = active;
+  void invoke("set_mouse_active", { label: windowLabel, active }).catch(() => {});
+}
 
 /** Where the exported log went: the desktop, or the downloads folder when that failed. */
 export interface ExportedLog { path: string; desktop: boolean }
