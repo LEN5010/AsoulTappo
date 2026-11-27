@@ -47,7 +47,9 @@ extern "C" {
     fn CFBooleanGetValue(boolean: *const c_void) -> u8;
 }
 
-fn with_window<T: Send + 'static>(
+/// Runs `action` with the window's NSWindow on the main thread: at once when called there, otherwise sent there and
+/// waited for. AppKit stops the app on some window calls made from another thread.
+pub(crate) fn with_window<T: Send + 'static>(
     window: &WebviewWindow,
     action: impl FnOnce(&NSWindow, MainThreadMarker) -> T + Send + 'static,
 ) -> tauri::Result<T> {

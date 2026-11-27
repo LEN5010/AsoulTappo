@@ -171,18 +171,18 @@ fn move_to_next_monitor(app: &tauri::AppHandle, overlay: &Overlay, from: &str, o
 }
 
 /// macOS gives a full-screen app a Space of its own. Without these flags the pet stays on the Space it
-/// started on and is gone while another desktop or a full-screen app is shown.
+/// started on and is gone while another desktop or a full-screen app is shown. AppKit takes the change on the main
+/// thread only and stops the app when it comes from another one (macOS 27: "Must only be used from the main
+/// thread"). The todos' window is made in an async command, off the main thread, so the change goes through
+/// `with_window`.
 #[cfg(target_os = "macos")]
 fn join_all_spaces(w: &WebviewWindow, tag: &str) {
-    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior as B};
-    match w.ns_window() {
-        Ok(ptr) if !ptr.is_null() => {
-            // SAFETY: Tauri hands out the window's live NSWindow; setup runs on the main thread.
-            let ns = unsafe { &*(ptr as *const NSWindow) };
-            ns.setCollectionBehavior(ns.collectionBehavior() | B::CanJoinAllSpaces | B::FullScreenAuxiliary);
-            applog!(tag, "joins all Spaces and full-screen apps");
-        }
-        Ok(_) => applog!(tag, "no NSWindow to join all Spaces"),
+    use objc2_app_kit::NSWindowCollectionBehavior as B;
+    let joined = overlay_macos::with_window(w, |ns, _| {
+        ns.setCollectionBehavior(ns.collectionBehavior() | B::CanJoinAllSpaces | B::FullScreenAuxiliary)
+    });
+    match joined {
+        Ok(()) => applog!(tag, "joins all Spaces and full-screen apps"),
         Err(e) => applog!(tag, "join all Spaces failed: {e}"),
     }
 }
