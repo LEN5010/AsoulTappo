@@ -3,7 +3,7 @@ import type { Rarity } from "../manifest";
 
 // Non-starter emotes per tier of the pool. They change only with a new emote set; cards and skins are counted from
 // the manifest, so adding a skin or a card needs no change in the tests.
-const POOL_EMOTES: Partial<Record<Rarity, number>> = { common: 320, uncommon: 75, rare: 60 };
+const POOL_EMOTES: Partial<Record<Rarity, number>> = { common: 320, uncommon: 120, rare: 60 };
 
 /** The size of each tier of the resonance pool, counted from the manifest's cards and skins. */
 export function realPoolCounts(): Record<Rarity, number> {

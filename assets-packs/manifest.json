@@ -5670,6 +5670,258 @@
    ]
   },
   {
+   "id": "jiaran-live",
+   "name": "直播间大表情 · 嘉然",
+   "character": "嘉然",
+   "since": "1.3.0",
+   "emotes": [
+    {
+     "key": "jiaran-live.01",
+     "name": "嘉心糖",
+     "img": "bundle:emotes/jiaran-live/01.webp"
+    },
+    {
+     "key": "jiaran-live.02",
+     "name": "生气",
+     "img": "bundle:emotes/jiaran-live/02.webp"
+    },
+    {
+     "key": "jiaran-live.03",
+     "name": "贪吃",
+     "img": "bundle:emotes/jiaran-live/03.webp"
+    },
+    {
+     "key": "jiaran-live.04",
+     "name": "通过",
+     "img": "bundle:emotes/jiaran-live/04.webp"
+    },
+    {
+     "key": "jiaran-live.05",
+     "name": "快快快",
+     "img": "bundle:emotes/jiaran-live/05.webp"
+    },
+    {
+     "key": "jiaran-live.06",
+     "name": "标记",
+     "img": "bundle:emotes/jiaran-live/06.webp"
+    },
+    {
+     "key": "jiaran-live.07",
+     "name": "索嗨嗨",
+     "img": "bundle:emotes/jiaran-live/07.webp"
+    },
+    {
+     "key": "jiaran-live.08",
+     "name": "早睡",
+     "img": "bundle:emotes/jiaran-live/08.webp"
+    },
+    {
+     "key": "jiaran-live.09",
+     "name": "可爱猫猫",
+     "img": "bundle:emotes/jiaran-live/09.webp"
+    },
+    {
+     "key": "jiaran-live.10",
+     "name": "可爱小猪",
+     "img": "bundle:emotes/jiaran-live/10.webp"
+    },
+    {
+     "key": "jiaran-live.11",
+     "name": "mua",
+     "img": "bundle:emotes/jiaran-live/11.webp"
+    },
+    {
+     "key": "jiaran-live.12",
+     "name": "拥抱",
+     "img": "bundle:emotes/jiaran-live/12.webp"
+    },
+    {
+     "key": "jiaran-live.13",
+     "name": "害羞",
+     "img": "bundle:emotes/jiaran-live/13.webp"
+    },
+    {
+     "key": "jiaran-live.14",
+     "name": "你是",
+     "img": "bundle:emotes/jiaran-live/14.webp"
+    },
+    {
+     "key": "jiaran-live.15",
+     "name": "比心",
+     "img": "bundle:emotes/jiaran-live/15.webp"
+    }
+   ],
+   "rarity": "uncommon"
+  },
+  {
+   "id": "nailin-live",
+   "name": "直播间大表情 · 乃琳",
+   "character": "乃琳",
+   "since": "1.3.0",
+   "emotes": [
+    {
+     "key": "nailin-live.01",
+     "name": "奶淇琳",
+     "img": "bundle:emotes/nailin-live/01.webp"
+    },
+    {
+     "key": "nailin-live.02",
+     "name": "快快快",
+     "img": "bundle:emotes/nailin-live/02.webp"
+    },
+    {
+     "key": "nailin-live.03",
+     "name": "通过",
+     "img": "bundle:emotes/nailin-live/03.webp"
+    },
+    {
+     "key": "nailin-live.04",
+     "name": "比心",
+     "img": "bundle:emotes/nailin-live/04.webp"
+    },
+    {
+     "key": "nailin-live.05",
+     "name": "胆大招商",
+     "img": "bundle:emotes/nailin-live/05.webp"
+    },
+    {
+     "key": "nailin-live.06",
+     "name": "索嗨嗨",
+     "img": "bundle:emotes/nailin-live/06.webp"
+    },
+    {
+     "key": "nailin-live.07",
+     "name": "害羞",
+     "img": "bundle:emotes/nailin-live/07.webp"
+    },
+    {
+     "key": "nailin-live.08",
+     "name": "可爱小猪",
+     "img": "bundle:emotes/nailin-live/08.webp"
+    },
+    {
+     "key": "nailin-live.09",
+     "name": "乃琳摇",
+     "img": "bundle:emotes/nailin-live/09.webp"
+    },
+    {
+     "key": "nailin-live.10",
+     "name": "琳的肯定",
+     "img": "bundle:emotes/nailin-live/10.webp"
+    },
+    {
+     "key": "nailin-live.11",
+     "name": "Mua",
+     "img": "bundle:emotes/nailin-live/11.webp"
+    },
+    {
+     "key": "nailin-live.12",
+     "name": "两眼一黑",
+     "img": "bundle:emotes/nailin-live/12.webp"
+    },
+    {
+     "key": "nailin-live.13",
+     "name": "收到收到",
+     "img": "bundle:emotes/nailin-live/13.webp"
+    },
+    {
+     "key": "nailin-live.14",
+     "name": "冬嘎西嘎",
+     "img": "bundle:emotes/nailin-live/14.webp"
+    },
+    {
+     "key": "nailin-live.15",
+     "name": "撒娇",
+     "img": "bundle:emotes/nailin-live/15.webp"
+    }
+   ],
+   "rarity": "uncommon"
+  },
+  {
+   "id": "beila-live",
+   "name": "直播间大表情 · 贝拉",
+   "character": "贝拉",
+   "since": "1.3.0",
+   "emotes": [
+    {
+     "key": "beila-live.01",
+     "name": "贝极星",
+     "img": "bundle:emotes/beila-live/01.webp"
+    },
+    {
+     "key": "beila-live.02",
+     "name": "快快快",
+     "img": "bundle:emotes/beila-live/02.webp"
+    },
+    {
+     "key": "beila-live.03",
+     "name": "通过",
+     "img": "bundle:emotes/beila-live/03.webp"
+    },
+    {
+     "key": "beila-live.04",
+     "name": "嘘",
+     "img": "bundle:emotes/beila-live/04.webp"
+    },
+    {
+     "key": "beila-live.05",
+     "name": "生气",
+     "img": "bundle:emotes/beila-live/05.webp"
+    },
+    {
+     "key": "beila-live.06",
+     "name": "索嗨嗨",
+     "img": "bundle:emotes/beila-live/06.webp"
+    },
+    {
+     "key": "beila-live.07",
+     "name": "可爱小猪",
+     "img": "bundle:emotes/beila-live/07.webp"
+    },
+    {
+     "key": "beila-live.08",
+     "name": "拉脑过载",
+     "img": "bundle:emotes/beila-live/08.webp"
+    },
+    {
+     "key": "beila-live.09",
+     "name": "撒娇兔兔",
+     "img": "bundle:emotes/beila-live/09.webp"
+    },
+    {
+     "key": "beila-live.10",
+     "name": "给你一拳",
+     "img": "bundle:emotes/beila-live/10.webp"
+    },
+    {
+     "key": "beila-live.11",
+     "name": "想开了",
+     "img": "bundle:emotes/beila-live/11.webp"
+    },
+    {
+     "key": "beila-live.12",
+     "name": "调皮鬼脸",
+     "img": "bundle:emotes/beila-live/12.webp"
+    },
+    {
+     "key": "beila-live.13",
+     "name": "NONONO",
+     "img": "bundle:emotes/beila-live/13.webp"
+    },
+    {
+     "key": "beila-live.14",
+     "name": "拜拜",
+     "img": "bundle:emotes/beila-live/14.webp"
+    },
+    {
+     "key": "beila-live.15",
+     "name": "举猫猫",
+     "img": "bundle:emotes/beila-live/15.webp"
+    }
+   ],
+   "rarity": "uncommon"
+  },
+  {
    "id": "achao",
    "name": "阿草和TA的朋友们",
    "character": "阿草",

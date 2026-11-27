@@ -580,6 +580,40 @@ def scratch_emote_set() -> dict:
                        for n, name in enumerate(names, 1)]}
 
 
+def live_emote_sets() -> list[dict]:
+    """The live-room emote sets (cat.LIVE_EMOTE_SETS), from their pictures in the bundle; `since` keeps them out of
+    older clients' pools."""
+    return [{"id": sid, "name": title, "character": member, "since": since,
+             "emotes": [{"key": f"{sid}.{n:02d}", "name": name, "img": f"bundle:emotes/{sid}/{n:02d}.webp"}
+                        for n, name in enumerate(names, 1)]}
+            for sid, title, member, since, names in cat.LIVE_EMOTE_SETS]
+
+
+def build_live_emotes(src: Path, force: bool) -> int:
+    """Trims and scales the live-room emotes' PNGs (<set id>/<nn>.png under [src]) into the bundle, as the HD 装扮
+    emotes are; returns how many pictures it wrote."""
+    built = 0
+    for sid, _, _, _, names in cat.LIVE_EMOTE_SETS:
+        for n in range(1, len(names) + 1):
+            out = BUNDLE / f"emotes/{sid}/{n:02d}.webp"
+            if force or not out.exists():
+                save_webp(square_fit(load_rgba(src / sid / f"{n:02d}.png"), EMOTE_PX), out, q=85)
+                built += 1
+    return built
+
+
+def listed_last(emotes: list[dict]) -> list[dict]:
+    """[emotes] with the sets the catalog lists by name put last (the live-room sets, then 阿草's), whatever the
+    others came from, and every set's rarity taken from the catalog."""
+    listed = live_emote_sets() + [scratch_emote_set()]
+    ids = {s["id"] for s in listed}
+    out = [s for s in emotes if s["id"] not in ids] + listed
+    for es in out:
+        es["rarity"] = ("rare" if es["id"] in cat.RARE_EMOTE_SETS else
+                        "uncommon" if es["id"] in cat.UNCOMMON_EMOTE_SETS else "common")
+    return out
+
+
 # ---------------------------------------------------------------- manifest
 def write_json(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -668,6 +702,10 @@ def main() -> None:
                     help="Update the holo masks and the cards' holo entries only, leaving every other asset as it is")
     ap.add_argument("--photocards-only", action="store_true",
                     help="Update the manifest's photocard list only, leaving every asset as it is")
+    ap.add_argument("--live-src", help="The live-room emotes' 648px PNGs (<set id>/<nn>.png); without it the pictures "
+                                       "in the bundle are kept")
+    ap.add_argument("--live-only", action="store_true",
+                    help="Update the live-room emote sets only, leaving every other asset as it is")
     args = ap.parse_args()
     ctx = Ctx(Path(args.src), args.force)
 
@@ -681,11 +719,21 @@ def main() -> None:
         ap.error("--holo-only is a mode of its own")
     if args.photocards_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.holo_only):
         ap.error("--photocards-only is a mode of its own")
+    if args.live_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.holo_only
+                           or args.photocards_only):
+        ap.error("--live-only is a mode of its own")
     previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
     if args.photocards_only:
         manifest = {**previous, "photocards": cat.PHOTOCARDS}
         write_manifests(manifest)
         print(f"{sum(len(s['cards']) for s in cat.PHOTOCARDS)} photocards")
+        return
+    if args.live_src:
+        print(f"{build_live_emotes(Path(args.live_src), args.force)} live-room emote pictures built")
+    if args.live_only:
+        manifest = {**previous, "emoteSets": listed_last(previous["emoteSets"])}
+        write_manifests(manifest)
+        print(f"{sum(len(s['emotes']) for s in live_emote_sets())} live-room emotes")
         return
     if args.holo_src:
         print(f"{build_holo_masks(Path(args.holo_src), args.force)} holo masks built")
@@ -733,10 +781,7 @@ def main() -> None:
         collection_ids = {s[0] for s in cat.COLLECTION_EMOTE_SETS}
         emotes += [s for s in previous["emoteSets"] if s["id"] in collection_ids]
     # Listed last and in every mode, whatever the emote sets came from.
-    emotes = [s for s in emotes if s["id"] != cat.SCRATCH_EMOTE_SET[0]] + [scratch_emote_set()]
-    for es in emotes:
-        es["rarity"] = ("rare" if es["id"] in cat.RARE_EMOTE_SETS else
-                        "uncommon" if es["id"] in cat.UNCOMMON_EMOTE_SETS else "common")
+    emotes = listed_last(emotes)
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 

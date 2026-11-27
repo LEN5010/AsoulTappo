@@ -68,7 +68,7 @@ class Clock:
 
 # Non-starter emotes per tier of the real pool. They change only with a new emote set; cards and skins are counted
 # from the manifest, so adding a skin or a card needs no change in the tests.
-POOL_EMOTES = {"common": 320, "uncommon": 75, "rare": 60}
+POOL_EMOTES = {"common": 320, "uncommon": 120, "rare": 60}
 
 
 def real_pool_counts(m: Manifest) -> dict[str, int]:

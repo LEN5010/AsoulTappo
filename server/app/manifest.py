@@ -9,7 +9,7 @@ A card with a ``holo`` has a holo version (镭射款), an item of its own: reson
 ``resonance.holoChance`` (see Game.resonate); it is never in a tier of the pool and never crafted.
 Starter items (see ``starter`` in the manifest) are owned by every player and never drop.
 An emote set with a ``source`` (scratch) is won there only: its emotes are neither in the resonance pool nor crafted.
-A card or skin with a ``since`` ships with that release: older clients' pools leave it out.
+A card, skin or emote set with a ``since`` ships with that release: older clients' pools leave it out.
 Photocards (``photocards``) are kept apart from these items: see photo_deal.py.
 """
 from __future__ import annotations
@@ -114,11 +114,13 @@ class Manifest:
     @cached_property
     def item_since(self) -> dict[str, tuple]:
         """Item id -> (major, minor, patch) of the release that ships it, for the cards, holo versions and skins that
-        name one."""
+        name one, and the emotes of the emote sets that do."""
         cards = {f"card:{c['id']}": version_key(c["since"])[:3] for c in self.data["cards"] if c.get("since")}
         holos = {f"holo:{c['id']}": version_key(c["holo"]["since"])[:3] for c in self.data["cards"]
                  if c.get("holo", {}).get("since")}
-        return {**cards, **holos, **self.skin_since}
+        emotes = {f"emote:{e['key']}": version_key(s["since"])[:3] for s in self.data.get("emoteSets", [])
+                  if s.get("since") for e in s["emotes"]}
+        return {**cards, **holos, **emotes, **self.skin_since}
 
     @cached_property
     def holos(self) -> dict[str, str]:
@@ -140,10 +142,10 @@ class Manifest:
 
     def resonance_pool_for(self, version: str | None, now: float | None = None, *,
                            tiers: Iterable[str] = ()) -> dict[str, list[dict]]:
-        """The standing pool a client of [version] can show: cards and skins from a later release are left out, as
-        is every one with a `since` when the version is missing or unreadable. A pre-release counts as its release.
-        None: the whole pool. With [now], the items of banners that have not ended are left out too (app/banners.py).
-        [tiers] can add tiers that only a limited pool rates."""
+        """The standing pool a client of [version] can show: cards, skins and emotes from a later release are left
+        out, as is every one with a `since` when the version is missing or unreadable. A pre-release counts as its
+        release. None: the whole pool. With [now], the items of banners that have not ended are left out too
+        (app/banners.py). [tiers] can add tiers that only a limited pool rates."""
         pool = self.resonance_pool
         extra = set(tiers) - pool.keys()
         if extra:

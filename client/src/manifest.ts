@@ -70,6 +70,8 @@ export interface ManifestEmoteSet {
   rarity: Rarity;
   /** Set on a set won elsewhere than resonance: never in the pool, never crafted. */
   source?: "scratch";
+  /** The release that ships the set, for sets newer than the first ones: the server keeps them from older clients. */
+  since?: string;
   emotes: ManifestEmote[];
 }
 export interface ManifestAccessory {

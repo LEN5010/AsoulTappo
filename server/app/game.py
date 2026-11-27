@@ -436,7 +436,7 @@ class Game:
 
     def resonate(self, token: str, count: int = 1, version: str | None = None,
                  banner_id: str | None = None) -> dict[str, Any]:
-        """[version] is the client's: cards and skins it cannot show stay out of its pool (see
+        """[version] is the client's: cards, skins and emotes it cannot show stay out of its pool (see
         Manifest.resonance_pool_for), and a tier left empty gives its odds to common.
 
         A drawn card with a holo version the client can show (Manifest.holos_for) is that version at holoChance

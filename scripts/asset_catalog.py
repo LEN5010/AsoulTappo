@@ -98,6 +98,26 @@ COLLECTION_EMOTE_SETS = [
     ("beila-casket-motion", "匣中惊鸿 · 贝拉（动态）", "贝拉", "贝拉的冒险-匣中惊鸿", "动态表情包"),
 ]
 
+# Live-room emotes (直播间大表情): each member's UP主大表情 from the Bilibili live room, upscaled 4x to 648px PNGs.
+# The pictures (trimmed and scaled to 320px) are kept in client/public/assets/emotes/<id>/<nn>.webp and rebuilt from
+# the PNGs (<id>/<nn>.png under --live-src, kept out of the repository). The pipeline lists them after the other sets,
+# so no member's starter emotes change. `since` is the release that ships them: older clients' pools leave them out.
+# id, title, member, since, emote names in order
+LIVE_EMOTE_SETS = [
+    ("jiaran-live", "直播间大表情 · 嘉然", "嘉然", "1.3.0", [
+        "嘉心糖", "生气", "贪吃", "通过", "快快快", "标记", "索嗨嗨", "早睡",
+        "可爱猫猫", "可爱小猪", "mua", "拥抱", "害羞", "你是", "比心",
+    ]),
+    ("nailin-live", "直播间大表情 · 乃琳", "乃琳", "1.3.0", [
+        "奶淇琳", "快快快", "通过", "比心", "胆大招商", "索嗨嗨", "害羞", "可爱小猪",
+        "乃琳摇", "琳的肯定", "Mua", "两眼一黑", "收到收到", "冬嘎西嘎", "撒娇",
+    ]),
+    ("beila-live", "直播间大表情 · 贝拉", "贝拉", "1.3.0", [
+        "贝极星", "快快快", "通过", "嘘", "生气", "索嗨嗨", "可爱小猪", "拉脑过载",
+        "撒娇兔兔", "给你一拳", "想开了", "调皮鬼脸", "NONONO", "拜拜", "举猫猫",
+    ]),
+]
+
 # 阿草's stickers: won from scratch cards only, never in the resonance pool and never crafted.
 # id, title, owner, sticker names in emote order. The pictures (表情包/阿草和TA的朋友们/AI高清, trimmed and scaled
 # to 320px) are kept in client/public/assets/emotes/achao/<nn>.webp; the pipeline only lists them.
@@ -339,10 +359,10 @@ def card_subseries(series: str, name: str) -> str | None:
 
 # ------------------------------------------------------------------ rarity and skins
 # Prices and odds are not here: they live in the private economy file (server/app/economy.py).
-# Animated collection emotes are rare; Bloom and Brainwave sets are uncommon.
+# Animated collection emotes are rare; Bloom, Brainwave and live-room sets are uncommon.
 RARE_EMOTE_SETS = {sid for sid, _, _, _, folder in COLLECTION_EMOTE_SETS if folder == "动态表情包"}
 UNCOMMON_EMOTE_SETS = {"jiaran-naodong", "nailin-naodong", "beila-naodong",
-                       "bloom-jiaran", "bloom-nailin", "bloom-beila"}
+                       "bloom-jiaran", "bloom-nailin", "bloom-beila"} | {s[0] for s in LIVE_EMOTE_SETS}
 THEME_RARITY = "rare"
 # Every player owns the five characters, the default theme and the first
 # STARTER_EMOTES emotes of each character's first emote set.

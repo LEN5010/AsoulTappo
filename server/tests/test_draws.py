@@ -138,9 +138,10 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
         assert skins(version) == every - birthday - forms
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
-    # Besides skins only the wardrobe cards (the limited tier) are held back.
+    # Besides skins only the wardrobe cards (the limited tier) and the 45 live-room emotes (uncommon) are held back.
+    every = {r: len(v) for r, v in M.resonance_pool.items() if r not in ("skin", "limited")}
     assert {r: len(v) for r, v in M.resonance_pool_for("1.1.4").items() if r not in ("skin", "limited")} == \
-        {r: len(v) for r, v in M.resonance_pool.items() if r not in ("skin", "limited")}
+        {**every, "uncommon": every["uncommon"] - 45}
 
 
 def test_wardrobe_cards_stay_out_of_clients_older_than_1_2_4():
@@ -151,6 +152,34 @@ def test_wardrobe_cards_stay_out_of_clients_older_than_1_2_4():
         assert {i["id"] for i in M.resonance_pool_for(version)["limited"]} == wardrobe
     for version in ("1.2.3", "1.2.3-rc.1", "1.2.2", ""):
         assert M.resonance_pool_for(version)["limited"] == []
+
+
+def test_live_room_emotes_stay_out_of_clients_older_than_1_3_0():
+    M = Manifest.load()
+    live = {f"emote:{e['key']}" for s in M.data["emoteSets"] if s.get("since") for e in s["emotes"]}
+    every = {i["id"] for i in M.resonance_pool["uncommon"]}
+    assert len(live) == 45 and live <= every
+    uncommon = lambda version: {i["id"] for i in M.resonance_pool_for(version)["uncommon"]}
+    for version in (None, "1.3.0", "1.3.0-rc.1", "v1.3.1"):
+        assert uncommon(version) == every and not live & M.held_for(version)
+    for version in ("1.2.6", "1.2.6-rc.4", "1.2.4", ""):
+        assert uncommon(version) == every - live and live <= M.held_for(version)
+
+
+def test_an_older_client_never_draws_a_live_room_emote():
+    def draw(version):
+        # The uncommon range, with every uncommon emote a 1.2.6 client can show owned.
+        g, _ = game(SeqRng(.137, .5))
+        pid = player_id_for(TOKEN)
+        for item in g.manifest.resonance_pool_for("1.2.6")["uncommon"]:
+            g.store.add_item(pid, item["id"], 0)
+        return g.resonate(TOKEN, 1, version)["drops"][0]
+
+    # Nothing is left to find there for 1.2.6: the range lands on common.
+    assert draw("1.2.6")["rarity"] == "common"
+    drop = draw("1.3.0")
+    assert drop["rarity"] == "uncommon" and drop["new"]
+    assert drop["item"].split(":")[1].split(".")[0] in ("jiaran-live", "nailin-live", "beila-live")
 
 
 def test_the_limited_tier_sits_just_above_common():

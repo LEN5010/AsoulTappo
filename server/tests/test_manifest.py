@@ -160,7 +160,8 @@ def test_emote_tiers_match_the_curated_sets():
         "jiaran-moon-motion", "nailin-reverie-motion", "beila-casket-motion"}
     assert {sid for sid, rarity in sets.items() if rarity == "uncommon"} == {
         "jiaran-naodong", "nailin-naodong", "beila-naodong",
-        "bloom-jiaran", "bloom-nailin", "bloom-beila"}
+        "bloom-jiaran", "bloom-nailin", "bloom-beila",
+        "jiaran-live", "nailin-live", "beila-live"}
     for sid in ("jiaran-garden", "nailin-raccoon", "beila-rabbit", "symphony-xinyi", "symphony-sinuo"):
         assert sets[sid] == "common"
     assert M.resonance["duplicateRefund"] == {"emote": 5, "normal": 20, "small": 360, "dance": 360, "holo": 180}
@@ -168,6 +169,23 @@ def test_emote_tiers_match_the_curated_sets():
     assert M.resonance["commonKindWeights"] == {"card": 45, "emote": 41.2}
     assert M.resonance["rates"] == {"legendary": .1, "skin": .2, "epic": 4.5, "rare": 3, "uncommon": 6, "limited": 2,
                                     "common": 84.2}
+
+
+def test_live_room_emotes_are_three_uncommon_sets_of_fifteen_from_1_3_0():
+    live = {"jiaran-live": "嘉然", "nailin-live": "乃琳", "beila-live": "贝拉"}
+    ids = [s["id"] for s in M.data["emoteSets"]]
+    # Listed after every other set but 阿草's, so each member's first set (their starter emotes) stays the same.
+    assert ids[-4:] == [*live, "achao"]
+    assert not {k.split(".")[0] for k in M.data["starter"]["emotes"]} & set(live)
+    for s in M.data["emoteSets"][-4:-1]:
+        sid, member = s["id"], live[s["id"]]
+        assert s["name"] == f"直播间大表情 · {member}" and s["character"] == member
+        assert s["rarity"] == "uncommon" and s["since"] == "1.3.0" and "source" not in s
+        assert [e["key"] for e in s["emotes"]] == [f"{sid}.{n:02d}" for n in range(1, 16)]
+        assert [e["img"] for e in s["emotes"]] == [f"bundle:emotes/{sid}/{n:02d}.webp" for n in range(1, 16)]
+        assert len({e["name"] for e in s["emotes"]}) == 15
+    # only these sets name a release
+    assert {s["id"] for s in M.data["emoteSets"] if s.get("since")} == set(live)
 
 
 def test_wardrobe_cards_are_twelve_still_portraits_a_member_from_1_2_5():
