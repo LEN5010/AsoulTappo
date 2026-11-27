@@ -121,6 +121,13 @@ const TEETH = 30;
  * into the hand and how long it is held there before it is torn. The steps are the draw board's (RevealScene: a tile
  * dealt every 42 ms, a quiet one turned every 70 ms, 300 ms from a turn to its spotlight). */
 const RUSH_DEAL = 42, RUSH_OUT = 620, ROW_Y = -40, RUSH_STEP = 70, RUSH_TEAR = 200, RUSH_UP = 560, RUSH_BEAT = 300;
+/** A press while something is on its way (a bag coming to the hand, a plain card coming out of its bag or turning over
+ * before its face is round) runs the clock this much faster, easing in and out. Nothing of it is kept for what comes
+ * next. */
+const QUICK = 2;
+/** For so long after a press sent a card on, a tap or a key on the next bag tears nothing: it is the second press of a
+ * double press. A pull of the flap tears. */
+const AGAIN_MS = 300;
 /** How long what sways by itself goes on after the last touch while the table waits. */
 const STIR_MS = 3000;
 /** Whether a table stands still while it waits (OpeningOptions.rest) when the host does not say. */
@@ -181,6 +188,8 @@ interface Bag extends BagModel {
   /** It stands in the row of a box skipped through; it is torn there without a sound for each bit. */
   row: boolean;
   hush: boolean;
+  /** It is being cleared off the desk: a drop to the heap still under way stops where it is. */
+  swept: boolean;
 }
 interface Table extends BoxModel {
   on: boolean;
@@ -231,7 +240,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     return {
       ...bagModel(card, rnd(0, 20), rand() < 0.5 ? 0 : 1), card, i, state: "box", n: 0, thr, rise: 0, route: null,
       vbx: 0, vby: 0, vw: 0, curlV: 0, tug: 0, tugV: 0, alone: false, drive: null, resolve: null, sealedAt: 0, fade: 0,
-      float: 0, leanX: 0, leanY: 0, row: false, hush: false,
+      float: 0, leanX: 0, leanY: 0, row: false, hush: false, swept: false,
     };
   }
   const makeCard = (info: CardInfo): Card => ({ ...cardModel(info), state: "in", home: { x: 0, y: 0, s: 1 } });
@@ -268,9 +277,16 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   let tempo = 0;
   let lastTear = -1e9;
   let auto = false;
-  let eager = false;     // a swipe came while a card was still on its way out
-  let early = false;     // so did a press
+  let early = false;     // a press came while the box was on its way over: it opens once it is there
   let haste = 1;         // how fast a sideways card's ceremony runs; a press during it speeds it up
+  /** A plain card on its way out of its bag or turning over, its face not round yet: a press only hurries it. */
+  let unseen: Card | null = null;
+  /** The bag on its way to the hand: a press only hurries it. */
+  let inbound: Bag | null = null;
+  /** How much faster the clock runs for a press while something is on its way, and what that eases to. */
+  let quick = 1, quickTo = 1;
+  /** Time as it passed outside, however fast the table's clock ran; and when a press last sent a card on, by it. */
+  let wall = 0, sentAt = -1e9;
   let wides = 0;         // sideways cards so far in this box
   let view = { w: STAGE_W, h: STAGE_H, px: 1, css: 1 };
   /** Where the box comes from, until the size of the view is known. */
@@ -323,11 +339,13 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
 
   /* ---------------------------------------------------------------- pointer */
   const ptr = {
-    x: 0, y: 0, vx: 0, vy: 0, down: false, sx: 0, sy: 0, far: 0, dir: 1, moved: 0, used: false, inside: false,
+    x: 0, y: 0, vx: 0, vy: 0, down: false, sx: 0, sy: 0, moved: 0, used: false, inside: false,
     t: undefined as number | undefined,
+    /** The sealed bag in hand this press began on: only such a press tears it. */
+    on: null as Bag | null,
   };
   let pressWaiters: (() => void)[] = [];
-  /** The next press, or a swipe that goes on from the last tear. */
+  /** The next press. */
   const pressed = () => new Promise<void>((done) => { pressWaiters.push(done); });
   function firePress(): void {
     const w = pressWaiters;
@@ -364,20 +382,13 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       turn.pitch = clamp(turn.pitch - dy * 0.45, -80, 80);
       return;
     }
-    if (active?.state === "sealed") return tearTo(active, x, y);
-    // After a tear the same stroke may run on. Turning back asks for the next bag and hurries what is on the way.
-    if ((y - ptr.far) * ptr.dir > 0) ptr.far = y;
-    else if (Math.abs(y - ptr.far) > 44) {
-      ptr.far = y;
-      ptr.dir = -ptr.dir;
-      hurry(0.9);
-      if (shown) firePress();
-    }
+    // Only a press that began on the bag in hand pulls its flap. What the hand does after the tear counts for nothing.
+    if (active?.state === "sealed" && ptr.on === active) tearTo(active, x, y);
   }
   function onDown(x: number, y: number, t: number): void {
     snd.wake();
-    Object.assign(ptr, { x, y, sx: x, sy: y, far: y, t, vx: 0, vy: 0 });
-    Object.assign(ptr, { down: true, moved: 0, used: false, inside: true });
+    Object.assign(ptr, { x, y, sx: x, sy: y, t, vx: 0, vy: 0 });
+    Object.assign(ptr, { down: true, moved: 0, used: false, inside: true, on: null });
     grip = null;
     if (phase === "intro") { ptr.used = true; return pressBox(); }
     const card = turnable();
@@ -387,26 +398,27 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       return;
     }
     if (phase === "end") { ptr.used = true; return tapEnd(x, y); }
-    if (active?.state !== "sealed") { ptr.used = true; ask(); }
+    if (active?.state !== "sealed") { ptr.used = true; return ask(); }
+    ptr.on = active;
+    // The second press of a double press is no tap; it may still pull the flap.
+    if (wall - sentAt < AGAIN_MS) ptr.used = true;
   }
   /** One that comes while the box is on its way over counts once it is there. */
   function pressBox(): void {
     if (pressWaiters.length) firePress();
     else if (visiting) early = true;
   }
-  /** A press while nothing can be taken hold of: go on, or get there sooner. */
+  /** A press while nothing can be taken hold of: it sends on what waits for one, or gets what is on its way there
+   * sooner. It is spent either way: nothing of it is kept for what comes next. */
   function ask(): void {
     if (spot?.write) spot.write();
     else if (spot && !shown) haste = 4;
     if (phase === "opening" || phase === "gather") haste = 3;
-    hurry(0.6);
-    if (pressWaiters.length) firePress();
-    else if (phase === "play") early = true;
-  }
-  function hurry(k: number): void {
-    if (phase !== "play" || active?.state === "sealed") return;
-    tempo = Math.max(tempo, k);
-    eager = true;
+    if (phase === "play" && (inbound || unseen)) quickTo = QUICK;
+    if (phase === "play" && active?.state !== "sealed") tempo = Math.max(tempo, 0.6);
+    if (!pressWaiters.length) return;
+    sentAt = wall;
+    firePress();
   }
   /** [off]: the press was taken away, so it is no tap. */
   function onUp(off: boolean): void {
@@ -421,21 +433,23 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       turn.to = Math.round((turn.yaw + turn.vy * 240) / 180) * 180;
       return;
     }
-    if (active?.state === "sealed") {
+    if (active?.state === "sealed" && ptr.on === active) {
       const a = active;
       if (!ptr.used && !off && ptr.moved < 6) void tearAlone(a, 620);
       else if (a.q > 0.72) void tearAlone(a, 260);
     }
     grip = null;
+    ptr.on = null;
   }
   function press(repeat: boolean): void {
-    if (repeat && !shown && active?.state !== "sealed") return;
+    // A key held down goes on with what stands still: a sealed bag, or a card turned all the way over.
+    if (repeat && (spinning || (!shown && active?.state !== "sealed"))) return;
     snd.wake();
     if (phase === "intro") pressBox();
-    else if (active?.state === "sealed") void tearAlone(active, 560);
-    else if (inspecting) void putBack();
-    // A key held down lets a plain card finish turning before it goes on; a press of its own sends it on at once.
-    else if (repeat && spinning && spinning === shown) early = true;
+    else if (active?.state === "sealed") {
+      // The second key of a double press tears nothing.
+      if (repeat || wall - sentAt >= AGAIN_MS) void tearAlone(active, 560);
+    } else if (inspecting) void putBack();
     else ask();
   }
   function setAuto(on: boolean): void {
@@ -496,14 +510,11 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     a.q = 1;
     a.strain = 0;
     a.state = "torn";
-    // One of the row is no tear of the hand's: the pace and what was pressed stay as they were.
+    // One of the row is no tear of the hand's: the pace stays as it was.
     if (!a.hush) {
       const gap = time.clock - lastTear;
       lastTear = time.clock;
       tempo = lerp(tempo, 1 - smooth(650, 2000, gap), 0.6);
-      eager = early = false;
-      ptr.far = ptr.y;
-      ptr.dir = -1;
     }
     snd.snap(speed, (a.gx - 0.5) * 0.5);
     // The flap goes on up and over with the hand.
@@ -796,6 +807,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   async function arrive(b: Bag): Promise<void> {
     const my = epoch, ready = b.state === "rise" && !!b.route, ms = pace(ready ? 560 : 1060);
     b.resolve = null;
+    inbound = b;
     const r = ready ? b.route! : setOut(b, ms);
     snd.slide(0.26, 0.95, -0.35);
     void tween(r, { u: 1 }, ms, E.glide).then(() => { if (b.route === r) b.route = null; });
@@ -803,16 +815,19 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     await kit.want(b.card.info, "behind").ready;
     // One that stood ready can be torn while it settles.
     await wait(ms * (ready ? 0.5 : 0.72));
+    if (inbound === b) inbound = null;
     if (my !== epoch || active !== b) return;
+    // What hurried it here is spent. A press that began before it was in hand does not tear it.
+    quickTo = 1;
+    seal(b);
+  }
+  /** [b] is in hand, to be torn. */
+  function seal(b: Bag): void {
     b.state = "sealed";
     grip = null;
     ptr.sx = ptr.x;
     ptr.sy = ptr.y;
-    if (ptr.down) ptr.moved = 10;
     b.sealedAt = hc;
-    // A press that came while the bag was on its way tears it.
-    if (early && !ptr.down) void tearAlone(b, 420);
-    early = false;
   }
 
   /** The next bag comes up a little in the box. */
@@ -837,8 +852,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     setPhase("spot");
     spot = { card: c, group, sign: kind === "sign", write: null, quick: false };
     pressWaiters = [];
-    early = eager = false;
     tempo = 0;
+    quickTo = 1;
     // The first of a box, the group and a signed one take their time; later ones and the automatic run are brisker.
     haste = auto ? 1.4 : kind === "duo" && wides ? 1.2 : 1;
     if (c.info.land) wides += 1;
@@ -870,9 +885,12 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   }
 
   /** A card of one member comes out of its bag and turns over; a signed one unhurried, in its own light. False once the
-   * run has ended; "asked" when a press sent a plain one on before it had turned all the way. */
+   * run has ended; "asked" when a press sent a plain one on once its face was round, before it had turned all the
+   * way. */
   async function soloOut(b: Bag, live: Live, grand = false): Promise<false | "seen" | "asked"> {
     const c = b.card, pc = grand ? (ms: number) => ms * 1.35 : pace;
+    // Until its face comes round, a press only gets a plain one there sooner.
+    if (!grand) unseen = c;
     // The flap goes up first.
     if (!grand) await wait(pc(210));
     if (!live()) return false;
@@ -891,10 +909,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     await wait(pc(370));
     if (!live()) return false;
     c.state = "out";
-    // A press that came before it was out lets it turn over first, then sends it on.
-    const queued = !grand && early;
     if (!grand) {
-      early = false;
       shown = spinning = c;
       lift(bags[cur + 1]);
     }
@@ -907,8 +922,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     void tween(c.p, { rz: -3.2 }, pc(320), E.flow)
       .then(() => { if (turning()) void tween(c.p, { rz: 0 }, pc(460), E.flow); });
     void tween(c.p, { ry: 0 }, pc(740), E.flow);
-    if (grand) await wait(pc(330));
-    else if (await waitOrPress(pc(330))) return sent(live);
+    await wait(pc(330));
     if (!live()) return false;
     snd.flip(0.75, 1);
     c.sheen = -0.5;
@@ -923,9 +937,10 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       void tween(scene, { rays: 0.10 }, 700, E.flow);
       await wait(pc(420) - 115);
     } else {
+      // Its face is round: a press from now on sends it on at once, however far it has turned.
+      unseen = null;
       if (await waitOrPress(pc(420))) return sent(live);
       spinning = null;
-      if (queued) early = true;
     }
     return live() && await written && "seen";
   }
@@ -938,7 +953,6 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   function write(c: Card): Promise<boolean> {
     // What was pressed on the way here does not count: the writing would be over before it was seen.
     pressWaiters = [];
-    early = eager = false;
     haste = auto ? 1.4 : 1;
     const ms = c.info.signed!.ms, since = time.clock, here = spot!;
     c.signT = 0;
@@ -956,13 +970,14 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   async function revealSolo(b: Bag, live: Live): Promise<void> {
     const how = await soloOut(b, live);
     if (!how) return;
+    // Hurried over or not, the table goes on at its own pace from here.
+    quickTo = 1;
     if (how === "seen") {
       emit({ type: "shown", index: b.i });
       await hold(0, auto ? 320 : 0);
       if (!live()) return;
     }
     // The press that sent it on is spent: the next bag waits for one of its own.
-    early = eager = false;
     pressWaiters = [];
     shown = null;
     keep(b.card);
@@ -981,7 +996,6 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     void tween(c, { gleamInk: 1.9 }, 1150, E.flow, 80);
     void tween(scene, { rays: 0.24, toneAmt: 0.42 }, 1100, E.flow);
     haste = 1;
-    early = false;
     emit({ type: "shown", index: b.i });
     await hold(360, auto ? 1000 : 0);
     if (live()) await settleRare(c);
@@ -998,13 +1012,12 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       });
     });
   }
-  /** Holds a card on show until the next press; a run of quick tears does not wait long. */
+  /** Holds a card on show for at least [least] and until a press; one that opens by itself goes on after [autoMs]. */
   async function hold(least: number, autoMs: number): Promise<void> {
     const asked = pressed();
     await wait(least);
     if (autoMs) await Promise.race([asked, wait(autoMs)]);
-    else if (!early && !(eager && ptr.down)) await asked;
-    early = false;
+    else await asked;
     pressWaiters = [];
   }
 
@@ -1021,11 +1034,14 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     snd.rustle(5, 420, 0.12, 0.85);
     void tween(b.p, { y: b.p.y + 262 }, ms * k, E.flow);
     await wait(ms * 0.9 * k);
+    // Cleared off the desk meanwhile (the box laid out, or left): it does not come back to the heap.
+    if (b.swept) return;
     // It is let go of, crumples a little and drifts over to the others.
     // With nothing in it, it goes nearly flat again.
     void tween(b, { crush: 0.14, open: 0.45, air: 0.34 }, 1100 * k, E.flow);
     void tween(b.p, { x: at.x, rz: at.rz * 0.4, s: at.s, rx: rnd(-14, 14), ry: rnd(-16, 16) }, 820 * k, E.flow);
     await tween(b.p, { y: at.y }, 820 * k, E.out);
+    if (b.swept || b.state !== "falling") return;
     b.state = "heap";
     snd.rustle(2, 120, 0.12, 0.7);
   }
@@ -1045,6 +1061,8 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     void tween(c.p, { x: at.x }, pace(560), E.out);
     void tween(c.p, { rz: at.rz, s: at.s, z: 0, rx: 0, ry: 0 }, pace(560), E.flow);
     await tween(c.p, { y: at.y }, pace(560), E.flow);
+    // Laid out in the spread meanwhile: it stays there.
+    if (c.state !== "fly") return;
     c.state = "rail";
     c.p.s = at.s;
     c.gleam = -0.6;
@@ -1082,7 +1100,6 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     await turnWide(c, group);
     if (!live()) return;
     haste = 1;
-    early = false;
     emit({ type: "shown", index: b.i });
     await hold(group ? 500 : 320, auto ? (group ? 1100 : 700) : 0);
     if (live()) await settleRare(c);
@@ -1138,6 +1155,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     // The empties are swept off the desk.
     snd.rustle(26, 620, 0.26, 0.7);
     for (const b of bags) {
+      b.swept = true;
       const to = { x: b.p.x + 420, y: b.p.y + rnd(-30, 60), rz: b.p.rz + rnd(20, 70) };
       void tween(b.p, to, 860, E.flow, rnd(0, 220));
     }
@@ -1231,10 +1249,11 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     rushNext = false;
     pressWaiters = [];
     grip = null;
-    eager = early = false;
     tempo = 0;
     haste = 1;
-    shown = spinning = null;
+    quickTo = 1;
+    shown = spinning = unseen = null;
+    inbound = null;
     // A card out of its bag already goes on down.
     for (const b of bags) {
       const c = b.card;
@@ -1314,15 +1333,9 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       await kit.want(b.card.info, "front").ready;
       await kit.want(b.card.info, "behind").ready;
       if (!live() || active !== b) return;
-      b.state = "sealed";
-      grip = null;
-      ptr.sx = ptr.x;
-      ptr.sy = ptr.y;
-      if (ptr.down) ptr.moved = 10;
-      b.sealedAt = hc;
-      if (!early) await wait(RUSH_BEAT);
+      seal(b);
+      await wait(RUSH_BEAT);
       if (!live()) return;
-      early = false;
       void tearAlone(b, 560);
       await new Promise<void>((done) => {
         b.resolve = done;
@@ -1377,8 +1390,9 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     shown = null;
     spot = null;
     active = null;
-    eager = early = false;
+    unseen = inbound = null;
     haste = 1;
+    quickTo = 1;
     tempo = 0;
     setAuto(false);
     setDim(false);
@@ -1404,6 +1418,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     b.route = null;
     b.drive = null;
     b.resolve = null;
+    b.swept = true;
     if (b.state === "heap") return;
     if (b.state === "box" || b.state === "rise") {
       // One on its way up sinks back in.
@@ -1464,8 +1479,10 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     pressWaiters = [];
     grip = null;
     spot = null;
-    eager = early = false;
+    early = false;
+    unseen = inbound = null;
     haste = 1;
+    quickTo = 1;
     tempo = 0;
     setAuto(false);
     setDim(false);
@@ -1521,6 +1538,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
     for (const b of bags) {
       b.route = null;
       b.drive = null;
+      b.swept = true;
       if (b.state === "gone") continue;
       if (b.state === "heap") void tween(b.p, { x: b.p.x + 420, rz: b.p.rz + 40 }, 520, E.flow, rnd(0, 120));
       else if (b.state === "box" || b.state === "rise") Object.assign(b, { state: "box", rise: 0 });
@@ -1567,6 +1585,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
           void tween(b, { fade: 1, beam: 0 }, 320, E.flow);
         }
         b.route = null;
+        b.swept = true;
         void tween(b.p, { y: view.h / 2 + BAG[1] }, 460, E.flow);
       }
     }
@@ -1598,8 +1617,11 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
   /* ---------------------------------------------------------------- each frame */
   function update(dt: number): void {
     wake();
+    wall += dt;
+    quick += (quickTo - quick) * (1 - Math.exp(-dt / 90));
+    if (Math.abs(quickTo - quick) < 0.01) quick = quickTo;
     const step = dt * haste;
-    time.advance(step);
+    time.advance(step * quick);
     hc += step;
     const { clock } = time;
     if (!waiting()) stirred = clock;
@@ -1633,7 +1655,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       b.curlV *= Math.exp(-dt / (b.torn ? 32 : 62));
       b.curl = clamp(b.curl + b.curlV * dt, 0.2, 3.12);
       b.rad += ((b.torn ? 0.02 : lerp(0.62, 0.36, b.q)) - b.rad) * (1 - Math.exp(-dt / (b.torn ? 80 : 140)));
-      const want = b.state === "sealed" && ptr.down ? -b.strain * 2.2 : 0;
+      const want = b.state === "sealed" && ptr.down && ptr.on === b ? -b.strain * 2.2 : 0;
       b.tugV += (want - b.tug) * dt * 0.0016;
       b.tugV *= Math.exp(-dt / 55);
       b.tug += b.tugV * dt;
@@ -1647,7 +1669,7 @@ export function createOpening(gl: GL, kit: Kit, painter: Painter, options: Openi
       b.bx += b.vbx * Math.min(dt, 32);
       b.vby = spring(b.by, b.vby, clamp(hy * 15, -20, 20) * loose);
       b.by += b.vby * Math.min(dt, 32);
-      const inHand = b === active && b.state === "sealed" && ptr.down;
+      const inHand = b === active && b.state === "sealed" && ptr.down && ptr.on === b;
       const lifted = inHand ? 5 * b.q + 9 * b.strain * clamp(b.q * 8) : b.torn ? 0 : 3 * b.q;
       b.lift2 += (lifted - b.lift2) * (1 - Math.exp(-dt / 130));
       const rip = b.torn ? 3.2 : 2 + 2.4 * b.q + clamp(Math.abs(ptr.vy) * 1.2, 0, 2) * (inHand ? 1 : 0);

@@ -22,15 +22,21 @@ const gl = { getError: () => 0 } as unknown as GL;
 type Told = [number, OpeningEvent][];
 /** "sign:bella-2" is the signed bella-2. [woken] is set by every event, as the host wakes the canvas for each. */
 function table(
-  cards: string[], skipIntro = true, { kit: k = kit, painter = {} as Painter, gl: g = gl, rest = undefined as boolean | undefined } = {},
+  cards: string[], skipIntro = true,
+  { kit: k = kit, painter = {} as Painter, gl: g = gl, rest = undefined as boolean | undefined, sound = quiet } = {},
 ): { o: Opening; told: Told; woken: { on: boolean } } {
   const told: Told = [], woken = { on: false };
   const deal = cards.map((c) => ({ card: c.replace(/^sign:/, ""), signed: c.startsWith("sign:") }));
   const o: Opening = createOpening(g, k, painter, {
-    art: seriesArt("asoul2026")!, deal, skipIntro, ...(rest === undefined ? {} : { rest }), sound: quiet, seed: 1,
+    art: seriesArt("asoul2026")!, deal, skipIntro, ...(rest === undefined ? {} : { rest }), sound, seed: 1,
     on: (e) => { told.push([o.clock, e]); woken.on = true; },
   });
   return { o, told, woken };
+}
+/** The first flip of a box is the sound of the first card's face coming round. */
+function listening(): { sound: PhotoSound; flips: () => number } {
+  let n = 0;
+  return { sound: { ...quiet, flip() { n++; } }, flips: () => n };
 }
 /** Frames go by until [done] holds; how long that took. */
 async function until(o: Opening, done: () => boolean, most = 20000): Promise<number> {
@@ -42,11 +48,46 @@ async function until(o: Opening, done: () => boolean, most = 20000): Promise<num
   }
   return o.clock - from;
 }
+/** Frames drawn until [done] holds: the time that took outside, whatever the table's own clock did meanwhile. */
+async function framesUntil(o: Opening, done: () => boolean, most = 2000): Promise<number> {
+  let n = 0;
+  while (!done()) {
+    if (++n > most) throw new Error(`not within ${most} frames`);
+    o.update(16);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+  return n;
+}
 const idle = (o: Opening, ms: number) => until(o, () => false, ms).catch(() => undefined);
+/** So long after a press that sent a card on, a press on the next bag is one of its own, not the second of a double
+ * press (opening.ts AGAIN_MS). */
+const AGAIN = 300;
 const sealed = (o: Opening, i: number) => () => o.state().active?.i === i && o.state().active?.state === "sealed";
 const out = (o: Opening, card: string) => () => o.state().shown === card;
-const told = (list: Told, type: "shown" | "kept", index: number) => () =>
+const told = (list: Told, type: "shown" | "kept" | "torn", index: number) => () =>
   list.some(([, e]) => e.type === type && e.index === index);
+/** The hand moves to [y] in steps of [dy], a frame for each. */
+async function drag(o: Opening, from: { y: number; t: number }, y: number, dy: number): Promise<{ y: number; t: number }> {
+  let at = from.y, t = from.t;
+  while ((y - at) * Math.sign(dy) > 0) {
+    at += dy;
+    t += 16;
+    o.move(0, at, t);
+    o.update(16);
+    await vi.advanceTimersByTimeAsync(0);
+  }
+  return { y: at, t };
+}
+/** Takes the bag in hand by its lower half and pulls the flap up until the seal of bag [i] is through. */
+async function tearUp(o: Opening, list: Told, i: number): Promise<{ y: number; t: number }> {
+  let at = { y: 120, t: o.clock };
+  o.down(0, at.y, at.t);
+  while (!told(list, "torn", i)()) {
+    if (at.y < -400) throw new Error(`bag ${i} not torn`);
+    at = await drag(o, at, at.y - 9, -9);
+  }
+  return at;
+}
 const keptOrder = (list: Told) => list.flatMap(([, e]) => (e.type === "kept" ? [e.index] : []));
 const PLAIN = ["diana-1", "bella-2", "eileen-3", "diana-4"];
 const MIXED = ["diana-1", "bella-diana-1", "eileen-3", "sign:bella-2", "group-2", "diana-4"];
@@ -56,21 +97,59 @@ describe("a box opened by presses", () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it("sends a plain card on at once, however far it has turned", async () => {
-    const { o, told: list } = table(PLAIN);
+  it("sends a plain card on at once once its face is round, however far it has turned", async () => {
+    const ear = listening();
+    const { o, told: list } = table(PLAIN, true, { sound: ear.sound });
     await until(o, sealed(o, 0));
     o.press();
-    await until(o, out(o, "diana-1"));
+    await until(o, () => ear.flips() > 0);
     o.press();
     expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(16);
     expect(told(list, "shown", 0)()).toBe(false);
   });
 
+  it("only hurries a plain card over when the press came before its face was round", async () => {
+    // As it comes out of its bag, and as it begins to turn.
+    for (const when of ["torn", "out"] as const) {
+      const alone = table(PLAIN), pressed = table(PLAIN);
+      const ready = ({ o, told: list }: typeof alone) => (when === "torn" ? told(list, "torn", 0) : out(o, "diana-1"));
+      for (const t of [alone, pressed]) {
+        await until(t.o, sealed(t.o, 0));
+        t.o.press();
+        await until(t.o, ready(t));
+      }
+      pressed.o.press();
+      const slow = await framesUntil(alone.o, told(alone.told, "shown", 0));
+      const fast = await framesUntil(pressed.o, told(pressed.told, "shown", 0));
+      expect(fast).toBeLessThan(slow * 0.8);
+      // It waits on show for a press of its own.
+      await idle(pressed.o, 3000);
+      expect(told(pressed.told, "kept", 0)()).toBe(false);
+      pressed.o.press();
+      expect(await until(pressed.o, told(pressed.told, "kept", 0))).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it("keeps a plain card on show when the hand that tore it drifts back down and holds on", async () => {
+    const { o, told: list } = table(PLAIN);
+    await until(o, sealed(o, 0));
+    const at = await tearUp(o, list, 0);
+    await drag(o, at, at.y + 80, 10);
+    await until(o, told(list, "shown", 0));
+    await idle(o, 1500);
+    expect(told(list, "kept", 0)()).toBe(false);
+    o.up();
+    await idle(o, 500);
+    expect(told(list, "kept", 0)()).toBe(false);
+    o.press();
+    expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(16);
+  });
+
   it("has the next bag ready to tear soon after a plain card is sent on", async () => {
-    const { o } = table(PLAIN);
+    const { o, told: list } = table(PLAIN);
     await until(o, sealed(o, 0));
     o.press();
-    await until(o, out(o, "diana-1"));
+    await until(o, told(list, "shown", 0));
     o.press();
     expect(await until(o, sealed(o, 1))).toBeLessThan(300);
     // The press that sent the card on does not tear it as well.
@@ -78,24 +157,67 @@ describe("a box opened by presses", () => {
     expect(o.state().active).toMatchObject({ i: 1, state: "sealed", n: 0 });
   });
 
-  it("lets a plain card turn over first when the press came before it was out, then sends it on", async () => {
+  it("does not tear the next bag with the second press of a double press", async () => {
+    // The second one comes while the bag is on its way, or once it is in hand.
+    for (const [how, gap] of [["tap", 100], ["tap", 260], ["key", 100], ["key", 260]] as const) {
+      const { o, told: list } = table(PLAIN);
+      await until(o, sealed(o, 0));
+      o.press();
+      await until(o, told(list, "shown", 0));
+      const go = () => {
+        if (how === "key") return o.press();
+        o.down(0, 40, o.clock);
+        o.up();
+      };
+      go();
+      await idle(o, gap);
+      go();
+      await idle(o, 1500);
+      expect(o.state().active).toMatchObject({ i: 1, state: "sealed", n: 0 });
+      expect(told(list, "torn", 1)()).toBe(false);
+      // A press of its own tears it.
+      go();
+      await until(o, told(list, "torn", 1), 3000);
+    }
+  });
+
+  it("tears a bag only with a press that began on it once it was in hand", async () => {
     const { o, told: list } = table(PLAIN);
     await until(o, sealed(o, 0));
     o.press();
-    await until(o, () => list.some(([, e]) => e.type === "torn"));
-    o.press();
     await until(o, told(list, "shown", 0));
-    expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(32);
+    // The press that sends the card on is held, and pulls up once the next bag is in hand.
+    o.down(0, 120, o.clock);
+    await until(o, sealed(o, 1));
+    await drag(o, { y: 120, t: o.clock }, -260, -9);
+    o.up();
+    await idle(o, 1000);
+    expect(o.state().active).toMatchObject({ i: 1, state: "sealed", n: 0 });
+    // Taken anew, the same pull tears it.
+    await tearUp(o, list, 1);
+    o.up();
+    await until(o, told(list, "shown", 1));
   });
 
-  it("lets a plain card turn over while a key is held down", async () => {
+  it("lets a plain card turn over all the way while a key is held down, then sends it on", async () => {
     const { o, told: list } = table(PLAIN);
     await until(o, sealed(o, 0));
     o.press();
     await until(o, out(o, "diana-1"));
-    o.press(true);
-    await until(o, told(list, "shown", 0));
-    expect(await until(o, told(list, "kept", 0))).toBeLessThanOrEqual(32);
+    // From here the key repeats every other frame.
+    let n = 0;
+    const holding = (done: () => boolean) => () => {
+      if (++n % 2 === 0) o.press(true);
+      return done();
+    };
+    await until(o, holding(told(list, "kept", 0)));
+    const at = (type: "shown" | "kept", i: number) => list.find(([, e]) => e.type === type && e.index === i)?.[0];
+    expect(at("shown", 0)).toBeDefined();
+    expect(at("kept", 0)! - at("shown", 0)!).toBeLessThanOrEqual(48);
+    // Held on, it tears the next bag and turns that card over all the way too.
+    await until(o, holding(told(list, "kept", 1)), 8000);
+    expect(at("shown", 1)).toBeDefined();
+    expect(at("kept", 1)! - at("shown", 1)!).toBeLessThanOrEqual(48);
   });
 
   it("keeps a plain card on show until a press when none came", async () => {
@@ -113,6 +235,7 @@ describe("a box opened by presses", () => {
     const { o, told: list } = table(MIXED);
     for (let i = 0; i < MIXED.length; i++) {
       await until(o, sealed(o, i));
+      await idle(o, AGAIN);
       o.press();
       await until(o, told(list, "shown", i));
       o.press();
@@ -320,6 +443,7 @@ describe("a box skipped through", () => {
     await until(o, told(list, "shown", 0));
     o.press();
     await until(o, sealed(o, 1));
+    await idle(o, AGAIN);
     o.press();
     await until(o, told(list, "shown", 1));
     expect(o.skip()).toBe("rush");
@@ -380,5 +504,47 @@ describe("a box skipped through", () => {
     await until(o, () => o.state().phase === "intro");
     expect(o.skip()).toBe("all");
     await until(o, () => o.state().phase === "end", 6000);
+  });
+
+  it("leaves no bag on the desk when skipped once the rare card is out of the way", async () => {
+    // The rare one second: once it is shown and gone, only plain bags are left for the row.
+    const deal = ["diana-1", "bella-diana-1", "eileen-3", "diana-4", "bella-1", "eileen-1"];
+    let bags = 0;
+    const any = <T>(o: object) => new Proxy(o, { get: (t, k) => (k in t ? Reflect.get(t, k) : () => undefined) }) as T;
+    const { o, told: list } = table(deal, true, {
+      painter: any<Painter>({ blended: "over", bag: () => { bags++; }, foil: () => { bags++; } }),
+      gl: any<GL>({ drawingBufferWidth: 960, drawingBufferHeight: 640, getError: () => 0 }),
+    });
+    o.resize(960, 640, 1);
+    const frame = () => { o.update(16); o.draw(); };
+    const go = (done: () => boolean, most = 20000) => until(o, () => { o.draw(); return done(); }, most);
+    for (const i of [0, 1]) {
+      await go(sealed(o, i));
+      await idle(o, AGAIN);
+      o.press();
+      await go(told(list, "shown", i));
+      o.press();
+      await go(told(list, "kept", i));
+    }
+    await go(sealed(o, 2));
+    expect(o.skip()).toBe("rush");
+    await go(() => o.state().phase === "end", 8000);
+    // Whatever was still on its way to the heap stays swept away.
+    for (let t = 0; t < 3000; t += 16) {
+      bags = 0;
+      frame();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bags).toBe(0);
+    }
+    // Nor does one come back while the table goes and the shelf comes into sight under it.
+    let gone = false;
+    void o.goOut().then(() => { gone = true; });
+    for (let t = 0; t < 3000; t += 16) {
+      bags = 0;
+      frame();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bags).toBe(0);
+    }
+    expect(gone).toBe(true);
   });
 });
