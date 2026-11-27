@@ -3,12 +3,14 @@
 // on a sunburst medallion as a large die-cut sticker, and its skill is named and explained. It fills its parent (the
 // board) and sizes itself by --cu (clamped to the container's width and height as well as --u, so narrow 7×7 boards and
 // wide 11×5 boards alike fit without clipping). It plays once, [ms] long; [at] (0 to 1) is how far in it already is.
+// With [art] the sticker is that picture instead of the member's dumpling (the alpaca's car as it comes out).
 import { computed } from "vue";
 import { reducedMotion } from "../../stores/theme";
 import TuanziToken from "./TuanziToken.vue";
 
 const props = defineProps<{
   member: string; who: string; name: string; text: string; color?: string; ms: number; at?: number; paused?: boolean;
+  art?: string;
 }>();
 
 const delay = computed(() => `${-Math.min(0.98, Math.max(0, props.at ?? 0)) * props.ms}ms`);
@@ -25,7 +27,9 @@ const delay = computed(() => `${-Math.min(0.98, Math.max(0, props.at ?? 0)) * pr
       <i class="medallion" aria-hidden="true"></i>
       <i class="shock" aria-hidden="true"></i>
       <i class="flash" aria-hidden="true"></i>
-      <span class="art" aria-hidden="true"><TuanziToken :member="member" /></span>
+      <span class="art" :class="{ pic: art }" aria-hidden="true">
+        <img v-if="art" :src="art" alt="" draggable="false" /><TuanziToken v-else :member="member" />
+      </span>
       <div class="words" aria-hidden="true">
         <small class="who"><i></i>{{ who }}</small>
         <b class="name"><span v-for="(ch, k) in name" :key="k" :style="{ '--k': k }">{{ ch }}</span></b>
@@ -219,6 +223,19 @@ const delay = computed(() => `${-Math.min(0.98, Math.max(0, props.at ?? 0)) * pr
   animation-name: slap;
 }
 .art :deep(.tuanzi-token) {
+  filter: var(--sticker-lg);
+}
+/*
+ * A picture for a sticker: wider than tall, held by its foot in the same square; a little smaller and to the right,
+ * so its nose stays clear of the board's left edge, which cuts the medallion.
+ */
+.art.pic img {
+  display: block;
+  width: 82%;
+  height: 100%;
+  margin-left: 16%;
+  object-fit: contain;
+  object-position: 50% 62%;
   filter: var(--sticker-lg);
 }
 @keyframes slap {

@@ -19,7 +19,7 @@ from test_race import replay
 TOKEN = "race-player-token-000001"
 OTHER = "race-player-token-000002"
 M = Manifest.load()
-CFG = {k: v for k, v in M.park["race"].items() if k not in ("maps", "skills")}
+CFG = {k: v for k, v in M.park["race"].items() if k not in ("maps", "skills", "shuffle", "alpaca")}
 MEMBERS = tuple(c["id"] for c in M.data["characters"])
 PRICE = M.park["coin"]["price"]
 T0 = park_race.opened_at(CFG, 1_800_000_000)  # a boundary: a race opens its bets then
@@ -42,9 +42,10 @@ def manifest(popular=False, forms=False):
     these tests start from."""
     m = Manifest.load()
     cfg = m.park["race"]
-    # Maps and skills have tests of their own (tests/test_race_maps.py).
-    cfg.pop("maps", None)
-    cfg.pop("skills", None)
+    # Maps and skills have tests of their own (tests/test_race_maps.py), as have the order drawn every round and the
+    # alpaca (tests/test_race_alpaca.py).
+    for key in ("maps", "skills", "shuffle", "alpaca"):
+        cfg.pop(key, None)
     if forms:
         cfg["sims"] = SIMS
     else:

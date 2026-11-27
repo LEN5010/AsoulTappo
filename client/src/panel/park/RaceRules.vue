@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // The race rules (behind the band's info key), drawn more than written: how the field moves on the left, how bets
 // pay on the right. Every row is a picture of the thing (a die, the start square, a stack, the board's own special
-// squares drawn as on the board) with a few words beside it.
+// squares drawn as on the board, the alpaca's car) with a few words beside it.
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
+import carArt from "../../assets/park/alpaca-car.webp";
 import ParkCoin from "./ParkCoin.vue";
 import ParkSheet from "./ParkSheet.vue";
 import RaceDie from "./RaceDie.vue";
@@ -27,6 +28,9 @@ const LOW = Math.min(...DICE.flat());
 const HIGH = Math.max(...DICE.flat());
 /** The dice beside the first rule: the plain die, or with skills (a die each) the lowest and highest face of all. */
 const LEAD_DICE = SKILLS.length ? [LOW, HIGH] : CFG.dice;
+/** The order rolled for again every round; the alpaca and the faces of its die, lowest and highest. */
+const SHUFFLE = !!CFG.shuffle;
+const ALPACA_DICE = CFG.alpaca?.dice ?? [];
 /** The places each kind of bet covers, first to last, for its mini podium. */
 const PLACES: Record<RaceKind, number[]> = { win: [0], top2: [0, 1], last: [MEMBERS.length - 1] };
 /** Which places each kind pays on, in words. */
@@ -51,7 +55,15 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead dice order" aria-hidden="true"><RaceDie :face="6" class="hi" /><RaceDie :face="3" /></span>
-          <span class="park-sheet-main"><b>开局掷骰决定行动顺序</b><small>点数大者先行，同点重掷</small></span>
+          <span v-if="SHUFFLE" class="park-sheet-main"><b>每轮掷骰决定行动顺序</b><small>点数大者先行，同点重掷</small></span>
+          <span v-else class="park-sheet-main"><b>开局掷骰决定行动顺序</b><small>点数大者先行，同点重掷</small></span>
+        </li>
+        <li v-if="ALPACA_DICE.length" class="park-sheet-row">
+          <span class="park-sheet-lead car" aria-hidden="true"><img :src="carArt" alt="" draggable="false" /></span>
+          <span class="park-sheet-main">
+            <b>领先者过半程，羊驼出动</b>
+            <small>往回开 {{ Math.min(...ALPACA_DICE) }}–{{ Math.max(...ALPACA_DICE) }} 格，带走碰到的团子</small>
+          </span>
         </li>
         <li class="park-sheet-row">
           <span class="park-sheet-lead bare goal" aria-hidden="true">
@@ -175,6 +187,16 @@ const PLACE_WORDS: Record<RaceKind, string> = { win: "第 1 名", top2: "前 2 �
 /* The order's dice: the higher face stands a step up. */
 .order .hi {
   translate: 0 -5px;
+}
+/* The alpaca's car, as on the board. */
+.car {
+  display: grid;
+  place-items: center;
+}
+.car img {
+  width: 54px;
+  height: auto;
+  filter: var(--sticker);
 }
 
 /*

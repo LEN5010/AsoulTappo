@@ -37,6 +37,10 @@ export interface RaceConfig {
   squares: { range: [number, number]; boost: number; trip: number; portalGap: [number, number] };
   /** The coins a race's win reaches to be told to the room. */
   roomAt: number;
+  /** The order of play drawn again every round from the second on (1.3.0). */
+  shuffle?: boolean;
+  /** The alpaca: out on the finish once a dumpling is past the middle, driving back towards the start (1.3.0). */
+  alpaca?: { dice: number[] };
 }
 
 export interface RaceStep {
@@ -118,6 +122,10 @@ export interface RaceSetup {
   dice?: Record<string, number[]>;
   chance?: { sims: number } & Record<RaceKind, Record<string, number>>;
   popularity?: Record<string, number>;
+  /** Races run by the rules beyond the squares (1.3.0): the order drawn every round, and the alpaca, out once a
+   * dumpling is past square [at] (the middle of the track), with the faces of its die. */
+  shuffle?: boolean;
+  alpaca?: { at: number; dice: number[] };
 }
 
 export interface RacePace { lit: number; hop: number; gap: number; act: number; rest: number }
@@ -178,7 +186,40 @@ export interface Race {
   result?: { staked: number; won: number; net: number };
   /** Started races: whether the move list is there to play (false on old races whose list is gone: result only). */
   replay?: boolean;
+  /**
+   * Races run by the rules beyond the squares (setup.shuffle, setup.alpaca): each round's order (ALPACA for the
+   * alpaca once it takes turns) and with setup.shuffle the dice it was rolled for by, as [rolls] are the opening's
+   * ([] for the first round, which the opening decides), the alpaca's turns, and the step after which it came out;
+   * and their times: each round of the dice for an order, the change of order after them, opening each round from the
+   * second, each turn's length and the pace it is made of, the alpaca's coming out (park_race.py paced_times).
+   */
+  orders?: string[][];
+  orderRolls?: OrderRoll[][][];
+  drives?: RaceDrive[];
+  enter?: number;
+  orderRollMs?: number;
+  shuffleMs?: number;
+  drivesMs?: number[];
+  drivePace?: DrivePace;
+  enterMs?: number;
 }
+
+/** The alpaca's name in a race's orders and rest (race.py ALPACA). */
+export const ALPACA = "alpaca";
+
+/**
+ * One of the alpaca's turns (race.py run): in round [r], before step [at], rolling [face]; it drives from square
+ * [from] to [to], towards the start. [back]: the square it left for the finish before driving, nobody being ahead of
+ * it; [take]: the square it stopped on, bottom to top, when it carried anyone; [home]: it went back to the finish
+ * after, nobody being left ahead of it, and left them there.
+ */
+export interface RaceDrive {
+  r: number; at: number; face: number; from: number; to: number; back?: number; take?: string[]; home?: boolean;
+}
+
+/** The pace of the alpaca's turns, ms (park_race.py DRIVE): its die lit, a way to or from the finish, a square
+ * driven, picking up its riders, the rest after. */
+export interface DrivePace { lit: number; away: number; sq: number; take: number; rest: number }
 
 /** A finished race in GET /api/park/race/history: [day] is the China day of its start. */
 export interface RacePast {
@@ -235,6 +276,8 @@ export const cutLength = (race: Race, i: number): number => (cutOf(race, i) ? ra
  * close-up comes first in its turn: it moves cutLength() later.
  */
 export function stepStart(race: Race, i: number): number {
+  const tl = timelineOf(race);
+  if (tl) return i < tl.steps.length ? tl.beats[tl.steps[i]!]!.at : tl.end;
   const step = race.stepMs ?? 1;
   const slowFrom = race.slowFrom ?? race.moves?.length ?? 0;
   const slow = race.slowMs ?? step;
@@ -263,8 +306,294 @@ export function stepLength(race: Race, i: number): number {
   return i < slowFrom ? race.stepMs ?? 1 : race.slowMs ?? race.stepMs ?? 1;
 }
 
-/** When round [r]'s dice are thrown, ms after startsAt: rollMs before its first step. */
-export const rollStart = (race: Race, r: number): number => stepStart(race, r * ROUND) - (race.rollMs ?? 0);
+// ---------------------------------------------------------------- the rules beyond the squares, in time
+
+/*
+ * A race run by the order rolled for every round and the alpaca plays as a row of beats, ms after startsAt (park_race.py
+ * paced_ms): from the second round on a round opens with the dice for its order (orderRollMs for each round of them;
+ * none on races from before them) and the change of order (shuffleMs), then its dice (rollMs), then
+ * the turns in the round's order: a member's step (its close-up first, then the step) or the alpaca's drive
+ * (drivesMs); right after the step that brought the alpaca out comes its coming out (enterMs). The turns after the
+ * winning move are only shown (rest). A drive need not be in the round of the step it comes before: the alpaca last
+ * in a round and first in the next drives twice before the same step, the next round's change of order and dice in
+ * between, so the beats follow the orders, never the drives' `at`.
+ */
+export type BeatKind = "order" | "shuffle" | "roll" | "step" | "drive" | "enter";
+export interface Beat {
+  kind: BeatKind;
+  /** The round it is in. */
+  r: number;
+  /** The step of a step's beat, the drive of a drive's; -1 otherwise. */
+  i: number;
+  at: number;
+  len: number;
+  /** The steps done before it. */
+  done: number;
+}
+
+/** The share of enterMs the alpaca's close-up takes; then it drives onto the finish. */
+export const ENTER_CUT = 2 / 3;
+
+/**
+ * A change of where the alpaca is: out onto the finish ("enter"), off its square for the finish before drive [k]
+ * ("back"), drive [k] setting off, taking those it reaches along ("glide"), back to the finish after it ("home").
+ * [before]: the step it comes before; [at]: when, ms after startsAt.
+ */
+export interface CarEvent { kind: "enter" | "back" | "glide" | "home"; k: number; before: number; at: number }
+
+/** A race's beats in time order; each step's and each round's dice's beat; the car's changes; when the last ends. */
+export interface Timeline { beats: Beat[]; steps: number[]; rolls: number[]; cars: CarEvent[]; end: number }
+
+const timelines = new WeakMap<Race, Timeline | null>();
+
+/** The beats of a race run by the rules beyond the squares (it has `orders`); null for any other. Once a race. */
+export function timelineOf(race: Race): Timeline | null {
+  let out = timelines.get(race);
+  if (out === undefined) {
+    out = buildTimeline(race);
+    timelines.set(race, out);
+  }
+  return out;
+}
+
+function buildTimeline(race: Race): Timeline | null {
+  const orders = race.orders;
+  const moves = race.moves;
+  if (!orders?.length || !moves?.length) return null;
+  const drives = race.drives ?? [];
+  const beats: Beat[] = [];
+  const steps: number[] = [];
+  const rolls: number[] = [];
+  const cars: CarEvent[] = [];
+  let at = race.leadMs ?? 0;
+  let i = 0;
+  let k = 0;
+  const push = (kind: BeatKind, r: number, n: number, len: number) => {
+    beats.push({ kind, r, i: n, at, len, done: i });
+    at += len;
+  };
+  for (let r = 0; r < orders.length && i < moves.length; r++) {
+    const dice = r > 0 ? race.orderRolls?.[r]?.length ?? 0 : 0;
+    if (dice && race.orderRollMs) push("order", r, -1, dice * race.orderRollMs);
+    if (r > 0 && race.shuffleMs) push("shuffle", r, -1, race.shuffleMs);
+    rolls.push(beats.length);
+    push("roll", r, -1, race.rollMs ?? 0);
+    for (const who of orders[r]!) {
+      if (i >= moves.length) break;
+      if (who === ALPACA) {
+        const d = drives[k];
+        if (!d || d.r !== r) continue;
+        const from = at;
+        const p = driveTimes(race, k);
+        push("drive", r, k, race.drivesMs?.[k] ?? p.len);
+        if (d.back !== undefined) cars.push({ kind: "back", k, before: i, at: from + p.backAt });
+        cars.push({ kind: "glide", k, before: i, at: from + p.glideAt });
+        if (d.home) cars.push({ kind: "home", k, before: i, at: from + p.homeAt });
+        k++;
+        continue;
+      }
+      steps.push(beats.length);
+      push("step", r, i, cutLength(race, i) + stepLength(race, i));
+      i++;
+      if (race.enter === i - 1) {
+        const from = at;
+        if (race.enterMs) push("enter", r, -1, race.enterMs);
+        cars.push({ kind: "enter", k: -1, before: i, at: from + (race.enterMs ?? 0) * ENTER_CUT });
+      }
+    }
+  }
+  return { beats, steps, rolls, cars, end: at };
+}
+
+/** The playhead of a race with a timeline at [at] ms after startsAt. */
+function playheadOn(race: Race, tl: Timeline, at: number): Playhead {
+  const n = race.moves?.length ?? 0;
+  let driven = 0;
+  while (driven < tl.cars.length && tl.cars[driven]!.at <= at) driven++;
+  // The last beat begun by then.
+  const beats = tl.beats;
+  let lo = 0;
+  let hi = beats.length - 1;
+  let b = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (beats[mid]!.at <= at) {
+      b = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  if (b < 0) return { done: 0, current: -1, part: 0, driven };
+  const beat = beats[b]!;
+  const into = at - beat.at;
+  if (into >= beat.len) return { done: b === beats.length - 1 ? n : beat.done + (beat.kind === "step" ? 1 : 0), current: -1, part: 0, driven };
+  if (beat.kind === "step") {
+    const i = beat.i;
+    const cut = cutLength(race, i);
+    if (into < cut) return { done: i, current: i, part: 0, cut: into / cut, driven };
+    const ms = into - cut;
+    return { done: i, current: i, part: race.pace ? partAt(stepTimes(race, i), ms) : ms / stepLength(race, i), ms, driven };
+  }
+  if (beat.kind === "drive") return { done: beat.done, current: -1, part: 0, driven, drive: { k: beat.i, ms: into } };
+  if (beat.kind === "order") return { done: beat.done, current: -1, part: 0, driven, order: { r: beat.r, ms: into } };
+  if (beat.kind === "shuffle") return { done: beat.done, current: -1, part: 0, driven, shuffle: { r: beat.r, ms: into } };
+  if (beat.kind === "enter") return { done: beat.done, current: -1, part: 0, driven, enter: into };
+  return { done: beat.done, current: -1, part: 0, driven };
+}
+
+/**
+ * One of the alpaca's drives in ms from its start (park_race.py drive_ms): its die lit; back to the finish first
+ * (from backAt, for backLen); the drive (from glideAt, for glideLen); picking its riders up (takeAt, takeLen); home
+ * to the finish after (homeAt, homeLen); the rest. In the last round slower by the same factor as the steps; the
+ * server's length stands, and times that would not fit in it shrink together.
+ */
+export interface DrivePhases {
+  len: number; backAt: number; backLen: number; glideAt: number; glideLen: number; takeAt: number; takeLen: number;
+  homeAt: number; homeLen: number;
+}
+
+const DRIVE_PACE: DrivePace = { lit: 600, away: 900, sq: 300, take: 300, rest: 500 };
+
+export function driveTimes(race: Race, k: number): DrivePhases {
+  const d = race.drives?.[k];
+  const len = race.drivesMs?.[k] ?? 1;
+  if (!d) return { len, backAt: 0, backLen: 0, glideAt: 0, glideLen: 0, takeAt: 0, takeLen: 0, homeAt: 0, homeLen: 0 };
+  const pace = race.drivePace ?? DRIVE_PACE;
+  const last = Math.floor((race.slowFrom ?? Infinity) / ROUND);
+  const slow = d.r >= last && race.stepMs ? (race.slowMs ?? race.stepMs) / race.stepMs : 1;
+  const lit = pace.lit * slow;
+  const back = d.back !== undefined ? pace.away * slow : 0;
+  const glide = Math.abs(d.from - d.to) * pace.sq * slow;
+  const take = d.take?.length ? pace.take * slow : 0;
+  const home = d.home ? pace.away * slow : 0;
+  const fit = Math.min(1, len / Math.max(1, lit + back + glide + take + home + pace.rest * slow));
+  const backAt = lit * fit;
+  const glideAt = backAt + back * fit;
+  const takeAt = glideAt + glide * fit;
+  const homeAt = takeAt + take * fit;
+  return { len, backAt, backLen: back * fit, glideAt, glideLen: glide * fit, takeAt, takeLen: take * fit, homeAt, homeLen: home * fit };
+}
+
+/*
+ * The car's way along a drive: a smooth start over the first GLIDE_EASE of its time, an even speed, a smooth stop
+ * over the last. glideAt gives how far along the way it is at a share of the time, glideWhen the share of the time it
+ * gets there, so the riders are picked up just as the car reaches them.
+ */
+export const GLIDE_EASE = 0.14;
+const GLIDE_TOP = 1 / (1 - GLIDE_EASE);
+
+export function glideAt(u: number): number {
+  const x = Math.min(1, Math.max(0, u));
+  if (x < GLIDE_EASE) return (GLIDE_TOP * x * x) / (2 * GLIDE_EASE);
+  if (x > 1 - GLIDE_EASE) return 1 - (GLIDE_TOP * (1 - x) ** 2) / (2 * GLIDE_EASE);
+  return GLIDE_TOP * (GLIDE_EASE / 2 + x - GLIDE_EASE);
+}
+
+export function glideWhen(p: number): number {
+  const y = Math.min(1, Math.max(0, p));
+  const edge = (GLIDE_TOP * GLIDE_EASE) / 2;
+  if (y < edge) return Math.sqrt((2 * GLIDE_EASE * y) / GLIDE_TOP);
+  if (y > 1 - edge) return 1 - Math.sqrt((2 * GLIDE_EASE * (1 - y)) / GLIDE_TOP);
+  return GLIDE_EASE + y / GLIDE_TOP - GLIDE_EASE / 2;
+}
+
+/** A square one of the alpaca's drives picked dumplings up from, and its stack then, bottom to top. */
+export interface Pickup { sq: number; stack: string[] }
+
+const pickupCache = new WeakMap<Race, Pickup[][]>();
+
+/**
+ * Each drive's pickups, in the order the car reached them: its own square first (those riding it), then on towards
+ * the start. Put together the other way round, bottom to top, they make the drive's `take`. Worked out once a race.
+ */
+export function pickupsOf(race: Race, track: number): Pickup[][] {
+  const known = pickupCache.get(race);
+  if (known) return known;
+  const tl = timelineOf(race);
+  const out: Pickup[][] = [];
+  if (tl && race.start && race.moves) {
+    const step = createBoardStepper(false);
+    (race.drives ?? []).forEach((d, k) => {
+      const e = tl.cars.findIndex((c) => c.kind === "glide" && c.k === k);
+      const picks: Pickup[] = [];
+      if (e >= 0) {
+        const board = step(race.start!, race.moves!, tl.cars[e]!.before, -1, { race, track, driven: e });
+        for (let sq = d.from; sq >= Math.max(1, d.to); sq--) {
+          const stack = board.stacks.get(sq);
+          if (stack?.length) picks.push({ sq, stack: [...stack] });
+        }
+      }
+      out.push(picks);
+    });
+  }
+  pickupCache.set(race, out);
+  return out;
+}
+
+/** A turn of a round in its order: a member's step, the alpaca's drive, or after the winning move a die only shown. */
+export interface Turn { m: string; face: number; step?: number; drive?: number }
+
+/** Round [r]'s turns, in its order (race.orders; five steps a round on any other race), with each one's face. */
+export function turnsOf(race: Race, r: number): Turn[] {
+  const moves = race.moves ?? [];
+  const order = race.orders?.[r];
+  if (!order) {
+    const steps = moves.slice(r * ROUND, (r + 1) * ROUND).map((s, k) => ({ m: s.m, face: s.dice[0] ?? s.steps, step: r * ROUND + k }));
+    return r === roundsOf(race) - 1 ? [...steps, ...(race.rest ?? [])] : steps;
+  }
+  const drives = race.drives ?? [];
+  let i = r * ROUND;
+  let k = drives.findIndex((d) => d.r >= r);
+  if (k < 0) k = drives.length;
+  const rest = r === roundsOf(race) - 1 ? [...(race.rest ?? [])] : [];
+  const out: Turn[] = [];
+  for (const m of order) {
+    if (m === ALPACA && drives[k]?.r === r) {
+      out.push({ m, face: drives[k]!.face, drive: k });
+      k++;
+    } else if (m !== ALPACA && i < moves.length && i < (r + 1) * ROUND) {
+      const s = moves[i]!;
+      out.push({ m: s.m, face: s.dice[0] ?? s.steps, step: i });
+      i++;
+    } else {
+      const x = rest.shift();
+      if (x) out.push({ m: x.m, face: x.face });
+    }
+  }
+  return out;
+}
+
+/**
+ * The order on show at server time [t] (ms) on a race by the rules beyond the squares: the latest round's whose change
+ * of order, or without one its dice, has begun (the opening's order before). While a round's dice for its order are
+ * out, the order before stays, the alpaca at its end when it rolls for a place the first time. Null on any other race.
+ */
+export function orderAt(race: Race, t: number): string[] | null {
+  const tl = timelineOf(race);
+  if (!tl || !race.orders) return null;
+  const at = t - race.startsAt * 1000;
+  let r = 0;
+  let rolling = -1;
+  for (const b of tl.beats) {
+    if (b.at > at) break;
+    if (b.kind === "shuffle" || b.kind === "roll") {
+      r = b.r;
+      rolling = -1;
+    } else if (b.kind === "order") rolling = b.r;
+  }
+  const out = race.orders[r] ?? null;
+  if (out && rolling > r && !out.includes(ALPACA) && race.orders[rolling]?.includes(ALPACA)) return [...out, ALPACA];
+  return out;
+}
+
+/**
+ * When round [r]'s dice are thrown, ms after startsAt: rollMs before its first step; on a race by the rules beyond
+ * the squares, where the alpaca may drive first, the round's own beat.
+ */
+export function rollStart(race: Race, r: number): number {
+  const tl = timelineOf(race);
+  if (tl) return r < tl.rolls.length ? tl.beats[tl.rolls[r]!]!.at : tl.end;
+  return stepStart(race, r * ROUND) - (race.rollMs ?? 0);
+}
 
 /** The rounds of a race: one more for every ROUND moves begun. */
 export const roundsOf = (race: Race): number => Math.ceil((race.moves?.length ?? 0) / ROUND);
@@ -274,6 +603,7 @@ export const roundsOf = (race: Race): number => Math.ceil((race.moves?.length ??
  * winning move, the faces drawn only to be shown (race.rest).
  */
 export function roundDice(race: Race, r: number): OrderRoll[] {
+  if (race.orders) return turnsOf(race, r).map(({ m, face }) => ({ m, face }));
   const out = (race.moves ?? []).slice(r * ROUND, (r + 1) * ROUND).map((s) => ({ m: s.m, face: s.dice[0] ?? s.steps }));
   return r === roundsOf(race) - 1 ? [...out, ...(race.rest ?? [])] : out;
 }
@@ -282,9 +612,20 @@ export function roundDice(race: Race, r: number): OrderRoll[] {
  * Where playback is at server time [t] (ms): steps fully done, the step under way (or -1), and how far into it. While
  * the step's close-up is up it has not moved yet: [part] is 0 and [cut] how far into the close-up.
  */
-export interface Playhead { done: number; current: number; part: number; cut?: number; ms?: number }
+export interface Playhead {
+  done: number; current: number; part: number; cut?: number; ms?: number;
+  /**
+   * Races by the rules beyond the squares only: how many of the car's changes have come (Timeline.cars), the
+   * alpaca's drive under way and how far into it, the dice for an order and the change of order under way, how far
+   * into the alpaca's coming out.
+   */
+  driven?: number; drive?: { k: number; ms: number }; order?: { r: number; ms: number }; shuffle?: { r: number; ms: number };
+  enter?: number;
+}
 
 export function playhead(race: Race, t: number): Playhead {
+  const tl = timelineOf(race);
+  if (tl) return playheadOn(race, tl, t - race.startsAt * 1000);
   const moves = race.moves ?? [];
   const at = t - race.startsAt * 1000;
   // Few steps: a scan is plain and exact at the switch to the slow round. Between steps (a round's dice) nothing is
@@ -457,15 +798,46 @@ export function openingAt(race: Race, t: number): Opening | null {
   if (!rolls?.length || !race.order) return null;
   const at = t - race.startsAt * 1000;
   if (at >= (race.leadMs ?? 0)) return null;
+  return diceRoundsAt(rolls, at - OPEN_AT, REROLL_MS, OPEN_ROLL_MS);
+}
+
+/**
+ * Rounds of dice for an order [at] ms after the first leaves the hand: round k [step] × k in, tumbling for [tumble];
+ * [step] after the last one starts the field lines up.
+ */
+function diceRoundsAt(rolls: OrderRoll[][], at: number, step: number, tumble: number): Opening {
   let round = -1;
-  while (round + 1 < rolls.length && at >= OPEN_AT + (round + 1) * REROLL_MS) round++;
-  const tumbling = round >= 0 && at < OPEN_AT + round * REROLL_MS + OPEN_ROLL_MS;
-  const lined = at >= OPEN_AT + rolls.length * REROLL_MS;
+  while (round + 1 < rolls.length && at >= (round + 1) * step) round++;
+  const tumbling = round >= 0 && at < round * step + tumble;
+  const lined = at >= rolls.length * step;
   const faces: Record<string, number> = {};
   const upto = lined ? 0 : round - (tumbling ? 1 : 0);
-  for (let k = 0; k <= upto; k++) for (const r of rolls[k]) faces[r.m] = r.face;
-  const since = round >= 0 ? at - (OPEN_AT + round * REROLL_MS) : 0;
-  return { round, rolling: round >= 0 ? rolls[round].map((r) => r.m) : [], tumbling, since, faces, lined };
+  for (let k = 0; k <= upto; k++) for (const r of rolls[k]!) faces[r.m] = r.face;
+  const since = round >= 0 ? at - round * step : 0;
+  return { round, rolling: round >= 0 ? rolls[round]!.map((r) => r.m) : [], tumbling, since, faces, lined };
+}
+
+/** A round's dice for its order (Race.orderRolls) as they play: as the opening's, scaled with orderRollMs. */
+export interface OrderDice extends Opening {
+  /** The round they decide the order of. */
+  r: number;
+  /** How long each tumbles, ms. */
+  tumble: number;
+}
+
+/**
+ * The dice for round r's order at playhead [h]: thrown as the opening's while their beat plays, each round of them
+ * orderRollMs long and tumbling for the same share of it as the opening's (OPEN_ROLL_MS of REROLL_MS); lined up while
+ * the order changes after them. Null at any other moment, and on races from before them.
+ */
+export function orderDiceAt(race: Race, h: Playhead | null): OrderDice | null {
+  const step = race.orderRollMs;
+  const on = h?.order ?? h?.shuffle;
+  const rolls = on && step ? race.orderRolls?.[on.r] : undefined;
+  if (!on || !step || !rolls?.length) return null;
+  const tumble = (step * OPEN_ROLL_MS) / REROLL_MS;
+  const at = h!.order ? on.ms : rolls.length * step + on.ms;
+  return { r: on.r, tumble, ...diceRoundsAt(rolls, at, step, tumble) };
 }
 
 // ---------------------------------------------------------------- the board
@@ -666,30 +1038,52 @@ export function stacksAt(start: readonly string[], moves: readonly RaceStep[], h
   return stacks;
 }
 
-interface StepCursor { completed: number; partial: number }
+interface StepCursor { completed: number; partial: number; driven?: number }
 
-/** The board changes when the group leaves its square, or when its landing square acts. */
+/**
+ * The board changes when the group leaves its square, or when its landing square acts; on a race by the rules beyond
+ * the squares, also with every change of where the alpaca is ([driven]).
+ */
 export function stepCursor(h: Playhead, previous?: StepCursor | null): StepCursor {
   const completed = h.current >= 0 ? (h.part >= SQUARE_AT ? h.current + 1 : h.current) : h.done;
   const partial = h.current >= 0 && h.part >= HOP_AT && h.part < SQUARE_AT ? h.current : -1;
-  return previous?.completed === completed && previous.partial === partial ? previous : { completed, partial };
+  const driven = h.driven;
+  if (previous?.completed === completed && previous.partial === partial && previous.driven === driven) return previous;
+  return driven === undefined ? { completed, partial } : { completed, partial, driven };
 }
 
-interface BoardState { stacks: Map<number, string[]>; hops: Record<string, string> }
+/**
+ * A board: the stacks, each tuanzi's last move (for its animation), and on a race with the alpaca where its car is
+ * parked (null before it is out; the square it drives to from the moment it sets off) and its last change.
+ */
+interface BoardState { stacks: Map<number, string[]>; hops: Record<string, string>; car?: number | null; carKey?: string }
 
-/** Keep completed moves, and play a partial move on a separate snapshot so it can be scrubbed either way. */
+/** What a board needs to play the alpaca's turns too: the race, how many of the car's changes have come, the track. */
+export interface CarRun { race: Race; driven: number; track: number }
+
+/**
+ * Keep completed moves, and play a partial move on a separate snapshot so it can be scrubbed either way. With [run]
+ * the car's changes (Timeline.cars) play in between, each before the step it comes before.
+ */
 export function createBoardStepper(withHops = true) {
   let cache: {
     start: readonly string[];
     moves: readonly RaceStep[];
+    race: Race | undefined;
     completed: number;
     partial: number;
+    driven: number;
     base: BoardState;
     frame: BoardState;
   } | undefined;
 
   function copy(board: BoardState): BoardState {
-    return { stacks: new Map([...board.stacks].map(([sq, stack]) => [sq, [...stack]])), hops: { ...board.hops } };
+    const out: BoardState = { stacks: new Map([...board.stacks].map(([sq, stack]) => [sq, [...stack]])), hops: { ...board.hops } };
+    if (board.car !== undefined) {
+      out.car = board.car;
+      out.carKey = board.carKey;
+    }
+    return out;
   }
   function apply(board: BoardState, s: RaceStep, i: number, complete: boolean) {
     playStep(board.stacks, s, complete);
@@ -700,19 +1094,64 @@ export function createBoardStepper(withHops = true) {
     if (acted && s.square === "flip") for (const m of board.stacks.get(s.to) ?? []) board.hops[m] = key;
     if (acted && s.react?.length) for (const m of s.stack ?? s.react) board.hops[m] = key;
   }
-
-  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number): BoardState => {
-    const target = Math.min(completed, moves.length);
-    if (!cache || cache.start !== start || cache.moves !== moves || target < cache.completed) {
-      const base = { stacks: new Map([[0, [...start]]]), hops: {} };
-      cache = { start, moves, completed: 0, partial: -1, base, frame: base };
+  /**
+   * A change of the car: out onto the finish; a drive, taking everyone on the squares it passes and its own along to
+   * where it stops (race.py run: the lower squares at the bottom); back to the finish, leaving its riders standing.
+   * Their moves: `cd${k}` riding drive k, `cb${k}` and `ch${k}` left off it by going back before drive k or after it.
+   */
+  function moveCar(board: BoardState, e: CarEvent, drives: readonly RaceDrive[], track: number) {
+    if (e.kind === "enter") {
+      board.car = track;
+      board.carKey = "e";
+      return;
     }
-    if (cache.completed === target && cache.partial === partial) return cache.frame;
-    if (cache.completed < target) {
+    const d = drives[e.k];
+    if (!d) return;
+    if (e.kind === "glide") {
+      const took: string[] = [];
+      for (let sq = Math.max(1, d.to); sq <= d.from; sq++) {
+        const stack = board.stacks.get(sq);
+        if (!stack) continue;
+        took.push(...stack);
+        board.stacks.delete(sq);
+      }
+      if (took.length) board.stacks.set(d.to, took);
+      if (withHops) for (const m of took) board.hops[m] = `cd${e.k}`;
+      board.car = d.to;
+    } else {
+      const left = board.car ? board.stacks.get(board.car) ?? [] : [];
+      if (withHops && board.car !== track) for (const m of left) board.hops[m] = `c${e.kind[0]}${e.k}`;
+      board.car = track;
+    }
+    board.carKey = `${e.kind[0]}${e.k}`;
+  }
+
+  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number, run?: CarRun): BoardState => {
+    const target = Math.min(completed, moves.length);
+    const cars = (run && timelineOf(run.race)?.cars) || [];
+    const driven = Math.min(run?.driven ?? 0, cars.length);
+    if (!cache || cache.start !== start || cache.moves !== moves || cache.race !== run?.race || target < cache.completed
+      || driven < cache.driven) {
+      const base: BoardState = { stacks: new Map([[0, [...start]]]), hops: {} };
+      if (run) {
+        base.car = null;
+        base.carKey = "";
+      }
+      cache = { start, moves, race: run?.race, completed: 0, partial: -1, driven: 0, base, frame: base };
+    }
+    if (cache.completed === target && cache.partial === partial && cache.driven === driven) return cache.frame;
+    if (cache.completed < target || cache.driven < driven) {
       cache.base = copy(cache.base);
-      while (cache.completed < target) {
-        const i = cache.completed++;
-        apply(cache.base, moves[i], i, true);
+      for (;;) {
+        const e = cars[cache.driven];
+        if (e && e.before <= cache.completed) {
+          if (cache.driven >= driven) break;
+          moveCar(cache.base, e, run!.race.drives ?? [], run!.track);
+          cache.driven++;
+        } else if (cache.completed < target) {
+          const i = cache.completed++;
+          apply(cache.base, moves[i], i, true);
+        } else break;
       }
     }
     cache.partial = partial;
@@ -728,8 +1167,8 @@ export function createBoardStepper(withHops = true) {
 /** The standings need only the stacks, retaining their reference between board changes. */
 export function createStackStepper() {
   const step = createBoardStepper(false);
-  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number) =>
-    step(start, moves, completed, partial).stacks;
+  return (start: readonly string[], moves: readonly RaceStep[], completed: number, partial: number, run?: CarRun) =>
+    step(start, moves, completed, partial, run).stacks;
 }
 
 export function spots(stacks: Map<number, string[]>): Record<string, Spot> {
@@ -754,9 +1193,29 @@ export function rankOf(stacks: Map<number, string[]>): string[] {
   return [...stacks.entries()].sort((a, b) => b[0] - a[0]).flatMap(([square, s]) => (square ? [...s].reverse() : s));
 }
 
-/** The leader after each step in full (index i: after step i). */
-export function leaders(start: readonly string[], moves: readonly RaceStep[]): string[] {
-  return moves.map((_, i) => rankOf(stacksAt(start, moves, { done: i + 1, current: -1, part: 0 }))[0]);
+/**
+ * The leader after each step in full (index i: after step i); with [run] (a race by the rules beyond the squares),
+ * after the alpaca's turns before it too, not those after.
+ */
+export function leaders(start: readonly string[], moves: readonly RaceStep[], run?: Omit<CarRun, "driven">): string[] {
+  const cars = run && timelineOf(run.race)?.cars;
+  if (!run || !cars) return moves.map((_, i) => rankOf(stacksAt(start, moves, { done: i + 1, current: -1, part: 0 }))[0]);
+  const step = createBoardStepper(false);
+  return moves.map((_, i) => rankOf(step(start, moves, i + 1, -1, { ...run, driven: carsBefore(cars, i) }).stacks)[0]);
+}
+
+/** The leader just before each step (index i: before step i), the alpaca's turns since the step before included. */
+export function leadersBefore(start: readonly string[], moves: readonly RaceStep[], run: Omit<CarRun, "driven">): string[] {
+  const cars = timelineOf(run.race)?.cars ?? [];
+  const step = createBoardStepper(false);
+  return moves.map((_, i) => rankOf(step(start, moves, i, -1, { ...run, driven: carsBefore(cars, i) }).stacks)[0]);
+}
+
+/** How many of the car's changes come before step [i]. */
+function carsBefore(cars: readonly CarEvent[], i: number): number {
+  let n = 0;
+  while (n < cars.length && cars[n]!.before <= i) n++;
+  return n;
 }
 
 // ---------------------------------------------------------------- moments worth a word

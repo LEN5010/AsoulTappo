@@ -20,17 +20,26 @@
 // hop squashes and stretches about the foot of the group's stack, and the group springs back after it lands. A word
 // pops over the dumpling at the moments that matter. The moves are one Web Animations run each, as long as their part
 // of the step (stepPhases) and the spring back; under reduced motion everything jumps and stands still.
+// On a race with the alpaca (setup.alpaca) the board marks the middle of the track (a dashed bar across the way after
+// square `at`). Once a dumpling is past it, a close-up names the alpaca and its car drives onto the finish. The car
+// never hops: on its turn it glides square by square towards the start (race.ts glideAt: a smooth start, an even
+// speed, a smooth stop), its wheels' spokes turning and lines streaming behind it, facing the way it drives (the
+// picture faces left; turned round going right, kept going up or down). Those it reaches step up onto its back seat as
+// it gets to them, under those already riding, and ride along; a 创！ pops over it once it has hit someone. Going
+// back to the finish it fades out with a puff and in on the finish; those riding stay where they were, down off the
+// seat. Dumplings on its square stand on its back seat, which stays over its square.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { manifest } from "../../manifest";
 import { economy } from "../../stores/economy";
 import { reducedMotion } from "../../stores/theme";
 import Icon from "../../ui/Icon.vue";
 import alpaca from "../../assets/brand/side-alpaca.webp";
+import carArt from "../../assets/park/alpaca-car.webp";
 import { COIN } from "./coin";
 import {
-  cornersOf, createBoardStepper, cutOf, HOP_AT, layoutOf, leaders, momentOf, playhead, rankOf, saidAt, sceneryCells, spots,
-  SQUARE_AT, SKILL_NAMES, skillText, squareOn, stageOf, stepCursor, stepPath, stepTimes, type MomentKind,
-  type Race, type Spot,
+  ALPACA, cornersOf, createBoardStepper, cutOf, driveTimes, ENTER_CUT, glideWhen, HOP_AT, layoutOf, leaders,
+  leadersBefore, momentOf, pickupsOf, playhead, rankOf, saidAt, sceneryCells, spots, SQUARE_AT, SKILL_NAMES, skillText, squareOn,
+  stageOf, stepCursor, stepPath, stepTimes, timelineOf, type MomentKind, type Playhead, type Race, type Spot,
 } from "./race";
 import SkillCutIn from "./SkillCutIn.vue";
 import TuanziToken from "./TuanziToken.vue";
@@ -75,6 +84,8 @@ const FOOT = 0.12;
 const ARC = 0.42;
 /** How far apart each one up a stack of [n] stands, in units. */
 const stepOf = (n: number) => (n > 1 ? Math.min(LIFT, (RISE + 1 - FOOT - D) / (n - 1)) : 0);
+/** As stepOf for a stack on the car's back seat. */
+const carStepOf = (n: number) => (n > 1 ? Math.min(LIFT, (CAR_RISE + 1 - FOOT - D - SEAT) / (n - 1)) : 0);
 /** A flip: how far aside the tuanzi swing (towards the middle of the board going up, the other way going down, as
  * far as the board's edge allows), and how high they jump. */
 const FLIP_SWING = 0.32;
@@ -84,6 +95,24 @@ const HOP_SAMPLES = 10;
 /** A hop seen less than this late (ms) is squeezed to land on time instead of being skipped into. */
 const CATCH_UP_MS = 150;
 const CROWD: readonly [number, number][] = [[0.2, 0.56], [0.5, 0.56], [0.8, 0.56], [0.33, 0.93], [0.67, 0.93]];
+/*
+ * The alpaca's car (alpaca-car.webp, 400 × 274, facing left), CAR_W units wide, its wheels CAR_FOOT over the foot of
+ * its square. Its back seat, TRUNK of its width from its front, stays over the middle of the car's square, so the car
+ * reaches forward of it; riders stand SEAT over the square's feet and a stack there rises at most CAR_RISE over its
+ * square's top. HUBS: the wheels' hubs in the picture's own units, with their radius HUB_R.
+ */
+const CAR_W = 1.5;
+const CAR_H = (CAR_W * 274) / 400;
+const CAR_FOOT = 0.07;
+const TRUNK = 0.8;
+const SEAT = 0.36;
+const CAR_RISE = 0.8;
+const HUBS = [[93.6, 217.7], [282, 217.7]] as const;
+const HUB_R = 14.7;
+/** A spoke: from the hub's middle to near its rim, three to a hub. */
+const SPOKES = [0, 120, 240].map((deg) => ({
+  x: HUB_R * 0.78 * Math.sin((deg * Math.PI) / 180), y: -HUB_R * 0.78 * Math.cos((deg * Math.PI) / 180),
+}));
 
 const board = computed(() => layoutOf(props.track, props.race?.setup.map?.path));
 const routed = computed(() => board.value.routed);
@@ -206,9 +235,19 @@ const trail = computed(() => {
 });
 
 const cursor = computed<ReturnType<typeof stepCursor> | null>((prev) => head.value && stepCursor(head.value, prev));
+/** A race by the rules beyond the squares, out on the board: its alpaca plays in between the steps. */
+const timeline = computed(() => (props.race?.start && moves.value.length ? timelineOf(props.race) : null));
+const carRun = computed(() => (timeline.value && props.race ? { race: props.race, track: props.track } : null));
 const stepBoard = createBoardStepper();
-const boardState = computed(() => stepBoard(lanes.value, moves.value, cursor.value?.completed ?? 0, cursor.value?.partial ?? -1));
+const boardState = computed(() => {
+  const at = cursor.value;
+  const run = carRun.value;
+  return stepBoard(lanes.value, moves.value, at?.completed ?? 0, at?.partial ?? -1, run ? { ...run, driven: at?.driven ?? 0 } : undefined);
+});
 const stacks = computed(() => boardState.value.stacks);
+/** Where the car is parked (null before it is out), and the square whose stack stands on its back seat (-1: none). */
+const carSq = computed(() => boardState.value.car ?? null);
+const seatSq = computed(() => (carSq.value !== null && carSq.value < props.track ? carSq.value : -1));
 const places = computed<Record<string, Spot>>(() => spots(stacks.value));
 /** The square under the active mover while its step plays. */
 const activeSq = computed(() => (ready.value && step.value ? places.value[step.value.m]?.square ?? -1 : -1));
@@ -223,6 +262,8 @@ const squareActed = computed(() => !!head.value && head.value.part >= SQUARE_AT)
 /** Drawn over everyone: the movers, and once the step has reordered the stack it landed on, that whole stack. */
 const lifted = computed(() => {
   const s = step.value;
+  const take = drive.value?.d.take;
+  if (take?.length) return take;
   if (!s || !squareActed.value) return movers.value;
   const turned = s.stack ?? (s.square === "flip" ? stacks.value.get(s.to) : undefined);
   return turned ? [...movers.value, ...turned] : movers.value;
@@ -284,14 +325,15 @@ const roll = computed<{ m: string; key: string; text: string; down: boolean } | 
   return { m: s.m, key: `${w.i}a`, text: `+${s.steps}`, down: false };
 });
 
-/** Who leads after each step, worked out once a race. */
-const leadAfter = computed(() => (props.race?.start && moves.value.length ? leaders(props.race.start, moves.value) : []));
+/** Who leads after each step, worked out once a race; with the alpaca, also who leads just before each step. */
+const leadAfter = computed(() => (props.race?.start && moves.value.length ? leaders(props.race.start, moves.value, carRun.value ?? undefined) : []));
+const leadBefore = computed(() => (carRun.value && props.race?.start ? leadersBefore(props.race.start, moves.value, carRun.value) : null));
 const moment = computed(() => {
   const w = said.value;
   const s = w ? moves.value[w.i] : undefined;
   if (!w || !s) return null;
   const i = w.i;
-  const m = momentOf(s, i ? leadAfter.value[i - 1] : lanes.value[0], leadAfter.value[i]);
+  const m = momentOf(s, leadBefore.value ? leadBefore.value[i] : i ? leadAfter.value[i - 1] : lanes.value[0], leadAfter.value[i]);
   if (!m || w.part < m.from) return null;
   // A skill's word is its name: the mover's own, or the climber's.
   const text = m.kind === "skill" ? SKILL_NAMES[m.m === s.m && s.skill ? s.skill : "climb"] ?? "" : WORDS[m.kind];
@@ -329,14 +371,99 @@ const tail = computed(() => {
   return !!r?.endsAt && !!h && h.current < 0 && h.done === moves.value.length && props.t < r.endsAt * 1000;
 });
 
+// ---------------------------------------------------------------- the alpaca
+
+/**
+ * The alpaca's coming out: a close-up of it in its car for ENTER_CUT of enterMs, before it drives onto the finish.
+ * [at] is how far in it is, read as it comes up and then left alone while it plays, so the close-up runs its length
+ * by itself; held (paused, scrubbed) it follows the board. A seek, a change of rate or of holding draws it afresh.
+ */
+const enterCut = computed<{ key: string; ms: number; at: number } | null>((prev) => {
+  const r = props.race;
+  const h = head.value;
+  if (!r?.enterMs || !h || h.enter === undefined) return null;
+  const len = r.enterMs * ENTER_CUT;
+  if (h.enter >= len) return null;
+  const held = !!(props.paused || props.scrubbing);
+  const key = `${r.id}:enter:${props.seek ?? 0}:${props.rate ?? 1}:${held ? "held" : "on"}`;
+  if (prev?.key === key && !held) return prev;
+  return { key, ms: len / Math.max(0.01, props.rate ?? 1), at: h.enter / len };
+});
+
+/**
+ * The way the car faces on [sq], 1 to the right: the way it last drove along a row, towards the start (the picture
+ * faces left); on the finish, the way it is about to drive.
+ */
+function faceAt(sq: number): 1 | -1 {
+  const cell = board.value.cell;
+  for (let j = sq; j < props.track; j++) {
+    const dx = cell(j).col - cell(j + 1).col;
+    if (dx) return dx > 0 ? 1 : -1;
+  }
+  for (let j = sq; j > 0; j--) {
+    const dx = cell(j - 1).col - cell(j).col;
+    if (dx) return dx > 0 ? 1 : -1;
+  }
+  return -1;
+}
+/** The car's box on [sq] facing [face], its top left in units from the ring's: its back seat over the square's middle. */
+function carBox(sq: number, face: 1 | -1): { x: number; y: number } {
+  const c = board.value.cell(sq);
+  return { x: c.col + 0.5 - (face < 0 ? TRUNK : 1 - TRUNK) * CAR_W, y: c.row + 1 - CAR_FOOT - CAR_H };
+}
+const carFace = computed<1 | -1>(() => (carSq.value === null ? -1 : faceAt(carSq.value)));
+const carStyle = computed(() => {
+  const sq = carSq.value;
+  if (sq === null) return {};
+  const b = carBox(sq, carFace.value);
+  // Behind the tuanzi on its own row, in front of those on the rows above.
+  return { "--cx": b.x, "--cy": b.y, "--face": carFace.value, zIndex: 9 + Math.round((board.value.cell(sq).row + 1 - FOOT) * 10) };
+});
+/** The drive under way: the alpaca's turn, its times, how far in. */
+const drive = computed(() => {
+  const r = props.race;
+  const h = head.value;
+  const d = h?.drive && r?.drives?.[h.drive.k];
+  return r && h?.drive && d ? { k: h.drive.k, d, p: driveTimes(r, h.drive.k), ms: h.drive.ms } : null;
+});
+/** The car is on the move: its wheels turn and lines stream off behind it. */
+const driving = computed(() => {
+  const v = drive.value;
+  return !!v && v.ms >= v.p.glideAt && v.ms < v.p.takeAt;
+});
+/** 创！ over the car from the moment it reaches someone not yet riding it until it has picked them up. */
+const bump = computed(() => {
+  const v = drive.value;
+  const r = props.race;
+  if (!v || !r || !v.d.take?.length) return null;
+  const hit = pickupsOf(r, props.track)[v.k]?.find((x) => x.sq < v.d.from);
+  if (!hit) return null;
+  const from = v.p.glideAt + v.p.glideLen * glideWhen((v.d.from - hit.sq) / Math.max(1, v.d.from - v.d.to));
+  return v.ms >= from && v.ms < v.p.homeAt + (v.d.home ? 0 : 400) ? `${r.id}:${v.k}` : null;
+});
+/** The middle of the track on a race with the alpaca: a bar across the way after square `at`, in units. */
+const midline = computed(() => {
+  const at = props.race?.setup.alpaca?.at;
+  if (!at || at >= props.track) return null;
+  const a = board.value.cell(at);
+  const b = board.value.cell(at + 1);
+  const mx = (a.col + b.col) / 2 + 0.5;
+  const my = (a.row + b.row) / 2 + 0.5;
+  const ux = b.col - a.col;
+  const uy = b.row - a.row;
+  const half = 0.36;
+  const f = (n: number) => Math.round(n * 1000) / 1000;
+  return { x1: f(mx - uy * half), y1: f(my + ux * half), x2: f(mx + uy * half), y2: f(my - ux * half) };
+});
+
 // ---------------------------------------------------------------- where each tuanzi stands
 
 /** A spot in units from the ring's top left: across, down to the feet, the height in its stack and how far it rises. */
 interface At { x: number; y: number; lvl: number; rise: number }
-/** The middle of [square], at the feet's height, [lvl] up a stack of [n]. */
-function footOf(square: number, lvl: number, n: number): At {
+/** The middle of [square], at the feet's height, [lvl] up a stack of [n]; on the car's back seat with [seat]. */
+function footOf(square: number, lvl: number, n: number, seat = false): At {
   const c = board.value.cell(square);
-  return { x: c.col + 0.5, y: c.row + 1 - FOOT, lvl, rise: lvl * stepOf(n) };
+  return { x: c.col + 0.5, y: c.row + 1 - FOOT, lvl, rise: seat ? SEAT + lvl * carStepOf(n) : lvl * stepOf(n) };
 }
 function atOf(p: Spot | undefined): At {
   if (!p?.square) {
@@ -344,7 +471,7 @@ function atOf(p: Spot | undefined): At {
     const c = board.value.cell(0);
     return { x: c.col + x, y: c.row + y, lvl: 0, rise: 0 };
   }
-  return footOf(p.square, p.level, stacks.value.get(p.square)?.length ?? 1);
+  return footOf(p.square, p.level, stacks.value.get(p.square)?.length ?? 1, p.square === seatSq.value);
 }
 const ats = computed<Record<string, At>>(() => Object.fromEntries(props.members.map((m) => [m, atOf(places.value[m])])));
 
@@ -354,7 +481,7 @@ function style(m: string) {
   const z = 10 + Math.round(a.y * 10) + a.lvl + (lifted.value.includes(m) ? 100 : 0);
   // --over: how far the top of its stack rises over it, in units, for what floats over the stack.
   const sq = places.value[m]?.square;
-  const over = (above.value[m] ?? 0) * stepOf(sq ? stacks.value.get(sq)?.length ?? 1 : 1);
+  const over = (above.value[m] ?? 0) * (sq && sq === seatSq.value ? carStepOf : stepOf)(sq ? stacks.value.get(sq)?.length ?? 1 : 1);
   return { "--x": a.x, "--y": a.y, "--rise": a.rise, "--over": over, zIndex: z };
 }
 /** Words near the right edge open to the left, so they stay on the paper. */
@@ -372,11 +499,15 @@ onBeforeUnmount(() => cancelAnimationFrame(frame));
 
 const rate = computed(() => props.rate ?? 1);
 // A change of rate carries the moves under way along; pausing freezes them cleanly.
+const carEl = ref<HTMLElement | null>(null);
+const carBody = ref<HTMLElement | null>(null);
+/** Everything on the board that moves by Web Animations. */
+const animated = () => [...Object.values(tzEls), ...(carEl.value ? [carEl.value] : []), ...(carBody.value ? [carBody.value] : [])];
 watch(rate, (k) => {
-  for (const node of Object.values(tzEls)) for (const a of node.getAnimations?.() ?? []) a.playbackRate = k;
+  for (const node of animated()) for (const a of node.getAnimations?.() ?? []) a.playbackRate = k;
 });
 watch(() => !!props.paused, (p) => {
-  for (const node of Object.values(tzEls)) {
+  for (const node of animated()) {
     for (const a of node.getAnimations?.() ?? []) {
       if (p) a.pause();
       else a.play();
@@ -507,6 +638,140 @@ function dropFrames(from: At, to: At, unit: number, ms: number): Keyframe[] {
   ];
 }
 
+/**
+ * Riding drive [k]: [m] stands where it was until the car gets to its square, then rides along on the back seat,
+ * rising as those the car reaches later go in under it, to where the car stops; there those picked up last step up
+ * while the car picks them up (DrivePhases take), and all spring back. Seen late, it is taken up where it is.
+ */
+function ride(m: string, k: number, from: At, to: At, node: HTMLElement, unit: number, r: Race, h: Playhead) {
+  const d = r.drives?.[k];
+  const picks = pickupsOf(r, props.track)[k];
+  const p0 = picks?.findIndex((x) => x.stack.includes(m)) ?? -1;
+  if (!d || !picks || p0 < 0) return;
+  const p = driveTimes(r, k);
+  const late = h.drive?.k === k ? Math.max(0, h.drive.ms - p.glideAt) : Infinity;
+  const ms = p.glideLen + p.takeLen;
+  if (ms <= 0 || late >= ms) return;
+  const whole = ms + SETTLE_MS;
+  const land = p.glideLen / whole;
+  const up = ms / whole;
+  const n = Math.max(1, d.from - d.to);
+  const share = (sq: number) => land * glideWhen((d.from - sq) / n);
+  const size = d.take?.length ?? 1;
+  const got = picks[p0]!.sq;
+  let level = picks[p0]!.stack.indexOf(m);
+  const frames: Keyframe[] = [keyAt(0, from, unit, LEVEL)];
+  if (got > d.to) {
+    if (share(got) > 0) frames.push(keyAt(share(got), from, unit, LEVEL));
+    for (let sq = got - 1; sq > d.to; sq--) {
+      level += picks.find((x) => x.sq === sq)?.stack.length ?? 0;
+      frames.push(keyAt(share(sq), footOf(sq, level, size, true), unit, LEVEL));
+    }
+    frames.push(keyAt(land, footOf(d.to, level, size, true), unit, LEVEL), keyAt((land + up) / 2, to, unit, LEVEL));
+  } else {
+    // Where the car stops: up onto the seat in a little hop as it is picked up.
+    frames.push(keyAt(land, from, unit, SQUAT), keyAt((land + up) / 2, to, unit, STRETCH, ARC * 0.6));
+  }
+  frames.push(keyAt(up, to, unit, SQUAT), ...settle(up, to, unit));
+  const run = node.animate(frames, { duration: whole, fill: "backwards" });
+  run.playbackRate = rate.value;
+  if (late >= CATCH_UP_MS * rate.value) run.currentTime = late;
+  if (props.paused) run.pause();
+}
+
+/** The car where it was before its latest change, to move from. */
+let carWas: number | null = null;
+watch(() => props.race?.id, () => (carWas = null));
+/** A puff of exhaust where the car left a square for the finish. */
+const puff = ref<{ key: string; x: number; y: number } | null>(null);
+const carMove = (b: { x: number; y: number }, unit: number, extra = "") => `translate(${b.x * unit}px, ${b.y * unit}px)${extra}`;
+
+/*
+ * The car's changes: it glides along the squares of a drive (glideAt: a smooth start and stop), turning round where
+ * the way turns along a row; it fades out with a puff and in on the finish when it goes back there; it drives in onto
+ * the finish when it comes out. The body turns (scaleX) on frames of its own, so the words over the car never mirror.
+ */
+watch([() => boardState.value.carKey, () => props.seek, () => props.scrubbing], ([key, seek, scrubbing], [before, previousSeek, wasScrubbing]) => {
+  const sq = carSq.value;
+  if (seek !== previousSeek || scrubbing !== wasScrubbing) {
+    for (const node of [carEl.value, carBody.value]) for (const a of node?.getAnimations?.() ?? []) a.cancel();
+    carWas = sq;
+    puff.value = null;
+    return;
+  }
+  const r = props.race;
+  const h = head.value;
+  const el = ringEl.value;
+  const node = carEl.value;
+  const body = carBody.value;
+  if (!scrubbing && key && key !== before && sq !== null && ready.value && !reducedMotion.value && r && h && el && node && body
+    && typeof node.animate === "function") {
+    const unit = el.getBoundingClientRect().width / board.value.cols;
+    const k = Number(key.slice(1));
+    let frames: Keyframe[] = [];
+    let turns: Keyframe[] = [];
+    let ms = 0;
+    let late = Infinity;
+    if (key[0] === "g") {
+      const d = r.drives?.[k];
+      const p = driveTimes(r, k);
+      if (d) {
+        const n = Math.max(1, d.from - d.to);
+        let face = faceAt(d.from);
+        for (let j = 0; j <= n; j++) {
+          const at = d.from - j;
+          if (j) {
+            const dx = board.value.cell(at).col - board.value.cell(at + 1).col;
+            if (dx) face = dx > 0 ? 1 : -1;
+          }
+          const offset = glideWhen(j / n);
+          frames.push({ offset, transform: carMove(carBox(at, face), unit) });
+          turns.push({ offset, transform: `scaleX(${face})` });
+        }
+        ms = p.glideLen;
+        late = h.drive?.k === k ? h.drive.ms - p.glideAt : Infinity;
+      }
+    } else if ((key[0] === "b" || key[0] === "h") && carWas !== null) {
+      const p = driveTimes(r, k);
+      const a = carBox(carWas, faceAt(carWas));
+      const b = carBox(sq, faceAt(sq));
+      frames = [
+        { offset: 0, transform: carMove(a, unit), opacity: 1 },
+        { offset: 0.4, transform: carMove(a, unit, " scale(0.82)"), opacity: 0 },
+        { offset: 0.6, transform: carMove(b, unit, " scale(0.82)"), opacity: 0 },
+        { offset: 1, transform: carMove(b, unit), opacity: 1 },
+      ];
+      turns = [
+        { offset: 0, transform: `scaleX(${faceAt(carWas)})` }, { offset: 0.5, transform: `scaleX(${faceAt(carWas)})` },
+        { offset: 0.5, transform: `scaleX(${faceAt(sq)})` }, { offset: 1, transform: `scaleX(${faceAt(sq)})` },
+      ];
+      ms = key[0] === "b" ? p.backLen : p.homeLen;
+      late = h.drive?.k === k ? h.drive.ms - (key[0] === "b" ? p.backAt : p.homeAt) : Infinity;
+      if (late < ms) puff.value = { key, x: a.x + CAR_W / 2, y: a.y + CAR_H * 0.7 };
+    } else if (key === "e" && r.enterMs) {
+      const face = faceAt(sq);
+      const b = carBox(sq, face);
+      frames = [
+        { offset: 0, transform: carMove({ x: b.x - face * 0.9, y: b.y }, unit), opacity: 0 },
+        { offset: 0.35, opacity: 1 },
+        { offset: 1, transform: carMove(b, unit), opacity: 1, easing: "ease-out" },
+      ];
+      ms = r.enterMs * (1 - ENTER_CUT);
+      late = h.enter !== undefined ? h.enter - r.enterMs * ENTER_CUT : Infinity;
+    }
+    if (frames.length && ms > 0 && late < ms) {
+      for (const [target, keys] of [[node, frames], [body, turns]] as const) {
+        if (!keys.length) continue;
+        const run = target.animate(keys, { duration: ms, fill: "backwards" });
+        run.playbackRate = rate.value;
+        if (late >= CATCH_UP_MS * rate.value) run.currentTime = late;
+        if (props.paused) run.pause();
+      }
+    }
+  }
+  carWas = sq;
+}, { flush: "post" });
+
 watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], [before, previousSeek, wasScrubbing]) => {
   if (seek !== previousSeek || scrubbing !== wasScrubbing) {
     for (const node of Object.values(tzEls)) for (const a of node.getAnimations?.() ?? []) a.cancel();
@@ -526,6 +791,11 @@ watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], 
       const node = tzEls[m];
       if (!key || key === before[m] || !from || !node || typeof node.animate !== "function") continue;
       unit ||= el.getBoundingClientRect().width / board.value.cols;
+      if (key.startsWith("c")) {
+        // The alpaca's: riding drive k along; left standing by its going back (the CSS's transition steps them down).
+        if (key.startsWith("cd")) ride(m, Number(key.slice(2)), from, ats.value[m], node, unit, r, h);
+        continue;
+      }
       const i = Number.parseInt(key, 10);
       const s = moves.value[i];
       if (!s) continue;
@@ -636,6 +906,28 @@ watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], 
           <polyline class="trail-dash" :points="trail.points" />
           <circle class="trail-end" :cx="trail.end.x" :cy="trail.end.y" r="0.24" />
         </svg>
+        <template v-if="race?.setup.alpaca">
+          <svg v-if="midline" class="midline" :viewBox="`0 0 ${board.cols} ${board.rows}`" aria-hidden="true">
+            <line class="mid-bed" :x1="midline.x1" :y1="midline.y1" :x2="midline.x2" :y2="midline.y2" />
+            <line class="mid-dash" :x1="midline.x1" :y1="midline.y1" :x2="midline.x2" :y2="midline.y2" />
+          </svg>
+          <div v-if="carSq !== null" ref="carEl" class="car" :class="{ driving }" :style="carStyle" title="羊驼">
+            <div ref="carBody" class="car-body">
+              <i class="lines" aria-hidden="true"><i></i><i></i><i></i></i>
+              <img :src="carArt" alt="" draggable="false" />
+              <svg class="spokes" viewBox="0 0 400 274" aria-hidden="true">
+                <g v-for="(hub, k) in HUBS" :key="k" class="hub" :style="{ transformOrigin: `${hub[0]}px ${hub[1]}px` }">
+                  <line v-for="(sp, j) in SPOKES" :key="j" :x1="hub[0]" :y1="hub[1]" :x2="hub[0] + sp.x" :y2="hub[1] + sp.y" />
+                </g>
+              </svg>
+            </div>
+            <span v-if="ready && bump" :key="`${bump}-${seek}`" class="say bump" aria-hidden="true">创！</span>
+          </div>
+          <i
+            v-if="ready && puff" :key="`${puff.key}-${seek}`" class="puff" aria-hidden="true"
+            :style="{ '--px': puff.x, '--py': puff.y }"
+          ><i></i><i></i><i></i></i>
+        </template>
         <div
           v-for="m in members" :key="m" :ref="(el) => { if (el) tzEls[m] = el as HTMLElement }" class="tz" :data-m="m"
           :class="{
@@ -654,6 +946,10 @@ watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], 
         <SkillCutIn
           v-if="ready && cut" :key="cut.key" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
           :color="cut.color" :ms="cut.ms" :at="cut.at" :paused="paused || scrubbing"
+        />
+        <SkillCutIn
+          v-else-if="ready && enterCut" :key="enterCut.key" :member="ALPACA" :art="carArt" who="羊驼" name="出动"
+          text="往起点开，碰到的团子一起带走" :ms="enterCut.ms" :at="enterCut.at" :paused="paused || scrubbing"
         />
       </div>
     </div>
@@ -1268,6 +1564,200 @@ watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], 
 }
 
 /* ---- a tuanzi stands on its square, --rise units up its stack (the script's stepOf) */
+/* The middle of the track on a race with the alpaca: a coral bar across the way with white dashes, over the squares'
+   edges, under the portals' arcs. */
+.midline {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.midline line {
+  stroke-linecap: round;
+}
+.mid-bed {
+  stroke: var(--c-600);
+  stroke-width: 0.1;
+}
+.mid-dash {
+  stroke: #fff;
+  stroke-width: 0.044;
+  stroke-dasharray: 0.07 0.08;
+}
+
+/*
+ * The alpaca's car: CAR_W units wide (see the script), its top left at --cx, --cy units, the body turned by --face (the
+ * picture faces left); the words over it do not turn. It never hops or squashes; a drive glides it (Web Animations).
+ * Its spokes (the picture's hubs are plain discs) turn and lines stream off its back while it drives.
+ */
+.car {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--u) * 1.5);
+  height: calc(var(--u) * 1.5 * 274 / 400);
+  transform: translate(calc(var(--cx) * var(--u)), calc(var(--cy) * var(--u)));
+  transition: transform 320ms var(--ease-out);
+}
+.car-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(var(--face));
+}
+.car-body::before {
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -4%;
+  height: 13%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--c-900-rgb), 0.34) 30%, transparent);
+}
+.car-body img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  filter: drop-shadow(0 calc(var(--u) * 0.02) calc(var(--u) * 0.03) rgba(var(--c-900-rgb), 0.28));
+}
+.spokes {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+/* In the picture's own outline colour. */
+.spokes line {
+  stroke: #76303a;
+  stroke-width: 4.4;
+  stroke-linecap: round;
+}
+/* The picture drives to its left, so its wheels turn backwards; turned round, forwards. */
+.car.driving .hub {
+  animation: wheel 380ms linear infinite;
+}
+@keyframes wheel {
+  to { rotate: -360deg; }
+}
+.lines {
+  position: absolute;
+  left: 93%;
+  top: 44%;
+  width: 36%;
+  height: 32%;
+  opacity: 0;
+  transition: opacity 160ms;
+  pointer-events: none;
+}
+.car.driving .lines {
+  opacity: 1;
+}
+.lines i {
+  position: absolute;
+  left: 0;
+  width: 72%;
+  height: max(2px, calc(var(--u) * 0.045));
+  border-radius: 99px;
+  background: rgba(var(--c-900-rgb), 0.3);
+}
+/* Streaming only while the car drives; longhands, so the delays below stand. */
+.car.driving .lines i {
+  animation-name: streak;
+  animation-duration: 340ms;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.lines i:nth-child(1) {
+  top: 0;
+  animation-delay: -110ms;
+}
+.lines i:nth-child(2) {
+  top: 42%;
+  width: 92%;
+}
+.lines i:nth-child(3) {
+  top: 84%;
+  animation-delay: -230ms;
+}
+@keyframes streak {
+  from { translate: -10% 0; opacity: 1; }
+  to { translate: 55% 0; opacity: 0; }
+}
+/* 创！ over the car when it hits someone: a coral word, as a skill's. */
+.say.bump {
+  left: 30%;
+  bottom: 84%;
+  z-index: 4;
+  background: var(--c-500);
+  box-shadow: 0 0 0 2px var(--surface), 0 6px 12px -6px rgba(var(--c-900-rgb), 0.4);
+}
+.say.bump::after {
+  background: var(--c-500);
+  box-shadow: 2px 2px 0 0 var(--surface);
+}
+/* A puff of exhaust where the car left a square for the finish. */
+.puff {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 300;
+  width: calc(var(--u) * 0.9);
+  height: calc(var(--u) * 0.9);
+  transform: translate(calc(var(--px) * var(--u) - 50%), calc(var(--py) * var(--u) - 50%));
+  pointer-events: none;
+}
+.puff i {
+  position: absolute;
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 max(1px, calc(var(--u) * 0.02)) rgba(var(--c-900-rgb), 0.14);
+  animation: puff 720ms var(--ease-out) both;
+}
+.puff i:nth-child(1) {
+  left: 0;
+  top: 30%;
+}
+.puff i:nth-child(2) {
+  left: 28%;
+  top: 2%;
+  animation-delay: 60ms;
+}
+.puff i:nth-child(3) {
+  left: 52%;
+  top: 34%;
+  animation-delay: 120ms;
+}
+@keyframes puff {
+  0% { opacity: 0; scale: 0.3; }
+  30% { opacity: 0.95; scale: 1; }
+  100% { opacity: 0; scale: 1.35; translate: 0 -30%; }
+}
+.board.paused .hub,
+.board.paused .lines i,
+.board.paused .puff i {
+  animation-play-state: paused;
+}
+.calm .car {
+  transition: none;
+}
+.calm .hub,
+.calm .lines,
+.calm .puff {
+  display: none;
+}
+
 .tz {
   position: absolute;
   z-index: 10;

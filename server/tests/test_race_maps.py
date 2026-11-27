@@ -15,7 +15,8 @@ from test_race import FIRST, KEEP, Script
 from test_race_park import T0, TOKEN, seeds
 
 M = Manifest.load()
-CFG = M.park["race"]
+# The order drawn every round and the alpaca have tests of their own (tests/test_race_alpaca.py).
+CFG = {k: v for k, v in M.park["race"].items() if k not in ("shuffle", "alpaca")}
 MEMBERS = tuple(c["id"] for c in M.data["characters"])
 J, N, B, X, S = MEMBERS
 DICE = (1, 2, 3)
@@ -247,6 +248,8 @@ def test_a_seed_still_decides_the_whole_race():
 def make():
     m = Manifest.load()
     m.park["race"]["sims"] = 300
+    for key in ("shuffle", "alpaca"):
+        m.park["race"].pop(key, None)
     clock = Clock(T0 + 1)
     g = Game(Store(":memory:"), m, now=clock)
     races = Races(lambda: g, Park(lambda: g), dealer=random.Random(3), seeds=seeds())

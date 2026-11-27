@@ -38,6 +38,19 @@ does, by id (`chance` in percent and `by` in squares come from the manifest):
 - shield: a trip square, and a portal that would take it back, do nothing to its group.
 - climb: when a group lands on its square and it is not on top, it goes to the top.
 
+With `shuffle` the order of play is rolled for again at the start of every round from the second on, as the opening
+rolls for it (opening()), by those taking turns, the alpaca among them; the opening still decides the first round.
+With `alpaca` ({dice}) an alpaca drives the other way: once
+a dumpling stands past the middle of the track (`at`, track // 2) it waits on the finish, and from the next round on
+it takes a turn in the order. On its turn it goes back to the finish first when no dumpling is ahead of it (on the
+squares from 1 up to its own; the start line is out of its reach), then rolls its die and drives that many squares
+towards the start, to square 1 at most. Every dumpling on its own square and on the squares it passes rides along to
+the square it stops on, in the order they were in: those further along on top, a square's stack as it was. With
+nobody ahead of it then, it goes back to the finish and leaves them there. Riders are not held: on its turn a rider
+moves on from the alpaca's square as any dumpling in a stack does. Passing the alpaca does nothing, and a group that
+ends its move on the alpaca's square rides along at its next drive. Squares and skills do nothing to the alpaca or to
+what it carries. Both are copied into the setup (deal_rules()), so that a race dealt before them runs as it did.
+
 The real race draws from StreamRng (SHA-256 of the seed), which anyone can recompute from the published seed.
 """
 from __future__ import annotations
@@ -67,6 +80,8 @@ MIN_TRACK = 14
 MAX_BOARD = (16, 10)
 # A run of a route: one square at a time to the right, the left, up or down the board.
 RUNS = {"R": (1, 0), "L": (-1, 0), "U": (0, -1), "D": (0, 1)}
+# The alpaca's name in an order of play and among the last round's dice.
+ALPACA = "alpaca"
 
 
 # ---------------------------------------------------------------- randomness
@@ -123,6 +138,9 @@ class Rules:
     maps: tuple[dict[str, Any], ...] = ()
     # The skills a race deals instead of forms (read_skill()).
     skills: tuple[dict[str, Any], ...] = ()
+    # Whether a race draws its order of play again every round, and the faces of the alpaca's die (none: no alpaca).
+    shuffle: bool = False
+    alpaca: tuple[int, ...] = ()
 
     @classmethod
     def of(cls, cfg: dict[str, Any], members: list[str] | tuple[str, ...]) -> "Rules":
@@ -133,7 +151,8 @@ class Rules:
                    square_range=(int(sq["range"][0]), int(sq["range"][1])), boost=int(sq["boost"]),
                    trip=int(sq["trip"]), portal_gap=(int(gap[0]), int(gap[1])), forms=forms,
                    maps=tuple(read_map(m) for m in cfg.get("maps") or ()),
-                   skills=tuple(read_skill(k) for k in cfg.get("skills") or ()))
+                   skills=tuple(read_skill(k) for k in cfg.get("skills") or ()),
+                   shuffle=bool(cfg.get("shuffle")), alpaca=read_alpaca(cfg.get("alpaca")))
 
 
 def read_route(mid: str, track: int, raw: dict[str, Any]) -> list[list[int]]:
@@ -231,6 +250,29 @@ def read_skill(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def read_alpaca(raw: dict[str, Any] | None) -> tuple[int, ...]:
+    """The faces of the alpaca's die, {dice: [1, ..., 6]}; () without an alpaca (None or false). Raises ValueError on
+    one without a die, an empty die or a face below 1."""
+    if raw is None or raw is False:
+        return ()
+    faces = tuple(int(x) for x in raw.get("dice") or ())
+    if not faces or min(faces) < 1:
+        raise ValueError("race alpaca: needs a die of faces 1 or more")
+    return faces
+
+
+def deal_rules(rules: Rules, setup: dict[str, Any]) -> dict[str, Any]:
+    """The rules a race dealt [setup] is run by beyond its squares and dice, to copy into the setup: {"shuffle": True}
+    when the order is drawn every round, {"alpaca": {at, dice}} with the alpaca, `at` the middle of the race's track
+    (track // 2). Draws nothing."""
+    out: dict[str, Any] = {}
+    if rules.shuffle:
+        out["shuffle"] = True
+    if rules.alpaca:
+        out["alpaca"] = {"at": track_of(rules, setup) // 2, "dice": list(rules.alpaca)}
+    return out
+
+
 def deal(rules: Rules, rng: Any) -> dict[str, Any]:
     """A race's setup. With maps: {"map": one of them at random}, copied in so that the setup alone replays the
     race. Otherwise five different squares in the range: the portal's two ends [a, b] (a < b, b − a within
@@ -323,10 +365,15 @@ def opening(n: int, below: Any) -> tuple[list[int], list[list[tuple[int, int]]]]
     rolling = list(range(n))
     while rolling:
         got = [(d, below(ORDER_FACES) + 1) for d in rolling]
+        # Only those who just rolled can share a key: a member who stopped rolling has a shorter key than theirs.
+        now: dict[int, tuple[int, ...]] = {}
+        tally: dict[tuple[int, ...], int] = {}
         for d, face in got:
             keys[d].append(face)
+            key = now[d] = tuple(keys[d])
+            tally[key] = tally.get(key, 0) + 1
         rounds.append(got)
-        rolling = [d for d in range(n) if any(e != d and keys[e] == keys[d] for e in range(n))]
+        rolling = [d for d in rolling if tally[now[d]] > 1]
     return sorted(range(n), key=lambda d: keys[d], reverse=True), rounds
 
 
@@ -339,16 +386,26 @@ class UnfinishedRace(ValueError):
     """No member reached the finish within MAX_MOVES."""
 
 
-def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
+def run(rules: Rules, setup: dict[str, Any], rng: Any, *, keep_dice: bool = True) -> dict[str, Any]:
     """Runs one race. Returns {ranking, start, order, rolls, moves, rest}: ranking first to last; start the lanes on
-    the start line, top lane first; order who moves first to last, every round; rolls the order's rounds of dice, each
-    [{m, face}] in the order drawn; each move as described in PROTOCOL.md (团子赛跑); rest the dice of those after the
-    winning move in the last round, [{m, face}] in the order, which never move.
+    the start line, top lane first; order who moves first to last, the opening's (every round's without `shuffle`);
+    rolls the order's rounds of dice, each [{m, face}] in the order drawn; each move as described in PROTOCOL.md
+    (团子赛跑); rest the dice of those after the winning move in the last round, [{m, face}] in the order, which never
+    move. Every member moves once a round, so the moves come five a round.
+
+    A setup with `shuffle` or `alpaca` (deal_rules()) adds `orders`, each round's order (ALPACA for the alpaca); with
+    `shuffle` `orderRolls`, each round's dice for its order as `rolls` are the opening's ([] for the first round, which
+    the opening decides); with the alpaca `drives`, its turns: {r, at, face, from, to, back?, take?, home?}: in round
+    r, before move `at`; `back` the square it left for the finish before driving, `take` the square it stopped on
+    bottom to top when it carried anyone, `home` when it went back to the finish after; and `enter`, the move after
+    which it came out (none when the race ended first).
 
     Each member rolls its own die, setup["dice"][member], or rules.dice on setups from before forms. Draw order: the
-    lanes (one shuffle), the order (opening()), then for each move its die (below(len(its faces))), a burst's chance
-    (below(100)), a solo's chance when it has others on its head (below(100)), the second die of an `again` square;
-    then rest's dice as the moves' dice."""
+    lanes (one shuffle), the order (opening()), then round by round: with `shuffle`, from the second round on, the
+    round's order (opening() by those taking turns, the members in their order and the alpaca after them); for each
+    move its die (below(len(its faces))), a burst's chance (below(100)), a solo's chance when it has others on its head
+    (below(100)), the second die of an `again` square; for each of the alpaca's turns its die; then rest's dice as the
+    turns' dice. Without [keep_dice] (simulated races, chances()) `orderRolls` is left out; the draws are the same."""
     members = rules.members
     below = rng.below
     own = setup.get("dice") or {}
@@ -375,8 +432,73 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
     order, rounds = opening(n, below)
     rolls = [[{"m": members[d], "face": face} for d, face in got] for got in rounds]
     moves: list[dict[str, Any]] = []
+    # The rules beyond the squares (deal_rules()); a setup without them runs, and draws, as before them.
+    shuffle = bool(setup.get("shuffle"))
+    alpaca = setup.get("alpaca")
+    car_dice = tuple(alpaca["dice"]) if alpaca else ()
+    middle = int(alpaca["at"]) if alpaca else track
+    # The alpaca: its index in an order, its square once it is out, and whether it takes turns yet.
+    CAR = n
+    orders: list[list[int]] = []
+    order_rolls: list[list[list[dict[str, Any]]]] = []
+    drives: list[dict[str, Any]] = []
+    car: int | None = None
+    enter: int | None = None
+    turns = False
+
+    def ahead(square: int) -> bool:
+        # A dumpling the alpaca can still reach: past the start line and short of [square].
+        return any(0 < pos[x] < square for x in idx)
+
+    def drive(r: int) -> None:
+        nonlocal car
+        face = car_dice[below(len(car_dice))]
+        turn: dict[str, Any] = {"r": r, "at": len(moves), "face": face}
+        if car != track and not ahead(car):
+            turn["back"] = car
+            car = track
+        frm = car
+        to = max(1, frm - face)
+        took: list[int] = []
+        for sq in range(to, frm + 1):
+            # Upwards, so those further along end on top, each square's stack as it was.
+            if sq in stack:
+                took.extend(stack.pop(sq))
+        if took:
+            stack[to] = took
+            for g in took:
+                pos[g] = to
+        turn["from"] = frm
+        turn["to"] = to
+        if took:
+            turn["take"] = [members[g] for g in took]
+        car = to
+        if not ahead(car):
+            turn["home"] = True
+            car = track
+        drives.append(turn)
+
+    played = 0
     while True:
-        for at, d in enumerate(order):
+        this = list(order)
+        if turns:
+            this.append(CAR)
+        if shuffle and played:
+            # Those taking turns roll for it as in the opening: the members in their order, the alpaca after them.
+            them = sorted(this)
+            placed, thrown = opening(len(them), below)
+            this = [them[x] for x in placed]
+            if keep_dice:
+                names = [ALPACA if e == CAR else members[e] for e in them]
+                order_rolls.append([[{"m": names[x], "face": face} for x, face in got] for got in thrown])
+        elif shuffle and keep_dice:
+            order_rolls.append([])
+        if shuffle or alpaca:
+            orders.append(this)
+        for at, d in enumerate(this):
+            if d == CAR:
+                drive(played)
+                continue
             if len(moves) == MAX_MOVES:
                 map_id = (setup.get("map") or {}).get("id", "lap")
                 raise UnfinishedRace(f"race on {map_id} did not finish in {MAX_MOVES} moves")
@@ -478,9 +600,25 @@ def run(rules: Rules, setup: dict[str, Any], rng: Any) -> dict[str, Any]:
                 ranked = sorted(idx, key=lambda x: (pos[x], height(x)), reverse=True)
                 # The rest of the last round still roll, after every draw the race used, only to be shown: the round's
                 # dice are thrown together, so its last die gives nothing away.
-                rest = [{"m": members[e], "face": dice[e][below(len(dice[e]))]} for e in order[at + 1:]]
-                return {"ranking": [members[x] for x in ranked], "start": [members[x] for x in start],
-                        "order": [members[x] for x in order], "rolls": rolls, "moves": moves, "rest": rest}
+                rest = [{"m": ALPACA, "face": car_dice[below(len(car_dice))]} if e == CAR
+                        else {"m": members[e], "face": dice[e][below(len(dice[e]))]} for e in this[at + 1:]]
+                out = {"ranking": [members[x] for x in ranked], "start": [members[x] for x in start],
+                       "order": [members[x] for x in order], "rolls": rolls, "moves": moves, "rest": rest}
+                if shuffle or alpaca:
+                    out["orders"] = [[ALPACA if e == CAR else members[e] for e in o] for o in orders]
+                if shuffle and keep_dice:
+                    out["orderRolls"] = order_rolls
+                if alpaca:
+                    out["drives"] = drives
+                    if enter is not None:
+                        out["enter"] = enter
+                return out
+            if alpaca and car is None and max(pos) > middle:
+                car = track
+                enter = len(moves) - 1
+        if car is not None:
+            turns = True
+        played += 1
 
 
 def run_seed(rules: Rules, setup: dict[str, Any], seed: bytes) -> dict[str, Any]:
@@ -501,7 +639,7 @@ def chances(rules: Rules, setup: dict[str, Any], sims: int, rng: Any) -> dict[st
     members = rules.members
     count = {kind: dict.fromkeys(members, 0) for kind in PLACES}
     for _ in range(sims):
-        ranking = run(rules, setup, rng)["ranking"]
+        ranking = run(rules, setup, rng, keep_dice=False)["ranking"]
         count["win"][ranking[0]] += 1
         count["top2"][ranking[0]] += 1
         count["top2"][ranking[1]] += 1

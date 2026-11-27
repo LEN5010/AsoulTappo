@@ -314,188 +314,276 @@
         {
           "id": "ring",
           "name": "环形跑道",
-          "track": 32,
+          "track": 62,
           "path": {
             "from": [
               0,
               0
             ],
-            "runs": "R11 D6 L11 U4"
+            "runs": "R3 D2 R3 U2 R3 D2 R3 U2 R3 D9 L3 U2 L3 D2 L3 U2 L3 D2 L3 U7"
           },
           "squares": [
             {
-              "at": 4,
+              "at": 6,
               "kind": "boost",
               "by": 3
             },
             {
               "at": 8,
               "kind": "portal",
-              "to": 14
+              "to": 15
             },
             {
               "at": 11,
-              "kind": "again"
-            },
-            {
-              "at": 17,
-              "kind": "hook"
-            },
-            {
-              "at": 20,
-              "kind": "trip",
-              "by": 2
-            },
-            {
-              "at": 23,
-              "kind": "flip"
-            },
-            {
-              "at": 26,
-              "kind": "boost",
-              "by": 2
-            },
-            {
-              "at": 29,
-              "kind": "trip",
-              "by": 4
-            }
-          ]
-        },
-        {
-          "id": "ladder",
-          "name": "蛇梯坡道",
-          "track": 50,
-          "path": {
-            "from": [
-              0,
-              6
-            ],
-            "runs": "R11 U2 L11 U2 R11 U2 L11"
-          },
-          "squares": [
-            {
-              "at": 3,
               "kind": "boost",
               "by": 3
             },
             {
-              "at": 7,
-              "kind": "portal",
-              "to": 19
+              "at": 13,
+              "kind": "trip",
+              "by": 3
             },
             {
-              "at": 10,
-              "kind": "again"
+              "at": 19,
+              "kind": "flip"
             },
             {
-              "at": 15,
-              "kind": "hook"
-            },
-            {
-              "at": 22,
+              "at": 23,
               "kind": "trip",
               "by": 2
             },
             {
-              "at": 26,
-              "kind": "portal",
-              "to": 36
-            },
-            {
-              "at": 29,
-              "kind": "flip"
-            },
-            {
-              "at": 33,
-              "kind": "boost",
-              "by": 4
-            },
-            {
-              "at": 39,
-              "kind": "again"
-            },
-            {
-              "at": 42,
+              "at": 28,
               "kind": "hook"
             },
             {
-              "at": 45,
+              "at": 30,
+              "kind": "flip"
+            },
+            {
+              "at": 35,
               "kind": "trip",
-              "by": 4
+              "by": 2
+            },
+            {
+              "at": 38,
+              "kind": "hook"
+            },
+            {
+              "at": 46,
+              "kind": "boost",
+              "by": 3
             },
             {
               "at": 48,
+              "kind": "again"
+            },
+            {
+              "at": 50,
+              "kind": "portal",
+              "to": 57
+            },
+            {
+              "at": 55,
+              "kind": "again"
+            },
+            {
+              "at": 59,
               "kind": "trip",
               "by": 5
             }
           ]
         },
         {
-          "id": "spiral",
-          "name": "回旋塔",
-          "track": 50,
+          "id": "ladder",
+          "name": "蛇梯坡道",
+          "track": 73,
           "path": {
             "from": [
               0,
-              0
+              8
             ],
-            "runs": "R11 D6 L11 U4 R9 D2 L7"
+            "runs": "R13 U2 L13 U2 R13 U2 L13 U2 R13"
           },
           "squares": [
             {
-              "at": 3,
+              "at": 5,
+              "kind": "flip"
+            },
+            {
+              "at": 8,
+              "kind": "portal",
+              "to": 21
+            },
+            {
+              "at": 10,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 12,
               "kind": "again"
             },
             {
-              "at": 6,
-              "kind": "portal",
-              "to": 13
-            },
-            {
-              "at": 9,
-              "kind": "boost",
-              "by": 3
-            },
-            {
-              "at": 16,
+              "at": 18,
               "kind": "hook"
             },
             {
-              "at": 20,
-              "kind": "trip",
-              "by": 3
-            },
-            {
-              "at": 24,
+              "at": 25,
               "kind": "portal",
               "to": 34
             },
             {
               "at": 27,
-              "kind": "flip"
+              "kind": "trip",
+              "by": 3
             },
             {
               "at": 31,
               "kind": "boost",
-              "by": 4
+              "by": 2
             },
             {
               "at": 37,
               "kind": "again"
             },
             {
-              "at": 41,
-              "kind": "trip",
-              "by": 3
-            },
-            {
-              "at": 44,
+              "at": 40,
               "kind": "boost",
               "by": 2
             },
             {
+              "at": 46,
+              "kind": "hook"
+            },
+            {
+              "at": 49,
+              "kind": "trip",
+              "by": 5
+            },
+            {
+              "at": 51,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 55,
+              "kind": "portal",
+              "to": 62
+            },
+            {
+              "at": 60,
+              "kind": "trip",
+              "by": 4
+            },
+            {
+              "at": 66,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 69,
+              "kind": "flip"
+            }
+          ]
+        },
+        {
+          "id": "spiral",
+          "name": "回旋塔",
+          "track": 78,
+          "path": {
+            "from": [
+              0,
+              0
+            ],
+            "runs": "R14 D8 L14 U6 R12 D4 L10 U2 R8"
+          },
+          "squares": [
+            {
+              "at": 3,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 12,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 15,
+              "kind": "trip",
+              "by": 4
+            },
+            {
+              "at": 17,
+              "kind": "hook"
+            },
+            {
+              "at": 24,
+              "kind": "trip",
+              "by": 2
+            },
+            {
+              "at": 29,
+              "kind": "flip"
+            },
+            {
+              "at": 32,
+              "kind": "portal",
+              "to": 38
+            },
+            {
+              "at": 34,
+              "kind": "hook"
+            },
+            {
+              "at": 36,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 43,
+              "kind": "again"
+            },
+            {
               "at": 47,
+              "kind": "again"
+            },
+            {
+              "at": 51,
+              "kind": "trip",
+              "by": 2
+            },
+            {
+              "at": 53,
+              "kind": "portal",
+              "to": 60
+            },
+            {
+              "at": 55,
+              "kind": "again"
+            },
+            {
+              "at": 57,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 63,
+              "kind": "portal",
+              "to": 72
+            },
+            {
+              "at": 65,
+              "kind": "flip"
+            },
+            {
+              "at": 69,
+              "kind": "boost",
+              "by": 4
+            },
+            {
+              "at": 75,
               "kind": "trip",
               "by": 5
             }
@@ -504,64 +592,102 @@
         {
           "id": "coaster",
           "name": "过山车",
-          "track": 46,
+          "track": 78,
           "path": {
             "from": [
               0,
-              6
+              8
             ],
-            "runs": "U6 R2 D6 R2 U6 R2 D6 R2 U6 R2 D6"
+            "runs": "U8 R2 D8 R2 U8 R2 D8 R2 U8 R2 D8 R2 U8 R2 D8"
           },
           "squares": [
             {
               "at": 3,
-              "kind": "portal",
-              "to": 11
+              "kind": "trip",
+              "by": 2
             },
             {
-              "at": 7,
+              "at": 5,
+              "kind": "portal",
+              "to": 13
+            },
+            {
+              "at": 9,
               "kind": "again"
             },
             {
-              "at": 14,
-              "kind": "hook"
+              "at": 15,
+              "kind": "trip",
+              "by": 3
             },
             {
-              "at": 18,
+              "at": 19,
+              "kind": "trip",
+              "by": 5
+            },
+            {
+              "at": 22,
               "kind": "portal",
-              "to": 27
-            },
-            {
-              "at": 21,
-              "kind": "boost",
-              "by": 4
+              "to": 35
             },
             {
               "at": 24,
-              "kind": "trip",
-              "by": 4
+              "kind": "hook"
             },
             {
-              "at": 30,
-              "kind": "flip"
-            },
-            {
-              "at": 33,
+              "at": 28,
               "kind": "boost",
               "by": 3
             },
             {
-              "at": 37,
-              "kind": "again"
+              "at": 32,
+              "kind": "boost",
+              "by": 4
             },
             {
-              "at": 40,
-              "kind": "hook"
+              "at": 38,
+              "kind": "flip"
             },
             {
               "at": 43,
-              "kind": "trip",
+              "kind": "boost",
               "by": 4
+            },
+            {
+              "at": 46,
+              "kind": "boost",
+              "by": 2
+            },
+            {
+              "at": 51,
+              "kind": "flip"
+            },
+            {
+              "at": 56,
+              "kind": "again"
+            },
+            {
+              "at": 62,
+              "kind": "hook"
+            },
+            {
+              "at": 64,
+              "kind": "portal",
+              "to": 74
+            },
+            {
+              "at": 66,
+              "kind": "trip",
+              "by": 3
+            },
+            {
+              "at": 68,
+              "kind": "trip",
+              "by": 5
+            },
+            {
+              "at": 71,
+              "kind": "hook"
             }
           ]
         }
@@ -659,6 +785,17 @@
           ]
         }
       ],
+      "shuffle": true,
+      "alpaca": {
+        "dice": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
+      },
       "sims": 20000,
       "payout": 0.85,
       "minOdds": 1.1,

@@ -7,6 +7,10 @@
 // (RaceTrack) fills the stage; beside it the field in the order it stands, each with its skill, its die's faces, how
 // far along it is and my coins on it, and under those my bets. The strip under the board is the order of play, each
 // tuanzi under its die: the opening's dice, then each round's five thrown together, the one whose turn it is raised.
+// On a race with the order rolled for every round (setup.shuffle) each round from the second opens with dice for its
+// order thrown as the opening's, the alpaca rolling too once it takes turns; then the seats slide into the order, and
+// once the alpaca is out (setup.alpaca) it takes a seat of its own, its car over its die; the replay's bar marks where
+// it hit someone.
 // Between races the board shows the next race's map with the time to its start; at the finish the tuanzi fly from
 // their squares onto a podium over the board.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -18,13 +22,16 @@ import Icon from "../../ui/Icon.vue";
 import { EASE_OUT } from "../../ui/motion";
 import ParkCoin from "./ParkCoin.vue";
 import RaceDie, { type Toss } from "./RaceDie.vue";
+import carArt from "../../assets/park/alpaca-car.webp";
 import RaceTrack from "./RaceTrack.vue";
 import TuanziToken from "./TuanziToken.vue";
 import { COIN_SMALL } from "./coin";
 import {
-  chinaDay, createStackStepper, cutOf, DICE_TOSS, FORM_NAMES, hits, KIND_NAMES, leaders, momentOf, OPEN_ROLL_MS,
-  openingAt, playhead, playLength, rankOf, replayAt, replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES,
-  skillText, spots, staggered, stageOf, stepCursor, stepStart, trackOf, type Race, type ReplayClock,
+  ALPACA, chinaDay, createStackStepper, cutOf, DICE_TOSS, driveTimes, FORM_NAMES, hits, KIND_NAMES, leaders,
+  leadersBefore, momentOf, OPEN_ROLL_MS, openingAt, orderAt, orderDiceAt, pickupsOf, playhead, playLength, rankOf,
+  replayAt, replayTime, ROUND, roundAt, roundDice, roundsOf, SKILL_NAMES, skillText, spots, staggered, stageOf,
+  stepCursor, stepStart, timelineOf, trackOf, turnsOf, type Opening, type OrderRoll, type Playhead, type Race,
+  type ReplayClock, type Turn,
 } from "./race";
 import { isFinished, isPlaying, raceClock, useRaceFeed } from "./raceFeed";
 
@@ -47,7 +54,7 @@ const CUE_MS = 2600;
 const ORDER_FACES = [1, 2, 3, 4, 5, 6];
 const fmt = (n: number) => Math.abs(n).toLocaleString("en-US");
 const character = (m: string) => manifest.characters.find((c) => c.id === m);
-const nameOf = (m: string) => character(m)?.name ?? m;
+const nameOf = (m: string) => (m === ALPACA ? "羊驼" : character(m)?.name ?? m);
 const colorOf = (m: string) => character(m)?.color;
 const x = (n: number) => `×${n.toFixed(1)}`;
 
@@ -146,24 +153,19 @@ function togglePause() {
   paused.value = !paused.value;
   played.value = { ...p, clock: replayAt(p.race, at, Date.now(), paused.value ? 0 : playRate.value) };
 }
+/** Where ← and → go: each step's start and, on a race with the alpaca, each of its drives', in time order. */
+function seekPoints(r: Race): number[] {
+  const out = (r.moves ?? []).map((_, i) => stepStart(r, i));
+  for (const b of timelineOf(r)?.beats ?? []) if (b.kind === "drive") out.push(b.at);
+  return out.sort((a, b) => a - b);
+}
 function stepSeek(dir: -1 | 1) {
   const p = played.value;
-  const moves = p?.race.moves;
-  if (!p || !moves?.length) return;
+  if (!p || !p.race.moves?.length) return;
   const at = replayTime(p.race, p.clock, Date.now()) - p.race.startsAt * 1000;
-  if (dir > 0) {
-    const nextIdx = moves.findIndex((_, i) => stepStart(p.race, i) > at + 80);
-    seek(nextIdx >= 0 ? stepStart(p.race, nextIdx) : playLength(p.race));
-  } else {
-    let prevIdx = -1;
-    for (let i = moves.length - 1; i >= 0; i--) {
-      if (stepStart(p.race, i) < at - 280) {
-        prevIdx = i;
-        break;
-      }
-    }
-    seek(prevIdx >= 0 ? stepStart(p.race, prevIdx) : 0);
-  }
+  const points = seekPoints(p.race);
+  if (dir > 0) seek(points.find((x) => x > at + 80) ?? playLength(p.race));
+  else seek([...points].reverse().find((x) => x < at - 280) ?? 0);
 }
 const canReplayStage = computed(() => finished.value && !!stage.value?.moves?.length);
 function replayStage() {
@@ -177,20 +179,27 @@ const progress = computed(() => {
   const p = played.value;
   return p ? Math.min(1, (stageNow.value - p.race.startsAt * 1000) / Math.max(1, playLength(p.race))) : 0;
 });
-/** Key moments along the replay timeline (skills, portals, flips and lead changes) for quick visual scrubbing. */
+/**
+ * Key moments along the replay timeline (skills, portals, flips, lead changes and the alpaca hitting someone) for
+ * quick visual scrubbing.
+ */
 const replayMarks = computed(() => {
   const r = played.value?.race;
   if (!r?.start || !r.moves?.length) return [];
   const total = playLength(r);
   if (total <= 0) return [];
-  const lead = leaders(r.start, r.moves);
-  const out: { at: number; pct: number; label: string; kind: "skill" | "lead" | "special" }[] = [];
+  const tl = timelineOf(r);
+  const run = tl ? { race: r, track: trackOf(r.setup, CFG.value?.track ?? 24) } : undefined;
+  const lead = leaders(r.start, r.moves, run);
+  const before = run ? leadersBefore(r.start, r.moves, run) : null;
+  const out: { at: number; pct: number; label: string; kind: "skill" | "lead" | "special" | "car" }[] = [];
+  const pctOf = (at: number) => Math.min(97, Math.max(3, (at / total) * 100));
   r.moves.forEach((s, i) => {
     const at = stepStart(r, i);
-    const pct = Math.min(97, Math.max(3, (at / total) * 100));
+    const pct = pctOf(at);
     const rNo = Math.floor(i / ROUND) + 1;
     const cut = cutOf(r, i);
-    const m = momentOf(s, i ? lead[i - 1] : r.start![0], lead[i]);
+    const m = momentOf(s, before ? before[i]! : i ? lead[i - 1] : r.start![0], lead[i]);
     if (cut) {
       const sk = r.setup.skills?.[cut.m];
       out.push({ at, pct, kind: "skill", label: `第 ${rNo} 轮 · ${nameOf(cut.m)} ${sk ? SKILL_NAMES[sk.id] ?? "" : ""}`.trim() });
@@ -200,6 +209,14 @@ const replayMarks = computed(() => {
       out.push({ at, pct, kind: "lead", label: `第 ${rNo} 轮 · ${nameOf(m.m)} 领先` });
     }
   });
+  // The alpaca's drives that reached someone not yet riding it, at the start of their turn.
+  const picks = run ? pickupsOf(r, run.track) : [];
+  for (const b of tl?.beats ?? []) {
+    const d = b.kind === "drive" ? r.drives?.[b.i] : undefined;
+    const hit = d ? picks[b.i]?.filter((x) => x.sq < d.from).flatMap((x) => x.stack) ?? [] : [];
+    if (d && hit.length) out.push({ at: b.at, pct: pctOf(b.at), kind: "car", label: `第 ${d.r + 1} 轮 · 羊驼创到 ${hit.map(nameOf).join("、")}` });
+  }
+  out.sort((a, b) => a.at - b.at);
   // Keep markers spaced enough to read cleanly on the bar.
   return out.filter((mk, idx, arr) => idx === 0 || mk.pct - arr[idx - 1]!.pct >= 4.5);
 });
@@ -274,7 +291,9 @@ const stacks = computed(() => {
   const r = stage.value;
   const at = cursor.value;
   if (!r?.start || !r.moves || !at) return null;
-  return stepStacks(r.start, r.moves, at.completed, at.partial);
+  // On a race with the alpaca its drives so far play in between the steps.
+  const run = timelineOf(r) ? { race: r, driven: at.driven ?? 0, track: track.value } : undefined;
+  return stepStacks(r.start, r.moves, at.completed, at.partial, run);
 });
 /*
  * The lists below move their rows when the order changes (TransitionGroup). A list that draws again while its rows
@@ -332,36 +351,70 @@ const backedMembers = computed(() => [...new Set((stage.value?.mine ?? []).map((
 // ---------------------------------------------------------------- the order of play and its dice
 /** The opening (the dice for the order) while it plays. */
 const opening = computed(() => (stage.value && playing.value ? openingAt(stage.value, stageNow.value) : null));
-/** The order of play: the manifest's until the opening has settled it; none for a race from before the opening. */
-const seats = computed<string[]>(() => {
+/** A round's dice for its order while they play and while the field lines up after them (setup.shuffle). */
+const orderDice = computed(() => (stage.value && playing.value && !opening.value ? orderDiceAt(stage.value, head.value) : null));
+/**
+ * The order of play: the manifest's until the opening has settled it; none for a race from before the opening. On a
+ * race with the order drawn every round, the round's from its change of order on, the alpaca's seat among them once it
+ * is out.
+ */
+const seats = computed<string[]>((prev) => {
   const r = stage.value;
-  if (r?.order && (!opening.value || opening.value.lined)) return r.order;
-  return r?.order || !r?.moves ? MEMBERS : [];
+  let out = r?.order || !r?.moves ? MEMBERS : [];
+  if (r?.order && (!opening.value || opening.value.lined)) out = (playing.value && orderAt(r, stageNow.value)) || r.order;
+  return prev && prev.length === out.length && prev.every((m, i) => m === out[i]) ? prev : out;
 });
 /** A seat's die: its face, keyed so each throw remounts it once; the throw while it is in the air. */
 interface SeatDie { key: string; face: number; toss: Toss | null; out: boolean }
 /**
- * A member's die in the opening: the face it shows, keyed by the round it was last thrown in; the throw while its
- * round is in the air (staggered among those throwing), dimmed once its place is settled.
+ * A member's die in rounds of dice for an order ([o] of [rolls], each tumbling for [tumble]): the face it shows, keyed
+ * by [tag] and the round it was last thrown in; the throw while its round is in the air (staggered among those
+ * throwing), dimmed once its place is settled.
  */
+function orderDie(m: string, o: Opening, rolls: OrderRoll[][], tumble: number, tag: string, seed: number): SeatDie | null {
+  if (o.round < 0) return null;
+  const k = o.rolling.indexOf(m);
+  let thrown = o.round;
+  while (thrown > 0 && !rolls[thrown]!.some((r) => r.m === m)) thrown--;
+  if (k >= 0 && o.tumbling) {
+    const face = rolls[o.round]![k]!.face;
+    const { delay, ms } = staggered(tumble, k, o.rolling.length);
+    const toss = reducedMotion.value || scrubbing.value
+      ? null : { ms, delay, at: o.since, pool: ORDER_FACES, seed, height: 95 };
+    return { key: `${m}${tag}${thrown}`, face, toss, out: false };
+  }
+  return { key: `${m}${tag}${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
+}
+/** A member's die in the opening. */
 function openingDie(m: string): SeatDie | null {
   const o = opening.value;
   const rolls = stage.value?.rolls;
-  if (!o || !rolls || o.round < 0) return null;
-  const k = o.rolling.indexOf(m);
-  let thrown = o.round;
-  while (thrown > 0 && !rolls[thrown].some((r) => r.m === m)) thrown--;
-  if (k >= 0 && o.tumbling) {
-    const face = rolls[o.round][k].face;
-    const { delay, ms } = staggered(OPEN_ROLL_MS, k, o.rolling.length);
-    const toss = reducedMotion.value || scrubbing.value
-      ? null : { ms, delay, at: o.since, pool: ORDER_FACES, seed: MEMBERS.indexOf(m), height: 95 };
-    return { key: `${m}o${thrown}`, face, toss, out: false };
-  }
-  return { key: `${m}o${thrown}`, face: o.faces[m] ?? 0, toss: null, out: k < 0 && !o.lined };
+  return o && rolls ? orderDie(m, o, rolls, OPEN_ROLL_MS, "o", MEMBERS.indexOf(m)) : null;
 }
-/** The round whose dice are out, once the opening is over. */
-const round = computed(() => (stage.value?.moves && playing.value && !opening.value ? roundAt(stage.value, stageNow.value) : null));
+/** A die in a round's dice for its order, the alpaca's among them. */
+function roundOrderDie(m: string): SeatDie | null {
+  const o = orderDice.value;
+  const rolls = o && stage.value?.orderRolls?.[o.r];
+  return o && rolls ? orderDie(m, o, rolls, o.tumble, `s${o.r}.`, o.r * 8 + MEMBERS.indexOf(m) + 1) : null;
+}
+/** The round whose dice are out, once the opening is over; none while a round's dice for its order play. */
+const round = computed(() => (stage.value?.moves && playing.value && !opening.value && !orderDice.value
+  ? roundAt(stage.value, stageNow.value) : null));
+/** On a race with the alpaca: when each of its drives starts, ms after startsAt. */
+const driveStarts = computed(() => {
+  const r = stage.value;
+  const out: number[] = [];
+  for (const b of (r && timelineOf(r)?.beats) ?? []) if (b.kind === "drive") out[b.i] = b.at;
+  return out;
+});
+/** Whether turn [x] of the round on show is over at [h]: its step done, or its drive begun and no longer under way. */
+function turnDone(r: Race, h: Playhead | null, x: Turn | undefined): boolean {
+  if (!h || !x) return false;
+  if (x.step !== undefined) return x.step < h.done && h.current !== x.step;
+  if (x.drive === undefined) return false;
+  const at = driveStarts.value[x.drive];
+  return at !== undefined && stageNow.value - r.startsAt * 1000 >= at && h.drive?.k !== x.drive;
+}
 /**
  * A member's die in a round: the five thrown together at the round's start (staggered, landing by DICE_TOSS of
  * rollMs), lying in the row after; dimmed once its move is done.
@@ -375,11 +428,14 @@ function roundDie(m: string): SeatDie | null {
   if (k < 0) return null;
   const len = (r.rollMs ?? 0) * DICE_TOSS;
   const { delay, ms } = staggered(len, k, dice.length);
+  const pool = m === ALPACA ? r.setup.alpaca?.dice ?? ORDER_FACES : diceOf(m);
   const toss = reducedMotion.value || scrubbing.value || ra.since >= len
     ? null
-    : { ms, delay, at: ra.since, pool: diceOf(m), seed: ra.round * ROUND + k, height: 110 };
+    : { ms, delay, at: ra.since, pool, seed: ra.round * ROUND + k, height: 110 };
   const i = ra.round * ROUND + k;
-  const done = !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
+  const done = r.orders
+    ? turnDone(r, head.value, turnsOf(r, ra.round)[k])
+    : !!head.value && i < (r.moves?.length ?? 0) && i < head.value.done && head.value.current !== i;
   return { key: `${m}r${ra.round}`, face: dice[k].face, toss, out: done };
 }
 /** The throws in the air, by member: read as a die comes up and not followed, since they change with every tick. */
@@ -391,7 +447,7 @@ const seatDice = computed<Record<string, SeatDieView | null>>((prev) => {
   const next: Record<string, SeatDieView | null> = {};
   const list = seats.value;
   for (const m of list) {
-    const d = opening.value ? openingDie(m) : roundDie(m);
+    const d = opening.value ? openingDie(m) : orderDice.value ? roundOrderDie(m) : roundDie(m);
     air[m] = d?.toss ?? null;
     next[m] = d ? { m, key: d.key, face: d.face, out: d.out, air: !!d.toss } : null;
   }
@@ -411,13 +467,19 @@ const seatDice = computed<Record<string, SeatDieView | null>>((prev) => {
   }
   return next;
 });
-/** Whose turn it is in the step under way, and whether it still waits for its die. */
+/** Whose turn it is in the step or the alpaca's drive under way, and whether it still waits for its die. */
 const mover = computed(() => {
   const r = stage.value;
   const h = head.value;
+  if (h?.drive) return ALPACA;
   return r?.moves && h && h.current >= 0 ? r.moves[h.current].m : "";
 });
-const moverWaits = computed(() => !!mover.value && !!head.value && stageOf(head.value.part) !== "walk");
+const moverWaits = computed(() => {
+  const r = stage.value;
+  const h = head.value;
+  if (r && h?.drive) return h.drive.ms < driveTimes(r, h.drive.k).glideAt;
+  return !!mover.value && !!h && stageOf(h.part) !== "walk";
+});
 /** The last round is under way, and its opening cue. */
 const inFinalRound = computed(() => {
   const r = stage.value;
@@ -425,12 +487,21 @@ const inFinalRound = computed(() => {
   return !!r && !!ra && roundsOf(r) >= 2 && ra.round === roundsOf(r) - 1;
 });
 const lastRound = computed(() => inFinalRound.value && (round.value?.since ?? Infinity) < CUE_MS);
-/** Five turn-rhythm pips inside the current round: which seats have moved, and whose turn is active. */
+/**
+ * Turn-rhythm pips inside the current round, five (six with the alpaca): which seats have moved, and whose turn is
+ * active.
+ */
 const roundPips = computed<("done" | "now" | "todo")[]>(() => {
   const r = stage.value;
   const ra = round.value;
   const h = head.value;
   if (!r?.moves || !ra || !h) return [];
+  if (r.orders) {
+    return turnsOf(r, ra.round).map((x) => {
+      if ((x.step !== undefined && h.current === x.step) || (x.drive !== undefined && h.drive?.k === x.drive)) return "now";
+      return turnDone(r, h, x) ? "done" : "todo";
+    });
+  }
   const base = ra.round * ROUND;
   return Array.from({ length: ROUND }, (_, k) => {
     const idx = base + k;
@@ -443,6 +514,7 @@ const roundPips = computed<("done" | "now" | "todo")[]>(() => {
 const status = computed(() => {
   if (finished.value) return view.value === "board" ? "终局赛道" : "本场名次";
   if (opening.value) return "掷骰定序";
+  if (orderDice.value) return `第 ${orderDice.value.r + 1} 轮 · 掷骰定序`;
   if (round.value && stage.value) {
     const cur = round.value.round + 1;
     if (played.value) return `第 ${cur}/${roundsOf(stage.value)} 轮`;
@@ -709,7 +781,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
               :paused="paused" :rate="speed"
             />
           </span>
-          <span class="head"><TuanziToken :member="m" :size="48" /></span>
+          <span class="head" :class="{ car: m === ALPACA }">
+            <img v-if="m === ALPACA" :src="carArt" alt="" draggable="false" /><TuanziToken v-else :member="m" :size="48" />
+          </span>
         </li>
       </TransitionGroup>
       <div v-else-if="view === 'board'" class="board-dock" role="toolbar" aria-label="终局查看">
@@ -888,6 +962,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 .mark.lead {
   background: var(--gold-soft);
   box-shadow: 0 0 0 1px var(--gold);
+}
+/* The alpaca hitting someone: a short bar, like its car. */
+.mark.car {
+  width: 9px;
+  height: 5px;
+  border-radius: 2px;
+  background: var(--c-600);
+  box-shadow: 0 0 0 1.5px var(--surface);
 }
 .progress-wrap:hover .mark {
   transform: scale(1.2);
@@ -1454,6 +1536,29 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey, true));
 }
 .seat-move {
   transition: transform 640ms var(--ease-in-out);
+}
+/* The alpaca's seat: its car, wider than a tuanzi, in the same pill; it pops in when the alpaca first takes a turn. */
+.seat .head.car img {
+  display: block;
+  width: 86%;
+  height: auto;
+  translate: 0 4%;
+  filter: var(--sticker);
+  pointer-events: none;
+}
+.seat-enter-active {
+  transition: opacity 320ms var(--ease-out), scale 420ms var(--ease-pop);
+}
+.seat-enter-from {
+  opacity: 0;
+  scale: 0.5;
+}
+/*
+ * Scrubbing a replay back past the alpaca's first round, its seat goes at once and the others close up. Left alone it
+ * would wait out the seats' move (640 ms) where it stood.
+ */
+.seat-leave-active {
+  display: none;
 }
 /* Post-race final board dock: sits in the deck strip below the board so no tile is ever obscured. */
 .board-dock {

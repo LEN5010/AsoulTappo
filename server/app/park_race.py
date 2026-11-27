@@ -55,6 +55,14 @@ PRIZE = "race_prize"
 # the step rests for PACE rest; the last round's steps are SLOW_MS / STEP_MS as long. Its rounds' dice take
 # PACED_ROLL_MS and its close-ups PACED_CUT_MS. The race row keeps these times with its moves (result.times), and
 # they are scaled together when the race would run past its window.
+#
+# A race whose order is rolled for every round (race.deal_rules) is paced so too, and from its second round on a round
+# opens with the dice for its order, ORDER_ROLL_MS for each round of them as in the opening, then SHUFFLE_MS, the order
+# changing places, before its dice. Once the alpaca is out it gets ENTER_MS after the move
+# that brought it, a close-up and its drive onto the finish; each of its turns lasts as long as what it shows
+# (drive_ms()): lit for DRIVE lit, DRIVE away to leave for the finish first, DRIVE sq a square driven, DRIVE take
+# more when it carries anyone, DRIVE away to go back to the finish after, and DRIVE rest; slow in the last round as
+# the steps are.
 LEAD_MS = 4000
 REROLL_MS = 1500
 ROLL_MS = 4800
@@ -65,6 +73,11 @@ TAIL_MS = 4000
 PACE = {"lit": 600, "hop": 360, "gap": 150, "act": 600, "rest": 500}
 PACED_ROLL_MS = 2800
 PACED_CUT_MS = 2000
+SHUFFLE_MS = 800
+# A round of a round's dice for its order, as long as each of the opening's.
+ORDER_ROLL_MS = REROLL_MS
+ENTER_MS = 3000
+DRIVE = {"lit": 600, "away": 900, "sq": 300, "take": 300, "rest": 500}
 # Moves a round: one for each member, in the order.
 ROUND = 5
 RUN_MARGIN = 10
@@ -82,6 +95,8 @@ SIMS = 20000
 
 # The first client that plays a race run on a map or with skills; older ones get such a race's result only.
 MAPS_SINCE = (1, 2, 5)
+# The first client that plays a race whose order is drawn every round or that has the alpaca (race.deal_rules).
+RULES_SINCE = (1, 3, 0)
 RaceView = Literal["full", "summary", "schedule"]
 log = logging.getLogger(__name__)
 
@@ -90,6 +105,20 @@ def plays_maps(version: str | None) -> bool:
     """Whether a client reporting [version] can play a race on a map or with skills (a pre-release as its release)."""
     key = version_key(version)
     return key is not None and key[:3] >= MAPS_SINCE
+
+
+def plays(setup: dict[str, Any], version: str | None) -> bool:
+    """Whether a client reporting [version] can play a race dealt [setup]: any client a race on the lap without skills,
+    MAPS_SINCE on a race with a map or skills, RULES_SINCE on one by the rules beyond them (a pre-release as its
+    release)."""
+    if setup.get("shuffle") or setup.get("alpaca"):
+        need = RULES_SINCE
+    elif setup.get("map") or setup.get("skills"):
+        need = MAPS_SINCE
+    else:
+        return True
+    key = version_key(version)
+    return key is not None and key[:3] >= need
 
 
 class OddsChanged(GameError):
@@ -150,9 +179,25 @@ def pushed(move: dict[str, Any]) -> int | None:
     return 0
 
 
-def paced_times(moves: list[dict[str, Any]], scale: float = 1.0) -> dict[str, Any]:
+def drive_ms(turn: dict[str, Any], drive: dict[str, int]) -> int:
+    """How long one of the alpaca's turns (race.run's drives) lasts at the pace [drive] (DRIVE, scaled)."""
+    t = drive["lit"] + abs(int(turn["from"]) - int(turn["to"])) * drive["sq"] + drive["rest"]
+    if turn.get("back") is not None:
+        t += drive["away"]
+    if turn.get("take"):
+        t += drive["take"]
+    if turn.get("home"):
+        t += drive["away"]
+    return t
+
+
+def paced_times(moves: list[dict[str, Any]], scale: float = 1.0, *, drives: list[dict[str, Any]] | None = None,
+                enter: int | None = None, shuffle: bool = False) -> dict[str, Any]:
     """The times of a race paced by the square, ms, at [scale] of full length: `pace` (PACE scaled), each step's
-    length in `steps`, a round's dice in `roll` and a close-up in `cut`."""
+    length in `steps`, a round's dice in `roll` and a close-up in `cut`. With the alpaca's turns [drives]: their pace
+    `drive` (DRIVE scaled), each one's length in `drives`, and `enter` when it came out at move [enter]; with [shuffle]
+    each round of the dice for the order in `orderRoll` and the change of order after them in `shuffle`, opening each
+    round from the second."""
     pace = {k: max(1, math.floor(v * scale)) for k, v in PACE.items()}
     first = slow_from(len(moves))
     steps = []
@@ -162,14 +207,35 @@ def paced_times(moves: list[dict[str, Any]], scale: float = 1.0) -> dict[str, An
         if push is not None:
             t += pace["gap"] + (push * pace["hop"] if push else pace["act"])
         steps.append(t if i < first else t * SLOW_MS // STEP_MS)
-    return {"pace": pace, "steps": steps, "roll": max(1, math.floor(PACED_ROLL_MS * scale)),
-            "cut": max(1, math.floor(PACED_CUT_MS * scale))}
+    out: dict[str, Any] = {"pace": pace, "steps": steps, "roll": max(1, math.floor(PACED_ROLL_MS * scale)),
+                           "cut": max(1, math.floor(PACED_CUT_MS * scale))}
+    if drives is not None:
+        drive = {k: max(1, math.floor(v * scale)) for k, v in DRIVE.items()}
+        last = first // ROUND
+        out["drive"] = drive
+        out["drives"] = [drive_ms(turn, drive) * (SLOW_MS if turn["r"] >= last else STEP_MS) // STEP_MS
+                         for turn in drives]
+        if enter is not None:
+            out["enter"] = max(1, math.floor(ENTER_MS * scale))
+    if shuffle:
+        out["shuffle"] = max(1, math.floor(SHUFFLE_MS * scale))
+        out["orderRoll"] = max(1, math.floor(ORDER_ROLL_MS * scale))
+    return out
 
 
-def paced_ms(times: dict[str, Any], cuts: int) -> int:
-    """How long the rounds' dice, the steps and [cuts] close-ups of a paced race take together."""
+def paced_ms(times: dict[str, Any], cuts: int, order_rolls: int = 0) -> int:
+    """How long the rounds' dice, the steps and [cuts] close-ups of a paced race take together; with the rules beyond
+    the squares, also the [order_rolls] rounds of dice for the orders, the changes of order, the alpaca's coming out
+    and its turns."""
     rounds = -(-len(times["steps"]) // ROUND)
-    return rounds * times["roll"] + sum(times["steps"]) + cuts * times["cut"]
+    return (rounds * times["roll"] + sum(times["steps"]) + cuts * times["cut"]
+            + order_rolls * times.get("orderRoll", 0) + max(0, rounds - 1) * times.get("shuffle", 0)
+            + sum(times.get("drives", ())) + times.get("enter", 0))
+
+
+def order_rolls_of(outcome: dict[str, Any]) -> int:
+    """How many rounds of dice the orders of a race took after the opening (race.run's orderRolls)."""
+    return sum(len(dice) for dice in outcome.get("orderRolls") or ())
 
 
 def lead_ms(rounds: int) -> int:
@@ -188,7 +254,10 @@ def playback_ms(lead: int, steps: int, step_ms: int, slow_ms: int, roll: int | N
 
 def _result(outcome: dict[str, Any]) -> dict[str, Any]:
     """What a race row keeps of its outcome (the ranking has its own column)."""
-    return {**{k: outcome[k] for k in ("start", "order", "rolls", "moves", "rest")}, "cuts": cuts_of(outcome["moves"])}
+    out = {**{k: outcome[k] for k in ("start", "order", "rolls", "moves", "rest")}, "cuts": cuts_of(outcome["moves"])}
+    # Races run by the rules beyond the squares (race.deal_rules): each round's order and its dice, and the alpaca.
+    out.update({k: outcome[k] for k in ("orders", "orderRolls", "drives", "enter") if k in outcome})
+    return out
 
 
 def room_message(peer_id: str, coins: int) -> dict[str, Any]:
@@ -258,6 +327,8 @@ class Races:
         cfg = self.cfg
         rules = self.rules
         setup = race.deal(rules, self.dealer)
+        # Draws nothing, so the squares and the skills come out as before.
+        setup.update(race.deal_rules(rules, setup))
         # Drawn after the squares from the same dealer, so the squares come out as before; public with the setup.
         forms = race.deal_skills(rules, self.dealer) or race.deal_forms(rules, self.dealer)
         if forms:
@@ -280,16 +351,18 @@ class Races:
         cuts = len(cuts_of(outcome["moves"]))
         room = window_ms - lead - TAIL_MS
         result = _result(outcome)
-        if setup.get("map") or setup.get("skills"):
-            times = paced_times(outcome["moves"])
-            moving = paced_ms(times, cuts)
+        if setup.get("map") or setup.get("skills") or setup.get("shuffle") or setup.get("alpaca"):
+            more = {"drives": outcome.get("drives"), "enter": outcome.get("enter"), "shuffle": bool(setup.get("shuffle"))}
+            times = paced_times(outcome["moves"], **more)
+            order_rolls = order_rolls_of(outcome)
+            moving = paced_ms(times, cuts, order_rolls)
             if moving > room:
                 # Every time shrinks by the same factor; rounding down only ever shortens.
                 step_ms = max(1, math.floor(STEP_MS * room / moving))
                 slow_ms = max(1, math.floor(SLOW_MS * room / moving))
-                times = paced_times(outcome["moves"], room / moving)
+                times = paced_times(outcome["moves"], room / moving, **more)
             result["times"] = times
-            length = lead + paced_ms(times, cuts) + TAIL_MS
+            length = lead + paced_ms(times, cuts, order_rolls) + TAIL_MS
         else:
             moving = playback_ms(0, steps, step_ms, slow_ms, cuts=cuts) - TAIL_MS
             if moving > room:
@@ -507,8 +580,7 @@ class Races:
                     # Refunded in full.
                     item["mine"] = {"staked": staked, "net": 0}
             else:
-                setup = json.loads(r["setup"])
-                known = plays_maps(version) or not (setup.get("map") or setup.get("skills"))
+                known = plays(json.loads(r["setup"]), version)
                 item.update(phase="done", ranking=json.loads(r["ranking"]),
                             replay=known and self.played(r) is not None)
                 if mine:
@@ -565,7 +637,7 @@ class Races:
         if status in ("running", "settled"):
             # Public from the start on: the seed and everything it decides.
             out.update(seed=row["seed"], endsAt=row["ends_at"], ranking=json.loads(row["ranking"]))
-            known = plays_maps(version) or not (setup.get("map") or setup.get("skills"))
+            known = plays(setup, version)
             result = self.played(row) if known and (playback or not row["result"]) else None
             if playback and result is not None:
                 # Rows from before the opening dice have no order and no rolls, and played after the plain LEAD_MS;
@@ -585,8 +657,19 @@ class Races:
                     out.update(rollMs=times["roll"], stepsMs=times["steps"], pace=times["pace"])
                     if result.get("cuts"):
                         out["cutMs"] = times["cut"]
+                    # The rules beyond the squares: the dice for the order and its change, the alpaca's turns and its
+                    # coming out.
+                    if "shuffle" in times:
+                        out["shuffleMs"] = times["shuffle"]
+                    if "orderRoll" in times:
+                        out["orderRollMs"] = times["orderRoll"]
+                    if "drives" in times:
+                        out.update(drivesMs=times["drives"], drivePace=times["drive"])
+                    if "enter" in times:
+                        out["enterMs"] = times["enter"]
                 if rolls:
                     out.update(order=result["order"], rolls=rolls)
+                out.update({k: result[k] for k in ("orders", "orderRolls", "drives", "enter") if k in result})
             out["replay"] = known and (result is not None or bool(row["result"]))
         if status == "settled" and bets:
             staked = sum(b["coins"] for b in bets)
