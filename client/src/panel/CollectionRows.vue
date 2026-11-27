@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The two collections a pool's page sums up under its own: the 衣橱 series (in the limited tier) and the holo versions
+// The two collections a pool's page sums up under its own: the 衣橱 series (the limited tier) and the holo versions
 // (镭射款). Each is a row on the sheet's paper: a small card on the left (the newest owned one) in the collection's
 // material, its name and count, and one pip a card, lit in that material when owned. The 衣橱 pips stand in a group a
 // member, each group a way into her plate; the holo row opens the collection's page at the holo filter.
@@ -30,8 +30,7 @@ function newest<T extends { id: string }>(owned: readonly T[], item: (x: T) => s
   return owned.at(-1);
 }
 
-/** The 衣橱 series, one video plate a member (a picture plate's series is not 衣橱), and the newest owned card of all
- * on the left. */
+/** The limited tier: one series plate a member, and the newest owned card of all on the left. */
 const closets = allPlates().flatMap((plate) => (plate.kind === "series" ? [plate] : []));
 const closetPick = ref("");
 const wardrobe = computed(() => {

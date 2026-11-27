@@ -8,3 +8,4 @@ Non-commercial fan project. Rights holders: open an issue and the assets will be
 
 Per character: `bgImage.webp`, `keyboardImage.webp`, `mouseImage.webp`, `leftClickImage.webp`, `rightClickImage.webp` (the original PNGs, stored as lossless WebP).
 Skin folders start with the member's name, such as `贝拉山海经`. Only `bgImage.webp` is required; any other layer falls back to the member's. A two-form skin also has `formImage.webp`, its second picture.
+A skin may also have `poster.webp`: its official poster, cut for the limited pool's stage and stored as lossy WebP; `posterTitle.webp`, the poster's title cut out of it, its lettering with the domes, rings and English line around it (`posterTitle.json` says what the lettering reads); and `pv.mp4`, a clip of its official PV cut to the poster's shape (H.264, no sound).

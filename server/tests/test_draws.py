@@ -127,15 +127,18 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
     winter = {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
     birthday = {"char:心宜2025生日", "char:思诺2025生日"}
     forms = {"char:嘉然然龙", "char:乃琳法师", "char:贝拉炎头队长"}
-    assert later == winter | birthday | forms
+    heart = {"char:心宜2026生日"}
+    assert later == winter | birthday | forms | heart
     skins = lambda version: {i["id"] for i in M.resonance_pool_for(version)["skin"]}
     every = {i["id"] for i in M.resonance_pool["skin"]}
-    for version in (None, "1.2.5", "v1.2.5", "1.2.5-rc.1", "1.3.0"):
+    for version in (None, "1.3.0", "v1.3.0", "1.3.0-rc.1"):
         assert skins(version) == every
+    for version in ("1.2.5", "v1.2.5", "1.2.5-rc.1", "1.2.6"):
+        assert skins(version) == every - heart
     for version in ("1.2.2", "v1.2.4", "1.2.4-rc.1"):
-        assert skins(version) == every - forms
+        assert skins(version) == every - forms - heart
     for version in ("1.2.0", "v1.2.1", "1.2.0-rc.3"):
-        assert skins(version) == every - birthday - forms
+        assert skins(version) == every - birthday - forms - heart
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
     # Besides skins only the wardrobe cards (the limited tier) and the 45 live-room emotes (uncommon) are held back.
@@ -146,13 +149,9 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
 
 def test_wardrobe_cards_stay_out_of_clients_older_than_1_2_4():
     M = Manifest.load()
-    wardrobe = {f"card:{c['id']}" for c in M.data["cards"] if c["series"].startswith("wardrobe-")}
-    # The 脑洞波 cards share the tier from 1.3.0 (tests/test_naodong.py).
-    naodong = {f"card:{c['id']}" for c in M.data["cards"] if c["series"] == "naodong"}
-    assert {i["id"] for i in M.resonance_pool["limited"]} == wardrobe | naodong and len(wardrobe) == 36
-    for version in (None, "v1.3.0"):
-        assert {i["id"] for i in M.resonance_pool_for(version)["limited"]} == wardrobe | naodong
-    for version in ("1.2.4", "1.2.4-rc.2", "1.2.6"):
+    wardrobe = {f"card:{c['id']}" for c in M.data["cards"] if c["rarity"] == "limited"}
+    assert {i["id"] for i in M.resonance_pool["limited"]} == wardrobe and len(wardrobe) == 36
+    for version in (None, "1.2.4", "1.2.4-rc.2", "v1.3.0"):
         assert {i["id"] for i in M.resonance_pool_for(version)["limited"]} == wardrobe
     for version in ("1.2.3", "1.2.3-rc.1", "1.2.2", ""):
         assert M.resonance_pool_for(version)["limited"] == []
@@ -205,8 +204,7 @@ def test_an_older_client_rolling_the_limited_range_gets_common():
 def test_the_limited_tier_gives_missing_cards_and_closes_once_all_are_owned():
     g, _ = game(SeqRng(.139, .5))
     pid = player_id_for(TOKEN)
-    # The 1.2.4 client's limited tier: the 衣橱 cards, not the later 脑洞波 ones.
-    cards = [i["id"] for i in g.manifest.resonance_pool_for("1.2.4")["limited"]]
+    cards = [i["id"] for i in g.manifest.resonance_pool["limited"]]
     for item in cards[:-1]:
         g.store.add_item(pid, item, 0)
     g.store.update_player(pid, shards=160 * 2)

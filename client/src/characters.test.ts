@@ -17,7 +17,19 @@ describe("skins", () => {
   it("show the member when this client does not have the skin", () => {
     expect(getCharacter("思诺新皮肤")).toBe(characters["思诺"]);
   });
-  it.each([["贝拉2025生日", "贝拉"], ["嘉然2025生日", "嘉然"], ["乃琳2025生日", "乃琳"]])("ships %s with previews and %s's input layers", (name, member) => {
+  it("keep an official poster to the skin whose folder has one", () => {
+    expect(Object.values(characters).filter((c) => c.poster).map((c) => c.name)).toEqual(["心宜2026生日"]);
+  });
+  it("keep the poster's title lettering with what it reads", () => {
+    expect(Object.values(characters).filter((c) => c.posterTitle).map((c) => [c.name, c.posterTitle!.text]))
+      .toEqual([["心宜2026生日", "心之轨迹"]]);
+    expect(characters["心宜2026生日"]!.posterTitle!.src).toBeTruthy();
+  });
+  it("keep a clip of the official PV to the skin whose folder has one, and to no skin borrowing its member's", () => {
+    expect(Object.values(characters).filter((c) => c.pv).map((c) => c.name)).toEqual(["心宜2026生日"]);
+    expect(characters["心宜"]!.pv).toBeUndefined();
+  });
+  it.each([["贝拉2025生日", "贝拉"], ["嘉然2025生日", "嘉然"], ["乃琳2025生日", "乃琳"], ["心宜2026生日", "心宜"]])("ships %s with previews and %s's input layers", (name, member) => {
     const skin = characters[name]!;
     const base = characters[member]!;
     expect(getCharacter(skin.name)).toBe(skin);

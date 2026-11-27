@@ -4,6 +4,10 @@
 // is required, the other layers come from the member. A two-form skin also has formImage.webp, its second picture
 // on the same canvas (pet/SkinForm.ts says when it shows), and may have formLoop.webp: frames of one part of the
 // second picture, side by side, that play over it while it shows (formLoop.json says where; scripts/make_form_loop.py).
+// A skin may also have poster.webp, its official poster cut to spread over the left of a limited pool's stage,
+// posterTitle.webp, the poster's title cut out (its lettering with the domes, rings and English line around it), with
+// posterTitle.json saying what the lettering reads, and pv.mp4, a clip
+// of its official PV cut to the poster's shape, played there before the poster comes in (panel/BannerStage.vue).
 import { memberNameOf } from "./characterMeta";
 
 const files = import.meta.glob("./assets/characters/*/*.webp", {
@@ -30,6 +34,11 @@ export interface FormLoopSpec {
   entrance?: "summon";
 }
 const loops = import.meta.glob("./assets/characters/*/formLoop.json", { eager: true, import: "default" }) as Record<string, FormLoopSpec>;
+/** What the lettering of the title cut out of a skin's poster (posterTitle.webp) reads. */
+const posterTitles = import.meta.glob("./assets/characters/*/posterTitle.json", { eager: true, import: "default" }) as
+  Record<string, { text: string }>;
+const pvs = import.meta.glob("./assets/characters/*/pv.mp4", { eager: true, query: "?url", import: "default" }) as
+  Record<string, string>;
 
 const previews = import.meta.glob("./assets/previews/characters/*/*.webp", {
   eager: true, query: "?url", import: "default",
@@ -48,6 +57,13 @@ export interface CharacterAssets {
   rightClick: string;
   /** The second picture of a two-form skin, in the same three sizes as `bg`. */
   form?: { bg: string; bgSmall: string; bgMedium: string; loop?: FormLoopSpec & { src: string } };
+  /** The skin's official poster, spread over the left of a limited pool's stage. Only the skin's own folder counts: a
+   *  member never lends its poster to its skins. */
+  poster?: string;
+  /** The title cut out of that poster, and what its lettering reads: a limited pool of that name shows it as its title. */
+  posterTitle?: { src: string; text: string };
+  /** A clip of the skin's official PV, played where its poster spreads before the poster comes in. Its own folder only. */
+  pv?: string;
 }
 
 function build(): Record<string, CharacterAssets> {
@@ -61,6 +77,8 @@ function build(): Record<string, CharacterAssets> {
   for (const [name, own] of Object.entries(tmp)) {
     const f = { ...tmp[memberNameOf(name)], ...own };
     const loop = loops[`./assets/characters/${name}/formLoop.json`];
+    const title = posterTitles[`./assets/characters/${name}/posterTitle.json`];
+    const pv = pvs[`./assets/characters/${name}/pv.mp4`];
     if (!f.bgImage || !f.keyboardImage || !f.mouseImage) continue;
     out[name] = {
       name,
@@ -72,6 +90,9 @@ function build(): Record<string, CharacterAssets> {
       mouse: f.mouseImage,
       leftClick: f.leftClickImage ?? f.mouseImage,
       rightClick: f.rightClickImage ?? f.mouseImage,
+      ...(own.poster ? { poster: own.poster } : {}),
+      ...(own.posterTitle && title ? { posterTitle: { src: own.posterTitle, text: title.text } } : {}),
+      ...(pv ? { pv } : {}),
       ...(own.formImage ? {
         form: {
           bg: own.formImage,

@@ -5,15 +5,15 @@ let keySwitchAt = 0;
 </script>
 
 <script setup lang="ts">
-// The pools to draw from, where a stage's eyebrow sits: the standing pool first, then each limited pool with what is
-// left of it. Small tab keys: the picked one is latched in coral, a limited one wears the pearl lip of its material.
+// The pools to draw from, where a stage's eyebrow sits: the standing pool first, then each limited pool. Small tab keys
+// with the pools' names alone, so four keep to one row: the picked one is latched in coral, a limited one wears the
+// pearl lip of its material, and what is left of a limited pool shows on its stage (BannerStage.vue).
 // On a series' key visual they are clear keys of its dark and the picked one is white (`.on-poster` in ui/tokens.css).
 import { nextTick, onMounted, ref, watch } from "vue";
 import { reducedMotion } from "../stores/theme";
-import Icon from "../ui/Icon.vue";
 
 const props = defineProps<{
-  /** `fresh` marks a pool with something new on sale. */
+  /** `left` (what is left of it) marks a limited pool; `fresh` marks a pool with something new on sale. */
   pools: { id: string; name: string; left?: string; fresh?: boolean }[];
   modelValue: string;
   disabled?: boolean;
@@ -73,7 +73,6 @@ onMounted(() => {
       @click="p.id !== modelValue && emit('update:modelValue', p.id)"
     >
       <span>{{ p.name }}</span>
-      <small v-if="p.left"><Icon name="clock" :size="11" />{{ p.left }}</small>
       <i v-if="p.fresh && p.id !== modelValue" class="fresh">NEW</i>
     </button>
   </div>
@@ -90,28 +89,6 @@ onMounted(() => {
 .pool-tab {
   margin-bottom: 3px;
 }
-.pool-tab.limited {
-  padding-right: 6px;
-}
-/* Countdown capsule inside a limited pool key. */
-.pool-tab small {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 20px;
-  padding: 0 7px 0 5px;
-  box-sizing: border-box;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--holo-lilac) 24%, var(--c-50));
-  color: var(--night);
-  font: 800 var(--fs-caption)/1 var(--font);
-  font-variant-numeric: tabular-nums;
-  transition: background var(--dur-fast), color var(--dur-fast);
-}
-.pool-tab small :deep(svg) {
-  color: var(--pearl-deep);
-  transition: color var(--dur-fast);
-}
 /* A limited pool: the pearl sheen drifts along its rounded lip, and fills the face once latched. */
 .pool-tab.limited:not(.on):not(:disabled) {
   --face: linear-gradient(180deg, #fff 36%, color-mix(in srgb, var(--holo-lilac) 14%, #fff));
@@ -125,14 +102,11 @@ onMounted(() => {
 .calm .pool-tab.limited::before {
   animation: none;
 }
-/* On a key visual a limited pool's key is as clear as the others; its clock keeps the pearl. */
+/* On a key visual a limited pool's key is as clear as the others. */
 .pool-tab.limited.on-poster:not(.on):not(:disabled) {
   --face: var(--poster-face);
   --lip: var(--poster-lip);
   color: #fff;
-}
-.pool-tab.on-poster small {
-  text-shadow: none;
 }
 .pool-tab.limited.on {
   --face: linear-gradient(115deg, color-mix(in srgb, var(--holo-pink) 62%, #fff), color-mix(in srgb, var(--holo-lilac) 72%, #fff) 44%,
@@ -140,20 +114,6 @@ onMounted(() => {
   --face-inset: inset 0 1px 0 rgba(255, 255, 255, 0.68);
   --lip: var(--pearl);
   color: var(--ink);
-}
-.pool-tab.limited.on small {
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--ink);
-}
-.pool-tab.limited.on small :deep(svg) {
-  color: var(--pearl-deep);
-}
-.pool-tab:disabled:not(.on) small {
-  background: color-mix(in srgb, var(--c-200) 45%, var(--c-100));
-  color: var(--ink-3);
-}
-.pool-tab:disabled:not(.on) small :deep(svg) {
-  color: var(--ink-3);
 }
 .fresh {
   position: absolute;
