@@ -300,17 +300,24 @@ const moment = computed(() => {
 
 /**
  * The close-up the step under way opens with: its member's skill, named and explained, before the step moves. [at] is
- * how far in it is, read once as it comes up.
+ * how far in it is, read as it comes up and then left alone while it plays, so the close-up runs its length by itself
+ * (an [at] that moved along with the board would play it twice as fast); held (paused, scrubbed) it follows the board.
+ * A seek, a change of rate or of holding draws it afresh.
  */
-const cut = computed(() => {
+const cut = computed<{
+  key: string; m: string; who: string; name: string; text: string; color?: string; ms: number; at: number;
+} | null>((prev) => {
   const r = props.race;
   const h = head.value;
   if (!r || !h || h.cut === undefined) return null;
   const c = cutOf(r, h.current);
   const skill = c ? r.setup.skills?.[c.m] : undefined;
   if (!c || !skill) return null;
+  const held = !!(props.paused || props.scrubbing);
+  const key = `${r.id}:${c.at}:${props.seek ?? 0}:${props.rate ?? 1}:${held ? "held" : "on"}`;
+  if (prev?.key === key && !held) return prev;
   return {
-    key: `${r.id}:${c.at}`, m: c.m, who: nameOf(c.m), name: SKILL_NAMES[skill.id] ?? "", text: skillText(skill),
+    key, m: c.m, who: nameOf(c.m), name: SKILL_NAMES[skill.id] ?? "", text: skillText(skill),
     color: manifest.characters.find((x) => x.id === c.m)?.color, ms: (r.cutMs ?? 0) / Math.max(0.01, props.rate ?? 1), at: h.cut,
   };
 });
@@ -645,7 +652,7 @@ watch([hops, () => props.seek, () => props.scrubbing], ([now, seek, scrubbing], 
           <span v-if="leader === m && !above[m]" class="crown" aria-hidden="true"><Icon name="crown" :size="22" /></span>
         </div>
         <SkillCutIn
-          v-if="ready && cut" :key="`${cut.key}-${seek}`" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
+          v-if="ready && cut" :key="cut.key" :member="cut.m" :who="cut.who" :name="cut.name" :text="cut.text"
           :color="cut.color" :ms="cut.ms" :at="cut.at" :paused="paused || scrubbing"
         />
       </div>

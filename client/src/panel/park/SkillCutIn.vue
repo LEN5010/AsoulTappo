@@ -147,12 +147,13 @@ const delay = computed(() => `${-Math.min(0.98, Math.max(0, props.at ?? 0)) * pr
   opacity: 0.58;
   animation-name: rays;
 }
+/* Spins on a clock of its own, started as far in as the close-up is, so a close-up drawn afresh keeps its rays' angle. */
 .rays i {
   position: absolute;
   inset: -20%;
   background: repeating-conic-gradient(#fff 0 6.5deg, transparent 6.5deg 24deg);
   animation: spin 24s linear infinite;
-  animation-delay: 0s;
+  animation-delay: var(--delay);
   animation-fill-mode: none;
 }
 @keyframes rays {
