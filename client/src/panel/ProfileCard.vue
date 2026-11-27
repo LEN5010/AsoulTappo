@@ -56,15 +56,16 @@ watch(box, (el) => {
 onBeforeUnmount(() => observer?.disconnect());
 const artWidth = computed(() => Math.max(0, Math.min(width.value - TEXT_ROOM, HEIGHT * BANNER_ASPECT)));
 /** A card plate shows its full-size still over its thumbnail, a series plate its full-size frame over the video's
- * poster, a sweep plate its cut-out on coral. */
+ * poster, a picture plate its full-size picture over the small one, a sweep plate its cut-out on coral. */
 const art = computed(() => {
   const p = props.plate, w = artWidth.value;
   if (!p || !w) return null;
   if (p.kind === "card") {
     return { src: assetUrl(p.card.full), back: `url(${assetUrl(p.card.thumb)})`, at: bannerArt(p.crop, w, HEIGHT), sweep: false };
   }
-  if (p.kind === "series") {
-    return { src: assetUrl(p.still), back: `url(${assetUrl(p.poster)})`, at: bannerArt(p.motion.face, w, HEIGHT, p.aspect), sweep: false };
+  if (p.kind === "series" || p.kind === "picture") {
+    const face = p.kind === "series" ? p.motion.face : p.picture.face;
+    return { src: assetUrl(p.still), back: `url(${assetUrl(p.poster)})`, at: bannerArt(face, w, HEIGHT, p.aspect), sweep: false };
   }
   return { src: p.sweep.src, back: undefined, at: sweepArt(p.sweep, w, HEIGHT, BANNER_FIT).face, sweep: true };
 });

@@ -251,13 +251,15 @@ class Manifest:
     @cached_property
     def plates(self) -> dict[str, list[str]]:
         """Name plates besides the big hidden cards: plate id -> the item ids that unlock it (every emote of its
-        `emoteSet`, or every card of its `series`). A plate whose set is unknown or empty is left out; older
-        manifests have none."""
+        `emoteSet`, or every card of its `series`, only those showing its `member` when it names one, as a big hidden
+        card's plate asks for its member's cards of a collection of several). A plate whose set is unknown or empty
+        is left out; older manifests have none."""
         sets = {s["id"]: s["emotes"] for s in self.data.get("emoteSets", [])}
         out: dict[str, list[str]] = {}
         for p in self.data.get("plates", []):
             if p.get("series"):
-                needs = [f"card:{c['id']}" for c in self.data["cards"] if c["series"] == p["series"]]
+                needs = [f"card:{c['id']}" for c in self.data["cards"] if c["series"] == p["series"]
+                         and (not p.get("member") or p["member"] in c["characters"])]
             else:
                 needs = [f"emote:{e['key']}" for e in sets.get(p.get("emoteSet"), [])]
             if needs:

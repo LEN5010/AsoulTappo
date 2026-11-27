@@ -15,7 +15,10 @@ it("builds one all-member pool of distinct items", () => {
   expect(new Set(Object.values(p).flat().map((i) => i.id)).size).toBe(realPoolSize());
   // Holo versions come from their card's draws, never from a tier of the pool.
   expect(Object.values(p).flat().some((i) => i.id.startsWith("holo:"))).toBe(false);
-  expect(p.limited.every((i) => i.kind === "card" && getCard(i.ref)?.series.startsWith("wardrobe-"))).toBe(true);
+  // 衣橱, and the 脑洞波 cards a limited pool features before they join the tier
+  const series = (i: (typeof p.limited)[number]) => (i.kind === "card" ? getCard(i.ref)?.series ?? "" : "");
+  expect(p.limited.every((i) => series(i).startsWith("wardrobe-") || series(i) === "naodong")).toBe(true);
+  expect(p.limited.filter((i) => series(i) === "naodong")).toHaveLength(12);
   // the economy names no craft price for them
   expect(p.limited.map(craftCost).every((c) => c === null)).toBe(true);
 });

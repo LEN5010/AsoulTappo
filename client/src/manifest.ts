@@ -93,13 +93,13 @@ export interface ManifestDecor {
 }
 export interface ManifestSeries { id: string; name: string; total: number }
 /**
- * A name plate besides the big hidden cards: worn once every emote of `emoteSet`, or every card of `series`, is
- * owned. A series plate plays its own `video` (`poster` is its first frame, `still` that frame at full size;
- * `aspect` is height over width).
+ * A name plate besides the big hidden cards: worn once every emote of `emoteSet`, or every card of `series` (only
+ * those of `member` when it names one), is owned. A series plate shows `still` at full size and `poster`, the same
+ * picture small; with a `video` it plays that, `poster` being its first frame. `aspect` is height over width.
  */
 export type ManifestPlate = { id: string; name: string } & (
   | { emoteSet: string; series?: undefined }
-  | { series: string; emoteSet?: undefined; video: string; poster: string; still: string; aspect: number }
+  | { series: string; emoteSet?: undefined; member?: string; video?: string; poster: string; still: string; aspect: number }
 );
 export type PhotoKind = "solo" | "duo" | "group";
 /** A photocard (官周小卡). A solo card also comes signed, an item of its own (src/photocards.ts). */

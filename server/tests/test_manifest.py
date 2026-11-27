@@ -83,7 +83,7 @@ def test_only_the_five_characters():
 def test_cards_rarity_rules_and_counts():
     cards = M.data["cards"]
     assert len({c["id"] for c in cards}) == len(cards)
-    assert len(cards) == 121
+    assert len(cards) == 133
     assert sum(c["tier"] == "big" for c in cards) == 10
     assert sum(c["tier"] == "small" for c in cards) == 10
     assert M.cards["c1748345610010"]["tier"] == "big"
@@ -147,7 +147,7 @@ def test_accessories_starter_and_economy():
 def test_pool_counts_and_card_rarities():
     assert {r: len(v) for r, v in M.resonance_pool.items()} == real_pool_counts(M)
     for c in M.cards.values():
-        if c["series"].startswith("wardrobe-"):
+        if c["series"].startswith("wardrobe-") or c["series"] == "naodong":
             assert c["rarity"] == "limited"
             continue
         assert c["rarity"] == ("legendary" if c["tier"] == "big" else "epic" if c["tier"] == "small" or c["video"] else "common")
@@ -189,7 +189,7 @@ def test_live_room_emotes_are_three_uncommon_sets_of_fifteen_from_1_3_0():
 
 
 def test_wardrobe_cards_are_twelve_still_portraits_a_member_from_1_2_5():
-    cards = [c for c in M.data["cards"] if c["rarity"] == "limited"]
+    cards = [c for c in M.data["cards"] if c["series"].startswith("wardrobe-")]
     assert len(cards) == 36
     for series, member in (("wardrobe-jiaran", "嘉然"), ("wardrobe-nailin", "乃琳"), ("wardrobe-beila", "贝拉")):
         mine = [c for c in cards if c["series"] == series]
@@ -201,8 +201,10 @@ def test_wardrobe_cards_are_twelve_still_portraits_a_member_from_1_2_5():
         assert c["tier"] == "normal" and c["video"] is None and c["since"] == "1.2.4"
         assert c["thumb"].startswith("bundle:cards/thumb/") and c["full"].startswith(f"pack:cards/{c['series']}/")
     assert M.data["rarities"]["limited"] == {"name": "限定"}
-    # only the wardrobe cards name a release
-    assert {c["id"] for c in M.data["cards"] if c.get("since")} == {c["id"] for c in cards}
+    # only the wardrobe and 脑洞波 cards (tests/test_naodong.py) name a release, and they are the limited tier
+    limited = {c["id"] for c in M.data["cards"] if c["rarity"] == "limited"}
+    assert {c["id"] for c in M.data["cards"] if c.get("since")} == limited
+    assert limited == {c["id"] for c in cards} | {c["id"] for c in M.data["cards"] if c["series"] == "naodong"}
 
 
 def test_wardrobe_plates_play_a_bundled_video_and_unlock_with_their_series():

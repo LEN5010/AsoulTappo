@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A name plate before wearing it: its picture, the set that unlocks it, and the own pet with the plate under it
 // as partners see it. A card plate shows the card and its cards; a sweep plate its picture and its emotes; a series
-// plate its video and its series.
+// plate its video and its series; a picture plate its picture and its member's cards in its series.
 import { computed } from "vue";
 import { assetUrl } from "../asset";
 import { cardFrame, poolName } from "../cards";
@@ -30,6 +30,7 @@ const has = (c: ManifestCard) => owns(`card:${c.id}`);
 const hasEmote = (e: ManifestEmote) => owns(`emote:${e.key}`);
 const card = computed(() => (props.plate.kind === "card" ? props.plate.card : null));
 const series = computed(() => (props.plate.kind === "series" ? props.plate : null));
+const picture = computed(() => (props.plate.kind === "picture" ? props.plate : null));
 const owned = computed(() => !card.value || has(card.value));
 /** The cards to collect, a big hidden card first. */
 const set = computed(() => plateCards(props.plate));
@@ -44,7 +45,7 @@ const collected = computed(() => needs.value.filter(owns).length);
 const unlocked = computed(() => collected.value === needs.value.length);
 const worn = computed(() => settings.plate === props.plate.id);
 const nick = computed(() => settings.nick.trim() || "匿名小面包");
-const seriesId = computed(() => card.value?.series ?? series.value?.series ?? "");
+const seriesId = computed(() => card.value?.series ?? series.value?.series ?? picture.value?.series ?? "");
 const pool = computed(() =>
   seriesId.value ? poolName(manifest.series.find((s) => s.id === seriesId.value)?.name ?? seriesId.value) : "");
 function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
@@ -62,6 +63,9 @@ function go(page: "resonance" | "park") { ui.page = page; emit("close"); }
       <div v-else-if="series" class="art ui-frame frame-gold motion" :style="{ aspectRatio: `1 / ${series.aspect}` }">
         <img v-if="reducedMotion" :src="assetUrl(series.poster)" :alt="plate.name" />
         <video v-else :src="assetUrl(series.video)" :poster="assetUrl(series.poster)" autoplay loop muted playsinline></video>
+      </div>
+      <div v-else-if="picture" class="art ui-frame frame-gold" :style="{ aspectRatio: `1 / ${picture.aspect}` }">
+        <img :src="assetUrl(picture.still)" :style="{ backgroundImage: `url(${assetUrl(picture.poster)})` }" :alt="plate.name" />
       </div>
       <div class="info">
         <span class="ui-tag gold">铭牌</span>

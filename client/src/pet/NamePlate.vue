@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // A name plate: the strip across the eyes in a gold frame, with the nickname in white on a dark wash at the left.
 // A big hidden card plays its video; a sweep plate (a still picture on coral) glides between its two bands; a series
-// plate plays its own video under one fixed crop.
+// plate plays its own video under one fixed crop; a picture plate shows its picture under one fixed crop, fading in
+// where it leaves the strip bare under the nickname.
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { assetUrl } from "../asset";
 import { usePageActive } from "../composables/usePageActive";
@@ -9,7 +10,9 @@ import { renderActive } from "../stores/activity";
 import { reducedMotion } from "../stores/theme";
 import { roomStatus } from "../roomStatus";
 import Icon from "../ui/Icon.vue";
-import { getPlate, motionArt, plateArt, sweepArt, sweepFrames, panCycle, videoFace, type ArtBox } from "./plates";
+import {
+  PICTURE_FADE, getPlate, motionArt, panCycle, pictureArt, plateArt, sweepArt, sweepFrames, videoFace, type ArtBox,
+} from "./plates";
 import { followVideo } from "./plateVideo";
 import { useInView } from "./inView";
 
@@ -30,14 +33,19 @@ const card = computed(() => (plate.value?.kind === "card" ? plate.value.card : n
 const crop = computed(() => (plate.value?.kind === "card" ? plate.value.crop : null));
 const sweep = computed(() => (plate.value?.kind === "sweep" ? plate.value.sweep : null));
 const series = computed(() => (plate.value?.kind === "series" ? plate.value : null));
+const picture = computed(() => (plate.value?.kind === "picture" ? plate.value : null));
 const inner = computed(() => ({ w: props.width - FRAME * 2, h: props.height - FRAME * 2 }));
 const sweepBoxes = computed(() => (sweep.value ? sweepArt(sweep.value, inner.value.w, inner.value.h) : null));
 /** A series plate's video and its poster sit in the same box for the whole loop. */
 const seriesArt = computed(() => (series.value ? motionArt(series.value, inner.value.w, inner.value.h) : null));
+const pictureBox = computed(() => (picture.value ? pictureArt(picture.value, inner.value.w, inner.value.h) : null));
 const stillArt = computed(() =>
-  sweepBoxes.value?.face ?? seriesArt.value ?? (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
-const artSrc = computed(() =>
-  sweep.value?.src ?? (series.value ? assetUrl(series.value.poster) : card.value ? assetUrl(card.value.thumb) : ""));
+  sweepBoxes.value?.face ?? seriesArt.value ?? pictureBox.value ??
+  (crop.value ? plateArt(crop.value, inner.value.w, inner.value.h) : null));
+const poster = computed(() => series.value?.poster ?? picture.value?.poster ?? card.value?.thumb);
+const artSrc = computed(() => sweep.value?.src ?? (poster.value ? assetUrl(poster.value) : ""));
+/** A picture plate's picture that starts inside the strip fades in over this many px. */
+const fade = computed(() => (pictureBox.value && pictureBox.value.left > 0 ? PICTURE_FADE * inner.value.h : 0));
 const videoSrc = computed(() => series.value?.video ?? card.value?.video ?? null);
 const pageActive = usePageActive();
 const root = ref<HTMLElement>();
@@ -99,8 +107,11 @@ const px = (n: number) => `${n}px`;
   >
     <div class="win" :class="{ sweep: !!sweep }">
       <img
-        ref="img" class="art" :src="artSrc" alt="" draggable="false" decoding="async"
-        :style="{ width: px(stillArt.width), height: px(stillArt.height), left: px(stillArt.left), top: px(stillArt.top) }"
+        ref="img" class="art" :class="{ fade: !!fade }" :src="artSrc" alt="" draggable="false" decoding="async"
+        :style="{
+          width: px(stillArt.width), height: px(stillArt.height), left: px(stillArt.left), top: px(stillArt.top),
+          '--fade': fade ? px(fade) : undefined,
+        }"
       />
       <canvas v-if="playing" ref="canvas" class="art" :class="{ on: drawn }" :style="{ width: px(inner.w), height: px(inner.h) }"></canvas>
       <div
@@ -146,6 +157,11 @@ const px = (n: number) => `${n}px`;
   max-width: none;
   pointer-events: none;
   user-select: none;
+}
+/* The bare strip under the nickname runs into the picture. */
+.art.fade {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--fade));
+  mask-image: linear-gradient(90deg, transparent, #000 var(--fade));
 }
 canvas.art {
   left: 0;

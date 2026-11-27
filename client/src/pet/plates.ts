@@ -5,6 +5,9 @@
 //   two bands of it (PLATE_SWEEPS).
 // - a plate listed in the manifest with a card `series` (衣橱), unlocked by the whole series: its own video, cut
 //   with one fixed crop like a big hidden card's (PLATE_MOTIONS).
+// - a plate listed in the manifest with a card `series` and no video (脑洞波), unlocked by the cards of its member in
+//   the series: a still picture under one fixed crop, the face further right than on the other plates
+//   (PLATE_PICTURES).
 import alpaca from "../assets/brand/side-alpaca.webp";
 import { getCard, manifest, type ManifestCard, type ManifestEmote, type ManifestPlate } from "../manifest";
 
@@ -85,6 +88,16 @@ export const PLATE_MOTIONS: Readonly<Record<string, PlateMotion>> = {
   "wardrobe-beila": { face: { fx: 0.471, fy: 0.42, fw: 0.18 }, gap: 0.2 }, // 贝拉个性装扮 2.0, light theme
 };
 
+/** A picture plate's face, as fractions of its picture. */
+export interface PlatePicture { face: PlateFace }
+
+/** The 脑洞波 plates: each member's theme picture for her own space (个人空间头图), a close-up of her first card. */
+export const PLATE_PICTURES: Readonly<Record<string, PlatePicture>> = {
+  "naodong-jiaran": { face: { fx: 0.554, fy: 0.585, fw: 0.2 } }, // starry eyes, hungry at midnight
+  "naodong-nailin": { face: { fx: 0.606, fy: 0.31, fw: 0.165 } }, // winking, up late at a game
+  "naodong-beila": { face: { fx: 0.538, fy: 0.466, fw: 0.21 } }, // full face, watering flowers
+};
+
 type SeriesPlate = Extract<ManifestPlate, { series: string }>;
 
 export type Plate =
@@ -95,6 +108,12 @@ export type Plate =
   | {
     kind: "series"; id: string; name: string; series: string; cards: ManifestCard[];
     video: string; poster: string; still: string; aspect: number; motion: PlateMotion;
+  }
+  /** `cards` are those of `member` in `series` that unlock it; `poster` and `still` are its picture, small and full
+   * size, as asset references. */
+  | {
+    kind: "picture"; id: string; name: string; series: string; member: string | null; cards: ManifestCard[];
+    poster: string; still: string; aspect: number; picture: PlatePicture;
   };
 
 const TIER_ORDER = { big: 0, small: 1, normal: 2 } as const;
@@ -114,13 +133,22 @@ const PLATES: readonly Plate[] = [
   }),
 ];
 
+/** The cards a series plate asks for: its series, only its member's where it names one. Same rule as the server
+ * (manifest.py plates). */
+function seriesCards(p: SeriesPlate): ManifestCard[] {
+  return manifest.cards.filter((c) => c.series === p.series && (!p.member || c.characters.includes(p.member)));
+}
+
 function seriesPlate(p: SeriesPlate): Plate[] {
-  const motion = PLATE_MOTIONS[p.id];
-  const cards = manifest.cards.filter((c) => c.series === p.series);
-  return motion && cards.length ? [{
-    kind: "series", id: p.id, name: p.name, series: p.series, cards,
-    video: p.video, poster: p.poster, still: p.still, aspect: p.aspect, motion,
-  }] : [];
+  const cards = seriesCards(p);
+  if (!cards.length) return [];
+  const { id, name, series, poster, still, aspect } = p;
+  if (!p.video) {
+    const picture = PLATE_PICTURES[id];
+    return picture ? [{ kind: "picture", id, name, series, member: p.member ?? null, cards, poster, still, aspect, picture }] : [];
+  }
+  const motion = PLATE_MOTIONS[id];
+  return motion ? [{ kind: "series", id, name, series, cards, video: p.video, poster, still, aspect, motion }] : [];
 }
 const plateIndex = new Map(PLATES.map((p) => [p.id, p]));
 
@@ -134,7 +162,8 @@ export function getPlate(id: string | null | undefined): Plate | null {
 /** The members a plate shows. */
 export function plateMembers(plate: Plate): string[] {
   if (plate.kind === "card") return plate.card.characters;
-  if (plate.kind === "series") return [...new Set(plate.cards.flatMap((c) => c.characters))];
+  if (plate.kind === "picture" && plate.member) return [plate.member];
+  if (plate.kind === "series" || plate.kind === "picture") return [...new Set(plate.cards.flatMap((c) => c.characters))];
   return [];
 }
 
@@ -155,10 +184,10 @@ export function plateSet(card: ManifestCard): ManifestCard[] {
     .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
 }
 
-/** The cards a plate asks for: a big hidden card's set, or a series plate's series; none for an emote plate. */
+/** The cards a plate asks for: a big hidden card's set, or a series plate's cards; none for an emote plate. */
 export function plateCards(plate: Plate): ManifestCard[] {
   if (plate.kind === "card") return plateSet(plate.card);
-  return plate.kind === "series" ? plate.cards : [];
+  return plate.kind === "sweep" ? [] : plate.cards;
 }
 
 /** Item ids a plate asks for: its cards, or every emote of its set. Same rule as the server (game.py plate_needs). */
@@ -237,6 +266,31 @@ export function motionArt(plate: Extract<Plate, { kind: "series" }>, w: number, 
   const { face, gap = 0 } = plate.motion;
   const fit = { span: Math.max(FACE_SPAN, (w * face.fw) / h) };
   return plateArt(face, w, h, PLATE_ANCHOR, plate.aspect, fit, gap);
+}
+
+/** A picture plate's eyes sit this far across the strip, right of the other plates' anchor. */
+export const PICTURE_ANCHOR = 0.8;
+/** How much of the strip's width a picture plate may leave bare at the left, under the nickname. */
+export const PICTURE_GAP = 0.3;
+/** Where its picture starts inside the strip, it fades in over this much of the strip's height. */
+export const PICTURE_FADE = 0.45;
+
+/**
+ * Where a picture plate's picture goes in a w x h strip: the eyes at PICTURE_ANCHOR across and mid-height, the right
+ * of the strip covered and at most PICTURE_GAP of it bare at the left. The face is drawn as on the other plates, larger
+ * on a strip long for its height (a large or small pet), where that is what lets the picture reach that far.
+ */
+export function pictureArt(plate: Extract<Plate, { kind: "picture" }>, w: number, h: number): ArtBox {
+  const { face } = plate.picture;
+  const width = Math.max(
+    (FACE_SPAN * h) / face.fw, (1 - PICTURE_GAP) * w, ((PICTURE_ANCHOR - PICTURE_GAP) * w) / face.fx,
+  );
+  const height = width * plate.aspect;
+  return {
+    width, height,
+    left: Math.min(Math.max(PICTURE_ANCHOR * w - face.fx * width, w - width), PICTURE_GAP * w),
+    top: within(h / 2 - face.fy * height, h - height),
+  };
 }
 
 /**

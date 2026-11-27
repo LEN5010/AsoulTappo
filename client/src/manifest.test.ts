@@ -29,8 +29,11 @@ describe("manifest", () => {
     expect(getEmote(manifest.emoteSets[0].emotes[0].key)).toBeTruthy();
     expect(manifest.decor).toEqual([]);
     expect(manifest.accessories).toEqual([]);
-    expect(manifest.cards).toHaveLength(121);
-    expect(manifest.cards.filter((c) => c.rarity === "limited").map((c) => c.since)).toEqual(Array(36).fill("1.2.4"));
+    expect(manifest.cards).toHaveLength(133);
+    // 衣橱 from 1.2.4, then 脑洞波 from 1.3.0
+    expect(manifest.cards.filter((c) => c.rarity === "limited").map((c) => c.since))
+      .toEqual([...Array(36).fill("1.2.4"), ...Array(12).fill("1.3.0")]);
+    expect(manifest.cards.filter((c) => c.since).every((c) => c.rarity === "limited")).toBe(true);
     expect(getDecor(null)).toBeUndefined();
     expect(characterColor("嘉然")).toBe("#e799b0");
     expect(characterColor("贝拉山海经")).toBe(characterColor("贝拉"));
@@ -49,14 +52,24 @@ describe("manifest", () => {
     expect(getTheme("nope").id).toBe(d.id);
     expect(Object.values(d.parts).flat().every((r) => (r as string).startsWith("bundle:"))).toBe(true);
   });
-  it("lists 阿草's plate and the 衣橱 plates, each under an id no card has", () => {
+  it("lists 阿草's plate, the 衣橱 plates and the 脑洞波 plates, each under an id no card has", () => {
     expect(manifest.plates[0]).toEqual({ id: "achao", name: "阿草", emoteSet: "achao" });
-    expect(manifest.plates.map((p) => p.id)).toEqual(["achao", "wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila"]);
+    expect(manifest.plates.map((p) => p.id)).toEqual([
+      "achao", "wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila", "naodong-jiaran", "naodong-nailin", "naodong-beila",
+    ]);
     for (const p of manifest.plates) {
       expect(getCard(p.id)).toBeUndefined();
       if (p.series === undefined) expect(manifest.emoteSets.find((s) => s.id === p.emoteSet)?.emotes).toHaveLength(20);
-      else expect(manifest.cards.filter((c) => c.series === p.series)).toHaveLength(12);
+      else if (p.member === undefined) expect(manifest.cards.filter((c) => c.series === p.series)).toHaveLength(12);
+      else {
+        const series = manifest.cards.filter((c) => c.series === p.series);
+        expect(series).toHaveLength(12);
+        expect(series.filter((c) => c.characters.join() === p.member)).toHaveLength(4);
+      }
     }
+    // 衣橱 plates play a video, 脑洞波 plates show a still picture
+    expect(manifest.plates.filter((p) => p.series !== undefined && !p.video).map((p) => p.id))
+      .toEqual(["naodong-jiaran", "naodong-nailin", "naodong-beila"]);
   });
   it("wire emote keys fit the server limit", () => {
     for (const s of manifest.emoteSets) for (const e of s.emotes) expect(e.key.length).toBeLessThanOrEqual(32);

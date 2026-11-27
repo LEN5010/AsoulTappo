@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { manifest } from "../manifest";
 import {
   ACHAO_ARMS_MS, ACHAO_FACE_MS, ACHAO_FALL_MS, ACHAO_RISE_MS, BANNER_ASPECT, BANNER_EYES, BANNER_FIT, CARD_PAN, PAN_CYCLE_MS,
-  PLATE_ANCHOR, PLATE_CROPS, PLATE_MOTIONS, PLATE_SWEEPS, allPlates, bannerArt, getPlate, motionArt, nameBand, panAt, panCycle,
-  plateArt, plateCard, plateCards, plateMembers, plateNeeds, plateSet, plateSize, plateUnlocked, sweepArt, sweepFrames, videoFace,
+  PICTURE_ANCHOR, PICTURE_GAP, PLATE_ANCHOR, PLATE_CROPS, PLATE_MOTIONS, PLATE_PICTURES, PLATE_SWEEPS, allPlates, bannerArt,
+  getPlate, motionArt, nameBand, panAt, panCycle, pictureArt, plateArt, plateCard, plateCards, plateMembers, plateNeeds,
+  plateSet, plateSize, plateUnlocked, sweepArt, sweepFrames, videoFace,
 } from "./plates";
 
 describe("name plates", () => {
@@ -102,7 +103,8 @@ describe("阿草's plate", () => {
     expect(manifest.plates[0]).toEqual({ id: "achao", name: "阿草", emoteSet: "achao" });
     expect(allPlates().map((p) => p.id)).toEqual([...manifest.cards.filter((c) => c.tier === "big").map((c) => c.id), ...manifest.plates.map((p) => p.id)]);
     expect(Object.keys(PLATE_SWEEPS)).toEqual(manifest.plates.filter((p) => p.series === undefined).map((p) => p.id));
-    expect(Object.keys(PLATE_MOTIONS)).toEqual(manifest.plates.filter((p) => p.series !== undefined).map((p) => p.id));
+    expect(Object.keys(PLATE_MOTIONS)).toEqual(manifest.plates.filter((p) => p.series !== undefined && p.video).map((p) => p.id));
+    expect(Object.keys(PLATE_PICTURES)).toEqual(manifest.plates.filter((p) => p.series !== undefined && !p.video).map((p) => p.id));
     expect(manifest.plates.some((p) => manifest.cards.some((c) => c.id === p.id))).toBe(false);
     const p = achao();
     expect(p).toMatchObject({ kind: "sweep", name: "阿草", set: "achao" });
@@ -256,5 +258,86 @@ describe("the 衣橱 plates", () => {
         expect(art.top + art.height).toBeGreaterThanOrEqual(h - 1e-9);
       }
     }
+  });
+});
+
+describe("the 脑洞波 plates", () => {
+  const members = { "naodong-jiaran": "嘉然", "naodong-nailin": "乃琳", "naodong-beila": "贝拉" } as const;
+  const pictures = () => Object.keys(members).map((id) => {
+    const p = getPlate(id)!;
+    if (p.kind !== "picture") throw new Error(`${id} is not a picture plate`);
+    return p;
+  });
+  // the windows inside plates under pets at x0.4, x0.6, x0.8, x1, x1.5 and x2
+  const STRIPS = [[87, 12], [133, 14], [178, 20], [224, 26], [338, 36], [452, 36]] as const;
+
+  it("are unlocked by the four cards of their member in the series, the other members' not counting", () => {
+    for (const p of pictures()) {
+      const member = members[p.id as keyof typeof members];
+      expect(p).toMatchObject({ series: "naodong", member });
+      expect(plateMembers(p)).toEqual([member]);
+      const cards = manifest.cards.filter((c) => c.series === "naodong" && c.characters.join() === member);
+      expect(cards).toHaveLength(4);
+      expect(plateCards(p)).toEqual(cards);
+      expect(plateNeeds(p)).toEqual(cards.map((c) => `card:${c.id}`));
+      expect(plateCard(p.id)).toBeNull();
+      const others = manifest.cards.filter((c) => c.series === "naodong" && c.characters.join() !== member);
+      const owned = Object.fromEntries([...cards.slice(1), ...others].map((c) => [`card:${c.id}`, 1]));
+      expect(plateUnlocked(p.id, owned)).toBe(false);
+      owned[`card:${cards[0]!.id}`] = 1;
+      expect(plateUnlocked(p.id, owned)).toBe(true);
+    }
+  });
+
+  it("cover the right of the strip, leaving bare at most their gap at the left", () => {
+    for (const p of pictures()) {
+      for (const [w, h] of STRIPS) {
+        const art = pictureArt(p, w, h);
+        expect(art.left).toBeLessThanOrEqual(PICTURE_GAP * w + 1e-9);
+        expect(art.left + art.width).toBeGreaterThanOrEqual(w - 1e-9);
+        expect(art.top).toBeLessThanOrEqual(1e-9);
+        expect(art.top + art.height).toBeGreaterThanOrEqual(h - 1e-9);
+        expect(art.height / art.width).toBeCloseTo(p.aspect);
+      }
+    }
+  });
+
+  it("put the eyes right of the other plates', at their own anchor and mid-height", () => {
+    expect(PICTURE_ANCHOR).toBeGreaterThan(PLATE_ANCHOR);
+    for (const p of pictures()) {
+      for (const [w, h] of STRIPS) {
+        const art = pictureArt(p, w, h);
+        expect(art.left + p.picture.face.fx * art.width).toBeCloseTo(PICTURE_ANCHOR * w);
+        expect(art.top + p.picture.face.fy * art.height).toBeCloseTo(h / 2);
+      }
+    }
+  });
+
+  it("draw the face as large as the other plates do under a pet at x1, larger where the strip is long for its height", () => {
+    for (const p of pictures()) {
+      expect(pictureArt(p, 224, 26).width * p.picture.face.fw).toBeCloseTo(1.7 * 26);
+      for (const [w, h] of STRIPS) expect(pictureArt(p, w, h).width * p.picture.face.fw).toBeGreaterThanOrEqual(1.7 * h - 1e-9);
+    }
+    // under a pet at x2 the strip is 12.6 times as long as it is high, against 8.6 at x1
+    const beila = pictures()[2]!;
+    expect(pictureArt(beila, 452, 36).width * beila.picture.face.fw / 36).toBeCloseTo(2.45, 1);
+  });
+
+  it("cover the profile banner, even a narrow one", () => {
+    for (const p of pictures()) {
+      for (const w of [540, 120]) {
+        const h = 184, art = bannerArt(p.picture.face, w, h, p.aspect);
+        expect(art.left).toBe(0);
+        expect(art.width).toBeGreaterThanOrEqual(w);
+        expect(art.top).toBeLessThanOrEqual(0);
+        expect(art.top + art.height).toBeGreaterThanOrEqual(h - 1e-9);
+      }
+    }
+  });
+
+  it("are listed after the 衣橱 plates and are not 衣橱", () => {
+    const ids = allPlates().map((p) => p.id);
+    expect(ids.slice(-6)).toEqual(["wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila", ...Object.keys(members)]);
+    expect(allPlates().filter((p) => p.kind === "series").map((p) => p.id)).toEqual(["wardrobe-jiaran", "wardrobe-nailin", "wardrobe-beila"]);
   });
 });

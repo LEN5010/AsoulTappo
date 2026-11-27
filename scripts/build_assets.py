@@ -454,32 +454,69 @@ PORTRAIT_SIZE = (1242, 1988)
 PLATE_VIDEO_W = 540
 
 
+def portrait_card(img: Path, num: str, name: str, series: str, member: str, rarity: str, since: str,
+                  force: bool) -> dict:
+    """A still card from a space-background portrait: cut to 2:3, its thumbnail bundled and its full size in the
+    packs. Returns its manifest entry."""
+    if not img.is_file():
+        raise SystemExit(f"missing source for card {num} ({img})")
+    cid = f"c{num}"
+    thumb_rel = f"cards/thumb/{cid}.webp"
+    full_rel = f"cards/{series}/{cid}.webp"
+    if force or not (BUNDLE / thumb_rel).exists() or not (PACKS / full_rel).exists():
+        im = load_rgba(img).convert("RGB")
+        if im.size != PORTRAIT_SIZE:
+            raise SystemExit(f"{img}: {im.size}, expected {PORTRAIT_SIZE}")
+        h = im.width * 3 // 2
+        top = (im.height - h) // 2
+        im = im.crop((0, top, im.width, top + h))
+        save_webp(resize_w(im, CARD_FULL_W), PACKS / full_rel, q=WEBP_Q)
+        save_webp(im.resize(CARD_THUMB, Image.LANCZOS), BUNDLE / thumb_rel, q=80)
+    return {
+        "id": cid, "name": name, "series": series, "sub": None, "characters": [member],
+        "rarity": rarity, "tier": "normal",
+        "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None, "still": False,
+        "since": since,
+    }
+
+
 def build_wardrobe(src: Path, force: bool) -> list[dict]:
     """The wardrobe cards from <src>/space-bg/<suit>_sp_image<n>.jpg: thumbnail bundled, full size in the packs."""
-    cards = []
-    for series, num, name, member, k in cat.wardrobe_cards():
-        img = src / "space-bg" / f"{num[:-2]}_sp_image{k}.jpg"
-        if not img.is_file():
-            raise SystemExit(f"missing source for wardrobe card {num} ({img})")
-        cid = f"c{num}"
-        thumb_rel = f"cards/thumb/{cid}.webp"
-        full_rel = f"cards/{series}/{cid}.webp"
-        if force or not (BUNDLE / thumb_rel).exists() or not (PACKS / full_rel).exists():
-            im = load_rgba(img).convert("RGB")
-            if im.size != PORTRAIT_SIZE:
-                raise SystemExit(f"{img}: {im.size}, expected {PORTRAIT_SIZE}")
-            h = im.width * 3 // 2
-            top = (im.height - h) // 2
-            im = im.crop((0, top, im.width, top + h))
-            save_webp(resize_w(im, CARD_FULL_W), PACKS / full_rel, q=WEBP_Q)
-            save_webp(im.resize(CARD_THUMB, Image.LANCZOS), BUNDLE / thumb_rel, q=80)
-        cards.append({
-            "id": cid, "name": name, "series": series, "sub": None, "characters": [member],
-            "rarity": cat.WARDROBE_RARITY, "tier": "normal",
-            "thumb": f"bundle:{thumb_rel}", "full": f"pack:{full_rel}", "video": None, "still": False,
-            "since": cat.WARDROBE_SINCE,
-        })
-    return cards
+    return [portrait_card(src / "space-bg" / f"{num[:-2]}_sp_image{k}.jpg", num, name, series, member,
+                          cat.WARDROBE_RARITY, cat.WARDROBE_SINCE, force)
+            for series, num, name, member, k in cat.wardrobe_cards()]
+
+
+def build_naodong(src: Path, force: bool) -> list[dict]:
+    """The 脑洞波 cards from the theme suit folders under <src> (the 主题 folder): thumbnail bundled, full size in the
+    packs."""
+    series = cat.NAODONG_SERIES[0]
+    return [portrait_card(src / cat.NAODONG_DIR.format(member=member) / f"background_portrait_{k}-0_other.jpg",
+                          num, name, series, member, cat.NAODONG_RARITY, cat.NAODONG_SINCE, force)
+            for num, name, member, k in cat.naodong_cards()]
+
+
+def build_naodong_plates(src: Path, force: bool) -> dict[str, dict]:
+    """Each 脑洞波 plate's picture, its member's still personal-space head picture from the theme suit folder under
+    <src>: PLATE_VIDEO_W wide in the bundle (`poster`, under the pet) and at full size in the packs (`still`, for the
+    profile namecard). Returns plate id -> {poster, still, aspect} for the manifest."""
+    out = {}
+    for plate in cat.PLATES:
+        if plate.get("series") != cat.NAODONG_SERIES[0]:
+            continue
+        pid = plate["id"]
+        source = src / cat.NAODONG_DIR.format(member=plate["member"]) / "head_myself_squared_bg-0_other.png"
+        if not source.is_file():
+            raise SystemExit(f"missing head picture for {pid} ({source})")
+        poster, still = BUNDLE / "plates" / f"{pid}.webp", PACKS / "plates" / f"{pid}.webp"
+        if force or not poster.exists() or not still.exists():
+            im = load_rgba(source).convert("RGB")
+            save_webp(resize_w(im, PLATE_VIDEO_W), poster, q=80)
+            save_webp(im, still, q=WEBP_Q)
+        with Image.open(still) as im:
+            aspect = round(im.height / im.width, 4)
+        out[pid] = {"poster": f"bundle:plates/{pid}.webp", "still": f"pack:plates/{pid}.webp", "aspect": aspect}
+    return out
 
 
 def build_wardrobe_plates(src: Path, force: bool) -> dict[str, dict]:
@@ -554,13 +591,38 @@ def attach_holo(cards: list[dict]) -> list[dict]:
     return out
 
 
-def manifest_plates(motion: dict[str, dict]) -> list[dict]:
-    """The catalog's plates, a wardrobe plate with its video when it has been built."""
-    return [{**p, **motion.get(p["id"], {})} for p in cat.PLATES]
+#: A series plate's pictures in the manifest (a 脑洞波 plate has no video).
+PLATE_ART = ("video", "poster", "still", "aspect")
+
+
+def manifest_plates(art: dict[str, dict]) -> list[dict]:
+    """The catalog's plates, a series plate with its pictures (PLATE_ART) once they have been built; a series plate
+    without them is left out."""
+    return [{**p, **art.get(p["id"], {})} for p in cat.PLATES if not p.get("series") or p["id"] in art]
+
+
+def plate_art(manifest: dict) -> dict[str, dict]:
+    """The pictures of [manifest]'s series plates, to carry over to the next manifest: plate id -> PLATE_ART keys."""
+    return {p["id"]: {k: p[k] for k in PLATE_ART if k in p} for p in manifest.get("plates", []) if "still" in p}
+
+
+#: The series built by steps of their own (the 衣橱 and 脑洞波 portraits), not from the collections' cards.
+OWN_SERIES = {**{k: v[0] for k, v in cat.WARDROBE_SERIES.items()}, cat.NAODONG_SERIES[0]: cat.NAODONG_SERIES[1]}
+
+
+def series_names() -> dict[str, str]:
+    """Every card series by id, in manifest order: the collections, then the 衣橱 and 脑洞波 ones."""
+    return {**{k: v[0] for k, v in cat.CARD_SERIES.items()}, **OWN_SERIES}
 
 
 def series_name(series: str) -> str:
-    return cat.CARD_SERIES[series][0] if series in cat.CARD_SERIES else cat.WARDROBE_SERIES[series][0]
+    return series_names()[series]
+
+
+def manifest_cards(collections: list[dict], wardrobe: list[dict], naodong: list[dict]) -> list[dict]:
+    """The manifest's cards: those of [collections] that no step of its own builds, then the 衣橱 cards, then the
+    脑洞波 ones, holo versions attached."""
+    return attach_holo([c for c in collections if c["series"] not in OWN_SERIES] + wardrobe + naodong)
 
 
 def starter_items(emotes: list[dict]) -> dict:
@@ -674,8 +736,9 @@ RARITIES = {
 
 
 def series_list(cards: list[dict]) -> list[dict]:
-    names = {**{k: v[0] for k, v in cat.CARD_SERIES.items()}, **{k: v[0] for k, v in cat.WARDROBE_SERIES.items()}}
-    return [{"id": k, "name": name, "total": sum(1 for c in cards if c["series"] == k)} for k, name in names.items()]
+    """The series [cards] fill, in manifest order, with their totals."""
+    totals = {k: sum(1 for c in cards if c["series"] == k) for k in series_names()}
+    return [{"id": k, "name": name, "total": totals[k]} for k, name in series_names().items() if totals[k]]
 
 
 def write_manifests(manifest: dict) -> None:
@@ -696,6 +759,10 @@ def main() -> None:
                                            "and plates are kept from the current manifest")
     ap.add_argument("--wardrobe-only", action="store_true",
                     help="Update the wardrobe cards and plates only, leaving every other asset as it is")
+    ap.add_argument("--naodong-src", help="The 主题 folder that holds the 脑洞波 theme suits (脑洞波系列主题装扮-<member>/); "
+                                          "without it the 脑洞波 cards and plates are kept from the current manifest")
+    ap.add_argument("--naodong-only", action="store_true",
+                    help="Update the 脑洞波 cards and plates only, leaving every other asset as it is")
     ap.add_argument("--holo-src", help="Official holo masks (<numeric card id>.webp); without it the masks in the "
                                        "packs are kept")
     ap.add_argument("--holo-only", action="store_true",
@@ -715,12 +782,17 @@ def main() -> None:
         ap.error("--wardrobe-only requires --wardrobe-src")
     if args.wardrobe_only and (args.cards_only or args.emotes_only):
         ap.error("--wardrobe-only is a mode of its own")
-    if args.holo_only and (args.cards_only or args.emotes_only or args.wardrobe_only):
+    if args.naodong_only and not args.naodong_src:
+        ap.error("--naodong-only requires --naodong-src")
+    if args.naodong_only and (args.cards_only or args.emotes_only or args.wardrobe_only):
+        ap.error("--naodong-only is a mode of its own")
+    if args.holo_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.naodong_only):
         ap.error("--holo-only is a mode of its own")
-    if args.photocards_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.holo_only):
+    if args.photocards_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.naodong_only
+                                 or args.holo_only):
         ap.error("--photocards-only is a mode of its own")
-    if args.live_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.holo_only
-                           or args.photocards_only):
+    if args.live_only and (args.cards_only or args.emotes_only or args.wardrobe_only or args.naodong_only
+                           or args.holo_only or args.photocards_only):
         ap.error("--live-only is a mode of its own")
     previous = json.loads((PACKS / "manifest.json").read_text(encoding="utf-8"))
     if args.photocards_only:
@@ -742,20 +814,26 @@ def main() -> None:
         write_manifests(manifest)
         print(f"{sum(1 for c in manifest['cards'] if c.get('holo'))} holo cards")
         return
+    # The 衣橱 and 脑洞波 cards and their plates' pictures are built from sources of their own; without them they are
+    # kept from the current manifest, whatever else a mode rebuilds.
     wardrobe_ids = set(cat.WARDROBE_SERIES)
+    art = plate_art(previous)
     if args.wardrobe_src:
         wardrobe = build_wardrobe(Path(args.wardrobe_src), args.force)
-        motion = build_wardrobe_plates(Path(args.wardrobe_src), args.force)
+        art.update(build_wardrobe_plates(Path(args.wardrobe_src), args.force))
     else:
         wardrobe = [c for c in previous["cards"] if c["series"] in wardrobe_ids]
-        motion = {p["id"]: {k: p[k] for k in ("video", "poster", "still", "aspect")}
-                  for p in previous.get("plates", []) if "video" in p}
-    if args.wardrobe_only:
-        manifest = {**previous, "rarities": RARITIES, "plates": manifest_plates(motion)}
-        manifest["cards"] = attach_holo([c for c in previous["cards"] if c["series"] not in wardrobe_ids] + wardrobe)
+    if args.naodong_src:
+        naodong = build_naodong(Path(args.naodong_src), args.force)
+        art.update(build_naodong_plates(Path(args.naodong_src), args.force))
+    else:
+        naodong = [c for c in previous["cards"] if c["series"] == cat.NAODONG_SERIES[0]]
+    if args.wardrobe_only or args.naodong_only:
+        manifest = {**previous, "rarities": RARITIES, "plates": manifest_plates(art)}
+        manifest["cards"] = manifest_cards(previous["cards"], wardrobe, naodong)
         manifest["series"] = series_list(manifest["cards"])
         write_manifests(manifest)
-        print(f"{len(wardrobe)} wardrobe cards, {len(motion)} plate videos")
+        print(f"{len(wardrobe)} wardrobe cards, {len(naodong)} 脑洞波 cards, {len(manifest['plates'])} plates")
         return
 
     if args.series and not args.cards_only:
@@ -785,7 +863,7 @@ def main() -> None:
     for t in themes:
         t["rarity"] = None if t["default"] else cat.THEME_RARITY
 
-    cards = attach_holo([c for c in cards if c["series"] not in wardrobe_ids] + wardrobe)
+    cards = manifest_cards(cards, wardrobe, naodong)
     manifest = {
         "version": 4,
         "characters": cat.CHARACTERS,
@@ -799,7 +877,7 @@ def main() -> None:
         "accessories": accessories,
         "starter": starter_items(emotes),
         "skins": cat.SKINS,
-        "plates": manifest_plates(motion),
+        "plates": manifest_plates(art),
         "photocards": cat.PHOTOCARDS,
     }
     from build_previews import build_emote_covers, build_pet_previews

@@ -5,8 +5,8 @@
 // pearl card with the featured items piled on it as stickers. A featured skin sits at its desk as on the desktop; a two-form skin
 // types for a moment and changes into its second form, as it does for the player. The sheet lists what the pool
 // holds: its featured items as standees (the one on show times its own turn), then the 衣橱 series as a row
-// (CollectionRows.vue); under the sheet the 衣橱 cards pass by. A pool with more featured items than a row of
-// standees takes keeps a lineup under the hero.
+// (CollectionRows.vue); under the sheet the limited cards it deals pass by. A pool with more featured items than a
+// row of standees takes keeps a lineup under the hero.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
@@ -15,7 +15,7 @@ import { cardLabel } from "../cards";
 import { characterColor, getCard, memberOf } from "../manifest";
 import { collectible, RARITY_LABEL, type Item } from "../items";
 import type { Rarity } from "../manifest";
-import { bannerBaseRates, featuredItems } from "../resonance";
+import { bannerBaseRates, featuredItems, heldItems } from "../resonance";
 import { collection } from "../stores/player";
 import type { Banner } from "../stores/economy";
 import { reducedMotion } from "../stores/theme";
@@ -57,24 +57,31 @@ const figure = (item: Item, step: number): Figure => {
   const card = skin ? undefined : getCard(item.ref);
   return { item, step, skin, twoForm: skin && !!getCharacter(item.ref)?.form, art: card ? assetUrl(card.full) : "" };
 };
-/** The limited tier's cards (the 衣橱 cards), where this pool raises their odds. */
+/** The limited tier's cards (the 衣橱 cards, and those of a limited pool once it has ended). */
 const LIMITED = collectible.filter((item) => item.rarity === "limited" && item.kind === "card");
 const raised = computed(() => !!props.banner.rates?.limited && bannerBaseRates(props.banner).limited > 0);
-/** The limited cards a member at a time, so neighbours differ: the hand deals them in this order. */
-const DEALT = (() => {
+/**
+ * The limited cards this pool deals where it raises their odds, a member at a time so neighbours differ: the hand
+ * deals them in this order. Not those a limited pool keeps to itself for now, this one's featured cards among them.
+ */
+const dealt = computed(() => {
+  const held = heldItems();
   const by = new Map<string, Item[]>();
   for (const item of LIMITED) {
+    if (held.has(item.id)) continue;
     const member = item.characters[0] ?? "";
     by.set(member, [...(by.get(member) ?? []), item]);
   }
   const rows = [...by.values()];
-  const dealt: Item[] = [];
-  for (let i = 0; rows.some((row) => row[i]); i++) for (const row of rows) if (row[i]) dealt.push(row[i]!);
-  return dealt;
-})();
+  const out: Item[] = [];
+  for (let i = 0; rows.some((row) => row[i]); i++) for (const row of rows) if (row[i]) out.push(row[i]!);
+  return out;
+});
+/** The hero is the hand dealing them. */
+const dealing = computed(() => raised.value && dealt.value.length > 0);
 /** The same cards passing under the sheet. */
 const strip = computed(() =>
-  (raised.value ? DEALT : []).map((item) => ({ item, art: assetUrl(getCard(item.ref)?.thumb ?? item.art) })));
+  (raised.value ? dealt.value : []).map((item) => ({ item, art: assetUrl(getCard(item.ref)?.thumb ?? item.art) })));
 /** Keyboard focus in the strip stops it and lets it scroll, so the focused card is in view. */
 const stripKeyed = ref(false);
 function onStripKey(e: KeyboardEvent) {
@@ -90,13 +97,18 @@ function onStripKey(e: KeyboardEvent) {
 /** The pile: the item on show and, on the pearl card, the next ones behind it. */
 const pile = computed(() => {
   const n = items.value.length;
-  const shown = raised.value ? Math.min(1, n) : Math.min(PILE, n);
+  const shown = dealing.value ? Math.min(1, n) : Math.min(PILE, n);
   return Array.from({ length: shown }, (_, step) => figure(items.value[(at.value + step) % n]!, step));
 });
 /** What the pool's featured items are called: skins when they all are. */
 const featuredWord = computed(() => (items.value.every((i) => i.kind === "character") ? "本期皮肤" : "本期限定"));
-/** With too many featured items for a row of standees, a lineup under the hero picks among them. */
+/** With too many featured items for a row of standees, a lineup under the pearl card picks among them and times
+ * their turns; under the hand of dealt cards there is none, and the standees time them. */
 const lined = computed(() => items.value.length > STANDS);
+/** Then the standees stand in even rows of at most this many (two rows up to 16, so the cards passing under the sheet
+ * stay in sight): this many columns. */
+const STAND_ROW = 8;
+const standCols = computed(() => Math.ceil(items.value.length / Math.ceil(items.value.length / STAND_ROW)));
 const odds = (r: Rarity) => (props.banner.rates?.[r] ? `${RARITY_LABEL[r]} ${props.banner.rates[r]}%` : "");
 /** The odds beside the featured items: their own tier's rate here, or the tiers of theirs this pool rates. */
 const featuredOdds = computed(() => {
@@ -240,7 +252,7 @@ function onFeaturedKey(e: KeyboardEvent) {
 // The showcase width sets the pet's canvas size. The card fan reserves room for the second-form wing.
 const plateEl = ref<HTMLElement>();
 const plateW = ref(0);
-const frontScale = computed(() => Math.max(0.5, plateW.value * (raised.value ? 1 : 0.96) / PET_BASE.width));
+const frontScale = computed(() => Math.max(0.5, plateW.value * (dealing.value ? 1 : 0.96) / PET_BASE.width));
 const backScale = computed(() => frontScale.value * 0.58);
 let resize: ResizeObserver | undefined;
 let measureFrame = 0;
@@ -293,7 +305,7 @@ onBeforeUnmount(() => {
     </div>
 
     <CardHand
-      v-if="raised" class="card-hand" bare :items="DEALT" :busy="busy" :paused="paused" :hold="pointing" crest="LIMITED"
+      v-if="dealing" class="card-hand" bare :items="dealt" :busy="busy" :paused="paused" :hold="pointing" crest="LIMITED"
       :style="{ '--pet-reach': petReach }"
       @inspect="emit('inspect', $event)" @pointerenter="pointing = true"
     >
@@ -412,7 +424,10 @@ onBeforeUnmount(() => {
               <span v-if="featuredOdds" class="odds">{{ featuredOdds }}</span>
               <span v-if="banner.pity" class="odds">{{ banner.pity }} 次保底</span>
             </p>
-            <div class="stands" @keydown="onFeaturedKey" @pointerenter="pointing = true">
+            <div
+              class="stands" :class="{ rows: lined }" :style="lined ? { '--cols': standCols } : undefined"
+              @keydown="onFeaturedKey" @pointerenter="pointing = true"
+            >
               <button
                 v-for="(item, i) in items" :key="item.id" type="button" class="stand-key" :class="{ on: i === at, done: owns(item) }"
                 :disabled="busy" :title="item.name" :aria-label="i === at ? `查看${item.name}` : `换到${item.name}`"
@@ -422,8 +437,8 @@ onBeforeUnmount(() => {
                   <PetBust v-if="item.kind === 'character'" class="stand-bust" :src="getCharacter(item.ref)!.bg" />
                   <span v-else class="stand-card frame-pearl"><img :src="assetUrl(item.art)" alt="" draggable="false" /></span>
                 </span>
-                <b class="stand-name"><Icon :name="owns(item) ? 'check' : 'lock'" :size="11" /><span>{{ item.name }}</span></b>
-                <i v-if="i === at && !lined && items.length > 1 && !reducedMotion" class="tick" aria-hidden="true" @animationend="go(1)"></i>
+                <b v-if="!lined" class="stand-name"><Icon :name="owns(item) ? 'check' : 'lock'" :size="11" /><span>{{ item.name }}</span></b>
+                <i v-if="i === at && (!lined || dealing) && items.length > 1 && !reducedMotion" class="tick" aria-hidden="true" @animationend="go(1)"></i>
               </button>
             </div>
           </div>
@@ -434,7 +449,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="strip.length" class="closet-strip" :class="{ keyed: stripKeyed, covered: stripCovered }" role="region" aria-label="衣橱卡牌"
+        v-if="strip.length" class="closet-strip" :class="{ keyed: stripKeyed, covered: stripCovered }" role="region" aria-label="限定卡牌"
         :style="{ '--marquee': `${strip.length * 2.1}s` }"
         @pointerdown="stripKeyed = false" @keydown="onStripKey"
         @focusin="stripKeyed = ($event.target as HTMLElement).matches(':focus-visible')"
@@ -1475,6 +1490,34 @@ h3 {
 }
 .stands:has(:focus-visible) .tick {
   animation-play-state: paused;
+}
+/* More featured items than a row takes: even rows of them without names (the one on show is named above), the
+   missing ones dimmed as in a plate's set. */
+.stands.rows {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: 8px 4px;
+}
+.stands.rows .stand-key {
+  padding-bottom: 0;
+}
+/* The turn of the one on show, in the gap under its row. */
+.stands.rows .stand-key .tick {
+  bottom: -5px;
+}
+.stands.rows .stand {
+  width: 100%;
+  max-width: 62px;
+  height: 58px;
+}
+.stands.rows .stand-card {
+  width: min(36px, 100%);
+}
+.stands.rows .stand-key:not(.done) .stand-card img {
+  filter: var(--dim);
+}
+.stands.rows .stand-key:not(.done) .stand-bust {
+  filter: var(--contour) var(--dim) drop-shadow(0 2px 2px rgba(var(--shadow-rgb), 0.18));
 }
 
 @container panel (max-width: 820px) {
