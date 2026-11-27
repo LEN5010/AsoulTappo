@@ -127,15 +127,18 @@ def test_skins_of_a_later_release_stay_out_of_older_clients_pools():
     winter = {"char:嘉然冬日奇迹", "char:乃琳冬日奇迹", "char:贝拉冬日奇迹"}
     birthday = {"char:心宜2025生日", "char:思诺2025生日"}
     forms = {"char:嘉然然龙", "char:乃琳法师", "char:贝拉炎头队长"}
-    assert later == winter | birthday | forms
+    heart = {"char:心宜2026生日"}
+    assert later == winter | birthday | forms | heart
     skins = lambda version: {i["id"] for i in M.resonance_pool_for(version)["skin"]}
     every = {i["id"] for i in M.resonance_pool["skin"]}
-    for version in (None, "1.2.5", "v1.2.5", "1.2.5-rc.1", "1.3.0"):
+    for version in (None, "1.3.0", "v1.3.0", "1.3.0-rc.1"):
         assert skins(version) == every
+    for version in ("1.2.5", "v1.2.5", "1.2.5-rc.1", "1.2.6"):
+        assert skins(version) == every - heart
     for version in ("1.2.2", "v1.2.4", "1.2.4-rc.1"):
-        assert skins(version) == every - forms
+        assert skins(version) == every - forms - heart
     for version in ("1.2.0", "v1.2.1", "1.2.0-rc.3"):
-        assert skins(version) == every - birthday - forms
+        assert skins(version) == every - birthday - forms - heart
     for version in ("1.1.4", "1.2.0" + "x", ""):
         assert skins(version) == every - later
     # Besides skins only the wardrobe cards (the limited tier) and the 45 live-room emotes (uncommon) are held back.

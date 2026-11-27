@@ -394,7 +394,9 @@ SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for me
 ] + [skin(member, "冬日奇迹", "1.2.0") for member in ("嘉然", "乃琳", "贝拉")] + [
     skin(member, "2025生日", "1.2.2") for member in ("心宜", "思诺")] + [
     # Two-form skins: their folder also holds formImage.webp, shown while the player keeps typing (PetView).
-    skin("嘉然", "然龙", "1.2.5"), skin("乃琳", "法师", "1.2.5"), skin("贝拉", "炎头队长", "1.2.5")]
+    skin("嘉然", "然龙", "1.2.5"), skin("乃琳", "法师", "1.2.5"), skin("贝拉", "炎头队长", "1.2.5")] + [
+    # 心宜's 2026 birthday skin (the 心之轨迹 birthday event), featured by the pool of that name.
+    skin("心宜", "2026生日", "1.3.0")]
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote
 # of `emoteSet` is owned, or every card of `series`; the client keeps the picture and its crop
