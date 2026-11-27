@@ -992,6 +992,13 @@ def test_the_client_gets_the_shelf_as_it_is(monkeypatch):
     assert TestClient(main.app).get("/api/economy").json()["photocards"] == shelf
 
 
+def test_the_client_never_gets_the_weights(monkeypatch):
+    weighed = {**CFG, "weight": {"bella-eileen-1": 0.5, "bella-eileen-2": 0.5}}
+    monkeypatch.setattr(main, "manifest", two_series(weighed, CFG2))
+    assert TestClient(main.app).get("/api/economy").json()["photocards"] == [CFG, CFG2]
+    assert main.manifest.economy["photocards"][0]["weight"] == weighed["weight"]
+
+
 @pytest.mark.parametrize("shelf", [None, []])
 def test_the_api_without_photocards(monkeypatch, shelf):
     monkeypatch.setattr(main, "game", Game(Store(":memory:"), with_shelf(shelf), now=Clock()))

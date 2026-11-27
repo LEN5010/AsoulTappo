@@ -283,9 +283,12 @@ def client_view(economy: dict[str, Any], cfg: DropConfig,
     client's resonance [pool], a tier it leaves empty is folded into common, as its draws do. Without [holo] (a client
     that gets no holo versions) the holo chance is left out. The economy's own list of limited pools never goes out:
     the client gets [banners], those it can draw from now or within the hour, and [held], the items kept out of the
-    standing pool for a banner."""
+    standing pool for a banner. A photocard series' `weight` stays on the server: the client shows each kind's odds
+    whole."""
     out = {**economy, "tapGuard": {"fastPerSecond": cfg.fast_taps_per_sec, "fastStreakSec": cfg.fast_streak_sec,
                                    "cooldownSec": cfg.tap_cooldown_sec}}
+    if isinstance(economy.get("photocards"), list):
+        out["photocards"] = [{k: v for k, v in c.items() if k != "weight"} for c in economy["photocards"]]
     res = economy.get("resonance")
     if not res:
         return out
