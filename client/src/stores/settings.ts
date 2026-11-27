@@ -21,8 +21,11 @@ export interface Settings {
   clickThrough: boolean;
   alwaysOnTop: boolean;
   lastRoom: string;
-  /** The room the save was in when the app last closed ("" = none): the desk goes back into it once on start. */
+  /** The room the save was in when the app last closed ("" = none), left neither on purpose nor by being turned
+   * away: with autoRejoin the desk goes back into it once on start. */
   rejoinRoom: string;
+  /** The online page's switch: go back into rejoinRoom on start, also when nobody is in it (that makes it again). */
+  autoRejoin: boolean;
   /** The rooms joined lately, newest first (recentRooms.ts). */
   recentRooms: RecentRoom[];
   /** Tap batching window (100–200ms). */
@@ -202,6 +205,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alwaysOnTop: true,
   lastRoom: "",
   rejoinRoom: "",
+  autoRejoin: false,
   recentRooms: [],
   batchMs: 150,
   favorites: [],

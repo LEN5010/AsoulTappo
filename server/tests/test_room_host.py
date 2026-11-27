@@ -1,11 +1,12 @@
 """Room host, public rooms, the public list and removing members."""
 import asyncio
+import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app, manager
-from app.rooms import Banned, NeedSave, RoomManager
+from app.rooms import EMPTY_SECONDS, Banned, NeedSave, RoomManager
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +163,7 @@ def test_members_without_a_save_already_inside_stay_when_the_room_goes_public():
         assert [p.id for p in manager.members("r1")][1] == jb["you"]
 
 
-def test_host_removes_a_member_whose_save_stays_out_until_the_room_closes():
+def test_host_removes_a_member_whose_save_stays_out_until_the_room_is_forgotten(monkeypatch):
     c = TestClient(app).__enter__()
     with c.websocket_connect("/ws") as a, c.websocket_connect("/ws") as b:
         ja = join(a, nick="a", tok=token("a"))
@@ -187,8 +188,12 @@ def test_host_removes_a_member_whose_save_stays_out_until_the_room_closes():
             assert join(other, nick="d", tok=token("d"))["type"] == "joined"
             a.receive_json()
 
-    # everyone left: the room and its bans are gone
+    # everyone left: the room is gone, its bans are kept with it (rooms.EMPTY_SECONDS) and then gone too
     assert "r1" not in manager.rooms
+    with c.websocket_connect("/ws") as b:
+        refused = join(b, nick="b", tok=token("b"))
+        assert refused["code"] == "room_full" and refused["reason"] == "banned"
+    monkeypatch.setattr(manager, "clock", lambda: time.monotonic() + EMPTY_SECONDS)
     with c.websocket_connect("/ws") as b:
         assert join(b, nick="b", tok=token("b"))["type"] == "joined"
 

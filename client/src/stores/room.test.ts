@@ -433,13 +433,12 @@ it("tells before any invite that bets need an account, only on a server with acc
 });
 
 // ---------------------------------------------------------------- back into the room on start
-const OPEN_URL = "https://len5010.top/tappo/rooms/old";
-
-/** The room store of an app that closed while in room "old", with the server's answer about that room. */
-async function restart(answer: () => Promise<unknown>) {
-  const saved = JSON.stringify({ termsAgreed: TERMS_VERSION, statementSeen: APP_VERSION, lastRoom: "old", rejoinRoom: "old" });
+/** The room store of an app that closed while in room "old", with the online page's switch [on] or off. Nothing is
+ * looked up on the way back: fetch answers every call with a server error. */
+async function restart(on: boolean) {
+  const saved = JSON.stringify({ termsAgreed: TERMS_VERSION, statementSeen: APP_VERSION, lastRoom: "old", rejoinRoom: "old", autoRejoin: on });
   vi.stubGlobal("localStorage", { getItem: withEconomy((k: string) => (k === "asoultappo.settings.v1" ? saved : null)), setItem: () => {} });
-  const fetchMock = vi.fn(answer);
+  const fetchMock = vi.fn(async () => reply(500, null));
   vi.stubGlobal("fetch", fetchMock);
   const { settings } = await import("./settings");
   const player = await import("./player");
@@ -447,100 +446,90 @@ async function restart(answer: () => Promise<unknown>) {
   return { settings, player, r: room, fetchMock };
 }
 
-it("goes back into the room it was in once the server answers, and only into a room that is open", async () => {
-  const { settings, player, r, fetchMock } = await restart(async () => reply(200, { room: "old", open: true }));
+it("goes back into the room it was in once the server answers, also into a room nobody is in", async () => {
+  const { settings, player, r, fetchMock } = await restart(true);
   r.rejoinOnStart();
   await vi.advanceTimersByTimeAsync(0);
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(Socket.all).toHaveLength(0);
   player.online.value = true;
   await vi.advanceTimersByTimeAsync(0);
-  expect(fetchMock).toHaveBeenCalledWith(OPEN_URL, undefined);
   expect(r.roomId.value).toBe("old");
   const socket = Socket.all[0];
   socket.open();
-  // Only into the room as it is: it may close between the answer and the join.
-  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
+  // A plain join: for a room nobody is in, it makes the room again.
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old" });
+  expect(socket.sent[0]).not.toHaveProperty("onlyOpen");
   socket.recv({ type: "joined", room: "old", you: "me", members: [] });
   expect(settings.rejoinRoom).toBe("old");
-  // Once a run: going offline and back does not ask again.
+  // Once a run: going offline and back does not join again.
   player.online.value = false;
   r.rejoinOnStart();
   player.online.value = true;
   await vi.advanceTimersByTimeAsync(0);
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(Socket.all).toHaveLength(1);
+  expect(fetchMock).not.toHaveBeenCalled();
   // Leaving on purpose forgets it.
   r.leaveRoom();
   expect(settings.rejoinRoom).toBe("");
 });
 
-it("forgets a room that closed, and joins nothing on a server that cannot tell", async () => {
-  for (const answer of [
-    async () => reply(200, { room: "old", open: false }),
-    async () => reply(404, { detail: "Not Found" }),
-  ]) {
-    vi.resetModules();
-    const { settings, player, r } = await restart(answer);
-    player.online.value = true;
-    r.rejoinOnStart();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(Socket.all).toHaveLength(0);
-    expect(r.roomId.value).toBe("");
-    expect(settings.rejoinRoom).toBe("");
-    // The room box still offers it.
-    expect(settings.lastRoom).toBe("old");
-  }
+it("stays out of the room it was in while the switch is off, and keeps it for a start with the switch on", async () => {
+  const { settings, player, r } = await restart(false);
+  player.online.value = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(Socket.all).toHaveLength(0);
+  expect(r.roomId.value).toBe("");
+  expect(settings.rejoinRoom).toBe("old");
+  // Turned on during the run, it waits for the next start.
+  settings.autoRejoin = true;
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(Socket.all).toHaveLength(0);
 });
 
-it("keeps the room for the next start when the server does not answer about it", async () => {
-  for (const answer of [
-    async () => reply(429, { detail: { code: "too_many_lookups", message: "" } }),
-    async () => reply(503, { detail: "Service Unavailable" }),
-    async () => reply(502, null),
-    async () => { throw new TypeError("offline"); },
-  ]) {
-    vi.resetModules();
-    const { settings, player, r } = await restart(answer);
-    player.online.value = true;
-    r.rejoinOnStart();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(Socket.all).toHaveLength(0);
-    expect(r.roomId.value).toBe("");
-    expect(settings.rejoinRoom).toBe("old");
-  }
+it("does not go back when the switch is turned off before the server answers", async () => {
+  const { settings, player, r } = await restart(true);
+  r.rejoinOnStart();
+  settings.autoRejoin = false;
+  player.online.value = true;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(Socket.all).toHaveLength(0);
+  expect(settings.rejoinRoom).toBe("old");
+});
+
+it("keeps the room for the next start when this run never reaches the server", async () => {
+  const { settings, r } = await restart(true);
+  r.rejoinOnStart();
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(Socket.all).toHaveLength(0);
+  expect(settings.rejoinRoom).toBe("old");
 });
 
 it("takes a refused rejoin quietly and forgets the room", async () => {
-  const { settings, player, r } = await restart(async () => reply(200, { room: "old", open: true }));
-  player.online.value = true;
-  r.rejoinOnStart();
-  await vi.advanceTimersByTimeAsync(0);
-  const socket = Socket.all[0];
-  socket.open();
-  socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
-  expect(r.lastError.value).toBe("");
-  expect(r.roomId.value).toBe("");
-  expect(settings.rejoinRoom).toBe("");
-  await vi.advanceTimersByTimeAsync(60000);
-  expect(Socket.all).toHaveLength(1);
-});
-
-it("takes a room that closed before the join came quietly and forgets it", async () => {
-  const { settings, player, r } = await restart(async () => reply(200, { room: "old", open: true }));
-  player.online.value = true;
-  r.rejoinOnStart();
-  await vi.advanceTimersByTimeAsync(0);
-  const socket = Socket.all[0];
-  socket.open();
-  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
-  expect(r.lastError.value).toBe("");
-  expect(r.roomId.value).toBe("");
-  expect(settings.rejoinRoom).toBe("");
-  await vi.advanceTimersByTimeAsync(60000);
-  expect(Socket.all).toHaveLength(1);
+  for (const refusal of [
+    { type: "error", code: "room_full", message: "room is full (max 20)" },
+    { type: "error", code: "room_full", reason: "banned", message: "你已被移出这个房间" },
+  ]) {
+    vi.resetModules();
+    Socket.all = [];
+    const { settings, player, r } = await restart(true);
+    player.online.value = true;
+    r.rejoinOnStart();
+    await vi.advanceTimersByTimeAsync(0);
+    const socket = Socket.all[0];
+    socket.open();
+    socket.recv(refusal);
+    expect(r.lastError.value).toBe("");
+    expect(r.roomId.value).toBe("");
+    expect(settings.rejoinRoom).toBe("");
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(Socket.all).toHaveLength(1);
+  }
 });
 
 it("shows why a room joined by hand turned the join down, also while going back to the last one", async () => {
-  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  const { player, r } = await restart(true);
   player.online.value = true;
   r.rejoinOnStart();
   await vi.advanceTimersByTimeAsync(0);
@@ -550,32 +539,29 @@ it("shows why a room joined by hand turned the join down, also while going back 
   const socket = Socket.all.at(-1)!;
   socket.open();
   expect(socket.sent[0]).toMatchObject({ type: "join", room: "new" });
-  expect(socket.sent[0]).not.toHaveProperty("onlyOpen");
   socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
   expect(r.lastError.value).toBe("房间已满(最多 20 人)");
 });
 
 it("keeps a join going back to the last room one when the save changes before the room answered", async () => {
-  const { player, r } = await restart(async () => reply(200, { room: "old", open: true }));
+  const { player, r } = await restart(true);
   player.online.value = true;
   r.rejoinOnStart();
   await vi.advanceTimersByTimeAsync(0);
   player.saveCode.value = "other-save";
   const socket = Socket.all.at(-1)!;
   socket.open();
-  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old", onlyOpen: true });
-  socket.recv({ type: "error", code: "room_full", reason: "room_closed", message: "房间里已经没有人了" });
+  expect(socket.sent[0]).toMatchObject({ type: "join", room: "old" });
+  socket.recv({ type: "error", code: "room_full", message: "room is full (max 20)" });
   expect(r.lastError.value).toBe("");
   expect(r.roomId.value).toBe("");
 });
 
 it("does not go back when the player joined a room first", async () => {
-  let answer: (v: unknown) => void = () => {};
-  const { settings, player, r } = await restart(() => new Promise((resolve) => (answer = resolve)));
-  player.online.value = true;
+  const { settings, player, r } = await restart(true);
   r.rejoinOnStart();
   r.joinRoom("new");
-  answer(reply(200, { room: "old", open: true }));
+  player.online.value = true;
   await vi.advanceTimersByTimeAsync(0);
   expect(Socket.all).toHaveLength(1);
   expect(r.roomId.value).toBe("new");

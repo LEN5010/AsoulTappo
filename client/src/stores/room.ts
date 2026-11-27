@@ -306,8 +306,8 @@ const events: RoomEvents = {
   },
 };
 
-/** Errors after which the room client stops instead of reconnecting. room_closed answers only a rejoin's join. */
-const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save", "room_closed"]);
+/** Errors after which the room client stops instead of reconnecting. */
+const FINAL_ERRORS = new Set(["room_full", "kicked", "banned", "need_save"]);
 
 function errorText(code: string, message: string): string {
   switch (code) {
@@ -790,8 +790,7 @@ export async function createRoom(): Promise<string> {
 
 /**
  * Join [room], replacing any room joined or being joined. [opts.rejoin]: this is the join that goes back to the room
- * of the last run (rejoinOnStart): it goes only into the room as it is, and a refusal of it is not shown. Any other
- * join shows why it was refused.
+ * of the last run (rejoinOnStart): a refusal of it is not shown. Any other join shows why it was refused.
  */
 export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
   if (isMirrorWindow) { void requestDesktop("joinRoom", room); return; }
@@ -812,7 +811,6 @@ export function joinRoom(room: string, opts: { rejoin?: boolean } = {}): void {
     ddz: true,
     ddzMatch: true,
     ddzWatch: true,
-    ...(rejoining ? { onlyOpen: true } : {}),
   });
 }
 
@@ -833,46 +831,30 @@ let rejoining = false;
 let rejoinStarted = false;
 
 /**
- * Desk only, once a run: the room the save was in when the app last closed is joined again, quietly, once the terms
- * are agreed and the server answers. Only a room that still has members is joined (GET /rooms/{id}): a join of any
- * other id would make the room. A room the server says is empty, a server without that answer (404), or a refused
- * join forgets it; no answer (offline, too many lookups, a server error) keeps it for the next start.
+ * Desk only, once a run, with the online page's switch on (settings.autoRejoin): the room the save was in when the
+ * app last closed is joined again, quietly, once the terms are agreed and the server answers, also when nobody is in
+ * it: the join makes it again, and the server gives back what it kept of it. A refused join forgets the room; a run
+ * that never reaches the server keeps it for the next start. With the switch off the room is still noted, for a start
+ * after it is turned on.
  */
 export function rejoinOnStart(): void {
   if (STANDALONE || isMirrorWindow || rejoinStarted) return;
   rejoinStarted = true;
+  if (!settings.autoRejoin) return;
   const ready = () => agreed.value && online.value;
-  if (ready()) { void rejoinLast(); return; }
+  if (ready()) { rejoinLast(); return; }
   const stop = watch(ready, (ok) => {
     if (!ok) return;
     stop();
-    void rejoinLast();
+    rejoinLast();
   });
 }
 
-async function rejoinLast(): Promise<void> {
+function rejoinLast(): void {
   const id = settings.rejoinRoom;
-  const base = settings.serverUrl;
-  if (!id || roomId.value) return;
-  // "open", "closed" (the room is empty or the server cannot tell) or why there was no answer.
-  let answer = "unreachable";
-  try {
-    const res = await serverFetch(`${toHttpBase(base)}/rooms/${encodeURIComponent(id)}`);
-    if (res.status === 404) answer = "closed";
-    else if (!res.ok) answer = `status ${res.status}`;
-    else {
-      const open = ((await res.json().catch(() => null)) as { open?: unknown } | null)?.open;
-      answer = open === true ? "open" : open === false ? "closed" : "bad answer";
-    }
-  } catch {
-    /* unreachable: asked again on the next start */
-  }
-  // A room joined or a server chosen meanwhile wins.
-  if (roomId.value || base !== settings.serverUrl || settings.rejoinRoom !== id) return;
-  writeLog("room", answer === "open" ? "rejoin" : answer === "closed" ? "rejoin skipped: room closed"
-    : `rejoin put off: ${answer}`);
-  if (answer === "closed") settings.rejoinRoom = "";
-  if (answer !== "open") return;
+  // A room joined meanwhile wins, and so does the switch turned off.
+  if (!id || roomId.value || !settings.autoRejoin) return;
+  writeLog("room", "rejoin");
   joinRoom(id, { rejoin: true });
 }
 

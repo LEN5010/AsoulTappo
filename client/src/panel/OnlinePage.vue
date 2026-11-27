@@ -311,6 +311,10 @@ async function copy() {
             <i v-else class="dot" :class="conn"></i>
             {{ connText[conn] }}
           </span>
+          <label class="rejoin">
+            <span>开机回房</span>
+            <input v-model="settings.autoRejoin" class="ui-switch" type="checkbox" />
+          </label>
         </div>
         <div v-if="conn === 'idle'" class="ticket-body">
           <input v-model="input" class="ui-input" maxlength="64" placeholder="房间号" aria-label="房间号" spellcheck="false" @keydown.enter="joinRoom(input)" />
@@ -635,7 +639,9 @@ async function copy() {
 .err {
   margin: 0;
 }
-.public {
+/* The host's listing switch on the room side, and going back into the room on start under the connection. */
+.public,
+.rejoin {
   flex: none;
   display: flex;
   align-items: center;

@@ -53,6 +53,12 @@ PROFILE_INTERVAL = 0.3
 # room when it stopped (see RoomManager.snapshot) is brought back for this long after: the saves the host removed, and
 # for the save that was host its host role and the room's public listing.
 RESTORE_SECONDS = 600.0
+# A room whose last member left is kept the same way for this long, so that members coming back to it later (a desk
+# can go back into its room on start) find its name, its removed saves and, with the save that was host last, its host
+# role and listing. Only a room with a name, a listing or removed saves is kept: any other comes back the same without.
+EMPTY_SECONDS = 24 * 3600.0
+# At most this many rooms are kept at once; past it the one kept longest goes first.
+RESTORE_MAX = 20000
 
 
 class PokeRefused(Exception):
@@ -319,7 +325,7 @@ class Room:
     # The name the host gave the room as typed (kept for masking again when the blocked words change), and as shown.
     raw_name: str = ""
     name: str = ""
-    # saves the host removed; gone with the room
+    # saves the host removed; kept with the room's other state once it empties (RoomManager._keep_emptied)
     banned: set[str] = field(default_factory=set)
     # This cheer round's paid taps by player id (a save that left keeps its taps on the bar), when each save with taps
     # on it left (monotonic clock; gone again when it comes back), and rounds finished.
@@ -335,12 +341,15 @@ class Room:
 
 @dataclass
 class Restore:
-    """A room as the last run left it; until is on the manager's clock."""
+    """A room as the last run left it, or as its last member left it; until is on the manager's clock."""
     public: bool
     host: str | None
     banned: set[str]
     until: float
     name: str = ""
+    # How long the entry lasts from when it was made: RESTORE_SECONDS for a room of the last run, EMPTY_SECONDS for
+    # a room that emptied.
+    keep: float = RESTORE_SECONDS
 
 
 class RoomManager:
@@ -359,7 +368,8 @@ class RoomManager:
         self.by_save: dict[str, dict[str, dict[str, Peer]]] = {}
         # Called once for every member removed by depart (leave, kick, failed writer), after member_left.
         self.on_depart: Callable[[str, Peer], Awaitable[None]] | None = None
-        # Rooms of the last run, by room id, until their host is back or they run out (see RESTORE_SECONDS).
+        # Rooms of the last run and rooms whose last member left, by room id, until their host is back or they run
+        # out (RESTORE_SECONDS, EMPTY_SECONDS). In the order they were made: the first is the one kept longest.
         self.restoring: dict[str, Restore] = {}
         # The soonest `until` among them: joins drop the entries that ran out once the clock passes it.
         self._restore_at = float("inf")
@@ -368,10 +378,11 @@ class RoomManager:
 
     def snapshot(self) -> list[dict]:
         """What a restart would lose of each room: whether it is listed, the host's save, the removed saves and the
-        room's name. What this run still holds of the last one goes in again with its "age" (seconds since it was
-        saved), so the next run lets it run out when this one would have: a room nobody came back to, and for a room
-        whose members came back before its host, that host's claim to the role and the listing, which then stands in
-        for the save holding the role meanwhile. One entry per room."""
+        room's name. What this run still holds of the last one or of rooms that emptied goes in again with its "age"
+        (seconds since it was made) and "keep" (how long it lasts), so the next run lets it run out when this one
+        would have: a room nobody came back to, and for a room whose members came back before its host, that host's
+        claim to the role and the listing, which then stands in for the save holding the role meanwhile. One entry per
+        room."""
         now = self.clock()
         out = []
         for room_id, room in list(self.rooms.items()):
@@ -382,7 +393,8 @@ class RoomManager:
             if pending is not None and pending.host and pending.until > now:
                 entry["host"] = pending.host
                 entry["public"] = room.public or pending.public
-                entry["age"] = max(0.0, RESTORE_SECONDS - (pending.until - now))
+                entry["age"] = max(0.0, pending.keep - (pending.until - now))
+                entry["keep"] = pending.keep
             if entry["public"] or entry["host"] or entry["banned"] or entry["name"]:
                 out.append(entry)
         for room_id, pending in list(self.restoring.items()):
@@ -390,18 +402,39 @@ class RoomManager:
                 continue
             out.append({"room": room_id, "public": pending.public, "host": pending.host,
                         "banned": sorted(pending.banned), "name": pending.name,
-                        "age": max(0.0, RESTORE_SECONDS - (pending.until - now))})
+                        "age": max(0.0, pending.keep - (pending.until - now)), "keep": pending.keep})
         return out
 
     def restore(self, rooms: list[dict], age: Callable[[dict], float]) -> None:
-        """Take back what the last run saved; [age] gives each entry's seconds since it was saved."""
+        """Take back what the last run saved; [age] gives each entry's seconds since it was made, and its "keep" how
+        long it lasts (RESTORE_SECONDS when it has none, as from a server from before rooms that emptied were kept)."""
         now = self.clock()
         for entry in rooms:
-            left = RESTORE_SECONDS - age(entry)
+            keep = float(entry.get("keep") or RESTORE_SECONDS)
+            left = keep - age(entry)
             if left > 0:
                 self.restoring[entry["room"]] = Restore(bool(entry["public"]), entry["host"] or None,
-                                                        set(entry["banned"]), now + left, str(entry.get("name") or ""))
+                                                        set(entry["banned"]), now + left, str(entry.get("name") or ""),
+                                                        keep)
         self._expire_restoring(now)
+
+    def _keep_emptied(self, room_id: str, room: Room, last: Peer) -> None:
+        """[room] has just lost its last member, [last]: what members coming back would miss of it is kept for
+        EMPTY_SECONDS, as for a room of the last run. Its host there is [last] when it held the role, and a listing
+        still waiting for the last run's host goes with it. A room with no name, listing or removed saves is not kept,
+        and nor is anything the last run left of it."""
+        now = self.clock()
+        pending = self.restoring.pop(room_id, None)
+        public = room.public or (pending is not None and pending.host is not None and pending.until > now
+                                 and pending.public)
+        if not (public or room.raw_name or room.banned):
+            return
+        host = last.token if room.host == last.id else None
+        self.restoring[room_id] = Restore(public, host, set(room.banned), now + EMPTY_SECONDS, room.raw_name,
+                                          EMPTY_SECONDS)
+        while len(self.restoring) > RESTORE_MAX:
+            del self.restoring[next(iter(self.restoring))]
+        self._restore_at = min(self._restore_at, now + EMPTY_SECONDS)
 
     def _expire_restoring(self, now: float) -> None:
         self.restoring = {rid: pending for rid, pending in self.restoring.items() if pending.until > now}
@@ -513,6 +546,7 @@ class RoomManager:
                 if timer:
                     timer.cancel()
             del self.rooms[room_id]
+            self._keep_emptied(room_id, room, peer)
         elif room.host == peer_id:
             room.host = next(iter(room.peers))
         return True

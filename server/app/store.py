@@ -180,6 +180,10 @@ class Store(AdminStore, ParkStore, DdzStore, FeedbackStore, PhotoStore):
             # The names of rooms, which the table left out before: each restart brought its rooms back unnamed.
             if "name" not in self._columns("room_restore"):
                 self._db.execute("ALTER TABLE room_restore ADD COLUMN name TEXT NOT NULL DEFAULT ''")
+            # How long each room lasts, which the table left out before, when every room lasted RESTORE_SECONDS: a
+            # room that had emptied before the stop lasts rooms.EMPTY_SECONDS from when it emptied.
+            if "keep" not in self._columns("room_restore"):
+                self._db.execute("ALTER TABLE room_restore ADD COLUMN keep REAL")
             # v1 stored bare card ids in `cards`; items are namespaced (card:<id>)
             if self._db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'").fetchone():
                 self._db.execute(

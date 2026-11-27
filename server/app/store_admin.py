@@ -54,23 +54,25 @@ class AdminStore(_StoreState):
 
     def save_rooms(self, rooms: list[dict[str, Any]], ts: float) -> None:
         """Replace the saved rooms with [rooms] (RoomManager.snapshot entries), saved at [ts], or [age] seconds
-        before it for an entry carried over from the run before."""
+        before it for an entry made before (carried over from the run before, or of a room that emptied), with how
+        long it lasts ([keep])."""
         with self._lock:
             self._db.execute("DELETE FROM room_restore")
             self._db.executemany(
-                "INSERT INTO room_restore (room, public, host, banned, saved, name) VALUES (?,?,?,?,?,?)",
-                [(r["room"], int(r["public"]), r["host"], json.dumps(r["banned"]), ts - r.get("age", 0.0), r["name"])
-                 for r in rooms])
+                "INSERT INTO room_restore (room, public, host, banned, saved, name, keep) VALUES (?,?,?,?,?,?,?)",
+                [(r["room"], int(r["public"]), r["host"], json.dumps(r["banned"]), ts - r.get("age", 0.0), r["name"],
+                  r.get("keep")) for r in rooms])
             self._commit()
 
     def take_rooms(self) -> list[dict[str, Any]]:
-        """The saved rooms, which are removed: each start reads them once."""
+        """The saved rooms, which are removed: each start reads them once. "keep" only for a room saved with one."""
         with self._lock:
             rows = self._db.execute("SELECT * FROM room_restore").fetchall()
             self._db.execute("DELETE FROM room_restore")
             self._commit()
         return [{"room": r["room"], "public": bool(r["public"]), "host": r["host"], "banned": json.loads(r["banned"]),
-                 "saved": r["saved"], "name": r["name"]} for r in rows]
+                 "saved": r["saved"], "name": r["name"], **({"keep": r["keep"]} if r["keep"] is not None else {})}
+                for r in rows]
 
     def add_tap_flags(self, day: str, pid: str, dropped: int = 0, server: int = 0, client: int = 0,
                       auto: int = 0, injected: int = 0) -> None:
