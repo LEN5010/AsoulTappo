@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // The strip's menu, opened from the handle at the left end of the strip or of the own name plate: fold the strip,
 // swap it for the name plate and back, the shard pops, the tomato timer's page and the todos' window. It opens above the handle, or below
-// where the screen ends above it.
+// where the screen ends above it. A docked pet's strip only comes out for a click, so there is nothing to fold.
 import { onMounted, ref } from "vue";
 import Icon from "../ui/Icon.vue";
 import { edgeShift } from "./lift";
 import { STANDALONE } from "../edition";
 
-/** `plate`: the own name plate stands in the strip's place. */
-defineProps<{ plate: boolean; shardPop: boolean }>();
+/** `plate`: the own name plate stands in the strip's place. `docked`: the strip of a docked pet. */
+defineProps<{ plate: boolean; shardPop: boolean; docked?: boolean }>();
 defineEmits<{ fold: []; swap: []; shardPop: []; pomodoro: []; todo: [] }>();
 
 const root = ref<HTMLElement>();
@@ -31,7 +31,7 @@ onMounted(() => {
     ref="root" class="grip-menu" :class="{ down }" :style="shift ? { left: `${shift}px` } : undefined" role="menu"
     aria-label="任务栏" data-hit data-no-drag
   >
-    <button type="button" role="menuitem" @click="$emit('fold')">
+    <button v-if="!docked" type="button" role="menuitem" @click="$emit('fold')">
       <Icon name="fold" :size="16" /><span>收起任务栏</span>
     </button>
     <button type="button" role="menuitem" @click="$emit('swap')">

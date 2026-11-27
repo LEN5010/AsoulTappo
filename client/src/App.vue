@@ -135,16 +135,20 @@ const barPinned = computed(() => !settings.barFolded && !docked.value);
 const peek = ref(false);
 /** The status keys: under the own name tag, or in place of the quick emotes under the strip. */
 const statusOpen = ref(false);
-/** The strip's menu, from the handle on a pinned strip or on the own name plate. */
+/**
+ * The strip's menu, from the handle on a pinned strip, on the strip a click brought out under a docked pet, or on the
+ * own name plate.
+ */
 const gripOpen = ref(false);
 /** The tomato timer's page: under the own name plate, or in place of the quick emotes under the strip. */
 const pomodoroOpen = ref(false);
 const PEEK_MS = 6000;
 let peekTimer: ReturnType<typeof setTimeout> | undefined;
-/** Restarts the countdown; the quick emotes hold the strip open while they are. */
+/** Restarts the countdown; the quick emotes and the strip's menu hold the strip open while they are. */
 function keepPeek() {
   clearTimeout(peekTimer);
-  if (peek.value && !ui.quickOpen && !statusOpen.value && !pomodoroOpen.value) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
+  const held = ui.quickOpen || statusOpen.value || pomodoroOpen.value || gripOpen.value;
+  if (peek.value && !held) peekTimer = setTimeout(() => (peek.value = false), PEEK_MS);
 }
 function onOwnTap() {
   if (barPinned.value || settings.clickThrough) return;
@@ -205,9 +209,12 @@ function toggleFold() {
   settings.barFolded = !settings.barFolded;
   peek.value = false;
 }
-/** The handle: pins a strip a click on the pet brought out, and opens the strip's menu on a pinned one. */
+/**
+ * The handle: pins a strip a click on the pet brought out, and opens the strip's menu on a pinned one. A docked pet
+ * cannot pin its strip: the handle opens the menu there too.
+ */
 function onGrip() {
-  if (!barPinned.value) return toggleFold();
+  if (!barPinned.value && !docked.value) return toggleFold();
   gripOpen.value = !gripOpen.value;
   statusOpen.value = ui.quickOpen = false;
 }
@@ -215,10 +222,12 @@ function foldBar() {
   gripOpen.value = false;
   toggleFold();
 }
+/** Swaps the strip for the own name plate and back. A docked pet lets its strip go back at once, the plate over its desk. */
 function swapPlate() {
   gripOpen.value = false;
   settings.barPlate = !settings.barPlate;
-  keepPeek();
+  if (docked.value) peek.value = false;
+  else keepPeek();
 }
 /**
  * The tomato timer's page, from its key on the quick emotes, the strip's menu or the countdown. A strip that is away
@@ -266,8 +275,13 @@ const pomodoroAt = computed(() => {
     top: `${Math.round(Math.max(0, PET_BASE.monitor.y * s - POMODORO_CHIP_H - 8))}px`,
   };
 });
-/** The own name plate in the strip's place, as partners see it under this pet; a docked pet keeps the strip. */
+/** The own name plate in the strip's place, as partners see it under this pet; a docked pet has it on its desk. */
 const plateShown = computed(() => settings.barPlate && !docked.value);
+/**
+ * The own name plate of a docked pet, over the desk's front as a docked partner's name (onDeskFront): there is no room
+ * under the desk. It has no handle; a click on it is one on the pet, and it gives way to the strip a click brings out.
+ */
+const deskPlateShown = computed(() => settings.barPlate && docked.value && !barShown.value && !settings.clickThrough);
 const ownPlate = computed(() => getPlate(settings.plate)?.id);
 const ownPlateSize = computed(() => plateSize(settings.scale));
 /** The own name plate (`.own-plate`) and its width with its sides, measured while it shows. */
@@ -296,7 +310,7 @@ const ownNick = computed(() => settings.nick.trim() || settings.character);
 const ownStatus = computed(() => (inRoom.value ? shownStatus.value : null));
 watch(barShown, (shown) => { if (!shown) ui.quickOpen = statusOpen.value = gripOpen.value = pomodoroOpen.value = false; });
 watch(inRoom, (inside) => { if (!inside) statusOpen.value = false; });
-watch([peek, () => ui.quickOpen, statusOpen, pomodoroOpen], keepPeek);
+watch([peek, () => ui.quickOpen, statusOpen, pomodoroOpen, gripOpen], keepPeek);
 // Daily tap statistics and the local counter use the same China calendar day.
 watch(() => [status.value?.totals.taps, status.value?.dailyTaps] as const, ([total, daily]) => {
   if (typeof total !== "number") return;
@@ -446,9 +460,9 @@ function onRemoteMoved(m: RemoteMember, p: Pos) {
   const placed = placePet(p, reaching(remoteSize.value, remoteReach(m)), settings.remoteScale);
   placeRemote(memberKey(m), placed.docked ? { ...placed.pos, docked: true } : placed.pos);
 }
-/** A docked partner's name has no room under the desk; it goes over the desk's front instead. */
-const nameOnDesk = (m: RemoteMember) =>
-  remoteDocked(m) ? { position: "absolute" as const, bottom: `${Math.round(DESK_GAP * settings.remoteScale) + 4}px` } : undefined;
+/** A docked pet's name, the pet drawn at [scale]: it has no room under the desk, so it goes over the desk's front. */
+const onDeskFront = (scale: number) => ({ position: "absolute" as const, bottom: `${Math.round(DESK_GAP * scale) + 4}px` });
+const nameOnDesk = (m: RemoteMember) => (remoteDocked(m) ? onDeskFront(settings.remoteScale) : undefined);
 /** Where the duel bubbles go so they stay on screen: the key and the bets over a partner, the duel over the own pet. */
 const pickPlace = (m: RemoteMember) => bubblePlacement(remoteAt(m), remoteSize.value, pickSize(), viewport.value);
 /** The open dou dizhu table member [m] opened in the room, shown as a sign over its pet. */
@@ -758,10 +772,11 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
         :quick-open="ui.quickOpen" :draws="STANDALONE ? 0 : draws"
         @toggle-view="settings.tapView = settings.tapView === 'today' ? 'total' : 'today'"
         @quick="toggleQuick" @menu="raisePanel" @resonance="openPanel('resonance')"
-        :grip="docked ? undefined : barPinned ? 'menu' : 'pin'" :grip-open="gripOpen" @grip="onGrip"
+        :grip="barPinned || docked ? 'menu' : 'pin'" :grip-open="gripOpen" @grip="onGrip"
       >
+        <!-- With the plate set, the strip shows only under a docked pet: its menu then offers the strip back. -->
         <GripMenu
-          v-if="gripOpen" :plate="false" :shard-pop="settings.shardPop"
+          v-if="gripOpen" :plate="settings.barPlate" :docked="docked" :shard-pop="settings.shardPop"
           @fold="foldBar" @swap="swapPlate" @shard-pop="settings.shardPop = !settings.shardPop" @pomodoro="openPomodoro"
           @todo="openTodo"
         />
@@ -772,6 +787,17 @@ watch(() => [ui.panelOpen, ui.quickOpen, statusOpen.value, gripOpen.value, pomod
           :ceiling="plateCeiling" @pick="pickQuick" @status="statusOpen = true" @pomodoro="pomodoroOpen = true" @todo="openTodo"
         />
       </CounterBar>
+      <!-- A docked pet's own name plate, over its desk's front: no handle, a click on it is one on the pet. -->
+      <div v-else-if="deskPlateShown" key="desk-plate" class="desk-plate" :style="onDeskFront(settings.scale)">
+        <NamePlate
+          v-if="ownPlate" :card="ownPlate" :nick="ownNick" :color="characterColor(settings.character)"
+          :width="ownPlateSize.width" :height="ownPlateSize.height" :font="ownName.font" :status="ownStatus"
+        />
+        <NamePill
+          v-else :nick="ownNick" :color="characterColor(settings.character)" :width="PET_BASE.width * settings.scale"
+          :height="ownName.pill" :font="ownName.font" :status="ownStatus"
+        />
+      </div>
       </Transition>
 
     </PetActor>
@@ -803,6 +829,9 @@ html.browser-preview body {
 .strip-leave-active { transition: opacity var(--dur-fast) var(--ease-in), translate var(--dur-release) var(--ease-in); }
 /* A shrunken strip (CounterBar's --bar-zoom) slides by as much less. */
 .strip-enter-from, .strip-leave-to { opacity: 0; translate: 0 calc(-14px * var(--bar-zoom, 1)); }
+/* The plate on a docked pet's desk only fades: it does not come out from under the desk. */
+.desk-plate { display: flex; }
+.desk-plate.strip-enter-from, .desk-plate.strip-leave-to { translate: none; }
 .desk > :deep(*) { pointer-events: auto; }
 /* A layer of no size of its own; each sign stands on the top edge of its pet's box. */
 .signs, .sign-at { position: absolute; left: 0; top: 0; height: 0; }
