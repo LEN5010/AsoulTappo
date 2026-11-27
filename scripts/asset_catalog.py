@@ -283,32 +283,6 @@ def wardrobe_cards() -> list[tuple[str, str, str, str, int]]:
     return out
 
 
-# 脑洞波: the four space-background portraits of each member's 脑洞波 theme suit (主题装扮), one series in the limited
-# tier beside the 衣橱 cards, featured by a limited pool of their own (the economy's banners). A card is
-# c<item_id><nn>, its source <src>/脑洞波系列主题装扮-<member>/background_portrait_<n>-0_other.jpg under the 主题 folder
-# (1242 x 1988, the same files as under 装扮头图), cut to 2:3 as the 衣橱 portraits are. Each member's plate (PLATES)
-# is her suit's still personal-space head picture, head_myself_squared_bg-0_other.png in the same folder.
-NAODONG_SERIES = ("naodong", "脑洞波")
-NAODONG_SINCE = "1.3.0"
-NAODONG_RARITY = "limited"
-NAODONG_DIR = "脑洞波系列主题装扮-{member}"
-# member, suit item_id
-NAODONG_SUITS = [("嘉然", "116741401"), ("乃琳", "123046201"), ("贝拉", "112644401")]
-# Card names by member, in portrait order, given for their mood as the 衣橱 names are. 奶淇琳 is what the fans call
-# 乃琳, and the third portraits are a band, so they share 欢歌.
-NAODONG_NAMES = {
-    "嘉然": ["夜半食梦", "百态心情", "清笛欢歌", "甜心满杯"],
-    "乃琳": ["不眠之夜", "欢呼雀跃", "琴音欢歌", "奶淇琳"],
-    "贝拉": ["晴窗花事", "元气满格", "鼓点欢歌", "星愿扭蛋"],
-}
-
-
-def naodong_cards() -> list[tuple[str, str, str, int]]:
-    """(card id without the c, name, member, portrait number) for every 脑洞波 card, in series order."""
-    return [(f"{suit}{k:02d}", NAODONG_NAMES[member][k - 1], member, k)
-            for member, suit in NAODONG_SUITS for k in range(1, len(NAODONG_NAMES[member]) + 1)]
-
-
 # 镭射款 (holo): the static normal cards of 此间为爱, 匣中惊鸿 and 绮梦漫游 that Bilibili sells a holo version of. Each
 # has the official mask (`upgrade_cover_url` of lottery_home_detail: white where the foil goes) and the shading
 # parameters of its `shine_effect_config`, camel-cased. The four 绮梦漫游 cards the API gives `{}` take the values the
@@ -423,14 +397,11 @@ SKINS = [skin(member, series) for series in ("山海经", "睡衣派对") for me
     skin("嘉然", "然龙", "1.2.5"), skin("乃琳", "法师", "1.2.5"), skin("贝拉", "炎头队长", "1.2.5")]
 # --------------------------------------------------------------- name plates
 # Name plates besides the big hidden cards, which are worn under their card id. Each unlocks once every emote
-# of `emoteSet` is owned, or every card of `series` (only those of `member` when it names one); the client keeps the
-# picture and its crop (client/src/pet/plates.ts). Ids must never be card ids (those are "c" and digits).
+# of `emoteSet` is owned, or every card of `series`; the client keeps the picture and its crop
+# (client/src/pet/plates.ts). Ids must never be card ids (those are "c" and digits).
 PLATES = [{"id": "achao", "name": "阿草", "emoteSet": SCRATCH_EMOTE_SET[0]}] + [
     {"id": series, "name": name, "series": series}
-    for series, (name, _, _) in WARDROBE_SERIES.items()] + [
-    {"id": f"{NAODONG_SERIES[0]}-{CHAR_BY_NAME[member]['id']}", "name": f"{NAODONG_SERIES[1]} · {member}",
-     "series": NAODONG_SERIES[0], "member": member}
-    for member, _ in NAODONG_SUITS]
+    for series, (name, _, _) in WARDROBE_SERIES.items()]
 # The 2.0 theme head video each wardrobe plate plays (<item_id>_<skin>_head_myself_mp4_bg.mp4 under the wardrobe
 # source's head-video folder), encoded to client/public/assets/plates/<plate id>.mp4 with a poster beside it.
 WARDROBE_PLATE_VIDEOS = {

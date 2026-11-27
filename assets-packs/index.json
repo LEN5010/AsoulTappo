@@ -270,73 +270,6 @@
    ]
   },
   {
-   "id": "cards-naodong",
-   "title": "脑洞波 · 卡面",
-   "size": 1801310,
-   "files": [
-    {
-     "path": "cards/naodong/c11264440101.webp",
-     "size": 157118,
-     "sha256": "14675dc71795775fd2580e8d432f6ad644b80342da268f8d95d25ef87c4fe342"
-    },
-    {
-     "path": "cards/naodong/c11264440102.webp",
-     "size": 129660,
-     "sha256": "487fd876834aef12c8e257c44bf817e7551d0f954fa8e27360734575f9589aac"
-    },
-    {
-     "path": "cards/naodong/c11264440103.webp",
-     "size": 129558,
-     "sha256": "9662f36e94885b14702a1efe59ff8dd85d39523731d97fb61439b08c06eb683f"
-    },
-    {
-     "path": "cards/naodong/c11264440104.webp",
-     "size": 155290,
-     "sha256": "cf9e027ce16b27781c71cfcc5f570322949f2a6412d668b4babdecb06707ba66"
-    },
-    {
-     "path": "cards/naodong/c11674140101.webp",
-     "size": 198028,
-     "sha256": "10c4fe2b0c73bb5af90626d769e9d973498fca3892dc897fca748262d0aa382d"
-    },
-    {
-     "path": "cards/naodong/c11674140102.webp",
-     "size": 188974,
-     "sha256": "a548ad93b920f41bc60494c2d3d302e94e9819a164c35d78da02412f1a42f235"
-    },
-    {
-     "path": "cards/naodong/c11674140103.webp",
-     "size": 109376,
-     "sha256": "a100a1b6393d755d1397be24abe76d3c900e097b3f38e81c440587828c37e950"
-    },
-    {
-     "path": "cards/naodong/c11674140104.webp",
-     "size": 167802,
-     "sha256": "a7ad18da60e30e4a4319a9e043544265db06d9ed17d93a54cd8b64ac05bab628"
-    },
-    {
-     "path": "cards/naodong/c12304620101.webp",
-     "size": 135018,
-     "sha256": "ab3d30af7085d0db520c53e70c1dac74e3e5ed5c9d9008c6bb6f51353e8e0bca"
-    },
-    {
-     "path": "cards/naodong/c12304620102.webp",
-     "size": 142274,
-     "sha256": "bc418f12e307be10f8cabbbbf60cae22af2658110062562622a20031c94f0f8c"
-    },
-    {
-     "path": "cards/naodong/c12304620103.webp",
-     "size": 124902,
-     "sha256": "ac825e0c12253a8c4e26c69f36b6255daad51edef671c5ccd2f89066fdcff33f"
-    },
-    {
-     "path": "cards/naodong/c12304620104.webp",
-     "size": 163310,
-     "sha256": "e8fe71c8a36bbdbce167888ce732a89acd5ce51d64949edebaa5a9ffe831e429"
-    }
-   ]
-  },
-  {
    "id": "cards-reverie",
    "title": "乃琳的酒馆 · 绮梦漫游 · 卡面",
    "size": 1952946,
@@ -865,23 +798,8 @@
   {
    "id": "plates",
    "title": "铭牌",
-   "size": 636054,
+   "size": 296456,
    "files": [
-    {
-     "path": "plates/naodong-beila.webp",
-     "size": 107638,
-     "sha256": "e309b392ad316c4e8e7fe831d54c63d67342c69f8b83dd18cb0fbc1f9135262e"
-    },
-    {
-     "path": "plates/naodong-jiaran.webp",
-     "size": 145776,
-     "sha256": "13bcec307b86c5752ac632718444f91aaaedd5e91cce8ade55e83a5b3e771c1a"
-    },
-    {
-     "path": "plates/naodong-nailin.webp",
-     "size": 86184,
-     "sha256": "67f13464d1cde4eec98f81f20caefa5f873cf711bde61dbb0b9fd1e7eb5efa2e"
-    },
     {
      "path": "plates/wardrobe-beila.webp",
      "size": 80056,
