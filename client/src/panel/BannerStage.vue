@@ -1,18 +1,25 @@
 <script setup lang="ts">
 // The stage of a limited pool, laid out as the standing pool's (PoolStage.vue): a hero on the left, the pool's name
-// and a sheet of paper on the right. Where the pool raises the limited tier's odds the hero is the standing pool's
-// hand (CardHand.vue) dealing the limited cards, with the featured item on show standing at its foot; else it is a
-// pearl card with the featured items piled on it as stickers. A featured skin sits at its desk as on the desktop; a two-form skin
-// types for a moment and changes into its second form, as it does for the player. The sheet lists what the pool
-// holds: its featured items as standees (the one on show times its own turn), then the 衣橱 series as a row
-// (CollectionRows.vue); under the sheet the 衣橱 cards pass by. A pool with more featured items than a row of
-// standees takes keeps a lineup under the hero.
+// and a sheet of paper on the right, with what is left of the pool's time beside the item on show. Where the pool
+// raises the limited tier's odds the hero is the standing pool's hand (CardHand.vue) dealing the limited cards, with
+// the featured item on show standing at its foot; else it is a pearl card with the featured items piled on it as
+// stickers. A pool featuring a skin with an official poster (characters.ts) has no card and no sheet: the poster spreads
+// over the left of the panel, from its top edge down under the action bar, and the right is a scrapbook of the skin's
+// member (her cards as photos, her emotes as stickers) with the item on show large in front of it and one line of the
+// pool under them; the scrapbook fills as the pool comes on screen. Where the poster's title lettering reads the pool's
+// name, that title lies on the poster's lower left in place of the name. Where the skin also has a clip of its PV, the
+// clip plays there first each time the pool comes on screen, and the poster and its title come in as it ends. A featured
+// skin sits at its desk as on the desktop; a two-form skin types for a moment and changes into its second form, as it
+// does for the player. The
+// sheet lists what the pool holds: its featured items as standees (the one on show times its own turn), then the 衣橱
+// series as a row (CollectionRows.vue); under the sheet the 衣橱 cards pass by. A pool with more featured items than a
+// row of standees takes keeps a lineup under the hero.
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { usePageActive } from "../composables/usePageActive";
 import { assetUrl } from "../asset";
-import { formReach, getCharacter, PET_BASE, skinSeries } from "../characters";
+import { formReach, getCharacter, headAnchor, PET_BASE, skinSeries } from "../characters";
 import { cardLabel } from "../cards";
-import { characterColor, getCard, memberOf } from "../manifest";
+import { characterColor, emoteCover, getCard, manifest, memberOf, RARITY_ORDER } from "../manifest";
 import { collectible, RARITY_LABEL, type Item } from "../items";
 import type { Rarity } from "../manifest";
 import { bannerBaseRates, featuredItems } from "../resonance";
@@ -27,7 +34,13 @@ import CardHand from "./CardHand.vue";
 import CollectionRows from "./CollectionRows.vue";
 import type { Plate } from "../pet/plates";
 
-const props = defineProps<{ banner: Banner; busy: boolean; paused?: boolean }>();
+const props = defineProps<{
+  banner: Banner;
+  busy: boolean;
+  paused?: boolean;
+  /** What is left of the pool's time, as the pool keys had it. */
+  left?: string;
+}>();
 const emit = defineEmits<{ inspect: [item: Item]; plate: [plate: Plate] }>();
 
 /** A skin types this long in its first form, then shows its second for the rest of its turn. */
@@ -45,6 +58,26 @@ const active = computed(() => items.value[at.value % Math.max(1, items.value.len
 const owns = (item: Item) => (collection.owned[item.id] ?? 0) > 0;
 const got = computed(() => items.value.filter(owns).length);
 
+/** The official poster of the skin on show, where it has one: spread over the left of the stage in place of the wash. */
+const posterArt = computed(() => {
+  const item = active.value;
+  return item?.kind === "character" ? getCharacter(item.ref)?.poster ?? "" : "";
+});
+/** The clip of the PV of the skin on show, where it has one: it plays where the poster spreads, before the poster. */
+const pvArt = computed(() => {
+  const item = active.value;
+  return item?.kind === "character" ? getCharacter(item.ref)?.pv ?? "" : "";
+});
+/** The title cut out of a featured skin's poster, where its lettering reads the pool's name: it lies on the spread
+ *  poster for the name. Its pale lines are drawn for the poster, so it never stands on the paper. */
+const titleArt = computed(() => {
+  if (!showcased.value) return "";
+  for (const item of items.value) {
+    const title = item.kind === "character" ? getCharacter(item.ref)?.posterTitle : undefined;
+    if (title?.text === props.banner.name) return title.src;
+  }
+  return "";
+});
 const washArt = computed(() => {
   const item = active.value;
   if (!item) return "";
@@ -60,6 +93,58 @@ const figure = (item: Item, step: number): Figure => {
 /** The limited tier's cards (the 衣橱 cards), where this pool raises their odds. */
 const LIMITED = collectible.filter((item) => item.rarity === "limited" && item.kind === "card");
 const raised = computed(() => !!props.banner.rates?.limited && bannerBaseRates(props.banner).limited > 0);
+/** A pool featuring a skin with an official poster spreads the poster over the left in place of the pearl card: the
+ *  item on show sits on the paper instead, large. */
+const showcased = computed(() =>
+  !raised.value && items.value.some((item) => item.kind === "character" && !!getCharacter(item.ref)?.poster));
+/** A showcased pool of one item: the paper's middle shows it, so no standee repeats it under the count. */
+const soleShow = computed(() => showcased.value && items.value.length === 1);
+
+// A showcased pool has a scrapbook on the right in place of the sheet: the cards of the member of the skin with the
+// poster as photos, her emotes as stickers between them, around and behind the item on show. They are what she has
+// been, not what the pool gives: they cannot be picked.
+/** Where the photos and stickers lie, in parts of the scrapbook (x, y of the top left corner, in %) and their turn. */
+interface Slot { x: number; y: number; r: number }
+/** Two rows of three photos, the lower one behind the item on show; the stickers on their corners and in their gaps. */
+const PHOTO_SLOTS: Slot[] = [
+  { x: 5, y: 6, r: -7 }, { x: 38, y: 3, r: 4 }, { x: 70, y: 7, r: 8 },
+  { x: 14, y: 35, r: 5 }, { x: 46, y: 33, r: -4 }, { x: 74, y: 37, r: -8 },
+];
+const STICKER_SLOTS: Slot[] = [
+  { x: 27, y: 28, r: -12 }, { x: 62, y: 1, r: 9 }, { x: 20, y: 0, r: -8 },
+  { x: 63, y: 29, r: 8 }, { x: 29, y: 58, r: -4 }, { x: 85, y: 73, r: 12 },
+];
+/** The photos and stickers come in this far apart after the PV; then one catches the light every GLINT_S seconds. */
+const MEMORY_STEP_MS = 110;
+const GLINT_S = 3.2;
+const memories = computed(() => {
+  const skin = showcased.value ? items.value.find((i) => i.kind === "character" && !!getCharacter(i.ref)?.poster) : undefined;
+  if (!skin) return [];
+  const member = memberOf(skin.ref);
+  // Her own cards first, the rarer first.
+  const cards = manifest.cards.filter((c) => c.characters.includes(member))
+    .sort((a, b) => a.characters.length - b.characters.length || RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity));
+  const photos = cards.slice(0, PHOTO_SLOTS.length).map((c, i) => ({ kind: "photo", src: assetUrl(c.thumb), slot: PHOTO_SLOTS[i]! }));
+  const emotes = manifest.emoteSets.filter((s) => s.character === member && !s.source).flatMap((s) => s.emotes);
+  const stickers = emotes.slice(0, STICKER_SLOTS.length)
+    .map((e, i) => ({ kind: "sticker", src: assetUrl(emoteCover(e.key)), slot: STICKER_SLOTS[i]! }));
+  // They come in a photo and a sticker in turn; the stickers lie over the photos.
+  const turn = (kind: string, i: number) => (kind === "photo" ? 2 * i : i < photos.length ? 2 * i + 1 : photos.length + i);
+  const all = [...photos, ...stickers];
+  // Over a round the light goes from one to another out of the order they came in.
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+  const hop = [7, 5, 3].find((k) => gcd(k, all.length) === 1) ?? 1;
+  return all.map((m, n) => {
+    const at = turn(m.kind, m.kind === "photo" ? n : n - photos.length);
+    return {
+      ...m,
+      style: {
+        left: `${m.slot.x}%`, top: `${m.slot.y}%`, "--rot": `${m.slot.r}deg`, "--at": `${at * MEMORY_STEP_MS}ms`,
+        "--glint": `${((at * hop) % all.length) * GLINT_S}s`, "--round": `${all.length * GLINT_S}s`,
+      },
+    };
+  });
+});
 /** The limited cards a member at a time, so neighbours differ: the hand deals them in this order. */
 const DEALT = (() => {
   const by = new Map<string, Item[]>();
@@ -115,12 +200,13 @@ const forms = computed(() => {
   return c?.form ? [c.bgSmall, c.form.bgSmall] : null;
 });
 
-/** The skin on show peeks over the top of the sheet, in the form the hero shows; a long pool name leaves it no room. */
+/** The skin on show peeks over the top of the sheet, in the form the hero shows; a long pool name leaves it no room,
+ *  and a showcased pool has it large on the sheet already. */
 const PEEK_NAME = 5;
 const peek = computed(() => {
   const item = active.value;
   const c = item?.kind === "character" ? getCharacter(item.ref) : undefined;
-  if (!c || props.banner.name.length > PEEK_NAME) return null;
+  if (!c || showcased.value || props.banner.name.length > PEEK_NAME) return null;
   const second = formShown.value && !!c.form;
   return { key: `${item!.id}${second ? "+" : ""}`, src: second ? c.form!.bg : c.bg };
 });
@@ -143,6 +229,35 @@ watch(() => props.busy, () => (pointing.value = false));
 // A detail sheet hands focus back to the card that opened it: that is not the keyboard walking the strip.
 watch(() => props.paused, (paused) => { if (!paused) stripKeyed.value = false; }, { flush: "post" });
 const playing = computed(() => pageActive.value && !reducedMotion.value && !props.busy && !props.paused);
+
+// The PV plays each time the pool comes on screen, once; the featured items wait for it before taking turns (`.pv`
+// stops their ticks). Anything that stops the stage (a draw, a detail sheet, the page or window going away) ends it,
+// and so does a clip that fails or has not started after PV_STALL_MS: the poster comes in instead.
+const PV_STALL_MS = 4000;
+const pvOn = ref(false);
+/** Each start mounts a fresh player, so the clip plays from its first frame. */
+const pvRun = ref(0);
+let pvStall = 0;
+function pvEnd() {
+  clearTimeout(pvStall);
+  pvStall = 0;
+  pvOn.value = false;
+}
+function pvStart() {
+  pvEnd();
+  if (!showcased.value || !pvArt.value || !playing.value) return;
+  pvRun.value += 1;
+  pvOn.value = true;
+  pvStall = window.setTimeout(pvEnd, PV_STALL_MS);
+}
+function pvPlaying() {
+  clearTimeout(pvStall);
+  pvStall = 0;
+}
+watch(pageActive, (on) => { if (on) pvStart(); }, { immediate: true });
+watch(playing, (on) => { if (!on) pvEnd(); });
+watch(pvArt, () => { if (pvOn.value) pvEnd(); });
+
 const hold = computed(() => !playing.value || pointing.value);
 // The strip stops where nobody sees it pass: under a detail sheet, the odds or a reveal, and on a page not shown.
 const stripCovered = computed(() => !pageActive.value || props.busy || !!props.paused);
@@ -237,11 +352,75 @@ function onFeaturedKey(e: KeyboardEvent) {
   go(next - at.value);
 }
 
+// Where the stage lies in a row, the spread poster lies on the page's ground (MainPanel.vue), under the sidebar's seam
+// and the window keys: it reaches up to the panel's top edge, which the page does not. Narrow, it stays in the stage.
+/** How far the spread poster reaches past the hand: on its right, under the paper's edge, and below the stage, under
+ *  the action bar. */
+const SPREAD = { right: 140, foot: 10 };
+const stageEl = ref<HTMLElement>();
+const handEl = ref<HTMLElement>();
+/** The page is the one shown: under another page the ground is bare (KeepAlive leaves what is teleported there). */
+const there = ref(true);
+onActivated(() => { there.value = true; });
+onDeactivated(() => { there.value = false; });
+interface Box { left: number; top: number; width: number; height: number }
+/** The spread poster's box on the ground, from the panel's top edge; none while it stays in the stage. */
+const grounded = ref<Box | null>(null);
+/** The page's scroller: a scrolled page takes the poster up with it. */
+let scroller: HTMLElement | null = null;
+function placeGround() {
+  const stage = stageEl.value, hand = handEl.value;
+  const ground = stage?.closest(".main")?.querySelector<HTMLElement>(".page-ground");
+  if (!showcased.value || !stage || !hand || !ground || getComputedStyle(stage).flexDirection !== "row") {
+    grounded.value = null;
+    return;
+  }
+  const g = ground.getBoundingClientRect(), s = stage.getBoundingClientRect(), h = hand.getBoundingClientRect();
+  const up = scroller?.scrollTop ?? 0;
+  const box: Box = {
+    left: Math.round(s.left - g.left),
+    top: -Math.round(up),
+    width: Math.round(h.right + SPREAD.right - s.left),
+    height: Math.round(s.bottom + SPREAD.foot - g.top + up),
+  };
+  const was = grounded.value;
+  if (!was || was.left !== box.left || was.top !== box.top || was.width !== box.width || was.height !== box.height) {
+    grounded.value = box;
+  }
+}
+const groundBox = computed(() => {
+  const b = grounded.value;
+  return b ? { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` } : undefined;
+});
+const spreadEl = ref<HTMLElement>();
+// Going to another pool unmounts the stage at once while its section fades out (ResonancePage.vue), and what lies on
+// the ground would go at once: a copy of it fades out with the section instead.
+onBeforeUnmount(() => {
+  const el = spreadEl.value, ground = el?.parentElement;
+  if (!el || !ground || !grounded.value || reducedMotion.value || typeof el.animate !== "function") return;
+  const ghost = el.cloneNode(true) as HTMLElement;
+  for (const video of ghost.querySelectorAll("video")) video.remove();
+  ground.insertBefore(ghost, el.nextSibling);
+  const fade = ghost.animate([{ opacity: getComputedStyle(el).opacity }, { opacity: 0 }], { duration: 120, easing: "ease-in", fill: "forwards" });
+  void fade.finished.catch(() => {}).finally(() => ghost.remove());
+});
+
 // The showcase width sets the pet's canvas size. The card fan reserves room for the second-form wing.
 const plateEl = ref<HTMLElement>();
 const plateW = ref(0);
 const frontScale = computed(() => Math.max(0.5, plateW.value * (raised.value ? 1 : 0.96) / PET_BASE.width));
 const backScale = computed(() => frontScale.value * 0.58);
+/** The paper's middle, where a showcased pool's item sits: the pet fills it, clear of its sides and of headwear that
+ *  reaches above the canvas (a head anchor above 0). */
+const showEl = ref<HTMLElement>();
+const showBox = ref({ w: 0, h: 0 });
+const showScale = computed(() => {
+  const { w, h } = showBox.value;
+  if (!w || !h) return 1;
+  const item = front.value?.item;
+  const headroom = item?.kind === "character" ? Math.max(0, 4 - headAnchor(item.ref).y) : 0;
+  return Math.max(0.6, Math.min(2.2, (w - 24) / (PET_BASE.width * petReach.value), (h - 16) / (PET_BASE.height + headroom)));
+});
 let resize: ResizeObserver | undefined;
 let measureFrame = 0;
 let observing = false;
@@ -249,6 +428,8 @@ function measure() {
   measureFrame = 0;
   const w = plateEl.value?.offsetWidth || (heroEl.value ? heroEl.value.clientWidth / 1.3 : 0);
   if (w > 0) plateW.value = w;
+  if (showEl.value) showBox.value = { w: showEl.value.clientWidth, h: showEl.value.clientHeight };
+  placeGround();
 }
 function scheduleMeasure() {
   if (!measureFrame) measureFrame = requestAnimationFrame(measure);
@@ -256,13 +437,17 @@ function scheduleMeasure() {
 function connectResize() {
   observing = true;
   resize?.disconnect();
-  if (plateEl.value) resize?.observe(plateEl.value);
-  if (heroEl.value) resize?.observe(heroEl.value);
+  for (const el of [plateEl.value, heroEl.value, showEl.value, stageEl.value, handEl.value]) if (el) resize?.observe(el);
+  scroller?.removeEventListener("scroll", scheduleMeasure);
+  scroller = stageEl.value?.closest<HTMLElement>(".ui-scroll") ?? null;
+  scroller?.addEventListener("scroll", scheduleMeasure, { passive: true });
   scheduleMeasure();
 }
 function disconnectResize() {
   observing = false;
   resize?.disconnect();
+  scroller?.removeEventListener("scroll", scheduleMeasure);
+  scroller = null;
   cancelAnimationFrame(measureFrame);
   measureFrame = 0;
 }
@@ -274,17 +459,18 @@ onMounted(() => {
 onActivated(connectResize);
 onDeactivated(disconnectResize);
 // Another pool may stand the item on another plate or swap between the hand and the hero.
-watch([plateEl, heroEl], () => { if (observing) connectResize(); }, { flush: "post" });
+watch([plateEl, heroEl, showEl, handEl, showcased], () => { if (observing) connectResize(); }, { flush: "post" });
 onBeforeUnmount(() => {
   disconnectResize();
   cancelAnimationFrame(leanFrame);
   stopTurn();
+  clearTimeout(pvStall);
 });
 </script>
 
 <template>
-  <section class="banner-stage" :class="{ hold, calm: reducedMotion }" @pointerleave="unpoint">
-    <div class="wash" aria-hidden="true">
+  <section ref="stageEl" class="banner-stage" :class="{ hold, calm: reducedMotion, pv: pvOn }" @pointerleave="unpoint">
+    <div v-if="!(showcased && posterArt)" class="wash" aria-hidden="true">
       <Transition name="wash" :css="!reducedMotion">
         <span v-if="active" :key="active.id" class="wash-blob">
           <img v-if="washArt" :src="washArt" alt="" draggable="false" />
@@ -312,9 +498,32 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </CardHand>
-    <div v-else class="feature-hand" :class="{ lined }">
+    <div v-else ref="handEl" class="feature-hand" :class="{ lined, spread: showcased }">
+      <Teleport v-if="showcased" defer to=".page-ground" :disabled="!grounded">
+        <Transition name="ground" appear :css="!reducedMotion">
+          <div
+            v-if="there" ref="spreadEl" class="poster-spread" :class="{ grounded: !!grounded, calm: reducedMotion }"
+            :style="groundBox" aria-hidden="true"
+          >
+            <div class="poster-art">
+              <Transition name="wash" :css="!reducedMotion">
+                <img v-if="posterArt" :key="posterArt" :class="{ veiled: pvOn }" :src="posterArt" alt="" draggable="false" />
+              </Transition>
+              <Transition name="pv">
+                <video
+                  v-if="pvOn" :key="pvRun" :src="pvArt" autoplay muted playsinline disablepictureinpicture
+                  @playing="pvPlaying" @ended="pvEnd" @error="pvEnd"
+                ></video>
+              </Transition>
+            </div>
+            <div v-if="titleArt" class="poster-title" :class="{ veiled: pvOn }">
+              <img :src="titleArt" alt="" draggable="false" />
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
       <div
-        ref="heroEl" class="hero" :style="{ '--lean': `${LEAN_DEG}deg` }"
+        v-else ref="heroEl" class="hero" :style="{ '--lean': `${LEAN_DEG}deg` }"
         @pointerenter="leanStart" @pointermove="leanMove" @pointerleave="leanEnd"
       >
         <span ref="plateEl" class="plate frame-pearl" aria-hidden="true">
@@ -364,16 +573,16 @@ onBeforeUnmount(() => {
     <div class="info">
       <header class="title">
         <slot name="switch"><span class="ui-eyebrow">RESONANCE</span></slot>
-        <h3>{{ banner.name }}</h3>
+        <h3 :class="{ sr: !!titleArt }">{{ banner.name }}</h3>
       </header>
 
-      <div class="sheet" :class="{ 'has-forms': !!forms }">
+      <div class="sheet" :class="{ 'has-forms': !!forms, 'has-show': showcased }">
         <div v-if="peek" class="peek" aria-hidden="true">
           <Transition name="peek" mode="out-in" :css="!reducedMotion">
             <PetBust :key="peek.key" class="peek-bust" :src="peek.src" />
           </Transition>
         </div>
-        <div class="feature-slot">
+        <div v-if="!showcased" class="feature-slot">
           <Transition name="feature" mode="out-in" :css="!reducedMotion">
             <div v-if="feature" :key="active?.id" class="feature">
               <p class="tags">
@@ -388,6 +597,27 @@ onBeforeUnmount(() => {
               </p>
             </div>
           </Transition>
+          <span v-if="left" class="time-left"><Icon name="clock" :size="11" /><span class="sr">剩余</span>{{ left }}</span>
+        </div>
+
+        <div v-if="showcased && front" ref="showEl" class="show-stage">
+          <div v-if="memories.length" class="memories" :class="{ halt: !playing, hold }" aria-hidden="true">
+            <span v-for="(m, i) in memories" :key="i" class="memory" :class="m.kind" :style="m.style">
+              <img :src="m.src" alt="" draggable="false" />
+            </span>
+          </div>
+          <button
+            type="button" class="showcase" :class="{ card: !front.skin }" :disabled="busy" :title="front.item.name"
+            :aria-label="`查看${front.item.name}`" @click="emit('inspect', front.item)" @pointerenter="pointing = true"
+          >
+            <i v-if="formPulse && !reducedMotion" :key="formPulse" class="form-ring" aria-hidden="true"></i>
+            <Transition name="show" mode="out-in" :css="!reducedMotion">
+              <span v-if="front.skin" :key="front.item.id" class="show-floor">
+                <PetView class="showcase-pet" :character="front.item.ref" :scale="showScale" :key-down="keyDown" :form="formShown" />
+              </span>
+              <span v-else :key="front.item.id" class="card-face frame-pearl"><img :src="front.art" alt="" draggable="false" /></span>
+            </Transition>
+          </button>
         </div>
 
         <div v-if="forms" class="forms" role="group" aria-label="形态" @keydown="arrowSelect($event, $event.currentTarget as HTMLElement)">
@@ -407,12 +637,16 @@ onBeforeUnmount(() => {
 
         <div class="meter">
           <div class="lead">
-            <p class="l-head">
+            <p class="l-head" :class="{ line: showcased }">
+              <template v-if="showcased">
+                <span v-if="feature" class="ui-tag up"><em>UP</em><span class="up-word">限定{{ feature.kind }}</span></span>
+                <span v-if="left" class="time-left"><Icon name="clock" :size="11" /><span class="sr">剩余</span>{{ left }}</span>
+              </template>
               <em>{{ featuredWord }}</em><b>{{ got }}</b><i>/{{ items.length }}</i>
               <span v-if="featuredOdds" class="odds">{{ featuredOdds }}</span>
               <span v-if="banner.pity" class="odds">{{ banner.pity }} 次保底</span>
             </p>
-            <div class="stands" @keydown="onFeaturedKey" @pointerenter="pointing = true">
+            <div v-if="!soleShow" class="stands" @keydown="onFeaturedKey" @pointerenter="pointing = true">
               <button
                 v-for="(item, i) in items" :key="item.id" type="button" class="stand-key" :class="{ on: i === at, done: owns(item) }"
                 :disabled="busy" :title="item.name" :aria-label="i === at ? `查看${item.name}` : `换到${item.name}`"
@@ -540,6 +774,119 @@ onBeforeUnmount(() => {
 }
 .feature-hand:not(.lined) .hero {
   height: calc(var(--hero-h) + 54px);
+}
+/* No card: the poster spreads over the left of the panel. It comes in from the sidebar's seam, and goes out toward the
+ * action bar and, before the pool keys, under the paper. The room keeps the hero's. In the stage it starts a little
+ * above the stage; on the page's ground (`.grounded`, placed by placeGround) at the panel's top edge, under the window
+ * keys. */
+.feature-hand.spread {
+  min-height: calc(var(--hero-h) + 54px);
+}
+.poster-spread {
+  position: absolute;
+  top: -18px;
+  bottom: -10px;
+  left: -34px;
+  right: -140px;
+  pointer-events: none;
+}
+.poster-spread.grounded {
+  right: auto;
+  bottom: auto;
+}
+.poster-art {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 32px, #000 50%, transparent 80%);
+  mask-image: linear-gradient(90deg, transparent, #000 32px, #000 50%, transparent 80%);
+}
+.poster-art img,
+.poster-art video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 6%, #000 80%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 6%, #000 80%, transparent);
+}
+.grounded .poster-art img,
+.grounded .poster-art video {
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent);
+  mask-image: linear-gradient(180deg, #000 80%, transparent);
+}
+/* The clip has the poster's shape with 心宜 left of its middle: a narrower stage gives up its right first. */
+.poster-art video {
+  object-position: 30% 50%;
+}
+/* The poster waits under the PV and comes in as the clip goes. */
+.poster-art img {
+  transition: opacity 900ms var(--ease-in-out);
+}
+.poster-art img.veiled {
+  opacity: 0;
+}
+/* On the ground it comes and goes with the stage. */
+.ground-enter-active {
+  transition: opacity 320ms var(--ease-out);
+}
+.ground-leave-active {
+  transition: opacity 120ms var(--ease-in);
+}
+.ground-enter-from,
+.ground-leave-to {
+  opacity: 0;
+}
+/* The poster's title as printed, on its lower left, clear of the action bar. Its pale lines are drawn for the poster's
+ * dark cloth: a mist of the cloth's red under it, and a dark edge on its lines as the cloth's shadow, carry them off
+ * whatever the poster has there and off the paper the poster fades into. It goes with the PV and comes in after it, a
+ * little after the poster. */
+.poster-title {
+  --mist: 108 20 34;
+  --edge: 70 8 20;
+  position: absolute;
+  left: 34px;
+  bottom: 36px;
+  width: min(340px, 62%);
+  transition: opacity 900ms var(--ease-in-out) 300ms, translate 900ms var(--ease-out) 300ms;
+}
+.poster-title::before {
+  content: "";
+  position: absolute;
+  inset: -46% -30% -44% -26%;
+  background: radial-gradient(closest-side, rgb(var(--mist) / 0.88), rgb(var(--mist) / 0.66) 46%, rgb(var(--mist) / 0.28) 74%,
+    rgb(var(--mist) / 0) 100%);
+}
+.poster-title img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 0 1px rgb(var(--edge) / 0.9)) drop-shadow(0 2px 6px rgb(var(--edge) / 0.45));
+}
+.poster-title.veiled {
+  opacity: 0;
+  translate: 0 8px;
+  transition-duration: 300ms;
+  transition-delay: 0ms;
+}
+.calm .poster-title {
+  transition: none;
+}
+.pv-enter-active {
+  transition: opacity 600ms var(--ease-out);
+}
+.pv-leave-active {
+  transition: opacity 900ms var(--ease-in-out);
+}
+.pv-enter-from,
+.pv-leave-to {
+  opacity: 0;
+}
+.feature-hand.spread .lineup {
+  position: relative;
+  margin-top: auto;
 }
 /* The pearl card the stickers are piled on: leans toward the pointer with sliding pearl metal and specular glare. */
 .plate {
@@ -908,6 +1255,7 @@ onBeforeUnmount(() => {
   animation: tick 7s linear both;
 }
 .hold .tick,
+.pv .tick,
 .lineup:has(:focus-visible) .tick {
   animation-play-state: paused;
 }
@@ -934,6 +1282,15 @@ h3 {
   margin: 0;
   font: 800 clamp(36px, 5.2cqw, 48px)/1.04 var(--font);
   letter-spacing: 0.03em;
+}
+/* Read out, not shown: the pool's name where its title lies on the poster, and the word before the time left. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .sheet {
   position: relative;
@@ -1056,9 +1413,34 @@ h3 {
 }
 .feature-slot {
   min-height: 70px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
 }
 .feature {
+  flex: 1;
   min-width: 0;
+}
+/* What is left of the pool's time, at the right end of the tags row, in the limited pools' pearl; it stays while the
+ * featured items take turns. */
+.time-left {
+  flex: none;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px 0 5px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--holo-lilac) 24%, var(--c-50));
+  color: var(--night);
+  font: 800 var(--fs-caption)/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.time-left svg {
+  color: var(--pearl-deep);
 }
 .tags {
   display: flex;
@@ -1139,6 +1521,181 @@ h3 {
 .feature-leave-to {
   opacity: 0;
   transform: translateX(-8px);
+}
+
+/* A showcased pool has no sheet: its scrapbook lies on the page with the item on show in front of it, and one line of
+ * the pool under them. */
+.sheet.has-show {
+  padding: 0 0 0 18px;
+  background: none;
+  box-shadow: none;
+}
+.show-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 110px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+/* The item on show, at the scrapbook's foot, as large as the room holds, its desk on a soft shadow. */
+.showcase {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 8px;
+  box-sizing: border-box;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.showcase.card {
+  align-self: stretch;
+}
+/* The scrapbook: the member's cards as prints in a white border and her emotes as die-cut stickers. As the pool comes
+ * on screen they come in one by one, each with a flash, while the PV plays; then now and then one catches the light. */
+.memories {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  pointer-events: none;
+}
+.memory {
+  position: absolute;
+  rotate: var(--rot);
+  opacity: 0;
+}
+.memory img {
+  display: block;
+  width: 100%;
+}
+.photo {
+  width: min(25cqw, 31cqh);
+  aspect-ratio: 2 / 3;
+  padding: 4px;
+  box-sizing: border-box;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 7px 14px -9px rgba(var(--shadow-rgb), 0.5), 0 0 0 0.5px rgba(var(--shadow-rgb), 0.08);
+}
+.photo img {
+  height: 100%;
+  object-fit: cover;
+  border-radius: 1.5px;
+}
+/* The flash: white over the print as it comes, going off it. A sticker flashes by its own light (memory-in). */
+.photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  opacity: 0;
+}
+.sticker {
+  width: min(14.5cqw, 18cqh);
+}
+.sticker img {
+  height: auto;
+  filter: var(--sticker);
+}
+.memories .memory {
+  animation:
+    memory-in 520ms var(--ease-out) var(--at) both,
+    memory-glint var(--round) linear calc(var(--at) + 2.4s + var(--glint)) infinite;
+}
+.memories .photo::after {
+  animation: memory-flash 560ms var(--ease-out) var(--at) both;
+}
+/* The light waits while the pointer is on the stage; all of it waits while the stage stops. */
+.memories.hold .memory {
+  animation-play-state: running, paused;
+}
+.memories.halt .memory,
+.memories.halt .photo::after {
+  animation-play-state: paused;
+}
+.calm .memories .memory {
+  opacity: 1;
+  animation: none;
+}
+.calm .memories .photo::after {
+  animation: none;
+}
+@keyframes memory-in {
+  from { opacity: 0; scale: 1.12; translate: 0 -6px; filter: brightness(1.8); }
+  40% { opacity: 1; }
+  to { opacity: 1; scale: 1; translate: 0 0; filter: brightness(1); }
+}
+@keyframes memory-flash {
+  from { opacity: 0.92; }
+  to { opacity: 0; }
+}
+@keyframes memory-glint {
+  0%, 2.6%, 100% { filter: brightness(1); }
+  1.1% { filter: brightness(1.28); }
+}
+.show-floor {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: block;
+}
+.show-floor::before {
+  content: "";
+  position: absolute;
+  left: 16%;
+  right: 16%;
+  bottom: -8px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(var(--shadow-rgb), 0.2), transparent);
+}
+.showcase:focus-visible {
+  outline: 2px solid var(--c-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-m);
+}
+.showcase-pet,
+.showcase .card-face {
+  z-index: 1;
+  flex: none;
+  transition: translate var(--dur-base) var(--ease-out);
+}
+.showcase-pet {
+  pointer-events: none;
+}
+.showcase-pet :deep(.still) {
+  filter: var(--sticker-lg);
+}
+.showcase .card-face {
+  position: relative;
+  height: 100%;
+}
+.showcase:hover:not(:disabled) .showcase-pet,
+.showcase:hover:not(:disabled) .card-face {
+  translate: 0 -3px;
+}
+.showcase .form-ring {
+  z-index: 0;
+  left: 50%;
+  top: 55%;
+  width: min(64%, 220px);
+}
+.show-enter-active {
+  transition: opacity 260ms, translate 360ms var(--ease-out);
+}
+.show-leave-active {
+  transition: opacity 140ms var(--ease-in);
+}
+.show-enter-from {
+  opacity: 0;
+  translate: 0 8px;
+}
+.show-leave-to {
+  opacity: 0;
 }
 
 /* The two forms of the skin on show, as tactile rounded keys: the lit one is latched in pearl, a press holds the other. */
@@ -1313,7 +1870,7 @@ h3 {
   display: flex;
   flex-direction: column;
 }
-.sheet:not(.has-forms) .meter {
+.sheet:not(.has-forms):not(.has-show) .meter {
   flex: 1;
   justify-content: flex-end;
 }
@@ -1332,20 +1889,50 @@ h3 {
   min-width: 0;
   white-space: nowrap;
 }
-.l-head em {
+.l-head > em {
   margin-right: 5px;
   font: 800 var(--fs-body)/1 var(--font);
   font-style: normal;
   color: var(--ink);
 }
-.l-head b {
+.l-head > b {
   font: 800 18px/1 var(--font-latin);
   color: var(--ink);
 }
-.l-head i {
+.l-head > i {
   font: 800 var(--fs-label)/1 var(--font-latin);
   font-style: normal;
   color: var(--ink-3);
+}
+/* A showcased pool's one line: its UP tag and the time left, how many of its items are found, and its odds. Short of
+ * room the odds go first (the odds sheet has them), then the words of the UP tag, then the word before the count. */
+.sheet.has-show .lead {
+  container: line / inline-size;
+}
+.l-head.line {
+  align-items: center;
+}
+.l-head.line .up,
+.l-head.line .time-left {
+  margin: 0 8px 0 0;
+}
+@container line (max-width: 360px) {
+  .l-head.line .odds {
+    display: none;
+  }
+}
+@container line (max-width: 290px) {
+  .l-head.line .up {
+    padding-right: 3px;
+  }
+  .l-head.line .up-word {
+    display: none;
+  }
+}
+@container line (max-width: 235px) {
+  .l-head.line > em {
+    display: none;
+  }
 }
 /* The pool's own odds for a row, a quiet tag at its right end. */
 .odds {
@@ -1511,6 +2098,42 @@ h3 {
   .card-hand {
     align-self: center;
   }
+  /* Over the full width, above the name: only its sides and its foot fade. */
+  .feature-hand.spread {
+    align-self: stretch;
+    width: auto;
+    min-height: 0;
+    height: 250px;
+  }
+  .poster-spread {
+    top: -18px;
+    bottom: 0;
+    left: -16px;
+    right: -16px;
+  }
+  .poster-art {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+  .poster-art img,
+  .poster-art video {
+    object-position: 50% 22%;
+    -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+    mask-image: linear-gradient(180deg, #000 70%, transparent);
+  }
+  .poster-art video {
+    object-position: 50% 30%;
+  }
+  /* A smaller title, in the middle of the band's foot. */
+  .poster-title {
+    left: 50%;
+    bottom: 8px;
+    width: min(230px, 64%);
+    translate: -50% 0;
+  }
+  .poster-title.veiled {
+    translate: -50% 8px;
+  }
   .wash {
     left: 50%;
     transform: translateX(-50%);
@@ -1522,6 +2145,13 @@ h3 {
   }
   .sheet {
     margin-left: 0;
+  }
+  .show-stage {
+    flex: none;
+    height: 150px;
+  }
+  .memories {
+    display: none;
   }
 }
 /* A shorter panel: the forms and the standees give way before the last row slips under the action bar. */

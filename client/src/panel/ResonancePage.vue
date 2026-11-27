@@ -216,7 +216,7 @@ async function nextBatch() {
         </template>
       </PhotoStage>
       <BannerStage
-        v-else-if="banner" :key="banner.id" :banner="banner" :busy="revealing"
+        v-else-if="banner" :key="banner.id" :banner="banner" :left="bannerLeft(banner, now)" :busy="revealing"
         :paused="probabilities || history || !!detail || !!skin || !!plate" @inspect="inspect" @plate="plate = $event"
       >
         <template #switch><PoolTabs :model-value="poolId" :pools="pools" :disabled="revealing" @update:model-value="ui.pool = $event" @near="near" /></template>
@@ -257,13 +257,13 @@ async function nextBatch() {
           <b :class="{ empty: draws < 1, abundant: draws >= 10 }">{{ draws }}</b>
           <span>次</span>
           <em v-if="!complete && res && draws < 1" class="short-pill">碎片不足</em>
+          <i v-if="!complete && res && draws >= 1 && draws < 10 && tenShort > 0" class="ten-gap">· 差 {{ formatCount(tenShort) }} 满十次</i>
         </p>
         <p v-if="!complete && res && draws < 1 && onceShort > 0" class="today short" :title="income ? nextTapText(income) : undefined">
           <Icon name="shard" :size="13" />还差<b>{{ formatCount(onceShort) }}</b>碎片
         </p>
         <p v-else-if="income" class="today" :title="nextTapText(income)">
           <Icon name="shard" :size="13" />今日已获得<b>{{ formatCount(income.today) }}</b>
-          <i v-if="!complete && res && draws >= 1 && draws < 10 && tenShort > 0" class="ten-gap">· 差 {{ formatCount(tenShort) }} 满十次</i>
         </p>
       </div>
       <b v-if="complete" class="done">已集齐</b>
@@ -514,6 +514,7 @@ async function nextBatch() {
   100% { background-position: -60% 0; }
 }
 .supply {
+  container: supply / inline-size;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -573,12 +574,19 @@ async function nextBatch() {
 .supply .today.short b {
   color: var(--ink-2);
 }
+/* How far the shards are from ten draws, after the count of draws. Where the column has no room for all of it, it is
+ * left out rather than cut. */
 .ten-gap {
   margin-left: 2px;
   font-size: var(--fs-caption);
   font-weight: 600;
   font-style: normal;
   color: var(--ink-3);
+}
+@container supply (max-width: 180px) {
+  .ten-gap {
+    display: none;
+  }
 }
 .done {
   flex: none;
